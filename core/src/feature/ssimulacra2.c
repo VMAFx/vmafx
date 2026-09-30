@@ -335,13 +335,39 @@ static inline float srgb_to_linear(float v)
     return vmaf_ss2_srgb_eotf(v);
 }
 
+/* A * beta = gamma for the 3x3 system of CreateRecursiveGaussian, solved by
+ * Cramer's rule in libjxl's expression order (each column of A replaced by
+ * gamma in turn). */
+static void solve_cramer_3x3(const double A[3][3], const double gamma[3], double beta[3])
+{
+    const double det_A = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
+                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
+                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+    const double inv_det = 1.0 / det_A;
+
+    for (int col = 0; col < 3; col++) {
+        double M[3][3];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                M[i][j] = A[i][j];
+            }
+        }
+        for (int i = 0; i < 3; i++) {
+            M[i][col] = gamma[i];
+        }
+        beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
+                     M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) *
+                    inv_det;
+    }
+}
+
 /* Port of libjxl CreateRecursiveGaussian (lib/jxl/gauss_blur.cc).
  * Charalampidis [2016] "Recursive Implementation of the Gaussian Filter
  * Using Truncated Cosine Functions", with k={1,3,5}. Writes n2[], d1[],
  * and radius into the state; the full IIR pass uses symmetric-sum
- * recurrence `out_k = n2[k]*sum - d1[k]*prev_k - prev2_k`. */
-/* ADR-0130-era scalar, pre-existing pre-touched-file rule. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — paired SIMD ports (avx2/avx512/neon/sve2) bit-exact-match this scalar; splitting would force matching splits in 4 SIMD files (ADR-0141)
+ * recurrence `out_k = n2[k]*sum - d1[k]*prev_k - prev2_k`. The file builds
+ * with -ffp-contract=off, so the helper split keeps every rounding. */
 static void create_recursive_gaussian(Ssimu2State *s, double sigma)
 {
     const double radius = round(3.2795 * sigma + 0.2546); /* (57), "N" */
@@ -379,28 +405,8 @@ static void create_recursive_gaussian(Ssimu2State *s, double sigma)
     const double A[3][3] = {{p1, p3, p5}, {r1, r3, r5}, {zeta_15, zeta_35, 1.0}};
     const double gamma[3] = {1.0, radius * radius - sigma * sigma, /* (55) */
                              zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-
-    const double det_A = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
-                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
-                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
-    const double inv_det = 1.0 / det_A;
-
     double beta[3];
-    for (int col = 0; col < 3; col++) {
-        double M[3][3];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                M[i][j] = A[i][j];
-            }
-        }
-        for (int i = 0; i < 3; i++) {
-            M[i][col] = gamma[i];
-        }
-        beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
-                     M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
-                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) *
-                    inv_det;
-    }
+    solve_cramer_3x3(A, gamma, beta);
 
     /* (33): final coefficients */
     s->rg_radius = (int)radius;
@@ -459,13 +465,65 @@ static inline float read_plane(const VmafPicture *pic, int plane, int x, int y)
     return (float)row[sx];
 }
 
+/* YCbCr -> RGB constants of one `yuv_matrix` option. */
+typedef struct Ssimu2YuvCoeffs {
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+} Ssimu2YuvCoeffs;
+
+static Ssimu2YuvCoeffs yuv_matrix_coeffs(int yuv_matrix)
+{
+    /* BT.709 limited-range (8-bit reference): Y in [16,235], C in [16,240].
+     * BT.601 limited is the default branch. */
+    float kr = 0.299f;
+    float kg = 0.587f;
+    float kb = 0.114f;
+    int limited = 1;
+    switch (yuv_matrix) {
+    case YUV_MATRIX_BT709_FULL:
+        limited = 0;
+        /* fall through */
+    case YUV_MATRIX_BT709_LIMITED:
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case YUV_MATRIX_BT601_FULL:
+        limited = 0;
+        break;
+    case YUV_MATRIX_BT601_LIMITED:
+    default:
+        break;
+    }
+
+    /* Derived coefficients for the standard YCbCr → RGB inverse:
+     *   R = Y                + 2(1-kr) * V
+     *   B = Y + 2(1-kb) * U
+     *   G = Y - (2kb(1-kb)/kg) U - (2kr(1-kr)/kg) V
+     */
+    Ssimu2YuvCoeffs c;
+    c.cr_r = 2.0f * (1.0f - kr);
+    c.cb_b = 2.0f * (1.0f - kb);
+    c.cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
+    c.cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
+    c.y_scale = limited ? (255.0f / 219.0f) : 1.0f;
+    c.c_scale = limited ? (255.0f / 224.0f) : 1.0f;
+    c.y_off = limited ? (16.0f / 255.0f) : 0.0f;
+    c.c_off = 0.5f;
+    return c;
+}
+
 /* Apply YUV matrix → non-linear sRGB in [0,1], then sRGB EOTF → linear RGB.
- * Writes planar R|G|B, each plane w*h contiguous floats at `out`. */
-/* ADR-0141 carve-out: the matmul + per-pixel YUV-matrix dispatch +
- * clamp + per-lane sRGB EOTF is a line-for-line port of the libjxl
- * scalar reference path — splitting would break the scalar-diff
- * audit story. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — paired SIMD ports (avx2/avx512/neon/sve2) bit-exact-match this scalar; splitting would force matching splits in 4 SIMD files (ADR-0141)
+ * Writes planar R|G|B, each plane w*h contiguous floats at `out`. The SIMD
+ * ports (avx2/avx512/neon/sve2) are bit-exact with this scalar path; the file
+ * builds with -ffp-contract=off, so moving the constants into
+ * yuv_matrix_coeffs() keeps every rounding. */
 static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->w;
@@ -477,62 +535,7 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
 
     const float peak = (float)((1u << s->bpc) - 1u);
     const float inv_peak = 1.0f / peak;
-
-    /* BT.709 limited-range (8-bit reference): Y in [16,235], C in [16,240]. */
-    float kr;
-    float kg;
-    float kb;
-    float ky;
-    float kcb_r;
-    float kcb_g;
-    float kcr_g;
-    float kcr_r;
-    int limited = 1;
-    switch (s->yuv_matrix) {
-    case YUV_MATRIX_BT709_FULL:
-        limited = 0;
-        /* fall through */
-    case YUV_MATRIX_BT709_LIMITED:
-        kr = 0.2126f;
-        kg = 0.7152f;
-        kb = 0.0722f;
-        break;
-    case YUV_MATRIX_BT601_FULL:
-        limited = 0;
-        /* fall through */
-    case YUV_MATRIX_BT601_LIMITED:
-    default:
-        kr = 0.299f;
-        kg = 0.587f;
-        kb = 0.114f;
-        break;
-    }
-    (void)kg;
-    ky = kr;
-    kcb_r = kb;
-    kcb_g = kg;
-    kcr_g = kr;
-    kcr_r = kb;
-    (void)ky;
-    (void)kcb_r;
-    (void)kcb_g;
-    (void)kcr_g;
-    (void)kcr_r;
-
-    /* Derived coefficients for the standard YCbCr → RGB inverse:
-     *   R = Y                + 2(1-kr) * V
-     *   B = Y + 2(1-kb) * U
-     *   G = Y - (2kb(1-kb)/kg) U - (2kr(1-kr)/kg) V
-     */
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
+    const Ssimu2YuvCoeffs k = yuv_matrix_coeffs(s->yuv_matrix);
 
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
@@ -541,9 +544,9 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
             float V = read_plane(pic, 2, (int)x, (int)y) * inv_peak;
 
             /* Normalise to [0,1] luma / centered-at-0 chroma. */
-            float Yn = (Y - y_off) * y_scale;
-            float Un = (U - c_off) * c_scale;
-            float Vn = (V - c_off) * c_scale;
+            float Yn = (Y - k.y_off) * k.y_scale;
+            float Un = (U - k.c_off) * k.c_scale;
+            float Vn = (V - k.c_off) * k.c_scale;
 
             /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
              * kernels and their scalar tails all use a single-rounded
@@ -562,10 +565,10 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
              * twice while the SIMD path rounded once, and the score moved by
              * 0.37. `vmaf_fmaf_exact` is single-rounded on every host; see
              * feature/common/fmaf_exact.h. Keep them in this exact order. */
-            float R = vmaf_fmaf_exact(cr_r, Vn, Yn);
-            float G = vmaf_fmaf_exact(cb_g, Un, Yn);
-            G = vmaf_fmaf_exact(cr_g, Vn, G);
-            float B = vmaf_fmaf_exact(cb_b, Un, Yn);
+            float R = vmaf_fmaf_exact(k.cr_r, Vn, Yn);
+            float G = vmaf_fmaf_exact(k.cb_g, Un, Yn);
+            G = vmaf_fmaf_exact(k.cr_g, Vn, G);
+            float B = vmaf_fmaf_exact(k.cb_b, Un, Yn);
 
             R = clampf(R, 0.0f, 1.0f);
             G = clampf(G, 0.0f, 1.0f);
@@ -991,20 +994,35 @@ static void init_simd_dispatch(Ssimu2State *s)
 #endif
 }
 
-static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
-                unsigned h)
+/* The colour conversion reads U and V; 4:0:0 has neither plane (its data[1] /
+ * data[2] are NULL), so init() refuses it instead of letting extract() read
+ * through a NULL plane. ssimulacra2_sycl refuses it the same way. */
+static int check_pixel_format(enum VmafPixelFormat pix_fmt)
 {
-    (void)pix_fmt;
-    Ssimu2State *s = fex->priv;
+    if (pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN)
+        return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input, not 4:0:0\n");
+    return -EINVAL;
+}
 
-    s->w = w;
-    s->h = h;
-    s->bpc = bpc;
-    s->sample_scale = 1.0f / (float)((1u << bpc) - 1u);
+/* Every buffer init() allocates. aligned_free(NULL) is a no-op, so this also
+ * releases a partial allocation; the pointers are cleared so that nothing is
+ * freed twice. */
+static void free_buffers(Ssimu2State *s)
+{
+    float **const bufs[] = {
+        &s->ref_lin,   &s->dist_lin,  &s->ref_xyb, &s->dist_xyb, &s->mu1,     &s->mu2,
+        &s->sigma1_sq, &s->sigma2_sq, &s->sigma12, &s->mul_buf,  &s->scratch, &s->col_state,
+    };
+    for (size_t i = 0; i < sizeof(bufs) / sizeof(bufs[0]); i++) {
+        aligned_free(*bufs[i]);
+        *bufs[i] = NULL;
+    }
+}
 
-    create_recursive_gaussian(s, SSIMU2_SIGMA);
-
-    s->cap_plane = (size_t)w * (size_t)h;
+static int alloc_buffers(Ssimu2State *s, unsigned w)
+{
     const size_t rgb_bytes = 3u * s->cap_plane * sizeof(float);
     const size_t plane_bytes = s->cap_plane * sizeof(float);
     const size_t col_state_bytes = 6u * (size_t)w * sizeof(float);
@@ -1025,29 +1043,36 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->ref_lin || !s->dist_lin || !s->ref_xyb || !s->dist_xyb || !s->mu1 || !s->mu2 ||
         !s->sigma1_sq || !s->sigma2_sq || !s->sigma12 || !s->mul_buf || !s->scratch ||
         !s->col_state) {
-        goto fail;
+        /* Partial OOM: any of the 12 allocations may have succeeded while a
+         * later one failed; release them so the state does not leak. */
+        free_buffers(s);
+        return -ENOMEM;
     }
+    return 0;
+}
+
+static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                unsigned h)
+{
+    const int fmt_err = check_pixel_format(pix_fmt);
+    if (fmt_err)
+        return fmt_err;
+    Ssimu2State *s = fex->priv;
+
+    s->w = w;
+    s->h = h;
+    s->bpc = bpc;
+    s->sample_scale = 1.0f / (float)((1u << bpc) - 1u);
+
+    create_recursive_gaussian(s, SSIMU2_SIGMA);
+
+    s->cap_plane = (size_t)w * (size_t)h;
+    const int err = alloc_buffers(s, w);
+    if (err)
+        return err;
 
     init_simd_dispatch(s);
     return 0;
-
-fail:
-    /* Partial OOM: any of the 12 allocations above may have succeeded while a
-     * later one failed. Free every non-NULL buffer (aligned_free(NULL) is a
-     * no-op) so the partially-initialised state does not leak 1-11 buffers. */
-    aligned_free(s->ref_lin);
-    aligned_free(s->dist_lin);
-    aligned_free(s->ref_xyb);
-    aligned_free(s->dist_xyb);
-    aligned_free(s->mu1);
-    aligned_free(s->mu2);
-    aligned_free(s->sigma1_sq);
-    aligned_free(s->sigma2_sq);
-    aligned_free(s->sigma12);
-    aligned_free(s->mul_buf);
-    aligned_free(s->scratch);
-    aligned_free(s->col_state);
-    return -ENOMEM;
 }
 
 /* Dispatch YUV → linear RGB through the SIMD function pointer when set,
@@ -1078,6 +1103,48 @@ static int append_score(VmafFeatureCollector *feature_collector, unsigned index,
     return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
 }
 
+/* One scale: XYB of both images, the three products and five blurs, and the
+ * SSIM and edge-difference norms of the scale. */
+static void score_one_scale(Ssimu2State *s, unsigned cw, unsigned ch, double avg_ssim[6],
+                            double avg_ed[12])
+{
+    s->xyb_fn(s->ref_lin, s->ref_xyb, cw, ch);
+    s->xyb_fn(s->dist_lin, s->dist_xyb, cw, ch);
+
+    s->mul3_fn(s->ref_xyb, s->ref_xyb, s->mul_buf, cw, ch);
+    blur_3plane(s, s->mul_buf, s->sigma1_sq, cw, ch);
+
+    s->mul3_fn(s->dist_xyb, s->dist_xyb, s->mul_buf, cw, ch);
+    blur_3plane(s, s->mul_buf, s->sigma2_sq, cw, ch);
+
+    s->mul3_fn(s->ref_xyb, s->dist_xyb, s->mul_buf, cw, ch);
+    blur_3plane(s, s->mul_buf, s->sigma12, cw, ch);
+
+    blur_3plane(s, s->ref_xyb, s->mu1, cw, ch);
+    blur_3plane(s, s->dist_xyb, s->mu2, cw, ch);
+
+    s->ssim_fn(s->mu1, s->mu2, s->sigma1_sq, s->sigma2_sq, s->sigma12, cw, ch, avg_ssim);
+    s->edge_fn(s->ref_xyb, s->mu1, s->dist_xyb, s->mu2, cw, ch, avg_ed);
+}
+
+/* 2x2-downsample both linear-RGB images for the next scale. Each result lands
+ * in mul_buf, which then swaps places with the image it came from. */
+static void downsample_both(Ssimu2State *s, unsigned *cw, unsigned *ch)
+{
+    unsigned nw = 0;
+    unsigned nh = 0;
+    s->down_fn(s->ref_lin, *cw, *ch, s->mul_buf, &nw, &nh);
+    float *tmp = s->ref_lin;
+    s->ref_lin = s->mul_buf;
+    s->mul_buf = tmp;
+    s->down_fn(s->dist_lin, *cw, *ch, s->mul_buf, &nw, &nh);
+    tmp = s->dist_lin;
+    s->dist_lin = s->mul_buf;
+    s->mul_buf = tmp;
+    *cw = nw;
+    *ch = nh;
+}
+
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -1102,41 +1169,10 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     for (int scale = 0; scale < kNumScales; scale++) {
         if (cw < 8u || ch < 8u)
             break;
-
-        s->xyb_fn(s->ref_lin, s->ref_xyb, cw, ch);
-        s->xyb_fn(s->dist_lin, s->dist_xyb, cw, ch);
-
-        s->mul3_fn(s->ref_xyb, s->ref_xyb, s->mul_buf, cw, ch);
-        blur_3plane(s, s->mul_buf, s->sigma1_sq, cw, ch);
-
-        s->mul3_fn(s->dist_xyb, s->dist_xyb, s->mul_buf, cw, ch);
-        blur_3plane(s, s->mul_buf, s->sigma2_sq, cw, ch);
-
-        s->mul3_fn(s->ref_xyb, s->dist_xyb, s->mul_buf, cw, ch);
-        blur_3plane(s, s->mul_buf, s->sigma12, cw, ch);
-
-        blur_3plane(s, s->ref_xyb, s->mu1, cw, ch);
-        blur_3plane(s, s->dist_xyb, s->mu2, cw, ch);
-
-        s->ssim_fn(s->mu1, s->mu2, s->sigma1_sq, s->sigma2_sq, s->sigma12, cw, ch, avg_ssim[scale]);
-        s->edge_fn(s->ref_xyb, s->mu1, s->dist_xyb, s->mu2, cw, ch, avg_ed[scale]);
+        score_one_scale(s, cw, ch, avg_ssim[scale], avg_ed[scale]);
         completed++;
-
-        if (scale + 1 < kNumScales) {
-            unsigned nw = 0;
-            unsigned nh = 0;
-            s->down_fn(s->ref_lin, cw, ch, s->mul_buf, &nw, &nh);
-            /* swap: mul now holds downsampled ref_lin */
-            float *tmp = s->ref_lin;
-            s->ref_lin = s->mul_buf;
-            s->mul_buf = tmp;
-            s->down_fn(s->dist_lin, cw, ch, s->mul_buf, &nw, &nh);
-            tmp = s->dist_lin;
-            s->dist_lin = s->mul_buf;
-            s->mul_buf = tmp;
-            cw = nw;
-            ch = nh;
-        }
+        if (scale + 1 < kNumScales)
+            downsample_both(s, &cw, &ch);
     }
 
     const double score = pool_score(avg_ssim, avg_ed, completed);
@@ -1148,18 +1184,7 @@ static int close(VmafFeatureExtractor *fex)
     Ssimu2State *s = fex->priv;
     if (!s)
         return 0;
-    aligned_free(s->ref_lin);
-    aligned_free(s->dist_lin);
-    aligned_free(s->ref_xyb);
-    aligned_free(s->dist_xyb);
-    aligned_free(s->mu1);
-    aligned_free(s->mu2);
-    aligned_free(s->sigma1_sq);
-    aligned_free(s->sigma2_sq);
-    aligned_free(s->sigma12);
-    aligned_free(s->mul_buf);
-    aligned_free(s->scratch);
-    aligned_free(s->col_state);
+    free_buffers(s);
     return 0;
 }
 

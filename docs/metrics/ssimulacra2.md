@@ -54,7 +54,11 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 
 ## Inputs And Backends
 
-- Pixel formats: YUV 4:2:0, 4:2:2, and 4:4:4.
+- Pixel formats: YUV 4:2:0, 4:2:2, and 4:4:4. The colour conversion needs
+  both chroma planes, so 4:0:0 (luma-only) input is refused at init with
+  `ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input, not 4:0:0` and
+  `-EINVAL` from `vmaf_read_pictures()`. (The `vmaf` CLI never produces it: it
+  rejects `-p 400` and converts Y4M `mono` input to 4:2:0.)
 - Bit depths: 8, 10, and 12 bpc.
 - CPU SIMD: AVX2, AVX-512, NEON, and SVE2 when the host advertises it.
 - GPU twins: `ssimulacra2_cuda`, `ssimulacra2_sycl`, and

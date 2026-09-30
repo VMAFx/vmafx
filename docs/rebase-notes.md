@@ -91,6 +91,26 @@
   section types and, as a list of pairs, repeated names. No device or oneAPI
   is needed. No Netflix golden-data, public API or FFmpeg patch impact; the
   Meson wiring (`sycl_aot_image_check` in `core/src/meson.build`) is unchanged.
+## fix/ssimulacra2-reject-yuv400 — CPU `ssimulacra2` refuses 4:0:0 at init (2026-10-01)
+
+- `core/src/feature/ssimulacra2.c` is fork-only (upstream Netflix/vmaf has no
+  `ssimulacra2`); no Netflix golden-data, public C API or FFmpeg patch impact.
+  `init()` now returns `-EINVAL` for `VMAF_PIX_FMT_YUV400P` /
+  `VMAF_PIX_FMT_UNKNOWN` before it allocates anything; keep that check first if
+  `init()` is restructured, since `convert_picture_to_linear_rgb` and every
+  SIMD `picture_to_linear_rgb` read U and V unconditionally.
+  `core/test/test_ssimulacra2_coverage.c::test_ssimulacra2_rejects_yuv400`
+  guards it.
+- Touching the file made it subject to the HISS touched-file rule, so four
+  functions were split without changing any arithmetic (the TU builds with
+  `-ffp-contract=off`): `create_recursive_gaussian` calls
+  `solve_cramer_3x3`, `picture_to_linear_rgb` takes its constants from
+  `yuv_matrix_coeffs`, `init` / `close` share `alloc_buffers` /
+  `free_buffers` (the `goto fail` path is gone), and `extract` calls
+  `score_one_scale` / `downsample_both`. The two
+  `NOLINTNEXTLINE(readability-function-size)` lines they carried are gone
+  with the long bodies. Output is bit-identical to master (every frame of
+  five fixtures x four `yuv_matrix` values x AVX-512 / AVX2 / scalar).
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

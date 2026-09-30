@@ -17,11 +17,14 @@
  *       sample_scale and extract() still produces a finite result.
  *    4. YUV444P input: a 4:4:4 frame exercises the full-chroma plane path
  *       in convert_picture_to_linear_rgb.
+ *    5. YUV400P input has no chroma planes: init() refuses it with -EINVAL
+ *       (it used to be accepted, and extract() read through the NULL U plane).
  *
  *  ssimulacra2 requires width >= 8 per scale (multi-scale stops when
  *  cw < 8 || ch < 8).  32x32 is enough to run at least 2 scales.
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -259,12 +262,32 @@ static char *test_ssimulacra2_yuv444p_extract(void)
     return NULL;
 }
 
+/* ----------------------------------------------------------------- */
+/* YUV400P: no chroma planes to convert, so init refuses the format  */
+/* ----------------------------------------------------------------- */
+
+static char *test_ssimulacra2_rejects_yuv400(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
+    mu_assert("ssimulacra2 extractor missing", fex != NULL);
+
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    mu_assert("context_create", err == 0);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV400P, 8u, S2_W, S2_H);
+    mu_assert("4:0:0 init must fail with -EINVAL", err == -EINVAL);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("context_destroy after a refused init", err == 0);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_ssimulacra2_default_extract);
     mu_run_test(test_ssimulacra2_identical_extract);
     mu_run_test(test_ssimulacra2_10bit_extract);
     mu_run_test(test_ssimulacra2_yuv444p_extract);
+    mu_run_test(test_ssimulacra2_rejects_yuv400);
     return NULL;
 }
 
