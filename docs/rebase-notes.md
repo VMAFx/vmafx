@@ -184,10 +184,13 @@
   atomic per block (`add_block_sad()`); `integer_psnr/psnr_score.cu` sums
   eight pixels per thread (geometry in `integer_psnr_cuda.h`, shared with
   `psnr_cuda_dispatch()`), adds one atomic per block (`add_block_sse()`) and
-  selects the plane with constant indices (`plane_row()`). Keep all three on
-  a sync of these upstream-derived NVIDIA kernels: per-warp atomics to the
-  single accumulator serialise the kernels, and `pic.data[plane]` on the
-  by-value kernel parameter puts both pictures on every thread's stack.
+  selects the plane with constant indices (`plane_row()`);
+  `integer_moment/moment_score.cu` takes the same layout
+  (`integer_moment_cuda.h`) and adds one atomic per accumulator per block
+  (`add_block_sums()`). Keep all of it on a sync of these upstream-derived
+  NVIDIA kernels: per-warp atomics to a single accumulator serialise the
+  kernels, and `pic.data[plane]` on the by-value kernel parameter puts both
+  pictures on every thread's stack.
 - clang-tidy clean-up of touched CUDA hosts (HISS-04, no behaviour change):
   `integer_vif_cuda.c` gained `vif_submit_plane()` / `vif_submit_scales()`
   and a kernel-name table in `vif_get_filter1d_functions()`;
