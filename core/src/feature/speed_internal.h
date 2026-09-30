@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "libvmaf/picture.h"
+#include "picture_geometry.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,8 +65,34 @@ static inline bool speed_validate_dimensions(unsigned w, unsigned h, double pres
 }
 
 /**
+ * Whether filter_and_downscale() resamples a plane before filtering it.
+ *
+ * A prescale within 1e-3 of 1 counts as the identity, but lround() can still
+ * give the scaled plane a different size: at speed_prescale=1.0009 a 576-wide
+ * plane scales to 577. Filtering at that size without the resample reads a
+ * column the frame buffer never received (or, below 1, drops the last ones
+ * instead of resampling). So the resample is skipped only when the size is
+ * unchanged too. speed.c and speed_internal_filter_and_downscale() use this;
+ * the SYCL twin (sycl/speed_sycl_host.cpp, fill_geometry()) applies the same
+ * rule on the device.
+ */
+static inline bool speed_prescale_resamples(double prescale, size_t original_w, size_t original_h,
+                                            size_t scaled_w, size_t scaled_h)
+{
+    const bool identity = fabs(prescale - 1.0) < 1.0e-3;
+    return !identity || scaled_w != original_w || scaled_h != original_h;
+}
+
+/**
  * Derive chroma plane dimensions from luma dimensions and pixel format.
  * Returns 0 on success, -EINVAL if pixel format has no chroma planes or is invalid.
+ *
+ * The extents are the picture's own (vmaf_chroma_extent(), the rounding
+ * vmaf_picture_alloc() uses), because picture_copy() copies
+ * VmafPicture::w/h[channel]. The CPU speed_chroma, every GPU twin and the CLI
+ * dimension check take their chroma geometry from this one function. The
+ * former floor division sized the CPU, CUDA and HIP plane buffers one row or
+ * column short of an odd-sized plane, and picture_copy() wrote past them.
  */
 static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixelFormat pix_fmt,
                                           unsigned *chroma_w, unsigned *chroma_h)
@@ -75,11 +102,11 @@ static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixel
 
     switch (pix_fmt) {
     case VMAF_PIX_FMT_YUV420P:
-        *chroma_w = w / 2u;
-        *chroma_h = h / 2u;
+        *chroma_w = vmaf_chroma_extent(w, true);
+        *chroma_h = vmaf_chroma_extent(h, true);
         return 0;
     case VMAF_PIX_FMT_YUV422P:
-        *chroma_w = w / 2u;
+        *chroma_w = vmaf_chroma_extent(w, true);
         *chroma_h = h;
         return 0;
     case VMAF_PIX_FMT_YUV444P:

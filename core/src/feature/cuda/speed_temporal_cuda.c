@@ -58,6 +58,9 @@ extern const char speed_score_ptx[];
 #define ST_INDTERM_BLOCK (256u)
 #define ST_SCORE_BLOCK (256u)
 #define ST_SOLVE_WARP (32u)
+/* Warps per backward-substitution block, as in the chroma twin (ADR-1202):
+ * 8 x 32 = 256 threads, inside CUDA's 1024-thread block limit at every size. */
+#define ST_SOLVE_WARPS_PER_BLOCK (8u)
 
 #define ST_DEFAULT_SIGMA_NN (0.29)
 #define ST_DEFAULT_MAX_VAL (1000.0)
@@ -377,6 +380,23 @@ fail:
     return _cuda_err;
 }
 
+/* Launch geometry of speed_solve_kernel: one warp per linear system and
+ * ST_SOLVE_WARPS_PER_BLOCK warps per block, so the block count grows with the
+ * picture and the block size stays fixed. The former formula grew the block
+ * instead and passed CUDA's 1024-thread limit above 256 systems (1080p luma;
+ * 576x324 at speed_prescale 4), and the launch failed with
+ * CUDA_ERROR_INVALID_VALUE (T-CUDA-SPEED-TEMPORAL-SOLVE-LAUNCH-2026-09-30).
+ * The chroma twin's launch_backward_substitution() has had this since
+ * ADR-1202. */
+static void st_solve_launch_dims(uint32_t systems, uint32_t *blocks, uint32_t *threads)
+{
+    uint32_t warps = ST_SOLVE_WARPS_PER_BLOCK;
+    if (systems < ST_SOLVE_WARPS_PER_BLOCK)
+        warps = systems ? systems : 1u;
+    *threads = warps * ST_SOLVE_WARP;
+    *blocks = (systems + warps - 1u) / warps;
+}
+
 /* `singular_out` reports a singular covariance matrix, which is NOT a failure:
  * the CPU reference zeroes the solution and reports it separately so the caller
  * can apply the one-sided-zero rule in speed_extract_score(). The return value
@@ -416,8 +436,9 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
             cuMemcpyHtoDAsync(d_sol, h_indterm, (size_t)sz * (size_t)nb * sizeof(float), s->stream),
             fail);
         const uint32_t u_nb = (uint32_t)nb;
-        const uint32_t threads = ((u_nb + 7u) / 8u) * ST_SOLVE_WARP;
-        const uint32_t blocks = (u_nb + (threads / ST_SOLVE_WARP) - 1u) / (threads / ST_SOLVE_WARP);
+        uint32_t blocks = 0u;
+        uint32_t threads = 0u;
+        st_solve_launch_dims(u_nb, &blocks, &threads);
         void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,

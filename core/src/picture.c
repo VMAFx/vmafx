@@ -24,6 +24,7 @@
 
 #include "mem.h"
 #include "picture.h"
+#include "picture_geometry.h"
 #include "ref.h"
 
 #define DATA_ALIGN 64
@@ -136,17 +137,19 @@ int vmaf_picture_priv_init(VmafPicture *pic)
 
 static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
 {
-    const int ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
-    const int ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
+    const bool ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const bool ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
     pic->w[0] = w;
     /* Ceiling division: for 4:2:0 an odd luma width/height must produce one
      * extra chroma sample row/column so that every luma sample is covered.
      * Floor (plain >> ss) under-allocates by one row for odd-height inputs,
      * causing one-past-end OOB in ciede scale_chroma_planes and similar
-     * consumers.  (Research-0094, fix/picture-odd-dim-chroma-ceiling.) */
-    pic->w[1] = pic->w[2] = (w + ((unsigned)ss_hor)) >> ss_hor;
+     * consumers.  (Research-0094, fix/picture-odd-dim-chroma-ceiling.)
+     * vmaf_chroma_extent() is the one definition; extractors that size a
+     * chroma buffer themselves call it too. */
+    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, ss_hor);
     pic->h[0] = h;
-    pic->h[1] = pic->h[2] = (h + ((unsigned)ss_ver)) >> ss_ver;
+    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, ss_ver);
     if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
         pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
 

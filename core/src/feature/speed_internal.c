@@ -58,7 +58,6 @@
 
 #define SI_EIGENVALUE_EPS SPEED_INTERNAL_EIGENVALUE_EPS
 #define SI_MAX(x, y) ((x) > (y) ? (x) : (y))
-#define SI_ALMOST_EQUAL(x, c) (fabs((x) - (c)) < 1.0e-3)
 
 /* ------------------------------------------------------------------ */
 /* Dimensions + stride                                                 */
@@ -133,7 +132,8 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
     enum vif_scaling_method scaling_method;
     (void)vif_get_scaling_method(opt->speed_prescale_method, &scaling_method);
 
-    if (!SI_ALMOST_EQUAL(opt->speed_prescale, 1.0)) {
+    if (speed_prescale_resamples(opt->speed_prescale, dim->original_width, dim->original_height,
+                                 dim->scaled_width, dim->scaled_height)) {
         (void)memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
         vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, (int)dim->original_width,
                           (int)dim->original_height, (int)stride_px, (int)dim->scaled_width,

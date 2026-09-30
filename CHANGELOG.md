@@ -262,6 +262,29 @@
   (ADR-1356). PyPI's PEP 740 attestations are unchanged.
 
 
+- **`speed_chroma` no longer overruns its frame buffers on odd-sized pictures
+  in subsampled formats.** In YUV 4:2:0 and 4:2:2, picture allocators produce
+  one extra chroma sample row or column to cover the odd luma extent
+  (`vmaf_chroma_extent()`). `speed_chroma` (CPU, CUDA, and HIP) previously
+  derived chroma dimensions with integer floor division, under-allocating its
+  buffers by one row or column and causing `picture_copy()` to write past the
+  buffer under AddressSanitizer. All three extractors now derive chroma extents
+  via `speed_chroma_dimensions()`.
+
+
+- **`speed_temporal` no longer overruns its frame buffers when `speed_prescale`
+  is above 1.** The CPU extractor sized its four frame buffers with the source
+  height, but resamples each frame in place at the prescaled height, so
+  `--feature speed_temporal=speed_prescale=1.5` read and wrote past the end of
+  the allocation: an AddressSanitizer build reports a heap-buffer-overflow and a
+  release build aborts with `free(): invalid size` or corrupts the heap. The
+  buffers now hold the upscaled plane, as `speed_chroma`'s already did. Scores
+  at `speed_prescale` 1 and below are unchanged, and the CUDA, SYCL and HIP
+  twins were not affected. Reported upstream as
+  [Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)
+  ([features](docs/metrics/features.md#options-shared)).
+
+
 - `scripts/ci/check-state-md-rows.sh` works with the `mawk` of Debian 12. That
   version reads regex intervals such as `{0,2}` literally, so the gate matched no
   bug row there and passed every `docs/state.md`, duplicates included. The gate

@@ -18,6 +18,7 @@
  */
 
 #include "mem.h"
+#include "picture_geometry.h"
 #include "picture_cuda.h"
 #include "common.h"
 #include "log.h"
@@ -153,9 +154,9 @@ static int pinned_alloc_check_args(const VmafPicture *pic, enum VmafPixelFormat 
 /* picture_set_plane_dims - zero the picture and derive its per-plane extents.
  *
  * HISS-04: the geometry prologue both CUDA picture allocators carried inline,
- * factored into one. Every statement is copied character for character and in
- * the same order (the ceiling-division shifts included), so both callers get
- * the plane dimensions they computed before.
+ * factored into one. The chroma extents come from vmaf_chroma_extent(), the
+ * ceiling division picture.c uses, so both callers get the plane dimensions
+ * they computed before.
  */
 static void picture_set_plane_dims(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                    unsigned w, unsigned h)
@@ -163,13 +164,13 @@ static void picture_set_plane_dims(VmafPicture *pic, enum VmafPixelFormat pix_fm
     memset(pic, 0, sizeof(*pic));
     pic->pix_fmt = pix_fmt;
     pic->bpc = bpc;
-    const int ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
-    const int ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
+    const bool ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const bool ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
     pic->w[0] = w;
-    /* Ceiling division — mirrors picture.c fix (Research-0094). */
-    pic->w[1] = pic->w[2] = (w + ((unsigned)ss_hor)) >> ss_hor;
+    /* Ceiling division, the one definition picture.c uses (Research-0094). */
+    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, ss_hor);
     pic->h[0] = h;
-    pic->h[1] = pic->h[2] = (h + ((unsigned)ss_ver)) >> ss_ver;
+    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, ss_ver);
     if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
         pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
 }

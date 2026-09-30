@@ -6294,6 +6294,7 @@
         "core/test/test_score_pooled_eagain.c": 1,
         "core/test/test_speed.c": 1,
         "core/test/test_speed_clamp_score.c": 1,
+        "core/test/test_speed_frame_buffers.c": 1,
         "core/test/test_speed_qa.c": 1,
         "core/test/test_speed_simd.c": 2,
         "core/test/test_speed_singular_tally.c": 1,
@@ -6779,7 +6780,7 @@
     "1202": {
       "sites": {
         "core/src/feature/cuda/speed_chroma_cuda.c": 3,
-        "core/src/feature/cuda/speed_temporal_cuda.c": 1,
+        "core/src/feature/cuda/speed_temporal_cuda.c": 3,
         "core/src/feature/hip/speed_chroma_hip.c": 2,
         "core/src/feature/hip/speed_temporal_hip.c": 1
       },

@@ -838,29 +838,6 @@ static int speed_chroma_init_unwind(SpeedChromaCudaState *s, VmafCudaState *cu_s
     return rc;
 }
 
-/* sc_chroma_dims - derive chroma plane dimensions from luma + pixel format.
- *
- * HISS-04: lifted verbatim out of init_fex_cuda.
- */
-static int sc_chroma_dims(enum VmafPixelFormat pix_fmt, unsigned *cw, unsigned *ch)
-{
-    switch (pix_fmt) {
-    case VMAF_PIX_FMT_UNKNOWN:
-    case VMAF_PIX_FMT_YUV400P:
-        return -EINVAL;
-    case VMAF_PIX_FMT_YUV420P:
-        *cw /= 2u;
-        *ch /= 2u;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        *cw /= 2u;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        break;
-    }
-    return 0;
-}
-
 /* sc_fill_options - map the extractor options into SpeedInternalOptions.
  *
  * HISS-04: lifted verbatim out of init_fex_cuda.
@@ -1021,10 +998,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)bpc;
 
-    /* Derive chroma plane dimensions from luma dimensions + pixel format. */
-    unsigned cw = w;
-    unsigned ch = h;
-    const int dim_err = sc_chroma_dims(pix_fmt, &cw, &ch);
+    /* The chroma planes' own extents, as the CPU speed_chroma sizes them:
+     * picture_copy() below copies w/h[channel], rounded up for odd sizes. */
+    unsigned cw = 0u;
+    unsigned ch = 0u;
+    const int dim_err = speed_chroma_dimensions(w, h, pix_fmt, &cw, &ch);
     if (dim_err)
         return dim_err;
 

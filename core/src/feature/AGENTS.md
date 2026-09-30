@@ -1006,6 +1006,28 @@ SpEED-QA full-frame reduction or SpEED-driven model. Status quo
 is binding contract until one of three named triggers in
 that ADR fires.
 
+### `speed_temporal` frame buffers hold `alloc_height` rows (Netflix/vmaf#1626)
+
+`speed_temporal` `init()` in [`speed.c`](speed.c) sizes its four frame
+buffers `float_stride * dimensions.alloc_height`. `filter_and_downscale()`
+copies `alloc_height` rows out of each buffer and resamples the frame back in
+place at `scaled_height`; `speed_prescale` above 1 makes that taller than the
+source. Upstream still allocates `float_stride * h` (issue #1626, fix proposed
+upstream in PR #1627). **On upstream sync**: keep `alloc_height`;
+restoring `h` brings the heap overrun back.
+`test_speed_frame_buffers` (1.0 / 1.5 / 2.0 / 4.0) catches it under ASan only.
+Drop this note once the upstream fix is ported. `speed_chroma` and the
+CUDA / HIP / SYCL twins already size from the scaled geometry.
+
+### `speed_chroma` buffers use `speed_chroma_dimensions()` ceiling extents
+
+In subsampled formats (4:2:0, 4:2:2) an odd luma width or height produces
+an extra chroma row or column to cover the last luma sample
+(`vmaf_chroma_extent()`). `speed.c` `init_chroma()`, `speed_chroma_cuda.c`,
+and `speed_chroma_hip.c` must derive chroma extents via
+`speed_chroma_dimensions()`, not integer `/ 2`, so that buffers match the
+ceiling dimensions allocated by `picture.c` and copied by `picture_copy()`.
+
 ### `speed_internal.c` is the shared CPU helper TU for the SpEED GPU twins (ADR-0964)
 
 `core/src/feature/speed_internal.{h,c}` is contract between

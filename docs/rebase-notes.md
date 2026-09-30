@@ -21,6 +21,29 @@
   and `core/tools/test/test_vmaf_option_dict_ownership.sh` depend on that
   contract; the test and the fuzz harness no longer free dictionaries themselves.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/speed-temporal-prescale-overflow — `speed_temporal` and `speed_chroma` frame buffers (2026-09-30)
+
+- `core/src/feature/speed.c`, `speed_temporal` `init()`: `frame_size` is
+  `float_stride * s->speed_state.dimensions.alloc_height`, not
+  `float_stride * h`. Upstream Netflix/vmaf still has the `h` line
+  ([Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)); the
+  same one-line fix is proposed upstream (PR #1627). **Upstream-sync note: drop
+  this entry when the upstream fix is ported.** Until then, an upstream sync that
+  touches the `speed_temporal` `init()` must keep `alloc_height`; restoring
+  `h` brings back the heap overrun at `speed_prescale` above 1, which
+  `test_speed_frame_buffers` reports under ASan (`sanitizers.yml`).
+- `core/src/feature/speed.c`, `init_chroma()`: sizes chroma dimensions via
+  `speed_chroma_dimensions()`, which rounds up odd luma dimensions using
+  `vmaf_chroma_extent()`. Fixed in `speed_chroma_cuda.c` and `speed_chroma_hip.c`
+  as well.
+- `core/src/feature/cuda/speed_temporal_cuda.c`: `st_solve_launch_dims()` fixes
+  the block thread count overflow when `u_nb > 256` (1080p, or 576x324 at prescale 4.0).
+- `core/test/test_speed_frame_buffers.c` (new, fork-only, float-gated like
+  `test_speed`): regression tests for `speed_temporal` prescale and `speed_chroma`
+  odd sizes under ASan.
+- No Netflix golden-data, public API or FFmpeg patch impact: output at
+  `speed_prescale <= 1.0` is bit-identical, and none of the Netflix reference
+  pairs runs SpEED.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
