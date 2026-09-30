@@ -83,7 +83,7 @@
 > | `float_ssim_hip` | `float_ssim_hip` | Yes | ADR-0375 |
 > | `float_vif_hip` | `float_vif_hip` | Yes | ADR-0379 |
 > | `integer_psnr_hvs_hip` | `psnr_hvs_hip` | Yes | PR #995 |
-> | `integer_cambi_hip` | `cambi_hip` | Yes | PR #996 |
+> | `integer_cambi_hip` | `cambi_hip` | Yes | PR #996 / ADR-1378 (device-resident) |
 > | `ssimulacra2_hip` | `ssimulacra2_hip` | Yes | PR #1000 |
 > | `integer_vif_hip` | `integer_vif_hip` | Yes | PR #1001 |
 > | `integer_motion_hip` | `integer_motion_hip` | Yes | PR #1004 |
@@ -91,8 +91,8 @@
 > | `integer_ms_ssim_hip` | `ms_ssim_hip` | Yes | ADR-0285 / PR #1013 |
 > | `integer_ssim_hip` | `integer_ssim_hip` | Yes | PR #999 / ADR-0564 |
 > | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 |
-> | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 |
-> | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 |
+> | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 / ADR-1384 (device-resident) |
+> | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 / ADR-1384 (device-resident) |
 >
 > All registered kernels require `enable_hip=true` + `enable_hipcc=true`.
 > Without `enable_hipcc=true`, `float_ssim_hip`, `integer_ssim_hip`, and
@@ -584,10 +584,11 @@ a pinned buffer the extractor owns, so the picture is read before `submit()`
 returns, and enqueues the device copy from that buffer without waiting. The
 buffer is reused next frame, which is safe because libvmaf collects frame
 N - 1, and `collect()` drains the extractor's stream, before it submits frame
-N. The other extractors still use `vmaf_hip_picture_upload()`. On the gfx1036
-iGPU the staged path measured slower than the waiting upload for a single
-motion twin at 4K, because the runtime there copies a pageable picture
-without a host copy; see
+N. `cambi_hip`, `speed_chroma_hip` and `speed_temporal_hip` stage the same way
+(ADR-1378, ADR-1384). The other extractors still use
+`vmaf_hip_picture_upload()`. On the gfx1036 iGPU the staged path measured
+slower than the waiting upload for a single motion twin at 4K, because the
+runtime there copies a pageable picture without a host copy; see
 [Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01).
 
 To check a build on your own hardware, run one extractor twice and compare:
@@ -796,3 +797,49 @@ are 0 on a healthy stack. On the gfx1036 five runs gave 55 bad frames in
 it, compare HIP scores from this device over repeated runs and treat a
 single-frame mismatch as suspect, not as a code defect
 (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).
+
+## RC3: CAMBI and SpEED run entirely on the device (2026-09-30)
+
+`cambi_hip` ([ADR-1378](../../adr/1378-hip-cambi-device-resident.md)) and
+`speed_chroma_hip` / `speed_temporal_hip`
+([ADR-1384](../../adr/1384-hip-speed-device-resident.md)) no longer run any
+stage of the CPU extractors on the host. Each frame is one staged upload (see
+[Picture uploads](#picture-uploads)), the whole pipeline on the extractor's
+stream, and one small read of the result; `collect()` is the only host wait.
+They port the SYCL designs of ADR-1357 and ADR-1358 and build for gfx90a,
+gfx1030, gfx1036 and gfx1100, but have not yet run on an AMD device.
+
+What to expect from the scores:
+
+- **`cambi_hip`** keeps `cambi.c`'s sliding column histograms and sums the
+  top-K c-values exactly, so it scores bit-identically to `--backend cpu`
+  wherever the CPU's own top-K sum is exact (every sub-4K frame measured on
+  SYCL). It now refuses, as the CPU does, a window whose adjusted size exceeds
+  65 x 65.
+- **`speed_chroma_hip` / `speed_temporal_hip`** reproduce `speed.c` in fp32
+  operation for operation. On HIP that takes build flags, not intrinsics: the
+  kernel file is compiled with `-ffp-contract=off` and
+  `-fhip-fp32-correctly-rounded-divide-sqrt`, because HIP's `__fmul_rn()`,
+  `__fadd_rn()` and `__fdiv_rn()` are the plain (contracting) operators and
+  `__fsqrt_rn()` is the approximate native square root. The scores equal the
+  CPU's bit for bit when the CPU's `log2f` is correctly rounded; with a glibc
+  (gcc) build a few `speed_chroma` frames differ in the last float bits. The
+  [SpEED page](../../metrics/speed_qa.md#hip-device-resident-cpu-fp32-arithmetic)
+  shows how to compare with a correctly rounded `log2f`.
+
+Request the twins by name; `--feature cambi` or `--feature speed_chroma` runs
+the CPU extractor whatever `--backend` says:
+
+```bash
+vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
+     --backend hip --feature cambi_hip --feature speed_chroma_hip \
+     --feature speed_temporal_hip --json -o hip.json
+```
+
+Without a device, `test_hip_cambi_device_math` and `test_hip_speed_device_math`
+replay every kernel on the host against the CPU extractors, and
+`test_hip_device_resident_contract.py` checks the sources keep one upload, one
+readback and one wait per frame. The on-device parity and timing commands are
+in [`docs/state.md`](../../state.md) under
+`T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29` and
+`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`.

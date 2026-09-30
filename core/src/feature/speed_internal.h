@@ -383,8 +383,8 @@ int speed_internal_clamp_score(double score, double max_val, unsigned index, con
  * Fill the geometry, filter taps and scoring constants of a device-resident
  * SpEED pipeline (speed_gpu_common.h) from the SpEED dimensions and options,
  * validating the kernelscale, the prescale method and the weighting mode
- * exactly as speed.c's speed_init() does. The SYCL (ADR-1358) and CUDA
- * (ADR-1380) twins both call this one routine at init.
+ * exactly as speed.c's speed_init() does. The SYCL (ADR-1358), CUDA
+ * (ADR-1380) and HIP (ADR-1384) twins call this one routine at init.
  *
  * @param dim     Dimensions from speed_internal_init_dimensions().
  * @param opt     Extractor options (speed_weight_var_mode 0 for speed_temporal).

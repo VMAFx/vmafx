@@ -811,7 +811,7 @@ int speed_internal_clamp_score(double score, double max_val, unsigned index, con
 }
 
 /* ------------------------------------------------------------------ */
-/* Device-resident pipelines: init-time setup (ADR-1358, ADR-1380)     */
+/* Device-resident pipelines: init-time setup (ADR-1358, ADR-1380, ADR-1384) */
 /* ------------------------------------------------------------------ */
 
 /* picture_copy() takes its 16-bit path for exactly these depths and reads

@@ -55572,3 +55572,48 @@ the CPU), `motion_v2_hip` output changes only with non-default
 debug score unless `debug=true`. Measured on a gfx1036 (2026-10-01):
 `motion_hip` identical to the CPU `motion`, every HIP device test OK; see the
 HIP backend guide, "Measured on a gfx1036".
+debug score unless `debug=true`. None of this was measured on an AMD device
+in this change.
+output can move at the fp32 rounding level and identical frames now score
+exactly 1. None of this was measured on an AMD device in this change.
+
+## ADR-1378 / ADR-1384 — HIP CAMBI and SpEED run entirely on the device (2026-09-30)
+
+`perf/hip-rc3-device-resident`, Research-1378, ADR-1378, ADR-1384. Built on
+`fix/hip-rc3-parity` (ADR-1377's `vmaf_hip_picture_upload_staged()` and
+`vmaf_hip_rc_to_errno()`).
+
+- `core/src/feature/hip/integer_cambi_hip.c`, `integer_cambi_hip.h`,
+  `integer_cambi/cambi_hip_device.h`, `integer_cambi/cambi_score.hip`: the
+  ADR-1357 pipeline on HIP. No host CAMBI stage and no mid-frame wait; one
+  staged upload and one 88-byte readback per frame. The per-work-item math is
+  the header, which `core/test/test_hip_cambi_device_math.c` replays on the
+  host; the parameter block is `cambi_hip_plan()`. If upstream Netflix
+  changes `cambi.c`'s preprocessing, mask, mode filter, `c_value_pixel()` or
+  pooling, mirror it in the header (and in the SYCL twin) and rerun the
+  replay.
+- `core/src/feature/cambi.c` / `cambi_internal.h`: new shared helpers
+  `vmaf_cambi_check_window_fits_lut()` (cambi.c's own init guard now calls
+  it), `vmaf_cambi_resize_source_indices()`, `vmaf_cambi_adjust_window()`,
+  `vmaf_cambi_mask_index()`, `vmaf_cambi_fixed_topk_mean()` with
+  `VMAF_CAMBI_TOPK_FIXED_SHIFT`, and `vmaf_cambi_contrast_weights()`. The
+  SYCL twin calls them too. An upstream change to `adjust_window_size()`,
+  `get_mask_index()`, the decimate walk or `g_contrast_weights` must keep
+  these in step. The CUDA device-resident port adds the same helpers with the
+  same signatures; on a rebase between the two keep one copy.
+- `core/src/feature/hip/speed_hip_pipeline.{h,c}`,
+  `speed/speed_hip_device.h`, `speed/speed_pipeline.hip` (new; the old
+  `speed/speed_score.hip` split is deleted), `speed_chroma_hip.c`,
+  `speed_temporal_hip.c`: the ADR-1358 chain on HIP. The kernel TU must keep
+  `-ffp-contract=off -fhip-fp32-correctly-rounded-divide-sqrt`
+  (`hip_cu_extra_flags` in `core/src/meson.build`); do not replace plain
+  operators with HIP's `__f*_rn` intrinsics, which contract or approximate.
+- `core/src/feature/speed_gpu_common.h` (rewritten: the backend-neutral
+  `SpeedGpu*` contract) and `speed_internal_gpu_configure()` in
+  `speed_internal.c`: the one init-time configure the SYCL and HIP twins
+  call; `speed_sycl_host.cpp` delegates to it and `speed_sycl_pipeline.h`
+  aliases the types. The CUDA device-resident port carries the identical
+  routine; keep one copy on rebase.
+- Tests: `test_hip_cambi_device_math`, `test_hip_speed_device_math` (fast
+  suite, no device) and `test_hip_device_resident_contract.py` (imports the
+  helpers of `test_hip_kernel_source_contract.py`).

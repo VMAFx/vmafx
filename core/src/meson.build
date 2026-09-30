@@ -298,11 +298,9 @@ if is_hipcc_enabled and is_hip_enabled
         'adm_csf'         : feature_src_dir + 'hip/integer_adm/adm_csf.hip',
         'adm_csf_den'     : feature_src_dir + 'hip/integer_adm/adm_csf_den.hip',
         'adm_cm'          : feature_src_dir + 'hip/integer_adm/adm_cm.hip',
-        # ADR-0852: wire speed_chroma_hip + speed_temporal_hip (ADR-0567 HIP)
-        # into the HSACO build.  The kernel source was already written and
-        # committed; this entry causes hipcc --genco to compile it into an
-        # HSACO blob that hipModuleLoadData loads at runtime.
-        'speed_score'     : feature_src_dir + 'hip/speed/speed_score.hip',
+        # ADR-1384: the device-resident SpEED chain shared by speed_chroma_hip
+        # and speed_temporal_hip (host side: feature/hip/speed_hip_pipeline.c).
+        'speed_pipeline'  : feature_src_dir + 'hip/speed/speed_pipeline.hip',
     }
     # Per-kernel extra hipcc flags. Mirrors `cuda_cu_extra_flags` below for
     # the nvcc path. `ssimulacra2_blur` needs `-ffp-contract=off` so the
@@ -316,9 +314,16 @@ if is_hipcc_enabled and is_hip_enabled
     # (integer_ssim.c::ssim_reduce_row_range) operand for operand; without
     # the flag the variance / covariance products fuse into FMAs and each
     # per-pixel term rounds differently from the CPU's (ADR-0564).
+    # `speed_pipeline` (ADR-1384) reproduces speed.c in fp32 operation for
+    # operation: contraction off, and correctly rounded `/` and sqrtf() --
+    # hipcc's default, passed explicitly so a toolchain default cannot move
+    # the eigenvalues or the regular / singular decision. HIP's __fsqrt_rn()
+    # is the native approximation without OCML_BASIC_ROUNDED_OPERATIONS, and
+    # __fmul_rn() / __fadd_rn() are plain operators that contract.
     hip_cu_extra_flags = {
         'ssimulacra2_blur' : ['-ffp-contract=off'],
         'integer_ssim_score' : ['-ffp-contract=off'],
+        'speed_pipeline' : ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt'],
     }
     # ADR-1320: Explicit shared header dependencies for HIP device kernels.
     # While hipcc passes -Xclang -dependency-file on Linux, depend_files
@@ -348,6 +353,9 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/ssimulacra2_hip.h',
         'feature/hip/float_adm_hip.h',
         'feature/hip/integer_cambi_hip.h',
+        'feature/hip/integer_cambi/cambi_hip_device.h',
+        'feature/hip/speed/speed_hip_device.h',
+        'feature/speed_gpu_common.h',
         'feature/hip/speed_chroma_hip.h',
         'feature/hip/speed_temporal_hip.h',
         'feature/adm_angle_flag.h',

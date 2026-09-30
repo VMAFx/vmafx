@@ -123,6 +123,17 @@ test('test_hip_kernel_source_contract',
     timeout : 30,
 )
 
+# ADR-1378 / ADR-1384: device-free source guard for the device-resident HIP
+# CAMBI and SpEED twins (no host stage, one staged upload, one readback and
+# one wait per frame, CPU helpers for the host combine, fp64-free device code
+# without inexact intrinsics), with a planted regression per check.
+test('test_hip_device_resident_contract',
+    import('python').find_installation(),
+    args : files('test_hip_device_resident_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1183 / T-GPU-TWIN-OPTION-ALIAS-DRIFT: a non-default feature option
 # becomes part of the published collector key. Keep GPU spellings equal to the
 # CPU reference without requiring any GPU runtime on the test host.
@@ -4865,6 +4876,39 @@ test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 90)
+
+# ADR-1378 / ADR-1384 -- device-free replays of the device-resident HIP CAMBI
+# and SpEED kernels. Each compiles the kernels' per-work-item header
+# (integer_cambi/cambi_hip_device.h, speed/speed_hip_device.h) for the host,
+# with contraction off like the kernel build, and replays a frame's chain
+# work-item by work-item against the CPU extractor. No AMD device is needed,
+# so both run in the `fast` suite of every HIP build, with or without hipcc;
+# the `gpu`-suite parity tests above remain the on-device gate.
+hip_device_math_args = ['-DHAVE_HIP=1'] + cc.get_supported_arguments(['-ffp-contract=off'])
+test_hip_cambi_device_math = executable('test_hip_cambi_device_math',
+    ['test.c', 'test_hip_cambi_device_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: hip_device_math_args
+)
+test('test_hip_cambi_device_math', test_hip_cambi_device_math,
+    suite : ['fast'],
+    timeout : 120)
+
+test_hip_speed_device_math = executable('test_hip_speed_device_math',
+    ['test.c', 'test_hip_speed_device_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: hip_device_math_args +
+            ['-DSPEED_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"']
+)
+test('test_hip_speed_device_math', test_hip_speed_device_math,
+    suite : ['fast'],
+    timeout : 180)
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 # Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
 # ADR-1211 made the HIP ADM extractor able to run at all.

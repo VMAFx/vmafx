@@ -325,9 +325,46 @@ run at load average 13, with N = 102, `psnr_cuda` took 2.41 to 2.56 ms per
 frame, `speed_chroma_cuda` 2.75 and `speed_temporal_cuda` 2.73: reading and
 uploading the pictures, not the SpEED kernels, sets their speed.
 
-The HIP twins still read the covariance back and run the linear algebra on the
-host; porting the chain to them is tracked as
-`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`.
+### HIP: device-resident, CPU fp32 arithmetic
+
+Since [ADR-1384](../adr/1384-hip-speed-device-resident.md), `speed_chroma_hip`
+and `speed_temporal_hip` run the same chain as the SYCL twins: one staged upload
+of the raw planes (the host copies them into pinned memory and returns without
+waiting), eight kernels and one read of the result; `collect()` is the only
+wait. The geometry, filter taps and scoring constants come from
+`speed_internal_gpu_configure()`, the routine the SYCL twins use too.
+
+HIP needs its exact arithmetic spelled out per build, not per operation: the
+kernel file is compiled with `-ffp-contract=off` (hipcc otherwise fuses
+`a * b + c` into an FMA) and `-fhip-fp32-correctly-rounded-divide-sqrt`, and
+the code uses plain `/` and `sqrtf()`. HIP's `__fmul_rn()`, `__fadd_rn()` and
+`__fdiv_rn()` are the plain operators, and `__fsqrt_rn()` is the approximate
+native square root, unless the device library is built with
+`OCML_BASIC_ROUNDED_OPERATIONS`, so they would not round correctly.
+
+What "bit-identical" depends on: the device computes log2 correctly rounded,
+while the CPU extractor calls the C library's `log2f`. The Intel compiler's
+libimf rounds it correctly; glibc misrounds about 0.4 % of arguments. Against a
+glibc (gcc) build, a few `speed_chroma` frames therefore differ in the last
+float bits (6 of 48 on the Netflix pair, at most 4.8e-7) while `speed_temporal`
+stays identical. To compare everything else bit for bit on a glibc build, give
+the whole run a correctly rounded `log2f`:
+
+```sh
+printf '#include <math.h>\nfloat log2f(float x) { return (float)log2((double)x); }\n' \
+  > /tmp/crlog2f.c
+cc -O2 -fPIC -shared /tmp/crlog2f.c -o /tmp/crlog2f.so -lm
+LD_PRELOAD=/tmp/crlog2f.so python3 scripts/dev/speed_gpu_parity.py --backend hip \
+  --vmaf build-hip/tools/vmaf --netflix-dir python/test/resource/yuv \
+  --bbb-dir testdata/bbb --no-timing
+```
+
+`speed_prescale_method=lanczos4` stays within the ADR-0214 tolerance, as on
+SYCL: the CPU evaluates its weights with fp64 `sin`. The twins have not yet run
+on an AMD device; the verify and timing commands are in
+[`state.md`](../state.md) under `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`, and a
+host test replays the kernels against the CPU extractor
+(`test_hip_speed_device_math`, no device needed).
 
 ### The CPU reference and `log2f`
 

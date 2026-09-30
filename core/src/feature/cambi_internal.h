@@ -154,23 +154,23 @@ const float *vmaf_cambi_reciprocal_lut(unsigned *size);
  * window_size %d too large for reciprocal LUT" when the larger of the two
  * adjusted windows (encode and source resolution, after the high-res
  * speed-up) has window^2 >= the table size, else 0. The CPU extractor and the
- * device-resident twins call this one check (ADR-1379). */
+ * device-resident twins call this one check (ADR-1378, ADR-1379). */
 int vmaf_cambi_check_window_fits_lut(uint16_t enc_window, uint16_t src_window);
 
 /* The source row / column index decimate_generic_*_and_convert_to_10b() reads
  * for each of the `out_len` output indices when resizing `in_len` samples:
  * cambi.c's own float walk, evaluated once into `indices` so a device twin can
- * gather through the table (ADR-1379). */
+ * gather through the table (ADR-1378, ADR-1379). */
 void vmaf_cambi_resize_source_indices(unsigned in_len, unsigned out_len, uint32_t *indices);
 
 /* cambi.c's adjust_window_size(): the `window_size` option scaled to a
  * width x height picture, halved under the high-res speed-up, rounded up to
- * odd (ADR-1379). */
+ * odd (ADR-1378, ADR-1379). */
 uint16_t vmaf_cambi_adjust_window(int window_size, unsigned width, unsigned height,
                                   bool high_res_speedup);
 
 /* cambi.c's get_mask_index() for the 7x7 spatial mask of a width x height
- * picture (ADR-1379). */
+ * picture (ADR-1378, ADR-1379). */
 uint16_t vmaf_cambi_mask_index(unsigned width, unsigned height);
 
 /* Every non-zero c-value is a multiple of 2^-24 and below 2^14, so a device
@@ -178,12 +178,12 @@ uint16_t vmaf_cambi_mask_index(unsigned width, unsigned height);
 #define VMAF_CAMBI_TOPK_FIXED_SHIFT 24
 
 /* The per-scale score of spatial_pooling() from that exact sum
- * (sum_hi * 2^64 + sum_lo units of 2^-24) over `topk` elements (ADR-1379). */
+ * (sum_hi * 2^64 + sum_lo units of 2^-24) over `topk` elements (ADR-1378, ADR-1379). */
 double vmaf_cambi_fixed_topk_mean(uint64_t sum_hi, uint64_t sum_lo, unsigned topk);
 
 /* The per-contrast weights c_value_pixel() applies, entry d for contrast d + 1;
  * stores the entry count (32) in `*count` when `count` is non-NULL. Device
- * twins upload the first num_diffs entries verbatim (ADR-1379). */
+ * twins upload the first num_diffs entries verbatim (ADR-1378, ADR-1379). */
 const int *vmaf_cambi_contrast_weights(unsigned *count);
 
 /* Per-scale weight × 16/8/4/2/1 normalisation. */

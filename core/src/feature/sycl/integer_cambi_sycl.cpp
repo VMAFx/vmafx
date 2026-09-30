@@ -1285,7 +1285,7 @@ int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned he
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
-    /* cambi.c's own window and mask-index rounding (ADR-1379). */
+    /* cambi.c's own window and mask-index rounding (ADR-1378, ADR-1379). */
     s->adjusted_window = vmaf_cambi_adjust_window(s->window_size, s->proc_width, s->proc_height,
                                                   (bool)s->cambi_high_res_speedup);
     s->mask_index = vmaf_cambi_mask_index(s->proc_width, s->proc_height);
@@ -1435,7 +1435,7 @@ int upload_contrast_tables(CambiStateSycl *s)
 }
 
 /* decimate_generic_*_and_convert_to_10b's resize walk, evaluated once on the
- * host by cambi.c itself: output index -> source index (ADR-1379). */
+ * host by cambi.c itself: output index -> source index (ADR-1378, ADR-1379). */
 std::vector<uint32_t> resize_indices(unsigned in_len, unsigned out_len)
 {
     std::vector<uint32_t> idx(out_len);
@@ -1686,7 +1686,7 @@ unsigned device_compute_units(VmafSyclState *state)
  * encode-resolution window and the source-resolution window (the full input
  * here, as cambi.c's default src_width / src_height), adjusted with the
  * high-res speed-up, must satisfy window^2 < the reciprocal table size, so
- * the largest accepted window is 65 x 65 (ADR-1357, ADR-1379). */
+ * the largest accepted window is 65 x 65 (ADR-1357, ADR-1378, ADR-1379). */
 int check_window_fits_lut(const CambiStateSycl *s)
 {
     const uint16_t src_window = vmaf_cambi_adjust_window(
@@ -1759,7 +1759,7 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
 }
 
 /* Per-scale mean of the top-K c-values: the exact fixed-point sum, converted
- * to double once, then spatial_pooling()'s division (cambi.c, ADR-1379). */
+ * to double once, then spatial_pooling()'s division (cambi.c, ADR-1378, ADR-1379). */
 double scale_score(const CambiSyclResults &r, int scale, unsigned topk)
 {
     return vmaf_cambi_fixed_topk_mean(r.sum_hi[scale], r.sum_lo[scale], topk);

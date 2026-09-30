@@ -9,7 +9,7 @@
  *
  *  The geometry, the filter taps and the scoring constants come from
  *  speed_internal_gpu_configure() (speed_internal.c), the routine the CUDA
- *  twins call too (ADR-1380), so every backend derives them from one
+ *  (ADR-1380) and HIP (ADR-1384) twins call too, so every backend derives them from one
  *  implementation (HISS-19).
  */
 

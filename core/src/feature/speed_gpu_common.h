@@ -4,18 +4,19 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Host/device contract of the device-resident SpEED pipelines (ADR-1358,
- *  ADR-1380): the per-run constants a GPU twin needs to run every per-frame
+ *  ADR-1380, ADR-1384): the per-run constants a GPU twin needs to run every per-frame
  *  stage of speed.c on the device, and the one result block it reads back
  *  per frame.
  *
  *  Plain C with fixed-width fields only, so the same layout is shared by the
- *  C host code, the SYCL pipeline (speed_sycl_pipeline.h aliases these types)
- *  and the CUDA kernels (cuda/speed/speed_score.cu takes them by value).
+ *  C host code, the SYCL pipeline (speed_sycl_pipeline.h aliases these types),
+ *  the CUDA kernels (cuda/speed/speed_score.cu takes them by value) and the
+ *  HIP pipeline (hip/speed/speed_hip_device.h embeds them).
  *  speed_internal_gpu_configure() (speed_internal.c) fills them at init from
  *  the helpers the CPU extractor uses, so every backend receives the host's
  *  values bit for bit. Nothing here runs per frame.
  *
- *  Until ADR-1380 this header held the ADR-0567 split's parameter blocks,
+ *  Until ADR-1380 / ADR-1384 this header held the ADR-0567 split's parameter blocks,
  *  which no translation unit included.
  */
 

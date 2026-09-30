@@ -1,24 +1,26 @@
 /**
- *  Copyright 2016-2025 Netflix, Inc.
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  speed_temporal feature extractor — HIP backend with real on-device
- *  GPU kernels (ADR-0567).
+ *  speed_temporal feature extractor — HIP backend, device-resident
+ *  (ADR-1384, the HIP port of ADR-1358; refines ADR-0567).
  *
- *  Temporal design: two ping-pong host float buffers hold converted luma
- *  planes.  Each frame the GPU runs the full SpEED pipeline on the
- *  temporal difference (prev − cur) rather than the raw plane — matching
- *  the CPU twin in speed.c.  Frame 0 emits score 0 (no previous frame).
+ *  Temporal design: the raw luma planes of the last two frames stay on the
+ *  device in two slots (reference and distorted per slot). submit() uploads
+ *  the current frame into slot `index % 2` and, from the second frame on,
+ *  enqueues the SpEED chain of speed/speed_pipeline.hip on the temporal
+ *  difference `previous - current` (speed.c extract(): subtract_image()),
+ *  never waiting. collect() waits once and reads the frame score. Frame 0
+ *  emits 0, as the CPU reference does.
  *
- *  Algorithm split: identical to speed_chroma_hip.c.  See that file and
- *  ADR-0567 for the full GPU/CPU split rationale.
+ *  This TU holds no device kernel and no SpEED arithmetic
+ *  (core/test/test_hip_kernel_source_contract.py).
  *
- *  HIP adaptation notes: same as speed_chroma_hip.c.
+ *  Output feature: Speed_temporal_feature_speed_temporal_score.
  */
 
 #include <errno.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,15 +29,11 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "log.h"
-#include "mem.h"
 #include "picture.h"
-#include "picture_copy.h"
 
 #include "feature/speed_internal.h"
 #include "hip/speed_temporal_hip.h"
-
-#ifdef HAVE_HIPCC
-#include <hip/hip_runtime_api.h>
+#include "speed_hip_pipeline.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -43,20 +41,8 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-extern const unsigned char speed_score_hsaco[];
-extern const unsigned int speed_score_hsaco_len;
-#endif /* HAVE_HIPCC */
-
-#define ST_BLOCK_SIZE (5u)
-#define ST_ELEMENTS (25u)
-#define ST_COV_BLOCK (256u)
-#define ST_MEANS_BLOCK (256u)
-#define ST_INDTERM_BLOCK (256u)
-#define ST_SCORE_BLOCK (256u)
-/* ST_SOLVE_WARP is no longer a compile-time constant; the actual wavefront
- * size is queried at init time from hipDeviceProp_t.warpSize and stored in
- * SpeedTemporalHipState.solve_warp.  This default covers GCN/RDNA1. */
-#define ST_SOLVE_WARP_DEFAULT (64u)
+#define ST_CHANNELS (2u) /* reference, distorted */
+#define ST_SLOTS (2u)    /* current and previous frame */
 
 #define ST_DEFAULT_SIGMA_NN (0.29)
 #define ST_DEFAULT_MAX_VAL (1000.0)
@@ -70,59 +56,7 @@ extern const unsigned int speed_score_hsaco_len;
 /* ------------------------------------------------------------------ */
 
 typedef struct SpeedTemporalHipState {
-#ifdef HAVE_HIPCC
-    hipModule_t module;
-    hipFunction_t func_means;
-    hipFunction_t func_cov;
-    hipFunction_t func_indterm;
-    hipFunction_t func_solve;
-    hipFunction_t func_score;
-    hipStream_t stream;
-    unsigned solve_warp; /* actual device wavefront size (32 or 64) */
-#endif
-
-    SpeedInternalDimensions dim;
-    SpeedInternalOptions opt;
-    size_t float_stride;
-
-    /* Ping-pong host luma plane buffers. */
-    float *h_ref[2];
-    float *h_dis[2];
-
-#ifdef HAVE_HIPCC
-    void *d_plane;
-    void *d_means;
-    void *d_cov_mat;
-    void *d_indterm_ref;
-    void *d_indterm_dis;
-    void *d_sol_ref;
-    void *d_sol_dis;
-    void *d_R;
-    void *d_eigenvalues;     /* dis eigenvalues after the dis linalg pass */
-    void *d_eigenvalues_ref; /* ref eigenvalues, stashed before the dis linalg
-                              * overwrites the shared d_eigenvalues buffer */
-    void *d_ref_ent;
-    void *d_ref_var;
-    void *d_dis_ent;
-    void *d_dis_var;
-
-    float *h_cov_mat;
-    float *h_ref_ent;
-    float *h_ref_var;
-    float *h_dis_ent;
-    float *h_dis_var;
-#endif /* HAVE_HIPCC */
-
-    float *h_eigenvalues;
-    float *h_eig_scratch;
-    float *h_Q;
-    float *h_R;
-    float *h_qr_scratch;
-    float *h_indterm_ref;
-    float *h_indterm_dis;
-    float *h_qt_scratch;
-
-    unsigned frame_index;
+    SpeedHipPipeline *pipeline;
 
     double speed_temporal_kernelscale;
     double speed_temporal_prescale;
@@ -215,440 +149,15 @@ static const VmafOption options_temporal[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* HIP helpers                                                         */
-/* ------------------------------------------------------------------ */
-
-static void subtract_plane(float *a, const float *b, int w, int h, size_t stride_bytes)
-{
-    const size_t stride_px = stride_bytes / sizeof(float);
-    for (int i = 0; i < h; i++) {
-        for (int j = 0; j < w; j++)
-            a[(size_t)i * stride_px + (size_t)j] -= b[(size_t)i * stride_px + (size_t)j];
-    }
-}
-
-#ifdef HAVE_HIPCC
-
-static int hip_rc_st(hipError_t rc)
-{
-    if (rc == hipSuccess)
-        return 0;
-    switch (rc) {
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorInvalidValue:
-        return -EINVAL;
-    case hipErrorNoDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
-
-static void free_hip_buffers_st(SpeedTemporalHipState *s)
-{
-#define FD(p)                                                                                      \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            (void)hipFree((p));                                                                    \
-            (p) = NULL;                                                                            \
-        }                                                                                          \
-    } while (0)
-#define FH(p)                                                                                      \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            (void)hipHostFree((p));                                                                \
-            (p) = NULL;                                                                            \
-        }                                                                                          \
-    } while (0)
-    FD(s->d_plane);
-    FD(s->d_means);
-    FD(s->d_cov_mat);
-    FD(s->d_indterm_ref);
-    FD(s->d_indterm_dis);
-    FD(s->d_sol_ref);
-    FD(s->d_sol_dis);
-    FD(s->d_R);
-    FD(s->d_eigenvalues);
-    FD(s->d_eigenvalues_ref);
-    FD(s->d_ref_ent);
-    FD(s->d_ref_var);
-    FD(s->d_dis_ent);
-    FD(s->d_dis_var);
-    FH(s->h_cov_mat);
-    FH(s->h_ref_ent);
-    FH(s->h_ref_var);
-    FH(s->h_dis_ent);
-    FH(s->h_dis_var);
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-    if (s->stream) {
-        (void)hipStreamDestroy(s->stream);
-        s->stream = NULL;
-    }
-#undef FD
-#undef FH
-}
-
-static int st_hip_module_load(SpeedTemporalHipState *s)
-{
-    hipError_t rc = hipModuleLoadData(&s->module, speed_score_hsaco);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-
-#define GET_FN(field, name)                                                                        \
-    do {                                                                                           \
-        rc = hipModuleGetFunction(&(s->field), s->module, (name));                                 \
-        if (rc != hipSuccess) {                                                                    \
-            (void)hipModuleUnload(s->module);                                                      \
-            s->module = NULL;                                                                      \
-            return hip_rc_st(rc);                                                                  \
-        }                                                                                          \
-    } while (0)
-
-    GET_FN(func_means, "speed_means_hip_kernel");
-    GET_FN(func_cov, "speed_cov_hip_kernel");
-    GET_FN(func_indterm, "speed_indterm_hip_kernel");
-    GET_FN(func_solve, "speed_solve_hip_kernel");
-    GET_FN(func_score, "speed_score_hip_kernel");
-#undef GET_FN
-    return 0;
-}
-
-static int st_hip_bufs_alloc(SpeedTemporalHipState *s)
-{
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t nb = s->dim.num_blocks;
-    const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
-    const size_t score_bytes = nb * sizeof(float);
-
-#define AD(f, sz)                                                                                  \
-    do {                                                                                           \
-        if (hipMalloc(&(s->f), (sz)) != hipSuccess)                                                \
-            return -ENOMEM;                                                                        \
-    } while (0)
-#define AH(f, sz)                                                                                  \
-    do {                                                                                           \
-        if (hipHostMalloc((void **)&(s->f), (sz), 0) != hipSuccess)                                \
-            return -ENOMEM;                                                                        \
-    } while (0)
-
-    AD(d_plane, plane_bytes);
-    AD(d_means, indterm_bytes);
-    AD(d_cov_mat, cov_bytes);
-    AD(d_indterm_ref, indterm_bytes);
-    AD(d_indterm_dis, indterm_bytes);
-    AD(d_sol_ref, indterm_bytes);
-    AD(d_sol_dis, indterm_bytes);
-    AD(d_R, cov_bytes);
-    AD(d_eigenvalues, ST_ELEMENTS * sizeof(float));
-    AD(d_eigenvalues_ref, ST_ELEMENTS * sizeof(float));
-    AD(d_ref_ent, score_bytes);
-    AD(d_ref_var, score_bytes);
-    AD(d_dis_ent, score_bytes);
-    AD(d_dis_var, score_bytes);
-    AH(h_cov_mat, cov_bytes);
-    AH(h_ref_ent, score_bytes);
-    AH(h_ref_var, score_bytes);
-    AH(h_dis_ent, score_bytes);
-    AH(h_dis_var, score_bytes);
-#undef AD
-#undef AH
-    return 0;
-}
-
-static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, void *d_indterm,
-                               float *h_indterm)
-{
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
-    const uint32_t op_w = (uint32_t)s->dim.truncated_width;
-    const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
-    const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
-    const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
-    const size_t plane_bytes = s->dim.truncated_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = (size_t)ST_ELEMENTS * num_blocks * sizeof(float);
-
-    hipError_t rc =
-        hipMemcpyAsync(s->d_plane, h_plane, plane_bytes, hipMemcpyHostToDevice, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-
-    {
-        const uint32_t grid_x = (num_blocks + ST_MEANS_BLOCK - 1u) / ST_MEANS_BLOCK;
-        void *args[] = {&s->d_plane,   &s->d_means, &op_w,        &stride_px,
-                        &num_blocks_h, &num_blocks, &submatrix_w, &submatrix_h};
-        rc = hipModuleLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-    {
-        const size_t smem = ST_COV_BLOCK * sizeof(double);
-        void *args[] = {&s->d_plane,   &s->d_means, &s->d_cov_mat, &stride_px,
-                        &num_blocks_h, &num_blocks, &submatrix_w,  &submatrix_h};
-        rc = hipModuleLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u, 1u,
-                                   (uint32_t)smem, s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-    {
-        const uint32_t total = ST_ELEMENTS * num_blocks;
-        const uint32_t grid_x = (total + ST_INDTERM_BLOCK - 1u) / ST_INDTERM_BLOCK;
-        void *args[] = {&s->d_plane, &d_indterm, &stride_px, &num_blocks_h, &num_blocks};
-        rc = hipModuleLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-
-    rc = hipMemcpyAsync(s->h_cov_mat, s->d_cov_mat, ST_ELEMENTS * ST_ELEMENTS * sizeof(float),
-                        hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(h_indterm, d_indterm, indterm_bytes, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipStreamSynchronize(s->stream);
-    return hip_rc_st(rc);
-}
-
-/* `singular_out` reports a singular covariance matrix, which is NOT a failure:
- * the CPU reference zeroes the solution and reports it separately so the caller
- * can apply the one-sided-zero rule in speed_extract_score(). The return value
- * stays reserved for hard HIP failures. Mirrors the chroma twin (ADR-1202) and
- * ADR-1218. */
-static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d_sol,
-                             bool *singular_out)
-{
-    const int sz = (int)ST_ELEMENTS;
-    const int nb = (int)s->dim.num_blocks;
-    const size_t indterm_bytes = (size_t)ST_ELEMENTS * (size_t)nb * sizeof(float);
-
-    speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
-    bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
-
-    hipError_t rc = hipSuccess;
-    *singular_out = !regular;
-    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_temporal_hip");
-    if (!regular) {
-        /* Zero the DEVICE solution, not the host staging buffer. The score
-         * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
-         * `d_indterm` at the top of every pipeline run, so zeroing it changed
-         * nothing. Without this, a singular frame scored against the previous
-         * frame's solution — or, on the first frame, against whatever the
-         * device allocator handed back. ADR-1218. */
-        rc = hipMemsetAsync(d_sol, 0, indterm_bytes, s->stream);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    } else {
-        (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
-        speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
-
-        rc = hipMemcpyAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
-                            hipMemcpyHostToDevice, s->stream);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-        rc = hipMemcpyAsync(d_sol, h_indterm, indterm_bytes, hipMemcpyHostToDevice, s->stream);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-
-        /* K4: backward substitution — one wavefront per column.
-         * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
-        const uint32_t u_nb = (uint32_t)nb;
-        void *args[] = {&s->d_R, &d_sol, &u_nb};
-        rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-        rc = hipStreamSynchronize(s->stream);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-
-    /* H2D eigenvalues for the score kernel. Each pass uploads its own
-     * eigenvalues into the shared d_eigenvalues buffer; the caller stashes the
-     * ref eigenvalues into d_eigenvalues_ref between the ref and dis passes. */
-    rc = hipMemcpyAsync(s->d_eigenvalues, s->h_eigenvalues, ST_ELEMENTS * sizeof(float),
-                        hipMemcpyHostToDevice, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipStreamSynchronize(s->stream);
-    return hip_rc_st(rc);
-}
-
-static int run_score_st(SpeedTemporalHipState *s, float *score_out)
-{
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const float sigma_nn = (float)s->opt.speed_sigma_nn;
-    hipError_t rc = hipSuccess;
-
-    /* K5: entropy + score. The kernel reads d_eigenvalues_ref for the ref
-     * entropy and d_eigenvalues (the dis eigenvalues uploaded by the dis
-     * run_cpu_linalg_st pass) for the dis entropy. */
-    {
-        const uint32_t grid = (num_blocks + ST_SCORE_BLOCK - 1u) / ST_SCORE_BLOCK;
-        void *args[] = {&s->d_eigenvalues_ref, &s->d_eigenvalues, &s->d_sol_ref, &s->d_sol_dis,
-                        &s->d_indterm_ref,     &s->d_indterm_dis, &s->d_ref_ent, &s->d_ref_var,
-                        &s->d_dis_ent,         &s->d_dis_var,     &num_blocks,   &sigma_nn};
-        rc = hipModuleLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-
-    const size_t ab = (size_t)num_blocks * sizeof(float);
-    rc = hipMemcpyAsync(s->h_ref_ent, s->d_ref_ent, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_ref_var, s->d_ref_var, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_dis_ent, s->d_dis_ent, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_dis_var, s->d_dis_var, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipStreamSynchronize(s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-
-    const float base_entropy =
-        (float)ST_ELEMENTS *
-        (log2f((1.0f + (float)s->opt.speed_nn_floor) * (float)s->opt.speed_sigma_nn) +
-         log2f(2.0f * 3.14159265358979323846f * 2.71828182845904523536f));
-
-    float total = 0.0f;
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        const float re = s->h_ref_ent[i];
-        const float de = s->h_dis_ent[i];
-        if (re < base_entropy && de < base_entropy)
-            continue;
-        const float rv = s->h_ref_var[i];
-        const float dv = s->h_dis_var[i];
-        /* speed_temporal uses weight_var_mode = 0. */
-        total += fabsf(re * log2f(1.0f + rv) - de * log2f(1.0f + dv));
-    }
-    *score_out = total / (float)num_blocks;
-    return 0;
-}
-
-#endif /* HAVE_HIPCC */
-
-/* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-/* Releases every host-side scratch buffer allocated by init_temporal_hip().
- * Extracted so the init error paths and close_temporal_hip() free the exact same
- * set in the exact same order (HISS-01: no goto-chained cleanup ladder). */
-static void st_free_cpu_buffers(SpeedTemporalHipState *s)
+/* The init-time part of speed_init(); speed_temporal always weights with
+ * mode 0 (speed.c init()). */
+static int st_configure(const SpeedTemporalHipState *s, unsigned bpc, unsigned w, unsigned h,
+                        SpeedHipConfig *config)
 {
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
-}
-
-/* Allocates the host scratch buffers and validates the mandatory ones.
- * Releases everything and reports -ENOMEM on failure, exactly as the former
- * inline block did (HISS-04 split of init_temporal_hip). */
-static int st_alloc_cpu_buffers(SpeedTemporalHipState *s)
-{
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t nb = s->dim.num_blocks;
-    const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
-
-#define ALLOC_A(field, sz) s->field = (float *)aligned_malloc((sz), 32)
-    ALLOC_A(h_ref[0], plane_bytes);
-    ALLOC_A(h_ref[1], plane_bytes);
-    ALLOC_A(h_dis[0], plane_bytes);
-    ALLOC_A(h_dis[1], plane_bytes);
-    ALLOC_A(h_eigenvalues, ST_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float));
-    ALLOC_A(h_Q, cov_bytes);
-    ALLOC_A(h_R, cov_bytes);
-    ALLOC_A(h_qr_scratch, 4u * cov_bytes);
-    ALLOC_A(h_indterm_ref, indterm_bytes);
-    ALLOC_A(h_indterm_dis, indterm_bytes);
-    ALLOC_A(h_qt_scratch, indterm_bytes);
-#undef ALLOC_A
-
-    if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
-        !s->h_Q || !s->h_R) {
-        st_free_cpu_buffers(s);
-        return -ENOMEM;
-    }
-    return 0;
-}
-
-#ifdef HAVE_HIPCC
-/* Loads the HSACO, creates the stream, queries the wavefront width and
- * allocates the device buffers. Every failure path releases the same
- * resources, in the same order, as the goto ladder this replaces. */
-static int st_hip_setup(SpeedTemporalHipState *s)
-{
-    int err = st_hip_module_load(s);
-    if (err) {
-        st_free_cpu_buffers(s);
-        return err;
-    }
-
-    if (hipStreamCreate(&s->stream) != hipSuccess) {
-        if (s->module) {
-            (void)hipModuleUnload(s->module);
-            s->module = NULL;
-        }
-        st_free_cpu_buffers(s);
-        return -EIO;
-    }
-
-    /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
-     * Used as blockDim.x for speed_solve_hip_kernel. */
-    {
-        int dev = 0;
-        hipDeviceProp_t prop;
-        (void)hipGetDevice(&dev);
-        s->solve_warp = (hipGetDeviceProperties(&prop, dev) == hipSuccess) ?
-                            (unsigned)prop.warpSize :
-                            ST_SOLVE_WARP_DEFAULT;
-    }
-
-    err = st_hip_bufs_alloc(s);
-    if (err) {
-        free_hip_buffers_st(s);
-        st_free_cpu_buffers(s);
-        return err;
-    }
-    return 0;
-}
-#endif /* HAVE_HIPCC */
-
-static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                             unsigned w, unsigned h)
-{
-    (void)pix_fmt;
-    (void)bpc;
-    SpeedTemporalHipState *s = fex->priv;
-
-    s->opt = (SpeedInternalOptions){
+    const SpeedInternalOptions opt = {
         .speed_kernelscale = s->speed_temporal_kernelscale,
         .speed_prescale = s->speed_temporal_prescale,
         .speed_prescale_method = s->speed_temporal_prescale_method,
@@ -656,193 +165,103 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
         .speed_nn_floor = s->speed_temporal_nn_floor,
         .speed_weight_var_mode = 0,
     };
+    SpeedInternalDimensions dim;
+    int err = speed_internal_init_dimensions(&dim, (int)w, (int)h, opt.speed_prescale);
+    if (!err)
+        err = speed_internal_gpu_configure(&dim, &opt, bpc, &config->shared);
+    config->channels = ST_CHANNELS;
+    config->raw_planes = ST_CHANNELS * ST_SLOTS;
+    config->staged = ST_CHANNELS;
+    return err;
+}
 
-    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    SpeedTemporalHipState *s = fex->priv;
+    SpeedHipConfig config;
+    int err = st_configure(s, bpc, w, h, &config);
     if (err)
         return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
-    err = st_alloc_cpu_buffers(s);
+    SpeedHipBindingSets bindings;
+    speed_hip_bindings_temporal(s->speed_temporal_use_ref_diff ? 1 : 0, &bindings);
+    err = speed_hip_pipeline_create(&s->pipeline, &config, &bindings);
     if (err)
         return err;
-
-#ifdef HAVE_HIPCC
-    err = st_hip_setup(s);
-    if (err)
-        return err;
-#else
-    return -ENOSYS;
-#endif /* HAVE_HIPCC */
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-#ifdef HAVE_HIPCC
-        free_hip_buffers_st(s);
-#endif
-        st_free_cpu_buffers(s);
+        speed_hip_pipeline_destroy(&s->pipeline);
         return -ENOMEM;
     }
-
-    s->frame_index = 0;
     return 0;
 }
 
-#ifdef HAVE_HIPCC
-/* Builds the temporal difference planes for both sides and runs the host
- * filter/downscale over them. Extracted from extract_temporal_hip() for
- * HISS-04; each subtract/filter call and its argument order is copied
- * unchanged. */
-static int st_prepare_diff_planes(SpeedTemporalHipState *s, int cyclic, int other)
-{
-    const int orig_w = (int)s->dim.original_width;
-    const int orig_h = (int)s->dim.original_height;
-    subtract_plane(s->h_ref[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff)
-        subtract_plane(s->h_dis[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    else
-        subtract_plane(s->h_dis[other], s->h_dis[cyclic], orig_w, orig_h, s->float_stride);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
-
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
-                                        s->float_stride);
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
-                                        s->float_stride);
-    aligned_free(tmp_filter);
-    return 0;
-}
-
-/* Runs the reference and distorted GPU pipelines plus the CPU linear algebra
- * over the prepared diff planes and produces the frame score. The singular
- * rule (ADR-1218) and the `run_score_st` call are copied verbatim. */
-static int st_score_diff(SpeedTemporalHipState *s, int other, float *score_out)
-{
-    /* Reference diff: means → cov → indterm, then eigendecomp + QR. Uploads ref
-     * eigenvalues into the shared d_eigenvalues buffer. */
-    int err = run_gpu_pipeline_st(s, s->h_ref[other], s->d_indterm_ref, s->h_indterm_ref);
-    if (err)
-        return err;
-
-    bool singular_ref = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
-    if (err)
-        return err;
-
-    /* Stash the reference eigenvalues aside before the distorted linalg pass
-     * overwrites d_eigenvalues. The CPU reference (est_params in speed.c)
-     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. run_cpu_linalg_st synchronizes the stream after its
-     * eigenvalue H2D, so this DtoD copy is correctly ordered. */
-    {
-        hipError_t drc =
-            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float));
-        if (drc != hipSuccess)
-            return hip_rc_st(drc);
-    }
-
-    /* Distorted diff: means → cov → indterm (keeps the DIS covariance in
-     * h_cov_mat — no save/restore of the ref covariance), then eigendecomp + QR.
-     * Uploads dis eigenvalues into d_eigenvalues. */
-    err = run_gpu_pipeline_st(s, s->h_dis[other], s->d_indterm_dis, s->h_indterm_dis);
-    if (err)
-        return err;
-
-    bool singular_dis = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
-    if (err)
-        return err;
-
-    /* Exactly one side numerically unstable: report 0 rather than the inflated
-     * score a zeroed solution on one side produces. Verbatim the CPU rule in
-     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
-     * sides are singular the CPU still scores, from two zeroed solutions — so
-     * do we, which is why the singular branch above zeroes `d_sol` on the
-     * device. ADR-1218. */
-    float score = 0.0f;
-    if (singular_ref != singular_dis) {
-        score = 0.0f;
-    } else {
-        err = run_score_st(s, &score);
-        if (err)
-            return err;
-    }
-    *score_out = score;
-    return 0;
-}
-
-#endif /* HAVE_HIPCC */
-
-static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                VmafPicture *dist_pic_90, unsigned index,
-                                VmafFeatureCollector *feature_collector)
+static int submit_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
+                               VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
-
-#ifndef HAVE_HIPCC
-    (void)fex;
-    (void)ref_pic;
-    (void)dist_pic;
-    (void)index;
-    (void)feature_collector;
-    return -ENOSYS;
-#else
     SpeedTemporalHipState *s = fex->priv;
+    const SpeedHipPlane planes[ST_CHANNELS] = {{ref_pic, 0u}, {dist_pic, 0u}};
+    const uint32_t set = index % ST_SLOTS;
+    const int err = speed_hip_pipeline_upload(s->pipeline, ST_CHANNELS * set, planes, ST_CHANNELS);
+    if (err || index == 0u)
+        return err;
+    return speed_hip_pipeline_submit(s->pipeline, set);
+}
 
-    const int cyclic = (int)(index % 2u);
-    const int other = (int)((index + 1u) % 2u);
+static void st_tally_frame(SpeedTemporalHipState *s, const SpeedGpuFrameResult *result,
+                           unsigned index)
+{
+    for (uint32_t ch = 0u; ch < ST_CHANNELS; ch++) {
+        speed_internal_tally_solve(&s->singular_tally, result->singular[ch] != 0,
+                                   "speed_temporal_hip");
+        if (result->iteration_cap[ch] != 0)
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "speed_temporal_hip: eigenvalue QR iteration reached cap at frame %u, "
+                     "possible non-convergence\n",
+                     index);
+    }
+}
 
-    picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
-
-    if (index == 0) {
+static int collect_temporal_hip(VmafFeatureExtractor *fex, unsigned index,
+                                VmafFeatureCollector *feature_collector)
+{
+    SpeedTemporalHipState *s = fex->priv;
+    if (index == 0u) {
+        /* The upload must land before submit() reuses the staging planes. */
+        const int err = speed_hip_pipeline_wait(s->pipeline);
+        if (err)
+            return err;
         return vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
             0.0, index);
     }
-
-    int err = st_prepare_diff_planes(s, cyclic, other);
+    SpeedGpuFrameResult result;
+    int err = speed_hip_pipeline_collect(s->pipeline, &result);
     if (err)
         return err;
-
-    float score = 0.0f;
-    err = st_score_diff(s, other, &score);
-    if (err)
-        return err;
-
-    /* Every clamp here was a less-than comparison, and every comparison
-     * against NaN is false, so a non-finite score was published as
-     * speed_temporal_max_val -- a finite, plausible 1000.0 standing in for a
-     * computation that produced no number, and invisible to the parity
-     * harness's own isfinite() assertion. speed_internal_clamp_score() checks
-     * finiteness first and fails the frame, matching the CPU reference and
-     * the brisque.c / y_funque_plus.c convention. Finite scores clamp exactly
-     * as before. */
+    st_tally_frame(s, &result, index);
+    /* speed_internal_clamp_score() refuses a non-finite score instead of
+     * clamping it to speed_max_val, matching the CPU reference. */
     double clipped = 0.0;
-    err = speed_internal_clamp_score(score, s->speed_temporal_max_val, index, "speed_temporal_hip",
-                                     "speed_temporal", &clipped);
+    err = speed_internal_clamp_score(result.score[0], s->speed_temporal_max_val, index,
+                                     "speed_temporal_hip", "speed_temporal", &clipped);
     if (err)
         return err;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Speed_temporal_feature_speed_temporal_score",
                                                    clipped, index);
-#endif /* HAVE_HIPCC */
 }
 
 static int close_temporal_hip(VmafFeatureExtractor *fex)
 {
     SpeedTemporalHipState *s = fex->priv;
     speed_internal_report_singular(&s->singular_tally, "speed_temporal_hip");
-#ifdef HAVE_HIPCC
-    free_hip_buffers_st(s);
-#endif
-    st_free_cpu_buffers(s);
+    speed_hip_pipeline_destroy(&s->pipeline);
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
     return 0;
@@ -853,13 +272,14 @@ static const char *provided_features_temporal[] = {
     NULL,
 };
 
-/* ADR-0567: real HIP GPU kernels for speed_temporal.
- * TEMPORAL flag guarantees sequential frame submission (ping-pong diff
- * requires frame ordering). */
+/* ADR-1384: device-resident HIP twin of speed_temporal. TEMPORAL guarantees
+ * in-order frames: the previous frame's planes stay on the device between
+ * submits. */
 VmafFeatureExtractor vmaf_fex_speed_temporal_hip = {
     .name = "speed_temporal_hip",
     .init = init_temporal_hip,
-    .extract = extract_temporal_hip,
+    .submit = submit_temporal_hip,
+    .collect = collect_temporal_hip,
     .close = close_temporal_hip,
     .options = options_temporal,
     .priv_size = sizeof(SpeedTemporalHipState),

@@ -577,7 +577,7 @@ static int setup_contrast_and_luminance(CambiState *s, int num_diffs)
     adjust_window_size(&s->src_window_size, s->src_width, s->src_height,
                        (bool)s->cambi_high_res_speedup);
 
-    /* Shared with the device-resident GPU twins (ADR-1379), so every backend
+    /* Shared with the device-resident GPU twins (ADR-1378, ADR-1379), so every backend
      * accepts and rejects the same windows. */
     return vmaf_cambi_check_window_fits_lut(s->window_size, s->src_window_size);
 }
@@ -1802,7 +1802,7 @@ const float *vmaf_cambi_reciprocal_lut(unsigned *size)
     return reciprocal_lut;
 }
 
-/* ADR-1379: init's reciprocal-table guard, shared by cambi.c and the GPU
+/* ADR-1378 / ADR-1379: init's reciprocal-table guard, shared by cambi.c and the GPU
  * twins. c_value_pixel() indexes reciprocal_lut with p_0 + p_m, which reaches
  * window^2, so an adjusted window (encode or source resolution) whose square
  * reaches the table size would read past it. */
@@ -1817,8 +1817,8 @@ int vmaf_cambi_check_window_fits_lut(uint16_t enc_window, uint16_t src_window)
     return 0;
 }
 
-/* ADR-1379: the source index decimate_generic_*_and_convert_to_10b() reads
- * for each output index when resizing, computed with the same float walk so
+/* ADR-1378 / ADR-1379: the source index decimate_generic_*_and_convert_to_10b() reads
+ * for each of the `out_len` output indices when resizing, computed with the same float walk so
  * a device twin can gather through the table and land on the same samples.
  * Keep it in step with those three walks. */
 void vmaf_cambi_resize_source_indices(unsigned in_len, unsigned out_len, uint32_t *indices)
@@ -1832,7 +1832,7 @@ void vmaf_cambi_resize_source_indices(unsigned in_len, unsigned out_len, uint32_
     }
 }
 
-/* ADR-1379: adjust_window_size() for a device twin, so the twins cannot drift
+/* ADR-1378 / ADR-1379: adjust_window_size() for a device twin, so the twins cannot drift
  * from the CPU's rounding of the window. */
 uint16_t vmaf_cambi_adjust_window(int window_size, unsigned width, unsigned height,
                                   bool high_res_speedup)
@@ -1842,14 +1842,14 @@ uint16_t vmaf_cambi_adjust_window(int window_size, unsigned width, unsigned heig
     return window;
 }
 
-/* ADR-1379: get_mask_index() at the extractor's MASK_FILTER_SIZE, for the
+/* ADR-1378 / ADR-1379: get_mask_index() at the extractor's MASK_FILTER_SIZE, for the
  * device spatial mask. */
 uint16_t vmaf_cambi_mask_index(unsigned width, unsigned height)
 {
     return get_mask_index(width, height, MASK_FILTER_SIZE);
 }
 
-/* ADR-1357 / ADR-1379: spatial_pooling()'s mean of the top-K c-values from the
+/* ADR-1357 / ADR-1378 / ADR-1379: spatial_pooling()'s mean of the top-K c-values from the
  * exact sum a device twin accumulates in units of 2^-VMAF_CAMBI_TOPK_FIXED_SHIFT
  * (hi * 2^64 + lo), converted to double once and divided by the count as
  * average_topk_elements() divides. */
@@ -1861,7 +1861,7 @@ double vmaf_cambi_fixed_topk_mean(uint64_t sum_hi, uint64_t sum_lo, unsigned top
     return ldexp(fixed, -VMAF_CAMBI_TOPK_FIXED_SHIFT) / (double)topk;
 }
 
-/* ADR-1379: the per-contrast weights c_value_pixel() applies
+/* ADR-1378 / ADR-1379: the per-contrast weights c_value_pixel() applies
  * (g_contrast_weights), for the device twins to upload verbatim. */
 const int *vmaf_cambi_contrast_weights(unsigned *count)
 {

@@ -175,6 +175,36 @@
   [SpEED](docs/metrics/speed_qa.md#cuda-the-same-chain-on-the-device).
 
 
+- **`cambi_hip` runs every CAMBI stage on the device (ADR-1378).** The HIP
+  twin no longer preprocesses the picture on the host or copies the image and
+  mask back at every scale to compute the c-values and the top-K pooling
+  there: each frame is one staged upload of the luma, the whole
+  ADR-1357 pipeline on the extractor's stream and one 88-byte read of the
+  exact per-scale sums, with `collect()` the only wait. Scores are expected
+  to equal `--backend cpu` bit for bit wherever the CPU's own top-K sum is
+  exact. `cambi_hip` now also refuses, as the CPU extractor does, a window
+  whose adjusted size exceeds 65 x 65 ("cambi: window_size N too large for
+  reciprocal LUT"). Not yet run on an AMD device: the verify and timing
+  commands are in `docs/state.md` (`T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`)
+  and [CAMBI](docs/metrics/cambi.md#hip).
+
+
+- **The HIP SpEED twins run entirely on the device in the CPU's fp32
+  arithmetic (ADR-1384).** `speed_chroma_hip` and `speed_temporal_hip` no
+  longer copy and filter planes on the host or read the 25x25 covariance back
+  for the eigenvalues and the QR solve: each frame is one staged upload, eight
+  kernels (the ADR-1358 chain) and one result read, with `collect()` the only
+  wait. The kernels are built without FMA contraction and with correctly
+  rounded division and square root, so every per-frame score equals the CPU
+  extractor's when the CPU's `log2f` is correctly rounded; against a glibc
+  build, whose `log2f` misrounds about 0.4 % of arguments, a few chroma frames
+  differ in the last float bits. The init-time setup is now one routine,
+  `speed_internal_gpu_configure()`, shared with the SYCL twins. Request the
+  twins by name (`--feature speed_chroma_hip`). Not yet run on an AMD device:
+  see `docs/state.md` (`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`) and
+  [SpEED](docs/metrics/speed_qa.md#hip-device-resident-cpu-fp32-arithmetic).
+
+
 - **The SYCL integer ADM twin computes AIM on the device, so the default model's
   ADM no longer falls back to the CPU under `--backend sycl` (ADR-1362).**
   `adm_sycl` now emits `VMAF_integer_feature_aim_score` and
