@@ -292,7 +292,10 @@ core/src/feature/hip/          # per-feature kernels
   through the CPU's `motion_fps_weight` / `motion_max_val` clip. Emits
   `VMAF_integer_feature_motion2_score` + `VMAF_integer_feature_motion3_score`.
 - **`integer_psnr_hvs_hip`** — frequency-weighted distortion per 8×8 block,
-  porting the CUDA twin. Emits `psnr_hvs` + per-channel variants.
+  porting the CUDA twin and ADR-1369 native upload design. Uploads raw native
+  samples via `vmaf_hip_picture_upload()` and converts on the device, eliminating
+  host float conversions and unused pinned staging allocations. Emits `psnr_hvs`
+  and per-channel variants.
 - **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
   the CUDA twin (`ssim_cuda.c`): a 9-tap integer Gaussian, int64 moments, the
   window truncated at the frame border, and the per-pixel SSIM term in double.

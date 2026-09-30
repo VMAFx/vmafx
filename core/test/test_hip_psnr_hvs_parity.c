@@ -168,9 +168,85 @@ static char *test_psnr_hvs_cpu_hip_parity(void)
     return NULL;
 }
 
+/* 9- to 12-bit input: calc_psnrhvs() uses the raw sample at every depth. The
+ * twin used to convert only 10- and 12-bit samples back exactly and scored
+ * 9 / 11 bits on 16 times the sample (-1.57 against 22.47 dB at 9 bits).
+ * This test fails on the old host-convert path and passes with on-device
+ * native sample upload and conversion. */
+static int fill_deep_pic(VmafPicture *pic, unsigned bpc, unsigned salt)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u);
+    if (err)
+        return err;
+    const unsigned range = 1u << bpc;
+    for (unsigned p = 0; p < 3u; p++) {
+        uint16_t *data = (uint16_t *)pic->data[p];
+        const size_t stride = (size_t)pic->stride[p] / sizeof(uint16_t);
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                data[row * stride + col] =
+                    (uint16_t)(((col * 37u + row * 11u + p * 5u) ^ (salt * 91u)) % range);
+            }
+        }
+    }
+    return 0;
+}
+
+static char *open_deep(VmafHipState *hip_state, VmafContext **vmaf)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    mu_assert("vmaf_init failed", !vmaf_init(vmaf, cfg));
+    if (hip_state)
+        mu_assert("vmaf_hip_import_state failed", !vmaf_hip_import_state(*vmaf, hip_state));
+    mu_assert("vmaf_use_feature failed",
+              !vmaf_use_feature(*vmaf, hip_state ? "psnr_hvs_hip" : "psnr_hvs", NULL));
+    return NULL;
+}
+
+static char *score_deep(VmafHipState *hip_state, unsigned bpc, double *score)
+{
+    VmafContext *vmaf = NULL;
+    mu_assert_msg(open_deep(hip_state, &vmaf));
+    VmafPicture ref;
+    VmafPicture dist;
+    mu_assert("ref alloc", !fill_deep_pic(&ref, bpc, 0u));
+    mu_assert("dist alloc", !fill_deep_pic(&dist, bpc, 1u));
+    mu_assert("read", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
+    mu_assert("flush", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
+    mu_assert("score", !vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u));
+    mu_assert("vmaf_close failed", !vmaf_close(vmaf));
+    return NULL;
+}
+
+static char *test_psnr_hvs_deep_parity(void)
+{
+    char *msg = NULL;
+    for (unsigned bpc = 9u; bpc <= 12u && !msg; bpc++) {
+        VmafHipState *hip_state = NULL;
+        VmafHipConfiguration hip_cfg = {.device_index = -1};
+        if (vmaf_hip_state_init(&hip_state, hip_cfg) != 0 || hip_state == NULL) {
+            (void)fprintf(stderr, "[skip: no HIP device] ");
+            return NULL;
+        }
+        double cpu = 0.0;
+        double hip = NAN;
+        msg = score_deep(NULL, bpc, &cpu);
+        if (!msg)
+            msg = score_deep(hip_state, bpc, &hip);
+        if (!msg && !(fabs(cpu - hip) <= PARITY_TOL)) {
+            (void)fprintf(stderr, "\n%u-bit psnr_hvs: cpu=%.8f hip=%.8f delta=%.2e\n", bpc, cpu,
+                          hip, fabs(cpu - hip));
+            msg = "psnr_hvs at 9-12 bits must score the raw sample like the CPU";
+        }
+        vmaf_hip_state_free(&hip_state);
+    }
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_hip_registered);
     mu_run_test(test_psnr_hvs_cpu_hip_parity);
+    mu_run_test(test_psnr_hvs_deep_parity);
     return NULL;
 }

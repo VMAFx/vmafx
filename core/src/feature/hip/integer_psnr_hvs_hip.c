@@ -7,12 +7,14 @@
  *  Direct port of `libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c`
  *  (s/cuda/hip/ + HIP API tweaks).
  *
- *  Design mirrors the CUDA twin exactly:
+ *  Design mirrors the CUDA twin with the following difference (ADR-1369 port):
  *  - 3 dispatches per frame (Y, Cb, Cr).
  *  - Per-plane single-dispatch design: one HIP block per output 8x8
  *    image block (step=7), 64 threads per block.
- *  - Host-side uint-to-float normalisation into tightly-pitched device
- *    float buffers (same picture_copy semantics as the CUDA twin).
+ *  - Native samples (uint8_t or uint16_t) are uploaded directly from the
+ *    VmafPicture via vmaf_hip_picture_upload(); no host float conversion.
+ *    The kernel reads raw integers and skips the float round-trip, saving
+ *    4x upload bandwidth at 8 bpc and 2x at 10/12 bpc.
  *  - Combined `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)` computed on the host
  *    after the per-plane partial-sum readback.
  *  - Rejects YUV400P (no chroma) and bpc > 12 (matches CPU + CUDA).
@@ -37,10 +39,13 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "integer_psnr_hvs_hip.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -73,23 +78,14 @@ typedef struct PsnrHvsStateHip {
     hipModule_t module;
     hipFunction_t func_psnr_hvs;
 
-    /* Per-plane ref / dist float device buffers (normalised). */
-    float *d_ref[PSNR_HVS_NUM_PLANES];
-    float *d_dist[PSNR_HVS_NUM_PLANES];
+    /* Per-plane ref / dist device buffers (native uint8 or uint16 samples). */
+    void *d_ref[PSNR_HVS_NUM_PLANES];
+    void *d_dist[PSNR_HVS_NUM_PLANES];
     /* Per-plane block partial-sum device buffers. */
     float *d_partials[PSNR_HVS_NUM_PLANES];
 
-    /* Pinned host staging for float planes. */
-    float *h_ref[PSNR_HVS_NUM_PLANES];
-    float *h_dist[PSNR_HVS_NUM_PLANES];
     /* Pinned host staging for partial readback. */
     float *h_partials[PSNR_HVS_NUM_PLANES];
-
-    /* Persistent pinned uint8/uint16 staging for device-to-host readback
-     * of pic planes (mirrors T-GPU-OPT-3 from the CUDA twin).
-     * Sized at init() time to width x height x bpc_bytes per plane. */
-    void *h_uint_ref[PSNR_HVS_NUM_PLANES];
-    void *h_uint_dist[PSNR_HVS_NUM_PLANES];
 #endif /* HAVE_HIPCC */
 
     unsigned index;
@@ -154,25 +150,9 @@ static void psnr_hvs_free_plane_buffers(PsnrHvsStateHip *s)
             (void)hipFree(s->d_partials[p]);
             s->d_partials[p] = NULL;
         }
-        if (s->h_ref[p]) {
-            (void)hipHostFree(s->h_ref[p]);
-            s->h_ref[p] = NULL;
-        }
-        if (s->h_dist[p]) {
-            (void)hipHostFree(s->h_dist[p]);
-            s->h_dist[p] = NULL;
-        }
         if (s->h_partials[p]) {
             (void)hipHostFree(s->h_partials[p]);
             s->h_partials[p] = NULL;
-        }
-        if (s->h_uint_ref[p]) {
-            (void)hipHostFree(s->h_uint_ref[p]);
-            s->h_uint_ref[p] = NULL;
-        }
-        if (s->h_uint_dist[p]) {
-            (void)hipHostFree(s->h_uint_dist[p]);
-            s->h_uint_dist[p] = NULL;
         }
     }
 }
@@ -184,27 +164,19 @@ static int psnr_hvs_alloc_plane_buffers(PsnrHvsStateHip *s)
 {
     const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
         const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
+        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
 
-        if (hipMalloc((void **)&s->d_ref[p], plane_bytes) != hipSuccess)
+        /* Device buffers hold native samples (1 or 2 bytes each). */
+        if (hipMalloc(&s->d_ref[p], uint_bytes) != hipSuccess)
             return -ENOMEM;
-        if (hipMalloc((void **)&s->d_dist[p], plane_bytes) != hipSuccess)
+        if (hipMalloc(&s->d_dist[p], uint_bytes) != hipSuccess)
             return -ENOMEM;
         if (hipMalloc((void **)&s->d_partials[p], partials_bytes) != hipSuccess)
             return -ENOMEM;
 
-        if (hipHostMalloc((void **)&s->h_ref[p], plane_bytes, hipHostMallocDefault) != hipSuccess)
-            return -ENOMEM;
-        if (hipHostMalloc((void **)&s->h_dist[p], plane_bytes, hipHostMallocDefault) != hipSuccess)
-            return -ENOMEM;
         if (hipHostMalloc((void **)&s->h_partials[p], partials_bytes, hipHostMallocDefault) !=
             hipSuccess)
-            return -ENOMEM;
-        if (hipHostMalloc(&s->h_uint_ref[p], uint_bytes, hipHostMallocDefault) != hipSuccess)
-            return -ENOMEM;
-        if (hipHostMalloc(&s->h_uint_dist[p], uint_bytes, hipHostMallocDefault) != hipSuccess)
             return -ENOMEM;
     }
     return 0;
@@ -342,113 +314,74 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 }
 
 #ifdef HAVE_HIPCC
-/* Normalise a uint8/uint16 plane from the VmafPicture (already D2H on the
- * CPU side here — we do a simple 2D memcpy from pic->data bypassing the
- * CUDA D2H trick, since HIP picture-stream integration is post-scaffold).
- * The arithmetic mirrors picture_copy.c exactly so scores match the
- * CUDA twin. */
-static void upload_plane(PsnrHvsStateHip *s, const VmafPicture *pic, int plane)
+/* Launch the psnr_hvs kernel for one plane, zero partials, and start D2H copy. */
+static int psnr_hvs_launch_plane(PsnrHvsStateHip *s, int p, int wide, hipStream_t str)
 {
+    const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
+
+    hipError_t rc = hipMemsetAsync(s->d_partials[p], 0, partials_bytes, str);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    unsigned nbx = s->num_blocks_x[p];
+    unsigned nby = s->num_blocks_y[p];
+    unsigned width = s->width[p];
+    unsigned height = s->height[p];
+    int plane_arg = p;
+    int wide_arg = wide;
+
+    void *args[] = {
+        (void *)&s->d_ref[p], (void *)&s->d_dist[p], (void *)&s->d_partials[p],
+        (void *)&width,       (void *)&height,       (void *)&nbx,
+        (void *)&nby,         (void *)&plane_arg,    (void *)&wide_arg,
+    };
+    rc = hipModuleLaunchKernel(s->func_psnr_hvs, nbx, nby, 1, PSNR_HVS_BLOCK_DIM,
+                               PSNR_HVS_BLOCK_DIM, 1, 0, str, args, NULL);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    rc = hipMemcpyAsync(s->h_partials[p], s->d_partials[p], partials_bytes, hipMemcpyDeviceToHost,
+                        str);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+    return 0;
+}
+
+/* Upload raw native samples and launch the psnr_hvs kernel on each plane.
+ * ref_pic / dist_pic are VmafPictures with pageable host data.
+ * vmaf_hip_picture_upload() copies and waits before returning (prevents the
+ * pageable-upload race documented in picture_hip.h). */
+static int launch_psnr_hvs(PsnrHvsStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+{
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
-    const unsigned W = s->width[plane];
-    const unsigned H = s->height[plane];
+    const int wide = (s->bpc > 8u) ? 1 : 0;
 
-    if (s->bpc <= 8u) {
-        const uint8_t *src = (const uint8_t *)pic->data[plane];
-        const ptrdiff_t stride = pic->stride[plane];
-        /* This helper is split: call with ref_pic and dist_pic separately. */
-        for (unsigned y = 0; y < H; y++) {
-            for (unsigned x = 0; x < W; x++) {
-                s->h_ref[plane][y * W + x] = (float)src[y * stride + x];
-            }
-        }
-    } else {
-        const float scaler = (s->bpc == 10) ? 4.0f : (s->bpc == 12) ? 16.0f : 1.0f;
-        const uint16_t *src = (const uint16_t *)pic->data[plane];
-        const ptrdiff_t stride_u16 = (ptrdiff_t)pic->stride[plane] / (ptrdiff_t)sizeof(uint16_t);
-        for (unsigned y = 0; y < H; y++) {
-            for (unsigned x = 0; x < W; x++) {
-                s->h_ref[plane][y * W + x] =
-                    (float)src[(ptrdiff_t)y * stride_u16 + (ptrdiff_t)x] / scaler;
-            }
-        }
+    VmafHipPlaneUpload uploads[2u * PSNR_HVS_NUM_PLANES];
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        const size_t row_bytes = (size_t)s->width[p] * bpc_bytes;
+        const size_t i = (size_t)p * 2u;
+        uploads[i] = (VmafHipPlaneUpload){.dst = s->d_ref[p],
+                                          .dst_pitch = row_bytes,
+                                          .pic = ref_pic,
+                                          .plane = (unsigned)p,
+                                          .row_bytes = row_bytes,
+                                          .rows = s->height[p]};
+        uploads[i + 1u] = (VmafHipPlaneUpload){.dst = s->d_dist[p],
+                                               .dst_pitch = row_bytes,
+                                               .pic = dist_pic,
+                                               .plane = (unsigned)p,
+                                               .row_bytes = row_bytes,
+                                               .rows = s->height[p]};
     }
-    (void)bpc_bytes;
-}
-
-static void upload_plane_dist(PsnrHvsStateHip *s, const VmafPicture *pic, int plane)
-{
-    const unsigned W = s->width[plane];
-    const unsigned H = s->height[plane];
-
-    if (s->bpc <= 8u) {
-        const uint8_t *src = (const uint8_t *)pic->data[plane];
-        const ptrdiff_t stride = pic->stride[plane];
-        for (unsigned y = 0; y < H; y++) {
-            for (unsigned x = 0; x < W; x++) {
-                s->h_dist[plane][y * W + x] = (float)src[y * stride + x];
-            }
-        }
-    } else {
-        const float scaler = (s->bpc == 10) ? 4.0f : (s->bpc == 12) ? 16.0f : 1.0f;
-        const uint16_t *src = (const uint16_t *)pic->data[plane];
-        const ptrdiff_t stride_u16 = (ptrdiff_t)pic->stride[plane] / (ptrdiff_t)sizeof(uint16_t);
-        for (unsigned y = 0; y < H; y++) {
-            for (unsigned x = 0; x < W; x++) {
-                s->h_dist[plane][y * W + x] =
-                    (float)src[(ptrdiff_t)y * stride_u16 + (ptrdiff_t)x] / scaler;
-            }
-        }
-    }
-}
-
-static int launch_psnr_hvs(PsnrHvsStateHip *s)
-{
-    hipStream_t str = (hipStream_t)s->lc.str;
+    int err = vmaf_hip_picture_upload(uploads, 2u * PSNR_HVS_NUM_PLANES, s->lc.str);
+    if (err != 0)
+        return err;
 
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-
-        /* H2D: float ref/dist planes. */
-        hipError_t rc =
-            hipMemcpyAsync(s->d_ref[p], s->h_ref[p], plane_bytes, hipMemcpyHostToDevice, str);
-        if (rc != hipSuccess)
-            return psnr_hvs_hip_rc(rc);
-        rc = hipMemcpyAsync(s->d_dist[p], s->h_dist[p], plane_bytes, hipMemcpyHostToDevice, str);
-        if (rc != hipSuccess)
-            return psnr_hvs_hip_rc(rc);
-
-        /* Zero the partial-sum buffer. */
-        rc = hipMemsetAsync(s->d_partials[p], 0, partials_bytes, str);
-        if (rc != hipSuccess)
-            return psnr_hvs_hip_rc(rc);
-
-        /* Launch one block per output 8x8 image block. */
-        unsigned nbx = s->num_blocks_x[p];
-        unsigned nby = s->num_blocks_y[p];
-        unsigned width = s->width[p];
-        unsigned height = s->height[p];
-        int plane_arg = p;
-        int bpc_arg = (int)s->bpc;
-
-        /* hipModuleLaunchKernel arg pack — order matches the kernel
-         * signature: (ref, dist, partials, width, height, nbx, nby, plane, bpc). */
-        void *args[] = {
-            (void *)&s->d_ref[p], (void *)&s->d_dist[p], (void *)&s->d_partials[p],
-            (void *)&width,       (void *)&height,       (void *)&nbx,
-            (void *)&nby,         (void *)&plane_arg,    (void *)&bpc_arg,
-        };
-        rc = hipModuleLaunchKernel(s->func_psnr_hvs, nbx, nby, 1, PSNR_HVS_BLOCK_DIM,
-                                   PSNR_HVS_BLOCK_DIM, 1, 0, str, args, NULL);
-        if (rc != hipSuccess)
-            return psnr_hvs_hip_rc(rc);
-
-        /* D2H: partial sums. */
-        rc = hipMemcpyAsync(s->h_partials[p], s->d_partials[p], partials_bytes,
-                            hipMemcpyDeviceToHost, str);
-        if (rc != hipSuccess)
-            return psnr_hvs_hip_rc(rc);
+        err = psnr_hvs_launch_plane(s, p, wide, str);
+        if (err != 0)
+            return err;
     }
     return 0;
 }
@@ -463,21 +396,19 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
 
 #ifdef HAVE_HIPCC
-    /* CPU-side normalise all planes for ref and dist. */
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        upload_plane(s, ref_pic, p);
-        upload_plane_dist(s, dist_pic, p);
-    }
-
-    int err = launch_psnr_hvs(s);
+    /* Upload native samples to the device, launch the kernel, and read back
+     * partial sums. vmaf_hip_picture_upload() (called inside launch_psnr_hvs)
+     * blocks until the copies are done reading the picture, so by the time
+     * submit_fex_hip returns the pictures can be recycled safely. */
+    int err = launch_psnr_hvs(s, ref_pic, dist_pic);
     if (err != 0)
         return err;
 
-    /* Record the submit event on the kernel stream (no separate upload
-     * stream here; matches the simpler single-stream HIP posture used by
-     * float_psnr_hip). vmaf_hip_kernel_submit_post_record records the
-     * finished event so collect() can wait for it. */
-    hipError_t rc = hipEventRecord((hipEvent_t)s->lc.submit, (hipStream_t)s->lc.str);
+    /* Record the submit event on the kernel stream. vmaf_hip_kernel_submit_post_record
+     * records the finished event so collect() can wait for it. */
+    hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+    hipError_t rc = hipEventRecord(submit_ev, str);
     if (rc != hipSuccess)
         return psnr_hvs_hip_rc(rc);
 

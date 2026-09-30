@@ -62,19 +62,20 @@ inputs and diverging from the other backends.)
 
 ### Sample conversion
 
-The CUDA (`psnr_hvs_cuda`) and SYCL (`psnr_hvs_sycl`,
+The CUDA (`psnr_hvs_cuda`), HIP (`psnr_hvs_hip`), and SYCL (`psnr_hvs_sycl`,
 [ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md)) twins read the raw
 integer samples of the device pictures at every supported depth, 8 to 12 bits
-(every backend rejects deeper input, like the CPU extractor). Two threads share
+(every backend rejects deeper input, like the CPU extractor), eliminating host
+float conversions and redundant pinned host staging allocations. Two threads share
 each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
 launch covers every plane. Each block's float sum goes to a partials buffer, and
 the host adds each plane's partials in block order. 4:0:0 input is scored on luma
 only, as on the CPU.
 
-`psnr_hvs_cuda` returns the same values, bit for bit, as the host-conversion twin
-it replaced, on the Netflix 576x324 pair, on 1920x1080 and on 3840x2160 content,
-except at 9 and 11 bits, where that twin was wrong (-1.57 dB and NaN on a
-64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
+Both `psnr_hvs_cuda` and `psnr_hvs_hip` return the same values, bit for bit, as
+the host-conversion twins they replaced, on the Netflix 576x324 pair, on 1920x1080
+and on 3840x2160 content, except at 9 and 11 bits, where the previous twins were
+wrong (-1.57 dB and NaN on a 64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
 
 ### Difference to the CPU extractor at large frame sizes
 

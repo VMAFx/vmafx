@@ -337,6 +337,21 @@
 - `docs/adr/1388-release-pat-mode-gate-exemption.md`: documents dual-path exemption
   protocol (bot author vs PAT author with verified release-only diff).
 - No impact on Netflix golden data, SIMD/GPU kernels, public API or FFmpeg patches.
+## perf/hip-psnr-hvs-device-convert — HIP psnr_hvs native sample upload and device conversion (ADR-1369 port) (2026-09-30)
+
+- `core/src/feature/hip/integer_psnr_hvs_hip.c`: fork-only (upstream Netflix/vmaf
+  has no HIP backend). Replaces host-side float conversion loops with native
+  sample upload via `vmaf_hip_picture_upload()`. Device buffers `d_ref` / `d_dist`
+  are sized to sample width (1 byte for 8 bpc, 2 bytes for 9–12 bpc). Removed
+  unused pinned host buffers `h_uint_ref` and `h_uint_dist` (eliminating 6 redundant
+  allocations).
+- `core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip`: fork-only. Replaced
+  `const float *` kernel parameters with `const void *` and `int wide` flag (0 for
+  8 bpc uint8_t, 1 for 16 bpc uint16_t). Kernel reads and converts raw samples
+  directly on the device. Resolves a latent scaling bug on 9-bit and 11-bit depths.
+- `core/test/test_hip_psnr_hvs_parity.c`: added `test_psnr_hvs_deep_parity` asserting
+  exact parity against CPU for 9, 10, 11, and 12-bit inputs.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

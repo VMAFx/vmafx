@@ -7,17 +7,18 @@
  *  Direct port of the CUDA twin at
  *  `libvmaf/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`.
  *
- *  HIP adaptations from CUDA:
+ *  HIP adaptations from CUDA (updated by ADR-1369 device-convert port):
  *  - `#include <hip/hip_runtime.h>` replaces `cuda_helper.cuh` / CUDA headers.
  *  - `__syncthreads()` is identical in HIP; `__shfl_down` is available.
- *  - `VmafCudaBuffer` is replaced by plain `float *` pointers — the host
- *    marshals tightly-pitched device buffers (same pattern as
- *    `integer_psnr/psnr_score.hip` and `float_psnr/float_psnr_score.hip`).
- *  - Kernel parameter list uses plain `float *` for ref/dist/partials
- *    instead of the `VmafCudaBuffer` wrapper struct.
+ *  - ref_in / dist_in are now raw `void *` device buffers holding native
+ *    uint8_t (8-bpc) or uint16_t (10/12-bpc) samples; the `wide` flag
+ *    selects the read width. No float conversion happens on the host; the
+ *    sample is read directly as an integer, saving 4x upload bandwidth at
+ *    8 bpc and 2x at 10/12 bpc versus the previous host-normalised float path.
+ *  - partials_out is still `float *` (per-block masked-error sums).
  *  - The rest of the algorithm (CSF tables, od_bin_fdct8, means/variances,
- *    masked-error accumulation) is byte-for-byte identical to the CUDA twin
- *    to preserve the established CUDA/HIP numeric contract.
+ *    masked-error accumulation) is bit-identical to the CUDA twin so that the
+ *    established CUDA/HIP numeric contract (ADR-1361) is preserved.
  *
  *  One HIP block per output 8x8 image block (step=7), 64 threads/block
  *  (8x8 2-D thread grid, same as CUDA). Cooperative load + thread-0-serial
@@ -181,18 +182,6 @@ __device__ static void od_bin_fdct8x8_parallel(int blk[64], int z[64], unsigned 
     __syncthreads();
 }
 
-__device__ static inline int sample_to_int(float v, int bpc)
-{
-    /* picture_copy normalises uint sample to float in [0, 255]
-     * (8-bit: scale=1; 10-bit: /4; 12-bit: /16). Reverse here.
-     * Identical to the CUDA twin. */
-    if (bpc == 8)
-        return (int)(v + 0.5f);
-    if (bpc == 10)
-        return (int)(v * 4.0f + 0.5f);
-    return (int)(v * 16.0f + 0.5f);
-}
-
 /**
  * psnr_hvs kernel: one HIP block per output 8x8 image block.
  * Cooperative load (64 threads), then thread 0 runs float means /
@@ -200,114 +189,67 @@ __device__ static inline int sample_to_int(float v, int bpc)
  * threads run the integer DCT passes in parallel; thread 0 resumes
  * for the masking and final float reduction.
  *
- * HIP adaptation: ref_in / dist_in / partials_out are plain float *
- * (tightly-pitched device buffers, no VmafCudaBuffer wrapper).
- * Everything else is identical to the CUDA twin.
+ * ref_in / dist_in hold raw native samples: uint8_t when wide==0,
+ * uint16_t when wide==1. No host float conversion — samples are read
+ * directly as integers. partials_out is float (per-block masked-error
+ * sums, same layout as before).
  */
-__global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
-                              const float *__restrict__ dist_in,
-                              float *__restrict__ partials_out,
-                              unsigned width,
-                              unsigned height,
-                              unsigned num_blocks_x,
-                              unsigned num_blocks_y,
-                              int plane,
-                              int bpc)
+__device__ static void calc_spatial_stats(const int s_ref[64], const int s_dist[64],
+                                          float *out_s_gvar, float *out_d_gvar)
 {
-    __shared__ int s_ref[64];
-    __shared__ int s_dist[64];
-    __shared__ int dct_s[64];
-    __shared__ int dct_d[64];
-    __shared__ int z_s[64];
-    __shared__ int z_d[64];
-
-    const unsigned blk_x = blockIdx.x;
-    const unsigned blk_y = blockIdx.y;
-    const unsigned lx = threadIdx.x;
-    const unsigned ly = threadIdx.y;
-    const unsigned local_idx = ly * 8u + lx;
-
-    const unsigned x0 = blk_x * 7u;
-    const unsigned y0 = blk_y * 7u;
-    const bool valid_block =
-        (blk_x < num_blocks_x && blk_y < num_blocks_y && x0 + 7u < width && y0 + 7u < height);
-
-    int my_ref = 0;
-    int my_dist = 0;
-    if (valid_block) {
-        const unsigned sx = x0 + lx;
-        const unsigned sy = y0 + ly;
-        const unsigned src_idx = sy * width + sx;
-        my_ref = sample_to_int(ref_in[src_idx], bpc);
-        my_dist = sample_to_int(dist_in[src_idx], bpc);
-    }
-    s_ref[local_idx] = my_ref;
-    s_dist[local_idx] = my_dist;
-    dct_s[local_idx] = my_ref;
-    dct_d[local_idx] = my_dist;
-    __syncthreads();
-
     float s_means[4] = {0.f, 0.f, 0.f, 0.f};
     float d_means[4] = {0.f, 0.f, 0.f, 0.f};
     float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
     float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
     float s_gmean = 0.f, d_gmean = 0.f;
     float s_gvar = 0.f, d_gvar = 0.f;
-    float s_mc = 0.f, d_mc = 0.f;
 
-    if (local_idx == 0u) {
-        /* Pass 1: means. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                s_gmean += (float)s_ref[i * 8 + j];
-                d_gmean += (float)s_dist[i * 8 + j];
-                s_means[sub] += (float)s_ref[i * 8 + j];
-                d_means[sub] += (float)s_dist[i * 8 + j];
-            }
+    /* Pass 1: means. */
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            s_gmean += (float)s_ref[i * 8 + j];
+            d_gmean += (float)s_dist[i * 8 + j];
+            s_means[sub] += (float)s_ref[i * 8 + j];
+            d_means[sub] += (float)s_dist[i * 8 + j];
         }
-        s_gmean /= 64.f;
-        d_gmean /= 64.f;
-        for (int i = 0; i < 4; i++)
-            s_means[i] /= 16.f;
-        for (int i = 0; i < 4; i++)
-            d_means[i] /= 16.f;
-
-        /* Pass 2: variances. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                const float ds = (float)s_ref[i * 8 + j] - s_gmean;
-                const float dd = (float)s_dist[i * 8 + j] - d_gmean;
-                s_gvar += ds * ds;
-                d_gvar += dd * dd;
-                const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
-                const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
-                s_vars[sub] += qs * qs;
-                d_vars[sub] += qd * qd;
-            }
-        }
-        s_gvar *= 1.f / 63.f * 64.f;
-        d_gvar *= 1.f / 63.f * 64.f;
-        for (int i = 0; i < 4; i++)
-            s_vars[i] *= 1.f / 15.f * 16.f;
-        for (int i = 0; i < 4; i++)
-            d_vars[i] *= 1.f / 15.f * 16.f;
-        if (s_gvar > 0.f)
-            s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-        if (d_gvar > 0.f)
-            d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
+    }
+    s_gmean /= 64.f;
+    d_gmean /= 64.f;
+    for (int i = 0; i < 4; i++) {
+        s_means[i] /= 16.f;
+        d_means[i] /= 16.f;
     }
 
-    /* Integer DCT in place, parallel across the first eight threads. */
-    od_bin_fdct8x8_parallel(dct_s, z_s, local_idx);
-    od_bin_fdct8x8_parallel(dct_d, z_d, local_idx);
+    /* Pass 2: variances. */
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            const float ds = (float)s_ref[i * 8 + j] - s_gmean;
+            const float dd = (float)s_dist[i * 8 + j] - d_gmean;
+            s_gvar += ds * ds;
+            d_gvar += dd * dd;
+            const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
+            const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
+            s_vars[sub] += qs * qs;
+            d_vars[sub] += qd * qd;
+        }
+    }
+    s_gvar *= 1.f / 63.f * 64.f;
+    d_gvar *= 1.f / 63.f * 64.f;
+    for (int i = 0; i < 4; i++) {
+        s_vars[i] *= 1.f / 15.f * 16.f;
+        d_vars[i] *= 1.f / 15.f * 16.f;
+    }
+    *out_s_gvar = (s_gvar > 0.f) ? ((s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar) : 0.f;
+    *out_d_gvar = (d_gvar > 0.f) ? ((d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar) : 0.f;
+}
 
-    if (local_idx != 0u)
-        return;
-
+__device__ static float calc_mask_threshold(const int dct_s[64], const int dct_d[64], int plane,
+                                            float s_gvar, float d_gvar, float mask[64])
+{
+    float s_mc = 0.f, d_mc = 0.f;
     /* Pass 3: per-coefficient mask*dct^2 accumulation, skipping DC. */
-    float mask[64];
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
             const float c = CSF_TABLES[plane][i * 8 + j];
@@ -333,8 +275,12 @@ __global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
     const float dm = sqrtf(d_mc * d_gvar) / 32.f;
     if (dm > sm)
         sm = dm;
-    const float thresh = sm;
+    return sm;
+}
 
+__device__ static float calc_masked_error(const int dct_s[64], const int dct_d[64], int plane,
+                                          float thresh, const float mask[64])
+{
     /* Pass 4: per-coefficient masked-error contribution. */
     float ret = 0.f;
     for (int i = 0; i < 8; i++) {
@@ -348,8 +294,65 @@ __global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
             ret += (err * c) * (err * c);
         }
     }
-    if (!valid_block)
-        ret = 0.f;
+    return ret;
+}
+
+__global__ void psnr_hvs_hip(const void *__restrict__ ref_in, const void *__restrict__ dist_in,
+                             float *__restrict__ partials_out, unsigned width, unsigned height,
+                             unsigned num_blocks_x, unsigned num_blocks_y, int plane, int wide)
+{
+    __shared__ int s_ref[64];
+    __shared__ int s_dist[64];
+    __shared__ int dct_s[64];
+    __shared__ int dct_d[64];
+    __shared__ int z_s[64];
+    __shared__ int z_d[64];
+
+    const unsigned blk_x = blockIdx.x;
+    const unsigned blk_y = blockIdx.y;
+    const unsigned lx = threadIdx.x;
+    const unsigned ly = threadIdx.y;
+    const unsigned local_idx = ly * 8u + lx;
+
+    const unsigned x0 = blk_x * 7u;
+    const unsigned y0 = blk_y * 7u;
+    const bool valid_block =
+        (blk_x < num_blocks_x && blk_y < num_blocks_y && x0 + 7u < width && y0 + 7u < height);
+
+    int my_ref = 0;
+    int my_dist = 0;
+    if (valid_block) {
+        const unsigned src_idx = (y0 + ly) * width + (x0 + lx);
+        /* Read the native sample directly — no float round-trip.
+         * wide==1: uint16_t (10 or 12 bpc); wide==0: uint8_t (8 bpc). */
+        if (wide) {
+            my_ref = (int)((const unsigned short *)ref_in)[src_idx];
+            my_dist = (int)((const unsigned short *)dist_in)[src_idx];
+        } else {
+            my_ref = (int)((const unsigned char *)ref_in)[src_idx];
+            my_dist = (int)((const unsigned char *)dist_in)[src_idx];
+        }
+    }
+    s_ref[local_idx] = my_ref;
+    s_dist[local_idx] = my_dist;
+    dct_s[local_idx] = my_ref;
+    dct_d[local_idx] = my_dist;
+    __syncthreads();
+
+    float s_gvar = 0.f, d_gvar = 0.f;
+    if (local_idx == 0u)
+        calc_spatial_stats(s_ref, s_dist, &s_gvar, &d_gvar);
+
+    /* Integer DCT in place, parallel across the first eight threads. */
+    od_bin_fdct8x8_parallel(dct_s, z_s, local_idx);
+    od_bin_fdct8x8_parallel(dct_d, z_d, local_idx);
+
+    if (local_idx != 0u)
+        return;
+
+    float mask[64];
+    const float thresh = calc_mask_threshold(dct_s, dct_d, plane, s_gvar, d_gvar, mask);
+    float ret = valid_block ? calc_masked_error(dct_s, dct_d, plane, thresh, mask) : 0.f;
 
     const unsigned slot = blk_y * num_blocks_x + blk_x;
     partials_out[slot] = ret;
