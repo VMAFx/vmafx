@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generated_at": "2026-09-30T07:52:27Z",
+  "generated_at": "2026-09-30T08:59:18Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "803fa74a27e1bfc650548706f80805fa436c19cf",
+  "commit_sha": "9f5fc89fbc2c044fdde07c8c6aab17cefb5535ce",
   "total_infractions": 431,
   "increase_rationale": "praetor engine f41e74d -\u003e 25451d8: the newer HISS scanners measure 246 existing infractions the old engine did not see; f41e74d re-records 185 on the same tree (ADR-1351)",
   "infractions": [
@@ -2617,13 +2617,6 @@
     {
       "rule_id": "HISS-07",
       "file_path": "dev/scripts/fetch-intel-neo.py",
-      "line_number": 126,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "fingerprint": "dev/scripts/fetch-intel-neo.py:126:HISS-07"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "dev/scripts/fetch-intel-neo.py",
       "line_number": 132,
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "fingerprint": "dev/scripts/fetch-intel-neo.py:132:HISS-07"
@@ -2638,16 +2631,23 @@
     {
       "rule_id": "HISS-07",
       "file_path": "dev/scripts/fetch-intel-neo.py",
-      "line_number": 141,
+      "line_number": 144,
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "fingerprint": "dev/scripts/fetch-intel-neo.py:141:HISS-07"
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:144:HISS-07"
     },
     {
       "rule_id": "HISS-07",
       "file_path": "dev/scripts/fetch-intel-neo.py",
-      "line_number": 179,
+      "line_number": 147,
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "fingerprint": "dev/scripts/fetch-intel-neo.py:179:HISS-07"
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:147:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 185,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:185:HISS-07"
     },
     {
       "rule_id": "HISS-07",
@@ -3234,7 +3234,7 @@
       "file_path": "tools/vmaf-tune/src/vmaftune/predictor_train.py",
       "line_number": 706,
       "symbol": "_write_model_card",
-      "message": "Function '_write_model_card' (135 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function '_write_model_card' (134 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/predictor_train.py:706:HISS-04"
     },
     {
