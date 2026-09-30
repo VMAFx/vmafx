@@ -728,7 +728,8 @@ It now runs the kernel `motion_v2_cuda` already used, through one host helper
   device, through an event, never on the host, and the eight-frame batch
   readback ([ADR-0845](../../adr/0845-cuda-motion-launch-overhead.md)) waits
   once instead of twice;
-- `motion_v2_cuda` output is unchanged.
+- `motion_v2_cuda`'s SAD is unchanged (same kernel); its host scoring now
+  weights and caps it like the CPU (see the option section below).
 
 Check it on the Netflix pair (expected: `0.0`):
 
@@ -757,16 +758,31 @@ naming the twin with the option failed with `unknown option`.
 | `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs`: a second pass-2 kernel reduces L, C and S per block; dB on the host |
 | `float_motion_cuda` | `motion_max_val` (`mmxv`) | host: every emitted score, the debug `motion` included, is weighted by `motion_fps_weight` and then capped |
 
-`float_ssim_cuda` no longer declares `enable_chroma`: the CPU `float_ssim` has
-no such option and the kernel always read luma only, so
-`--feature float_ssim_cuda=enable_chroma=true` now fails with
-`unknown option` instead of silently scoring luma. The SSIM kernel rounds its
-three products without FMA contraction, so identical windows score exactly 1
-and `enable_db` reports the CPU's `+inf` or `clip_db` ceiling for identical
-frames; the default score moves by an fp32 rounding. The `integer_ssim_cuda`
-kernel now builds without FMA contraction, as its HIP twin does, so each
-pixel's SSIM term is the CPU's expression evaluated operand for operand; its
-default score moves by a double rounding.
+The same change fixed how these twins score, not only which options they take:
+
+- **`float_ssim_cuda` computes the CPU's `l * c * s`.** Each pixel uses the
+  CPU's types and rounding points (double numerators over fp32 denominators,
+  `s` in fp32), and the frame mean is rounded to fp32 as the CPU returns it.
+  With `enable_db`, identical frames therefore report what the CPU reports:
+  `+inf` where its mean rounds to 1, a finite value where it does not
+  (identical flat frames: 72.247199 dB, not `+inf`). The default score moves
+  towards the CPU's by an fp32 rounding.
+- **`float_ssim_cuda` still accepts `enable_chroma`**, which the CPU
+  `float_ssim` does not have: it has always been ignored (the twin scores luma
+  only), and now logs a warning that says so.
+- **`integer_ssim_cuda` computes each pixel's term as the CPU does**, without
+  FMA contraction and with the CPU's grouping, so every term equals the CPU's
+  bit for bit. The frame sum runs in a different order (per block, then on
+  the host), so the score can differ from the CPU's by a double rounding; on
+  identical frames with a side below 12 pixels that can put one of the two at
+  `+inf` and the other near 156 dB with `enable_db` and no `clip_db`.
+- **`motion_v2_cuda` publishes the CPU's SAD score**: fps-weighted and capped
+  at `motion_max_val`, with `motion2_v2` and `motion3_v2` derived from it and
+  `0` / `0` for a one-frame input. Before, it stored the raw SAD and did not
+  cap `motion2_v2`, so non-default `motion_fps_weight` / `motion_max_val`
+  gave other scores than the CPU.
+- **`psnr_cuda` sees every frame under `--subsample`**, like the CPU `psnr`,
+  so `enable_apsnr` sums all frames.
 
 ```bash
 # psnr_cuda with the CPU options (mse_* per frame, apsnr_* under aggregate_metrics)

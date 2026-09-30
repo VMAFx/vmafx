@@ -95,7 +95,9 @@ REQUIRED = {
 SSIM_REQUIRED = {
     "float_ssim.c": "vmaf_ssim_emit_score(",
     "integer_ssim.c": "vmaf_ssim_emit_score_named(",
-    "cuda/integer_ssim_cuda.c": "vmaf_ssim_emit_ratio_score_named(",
+    # float_ssim_cuda validates the ratio with vmaf_feature_finite_ratio_named
+    # and rounds the mean to fp32 like the CPU before emitting it (ADR-1373).
+    "cuda/integer_ssim_cuda.c": "vmaf_ssim_emit_score_named(",
     "cuda/ssim_cuda.c": "vmaf_ssim_emit_ratio_score_named(",
     "hip/float_ssim_hip.c": "vmaf_ssim_emit_ratio_score_named(",
     "hip/integer_ssim_hip.c": "vmaf_ssim_emit_ratio_score_named(",

@@ -44,7 +44,14 @@ VMAF_CUDA_HOST_DEVICE int vmaf_cuda_tile_index(int reflected, int extent)
 
 /* Reflect-101, the CPU motion's mirror(): -1 -> 1, extent -> extent - 2.
  * One reflection, like the CPU; callers clamp the result with
- * vmaf_cuda_tile_index() for the unconsumed padding samples. */
+ * vmaf_cuda_tile_index() for the unconsumed padding samples.
+ *
+ * Precondition for the consumed samples: extent >= radius + 1 (3 for the
+ * 5-tap motion filter). One reflection of an index within `radius` of the
+ * plane then lands inside it, as the CPU's mirror() does. Below that the
+ * CPU's mirror() itself would read outside the plane, so the motion twins'
+ * init() refuses such frames, like the CPU extractors, and the clamp here is
+ * never what makes a consumed sample valid. */
 VMAF_CUDA_HOST_DEVICE int vmaf_cuda_reflect_101(int idx, int extent)
 {
     if (idx < 0) {

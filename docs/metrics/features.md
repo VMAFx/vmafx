@@ -757,10 +757,12 @@ the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
 SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
 HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
 scales to the CPU extractor. The CUDA twins
-`integer_ssim_cuda` and `float_ssim_cuda` implement the same options, with
-the same identical-frame behaviour
+`integer_ssim_cuda` and `float_ssim_cuda` implement the same options
 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)); `float_ssim_cuda`
-no longer declares the `enable_chroma` the CPU `float_ssim` never had.
+computes the CPU's per-pixel `l * c * s` and fp32 frame mean, so identical
+frames report the CPU's value (`+inf`, or 72.247 dB for flat frames), and
+still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
+had.
 `float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
 computes that feature on the CPU.
 

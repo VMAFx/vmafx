@@ -25,6 +25,9 @@
  * its differences overflow an int32 vertical filter sum, which exercises the
  * kernel's int64 path. A debug run with motion_fps_weight = 0.6 pins the
  * debug `motion` score, which the CPU weights and caps like its SAD score.
+ * motion_v2 runs with motion_fps_weight = 0.3 and with motion_max_val = 4 pin
+ * the CPU's weighted, capped SAD score and the motion2_v2 / motion3_v2 derived
+ * from it, and a one-frame run pins the CPU's 0 / 0 motion2_v2 / motion3_v2.
  * Frames below 3x3 must fail init() with -EINVAL; that case needs no device.
  *
  * The parity cases skip (exit 77) when no CUDA device is visible.
@@ -76,21 +79,27 @@ typedef struct {
     const char *cuda;
     const char *const *opts;
     unsigned n_keys;
+    /* Frames to feed; 0 means NUM_FRAMES. */
+    unsigned n_frames;
     const char *keys[MAX_KEYS];
 } Twin;
 
 static const char *const DEBUG_WEIGHT_OPTS[] = {"debug", "true", "motion_fps_weight", "0.6", NULL};
+static const char *const V2_WEIGHT_OPTS[] = {"motion_fps_weight", "0.3", NULL};
+static const char *const V2_CAP_OPTS[] = {"motion_max_val", "4", NULL};
 
 static const Twin TWINS[] = {
     {"motion",
      "motion_cuda",
      NULL,
      2u,
+     0u,
      {"VMAF_integer_feature_motion2_score", "VMAF_integer_feature_motion3_score", NULL}},
     {"motion_v2",
      "motion_v2_cuda",
      NULL,
      3u,
+     0u,
      {"VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
       "VMAF_integer_feature_motion3_v2_score"}},
     /* The debug score carries the fps weight on the CPU; mfw is a
@@ -99,7 +108,35 @@ static const Twin TWINS[] = {
      "motion_cuda",
      DEBUG_WEIGHT_OPTS,
      3u,
+     0u,
      {"integer_motion_mfw_0.6", "integer_motion2_mfw_0.6", "integer_motion3_mfw_0.6"}},
+    /* The CPU motion_v2 publishes MIN(sad * motion_fps_weight, motion_max_val)
+     * and derives motion2_v2 / motion3_v2 from that; mfw and mmxv are
+     * FEATURE_PARAMs, so the keys carry them. */
+    {"motion_v2",
+     "motion_v2_cuda",
+     V2_WEIGHT_OPTS,
+     3u,
+     0u,
+     {"VMAF_integer_feature_motion_v2_sad_score_mfw_0.3",
+      "VMAF_integer_feature_motion2_v2_score_mfw_0.3",
+      "VMAF_integer_feature_motion3_v2_score_mfw_0.3"}},
+    {"motion_v2",
+     "motion_v2_cuda",
+     V2_CAP_OPTS,
+     3u,
+     0u,
+     {"VMAF_integer_feature_motion_v2_sad_score_mmxv_4",
+      "VMAF_integer_feature_motion2_v2_score_mmxv_4",
+      "VMAF_integer_feature_motion3_v2_score_mmxv_4"}},
+    /* One frame: the CPU flush still emits motion2_v2 = motion3_v2 = 0. */
+    {"motion_v2",
+     "motion_v2_cuda",
+     NULL,
+     3u,
+     1u,
+     {"VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
+      "VMAF_integer_feature_motion3_v2_score"}},
 };
 
 /* lowbias32 hash of the position and frame: stateless, so both runs see the
@@ -157,12 +194,17 @@ static int use_feature(VmafContext *vmaf, const char *name, const char *const *o
     return vmaf_use_feature(vmaf, name, dict);
 }
 
-/* Feed NUM_FRAMES frames, flush, and read every score of every frame. */
+static unsigned twin_frames(const Twin *t)
+{
+    return t->n_frames ? t->n_frames : NUM_FRAMES;
+}
+
+/* Feed the twin's frame count, flush, and read every score of every frame. */
 static char *score_sequence(VmafContext *vmaf, const char *feature, const Twin *t, Geometry g,
                             unsigned bpc, double out[NUM_FRAMES][MAX_KEYS])
 {
     mu_assert("vmaf_use_feature failed", !use_feature(vmaf, feature, t->opts));
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+    for (unsigned i = 0; i < twin_frames(t); i++) {
         VmafPicture ref;
         VmafPicture dist;
         mu_assert("reference allocation failed", !fill_picture(&ref, g, bpc, i));
@@ -173,7 +215,7 @@ static char *score_sequence(VmafContext *vmaf, const char *feature, const Twin *
         mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, i));
     }
     mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+    for (unsigned i = 0; i < twin_frames(t); i++) {
         for (unsigned k = 0; k < t->n_keys; k++) {
             mu_assert("motion score missing",
                       !vmaf_feature_score_at_index(vmaf, t->keys[k], &out[i][k], i));
@@ -232,7 +274,7 @@ static char *check_case(const Twin *t, Geometry g, unsigned bpc, int *skipped)
     if (*skipped) {
         return NULL;
     }
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+    for (unsigned i = 0; i < twin_frames(t); i++) {
         for (unsigned k = 0; k < t->n_keys; k++) {
             if (cpu[i][k] != gpu[i][k]) {
                 (void)fprintf(stderr, "\n  %s %ux%u %u-bit frame %u %s: cpu=%.17g cuda=%.17g\n",
@@ -277,6 +319,18 @@ static char *test_motion_cuda_debug_score_is_weighted(void)
     return check_twin(&TWINS[2], 7u, 1u);
 }
 
+/* The weighted and the capped motion_v2 scores, and a one-frame run, on the
+ * first seven geometries at 8 and 10 bits. */
+static char *test_motion_v2_cuda_options_and_one_frame(void)
+{
+    for (size_t t = 3; t < 6; t++) {
+        mu_assert_msg(check_twin(&TWINS[t], 7u, 2u));
+        if (mu_skipped)
+            return NULL;
+    }
+    return NULL;
+}
+
 /* init() with a zeroed private state. Rejected sizes return before init()
  * reads the CUDA state or the options, so neither a device nor a close is
  * needed. */
@@ -317,6 +371,7 @@ char *run_tests(void)
         MU_TEST(test_motion_cuda_matches_scalar_cpu),
         MU_TEST(test_motion_v2_cuda_matches_scalar_cpu),
         MU_TEST(test_motion_cuda_debug_score_is_weighted),
+        MU_TEST(test_motion_v2_cuda_options_and_one_frame),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

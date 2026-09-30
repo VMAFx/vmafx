@@ -8,7 +8,7 @@
   is the CPU's (weighted by `motion_fps_weight`, capped at `motion_max_val`).
   Each frame is ordered against the previous one on the device instead of by
   the engine's context barrier, and the eight-frame batch readback waits once
-  instead of twice. `motion_v2_cuda` output is unchanged. Not yet measured on
+  instead of twice. `motion_v2_cuda`'s SAD is unchanged. Not yet measured on
   an NVIDIA GPU (ADR-1372; check in `docs/state.md`,
   `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`;
   [CUDA backend](docs/backends/cuda/overview.md#cpu-parity-motion-options-and-tiny-frames-2026-09-30)).

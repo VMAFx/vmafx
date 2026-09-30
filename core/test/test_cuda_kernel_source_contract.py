@@ -11,10 +11,17 @@ case that edits the live source the way the old code read and must fail:
   submit path waits on the host, the previous frame is ordered by an event,
   and motion_cuda reads its SAD slots back with one synchronisation;
 - PSNR / SSIM / float motion options: the host arithmetic is the CPU's shared
-  helpers (psnr_score.h, nonfinite_score.h, motion_clip), not a copy;
-- float SSIM: the combine rounds its three products with __fmul_rn and scores
-  numerator == denominator as exactly 1; the integer SSIM combine compiles
-  with --fmad=false, so it evaluates the CPU expression operand for operand;
+  helpers (psnr_score.h, nonfinite_score.h, motion_clip), not a copy; the
+  chroma accumulators of psnr_cuda are zeroed on the kernels' picture
+  stream, and psnr_cuda is TEMPORAL like the CPU psnr;
+- motion_v2: the published SAD score is the CPU's weighted, capped value and
+  flush derives motion2_v2 / motion3_v2 from it without re-weighting, also
+  for a one-frame input;
+- float SSIM: each pixel is the CPU's l * c * s with double numerators over
+  fp32 denominators (no forced exact 1), and the frame mean is rounded to
+  fp32; `enable_chroma` stays declared as an ignored option (HISS-14);
+- integer SSIM: the combine compiles with --fmad=false and groups the term
+  as the CPU does, ((w * a) * b) / den;
 - ADM: the DWT kernels read their rows and taps through adm_dwt2_rows.h;
 - VIF: vif_cuda declares its minimum size through the ADR-1324 gate.
 """
@@ -36,11 +43,15 @@ ADM_KERNEL = "integer_adm/adm_dwt2.cu"
 MESON = "meson.build"
 MESON_PATH = ROOT / "core" / "src" / MESON
 INTEGER_SSIM_FMAD = "'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
+MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
+FLOAT_SSIM_MEAN = "*mean = (double)(float)*mean;"
 SOURCES = (
     MOTION_KERNEL,
     MOTION_SAD,
     *MOTION_TUS,
     SSIM_KERNEL,
+    INTEGER_SSIM_KERNEL,
     ADM_KERNEL,
     "integer_psnr_cuda.c",
     "ssim_cuda.c",
@@ -131,8 +142,14 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
             failures.append(f"{name}: clip_db ceiling does not come from vmaf_ssim_max_db()")
         if "s->enable_db, s->max_db" not in sources[name]:
             failures.append(f"{name}: the score is not emitted through enable_db / max_db")
-    if '"enable_chroma"' in sources["integer_ssim_cuda.c"]:
-        failures.append("integer_ssim_cuda.c: float_ssim_cuda declares enable_chroma again")
+    fssim = sources["integer_ssim_cuda.c"]
+    if '.name = "enable_chroma"' not in fssim or '"ignored: float_ssim is luma only' not in fssim:
+        failures.append(
+            "integer_ssim_cuda.c: float_ssim_cuda must keep enable_chroma as a documented, "
+            "ignored option (HISS-14)"
+        )
+    failures.extend(_psnr_stream_failures(psnr))
+    failures.extend(_motion_v2_option_failures(sources["integer_motion_v2_cuda.c"]))
     motion = sources["float_motion_cuda.c"]
     if motion.count("motion_clip(s, ") != 3:
         failures.append(
@@ -142,22 +159,58 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _psnr_stream_failures(psnr: str) -> list[str]:
+    failures: list[str] = []
+    submit = _code(_function_body(psnr, "submit_fex_cuda"))
+    memsets = re.findall(r"cuMemsetD8Async\(([^;]*)\)\);", submit)
+    if not memsets or any(not m.rstrip().endswith("pic_stream") for m in memsets):
+        failures.append(
+            "integer_psnr_cuda.c: a plane accumulator is zeroed off the kernels' picture stream"
+        )
+    if "VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_TEMPORAL" not in psnr:
+        failures.append("integer_psnr_cuda.c: psnr_cuda is not TEMPORAL like the CPU psnr")
+    return failures
+
+
+def _motion_v2_option_failures(source: str) -> list[str]:
+    failures: list[str] = []
+    if MOTION_V2_SAD_SCORE not in _function_body(source, "collect_fex_cuda"):
+        failures.append(
+            "integer_motion_v2_cuda.c: the SAD score is not fps-weighted and capped like the CPU"
+        )
+    emit = _code(_function_body(source, "motion_v2_emit_frame"))
+    if "motion_fps_weight" in emit:
+        failures.append("integer_motion_v2_cuda.c: flush re-weights the stored SAD scores")
+    if "if (n_frames == 0)" not in _function_body(source, "flush_fex_cuda"):
+        failures.append(
+            "integer_motion_v2_cuda.c: a one-frame input emits no motion2_v2 / motion3_v2"
+        )
+    return failures
+
+
 def _ssim_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    kernel = sources[SSIM_KERNEL]
-    for product in (
-        "__fmul_rn(m.ref_mu, m.ref_mu)",
-        "__fmul_rn(m.cmp_mu, m.cmp_mu)",
-        "__fmul_rn(m.ref_mu, m.cmp_mu)",
+    kernel = _code(sources[SSIM_KERNEL])
+    if re.search(r"==[^;?]*\?\s*1\.0f?\s*:", kernel):
+        failures.append(f"{SSIM_KERNEL}: forces identical windows to exactly 1; the CPU does not")
+    for piece in (
+        "(double)l_den)",
+        "(double)c_den)",
+        "__fdiv_rn(__fadd_rn(csb, c3), __fadd_rn(srsc, c3))",
+        "__dmul_rn(__dmul_rn(t.l, t.c), t.s)",
     ):
-        if product not in kernel:
-            failures.append(f"{SSIM_KERNEL}: {product} can be contracted into an FMA")
-    if "(num == den) ? 1.0f : num / den" not in kernel:
-        failures.append(f"{SSIM_KERNEL}: identical windows no longer score exactly 1")
-    if kernel.count("ssim_from_moments(") != 3:
-        failures.append(f"{SSIM_KERNEL}: both pass-2 kernels must share ssim_from_moments()")
+        if piece not in kernel:
+            failures.append(
+                f"{SSIM_KERNEL}: ssim_terms() no longer has the CPU's types and rounding ({piece})"
+            )
+    if kernel.count("ssim_terms(") != 3:
+        failures.append(f"{SSIM_KERNEL}: both pass-2 kernels must share ssim_terms()")
+    if FLOAT_SSIM_MEAN not in sources["integer_ssim_cuda.c"]:
+        failures.append("integer_ssim_cuda.c: the frame mean is not rounded to fp32 like the CPU's")
     if INTEGER_SSIM_FMAD not in _code_meson(sources[MESON]):
         failures.append("core/src/meson.build: integer_ssim_score is compiled with FMA contraction")
+    if "*term = w_d * a * b / den;" not in sources[INTEGER_SSIM_KERNEL]:
+        failures.append(f"{INTEGER_SSIM_KERNEL}: the SSIM term is not grouped as the CPU groups it")
     return failures
 
 
@@ -258,22 +311,68 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         )
         self._assert_detected(sources, "motion_clip()ped")
 
-    def test_phantom_enable_chroma_is_detected(self) -> None:
-        sources = _sources()
-        sources["integer_ssim_cuda.c"] += '\n{.name = "enable_chroma"},\n'
-        self._assert_detected(sources, "enable_chroma again")
+    def test_removed_enable_chroma_is_detected(self) -> None:
+        sources = self._edit("integer_ssim_cuda.c", '.name = "enable_chroma"', '.name = "chroma"')
+        self._assert_detected(sources, "HISS-14")
 
-    def test_contracted_ssim_product_is_detected(self) -> None:
-        sources = self._edit(SSIM_KERNEL, "__fmul_rn(m.ref_mu, m.ref_mu)", "m.ref_mu * m.ref_mu")
-        self._assert_detected(sources, "contracted into an FMA")
+    def test_forced_exact_one_is_detected(self) -> None:
+        sources = self._edit(
+            SSIM_KERNEL,
+            "t.ssim = __dmul_rn(__dmul_rn(t.l, t.c), t.s);",
+            "t.ssim = (l_den == c_den) ? 1.0 : __dmul_rn(__dmul_rn(t.l, t.c), t.s);",
+        )
+        self._assert_detected(sources, "forces identical windows")
+
+    def test_fp32_ssim_denominator_dropped_is_detected(self) -> None:
+        sources = self._edit(SSIM_KERNEL, "(double)l_den)", "(double)l_den * 1.0)")
+        self._assert_detected(sources, "types and rounding")
+
+    def test_unrounded_frame_mean_is_detected(self) -> None:
+        sources = self._edit("integer_ssim_cuda.c", FLOAT_SSIM_MEAN, "(void)mean;")
+        self._assert_detected(sources, "rounded to fp32")
 
     def test_contracted_integer_ssim_is_detected(self) -> None:
         sources = self._edit(MESON, INTEGER_SSIM_FMAD, "'integer_ssim_score' : []")
         self._assert_detected(sources, "FMA contraction")
 
-    def test_missing_exact_one_is_detected(self) -> None:
-        sources = self._edit(SSIM_KERNEL, "(num == den) ? 1.0f : num / den", "num / den")
-        self._assert_detected(sources, "exactly 1")
+    def test_regrouped_integer_ssim_term_is_detected(self) -> None:
+        sources = self._edit(
+            INTEGER_SSIM_KERNEL, "*term = w_d * a * b / den;", "*term = w_d * (a * b / den);"
+        )
+        self._assert_detected(sources, "grouped as the CPU")
+
+    def test_chroma_memset_on_readback_stream_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_psnr_cuda.c",
+            "cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, pic_stream)",
+            "cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, s->lc.str)",
+        )
+        self._assert_detected(sources, "off the kernels' picture stream")
+
+    def test_non_temporal_psnr_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_psnr_cuda.c",
+            "VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_TEMPORAL",
+            "VMAF_FEATURE_EXTRACTOR_CUDA",
+        )
+        self._assert_detected(sources, "TEMPORAL")
+
+    def test_unweighted_motion_v2_sad_is_detected(self) -> None:
+        sources = self._edit("integer_motion_v2_cuda.c", MOTION_V2_SAD_SCORE, "sad_score")
+        self._assert_detected(sources, "fps-weighted and capped")
+
+    def test_motion_v2_reweighting_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_motion_v2_cuda.c",
+            "    vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);\n",
+            "    vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);\n"
+            "    score_cur *= s->motion_fps_weight;\n",
+        )
+        self._assert_detected(sources, "re-weights")
+
+    def test_motion_v2_one_frame_drop_is_detected(self) -> None:
+        sources = self._edit("integer_motion_v2_cuda.c", "if (n_frames == 0)", "if (n_frames < 2)")
+        self._assert_detected(sources, "one-frame input")
 
     def test_unclamped_adm_rows_are_detected(self) -> None:
         sources = self._edit(
