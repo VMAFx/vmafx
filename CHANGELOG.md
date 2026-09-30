@@ -6,6 +6,17 @@
 ## [Unreleased]
 ### Added
 
+- **`scripts/dev/hip_dispatch_drop_probe.hip` checks whether an AMD GPU runs
+  every command of a HIP stream.** Built with `hipcc`, it runs frames of one
+  memset, several small kernels and a readback on one stream and reports the
+  frames with wrong results and the kernel launches that never ran. On the
+  maintainers' gfx1036 iGPU (ROCm 7.2.4) about one frame in 10^4 loses a run
+  of its commands, which makes a HIP twin report a wrong score for that frame
+  on master as well; the probe tells whether a driver update fixed it. See
+  [the HIP backend guide](docs/backends/hip/overview.md#known-issue-the-gfx1036-loses-stream-commands)
+  (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).
+
+
 - **`vmaf_feature_backend_twin()` and `vmaf_registered_feature_extractor()`**
   in `libvmaf.h`. The first tells a caller which device twin model dispatch
   would use for a CPU extractor on the context's backend, and whether that twin
@@ -76,8 +87,10 @@
   covers the whole clip; `motion_hip` defaults `debug` to false and emits
   `VMAF_integer_feature_motion_sad_score`, as the CPU `motion` does. The
   parity gate (`scripts/ci/cross_backend_parity_gate.py`) takes `--backends
-  hip` and a `float_ssim_lcs` cell. Not yet measured on AMD hardware; see
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  hip` and a `float_ssim_lcs` cell. On a gfx1036 `psnr_hip` with all four
+  options matches the CPU exactly, `apsnr_*` included, and the parity gate
+  passes every HIP cell; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
 
 
 - **`vmaf` reads its two inputs ahead of scoring, on one thread each
@@ -450,9 +463,9 @@
   plane on 3x3 to 9x9 and 17x17 frames; its tile loads clamp the same way.
   `vif_hip` scored frames below 16 pixels from other samples than the CPU (its filters
   need 16 pixels at every scale); model dispatch now computes those frames
-  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. Not
-  yet measured on AMD hardware; see
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. The
+  device tests pass on a gfx1036 with no GPU memory fault; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
 
 
 - **`motion_hip` now computes the CPU `motion` arithmetic (ADR-1377).** The
@@ -465,10 +478,12 @@
   `--backend cpu` bit for bit; the debug `motion` score now carries
   `motion_fps_weight` and `motion_max_val` like the CPU's, and a one-frame
   run reports `motion3 = 0`. Both motion twins copy the reference luma into
-  pinned memory and upload it without a host wait in `submit()`. Not yet
-  measured on AMD hardware: the verify commands are in `docs/state.md`
-  (`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29`) and
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  pinned memory and upload it without a host wait in `submit()`. Measured on
+  a gfx1036: `motion2` / `motion3` identical to `--backend cpu` on every
+  frame (1.26e-5 apart before); at 4K `motion_hip` takes 12.95 ms per frame
+  (14.25 before) and `motion_v2_hip` 13.24 (10.17 before), the staged upload
+  costing more than the wait it removes on that iGPU; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
 
 
 - **`motion_hip` and `float_motion_hip` no longer crash with

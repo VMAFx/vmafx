@@ -76,3 +76,11 @@ time commands of `docs/state.md` rows. Preserve:
 `tests/test_rc3_home_gpu_retest.py` (pre-commit `rc3-home-gpu-retest-contract`)
 checks every entry names an existing row and runs the real path on a fake
 `vmaf`.
+
+`hip_dispatch_drop_probe.hip` (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01)
+is a standalone HIP program, not built by Meson. Keep it vmafx-free: one
+stream, memset + kernels + readback per frame, a never-reset dispatch
+counter, exit 1 on any wrong slot or lost dispatch. Its value is that it
+reproduces the gfx1036 command loss without libvmaf; do not route it through
+vmafx code or relax its checks. The state row names the command that closes
+the row.

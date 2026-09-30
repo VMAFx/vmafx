@@ -69,6 +69,24 @@ The twin now reproduces the CPU arithmetic instead. Pass 2 forms each pixel's te
 | clang-tidy 22.1.8, HIP lane, touched TUs | `tidy-ratchet.py --lane hip --only ...` | every touched file at or below `tidy-baseline-hip.json`; new files clean |
 | CPU `motion` SAD against CPU `motion_v2` SAD | `vmaf --feature motion` / `--feature motion_v2`, `--precision=max`, `testdata/ref_576x324_48f.yuv` | identical on all 48 frames |
 
+### Device results (gfx1036, 2026-10-01)
+
+On `ryzen-4090-arc` (Ryzen 9950X3D iGPU, gfx1036, ROCm 7.2.4, Linux 7.2.8), built with `-Dhip_gfx_targets=gfx1036`:
+
+| Check | Command | Result |
+|---|---|---|
+| Row tests | `run_meson_test.py -- -C build-hip --num-processes 1 test_hip_motion_tiny_frames test_hip_motion_parity test_hip_motion3_parity test_hip_motion_v2_parity test_hip_upload_race test_hip_adm_dwt2_rows test_hip_adm_tiny_frames test_hip_adm_parity test_hip_adm_small_border test_hip_vif_min_dim test_hip_vif_parity test_hip_twin_option_parity test_hip_psnr_parity test_hip_float_ssim_parity test_hip_float_motion_parity` | 15 OK, no skip marker, no `Memory access fault` |
+| Whole device suite | `run_meson_test.py -- -C build-hip --suite gpu --num-processes 1` | 52 OK; one skip marker, `test_hip_float_ssim_parity_large` (`float_ssim_hip` does not decimate) |
+| `motion_hip` vs CPU `motion` | `--feature motion`, `--precision=max`, Netflix pair | `motion2` / `motion3` 1.26e-5 apart on master, identical on the branch; identical on all 9600 frames of 20 looped runs |
+| Parity gate | `cross_backend_parity_gate.py ... --features float_ssim float_ssim_lcs psnr motion_v2 vif` | 1.0e-5, 1.0e-5, 0, 0, 1.0e-6, all OK |
+| `psnr_hip` options | `psnr=enable_mse=true:enable_apsnr=true:reduced_hbd_peak=true:min_sse=0.5` | per-frame values and `apsnr_*` identical |
+| `float_motion_hip` 3x3 / 17x17 | row `T-HIP-FLOAT-MOTION-TILE-OOB-2026-09-30` | exit 0, within 4e-6 / 1e-6; master does not fault either, so the host replay stays the evidence |
+| `motion_force_zero` | `--feature motion_hip=motion_force_zero=true` | master exits 139 (NULL `submit()`); fixed, `T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30` |
+
+Two findings came out of the device run. First, the test expectations of `test_hip_float_motion_parity` (tail motion2) and the one-frame case of `test_hip_twin_option_parity` (collector names) were stale; the twins were right. Second, the gfx1036 loses stream commands: a probe (`scripts/dev/hip_dispatch_drop_probe.hip`) that zeroes 12 slots, launches 12 kernels that each write one and count themselves, and reads the slots back, lost 382 of 6.0 million dispatches over five runs of 100000 frames, always a run of commands from the start of a frame (the memset and the first 1 to 11 kernels). That is the source of the rare `vif_hip` frames that carry the previous frame's sums, lose a scale's sums, or go wrong from scale 1 on, which also appear on master; moving or replacing the accumulator memset changes nothing, and `HIP_FORCE_DEV_KERNARG=0`, `HSA_ENABLE_INTERRUPT=0`, `AMD_DIRECT_DISPATCH=0` or a spinning wait do not stop it (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).
+
+Throughput, BBB 4K, `(median t(22) - median t(2)) / 20` over 3 interleaved runs: `motion_hip` 14.25 ms/frame on master and 12.95 on the branch, `motion_v2_hip` 10.17 and 13.24. The `motion_v2_hip` kernel alone is 9.76 and 10.03 ms (hipEvent timing of the two code objects on the same 4K planes), so nearly all of the difference is the staged upload: with `vmaf_hip_picture_upload()` in its place the twins run at 10.70 and 10.75 ms/frame. On this iGPU the runtime maps a pageable picture and copies it by SDMA without a host copy (about 0.3 ms), while the staged path first copies the luma into pinned memory on the host with the GPU idle, because libvmaf collects frame N - 1 before it submits frame N. With several twins in one process, and with the `vmaf_v0.6.1` model (ADM on the CPU), the two uploads are within noise.
+
 ## Alternatives explored
 
 - A diff-first kernel of its own for `motion_hip` instead of the shared one: rejected, two copies of one arithmetic (HISS-19); the CUDA branch shares its kernel the same way.
@@ -77,8 +95,9 @@ The twin now reproduces the CPU arithmetic instead. Pass 2 forms each pixel's te
 
 ## Open questions
 
-- Device confirmation on the maintainer's gfx1036: bit-exact `motion_hip` and `motion_v2_hip` with options, PSNR options, SSIM dB on identical frames (the flat fixture included), `float_ssim` and `enable_lcs` within the gate's 5e-5, VIF fallback below 16 pixels, `float_motion_hip` on 3x3 and 17x17 frames. Commands in the `docs/state.md` rows.
-- Throughput effect of the staged upload on gfx1036 (`(t(22) - t(2)) / 20` on BBB 4K, in the motion row).
+- Answered on 2026-10-01 (see Device results): device confirmation on the gfx1036, and the throughput effect of the staged upload there (a loss for a single motion twin at 4K).
+- Whether the staged upload pays off on a discrete AMD GPU, where the runtime stages pageable copies itself; no such device was available.
+- Whether a ROCm or amdgpu update stops the gfx1036 from losing stream commands (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`, probe command in the row).
 
 ## Related
 

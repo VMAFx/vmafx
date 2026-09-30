@@ -8,6 +8,6 @@
   plane on 3x3 to 9x9 and 17x17 frames; its tile loads clamp the same way.
   `vif_hip` scored frames below 16 pixels from other samples than the CPU (its filters
   need 16 pixels at every scale); model dispatch now computes those frames
-  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. Not
-  yet measured on AMD hardware; see
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. The
+  device tests pass on a gfx1036 with no GPU memory fault; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).

@@ -19,5 +19,7 @@
   covers the whole clip; `motion_hip` defaults `debug` to false and emits
   `VMAF_integer_feature_motion_sad_score`, as the CPU `motion` does. The
   parity gate (`scripts/ci/cross_backend_parity_gate.py`) takes `--backends
-  hip` and a `float_ssim_lcs` cell. Not yet measured on AMD hardware; see
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  hip` and a `float_ssim_lcs` cell. On a gfx1036 `psnr_hip` with all four
+  options matches the CPU exactly, `apsnr_*` included, and the parity gate
+  passes every HIP cell; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).

@@ -8,7 +8,9 @@
   `--backend cpu` bit for bit; the debug `motion` score now carries
   `motion_fps_weight` and `motion_max_val` like the CPU's, and a one-frame
   run reports `motion3 = 0`. Both motion twins copy the reference luma into
-  pinned memory and upload it without a host wait in `submit()`. Not yet
-  measured on AMD hardware: the verify commands are in `docs/state.md`
-  (`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29`) and
-  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+  pinned memory and upload it without a host wait in `submit()`. Measured on
+  a gfx1036: `motion2` / `motion3` identical to `--backend cpu` on every
+  frame (1.26e-5 apart before); at 4K `motion_hip` takes 12.95 ms per frame
+  (14.25 before) and `motion_v2_hip` 13.24 (10.17 before), the staged upload
+  costing more than the wait it removes on that iGPU; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).

@@ -17,9 +17,12 @@
 > bit-exactness, and it is inside the 5e-5 `places=4` cross-backend gate
 > from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md). The motion
 > difference came from `motion_hip` blurring each frame instead of the frame
-> difference; since 2026-09-30 it runs the CPU's arithmetic and is expected to
-> match exactly, which is not yet measured on an AMD device (see
+> difference; since 2026-09-30 it runs the CPU's arithmetic and matches the
+> CPU exactly (measured on the same gfx1036 on 2026-10-01, see
 > [RC3 CPU parity](#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30)).
+> VIF is then the only difference: 76.667849 against 76.667831, 1.79e-5
+> pooled and at most 4.9e-5 per frame, slightly more than before because the
+> old motion error partly offset the VIF one.
 >
 > **Dispatch posture (2026-05-18, updated per
 > [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
@@ -562,7 +565,10 @@ What this means for a run:
 - Scores are reproducible: every extractor gives the same per-frame output on
   every run and agrees with the CPU within its parity tolerance. Measured on a
   gfx1036 over the 48-frame Netflix pair at 576x324 and scaled to 1920x1080,
-  ten runs each, one extractor per process and all of them in one.
+  ten runs each, one extractor per process and all of them in one. Longer
+  runs on that device also show rare wrong frames that have nothing to do
+  with uploads; see
+  [Known issue: the gfx1036 loses stream commands](#known-issue-the-gfx1036-loses-stream-commands).
 - Throughput on a small device can drop. On the gfx1036 iGPU at 1080p,
   `--model version=vmaf_float_v0.6.1` went from 18.8 to 14.8 frames per second
   (-21 %), because a copy cannot start until the previous extractor's kernels
@@ -578,7 +584,11 @@ a pinned buffer the extractor owns, so the picture is read before `submit()`
 returns, and enqueues the device copy from that buffer without waiting. The
 buffer is reused next frame, which is safe because libvmaf collects frame
 N - 1, and `collect()` drains the extractor's stream, before it submits frame
-N. The other extractors still use `vmaf_hip_picture_upload()`.
+N. The other extractors still use `vmaf_hip_picture_upload()`. On the gfx1036
+iGPU the staged path measured slower than the waiting upload for a single
+motion twin at 4K, because the runtime there copies a pageable picture
+without a host copy; see
+[Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01).
 
 To check a build on your own hardware, run one extractor twice and compare:
 
@@ -659,9 +669,12 @@ twin's solve launch was already correct.
 ## RC3 CPU parity: motion, tiny frames and CPU options (2026-09-30)
 
 Three changes bring HIP twins onto the CPU's arithmetic. They build for
-gfx90a, gfx1030, gfx1036 and gfx1100 and pass every device-free check, but
-they have not yet run on an AMD device; the commands below are how to confirm
-them on one.
+gfx90a, gfx1030, gfx1036 and gfx1100 and pass every device-free check, and on
+2026-10-01 they passed on a gfx1036 (Ryzen 9950X3D iGPU, ROCm 7.2.4): every
+HIP device test OK, `motion_hip` equal to the CPU `motion` on every frame, and
+the parity gate within its tolerances (numbers under
+[Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01)). The commands
+below repeat the check on another AMD device.
 
 **`motion_hip` is expected to match the CPU `motion` exactly**
 ([ADR-1377](../../adr/1377-hip-motion-diff-first.md)). The CPU differences the
@@ -740,3 +753,46 @@ it). The per-row commands, with the expected numbers and a timing run, are in
 `T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29`,
 `T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29` and
 `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26`.
+
+### Measured on a gfx1036 (2026-10-01)
+
+| Check | Result |
+|---|---|
+| HIP device tests (`--suite gpu`, 52 tests) | all OK; the only skip marker is `test_hip_float_ssim_parity_large`, because `float_ssim_hip` does not decimate yet |
+| `motion_hip` against `--backend cpu`, Netflix 576x324 pair | `motion2` / `motion3` identical (1.26e-5 apart before) |
+| Parity gate, `float_ssim float_ssim_lcs psnr motion_v2 vif` | every cell OK: 1.0e-5, 1.0e-5, 0, 0, 1.0e-6 |
+| `psnr_hip` with all four CPU options | every per-frame value and every `apsnr_*` identical to the CPU |
+| `float_motion_hip` on 3x3 and 17x17 frames | exits 0, within 4e-6 of the CPU |
+| BBB 4K, ms per frame (master / this change) | `motion_hip` 14.25 / 12.95, `motion_v2_hip` 10.17 / 13.24 |
+
+`motion_v2_hip` got slower on this iGPU because of the staged upload, not
+the kernel: with the waiting `vmaf_hip_picture_upload()` the same kernel
+runs at 10.70 ms per frame, and `motion_hip` at 10.75. On an integrated GPU
+the runtime copies a pageable picture without an extra host copy, so the
+staged path's copy into pinned memory costs more than the wait it saves.
+`T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19` in [`docs/state.md`](../../state.md)
+has the numbers, including runs with several twins, where the two uploads are
+within noise.
+
+### Known issue: the gfx1036 loses stream commands
+
+On this gfx1036 (ROCm 7.2.4, Linux 7.2.8) a HIP stream now and then never
+runs a run of the commands it was given, roughly once per 10^4 frames, on
+master as well. A HIP twin then reports a wrong score for that frame:
+`vif_hip`, for example, reports the sums of two frames when the memset of
+its accumulators is lost, or fails the run with `invalid ratio` when a scale's
+kernel is lost. Nothing in vmafx sets it off, and no runtime setting tried
+stops it. To check a device or a driver update, run the probe that
+reproduces it without vmafx:
+
+```bash
+hipcc -O2 --offload-arch=gfx1036 scripts/dev/hip_dispatch_drop_probe.hip -o /tmp/probe
+for i in 1 2 3 4 5; do /tmp/probe 100000 12 0; done
+```
+
+Each run prints `bad_frames` and `lost` (dispatches that never ran); both
+are 0 on a healthy stack. On the gfx1036 five runs gave 55 bad frames in
+500000 and 382 lost dispatches in 6.0 million. Until a driver update clears
+it, compare HIP scores from this device over repeated runs and treat a
+single-frame mismatch as suspect, not as a code defect
+(`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).

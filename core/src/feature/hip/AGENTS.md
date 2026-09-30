@@ -985,6 +985,15 @@ Rebase-sensitive invariants:
 - `motion_hip`: `debug` default false (CPU, CUDA); emits
   `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
   force_zero.
+- gfx1036 (`ryzen-4090-arc`, ROCm 7.2.4) loses a run of a stream's commands
+  about once per 10^4 frames, master too
+  (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01). Symptoms: `vif_hip` frame =
+  CPU sums of it + previous frame (lost accumulator memset), one scale 0/0
+  (`invalid ratio`), scales 1-3 off; lone wrong `motion_v2_hip` SAD. Not a
+  twin bug: moving / replacing the memset, host kernargs, polling, no direct
+  dispatch all still fail. Check with `scripts/dev/hip_dispatch_drop_probe.hip`
+  before chasing a single-frame mismatch on that device; compare repeated
+  runs.
 - `motion_force_zero` (`motion_hip`, `float_motion_hip`): never set
   `submit` / `collect` to NULL in `init()`. libvmaf picks submit/collect from
   the descriptor before `init()` runs, then calls `fex->submit` after it: a

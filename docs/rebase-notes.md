@@ -55514,6 +55514,9 @@ that touches these files with the commands of Research-1379 finding 8.
   (`msh_release_device()`) and keeps `close()`. An upstream or CUDA-mirror
   hunk that restores `fex->submit = NULL` in either `init()` brings back the
   frame-0 SIGSEGV (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30).
+- `scripts/dev/hip_dispatch_drop_probe.hip` (new, not built by Meson):
+  standalone probe for T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01. No
+  libvmaf dependency, so no rebase interaction; keep it standalone.
 - `scripts/ci/cross_backend_parity_gate.py` / `cross_backend_vif_diff.py`:
   `hip` backend (`--hip_device`), `float_ssim_lcs` cell, and
   `BACKEND_EXTRACTOR_ALIASES` keyed by the base extractor
@@ -55533,5 +55536,6 @@ No public C API, CLI syntax or FFmpeg patch impact. CPU scores are unchanged.
 output moves from the combined formula to the CPU's product form (towards
 the CPU), `motion_v2_hip` output changes only with non-default
 `motion_fps_weight` / `motion_max_val`, and `motion_hip` no longer emits the
-debug score unless `debug=true`. None of this was measured on an AMD device
-in this change.
+debug score unless `debug=true`. Measured on a gfx1036 (2026-10-01):
+`motion_hip` identical to the CPU `motion`, every HIP device test OK; see the
+HIP backend guide, "Measured on a gfx1036".
