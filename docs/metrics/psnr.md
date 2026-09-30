@@ -111,7 +111,7 @@ than removing the truncation: on the pair above,
 `psnr_cb = 155.000000` for byte-identical chroma. Prefer `uncapped` unless
 you specifically want a raised sentinel. `min_sse` belongs to the integer
 `psnr` extractor only (`float_psnr` has no such option); of its GPU twins,
-only `psnr_sycl` implements it.
+`psnr_sycl` and `psnr_hip` implement it.
 
 ## Options
 
@@ -133,10 +133,12 @@ with the same helpers the CPU extractor uses
 (`core/src/feature/psnr_score.h`). `psnr_cuda` does the same since
 2026-09-30 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)), and like
 the CPU `psnr` it sees every frame under `--subsample`, so `apsnr_*` covers
-the whole clip (`psnr_sycl` does not yet). The HIP
-and Metal twins implement `enable_chroma` and `uncapped` only. On those
-backends a model that sets `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or
-`min_sse` computes `psnr` on the CPU instead
+the whole clip (`psnr_sycl` does not yet). `psnr_hip` implements the whole
+table since 2026-09-30 as well
+([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); not yet measured on
+an AMD device). The Metal twin implements `enable_chroma` and `uncapped`
+only. On that backend a model that sets `enable_mse`, `enable_apsnr`,
+`reduced_hbd_peak` or `min_sse` computes `psnr` on the CPU instead
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)), and naming
 the twin with one of these options fails with `unknown option`.
 

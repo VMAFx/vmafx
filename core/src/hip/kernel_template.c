@@ -34,9 +34,10 @@
  * intentionally coarse — feature kernels treat any negative rc as
  * "abort the per-frame submit" and do not branch on the specific
  * code. Mirrors the SYCL backend's `sycl_rc_to_errno` and the CUDA
- * `CHECK_CUDA_GOTO` aggregation pattern.
+ * `CHECK_CUDA_GOTO` aggregation pattern. Declared in common.h: this is the
+ * one definition the feature extractors share (ADR-1377).
  */
-static int hip_rc_to_errno(hipError_t rc)
+int vmaf_hip_rc_to_errno(hipError_t rc)
 {
     if (rc == hipSuccess) {
         return 0;
@@ -71,14 +72,14 @@ int vmaf_hip_kernel_lifecycle_init(VmafHipKernelLifecycle *lc, VmafHipContext *c
     hipStream_t stream = NULL;
     hipError_t rc = hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
     if (rc != hipSuccess) {
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     hipEvent_t submit_ev = NULL;
     rc = hipEventCreateWithFlags(&submit_ev, hipEventDisableTiming);
     if (rc != hipSuccess) {
         (void)hipStreamDestroy(stream);
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     hipEvent_t finished_ev = NULL;
@@ -86,7 +87,7 @@ int vmaf_hip_kernel_lifecycle_init(VmafHipKernelLifecycle *lc, VmafHipContext *c
     if (rc != hipSuccess) {
         (void)hipEventDestroy(submit_ev);
         (void)hipStreamDestroy(stream);
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     lc->str = (uintptr_t)stream;
@@ -119,14 +120,14 @@ int vmaf_hip_kernel_readback_alloc(VmafHipKernelReadback *rb, VmafHipContext *ct
     void *device = NULL;
     hipError_t rc = hipMalloc(&device, bytes);
     if (rc != hipSuccess) {
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     void *host_pinned = NULL;
     rc = hipHostMalloc(&host_pinned, bytes, hipHostMallocDefault);
     if (rc != hipSuccess) {
         (void)hipFree(device);
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     rb->device = device;
@@ -166,7 +167,7 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
         (picture_stream != 0) ? (hipStream_t)picture_stream : (hipStream_t)lc->str;
     hipError_t rc = hipMemsetAsync(rb->device, 0, rb->bytes, zero_stream);
     if (rc != hipSuccess) {
-        return hip_rc_to_errno(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
 
     /* Picture stream waits for the dist-side ready event. A zero
@@ -176,7 +177,7 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
     if (picture_stream != 0 && dist_ready_event != 0) {
         rc = hipStreamWaitEvent((hipStream_t)picture_stream, (hipEvent_t)dist_ready_event, 0);
         if (rc != hipSuccess) {
-            return hip_rc_to_errno(rc);
+            return vmaf_hip_rc_to_errno(rc);
         }
     }
     return 0;
@@ -192,7 +193,7 @@ int vmaf_hip_kernel_collect_wait(VmafHipKernelLifecycle *lc, VmafHipContext *ctx
         /* Lifecycle was never initialised — nothing to wait on. */
         return 0;
     }
-    return hip_rc_to_errno(hipStreamSynchronize((hipStream_t)lc->str));
+    return vmaf_hip_rc_to_errno(hipStreamSynchronize((hipStream_t)lc->str));
 }
 
 int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc, VmafHipContext *ctx)
@@ -214,23 +215,23 @@ int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc, VmafHipContext *
     if (lc->str != 0) {
         hipError_t rc = hipStreamSynchronize((hipStream_t)lc->str);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
         rc = hipStreamDestroy((hipStream_t)lc->str);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     if (lc->submit != 0) {
         hipError_t rc = hipEventDestroy((hipEvent_t)lc->submit);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     if (lc->finished != 0) {
         hipError_t rc = hipEventDestroy((hipEvent_t)lc->finished);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     lc->str = 0;
@@ -252,13 +253,13 @@ int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx
     if (rb->device != NULL) {
         hipError_t rc = hipFree(rb->device);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     if (rb->host_pinned != NULL) {
         hipError_t rc = hipHostFree(rb->host_pinned);
         if (rc != hipSuccess && first_err == 0) {
-            first_err = hip_rc_to_errno(rc);
+            first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     rb->device = NULL;
@@ -284,7 +285,7 @@ int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContex
      * event to complete, ensuring the pinned host buffer is safe to
      * read. Mirrors the CUDA twin's `vmaf_cuda_kernel_submit_post_record`. */
     hipError_t rc = hipEventRecord((hipEvent_t)lc->finished, (hipStream_t)lc->str);
-    return hip_rc_to_errno(rc);
+    return vmaf_hip_rc_to_errno(rc);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

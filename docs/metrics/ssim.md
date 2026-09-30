@@ -58,11 +58,13 @@ The extractor is luma-only; it has no chroma option.
 | `clip_db` | bool | `false` | Cap the dB value at `ceil(10 * log10(peak^2 / (0.5 / (w * h))))`, the dB of half a sample of error over the frame. Needs `enable_db` to have an effect. |
 
 Backend support: the CPU extractor, `integer_ssim_sycl`, `integer_ssim_cuda`,
-`integer_ssim_hip` and `integer_ssim_metal` accept both options. The SYCL and
-CUDA twins apply them on the host to the device-reduced score and report the
-CPU's `+inf` / ceiling for identical frames
+`integer_ssim_hip` and `integer_ssim_metal` accept both options. The SYCL,
+CUDA and HIP twins apply them on the host to the device-reduced score and
+report the CPU's `+inf` / ceiling for identical frames
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
-[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). The CUDA twin
+[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
+[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin is not yet
+measured on an AMD device). The CUDA twin
 computes every per-pixel term as the CPU does, bit for bit, and sums them in
 a different order, so its score can differ from the CPU's by a double
 rounding; on identical frames with a side below 12 pixels that can separate

@@ -21,7 +21,7 @@ MESON_BUILD = CORE_SRC / "meson.build"
 BUILD_DIR = Path(os.environ.get("VMAFX_DEVICE_DEP_BUILD_DIR", ROOT / "build")).resolve()
 
 EXPECTED_CUDA_TARGET_COUNT = 21
-EXPECTED_HIP_TARGET_COUNT = 22
+EXPECTED_HIP_TARGET_COUNT = 21
 
 
 def run_ninja(ninja_exe: str, args: list[str], cwd: str | Path) -> subprocess.CompletedProcess[str]:

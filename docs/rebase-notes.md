@@ -55452,3 +55452,62 @@ BBB 3840x2160 identical to `--backend cpu`; compute-sanitizer memcheck,
 racecheck and synccheck clean on the parity tests; one readback and one
 stream synchronisation per frame (CUPTI count). Re-verify after a rebase
 that touches these files with the commands of Research-1379 finding 8.
+## ADR-1377 / ADR-1381 / ADR-1382 — HIP RC3 CPU parity: diff-first motion, tiny-frame guards, CPU options (2026-09-30)
+
+`fix/hip-rc3-parity`, Research-1377, ADR-1377, ADR-1381, ADR-1382.
+
+- `core/src/feature/hip/integer_motion_sad_hip.{h,c}` (new): the only host
+  code that loads and launches `integer_motion_v2/motion_v2_score.hip`, the
+  one HIP motion SAD kernel (`sum |blur(prev - cur)|`, rounded `>> bpc` then
+  `>> 16`, int32 vertical sum at 8 bits, int64 above). `motion_hip` and
+  `motion_v2_hip` both call `vmaf_hip_motion_sad_submit()`.
+  `integer_motion/motion_score.hip`, its `motion_score` HSACO target and
+  `integer_motion_hip.h` are deleted. Do not restore a per-frame blur or swap
+  the operands to `cur - prev`: both change the rounding and fail
+  `test_hip_motion_tiny_frames` (`==` against the scalar CPU) and
+  `test_hip_kernel_source_contract.py`. If upstream Netflix changes
+  `motion_score_pipeline_8` / `_16` in `integer_motion.c`, mirror it in
+  `motion_v2_score.hip`, once, for both HIP twins.
+- `core/src/hip/picture_hip.{h,c}`: `vmaf_hip_picture_upload_staged()` plus
+  `vmaf_hip_picture_staging_alloc()` / `_free()`. The motion twins copy the
+  luma into an extractor-owned pinned buffer on the host and enqueue the
+  device copy without a host wait; `collect()` is their one wait. Keep
+  `vmaf_hip_picture_upload()` (waiting) for every extractor without a staging
+  buffer: the T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18 invariant still holds.
+- `core/src/hip/kernel_template.c` now defines `vmaf_hip_rc_to_errno()`,
+  which `core/src/hip/common.h` already declared; the motion, PSNR, SSIM and
+  float-motion twins call it instead of private copies.
+- `core/src/feature/hip/hip_tile_index.h` (new) and
+  `core/src/feature/hip/integer_adm/adm_dwt2_rows.h` (new): the motion tile
+  loads and the integer ADM scale-0 vertical DWT clamp their reflected index
+  into the plane; `adm_dwt2.hip` and `integer_adm_hip.c` take the scale-0 DWT
+  launch geometry from `adm_dwt2_rows.h` and the kernel `static_assert`s it.
+  An upstream or CUDA-mirror hunk to `adm_dwt2_load_column()` must keep
+  `adm_dwt2_source_row()`. The `AdmBufferHip` by-pointer convention
+  (ADR-0759) is untouched.
+- `core/src/feature/hip/integer_vif_hip.c`: `vif_hip_min_dim()` (16),
+  `check_context_hip()` with `context_fallback_name = "vif"`, and an `init()`
+  guard before any device work.
+- `core/src/feature/hip/integer_psnr_hip.c`: the CPU option table, options
+  applied on the host through `psnr_score.h`, new `flush_fex_hip()` for
+  `apsnr_*`. `integer_ssim_hip.c` / `float_ssim_hip.c`: `enable_db` /
+  `clip_db` through `vmaf_ssim_max_db()`; `float_ssim_hip` `enable_lcs`
+  selects `calculate_ssim_hip_vert_combine_lcs`. Identical SSIM windows score
+  exactly 1 (`issim_pixel_term()`, `ssim_from_moments()` with
+  `#pragma clang fp contract(off)`); folding the named temporaries back into
+  one expression breaks that. `float_motion_hip.c`: `motion_max_val` and
+  `fm_hip_motion_clip()` on every emitted score.
+- `core/src/meson.build`: `motion_score` HSACO target gone, the two new
+  headers join the HIP kernel depfile list; `core/src/hip/meson.build`:
+  `integer_motion_sad_hip.c`. `core/test/meson.build`:
+  `test_hip_kernel_source_contract`, `test_hip_adm_dwt2_rows`,
+  `test_hip_motion_tiny_frames`, `test_hip_vif_min_dim`,
+  `test_hip_twin_option_parity`. `test_device_target_header_dependencies.py`
+  expects 21 HIP kernel targets.
+
+No public C API, CLI syntax or FFmpeg patch impact. CPU scores are unchanged.
+`motion_hip` scores move to the CPU's (about 1.3e-5 on the Netflix pair);
+`motion_v2_hip`, `psnr_hip` with default options, `vif_hip` from 16x16 up and
+`integer_adm_hip` are unchanged by construction; default `float_ssim_hip`
+output can move at the fp32 rounding level and identical frames now score
+exactly 1. None of this was measured on an AMD device in this change.

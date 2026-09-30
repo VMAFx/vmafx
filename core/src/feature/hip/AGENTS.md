@@ -524,7 +524,12 @@ Rules:
 
 - Stage every plane from `VmafPicture::data` with
   `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues
-  copies, waits on event recorded after them. Do not call
+  copies, waits on event recorded after them. Or, with an extractor-owned
+  pinned buffer (`vmaf_hip_picture_staging_alloc()`), with
+  `vmaf_hip_picture_upload_staged()`: host copy into buffer before return,
+  device copy from buffer, no wait (ADR-1377; `motion_hip`, `motion_v2_hip`).
+  Buffer reuse next frame safe only because `collect()` drains the stream the
+  copies ran on and libvmaf collects frame N - 1 before submit N. Do not call
   `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly. Copy from
   extractor-owned pinned buffer (`integer_ms_ssim_hip`,
   `integer_psnr_hvs_hip`, SpEED twins) not affected: extractor owns that
@@ -547,9 +552,10 @@ Rules:
   bit-identical. Add new extractor to its `race_cases[]` table.
 
 Wait costs host time: 21 % of `vmaf_float_v0.6.1` throughput at 1080p on
-gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers would
-remove it; follow-up = T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in
-`docs/state.md`. Do not buy throughput back by dropping wait.
+gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers
+remove it (`vmaf_hip_picture_upload_staged()`, motion twins first); rest =
+T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in `docs/state.md`. Do not buy
+throughput back by dropping wait.
 
 ## Integer ADM staging buffer requirement (ADR-1154, ADR-1211)
 
@@ -889,3 +895,74 @@ Rebase-sensitive invariants:
 - `test_hip_float_motion_parity` exercises both invariants on a real HIP device.
   Preserve its non-default feature parameter when rebasing this fork-local
   extractor. See [Research-2115](../../../../docs/research/2115-hip-float-motion-lifecycle-flush.md).
+
+## Motion SAD: one diff-first kernel, one launcher (ADR-1377)
+
+- CPU `motion` / `motion_v2` SAD = `sum |H(V(prev - cur))|`: difference raw
+  frames first, vertical 5-tap rounded `>> bpc` (int32 sum at 8 bits, int64
+  above), horizontal rounded `>> 16`, arithmetic shifts.
+- Only kernel: `integer_motion_v2/motion_v2_score.hip`. Only host loader and
+  launcher: `integer_motion_sad_hip.c` (`vmaf_hip_motion_sad_submit()`).
+  `motion_hip` and `motion_v2_hip` both call it; neither TU calls
+  `hipModuleLaunchKernel`.
+- Do not restore per-frame blur ping-pong (`blur[2]`, `motion_score.hip`,
+  pre-ADR-1377 `motion_hip`): rounds unlike CPU, 1.26e-5 on Netflix pair on
+  gfx1036. Do not swap operands to `cur - prev`: arithmetic shift rounds
+  negative sums toward minus infinity.
+- `motion_hip` keeps raw luma ping-pong `pix[2]` + pinned `staging`; frame 0
+  uploads only. `submit()` never waits; `collect()` = one host wait.
+- Every emitted `motion_hip` score, debug `motion` included, goes through
+  `motion_clip_hip()` (fps weight, then `motion_max_val`), like CPU
+  `extract()`. One-frame run: `motion3[0] = 0` from `msh_flush_tail()`.
+- Guards: `test_hip_motion_tiny_frames` (`==` vs scalar CPU, 3x3 to 1283x723,
+  8/10/16 bit, skip 77 without device), `test_hip_kernel_source_contract.py`
+  (planted regressions), `test_hip_upload_race` (motion rows).
+
+## Tile loads and ADM scale-0 rows clamp after one reflection (ADR-1381)
+
+- Tiled kernels load whole tile for every thread, padding threads included.
+  One reflect-101 keeps every consumed sample in plane, not padding samples:
+  17-sample motion plane reflects halo 33 to -1.
+- Motion tile loads: `vmaf_hip_tile_index(vmaf_hip_reflect_101(i, n), n)`
+  (`hip_tile_index.h`). Identity for every consumed sample -> no score change.
+- ADM scale-0 vertical DWT: `adm_dwt2_load_column()` reads
+  `adm_dwt2_source_row()` (`integer_adm/adm_dwt2_rows.h`); launch geometry
+  `ADM_DWT2_*` shared by kernel (`static_assert`) and `integer_adm_hip.c`.
+  Bare reflection escapes only for heights 1-8; ADM minimum 17 -> identity.
+  Scale 1-3 vertical kernels read per output row, in bounds from 2 rows.
+- `test_hip_adm_dwt2_rows`: host replay of every launched thread row, heights
+  1-8192, and every motion tile slot, extents 3-1024. Device-free, fast suite.
+- New tiled HIP kernel: route every halo load through `vmaf_hip_tile_index()`.
+
+## vif_hip minimum 16x16 (ADR-1381)
+
+- `vif_hip_min_dim()` from `vif_filter1d_width`: `(half + 1) << scale` over
+  scale filters {17, 9, 5, 3} and decimation filters {9, 5, 3} = 16, same as
+  `vif_sycl`. `mirror2_i()` clamps, so no fault below it, but other samples
+  than CPU; scale 3 empty below 8.
+- `check_context_hip()` + `context_fallback_name = "vif"`: model dispatch runs
+  CPU `vif` below bound (ADR-1324). `init()` refuses direct request with
+  `-EINVAL` before any device work. Guard: `test_hip_vif_min_dim`.
+
+## CPU option tables on psnr / ssim / float_ssim / float_motion (ADR-1382)
+
+- Option tables = CPU tables (names, aliases, types, defaults, ranges, flags).
+  `test_hip_twin_option_parity` compares them device-free.
+- `psnr_hip`: device reduces integer SSE only; host calls `psnr_score.h`
+  (`vmaf_psnr_peak`, `vmaf_psnr_max`, `vmaf_psnr_from_mse`,
+  `vmaf_psnr_aggregate`), `flush_fex_hip()` publishes `apsnr_*`. No local
+  copy of PSNR math (`log10` in TU = regression).
+- `integer_ssim_hip`, `float_ssim_hip`: `enable_db` / `clip_db` via
+  `vmaf_ssim_max_db()` + shared SSIM emitters. Identical window -> exactly 1:
+  `issim_pixel_term()` returns weight when factors equal;
+  `ssim_from_moments()` named products under
+  `#pragma clang fp contract(off)`, `num == den ? 1`. hipcc default
+  contraction fuses across statements, so pragma load-bearing.
+- `float_ssim_hip` `enable_lcs`: separate kernel
+  `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
+  (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),
+  double per-block partials in `rb_lcs`. Default kernel stays LCS-free.
+- `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted score, debug
+  and flush tail included, through `fm_hip_motion_clip()`.
+- HIP error mapping: `vmaf_hip_rc_to_errno()` (`kernel_template.c`, declared in
+  `core/src/hip/common.h`). No new private copies.

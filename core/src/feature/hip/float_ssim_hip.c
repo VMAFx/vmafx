@@ -37,6 +37,15 @@
  *  is undefined and `init()` returns -ENOSYS — same scaffold contract as
  *  the pre-runtime posture (registered, runtime not ready).
  *
+ *  Options mirror CPU float_ssim.c (ADR-1382, the HIP port of ADR-1365).
+ *  `enable_lcs` switches pass 2 to a variant that also reduces the per-pixel
+ *  luminance / contrast / structure terms of iqa/ssim_tools.c (clamped
+ *  variances, flat-region covariance clamp) into three per-block double
+ *  partials and emits `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on
+ *  the host through the shared nonfinite_score.h SSIM helpers; identical
+ *  windows score exactly 1, so identical frames report the CPU's +inf /
+ *  clip_db ceiling.
+ *
  *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
  *  back to CPU before init when auto resolves above 1; direct requests keep
  *  the -EINVAL capability error.
@@ -77,29 +86,8 @@
 #define SSIM_HIP_BLOCK_Y 8u
 #define SSIM_HIP_K 11u
 
-/* ------------------------------------------------------------------ */
-/* HIP-to-errno translation                                            */
-/* ------------------------------------------------------------------ */
-
-static int ssim_hip_rc(hipError_t rc)
-{
-    if (rc == hipSuccess)
-        return 0;
-    switch (rc) {
-    case hipErrorInvalidValue:
-    case hipErrorInvalidHandle:
-        return -EINVAL;
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorNoDevice:
-    case hipErrorInvalidDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
+/* HIP errors map to negative errno through the shared
+ * vmaf_hip_rc_to_errno() (core/src/hip/common.h). */
 
 /* ------------------------------------------------------------------ */
 /* Private state                                                       */
@@ -109,9 +97,20 @@ typedef struct SsimStateHip {
     VmafHipKernelLifecycle lc;
     VmafHipKernelReadback rb; /* device: per-block float partials;
                                   * host_pinned: readback slot */
+    /* enable_lcs only: per-block double L / C / S partials, laid out
+     * [l | c | s] with partials_capacity entries each; unallocated otherwise. */
+    VmafHipKernelReadback rb_lcs;
     VmafHipContext *ctx;
 
     int scale_override;
+    /* CPU float_ssim.c options (ADR-1382). `enable_lcs` selects the pass-2
+     * kernel that also reduces L / C / S; `enable_db` / `clip_db` act on the
+     * host through the nonfinite_score.h SSIM helpers. */
+    bool enable_lcs;
+    bool enable_db;
+    bool clip_db;
+    /* vmaf_ssim_max_db(): +inf unless clip_db. */
+    double max_db;
 
     /* Five intermediate float device buffers for the horiz pass output.
      * Sized (w_horiz * h_horiz * sizeof(float)). Allocated via hipMalloc,
@@ -134,6 +133,7 @@ typedef struct SsimStateHip {
     hipFunction_t func_horiz_8;
     hipFunction_t func_horiz_16;
     hipFunction_t func_vert;
+    hipFunction_t func_vert_lcs;
 
     unsigned partials_capacity;
     unsigned partials_count;
@@ -152,7 +152,29 @@ typedef struct SsimStateHip {
     VmafDictionary *feature_name_dict;
 } SsimStateHip;
 
+/* The CPU float_ssim.c table: same names, defaults and range. */
 static const VmafOption options[] = {
+    {
+        .name = "enable_lcs",
+        .help = "enable luminance, contrast and structure intermediate output",
+        .offset = offsetof(SsimStateHip, enable_lcs),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB",
+        .offset = offsetof(SsimStateHip, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores",
+        .offset = offsetof(SsimStateHip, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
@@ -244,6 +266,7 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
     const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
     s->partials_capacity = grid_x * grid_y;
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +280,7 @@ static int ssim_hip_module_load(SsimStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, ssim_score_hsaco);
     if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
+        return vmaf_hip_rc_to_errno(hip_rc);
 
     hip_rc = hipModuleGetFunction(&s->func_horiz_8, s->module, "calculate_ssim_hip_horiz_8bpc");
     if (hip_rc == hipSuccess) {
@@ -266,11 +289,15 @@ static int ssim_hip_module_load(SsimStateHip *s)
     }
     if (hip_rc == hipSuccess)
         hip_rc = hipModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_hip_vert_combine");
+    if (hip_rc == hipSuccess) {
+        hip_rc = hipModuleGetFunction(&s->func_vert_lcs, s->module,
+                                      "calculate_ssim_hip_vert_combine_lcs");
+    }
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
-    return ssim_hip_rc(hip_rc);
+    return vmaf_hip_rc_to_errno(hip_rc);
 }
 
 /* Number of device buffers: five horiz-pass planes + two luma staging. */
@@ -303,7 +330,7 @@ static int ssim_hip_bufs_alloc(SsimStateHip *s)
     hipError_t hip_rc = hipSuccess;
     for (unsigned i = 0u; i < SSIM_HIP_N_BUFS && hip_rc == hipSuccess; i++)
         hip_rc = hipMalloc(slots[i], (i < SSIM_HIP_N_HORIZ) ? horiz_bytes : stage_bytes);
-    return ssim_hip_rc(hip_rc);
+    return vmaf_hip_rc_to_errno(hip_rc);
 }
 
 /* Free all seven device buffers, last allocated first. Safe to call with
@@ -344,43 +371,75 @@ static int ssim_hip_launch_horiz(SsimStateHip *s, hipStream_t str)
         (void *)&s->d_refcmp, (void *)&s->w_horiz,  (void *)&s->h_horiz,  (void *)&s->bpc,
     };
     const bool is8 = (s->bpc == 8u);
-    return ssim_hip_rc(hipModuleLaunchKernel(is8 ? s->func_horiz_8 : s->func_horiz_16, grid_horiz_x,
-                                             grid_horiz_y, 1u, SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y,
-                                             1u, 0, str, is8 ? args8 : args16, NULL));
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(
+        is8 ? s->func_horiz_8 : s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1u, SSIM_HIP_BLOCK_X,
+        SSIM_HIP_BLOCK_Y, 1u, 0, str, is8 ? args8 : args16, NULL));
 }
 
-/*
- * Pass 2 — vertical 11-tap + SSIM combine + per-block partial sum,
- * followed by DtoH readback and finished-event record.
- * Grid sized over w_final x h_final. Block 16x8.
- * Both passes run on the same stream, so implicit ordering holds.
- */
-static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
+/* Pass 2 (vertical 11-tap + SSIM combine + per-block partial sum) on `str`,
+ * after pass 1 on the same stream. `enable_lcs` selects the kernel that also
+ * reduces the L / C / S terms into rb_lcs. Grid over w_final x h_final. */
+static int ssim_hip_launch_vert(SsimStateHip *s, hipStream_t str)
 {
     const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
-
-    void *args2[] = {
-        (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu,  (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
-        (void *)&s->d_refcmp, (void *)&s->rb.device, (void *)&s->w_horiz,  (void *)&s->w_final,
-        (void *)&s->h_final,  (void *)&s->c1,        (void *)&s->c2,
+    if (!s->enable_lcs) {
+        void *args[] = {
+            (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu,  (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
+            (void *)&s->d_refcmp, (void *)&s->rb.device, (void *)&s->w_horiz,  (void *)&s->w_final,
+            (void *)&s->h_final,  (void *)&s->c1,        (void *)&s->c2,
+        };
+        return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_vert, grid_x, grid_y, 1u,
+                                                          SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0,
+                                                          str, args, NULL));
+    }
+    void *args[] = {
+        (void *)&s->d_ref_mu,
+        (void *)&s->d_cmp_mu,
+        (void *)&s->d_ref_sq,
+        (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp,
+        (void *)&s->rb.device,
+        (void *)&s->rb_lcs.device,
+        (void *)&s->w_horiz,
+        (void *)&s->w_final,
+        (void *)&s->h_final,
+        (void *)&s->partials_count,
+        (void *)&s->c1,
+        (void *)&s->c2,
     };
-    hipError_t hip_rc = hipModuleLaunchKernel(s->func_vert, grid_x, grid_y, 1u, SSIM_HIP_BLOCK_X,
-                                              SSIM_HIP_BLOCK_Y, 1u, 0, str, args2, NULL);
-    if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_vert_lcs, grid_x, grid_y, 1u,
+                                                      SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0,
+                                                      str, args, NULL));
+}
+
+/*
+ * Pass 2, then the DtoH read-back of its partials and the finished-event
+ * record. Both passes run on the same stream, so implicit ordering holds;
+ * collect() is the one host wait.
+ */
+static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
+{
+    int err = ssim_hip_launch_vert(s, str);
+    if (err != 0)
+        return err;
 
     /* Record submit event on the picture stream, then DtoH copy on the
      * private readback stream (same pattern as float_psnr_hip.c). */
-    hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
+    hipError_t hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
+        return vmaf_hip_rc_to_errno(hip_rc);
 
     const size_t copy_bytes = (size_t)s->partials_count * sizeof(float);
     hip_rc =
         hipMemcpyAsync(s->rb.host_pinned, s->rb.device, copy_bytes, hipMemcpyDeviceToHost, str);
+    if (hip_rc == hipSuccess && s->enable_lcs) {
+        const size_t lcs_bytes = 3u * (size_t)s->partials_count * sizeof(double);
+        hip_rc = hipMemcpyAsync(s->rb_lcs.host_pinned, s->rb_lcs.device, lcs_bytes,
+                                hipMemcpyDeviceToHost, str);
+    }
     if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
+        return vmaf_hip_rc_to_errno(hip_rc);
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
@@ -401,12 +460,15 @@ static int ssim_hip_release(SsimStateHip *s)
 #ifdef HAVE_HIPCC
     ssim_hip_bufs_free(s);
     if (s->module != NULL) {
-        e = ssim_hip_rc(hipModuleUnload(s->module));
+        e = vmaf_hip_rc_to_errno(hipModuleUnload(s->module));
         s->module = NULL;
         if (rc == 0)
             rc = e;
     }
 #endif /* HAVE_HIPCC */
+    e = vmaf_hip_kernel_readback_free(&s->rb_lcs, s->ctx);
+    if (rc == 0)
+        rc = e;
     e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (rc == 0)
         rc = e;
@@ -438,6 +500,10 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
                                              (size_t)s->partials_capacity * sizeof(float));
+    }
+    if (err == 0 && s->enable_lcs) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb_lcs, s->ctx,
+                                             3u * (size_t)s->partials_capacity * sizeof(double));
     }
 #ifdef HAVE_HIPCC
     if (err == 0)
@@ -530,6 +596,35 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #endif /* HAVE_HIPCC */
 }
 
+#ifdef HAVE_HIPCC
+/* enable_lcs: the three per-block L / C / S partial rows become the frame
+ * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
+ * order after the shared SSIM validation (ADR-1302). */
+static int ssim_hip_emit_lcs(const SsimStateHip *s, double total, double n_pixels, unsigned index,
+                             VmafFeatureCollector *feature_collector)
+{
+    static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
+    const double *lcs = (const double *)s->rb_lcs.host_pinned;
+    double score = 0.0;
+    int err = vmaf_feature_finite_ratio_named("float_ssim_hip", "float_ssim", total, n_pixels,
+                                              index, &score);
+    VmafNamedScore atoms[3];
+    for (unsigned k = 0; k < 3u && err == 0; k++) {
+        double sum = 0.0;
+        for (unsigned i = 0; i < s->partials_count; i++)
+            sum += lcs[((size_t)k * s->partials_count) + i];
+        atoms[k].name = atom_names[k];
+        err = vmaf_feature_finite_ratio_named("float_ssim_hip", atom_names[k], sum, n_pixels, index,
+                                              &atoms[k].value);
+    }
+    if (err != 0)
+        return err;
+    return vmaf_ssim_emit_scores_named(feature_collector, s->feature_name_dict, "float_ssim_hip",
+                                       "float_ssim", score, s->enable_db, s->max_db, atoms, 3u,
+                                       index);
+}
+#endif /* HAVE_HIPCC */
+
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
 {
@@ -555,9 +650,12 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     for (unsigned i = 0; i < s->partials_count; i++)
         total += (double)partials[i];
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                            "float_ssim_hip", "float_ssim", total, n_pixels, 0, 0.0,
-                                            index);
+    if (!s->enable_lcs) {
+        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                                "float_ssim_hip", "float_ssim", total, n_pixels,
+                                                s->enable_db, s->max_db, index);
+    }
+    return ssim_hip_emit_lcs(s, total, n_pixels, index, feature_collector);
 #endif /* HAVE_HIPCC */
 }
 

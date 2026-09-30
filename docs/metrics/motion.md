@@ -63,7 +63,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | NEON (AArch64) | Supported | `arm64/motion_neon.c`                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_cuda.c` (CPU arithmetic, ADR-1372) |
 | SYCL           | Supported | `feature/sycl/integer_motion_sycl.cpp` (bit-exact, ADR-1371) |
-| HIP            | Supported | `feature/hip/integer_motion_hip.c` (not bit-exact, see below) |
+| HIP            | Supported | `feature/hip/integer_motion_hip.c` (CPU arithmetic, ADR-1377; see below) |
 | Metal          | Supported | `feature/metal/integer_motion_metal.mm` (not bit-exact, see below) |
 
 The CPU computes the SAD of the blurred difference of the two frames,
@@ -77,12 +77,15 @@ used, and its debug `motion` score is the CPU's (weighted by
 its `motion2_score` and `motion3_score` equal the CPU's bit for bit on the
 Netflix 576x324 pair and on 50 frames of a 3840x2160 clip, where the previous
 order was 1.26e-5 and 6.9e-5 off (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29` in
-[`state.md`](../state.md)). The HIP and Metal twins still
-blur each frame and compare the blurred frames, which rounds differently. The
-SYCL twin did the same until 2026-09-29 and its `motion2_score` was up to
-2.0e-4 off on 17x17 frames and 1.3e-5 on the Netflix 576x324 pair; expect the
-same from those two, which have not been measured yet (their rows in
-[`state.md`](../state.md)).
+[`state.md`](../state.md)). The HIP twin runs the same arithmetic since
+2026-09-30 ([ADR-1377](../adr/1377-hip-motion-diff-first.md)) and is expected
+to match bit for bit, which has not yet been measured on an AMD device
+(`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29` in [`state.md`](../state.md) has
+the commands). The Metal twin still blurs each frame and compares the blurred
+frames, which rounds differently. The SYCL twin did the same until 2026-09-29
+and its `motion2_score` was up to 2.0e-4 off on 17x17 frames and 1.3e-5 on the
+Netflix 576x324 pair; expect the same from the Metal twin, which has not been
+measured yet (its row in [`state.md`](../state.md)).
 
 All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode.
 The 5-frame window (`motion_five_frame_window=true`) and `motion_moving_average`
@@ -277,13 +280,15 @@ run on one of them (`--backend sycl --feature float_motion`, say) writes no
 `motion_fps_weight`. With `motion_force_zero`, `float_motion_cuda` and
 `motion_cuda` publish zeros from the first frame; before 2026-09-30 both
 crashed on it (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
-`float_motion_sycl` and `float_motion_cuda` also take `motion_max_val`
-(alias `mmxv`) and, like the CPU, scale every score they emit (the debug
-`motion` too) by `motion_fps_weight` before capping it at `motion_max_val`
+`float_motion_sycl`, `float_motion_cuda` and `float_motion_hip` also take
+`motion_max_val` (alias `mmxv`) and, like the CPU, scale every score they
+emit (the debug `motion` too) by `motion_fps_weight` before capping it at
+`motion_max_val`
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
-[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). On HIP and Metal a
+[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
+[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)). On Metal a
 `motion_max_val` setting keeps `float_motion` on the CPU
-([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)); their debug
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)); its debug
 `motion` score is emitted without the fps weight.
 
 ```bash

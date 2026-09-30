@@ -44,6 +44,7 @@
 #include "libvmaf/picture.h"
 
 #include "hip/integer_adm_hip.h"
+#include "integer_adm/adm_dwt2_rows.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
@@ -603,9 +604,10 @@ static int dwt2_8_device_hip(AdmStateHip *s, const uint8_t *d_picture, hip_adm_d
                              hip_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride,
                              int dst_stride, AdmFixedParametersHip *p, hipStream_t c_stream)
 {
-    const int rows_per_thread = 4;
-    const int vert_out_tile_rows = 8;
-    const int vert_out_tile_cols = 128;
+    /* adm_dwt2_rows.h: the geometry the kernel instantiation assumes. */
+    const int rows_per_thread = ADM_DWT2_V_ROWS_PER_THREAD;
+    const int vert_out_tile_rows = ADM_DWT2_TILE_ROWS;
+    const int vert_out_tile_cols = ADM_DWT2_TILE_COLS;
     const int horz_out_tile_cols = vert_out_tile_cols / 2 - 2;
     const int horz_out_tile_rows = vert_out_tile_rows;
     int16_t v_shift = 8;
@@ -626,9 +628,10 @@ static int dwt2_16_device_hip(AdmStateHip *s, const uint16_t *d_picture, hip_adm
                               int dst_stride, int inp_size_bits, AdmFixedParametersHip *p,
                               hipStream_t c_stream)
 {
-    const int rows_per_thread = 4;
-    const int vert_out_tile_rows = 8;
-    const int vert_out_tile_cols = 128;
+    /* adm_dwt2_rows.h: the geometry the kernel instantiation assumes. */
+    const int rows_per_thread = ADM_DWT2_V_ROWS_PER_THREAD;
+    const int vert_out_tile_rows = ADM_DWT2_TILE_ROWS;
+    const int vert_out_tile_cols = ADM_DWT2_TILE_COLS;
     const int horz_out_tile_cols = vert_out_tile_cols / 2 - 2;
     const int horz_out_tile_rows = vert_out_tile_rows;
     int16_t v_shift = (int16_t)inp_size_bits;

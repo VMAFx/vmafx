@@ -1088,3 +1088,6 @@
 1392-cuda-integer-reductions-one-atomic-per-block
 1393-cambi-clip-window-to-frame
 1367-sycl-strict-fp-every-feature-tu
+1377-hip-motion-diff-first
+1381-hip-integer-tiny-frame-guards
+1382-hip-twin-cpu-option-parity

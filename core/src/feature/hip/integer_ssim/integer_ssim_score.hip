@@ -34,7 +34,9 @@
  *      `ssim_reduce_row_range()` operand for operand, and meson builds this
  *      file with `-ffp-contract=off` (`hip_cu_extra_flags`), so no product
  *      is fused into an FMA and each per-pixel term rounds exactly as the
- *      CPU's does.
+ *      CPU's does. The one exception is an identical window, whose term is
+ *      its weight exactly (ADR-1382), where the CPU's quotient may be an ulp
+ *      off before its sum absorbs it.
  *    - Only the summation order differs: the CPU adds the terms in raster
  *      order into one running double, this kernel adds them in a per-block
  *      tree and the host adds the blocks. The weights are integers and add
@@ -140,7 +142,16 @@ issim_horiz(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t
 
 /* One pixel's SSIM term, weighted by its window weight: the expression of
  * ssim_reduce_row_range() in integer_ssim.c with every operand in the same
- * order, so that it rounds identically (requires -ffp-contract=off). */
+ * order, so that it rounds identically (requires -ffp-contract=off). The
+ * four factors sit in named temporaries; the product and the quotient are
+ * formed from them in the CPU's order, which gives the same double.
+ *
+ * An identical window has equal numerator and denominator factors (exactly,
+ * whenever the moments are exact in double: 8- and 10-bit input), and its
+ * term is its weight. The CPU's quotient can round that by an ulp, which its
+ * raster-order sum absorbs; this twin sums per block, so it returns the
+ * weight itself. Identical frames then score exactly 1, and `enable_db`
+ * reports the CPU's +inf / clip_db ceiling for them (ADR-1382, ADR-1221). */
 __device__ __forceinline__ double issim_pixel_term(int64_t mux, int64_t muy, int64_t x2, int64_t xy,
                                                    int64_t y2, int64_t w, double sm)
 {
@@ -150,8 +161,13 @@ __device__ __forceinline__ double issim_pixel_term(int64_t mux, int64_t muy, int
     const double mx2 = (double)mux * (double)mux;
     const double mxy = (double)mux * (double)muy;
     const double my2 = (double)muy * (double)muy;
-    return w_d * (2.0 * mxy + c1) * (c2 + 2.0 * ((double)xy * w_d - mxy)) /
-           ((mx2 + my2 + c1) * ((double)x2 * w_d - mx2 + (double)y2 * w_d - my2 + c2));
+    const double lum_num = 2.0 * mxy + c1;
+    const double cs_num = c2 + 2.0 * ((double)xy * w_d - mxy);
+    const double lum_den = mx2 + my2 + c1;
+    const double cs_den = (double)x2 * w_d - mx2 + (double)y2 * w_d - my2 + c2;
+    if (lum_num == lum_den && cs_num == cs_den)
+        return w_d;
+    return w_d * lum_num * cs_num / (lum_den * cs_den);
 }
 
 } /* namespace */

@@ -1489,8 +1489,11 @@ nav:
         - "ADR-1372: cuda-motion-diff-first-pipeline": adr/1372-cuda-motion-diff-first-pipeline.md
         - "ADR-1373: cuda-twin-cpu-option-parity": adr/1373-cuda-twin-cpu-option-parity.md
         - "ADR-1374: cuda-integer-tiny-frame-guards": adr/1374-cuda-integer-tiny-frame-guards.md
+        - "ADR-1377: hip-motion-diff-first": adr/1377-hip-motion-diff-first.md
         - "ADR-1379: cuda-cambi-device-resident-pipeline": adr/1379-cuda-cambi-device-resident-pipeline.md
         - "ADR-1380: cuda-speed-device-resident-pipeline": adr/1380-cuda-speed-device-resident-pipeline.md
+        - "ADR-1381: hip-integer-tiny-frame-guards": adr/1381-hip-integer-tiny-frame-guards.md
+        - "ADR-1382: hip-twin-cpu-option-parity": adr/1382-hip-twin-cpu-option-parity.md
         - "ADR-1383: state-md-three-way-conflict-resolver": adr/1383-state-md-three-way-conflict-resolver.md
         - "ADR-1386: rc3-home-gpu-retest-kit": adr/1386-rc3-home-gpu-retest-kit.md
         - "ADR-1392: cuda-integer-reductions-one-atomic-per-block": adr/1392-cuda-integer-reductions-one-atomic-per-block.md

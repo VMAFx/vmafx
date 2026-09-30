@@ -23,9 +23,12 @@
  *  previously returned -ENOSYS, blocking zero-copy upload for all HIP
  *  extractors).
  *
- *  vmaf_hip_picture_upload() is how every HIP extractor stages a host
+ *  vmaf_hip_picture_upload() is how a HIP extractor stages a host
  *  VmafPicture onto the device: it returns only once the copies have
  *  finished reading the picture (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
+ *  vmaf_hip_picture_upload_staged() reads the picture into an
+ *  extractor-owned pinned buffer instead and returns without waiting for the
+ *  device copies (ADR-1377, T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19).
  */
 
 #include <stddef.h>
@@ -40,6 +43,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <hip/hip_runtime_api.h>
 
@@ -140,6 +144,81 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
     return hip_pic_rc_to_errno(rc);
 }
 
+/* Bytes `planes` take packed in a staging buffer, or 0 when a plane is
+ * invalid or the sum does not fit in size_t. */
+static size_t hip_pic_staged_bytes(const VmafHipPlaneUpload *planes, unsigned n_planes)
+{
+    size_t total = 0u;
+    for (unsigned i = 0u; i < n_planes; i++) {
+        const VmafHipPlaneUpload *p = &planes[i];
+        if (!hip_pic_plane_valid(p) || p->rows > SIZE_MAX / p->row_bytes)
+            return 0u;
+        const size_t bytes = p->rows * p->row_bytes;
+        if (bytes > SIZE_MAX - total)
+            return 0u;
+        total += bytes;
+    }
+    return total;
+}
+
+/* Host copy of one plane into `dst`, rows packed `row_bytes` apart. Reads the
+ * picture completely before it returns. */
+static void hip_pic_stage_plane(const VmafHipPlaneUpload *p, uint8_t *dst)
+{
+    const uint8_t *src = (const uint8_t *)p->pic->data[p->plane];
+    const size_t stride = (size_t)p->pic->stride[p->plane];
+    for (size_t row = 0u; row < p->rows; row++)
+        memcpy(dst + (row * p->row_bytes), src + (row * stride), p->row_bytes);
+}
+
+int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                   void *staging, size_t staging_bytes, uintptr_t stream)
+{
+    if (planes == NULL || n_planes == 0u || staging == NULL)
+        return -EINVAL;
+    /* Validate everything before the first copy, so a rejected call leaves
+     * nothing enqueued. */
+    const size_t needed = hip_pic_staged_bytes(planes, n_planes);
+    if (needed == 0u || needed > staging_bytes)
+        return -EINVAL;
+
+    hipStream_t str = vmaf_hip_stream_of(stream);
+    uint8_t *at = (uint8_t *)staging;
+    for (unsigned i = 0u; i < n_planes; i++) {
+        const VmafHipPlaneUpload *p = &planes[i];
+        hip_pic_stage_plane(p, at);
+        /* From pinned memory the copy is asynchronous for real; the source
+         * is the extractor's buffer, not the picture, so nothing waits. */
+        const hipError_t rc = hipMemcpy2DAsync(p->dst, p->dst_pitch, at, p->row_bytes, p->row_bytes,
+                                               p->rows, hipMemcpyHostToDevice, str);
+        if (rc != hipSuccess)
+            return hip_pic_rc_to_errno(rc);
+        at += p->rows * p->row_bytes;
+    }
+    return 0;
+}
+
+int vmaf_hip_picture_staging_alloc(void **out, size_t size)
+{
+    if (out == NULL || size == 0u)
+        return -EINVAL;
+    void *pinned = NULL;
+    const hipError_t rc = hipHostMalloc(&pinned, size, hipHostMallocDefault);
+    if (rc != hipSuccess)
+        return hip_pic_rc_to_errno(rc);
+    *out = pinned;
+    return 0;
+}
+
+void vmaf_hip_picture_staging_free(void *staging)
+{
+    if (staging == NULL)
+        return;
+    /* Best-effort teardown: the owner drained the stream that read it. */
+    const hipError_t rc = hipHostFree(staging);
+    (void)rc;
+}
+
 int vmaf_hip_picture_alloc(VmafHipContext *ctx, void **out, size_t size)
 {
     if (!ctx)
@@ -197,6 +276,31 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
     vmaf_log(VMAF_LOG_LEVEL_ERROR,
              "vmaf_hip_picture_upload requires HIP support compiled with -Denable_hipcc=true\n");
     return -ENOSYS;
+}
+
+int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                   void *staging, size_t staging_bytes, uintptr_t stream)
+{
+    (void)planes;
+    (void)n_planes;
+    (void)staging;
+    (void)staging_bytes;
+    (void)stream;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_hip_picture_upload_staged requires HIP support compiled "
+                                   "with -Denable_hipcc=true\n");
+    return -ENOSYS;
+}
+
+int vmaf_hip_picture_staging_alloc(void **out, size_t size)
+{
+    (void)out;
+    (void)size;
+    return -ENOSYS;
+}
+
+void vmaf_hip_picture_staging_free(void *staging)
+{
+    (void)staging;
 }
 
 #endif /* HAVE_HIPCC */

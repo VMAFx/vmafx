@@ -112,6 +112,17 @@ test('test_cuda_kernel_source_contract',
     timeout : 30,
 )
 
+# ADR-1377 / ADR-1381 / ADR-1382: device-free source guard for the HIP RC3
+# parity design (diff-first motion SAD, one host wait per frame, tile and ADM
+# row clamps, vif_hip CPU fallback, CPU option helpers), with a planted
+# regression per check.
+test('test_hip_kernel_source_contract',
+    import('python').find_installation(),
+    args : files('test_hip_kernel_source_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1183 / T-GPU-TWIN-OPTION-ALIAS-DRIFT: a non-default feature option
 # becomes part of the published collector key. Keep GPU spellings equal to the
 # CPU reference without requiring any GPU runtime on the test host.
@@ -2108,6 +2119,19 @@ test_adm_cm_row_rounding = executable('test_adm_cm_row_rounding',
     include_directories : [test_inc, include_directories('../src')],
 )
 test('test_adm_cm_row_rounding', test_adm_cm_row_rounding,
+    suite : ['fast'])
+
+# T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29 / ADR-1381: replays the
+# rows the hip ADM scale-0 vertical DWT loads for every plane height, and the
+# motion tile loads for every extent, from the headers the kernels and their
+# launches share. Device-free, so it runs everywhere.
+test_hip_adm_dwt2_rows = executable('test_hip_adm_dwt2_rows',
+    ['test.c', 'test_hip_adm_dwt2_rows.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_hip_adm_dwt2_rows', test_hip_adm_dwt2_rows,
     suite : ['fast'])
 
 # T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
@@ -4468,6 +4492,54 @@ test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 60)
+
+# T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29 / ADR-1377 — motion_hip and
+# motion_v2_hip against the scalar CPU motion / motion_v2 with == on 3x3 to
+# 1283x723 frames at 8, 10 and 16 bits (the debug motion score included), and
+# rejection below 3x3. Skips (77) without a HIP device.
+test_hip_motion_tiny_frames = executable('test_hip_motion_tiny_frames',
+    ['test.c', 'test_hip_motion_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_motion_tiny_frames', test_hip_motion_tiny_frames,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
+
+# T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 / ADR-1381 — vif_hip declares its
+# 16-pixel minimum through the ADR-1324 gate (model dispatch runs the CPU `vif`
+# below it) and rejects smaller direct requests. The declaration and init
+# checks need no device; the model boundary cases skip (77) without one.
+test_hip_vif_min_dim = executable('test_hip_vif_min_dim',
+    ['test.c', 'test_hip_vif_min_dim.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_vif_min_dim', test_hip_vif_min_dim,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 60)
+
+# T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26 (HIP part) / ADR-1382 — the
+# CPU psnr / ssim / float_ssim / float_motion / motion options on the HIP twins,
+# per option against the CPU. The option-table checks need no device; the
+# parity cases skip (77) without one.
+test_hip_twin_option_parity = executable('test_hip_twin_option_parity',
+    ['test.c', 'test_hip_twin_option_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_twin_option_parity', test_hip_twin_option_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
