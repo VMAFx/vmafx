@@ -1,0 +1,11 @@
+- **HIP twins stay inside their buffers on small frames, and `vif_hip` hands
+  frames below 16 pixels to the CPU (ADR-1381).** The HIP motion kernel's tile
+  loads and the integer ADM scale-0 vertical DWT reflect an index once, which
+  leaves the plane for the padding threads of a plane smaller than the tile
+  (the defect that faulted the SYCL twins); both now clamp the reflected row
+  into the plane, which changes no score of any accepted frame. `vif_hip`
+  scored frames below 16 pixels from other samples than the CPU (its filters
+  need 16 pixels at every scale); model dispatch now computes those frames
+  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. Not
+  yet measured on AMD hardware; see
+  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).

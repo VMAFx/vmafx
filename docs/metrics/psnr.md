@@ -111,7 +111,7 @@ than removing the truncation: on the pair above,
 `psnr_cb = 155.000000` for byte-identical chroma. Prefer `uncapped` unless
 you specifically want a raised sentinel. `min_sse` belongs to the integer
 `psnr` extractor only (`float_psnr` has no such option); of its GPU twins,
-only `psnr_sycl` implements it.
+`psnr_sycl` and `psnr_hip` implement it.
 
 ## Options
 
@@ -130,7 +130,9 @@ only `psnr_sycl` implements it.
 bit with every option set: the device only reduces each plane's sum of
 squared errors, and the host turns it into `psnr_*`, `mse_*` and `apsnr_*`
 with the same helpers the CPU extractor uses
-(`core/src/feature/psnr_score.h`). The CUDA, HIP and Metal twins implement
+(`core/src/feature/psnr_score.h`). `psnr_hip` does the same since
+2026-09-30 ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); not yet
+measured on an AMD device). The CUDA and Metal twins implement
 `enable_chroma` and `uncapped` only. On those backends a model that sets
 `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or `min_sse` computes `psnr`
 on the CPU instead

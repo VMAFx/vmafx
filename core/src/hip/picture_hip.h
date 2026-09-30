@@ -40,8 +40,25 @@
  * vmaf_float_v0.6.1 lost 21 % of its throughput (vmaf_v0.6.1 and the single
  * extractors stayed within noise, vif_hip lost 7 %). Running the kernels on
  * the private stream too made no difference. Staging through
- * extractor-owned pinned buffers removes the wait and is the follow-up:
- * T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in docs/state.md.
+ * extractor-owned pinned buffers removes the wait:
+ * vmaf_hip_picture_upload_staged() below, adopted extractor by extractor
+ * (T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in docs/state.md).
+ */
+
+/*
+ * Uploading without a host wait: vmaf_hip_picture_upload_staged().
+ *
+ * The host copies every plane into `staging`, pinned host memory the
+ * extractor owns (vmaf_hip_picture_staging_alloc()), before the call returns,
+ * so the caller may recycle the pictures at once; the device copies then run
+ * from `staging`, in stream order, while the host goes on. Nothing waits.
+ *
+ * `staging` must not be rewritten before those copies have run. An extractor
+ * that stages once per frame gets that from the frame protocol: its
+ * collect() drains the stream the copies ran on, and libvmaf collects frame
+ * N - 1 before it submits frame N (dispatch_gpu_double_buffer()), so the
+ * next submit() finds the copies done. Close drains the stream before it
+ * frees the buffer. ADR-1377.
  */
 
 /*
@@ -76,6 +93,23 @@ void vmaf_hip_picture_free(VmafHipContext *ctx, void *buf);
  * error is returned.
  */
 int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes, uintptr_t stream);
+
+/*
+ * Copy host picture planes into `staging`, packed plane after plane
+ * (`row_bytes` apart), then enqueue their device copies on `stream` and
+ * return without waiting; see the note above. `staging_bytes` must cover the
+ * sum of `rows * row_bytes` over `planes`. Returns 0 or a negative errno; a
+ * copy that fails to enqueue leaves the ones before it running from
+ * `staging`, which stays valid until the owner drains `stream`.
+ */
+int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                   void *staging, size_t staging_bytes, uintptr_t stream);
+
+/* Pinned host staging for vmaf_hip_picture_upload_staged(), `size` bytes.
+ * Free it with vmaf_hip_picture_staging_free() once the stream that copies
+ * from it is drained; freeing NULL is a no-op. */
+int vmaf_hip_picture_staging_alloc(void **out, size_t size);
+void vmaf_hip_picture_staging_free(void *staging);
 
 #ifdef __cplusplus
 }

@@ -9,12 +9,13 @@
  * ADR-0883 round-2 — integer motion (v1) CPU vs. HIP parity test.
  *
  * The original integer motion (v1) feature is computed by
- * integer_motion.c (CPU) and by integer_motion_hip.c +
- * integer_motion/motion_score.hip (HIP).  Existing tests cover the
- * motion3 (motion_v2) HIP variant; this test closes the v1 gap so
- * any future divergence between the Gaussian-blur convolution +
- * |ref(t) - ref(t-1)| sum-of-absolute-differences kernels is caught
- * at CI time.
+ * integer_motion.c (CPU) and by integer_motion_hip.c through the shared
+ * diff-first SAD kernel integer_motion_v2/motion_v2_score.hip (HIP,
+ * ADR-1377).  Existing tests cover the motion3 (motion_v2) HIP variant;
+ * this test closes the v1 gap so any future divergence between the
+ * sum |blur(ref(t-1) - ref(t))| kernels is caught at CI time; the
+ * bit-exact sweep over tiny, odd and 16-bit frames is
+ * test_hip_motion_tiny_frames.c.
  *
  * Asserts the single emitted `VMAF_integer_feature_motion_score`
  * channel.  Requires 2 frames so the motion delta is non-zero

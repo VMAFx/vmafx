@@ -1079,3 +1079,6 @@
 1366-cli-frame-readahead
 1363-sycl-ssimulacra2-msssim-device-resident
 1383-state-md-three-way-conflict-resolver
+1377-hip-motion-diff-first
+1381-hip-integer-tiny-frame-guards
+1382-hip-twin-cpu-option-parity

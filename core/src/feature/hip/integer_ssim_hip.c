@@ -20,6 +20,12 @@
  *  collect() adds the block pairs and returns sum(term) / sum(weight), the
  *  `ssim / ssimw` that calc_ssim() returns on the CPU.
  *
+ *  Options mirror CPU integer_ssim.c (ADR-1382, the HIP port of ADR-1365):
+ *  `enable_db` / `clip_db` convert the frame score on the host through the
+ *  shared nonfinite_score.h helpers (vmaf_ssim_max_db()). An identical
+ *  window scores exactly its weight, so identical frames report the CPU's
+ *  +inf / clip_db ceiling (issim_pixel_term()).
+ *
  *  HIP adaptations from the CUDA twin:
  *  - Pictures arrive as host VmafPictures; the two luma planes are staged
  *    into packed device buffers with hipMemcpy2DAsync on the private stream
@@ -34,6 +40,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -67,26 +74,6 @@
 /* Pass-1 output planes, in kernel argument order: mux, muy, x2, xy, y2, w. */
 #define ISSIM_HIP_MOMENTS 6u
 
-static int issim_hip_rc(hipError_t rc)
-{
-    switch (rc) {
-    case hipSuccess:
-        return 0;
-    case hipErrorInvalidValue:
-    case hipErrorInvalidHandle:
-        return -EINVAL;
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorNoDevice:
-    case hipErrorInvalidDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
-
 typedef struct IssimStateHip {
     VmafHipKernelLifecycle lc;
     /* One double term sum and one int64 weight sum per block. */
@@ -114,11 +101,31 @@ typedef struct IssimStateHip {
     unsigned block_count;
     /* (1 << bpc) - 1, the CPU's `samplemax`, as the kernel's double. */
     double samplemax;
+    /* CPU integer_ssim.c options; host-side dB conversion. */
+    bool enable_db;
+    bool clip_db;
+    /* vmaf_ssim_max_db(): +inf unless clip_db. */
+    double max_db;
 
     VmafDictionary *feature_name_dict;
 } IssimStateHip;
 
+/* The CPU integer_ssim.c table: same names and defaults. */
 static const VmafOption options[] = {
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB: -10*log10(1-ssim)",
+        .offset = offsetof(IssimStateHip, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores to a peak-derived ceiling",
+        .offset = offsetof(IssimStateHip, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {0},
 };
 
@@ -136,6 +143,7 @@ static void issim_hip_init_dims(IssimStateHip *s, unsigned w, unsigned h, unsign
     s->grid_y = (h + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
     s->block_count = s->grid_x * s->grid_y;
     s->samplemax = (double)((1u << bpc) - 1u);
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 }
 
 /* Load the kernel blob and resolve the three kernels by their extern "C"
@@ -146,7 +154,7 @@ static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
     (void)fex_name;
     hipError_t rc = hipModuleLoadData(&s->module, integer_ssim_score_hsaco);
     if (rc != hipSuccess)
-        return issim_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     rc = hipModuleGetFunction(&s->func_horiz_8, s->module, "integer_ssim_horiz_8bpc");
     if (rc == hipSuccess)
         rc = hipModuleGetFunction(&s->func_horiz_16, s->module, "integer_ssim_horiz_16bpc");
@@ -156,7 +164,7 @@ static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
-    return issim_hip_rc(rc);
+    return vmaf_hip_rc_to_errno(rc);
 #else
     (void)s;
     vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -179,7 +187,7 @@ static int issim_hip_bufs_free(IssimStateHip *s)
     for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS + 2u; i++) {
         if (*bufs[i] == NULL)
             continue;
-        const int e = issim_hip_rc(hipFree(*bufs[i]));
+        const int e = vmaf_hip_rc_to_errno(hipFree(*bufs[i]));
         *bufs[i] = NULL;
         if (err == 0)
             err = e;
@@ -201,7 +209,7 @@ static int issim_hip_bufs_alloc(IssimStateHip *s)
         rc = hipMalloc(&s->cmp_in, stage_bytes);
     if (rc != hipSuccess) {
         (void)issim_hip_bufs_free(s);
-        return issim_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
     return 0;
 }
@@ -217,7 +225,7 @@ static int issim_hip_release(IssimStateHip *s)
     if (rc == 0)
         rc = e;
     if (s->module != NULL) {
-        e = issim_hip_rc(hipModuleUnload(s->module));
+        e = vmaf_hip_rc_to_errno(hipModuleUnload(s->module));
         s->module = NULL;
         if (rc == 0)
             rc = e;
@@ -294,8 +302,9 @@ static int issim_hip_launch_horiz(IssimStateHip *s, hipStream_t str)
         (void *)&s->d_moment[5], (void *)&s->width,       (void *)&s->height,
     };
     hipFunction_t fn = (s->bpc <= 8u) ? s->func_horiz_8 : s->func_horiz_16;
-    return issim_hip_rc(hipModuleLaunchKernel(fn, s->grid_x, s->grid_y, 1u, ISSIM_HIP_BLOCK_X,
-                                              ISSIM_HIP_BLOCK_Y, 1u, 0u, str, args, NULL));
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(fn, s->grid_x, s->grid_y, 1u,
+                                                      ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u,
+                                                      str, args, NULL));
 }
 
 /* Pass 2. Implicitly ordered after pass 1: both run on `str`. */
@@ -307,9 +316,9 @@ static int issim_hip_launch_vert(IssimStateHip *s, hipStream_t str)
         (void *)&s->rb_ssim.device, (void *)&s->rb_wgt.device, (void *)&s->width,
         (void *)&s->height,         (void *)&s->samplemax,
     };
-    return issim_hip_rc(hipModuleLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u,
-                                              ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u, str,
-                                              args, NULL));
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u,
+                                                      ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u,
+                                                      str, args, NULL));
 }
 
 /* Copy both per-block partial arrays back and record the `finished` event
@@ -326,7 +335,7 @@ static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
                             (size_t)s->block_count * sizeof(int64_t), hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
-        return issim_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
@@ -398,7 +407,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     }
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
                                             "integer_ssim_hip", "ssim", total_term,
-                                            (double)total_weight, 0, 0.0, index);
+                                            (double)total_weight, s->enable_db, s->max_db, index);
 }
 
 static const char *provided_features[] = {"ssim", NULL};

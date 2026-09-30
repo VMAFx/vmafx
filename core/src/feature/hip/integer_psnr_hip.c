@@ -22,18 +22,27 @@
  *  "runtime not ready" rather than crashing.
  *
  *  Algorithm (mirrors CPU `integer_psnr.c`):
- *      sse_p = sum_{i,j} (ref_p[i,j] - dis_p[i,j])^2;   (per plane p)
+ *      sse_p = sum_{i,j} (ref_p[i,j] - dis_p[i,j])^2;   (per plane p, device)
  *      mse_p = sse_p / (w_p * h_p);
- *      psnr_p = (mse_p == 0) ? psnr_max                 (infinity sentinel)
- *             : uncapped     ? 10 * log10(peak^2 / mse_p)
- *                            : MIN(10 * log10(peak^2 / mse_p), psnr_max)
- *  psnr_max = (6 * bpc) + 12  (CPU `integer_psnr.c::init` min_sse==0 branch).
+ *      psnr_p = vmaf_psnr_from_mse(mse_p, peak^2, psnr_max_p, uncapped)
+ *  The device reduces the integer SSE; every option acts on it on the host
+ *  through `core/src/feature/psnr_score.h`, the helpers the CPU extractor
+ *  calls too, so the scores are the CPU's bit for bit (ADR-1382, the HIP
+ *  port of ADR-1365):
+ *    - `reduced_hbd_peak` -> vmaf_psnr_peak()
+ *    - `min_sse`          -> vmaf_psnr_max() (per-plane ceiling)
+ *    - `uncapped`         -> vmaf_psnr_from_mse() (ADR-1193)
+ *    - `enable_mse`       -> `mse_{y,cb,cr}` after each `psnr_*`
+ *    - `enable_apsnr`     -> per-plane SSE and sample totals across frames,
+ *                            published by flush() as `apsnr_*` aggregates
+ *                            (vmaf_psnr_aggregate()).
  *
  *  enable_chroma (default true): when false or pix_fmt == YUV400P, only
  *  the luma plane is dispatched (mirrors ADR-0453 CPU/CUDA/SYCL/Vulkan pattern).
  */
 
 #include <errno.h>
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -44,6 +53,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
+#include "psnr_score.h"
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
@@ -84,9 +94,9 @@ typedef struct PsnrStateHip {
     unsigned width[PSNR_NUM_PLANES];
     unsigned height[PSNR_NUM_PLANES];
     unsigned bpc;
+    /* vmaf_psnr_peak() of bpc and `reduced_hbd_peak`. */
     uint32_t peak;
-    /* psnr_max[p] = (6 * bpc) + 12 for all p (CPU integer_psnr.c
-     * min_sse==0 branch). Array layout enables per-plane override. */
+    /* Per-plane vmaf_psnr_max(): (6 * bpc) + 12, or the `min_sse` ceiling. */
     double psnr_max[PSNR_NUM_PLANES];
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default true mirrors CPU integer_psnr.c — see ADR-0453/0471. */
@@ -96,6 +106,15 @@ typedef struct PsnrStateHip {
      * truncating genuinely computed values. Default false keeps every
      * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
     bool uncapped;
+    /* CPU integer_psnr.c options (ADR-1382). `enable_mse` adds
+     * `mse_{y,cb,cr}`; `enable_apsnr` sums SSE and sample count across
+     * frames for the flush aggregates. */
+    bool enable_mse;
+    bool enable_apsnr;
+    bool reduced_hbd_peak;
+    double min_sse;
+    uint64_t apsnr_sse[PSNR_NUM_PLANES];
+    uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
     /* Number of active planes (1 for YUV400 or enable_chroma=false,
      * 3 otherwise). */
     unsigned n_planes;
@@ -115,69 +134,78 @@ typedef struct PsnrStateHip {
     VmafDictionary *feature_name_dict;
 } PsnrStateHip;
 
-static const VmafOption options[] = {{
-                                         .name = "enable_chroma",
-                                         .help = "enable calculation for chroma channels",
-                                         .offset = offsetof(PsnrStateHip, enable_chroma),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = true,
-                                     },
-                                     {
-                                         .name = "uncapped",
-                                         .help = "report the true PSNR instead of truncating at "
-                                                 "the psnr_max ceiling (an all-zero SSE still "
-                                                 "reports psnr_max)",
-                                         .offset = offsetof(PsnrStateHip, uncapped),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = false,
-                                     },
-                                     {0}};
+/* The CPU integer_psnr.c table: same names, defaults and range. */
+static const VmafOption options[] = {
+    {
+        .name = "enable_chroma",
+        .help = "enable calculation for chroma channels",
+        .offset = offsetof(PsnrStateHip, enable_chroma),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = true,
+    },
+    {
+        .name = "enable_mse",
+        .help = "enable MSE calculation",
+        .offset = offsetof(PsnrStateHip, enable_mse),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_apsnr",
+        .help = "enable APSNR calculation",
+        .offset = offsetof(PsnrStateHip, enable_apsnr),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "reduced_hbd_peak",
+        .help = "reduce hbd peak value to align with scaled 8-bit content",
+        .offset = offsetof(PsnrStateHip, reduced_hbd_peak),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "min_sse",
+        .help = "constrain the minimum possible sse",
+        .offset = offsetof(PsnrStateHip, min_sse),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = DBL_MAX,
+    },
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(an all-zero SSE still reports psnr_max)",
+        .offset = offsetof(PsnrStateHip, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 #define PSNR_HIP_BX 16
 #define PSNR_HIP_BY 16
 
 #ifdef HAVE_HIPCC
-/* Translate a HIP error code to a negative errno. Mirrors
- * `hip_rc_to_errno` in `kernel_template.c`. */
-static int psnr_hip_rc(hipError_t rc)
-{
-    if (rc == hipSuccess)
-        return 0;
-    switch (rc) {
-    case hipErrorInvalidValue:
-    case hipErrorInvalidHandle:
-        return -EINVAL;
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorNoDevice:
-    case hipErrorInvalidDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
-
 /* Load the HSACO module and look up the two kernel entry points.
  * Called once from init() with HAVE_HIPCC. */
 static int psnr_hip_module_load(PsnrStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, psnr_score_hsaco);
     if (rc != hipSuccess)
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
 
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_psnr_hip_kernel_8bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
     rc = hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_psnr_hip_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     }
     return 0;
 }
@@ -191,7 +219,7 @@ static int psnr_hip_launch_plane(PsnrStateHip *s, unsigned plane, uintptr_t pic_
 
     hipError_t rc = hipMemsetAsync(s->rb[plane].device, 0, sizeof(uint64_t), pstr);
     if (rc != hipSuccess)
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
 
     const unsigned pw = s->width[plane];
     const unsigned ph = s->height[plane];
@@ -214,7 +242,7 @@ static int psnr_hip_launch_plane(PsnrStateHip *s, unsigned plane, uintptr_t pic_
     };
     rc = hipModuleLaunchKernel(func, gx, gy, 1, PSNR_HIP_BX, PSNR_HIP_BY, 1, 0, pstr, args, NULL);
     if (rc != hipSuccess)
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     return 0;
 }
 
@@ -235,16 +263,16 @@ static int psnr_hip_launch(PsnrStateHip *s, uintptr_t pic_stream)
      * stream; DtoH copy all active plane accumulators; record finished. */
     hipError_t rc = hipEventRecord(submit_ev, pstr);
     if (rc != hipSuccess)
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
     rc = hipStreamWaitEvent(str, submit_ev, 0);
     if (rc != hipSuccess)
-        return psnr_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
 
     for (unsigned p = 0; p < s->n_planes; p++) {
         rc = hipMemcpyAsync(s->rb[p].host_pinned, s->rb[p].device, sizeof(uint64_t),
                             hipMemcpyDeviceToHost, str);
         if (rc != hipSuccess)
-            return psnr_hip_rc(rc);
+            return vmaf_hip_rc_to_errno(rc);
     }
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
@@ -338,16 +366,27 @@ static int psnr_hip_release(PsnrStateHip *s)
     return rc;
 }
 
+/* Peak, per-plane psnr_max and empty APSNR totals, as CPU integer_psnr.c::init
+ * derives them (psnr_score.h). Inactive planes keep the default ceiling: a
+ * zero plane size would turn a min_sse ceiling into -inf, and nothing reads it. */
+static void psnr_hip_init_scores(PsnrStateHip *s, unsigned bpc)
+{
+    s->bpc = bpc;
+    s->peak = vmaf_psnr_peak(bpc, s->reduced_hbd_peak);
+    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
+        const double min_sse = (p < s->n_planes) ? s->min_sse : 0.0;
+        s->psnr_max[p] = vmaf_psnr_max(bpc, s->peak, min_sse, s->width[p], s->height[p]);
+        s->apsnr_sse[p] = 0u;
+        s->apsnr_n_pixels[p] = 0u;
+    }
+}
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
     PsnrStateHip *s = fex->priv;
     psnr_hip_init_geometry(s, pix_fmt, w, h);
-    s->bpc = bpc;
-    s->peak = (1u << bpc) - 1u;
-    /* psnr_max formula mirrors CPU integer_psnr.c::init min_sse==0 branch. */
-    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++)
-        s->psnr_max[p] = (double)(6u * bpc) + 12.0;
+    psnr_hip_init_scores(s, bpc);
 
     int err = vmaf_hip_context_new(&s->ctx, 0);
     if (err == 0)
@@ -431,8 +470,37 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #endif /* HAVE_HIPCC */
 }
 
-/* psnr_name[p] matches CPU integer_psnr.c and the CUDA twin. */
+/* Feature names — same arrays as the CPU path
+ * (core/src/feature/integer_psnr.c::psnr_name / mse_name / flush). */
+static const char *const apsnr_name[PSNR_NUM_PLANES] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+
+#ifdef HAVE_HIPCC
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
+static const char *const mse_name[PSNR_NUM_PLANES] = {"mse_y", "mse_cb", "mse_cr"};
+
+/* Score one plane from its device-reduced SSE, in CPU order: `psnr_*`,
+ * then `mse_*` when `enable_mse` is set. `enable_apsnr` folds the SSE into
+ * the clip totals that flush_fex_hip() publishes. */
+static int psnr_hip_emit_plane(PsnrStateHip *s, unsigned p, unsigned index,
+                               VmafFeatureCollector *feature_collector)
+{
+    const uint64_t sse = *(const uint64_t *)s->rb[p].host_pinned;
+    if (s->enable_apsnr) {
+        s->apsnr_sse[p] += sse;
+        s->apsnr_n_pixels[p] += (uint64_t)s->height[p] * s->width[p];
+    }
+    const double mse = (double)sse / ((double)s->width[p] * (double)s->height[p]);
+    const double psnr =
+        vmaf_psnr_from_mse(mse, (double)s->peak * (double)s->peak, s->psnr_max[p], s->uncapped);
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      psnr_name[p], psnr, index);
+    if (err == 0 && s->enable_mse) {
+        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      mse_name[p], mse, index);
+    }
+    return err;
+}
+#endif /* HAVE_HIPCC */
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -446,30 +514,10 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return err;
 
 #ifdef HAVE_HIPCC
-    /* Match CPU integer_psnr.c::extract per plane. */
-    const double peak_sq = (double)s->peak * (double)s->peak;
+    /* Match CPU integer_psnr.c::extract per plane (psnr_score.h). */
     int rc = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        const double sse = (double)*(const uint64_t *)s->rb[p].host_pinned;
-        const double n_pixels = (double)s->width[p] * (double)s->height[p];
-        const double mse = sse / n_pixels;
-        /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
-         * psnr_max[p] as the infinity sentinel; the truncation applies
-         * only when `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
-        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-        double psnr;
-        if (!s->uncapped) {
-            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
-            psnr = 10.0 * log10(peak_sq / mse_clamped);
-            if (psnr > s->psnr_max[p])
-                psnr = s->psnr_max[p];
-        } else if (mse <= 0.0) {
-            psnr = s->psnr_max[p]; /* infinity sentinel */
-        } else {
-            psnr = 10.0 * log10(peak_sq / mse_clamped);
-        }
-        const int e = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);
+        const int e = psnr_hip_emit_plane(s, p, index, feature_collector);
         if (e != 0 && rc == 0)
             rc = e;
     }
@@ -479,6 +527,24 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     (void)index;
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
+}
+
+/* `enable_apsnr`: publish the clip-aggregate APSNR of every active plane,
+ * exactly as CPU integer_psnr.c::flush does. libvmaf collects the last
+ * pending frame before it flushes (flush_context_serial()), so the totals
+ * are complete. */
+static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    const PsnrStateHip *s = fex->priv;
+    int err = 0;
+    if (s->enable_apsnr) {
+        for (unsigned p = 0; p < s->n_planes; p++) {
+            const double apsnr =
+                vmaf_psnr_aggregate(s->peak, s->apsnr_sse[p], s->apsnr_n_pixels[p], s->psnr_max[p]);
+            err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[p], apsnr);
+        }
+    }
+    return (err < 0) ? err : !err;
 }
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
@@ -506,6 +572,7 @@ VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .init = init_fex_hip,
     .submit = submit_fex_hip,
     .collect = collect_fex_hip,
+    .flush = flush_fex_hip,
     .close = close_fex_hip,
     .options = options,
     .priv_size = sizeof(PsnrStateHip),

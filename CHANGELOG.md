@@ -36,6 +36,19 @@
   thread: on Linux and macOS the same file or pipe on both sides and
   `--no-reference`, on Windows anything but two regular files. See
   [Input read-ahead](docs/usage/cli.md#input-read-ahead).
+- **Four HIP twins take the CPU extractor's options (ADR-1382).** `psnr_hip`
+  now accepts `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`
+  through the CPU's own `core/src/feature/psnr_score.h`, `apsnr_*` aggregates
+  included; `integer_ssim_hip` accepts `enable_db` / `clip_db`,
+  `float_ssim_hip` `enable_lcs` / `enable_db` / `clip_db` (`float_ssim_l/c/s`
+  computed on the device), and `float_motion_hip` `motion_max_val`, with its
+  debug `motion` score now weighted by `motion_fps_weight` like the CPU's.
+  Before, a model that set one of these options computed the feature on the
+  CPU, and naming the twin with the option failed with `unknown option`. Both
+  SSIM twins score an identical window exactly 1, so with `enable_db`
+  identical frames report the CPU's `+inf` or `clip_db` ceiling. Not yet
+  measured on AMD hardware; see
+  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
 
 
 - **The SYCL integer ADM twin computes AIM on the device, so the default model's
@@ -221,6 +234,33 @@
   the repository, including a commit a force-push had already replaced,
   failed every other open pull request. Each run now scans the history of
   its own `HEAD`: on a pull request, master plus the PR's commits.
+- **HIP twins stay inside their buffers on small frames, and `vif_hip` hands
+  frames below 16 pixels to the CPU (ADR-1381).** The HIP motion kernel's tile
+  loads and the integer ADM scale-0 vertical DWT reflect an index once, which
+  leaves the plane for the padding threads of a plane smaller than the tile
+  (the defect that faulted the SYCL twins); both now clamp the reflected row
+  into the plane, which changes no score of any accepted frame. `vif_hip`
+  scored frames below 16 pixels from other samples than the CPU (its filters
+  need 16 pixels at every scale); model dispatch now computes those frames
+  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. Not
+  yet measured on AMD hardware; see
+  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
+
+
+- **`motion_hip` now computes the CPU `motion` arithmetic (ADR-1377).** The
+  HIP twin blurred each frame and differenced the blurred frames, while the
+  CPU (since the upstream pipelined-motion port) blurs the frame difference
+  and rounds after each filter pass; the two orders round differently, so
+  `motion2` / `motion3` were up to 1.26e-5 off on the Netflix 576x324 pair on
+  a gfx1036. `motion_hip` and `motion_v2_hip` now run one diff-first kernel,
+  the one `motion_v2_hip` already used, and are expected to match
+  `--backend cpu` bit for bit; the debug `motion` score now carries
+  `motion_fps_weight` and `motion_max_val` like the CPU's, and a one-frame
+  run reports `motion3 = 0`. Both motion twins copy the reference luma into
+  pinned memory and upload it without a host wait in `submit()`. Not yet
+  measured on AMD hardware: the verify commands are in `docs/state.md`
+  (`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29`) and
+  [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
 
 
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)

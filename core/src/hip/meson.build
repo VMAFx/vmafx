@@ -77,6 +77,8 @@ hip_sources += files(
     '../feature/hip/ciede_hip.c',
     '../feature/hip/float_moment_hip.c',
     '../feature/hip/integer_motion_v2_hip.c',
+    # ADR-1377: the diff-first motion SAD launcher both motion twins call.
+    '../feature/hip/integer_motion_sad_hip.c',
     # integer_motion_hip: HIP port of the integer motion extractor (ADR-0528).
     # Mirrors `feature/cuda/integer_motion_cuda.c` — TEMPORAL flag, per-frame
     # SAD reduction, motion3 5-frame window. Emits motion_score, motion2_score,
