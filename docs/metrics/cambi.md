@@ -341,8 +341,11 @@ As of this change the twin has been checked frame by frame by running its
 kernels through a host emulation of the CUDA driver, but not yet on an NVIDIA
 GPU, and it has no measured timing. The verify-and-time steps for an RTX 4090
 are in [`state.md`](../state.md) (`T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`).
-Before ADR-1379 the twin downloaded the distorted picture, preprocessed it on
-the host and read the image and mask back at every scale
+**Implementation note (before ADR-1379):** the twin downloaded the distorted
+picture to a host copy and preprocessed it there, because the host
+preprocessing path reads `pic->data[0]` as a host pointer and a CUDA picture
+holds a device address in that field (lusoris/vmaf#870); it then read the
+image and mask back at every scale for the host c-values and pooling
 ([ADR-0360](../adr/0360-cambi-cuda.md)).
 
 Companion research digest:
