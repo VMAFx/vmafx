@@ -699,6 +699,7 @@
     "0157": {
       "sites": {
         "core/test/meson.build": 1,
+        "core/test/test_cuda_float_motion_parity.c": 1,
         "core/test/test_cuda_motion_tiny_frames.c": 1,
         "core/test/test_cuda_preallocation_leak.c": 1,
         "core/test/test_cuda_twin_option_parity.c": 1
@@ -1275,7 +1276,7 @@
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_cuda_float_adm_parity.c": 2,
         "core/test/test_cuda_float_moment_parity.c": 1,
-        "core/test/test_cuda_float_motion_parity.c": 2,
+        "core/test/test_cuda_float_motion_parity.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 1,
         "core/test/test_cuda_float_psnr_parity.c": 2,
         "core/test/test_cuda_float_ssim_parity.c": 2,
@@ -1788,9 +1789,15 @@
         "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
         "core/src/feature/brisque.c": 1,
         "core/src/feature/ciede.c": 4,
+        "core/src/feature/cuda/float_motion_cuda.c": 1,
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 1,
+        "core/src/feature/cuda/integer_motion_cuda.c": 1,
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
+        "core/src/feature/cuda/integer_psnr_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
+        "core/src/feature/cuda/integer_ssim_cuda.c": 1,
+        "core/src/feature/cuda/integer_vif_cuda.c": 1,
         "core/src/feature/cuda/ssim_cuda.c": 1,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 3,
         "core/src/feature/delta_e_itp.c": 2,
@@ -6175,6 +6182,7 @@
         "core/test/test_cuda_adm_parity.c": 1,
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_cuda_drain_batch.c": 5,
+        "core/test/test_cuda_float_motion_parity.c": 1,
         "core/test/test_cuda_motion_tiny_frames.c": 1,
         "core/test/test_cuda_psnr_hvs_parity.c": 1,
         "core/test/test_cuda_runtime_unwind.c": 1,
@@ -8045,6 +8053,12 @@
         "scripts/dev/rc3-home-gpu-retest.sh": 1
       },
       "target": "1386-rc3-home-gpu-retest-kit.md"
+    },
+    "1392": {
+      "sites": {
+        "core/test/test_cuda_kernel_source_contract.py": 3
+      },
+      "target": "1392-cuda-integer-reductions-one-atomic-per-block.md"
     }
   },
   "retired": {

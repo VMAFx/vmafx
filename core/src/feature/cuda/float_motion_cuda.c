@@ -14,7 +14,11 @@
  *  `motion` / `motion2` value is motion_clip()ped, i.e. scaled by
  *  `motion_fps_weight` and capped at `motion_max_val` (ADR-1373, following
  *  ADR-1365 for SYCL), and `motion_force_zero` publishes zeros without
- *  touching the device.
+ *  touching the device. `motion3` is the CPU's too: the motion2 value
+ *  motion_blend_clip()ped (fps weight, the `motion_blend_factor` /
+ *  `motion_blend_offset` blend, the cap), with index 0 taken from the first
+ *  SAD and the last index from the flush, as float_motion.c emits it
+ *  (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
  */
 
 #include <errno.h>
@@ -28,6 +32,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "log.h"
+#include "motion_blend_tools.h"
 
 #include "cuda/float_motion_cuda.h"
 #include "cuda/kernel_template.h"
@@ -70,6 +75,8 @@ typedef struct FloatMotionStateCuda {
     unsigned bpc;
     double prev_motion_score;
     double motion_fps_weight;
+    double motion_blend_factor;
+    double motion_blend_offset;
     double motion_max_val;
     bool debug;
     bool motion_force_zero;
@@ -105,6 +112,30 @@ static const VmafOption options[] = {
         .max = 5.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
+    /* The motion3 blend, declared and ordered as in the CPU table: the
+     * option order spells the feature names (motion3_mbf_0.5_mbo_2). */
+    {
+        .name = "motion_blend_factor",
+        .alias = "mbf",
+        .help = "blend motion score given an offset",
+        .offset = offsetof(FloatMotionStateCuda, motion_blend_factor),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 1.0,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_blend_offset",
+        .alias = "mbo",
+        .help = "blend motion score starting from this offset",
+        .offset = offsetof(FloatMotionStateCuda, motion_blend_offset),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 40.0,
+        .min = 0.0,
+        .max = 1000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
     {
         .name = "motion_max_val",
         .alias = "mmxv",
@@ -134,6 +165,10 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_feature_motion2_score", 0.0, index);
+    if (!err) {
+        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_feature_motion3_score", 0.0, index);
+    }
     if (s->debug && !err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_feature_motion_score", 0.0, index);
@@ -331,7 +366,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->index = index;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
+    const ptrdiff_t plane_pitch = (ptrdiff_t)s->frame_w * ((s->bpc <= 8u) ? 1 : 2);
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
 
@@ -339,15 +374,18 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(ref_pic),
                                         CU_EVENT_WAIT_DEFAULT));
-    CUDA_MEMCPY2D copy = {0};
-    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    copy.srcPitch = ref_pic->stride[0];
-    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.dstDevice = (CUdeviceptr)s->ref_in->data;
-    copy.dstPitch = plane_pitch;
-    copy.WidthInBytes = plane_pitch;
-    copy.Height = s->frame_h;
+    /* Designated fields only: both memory types are set, every other field
+     * is the zero the driver expects. */
+    const CUDA_MEMCPY2D copy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)ref_pic->data[0],
+        .srcPitch = ref_pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
+        .dstDevice = (CUdeviceptr)s->ref_in->data,
+        .dstPitch = (size_t)plane_pitch,
+        .WidthInBytes = (size_t)plane_pitch,
+        .Height = s->frame_h,
+    };
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
@@ -388,6 +426,15 @@ static double motion_clip(const FloatMotionStateCuda *s, double score)
     return (weighted < s->motion_max_val) ? weighted : s->motion_max_val;
 }
 
+/* CPU float_motion.c::motion_blend_clip (motion3): fps weight, the blend,
+ * then the motion_max_val cap. */
+static double motion_blend_clip(const FloatMotionStateCuda *s, double score)
+{
+    const double blended =
+        motion_blend(score * s->motion_fps_weight, s->motion_blend_factor, s->motion_blend_offset);
+    return (blended < s->motion_max_val) ? blended : s->motion_max_val;
+}
+
 static int motion_append(const FloatMotionStateCuda *s, VmafFeatureCollector *feature_collector,
                          const char *name, double score, unsigned index)
 {
@@ -415,13 +462,23 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     const double motion_score = reduce_sad(s);
 
-    if (index > 1) {
-        /* motion2 of the previous frame: the smaller of its two SADs, then
-         * motion_clip() — CPU float_motion.c::extract order. */
+    if (index == 1) {
+        /* motion3 of frame 0 comes from the first SAD alone; its motion2 is
+         * the 0 emitted above (CPU float_motion.c::extract, index 1). */
+        err = motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                            motion_blend_clip(s, motion_score), 0);
+    } else {
+        /* motion2 / motion3 of the previous frame: the smaller of its two
+         * SADs, then motion_clip() / motion_blend_clip() — CPU
+         * float_motion.c::extract order. */
         const double motion2 =
             (motion_score < s->prev_motion_score) ? motion_score : s->prev_motion_score;
         err = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
                             motion_clip(s, motion2), index - 1);
+        if (!err) {
+            err = motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                                motion_blend_clip(s, motion2), index - 1);
+        }
     }
     if (s->debug && !err) {
         err = motion_append(s, feature_collector, "VMAF_feature_motion_score",
@@ -433,6 +490,21 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     return err;
 }
 
+/* Append `name` at `index` unless the collector already holds it. The probe
+ * reads the dictionary name, which carries non-default FEATURE_PARAM options
+ * such as motion2_mmxv_4. `s` is not const: vmaf_dictionary_get() takes the
+ * dictionary by a mutable pointer. */
+static int motion_append_once(FloatMotionStateCuda *s, VmafFeatureCollector *feature_collector,
+                              const char *name, double score, unsigned index)
+{
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&s->feature_name_dict, name, 0);
+    double existing;
+    if (!vmaf_feature_collector_get_score(feature_collector, entry ? entry->val : name, &existing,
+                                          index))
+        return 0;
+    return motion_append(s, feature_collector, name, score, index);
+}
+
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     FloatMotionStateCuda *s = fex->priv;
@@ -440,27 +512,24 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     if (sync_err)
         return sync_err;
 
+    /* Idempotency guard (motion_append_once): same rationale as
+     * integer_motion_cuda's flush — the post-#312 flush_context_cuda may
+     * have already written the tail scores via the pending-collect.
+     * Re-appending would trip the "cannot be overwritten" warning and
+     * surface as "context could not be synchronized". */
     int ret = 0;
     if (s->index > 0) {
-        /* Idempotency guard: same rationale as integer_motion_cuda's
-         * flush — the post-#312 flush_context_cuda may have already
-         * written motion2_score[s->index] via the pending-collect.
-         * Probe and skip in that case (re-append would trip the
-         * "cannot be overwritten" warning and surface as
-         * "context could not be synchronized"). The probe reads the
-         * dictionary name, which carries non-default FEATURE_PARAM options
-         * such as motion2_mmxv_4. */
-        const VmafDictionaryEntry *entry =
-            vmaf_dictionary_get(&s->feature_name_dict, "VMAF_feature_motion2_score", 0);
-        const char *motion2_name = entry ? entry->val : "VMAF_feature_motion2_score";
-        double existing;
-        if (vmaf_feature_collector_get_score(feature_collector, motion2_name, &existing,
-                                             s->index) != 0) {
-            /* Tail motion2: the last SAD alone, motion_clip()ped like the
-             * CPU float_motion.c::flush. */
-            ret = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
-                                motion_clip(s, s->prev_motion_score), s->index);
+        /* Tail motion2 / motion3: the last SAD alone, motion_clip()ped and
+         * motion_blend_clip()ped like the CPU float_motion.c::flush. */
+        ret = motion_append_once(s, feature_collector, "VMAF_feature_motion2_score",
+                                 motion_clip(s, s->prev_motion_score), s->index);
+        if (!ret) {
+            ret = motion_append_once(s, feature_collector, "VMAF_feature_motion3_score",
+                                     motion_blend_clip(s, s->prev_motion_score), s->index);
         }
+    } else {
+        /* A one-frame input: the CPU flush emits motion3 = 0 at index 0. */
+        ret = motion_append_once(s, feature_collector, "VMAF_feature_motion3_score", 0.0, 0);
     }
     return (ret < 0) ? ret : !ret;
 }
@@ -494,8 +563,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_feature_motion2_score",
-                                          NULL};
+                                          "VMAF_feature_motion3_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_motion_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion_cuda = {
     .name = "float_motion_cuda",
     .init = init_fex_cuda,

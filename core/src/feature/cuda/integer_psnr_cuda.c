@@ -176,15 +176,14 @@ static int psnr_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis, Vm
                               CUfunction funcbpc8, CUfunction funcbpc16, CudaFunctions *cu_f,
                               CUstream stream)
 {
-    const int block_dim_x = 16;
-    const int block_dim_y = 16;
-    const int grid_dim_x = DIV_ROUND_UP(width, block_dim_x);
-    const int grid_dim_y = DIV_ROUND_UP(height, block_dim_y);
+    /* One block per PSNR_BLOCK_COLS x PSNR_BLOCK_Y pixels (integer_psnr_cuda.h). */
+    const unsigned grid_dim_x = DIV_ROUND_UP(width, PSNR_BLOCK_COLS);
+    const unsigned grid_dim_y = DIV_ROUND_UP(height, PSNR_BLOCK_Y);
 
     void *kernelParams[] = {(void *)ref, (void *)dis, (void *)sse, &width, &height, &plane};
     CUfunction func = (bpc == 8) ? funcbpc8 : funcbpc16;
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                           block_dim_y, 1, 0, stream, kernelParams, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, PSNR_BLOCK_X,
+                                           PSNR_BLOCK_Y, 1, 0, stream, kernelParams, NULL));
     return 0;
 }
 
@@ -458,6 +457,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
  * CUDA twin. */
 static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_psnr_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_cuda = {
     .name = "psnr_cuda",
     .init = init_fex_cuda,

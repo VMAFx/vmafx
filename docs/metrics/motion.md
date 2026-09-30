@@ -265,10 +265,15 @@ returns `-ENOTSUP` with a warning until per-backend kernel ports land.
 Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across CUDA,
 SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
-The GPU twins emit `motion` and `motion2`; `motion3` comes from the CPU
-extractor only, so a run on a twin (`--backend cuda --feature float_motion`,
-say) writes no `motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
-[`state.md`](../state.md)). They take `debug`, `motion_force_zero` and
+`float_motion_cuda` emits all three scores, as the CPU does: its `motion3`
+is the CPU's blend of `motion2` (`motion_fps_weight`, then the
+`motion_blend_factor` / `motion_blend_offset` blend, then the
+`motion_max_val` cap), with frame 0 taken from the first SAD and the last
+frame from the flush, and it takes both blend options (aliases `mbf` /
+`mbo`). The SYCL, HIP and Metal twins emit `motion` and `motion2` only, so a
+run on one of them (`--backend sycl --feature float_motion`, say) writes no
+`motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
+[`state.md`](../state.md)). The twins take `debug`, `motion_force_zero` and
 `motion_fps_weight`. With `motion_force_zero`, `float_motion_cuda` and
 `motion_cuda` publish zeros from the first frame; before 2026-09-30 both
 crashed on it (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).

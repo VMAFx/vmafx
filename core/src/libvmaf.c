@@ -3200,8 +3200,9 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr
         /* CUDA extractors with submit+collect were already handled
          * in the batched pass above. Skip them here so we don't
          * double-submit. CUDA extractors WITHOUT async submit/collect
-         * (none today, but possible for purely-synchronous kernels)
-         * still need the legacy dispatch path. */
+         * still need the legacy dispatch path: the motion twins' init()
+         * swaps in a synchronous extract() under motion_force_zero
+         * (init_before_dispatch()). */
         const bool cuda = (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) != 0;
         if (cuda && fex_ctx->fex->submit && fex_ctx->fex->collect) {
             continue;

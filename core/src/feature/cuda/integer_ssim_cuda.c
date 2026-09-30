@@ -310,12 +310,14 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     return 0;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* float_ssim_check_geometry - the entry guards of init_fex_cuda.
+ *
+ * HISS-04: moved whole out of init_fex_cuda — the same enable_chroma
+ * warning, the same scale and 11x11 checks with the same messages and the
+ * same -EINVAL, in the same order.
+ */
+static int float_ssim_check_geometry(const SsimStateCuda *s, unsigned w, unsigned h)
 {
-    (void)pix_fmt; /* luma only, like the CPU float_ssim */
-    SsimStateCuda *s = fex->priv;
-
     if (s->enable_chroma) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "float_ssim_cuda: enable_chroma is ignored; float_ssim scores luma only\n");
@@ -334,12 +336,18 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                  "ssim_cuda: input %ux%u smaller than 11x11 Gaussian footprint.\n", w, h);
         return -EINVAL;
     }
+    return 0;
+}
 
-    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return integer_ssim_init_unwind(fex, s, err);
-
-    CudaFunctions *cu_f = fex->cu_state->f;
+/* float_ssim_load_kernels - load the module and resolve its four kernels
+ * with the owning context current.
+ *
+ * HISS-04: moved whole out of init_fex_cuda — the same push, loads and pop,
+ * and every failure still pops a pushed context and unwinds through
+ * integer_ssim_init_unwind() with the CUDA error.
+ */
+static int float_ssim_load_kernels(VmafFeatureExtractor *fex, SsimStateCuda *s, CudaFunctions *cu_f)
+{
     int _cuda_err = 0;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
@@ -358,13 +366,32 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
-
-    return integer_ssim_setup_geometry(fex, s, w, h, bpc);
+    return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
     return integer_ssim_init_unwind(fex, s, _cuda_err);
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt; /* luma only, like the CPU float_ssim */
+    SsimStateCuda *s = fex->priv;
+
+    int err = float_ssim_check_geometry(s, w, h);
+    if (err)
+        return err;
+
+    err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+    if (err)
+        return integer_ssim_init_unwind(fex, s, err);
+
+    err = float_ssim_load_kernels(fex, s, fex->cu_state->f);
+    if (err)
+        return err;
+    return integer_ssim_setup_geometry(fex, s, w, h, bpc);
 }
 
 /* integer_ssim_launch_vert - pass 2: vertical accumulation and SSIM combine.
@@ -588,6 +615,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"float_ssim", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_ssim_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim_cuda = {
     .name = "float_ssim_cuda",
     .init = init_fex_cuda,

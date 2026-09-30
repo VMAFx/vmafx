@@ -459,6 +459,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
                                           "VMAF_integer_feature_motion2_v2_score",
                                           "VMAF_integer_feature_motion3_v2_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .name = "motion_v2_cuda",
     .init = init_fex_cuda,

@@ -178,7 +178,11 @@ linked AGENTS.md before resolving conflicts.
   `integer_ssim_score` builds with `--fmad=false` and the CPU's grouping.
   The integer ADM DWT row and tap arithmetic lives in
   `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
-  pixels. Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+  pixels. `float_motion_cuda` emits the CPU's `motion3` (`motion_blend_clip()`).
+  The motion SAD and PSNR kernels add one atomic per block and PSNR selects
+  its plane with constant indices
+  ([ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)).
+  Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute

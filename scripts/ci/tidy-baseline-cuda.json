@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1266,
+  "total_warnings": 1224,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -389,19 +389,12 @@
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/cuda/float_adm_cuda.c": 3,
-    "core/src/feature/cuda/float_motion_cuda.c": 3,
     "core/src/feature/cuda/float_psnr_cuda.c": 5,
     "core/src/feature/cuda/float_vif_cuda.c": 3,
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_moment_cuda.c": 1,
-    "core/src/feature/cuda/integer_motion_cuda.c": 1,
-    "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
-    "core/src/feature/cuda/integer_psnr_cuda.c": 1,
-    "core/src/feature/cuda/integer_ssim_cuda.c": 2,
-    "core/src/feature/cuda/integer_vif_cuda.c": 12,
-    "core/src/feature/cuda/ssim_cuda.c": 2,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 6,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 16,
@@ -486,7 +479,6 @@
     "core/test/test_cuda_drain_batch.c": 12,
     "core/test/test_cuda_float_adm_parity.c": 26,
     "core/test/test_cuda_float_moment_parity.c": 20,
-    "core/test/test_cuda_float_motion_parity.c": 20,
     "core/test/test_cuda_float_ms_ssim_parity.c": 22,
     "core/test/test_cuda_float_psnr_parity.c": 20,
     "core/test/test_cuda_float_ssim_parity.c": 21,
@@ -744,6 +736,70 @@
         }
       },
       "previous_baseline_sha256": "311ef1c85d16e815ad29794715c890aefe9528a689e5e5b1226bd6ae155f54fc"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/float_motion_cuda.c",
+        "core/src/feature/cuda/integer_motion_cuda.c",
+        "core/src/feature/cuda/integer_motion_v2_cuda.c",
+        "core/src/feature/cuda/integer_psnr_cuda.c",
+        "core/src/feature/cuda/integer_ssim_cuda.c",
+        "core/src/feature/cuda/integer_vif_cuda.c",
+        "core/src/feature/cuda/ssim_cuda.c",
+        "core/test/test_cuda_float_motion_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/float_motion_cuda.c": {
+          "warnings": [
+            3,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_motion_cuda.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_psnr_cuda.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_ssim_cuda.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_vif_cuda.c": {
+          "warnings": [
+            12,
+            0
+          ]
+        },
+        "core/src/feature/cuda/ssim_cuda.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_motion_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "eb928b58774b39df3bd608c670968c830b714aafe40dc8e865500d18b4185ae3"
     }
   ]
 }

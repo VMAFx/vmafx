@@ -358,7 +358,9 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   added to the CPU `float_motion` extractor by the upstream port from
   Netflix/vmaf [`b949cebf`](https://github.com/Netflix/vmaf/commit/b949cebf)
   (2026-04-29). `float_motion_cuda` takes `motion_max_val` since
-  [ADR-1373](../../adr/1373-cuda-twin-cpu-option-parity.md); the others keep
+  [ADR-1373](../../adr/1373-cuda-twin-cpu-option-parity.md), and emits
+  `motion3_score` with the `motion_blend_factor` / `motion_blend_offset`
+  options since `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`; the others keep
   `float_motion` on the CPU. As of T3-15(c) /
   [ADR-0219](../../adr/0219-motion3-gpu-coverage.md), the
   `integer_motion_cuda` kernel emits `motion3_score` in 3-frame
@@ -772,7 +774,7 @@ naming the twin with the option failed with `unknown option`.
 | `psnr_cuda` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | host, on the device-reduced SSE, through `psnr_score.h` (bit-exact with the CPU) |
 | `integer_ssim_cuda` | `enable_db`, `clip_db` | host, on the device-reduced score (`vmaf_ssim_max_db()`) |
 | `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs`: a second pass-2 kernel reduces L, C and S per block; dB on the host |
-| `float_motion_cuda` | `motion_max_val` (`mmxv`) | host: every emitted score, the debug `motion` included, is weighted by `motion_fps_weight` and then capped |
+| `float_motion_cuda` | `motion_max_val` (`mmxv`), `motion_blend_factor` (`mbf`), `motion_blend_offset` (`mbo`) | host: every emitted score, the debug `motion` included, is weighted by `motion_fps_weight` and then capped; `motion3` is the CPU's blend of `motion2` (`motion_blend_clip()`) |
 
 The same change fixed how these twins score, not only which options they take:
 

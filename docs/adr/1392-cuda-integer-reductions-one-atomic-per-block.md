@@ -1,0 +1,49 @@
+<!-- markdownlint-disable MD013 MD060 -->
+# ADR-1392: CUDA motion and PSNR kernels add one atomic per block, the motion SAD filters separably, and PSNR selects its plane with constant indices
+
+- **Status**: Accepted
+- **Date**: 2026-09-30
+- **Deciders**: lusoris
+- **Tags**: cuda, performance, motion, psnr, gpu-parity, fork-local
+
+## Context
+
+The CUDA motion SAD kernel (`integer_motion_v2/motion_v2_score.cu`, which `motion_cuda` and `motion_v2_cuda` share since [ADR-1372](1372-cuda-motion-diff-first-pipeline.md)) and the PSNR kernel (`integer_psnr/psnr_score.cu`) sum one integer per pixel into a single 64-bit accumulator. Both reduced each warp with shuffles and then issued one `atomicAdd` per warp to that one address: 259,200 atomics for a 3840x2160 luma plane, and about 389,000 per 4K 4:2:0 frame for PSNR, which launches once per plane. Atomics to one address serialise in the L2. A CUPTI kernel trace of 50 frames of the 3840x2160 `bbb` pair on an RTX 4090 (median of three traces) measured 1,750.5 us of `calculate_psnr_kernel_8bpc` time per frame (1,165.0 to 2,043.6 us across the traces) and 136.5 us for the motion SAD kernel, for a frame that a memory-bound kernel reads in a few tens of microseconds. The motion kernel also computed the 5-tap vertical pass once per output and horizontal tap, 25 multiply-adds per output, although each vertical value feeds five neighbouring outputs (`T-GPU-MOTION-V2-INT64-VERTICAL-2026-09-29`).
+
+The PSNR kernels took the reference and distorted pictures as by-value `VmafPicture` parameters and read `data[plane]` / `stride[plane]` with the runtime `plane` argument. nvcc cannot index kernel-parameter space with a runtime value, so it copied both 96-byte structs to each thread's stack: `cuobjdump --dump-resource-usage` reports `STACK:192` for both PSNR kernels on every architecture, on `master` as well.
+
+The #1637 review had also flagged `__launch_bounds__(256, 8)` on the SAD kernel: eight 256-thread blocks exceed the 1536 threads an SM of sm_86 / 89 / 120 holds, so ptxas ignores the hint there with a `.minnctapersm` warning, and on sm_80 / 90 it caps the kernel at 32 registers.
+
+Constraints: the sums are integers and must stay the CPU's bit for bit (they are order-independent, so any reduction order is exact); no host round trip; the host-side kernel parameters stay as they are ([ADR-1215](1215-cuda-psnr-16bpc-plane-argument.md): `cuLaunchKernel` checks neither count nor order); every configured architecture (sm_80 to sm_120).
+
+## Decision
+
+1. **One atomic per block.** Both kernels reduce a block through warp shuffles, the per-warp sums in shared memory and a final shuffle in the first warp, and add the block's sum to the accumulator with one `atomicAdd`. The motion kernel keeps its 16x16 output tile: 32,400 atomics per 4K frame instead of 259,200.
+2. **PSNR threads sum eight pixels each.** A PSNR block is 32 x 8 threads, each summing eight pixels of one row 32 apart, so every load of a warp is one contiguous run, and a block covers 256 x 8 pixels: about 6,200 atomics per 4K 4:2:0 frame. The geometry lives in `integer_psnr_cuda.h`, shared by the kernel and `psnr_cuda_dispatch()`.
+3. **PSNR selects its plane with constant indices.** `plane_row()` reads `data[0..2]` / `stride[0..2]` behind a branch on `plane` instead of indexing with it, so no copy of the pictures is made: `STACK:0` on every architecture.
+4. **The motion filter is separable in shared memory.** After staging `prev - cur`, the block computes the vertical pass once for its 16 output rows and all 20 tile columns, with the CPU's rounding (`>> bpc`), into a second shared tile; each output then applies the 5 horizontal taps (`>> 16`). The integers are the ones the per-output loop computed; 10 multiply-adds per output instead of 25.
+5. **`__launch_bounds__(256, 6)`** on both SAD kernels: six blocks are the 1536 threads of an sm_86 / 89 / 120 SM, so the hint is honoured there and no longer caps sm_80 / 90 at 32 registers.
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| One atomic per block, multi-pixel PSNR threads, constant plane indices, separable motion filter (chosen) | Integer-exact; host code and kernel parameters unchanged; PSNR kernel about 99x (median against median) and motion SAD kernel 2.3x less GPU time at 4K | A second shared tile (1,344 bytes) and two more `__syncthreads()` in the motion kernel | — |
+| One atomic per warp (status quo) | Simplest | The L2 serialises every warp's atomic to the one address; PSNR spent 1.17 ms of GPU time per 4K frame | Measured bottleneck |
+| Per-block partials read back and summed on the host, as the SSIM twins do | No atomics at all | A readback of one value per block (about 4,000 per 4K luma plane) and a host loop per frame and plane, where an 8-byte sum suffices | More host work for no accuracy gain on an integer sum |
+| A second reduction kernel over per-block partials | No atomics, one 8-byte readback | One more launch per plane per frame | Launch overhead; per-block atomics no longer show in the kernel time |
+| CUB `BlockReduce` | Library-tuned | A template dependency in the kernel TU for 15 lines of shuffle code | Not needed for a fixed 256-thread block |
+| Pass the three plane pointers and strides as scalar kernel arguments instead of `plane_row()` | No branch in the kernel | Changes the kernel signature and the host argument array that ADR-1215 keeps identical for both bit depths | `plane_row()` gets the same `STACK:0` without touching the launch contract |
+| Larger motion tiles (32x16 outputs per block) or 32-bit horizontal sums for bpc <= 15 | Less halo per output; no 64-bit adds | More shared memory and registers per block; the 16-bit path still needs 33 bits | The upload dominates the frame time (see Consequences); left for `T-GPU-MOTION-V2-INT64-VERTICAL-2026-09-29` |
+
+## Consequences
+
+- **Positive**: GPU time per 3840x2160 8-bit frame on an RTX 4090 (CUPTI kernel trace, 50 frames of the `bbb` pair, median of three traces with the range, against a `master` build of 10f27efe2): the PSNR kernel 1,750.5 us (1,165.0 to 2,043.6) to 17.7 us (17.7 to 33.1) over its three plane launches (an intermediate build with one atomic per block and eight pixels per thread, but still the runtime plane index, took 163.2 us, 159.7 to 3,216.4, so the constant plane indices give the rest); the motion SAD kernel 136.5 us (135.7 to 137.7) to 59.6 us (58.8 to 59.8) for `motion_v2_cuda`, and `motion_cuda` 145.9 us (144.2 to 169.5, its former blur kernel on `master`) to 58.8 us (58.8 to 65.6). At 10 bits (12 frames of a 10-bit 3840x2160 pair made from the same clip, median of three): PSNR 1,166.7 us (1,162.3 to 1,167.1) to 53.6 us (53.4 to 54.2), the motion SAD kernel 133.4 to 63.8 us, and `motion_cuda` 151.0 to 63.7 us. Scores are unchanged: `psnr_*`, `mse_*`, `apsnr_*`, `integer_motion2` / `integer_motion3` and the `motion_v2` scores equal the CPU's (0.0) at 8, 10 and 16 bits on the Netflix pair and at 4K, and `compute-sanitizer` memcheck, racecheck and synccheck report no errors or hazards on the PSNR and motion tests. The SAD kernels use 26 (8-bit) and 40 (16-bit) registers on sm_89, the PSNR kernels 44 and 38; `-Xptxas -v` reports no stack frame and no spill for either kernel pair on any of the six configured architectures, and prints no `.minnctapersm` warning for them.
+- **Negative**: the wall time of a 4K CLI run barely moves, because copying the frames to the device dominates it: 24.9 MB per 8-bit frame, 2.1 to 2.2 ms of `memcpy HtoD` time per frame in the traces above, against 17.7 us of PSNR and 59.6 us of motion SAD kernel time. On this host the RTX 4090 sits on a PCIe Gen4 x8 link: a loop of `cudaMemcpyAsync` copies of one 12.4 MB frame moved 12.9 to 13.1 GB/s from pageable and 13.3 GB/s from pinned memory in four of five runs at load averages of 15 to 26, and in the fifth the pageable copies fell to 4.75 GB/s while the pinned ones held 13.3 GB/s (`T-CUDA-PAGEABLE-UPLOAD-4K-2026-09-30`). The state rows' (t(22) - t(2)) / 20 and a (t(200) - t(2)) / 198 variant, median of 3, interleaved with the `master` build at a load average of 16 to 29 from other jobs on the host, put every twin at 3.7 to 6.5 ms per 4K frame on both builds, with single repetitions spread over several milliseconds, so they cannot resolve the kernel change (`psnr_cuda` 4.77 against 4.53 ms at 200 frames, `motion_cuda` 4.22 against 4.06, `motion_v2_cuda` 4.77 against 5.42; `master` first).
+- **Neutral / follow-ups**: `integer_moment/moment_score.cu` still issues four atomics per warp to four accumulators, the same pattern: 573.8 us of GPU time per 4K frame (`T-CUDA-MOMENT-PER-WARP-ATOMICS-2026-10-01`). The upload is `T-CUDA-PAGEABLE-UPLOAD-4K-2026-09-30`. Guarded by `test_cuda_kernel_source_contract.py` (one atomic per block in both kernels, the per-block vertical pass, no runtime plane index; each with a planted regression), `test_cuda_motion_tiny_frames` (`==` with the scalar CPU, 3x3 to 1283x723, 8, 10 and 16 bits), `test_cuda_psnr_parity`, `test_cuda_psnr_parity_10bit`, `test_cuda_twin_option_parity` and the `*_large` parity tests.
+
+## References
+
+- req: "use your agents and fix cuda/hip etc. and tune it" (user, RC3 home session, 2026-09-30).
+- [Research-1372](../research/1372-cuda-rc3-parity-port.md) — the CUPTI traces behind these numbers.
+- [ADR-1372](1372-cuda-motion-diff-first-pipeline.md), [ADR-1373](1373-cuda-twin-cpu-option-parity.md), [ADR-1215](1215-cuda-psnr-16bpc-plane-argument.md), [ADR-0358](0358-cuda-motion-race-and-precision-fixes.md).

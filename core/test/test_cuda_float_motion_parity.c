@@ -12,14 +12,12 @@
  * core/src/feature/float_motion.c (CPU) and
  * core/src/feature/cuda/float_motion_cuda.c (CUDA).
  *
- * Feature surface: the CPU twin emits three features
+ * Feature surface: both twins emit three features
  * (`VMAF_feature_motion_score`, `..._motion2_score`,
- * `..._motion3_score`); the CUDA kernel emits the first two only
- * (`motion`/`motion2`). The motion3 post-process is the host-side
- * moving-average produced by the integer `motion_cuda` path
- * (already gated by test_cuda_motion3_parity.c, ADR-0214). This
- * test therefore restricts comparison to the two features that BOTH
- * backends emit.
+ * `..._motion3_score`). The CUDA twin emitted the first two only until
+ * T-GPU-FLOAT-MOTION3-MISSING-2026-09-30; its motion3 is now the CPU's
+ * host-side blend of motion2 (float_motion.c::motion_blend_clip), so all
+ * three are compared.
  *
  * Without this test, a SIMD pivot on the CPU side or a kernel-grid
  * change on the CUDA side could silently shift the float-path motion
@@ -43,6 +41,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -55,13 +59,13 @@
 /* ADR-0214 cross-backend tolerance (places=4 → 1e-4). */
 #define PARITY_TOL 1e-4
 
-/* Features emitted by BOTH CPU `float_motion` and CUDA
- * `float_motion_cuda`. The CPU twin additionally emits motion3 —
- * that one is already covered by test_cuda_motion3_parity.c. */
-#define NUM_MOTION_FEATURES 2u
+/* Features emitted by both CPU `float_motion` and CUDA
+ * `float_motion_cuda`. */
+#define NUM_MOTION_FEATURES 3u
 static const char *const MOTION_FEATURES[NUM_MOTION_FEATURES] = {
     "VMAF_feature_motion_score",
     "VMAF_feature_motion2_score",
+    "VMAF_feature_motion3_score",
 };
 
 static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
@@ -88,50 +92,63 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu(double *out_scores)
+/* Scores of every frame: [frame][feature]. */
+typedef double MotionScores[NUM_FRAMES][NUM_MOTION_FEATURES];
+
+/* Feed NUM_FRAMES fixture pairs and flush. */
+static char *feed_frames(VmafContext *vmaf)
 {
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_motion", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_motion) failed", !err);
-
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
+        VmafPicture ref;
+        VmafPicture dist;
+        mu_assert("fill_fixture(ref) failed", !fill_fixture(&ref, i));
+        mu_assert("fill_fixture(dist) failed", !fill_fixture(&dist, i));
+        mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, i));
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-
-    for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, MOTION_FEATURES[m], &out_scores[m], 1u);
-        mu_assert("CPU: vmaf_feature_score_at_index(motion[i], idx=1) failed", !err);
-    }
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
+    mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
     return NULL;
 }
 
-static char *run_cuda(double *out_scores, int *skipped)
+/* Every frame, so motion3 of frame 0 (from the first SAD) and of the last
+ * frame (from the flush) are compared too. */
+static char *read_scores(VmafContext *vmaf, MotionScores out)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
+            mu_assert("vmaf_feature_score_at_index failed",
+                      !vmaf_feature_score_at_index(vmaf, MOTION_FEATURES[m], &out[i][m], i));
+        }
+    }
+    return NULL;
+}
+
+/* Run `feature` over the fixture in `vmaf` and read every score back. */
+static char *run_feature(VmafContext *vmaf, const char *feature, MotionScores out)
+{
+    mu_assert("vmaf_use_feature failed", !vmaf_use_feature(vmaf, feature, NULL));
+    char *msg = feed_frames(vmaf);
+    return msg ? msg : read_scores(vmaf, out);
+}
+
+static char *run_cpu(MotionScores out)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    char *msg = run_feature(vmaf, "float_motion", out);
+    const int close_err = vmaf_close(vmaf);
+    if (msg)
+        return msg;
+    mu_assert("CPU: vmaf_close failed", !close_err);
+    return NULL;
+}
+
+static char *run_cuda(MotionScores out, int *skipped)
 {
     *skipped = 0;
-    for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++)
-        out_scores[m] = NAN;
-
-    int err = 0;
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (vmaf_cuda_state_init(&cu_state, cuda_cfg) != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         *skipped = 1;
         return NULL;
@@ -139,66 +156,52 @@ static char *run_cuda(double *out_scores, int *skipped)
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_motion_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(float_motion_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CUDA: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CUDA: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
+    char *msg = NULL;
+    if (vmaf_init(&vmaf, cfg)) {
+        msg = "CUDA: vmaf_init failed";
+    } else if (vmaf_cuda_import_state(vmaf, cu_state)) {
+        msg = "CUDA: vmaf_cuda_import_state failed";
+    } else {
+        msg = run_feature(vmaf, "float_motion_cuda", out);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
-
-    for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, MOTION_FEATURES[m], &out_scores[m], 1u);
-        mu_assert("CUDA: vmaf_feature_score_at_index(motion[i], idx=1) failed", !err);
-    }
-
-    err = vmaf_close(vmaf);
-    mu_assert("CUDA: vmaf_close failed", !err);
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
+    /* The CUDA state is freed only after its context is closed (ADR-0157). */
+    const int close_err = vmaf ? vmaf_close(vmaf) : 0;
+    const int free_err = vmaf_cuda_state_free(cu_state);
+    if (msg)
+        return msg;
+    mu_assert("CUDA: vmaf_close failed", !close_err);
+    mu_assert("CUDA: vmaf_cuda_state_free failed", !free_err);
     return NULL;
 }
 
 static char *test_float_motion_cpu_cuda_parity(void)
 {
-    double cpu_scores[NUM_MOTION_FEATURES] = {0};
-    double cuda_scores[NUM_MOTION_FEATURES] = {0};
+    MotionScores cpu_scores = {{0}};
+    MotionScores cuda_scores = {{0}};
     int skipped = 0;
 
     char *msg = run_cpu(cpu_scores);
     if (msg)
         return msg;
     msg = run_cuda(cuda_scores, &skipped);
-    if (msg)
+    if (msg || skipped)
         return msg;
-    if (skipped)
-        return NULL;
 
-    for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
-        mu_assert("CPU float_motion score is non-finite", isfinite(cpu_scores[m]));
-        mu_assert("CUDA float_motion score is non-finite", isfinite(cuda_scores[m]));
-
-        const double delta = fabs(cpu_scores[m] - cuda_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_motion parity FAIL %s: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                          MOTION_FEATURES[m], cpu_scores[m], cuda_scores[m], delta, PARITY_TOL);
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
+            mu_assert("CPU float_motion score is non-finite", isfinite(cpu_scores[i][m]));
+            mu_assert("CUDA float_motion score is non-finite", isfinite(cuda_scores[i][m]));
+            const double delta = fabs(cpu_scores[i][m] - cuda_scores[i][m]);
+            if (delta > PARITY_TOL) {
+                (void)fprintf(stderr,
+                              "\nfloat_motion parity FAIL %s[%u]: cpu=%.8f cuda=%.8f delta=%.2e "
+                              "tol=%.2e\n",
+                              MOTION_FEATURES[m], i, cpu_scores[i][m], cuda_scores[i][m], delta,
+                              PARITY_TOL);
+            }
+            mu_assert("float_motion CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
+                      delta <= PARITY_TOL);
         }
-        mu_assert("float_motion CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
     }
     return NULL;
 }
@@ -208,3 +211,5 @@ char *run_tests(void)
     mu_run_test(test_float_motion_cpu_cuda_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

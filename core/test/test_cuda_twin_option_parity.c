@@ -16,7 +16,9 @@
  *                      the CPU extractor does not have, stays accepted and
  *                      ignored for compatibility)
  *   float_motion_cuda  motion_max_val (and motion_fps_weight on the debug
- *                      `motion` score)
+ *                      `motion` score), and motion3 with motion_blend_factor
+ *                      and motion_blend_offset, which the twin did not emit
+ *                      (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30)
  *
  * Positive: each option set on both sides gives the CPU score, per frame --
  * bit-exact for PSNR (integer SSE, same host arithmetic via psnr_score.h),
@@ -28,7 +30,7 @@
  * CPU's l term is not exactly 1 there), and a single-pixel frame the CPU's
  * integer SSIM value; `--subsample 2` still sums every frame into apsnr_*;
  * motion_max_val = 0 zeroes every score; odd 4:2:0 and 10-bit 4:2:2
- * geometry.
+ * geometry; a one-frame input gets the CPU's motion3 = 0.
  *
  * The option-table checks need no device. The parity checks exit 77 (skip)
  * when no CUDA device is visible.
@@ -82,6 +84,8 @@ static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false, 
 static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false, false};
 static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true, false};
 static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false, false};
+/* One frame: the CPU float_motion flush emits motion3 = 0 at index 0. */
+static const Fixture FX_MOTION_ONE = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 1u, false, false};
 /* Identical flat frames: the CPU float_ssim reports 72.247199 dB, not +inf
  * (review of #1637: 64x64 flat 128 at 8 bits and 512 at 10 bits). */
 static const Fixture FX_FLAT8 = {VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u, 2u, true, true};
@@ -371,6 +375,10 @@ static const OptionCase OPTION_CASES[] = {
     {"float_ssim_cuda", "float_ssim", "clip_db", "true"},
     {"float_motion_cuda", "float_motion", "motion_max_val", "2.5"},
     {"float_motion_cuda", "float_motion", "mmxv", "2.5"},
+    {"float_motion_cuda", "float_motion", "motion_blend_factor", "0.5"},
+    {"float_motion_cuda", "float_motion", "mbf", "0.5"},
+    {"float_motion_cuda", "float_motion", "motion_blend_offset", "2"},
+    {"float_motion_cuda", "float_motion", "mbo", "2"},
 };
 
 /* Every twin and its CPU extractor: each option the twin declares must be a
@@ -701,18 +709,33 @@ static char *test_float_ssim_lcs(void)
 /* float_motion_cuda                                                   */
 /* ------------------------------------------------------------------ */
 
-static mu_message_t motion_case(const char *key, const char *value, const char *motion2,
-                                const char *motion, double tol)
+/* The three float_motion scores under `opts`, named with `suffix` (the
+ * option suffix of the feature names, "" for the defaults). */
+static mu_message_t motion_opts_case(const Fixture *fx, const char *const *opts, const char *suffix,
+                                     double tol)
 {
-    const char *const opts[] = {key, value, NULL};
+    static const char *const bases[] = {"motion2", "motion3", "motion"};
     Pair pair;
     bool ran = false;
-    mu_assert_msg(pair_run(&pair, &FX_MOTION, "float_motion", "float_motion_cuda", opts, &ran));
-    mu_message_t msg = ran ? expect_close(&pair, motion2, FX_MOTION.frames, tol, false) : NULL;
-    if (ran && !msg)
-        msg = expect_close(&pair, motion, FX_MOTION.frames, tol, false);
+    mu_assert_msg(pair_run(&pair, fx, "float_motion", "float_motion_cuda", opts, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(bases) / sizeof(bases[0]); i++) {
+        char name[NAME_LEN];
+        if (suffix[0]) {
+            (void)snprintf(name, sizeof(name), "%s_%s", bases[i], suffix);
+        } else {
+            (void)snprintf(name, sizeof(name), "VMAF_feature_%s_score", bases[i]);
+        }
+        msg = expect_close(&pair, name, fx->frames, tol, false);
+    }
     pair_close(&pair);
     return msg;
+}
+
+static mu_message_t motion_case(const char *key, const char *value, const char *suffix, double tol)
+{
+    const char *const opts[] = {key, value, NULL};
+    return motion_opts_case(&FX_MOTION, opts, suffix, tol);
 }
 
 /* Midpoint of the CPU default motion2 range, so the cap clips some frames
@@ -741,14 +764,12 @@ static char *test_float_motion_max_val(void)
     const double cap = motion_midpoint();
     mu_assert("fixture motion does not span a clip point", cap > 0.0);
     char value[NAME_LEN];
-    char motion2[NAME_LEN];
-    char motion[NAME_LEN];
+    char suffix[NAME_LEN];
     (void)snprintf(value, sizeof(value), "%.17g", cap);
-    (void)snprintf(motion2, sizeof(motion2), "motion2_mmxv_%g", cap);
-    (void)snprintf(motion, sizeof(motion), "motion_mmxv_%g", cap);
-    mu_assert_msg(motion_case("motion_max_val", value, motion2, motion, TOL_MOTION));
+    (void)snprintf(suffix, sizeof(suffix), "mmxv_%g", cap);
+    mu_assert_msg(motion_case("motion_max_val", value, suffix, TOL_MOTION));
     /* Boundary: a zero cap clips every score to exactly zero. */
-    mu_assert_msg(motion_case("motion_max_val", "0", "motion2_mmxv_0", "motion_mmxv_0", TOL_EXACT));
+    mu_assert_msg(motion_case("motion_max_val", "0", "mmxv_0", TOL_EXACT));
     return NULL;
 }
 
@@ -756,7 +777,39 @@ static char *test_float_motion_max_val(void)
  * motion_fps_weight too (the CUDA twin used to emit it unweighted). */
 static char *test_float_motion_fps_weight_debug_score(void)
 {
-    return motion_case("motion_fps_weight", "2", "motion2_mfw_2", "motion_mfw_2", 2.0 * TOL_MOTION);
+    return motion_case("motion_fps_weight", "2", "mfw_2", 2.0 * TOL_MOTION);
+}
+
+/* motion3 at the default options, which the twin did not emit at all, and
+ * with the blend options: an offset at the midpoint of the fixture's motion
+ * so the blend moves some frames and leaves others. */
+static char *test_float_motion_motion3(void)
+{
+    mu_assert_msg(motion_opts_case(&FX_MOTION, NULL, "", TOL_MOTION));
+    const double mid = motion_midpoint();
+    mu_assert("fixture motion does not span a blend point", mid > 0.0);
+    char offset[NAME_LEN];
+    char suffix[NAME_LEN];
+    (void)snprintf(offset, sizeof(offset), "%.17g", mid);
+    (void)snprintf(suffix, sizeof(suffix), "mbf_0.5_mbo_%g", mid);
+    const char *const opts[] = {"motion_blend_factor", "0.5", "motion_blend_offset", offset, NULL};
+    return motion_opts_case(&FX_MOTION, opts, suffix, TOL_MOTION);
+}
+
+/* Boundary: one frame. The CPU publishes motion2 = motion = 0 from its
+ * extract and motion3 = 0 from its flush. */
+static char *test_float_motion_one_frame(void)
+{
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_MOTION_ONE, "float_motion", "float_motion_cuda", NULL, &ran));
+    mu_message_t msg = NULL;
+    static const char *const names[] = {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score",
+                                        "VMAF_feature_motion_score"};
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_MOTION_ONE.frames, 0.0);
+    pair_close(&pair);
+    return msg;
 }
 
 static char *test_float_motion_force_zero(void)
@@ -765,9 +818,10 @@ static char *test_float_motion_force_zero(void)
     Pair pair;
     bool ran = false;
     mu_assert_msg(pair_run(&pair, &FX_MOTION, "float_motion", "float_motion_cuda", opts, &ran));
-    mu_message_t msg = ran ? expect_all(&pair, "motion2_force_0", FX_MOTION.frames, 0.0) : NULL;
-    if (ran && !msg)
-        msg = expect_all(&pair, "motion_force_0", FX_MOTION.frames, 0.0);
+    mu_message_t msg = NULL;
+    static const char *const names[] = {"motion2_force_0", "motion3_force_0", "motion_force_0"};
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_MOTION.frames, 0.0);
     pair_close(&pair);
     return msg;
 }
@@ -828,6 +882,8 @@ static char *run_motion_tests(void)
 {
     mu_run_test(test_float_motion_max_val);
     mu_run_test(test_float_motion_fps_weight_debug_score);
+    mu_run_test(test_float_motion_motion3);
+    mu_run_test(test_float_motion_one_frame);
     mu_run_test(test_float_motion_force_zero);
     mu_run_test(test_float_motion_max_val_out_of_range);
     return NULL;

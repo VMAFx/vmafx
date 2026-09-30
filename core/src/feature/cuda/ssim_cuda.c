@@ -349,9 +349,18 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * the entry point differed, so select the entry point and launch once. */
     CUfunction func_horiz = (s->bpc == 8u) ? s->func_horiz_8 : s->func_horiz_16;
     void *params[] = {
-        &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-        &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-        &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
+        (void *)&ref_pic->data[0],
+        &ref_stride,
+        (void *)&dist_pic->data[0],
+        &cmp_stride,
+        &s->d_mux->data,
+        &s->d_muy->data,
+        &s->d_x2->data,
+        &s->d_xy->data,
+        &s->d_y2->data,
+        &s->d_w->data,
+        &s->width,
+        &s->height,
     };
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func_horiz, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
                                            ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params, NULL));

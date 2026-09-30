@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin the CUDA RC3 parity design at source level (ADR-1372, ADR-1373, ADR-1374).
+"""Pin the CUDA RC3 parity design at source level (ADR-1372, ADR-1373, ADR-1374, ADR-1392).
 
 Device-free, so it runs on every host. Each contract has a planted-regression
 case that edits the live source the way the old code read and must fail:
@@ -27,7 +27,11 @@ case that edits the live source the way the old code read and must fail:
 - engine: libvmaf.c initialises a submit / collect extractor before it picks
   the asynchronous or the extract() path, because the motion twins' init()
   swaps the first for the second under motion_force_zero (the first frame
-  used to call the submit() init() had cleared).
+  used to call the submit() init() had cleared);
+- reductions (ADR-1392): the motion SAD and PSNR kernels add one atomic per
+  block, the motion kernel computes its vertical pass once per block, and
+  the PSNR kernel never indexes its by-value VmafPicture parameters with the
+  runtime plane (nvcc then copies both pictures to every thread's stack).
 """
 
 from __future__ import annotations
@@ -50,6 +54,7 @@ LIBVMAF = "libvmaf.c"
 LIBVMAF_PATH = ROOT / "core" / "src" / LIBVMAF
 INTEGER_SSIM_FMAD = "'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
 INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
+PSNR_KERNEL = "integer_psnr/psnr_score.cu"
 MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
 FLOAT_SSIM_MEAN = "*mean = (double)(float)*mean;"
 SOURCES = (
@@ -59,6 +64,7 @@ SOURCES = (
     SSIM_KERNEL,
     INTEGER_SSIM_KERNEL,
     ADM_KERNEL,
+    PSNR_KERNEL,
     "integer_psnr_cuda.c",
     "ssim_cuda.c",
     "integer_ssim_cuda.c",
@@ -162,6 +168,20 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
         failures.append(
             "float_motion_cuda.c: motion2, debug motion and tail motion2 must all "
             "be motion_clip()ped"
+        )
+    failures.extend(_float_motion3_failures(motion))
+    return failures
+
+
+def _float_motion3_failures(motion: str) -> list[str]:
+    """float_motion_cuda emits the CPU's motion3 (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30)."""
+    failures: list[str] = []
+    if '"VMAF_feature_motion3_score", NULL}' not in _code(motion):
+        failures.append("float_motion_cuda.c: motion3 is not a provided feature")
+    if _code(motion).count("motion_blend_clip(s, ") != 3:
+        failures.append(
+            "float_motion_cuda.c: motion3 of frame 0, of each middle frame and of the tail "
+            "must all be motion_blend_clip()ped"
         )
     return failures
 
@@ -268,9 +288,27 @@ def _dispatch_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _reduction_failures(sources: dict[str, str]) -> list[str]:
+    """ADR-1392: one atomic per block, the separable motion filter, no
+    runtime index into a by-value picture parameter."""
+    failures: list[str] = []
+    for name in (MOTION_KERNEL, PSNR_KERNEL):
+        code = _code(sources[name])
+        if len(re.findall(r"\batomicAdd\s*\(", code)) != 1 or not re.search(
+            r"if \(lid == 0u\)\s*atomicAdd\(", code
+        ):
+            failures.append(f"{name}: the block sum must reach memory with one atomic per block")
+    if "vertical_pass<VAcc>(s_diff, s_v, bpc);" not in _code(sources[MOTION_KERNEL]):
+        failures.append(f"{MOTION_KERNEL}: the vertical pass is no longer computed once per block")
+    if re.search(r"\.(?:data|stride)\[plane\]", _code(sources[PSNR_KERNEL])):
+        failures.append(f"{PSNR_KERNEL}: indexes the by-value picture with the runtime plane")
+    return failures
+
+
 def _all_failures(sources: dict[str, str]) -> list[str]:
     return [
         *_motion_failures(sources),
+        *_reduction_failures(sources),
         *_option_failures(sources),
         *_ssim_failures(sources),
         *_guard_failures(sources),
@@ -344,6 +382,22 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             "motion_score, index);",
         )
         self._assert_detected(sources, "motion_clip()ped")
+
+    def test_dropped_motion3_feature_is_detected(self) -> None:
+        sources = self._edit(
+            "float_motion_cuda.c",
+            '"VMAF_feature_motion3_score", NULL}',
+            "NULL}",
+        )
+        self._assert_detected(sources, "motion3 is not a provided feature")
+
+    def test_unblended_tail_motion3_is_detected(self) -> None:
+        sources = self._edit(
+            "float_motion_cuda.c",
+            "motion_blend_clip(s, s->prev_motion_score), s->index);",
+            "motion_clip(s, s->prev_motion_score), s->index);",
+        )
+        self._assert_detected(sources, "motion_blend_clip()ped")
 
     def test_removed_enable_chroma_is_detected(self) -> None:
         sources = self._edit("integer_ssim_cuda.c", '.name = "enable_chroma"', '.name = "chroma"')
@@ -427,6 +481,35 @@ class CudaKernelSourceContractTest(unittest.TestCase):
     def test_cuda_dispatch_before_init_is_detected(self) -> None:
         sources = self._edit(LIBVMAF, "err = init_before_dispatch(fex_ctx, ref_device);", "")
         self._assert_detected(sources, "read_pictures_cuda_submit_current() picks a path")
+
+    def test_per_warp_psnr_atomic_is_detected(self) -> None:
+        sources = self._edit(
+            PSNR_KERNEL,
+            "if ((lid & 31u) == 0u)\n        s_warp[lid >> 5] = v;",
+            "if ((lid & 31u) == 0u)\n        atomicAdd(sse, v);",
+        )
+        self._assert_detected(sources, "one atomic per block")
+
+    def test_per_warp_motion_atomic_is_detected(self) -> None:
+        sources = self._edit(
+            MOTION_KERNEL,
+            "if ((lid & 31u) == 0u)\n        s_warp[lid >> 5] = v;",
+            "if ((lid & 31u) == 0u)\n        atomicAdd(sad, v);",
+        )
+        self._assert_detected(sources, "one atomic per block")
+
+    def test_per_output_vertical_pass_is_detected(self) -> None:
+        sources = self._edit(MOTION_KERNEL, "vertical_pass<VAcc>(s_diff, s_v, bpc);", "")
+        self._assert_detected(sources, "once per block")
+
+    def test_runtime_plane_index_is_detected(self) -> None:
+        sources = self._edit(
+            PSNR_KERNEL,
+            "const T *ref_row = plane_row<T>(ref, plane, y);",
+            "const T *ref_row = reinterpret_cast<const T *>(\n"
+            "        reinterpret_cast<const uint8_t *>(ref.data[plane]) + y * ref.stride[plane]);",
+        )
+        self._assert_detected(sources, "runtime plane")
 
     def test_gpu_dispatch_before_init_is_detected(self) -> None:
         sources = self._edit(
