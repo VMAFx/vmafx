@@ -950,7 +950,6 @@
         "core/src/feature/pu21.c": 1,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_moment_sycl.cpp": 1,
-        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 2,
         "scripts/ci/cross_backend_vif_diff.py": 3
       },
@@ -6322,6 +6321,7 @@
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_psnr_parity.c": 1,
+        "core/test/test_sycl_shared_planes.c": 1,
         "core/test/test_sycl_speed_chroma_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_speed_temporal_parity.c": 1,
@@ -7801,6 +7801,7 @@
     },
     "1361": {
       "sites": {
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "scripts/ci/cross_backend_calibration.py": 2,
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/cross_backend_vif_diff.py": 2,
@@ -7859,6 +7860,18 @@
         "scripts/release/tests/test-docker-image-runtime-contract.sh": 2
       },
       "target": "1368-oneapi-release-image-debian13.md"
+    },
+    "1369": {
+      "sites": {
+        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,
+        "core/src/sycl/common.cpp": 6,
+        "core/src/sycl/common.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_shared_planes.c": 1
+      },
+      "target": "1369-sycl-shared-planes-light-twins.md"
     },
     "1370": {
       "sites": {
