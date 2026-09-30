@@ -261,6 +261,13 @@ static char *test_vif_hip_direct_init_rejects_below_min(void)
         const int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, rejected[i].w, rejected[i].h);
         free(priv);
         fex->priv = NULL;
+        if (rc == -ENOSYS) {
+            /* Scaffold build (enable_hipcc=false): -ENOSYS for every size,
+             * nothing else (ADR-1264). */
+            (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
+            mu_skipped = 1;
+            return NULL;
+        }
         mu_assert("direct vif_hip must reject frames below the minimum with -EINVAL",
                   rc == -EINVAL);
     }

@@ -911,6 +911,11 @@ Rebase-sensitive invariants:
   negative sums toward minus infinity.
 - `motion_hip` keeps raw luma ping-pong `pix[2]` + pinned `staging`; frame 0
   uploads only. `submit()` never waits; `collect()` = one host wait.
+- Staged upload bound = allocated size from owner (`.staging_bytes =
+  s->plane_bytes`), not frame geometry; `submit()` never rewrites
+  `frame_w` / `frame_h`. Error after a copy was enqueued -> drain stream
+  before returning (`*_drain_after_error()`, only in `return` of an error
+  branch; contract test checks).
 - Every emitted `motion_hip` score, debug `motion` included, goes through
   `motion_clip_hip()` (fps weight, then `motion_max_val`), like CPU
   `extract()`. One-frame run: `motion3[0] = 0` from `msh_flush_tail()`.
@@ -925,6 +930,8 @@ Rebase-sensitive invariants:
   17-sample motion plane reflects halo 33 to -1.
 - Motion tile loads: `vmaf_hip_tile_index(vmaf_hip_reflect_101(i, n), n)`
   (`hip_tile_index.h`). Identity for every consumed sample -> no score change.
+  `float_motion_score.hip` same geometry, same clamp (`fm_tile_index()`); its
+  old `fm_mirror()` read before `ref_in` at extents 3-9 and 17.
 - ADM scale-0 vertical DWT: `adm_dwt2_load_column()` reads
   `adm_dwt2_source_row()` (`integer_adm/adm_dwt2_rows.h`); launch geometry
   `ADM_DWT2_*` shared by kernel (`static_assert`) and `integer_adm_hip.c`.
@@ -942,7 +949,8 @@ Rebase-sensitive invariants:
   than CPU; scale 3 empty below 8.
 - `check_context_hip()` + `context_fallback_name = "vif"`: model dispatch runs
   CPU `vif` below bound (ADR-1324). `init()` refuses direct request with
-  `-EINVAL` before any device work. Guard: `test_hip_vif_min_dim`.
+  `-EINVAL` before any device work, after the scaffold `-ENOSYS` (ADR-1264).
+  Guard: `test_hip_vif_min_dim` (skips on scaffold builds).
 
 ## CPU option tables on psnr / ssim / float_ssim / float_motion (ADR-1382)
 
@@ -953,16 +961,32 @@ Rebase-sensitive invariants:
   `vmaf_psnr_aggregate`), `flush_fex_hip()` publishes `apsnr_*`. No local
   copy of PSNR math (`log10` in TU = regression).
 - `integer_ssim_hip`, `float_ssim_hip`: `enable_db` / `clip_db` via
-  `vmaf_ssim_max_db()` + shared SSIM emitters. Identical window -> exactly 1:
-  `issim_pixel_term()` returns weight when factors equal;
-  `ssim_from_moments()` named products under
-  `#pragma clang fp contract(off)`, `num == den ? 1`. hipcc default
-  contraction fuses across statements, so pragma load-bearing.
+  `vmaf_ssim_max_db()` + shared SSIM emitters. `integer_ssim_hip`:
+  `issim_pixel_term()` returns weight when factors equal (CPU raster sum
+  absorbs the quotient's ulp; per-block tree does not). 1x1 / 2x2 still
+  differ: `T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30`.
+- `float_ssim_hip`: no identical-window shortcut. CPU is 1 - 2^-24 on some
+  identical frames (fp32 luminance denominator, 72.247 dB). Pass 2 =
+  CPU `ssim_accumulate_default_scalar()`: `ssim_pixel()` = `(l * c) * s` in
+  double from `ssim_lcs()` (CPU types, `#pragma clang fp contract(off)`
+  load-bearing: hipcc default contraction fuses across statements), one
+  double partial per block; host `fssim_hip_cpu_mean()` rounds mean to fp32.
+  Do not bring back the combined Wang formula or `num == den ? 1`.
 - `float_ssim_hip` `enable_lcs`: separate kernel
   `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
   (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),
   double per-block partials in `rb_lcs`. Default kernel stays LCS-free.
 - `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted score, debug
-  and flush tail included, through `fm_hip_motion_clip()`.
+  and flush tail included, through `fm_hip_motion_clip()`. No `motion3`, no
+  mbf / mbo / mdc / mfs / mau yet: `T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`.
+- `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2`
+  folds stored value, never re-weights; one-frame run emits motion2_v2 /
+  motion3_v2 = 0 (only `n_frames == 0` returns early).
+- `motion_hip`: `debug` default false (CPU, CUDA); emits
+  `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
+  force_zero.
+- `psnr_hip` TEMPORAL like CPU `psnr`: `--subsample` must not drop frames
+  from `apsnr_*`. Twin's subsample flags (TEMPORAL / PREV_REF) follow CPU;
+  `test_hip_twin_option_parity` checks.
 - HIP error mapping: `vmaf_hip_rc_to_errno()` (`kernel_template.c`, declared in
   `core/src/hip/common.h`). No new private copies.

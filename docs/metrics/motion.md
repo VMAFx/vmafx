@@ -44,7 +44,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 
 | Option                    | Alias    | Type   | Default   | Range         | Effect                                                                 |
 |---------------------------|----------|--------|-----------|---------------|------------------------------------------------------------------------|
-| `debug`                   | —        | bool   | `true`    | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score` |
+| `debug`                   | —        | bool   | `false`   | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score`; `motion_cuda` and `motion_hip` default to false too, `motion_sycl` to true |
 | `motion_force_zero`       | `force_0`| bool   | `false`   | —             | Override all emitted scores to `0.0`; used for deterministic fixtures  |
 | `motion_fps_weight`       | `mfw`    | double | `1.0`     | `0.0–5.0`     | Multiplicative FPS-aware correction applied before clamping            |
 | `motion_blend_factor`     | `mbf`    | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                       |
@@ -200,8 +200,10 @@ must be mirrored into all four in the same PR.
 > **`motion_fps_weight` / `motion_max_val` note.** The CPU reference stores
 > `MIN(sad * motion_fps_weight, motion_max_val)` as `motion_v2_sad_score` and
 > derives `motion2_v2` / `motion3_v2` from it; a one-frame input still gets
-> `motion2_v2 = motion3_v2 = 0`. `motion_v2_cuda` does the same since
-> [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md). The SYCL, HIP and
+> `motion2_v2 = motion3_v2 = 0`. `motion_v2_cuda` and `motion_v2_hip` do the
+> same since [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md) and
+> [ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); `motion_v2_hip`
+> weighted at fold time and never capped before that. The SYCL and
 > Metal twins store the *raw* SAD, apply `motion_fps_weight` in the host-side
 > flush without the `motion_max_val` cap on `motion2_v2`, and emit no
 > `motion2_v2` / `motion3_v2` for a one-frame input. The paths agree at the

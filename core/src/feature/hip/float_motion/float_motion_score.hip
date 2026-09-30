@@ -11,7 +11,13 @@
  *    1. Convert ref pixel: `val = (raw / scaler) - 128.0`.
  *    2. 5x5 separable Gaussian blur with FM_FILT (sums to ~1.0).
  *    3. Frame > 0: SAD += |cur_blurred - prev_blurred|.
- *    Mirror padding: skip-boundary `2 * (sup - 1) - idx`.
+ *    Mirror padding: skip-boundary `2 * (sup - 1) - idx` (reflect-101), then
+ *    clamped into the plane: the block loads a 20x20 tile for every thread,
+ *    padding threads included, and one reflection of their halo leaves a
+ *    plane smaller than the tile (index 33 of a 17-sample axis reflects to
+ *    -1, and a 3-sample axis reaches -13), reading outside `ref`. The clamp is
+ *    the identity for every sample an output consumes (hip_tile_index.h,
+ *    ADR-1381), so no score changes.
  *
  *  Layout: 16x16 work-group with 2-pixel halo (5-tap), produces a float
  *  per-pixel blurred output and one float per-block SAD partial.
@@ -34,6 +40,8 @@
 #include <hip/hip_runtime.h>
 #include <stdint.h>
 
+#include "../hip_tile_index.h"
+
 #define FM_BX 16
 #define FM_BY 16
 #define FM_RADIUS 2
@@ -51,14 +59,11 @@ __device__ static const float FM_FILT[5] = {
     0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f,
 };
 
-/* Skip-boundary mirror — matches the CUDA twin's `fm_mirror`. */
-__device__ __forceinline__ int fm_mirror(int idx, int sup)
+/* Tile-load index: the CPU's skip-boundary mirror (reflect-101), clamped into
+ * the plane for the padding threads whose loads no output consumes. */
+__device__ __forceinline__ int fm_tile_index(int idx, int sup)
 {
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * (sup - 1) - idx;
-    return idx;
+    return vmaf_hip_tile_index(vmaf_hip_reflect_101(idx, sup), sup);
 }
 
 /* HIP warp-level float reduction — uses warpSize at runtime to handle
@@ -104,8 +109,8 @@ __global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
     for (unsigned i = lid; i < tile_elems; i += wg_size) {
         const unsigned tr = i / FM_TILE_W;
         const unsigned tc = i % FM_TILE_W;
-        const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
-        const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
+        const int gx = fm_tile_index(tile_ox + (int)tc, (int)width);
+        const int gy = fm_tile_index(tile_oy + (int)tr, (int)height);
         s_tile[tr][tc] = (float)ref[gy * ref_stride + gx] - 128.0f;
     }
     __syncthreads();
@@ -199,8 +204,8 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
     for (unsigned i = lid; i < tile_elems; i += wg_size) {
         const unsigned tr = i / FM_TILE_W;
         const unsigned tc = i % FM_TILE_W;
-        const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
-        const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
+        const int gx = fm_tile_index(tile_ox + (int)tc, (int)width);
+        const int gy = fm_tile_index(tile_oy + (int)tr, (int)height);
         const uint16_t r = reinterpret_cast<const uint16_t *>(ref + gy * ref_stride)[gx];
         s_tile[tr][tc] = (float)r * inv_scaler - 128.0f;
     }

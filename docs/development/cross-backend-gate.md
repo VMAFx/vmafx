@@ -2,7 +2,7 @@
 # Cross-backend GPU-parity gate
 
 `scripts/ci/cross_backend_parity_gate.py` compares per-frame metrics across
-selected CPU, CUDA, and SYCL backends. It can run every selected feature over
+selected CPU, CUDA, SYCL, and HIP backends. It can run every selected feature over
 every selected backend pair and emits machine-readable JSON plus a Markdown
 summary.
 
@@ -27,14 +27,22 @@ explicitly accepts its skip.
   | Feature | Tolerance | Contract source |
   |---|---:|---|
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
-  | `float_ssim`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 |
+  | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
-- **Backend pairs.** The script accepts `cpu`, `cuda`, and `sycl`; its command
-  line default is `cpu cuda`. HIP and Metal have backend-specific tests but are
-  not wired into this matrix runner.
+- **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
+  command line default is `cpu cuda`. `--hip-device` picks the HIP device by
+  index (`--hip_device` on the `vmaf` command line). No CI job runs the HIP
+  cells; they are for a local run on an AMD host. Metal has backend-specific
+  tests but is not wired into this matrix runner. Extractors whose twin is not
+  named `<feature>_<backend>` are listed in `BACKEND_EXTRACTOR_ALIASES`
+  (`float_ms_ssim` is `integer_ms_ssim_hip` on HIP).
+
+- **`float_ssim_lcs`.** Runs `float_ssim` with `enable_lcs=true` and compares
+  `float_ssim_l`, `float_ssim_c` and `float_ssim_s` next to the score, at the
+  same `5e-5` ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)).
 
 - **Per-device calibration.** `--gpu-id` selects the most-specific matching
   row in `scripts/ci/gpu_ulp_calibration.yaml`. If no row or feature override
@@ -77,6 +85,13 @@ docker exec vmaf-dev-mcp bash -lc '
     --json-out /tmp/parity.json \
     --md-out /tmp/parity.md
 '
+```
+
+On an AMD host, the same runner compares the HIP twins, including the
+`float_ssim` enable_lcs cell:
+
+```bash
+python3 scripts/ci/cross_backend_parity_gate.py   --vmaf-binary build-hip/tools/vmaf   --reference testdata/ref_576x324_48f.yuv   --distorted testdata/dis_576x324_48f.yuv   --width 576 --height 324   --backends cpu hip --hip-device 0   --features float_ssim float_ssim_lcs psnr motion_v2 vif   --json-out /tmp/parity-hip.json --md-out /tmp/parity-hip.md
 ```
 
 Pin each concurrent run to different hardware; do not multiplex one device

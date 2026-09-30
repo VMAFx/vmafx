@@ -550,6 +550,14 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 {
     (void)pix_fmt;
 
+#ifndef HAVE_HIPCC
+    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */
+    (void)fex;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return -ENOSYS;
+#else
     /* Direct `vif_hip` requests get no fallback (ADR-1324): refuse before
      * any device work, so there is nothing to free. */
     const unsigned min_dim = vif_hip_min_dim();
@@ -560,12 +568,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                  min_dim, min_dim, w, h);
         return -EINVAL;
     }
-
-#ifndef HAVE_HIPCC
-    (void)fex;
-    (void)bpc;
-    return -ENOSYS;
-#else
     VifStateHip *s = fex->priv;
 
     size_t rd_size = 0u;

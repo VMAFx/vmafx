@@ -63,10 +63,20 @@
   computed on the device), and `float_motion_hip` `motion_max_val`, with its
   debug `motion` score now weighted by `motion_fps_weight` like the CPU's.
   Before, a model that set one of these options computed the feature on the
-  CPU, and naming the twin with the option failed with `unknown option`. Both
-  SSIM twins score an identical window exactly 1, so with `enable_db`
-  identical frames report the CPU's `+inf` or `clip_db` ceiling. Not yet
-  measured on AMD hardware; see
+  CPU, and naming the twin with the option failed with `unknown option`.
+  `float_ssim_hip` now scores each pixel as the CPU does (`l * c * s` from the
+  CPU's luminance, contrast and structure terms) and rounds the frame mean to
+  fp32 like the CPU, so with `enable_db` identical frames report what the CPU
+  reports (72.247 dB on a flat frame, where the CPU's fp32 arithmetic leaves
+  1 - 2^-24) instead of a forced `+inf`; `integer_ssim_hip` scores identical
+  frames from 3x3 up exactly 1, as the CPU does. `motion_v2_hip` now stores
+  its SAD weighted by `motion_fps_weight` and capped at `motion_max_val` like
+  the CPU (it weighted at fold time and never capped) and scores one-frame
+  runs; `psnr_hip` now sees every frame under `--subsample`, so `apsnr_*`
+  covers the whole clip; `motion_hip` defaults `debug` to false and emits
+  `VMAF_integer_feature_motion_sad_score`, as the CPU `motion` does. The
+  parity gate (`scripts/ci/cross_backend_parity_gate.py`) takes `--backends
+  hip` and a `float_ssim_lcs` cell. Not yet measured on AMD hardware; see
   [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
 
 
@@ -435,8 +445,10 @@
   loads and the integer ADM scale-0 vertical DWT reflect an index once, which
   leaves the plane for the padding threads of a plane smaller than the tile
   (the defect that faulted the SYCL twins); both now clamp the reflected row
-  into the plane, which changes no score of any accepted frame. `vif_hip`
-  scored frames below 16 pixels from other samples than the CPU (its filters
+  into the plane, which changes no score of any accepted frame.
+  `float_motion_hip` had the same single reflection and read before its input
+  plane on 3x3 to 9x9 and 17x17 frames; its tile loads clamp the same way.
+  `vif_hip` scored frames below 16 pixels from other samples than the CPU (its filters
   need 16 pixels at every scale); model dispatch now computes those frames
   with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. Not
   yet measured on AMD hardware; see

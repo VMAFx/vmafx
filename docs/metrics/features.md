@@ -764,8 +764,10 @@ computes the CPU's per-pixel `l * c * s` and fp32 frame mean, so identical
 frames report the CPU's value (`+inf`, or 72.247 dB for flat frames), and
 still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
 had. The HIP twins `integer_ssim_hip` and `float_ssim_hip` implement
-`enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`) with the same
-identical-frame behaviour
+`enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`); `float_ssim_hip`
+scores each pixel with the CPU's own `l * c * s` arithmetic too, so its
+identical frames report what the CPU reports, including the finite 72.247 dB
+the CPU gives some identical frames
 ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)).
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet

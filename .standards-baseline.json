@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-29T13:09:56Z",
+  "generated_at": "2026-09-30T10:58:43Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 185,
+  "total_infractions": 182,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -771,18 +771,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/float_motion/float_motion_score.hip",
-      "line_number": 91,
+      "line_number": 96,
       "symbol": "float_motion_hip_kernel_8bpc",
       "message": "Function 'float_motion_hip_kernel_8bpc' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:91:HISS-04"
+      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:96:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/float_motion/float_motion_score.hip",
-      "line_number": 178,
+      "line_number": 183,
       "symbol": "float_motion_hip_kernel_16bpc",
       "message": "Function 'float_motion_hip_kernel_16bpc' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:178:HISS-04"
+      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:183:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -791,30 +791,6 @@
       "symbol": "float_vif_compute",
       "message": "Function 'float_vif_compute' (152 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/hip/float_vif/float_vif_score.hip:146:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_motion/motion_score.hip",
-      "line_number": 83,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_motion/motion_score.hip:83:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip",
-      "line_number": 79,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip:79:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip",
-      "line_number": 150,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip:150:HISS-04"
     },
     {
       "rule_id": "HISS-04",

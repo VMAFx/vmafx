@@ -32,6 +32,8 @@ Every HIP extractor stages its host pictures with `vmaf_hip_picture_upload()`, w
 
 `motion_v2_score.hip` loads a 20x20 tile per 16x16 block, halo included, for every thread. On a 17-sample axis the last block's halo index 33 reflects to `2 * 17 - 33 - 2 = -1`. A host replay of every block and tile slot (`test_hip_adm_dwt2_rows`, extents 3 to 1024) shows `vmaf_hip_tile_index(vmaf_hip_reflect_101(i, n), n)` always lands in `[0, n)` and equals the bare reflection for every slot an output consumes.
 
+`float_motion_score.hip` has the same geometry (16x16 blocks, 5-tap filter, 20x20 tile) and its own single reflection, `fm_mirror()`. Review of #1636 replayed its launch: extents 3 to 9 and 17 load outside `[0, n)` (index range [-13, 2] at 3, [-1, 16] at 17), i.e. before `ref_in`'s allocation, pre-existing since the float-motion port. Its loads now use the same clamped index, and the replay above covers it.
+
 ### ADM scale-0 vertical DWT: rows escape only below 9 rows
 
 `adm_dwt2_load_column()` serves the fused scale-0 kernel only; scales 1 to 3 run `dwt_s123_combined_vert_kernel_*`, which reads per output row and stays inside from 2 rows up. Replaying every thread row of the scale-0 launch (`DIV_ROUND_UP((h + 1) / 2, 8)` block rows of 2 thread rows, 10 source rows per thread) for every height from 1 to 8192: the single reflection leaves the plane for heights 1 to 8 exactly and never from 9 up; `integer_adm_hip` refuses frames below 17x17, so no accepted frame read outside before the change either. The clamp is the identity from 9 rows up.
@@ -42,11 +44,13 @@ Every HIP extractor stages its host pictures with `vmaf_hip_picture_upload()`, w
 
 ### Integer SSIM: the CPU's per-pixel term, and identical windows
 
-`issim_pixel_term()` evaluates the CPU's double expression operand for operand with contraction off (ADR-0564), so its per-pixel terms are the CPU's doubles and only the summation order differs. For an identical window the numerator and denominator factors are equal (exactly, while the moments are exact in double: 8- and 10-bit input) and the CPU's quotient `((w * f) * g) / (f * g)` is `w` up to an ulp; for random `f`, `g` and integer `w <= 65536` it misses `w` in 36.7 % of 200000 draws. The CPU's raster-order running sum absorbs those residues (the CPU reports `+inf` with `enable_db` on identical 576x324, 17x17 and 257x145 frames at 8 and 10 bits); a per-block tree need not. Returning the weight itself for an identical window makes identical frames exactly 1 on the twin without changing any other term.
+`issim_pixel_term()` evaluates the CPU's double expression operand for operand with contraction off (ADR-0564), so its per-pixel terms are the CPU's doubles and only the summation order differs. For an identical window the numerator and denominator factors are equal (exactly, while the moments are exact in double: 8- and 10-bit input) and the CPU's quotient `((w * f) * g) / (f * g)` is `w` up to an ulp; for random `f`, `g` and integer `w <= 65536` it misses `w` in 36.7 % of 200000 draws. The CPU's raster-order running sum absorbs those residues (the CPU reports `+inf` with `enable_db` on identical 576x324, 17x17 and 257x145 frames at 8 and 10 bits); a per-block tree need not. Returning the weight itself for an identical window makes identical frames exactly 1 on the twin without changing any other term. A host replay in review of #1636 (the CPU `calc_ssim()` body against an emulation of the kernel and collect order) confirms it from 3x3 up; on 1x1 and 2x2 identical frames the CPU sum has one to four terms, does not absorb the ulp, and reports 156.54 and 159.55 dB, where the twin reports `+inf` (`T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30`). Matching those needs the CPU's sequential sum on the device.
 
-### Float SSIM: the CPU is not exactly 1 on every identical frame
+### Float SSIM: the CPU is not exactly 1 on every identical frame, and the twin now follows it
 
-With `enable_db` on identical frames the CPU `float_ssim` reports `+inf` on the synthetic fixtures and on 17x17 / 257x145 noise, but on some frames of the 576x324 fixture 72.247 dB: one fp32 ulp below 1 (`1 - 2^-24`), a residue of its fp32 `l * c * s` and the final float cast. The mirrored twin reports `+inf` (or the `clip_db` ceiling) for every identical frame, as the SYCL twin does. No device arithmetic reproduces the CPU's residue; the ADR-1221 contract (perfect score is `+inf`) is what both twins implement.
+With `enable_db` on identical frames the CPU `float_ssim` reports `+inf` on the synthetic fixtures and on 17x17 / 257x145 noise, but on some frames of the 576x324 fixture, and on a flat 64x64 frame of 128, 72.247 dB: one fp32 ulp below 1 (`1 - 2^-24`). The cause is in `iqa/ssim_tools.c`: the luminance term divides a double numerator, `2.0 * mu_r * mu_c + C1`, by a denominator formed in fp32, `mu_r * mu_r + mu_c * mu_c + C1`. For a flat 128 frame that is 32774.50250 over the fp32 32774.50391, so `l = 1 - 4.3e-8`; C and S are exactly 1; the mean `(float)(sum / (w * h))` then rounds `1 - 4.3e-8` to the nearer fp32, `1 - 2^-24`. The first draft of this port forced an identical window to exactly 1 (ADR-1365's SYCL form), which reports `+inf` there, against the CPU.
+
+The twin now reproduces the CPU arithmetic instead. Pass 2 forms each pixel's term as `ssim_accumulate_default_scalar()` does, `(l * c) * s` in double from `ssim_lcs()` (the CPU's types: clamped fp32 variances, one fp32 `sqrtf` of the variance product, L and C in double over fp32 denominators, S in fp32, `C3 = C2 / 2`, contraction off), reduces one double per block, and the host rounds the frame mean to fp32. HIP's default fp32 division and square root are correctly rounded, so no equal-operand guard is needed for identical windows, unlike the SYCL device's approximate ones. This also removes the combined-formula residual that `float_ssim_sycl` still carries (`T-SYCL-FLOAT-SSIM-COMBINED-FORMULA-RESIDUAL-2026-09-29`: up to 7.8e-5 with the combined formula, within 9e-7 with the product form on SYCL). Bit-exact dB on every identical frame also needs the vertical moments to equal the CPU's, which depends on contraction in the moment passes (the separate fp-contract work).
 
 ### What runs without a device
 
@@ -55,8 +59,9 @@ With `enable_db` on identical frames the CPU `float_ssim` reports `+inf` on the 
 | Full HIP build, every touched kernel for gfx90a / gfx1030 / gfx1036 / gfx1100 | `ninja -C build-hip` | builds, no new warnings; `clang-offload-bundler --list` shows all four code objects in `motion_v2_score`, `ssim_score`, `integer_ssim_score` and `adm_dwt2`, and `llvm-nm` every kernel entry point, `calculate_ssim_hip_vert_combine_lcs` included |
 | Scaffold build (`enable_hipcc=false`) | `ninja -C build-scaffold` | builds, no warnings in touched files |
 | Row and tile replays | `test_hip_adm_dwt2_rows` | pass |
-| Source contract with 15 planted regressions | `test_hip_kernel_source_contract.py` | pass; each regression detected |
-| Option tables equal the CPU's, ADR-1183 gate passes, unknown key refused | `test_hip_twin_option_parity` (first two tests) | pass |
+| Source contract with 26 planted regressions | `test_hip_kernel_source_contract.py` | pass; each regression detected; the review-fix rules fail on the unfixed sources |
+| Option tables equal the CPU's (`motion_hip`'s `debug` default included), `--subsample` flags and `motion_hip`'s feature set follow the CPU, ADR-1183 gate passes, unknown key refused | `test_hip_twin_option_parity` (first three tests) | pass |
+| Parity gate: HIP backend, `float_ssim_lcs` cell, every HIP cell names a registered extractor | `scripts/ci/test_cross_backend_parity_gate.py` | pass |
 | vif_hip bound, CPU fallback declaration, direct init `-EINVAL` | `test_hip_vif_min_dim` (first two tests) | pass |
 | Motion twins refuse frames below 3x3 | `test_hip_motion_tiny_frames` (first test) | pass |
 | Device parity | the same three tests, remaining cases | skip (77) |
@@ -72,7 +77,7 @@ With `enable_db` on identical frames the CPU `float_ssim` reports `+inf` on the 
 
 ## Open questions
 
-- Device confirmation on the maintainer's gfx1036: bit-exact `motion_hip`, PSNR options, SSIM dB on identical frames, `enable_lcs` within 5e-4, VIF fallback below 16 pixels. Commands in the four `docs/state.md` rows.
+- Device confirmation on the maintainer's gfx1036: bit-exact `motion_hip` and `motion_v2_hip` with options, PSNR options, SSIM dB on identical frames (the flat fixture included), `float_ssim` and `enable_lcs` within the gate's 5e-5, VIF fallback below 16 pixels, `float_motion_hip` on 3x3 and 17x17 frames. Commands in the `docs/state.md` rows.
 - Throughput effect of the staged upload on gfx1036 (`(t(22) - t(2)) / 20` on BBB 4K, in the motion row).
 
 ## Related

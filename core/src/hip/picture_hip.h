@@ -98,9 +98,9 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
  * Copy host picture planes into `staging`, packed plane after plane
  * (`row_bytes` apart), then enqueue their device copies on `stream` and
  * return without waiting; see the note above. `staging_bytes` must cover the
- * sum of `rows * row_bytes` over `planes`. Returns 0 or a negative errno; a
- * copy that fails to enqueue leaves the ones before it running from
- * `staging`, which stays valid until the owner drains `stream`.
+ * sum of `rows * row_bytes` over `planes`. Returns 0 or a negative errno;
+ * when a copy fails to enqueue after earlier ones were, it waits for those
+ * before returning (error path only), so `staging` is free again.
  */
 int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
                                    void *staging, size_t staging_bytes, uintptr_t stream);

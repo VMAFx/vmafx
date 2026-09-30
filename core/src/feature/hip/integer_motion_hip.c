@@ -12,8 +12,10 @@
  *  (integer_motion_sad_hip.h), and host-side motion2 / motion3 scoring.
  *  Without `HAVE_HIPCC` the scaffold posture is preserved (-ENOSYS).
  *
- *  Provided features (mirrors CUDA twin):
- *    VMAF_integer_feature_motion_score   (debug only)
+ *  Provided features (the CPU `motion` set):
+ *    VMAF_integer_feature_motion_sad_score  (every frame, like the CPU)
+ *    VMAF_integer_feature_motion_score      (debug only; `debug` defaults
+ *                                            to false, as on the CPU)
  *    VMAF_integer_feature_motion2_score
  *    VMAF_integer_feature_motion3_score
  *
@@ -129,7 +131,7 @@ typedef struct MotionStateHip {
 // clang-format off
 static const VmafOption options[] = {
     {.name = "debug", .help = "debug mode: enable additional output",
-     .offset = offsetof(MotionStateHip, debug), .type = VMAF_OPT_TYPE_BOOL, .default_val.b = true},
+     .offset = offsetof(MotionStateHip, debug), .type = VMAF_OPT_TYPE_BOOL, .default_val.b = false},
     {.name = "motion_force_zero", .alias = "force_0", .help = "forcing motion score to zero",
      .offset = offsetof(MotionStateHip, motion_force_zero), .type = VMAF_OPT_TYPE_BOOL,
      .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
@@ -233,8 +235,11 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)dist_pic;
     (void)dist_pic_90;
 
-    int err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0., index);
+    int err =
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_motion_sad_score", 0., index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_motion2_score", 0., index);
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_integer_feature_motion3_score", 0., index);
     if (!s->debug)
@@ -283,6 +288,7 @@ static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
 {
     const VmafHipMotionSadFrame frame = {.pic = ref_pic,
                                          .staging = s->staging,
+                                         .staging_bytes = s->plane_bytes,
                                          .cur = s->pix[index % 2u],
                                          .prev = (index > 0u) ? s->pix[(index + 1u) % 2u] : NULL,
                                          .sad = (uint64_t *)s->rb.device,
@@ -427,9 +433,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)dist_pic_90;
     MotionStateHip *s = fex->priv;
 
+    /* The geometry stays the one init() sized the buffers for; libvmaf
+     * rejects a picture of any other size before it reaches submit(). */
     s->index = index;
-    s->frame_w = ref_pic->w[0];
-    s->frame_h = ref_pic->h[0];
 
 #ifdef HAVE_HIPCC
     return msh_launch(s, ref_pic, index);
@@ -473,7 +479,9 @@ static int msh_emit_first_frame(MotionStateHip *s, VmafFeatureCollector *feature
      * keys match what `vmaf_predict_score_at_index` looks up (encoded
      * option-aware key, not the literal). */
     int e = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                    "VMAF_integer_feature_motion2_score", 0., 0);
+                                                    "VMAF_integer_feature_motion_sad_score", 0., 0);
+    e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                 "VMAF_integer_feature_motion2_score", 0., 0);
     if (s->debug) {
         e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                      "VMAF_integer_feature_motion_score", 0., 0);
@@ -507,9 +515,13 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     s->score = normalize_and_scale_sad(*sad_host, s->frame_w, s->frame_h);
     s->frame_index++;
 
-    int e = 0;
+    /* The CPU's per-frame score (integer_motion.c::extract), stored as
+     * motion_sad_score on every frame and repeated as the debug motion
+     * score: the SAD score weighted and capped (motion_clip_hip()). */
+    int e = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                    "VMAF_integer_feature_motion_sad_score",
+                                                    motion_clip_hip(s, s->score), index);
     if (s->debug) {
-        /* The CPU emits the weighted, capped score here (motion_clip). */
         e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                      "VMAF_integer_feature_motion_score",
                                                      motion_clip_hip(s, s->score), index);
@@ -567,9 +579,9 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     return msh_release(fex->priv);
 }
 
-static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
-                                          "VMAF_integer_feature_motion2_score",
-                                          "VMAF_integer_feature_motion3_score", NULL};
+static const char *provided_features[] = {
+    "VMAF_integer_feature_motion_sad_score", "VMAF_integer_feature_motion_score",
+    "VMAF_integer_feature_motion2_score", "VMAF_integer_feature_motion3_score", NULL};
 
 /*
  * Load-bearing: registered via `extern VmafFeatureExtractor
