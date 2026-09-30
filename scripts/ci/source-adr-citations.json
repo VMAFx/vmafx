@@ -7787,7 +7787,7 @@
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
         "core/meson_options.txt": 1,
-        "core/src/meson.build": 6,
+        "core/src/meson.build": 7,
         "core/src/sycl/check_aot_image.py": 2,
         "core/test/meson.build": 1,
         "core/test/test_sycl_aot_image_check.py": 1,
@@ -7817,6 +7817,27 @@
         "python/test/gpu_default_model_test.py": 1
       },
       "target": "1362-sycl-integer-adm-aim-device-pass.md"
+    },
+    "1364": {
+      "sites": {
+        ".github/workflows/libvmaf-build-matrix.yml": 1,
+        "core/src/meson.build": 6,
+        "core/src/sycl/coff_add_anchor.py": 1,
+        "core/src/sycl/common.cpp": 1,
+        "core/src/sycl/common.h": 1,
+        "core/test/dnn/meson.build": 1,
+        "core/test/dnn/test_registry.sh": 1,
+        "core/test/meson.build": 4,
+        "core/test/test_device_target_header_dependencies.py": 1,
+        "core/test/test_parity_gate_metric_names.py": 1,
+        "core/test/test_run_meson_test_exit_status.py": 1,
+        "core/test/test_sycl_coff_anchor.py": 1,
+        "core/test/test_sycl_kernel_registration.c": 1,
+        "core/tools/test/test_vmaf_per_shot_input.c": 1,
+        "scripts/ci/run_meson_test.py": 1,
+        "scripts/ci/tests/test_sycl_aot_command.py": 2
+      },
+      "target": "1364-windows-sycl-msvc-device-link.md"
     },
     "1365": {
       "sites": {
