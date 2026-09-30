@@ -363,17 +363,18 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   passes `0` for the new trailing `channel` argument (Y-plane only,
   preserving CUDA pre-port behaviour). UV-plane motion on GPU is a
   follow-up tracked in [docs/state.md](../../state.md).
-- **`psnr_hvs_cuda` on-device conversion and cooperative DCT** (closes
-  `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, porting ADR-1369) — the
-  extractor converts raw integer samples on-device directly from pitched
-  `VmafPicture` device planes across all bit depths (fixing odd bit depths),
-  eliminating host D2H downloads, CPU float conversions, and H2D uploads. In
-  the kernel, each 8×8 block is processed cooperatively by two threads
-  (reference and distorted) using warp shuffle exchange (`__shfl_xor_sync`),
-  in-place 8×8 DCT in shared memory, and a single launch across all planes into
-  one unified partials buffer. Bit-identity against the previous CUDA twin is
-  exact (max absolute difference 0.0), with an area-scaled contract vs CPU
-  (ADR-1361).
+- **`psnr_hvs_cuda` reads the device pictures directly** (closes
+  `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, the CUDA port of
+  [ADR-1369](../../adr/1369-sycl-shared-planes-light-twins.md)) — no host copy,
+  host conversion or float upload per frame. The kernel reads the raw 8- to
+  12-bit samples with the picture pitch, runs two threads per 8x8 block (one per
+  image, exchanging their statistics with `__shfl_xor_sync`) with the DCT in
+  shared memory, and covers every plane in one launch; the host sums each plane's
+  block partials in block order in `float`. Output is bit-identical to the
+  previous twin except at 9 and 11 bits, which it used to score wrongly. On an
+  RTX 4090 a 3840x2160 frame takes 3.20 ms instead of 18.28 ms. At 3840x2160 the
+  CPU extractor's own `float` sum sets the difference to the CPU; see
+  [the psnr_hvs page](../../metrics/psnr-hvs.md#difference-to-the-cpu-extractor-at-large-frame-sizes).
 - **SSIMULACRA 2** — `ssimulacra2_cuda` shipped per
   [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
   host/GPU pipeline, IIR fatbin pinned with `--fmad=false`). The

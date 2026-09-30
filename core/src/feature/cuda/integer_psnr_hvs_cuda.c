@@ -6,12 +6,15 @@
  *  psnr_hvs feature extractor on the CUDA backend
  *  (T7-23 / ADR-0188 / ADR-0191 / ADR-1369).
  *
- *  On-device conversion directly from device pictures (ADR-1369 port).
- *  Reads raw samples directly from device picture memory with row pitch.
- *  No host roundtrip, no host float conversion, no private upload.
- *  Single dispatch for all active planes, two threads per 8x8 block,
- *  warp shuffle stats exchange, in-place integer DCT in shared memory.
- *  Per-block float expressions unchanged for bit-identical block scores.
+ *  CUDA port of ADR-1369: the kernel reads the raw 8- to 12-bit samples of
+ *  the device pictures with their pitch (no host copy, host conversion or
+ *  private upload), two threads per 8x8 block exchange their statistics with
+ *  a warp shuffle, the integer DCT runs in shared memory, and one launch
+ *  covers every active plane. The per-block float expressions are the
+ *  previous CUDA kernel's, and reduce_hvs_planes() adds the partials in block
+ *  order in float, so the output is bit-identical to the previous twin
+ *  (except at 9 and 11 bits, which it scored wrongly). 4:0:0 input is luma
+ *  only, as in the CPU extractor.
  */
 
 #include <errno.h>
@@ -73,16 +76,11 @@ static const VmafOption options[] = {
     {0},
 };
 
-static int validate_hvs_input(enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w, unsigned h)
+static int validate_hvs_input(unsigned bpc, unsigned w, unsigned h)
 {
     if (bpc > 12u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: invalid bitdepth (%u); bpc must be <= 12\n",
                  bpc);
-        return -EINVAL;
-    }
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "psnr_hvs_cuda: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
         return -EINVAL;
     }
     if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
@@ -97,7 +95,15 @@ static int configure_hvs_geometry(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_
 {
     s->width[0] = w;
     s->height[0] = h;
+    /* 4:0:0 has no chroma planes: luma only whatever enable_chroma says, as in
+     * the CPU extractor (third_party/xiph/psnr_hvs.c::init). */
+    s->n_planes =
+        (s->enable_chroma && pix_fmt != VMAF_PIX_FMT_YUV400P) ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
     switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV400P:
+        s->width[1] = s->width[2] = 0U;
+        s->height[1] = s->height[2] = 0U;
+        break;
     case VMAF_PIX_FMT_YUV420P:
         s->width[1] = s->width[2] = (w + 1u) >> 1;
         s->height[1] = s->height[2] = (h + 1u) >> 1;
@@ -119,7 +125,6 @@ static int configure_hvs_geometry(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_
 
 static int configure_hvs_blocks(PsnrHvsStateCuda *s)
 {
-    s->n_planes = s->enable_chroma ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
     s->total_blocks = 0U;
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         if (s->width[plane] < (unsigned)PSNR_HVS_BLOCK ||
@@ -166,7 +171,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     PsnrHvsStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
-    int err = validate_hvs_input(pix_fmt, bpc, w, h);
+    int err = validate_hvs_input(bpc, w, h);
     if (err)
         return err;
 
@@ -234,6 +239,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         args.plane[p].blocks_x = s->num_blocks_x[p];
         args.plane[p].first_block = s->first_block[p];
     }
+    // NOLINTNEXTLINE(performance-no-int-to-ptr): Driver API device address the kernel dereferences (ADR-0747)
     args.partials = (float *)s->rb.device->data;
     args.n_planes = s->n_planes;
     args.total_blocks = s->total_blocks;
@@ -316,6 +322,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
                                           NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda = {
     .name = "psnr_hvs_cuda",
     .init = init_fex_cuda,

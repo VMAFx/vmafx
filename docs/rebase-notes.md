@@ -1,14 +1,12 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
-## perf/cuda-psnr-hvs-device-convert — psnr_hvs_cuda on-device sample conversion (porting ADR-1369) (2026-09-30)
+## perf/cuda-psnr-hvs-device-convert — psnr_hvs_cuda reads the device pictures directly (CUDA port of ADR-1369) (2026-09-30)
 
-- `core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`, `core/src/feature/cuda/integer_psnr_hvs_cuda.c`, `core/src/feature/cuda/integer_psnr_hvs_cuda.h`: fork-only (upstream Netflix/vmaf has no CUDA PSNR-HVS twin).
-  `psnr_hvs_cuda` reads raw integer samples directly from pitched `VmafPicture` buffers on the device (`hvs_load_block`), across all bit depths (8, 9, 10, 11, 12, 16 bpc, also fixing odd-depth scaling on 9-bit and 11-bit inputs).
-  All host roundtrips (`issue_d2h_plane`, CPU float conversion, `issue_h2d_plane`), plane-private device float buffers, and host uint buffers are eliminated.
-- In the kernel, each 8×8 block is processed cooperatively by two threads (reference and distorted) using warp shuffle exchange (`__shfl_xor_sync`) and in-place DCT in shared memory (`s_block`), launching a single grid across all active planes into one partials buffer read back via `VmafCudaKernelReadback`.
-- Every float reduction expression and constant matches the CPU and SYCL twins bit-identically. Output vs pre-port CUDA twin is bit-identical (max absolute difference 0.0) across 576x324 and 4K BBB. CPU parity is within the ADR-1361 area-scaled tolerance (8.37e-05 dB at 576x324).
-- `core/test/test_cuda_module_lifecycle_contract.py`: `integer_psnr_hvs_cuda.c` removed from `EXPECTED_BUFFER_OWNERS` because it uses unified `VmafCudaKernelReadback` and no longer owns private `VmafCudaBuffer` allocations.
+- `core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`, `core/src/feature/cuda/integer_psnr_hvs_cuda.c`, `core/src/feature/cuda/integer_psnr_hvs_cuda.h`: fork-only (upstream Netflix/vmaf has no CUDA twin). The host round trip (`issue_d2h_plane`, `convert_plane`, `issue_h2d_plane`) and the private float planes are gone; the kernel reads the raw 8- to 12-bit samples of the device pictures (`hvs_load_block`), two threads per 8x8 block, one launch for every plane into one `VmafCudaKernelReadback` buffer.
+- Invariant: the per-block arithmetic is the previous CUDA kernel's, and `reduce_hvs_planes()` adds each plane's partials in block order in `float` (the sum ADR-1361 calibrated). Changing either changes the output: `vmaf --feature psnr_hvs_cuda --precision max` before and after a rebase must stay bit-identical at 576x324 and 3840x2160.
+- 4:0:0 input is luma only (as on master and on the CPU); `test_psnr_hvs_yuv400_parity` pins it, and `test_psnr_hvs_odd_depth_parity` pins 9- and 11-bit parity with the CPU.
+- `core/test/test_cuda_module_lifecycle_contract.py`: `integer_psnr_hvs_cuda.c` left `EXPECTED_BUFFER_OWNERS`; it owns no `VmafCudaBuffer` of its own any more.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)

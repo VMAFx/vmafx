@@ -10,7 +10,10 @@
  *  with pitched row strides. Two threads per 8x8 block (one reference, one
  *  distorted), warp-shuffle exchange of block stats, in-place integer DCT
  *  in shared memory, and one launch across all active planes into a single
- *  partials buffer. Bit-identical block scores.
+ *  partials buffer. The block arithmetic is the previous CUDA kernel's, so
+ *  every block score is bit-identical to it. It is not the CPU's to the bit:
+ *  the masking threshold takes a float square root where calc_psnrhvs()
+ *  takes a double one, and nvcc contracts where the CPU build does not.
  */
 
 #include <cuda_runtime.h>

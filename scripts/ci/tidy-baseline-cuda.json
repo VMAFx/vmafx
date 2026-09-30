@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1327,
+  "total_warnings": 1309,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -399,7 +399,6 @@
     "core/src/feature/cuda/integer_motion_v2_cuda.c": 5,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
     "core/src/feature/cuda/integer_psnr_cuda.c": 2,
-    "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 2,
     "core/src/feature/cuda/integer_ssim_cuda.c": 2,
     "core/src/feature/cuda/integer_vif_cuda.c": 12,
     "core/src/feature/cuda/speed_chroma_cuda.c": 10,
@@ -500,7 +499,6 @@
     "core/test/test_cuda_pic_preallocation.c": 44,
     "core/test/test_cuda_picture_pinned_overflow.c": 7,
     "core/test/test_cuda_preallocation_leak.c": 16,
-    "core/test/test_cuda_psnr_hvs_parity.c": 16,
     "core/test/test_cuda_psnr_parity.c": 23,
     "core/test/test_cuda_single_frame_flush.c": 6,
     "core/test/test_cuda_speed_chroma_parity.c": 20,
@@ -690,6 +688,28 @@
         }
       },
       "previous_baseline_sha256": "a85ba6fb7738e1ca24f45749e9144fe7892515cf61e71b58d3663e752051772b"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c",
+        "core/test/test_cuda_psnr_hvs_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_cuda_psnr_hvs_parity.c": {
+          "warnings": [
+            16,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b39032799a1c26e152df8b66c81a80503cfddecfbe6aa244941af16719633342"
     }
   ]
 }
