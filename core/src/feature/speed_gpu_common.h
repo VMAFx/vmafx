@@ -29,9 +29,14 @@ extern "C" {
 #endif
 
 /* NOLINTBEGIN(modernize-use-using):
- * C host/device contract header shared by C host code, SYCL (C++) and CUDA.
- * clang-tidy analyses this header under C++ translation units and proposes
- * `using` in place of `typedef struct`, which is not valid C (ADR-0141, ADR-1380). */
+ * This is a C header. speed_internal.c and the CUDA host files
+ * (cuda/speed_cuda_pipeline.c, cuda/speed_chroma_cuda.c,
+ * cuda/speed_temporal_cuda.c) include it as C, and clang-tidy also parses it
+ * as C++: under core/tools/vmaf.cpp, through feature_dimensions.h and
+ * speed_internal.h, and under the SYCL SpEED translation units.
+ * `modernize-use-using` asks for a `using` alias in place of each
+ * `typedef struct`, which C cannot spell. File-scoped, the shape ADR-1138
+ * prescribes for this C-parsed-as-C++ artefact, applied under ADR-0141. */
 
 #define SPEED_GPU_BLOCK 5u                                     /* block_size */
 #define SPEED_GPU_ELEMENTS (SPEED_GPU_BLOCK * SPEED_GPU_BLOCK) /* elements_in_block */
