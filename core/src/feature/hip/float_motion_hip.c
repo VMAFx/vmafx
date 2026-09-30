@@ -185,6 +185,32 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return err;
 }
 
+/* motion_force_zero keeps the asynchronous interface
+ * (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). libvmaf picks
+ * submit()/collect() from the callbacks of the uninitialised context
+ * (read_pictures_dispatch_one()), and vmaf_feature_extractor_context_submit()
+ * runs init() only then, so an init() that cleared submit had the framework
+ * call a NULL submit() on the first frame. submit() has no picture to read;
+ * collect() writes the zeros extract() writes for a direct caller. */
+static int submit_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
+                             VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)fex;
+    (void)ref_pic;
+    (void)ref_pic_90;
+    (void)dist_pic;
+    (void)dist_pic_90;
+    (void)index;
+    return 0;
+}
+
+static int collect_force_zero(VmafFeatureExtractor *fex, unsigned index,
+                              VmafFeatureCollector *feature_collector)
+{
+    return extract_force_zero(fex, NULL, NULL, NULL, NULL, index, feature_collector);
+}
+
 static int close_fex_hip(VmafFeatureExtractor *fex);
 
 /* Extracted from init: motion_force_zero short-circuit.  init_fex_hip releases
@@ -193,8 +219,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex);
 static int init_force_zero_hip(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
 {
     fex->extract = extract_force_zero;
-    fex->submit = NULL;
-    fex->collect = NULL;
+    fex->submit = submit_force_zero;
+    fex->collect = collect_force_zero;
     fex->flush = NULL;
     fex->close = close_fex_hip;
     s->feature_name_dict =

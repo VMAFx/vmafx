@@ -471,6 +471,17 @@
   [the HIP backend guide](docs/backends/hip/overview.md#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30).
 
 
+- **`motion_hip` and `float_motion_hip` no longer crash with
+  `motion_force_zero=true`.** Both HIP twins switched to their synchronous
+  zero path inside `init()` and cleared `submit()` / `collect()`, but libvmaf
+  had already chosen the asynchronous path for them, so the first frame
+  called a NULL `submit()` and the process died with SIGSEGV. The twins now
+  keep the asynchronous interface and write the CPU's zeros from
+  `collect()`. Measured on a gfx1036: `--feature motion_hip=motion_force_zero=true`
+  exits 0 with every `integer_motion*_force_0` score 0, as on the CPU
+  (`T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30` in `docs/state.md`).
+
+
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)
   GPUs. Through v1.0.0-rc.2 it shipped the Intel GPU compute runtime of
   Intel's `oneapi-runtime:2025.3.1` image (version 25.18), and every

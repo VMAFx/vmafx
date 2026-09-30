@@ -985,6 +985,13 @@ Rebase-sensitive invariants:
 - `motion_hip`: `debug` default false (CPU, CUDA); emits
   `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
   force_zero.
+- `motion_force_zero` (`motion_hip`, `float_motion_hip`): never set
+  `submit` / `collect` to NULL in `init()`. libvmaf picks submit/collect from
+  the descriptor before `init()` runs, then calls `fex->submit` after it: a
+  NULL there is a SIGSEGV on frame 0
+  (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). Keep a no-op `submit()`
+  and a `collect()` that writes `extract_force_zero()`'s zeros. Guard:
+  `test_integer_motion_force_zero` in `test_hip_twin_option_parity`.
 - `psnr_hip` TEMPORAL like CPU `psnr`: `--subsample` must not drop frames
   from `apsnr_*`. Twin's subsample flags (TEMPORAL / PREV_REF) follow CPU;
   `test_hip_twin_option_parity` checks.

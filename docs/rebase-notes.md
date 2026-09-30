@@ -55508,6 +55508,12 @@ that touches these files with the commands of Research-1379 finding 8.
   `debug` defaults to false and `VMAF_integer_feature_motion_sad_score` is
   emitted every frame, like the CPU `motion`. `integer_vif_hip.c`: the
   scaffold `-ENOSYS` comes before the minimum-size check (ADR-1264).
+- `integer_motion_hip.c` / `float_motion_hip.c`: under `motion_force_zero`
+  `init()` installs `submit_force_zero()` / `collect_force_zero()` instead of
+  clearing `submit` / `collect`; `motion_hip` releases its device objects there
+  (`msh_release_device()`) and keeps `close()`. An upstream or CUDA-mirror
+  hunk that restores `fex->submit = NULL` in either `init()` brings back the
+  frame-0 SIGSEGV (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30).
 - `scripts/ci/cross_backend_parity_gate.py` / `cross_backend_vif_diff.py`:
   `hip` backend (`--hip_device`), `float_ssim_lcs` cell, and
   `BACKEND_EXTRACTOR_ALIASES` keyed by the base extractor

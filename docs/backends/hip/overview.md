@@ -713,6 +713,8 @@ emits `motion2_v2` / `motion3_v2` for a one-frame run; `psnr_hip` sees every
 frame under `--subsample`, so the `apsnr_*` totals cover the clip; and
 `motion_hip` defaults `debug` to false and writes
 `VMAF_integer_feature_motion_sad_score` every frame, like the CPU `motion`.
+With `motion_force_zero=true`, `motion_hip` and `float_motion_hip` write the
+CPU's zero scores; before this change both crashed on the first frame.
 `float_motion_hip` does not emit `motion3` yet
 (`T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`).
 
