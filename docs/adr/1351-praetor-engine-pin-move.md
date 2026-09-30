@@ -67,6 +67,7 @@ For this move that means:
 
 - **New dependencies**: `tools/figures/` vendors interfig (MIT, Vectorize AI) and a player bundle with React, react-dom and scheduler (MIT). `REUSE.toml` labels both after the whole-tree table. `tools/markdownlint/package.json` adds js-yaml 5.2.2 and micromatch 4.0.8 (MIT), both already in its lock through markdownlint-cli2. All are dev-only and never reach libvmaf or its binaries.
 - **Build-time fetches**: `make docs-lint` runs `npm ci` from `tools/markdownlint/package-lock.json` into a temporary directory. The devcontainer vendors the praetor `25451d8` source in five base64 parts.
+- **Known advisories in a locked file**: praetor's `tools/markdownlint/package-lock.json` pins `smol-toml@1.7.0` ([GHSA-7w5x-hrqm-74c2](https://github.com/advisories/GHSA-7w5x-hrqm-74c2), high), `js-yaml@5.2.2` and `markdown-it@14.3.0` (one moderate advisory each). Dependency Review fails on this PR because of the high one. Audit locks the file to praetor's bytes, and praetor `main` has no fix yet ([#643](https://github.com/cordanaLLM/praetor/issues/643)), so the file is not edited here. The gate never parses TOML: `verify.mjs` passes its own YAML config from an empty directory. Whether Dependency Review may allow the advisory until the next pin move is a maintainer decision. `docs/state.md` tracks the gap as `T-PRAETOR-DOCS-GATE-LOCK-ADVISORIES-2026-09-30`.
 
 ## References
 
