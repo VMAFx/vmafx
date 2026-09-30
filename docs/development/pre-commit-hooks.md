@@ -3,12 +3,16 @@
 Run `make install-hooks` from the checkout or linked worktree you use.
 The installer requires Python with `pre-commit` installed in the active
 environment and prepares the configured hook environments before replacing
-any hooks. `make hooks-install` remains an alias.
+any hooks. `make hooks-install` remains an alias. Install `pre-commit` from
+the hash lock, which also carries `reuse` for the `reuse-lint` check:
 
 ```bash
-python3 -m pip install pre-commit
+python3 -m pip install --require-hashes -r requirements/locks/pre-commit.txt
 make install-hooks
 ```
+
+Lefthook owns three hooks next to these dispatchers; install it first, as
+described in [Lefthook and the governance hooks](#lefthook-and-the-governance-hooks).
 
 The installer writes regular dispatcher files to Git's effective hooks
 directory, including a configured `core.hooksPath`. Each invocation finds
@@ -40,6 +44,96 @@ docs toolchain. The required hosted `Docs` job installs these dependencies
 and runs strict validation.
 Missing `pre-commit` itself blocks framework hook dispatch with a clear
 message; activate the environment used for installation.
+
+## Lefthook and the governance hooks
+
+[`lefthook.yml`](../../lefthook.yml) owns `pre-commit`, `pre-push` and
+`post-commit` ([ADR-1249](../adr/1249-praetor-governance-adoption.md)). Its
+`pre-commit` and `pre-push` jobs run the pre-commit framework stage through
+`scripts/git-hooks/framework-hooks.sh`, next to the praetor governance checks
+(`compile-context --verify`, `audit`, `hiss coverage --verify`, `dedupe scan`).
+`post-commit` synchronises private state. The dispatchers keep `commit-msg`
+(Conventional Commits) and `pre-rebase` (worktree drift guard). Install
+lefthook first, then the dispatchers:
+
+```bash
+lefthook install
+make install-hooks   # reports "left lefthook's .../pre-commit in place"
+```
+
+`make install-hooks` leaves the hooks lefthook wrote in place
+([ADR-1385](../adr/1385-lefthook-installer-coexistence.md)). In the opposite
+order it stops at the first hook it did not write, for example Git LFS's
+`pre-push`.
+
+The governance checks need `praetorctl` at the engine commit pinned as
+`PRAETOR_REF` in `.github/workflows/standards-gate.yml`. A newer engine can
+fail an unchanged tree, so put the pinned build first on `PATH`:
+
+```bash
+ref=$(sed -n 's/^  PRAETOR_REF: //p' .github/workflows/standards-gate.yml)
+GOBIN="$HOME/go/bin-pinned" go install "github.com/cordanaLLM/praetor/cmd/standardsctl@$ref"
+cp "$HOME/go/bin-pinned/standardsctl" "$HOME/go/bin-pinned/praetorctl"  # add .exe on Windows
+export PATH="$HOME/go/bin-pinned:$PATH"
+```
+
+Two lefthook behaviours affect every checkout that shares the Git directory:
+
+- `lefthook run <hook>` installs the hook shims first unless you pass
+  `--no-auto-install`. Linked worktrees share one hooks directory, so a trial
+  run in a worktree installs lefthook for the main checkout too.
+- `lefthook uninstall` rewrites `.claude/settings.json` and `.codex/hooks.json`
+  with sorted keys even when it removes nothing. Both files are committed in
+  that form, so the rewrite leaves them unchanged; keep them that way
+  (`json.dumps(indent=2, sort_keys=True)` plus a newline).
+  `scripts/githooks/tests/test_install.py` checks it.
+
+Keep every `run:` value in `lefthook.yml` on one line and free of double quotes.
+On Windows lefthook passes it to `sh -c` without escaping, so a double quote
+ends the script early; put logic in a script under `scripts/git-hooks/`
+instead. The same test rejects both.
+
+## Windows hosts
+
+The hooks run in Git for Windows' Bash. Set up a checkout once:
+
+1. Clone with `core.autocrlf=false`
+   (`git clone -c core.autocrlf=false ...`). Several gates compare generated
+   files byte for byte against their LF form, and Git for Windows' default of
+   `true` checks them out with CRLF.
+2. Create a Python 3.14 virtualenv from the hash lock:
+
+   ```bash
+   py -3.14 -m venv .venv
+   .venv/Scripts/python.exe -m pip install --require-hashes -r requirements/locks/pre-commit.txt
+   ```
+
+   `framework-hooks.sh` prefers `.venv/Scripts/pre-commit.exe` (or
+   `.venv/bin/pre-commit` elsewhere) over `pre-commit` on `PATH` and puts the
+   virtualenv first on `PATH` for the checks, so `reuse` resolves without
+   activating it. The lock installs `reuse` with `charset-normalizer`, because
+   reuse cannot use `python-magic` on Windows.
+3. Put lefthook v2 on `PATH`
+   (`go install github.com/evilmartians/lefthook/v2@v2.1.14`) and the pinned
+   `praetorctl` first on `PATH`, as above.
+4. Install from a shell with the virtualenv active
+   (`source .venv/Scripts/activate`): `lefthook install`, then
+   `bash scripts/githooks/install.sh` (the command behind `make install-hooks`).
+   The `commit-msg` dispatcher looks `pre-commit` up on `PATH` when it runs, so
+   commit from a shell with the virtualenv active, or install the same lock into
+   the Python on `PATH`. Lefthook's jobs find `.venv` themselves.
+5. For pushes, install the push-stage tools into the same virtualenv:
+   `requirements/locks/mypy.txt` (with `--require-hashes`) and
+   `docs/requirements.txt` for the MkDocs strict build. `govulncheck` on
+   `PATH` enables the `security` job; without it the job reports a skip.
+
+Check the result with `lefthook run pre-commit --no-auto-install` on a staged
+change. A few fixture tests assume POSIX tools and skip on Windows with the
+reason printed; the Linux CI jobs still run them. Others still fail on Windows
+and run only when `Makefile`, `.pre-commit-config.yaml` or their own files
+change; see `T-HOOKS-WINDOWS-POSIX-FIXTURES-2026-09-30` in
+[docs/state.md](../state.md) and
+[Research-1385](../research/1385-lefthook-windows-host.md).
 
 ## Post-commit private-state synchronization
 

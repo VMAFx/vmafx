@@ -1,45 +1,45 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/block-unsafe-bash.sh\""
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
         "hooks": [
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-format-on-edit.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-format-on-edit.sh\"",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-snapshot-warn.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-snapshot-warn.sh\"",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/docs-drift-warn.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/docs-drift-warn.sh\"",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/compile-commands-sync.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/compile-commands-sync.sh\"",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/block-unsafe-bash.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ],
     "SessionStart": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/session-start.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/session-start.sh\"",
+            "type": "command"
           }
         ]
       }
@@ -48,8 +48,8 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/stop.sh\""
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/stop.sh\"",
+            "type": "command"
           }
         ]
       }

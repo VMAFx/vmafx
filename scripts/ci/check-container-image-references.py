@@ -14,7 +14,7 @@ import re
 import shlex
 import sys
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePath
 
 VARIABLE = re.compile(r"\$(?:\{([A-Z][A-Z0-9_]*)\}|([A-Z][A-Z0-9_]*))\Z")
 # These two consumers extend images built by this repository. A tag alone is
@@ -59,16 +59,19 @@ def logical_instructions(text: str) -> Iterator[tuple[int, str, str]]:
 
 
 def check_from(
-    path: Path, ref: str, image_keys: set[str], stages: set[str], arguments: dict[str, str]
+    path: PurePath, ref: str, image_keys: set[str], stages: set[str], arguments: dict[str, str]
 ) -> str | None:
+    # The exception tables use Git's '/' spelling. str() of a Windows path
+    # uses '\', which made the runner exception unreachable on Windows hosts.
+    name = path.as_posix()
     variable = VARIABLE.fullmatch(ref)
     if variable:
         key = variable.group(1) or variable.group(2)
-        local = (str(path), key, arguments.get(key)) in LOCAL_ARGUMENT
+        local = (name, key, arguments.get(key)) in LOCAL_ARGUMENT
         central = key in image_keys and bool(arguments.get(key))
         if not (central or local):
             return f"FROM argument {key} needs a global default owned by build-config.env"
-    elif ref != "scratch" and ref.lower() not in stages and (str(path), ref) not in LOCAL_FROM:
+    elif ref != "scratch" and ref.lower() not in stages and (name, ref) not in LOCAL_FROM:
         return f"FROM hardcodes a base image: {ref}"
     return None
 

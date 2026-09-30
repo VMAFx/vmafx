@@ -24,10 +24,9 @@ pre-commit:
       # markdownlint, the ADR, state.md and aggregator gates, semgrep, the
       # ADR-0332 worktree-drift guard) keep running unchanged. Superseding note
       # for ADR-0924. Fails closed like the ADR-1241 dispatcher it replaces.
-      run: |
-        if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit run; \
-        elif command -v pre-commit >/dev/null 2>&1; then pre-commit run; \
-        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi
+      # Keep every run value free of double quotes: lefthook on Windows passes
+      # it to sh -c unescaped, so the logic lives in the script.
+      run: bash scripts/git-hooks/framework-hooks.sh pre-commit
     context-check:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     hiss-audit:
@@ -60,12 +59,7 @@ pre-push:
       # arguments and push-ref stdin the dispatcher would; without them
       # hook-impl cannot compute the pushed range.
       use_stdin: true
-      run: |
-        if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
-        elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
-        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
-        "$fw" hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push \
-          --hook-dir "$(git rev-parse --git-path hooks)" -- {1} {2}
+      run: bash scripts/git-hooks/framework-hooks.sh pre-push {1} {2}
     security:
       run: if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo govulncheck is not installed, skipping >&2; fi
     flavor-audit:

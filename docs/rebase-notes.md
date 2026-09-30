@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/hooks-windows-host — lefthook and pre-commit hooks on Windows (ADR-1385) (2026-09-30)
+
+- `lefthook.yml`, `scripts/git-hooks/framework-hooks.sh`: fork-only (upstream
+  Netflix/vmaf has no lefthook). The `framework-hooks` jobs call the script from
+  a one-line `run:`. Keep every `run:` value on one line and free of double
+  quotes: lefthook on Windows passes it to `sh -c` unescaped.
+  `LefthookBridgeTests` in `scripts/githooks/tests/test_install.py` rejects both.
+- `.claude/settings.json`, `.codex/hooks.json`: stored as
+  `json.dumps(indent=2, sort_keys=True)` plus a newline, the form
+  `lefthook uninstall` writes. A conflict resolution must re-serialise them;
+  the same test fails on any other layout.
+- `scripts/githooks/install.py`: a hook containing `call_lefthook run` is left
+  in place, not refused. Keep that predicate if the installer's custom-hook
+  refusal is reworked.
+- `requirements/locks/pre-commit.in`: `reuse[charset-normalizer]`; dropping the
+  extra breaks `reuse-lint` on Windows.
+- `scripts/ci/check-container-image-references.py` compares `path.as_posix()`;
+  `scripts/docs/generate-adr-by-tag.sh` and the research-digest fixtures write
+  with `newline="\n"`. Keep both on a merge.
+- `cmd/vmafx-node/bpf/*.go` except `gen.go`: `//go:build linux`. The loader
+  uses Linux-only cilium/ebpf links; without the constraint `govulncheck ./...`
+  and `go vet ./...` fail on Windows and macOS.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: fork-only (upstream Netflix/vmaf

@@ -46,6 +46,15 @@ grep -Fq 'run: bash scripts/ci/tests/test-dedupe-gate.sh' \
 grep -Fq 'id: dedupe-gate-contract' "$repo_root/.pre-commit-config.yaml" ||
   report_failure "contract test is not wired into local hooks"
 
+# HISS-21: a native Windows make resolves standardsctl itself and cannot run the
+# POSIX stub below, so the replay would exercise the real engine instead.
+if make --version 2>/dev/null | grep -Eqi 'windows32|mingw'; then
+  echo "dedupe-gate-contract: skipped the make verify-all replay: $(command -v make) is a" \
+    "native Windows make; the Linux Deliverables Checklist job in rule-enforcement.yml runs it" >&2
+  [[ "$fail" -eq 0 ]]
+  exit
+fi
+
 cat >"$tmp_dir/standardsctl" <<'SH'
 #!/bin/sh
 set -eu

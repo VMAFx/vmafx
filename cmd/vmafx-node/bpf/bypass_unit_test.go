@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // bypass_unit_test.go — unit tests for Loader lifecycle methods and the
 // bpf2go-stub Close helpers.
 //

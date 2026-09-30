@@ -1,5 +1,61 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/auto-format-on-edit.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/auto-snapshot-warn.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/docs-drift-warn.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/compile-commands-sync.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/block-unsafe-bash.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/session-start.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/stop.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(meson setup:*)",
@@ -11,7 +67,6 @@
       "Bash(pkg-config:*)",
       "Bash(nasm:*)",
       "Bash(make:*)",
-
       "Bash(clang:*)",
       "Bash(gcc:*)",
       "Bash(g++:*)",
@@ -22,7 +77,6 @@
       "Bash(iwyu_tool:*)",
       "Bash(include-what-you-use:*)",
       "Bash(scan-build:*)",
-
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(pytest:*)",
@@ -34,7 +88,6 @@
       "Bash(pip-audit:*)",
       "Bash(pip:*)",
       "Bash(pip3:*)",
-
       "Bash(semgrep:*)",
       "Bash(gitleaks:*)",
       "Bash(trivy:*)",
@@ -42,7 +95,6 @@
       "Bash(cyclonedx-cli:*)",
       "Bash(syft:*)",
       "Bash(release-please:*)",
-
       "Bash(nvidia-smi:*)",
       "Bash(cuda-gdb:*)",
       "Bash(nvprof:*)",
@@ -53,14 +105,12 @@
       "Bash(sycl-ls:*)",
       "Bash(icpx:*)",
       "Bash(clang++ -fsycl:*)",
-
       "Bash(build/tools/vmaf:*)",
       "Bash(build/tools/vmaf_bench:*)",
       "Bash(build/test/*)",
       "Bash(./build/tools/vmaf:*)",
       "Bash(./build/tools/vmaf_bench:*)",
       "Bash(./build/test/*)",
-
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -84,7 +134,6 @@
       "Bash(gh workflow:*)",
       "Bash(gh issue:*)",
       "Bash(gh repo:*)",
-
       "Bash(ls:*)",
       "Bash(echo:*)",
       "Bash(cat:*)",
@@ -119,41 +168,6 @@
       "Bash(curl * | bash:*)",
       "Bash(wget * | sh:*)",
       "Bash(wget * | bash:*)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/block-unsafe-bash.sh" }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/auto-format-on-edit.sh" },
-          { "type": "command", "command": ".claude/hooks/auto-snapshot-warn.sh" },
-          { "type": "command", "command": ".claude/hooks/docs-drift-warn.sh" },
-          { "type": "command", "command": ".claude/hooks/compile-commands-sync.sh" }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/session-start.sh" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/stop.sh" }
-        ]
-      }
     ]
   }
 }

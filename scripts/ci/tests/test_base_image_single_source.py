@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -22,6 +24,44 @@ GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
 GATE = "scripts/ci/check-base-image-single-source.sh"
 BASE = 'ARG RELEASE_BUILDER_BASE="{pin}"\nFROM ${{RELEASE_BUILDER_BASE}} AS builder\n'
+
+
+def _load_references() -> ModuleType:
+    path = ROOT / "scripts/ci/check-container-image-references.py"
+    spec = importlib.util.spec_from_file_location("check_container_image_references", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+REFERENCES = _load_references()
+
+
+class LocalImageExceptionPathSpelling(unittest.TestCase):
+    """The exception tables must match whichever separator the host uses."""
+
+    def test_windows_and_posix_spellings_reach_the_same_exceptions(self) -> None:
+        for flavour in (PurePosixPath, PureWindowsPath):
+            with self.subTest(flavour=flavour.__name__):
+                runner = flavour("dev", "Containerfile.runner")
+                local = {"BASE_IMAGE": "vmaf-dev-mcp:local"}
+                self.assertIsNone(
+                    REFERENCES.check_from(runner, "${BASE_IMAGE}", set(), set(), local)
+                )
+                external = {"BASE_IMAGE": "alpine:latest"}
+                self.assertIn(
+                    "needs a global default",
+                    REFERENCES.check_from(runner, "${BASE_IMAGE}", set(), set(), external),
+                )
+                ffmpeg = flavour("Dockerfile.ffmpeg")
+                self.assertIsNone(REFERENCES.check_from(ffmpeg, "vmaf:latest", set(), set(), {}))
+                nested = flavour("docker", "Dockerfile.ffmpeg")
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(nested, "vmaf:latest", set(), set(), {}),
+                )
 
 
 class BaseImageGate(unittest.TestCase):

@@ -32,6 +32,11 @@ BASH = shutil.which("bash") or "/bin/bash"
 MAKE = shutil.which("make") or "/usr/bin/make"
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "HISS-21: the fixture replaces PATH with os.defpath plus shebang stubs and runs the "
+    "Makefile's sh recipes; the Linux Pre-Commit job in lint-and-format.yml runs it",
+)
 class EnvtestSingleSource(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="envtest fixture ")

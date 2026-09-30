@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // rclone_bypass_stub.go — compile-time stub for the bpf2go-generated bindings.
 //
 // bpf2go normally generates rcloneBypass_bpfel.go + rcloneBypass_bpfel.o

@@ -285,6 +285,18 @@ non-doc invocations select scope before requiring docs toolchain.
 Paired updates to config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
+### Lefthook run lines stay quote-free; installer yields to lefthook
+
+[ADR-1385](../docs/adr/1385-lefthook-installer-coexistence.md). Lefthook on
+Windows passes each `run:` to `sh -c` unescaped: one line, no double quotes,
+logic in `git-hooks/framework-hooks.sh` or a sibling script. Bridge prefers
+`.venv/bin` / `.venv/Scripts` pre-commit, prepends that dir to `PATH` via
+`cygpath` when present (lefthook hands Git Bash `C:/` PWD).
+`githooks/install.py` leaves `call_lefthook run` shims in place; order =
+`lefthook install`, then `make install-hooks`. `.claude/settings.json` +
+`.codex/hooks.json` stay sorted-key JSON (`lefthook uninstall` output).
+`githooks/tests/test_install.py` `LefthookBridgeTests` guards all four.
+
 ### Post-commit state sync preserves worktree identity
 
 [ADR-1280](../docs/adr/1280-worktree-state-sync.md) requires

@@ -17,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.lib.safe_subprocess import run as run_command
 
 HOOKS = ("pre-commit", "commit-msg", "pre-push", "pre-rebase")
+# Every hook lefthook installs calls its runner through this function
+# (lefthook v2 internal/templates/hook.tmpl).
+LEFTHOOK_SHIM = b"call_lefthook run "
 SOURCES = {
     "pre-commit": "scripts/githooks/pre-commit.sh",
     "pre-push": "scripts/git-hooks/pre-push",
@@ -82,6 +85,11 @@ def managed_source_link(path: Path, common: Path) -> bool:
     )
 
 
+def lefthook_owned(path: Path) -> bool:
+    """A lefthook shim owns its hook (ADR-1385); the installer leaves it in place."""
+    return path.is_file() and not path.is_symlink() and LEFTHOOK_SHIM in path.read_bytes()
+
+
 def managed(path: Path, common: Path, template: bytes) -> bool:
     if path.is_symlink():
         return managed_source_link(path, common)
@@ -103,7 +111,11 @@ def validate_sources(root: Path, hooks: Path, common: Path, template: bytes) -> 
     for source in SOURCES.values():
         if not os.access(root / source, os.X_OK):
             raise SystemExit(f"install-hooks: missing executable {root / source}")
-    unknown = [str(hooks / hook) for hook in HOOKS if not managed(hooks / hook, common, template)]
+    unknown = [
+        str(hooks / hook)
+        for hook in HOOKS
+        if not lefthook_owned(hooks / hook) and not managed(hooks / hook, common, template)
+    ]
     if unknown:
         raise SystemExit(
             "install-hooks: custom hooks left untouched; review and relocate them explicitly before retrying:\n"
@@ -135,6 +147,9 @@ def install_dispatchers(hooks: Path, content: bytes) -> None:
     with tempfile.TemporaryDirectory(prefix=".vmafx-install-", dir=hooks) as scratch:
         for hook in HOOKS:
             destination = hooks / hook
+            if lefthook_owned(destination):
+                print(f"install-hooks: left lefthook's {destination} in place")
+                continue
             if (
                 destination.is_file()
                 and not destination.is_symlink()
@@ -170,7 +185,13 @@ def main() -> None:
     validate_sources(root, hooks, common, template)
     prepare_framework(root, framework)
     content = template.replace(b"mode=framework", b"mode=native") if mode == "1" else template
+    owned = [hook for hook in HOOKS if lefthook_owned(hooks / hook)]
     install_dispatchers(hooks, content)
+    if owned:
+        print(
+            f"install-hooks: lefthook owns {', '.join(owned)}; dispatchers installed for the rest"
+        )
+        return
     print(
         f"install-hooks: {'native' if mode == '1' else 'framework'} pre-commit; framework commit-msg/pre-push; pre-rebase guard"
     )
