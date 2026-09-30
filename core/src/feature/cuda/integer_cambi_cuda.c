@@ -953,10 +953,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     }
     const uint16_t pixels = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
     double score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
+    /* cambi.c emits MIN(score, cambi_max_val) and nothing else. */
     if (score > s->cambi_max_val)
         score = s->cambi_max_val;
-    if (score < 0.0)
-        score = 0.0;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Cambi_feature_cambi_score", score, index);
 }

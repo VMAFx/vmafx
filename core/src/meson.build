@@ -1487,6 +1487,7 @@ if is_cuda_enabled
         'feature/cuda/speed_temporal_cuda.h',
         'feature/cuda/speed/speed_cuda_params.h',
         'feature/speed_gpu_common.h',
+        'feature/speed_log2_hard_cases.h',
         'feature/adm_angle_flag.h',
         'mem.h',
         'metadata.h',
