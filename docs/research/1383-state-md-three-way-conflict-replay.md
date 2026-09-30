@@ -50,12 +50,15 @@ The remaining differences from what landed:
 
 ### Found and fixed by the replay
 
-The first three-way replay of #1619 kept one `_Updated` line twice. The branch was stacked on #1616 and replayed its commit, which master already had as a squash merge, so both sides added the same line at different places. The resolver now keeps a non-blank line that both sides added once. `test_stacked_branch_replays_a_commit_master_squashed` fails without that change.
+The first full replay found two defects in the new resolver, both fixed with a test that fails without the fix:
+
+- **A line both sides added, at different places, was kept twice.** #1619 was stacked on #1616 and replayed its commit, which master already had as a squash merge, so both sides added the same `_Updated` line. The resolver now keeps a non-blank line that both sides added once (`test_stacked_branch_replays_a_commit_master_squashed`).
+- **Overlapping deletions were reported as a conflict.** In #1373 and #1507 both sides deleted `_Updated` lines over different, overlapping ranges, and the resolver refused the stop. Every line either side deleted now goes (`test_overlapping_deletions_are_not_a_conflict`).
 
 ### Outside the window
 
-- **Before 2026-09-26** (12 replays with stops): every master of that period fails today's gate (rows it learned to reject later), so every result exits 3 with either resolver. Compared on content only, the three-way results match what landed apart from three drift rows.
-- **#1561 and #1518** are integration branches with merge commits. Rebasing them replays dozens of already-merged commits (72 and 28 stops) and says nothing about the resolver.
+- **Before 2026-09-26** (27 replays, 31 stops): every master of that period fails today's gate on rows it learned to reject later, so the resolver exits 3 after writing, as the old resolver's result fails the gate too. Compared on content only, 13 results are identical to what landed and every differing row is drift. Two of those drift rows are a duplicate the replayed #1373 head itself carried. The 3 refusals are #1507 opening a row master had already closed.
+- **#1561 and #1518** are integration branches with merge commits. Rebasing them replays dozens of already-merged commits (100 stops between them) and says nothing about the resolver.
 
 ## Limitations
 
