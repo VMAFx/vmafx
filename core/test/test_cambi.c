@@ -38,6 +38,9 @@
 #include "feature/luminance_tools.h"
 #if ARCH_X86
 #include "feature/x86/cambi_avx2.h"
+#include "feature/x86/cambi_avx512.h"
+#elif ARCH_AARCH64
+#include "feature/arm64/cambi_neon.h"
 #endif
 
 #ifdef _MSC_VER
@@ -711,6 +714,350 @@ static char *test_calculate_c_values()
     return error;
 }
 
+/*
+ * Short frames (Netflix/vmaf#1628; ported from the upstream fix, Netflix/vmaf
+ * PR #1629). The coarsest scale of a wide, short input has fewer rows than
+ * half the window: 1920x128 leaves 8 rows against pad_size 11. Every c-values
+ * driver has to stay inside such a frame and give each row the histogram of
+ * the rows that exist: the scalar walk, the upstream-mirror AVX2 walk, and the
+ * fork's scanned AVX2, AVX-512 and NEON drivers (cambi_c_values_frame.h).
+ *
+ * The frame is a view into a taller picture whose rows around it hold the same
+ * banded content, and the c-values buffer has the same margin, filled with a
+ * sentinel. An unbounded walk reaches rows height - pad .. pad of the view,
+ * which stay inside these buffers, so the test fails on an unfixed tree
+ * without a sanitizer: a margin row written changes a sentinel, and a margin
+ * row read into the histogram moves an in-frame c-value off a reference that
+ * counts each window from scratch. Heights run from one row to a frame with
+ * one middle-slide row, so the heights that worked before are pinned too.
+ */
+typedef void (*CambiCValuesFn)(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                               uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
+                               const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                               const int *diff_weights, const int *all_diffs, int width,
+                               int height);
+
+enum {
+    /* Wide enough for the vector bodies of every row kernel and scan. */
+    SHORT_W = 40,
+    SHORT_WINDOW = 9,
+    SHORT_PAD = SHORT_WINDOW >> 1,
+    SHORT_MAX_H = 2 * SHORT_PAD + 2,
+    /* Margin above the view (an unbounded bottom edge starts at row
+     * height - pad) and picture height (an unbounded top edge ends at row pad
+     * of the view). */
+    SHORT_OFFSET = SHORT_PAD,
+    SHORT_PIC_H = SHORT_OFFSET + SHORT_MAX_H + 1,
+    SHORT_NUM_DIFFS = 4,
+    /* v_band_size of g_short_tvi with vlt_luma 0, where v_band_base is 0. */
+    SHORT_BAND = 560,
+};
+
+#define SHORT_SENTINEL (-1.0f)
+
+static const uint16_t g_short_tvi[SHORT_NUM_DIFFS] = {178, 305, 432, 559};
+
+typedef struct {
+    VmafPicture pic;
+    VmafPicture mask;
+    float *c_buf;
+    uint16_t *histograms;
+    uint16_t *diffs_to_consider;
+    int *diff_weights;
+    int *all_diffs;
+    bool have_pic;
+    bool have_mask;
+} ShortFrameFixture;
+
+/* Banded content (five neighbouring values, so most c-values are non-zero)
+ * and a mask with a few holes, over the whole picture, margins included. */
+static void short_frame_fill(const ShortFrameFixture *f)
+{
+    uint16_t *image = f->pic.data[0];
+    uint16_t *mask = f->mask.data[0];
+    const ptrdiff_t stride = f->pic.stride[0] >> 1;
+    for (int r = 0; r < SHORT_PIC_H; r++) {
+        for (int c = 0; c < SHORT_W; c++) {
+            image[r * stride + c] = (uint16_t)(200 + (3 * r + c) % 5);
+            mask[r * stride + c] = (uint16_t)((3 * r + 5 * c) % 7 != 0);
+        }
+    }
+}
+
+static char *short_frame_setup(ShortFrameFixture *f)
+{
+    if (vmaf_cambi_test_set_contrast_arrays(SHORT_NUM_DIFFS, &f->diffs_to_consider,
+                                            &f->diff_weights, &f->all_diffs)) {
+        return "short frame: contrast-array allocation error";
+    }
+    if (vmaf_picture_alloc(&f->pic, VMAF_PIX_FMT_YUV400P, 10, SHORT_W, SHORT_PIC_H)) {
+        return "short frame: picture allocation error";
+    }
+    f->have_pic = true;
+    if (vmaf_picture_alloc(&f->mask, VMAF_PIX_FMT_YUV400P, 10, SHORT_W, SHORT_PIC_H)) {
+        return "short frame: mask allocation error";
+    }
+    f->have_mask = true;
+    f->c_buf = aligned_malloc(sizeof(float) * SHORT_W * SHORT_PIC_H, 32);
+    f->histograms = aligned_malloc(sizeof(uint16_t) * SHORT_W * SHORT_BAND, 32);
+    if (!f->c_buf || !f->histograms) {
+        return "short frame: buffer allocation error";
+    }
+    short_frame_fill(f);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+static char *short_frame_teardown(ShortFrameFixture *f, char *error)
+{
+    error =
+        unref_picture_if_allocated(&f->mask, f->have_mask, error, "short frame: mask unref failed");
+    error = unref_picture_if_allocated(&f->pic, f->have_pic, error,
+                                       "short frame: picture unref failed");
+    aligned_free(f->c_buf);
+    aligned_free(f->histograms);
+    aligned_free(f->diffs_to_consider);
+    aligned_free(f->diff_weights);
+    aligned_free(f->all_diffs);
+    return error;
+}
+
+/* The c-value of (row, col) of the height-row frame at image / mask, from
+ * scratch: the histogram of the unmasked in-band pixels at most SHORT_PAD rows
+ * and columns away inside the frame, then c_value_pixel. */
+static float short_frame_reference(const ShortFrameFixture *f, const uint16_t *image,
+                                   const uint16_t *mask, ptrdiff_t stride, int height, int row,
+                                   int col)
+{
+    if (!mask[row * stride + col]) {
+        return 0.0f;
+    }
+    uint16_t histogram[SHORT_BAND] = {0};
+    for (int r = MAX(row - SHORT_PAD, 0); r <= MIN(row + SHORT_PAD, height - 1); r++) {
+        for (int c = MAX(col - SHORT_PAD, 0); c <= MIN(col + SHORT_PAD, SHORT_W - 1); c++) {
+            const uint16_t v = image[r * stride + c];
+            if (mask[r * stride + c] && v < SHORT_BAND) {
+                histogram[v]++;
+            }
+        }
+    }
+    return vmaf_cambi_test_c_value_pixel(
+        histogram, (uint16_t)(image[row * stride + col] + SHORT_NUM_DIFFS), f->diff_weights,
+        f->all_diffs, SHORT_NUM_DIFFS, g_short_tvi, 0, SHORT_NUM_DIFFS, SHORT_BAND, 0, 1);
+}
+
+/* Rows of the c-values buffer outside the frame keep the sentinel; rows inside
+ * equal the reference bit for bit. */
+static char *check_short_frame_output(const ShortFrameFixture *f, int height)
+{
+    const ptrdiff_t stride = f->pic.stride[0] >> 1;
+    const uint16_t *image = (const uint16_t *)f->pic.data[0] + SHORT_OFFSET * stride;
+    const uint16_t *mask = (const uint16_t *)f->mask.data[0] + SHORT_OFFSET * stride;
+    int outside_changed = 0;
+    int inside_wrong = 0;
+    for (int r = -SHORT_OFFSET; r < SHORT_PIC_H - SHORT_OFFSET; r++) {
+        for (int c = 0; c < SHORT_W; c++) {
+            const float got = f->c_buf[(ptrdiff_t)(r + SHORT_OFFSET) * SHORT_W + c];
+            if (r < 0 || r >= height) {
+                outside_changed += !float_bits_equal(got, SHORT_SENTINEL);
+            } else {
+                inside_wrong += !float_bits_equal(
+                    got, short_frame_reference(f, image, mask, stride, height, r, c));
+            }
+        }
+    }
+    mu_assert("calculate_c_values wrote rows outside a short frame", outside_changed == 0);
+    mu_assert("calculate_c_values used rows outside a short frame", inside_wrong == 0);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+/* One driver, every height from one row to a frame with one middle row. */
+static char *check_c_values_short_frame(const ShortFrameFixture *f, const char *name,
+                                        CambiCValuesFn calc_c_values)
+{
+    const ptrdiff_t stride = f->pic.stride[0] >> 1;
+    VmafPicture view = f->pic;
+    VmafPicture mask_view = f->mask;
+    view.data[0] = (uint16_t *)f->pic.data[0] + SHORT_OFFSET * stride;
+    mask_view.data[0] = (uint16_t *)f->mask.data[0] + SHORT_OFFSET * stride;
+    float *c_values = f->c_buf + (ptrdiff_t)SHORT_OFFSET * SHORT_W;
+    for (int height = 1; height <= SHORT_MAX_H; height++) {
+        for (int i = 0; i < SHORT_W * SHORT_PIC_H; i++) {
+            f->c_buf[i] = SHORT_SENTINEL;
+        }
+        calc_c_values(&view, &mask_view, c_values, f->histograms, SHORT_WINDOW, SHORT_NUM_DIFFS,
+                      g_short_tvi, 0, f->diff_weights, f->all_diffs, SHORT_W, height);
+        char *error = check_short_frame_output(f, height);
+        if (error) {
+            (void)fprintf(stderr, "%s, %d-row frame, window %d: ", name, height, SHORT_WINDOW);
+            return error;
+        }
+    }
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+/* The SIMD drivers the host can run. The gates read CPUID directly: the
+ * dispatch flags stay 0 until vmaf_init_cpu(), which this binary never runs. */
+static char *check_c_values_short_frame_simd(const ShortFrameFixture *f)
+{
+    char *error = CAMBI_TEST_NULL_POINTER;
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags_x86();
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        error = check_c_values_short_frame(f, "calculate_c_values_avx2", calculate_c_values_avx2);
+    }
+    if (!error && (flags & VMAF_X86_CPU_FLAG_AVX2)) {
+        error = check_c_values_short_frame(f, "calculate_c_values_scan_avx2",
+                                           calculate_c_values_scan_avx2);
+    }
+#if HAVE_AVX512
+    if (!error && (flags & VMAF_X86_CPU_FLAG_AVX512)) {
+        error =
+            check_c_values_short_frame(f, "calculate_c_values_avx512", calculate_c_values_avx512);
+    }
+#endif
+#elif ARCH_AARCH64
+    error = check_c_values_short_frame(f, "calculate_c_values_neon", calculate_c_values_neon);
+#else
+    (void)f;
+#endif
+    return error;
+}
+
+static char *test_calculate_c_values_short_frame()
+{
+    ShortFrameFixture f = {0};
+    char *error = short_frame_setup(&f);
+    if (!error) {
+        error = check_c_values_short_frame(&f, "calculate_c_values",
+                                           vmaf_cambi_test_calculate_c_values);
+    }
+    if (!error) {
+        error = check_c_values_short_frame_simd(&f);
+    }
+    return short_frame_teardown(&f, error);
+}
+
+/*
+ * The column twin of the short-frame test: a frame narrower than half the
+ * window. CAMBI decimates its scales in place, so at a coarse scale the
+ * columns past the frame's width, inside the stride, still hold a finer
+ * scale's pixels. Here the frame is the left `width` columns of the fixture
+ * picture, whose other columns keep the same banded content; a walk that reads
+ * them moves an in-frame c-value off a reference that counts each window from
+ * scratch, clipped to the frame. Widths run from one column to two past the
+ * half window, so the widths that worked before are pinned too, and the height
+ * gives every walk phase at least one row.
+ */
+enum {
+    NARROW_H = SHORT_MAX_H,
+    NARROW_MAX_W = SHORT_PAD + 2,
+};
+
+static float narrow_frame_reference(const ShortFrameFixture *f, int width, int row, int col)
+{
+    const ptrdiff_t stride = f->pic.stride[0] >> 1;
+    const uint16_t *image = f->pic.data[0];
+    const uint16_t *mask = f->mask.data[0];
+    if (!mask[row * stride + col]) {
+        return 0.0f;
+    }
+    uint16_t histogram[SHORT_BAND] = {0};
+    for (int r = MAX(row - SHORT_PAD, 0); r <= MIN(row + SHORT_PAD, NARROW_H - 1); r++) {
+        for (int c = MAX(col - SHORT_PAD, 0); c <= MIN(col + SHORT_PAD, width - 1); c++) {
+            const uint16_t v = image[r * stride + c];
+            if (mask[r * stride + c] && v < SHORT_BAND) {
+                histogram[v]++;
+            }
+        }
+    }
+    return vmaf_cambi_test_c_value_pixel(
+        histogram, (uint16_t)(image[row * stride + col] + SHORT_NUM_DIFFS), f->diff_weights,
+        f->all_diffs, SHORT_NUM_DIFFS, g_short_tvi, 0, SHORT_NUM_DIFFS, SHORT_BAND, 0, 1);
+}
+
+/* The width x NARROW_H c-values equal the reference bit for bit, and the rest
+ * of the buffer keeps the sentinel. */
+static char *check_narrow_frame_output(const ShortFrameFixture *f, int width)
+{
+    int inside_wrong = 0;
+    int outside_changed = 0;
+    for (int r = 0; r < NARROW_H; r++) {
+        for (int c = 0; c < width; c++) {
+            inside_wrong += !float_bits_equal(f->c_buf[(ptrdiff_t)r * width + c],
+                                              narrow_frame_reference(f, width, r, c));
+        }
+    }
+    for (int i = NARROW_H * width; i < SHORT_W * SHORT_PIC_H; i++) {
+        outside_changed += !float_bits_equal(f->c_buf[i], SHORT_SENTINEL);
+    }
+    mu_assert("calculate_c_values wrote past a narrow frame", outside_changed == 0);
+    mu_assert("calculate_c_values used columns outside a narrow frame", inside_wrong == 0);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+/* One driver, every width from one column to two past the half window. */
+static char *check_c_values_narrow_frame(const ShortFrameFixture *f, const char *name,
+                                         CambiCValuesFn calc_c_values)
+{
+    VmafPicture view = f->pic;
+    VmafPicture mask_view = f->mask;
+    for (int width = 1; width <= NARROW_MAX_W; width++) {
+        for (int i = 0; i < SHORT_W * SHORT_PIC_H; i++) {
+            f->c_buf[i] = SHORT_SENTINEL;
+        }
+        calc_c_values(&view, &mask_view, f->c_buf, f->histograms, SHORT_WINDOW, SHORT_NUM_DIFFS,
+                      g_short_tvi, 0, f->diff_weights, f->all_diffs, width, NARROW_H);
+        char *error = check_narrow_frame_output(f, width);
+        if (error) {
+            (void)fprintf(stderr, "%s, %d-column frame, window %d: ", name, width, SHORT_WINDOW);
+            return error;
+        }
+    }
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+/* The SIMD drivers the host can run, gated on CPUID as in the short-frame
+ * test. */
+static char *check_c_values_narrow_frame_simd(const ShortFrameFixture *f)
+{
+    char *error = CAMBI_TEST_NULL_POINTER;
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags_x86();
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        error = check_c_values_narrow_frame(f, "calculate_c_values_avx2", calculate_c_values_avx2);
+    }
+    if (!error && (flags & VMAF_X86_CPU_FLAG_AVX2)) {
+        error = check_c_values_narrow_frame(f, "calculate_c_values_scan_avx2",
+                                            calculate_c_values_scan_avx2);
+    }
+#if HAVE_AVX512
+    if (!error && (flags & VMAF_X86_CPU_FLAG_AVX512)) {
+        error =
+            check_c_values_narrow_frame(f, "calculate_c_values_avx512", calculate_c_values_avx512);
+    }
+#endif
+#elif ARCH_AARCH64
+    error = check_c_values_narrow_frame(f, "calculate_c_values_neon", calculate_c_values_neon);
+#else
+    (void)f;
+#endif
+    return error;
+}
+
+static char *test_calculate_c_values_narrow_frame()
+{
+    ShortFrameFixture f = {0};
+    char *error = short_frame_setup(&f);
+    if (!error) {
+        error = check_c_values_narrow_frame(&f, "calculate_c_values",
+                                            vmaf_cambi_test_calculate_c_values);
+    }
+    if (!error) {
+        error = check_c_values_narrow_frame_simd(&f);
+    }
+    return short_frame_teardown(&f, error);
+}
+
 static char *test_c_value_pixel()
 {
     const uint16_t histogram[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -1345,7 +1692,7 @@ static char *check_c_values_avx2_parity(VmafPicture *input, const VmafPicture *m
                                         uint16_t vlt_luma, const int *diff_weights,
                                         const int *all_diffs)
 {
-    if (!(vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2)) {
+    if (!(vmaf_get_cpu_flags_x86() & VMAF_X86_CPU_FLAG_AVX2)) {
         return CAMBI_TEST_NULL_POINTER;
     }
     float c_avx2[64] = {0};
@@ -1530,6 +1877,15 @@ static char *run_cambi_thresholds_rows_and_parity(void)
     return CAMBI_TEST_NULL_POINTER;
 }
 
+/* The c-values walks on frames with fewer rows or columns than half the
+ * window at a scale (Netflix/vmaf#1628 and its column twin). */
+static char *run_cambi_c_values_frame_edges(void)
+{
+    mu_run_test(test_calculate_c_values_short_frame);
+    mu_run_test(test_calculate_c_values_narrow_frame);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 static int remove_cambi_directory(const char *path)
 {
 #ifdef _WIN32
@@ -1603,6 +1959,9 @@ char *run_tests(void)
     if (error)
         return error;
     error = run_cambi_thresholds_rows_and_parity();
+    if (error)
+        return error;
+    error = run_cambi_c_values_frame_edges();
     if (error)
         return error;
     error = run_cambi_gpu_twin_tables();

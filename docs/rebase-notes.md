@@ -111,6 +111,53 @@
   `NOLINTNEXTLINE(readability-function-size)` lines they carried are gone
   with the long bodies. Output is bit-identical to master (every frame of
   five fixtures x four `yuv_matrix` values x AVX-512 / AVX2 / scalar).
+## fix/cambi-short-frame-oob — CAMBI c-values walks stay inside short and narrow frames (Netflix/vmaf#1628) (2026-09-30)
+
+- Partly a port, partly fork-local. `core/src/feature/cambi.c`
+  (`c_values_first_pass`, `c_values_top_edge`, `c_values_bottom_edge`) and
+  `core/src/feature/x86/cambi_avx2.c` (the `_avx2` twins) carry the loop bounds
+  of [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629):
+  `MIN(pad_size, height)`, `MIN(pad_size + 1, height)` and
+  `MAX(height - pad_size, 0)`. The fork split upstream's single
+  `calculate_c_values()` into those helpers, so `c_values_first_pass` /
+  `c_values_first_pass_avx2` gained a `height` parameter; upstream's diff does
+  not apply verbatim. When #1629 merges upstream, a sync keeps the fork's
+  helpers and checks the three bounds are present in both files.
+- If upstream instead rejects such frames in `init()` (the alternative
+  Netflix/vmaf#1628 raises), keep the fork's clipping: a 1920x160 frame is
+  valid video that CAMBI can score with the window clipped to the rows that
+  exist, the same clipping every frame gets at its top and bottom edge, and
+  rejecting it would make `cambi` fail on inputs that only needed these bounds
+  (Research-2132 has the comparison).
+- Fork-local, no upstream counterpart yet: the first column loop of every row
+  step in the same helpers (`c_values_first_pass`, `c_values_top_edge`,
+  `c_values_middle_slide`, `c_values_bottom_edge` and their `_avx2` twins) runs
+  to `MIN(pad_size, width)` instead of `pad_size`. Upstream's loops read the
+  columns past a frame narrower than `pad_size`; a sync that takes upstream's
+  loops must keep this bound or `test_calculate_c_values_narrow_frame` fails.
+- Fork-local: `core/src/feature/cambi_c_values_frame.h`
+  (`cambi_calculate_c_values_frame`, the walk the AVX2 scan, AVX-512 and NEON
+  drivers share) has the same three row bounds and already visits only the
+  columns below `width`. The header's comment already says a change to the walk
+  in `cambi.c` / `cambi_avx2.c` must be mirrored there; this is such a change.
+- `core/test/test_cambi.c`: `test_calculate_c_values_short_frame` is the
+  fork's version of upstream's sentinel test, rewritten for the fork's test
+  style and extended: every driver the host has, heights 1 to 10, and a
+  from-scratch reference for each in-frame c-value.
+  `test_calculate_c_values_narrow_frame` is its column twin (widths 1 to
+  `pad + 2`, stale content past the width). Keep the SIMD gates of both on
+  `vmaf_get_cpu_flags_x86()`; `vmaf_get_cpu_flags()` is 0 in this binary.
+  Upstream's version gates its AVX2 leg on `vmaf_get_cpu_flags()`, so on a sync
+  do not take it over the fork's.
+- `check_c_values_avx2_parity()` in the same file now reads
+  `vmaf_get_cpu_flags_x86()`. #1479 made that change on its branch, but when it
+  was rebased onto #1483 (merged earlier the same day) it kept its comment and
+  took #1483's helper with the old gate, so the code change never reached
+  master (`T-CAMBI-AVX2-PARITY-GATE-LOST-IN-REBASE-2026-09-30`).
+- `core/test/test_cambi_stage_simd.c`: the frame sweep adds 1-row and
+  `pad`-row heights for the production configuration.
+- No public API, FFmpeg patch or Netflix golden-data impact; golden gate and
+  `python/test/cambi_test.py` pass unchanged.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

@@ -231,10 +231,10 @@ static FORCE_INLINE void cambi_calculate_c_values_frame(CambiCValuesFrame *f, Ca
     memset(f->histograms, 0, (size_t)f->width * (size_t)f->v_band_size * sizeof(uint16_t));
 
     const int pad = f->pad_size;
-    for (int i = 0; i < pad; i++) {
+    for (int i = 0; i < MIN(pad, f->height); i++) {
         cambi_c_values_row_step(f, k, CAMBI_COLUMN_FIRST_PASS, i);
     }
-    for (int i = 0; i < pad + 1; i++) {
+    for (int i = 0; i < MIN(pad + 1, f->height); i++) {
         if (i + pad < f->height)
             cambi_c_values_row_step(f, k, CAMBI_COLUMN_ADD, i);
         cambi_c_values_row(f, k, i);
@@ -243,7 +243,7 @@ static FORCE_INLINE void cambi_calculate_c_values_frame(CambiCValuesFrame *f, Ca
         cambi_c_values_row_step(f, k, CAMBI_COLUMN_SLIDE, i);
         cambi_c_values_row(f, k, i);
     }
-    for (int i = f->height - pad; i < f->height; i++) {
+    for (int i = MAX(f->height - pad, 0); i < f->height; i++) {
         if (i - pad - 1 >= 0)
             cambi_c_values_row_step(f, k, CAMBI_COLUMN_SUBTRACT, i);
         cambi_c_values_row(f, k, i);

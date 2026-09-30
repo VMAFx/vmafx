@@ -51,11 +51,62 @@ This will yield the output:
 
 CAMBI supports the same input bit depths as VMAF: 8, 10, 12 and 16. However, the computations in CAMBI will always be performed at the 10-bit level, and the other formats will be converted to 10-bit as a preprocessing step.
 
+## Frame sizes
+
+CAMBI needs a width or a height of at least 216 pixels; `init()` refuses a
+frame when both are smaller (`CAMBI_MIN_WIDTH_HEIGHT`,
+`core/src/feature/cambi_internal.h`).
+
+The window scales with the encode resolution: `window_size * (width + height) /
+6000`, rounded up to an odd number (`adjust_window_size()` in
+`core/src/feature/cambi.c`); half of it, rounded down, is `pad_size`. CAMBI then
+halves the frame four times, so the coarsest of its five scales has 1/16 of the
+rows and columns, and it builds each pixel's histogram over the window clipped
+to the frame, as it does at every frame edge.
+
+On a wide, short input the coarsest scale can have no more rows than
+`pad_size`. With the default `window_size` of 65 that is every height up to 176
+at 1920 wide, 240 at 2560 wide and 352 at 3840 wide. Up to 2026-09-30 the
+c-values pass read and wrote rows past both ends of such frames and could
+crash ([Netflix/vmaf#1628](https://github.com/Netflix/vmaf/issues/1628); the
+upstream fix is [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629)).
+It now stops at the frame. Frames with fewer than `pad_size` rows at the
+coarsest scale (up to 160, 224 and 336 rows at those widths) score differently
+where they completed before: on 3-frame 8-bit ramps with `--cpumask 63`,
+3840x128 moves from 19.544347 to 19.512269, 1920x160 from 22.270340 to
+22.267602 and 3840x256 from 21.778393 to 21.769946. At exactly `pad_size`
+rows only a row outside the frame was written, so those frames (1920x176,
+2560x240, 3840x352) score as before, as does every frame with more rows.
+
+On a tall, narrow input the coarsest scale can have fewer columns than
+`pad_size`: with the default window, widths up to 80 at 1080 high, 160 at 1920
+high and 176 at 2160 high. Up to 2026-09-30 the scalar c-values walk read the
+columns past such a frame, pixels a finer scale left in the picture stride, while
+the SIMD paths did not. `--cpumask 63` builds and the CUDA, HIP and Metal twins,
+which run the scalar walk on the host, could therefore score such frames
+differently from the default dispatch: scores change for frames narrower than
+`pad_size` at some scale (measured: 64x1920 vertical ramp master
+14.975700714938673 vs branch 14.964394451743877 on the C path; the SIMD paths
+already agreed; another vertical ramp variant gave 16.141046 on the C path and
+16.131541 with SIMD). Every path now gives the SIMD result, which is the score
+of the window clipped to the frame, so the C path's and those twins' scores of
+such frames change (the 64x1920 ramp to 14.964394451743877 and 16.131541, a
+128x1920 one from 16.204770 to 16.201631). This column bound goes beyond the
+upstream fix, which bounds only the rows; upstream's C path still reads those
+columns. [Research-2132](../research/2132-cambi-short-and-narrow-frames.md)
+defines the inputs behind these numbers and lists the measurements.
+
+A very wide frame can need a window larger than 65 x 65, the size of the
+reciprocal table. `init()` then fails with
+`cambi: window_size 85 too large for reciprocal LUT` (7680x216 at the default
+`window_size` of 65); a lower `window_size` fits (`cambi=window_size=50` runs
+at 7680x216).
+
 ## Options
 
 The CAMBI feature extractor also supports additional optional parameters as listed below:
 
-- `window_size` (min: 15, max: 127, default: 63): Window size to compute CAMBI (default: 63 corresponds to ~1 degree at 4K resolution and 1.5H)
+- `window_size` (min: 15, max: 127, default: 65): Window size to compute CAMBI (default: 65 corresponds to ~1 degree at 4K resolution and 1.5H)
 - `topk` (min: 0, max: 1.0, default: 0.6): Ratio of pixels for the spatial pooling computation
 - `tvi_threshold` (min: 0.0001, max: 1.0, default: 0.019): Visibility threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886
 - `max_log_contrast` (min: 0, max: 5, default: 2): Maximum contrast in log luma level (2^max_log_contrast) at 10-bits. Default 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. The default is recommended for banding artifacts coming from video compression.

@@ -1299,12 +1299,12 @@ static void calculate_c_values_row(float *c_values, const uint16_t *histograms,
 }
 
 static void c_values_first_pass(uint16_t *histograms, const uint16_t *image, const uint16_t *mask,
-                                int width, ptrdiff_t stride, uint16_t pad_size,
+                                int width, int height, ptrdiff_t stride, uint16_t pad_size,
                                 const uint16_t num_diffs, uint16_t v_band_base,
                                 uint16_t v_band_size)
 {
-    for (int i = 0; i < pad_size; i++) {
-        for (int j = 0; j < pad_size; j++) {
+    for (int i = 0; i < MIN(pad_size, height); i++) {
+        for (int j = 0; j < MIN(pad_size, width); j++) {
             update_histogram_add_edge_first_pass(histograms, image, mask, i, j, width, stride,
                                                  pad_size, num_diffs, v_band_base, v_band_size,
                                                  increment_range);
@@ -1329,9 +1329,9 @@ static void c_values_top_edge(float *c_values, uint16_t *histograms, const uint1
                               uint16_t v_band_size)
 {
     (void)v_band_size;
-    for (int i = 0; i < pad_size + 1; i++) {
+    for (int i = 0; i < MIN(pad_size + 1, height); i++) {
         if (i + pad_size < height) {
-            for (int j = 0; j < pad_size; j++) {
+            for (int j = 0; j < MIN(pad_size, width); j++) {
                 update_histogram_add_edge(histograms, image, mask, i, j, width, stride, pad_size,
                                           num_diffs, v_band_base, v_band_size, increment_range);
             }
@@ -1357,7 +1357,7 @@ static void c_values_middle_slide(float *c_values, uint16_t *histograms, const u
                                   uint16_t v_band_base, uint16_t v_band_size)
 {
     for (int i = pad_size + 1; i < height - pad_size; i++) {
-        for (int j = 0; j < pad_size; j++) {
+        for (int j = 0; j < MIN(pad_size, width); j++) {
             uh_slide_edge(histograms, image, mask, i, j, width, stride, pad_size, v_band_base,
                           v_band_size, increment_range, decrement_range);
         }
@@ -1381,9 +1381,9 @@ static void c_values_bottom_edge(float *c_values, uint16_t *histograms, const ui
                                  const int *diff_weights, const int *all_diffs,
                                  uint16_t v_band_base, uint16_t v_band_size)
 {
-    for (int i = height - pad_size; i < height; i++) {
+    for (int i = MAX(height - pad_size, 0); i < height; i++) {
         if (i - pad_size - 1 >= 0) {
-            for (int j = 0; j < pad_size; j++) {
+            for (int j = 0; j < MIN(pad_size, width); j++) {
                 update_histogram_subtract_edge(histograms, image, mask, i, j, width, stride,
                                                pad_size, num_diffs, v_band_base, v_band_size,
                                                decrement_range);
@@ -1421,8 +1421,8 @@ static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, fl
     memset(c_values, 0, sizeof(float) * (size_t)width * (size_t)height);
     memset(histograms, 0, (size_t)width * (size_t)v_band_size * sizeof(uint16_t));
 
-    c_values_first_pass(histograms, image, mask, width, stride, pad_size, num_diffs, v_band_base,
-                        v_band_size);
+    c_values_first_pass(histograms, image, mask, width, height, stride, pad_size, num_diffs,
+                        v_band_base, v_band_size);
     c_values_top_edge(c_values, histograms, image, mask, width, height, stride, pad_size, num_diffs,
                       tvi_for_diff, vlt_luma, diff_weights, all_diffs, v_band_base, v_band_size);
     c_values_middle_slide(c_values, histograms, image, mask, width, height, stride, pad_size,

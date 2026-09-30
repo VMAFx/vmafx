@@ -100,6 +100,25 @@ feature/
   descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
 
+- **CAMBI c-values walks stay inside short and narrow frames**
+  (Netflix/vmaf#1628, port of Netflix/vmaf#1629, plus the column bound):
+  `calculate_c_values()` in `cambi.c`, `calculate_c_values_avx2()` in
+  `x86/cambi_avx2.c` and `cambi_calculate_c_values_frame()` in
+  `cambi_c_values_frame.h` (AVX2 scan, AVX-512, NEON) bound the first pass to
+  `MIN(pad_size, height)` rows, the top edge to `MIN(pad_size + 1, height)` and
+  start the bottom edge at `MAX(height - pad_size, 0)`. The scalar and
+  AVX2-mirror walks also bound every first column loop to
+  `MIN(pad_size, width)`; the shared SIMD walk only visits columns below
+  `width`. CAMBI decimates in place, so columns past `width` hold a finer
+  scale's pixels, not zeros, and reading them changes the score without any
+  sanitizer noticing. Keep the three walks identical; an upstream sync that
+  re-imports `calculate_c_values()` keeps both bounds (upstream has neither
+  the column bound nor, until #1629 merges, the row bounds).
+  `test_calculate_c_values_short_frame` and
+  `test_calculate_c_values_narrow_frame` (`core/test/test_cambi.c`) fail on
+  every driver that loses one. The CUDA, HIP and Metal twins run this walk on
+  the host through `vmaf_cambi_calculate_c_values()`.
+
 - **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
   `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
   `cambi.c::open_heatmaps` must open every `.gray` file through

@@ -727,9 +727,10 @@ static char *check_c_values_frame(const StageKernels *simd, const CValuesDriver 
     return err;
 }
 
-/* Windows 3 .. 65 (576x324 uses 9, 1080p 33, 2160p 65). Heights from the
- * smallest the walk supports (pad + 1) through the top / bottom edge overlap
- * to a full middle slide; widths around every vector boundary. */
+/* Windows 3 .. 65 (576x324 uses 9, 1080p 33, 2160p 65). Heights from pad + 1
+ * through the top / bottom edge overlap to a full middle slide, then frames
+ * with at most pad rows, as the coarsest scale of a wide, short input has
+ * (Netflix/vmaf#1628); widths around every vector boundary. */
 static char *sweep_frames_for(const StageKernels *simd, const CValuesDriver *driver,
                               const CValuesConfig *c, bool full, uint32_t *state)
 {
@@ -737,9 +738,10 @@ static char *sweep_frames_for(const StageKernels *simd, const CValuesDriver *dri
     static const int widths[] = {1, 7, 16, 17, 31, 33, 40, 64, 65, 97, 130, 257};
     for (size_t wi = 0; wi < sizeof(windows) / sizeof(windows[0]); wi++) {
         const int pad = windows[wi] >> 1;
-        const int heights[] = {pad + 1, 2 * pad + 1, 2 * pad + 9};
+        const int heights[] = {pad + 1, 2 * pad + 1, 2 * pad + 9, 1, pad};
+        const size_t num_heights = full ? sizeof(heights) / sizeof(heights[0]) : 1u;
         for (size_t x = 0; x < sizeof(widths) / sizeof(widths[0]); x++) {
-            const size_t shapes = (size_t)(full ? 3u : 1u) * (size_t)NUM_FRAME_FIXTURES;
+            const size_t shapes = num_heights * (size_t)NUM_FRAME_FIXTURES;
             for (size_t y = 0; y < shapes; y++) {
                 const FrameShape s = {windows[wi], MAX(widths[x], pad + 1),
                                       heights[y / NUM_FRAME_FIXTURES],

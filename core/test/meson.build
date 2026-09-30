@@ -281,6 +281,7 @@ test('test_gpu_public_header_docs',
     import('python').find_installation(),
     args : files('test_gpu_public_header_docs.py'),
     suite : ['fast'],
+    timeout : 120,
 )
 
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
