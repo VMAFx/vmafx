@@ -22,8 +22,8 @@ reached the host `c_value_pixel()` and read past the table.
 
 [ADR-1357](1357-sycl-cambi-device-resident.md) moved the SYCL twin to the
 device and made it bit-exact with `cambi.c` whenever the CPU's own top-K
-double sum is exact. The maintainer's RC3 requirement applies to every GPU
-backend: "there shouldnt be any gpu cpu rountrips"
+double sum is exact. The maintainer's RC3 requirement, that no GPU twin
+round-trips through the host inside a frame, applies to every GPU backend
 (`T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`).
 
 ## Decision
@@ -86,16 +86,30 @@ Out of scope, as since ADR-0360: `full_ref` (FR-CAMBI) and the heatmap dump.
   submit/collect double buffering (`VMAF_FEATURE_DISPATCH_AUTO`). It now
   rejects an oversize window exactly as `cambi.c` does. One set of
   `cambi.c` helpers serves the CPU and both twins.
-- **Verification & Performance**: the pipeline was built for every configured
-  CUDA architecture (sm_80 to sm_120) and verified on physical hardware on
-  `ryzen-4090-arc` (RTX 4090, sm_89):
-  - Parity: `src01_hrc00_576x324.yuv` (48 frames) bit-identical 48/48 (max diff 0.00e+00);
-    Big Buck Bunny 4K `3840x2160` (50 frames) bit-identical 50/50 (max diff 0.00e+00).
-  - Short-frame crash immunity: clean execution on 1920x64, 1920x128, 1920x160, and
-    3840x128 where the CPU crashes with `free(): invalid size`.
-  - Sanitizer: `compute-sanitizer --tool memcheck` reports 0 errors on `test_cuda_cambi_parity`.
-  - Timing: 4K BBB per-frame time dropped from 8.98 ms (CPU 16 threads) to 2.38 ms (CUDA),
-    a 3.8x speedup.
+- **Measured on an RTX 4090** (`ryzen-4090-arc`, sm_89, driver 615.71.09,
+  CUDA 13.4; icx 2026.0 release build without `-march=native`; before =
+  `origin/master` `10f27efe2` built the same way; commands and raw output in
+  [Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)):
+  - Every per-frame `cambi` at `--precision max` equals `--backend cpu`: 48/48
+    on the Netflix 576x324 pair and 50/50 on BBB 3840x2160.
+  - On the wide, short frames of `T-CAMBI-SHORT-FRAME-OOB-2026-09-30`
+    (1920x64, 1920x128, 1920x160, 3840x128) the twin equals a CPU build with
+    that row's fix on every frame, and `compute-sanitizer --tool memcheck` is
+    clean. The hybrid it replaces, which ran `cambi.c`'s c-values walk on the
+    host, scored frame 0 differently and then crashed on all four sizes (a
+    corrupted picture reference in `close_fex_cuda()`).
+  - `test_cuda_cambi_parity` and `test_cuda_cambi_parity_large` pass, and
+    `compute-sanitizer` memcheck, racecheck and synccheck report no error or
+    hazard on either.
+  - Per frame on the 576x324 pair, counted with a CUPTI driver-API callback
+    over frames 13 to 22: 65 kernel launches, two memsets, one 88-byte
+    device-to-host copy and one stream synchronisation. Before: 19 launches,
+    11 device-to-host copies (1.1 MiB: the picture, then the image and mask
+    at each of five scales), one upload of the preprocessed picture and 7
+    stream synchronisations.
+  - Milliseconds per frame, median of 3: 64.71 before and 6.01 after at
+    3840x2160, 1.59 and 0.38 at 576x324; the CPU extractor at 16 threads
+    takes 19.65 and 0.09.
 - **Neutral / follow-ups**: the HIP and Metal twins keep the hybrid
   (`T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`,
   `T-METAL-CAMBI-HOST-RESIDUAL-2026-09-29`).

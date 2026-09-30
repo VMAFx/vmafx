@@ -605,7 +605,8 @@ copied their planes to the host, filtered them there, and read the covariance,
 the independent terms and the per-block entropies back around a host eigenvalue
 problem and QR solve.
 
-Per frame now, counted in the driver calls over a run:
+Per frame now, counted on an RTX 4090 with a CUPTI driver-API callback over
+frames 13 to 22 of the Netflix 576x324 pair:
 
 | Twin | Kernel launches | Read back | Other work | Host waits |
 |---|---|---|---|---|
@@ -630,12 +631,16 @@ Scores:
   not match (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Details:
   [SpEED](../../metrics/speed_qa.md#the-cpu-reference-and-log2f).
 
-These results come from running the kernels through a host emulation of the
-CUDA driver; the port has not yet run on an NVIDIA GPU and has no measured
-timing ([Research-1379](../../research/1379-cuda-cambi-speed-device-resident.md)).
-The steps to verify and time it on an RTX 4090 are in
-[`state.md`](../../state.md) (`T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`,
-`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
+Measured on an RTX 4090 against an icx build of the CPU extractors: every
+per-frame `cambi`, `speed_chroma_u/v/uv` and `speed_temporal` value at
+`--precision max` is identical to `--backend cpu` on the Netflix 576x324 pair
+and on BBB 3840x2160. Before, `cambi_cuda` needed 11 device-to-host copies
+and 7 waits per frame, `speed_chroma_cuda` 20 and 6, and `speed_temporal_cuda`
+failed at 1920x1080 and above. Milliseconds per frame at 3840x2160, before ->
+after: `cambi_cuda` 64.71 -> 6.01, `speed_chroma_cuda` 24.90 -> 6.89,
+`speed_temporal_cuda` fails -> 5.88; method, the 576x324 numbers, the
+sanitizer runs and the before/after transfer counts are in
+[Research-1379](../../research/1379-cuda-cambi-speed-device-resident.md).
 
 ## `psnr_hvs_cuda` computes chroma by default (ADR-1203, 2026-09-06)
 

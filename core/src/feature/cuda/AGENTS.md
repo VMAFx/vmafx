@@ -889,6 +889,12 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   `__fdividef` (libdevice `log2f` not correctly rounded -> `speed_log2()`
   fp32 pairs). `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
   `0x1.6bdb1ap-49f`. Only `exact_fma()` = error-free transforms.
+- **`speed_log2()` hard cases.** Pair series misrounds exactly 48 floats
+  (mantissas 0x1.aa932c, 0x1.ff800c); `feature/speed_log2_hard_cases.h`
+  holds correct outputs, read by CUDA (`__constant__`) and SYCL
+  (`constexpr`) twins. Series change -> table stale: rerun exhaustive
+  replay (Research-1379 finding 7, 0 misrounds on RTX 4090 + Arc A380)
+  before merge; contract test recomputes entries in quad precision.
 - **CAMBI c-value** = `__fmul_rn(__int2float_rn(w * p0 * pm), lut[pm + p0])`
   with `vmaf_cambi_reciprocal_lut()` table (42 entries != `1.0f / i`); never
   divide. Top-K = radix select + exact 128-bit sum in 2^-24 units
@@ -900,9 +906,11 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
 - **Parity contract:** cambi bit-exact whenever CPU's double top-K sum is
   exact (else CPU rounding only; `test_cuda_cambi_parity` compares `==`);
   SpEED bit-exact vs CPU built without FMA contraction and with correctly
-  rounded `log2f` (icx build; gcc/glibc differs few frames <= 4.8e-7;
-  icx `-march=native` up to 7.9e-4, Research-1379). `lanczos4` prescale
-  outside tolerance (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
+  rounded `log2f` (icx build; gcc/glibc differs few frames: glibc 2.43
+  <= 4.8e-7, glibc 2.44 <= 1.4e-6; icx `-march=native` up to 7.9e-4,
+  Research-1379). `lanczos4` prescale not exact
+  (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Verified on RTX 4090
+  (Research-1379 finding 8); re-run its commands after touching these TUs.
 - **Init failure:** `speed_cuda_pipeline_open()` publishes pipeline before
   first allocation; extractor close (owed after failed init, ADR-1336)
   releases partial state. Do not self-close inside init.

@@ -47,9 +47,11 @@
   CPU's own double top-K sum is exact, and otherwise differ only by that sum's
   rounding. Like `cambi.c`, the twin now rejects an adjusted window above
   65 x 65 ("cambi: window_size N too large for reciprocal LUT") instead of
-  reading past the reciprocal table. Checked frame by frame through a host
-  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
-  [CAMBI](docs/metrics/cambi.md#cuda).
+  reading past the reciprocal table. On an RTX 4090 every frame of the Netflix
+  576x324 pair and of BBB 3840x2160 equals `--backend cpu`, and a 4K frame
+  takes 6.01 ms instead of 64.71 ms. The old twin also crashed on wide, short
+  frames such as 1920x128, where the new one matches the fixed CPU extractor.
+  See [CAMBI](docs/metrics/cambi.md#cuda).
 
 
 - **The CUDA SpEED twins run entirely on the device (ADR-1380).**
@@ -61,10 +63,13 @@
   intrinsic, so the scores move from within 1e-4 of `--backend cpu` to equal to
   it, against a CPU build that rounds `log2f` correctly and does not fuse
   multiply-adds (an icx build without `-march=native`; a gcc build on glibc
-  differs in the last bits on a few frames). The SpEED page now also states
-  that the SYCL and CUDA `lanczos4` prescale is up to 4.4e-4 relative from the
-  CPU rather than within tolerance. Checked frame by frame through a host
-  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
+  differs in the last bits on a few frames). On an RTX 4090 every frame of the
+  Netflix 576x324 pair and of BBB 3840x2160 is identical, a 4K
+  `speed_chroma_cuda` frame takes 6.89 ms instead of 24.90 ms, and
+  `speed_temporal_cuda`, which failed at 1920x1080 and above with
+  `CUDA_ERROR_INVALID_VALUE`, now runs 4K at 5.88 ms per frame. The `lanczos4`
+  prescale of the SYCL and CUDA twins is not exact: up to 5.7e-4 relative from
+  the CPU on a smooth 1080p gradient on an RTX 4090. See
   [SpEED](docs/metrics/speed_qa.md#cuda-the-same-chain-on-the-device).
 
 

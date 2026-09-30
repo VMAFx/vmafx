@@ -7,8 +7,11 @@
   intrinsic, so the scores move from within 1e-4 of `--backend cpu` to equal to
   it, against a CPU build that rounds `log2f` correctly and does not fuse
   multiply-adds (an icx build without `-march=native`; a gcc build on glibc
-  differs in the last bits on a few frames). The SpEED page now also states
-  that the SYCL and CUDA `lanczos4` prescale is up to 4.4e-4 relative from the
-  CPU rather than within tolerance. Checked frame by frame through a host
-  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
+  differs in the last bits on a few frames). On an RTX 4090 every frame of the
+  Netflix 576x324 pair and of BBB 3840x2160 is identical, a 4K
+  `speed_chroma_cuda` frame takes 6.89 ms instead of 24.90 ms, and
+  `speed_temporal_cuda`, which failed at 1920x1080 and above with
+  `CUDA_ERROR_INVALID_VALUE`, now runs 4K at 5.88 ms per frame. The `lanczos4`
+  prescale of the SYCL and CUDA twins is not exact: up to 5.7e-4 relative from
+  the CPU on a smooth 1080p gradient on an RTX 4090. See
   [SpEED](docs/metrics/speed_qa.md#cuda-the-same-chain-on-the-device).

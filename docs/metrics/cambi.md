@@ -337,10 +337,24 @@ window exceeds 65 x 65 (the size of the reciprocal table), with "cambi:
 window_size N too large for reciprocal LUT". Before ADR-1379 it had no such
 check.
 
-As of this change the twin has been checked frame by frame by running its
-kernels through a host emulation of the CUDA driver, but not yet on an NVIDIA
-GPU, and it has no measured timing. The verify-and-time steps for an RTX 4090
-are in [`state.md`](../state.md) (`T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`).
+Measured on an RTX 4090 against an icx build of the CPU extractor, at
+`--precision max`: every per-frame `cambi` is identical to `--backend cpu` on
+the Netflix 576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and on the
+wide, short frames (1920x64 to 3840x128) where the CPU extractor needs the
+`T-CAMBI-SHORT-FRAME-OOB-2026-09-30` fix, the twin equals the fixed CPU with
+`compute-sanitizer` clean. Milliseconds per frame, `(t(N) - t(2)) / (N - 2)`,
+median of 3, before and after ADR-1379 in alternation on the same host
+([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md) has the
+method and the raw numbers):
+
+| Size | `cambi_cuda` before | `cambi_cuda` after | CPU, 16 threads |
+| --- | ---: | ---: | ---: |
+| 3840x2160 | 64.71 | 6.01 | 19.65 |
+| 576x324 | 1.59 | 0.38 | 0.09 |
+
+Re-check parity and timing with
+`python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature cambi --vmaf $PWD/build-cuda/tools/vmaf`.
+
 **Implementation note (before ADR-1379):** the twin downloaded the distorted
 picture to a host copy and preprocessed it there, because the host
 preprocessing path reads `pic->data[0]` as a host pointer and a CUDA picture

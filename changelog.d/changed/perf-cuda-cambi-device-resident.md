@@ -7,6 +7,8 @@
   CPU's own double top-K sum is exact, and otherwise differ only by that sum's
   rounding. Like `cambi.c`, the twin now rejects an adjusted window above
   65 x 65 ("cambi: window_size N too large for reciprocal LUT") instead of
-  reading past the reciprocal table. Checked frame by frame through a host
-  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
-  [CAMBI](docs/metrics/cambi.md#cuda).
+  reading past the reciprocal table. On an RTX 4090 every frame of the Netflix
+  576x324 pair and of BBB 3840x2160 equals `--backend cpu`, and a 4K frame
+  takes 6.01 ms instead of 64.71 ms. The old twin also crashed on wide, short
+  frames such as 1920x128, where the new one matches the fixed CPU extractor.
+  See [CAMBI](docs/metrics/cambi.md#cuda).

@@ -55172,10 +55172,21 @@ on the device instead of the CPU fallback.
   `SpeedGpuChannelBinding`, `SpeedGpuFrameResult`, `SpeedGpuConfig`);
   `speed_sycl_pipeline.h` aliases them. `speed_internal_gpu_configure()`
   (`speed_internal.c`) replaced `speed_sycl_host.cpp`'s configuration code
-  and serves both backends.
+  and serves both backends. `speed_internal.h` includes the header, so it
+  reaches `core/tools/vmaf.cpp` through `feature_dimensions.h`; its
+  `typedef struct`s sit in a cited `NOLINTBEGIN(modernize-use-using)` bracket
+  (the ADR-1138 shape), which must stay balanced.
+- `core/src/feature/speed_log2_hard_cases.h` (new, fork-local): the 48 inputs
+  the fp32-pair `speed_log2()` of both device twins rounds the wrong way, with
+  their correctly rounded results; `speed_score.cu` and
+  `speed_sycl_pipeline.cpp` both read it. A change to either twin's
+  `speed_log2()` series invalidates the table: rerun the exhaustive replay of
+  Research-1379 before resolving.
 - Tests: `core/test/test_cuda_device_resident_contract.py` (new, fast suite);
   `test_cuda_cambi_parity` compares every frame with `==`; the CUDA SpEED
-  parity, singular and smoke tests exit 77 without a device.
+  parity, singular and smoke tests exit 77 without a device;
+  `test_cuda_speed_temporal_parity_1080p` (1920x1080) guards the
+  `speed_temporal_cuda` solve launch that failed above 256 SpEED blocks.
   `test_cuda_module_lifecycle_contract.py` names `speed_cuda_pipeline.c` as
   the SpEED module and buffer owner. `scripts/ci/tidy-baseline-cuda.json`
   tightened for the rewritten TUs (scoped write).
@@ -55185,8 +55196,9 @@ are bit-identical (the `cambi.c` changes move code into functions). CUDA CAMBI
 scores move to the CPU's (bit-identical except where the CPU's double top-K
 sum rounds); CUDA SpEED scores move from within 1e-4 of the CPU to
 bit-identical with a CPU build that rounds `log2f` correctly and does not
-fuse multiply-adds. Verified on physical RTX 4090 on ryzen-4090-arc:
-CAMBI 48/48 bit-identical on 576x324 and 50/50 on 4K with 3.8x speedup
-(2.38 ms/frame); SpEED temporal 48/48 and 50/50 bit-identical with 7.0x
-speedup (2.81 ms/frame); SpEED chroma max diff <= 1.43e-06 with 2.1x
-speedup; compute-sanitizer memcheck 0 errors.
+fuse multiply-adds. Measured on an RTX 4090 (`ryzen-4090-arc`) against an
+icx build: every CAMBI and SpEED frame of the Netflix 576x324 pair and of
+BBB 3840x2160 identical to `--backend cpu`; compute-sanitizer memcheck,
+racecheck and synccheck clean on the parity tests; one readback and one
+stream synchronisation per frame (CUPTI count). Re-verify after a rebase
+that touches these files with the commands of Research-1379 finding 8.

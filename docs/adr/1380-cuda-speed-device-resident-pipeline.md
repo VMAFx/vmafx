@@ -21,8 +21,9 @@ tolerance of the CPU but not equal to it.
 
 [ADR-1358](1358-sycl-speed-device-resident-linalg.md) moved the whole chain to
 the device on SYCL and reproduced `speed.c` operation for operation in fp32.
-The maintainer's RC3 requirement applies to CUDA too: "there shouldnt be any
-gpu cpu rountrips" (`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
+The maintainer's RC3 requirement, that no GPU twin round-trips through the
+host inside a frame, applies to CUDA too
+(`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
 
 ## Decision
 
@@ -53,8 +54,11 @@ We port the ADR-1358 chain to CUDA as one pipeline both extractors share:
   `__fdiv_rn` and `__fsqrt_rn` are correctly rounded, so the residual
   refinement SYCL needs for division and square root is not needed here.
   `log2` is evaluated in fp32 pairs and rounded once (libdevice `log2f` is
-  not correctly rounded). The reference's fp64 steps keep ADR-1358's exact
-  fp32 forms, so no kernel uses fp64.
+  not correctly rounded). The pairs carry about 2^-45 of error, which is too
+  much for 48 positive floats whose exact `log2` lies closer than that to a
+  rounding boundary; both twins look those up in `speed_log2_hard_cases.h`.
+  The reference's fp64 steps keep ADR-1358's exact fp32 forms, so no kernel
+  uses fp64.
 - The per-run constants come from one routine for both GPU backends:
   `speed_internal_gpu_configure()` (`speed_internal.c`) fills the geometry,
   the filter taps and the scoring constants of `speed_gpu_common.h`, which now
@@ -82,24 +86,53 @@ We port the ADR-1358 chain to CUDA as one pipeline both extractors share:
   glibc 2.43's `log2f` misrounds 0.14 % of the floats in [1, 1024), Intel's
   libimf (the icx build of the `vmaf-dev-mcp` image) 0.00013 %. The device
   rounds correctly, so against a gcc or clang CPU build a few frames differ in
-  the last float bits (6 of 48 `speed_chroma_u` frames on the Netflix
-  576x324 pair, at most 4.8e-7); against an icx build, or a gcc build whose
-  `log2f` is replaced by a correctly rounded one, they are identical. The CPU
-  reference must also not contract FMAs: icx with `-march=native`, as the
-  image's own `/usr/local/bin/vmaf` is built, moves the CPU scores by up to
-- **Verification & Performance**: the pipeline was built for every configured
-  CUDA architecture (sm_80 to sm_120) and verified on physical hardware on
-  `ryzen-4090-arc` (RTX 4090, sm_89):
-  - Parity: `speed_temporal` bit-identical 48/48 (576x324) and 50/50 (4K 3840x2160);
-    `speed_chroma_u/v/uv` within 1.43e-06 of GCC CPU reference (glibc log2f misrounding;
-    within 5e-5 ADR-0214 gate tolerance) and bit-identical to icx libimf reference.
-  - Sanitizer: `compute-sanitizer --tool memcheck` reports 0 errors on `test_cuda_speed_singular_parity`.
-  - Timing 4K BBB: `speed_temporal` dropped from 19.58 ms (CPU 16 threads) to 2.81 ms (CUDA),
-    a 7.0x speedup; `speed_chroma` dropped from 5.50 ms (CPU 16 threads) to 2.64 ms (CUDA), a 2.1x speedup.
+  the last float bits; against an icx build, or a gcc build whose `log2f` is
+  replaced by a correctly rounded one, they are identical. The CPU reference
+  must also not contract FMAs: icx with `-march=native`, as the image's own
+  `/usr/local/bin/vmaf` is built, moves the CPU scores by up to 7.9e-4 at
+  1080p. The `lanczos4` prescale is not exact on either device twin: both
+  compute the kernel weights in fp32 where the CPU uses fp64 `sin`
+  (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
+- **Measured on an RTX 4090** (`ryzen-4090-arc`, sm_89, driver 615.71.09,
+  CUDA 13.4; icx 2026.0 release build without `-march=native`; before =
+  `origin/master` `10f27efe2` built the same way; commands and raw output in
+  [Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)):
+  - `scripts/dev/speed_gpu_parity.py --backend cuda` exits 0: every per-frame
+    `speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv` and `speed_temporal`
+    at `--precision max` equals `--backend cpu`, 48/48 on the Netflix 576x324
+    pair and 50/50 on BBB 3840x2160. Before, 1 to 10 frames per output
+    matched (largest difference 4.0e-5), and `speed_temporal_cuda` failed at
+    1920x1080 and 3840x2160: its solve launch asked for
+    `((nb + 7) / 8) * 32` threads per block for `nb` 5x5 blocks, past the
+    1024-thread limit once `nb` exceeds 256, and `cuLaunchKernel` returned
+    `CUDA_ERROR_INVALID_VALUE` (`test_cuda_speed_temporal_parity_1080p` now
+    pins 1920x1080). A gcc build of this branch (glibc 2.44)
+    differs from its own CPU extractor on 0 to 2 `speed_chroma` frames per
+    output, by at most 1.4e-6, and matches on `speed_temporal`.
+  - With `speed_prescale=0.5` on BBB 3840x2160, nearest, bilinear and bicubic
+    prescale are identical on 6/6 frames; `lanczos4` matches on 1 of 18
+    outputs, at most 3.1e-6 relative on that content.
+  - `speed_log2()` returns the correctly rounded `log2` of every one of the
+    2 139 095 039 positive finite floats on the RTX 4090.
+  - `test_cuda_speed_{chroma,temporal,singular}_parity` and the two smoke
+    tests pass; `compute-sanitizer` memcheck, racecheck and synccheck report
+    no error or hazard on the three parity tests.
+  - Per frame on the 576x324 pair, counted with a CUPTI driver-API callback
+    over frames 13 to 22: 7 kernel launches, one 40-byte device-to-host copy
+    and one stream synchronisation for either twin. Before,
+    `speed_chroma_cuda` made 20 device-to-host copies (336 KiB), 16
+    host-to-device copies and 6 stream synchronisations.
+  - Milliseconds per frame, median of 3 (before -> after; CPU extractor at 16
+    threads): `speed_chroma` 24.90 -> 6.89 (CPU 9.11) at 3840x2160 and
+    1.51 -> 0.44 (0.12) at 576x324; `speed_temporal` failed -> 5.88 (26.74)
+    and 2.81 -> 0.42 (0.92).
 - **Neutral / follow-ups**: the HIP twins keep the split
   (`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`).
   `core/test/test_cuda_device_resident_contract.py` pins the design;
-  `test_cuda_speed_{chroma,temporal,singular}_parity` run and pass on a CUDA device.
+  `test_cuda_speed_{chroma,temporal,singular}_parity` compare one frame's
+  score with the CPU extractor's within 1e-4 on a CUDA device and skip
+  (exit 77) without one; `scripts/dev/speed_gpu_parity.py` is the
+  frame-by-frame, bit-for-bit check.
 
 ## References
 

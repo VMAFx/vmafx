@@ -247,10 +247,11 @@ this change 1 to 9 frames per run matched and the largest difference was
 correctly rounded division fallback and keep the ADR-0214 tolerance.
 `speed_prescale_method=lanczos4` evaluates its kernel weights in fp32 where the
 CPU uses fp64 `sin`, and SpEED amplifies the few-ulp weight differences: the
-CUDA twin, which computes the weights the same way, is up to 4.4e-4 relative
-from the CPU at 1920x1080 with `speed_prescale=0.5`, beyond the ADR-0214
-tolerance (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in
-[`state.md`](../state.md)).
+CUDA twin, which computes the weights the same way, is up to 2.1e-2 (5.7e-4
+relative) from the CPU on a smooth 1920x1080 gradient with
+`speed_prescale=0.5` on an RTX 4090, beyond the ADR-0214 tolerance, and at
+most 2.5e-5 on natural content
+(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in [`state.md`](../state.md)).
 
 Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
 one UHD 770 through WSL2 Level Zero, i9-12900K, the icx/icpx 2026.1 build of the
@@ -299,14 +300,30 @@ also built with `--fmad=false`.
 vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 --no_prediction   --backend cuda --feature speed_chroma_cuda -o out.json --json
 ```
 
-The kernels have been checked frame by frame, through a host emulation of the
-CUDA driver, against the CPU extractor on the Netflix pair and on 1080p and 4K
-clips, with nearest, bilinear and bicubic prescale, every weighting mode tried
-and `speed_use_ref_diff`: identical on every frame, `lanczos4` aside
-([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)). They
-have not yet run on an NVIDIA GPU and have no measured timing; the
-verify-and-time steps for an RTX 4090 are in [`state.md`](../state.md)
-(`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
+On an RTX 4090, against an icx build of the CPU extractor at `--precision
+max`, every per-frame `speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`
+and `speed_temporal` value is identical to `--backend cpu` on the Netflix
+576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and so are nearest,
+bilinear and bicubic prescale; `lanczos4` is not exact
+(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Before ADR-1380, 1 to 10
+frames per output matched, and `speed_temporal_cuda` failed at 1920x1080 and
+above with `CUDA_ERROR_INVALID_VALUE`. Milliseconds per frame,
+`(t(N) - t(2)) / (N - 2)`, median of 3, before and after in alternation on the
+same host ([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)
+has the method and the raw numbers):
+
+| Feature | Size | CUDA before | CUDA after | CPU, 16 threads |
+|---|---|---:|---:|---:|
+| `speed_chroma` | 3840x2160 | 24.90 | 6.89 | 9.11 |
+| `speed_chroma` | 576x324 | 1.51 | 0.44 | 0.12 |
+| `speed_temporal` | 3840x2160 | fails | 5.88 | 26.74 |
+| `speed_temporal` | 576x324 | 2.81 | 0.42 | 0.92 |
+
+The absolute numbers move with the host's load; what holds across runs is
+that at 4K the twins now cost about what the trivial `psnr_cuda` costs. In a
+run at load average 13, with N = 102, `psnr_cuda` took 2.41 to 2.56 ms per
+frame, `speed_chroma_cuda` 2.75 and `speed_temporal_cuda` 2.73: reading and
+uploading the pictures, not the SpEED kernels, sets their speed.
 
 The HIP twins still read the covariance back and run the linear algebra on the
 host; porting the chain to them is tracked as
@@ -320,10 +337,11 @@ glibc's `log2f` rounds 0.14 % of the floats in [1, 1024) the other way (glibc
 2.43), Intel's libimf 0.00013 %. So "identical to the CPU" holds against a CPU
 build whose `log2f` rounds the arguments it meets correctly, such as a
 `CC=icx CXX=icpx meson setup` build. Against a gcc or clang build on glibc, a
-few frames differ in the last bits: 6 of 48 `speed_chroma_u` frames on the
-Netflix pair, by at most 4.8e-7, well inside the ADR-0214 tolerance. The CPU
-extractor itself then differs by the same amount between its gcc and icx
-builds.
+few frames differ in the last bits, well inside the ADR-0214 tolerance: with
+glibc 2.43, 6 of 48 `speed_chroma_u` frames on the Netflix pair, by at most
+4.8e-7; with glibc 2.44, zero to two frames per `speed_chroma` output on the
+Netflix pair and on BBB 4K, by at most 1.4e-6. The CPU extractor itself then
+differs by the same amount between its gcc and icx builds.
 
 The CPU build must not fuse multiply-adds either. icx does when FMA
 instructions are available, for example with `-march=native`, which is how the
