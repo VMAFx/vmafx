@@ -463,10 +463,7 @@ namespace
 /* SSIM of one window. Every product sits in a named temporary so icpx
  * cannot contract it into an FMA (-fp-model=precise still contracts
  * `a * b + c` inside one expression, ADR-1358), which keeps the numerator
- * and the denominator the same operation sequence mirrored. Identical
- * windows therefore compare equal and score exactly 1, as the CPU does, and
- * `enable_db` reports the CPU's +inf / `clip_db` ceiling for them instead of
- * a finite dB value of an fp32 rounding residue (ADR-1221). */
+ * and the denominator the same operation sequence mirrored. */
 static inline float float_ssim_from_moments(const SsimMoments &moments, float c1, float c2)
 {
     const float reference_mean_sq = moments.reference_mean * moments.reference_mean;
@@ -478,7 +475,7 @@ static inline float float_ssim_from_moments(const SsimMoments &moments, float c1
     const float numerator = (2.0f * mean_product + c1) * (2.0f * covariance + c2);
     const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
                               (reference_variance + comparison_variance + c2);
-    return numerator == denominator ? 1.0f : numerator / denominator;
+    return numerator / denominator;
 }
 
 static inline float float_ssim_value(const FloatVertArgs &args, size_t x, size_t y)
@@ -974,21 +971,6 @@ static double sum_partials(const float *partials, unsigned count)
     return total;
 }
 
-/* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
- * `(float)(sum / (double)(w * h))`; the twin rounds the same way, so a frame
- * whose mean rounds to 1 scores exactly 1 and enable_db reports the CPU's
- * +inf / clip_db ceiling for it (ADR-1370). */
-static int float_ssim_frame_mean(const char *feature, double sum, double n_pixels, unsigned index,
-                                 double *mean)
-{
-    const int err =
-        vmaf_feature_finite_ratio_named("float_ssim_sycl", feature, sum, n_pixels, index, mean);
-    if (!err) {
-        *mean = (double)(float)*mean;
-    }
-    return err;
-}
-
 /* enable_lcs: the three per-WG L / C / S partial rows become the frame means
  * float_ssim_{l,c,s}, published with the score in CPU float_ssim.c order
  * after the shared SSIM validation (ADR-1302). */
@@ -1001,7 +983,8 @@ static int emit_float_ssim_lcs(const SsimStateSycl *s, double score, double n_pi
     for (unsigned k = 0; k < 3U && !err; k++) {
         const double sum = sum_partials(s->h_lcs_partials + (size_t)k * s->wg_count, s->wg_count);
         atoms[k].name = atom_names[k];
-        err = float_ssim_frame_mean(atom_names[k], sum, n_pixels, index, &atoms[k].value);
+        err = vmaf_feature_finite_ratio_named("float_ssim_sycl", atom_names[k], sum, n_pixels,
+                                              index, &atoms[k].value);
     }
     if (err)
         return err;
@@ -1020,18 +1003,15 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     qptr->wait();
 
     /* Per-WG float partials → host double sum → mean SSIM over
-     * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
+     * (W'-10)·(H'-10) decimated pixels. */
     const double total = sum_partials(s->h_partials, s->wg_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    double score = 0.0;
-    const int err = float_ssim_frame_mean("float_ssim", total, n_pixels, index, &score);
-    if (err)
-        return err;
     if (!s->enable_lcs) {
-        return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
-                                          "float_ssim_sycl", "float_ssim", score, s->enable_db,
-                                          s->max_db, index);
+        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                                "float_ssim_sycl", "float_ssim", total, n_pixels,
+                                                s->enable_db, s->max_db, index);
     }
+    const double score = total / n_pixels;
     return emit_float_ssim_lcs(s, score, n_pixels, index, feature_collector);
 }
 
@@ -1377,8 +1357,7 @@ static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs 
     const float reference_mean = (float)moments.reference_mean;
     const float comparison_mean = (float)moments.comparison_mean;
     /* Named products and the two variances summed as a pair: the same
-     * mirrored-operation contract as float_ssim_from_moments(), so an
-     * identical window scores exactly 1 like the exact-integer CPU path. */
+     * mirrored-operation contract as float_ssim_from_moments(). */
     const float reference_mean_sq = reference_mean * reference_mean;
     const float comparison_mean_sq = comparison_mean * comparison_mean;
     const float mean_product = reference_mean * comparison_mean;
@@ -1394,7 +1373,7 @@ static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs 
     if (denominator == 0.0f || moments.weight <= 0LL) {
         return {};
     }
-    const float ratio = numerator == denominator ? 1.0f : numerator / denominator;
+    const float ratio = numerator / denominator;
     return {.weighted_score = weight * ratio, .weight = weight};
 }
 

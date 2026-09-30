@@ -347,6 +347,13 @@
   accepts only 8, 10, 12 and 16 bits (`T-SYCL-PSNR-HVS-ODD-BPC-SCALE-2026-09-29`).
 
 
+### Fixed
+- **SYCL**: Fixed a bug where SSIM and MS-SSIM extractors emitted `+inf` for identical frames when `enable_db` was enabled by removing the `exactly 1` shortcut.
+- **SYCL**: Fixed a bug where the `psnr_sycl` extractor produced incorrectly scaled scores with `--subsample` by adding the missing `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag.
+- **SYCL**: Fixed a bug where `motion_v2_sycl` diverged from the CPU due to incorrect application of `fps_weight` and max clipping.
+- **SYCL**: Fixed out-of-bounds read/write errors in `cambi_sycl` on short frames (e.g. 1920x64, 1920x128).
+
+
 - **SYCL: the native Windows build runs its kernels.** A Windows MSVC build
   linked `vmaf.exe` and the tests with `link.exe`, which ignored `-fsycl` and
   never registered the SYCL device images, so every SYCL kernel submit failed
