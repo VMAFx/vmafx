@@ -248,6 +248,12 @@
   (ADR-1356). PyPI's PEP 740 attestations are unchanged.
 
 
+- `scripts/ci/check-state-md-rows.sh` works with the `mawk` of Debian 12. That
+  version reads regex intervals such as `{0,2}` literally, so the gate matched no
+  bug row there and passed every `docs/state.md`, duplicates included. The gate
+  now avoids intervals; CI's Ubuntu runner was not affected.
+
+
 - SYCL builds now contain the native Intel GPU code that `sycl_icpx_aot_targets`
   asks for. Since ADR-0568 the images were compiled into the objects and then
   dropped at the link, so every `libvmaf.so` was SPIR-V only and compiled its
