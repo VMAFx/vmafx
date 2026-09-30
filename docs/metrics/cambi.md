@@ -288,12 +288,12 @@ CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
 > backend.** The Metal twin carried the first two and gets the same fixes;
 > CUDA and SYCL were unaffected.
 
-The CUDA, HIP and Metal twins use the Strategy II hybrid architecture: the
+The CUDA and Metal twins use the Strategy II hybrid architecture: the
 integer phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on
 the GPU; the sliding-histogram `calculate_c_values` and the top-K spatial pool
-run on the host after a device-to-host copy at every scale. The SYCL twin runs
-every stage on the device ([below](#sycl)). Cross-backend gate runs at
-`places=4`.
+run on the host after a device-to-host copy at every scale. The SYCL and HIP
+twins run every stage on the device ([SYCL](#sycl), [HIP](#hip)).
+Cross-backend gate runs at `places=4`.
 
 > **Note**: The Vulkan backend (formerly T7-36 / ADR-0210) was removed in
 > [ADR-0726](../adr/0726-drop-vulkan-backend.md). CAMBI no longer has a Vulkan
@@ -379,3 +379,32 @@ any `window_size` above 65 without `cambi_high_res_speedup`. Both fail with
 
 Parity and timing reproduce with the commands in
 [Research-2122](../research/2122-sycl-cambi-device-resident.md).
+
+### HIP
+
+`cambi_hip` runs the same pipeline as `cambi_sycl`
+([ADR-1378](../adr/1378-hip-cambi-device-resident.md)): per frame it copies the
+distorted luma into pinned memory, uploads it without waiting, runs every stage
+on the extractor's stream and reads back one 88-byte block of exact per-scale
+sums; `collect()` is the only wait. The window, mask index, resize tables,
+contrast weights, reciprocal table, top-K mean and the window guard are
+`cambi.c`'s own helpers, so the twin accepts and rejects the same
+configurations as the CPU (a window above 65 x 65 fails init with the same
+message) and is expected to score bit-identically wherever the CPU's top-K sum
+is exact.
+
+```bash
+# -Dhip_gfx_targets: your device's target, as rocm_agent_enumerator prints it
+meson setup build-hip core -Denable_hip=true -Denable_hipcc=true \
+    -Dhip_gfx_targets=gfx1036
+ninja -C build-hip
+
+# Name the twin: --feature cambi alone runs the CPU extractor.
+./build-hip/tools/vmaf -r ref.yuv -d dis.yuv -w W -h H \
+    -p 420 -b 8 --backend hip --feature cambi_hip
+```
+
+The kernels' arithmetic lives in one header that a host test replays kernel by
+kernel against `cambi.c` (`test_hip_cambi_device_math`, no AMD device needed).
+It has not yet been timed on AMD hardware; the parity and timing commands are
+in [`docs/state.md`](../state.md) under `T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`.

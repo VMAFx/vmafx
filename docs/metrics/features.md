@@ -582,9 +582,10 @@ Quick facts:
 - **Output** — `cambi` in `[0, ∞)`; 0 = no banding, larger = more visible
   banding. Typical "bad" content sits in `1–10`.
 - **Input formats** — YUV 4:2:0, 8 / 10 bpc.
-- **Backends** — scalar (CPU) and HIP (`cambi_hip`). CUDA
-  and SYCL ports remain optional follow-ups under
-  [ADR-0205](../adr/0205-cambi-gpu-feasibility.md). (The original Vulkan
+- **Backends** — scalar (CPU), CUDA (`cambi_cuda`), SYCL (`cambi_sycl`),
+  HIP (`cambi_hip`) and Metal. The SYCL and HIP twins run every stage on the
+  device ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md),
+  [ADR-1378](../adr/1378-hip-cambi-device-resident.md)). (The original Vulkan
   kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
 
 ### CIEDE2000 — colour-difference metric

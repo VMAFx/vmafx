@@ -532,8 +532,9 @@ Rules:
   copies ran on and libvmaf collects frame N - 1 before submit N. Do not call
   `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly. Copy from
   extractor-owned pinned buffer (`integer_ms_ssim_hip`,
-  `integer_psnr_hvs_hip`, SpEED twins) not affected: extractor owns that
-  memory until it reuses it.
+  `integer_psnr_hvs_hip`) not affected: extractor owns that memory until it
+  reuses it. `cambi_hip` and the SpEED twins upload through
+  `vmaf_hip_picture_upload_staged()` (ADR-1378, ADR-1384).
 - Pass extractor's private stream (`lc.str`), even when kernels run on null
   stream. Null-stream copy queues behind every null-stream kernel of frame;
   wait then blocks host on all of them. Copy completes before any kernel is
@@ -608,23 +609,19 @@ this class of defect, because hardcoded values *were* defaults.
 
 25x25 SpEED covariance matrix regular only if **every** eigenvalue
 at least `1e-6`. CPU treats singular one as routine numerical
-condition, not failure; `speed_chroma_hip.c` / `speed_temporal_hip.c`
-must match it on two counts.
+condition, not failure; the device chain (ADR-1384) matches it on two
+counts.
 
-1. **Zero DEVICE solution.** Score kernel reads `d_sol`;
-   `h_indterm` re-downloaded from `d_indterm` at top of every
-   pipeline run. `memset`-ing host buffer = dead code, leaves
-   `d_sol` holding previous frame's solution — or raw allocator
-   memory on first frame. Use
-   `hipMemsetAsync(d_sol, 0, indterm_bytes, s->stream)`.
-2. **Report singularity out-of-band.** `run_cpu_linalg_sc()` and
-   `run_cpu_linalg_st()` take `bool *singular_out`; `int` return
-   stays reserved for hard HIP failures. Conflating the two makes
-   caller abort channel without emitting score, where CPU emits
-   one — regression ADR-1202 had to undo. Caller then applies CPU
-   rule from `speed_extract_score()`: score `0` when exactly one of
-   ref/dis was singular; for chroma, impute `speed_chroma_uv` from
-   surviving channel.
+1. **Zero solution on device.** `speed_hd_block_statistics()` starts
+   every block's solution at 0 and solves only when the channel's
+   `status` slot says regular, so singular channel scores from zero
+   solution, never from previous frame's memory.
+2. **Singularity travels out-of-band.** Per-channel `singular` flags
+   ride in `SpeedGpuFrameResult`; errors are return codes.
+   `speed_hd_score_finish()` applies `speed_extract_score()`'s rule
+   (score `0` when exactly one of ref/dis singular) on device;
+   `speed_chroma_hip.c::combine_chroma_uv()` imputes
+   `speed_chroma_uv` from surviving channel on host, from flags only.
 
 Guarded by `core/test/test_hip_speed_singular_parity.c`. Older
 `test_hip_speed_{chroma,temporal}_parity.c` fixtures are 768x432,
@@ -651,10 +648,9 @@ scores at 5.85.
 2. **`cambi.c::filter_mode` leaves output rows 0 and `height-1`
    UNFILTERED.** Vertical writeback under `if (i > 1)`, covers rows
    `1 .. height-2`; horizontal results for border rows live only in
-   3-row ring, never written back. Kernel guard =
-   `if (axis == 1 && (y == 0 || y >= height - 1)) return;` — V pass writes into buffer
-   that still holds pre-filter image, so returning early preserves
-   original pixels exactly.
+   3-row ring, never written back. Device: `cambi_hd_filter_v_pixel()`
+   writes rows `1 .. height-2` only; rows 0 and `height-1` keep
+   pre-filter value (still get level map).
 
 3. **`get_spatial_mask_for_index()` ZERO-PADS its 7x7 box sum.**
    Summed-area table `memset` to zero, gated by
@@ -990,3 +986,63 @@ Rebase-sensitive invariants:
   `test_hip_twin_option_parity` checks.
 - HIP error mapping: `vmaf_hip_rc_to_errno()` (`kernel_template.c`, declared in
   `core/src/hip/common.h`). No new private copies.
+
+## CAMBI device-resident: no host stage, one wait (ADR-1378)
+
+- Every `cambi.c` stage on device, ADR-1357 design. Per frame: one
+  `vmaf_hip_picture_upload_staged()` of dist luma, memset of
+  `CambiHipFrameState`, kernels of `integer_cambi/cambi_score.hip`, one
+  88-byte `CambiHipResults` device-to-host copy. `collect()` = only wait.
+  Never call `vmaf_cambi_preprocessing` / `_calculate_c_values` /
+  `_spatial_pooling` / `_get_spatial_mask` / `_filter_mode` / `_decimate`
+  from `integer_cambi_hip.c`; never sync stream mid-frame.
+- Per-work-item math only in `integer_cambi/cambi_hip_device.h` (kernels +
+  host replay compile same code). Kernels add decomposition, shared memory,
+  barriers, atomics; nothing else.
+- Parameter block laid out once by `cambi_hip_plan()` /
+  `cambi_hip_plan_bind_scales()` (`integer_cambi_hip.h`, host, every build);
+  replay calls same functions. Change layout there, not in extractor.
+- Window, mask index, resize tables, contrast weights, reciprocal table,
+  top-K mean, window guard = `cambi.c` helpers (`cambi_internal.h`:
+  `vmaf_cambi_adjust_window`, `_mask_index`, `_resize_source_indices`,
+  `_contrast_weights`, `_reciprocal_lut`, `_fixed_topk_mean`,
+  `_check_window_fits_lut`). No local copies.
+- `init()` runs host config + window guard before any device call (scaffold
+  build rejects same windows as CPU). Guard: window^2 >= 4226 -> -EINVAL.
+- Top-K sum exact: fixed point 2^-24 (`CAMBI_HIP_FIXED_SHIFT` ==
+  `VMAF_CAMBI_TOPK_FIXED_SHIFT`, static-asserted), 128-bit via hi/lo halves.
+  Integer reductions only; no fp64; level band `compact < levels` (band top
+  excluded, else histogram write lands in next chunk).
+- Guards: `test_hip_cambi_device_math` (lockstep c-values replay with
+  histogram canary, 12 banding fixtures, window cases),
+  `test_hip_device_resident_contract.py` (planted regressions),
+  `test_hip_cambi_parity` on device.
+
+## SpEED device-resident: CPU fp32 arithmetic by build flag (ADR-1384)
+
+- `speed_chroma_hip` / `speed_temporal_hip` run ADR-1358 chain through one
+  pipeline, `speed_hip_pipeline.{h,c}`. Twins: configure, bindings, upload,
+  submit, collect. No `hipModuleLaunchKernel`, no sync, no host SpEED stage
+  (`picture_copy`, `speed_internal_filter_and_downscale`, eigen / QR helpers)
+  in twin TUs or pipeline.
+- Per frame: `speed_hip_pipeline_upload()` (staged, no wait), eight kernels,
+  one `SpeedGpuFrameResult` copy. `speed_hip_pipeline_collect()` /
+  `_wait()` = only wait (`vmaf_hip_kernel_collect_wait`).
+- Init-time geometry, taps, scoring = `speed_internal_gpu_configure()`
+  (`speed_internal.c`), shared with SYCL; types = `speed_gpu_common.h`.
+  Parameter block = `speed_hip_params_fill()` / `speed_hip_taps_fill()` /
+  `speed_hip_bindings_*()`; replay test calls same.
+- Exact arithmetic = TU flags in `core/src/meson.build`
+  (`'speed_pipeline' : ['-ffp-contract=off',
+  '-fhip-fp32-correctly-rounded-divide-sqrt']`) + plain `*` `+` `/`
+  `sqrtf()`. Never `__fmul_rn` / `__fadd_rn` / `__fdiv_rn` / `__fsqrt_rn`:
+  without `OCML_BASIC_ROUNDED_OPERATIONS` = plain (contracting) operators /
+  native approximate sqrt. Explicit `fmaf()` only for exact two-product.
+- log2 = `speed_hd_log2_rn()` (fp32 pairs, one rounding). Host libm `log2f`
+  only behind `SPEED_HD_HOST_LIBM_LOG2 && !__HIP_DEVICE_COMPILE__` (test
+  seam). glibc `log2f` misrounds ~0.4 %: vs glibc CPU a few chroma frames
+  differ in last bits; compare with correctly rounded `log2f` preload.
+- No fp64 in `speed/`. lanczos4 prescale (`sinpif`) = ADR-0214 tolerance only.
+- Guards: `test_hip_speed_device_math` (replay vs CPU extractor),
+  `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
+  device.

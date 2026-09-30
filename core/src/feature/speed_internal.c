@@ -809,3 +809,96 @@ int speed_internal_clamp_score(double score, double max_val, unsigned index, con
     *out = score < max_val ? score : max_val;
     return 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* Device-resident pipelines: init-time setup (ADR-1358, ADR-1384)     */
+/* ------------------------------------------------------------------ */
+
+/* picture_copy() takes its 16-bit path for exactly these depths and reads
+ * every other depth as 8-bit samples. */
+static uint32_t si_gpu_sample_bytes(unsigned bpc)
+{
+    return (bpc == 10u || bpc == 12u || bpc == 16u) ? 2u : 1u;
+}
+
+/* picture_copy()'s divisor on the 16-bit path. */
+static float si_gpu_sample_scale(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 4.0f;
+    if (bpc == 12u)
+        return 16.0f;
+    if (bpc == 16u)
+        return 256.0f;
+    return 1.0f;
+}
+
+static void si_gpu_fill_geometry(const SpeedInternalDimensions *dim,
+                                 const SpeedInternalOptions *opt, unsigned bpc, int32_t method,
+                                 SpeedGpuGeometry *g)
+{
+    g->src_w = (uint32_t)dim->original_width;
+    g->src_h = (uint32_t)dim->original_height;
+    g->scaled_w = (uint32_t)dim->scaled_width;
+    g->scaled_h = (uint32_t)dim->scaled_height;
+    g->down_w = g->scaled_w >> SPEED_INTERNAL_NUM_SCALES;
+    g->down_h = g->scaled_h >> SPEED_INTERNAL_NUM_SCALES;
+    g->trunc_w = (uint32_t)dim->truncated_width;
+    g->trunc_h = (uint32_t)dim->truncated_height;
+    g->blocks_h = (uint32_t)dim->num_blocks_horizontal;
+    g->blocks = (uint32_t)dim->num_blocks;
+    g->sub_w = (uint32_t)dim->submatrix_width;
+    g->sub_h = (uint32_t)dim->submatrix_height;
+    g->bytes_per_sample = si_gpu_sample_bytes(bpc);
+    g->sample_scale = si_gpu_sample_scale(bpc);
+    /* filter_and_downscale() resamples unless ALMOST_EQUAL(prescale, 1.0).
+     * When it skips the resample but lround() still changed the plane size,
+     * the reference filters memory beyond the copied picture; the device
+     * resamples instead of reading outside its raw plane. */
+    const bool identity = SI_ALMOST_EQUAL(opt->speed_prescale, 1.0);
+    const bool same_size = g->scaled_w == g->src_w && g->scaled_h == g->src_h;
+    g->prescale = (!identity || !same_size) ? 1 : 0;
+    g->scale_method = method;
+}
+
+static void si_gpu_fill_filters(const SpeedInternalOptions *opt, SpeedGpuFilters *f)
+{
+    const float kernelscale = (float)opt->speed_kernelscale;
+    memset(f, 0, sizeof(*f));
+    f->antialias_width = (uint32_t)vif_get_filter_size(1, kernelscale);
+    speed_get_antialias_filter(f->antialias, SPEED_INTERNAL_NUM_SCALES, kernelscale);
+    f->lowpass_width = (uint32_t)vif_get_filter_size(SPEED_INTERNAL_NUM_SCALES, kernelscale);
+    vif_get_filter(f->lowpass, SPEED_INTERNAL_NUM_SCALES, kernelscale);
+}
+
+static void si_gpu_fill_scoring(const SpeedInternalOptions *opt, SpeedGpuScoring *s)
+{
+    const float sigma_nn = (float)opt->speed_sigma_nn;
+    const float nn_floor = (float)opt->speed_nn_floor;
+    s->sigma_nn = sigma_nn;
+    s->entropy_constant = speed_internal_entropy_constant();
+    s->base_entropy = speed_internal_base_entropy((size_t)SPEED_GPU_ELEMENTS, sigma_nn, nn_floor);
+    s->weight_mode = opt->speed_weight_var_mode;
+}
+
+int speed_internal_gpu_configure(const SpeedInternalDimensions *dim,
+                                 const SpeedInternalOptions *opt, unsigned bpc,
+                                 SpeedGpuConfig *config)
+{
+    if (!dim || !opt || !config)
+        return -EINVAL;
+    /* speed_init(), speed.c. */
+    if (!vif_validate_kernelscale((float)opt->speed_kernelscale)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale\n");
+        return -EINVAL;
+    }
+    enum vif_scaling_method method = vif_scale_nearest;
+    if (vif_get_scaling_method(opt->speed_prescale_method, &method))
+        return -EINVAL;
+    if (opt->speed_weight_var_mode < 0 || opt->speed_weight_var_mode > 6)
+        return -EINVAL;
+    si_gpu_fill_geometry(dim, opt, bpc, (int32_t)method, &config->geometry);
+    si_gpu_fill_filters(opt, &config->filters);
+    si_gpu_fill_scoring(opt, &config->scoring);
+    return 0;
+}

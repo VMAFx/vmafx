@@ -1485,8 +1485,10 @@ nav:
         - "ADR-1370: sycl-float-ssim-device-decimation": adr/1370-sycl-float-ssim-device-decimation.md
         - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
         - "ADR-1377: hip-motion-diff-first": adr/1377-hip-motion-diff-first.md
+        - "ADR-1378: hip-cambi-device-resident": adr/1378-hip-cambi-device-resident.md
         - "ADR-1381: hip-integer-tiny-frame-guards": adr/1381-hip-integer-tiny-frame-guards.md
         - "ADR-1382: hip-twin-cpu-option-parity": adr/1382-hip-twin-cpu-option-parity.md
+        - "ADR-1384: hip-speed-device-resident": adr/1384-hip-speed-device-resident.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

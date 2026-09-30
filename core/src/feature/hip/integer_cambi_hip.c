@@ -3,54 +3,39 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  CAMBI banding-detection feature extractor on the HIP backend.
- *  Direct port of `libvmaf/src/feature/cuda/integer_cambi_cuda.c`
- *  (T3-15 / ADR-0360) to the HIP backend.
+ *  CAMBI banding-detection feature extractor on the HIP backend, fully
+ *  device-resident since ADR-1378 (the HIP port of the SYCL design of
+ *  ADR-1357).
  *
- *  Strategy II hybrid (matches the CUDA twin):
- *    GPU stages (three HIP kernels in cambi_score.hip):
- *      - cambi_spatial_mask_kernel: 7×7 box derivative + threshold.
- *      - cambi_decimate_kernel: strict 2× stride-2 subsample.
- *      - cambi_filter_mode_kernel: separable 3-tap mode filter (H + V).
+ *  submit() copies the distorted luma plane into pinned staging and enqueues
+ *  on the extractor's stream, without waiting: one upload
+ *  (vmaf_hip_picture_upload_staged()), a reset of the per-frame device state,
+ *  input validation, preprocessing (10-bit conversion, resize, anti-dither),
+ *  the spatial mask, and for each of the five scales decimation, the mode
+ *  filter and level map, the run / change masks, the c-values and the
+ *  radix-select top-K pooling; then one copy of the 88-byte CambiHipResults
+ *  block back to pinned memory. collect() waits once and turns the five exact
+ *  per-scale top-K sums into the score with cambi.c's own
+ *  vmaf_cambi_fixed_topk_mean() and vmaf_cambi_weight_scores_per_scale(). No
+ *  stage of cambi.c runs on the host and nothing waits on the device before
+ *  collect().
  *
- *    Host CPU stages (via cambi_internal.h wrappers — bit-exact):
- *      - vmaf_cambi_preprocessing: decimate/upcast to 10-bit.
- *      - vmaf_cambi_calculate_c_values: sliding-histogram c-value pass.
- *      - vmaf_cambi_spatial_pooling: top-K pooling → per-scale score.
- *      - vmaf_cambi_weight_scores_per_scale: inner-product scale weights.
- *
- *  HIP adaptation notes vs. CUDA twin:
- *    - `CUmodule` / `cuModuleLoadData` → `hipModule_t` / `hipModuleLoadData`.
- *    - `CUfunction` / `cuModuleGetFunction` → `hipFunction_t` / `hipModuleGetFunction`.
- *    - `cuLaunchKernel` → `hipModuleLaunchKernel`.
- *    - `CUdeviceptr` / `cuMemcpyHtoDAsync` / `cuMemcpyDtoH` →
- *      `hipDeviceptr_t` / `hipMemcpyHtoDAsync` / `hipMemcpyDtoH`.
- *    - `cuStreamSynchronize` → `hipStreamSynchronize`.
- *    - `cuCtxPushCurrent` / `cuCtxPopCurrent` — not needed; HIP uses the
- *      default device context selected by `hipSetDevice`.
- *    - `CuStreamWaitEvent` → `hipStreamWaitEvent`.
- *    - `cuEventRecord` → `hipEventRecord`.
- *    - `VmafCudaKernelLifecycle` / `VmafCudaBuffer` / `VmafCudaKernelReadback`
- *      → `VmafHipKernelLifecycle` / dedicated `hipDeviceptr_t` device
- *      allocations via `hipMalloc` / `hipFree` / host pinned via
- *      `VmafHipKernelReadback`.
- *    - `vmaf_cuda_*` → `vmaf_hip_*` equivalents.
- *
- *  Precision contract: `places=4` (ULP=0 on the emitted score). GPU
- *  phases are integer + bit-exact. The host residual runs the exact CPU
- *  code via cambi_internal.h. Cross-backend gate target: ULP=0.
- *
- *  Lifecycle: mirrors the CUDA twin's synchronous-per-scale approach.
- *  submit() runs all GPU + CPU work per scale synchronously; collect()
- *  emits the pre-computed score. This is correct and matches the
- *  per-scale synchronous posture of the CUDA twin.
+ *  The kernels are in integer_cambi/cambi_score.hip; their per-work-item
+ *  arithmetic, and the parameter block laid out here once at init
+ *  (cambi_hip_plan()), are in integer_cambi/cambi_hip_device.h. The window,
+ *  mask index, resize tables, contrast weights and the reciprocal-table guard
+ *  come from cambi.c's shared helpers (cambi_internal.h). Numerical contract:
+ *  every stage is integer or float-for-float with cambi.c and the top-K sum
+ *  is exact, so the score is bit-identical to the CPU extractor whenever
+ *  cambi.c's own double sum is exact (ADR-1357).
  */
 
 #include <errno.h>
-#include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 #include "feature_collector.h"
@@ -69,6 +54,9 @@
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
+#include "../../hip/picture_hip.h"
 #endif /* HAVE_HIPCC */
 
 #include "feature/cambi_internal.h"
@@ -81,8 +69,6 @@
 
 /* --- Constants matching cambi.c --- */
 /* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR come from cambi_internal.h */
-#define CAMBI_HIP_NUM_SCALES 5
-#define CAMBI_HIP_MASK_FILTER_SIZE 7
 #define CAMBI_HIP_DEFAULT_MAX_VAL 1000.0
 #define CAMBI_HIP_DEFAULT_WINDOW_SIZE 65
 #define CAMBI_HIP_DEFAULT_TOPK 0.6
@@ -90,8 +76,45 @@
 #define CAMBI_HIP_DEFAULT_VLT 0.0
 #define CAMBI_HIP_DEFAULT_MAX_LOG_CONTRAST 2
 #define CAMBI_HIP_DEFAULT_EOTF "bt1886"
-#define CAMBI_HIP_BLOCK_X 16u
-#define CAMBI_HIP_BLOCK_Y 16u
+#define CAMBI_HIP_MAX_DIFFS 32u
+/* c-values: the shortest row chunk worth re-priming a window for, and the
+ * bound on the per-chunk column histograms (ADR-1357). */
+#define CAMBI_HIP_MIN_CHUNK_ROWS 32u
+#define CAMBI_HIP_HIST_BUDGET ((size_t)64u << 20u)
+#define CAMBI_HIP_POOL_MAX_GROUPS 512u
+#define CAMBI_HIP_POOL_ELEMS_PER_GROUP 4096u
+#define CAMBI_HIP_ARENA_ALIGN ((size_t)256u)
+
+/* The device fixed point is cambi.c's (vmaf_cambi_fixed_topk_mean()). */
+_Static_assert(CAMBI_HIP_FIXED_SHIFT == VMAF_CAMBI_TOPK_FIXED_SHIFT,
+               "device fixed point matches vmaf_cambi_fixed_topk_mean()");
+_Static_assert(CAMBI_HIP_NUM_SCALES == VMAF_CAMBI_NUM_SCALES, "cambi.c's scale count");
+
+/* Kernel entry points of cambi_score.hip, in launch order. */
+enum CambiHipKernel {
+    CAMBI_K_VALIDATE,
+    CAMBI_K_PREPROCESS,
+    CAMBI_K_MASK,
+    CAMBI_K_DECIMATE,
+    CAMBI_K_FILTER_H,
+    CAMBI_K_FILTER_V,
+    CAMBI_K_ROW_MASKS,
+    CAMBI_K_CVALS,
+    CAMBI_K_RADIX_HIST,
+    CAMBI_K_RADIX_SCAN,
+    CAMBI_K_TOPK_SUM,
+    CAMBI_K_TOPK_FINAL,
+    CAMBI_K_COUNT
+};
+
+#ifdef HAVE_HIPCC
+static const char *const cambi_hip_kernel_names[CAMBI_K_COUNT] = {
+    "cambi_hip_validate",   "cambi_hip_preprocess", "cambi_hip_spatial_mask",
+    "cambi_hip_decimate",   "cambi_hip_filter_h",   "cambi_hip_filter_v",
+    "cambi_hip_row_masks",  "cambi_hip_cvals",      "cambi_hip_radix_hist",
+    "cambi_hip_radix_scan", "cambi_hip_topk_sum",   "cambi_hip_topk_final",
+};
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* Private state                                                       */
@@ -102,34 +125,23 @@ typedef struct CambiStateHip {
     VmafHipContext *ctx;
 
 #ifdef HAVE_HIPCC
-    /* HIP module + kernel function handles (require real HIP types). */
     hipModule_t module;
-    hipFunction_t func_mask;
-    hipFunction_t func_decimate;
-    hipFunction_t func_filter_mode;
+    hipFunction_t kernels[CAMBI_K_COUNT];
+#endif /* HAVE_HIPCC */
 
-    /* Device buffers (flat uint16 arrays, proc_width × proc_height). */
-    hipDeviceptr_t d_image; /* current scale image on device */
-    hipDeviceptr_t d_mask;  /* spatial mask on device */
-    hipDeviceptr_t d_tmp;   /* scratch: filter_mode H output, decimate output */
-    size_t d_buf_bytes;     /* allocation size of each device buffer (scale 0) */
-#endif                      /* HAVE_HIPCC */
+    /* One device allocation holds every buffer; params (host image in
+     * `params`, device copy at d_params) points into it. */
+    void *d_arena;
+    CambiHipParams *d_params;
+    CambiHipFrameState *d_frame;
+    void *d_src;
+    /* Pinned host memory: the staged luma plane and the results. */
+    void *h_staging;
+    CambiHipResults *h_results;
+    size_t src_bytes;
+    CambiHipParams params;
 
-    /* Host VmafPicture pair for CPU residual. */
-    VmafPicture pics[2]; /* pics[0] = image, pics[1] = mask */
-
-    /* Pinned host readback: just a double for the pre-computed score. */
-    VmafHipKernelReadback rb_score;
-
-    /* Host scratch buffers for the CPU residual. */
-    VmafCambiHostBuffers buffers;
-
-    /* Callbacks (scalar; GPU has done the heavy lifting). */
-    VmafCambiRangeUpdater inc_range_callback;
-    VmafCambiRangeUpdater dec_range_callback;
-    VmafCambiDerivativeCalculator derivative_callback;
-
-    /* Configuration options (mirrors CambiStateCuda). */
+    /* Configuration options (mirrors cambi.c). */
     int enc_width;
     int enc_height;
     int enc_bitdepth;
@@ -142,21 +154,11 @@ typedef struct CambiStateHip {
     double cambi_vis_lum_threshold;
     char *eotf;
     char *cambi_eotf;
-    int cambi_high_res_speedup; /* reserved; v1 ignores it */
+    int cambi_high_res_speedup;
 
-    /* Resolved per-frame geometry. */
-    unsigned src_width;
-    unsigned src_height;
-    unsigned src_bpc;
-    unsigned proc_width;
-    unsigned proc_height;
-
-    /* Adjusted window and vlt_luma threshold. */
-    uint16_t adjusted_window;
-    uint16_t vlt_luma;
-
-    /* Per-frame index stored by submit() for collect(). */
-    unsigned index;
+    /* Resolved configuration. */
+    CambiHipPlanInput plan;
+    uint16_t tvi[CAMBI_HIP_MAX_DIFFS];
 
     VmafDictionary *feature_name_dict;
 } CambiStateHip;
@@ -289,390 +291,560 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
         .alias = "ceot",
     },
+    {
+        .name = "cambi_high_res_speedup",
+        .help =
+            "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p",
+        .offset = offsetof(CambiStateHip, cambi_high_res_speedup),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.i = 0,
+        .min = 0,
+        .max = CAMBI_4K_HEIGHT,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "hrs",
+    },
     {0},
 };
 
 /* ------------------------------------------------------------------ */
-/* Helper: compute adjusted window size (mirrors cambi.c). */
-/* ------------------------------------------------------------------ */
-static uint16_t cambi_hip_adjust_window(int window_size, unsigned w, unsigned h)
-{
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
-    adjusted >>= 4;
-    if (adjusted < 1u)
-        adjusted = 1u;
-    if ((adjusted & 1u) == 0u)
-        adjusted++;
-    return (uint16_t)adjusted;
-}
-
-#ifdef HAVE_HIPCC
-
-/* ------------------------------------------------------------------ */
-/* HIP error → errno translation (only needed with real HIP runtime). */
-/* ------------------------------------------------------------------ */
-static int hip_err(hipError_t rc)
-{
-    if (rc == hipSuccess)
-        return 0;
-    switch (rc) {
-    case hipErrorInvalidValue:
-    case hipErrorInvalidHandle:
-        return -EINVAL;
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorNoDevice:
-    case hipErrorInvalidDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* Helper: ceil_log2 for mask_index (mirrors cambi.c). */
-/* ------------------------------------------------------------------ */
-static uint16_t cambi_hip_ceil_log2(uint32_t num)
-{
-    if (num == 0u)
-        return 0u;
-    uint32_t tmp = num - 1u;
-    uint16_t shift = 0;
-    while (tmp > 0u) {
-        tmp >>= 1;
-        shift++;
-    }
-    return shift;
-}
-
-static uint16_t cambi_hip_get_mask_index(unsigned w, unsigned h, uint16_t filter_size)
-{
-    uint32_t shifted_wh = (w >> 6) * (h >> 6);
-    return (
-        uint16_t)((filter_size * filter_size + 3 * (cambi_hip_ceil_log2(shifted_wh) - 11) - 1) >>
-                  1);
-}
-
-/* ------------------------------------------------------------------ */
-/* TVI table initialisation. */
-/* ------------------------------------------------------------------ */
-/* ADR-1219 — delegate to the shared CPU helper rather than re-deriving the
- * TVI table.
- *
- * This used to hand-roll a binary search whose predicate was the NEGATION of
- * the CPU's `tvi_hard_threshold_condition`, seeded from luma 0 instead of
- * `luma_range.foot`, and it derived `vlt_luma` as the LARGEST luma below the
- * visibility threshold where the CPU takes the SMALLEST luma at or above it.
- * At the default `max_log_contrast = 2` that produced
- * `tvi_for_diff = [1026, 1025, 1024, 64]` against the CPU's
- * `[182, 309, 436, 563]`, which collapses the derived luma band from 564
- * entries to 65 and drops almost every pixel as out-of-band.
- *
- * `vmaf_cambi_init_tvi_and_vlt()` is the same helper the SYCL twin calls; it
- * runs the CPU's own bisection, so the twins cannot drift again. */
-static int cambi_hip_init_tvi(CambiStateHip *s)
-{
-    const int num_diffs = 1 << s->max_log_contrast;
-    return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
-                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                       s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
-}
-
-#endif /* HAVE_HIPCC — closes opener at line 305 */
-
-/* ------------------------------------------------------------------ */
-/* Module load helper (extracted to keep init under 60 lines). */
-/* ------------------------------------------------------------------ */
-#ifdef HAVE_HIPCC
-static int cambi_hip_module_load(CambiStateHip *s)
-{
-    hipError_t hip_rc = hipModuleLoadData(&s->module, cambi_score_hsaco);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-
-    hip_rc = hipModuleGetFunction(&s->func_mask, s->module, "cambi_spatial_mask_kernel");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return hip_err(hip_rc);
-    }
-    hip_rc = hipModuleGetFunction(&s->func_decimate, s->module, "cambi_decimate_kernel");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return hip_err(hip_rc);
-    }
-    hip_rc = hipModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return hip_err(hip_rc);
-    }
-    return 0;
-}
-#endif /* HAVE_HIPCC */
-
-/* ------------------------------------------------------------------ */
-/* Device buffer free helper. */
-/* ------------------------------------------------------------------ */
-static void cambi_hip_free_device_buffers(CambiStateHip *s)
-{
-#ifdef HAVE_HIPCC
-    if (s->d_image) {
-        (void)hipFree((void *)s->d_image);
-        s->d_image = (hipDeviceptr_t)0;
-    }
-    if (s->d_mask) {
-        (void)hipFree((void *)s->d_mask);
-        s->d_mask = (hipDeviceptr_t)0;
-    }
-    if (s->d_tmp) {
-        (void)hipFree((void *)s->d_tmp);
-        s->d_tmp = (hipDeviceptr_t)0;
-    }
-#else
-    (void)s;
-#endif /* HAVE_HIPCC */
-}
-
-/* ------------------------------------------------------------------ */
-/* Kernel dispatch helpers. */
-/* ------------------------------------------------------------------ */
-#ifdef HAVE_HIPCC
-
-static int dispatch_mask_hip(CambiStateHip *s, hipStream_t stream, unsigned w, unsigned h,
-                             unsigned stride_words, unsigned mask_index)
-{
-    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&s->d_image, &s->d_mask, &w, &h, &stride_words, &mask_index};
-    hipError_t rc = hipModuleLaunchKernel(s->func_mask, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
-}
-
-static int dispatch_decimate_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t src,
-                                 hipDeviceptr_t dst, unsigned out_w, unsigned out_h,
-                                 unsigned src_stride_words, unsigned dst_stride_words)
-{
-    const unsigned grid_x = (out_w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (out_h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&src, &dst, &out_w, &out_h, &src_stride_words, &dst_stride_words};
-    hipError_t rc = hipModuleLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
-}
-
-static int dispatch_filter_mode_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t in,
-                                    hipDeviceptr_t out, unsigned w, unsigned h,
-                                    unsigned stride_words, int axis)
-{
-    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&in, &out, &w, &h, &stride_words, &axis};
-    hipError_t rc =
-        hipModuleLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                              CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
-}
-
-#endif /* HAVE_HIPCC */
-
-#ifdef HAVE_HIPCC
-/* ------------------------------------------------------------------ */
-/* init failure unwind — one helper per former label, each tail-calling */
-/* the label it used to fall into. Release set and ORDER are unchanged  */
-/* from the goto ladder this replaces (HISS-01).                        */
+/* Init-time configuration (cambi.c init), host only, every build.     */
 /* ------------------------------------------------------------------ */
 
-static int cambi_init_unwind_ctx(CambiStateHip *s, int err)
+/* cambi.c::validate_and_setup_dimensions: the speed-up only takes effect when
+ * the encode is at least that resolution. */
+static int cambi_hip_speedup_valid(int requested, int pixels)
 {
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
-}
-
-static int cambi_init_unwind_lc(CambiStateHip *s, int err)
-{
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-    return cambi_init_unwind_ctx(s, err);
-}
-
-static int cambi_init_unwind_rb(CambiStateHip *s, int err)
-{
-    (void)vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
-    return cambi_init_unwind_lc(s, err);
-}
-
-static int cambi_init_unwind_module(CambiStateHip *s, int err)
-{
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-    cambi_hip_free_device_buffers(s);
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    return cambi_init_unwind_rb(s, err);
-}
-
-/* Device-side scale-0 buffers plus the two host VmafPictures used by the CPU
- * residual. A partial failure is left in place for cambi_init_unwind_module(). */
-static int cambi_hip_alloc_device(CambiStateHip *s)
-{
-    s->d_buf_bytes = (size_t)s->proc_width * s->proc_height * sizeof(uint16_t);
-    hipError_t hip_rc = hipMalloc((void **)&s->d_image, s->d_buf_bytes);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc = hipMalloc((void **)&s->d_mask, s->d_buf_bytes);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc = hipMalloc((void **)&s->d_tmp, s->d_buf_bytes);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-
-    /* Host VmafPictures for the CPU residual. */
-    int err =
-        vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        return err;
-    err = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        return err;
+    if (requested == 1080)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p;
+    if (requested == 1440)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p;
+    if (requested == 2160)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p;
     return 0;
 }
 
-static int cambi_hip_alloc_residual_scratch(CambiStateHip *s);
-
-/* Host scratch buffers for the CPU residual, in the original allocation order. */
-static int cambi_hip_alloc_host_scratch(CambiStateHip *s)
-{
-    /* Host scratch buffers for the CPU residual. */
-    const int num_diffs = 1 << s->max_log_contrast;
-    s->buffers.diffs_to_consider = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.diffs_to_consider) {
-        return -ENOMEM;
-    }
-    s->buffers.diff_weights = malloc(sizeof(int) * (size_t)num_diffs);
-    if (!s->buffers.diff_weights) {
-        return -ENOMEM;
-    }
-    s->buffers.all_diffs = malloc(sizeof(int) * (size_t)(2 * num_diffs + 1));
-    if (!s->buffers.all_diffs) {
-        return -ENOMEM;
-    }
-
-    static const int contrast_weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
-                                             8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
-    for (int d = 0; d < num_diffs; d++) {
-        s->buffers.diffs_to_consider[d] = (uint16_t)(d + 1);
-        s->buffers.diff_weights[d] = contrast_weights[d];
-    }
-    for (int d = -num_diffs; d <= num_diffs; d++)
-        s->buffers.all_diffs[d + num_diffs] = d;
-
-    s->buffers.tvi_for_diff = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.tvi_for_diff) {
-        return -ENOMEM;
-    }
-
-    const int tvi_err = cambi_hip_init_tvi(s);
-    if (tvi_err)
-        return tvi_err;
-
-    return cambi_hip_alloc_residual_scratch(s);
-}
-
-/* The per-pixel residual scratch: C-values, their histograms and the mask
- * filter's dynamic-programming rows. Split out of
- * cambi_hip_alloc_host_scratch() to stay inside the HISS-04 60-LOC bound;
- * allocation order is unchanged. */
-static int cambi_hip_alloc_residual_scratch(CambiStateHip *s)
-{
-    const int num_diffs = 1 << s->max_log_contrast;
-
-    s->buffers.c_values = malloc(sizeof(float) * s->proc_width * s->proc_height);
-    if (!s->buffers.c_values) {
-        return -ENOMEM;
-    }
-
-    const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[2 * num_diffs] -
-                                                            s->buffers.all_diffs[0]));
-    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * (size_t)num_bins);
-    if (!s->buffers.c_values_histograms) {
-        return -ENOMEM;
-    }
-
-    const int pad_size = CAMBI_HIP_MASK_FILTER_SIZE / 2;
-    const int dp_width = (int)s->proc_width + 2 * pad_size + 1;
-    const int dp_height = 2 * pad_size + 2;
-    s->buffers.mask_dp = malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height);
-    if (!s->buffers.mask_dp) {
-        return -ENOMEM;
-    }
-    s->buffers.filter_mode_buffer = malloc(sizeof(uint16_t) * 3u * s->proc_width);
-    if (!s->buffers.filter_mode_buffer) {
-        return -ENOMEM;
-    }
-    s->buffers.derivative_buffer = malloc(sizeof(uint16_t) * s->proc_width);
-    if (!s->buffers.derivative_buffer) {
-        return -ENOMEM;
-    }
-
-    return 0;
-}
-
-#endif /* HAVE_HIPCC */
-
-/* Resolves the encoded geometry exactly as cambi.c::init does. Returns
- * -EINVAL (after releasing the feature-name dictionary, as before) when the
- * encoded resolution is below the CAMBI minimum. */
+/* Resolves the encoded geometry exactly as cambi.c::init does. */
 static int cambi_hip_resolve_geometry(CambiStateHip *s, unsigned bpc, unsigned w, unsigned h)
 {
-    /* Resolve enc geometry (matches cambi.c::init logic). */
     if (s->enc_bitdepth == 0)
         s->enc_bitdepth = (int)bpc;
-    if (s->enc_width == 0 || s->enc_height == 0) {
-        s->enc_width = (int)w;
-        s->enc_height = (int)h;
-    }
-    if ((unsigned)s->enc_height > h || (unsigned)s->enc_width > w) {
+    if (s->enc_width == 0 || s->enc_height == 0 || (unsigned)s->enc_height > h ||
+        (unsigned)s->enc_width > w) {
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
     if (!cambi_validate_dimensions((unsigned)s->enc_width, (unsigned)s->enc_height)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_hip: encoded resolution %dx%d below minimum %d×%d.\n",
-                 s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_hip: encoded resolution %dx%d below minimum %d.\n",
+                 s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
-
-    s->src_width = w;
-    s->src_height = h;
-    s->src_bpc = bpc;
-    s->proc_width = (unsigned)s->enc_width;
-    s->proc_height = (unsigned)s->enc_height;
-    s->adjusted_window = cambi_hip_adjust_window(s->window_size, s->proc_width, s->proc_height);
-
+    if (!cambi_hip_speedup_valid(s->cambi_high_res_speedup, s->enc_width * s->enc_height))
+        s->cambi_high_res_speedup = 0;
+    CambiHipPlanInput *in = &s->plan;
+    in->src_width = w;
+    in->src_height = h;
+    in->src_bpc = bpc;
+    in->proc_width = (unsigned)s->enc_width;
+    in->proc_height = (unsigned)s->enc_height;
+    in->enc_bpc = (unsigned)s->enc_bitdepth;
+    in->speedup = s->cambi_high_res_speedup ? 1u : 0u;
+    in->adjusted_window = vmaf_cambi_adjust_window(s->window_size, in->proc_width, in->proc_height,
+                                                   in->speedup != 0u);
+    in->num_diffs = 1u << (unsigned)s->max_log_contrast;
+    /* The original topk setting when it is not the default, else cambi_topk
+     * (cambi.c::extract). */
+    in->topk = s->topk != CAMBI_HIP_DEFAULT_TOPK ? s->topk : s->cambi_topk;
+    in->compute_units = 1u;
     return 0;
 }
 
+/* ADR-1219: the TVI table, vlt_luma and the level band come from the shared
+ * CPU helper, never a re-derivation. */
+static int cambi_hip_contrast_tables(CambiStateHip *s)
+{
+    uint16_t diffs[CAMBI_HIP_MAX_DIFFS];
+    for (unsigned d = 0u; d < s->plan.num_diffs; d++)
+        diffs[d] = (uint16_t)(d + 1u);
+    uint16_t vlt_luma = 0u;
+    uint16_t v_band_base = 0u;
+    uint16_t v_band_size = 0u;
+    const int err = vmaf_cambi_init_tvi_and_vlt((int)s->plan.num_diffs, diffs, s->tvi_threshold,
+                                                s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
+                                                s->tvi, &vlt_luma, &v_band_base, &v_band_size);
+    s->plan.vlt_luma = vlt_luma;
+    s->plan.v_band_base = v_band_base;
+    s->plan.levels = v_band_size;
+    return err;
+}
+
+/* cambi.c::setup_contrast_and_luminance()'s guard, at the same point of init
+ * and through the same routine: the encode-resolution window and the
+ * source-resolution window (the full input, as cambi.c's default src_width /
+ * src_height), after the high-res speed-up, must satisfy window^2 < the
+ * reciprocal table size, so the largest accepted window is 65 x 65. */
+static int cambi_hip_check_window(const CambiStateHip *s)
+{
+    const CambiHipPlanInput *in = &s->plan;
+    const uint16_t src_window =
+        vmaf_cambi_adjust_window(s->window_size, in->src_width, in->src_height, in->speedup != 0u);
+    return vmaf_cambi_check_window_fits_lut((uint16_t)in->adjusted_window, src_window);
+}
+
+/* Host-only part of init: geometry, contrast tables and the window guard.
+ * Needs no device, so the scaffold build rejects what cambi.c rejects. */
+static int cambi_hip_configure(CambiStateHip *s, unsigned bpc, unsigned w, unsigned h)
+{
+    int err = cambi_hip_resolve_geometry(s, bpc, w, h);
+    if (!err)
+        err = cambi_hip_contrast_tables(s);
+    if (!err)
+        err = cambi_hip_check_window(s);
+    return err;
+}
+
 /* ------------------------------------------------------------------ */
-/* init_fex_hip                                                        */
+/* The parameter block (integer_cambi_hip.h), host only, every build.  */
 /* ------------------------------------------------------------------ */
+
+/* Row chunks for the c-values pass (ADR-1357): one work-item walks one column
+ * of one chunk, so enough chunks keep the device busy, at least
+ * CAMBI_HIP_MIN_CHUNK_ROWS rows each keep the per-chunk window priming a minor
+ * cost, and the column histograms stay within CAMBI_HIP_HIST_BUDGET. */
+static unsigned cambi_hip_cvals_chunks(unsigned width, unsigned height, unsigned levels,
+                                       unsigned compute_units)
+{
+    const unsigned target_items = compute_units * 512u;
+    unsigned chunks = (target_items + width - 1u) / width;
+    const size_t chunk_bytes = (size_t)width * levels * sizeof(uint16_t);
+    size_t by_memory = CAMBI_HIP_HIST_BUDGET / chunk_bytes;
+    if (by_memory < 1u)
+        by_memory = 1u;
+    unsigned max_chunks = height / CAMBI_HIP_MIN_CHUNK_ROWS;
+    if (max_chunks < 1u)
+        max_chunks = 1u;
+    if ((size_t)max_chunks > by_memory)
+        max_chunks = (unsigned)by_memory;
+    if (chunks < 1u)
+        chunks = 1u;
+    return chunks > max_chunks ? max_chunks : chunks;
+}
+
+/* Every scalar the kernels read. */
+static void cambi_hip_plan_scalars(CambiHipParams *p, const CambiHipPlanInput *in)
+{
+    p->src_width = in->src_width;
+    p->src_height = in->src_height;
+    p->src_bpc = in->src_bpc;
+    p->src_max = (1u << in->src_bpc) - 1u;
+    /* cambi.c::validate_image checks every depth but 8 and 16. */
+    p->validate = (in->src_bpc != 8u && in->src_bpc != 16u) ? 1u : 0u;
+    p->same_size = (in->proc_width == in->src_width && in->proc_height == in->src_height) ? 1u : 0u;
+    p->anti_dither = in->enc_bpc < 10u ? 1u : 0u;
+    p->proc_width = in->proc_width;
+    p->proc_height = in->proc_height;
+    p->mask_index = vmaf_cambi_mask_index(in->proc_width, in->proc_height);
+    p->pad = in->adjusted_window >> 1;
+    p->levels = in->levels;
+    p->num_diffs = in->num_diffs;
+    p->vlt_luma = in->vlt_luma;
+    p->v_band_base = in->v_band_base;
+    p->reserved = 0u;
+}
+
+/* Per-scale dimensions (cambi_score's scaled_width / scaled_height walk),
+ * c-values chunking and top-K counts (spatial_pooling's clip()). */
+void cambi_hip_plan(CambiHipParams *p, const CambiHipPlanInput *in)
+{
+    cambi_hip_plan_scalars(p, in);
+    unsigned width = in->proc_width;
+    unsigned height = in->proc_height;
+    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale) {
+        CambiHipScale *g = &p->scale[scale];
+        g->decimate_src_width = width;
+        g->decimate = (scale > 0u || in->speedup) ? 1u : 0u;
+        if (g->decimate) {
+            width = (width + 1u) >> 1;
+            height = (height + 1u) >> 1;
+        }
+        g->width = width;
+        g->height = height;
+        g->mask_shift = scale + in->speedup;
+        g->words = (width + 31u) / 32u;
+        g->chunks = cambi_hip_cvals_chunks(width, height, in->levels, in->compute_units);
+        g->chunk_rows = (height + g->chunks - 1u) / g->chunks;
+        g->chunks = (height + g->chunk_rows - 1u) / g->chunk_rows;
+        const unsigned n = width * height;
+        const int raw = (int)(in->topk * (double)(int)n);
+        g->topk = raw < 1 ? 1u : ((unsigned)raw > n ? n : (unsigned)raw);
+        const unsigned groups =
+            (n + CAMBI_HIP_POOL_ELEMS_PER_GROUP - 1u) / CAMBI_HIP_POOL_ELEMS_PER_GROUP;
+        g->pool_groups = groups > CAMBI_HIP_POOL_MAX_GROUPS ? CAMBI_HIP_POOL_MAX_GROUPS : groups;
+    }
+}
+
+void cambi_hip_plan_bind_scales(CambiHipParams *p, uint16_t *preproc, uint16_t *alt,
+                                uint16_t *filtered_h, unsigned speedup)
+{
+    const uint16_t *previous = preproc;
+    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale) {
+        CambiHipScale *g = &p->scale[scale];
+        g->image = ((scale + speedup) % 2u == 0u) ? preproc : alt;
+        g->filtered_h = filtered_h;
+        g->decimate_src = previous;
+        previous = g->image;
+    }
+}
+
+size_t cambi_hip_plan_hist_cells(const CambiHipParams *p)
+{
+    size_t most = 0u;
+    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale) {
+        const CambiHipScale *g = &p->scale[scale];
+        const size_t cells = (size_t)g->chunks * g->width;
+        most = cells > most ? cells : most;
+    }
+    return most * p->levels;
+}
+
+#ifdef HAVE_HIPCC
+
+/* ------------------------------------------------------------------ */
+/* Device arena: one allocation, carved at init.                       */
+/* ------------------------------------------------------------------ */
+
+/* Byte offsets of every buffer inside the arena. */
+typedef struct CambiHipArena {
+    size_t params;
+    size_t frame;
+    size_t src;
+    size_t preproc;
+    size_t alt;
+    size_t filtered_h;
+    size_t mask;
+    size_t q;
+    size_t runs;
+    size_t change;
+    size_t cvals;
+    size_t hist;
+    size_t lut;
+    size_t tvi;
+    size_t weights;
+    size_t ori_x;
+    size_t ori_y;
+    size_t total;
+} CambiHipArena;
+
+static size_t cambi_hip_arena_take(size_t *cursor, size_t bytes)
+{
+    const size_t offset = *cursor;
+    *cursor += (bytes + CAMBI_HIP_ARENA_ALIGN - 1u) / CAMBI_HIP_ARENA_ALIGN * CAMBI_HIP_ARENA_ALIGN;
+    return offset;
+}
+
+static CambiHipArena cambi_hip_arena_layout(const CambiStateHip *s)
+{
+    const CambiHipPlanInput *in = &s->plan;
+    const size_t pixels = (size_t)in->proc_width * in->proc_height;
+    const size_t half = (size_t)((in->proc_width + 1u) >> 1) * ((in->proc_height + 1u) >> 1);
+    const size_t mask_words = (size_t)in->proc_height * ((in->proc_width + 31u) / 32u);
+    const size_t hist_cells = cambi_hip_plan_hist_cells(&s->params);
+    unsigned lut_size = 0u;
+    (void)vmaf_cambi_reciprocal_lut(&lut_size);
+    size_t cursor = 0u;
+    CambiHipArena a;
+    a.params = cambi_hip_arena_take(&cursor, sizeof(CambiHipParams));
+    a.frame = cambi_hip_arena_take(&cursor, sizeof(CambiHipFrameState));
+    a.src = cambi_hip_arena_take(&cursor, s->src_bytes);
+    a.preproc = cambi_hip_arena_take(&cursor, pixels * sizeof(uint16_t));
+    a.alt = cambi_hip_arena_take(&cursor, half * sizeof(uint16_t));
+    a.filtered_h = cambi_hip_arena_take(&cursor, pixels * sizeof(uint16_t));
+    a.mask = cambi_hip_arena_take(&cursor, pixels * sizeof(uint16_t));
+    a.q = cambi_hip_arena_take(&cursor, pixels * sizeof(uint16_t));
+    a.runs = cambi_hip_arena_take(&cursor, mask_words * sizeof(uint32_t));
+    a.change = cambi_hip_arena_take(&cursor, mask_words * sizeof(uint32_t));
+    a.cvals = cambi_hip_arena_take(&cursor, pixels * sizeof(float));
+    a.hist = cambi_hip_arena_take(&cursor, hist_cells * sizeof(uint16_t));
+    a.lut = cambi_hip_arena_take(&cursor, (size_t)lut_size * sizeof(float));
+    a.tvi = cambi_hip_arena_take(&cursor, sizeof(s->tvi));
+    a.weights = cambi_hip_arena_take(&cursor, CAMBI_HIP_MAX_DIFFS * sizeof(int32_t));
+    a.ori_x = cambi_hip_arena_take(&cursor, (size_t)in->proc_width * sizeof(uint32_t));
+    a.ori_y = cambi_hip_arena_take(&cursor, (size_t)in->proc_height * sizeof(uint32_t));
+    a.total = cursor;
+    return a;
+}
+
+/* Point params at the arena at device address `base`. */
+static void cambi_hip_bind_params(CambiStateHip *s, unsigned char *base, const CambiHipArena *a)
+{
+    CambiHipParams *p = &s->params;
+    p->src = base + a->src;
+    p->preproc = (uint16_t *)(void *)(base + a->preproc);
+    p->mask = (uint16_t *)(void *)(base + a->mask);
+    p->q = (uint16_t *)(void *)(base + a->q);
+    p->runs = (uint32_t *)(void *)(base + a->runs);
+    p->change = (uint32_t *)(void *)(base + a->change);
+    p->cvals = (float *)(void *)(base + a->cvals);
+    p->hist = (uint16_t *)(void *)(base + a->hist);
+    p->lut = (const float *)(const void *)(base + a->lut);
+    p->tvi = (const uint16_t *)(const void *)(base + a->tvi);
+    p->weights = (const int32_t *)(const void *)(base + a->weights);
+    p->ori_x = p->same_size ? NULL : (const uint32_t *)(const void *)(base + a->ori_x);
+    p->ori_y = p->same_size ? NULL : (const uint32_t *)(const void *)(base + a->ori_y);
+    p->frame = (CambiHipFrameState *)(void *)(base + a->frame);
+    cambi_hip_plan_bind_scales(p, p->preproc, (uint16_t *)(void *)(base + a->alt),
+                               (uint16_t *)(void *)(base + a->filtered_h), s->plan.speedup);
+    s->d_params = (CambiHipParams *)(void *)(base + a->params);
+    s->d_frame = p->frame;
+    s->d_src = base + a->src;
+}
+
+/* ------------------------------------------------------------------ */
+/* Device setup and teardown.                                          */
+/* ------------------------------------------------------------------ */
+
+static int cambi_hip_module_load(CambiStateHip *s)
+{
+    hipError_t rc = hipModuleLoadData(&s->module, cambi_score_hsaco);
+    if (rc != hipSuccess) {
+        s->module = NULL;
+        return vmaf_hip_rc_to_errno(rc);
+    }
+    for (int k = 0; k < CAMBI_K_COUNT && rc == hipSuccess; ++k)
+        rc = hipModuleGetFunction(&s->kernels[k], s->module, cambi_hip_kernel_names[k]);
+    return vmaf_hip_rc_to_errno(rc);
+}
+
+static int cambi_hip_compute_units(unsigned *out)
+{
+    int device = 0;
+    int units = 0;
+    hipError_t rc = hipGetDevice(&device);
+    if (rc == hipSuccess)
+        rc = hipDeviceGetAttribute(&units, hipDeviceAttributeMultiprocessorCount, device);
+    *out = (rc == hipSuccess && units > 0) ? (unsigned)units : 1u;
+    return vmaf_hip_rc_to_errno(rc);
+}
+
+/* Upload cambi.c's resize index tables (only when the encode is resized). */
+static hipError_t cambi_hip_upload_resize(const CambiStateHip *s)
+{
+    const CambiHipPlanInput *in = &s->plan;
+    uint32_t *ori_x = malloc(sizeof(uint32_t) * in->proc_width);
+    uint32_t *ori_y = malloc(sizeof(uint32_t) * in->proc_height);
+    hipError_t rc = (ori_x && ori_y) ? hipSuccess : hipErrorOutOfMemory;
+    if (rc == hipSuccess) {
+        vmaf_cambi_resize_source_indices(in->src_width, in->proc_width, ori_x);
+        vmaf_cambi_resize_source_indices(in->src_height, in->proc_height, ori_y);
+        rc = hipMemcpy((void *)s->params.ori_x, ori_x, sizeof(uint32_t) * in->proc_width,
+                       hipMemcpyHostToDevice);
+    }
+    if (rc == hipSuccess)
+        rc = hipMemcpy((void *)s->params.ori_y, ori_y, sizeof(uint32_t) * in->proc_height,
+                       hipMemcpyHostToDevice);
+    free(ori_x);
+    free(ori_y);
+    return rc;
+}
+
+/* The constant tables and the parameter block, once, at init. */
+static int cambi_hip_upload_tables(CambiStateHip *s)
+{
+    unsigned lut_size = 0u;
+    const float *lut = vmaf_cambi_reciprocal_lut(&lut_size);
+    const CambiHipParams *p = &s->params;
+    hipError_t rc = hipMemcpy((void *)p->lut, lut, sizeof(float) * lut_size, hipMemcpyHostToDevice);
+    if (rc == hipSuccess)
+        rc = hipMemcpy((void *)p->tvi, s->tvi, sizeof(s->tvi), hipMemcpyHostToDevice);
+    if (rc == hipSuccess)
+        rc = hipMemcpy((void *)p->weights, vmaf_cambi_contrast_weights(NULL),
+                       sizeof(int32_t) * s->plan.num_diffs, hipMemcpyHostToDevice);
+    if (rc == hipSuccess && !p->same_size)
+        rc = cambi_hip_upload_resize(s);
+    if (rc == hipSuccess)
+        rc = hipMemcpy(s->d_params, p, sizeof(*p), hipMemcpyHostToDevice);
+    return vmaf_hip_rc_to_errno(rc);
+}
+
+/* The device arena and the pinned staging and results blocks. */
+static int cambi_hip_alloc(CambiStateHip *s)
+{
+    const CambiHipPlanInput *in = &s->plan;
+    s->src_bytes = (size_t)in->src_width * in->src_height * (in->src_bpc <= 8u ? 1u : 2u);
+    const CambiHipArena a = cambi_hip_arena_layout(s);
+    hipError_t rc = hipMalloc(&s->d_arena, a.total);
+    if (rc != hipSuccess) {
+        s->d_arena = NULL;
+        return vmaf_hip_rc_to_errno(rc);
+    }
+    const int err = vmaf_hip_picture_staging_alloc(&s->h_staging, s->src_bytes);
+    if (err) {
+        s->h_staging = NULL;
+        return err;
+    }
+    rc = hipHostMalloc((void **)&s->h_results, sizeof(CambiHipResults), hipHostMallocDefault);
+    if (rc != hipSuccess) {
+        s->h_results = NULL;
+        return vmaf_hip_rc_to_errno(rc);
+    }
+    cambi_hip_bind_params(s, (unsigned char *)s->d_arena, &a);
+    return cambi_hip_upload_tables(s);
+}
+
+/* Release every device resource init acquired, whichever step failed: the
+ * stream is drained and destroyed first, so no queued copy or kernel still
+ * uses the memory freed after it. Safe on a partial init and on close. */
+static int cambi_hip_release(CambiStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    vmaf_hip_picture_staging_free(s->h_staging);
+    s->h_staging = NULL;
+    if (s->h_results) {
+        (void)hipHostFree(s->h_results);
+        s->h_results = NULL;
+    }
+    if (s->d_arena) {
+        (void)hipFree(s->d_arena);
+        s->d_arena = NULL;
+    }
+    if (s->module) {
+        const int err = vmaf_hip_rc_to_errno(hipModuleUnload(s->module));
+        s->module = NULL;
+        rc = rc ? rc : err;
+    }
+    if (s->ctx) {
+        vmaf_hip_context_destroy(s->ctx);
+        s->ctx = NULL;
+    }
+    return rc;
+}
+
+static int cambi_hip_setup_device(CambiStateHip *s)
+{
+    int err = vmaf_hip_context_new(&s->ctx, 0);
+    if (!err)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (!err)
+        err = cambi_hip_module_load(s);
+    if (!err)
+        err = cambi_hip_compute_units(&s->plan.compute_units);
+    if (!err) {
+        cambi_hip_plan(&s->params, &s->plan);
+        err = cambi_hip_alloc(s);
+    }
+    return err;
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-frame enqueue: no host wait anywhere below.                     */
+/* ------------------------------------------------------------------ */
+
+static int cambi_hip_launch(CambiStateHip *s, int kernel, unsigned gx, unsigned gy, unsigned bx,
+                            unsigned by, int scale, int pass)
+{
+    void *args[] = {&s->d_params, &scale, &pass};
+    const hipError_t rc = hipModuleLaunchKernel(s->kernels[kernel], gx, gy, 1u, bx, by, 1u, 0u,
+                                                vmaf_hip_stream_of(s->lc.str), args, NULL);
+    return vmaf_hip_rc_to_errno(rc);
+}
+
+/* A CAMBI_HIP_TILE x CAMBI_HIP_TILE work-group per tile of a w x h image. */
+static int cambi_hip_launch_image(CambiStateHip *s, int kernel, unsigned w, unsigned h, int scale)
+{
+    const unsigned gx = (w + CAMBI_HIP_TILE - 1u) / CAMBI_HIP_TILE;
+    const unsigned gy = (h + CAMBI_HIP_TILE - 1u) / CAMBI_HIP_TILE;
+    return cambi_hip_launch(s, kernel, gx, gy, CAMBI_HIP_TILE, CAMBI_HIP_TILE, scale, 0);
+}
+
+/* Radix scan 0 (pass 0 was counted by the c-values kernel), passes 1 and 2,
+ * the partial sums above the threshold and the exact per-scale total. The
+ * kernels return at once on the device when the threshold resolved to 0. */
+static int cambi_hip_enqueue_pool(CambiStateHip *s, int scale)
+{
+    const unsigned groups = s->params.scale[scale].pool_groups;
+    int err = cambi_hip_launch(s, CAMBI_K_RADIX_SCAN, 1u, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale, 0);
+    for (int pass = 1; pass < CAMBI_HIP_RADIX_PASSES && !err; ++pass) {
+        err = cambi_hip_launch(s, CAMBI_K_RADIX_HIST, groups, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale,
+                               pass);
+        if (!err)
+            err = cambi_hip_launch(s, CAMBI_K_RADIX_SCAN, 1u, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale,
+                                   pass);
+    }
+    if (!err)
+        err = cambi_hip_launch(s, CAMBI_K_TOPK_SUM, groups, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale, 0);
+    if (!err)
+        err = cambi_hip_launch(s, CAMBI_K_TOPK_FINAL, 1u, 1u, 1u, 1u, scale, 0);
+    return err;
+}
+
+/* cambi_score's per-scale body: decimate, filter_mode, calculate_c_values,
+ * spatial_pooling. */
+static int cambi_hip_enqueue_scale(CambiStateHip *s, int scale)
+{
+    const CambiHipScale *g = &s->params.scale[scale];
+    int err = 0;
+    if (g->decimate)
+        err = cambi_hip_launch_image(s, CAMBI_K_DECIMATE, g->width, g->height, scale);
+    if (!err)
+        err = cambi_hip_launch_image(s, CAMBI_K_FILTER_H, g->width, g->height, scale);
+    if (!err)
+        err = cambi_hip_launch_image(s, CAMBI_K_FILTER_V, g->width, g->height, scale);
+    if (!err) {
+        const unsigned rows = (g->height + CAMBI_HIP_ROWMASK_ROWS - 1u) / CAMBI_HIP_ROWMASK_ROWS;
+        err = cambi_hip_launch(s, CAMBI_K_ROW_MASKS, g->words, rows, 32u, CAMBI_HIP_ROWMASK_ROWS,
+                               scale, 0);
+    }
+    if (!err) {
+        const unsigned columns = (g->width + CAMBI_HIP_CVALS_BLOCK - 1u) / CAMBI_HIP_CVALS_BLOCK;
+        err = cambi_hip_launch(s, CAMBI_K_CVALS, columns, g->chunks, CAMBI_HIP_CVALS_BLOCK, 1u,
+                               scale, 0);
+    }
+    if (!err)
+        err = cambi_hip_enqueue_pool(s, scale);
+    return err;
+}
+
+/* The whole frame: the staged upload, reset, preprocessing, mask, five
+ * scales, one readback. The host copy into staging has read the picture
+ * before this returns, so the caller may refill it at once
+ * (core/src/feature/hip/AGENTS.md, "Picture uploads"). */
+static int cambi_hip_enqueue_frame(CambiStateHip *s, const VmafPicture *dist)
+{
+    const CambiHipPlanInput *in = &s->plan;
+    if (!dist || dist->w[0] < in->src_width || dist->h[0] < in->src_height)
+        return -EINVAL;
+    const size_t row_bytes = (size_t)in->src_width * (in->src_bpc <= 8u ? 1u : 2u);
+    const VmafHipPlaneUpload plane = {.dst = s->d_src,
+                                      .dst_pitch = row_bytes,
+                                      .pic = dist,
+                                      .plane = 0u,
+                                      .row_bytes = row_bytes,
+                                      .rows = in->src_height};
+    const hipStream_t stream = vmaf_hip_stream_of(s->lc.str);
+    int err = vmaf_hip_picture_upload_staged(&plane, 1u, s->h_staging, s->src_bytes, s->lc.str);
+    if (!err)
+        err =
+            vmaf_hip_rc_to_errno(hipMemsetAsync(s->d_frame, 0, sizeof(CambiHipFrameState), stream));
+    if (!err && s->params.validate)
+        err = cambi_hip_launch_image(s, CAMBI_K_VALIDATE, in->src_width, in->src_height, 0);
+    if (!err)
+        err = cambi_hip_launch_image(s, CAMBI_K_PREPROCESS, in->proc_width, in->proc_height, 0);
+    if (!err)
+        err = cambi_hip_launch_image(s, CAMBI_K_MASK, in->proc_width, in->proc_height, 0);
+    for (int scale = 0; scale < CAMBI_HIP_NUM_SCALES && !err; ++scale)
+        err = cambi_hip_enqueue_scale(s, scale);
+    if (!err)
+        err = vmaf_hip_rc_to_errno(hipMemcpyAsync(s->h_results, &s->d_frame->results,
+                                                  sizeof(CambiHipResults), hipMemcpyDeviceToHost,
+                                                  stream));
+    return err;
+}
+
+#endif /* HAVE_HIPCC */
+
+/* ------------------------------------------------------------------ */
+/* Extractor callbacks.                                                */
+/* ------------------------------------------------------------------ */
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
@@ -683,212 +855,22 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (!s->feature_name_dict)
         return -ENOMEM;
 
-    int geom_err = cambi_hip_resolve_geometry(s, bpc, w, h);
-    if (geom_err != 0)
-        return geom_err;
-
+    int err = cambi_hip_configure(s, bpc, w, h);
 #ifndef HAVE_HIPCC
-    (void)s;
-    return -ENOSYS;
+    /* Scaffold posture: no device kernels. The host checks above still run,
+     * so a configuration cambi.c rejects is rejected here with its code. */
+    if (!err)
+        err = -ENOSYS;
 #else
-    int err = vmaf_hip_context_new(&s->ctx, 0);
+    if (!err)
+        err = cambi_hip_setup_device(s);
     if (err)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err)
-        return cambi_init_unwind_ctx(s, err);
-
-    /* Pinned readback: one double for the pre-computed score. */
-    err = vmaf_hip_kernel_readback_alloc(&s->rb_score, s->ctx, sizeof(double));
-    if (err)
-        return cambi_init_unwind_lc(s, err);
-
-    /* Load HSACO and resolve kernel functions. */
-    err = cambi_hip_module_load(s);
-    if (err)
-        return cambi_init_unwind_rb(s, err);
-
-    err = cambi_hip_alloc_device(s);
-    if (err)
-        return cambi_init_unwind_module(s, err);
-
-    err = cambi_hip_alloc_host_scratch(s);
-    if (err)
-        return cambi_init_unwind_module(s, err);
-
-    vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
-                                 &s->derivative_callback);
-
-    return 0;
+        (void)cambi_hip_release(s);
 #endif /* HAVE_HIPCC */
-}
-
-/* ------------------------------------------------------------------ */
-/* submit_fex_hip                                                      */
-/* ------------------------------------------------------------------ */
-#ifdef HAVE_HIPCC
-/* One decimation step: halves the image and the mask through the GPU decimate
- * kernel, swapping the scratch buffer in. Extracted from submit_fex_hip() for
- * HISS-04; the pointer swap order is unchanged. */
-static int cambi_hip_decimate_step(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t *d_img,
-                                   hipDeviceptr_t *d_msk, hipDeviceptr_t *d_tmp, unsigned *scaled_w,
-                                   unsigned *scaled_h)
-{
-    const unsigned new_w = (*scaled_w + 1u) >> 1;
-    const unsigned new_h = (*scaled_h + 1u) >> 1;
-
-    /* GPU decimate d_img → d_tmp. */
-    int err = dispatch_decimate_hip(s, stream, *d_img, *d_tmp, new_w, new_h, *scaled_w, new_w);
     if (err)
-        return err;
-    hipDeviceptr_t t = *d_img;
-    *d_img = *d_tmp;
-    *d_tmp = t;
-
-    /* GPU decimate d_msk → d_tmp. */
-    err = dispatch_decimate_hip(s, stream, *d_msk, *d_tmp, new_w, new_h, *scaled_w, new_w);
-    if (err)
-        return err;
-    t = *d_msk;
-    *d_msk = *d_tmp;
-    *d_tmp = t;
-
-    *scaled_w = new_w;
-    *scaled_h = new_h;
-    return 0;
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    return err;
 }
-
-/* The two strided device-to-host copies plus the single stall that waits for
- * both. Lifted out of cambi_hip_scale_pass() for HISS-04. */
-static int cambi_hip_readback_scale(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t d_img,
-                                    hipDeviceptr_t d_msk, unsigned scaled_w, unsigned scaled_h)
-{
-    /* DtoH: d_img / d_msk → pics[0] / pics[1].
- *
- * Two strided 2D copies enqueued on the stream, then one stall that
- * waits for both. This used to stall first and then issue two BLOCKING
- * copies per row — at 1080p, thousands of driver round trips a frame.
- * The CUDA twin carried the identical defect and it cost 0.60 s of a
- * 1.03 s run there; fixed here by inspection of that measurement, since
- * this machine has no AMD device. */
-    const size_t scaled_row_bytes = scaled_w * sizeof(uint16_t);
-    hipError_t hip_rc =
-        hipMemcpy2DAsync(s->pics[0].data[0], (size_t)s->pics[0].stride[0], d_img, scaled_row_bytes,
-                         scaled_row_bytes, scaled_h, hipMemcpyDeviceToHost, stream);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc =
-        hipMemcpy2DAsync(s->pics[1].data[0], (size_t)s->pics[1].stride[0], d_msk, scaled_row_bytes,
-                         scaled_row_bytes, scaled_h, hipMemcpyDeviceToHost, stream);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc = hipStreamSynchronize(stream);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    return 0;
-}
-
-/* One scale of the CAMBI pipeline: optional decimation, the two filter-mode
- * passes, the readback and the CPU residual. Every kernel dispatch keeps its
- * original order, and the spatial pooling that produces the scale score is
- * copied as a single unsplit expression. */
-static int cambi_hip_scale_pass(CambiStateHip *s, hipStream_t stream, int scale,
-                                hipDeviceptr_t *d_img_io, hipDeviceptr_t *d_msk_io,
-                                hipDeviceptr_t *d_tmp_io, unsigned *scaled_w_io,
-                                unsigned *scaled_h_io, int num_diffs, double topk,
-                                double *score_out)
-{
-    if (scale > 0) {
-        const int derr = cambi_hip_decimate_step(s, stream, d_img_io, d_msk_io, d_tmp_io,
-                                                 scaled_w_io, scaled_h_io);
-        if (derr)
-            return derr;
-    }
-
-    hipDeviceptr_t d_img = *d_img_io;
-    hipDeviceptr_t d_msk = *d_msk_io;
-    hipDeviceptr_t d_tmp = *d_tmp_io;
-    const unsigned scaled_w = *scaled_w_io;
-    const unsigned scaled_h = *scaled_h_io;
-    int err = 0;
-
-    /* GPU filter_mode H: d_img → d_tmp. */
-    err = dispatch_filter_mode_hip(s, stream, d_img, d_tmp, scaled_w, scaled_h, scaled_w, 0);
-    if (err)
-        return err;
-    /* GPU filter_mode V: d_tmp → d_img. */
-    err = dispatch_filter_mode_hip(s, stream, d_tmp, d_img, scaled_w, scaled_h, scaled_w, 1);
-    if (err)
-        return err;
-
-    err = cambi_hip_readback_scale(s, stream, d_img, d_msk, scaled_w, scaled_h);
-    if (err)
-        return err;
-
-    /* CPU residual: calculate_c_values + spatial pooling. */
-    vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
-                                  s->buffers.c_values_histograms, s->adjusted_window,
-                                  (uint16_t)num_diffs, s->buffers.tvi_for_diff, s->vlt_luma,
-                                  s->buffers.diff_weights, s->buffers.all_diffs, (int)scaled_w,
-                                  (int)scaled_h, s->inc_range_callback, s->dec_range_callback);
-
-    *score_out = vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scaled_w, scaled_h);
-
-    *d_img_io = d_img;
-    *d_msk_io = d_msk;
-    *d_tmp_io = d_tmp;
-    return 0;
-}
-
-/* Host-side upload of the preprocessed picture plus the full-scale GPU mask. */
-static int cambi_hip_upload_and_mask(CambiStateHip *s, hipStream_t stream)
-{
-    /* HtoD upload pics[0].data[0] → d_image.
-     *
-     * One strided 2D copy, not one call per row: the host picture's stride and
-     * the packed device buffer's differ, which is what the pitch arguments are
-     * for. Mirrors the CUDA twin. */
-    const size_t row_bytes = s->proc_width * sizeof(uint16_t);
-    {
-        hipError_t hip_rc = hipMemcpy2DAsync(s->d_image, row_bytes, s->pics[0].data[0],
-                                             (size_t)s->pics[0].stride[0], row_bytes,
-                                             s->proc_height, hipMemcpyHostToDevice, stream);
-        if (hip_rc != hipSuccess)
-            return hip_err(hip_rc);
-    }
-
-    /* GPU spatial mask at full scale. */
-    const unsigned mask_index_0 = (unsigned)cambi_hip_get_mask_index(s->proc_width, s->proc_height,
-                                                                     CAMBI_HIP_MASK_FILTER_SIZE);
-    const int err =
-        dispatch_mask_hip(s, stream, s->proc_width, s->proc_height, s->proc_width, mask_index_0);
-    if (err)
-        return err;
-    return 0;
-}
-
-#endif /* HAVE_HIPCC */
-
-#ifdef HAVE_HIPCC
-/* Weights the per-scale scores into the frame score, clamps it and stashes it
- * in the pinned readback buffer for collect(). The weighting call and both
- * clamps are copied verbatim, so the emitted value is unchanged. */
-static void cambi_hip_finalize_score(CambiStateHip *s,
-                                     const double scores_per_scale[CAMBI_HIP_NUM_SCALES])
-{
-    const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
-    double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, pixels_in_window);
-    if (score > s->cambi_max_val)
-        score = s->cambi_max_val;
-    if (score < 0.0)
-        score = 0.0;
-
-    /* Stash score in the pinned readback buffer for collect(). */
-    *(double *)s->rb_score.host_pinned = score;
-}
-
-#endif /* HAVE_HIPCC */
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -896,63 +878,22 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
-
+    (void)index;
 #ifndef HAVE_HIPCC
     (void)fex;
     (void)dist_pic;
-    (void)index;
     return -ENOSYS;
 #else
     CambiStateHip *s = fex->priv;
-    s->index = index;
-
-    /* Host preprocessing: decimate/upcast dist_pic → pics[0] (10-bit). */
-    int err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
-                                       (int)s->proc_height, s->enc_bitdepth);
-    if (err)
-        return err;
-
-    const hipStream_t stream = (hipStream_t)s->lc.str;
-
-    err = cambi_hip_upload_and_mask(s, stream);
-    if (err)
-        return err;
-
-    /* Per-scale GPU pipeline + CPU residual. */
-    unsigned scaled_w = s->proc_width;
-    unsigned scaled_h = s->proc_height;
-    const int num_diffs = 1 << s->max_log_contrast;
-    double scores_per_scale[CAMBI_HIP_NUM_SCALES] = {0.0, 0.0, 0.0, 0.0, 0.0};
-    const double topk = (s->topk != CAMBI_HIP_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
-
-    /* Track d_image / d_mask as locals to allow swapping across scales. */
-    hipDeviceptr_t d_img = s->d_image;
-    hipDeviceptr_t d_msk = s->d_mask;
-    hipDeviceptr_t d_tmp = s->d_tmp;
-
-    for (int scale = 0; scale < CAMBI_HIP_NUM_SCALES; scale++) {
-        err = cambi_hip_scale_pass(s, stream, scale, &d_img, &d_msk, &d_tmp, &scaled_w, &scaled_h,
-                                   num_diffs, topk, &scores_per_scale[scale]);
-        if (err)
-            return err;
-    }
-
-    cambi_hip_finalize_score(s, scores_per_scale);
-
-    /* Record submit event on stream so collect() can wait. */
-    hipError_t hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, stream);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc = hipStreamWaitEvent(stream, (hipEvent_t)s->lc.submit, 0u);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+    int err = cambi_hip_enqueue_frame(s, dist_pic);
+    if (!err)
+        err = vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+    return err;
 #endif /* HAVE_HIPCC */
 }
 
-/* ------------------------------------------------------------------ */
-/* collect_fex_hip — emit the pre-computed score. */
-/* ------------------------------------------------------------------ */
+/* The one wait of the frame, then cambi.c's pooling mean and scale
+ * weighting on five exact sums. */
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
 {
@@ -963,66 +904,42 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     return -ENOSYS;
 #else
     CambiStateHip *s = fex->priv;
-
-    int err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
+    const int err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
     if (err)
         return err;
-
-    const double score = *(double *)s->rb_score.host_pinned;
+    const CambiHipResults *r = s->h_results;
+    if (r->status & CAMBI_HIP_STATUS_INVALID_INPUT) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "cambi_hip: frame %u holds samples above the %u-bit maximum\n", index,
+                 s->plan.src_bpc);
+        return -EINVAL;
+    }
+    double scores[CAMBI_HIP_NUM_SCALES];
+    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale)
+        scores[scale] = vmaf_cambi_fixed_topk_mean(r->sum_hi[scale], r->sum_lo[scale],
+                                                   s->params.scale[scale].topk);
+    const uint16_t pixels = vmaf_cambi_get_pixels_in_window((uint16_t)s->plan.adjusted_window);
+    double score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
+    if (score > s->cambi_max_val)
+        score = s->cambi_max_val;
+    if (score < 0.0)
+        score = 0.0;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Cambi_feature_cambi_score", score, index);
 #endif /* HAVE_HIPCC */
 }
 
-/* ------------------------------------------------------------------ */
-/* close_fex_hip */
-/* ------------------------------------------------------------------ */
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
     CambiStateHip *s = fex->priv;
     int rc = 0;
-
 #ifdef HAVE_HIPCC
-    if (s->module) {
-        int e = hip_err(hipModuleUnload(s->module));
-        s->module = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    cambi_hip_free_device_buffers(s);
-
-    int e = vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
-    if (rc == 0)
-        rc = e;
-    e = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (rc == 0)
-        rc = e;
+    rc = cambi_hip_release(s);
 #endif /* HAVE_HIPCC */
-
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-
     if (s->feature_name_dict) {
-        int e = vmaf_dictionary_free(&s->feature_name_dict);
-        if (rc == 0)
-            rc = e;
+        const int e = vmaf_dictionary_free(&s->feature_name_dict);
+        rc = rc ? rc : e;
     }
-#ifdef HAVE_HIPCC
-    if (s->ctx) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-#endif /* HAVE_HIPCC */
     return rc;
 }
 
@@ -1043,12 +960,17 @@ VmafFeatureExtractor vmaf_fex_cambi_hip = {
     .priv_size = sizeof(CambiStateHip),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
+    /* Device-resident (ADR-1378): about 64 launches per frame on one stream
+     * -- upload, reset, validate, preprocess, mask, and per scale decimate,
+     * filter, masks, c-values and seven top-K pooling kernels -- and one
+     * readback; no host stage remains, so frames overlap through the normal
+     * submit / collect double buffering. */
     .chars =
         {
-            .n_dispatches_per_frame = 15, /* 5 scales × 3 kernels */
+            .n_dispatches_per_frame = 64,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
-            .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
+            .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
 
