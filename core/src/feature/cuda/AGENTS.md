@@ -11,9 +11,10 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 `float_ssim_cuda.c` removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,
 2026-05-18). Defined `vmaf_fex_float_ssim_cuda` but not listed in
 `core/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
-defines same symbol and = current canonical TU. No `enable_chroma` any more
-(ADR-1373: CPU `float_ssim` has none; kernel read luma only). Do not re-add
-`float_ssim_cuda.c` without consulting ADR-0546.
+defines same symbol and = current canonical TU. `enable_chroma` stays as
+accepted, ignored option (ADR-1373, HISS-14: was public; CPU `float_ssim` has
+none; kernel reads luma only). Do not re-add `float_ssim_cuda.c` without
+consulting ADR-0546.
 
 ## Scope
 
@@ -531,19 +532,29 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   arithmetic = CPU helper, never copy: `psnr_score.h`
   (`vmaf_psnr_peak/max/from_mse/aggregate`, plus `flush` for `apsnr_*`),
   `vmaf_ssim_max_db()` + `nonfinite_score.h` emitters, `motion_clip()`.
-  `test_twin_options_are_cpu_options` rejects twin-only keys (old
-  `float_ssim_cuda` `enable_chroma`).
-- **`ssim_score.cu` keeps `__fmul_rn` on three SSIM products** + `num ==
-  den` exact-1 return. NVCC default FMA contraction fused variances +
-  denominator mean-square sum, covariance kept its FMUL: identical windows
-  missed 1, `enable_db` gave finite dB, not CPU `+inf`. Both pass-2 kernels
-  share `ssim_from_moments()`.
+  `test_twin_options_are_cpu_options` rejects twin-only keys; sole
+  exception `float_ssim_cuda` `enable_chroma` (accepted no-op, HISS-14,
+  warns when set). Never remove it without `!` + `Migration:`.
+- **`psnr_cuda`: every plane accumulator zeroed on picture stream** (the
+  kernels' stream; memset on `lc.str` races the atomic adds,
+  `kernel_template.h`). **`psnr_cuda` is TEMPORAL** like CPU `psnr`: else
+  `--subsample N` feeds 1 frame in N into `apsnr_*`.
+- **`motion_v2_cuda` publishes CPU SAD score** `MIN(sad * mfw, mmxv)` in
+  collect; flush derives `motion2_v2` / `motion3_v2` from stored values,
+  NO re-weighting, one-frame input -> 0 / 0 (`n_frames == 0` early out
+  only). Mirrors `integer_motion_v2.c::extract` / `flush`.
+- **`ssim_score.cu::ssim_terms()` = CPU `l * c * s`, operand for operand**
+  (`iqa/ssim_tools.c::ssim_variance_scalar` + `iqa/ssim_accumulate_lane.h`):
+  double numerators over fp32 denominators, fp32 `s`, double product, each
+  rounding an intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Double
+  block partials; host rounds frame means to fp32 (`float_ssim_frame_mean`).
+  NEVER force identical windows to 1: CPU flat identical frames = 72.247 dB,
+  not `+inf` (#1637 review). Both pass-2 kernels share `ssim_terms()`.
 - **`integer_ssim_score` builds with `--fmad=false`** (`cuda_cu_extra_flags`,
-  as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373): combine = CPU
-  `ssim_reduce_row_range` expression operand for operand. Default
-  contraction fused `c1`'s last `* w` into denominator only (numerator adds
-  rounded `c1`), plus `c2`, `y2 * w`: identical window exact 1 by luck, not
-  construction. `test_cuda_kernel_source_contract.py` pins the flag.
+  as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:
+  `w_d * a * b / den` = `((w * a) * b) / den`. Per-pixel terms = CPU bit for
+  bit; frame sum order differs (warp / block / host vs CPU row-major) -> no
+  bit-exact claim. `test_cuda_kernel_source_contract.py` pins flag + grouping.
 - **Integer ADM DWT row / tap arithmetic in
   `integer_adm/adm_dwt2_rows.h`** (ADR-1374): `adm_dwt2_load_column()`
   reads `adm_dwt2_source_row()` (clamped), `calculate_indices()` reads

@@ -25,10 +25,20 @@
  *  Options: the CPU float_ssim.c table (ADR-1373, following ADR-1365 for
  *  SYCL). `enable_db` / `clip_db` act on the host through the
  *  nonfinite_score.h emitters the CPU extractor uses; `enable_lcs` selects
- *  the pass-2 kernel that also reduces the per-pixel L, C and S terms. The
- *  kernel scores identical windows exactly 1, so identical frames report the
- *  CPU's +inf / clip_db ceiling. The former `enable_chroma` option was a
- *  no-op the CPU extractor does not have and is gone.
+ *  the pass-2 kernel that also reduces the per-pixel L, C and S terms.
+ *
+ *  Arithmetic: the kernel computes each pixel's l * c * s with the CPU's
+ *  types and rounding points (double numerators over fp32 denominators,
+ *  ssim_score.cu::ssim_terms()), the partials are doubles, and the frame
+ *  means are rounded to fp32 as iqa_ssim() returns them. That is what makes
+ *  `enable_db` agree with the CPU on identical frames: +inf where the CPU's
+ *  mean rounds to 1, and the CPU's finite value where it does not (72.247 dB
+ *  on identical flat frames).
+ *
+ *  `enable_chroma` is accepted and ignored: the CPU float_ssim has no such
+ *  option and this twin always scored luma only, but the option was public
+ *  on this twin, so it stays for command-line compatibility (HISS-14) and
+ *  logs that it has no effect.
  */
 
 #include <errno.h>
@@ -65,12 +75,12 @@ typedef struct SsimStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
     VmafCudaKernelLifecycle lc;
-    /* Per-block float partials: device + pinned host. Owned by the
+    /* Per-block double partials: device + pinned host. Owned by the
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
     /* `enable_lcs` only: per-block L, C and S partials, three rows of
-     * partials_capacity floats, device + pinned host. */
+     * partials_capacity doubles, device + pinned host. */
     VmafCudaKernelReadback rb_lcs;
 
     CUfunction func_horiz_8;
@@ -78,6 +88,9 @@ typedef struct SsimStateCuda {
     CUfunction func_vert;
     CUfunction func_vert_lcs;
     int scale_override;
+    /* Accepted and ignored (luma only, as the CPU float_ssim); see the file
+     * comment. */
+    bool enable_chroma;
     /* CPU float_ssim.c options (ADR-1373). `max_db` is vmaf_ssim_max_db()
      * of `clip_db` and the frame geometry. */
     bool enable_lcs;
@@ -175,6 +188,15 @@ static const VmafOption options[] = {
         .min = 0,
         .max = 10,
     },
+    {
+        /* Not a CPU option: float_ssim is luma only on every backend. Kept
+         * because it was public on this twin (HISS-14); it changes nothing. */
+        .name = "enable_chroma",
+        .help = "ignored: float_ssim is luma only (accepted for compatibility)",
+        .offset = offsetof(SsimStateCuda, enable_chroma),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {0},
 };
 
@@ -252,7 +274,7 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
     s->partials_capacity = grid_x * grid_y;
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(float);
+    const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(double);
 
     int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
     if (ret)
@@ -293,6 +315,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)pix_fmt; /* luma only, like the CPU float_ssim */
     SsimStateCuda *s = fex->priv;
+
+    if (s->enable_chroma) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ssim_cuda: enable_chroma is ignored; float_ssim scores luma only\n");
+    }
 
     int scale = compute_scale(w, h, s->scale_override);
     if (scale != 1) {
@@ -474,41 +501,52 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
     CHECK_CUDA_RETURN(cu_f,
                       cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                        (size_t)s->partials_count * sizeof(float), s->lc.str));
+                                        (size_t)s->partials_count * sizeof(double), s->lc.str));
     if (s->enable_lcs) {
         CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb_lcs.host_pinned, s->rb_lcs.device->data,
-                                                  3u * (size_t)s->partials_count * sizeof(float),
+                                                  3u * (size_t)s->partials_count * sizeof(double),
                                                   s->lc.str));
     }
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
-static double sum_partials(const float *partials, unsigned count)
+static double sum_partials(const double *partials, unsigned count)
 {
     double total = 0.0;
     for (unsigned i = 0; i < count; i++)
-        total += (double)partials[i];
+        total += partials[i];
     return total;
+}
+
+/* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
+ * `(float)(sum / (double)(w * h))`; the twin rounds the same way, so a frame
+ * whose mean rounds to 1 scores exactly 1 and one just below keeps the
+ * CPU's finite dB value (as SYCL does, ADR-1370). */
+static int float_ssim_frame_mean(const char *feature, double sum, double n_pixels, unsigned index,
+                                 double *mean)
+{
+    const int err =
+        vmaf_feature_finite_ratio_named("float_ssim_cuda", feature, sum, n_pixels, index, mean);
+    if (!err)
+        *mean = (double)(float)*mean;
+    return err;
 }
 
 /* enable_lcs: the three per-block L / C / S partial rows become the frame
  * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
  * order after the shared SSIM validation (ADR-1302). */
-static int emit_float_ssim_lcs(const SsimStateCuda *s, double total, double n_pixels,
+static int emit_float_ssim_lcs(const SsimStateCuda *s, double score, double n_pixels,
                                unsigned index, VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
-    const float *lcs_partials = s->rb_lcs.host_pinned;
-    double score = 0.0;
-    int err = vmaf_feature_finite_ratio_named("float_ssim_cuda", "float_ssim", total, n_pixels,
-                                              index, &score);
+    const double *lcs_partials = s->rb_lcs.host_pinned;
+    int err = 0;
     VmafNamedScore atoms[3];
     for (unsigned k = 0; k < 3u && !err; k++) {
         const double sum =
             sum_partials(lcs_partials + ((size_t)k * s->partials_count), s->partials_count);
         atoms[k].name = atom_names[k];
-        err = vmaf_feature_finite_ratio_named("float_ssim_cuda", atom_names[k], sum, n_pixels,
-                                              index, &atoms[k].value);
+        err = float_ssim_frame_mean(atom_names[k], sum, n_pixels, index, &atoms[k].value);
     }
     if (err)
         return err;
@@ -526,16 +564,20 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (sync_err)
         return sync_err;
 
-    /* Per-block float partials -> host double sum -> mean SSIM over
-     * (W-10)·(H-10) pixels, the ciede_cuda precision pattern. */
+    /* Per-block double partials -> host double sum -> mean SSIM over
+     * (W-10)·(H-10) pixels, rounded to fp32 like the CPU. */
     const double total = sum_partials(s->rb.host_pinned, s->partials_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
+    double score = 0.0;
+    const int err = float_ssim_frame_mean("float_ssim", total, n_pixels, index, &score);
+    if (err)
+        return err;
     if (!s->enable_lcs) {
-        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                                "float_ssim_cuda", "float_ssim", total, n_pixels,
-                                                s->enable_db, s->max_db, index);
+        return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
+                                          "float_ssim_cuda", "float_ssim", score, s->enable_db,
+                                          s->max_db, index);
     }
-    return emit_float_ssim_lcs(s, total, n_pixels, index, feature_collector);
+    return emit_float_ssim_lcs(s, score, n_pixels, index, feature_collector);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

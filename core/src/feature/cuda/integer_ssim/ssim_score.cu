@@ -17,16 +17,15 @@
  *       over ref / cmp / ref² / cmp² / ref·cmp.
  *
  *    2. calculate_ssim_vert_combine — vertical 11-tap on the
- *       five intermediates + per-pixel SSIM combine + per-block
- *       float partial sum (tree reduce in shared memory).
+ *       five intermediates, then the CPU's per-pixel l * c * s with the
+ *       CPU's types and rounding points (ssim_terms()), then a per-block
+ *       double partial sum (tree reduce in shared memory).
  *       calculate_ssim_vert_combine_lcs is the `enable_lcs` variant:
  *       the same SSIM value plus the per-pixel luminance, contrast and
- *       structure terms of iqa/ssim_tools.c, reduced per block next to it
- *       (ADR-1373).
+ *       structure terms, reduced per block next to it (ADR-1373).
  *
- *  Mirrors the precision pattern of ciede_cuda + ssim_vulkan:
- *  per-block float partials, host accumulates in `double`,
- *  divides by (W-10)·(H-10) to recover mean SSIM.
+ *  The host sums the double partials, divides by (W-10)·(H-10) and rounds
+ *  the mean to fp32, as iqa_ssim() returns it.
  *
  *  v1: scale=1 only — same constraint as ssim_vulkan. Auto-
  *  decimation rejection happens host-side.
@@ -41,7 +40,6 @@
 #define BLOCK_SIZE (BLOCK_X * BLOCK_Y)
 #define WARPS_PER_BLOCK (BLOCK_SIZE / 32)
 #define K 11
-#define LCS_TERMS 3
 
 namespace
 {
@@ -126,61 +124,62 @@ __device__ inline SsimMoments vertical_moments(const SsimVertInputs &in, unsigne
     return m;
 }
 
-/* The three products of the SSIM combine, each rounded on its own:
- * __fmul_rn is never contracted into an FMA, so the numerator and the
- * denominator below run the same operations mirrored. */
-struct SsimProducts {
-    float ref_mean_sq;
-    float cmp_mean_sq;
-    float mean_product;
+/* One pixel's SSIM and its luminance, contrast and structure terms. */
+struct SsimTerms {
+    double ssim;
+    double l;
+    double c;
+    double s;
 };
 
-__device__ inline SsimProducts ssim_products(const SsimMoments &m)
+/* The CPU default path, operand for operand: iqa/ssim_tools.c::
+ * ssim_variance_scalar (both variances clamped at zero, the covariance not)
+ * and iqa/ssim_accumulate_lane.h (ssim_accumulate_scalar_step +
+ * ssim_accumulate_lane), which every CPU SIMD variant shares. The types are
+ * the CPU's and each rounding is spelled with an intrinsic so NVCC cannot
+ * fuse it:
+ *
+ *   l = (2.0 * mu_r * mu_c + C1) / (float)(mu_r^2 + mu_c^2 + C1)
+ *   c = (2.0 * sqrtf(var_r * var_c) + C2) / (float)(var_r + var_c + C2)
+ *   s = (float)((cov' + C3) / (sqrtf(var_r * var_c) + C3))
+ *   ssim = l * c * s                                (double)
+ *
+ * with double numerators over fp32-rounded denominators, cov' the
+ * covariance clamped to zero on a flat window, and C3 = C2 / 2. The CPU
+ * does not score identical windows exactly 1: a flat window's l is
+ * 1 - 4.3e-8 because the fp32 denominator rounds and the double numerator
+ * does not, so identical flat frames report 72.247 dB, not +inf (ADR-1373). */
+__device__ inline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)
 {
-    return {__fmul_rn(m.ref_mu, m.ref_mu), __fmul_rn(m.cmp_mu, m.cmp_mu),
-            __fmul_rn(m.ref_mu, m.cmp_mu)};
-}
-
-/* SSIM of one window. With the mirrored operations an identical window
- * compares numerator == denominator and scores exactly 1, as the CPU does,
- * so `enable_db` reports the CPU's +inf / `clip_db` ceiling for identical
- * frames instead of the dB of an fp32 rounding residue (ADR-1221, ADR-1373). */
-__device__ inline float ssim_from_moments(const SsimMoments &m, float c1, float c2)
-{
-    const SsimProducts p = ssim_products(m);
-    const float ref_var = m.ref_sq - p.ref_mean_sq;
-    const float cmp_var = m.cmp_sq - p.cmp_mean_sq;
-    const float covar = m.refcmp - p.mean_product;
-    const float num = (2.0f * p.mean_product + c1) * (2.0f * covar + c2);
-    const float den = (p.ref_mean_sq + p.cmp_mean_sq + c1) * (ref_var + cmp_var + c2);
-    return (num == den) ? 1.0f : num / den;
-}
-
-/* Per-pixel luminance, contrast and structure of CPU iqa/ssim_tools.c in
- * fp32: ssim_variance_scalar clamps both variances at zero, and
- * ssim_accumulate_default_scalar takes sigma_ref * sigma_cmp as one square
- * root and clamps a negative covariance to zero on a flat window, with
- * C3 = C2 / 2. The same arithmetic as the SYCL twin (ADR-1365). */
-__device__ inline void ssim_lcs(const SsimMoments &m, float c1, float c2, float (&lcs)[LCS_TERMS])
-{
-    const SsimProducts p = ssim_products(m);
-    const float ref_raw = m.ref_sq - p.ref_mean_sq;
-    const float cmp_raw = m.cmp_sq - p.cmp_mean_sq;
+    const float c3 = __fdiv_rn(c2, 2.0f);
+    const float ref_raw = __fsub_rn(m.ref_sq, __fmul_rn(m.ref_mu, m.ref_mu));
+    const float cmp_raw = __fsub_rn(m.cmp_sq, __fmul_rn(m.cmp_mu, m.cmp_mu));
     const float ref_var = ref_raw < 0.0f ? 0.0f : ref_raw;
     const float cmp_var = cmp_raw < 0.0f ? 0.0f : cmp_raw;
-    const float covar = m.refcmp - p.mean_product;
-    const float sigma_product = sqrtf(__fmul_rn(ref_var, cmp_var));
-    const float c3 = c2 / 2.0f;
-    const float flat_covar = (covar < 0.0f && sigma_product <= 0.0f) ? 0.0f : covar;
-    lcs[0] = (2.0f * p.mean_product + c1) / (p.ref_mean_sq + p.cmp_mean_sq + c1);
-    lcs[1] = (2.0f * sigma_product + c2) / (ref_var + cmp_var + c2);
-    lcs[2] = (flat_covar + c3) / (sigma_product + c3);
+    const float sigma_both = __fsub_rn(m.refcmp, __fmul_rn(m.ref_mu, m.cmp_mu));
+
+    const float srsc = __fsqrt_rn(__fmul_rn(ref_var, cmp_var));
+    const float l_den =
+        __fadd_rn(__fadd_rn(__fmul_rn(m.ref_mu, m.ref_mu), __fmul_rn(m.cmp_mu, m.cmp_mu)), c1);
+    const float c_den = __fadd_rn(__fadd_rn(ref_var, cmp_var), c2);
+    const float csb = (sigma_both < 0.0f && srsc <= 0.0f) ? 0.0f : sigma_both;
+    const float sv_f = __fdiv_rn(__fadd_rn(csb, c3), __fadd_rn(srsc, c3));
+
+    SsimTerms t;
+    t.l = __ddiv_rn(
+        __dadd_rn(__dmul_rn(__dmul_rn(2.0, (double)m.ref_mu), (double)m.cmp_mu), (double)c1),
+        (double)l_den);
+    t.c = __ddiv_rn(__dadd_rn(__dmul_rn(2.0, (double)srsc), (double)c2), (double)c_den);
+    t.s = (double)sv_f;
+    t.ssim = __dmul_rn(__dmul_rn(t.l, t.c), t.s);
+    return t;
 }
 
 /* Sum `value` over the block into thread 0's return value: warp shuffle,
- * then the warp sums in warp order (ciede_cuda precision pattern). Every
- * thread must call it; `scratch` is reusable once it returns. */
-__device__ inline float block_sum(float value, float (&scratch)[WARPS_PER_BLOCK])
+ * then the warp sums in warp order. Double throughout, as the CPU's
+ * accumulators are. Every thread must call it; `scratch` is reusable once
+ * it returns. */
+__device__ inline double block_sum(double value, double (&scratch)[WARPS_PER_BLOCK])
 {
     for (int off = 16; off > 0; off >>= 1)
         value += __shfl_down_sync(0xffffffff, value, off);
@@ -188,7 +187,7 @@ __device__ inline float block_sum(float value, float (&scratch)[WARPS_PER_BLOCK]
     if (tid % 32 == 0)
         scratch[tid / 32] = value;
     __syncthreads();
-    float total = 0.0f;
+    double total = 0.0;
     if (tid == 0) {
         for (int i = 0; i < WARPS_PER_BLOCK; i++)
             total += scratch[i];
@@ -289,9 +288,10 @@ __global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPict
     reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
 }
 
-/* Pass 2 — vertical + SSIM combine + per-block partial sum.
+/* Pass 2 — vertical + SSIM combine + per-block double partial sum.
  * __launch_bounds__(128) hints nvcc to budget registers for
- * 128-thread blocks; per ADR-0754 / ADR-0743 precedent. */
+ * 128-thread blocks; per ADR-0754 / ADR-0743 precedent. `partials` holds
+ * gridDim.x * gridDim.y doubles. */
 __launch_bounds__(BLOCK_SIZE) __global__
     void calculate_ssim_vert_combine(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
                                      VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
@@ -304,21 +304,19 @@ __launch_bounds__(BLOCK_SIZE) __global__
     const SsimVertInputs in =
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
 
-    float my_ssim = 0.0f;
+    double my_ssim = 0.0;
     if (x < w_final && y < h_final)
-        my_ssim = ssim_from_moments(vertical_moments(in, x, y, w_horiz), c1, c2);
+        my_ssim = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2).ssim;
 
-    /* Per-block tree reduction in shared memory. Same precision
-     * pattern as ciede_cuda — partial-per-block + host double sum. */
-    __shared__ float s_warp_sums[WARPS_PER_BLOCK];
-    const float block_ssim = block_sum(my_ssim, s_warp_sums);
+    __shared__ double s_warp_sums[WARPS_PER_BLOCK];
+    const double block_ssim = block_sum(my_ssim, s_warp_sums);
     if (is_block_leader())
-        reinterpret_cast<float *>(partials.data)[block_index()] = block_ssim;
+        reinterpret_cast<double *>(partials.data)[block_index()] = block_ssim;
 }
 
-/* `enable_lcs` pass 2: the same SSIM value, plus L, C and S per pixel from
- * the same moments, each reduced per block. `lcs_partials` holds three rows
- * of gridDim.x * gridDim.y floats: L, then C, then S. Out-of-frame threads
+/* `enable_lcs` pass 2: the same SSIM value, plus its L, C and S terms, each
+ * reduced per block. `lcs_partials` holds three rows of
+ * gridDim.x * gridDim.y doubles: L, then C, then S. Out-of-frame threads
  * contribute zeros. */
 __launch_bounds__(BLOCK_SIZE) __global__
     void calculate_ssim_vert_combine_lcs(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
@@ -332,25 +330,23 @@ __launch_bounds__(BLOCK_SIZE) __global__
     const SsimVertInputs in =
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
 
-    float my_ssim = 0.0f;
-    float lcs[LCS_TERMS] = {0.0f, 0.0f, 0.0f};
-    if (x < w_final && y < h_final) {
-        const SsimMoments m = vertical_moments(in, x, y, w_horiz);
-        my_ssim = ssim_from_moments(m, c1, c2);
-        ssim_lcs(m, c1, c2, lcs);
-    }
+    SsimTerms t = {0.0, 0.0, 0.0, 0.0};
+    if (x < w_final && y < h_final)
+        t = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2);
 
-    __shared__ float s_warp_sums[WARPS_PER_BLOCK];
-    const float block_ssim = block_sum(my_ssim, s_warp_sums);
-    const unsigned n_blocks = gridDim.x * gridDim.y;
-    float *const lcs_out = reinterpret_cast<float *>(lcs_partials.data);
-    for (int t = 0; t < LCS_TERMS; t++) {
-        const float block_term = block_sum(lcs[t], s_warp_sums);
-        if (is_block_leader())
-            lcs_out[(unsigned)t * n_blocks + block_index()] = block_term;
+    __shared__ double s_warp_sums[WARPS_PER_BLOCK];
+    const double block_ssim = block_sum(t.ssim, s_warp_sums);
+    const double block_l = block_sum(t.l, s_warp_sums);
+    const double block_c = block_sum(t.c, s_warp_sums);
+    const double block_s = block_sum(t.s, s_warp_sums);
+    if (is_block_leader()) {
+        const unsigned n_blocks = gridDim.x * gridDim.y;
+        double *const lcs_out = reinterpret_cast<double *>(lcs_partials.data);
+        lcs_out[block_index()] = block_l;
+        lcs_out[n_blocks + block_index()] = block_c;
+        lcs_out[(2u * n_blocks) + block_index()] = block_s;
+        reinterpret_cast<double *>(partials.data)[block_index()] = block_ssim;
     }
-    if (is_block_leader())
-        reinterpret_cast<float *>(partials.data)[block_index()] = block_ssim;
 }
 
 } /* extern "C" */

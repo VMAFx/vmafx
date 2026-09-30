@@ -131,7 +131,9 @@ bit with every option set: the device only reduces each plane's sum of
 squared errors, and the host turns it into `psnr_*`, `mse_*` and `apsnr_*`
 with the same helpers the CPU extractor uses
 (`core/src/feature/psnr_score.h`). `psnr_cuda` does the same since
-2026-09-30 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). The HIP
+2026-09-30 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)), and like
+the CPU `psnr` it sees every frame under `--subsample`, so `apsnr_*` covers
+the whole clip (`psnr_sycl` does not yet). The HIP
 and Metal twins implement `enable_chroma` and `uncapped` only. On those
 backends a model that sets `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or
 `min_sse` computes `psnr` on the CPU instead

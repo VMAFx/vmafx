@@ -34,13 +34,20 @@
 - Options (ADR-1373): `integer_psnr_cuda.c` calls `psnr_score.h` for every
   score and gained a `flush` for `apsnr_*`; `ssim_cuda.c` and
   `integer_ssim_cuda.c` emit through `vmaf_ssim_max_db()` / the
-  `nonfinite_score.h` emitters; `integer_ssim/ssim_score.cu` rounds the three
-  SSIM products with `__fmul_rn` (keep it: an FMA there breaks the exact 1 of
-  identical windows) and gained `calculate_ssim_vert_combine_lcs`;
-  `core/src/meson.build` builds `integer_ssim_score` with `--fmad=false`
-  (`cuda_cu_extra_flags`, the HIP twin's `-ffp-contract=off`);
-  `float_ssim_cuda` lost `enable_chroma`; `float_motion_cuda.c` routes every
-  score through `motion_clip()`.
+  `nonfinite_score.h` emitters; `integer_ssim/ssim_score.cu::ssim_terms()`
+  computes the CPU's `l * c * s` with the CPU's types and rounding points
+  (mirror of `iqa/ssim_tools.c` and `iqa/ssim_accumulate_lane.h`: when an
+  upstream sync changes either, change `ssim_terms()` in the same PR), its
+  partials are doubles and `integer_ssim_cuda.c` rounds the frame means to
+  fp32; it gained `calculate_ssim_vert_combine_lcs`. `core/src/meson.build`
+  builds `integer_ssim_score` with `--fmad=false` (`cuda_cu_extra_flags`, the
+  HIP twin's `-ffp-contract=off`), and `integer_ssim_score.cu` groups each
+  term as `integer_ssim.c` does. `float_ssim_cuda` keeps `enable_chroma` as
+  an ignored option (HISS-14); `float_motion_cuda.c` routes every score
+  through `motion_clip()`. `integer_motion_v2_cuda.c` publishes the CPU's
+  weighted, capped SAD and derives `motion2_v2` / `motion3_v2` from it like
+  `integer_motion_v2.c::flush`. `integer_psnr_cuda.c` is TEMPORAL and zeroes
+  every plane accumulator on the picture stream.
 - Tests: `core/test/test_cuda_module_lifecycle_contract.py` inventory lists
   `integer_motion_sad_cuda.c` as the motion module owner;
   `test_device_target_header_dependencies.py` counts 21 CUDA fatbin targets.
@@ -49,9 +56,11 @@ No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
 bit-identical (no CPU source changed). `motion_cuda` scores move to the CPU's
 (expected up to 2.0e-4 on 17x17 frames, 1.3e-5 on the Netflix pair, from the
 SYCL measurement); `motion_v2_cuda` is unchanged; default `float_ssim_cuda`
-moves by an fp32 rounding; default `integer_ssim_cuda` per-pixel terms move
-by a double rounding (the combine no longer fuses `c1`, `c2` and `y2 * w`);
-`psnr_cuda` and `float_motion_cuda` default scores are unchanged.
+moves towards the CPU's by an fp32 rounding; default `integer_ssim_cuda`
+per-pixel terms move to the CPU's (no fused `c1`, `c2`, `y2 * w`; the CPU's
+grouping); `psnr_cuda`, `float_motion_cuda` and `motion_v2_cuda` default
+scores are unchanged (`motion_v2_cuda` moves only with a non-default
+`motion_fps_weight` / `motion_max_val` or a one-frame input).
 
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 

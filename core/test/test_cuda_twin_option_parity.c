@@ -12,8 +12,9 @@
  *
  *   psnr_cuda          enable_mse, enable_apsnr, reduced_hbd_peak, min_sse
  *   integer_ssim_cuda  enable_db, clip_db
- *   float_ssim_cuda    enable_lcs, enable_db, clip_db (and no longer the
- *                      phantom enable_chroma the CPU extractor does not have)
+ *   float_ssim_cuda    enable_lcs, enable_db, clip_db (enable_chroma, which
+ *                      the CPU extractor does not have, stays accepted and
+ *                      ignored for compatibility)
  *   float_motion_cuda  motion_max_val (and motion_fps_weight on the debug
  *                      `motion` score)
  *
@@ -23,8 +24,11 @@
  * option left at its default adds no output, and an unknown key or an
  * out-of-range value is refused by both sides. Boundary: identical frames
  * (SSE == 0, perfect SSIM) report the same sentinel / +inf / clip_db ceiling
- * as the CPU; motion_max_val = 0 zeroes every score; odd 4:2:0 and 10-bit
- * 4:2:2 geometry.
+ * as the CPU; identical flat frames report the CPU's finite 72.247 dB (the
+ * CPU's l term is not exactly 1 there), and a single-pixel frame the CPU's
+ * integer SSIM value; `--subsample 2` still sums every frame into apsnr_*;
+ * motion_max_val = 0 zeroes every score; odd 4:2:0 and 10-bit 4:2:2
+ * geometry.
  *
  * The option-table checks need no device. The parity checks exit 77 (skip)
  * when no CUDA device is visible.
@@ -69,13 +73,22 @@ typedef struct Fixture {
     unsigned h;
     unsigned frames;
     bool identical;
+    /* Every sample is mid-range (128 << (bpc - 8)). */
+    bool flat;
 } Fixture;
 
 /* Odd 4:2:0 (ceil chroma), odd-width 10-bit 4:2:2, and an identical pair. */
-static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false};
-static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false};
-static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true};
-static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false};
+static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false, false};
+static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false, false};
+static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true, false};
+static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false, false};
+/* Identical flat frames: the CPU float_ssim reports 72.247199 dB, not +inf
+ * (review of #1637: 64x64 flat 128 at 8 bits and 512 at 10 bits). */
+static const Fixture FX_FLAT8 = {VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u, 2u, true, true};
+static const Fixture FX_FLAT10 = {VMAF_PIX_FMT_YUV420P, 10u, 64u, 64u, 2u, true, true};
+/* One pixel: the frame score is that pixel's term, so it must be the CPU's
+ * integer SSIM term bit for bit (at 10 bits it is not exactly 1). */
+static const Fixture FX_DOT10 = {VMAF_PIX_FMT_YUV444P, 10u, 1u, 1u, 2u, true, false};
 
 typedef struct Pair {
     VmafContext *cpu;
@@ -110,11 +123,11 @@ static unsigned distort(unsigned value, unsigned x, unsigned y, unsigned frame, 
     return (unsigned)(shifted < 0 ? 0 : (shifted > max ? max : shifted));
 }
 
-static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, bool distorted)
+static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, bool distorted, bool flat)
 {
     for (unsigned y = 0; y < pic->h[plane]; y++) {
         for (unsigned x = 0; x < pic->w[plane]; x++) {
-            unsigned v = sample_at(x, y, frame, plane, pic->bpc);
+            unsigned v = flat ? (128u << (pic->bpc - 8u)) : sample_at(x, y, frame, plane, pic->bpc);
             if (distorted)
                 v = distort(v, x, y, frame, pic->bpc);
             if (pic->bpc == 8u) {
@@ -135,7 +148,7 @@ static int make_picture(const Fixture *fx, unsigned frame, bool distorted, VmafP
     if (err)
         return err;
     for (unsigned p = 0; p < 3u; p++)
-        fill_plane(pic, p, frame, distorted);
+        fill_plane(pic, p, frame, distorted, fx->flat);
     return 0;
 }
 
@@ -193,30 +206,32 @@ static void pair_close(Pair *pair)
 
 /* Returns true when a CUDA device is available and the twin context is
  * ready; false means "skip" (no device). */
-static bool open_gpu(Pair *pair)
+static bool open_gpu(Pair *pair, unsigned n_subsample)
 {
     VmafCudaConfiguration cuda_cfg = {0};
     if (vmaf_cuda_state_init(&pair->cuda, cuda_cfg) != 0 || !pair->cuda)
         return false;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
     if (vmaf_init(&pair->gpu, cfg))
         return false;
     return vmaf_cuda_import_state(pair->gpu, pair->cuda) == 0;
 }
 
-/* Run `cpu_name` and `twin` with the same options over `fx`. Sets
- * mu_skipped and returns NULL with *ran == false when no device exists. */
-static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name, const char *twin,
-                             const char *const *opts, bool *ran)
+/* Run `cpu_name` and `twin` with the same options over `fx`, both contexts
+ * with `n_subsample`. Sets mu_skipped and returns NULL with *ran == false
+ * when no device exists. */
+static mu_message_t pair_run_subsampled(Pair *pair, const Fixture *fx, const char *cpu_name,
+                                        const char *twin, const char *const *opts,
+                                        unsigned n_subsample, bool *ran)
 {
     *ran = false;
     memset(pair, 0, sizeof(*pair));
-    if (!open_gpu(pair)) {
+    if (!open_gpu(pair, n_subsample)) {
         pair_close(pair);
         mu_skipped = 1;
         return NULL;
     }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
     mu_assert("CPU vmaf_init failed", !vmaf_init(&pair->cpu, cfg));
     mu_assert("CPU extractor rejected the options", !use_feature(pair->cpu, cpu_name, opts));
     mu_assert("CUDA twin rejected the options", !use_feature(pair->gpu, twin, opts));
@@ -224,6 +239,12 @@ static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name
     mu_assert("CUDA run failed", !feed(pair->gpu, fx));
     *ran = true;
     return NULL;
+}
+
+static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name, const char *twin,
+                             const char *const *opts, bool *ran)
+{
+    return pair_run_subsampled(pair, fx, cpu_name, twin, opts, 1u, ran);
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,8 +374,9 @@ static const OptionCase OPTION_CASES[] = {
 };
 
 /* Every twin and its CPU extractor: each option the twin declares must be a
- * CPU option with the same declaration, so no twin-only key (such as the
- * enable_chroma float_ssim_cuda used to declare) can reach a model. */
+ * CPU option with the same declaration, so no twin-only key can reach a
+ * model. The one exception is float_ssim_cuda's enable_chroma, public before
+ * the CPU table was adopted and kept as an accepted no-op (HISS-14). */
 static const char *const TWIN_PAIRS[][2] = {
     {"psnr_cuda", "psnr"},
     {"integer_ssim_cuda", "ssim"},
@@ -426,6 +448,9 @@ static char *test_twin_options_are_cpu_options(void)
         const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name(TWIN_PAIRS[i][1]);
         mu_assert("extractor not registered", twin && cpu && twin->options);
         for (unsigned k = 0; twin->options[k].name; k++) {
+            if (!strcmp(TWIN_PAIRS[i][0], "float_ssim_cuda") &&
+                !strcmp(twin->options[k].name, "enable_chroma"))
+                continue;
             const VmafOption *cpu_opt = lookup_option(cpu, twin->options[k].name);
             if (!cpu_opt || !same_option(&twin->options[k], cpu_opt)) {
                 (void)fprintf(stderr, "\n  %s.%s\n", TWIN_PAIRS[i][0], twin->options[k].name);
@@ -433,9 +458,26 @@ static char *test_twin_options_are_cpu_options(void)
             }
         }
     }
-    mu_assert(
-        "float_ssim_cuda must not declare enable_chroma",
-        !lookup_option(vmaf_get_feature_extractor_by_name("float_ssim_cuda"), "enable_chroma"));
+    return NULL;
+}
+
+/* HISS-14: `--feature float_ssim_cuda=enable_chroma=...` keeps working. The
+ * option is accepted (the ADR-1183 gate passes it), defaults to false, is
+ * not a CPU option, and never becomes part of a feature key. */
+static char *test_float_ssim_enable_chroma_is_an_accepted_no_op(void)
+{
+    const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_by_name("float_ssim_cuda");
+    const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("float_ssim");
+    mu_assert("extractor not registered", twin && cpu);
+    const VmafOption *opt = lookup_option(twin, "enable_chroma");
+    mu_assert("float_ssim_cuda must keep accepting enable_chroma", opt != NULL);
+    mu_assert("enable_chroma must stay a false-by-default bool",
+              opt->type == VMAF_OPT_TYPE_BOOL && !opt->default_val.b);
+    mu_assert("enable_chroma must not name features", !(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
+    mu_assert("the CPU float_ssim has no enable_chroma", !lookup_option(cpu, "enable_chroma"));
+    char unsupported[NAME_LEN];
+    mu_assert("the twin must accept enable_chroma",
+              honours(twin, "enable_chroma", "true", unsupported) && !unsupported[0]);
     return NULL;
 }
 
@@ -502,6 +544,23 @@ static char *test_psnr_min_sse_identical_frames(void)
     return msg;
 }
 
+/* `--subsample 2` on a TEMPORAL extractor still feeds every frame: the CPU
+ * psnr sums all four frames into apsnr_*, and so must psnr_cuda (review of
+ * #1637: without the flag the twin summed every second frame). */
+static char *test_psnr_apsnr_with_subsample(void)
+{
+    static const char *const opts[] = {"enable_apsnr", "true", NULL};
+    static const char *const aggregates[] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run_subsampled(&pair, &FX_ODD8, "psnr", "psnr_cuda", opts, 2u, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(aggregates) / sizeof(aggregates[0]); i++)
+        msg = expect_aggregate(&pair, aggregates[i]);
+    pair_close(&pair);
+    return msg;
+}
+
 static char *test_psnr_defaults_add_no_outputs(void)
 {
     Pair pair;
@@ -560,6 +619,45 @@ static mu_message_t ssim_unclipped_perfect(const char *cpu_name, const char *twi
     bool ran = false;
     mu_assert_msg(pair_run(&pair, &FX_SAME8, cpu_name, twin, opts, &ran));
     mu_message_t msg = ran ? expect_all(&pair, feature, FX_SAME8.frames, INFINITY) : NULL;
+    pair_close(&pair);
+    return msg;
+}
+
+/* Identical flat frames, enable_db without clip_db: the CPU's per-pixel l
+ * term is 1 - 4.3e-8 (double numerator over an fp32 denominator), its fp32
+ * frame mean 0.99999994, so it reports 72.247199 dB. The twin must report the
+ * same finite value, not the +inf a forced exact 1 gives. */
+static mu_message_t float_ssim_flat_case(const Fixture *fx, const char *const *opts)
+{
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, "float_ssim", "float_ssim_cuda", opts, &ran));
+    mu_message_t msg = ran ? expect_close(&pair, "float_ssim", fx->frames, TOL_EXACT, true) : NULL;
+    pair_close(&pair);
+    return msg;
+}
+
+static char *test_float_ssim_flat_identical_frames(void)
+{
+    static const char *const db[] = {"enable_db", "true", "scale", "1", NULL};
+    static const char *const clipped[] = {"enable_db", "true", "clip_db", "true",
+                                          "scale",     "1",    NULL};
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT8, db));
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT10, db));
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT8, clipped));
+    return NULL;
+}
+
+/* A single-pixel frame is scored by that pixel's term alone, so the twin
+ * must equal the CPU bit for bit, dB form included (156.5 dB at 10 bits,
+ * where the CPU's term is not exactly its weight). */
+static char *test_integer_ssim_single_pixel(void)
+{
+    static const char *const opts[] = {"enable_db", "true", NULL};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_DOT10, "ssim", "integer_ssim_cuda", opts, &ran));
+    mu_message_t msg = ran ? expect_close(&pair, "ssim", FX_DOT10.frames, TOL_EXACT, true) : NULL;
     pair_close(&pair);
     return msg;
 }
@@ -682,7 +780,7 @@ static char *test_float_motion_max_val_out_of_range(void)
     VmafContext *cpu = NULL;
     Pair pair;
     memset(&pair, 0, sizeof(pair));
-    if (!open_gpu(&pair)) {
+    if (!open_gpu(&pair, 1u)) {
         pair_close(&pair);
         mu_skipped = 1;
         return NULL;
@@ -697,13 +795,20 @@ static char *test_float_motion_max_val_out_of_range(void)
     return NULL;
 }
 
-static char *run_table_and_psnr_tests(void)
+static char *run_table_tests(void)
 {
     mu_run_test(test_twin_option_tables_match_cpu);
     mu_run_test(test_twin_options_are_cpu_options);
     mu_run_test(test_twin_rejects_unknown_option);
+    mu_run_test(test_float_ssim_enable_chroma_is_an_accepted_no_op);
+    return NULL;
+}
+
+static char *run_psnr_tests(void)
+{
     mu_run_test(test_psnr_options_bit_exact);
     mu_run_test(test_psnr_min_sse_identical_frames);
+    mu_run_test(test_psnr_apsnr_with_subsample);
     mu_run_test(test_psnr_defaults_add_no_outputs);
     return NULL;
 }
@@ -713,6 +818,8 @@ static char *run_ssim_tests(void)
     mu_run_test(test_integer_ssim_db_options);
     mu_run_test(test_float_ssim_db_options);
     mu_run_test(test_ssim_db_identical_frames_unclipped);
+    mu_run_test(test_float_ssim_flat_identical_frames);
+    mu_run_test(test_integer_ssim_single_pixel);
     mu_run_test(test_float_ssim_lcs);
     return NULL;
 }
@@ -728,7 +835,8 @@ static char *run_motion_tests(void)
 
 char *run_tests(void)
 {
-    mu_assert_msg(run_table_and_psnr_tests());
+    mu_assert_msg(run_table_tests());
+    mu_assert_msg(run_psnr_tests());
     mu_assert_msg(run_ssim_tests());
     mu_assert_msg(run_motion_tests());
     return NULL;

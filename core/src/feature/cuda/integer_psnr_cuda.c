@@ -337,17 +337,20 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * dispatches — zero each plane's device accumulator and wait
      * once on the dist-side ready event (the picture-stream wait is
      * a property of the picture, not the per-plane dispatch). The
-     * template's `submit_pre_launch` does both; we call it once for
-     * plane 0 and then zero the remaining planes' accumulators
-     * directly on the same private stream. */
-    int err = vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb[0],
-                                                 vmaf_cuda_picture_get_stream(ref_pic),
+     * template's `submit_pre_launch` does both for plane 0; the other
+     * planes' accumulators are zeroed on the same picture stream the
+     * kernels run on, because only program order on one stream orders a
+     * memset against an accumulating kernel (kernel_template.h). A memset
+     * on the private readback stream could land after some of the chroma
+     * kernel's atomic adds and erase them. */
+    CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
+    int err = vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb[0], pic_stream,
                                                  vmaf_cuda_picture_get_ready_event(dist_pic));
     if (err)
         return err;
     for (unsigned p = 1; p < s->n_planes; p++) {
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, s->lc.str));
+                          cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, pic_stream));
     }
 
     /* One dispatch per active plane against per-plane (w, h). All
@@ -355,8 +358,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * with motion_cuda.c et al. is preserved. */
     for (unsigned p = 0; p < s->n_planes; p++) {
         err = psnr_cuda_dispatch(ref_pic, dist_pic, s->rb[p].device, ref_pic->w[p], ref_pic->h[p],
-                                 p, s->bpc, s->funcbpc8, s->funcbpc16, cu_f,
-                                 vmaf_cuda_picture_get_stream(ref_pic));
+                                 p, s->bpc, s->funcbpc8, s->funcbpc16, cu_f, pic_stream);
         if (err)
             return err;
     }
@@ -366,7 +368,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * accumulator + record `finished`. The template documents this
      * exact sequence in its docstring; left inline for clarity since
      * the kernel launch + ref_pic stream are inherently per-feature. */
-    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, vmaf_cuda_picture_get_stream(ref_pic)));
+    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
     for (unsigned p = 0; p < s->n_planes; p++) {
         CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb[p].host_pinned,
@@ -466,7 +468,9 @@ VmafFeatureExtractor vmaf_fex_psnr_cuda = {
     .options = options,
     .priv_size = sizeof(PsnrStateCuda),
     .provided_features = provided_features,
-    .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+    /* TEMPORAL as the CPU psnr: `--subsample N` must still feed every frame
+     * to the `enable_apsnr` totals, not one frame in N. */
+    .flags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     /* 3 dispatches/frame (one per plane), reduction-dominated; AUTO +
      * 1080p area matches motion's profile (see ADR-0181 / ADR-0182).
      * Three small dispatches are still well under the threshold where

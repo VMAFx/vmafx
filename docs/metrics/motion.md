@@ -192,13 +192,16 @@ device is absent. The host-side post-process is identical across all GPU twins,
 so any change to the CPU `motion_v2` flush blend/clip/seed/moving-average logic
 must be mirrored into all four in the same PR.
 
-> **`motion_fps_weight` note.** All GPU twins store the *raw* SAD as
-> `motion_v2_sad_score` and apply `motion_fps_weight` in the host-side flush
-> (the CPU reference bakes it into the stored SAD instead). The two paths are
-> identical at the default `motion_fps_weight = 1.0`; under a non-default weight
-> the GPU twins diverge from the CPU `sad`/`motion3` by the weight factor on the
-> seed frame. This is a pre-existing GPU-twin behaviour (the GPU SAD has always
-> been raw), consistent across all four backends.
+> **`motion_fps_weight` / `motion_max_val` note.** The CPU reference stores
+> `MIN(sad * motion_fps_weight, motion_max_val)` as `motion_v2_sad_score` and
+> derives `motion2_v2` / `motion3_v2` from it; a one-frame input still gets
+> `motion2_v2 = motion3_v2 = 0`. `motion_v2_cuda` does the same since
+> [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md). The SYCL, HIP and
+> Metal twins store the *raw* SAD, apply `motion_fps_weight` in the host-side
+> flush without the `motion_max_val` cap on `motion2_v2`, and emit no
+> `motion2_v2` / `motion3_v2` for a one-frame input. The paths agree at the
+> default `motion_fps_weight = 1.0` / `motion_max_val = 10000`
+> (`T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30` in [`state.md`](../state.md)).
 
 ---
 

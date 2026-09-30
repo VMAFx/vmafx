@@ -33,7 +33,7 @@ Constraints: integer motion must be bit-exact with the CPU; one behaviour, one i
 
 ## Consequences
 
-- **Positive**: `motion_cuda` computes the CPU `motion` SAD exactly, so `motion2` / `motion3` and the debug score equal the CPU's; `motion_v2_cuda` output is unchanged (same kernel, same arithmetic). One module per motion twin pair instead of two. The batch readback waits once instead of twice. Tile loads of padding threads are clamped into the plane (`cuda_tile_index.h`), so planes smaller than the 20x20 tile can no longer read before a buffer.
+- **Positive**: `motion_cuda` computes the CPU `motion` SAD exactly, so `motion2` / `motion3` and the debug score equal the CPU's; `motion_v2_cuda`'s SAD is unchanged (same kernel, same arithmetic); its option handling is aligned with the CPU by [ADR-1373](1373-cuda-twin-cpu-option-parity.md). One module per motion twin pair instead of two. The batch readback waits once instead of twice. Tile loads of padding threads are clamped into the plane (`cuda_tile_index.h`), so planes smaller than the 20x20 tile can no longer read before a buffer.
 - **Negative**: the `motion_cuda` kernel reads two planes per tile; not measured on hardware here (no NVIDIA device on the host that wrote this).
 - **Neutral / follow-ups**: verification on an RTX 4090 is recorded in `docs/state.md` (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`). Guarded by `test_cuda_motion_tiny_frames` (`==` against the scalar CPU, 3x3 to 1283x723, 8, 10 and 16 bits) and the motion cases of `test_cuda_kernel_source_contract.py`. The HIP and Metal twins are `T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29` and `T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29`.
 

@@ -20,6 +20,30 @@
 
 ### Changed
 
+- **CUDA twins take the CPU extractor's options and arithmetic (ADR-1373).** `psnr_cuda`
+  now accepts `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`
+  through the same `core/src/feature/psnr_score.h` helpers as the CPU
+  extractor, `apsnr_*` aggregates included; `integer_ssim_cuda` accepts
+  `enable_db` / `clip_db`; `float_ssim_cuda` accepts `enable_lcs` (a device
+  kernel reduces the L, C and S terms) / `enable_db` / `clip_db`; and
+  `float_motion_cuda` accepts `motion_max_val` and weights its debug `motion`
+  score by `motion_fps_weight` like the CPU. Before, a model or a
+  `--backend cuda --feature psnr=enable_mse=true`-style request that set one of
+  these options computed the feature on the CPU, and naming the twin with the
+  option failed with `unknown option`. `float_ssim_cuda` now computes the
+  CPU's per-pixel `l * c * s` with the CPU's rounding and rounds the frame
+  mean to fp32, so with `enable_db` identical frames report the CPU's value
+  (identical flat frames: 72.247 dB, where the twin reported `+inf`);
+  `integer_ssim_cuda` computes each pixel's term as the CPU does;
+  `motion_v2_cuda` publishes the CPU's fps-weighted, capped SAD score and
+  emits `motion2_v2` / `motion3_v2` for a one-frame input; `psnr_cuda` sums
+  every frame into `apsnr_*` under `--subsample`, and its chroma accumulators
+  can no longer be cleared while the chroma kernels run. `float_ssim_cuda`
+  still accepts `enable_chroma`, which the CPU `float_ssim` does not have, and
+  warns that it is ignored. Not yet measured on an NVIDIA GPU; see
+  [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).
+
+
 - **`vmaf` reads its two inputs ahead of scoring, on one thread each
   (ADR-1366).** The CLI used to read the reference frame, then the distorted
   frame, then score the pair, all on one thread; at 3840x2160 the two reads
@@ -36,22 +60,6 @@
   thread: on Linux and macOS the same file or pipe on both sides and
   `--no-reference`, on Windows anything but two regular files. See
   [Input read-ahead](docs/usage/cli.md#input-read-ahead).
-- **Four CUDA twins take the CPU extractor's options (ADR-1373).** `psnr_cuda`
-  now accepts `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`
-  through the same `core/src/feature/psnr_score.h` helpers as the CPU
-  extractor, `apsnr_*` aggregates included; `integer_ssim_cuda` accepts
-  `enable_db` / `clip_db`; `float_ssim_cuda` accepts `enable_lcs` (a device
-  kernel reduces the L, C and S terms) / `enable_db` / `clip_db`; and
-  `float_motion_cuda` accepts `motion_max_val` and weights its debug `motion`
-  score by `motion_fps_weight` like the CPU. Before, a model or a
-  `--backend cuda --feature psnr=enable_mse=true`-style request that set one of
-  these options computed the feature on the CPU, and naming the twin with the
-  option failed with `unknown option`. `float_ssim_cuda` scores an identical
-  window exactly 1, so with `enable_db` identical frames report the CPU's
-  `+inf` or `clip_db` ceiling. `float_ssim_cuda` no longer declares
-  `enable_chroma`, which the CPU `float_ssim` does not have and the twin never
-  implemented. Not yet measured on an NVIDIA GPU; see
-  [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).
 
 
 - **The SYCL integer ADM twin computes AIM on the device, so the default model's
@@ -220,11 +228,6 @@
   the new `feature_backends` array says where each extractor ran.
 
 
-- **The Gitleaks check scans only the commit it checked out.** It ran
-  `git log --all` over a full-history checkout, so a finding on any branch in
-  the repository, including a commit a force-push had already replaced,
-  failed every other open pull request. Each run now scans the history of
-  its own `HEAD`: on a pull request, master plus the PR's commits.
 - **`motion_cuda` computes the CPU `motion` arithmetic.** The CUDA twin blurred
   each frame and differenced the blurred frames, while the CPU (since the
   upstream pipelined-motion port) blurs the frame difference and rounds after
@@ -235,7 +238,7 @@
   is the CPU's (weighted by `motion_fps_weight`, capped at `motion_max_val`).
   Each frame is ordered against the previous one on the device instead of by
   the engine's context barrier, and the eight-frame batch readback waits once
-  instead of twice. `motion_v2_cuda` output is unchanged. Not yet measured on
+  instead of twice. `motion_v2_cuda`'s SAD is unchanged. Not yet measured on
   an NVIDIA GPU (ADR-1372; check in `docs/state.md`,
   `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`;
   [CUDA backend](docs/backends/cuda/overview.md#cpu-parity-motion-options-and-tiny-frames-2026-09-30)).
@@ -247,6 +250,13 @@
   `--backend cuda --feature vif` compute smaller frames with the CPU `vif`, and
   `--feature vif_cuda` on such a frame fails `init()` instead of returning
   scores from clamped taps (ADR-1374).
+
+
+- **The Gitleaks check scans only the commit it checked out.** It ran
+  `git log --all` over a full-history checkout, so a finding on any branch in
+  the repository, including a commit a force-push had already replaced,
+  failed every other open pull request. Each run now scans the history of
+  its own `HEAD`: on a pull request, master plus the PR's commits.
 
 
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)
