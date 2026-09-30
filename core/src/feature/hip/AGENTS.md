@@ -1027,8 +1027,10 @@ Rebase-sensitive invariants:
   `vmaf_cambi_adjust_window`, `_mask_index`, `_resize_source_indices`,
   `_contrast_weights`, `_reciprocal_lut`, `_fixed_topk_mean`,
   `_check_window_fits_lut`). No local copies.
-- `init()` runs host config + window guard before any device call (scaffold
-  build rejects same windows as CPU). Guard: window^2 >= 4226 -> -EINVAL.
+- `init()`: scaffold build -> `-ENOSYS` first, nothing else (ADR-1264);
+  hipcc build -> host config + window guard before any device call. Guard:
+  window^2 >= 4226 -> -EINVAL. SpEED twins same order (`-ENOSYS`, then
+  `sc_configure()` / `st_configure()`).
 - Top-K sum exact: fixed point 2^-24 (`CAMBI_HIP_FIXED_SHIFT` ==
   `VMAF_CAMBI_TOPK_FIXED_SHIFT`, static-asserted), 128-bit via hi/lo halves.
   Integer reductions only; no fp64; level band `compact < levels` (band top

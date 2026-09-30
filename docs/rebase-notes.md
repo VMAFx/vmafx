@@ -55614,6 +55614,9 @@ exactly 1. None of this was measured on an AMD device in this change.
   call; `speed_sycl_host.cpp` delegates to it and `speed_sycl_pipeline.h`
   aliases the types. The CUDA device-resident port carries the identical
   routine; keep one copy on rebase.
+- The three `init()`s return `-ENOSYS` first in a build without hipcc
+  (ADR-1264), then run the host configure (CAMBI's window guard included)
+  before any device call; the contract test pins that order.
 - Tests: `test_hip_cambi_device_math`, `test_hip_speed_device_math` (fast
   suite, no device) and `test_hip_device_resident_contract.py` (imports the
   helpers of `test_hip_kernel_source_contract.py`).

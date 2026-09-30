@@ -306,8 +306,10 @@ static const VmafOption options[] = {
     {0},
 };
 
+#ifdef HAVE_HIPCC
 /* ------------------------------------------------------------------ */
-/* Init-time configuration (cambi.c init), host only, every build.     */
+/* Init-time configuration (cambi.c init), host only, before any       */
+/* device work. The scaffold build reports -ENOSYS first (ADR-1264).   */
 /* ------------------------------------------------------------------ */
 
 /* cambi.c::validate_and_setup_dimensions: the speed-up only takes effect when
@@ -390,8 +392,8 @@ static int cambi_hip_check_window(const CambiStateHip *s)
     return vmaf_cambi_check_window_fits_lut((uint16_t)in->adjusted_window, src_window);
 }
 
-/* Host-only part of init: geometry, contrast tables and the window guard.
- * Needs no device, so the scaffold build rejects what cambi.c rejects. */
+/* Host-only part of init: geometry, contrast tables and the window guard,
+ * all before the device is touched, so a rejected window costs no device. */
 static int cambi_hip_configure(CambiStateHip *s, unsigned bpc, unsigned w, unsigned h)
 {
     int err = cambi_hip_resolve_geometry(s, bpc, w, h);
@@ -401,6 +403,7 @@ static int cambi_hip_configure(CambiStateHip *s, unsigned bpc, unsigned w, unsig
         err = cambi_hip_check_window(s);
     return err;
 }
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* The parameter block (integer_cambi_hip.h), host only, every build.  */
@@ -849,6 +852,14 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                         unsigned w, unsigned h)
 {
     (void)pix_fmt;
+#ifndef HAVE_HIPCC
+    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */
+    (void)fex;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return -ENOSYS;
+#else
     CambiStateHip *s = fex->priv;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -856,20 +867,14 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         return -ENOMEM;
 
     int err = cambi_hip_configure(s, bpc, w, h);
-#ifndef HAVE_HIPCC
-    /* Scaffold posture: no device kernels. The host checks above still run,
-     * so a configuration cambi.c rejects is rejected here with its code. */
-    if (!err)
-        err = -ENOSYS;
-#else
     if (!err)
         err = cambi_hip_setup_device(s);
-    if (err)
+    if (err) {
         (void)cambi_hip_release(s);
-#endif /* HAVE_HIPCC */
-    if (err)
         (void)vmaf_dictionary_free(&s->feature_name_dict);
+    }
     return err;
+#endif /* HAVE_HIPCC */
 }
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

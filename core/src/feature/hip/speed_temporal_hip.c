@@ -152,6 +152,7 @@ static const VmafOption options_temporal[] = {
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_HIPCC
 /* The init-time part of speed_init(); speed_temporal always weights with
  * mode 0 (speed.c init()). */
 static int st_configure(const SpeedTemporalHipState *s, unsigned bpc, unsigned w, unsigned h,
@@ -174,10 +175,20 @@ static int st_configure(const SpeedTemporalHipState *s, unsigned bpc, unsigned w
     config->staged = ST_CHANNELS;
     return err;
 }
+#endif /* HAVE_HIPCC */
 
 static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                              unsigned w, unsigned h)
 {
+#ifndef HAVE_HIPCC
+    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return -ENOSYS;
+#else
     (void)pix_fmt;
     SpeedTemporalHipState *s = fex->priv;
     SpeedHipConfig config;
@@ -196,6 +207,7 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
         return -ENOMEM;
     }
     return 0;
+#endif /* HAVE_HIPCC */
 }
 
 static int submit_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,

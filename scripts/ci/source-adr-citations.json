@@ -7270,7 +7270,12 @@
     "1264": {
       "sites": {
         "core/src/feature/hip/float_vif_hip.c": 1,
+        "core/src/feature/hip/integer_cambi_hip.c": 2,
         "core/src/feature/hip/integer_vif_hip.c": 1,
+        "core/src/feature/hip/speed_chroma_hip.c": 1,
+        "core/src/feature/hip/speed_temporal_hip.c": 1,
+        "core/test/test_hip_cambi_device_math.c": 2,
+        "core/test/test_hip_device_resident_contract.py": 3,
         "core/test/test_hip_float_vif_parity.c": 1,
         "core/test/test_hip_kernel_source_contract.py": 2,
         "core/test/test_hip_vif_min_dim.c": 1
