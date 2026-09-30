@@ -65,4 +65,4 @@ The first full replay found two defects in the new resolver, both fixed with a t
 - The `--take` choice in the replay knows what landed; it only lets the replay continue past a refusal.
 - *Drift* is detected per key. A row the branch changed after the replayed head is not judged at all.
 - Order is compared for keyed lines only; plain lines are compared as a multiset.
-- On Debian 12 (`mawk` 1.3.4-20200120) `check-state-md-rows.sh` counts no id-bearing rows, because that `mawk` does not support the `{0,2}` interval its id pattern uses, and it passes any file. CI's Ubuntu runner is not affected. The resolver's own gate run inherits the blind spot on such a host.
+- The first replays ran in a Debian 12 image too, where `check-state-md-rows.sh` counted no id-bearing rows: that `mawk` (1.3.4 20200120) has no regex intervals, so the gate passed any file. This PR removes the intervals from the gate (`T-STATE-MD-ROWS-GATE-OLD-MAWK-2026-09-30`); the replays reported here ran on Debian 13, whose `mawk` was never affected, as was CI's Ubuntu runner.

@@ -157,7 +157,13 @@ report="$(awk '
     # against its own annotated copy, finds them unequal and reports clean:
     # 13 prose-led rows were duplicated in exactly that shape and were
     # invisible to both checks, because a prose-led row has no id either.
-    gsub(/_\(verified [0-9]{4}-[0-9]{2}-[0-9]{2}:[^)]*\)_/, "", row)
+    #
+    # No regex in this program uses an interval such as `{4}` or `{0,2}`:
+    # the mawk of Debian 12 (1.3.4 20200120) reads the braces literally, and
+    # this gate then counted no id-bearing rows at all and passed every file.
+    # `(\*\*|\*)?` rather than `\*?\*?` for the same reason: that mawk strips
+    # one asterisk with the latter, so every bold id kept a leading `*`.
+    gsub(/_\(verified [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]:[^)]*\)_/, "", row)
     gsub(/[[:space:]]+/, " ", row)
     sub(/[[:space:]]+$/, "", row)
     rowcount[row]++
@@ -203,9 +209,9 @@ report="$(awk '
     # The id opens the first cell, optionally bold. Shapes in use:
     #   **T-ID**  T-ID  **T7-16**  Netflix#NNN  **Netflix/vmaf#NNN**
     line = $0
-    if (match(line, /^\| \*{0,2}(T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(\/vmaf)?#[0-9]+)/)) {
+    if (match(line, /^\| (\*\*|\*)?(T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(\/vmaf)?#[0-9]+)/)) {
       id = substr(line, RSTART, RLENGTH)
-      sub(/^\| \*{0,2}/, "", id)
+      sub(/^\| (\*\*|\*)?/, "", id)
       idcount[id]++
       idlines[id] = idlines[id] " " NR
       if (sec == "Open bugs") {
