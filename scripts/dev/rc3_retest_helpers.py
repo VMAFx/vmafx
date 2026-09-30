@@ -24,6 +24,7 @@ import statistics
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 BACKEND_OPTIONS = {
     "cuda": ("enable_cuda",),
@@ -35,7 +36,7 @@ TIMING_LINE = re.compile(r"^(\S+) (\S+): cpu(\d+) (\S+) ms/frame, (\w+) (\S+) ms
 MAX_ERROR_TEXT = 160
 
 
-def load(path: str) -> dict:
+def load(path: str) -> dict[str, Any]:
     """The first JSON object in ``path`` (``--output /dev/stdout`` may add text)."""
     text = Path(path).read_text(encoding="utf-8")
     start = text.find("{")
@@ -47,7 +48,7 @@ def load(path: str) -> dict:
     return payload
 
 
-def frame_metrics(path: str) -> list[dict]:
+def frame_metrics(path: str) -> list[dict[str, Any]]:
     return [frame["metrics"] for frame in load(path)["frames"]]
 
 

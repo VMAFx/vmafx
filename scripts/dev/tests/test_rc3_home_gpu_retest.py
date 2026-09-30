@@ -83,7 +83,12 @@ def listed_entries() -> list[tuple[str, str]]:
     result = run_script("--list")
     if result.returncode != 0:
         raise AssertionError(result.stderr)
-    return [tuple(line.split()[:2]) for line in result.stdout.splitlines() if line.strip()]
+    entries: list[tuple[str, str]] = []
+    for line in result.stdout.splitlines():
+        if line.strip():
+            parts = line.split()
+            entries.append((parts[0], parts[1]))
+    return entries
 
 
 class HelperTests(unittest.TestCase):
