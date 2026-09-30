@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -222,6 +223,43 @@ def test_feature_extractor_name_lcs_pseudo_feature_cuda() -> None:
     assert result == "float_ms_ssim_cuda=enable_lcs=true"
 
 
+def test_feature_extractor_name_hip_has_hip_suffix() -> None:
+    assert feature_extractor_name("float_ssim", "hip") == "float_ssim_hip"
+
+
+def test_feature_extractor_name_float_ssim_lcs_cell() -> None:
+    # ADR-1382: the enable_lcs cell runs the same extractor with the option.
+    assert feature_extractor_name("float_ssim_lcs", "cpu") == "float_ssim=enable_lcs=true"
+    assert feature_extractor_name("float_ssim_lcs", "hip") == "float_ssim_hip=enable_lcs=true"
+    assert FEATURE_METRICS["float_ssim_lcs"] == (
+        "float_ssim",
+        "float_ssim_l",
+        "float_ssim_c",
+        "float_ssim_s",
+    )
+    assert FEATURE_TOLERANCE["float_ssim_lcs"] == DEFAULT_FP32_TOLERANCE
+
+
+def test_feature_extractor_name_hip_ms_ssim_uses_its_registered_name() -> None:
+    assert feature_extractor_name("float_ms_ssim", "hip") == "integer_ms_ssim_hip"
+    assert (
+        feature_extractor_name("float_ms_ssim_lcs", "hip") == "integer_ms_ssim_hip=enable_lcs=true"
+    )
+
+
+def test_every_hip_cell_names_a_registered_hip_extractor() -> None:
+    """The gate asks `--feature` for names the HIP build registers."""
+    hip_dir = Path(__file__).resolve().parents[2] / "core" / "src" / "feature" / "hip"
+    registered = set()
+    for source in hip_dir.glob("*.c"):
+        registered.update(
+            re.findall(r'^\s*\.name = "([a-z0-9_]+_hip)"', source.read_text(encoding="utf-8"), re.M)
+        )
+    for feature in FEATURE_METRICS:
+        extractor = feature_extractor_name(feature, "hip").split("=", 1)[0]
+        assert extractor in registered, f"{feature}: no HIP extractor named {extractor!r}"
+
+
 def test_backend_extractor_aliases_are_consistent_with_backend_suffix() -> None:
     # Aliases should always resolve to something that does NOT simply use BACKEND_SUFFIX.
     for (feat, backend), alias in BACKEND_EXTRACTOR_ALIASES.items():
@@ -293,6 +331,25 @@ def test_build_command_sycl_includes_sycl_device(tmp_path: Path) -> None:
         output=tmp_path / "out.json",
     )
     assert "--sycl_device" in cmd
+
+
+def test_build_command_hip_includes_hip_device(tmp_path: Path) -> None:
+    cmd = build_command(
+        binary=tmp_path / "vmaf",
+        ref=tmp_path / "ref.yuv",
+        dist=tmp_path / "dist.yuv",
+        width=320,
+        height=240,
+        pix_fmt="420",
+        bitdepth=8,
+        feature="float_ssim_lcs",
+        backend="hip",
+        device=0,
+        output=tmp_path / "out.json",
+    )
+    assert cmd[cmd.index("--hip_device") + 1] == "0"
+    assert cmd[cmd.index("--feature") + 1] == "float_ssim_hip=enable_lcs=true"
+    assert cmd[cmd.index("--backend") + 1] == "hip"
 
 
 def test_build_command_no_prediction_flag_present(tmp_path: Path) -> None:

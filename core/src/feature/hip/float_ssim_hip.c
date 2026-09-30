@@ -42,9 +42,15 @@
  *  luminance / contrast / structure terms of iqa/ssim_tools.c (clamped
  *  variances, flat-region covariance clamp) into three per-block double
  *  partials and emits `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on
- *  the host through the shared nonfinite_score.h SSIM helpers; identical
- *  windows score exactly 1, so identical frames report the CPU's +inf /
- *  clip_db ceiling.
+ *  the host through the shared nonfinite_score.h SSIM helpers.
+ *
+ *  Pass 2 forms each pixel's SSIM term exactly as the CPU's
+ *  ssim_accumulate_default_scalar() does (l * c * s in double from the
+ *  CPU-typed factors) and sums one double per block; collect() adds the
+ *  blocks in double, divides by the pixel count and rounds the mean to fp32,
+ *  as iqa_ssim() returns it (fssim_hip_cpu_mean()). Identical frames then
+ *  report what the CPU reports, 1 - 2^-24 (72.247 dB) where its fp32
+ *  luminance denominator leaves that residue, instead of a forced 1.
  *
  *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
  *  back to CPU before init when auto resolves above 1; direct requests keep
@@ -95,8 +101,8 @@
 
 typedef struct SsimStateHip {
     VmafHipKernelLifecycle lc;
-    VmafHipKernelReadback rb; /* device: per-block float partials;
-                                  * host_pinned: readback slot */
+    VmafHipKernelReadback rb; /* device: per-block double SSIM partials;
+                               * host_pinned: readback slot */
     /* enable_lcs only: per-block double L / C / S partials, laid out
      * [l | c | s] with partials_capacity entries each; unallocated otherwise. */
     VmafHipKernelReadback rb_lcs;
@@ -430,7 +436,7 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
     if (hip_rc != hipSuccess)
         return vmaf_hip_rc_to_errno(hip_rc);
 
-    const size_t copy_bytes = (size_t)s->partials_count * sizeof(float);
+    const size_t copy_bytes = (size_t)s->partials_count * sizeof(double);
     hip_rc =
         hipMemcpyAsync(s->rb.host_pinned, s->rb.device, copy_bytes, hipMemcpyDeviceToHost, str);
     if (hip_rc == hipSuccess && s->enable_lcs) {
@@ -499,7 +505,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0) {
         err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                             (size_t)s->partials_capacity * sizeof(float));
+                                             (size_t)s->partials_capacity * sizeof(double));
     }
     if (err == 0 && s->enable_lcs) {
         err = vmaf_hip_kernel_readback_alloc(&s->rb_lcs, s->ctx,
@@ -597,25 +603,37 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 }
 
 #ifdef HAVE_HIPCC
+/* The frame mean of one per-block partial row, as CPU iqa_ssim() returns its
+ * means: the double sum over the pixel count, rounded to fp32
+ * (`(float)(sum / (double)(w * h))`). Validates the ratio first (ADR-1302). */
+static int fssim_hip_cpu_mean(const double *partials, unsigned count, double n_pixels,
+                              const char *name, unsigned index, double *mean)
+{
+    double sum = 0.0;
+    for (unsigned i = 0; i < count; i++)
+        sum += partials[i];
+    double ratio = 0.0;
+    const int err =
+        vmaf_feature_finite_ratio_named("float_ssim_hip", name, sum, n_pixels, index, &ratio);
+    if (err == 0)
+        *mean = (double)(float)ratio;
+    return err;
+}
+
 /* enable_lcs: the three per-block L / C / S partial rows become the frame
  * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
  * order after the shared SSIM validation (ADR-1302). */
-static int ssim_hip_emit_lcs(const SsimStateHip *s, double total, double n_pixels, unsigned index,
+static int ssim_hip_emit_lcs(const SsimStateHip *s, double score, double n_pixels, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
     const double *lcs = (const double *)s->rb_lcs.host_pinned;
-    double score = 0.0;
-    int err = vmaf_feature_finite_ratio_named("float_ssim_hip", "float_ssim", total, n_pixels,
-                                              index, &score);
     VmafNamedScore atoms[3];
+    int err = 0;
     for (unsigned k = 0; k < 3u && err == 0; k++) {
-        double sum = 0.0;
-        for (unsigned i = 0; i < s->partials_count; i++)
-            sum += lcs[((size_t)k * s->partials_count) + i];
         atoms[k].name = atom_names[k];
-        err = vmaf_feature_finite_ratio_named("float_ssim_hip", atom_names[k], sum, n_pixels, index,
-                                              &atoms[k].value);
+        err = fssim_hip_cpu_mean(lcs + ((size_t)k * s->partials_count), s->partials_count, n_pixels,
+                                 atom_names[k], index, &atoms[k].value);
     }
     if (err != 0)
         return err;
@@ -643,19 +661,19 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* Accumulate per-block float partials in double, then divide by the
-     * effective pixel count. Mirrors the CUDA twin's collect path. */
-    const float *partials = (const float *)s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->partials_count; i++)
-        total += (double)partials[i];
+    /* The CPU's frame score: the double sum of the per-pixel terms over the
+     * pixel count, rounded to fp32 (fssim_hip_cpu_mean()). */
     const double n_pixels = (double)s->w_final * (double)s->h_final;
+    double score = 0.0;
+    err = fssim_hip_cpu_mean((const double *)s->rb.host_pinned, s->partials_count, n_pixels,
+                             "float_ssim", index, &score);
+    if (err != 0)
+        return err;
     if (!s->enable_lcs) {
-        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                                "float_ssim_hip", "float_ssim", total, n_pixels,
-                                                s->enable_db, s->max_db, index);
+        return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict, "float_ssim_hip",
+                                          "float_ssim", score, s->enable_db, s->max_db, index);
     }
-    return ssim_hip_emit_lcs(s, total, n_pixels, index, feature_collector);
+    return ssim_hip_emit_lcs(s, score, n_pixels, index, feature_collector);
 #endif /* HAVE_HIPCC */
 }
 

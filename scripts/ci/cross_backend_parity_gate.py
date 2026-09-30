@@ -106,6 +106,16 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     ),
     "ciede": ("ciede2000",),
     "float_ssim": ("float_ssim",),
+    # ADR-1382: `float_ssim` with `enable_lcs=true` adds the frame means of
+    # the per-pixel luminance / contrast / structure terms (`float_ssim_l`,
+    # `float_ssim_c`, `float_ssim_s`) on top of the score. Same float
+    # reductions as the score, same places=4 contract.
+    "float_ssim_lcs": (
+        "float_ssim",
+        "float_ssim_l",
+        "float_ssim_c",
+        "float_ssim_s",
+    ),
     "float_ms_ssim": ("float_ms_ssim",),
     # T7-35 / ADR-0215: enable_lcs adds 15 per-scale L/C/S triples on
     # top of the combined float_ms_ssim score. The CUDA/SYCL kernels
@@ -188,6 +198,8 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "float_moment": 5e-5,
     # Float pipeline, well-conditioned. places=4.
     "float_ssim": 5e-5,
+    # ADR-1382: L / C / S means are the score's own reductions — places=4.
+    "float_ssim_lcs": 5e-5,
     "float_ms_ssim": 5e-5,
     # T7-35 / ADR-0215: LCS triples are the same float reductions
     # that feed the Wang combine — same conditioning, same places=4.
@@ -212,17 +224,20 @@ BACKEND_SUFFIX: dict[str, str] = {
     "cpu": "",
     "cuda": "_cuda",
     "sycl": "_sycl",
+    "hip": "_hip",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
+    "hip": "--hip_device",
 }
 
 # Default device index per backend. CUDA gpumask=1 picks the first GPU;
-# SYCL device 0 is the first compute-capable.
+# SYCL and HIP device 0 is the first compute-capable one.
 BACKEND_DEFAULT_DEVICE: dict[str, int] = {
     "cuda": 1,
     "sycl": 0,
+    "hip": 0,
 }
 
 
@@ -281,10 +296,15 @@ def build_matrix(features: Iterable[str], backends: Iterable[str]) -> list[Cell]
 # extra L/C/S metrics.
 FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
+    # ADR-1382: the float_ssim L / C / S outputs.
+    "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
 }
 
+# Extractors whose backend twin is not `<feature><suffix>`, keyed by the
+# base extractor name (FEATURE_ALIASES resolved). The HIP MS-SSIM twin keeps
+# its upstream-mirror file name as its registered name (ADR-0549).
 BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
-    # No backend-specific aliases currently needed for CUDA or SYCL.
+    ("float_ms_ssim", "hip"): "integer_ms_ssim_hip",
 }
 
 
@@ -297,13 +317,9 @@ def feature_extractor_name(feature: str, backend: str) -> str:
     """
 
     suffix = BACKEND_SUFFIX[backend]
-    aliased = BACKEND_EXTRACTOR_ALIASES.get((feature, backend))
-    if aliased is not None:
-        return aliased
-    if feature in FEATURE_ALIASES:
-        base_name, opt_string = FEATURE_ALIASES[feature]
-        return f"{base_name}{suffix}={opt_string}"
-    return f"{feature}{suffix}"
+    base_name, opt_string = FEATURE_ALIASES.get(feature, (feature, ""))
+    extractor = BACKEND_EXTRACTOR_ALIASES.get((base_name, backend), f"{base_name}{suffix}")
+    return f"{extractor}={opt_string}" if opt_string else extractor
 
 
 def build_command(
@@ -737,6 +753,11 @@ def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
         type=int,
         default=BACKEND_DEFAULT_DEVICE["sycl"],
     )
+    ap.add_argument(
+        "--hip-device",
+        type=int,
+        default=BACKEND_DEFAULT_DEVICE["hip"],
+    )
     add_output_and_calibration_args(ap)
 
 
@@ -823,7 +844,7 @@ def main() -> int:
         sys.stderr.write("empty matrix — supply at least two backends or one feature\n")
         return 2
     args.workdir.mkdir(parents=True, exist_ok=True)
-    devices = {"cuda": args.cuda_device, "sycl": args.sycl_device}
+    devices = {"cuda": args.cuda_device, "sycl": args.sycl_device, "hip": args.hip_device}
     results = run_cells(args, cells, requested_calibration(args), devices)
     if args.json_out is not None:
         emit_json(results, args.json_out)

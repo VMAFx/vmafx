@@ -55,11 +55,13 @@ typedef struct VmafHipMotionSad {
 
 /* One frame of a raw-luma ping-pong. `cur` and `prev` are packed device
  * planes of `width` x `height` samples, vmaf_hip_motion_sad_plane_bytes()
- * each; `staging` is pinned host memory of the same size
- * (vmaf_hip_picture_staging_alloc()). */
+ * each; `staging` is pinned host memory (vmaf_hip_picture_staging_alloc())
+ * of `staging_bytes`, the size the owner allocated, so the upload refuses a
+ * plane that does not fit instead of trusting the frame geometry. */
 typedef struct VmafHipMotionSadFrame {
     const VmafPicture *pic; /* this frame's reference picture, in host memory */
     void *staging;          /* host copy of pic's luma, the device copy's source */
+    size_t staging_bytes;   /* allocated size of `staging` */
     void *cur;              /* receives pic's luma: the next frame's `prev` */
     const void *prev;       /* the previous frame's luma; NULL on the first frame */
     uint64_t *sad;          /* device accumulator, zeroed here; unused without prev */
@@ -79,7 +81,10 @@ void vmaf_hip_motion_sad_unload(VmafHipMotionSad *k);
  * kernel-template convention): stage pic's luma into `cur` through
  * `staging` without waiting (vmaf_hip_picture_upload_staged()) and, when
  * `prev` is set, zero `sad` and add sum |blur(prev - cur)| into it. The
- * picture is read before this returns. Returns 0 or a negative errno. */
+ * picture is read before this returns. Returns 0 or a negative errno; when
+ * the SAD fails to enqueue after the upload was, it waits for the stream
+ * first, so no copy is still reading `staging` or writing `cur` once the
+ * error is returned (the one host wait, error path only). */
 int vmaf_hip_motion_sad_submit(const VmafHipMotionSad *k, const VmafHipMotionSadFrame *frame,
                                uintptr_t stream);
 

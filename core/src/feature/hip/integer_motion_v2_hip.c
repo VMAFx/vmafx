@@ -215,6 +215,7 @@ static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned in
 {
     const VmafHipMotionSadFrame frame = {.pic = ref_pic,
                                          .staging = s->staging,
+                                         .staging_bytes = s->plane_bytes,
                                          .cur = s->pix[index % 2u],
                                          .prev = (index > 0u) ? s->pix[(index + 1u) % 2u] : NULL,
                                          .sad = (uint64_t *)s->rb.device,
@@ -315,9 +316,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)dist_pic_90;
     MotionV2StateHip *s = fex->priv;
 
+    /* The geometry stays the one init() sized the buffers for; libvmaf
+     * rejects a picture of any other size before it reaches submit(). */
     s->index = index;
-    s->frame_w = ref_pic->w[0];
-    s->frame_h = ref_pic->h[0];
 
 #ifdef HAVE_HIPCC
     return mv2_hip_launch(s, ref_pic, index);
@@ -344,13 +345,15 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                        0.0, index);
     }
 
-    /* SAD sum -> motion_v2_sad_score = sad / 256.0 / (w*h).
-     * Matches the CUDA twin's collect formula verbatim (ADR-0138/0139). */
+    /* SAD sum -> sad / 256.0 / (w*h), stored as the CPU stores it
+     * (integer_motion_v2.c::extract): scaled by motion_fps_weight, then capped
+     * at motion_max_val. flush() folds motion2_v2 / motion3_v2 from the stored
+     * value and does not weight it again. */
     const uint64_t *sad_host = s->rb.host_pinned;
     const double sad_score = (double)*sad_host / 256.0 / ((double)s->frame_w * (double)s->frame_h);
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_motion_v2_sad_score",
-                                                   sad_score, index);
+    return vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score",
+        MIN(sad_score * s->motion_fps_weight, s->motion_max_val), index);
 #else
     (void)feature_collector;
     (void)index;
@@ -370,7 +373,7 @@ static unsigned mv2_hip_count_frames(VmafFeatureCollector *fc, const char *sad_n
 }
 
 /* motion3_v2 seeding — mirrors integer_motion_v2.c::flush exactly.
- * stamp_value blends the *raw SAD* at min_idx, clipped to motion_max_val;
+ * stamp_value blends the stored SAD at min_idx, clipped to motion_max_val;
  * it is emitted for all indices i < min_idx. */
 static double mv2_hip_stamp_value(const MotionV2StateHip *s, VmafFeatureCollector *fc,
                                   const char *sad_name, unsigned n_frames, unsigned min_idx)
@@ -387,20 +390,19 @@ static double mv2_hip_stamp_value(const MotionV2StateHip *s, VmafFeatureCollecto
     return stamp_value;
 }
 
-/* motion2_v2 of frame i: the smaller fps-weighted SAD of frames i and i + 1,
- * or frame i's alone for the last frame. Mirrors CPU integer_motion_v2.c
- * flush; bit-exact when motion_fps_weight = 1.0 (default). */
-static double mv2_hip_motion2(const MotionV2StateHip *s, VmafFeatureCollector *fc,
-                              const char *sad_name, unsigned i, unsigned n_frames)
+/* motion2_v2 of frame i: the smaller stored SAD of frames i and i + 1, or
+ * frame i's alone for the last frame. The stored SAD already carries
+ * motion_fps_weight and the motion_max_val cap (collect()), exactly as CPU
+ * integer_motion_v2.c::flush reads it. */
+static double mv2_hip_motion2(VmafFeatureCollector *fc, const char *sad_name, unsigned i,
+                              unsigned n_frames)
 {
     double score_cur;
     double score_next;
     vmaf_feature_collector_get_score(fc, sad_name, &score_cur, i);
-    score_cur *= s->motion_fps_weight;
     if (i + 1u >= n_frames)
         return score_cur;
     vmaf_feature_collector_get_score(fc, sad_name, &score_next, i + 1u);
-    score_next *= s->motion_fps_weight;
     return score_cur < score_next ? score_cur : score_next;
 }
 
@@ -443,8 +445,10 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
         vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
     const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
 
+    /* A one-frame run still emits motion2_v2 = motion3_v2 = 0, as the CPU
+     * does; only an empty run has nothing to fold. */
     const unsigned n_frames = mv2_hip_count_frames(feature_collector, sad_name);
-    if (n_frames < 2u)
+    if (n_frames == 0u)
         return 1;
 
     /* 3-frame mode only (min_idx = 1; the 5-frame window is unsupported on
@@ -455,7 +459,7 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
 
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
-        const double motion2 = mv2_hip_motion2(s, feature_collector, sad_name, i, n_frames);
+        const double motion2 = mv2_hip_motion2(feature_collector, sad_name, i, n_frames);
         int append_err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
             motion2, i);

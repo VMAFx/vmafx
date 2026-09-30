@@ -679,8 +679,8 @@ upload through pinned staging and wait on the host only in `collect()` (see
 ([ADR-1381](../../adr/1381-hip-integer-tiny-frame-guards.md)). A tiled kernel
 loads a whole tile for every thread, padding threads included, and reflects an
 out-of-plane index once; on a plane smaller than the tile that reflection can
-still land outside it. The motion tile loads and the integer ADM scale-0
-vertical DWT now clamp the reflected index into the plane
+still land outside it. The motion and float-motion tile loads and the integer
+ADM scale-0 vertical DWT now clamp the reflected index into the plane
 (`hip_tile_index.h`, `integer_adm/adm_dwt2_rows.h`). The clamp is the identity
 for every sample an output reads, so no score changes;
 `test_hip_adm_dwt2_rows` replays every thread of the launch for every plane
@@ -699,8 +699,22 @@ fails at init.
 | `float_ssim_hip` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs` selects a pass-2 kernel that also reduces the per-pixel L, C and S |
 | `float_motion_hip` | `motion_max_val` (`mmxv`) | Host; every emitted score, the debug one included, goes through the CPU's `motion_clip()` |
 
-Both SSIM twins score an identical window exactly 1, so with `enable_db`
-identical frames report `+inf`, or the `clip_db` ceiling, as the CPU does.
+With `enable_db`, identical frames report what the CPU reports. For
+`integer_ssim_hip` that is `+inf` (or the `clip_db` ceiling) from 3x3 up.
+`float_ssim_hip` computes each pixel's term as the CPU does, `l * c * s` from
+the CPU's own luminance, contrast and structure types, and rounds the frame
+mean to fp32 like the CPU. On some identical frames the CPU's fp32 arithmetic
+leaves 1 - 2^-24, which is 72.247 dB, and the twin reports the same instead
+of a forced `+inf`.
+
+Three more CPU behaviours: `motion_v2_hip` stores its SAD weighted by
+`motion_fps_weight` and capped at `motion_max_val`, as the CPU does, and
+emits `motion2_v2` / `motion3_v2` for a one-frame run; `psnr_hip` sees every
+frame under `--subsample`, so the `apsnr_*` totals cover the clip; and
+`motion_hip` defaults `debug` to false and writes
+`VMAF_integer_feature_motion_sad_score` every frame, like the CPU `motion`.
+`float_motion_hip` does not emit `motion3` yet
+(`T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`).
 
 To confirm on an AMD host, build with HIP in the `vmaf-dev-mcp` container and
 run the device tests, which skip (exit 77) without a device:
@@ -712,6 +726,10 @@ ninja -C build-hip
 python3 scripts/ci/run_meson_test.py -- -C build-hip \
     test_hip_motion_tiny_frames test_hip_twin_option_parity \
     test_hip_vif_min_dim test_hip_adm_tiny_frames test_hip_upload_race
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference testdata/ref_576x324_48f.yuv --distorted testdata/dis_576x324_48f.yuv \
+    --width 576 --height 324 --backends cpu hip \
+    --features float_ssim float_ssim_lcs psnr motion_v2 vif
 ```
 
 Replace `gfx1036` with your device's target (`rocm_agent_enumerator` prints

@@ -109,6 +109,16 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # places=4 contract per ADR-0189 (measure-then-set-the-contract,
     # relax to places=3 if the gate exceeds 5e-5 max_abs).
     "float_ssim": ("float_ssim",),
+    # ADR-1382: `float_ssim` with `enable_lcs=true` adds the frame means of
+    # the per-pixel luminance / contrast / structure terms (`float_ssim_l`,
+    # `float_ssim_c`, `float_ssim_s`) on top of the score. Same float
+    # reductions as the score, same places=4 contract.
+    "float_ssim_lcs": (
+        "float_ssim",
+        "float_ssim_l",
+        "float_ssim_c",
+        "float_ssim_s",
+    ),
     # GPU long-tail batch 2 part 2 (T7-23 / ADR-0188 / ADR-0190):
     # float_ms_ssim. 5-level pyramid + Wang product combine. Single
     # emitted metric (the enable_lcs extras are gated separately
@@ -215,9 +225,13 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
 # 16-metric mode. Each entry is (extractor_base_name, "opt=val").
 FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
+    "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
 }
 
-BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {}
+# Twins not named `<feature><suffix>`, keyed by the base extractor name.
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
+    ("float_ms_ssim", "hip"): "integer_ms_ssim_hip",
+}
 
 # Per-backend extractor-name suffix and the device-selection flag the
 # CLI uses to actually route to it. CPU is the implicit baseline (no
@@ -226,10 +240,12 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {}
 BACKEND_SUFFIX: dict[str, str] = {
     "cuda": "_cuda",
     "sycl": "_sycl",
+    "hip": "_hip",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
+    "hip": "--hip_device",
 }
 
 
@@ -239,7 +255,7 @@ def feature_extractor_name(feature: str, backend: str | None) -> str:
         extractor_name = base_name
     else:
         extractor_name = BACKEND_EXTRACTOR_ALIASES.get(
-            (feature, backend), f"{base_name}{BACKEND_SUFFIX[backend]}"
+            (base_name, backend), f"{base_name}{BACKEND_SUFFIX[backend]}"
         )
     return f"{extractor_name}={opt_string}" if opt_string else extractor_name
 
@@ -412,16 +428,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend",
         choices=tuple(BACKEND_SUFFIX),
         default="cuda",
-        help="GPU backend to compare against CPU (cuda | sycl)",
+        help="GPU backend to compare against CPU (cuda | sycl | hip)",
     )
     ap.add_argument(
         "--device",
         type=int,
         default=None,
         help=(
-            "device selector for the chosen backend. SYCL uses a zero-based "
-            "index; CUDA uses a gpumask (for example 1 = first GPU). "
-            "Defaults: sycl=0, cuda=1."
+            "device selector for the chosen backend. SYCL and HIP use a "
+            "zero-based index; CUDA uses a gpumask (for example 1 = first GPU). "
+            "Defaults: sycl=0, hip=0, cuda=1."
         ),
     )
     ap.add_argument(
