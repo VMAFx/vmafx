@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sycl-rc3-parity — RC3 SYCL parity follow-ups (2026-09-30)
+
+- `core/src/feature/sycl/integer_ssim_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL). Fixed identical-frame flat-handling shortcut to avoid `+inf`
+  under `enable_db` and maintain CPU parity.
+- `core/src/feature/sycl/integer_psnr_sycl.cpp`: fork-only. Added
+  `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag for correct `--subsample` behavior.
+- `core/src/feature/sycl/integer_motion_v2_sycl.cpp`: fork-only. Aligned FPS
+  weighting and motion score clipping with CPU reference.
+- `core/src/feature/cambi_c_values_frame.h` & `core/src/feature/x86/cambi_avx2.c`:
+  bounded vertical loop indices for short frame heights (< `pad_size`),
+  preventing out-of-bounds memory access.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
 - `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf

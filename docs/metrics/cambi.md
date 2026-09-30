@@ -377,5 +377,13 @@ window exceeds 65 x 65 (the size of the reciprocal table): at 3840x2160 that is
 any `window_size` above 65 without `cambi_high_res_speedup`. Both fail with
 "cambi: window_size N too large for reciprocal LUT".
 
+### Short frame handling and SIMD / SYCL parity
+
+Input frames where `height < pad_size` (such as banner or slice geometries like 1920x64 and 1920x128) are fully supported across CPU scalar, AVX2 SIMD, and SYCL paths:
+
+- In `core/src/feature/cambi_c_values_frame.h`, `c_values_height_is_supported` accepts any `height >= 1`.
+- In `core/src/feature/x86/cambi_avx2.c`, the vertical loops in `c_values_first_pass_avx2`, `c_values_top_edge_avx2`, and `c_values_bottom_edge_avx2` clamp indices against frame height (`MIN(pad_size, height)`, `MIN(pad_size + 1, height)`, `MAX(height - pad_size, 0)`), preventing out-of-bounds reads and writes.
+- In `core/src/feature/sycl/integer_cambi_sycl.cpp`, boundary guards ensure short frames remain within device buffer limits, bit-exact with the CPU.
+
 Parity and timing reproduce with the commands in
 [Research-2122](../research/2122-sycl-cambi-device-resident.md).
