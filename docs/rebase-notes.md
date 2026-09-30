@@ -61,6 +61,21 @@
 - `core/test/test_meson_secret_env_sanitization.py`: `EXPECTED_RUNNER_PATHS` registers
   `scripts/dev/rc3-home-gpu-retest.sh` as an authorized caller of `scripts/ci/run_meson_test.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/float-moment-twin-routing — CPU float_moment declares the moments it emits (2026-10-01)
+
+- `core/src/feature/float_moment.c` is upstream Netflix code. The fork adds the
+  four emitted names (`float_moment_ref1st`, `float_moment_dis1st`,
+  `float_moment_ref2nd`, `float_moment_dis2nd`) to `provided_features` after
+  upstream's `"float_moment"`, plus the cited `modernize-use-nullptr` /
+  `misc-use-internal-linkage` NOLINTs. The ADR-1359 twin lookup pairs
+  extractors by provided feature name, so an upstream sync that restores the
+  one-name list makes every GPU `float_moment` twin unreachable again
+  (`T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01`);
+  `test_feature_backend_twin` fails in that case. On a conflict keep both the
+  upstream change and the four names.
+- CPU `float_moment` scores are unchanged; only which extractor serves
+  `--backend <gpu> --feature float_moment` changes. No public API, CLI syntax
+  or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

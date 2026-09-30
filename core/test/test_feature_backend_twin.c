@@ -157,6 +157,25 @@ static char *test_twin_lookup_without_device(void)
     return NULL;
 }
 
+/* The CPU float_moment declares the moments it emits next to upstream's
+ * extractor name, so the feature-keyed lookups find it
+ * (T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01). */
+static char *test_float_moment_provides_its_moments(void)
+{
+    static const char *const names[] = {"float_moment", "float_moment_ref1st",
+                                        "float_moment_dis1st", "float_moment_ref2nd",
+                                        "float_moment_dis2nd"};
+    const VmafFeatureExtractor *moment = vmaf_get_feature_extractor_by_name("float_moment");
+    mu_assert("float_moment is registered", moment != NULL);
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        mu_assert("every float_moment output resolves to the CPU extractor",
+                  vmaf_get_feature_extractor_by_feature_name(names[i], 0) == moment);
+    }
+    mu_assert("a moment name no extractor emits stays unresolved",
+              vmaf_get_feature_extractor_by_feature_name("float_moment_ref3rd", 0) == NULL);
+    return NULL;
+}
+
 /* Stand-in for an imported backend: compute_fex_flags() only tests the state
  * pointer, and nothing on the lookup path dereferences it. Returns the
  * extractor flag of the compiled backend, or 0 in a CPU-only build. */
@@ -233,6 +252,18 @@ static char *check_registry_twins(VmafContext *vmaf, unsigned flag)
     return NULL;
 }
 
+/* float_moment reaches the backend's twin through the moments the CPU
+ * extractor declares (T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01). */
+static char *check_float_moment_twin(VmafContext *vmaf, unsigned flag)
+{
+    const char *twin = NULL;
+    const char *option = NULL;
+    mu_assert("float_moment must map to the backend's float_moment twin",
+              vmaf_feature_backend_twin(vmaf, "float_moment", NULL, NULL, &twin, &option) == 0 &&
+                  twin_provides(twin, flag, "float_moment_ref1st") && option == NULL);
+    return NULL;
+}
+
 static char *test_twin_lookup_on_imported_backend(void)
 {
     VmafContext *vmaf = NULL;
@@ -240,6 +271,8 @@ static char *test_twin_lookup_on_imported_backend(void)
     unsigned char token = 0;
     const unsigned flag = fake_backend(vmaf, &token);
     char *msg = flag ? check_registry_twins(vmaf, flag) : NULL;
+    if (!msg && flag)
+        msg = check_float_moment_twin(vmaf, flag);
 #if defined(HAVE_SYCL) || defined(HAVE_CUDA)
     if (!msg && flag) {
         vmaf->cfg.gpumask = 1;
@@ -371,6 +404,7 @@ char *run_tests(void)
         MU_TEST(test_verdict_checks_geometry),
         MU_TEST(test_twin_lookup_guards),
         MU_TEST(test_twin_lookup_without_device),
+        MU_TEST(test_float_moment_provides_its_moments),
         MU_TEST(test_twin_lookup_on_imported_backend),
         MU_TEST(test_registered_extractors_report_backends),
         MU_TEST(test_registered_extractor_guards),

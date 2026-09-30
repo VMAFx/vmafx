@@ -160,8 +160,24 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"float_moment", NULL};
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
+/* Upstream declares only the extractor name, "float_moment". The four emitted
+ * names follow it because the device-twin lookup (ADR-1359,
+ * vmaf_get_feature_extractor_twin()) pairs extractors by the features they
+ * provide: without them `--backend cuda --feature float_moment` found no twin
+ * and ran on the CPU (T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01). */
+static const char *provided_features[] = {
+    "float_moment",        "float_moment_ref1st", "float_moment_dis1st",
+    "float_moment_ref2nd", "float_moment_dis2nd", NULL,
+};
+
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_moment` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_moment = {
     .name = "float_moment",
     .init = init,
@@ -181,3 +197,5 @@ VmafFeatureExtractor vmaf_fex_float_moment = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -1806,6 +1806,7 @@
         "core/src/feature/feature_dists.c": 1,
         "core/src/feature/feature_lpips.c": 1,
         "core/src/feature/feature_mobilesal.c": 1,
+        "core/src/feature/float_moment.c": 1,
         "core/src/feature/float_motion.c": 1,
         "core/src/feature/float_ms_ssim.c": 1,
         "core/src/feature/float_psnr.c": 1,
@@ -6083,6 +6084,7 @@
         "core/src/feature/feature_extractor.h": 2,
         "core/src/feature/feature_lpips.c": 1,
         "core/src/feature/feature_mobilesal.c": 1,
+        "core/src/feature/float_moment.c": 1,
         "core/src/feature/float_motion.c": 1,
         "core/src/feature/float_ms_ssim.c": 1,
         "core/src/feature/float_psnr.c": 1,
@@ -7800,6 +7802,7 @@
       "sites": {
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/feature_extractor.h": 1,
+        "core/src/feature/float_moment.c": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/libvmaf.c": 3,
         "core/test/meson.build": 1,

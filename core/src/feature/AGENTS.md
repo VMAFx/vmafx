@@ -87,6 +87,14 @@ feature/
   by eliminating compiler-generated widening conversions. **On rebase:** do not
   pre-widen operands (`(double)pic_ * pic_`) or revert to direct implicit
   widening (`cum += pic_ * pic_`).
+- **`float_moment.c::provided_features` lists the four emitted moments**
+  after upstream's `"float_moment"` (`T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01`).
+  The device-twin lookup (ADR-1359, `vmaf_get_feature_extractor_twin()`)
+  pairs extractors by provided feature name, and every GPU `float_moment`
+  twin declares `float_moment_{ref,dis}{1st,2nd}`; with upstream's list alone
+  `--backend <gpu> --feature float_moment` ran on the CPU. **On rebase:** keep
+  the four names when upstream touches the list;
+  `test_feature_backend_twin` fails without them.
 
 - **CAMBI bounded searches and live private helpers** (ADR-0205 / ADR-1146):
   `cambi.c` is strict-clean: it contains no `NOLINT` or Cppcheck suppression.
