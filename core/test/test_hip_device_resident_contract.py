@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # One definition of "a host wait" and of a C function body for every HIP
 # source contract (ADR-1377's test owns them).
-from test_hip_kernel_source_contract import HOST_WAIT, _function_body  # noqa: E402
+from test_hip_kernel_source_contract import HOST_WAIT, _function_body
 
 ROOT = Path(__file__).resolve().parents[2]
 HIP_FEATURE = ROOT / "core" / "src" / "feature" / "hip"
@@ -105,81 +105,88 @@ def _body(text: str, name: str) -> str:
     return _code(_function_body(text, name))
 
 
-def _cambi_failures(src: dict[str, str]) -> list[str]:
+def _host_stage_failures(name: str, text: str, stages: tuple[re.Pattern[str], ...]) -> list[str]:
+    """A CPU-extractor stage called on the host, or a sync outside the lifecycle."""
+    code = _code(text)
+    failures = [f"{name}: host stage {s.pattern} is back" for s in stages if s.search(code)]
+    if "hipStreamSynchronize" in code or "hipDeviceSynchronize" in code:
+        failures.append(f"{name}: a stream or device sync outside the lifecycle")
+    return failures
+
+
+def _frame_path_failures(name: str, text: str, fns: tuple[str, ...], upload_fn: str) -> list[str]:
+    """The per-frame enqueue path: no host wait, a staged upload, one readback."""
     failures: list[str] = []
-    host = _code(src[CAMBI_HOST])
-    for stage in CAMBI_HOST_STAGES:
-        if stage.search(host):
-            failures.append(f"{CAMBI_HOST}: host stage {stage.pattern} is back")
-    if "hipStreamSynchronize" in host or "hipDeviceSynchronize" in host:
-        failures.append(f"{CAMBI_HOST}: a stream or device sync outside the lifecycle")
-    for name in CAMBI_FRAME_FNS:
-        body = _body(src[CAMBI_HOST], name)
+    for fn in fns:
+        body = _body(text, fn)
         if not body:
-            failures.append(f"{CAMBI_HOST}: {name}() not found")
+            failures.append(f"{name}: {fn}() not found")
         elif HOST_WAIT.search(body):
-            failures.append(f"{CAMBI_HOST}: {name}() waits on the host mid-frame")
-    frame = _body(src[CAMBI_HOST], "cambi_hip_enqueue_frame")
-    if "vmaf_hip_picture_upload_staged(" not in frame:
-        failures.append(f"{CAMBI_HOST}: the frame upload skips the pinned staging")
-    readbacks = sum(len(DEVICE_TO_HOST.findall(_body(src[CAMBI_HOST], n))) for n in CAMBI_FRAME_FNS)
+            failures.append(f"{name}: {fn}() waits on the host mid-frame")
+    if "vmaf_hip_picture_upload_staged(" not in _body(text, upload_fn):
+        failures.append(f"{name}: the frame upload skips the pinned staging")
+    readbacks = sum(len(DEVICE_TO_HOST.findall(_body(text, fn))) for fn in fns)
     if readbacks != 1:
-        failures.append(f"{CAMBI_HOST}: {readbacks} device-to-host copies per frame, not one")
-    collect = _body(src[CAMBI_HOST], "collect_fex_hip")
+        failures.append(f"{name}: {readbacks} device-to-host copies per frame, not one")
+    return failures
+
+
+def _cambi_collect_failures(host: str) -> list[str]:
+    failures: list[str] = []
+    collect = _body(host, "collect_fex_hip")
     if collect.count("vmaf_hip_kernel_collect_wait(") != 1:
         failures.append(f"{CAMBI_HOST}: collect() no longer holds the frame's one wait")
     for helper in ("vmaf_cambi_fixed_topk_mean(", "vmaf_cambi_weight_scores_per_scale("):
         if helper not in collect:
             failures.append(f"{CAMBI_HOST}: collect() combines without {helper})")
-    if re.search(r"\bldexp\s*\(|18446744073709551616", host):
+    if re.search(r"\bldexp\s*\(|18446744073709551616", _code(host)):
         failures.append(f"{CAMBI_HOST}: a local copy of the top-K mean is back")
-    init = _body(src[CAMBI_HOST], "init_fex_hip")
+    return failures
+
+
+def _cambi_failures(src: dict[str, str]) -> list[str]:
+    host = src[CAMBI_HOST]
+    failures = _host_stage_failures(CAMBI_HOST, host, CAMBI_HOST_STAGES)
+    failures += _frame_path_failures(CAMBI_HOST, host, CAMBI_FRAME_FNS, "cambi_hip_enqueue_frame")
+    failures += _cambi_collect_failures(host)
+    init = _body(host, "init_fex_hip")
     guard = init.find("cambi_hip_configure(")
     if guard < 0 or guard > init.find("cambi_hip_setup_device("):
         failures.append(f"{CAMBI_HOST}: init() touches the device before the window guard")
-    if "vmaf_cambi_check_window_fits_lut(" not in _body(src[CAMBI_HOST], "cambi_hip_check_window"):
+    if "vmaf_cambi_check_window_fits_lut(" not in _body(host, "cambi_hip_check_window"):
         failures.append(f"{CAMBI_HOST}: the window guard is not cambi.c's")
     return failures
 
 
-def _speed_failures(src: dict[str, str]) -> list[str]:
+def _speed_twin_failures(src: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    for name in (SPEED_PIPELINE, *SPEED_TWINS):
-        code = _code(src[name])
-        for stage in SPEED_HOST_STAGES:
-            if stage.search(code):
-                failures.append(f"{name}: host stage {stage.pattern} is back")
-        if "hipStreamSynchronize" in code or "hipDeviceSynchronize" in code:
-            failures.append(f"{name}: a stream or device sync outside the lifecycle")
     for name in SPEED_TWINS:
         code = _code(src[name])
         if HOST_WAIT.search(code) or "hipModuleLaunchKernel" in code:
             failures.append(f"{name}: waits or launches outside {SPEED_PIPELINE}")
         if "speed_internal_gpu_configure(" not in code:
             failures.append(f"{name}: init() skips the shared speed_internal_gpu_configure()")
+    return failures
+
+
+def _speed_failures(src: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for name in (SPEED_PIPELINE, *SPEED_TWINS):
+        failures += _host_stage_failures(name, src[name], SPEED_HOST_STAGES)
+    failures += _speed_twin_failures(src)
     # The runtime half, not the -ENOSYS stubs of a build without hipcc.
     pipeline = src[SPEED_PIPELINE].split("#else /* HAVE_HIPCC */")[-1]
-    for name in SPEED_FRAME_FNS:
-        body = _body(pipeline, name)
-        if not body:
-            failures.append(f"{SPEED_PIPELINE}: {name}() not found")
-        elif HOST_WAIT.search(body):
-            failures.append(f"{SPEED_PIPELINE}: {name}() waits on the host mid-frame")
-    if "vmaf_hip_picture_upload_staged(" not in _body(pipeline, "speed_hip_pipeline_upload"):
-        failures.append(f"{SPEED_PIPELINE}: the frame upload skips the pinned staging")
-    readbacks = sum(len(DEVICE_TO_HOST.findall(_body(pipeline, n))) for n in SPEED_FRAME_FNS)
-    if readbacks != 1:
-        failures.append(f"{SPEED_PIPELINE}: {readbacks} device-to-host copies per frame, not one")
+    failures += _frame_path_failures(
+        SPEED_PIPELINE, pipeline, SPEED_FRAME_FNS, "speed_hip_pipeline_upload"
+    )
     if "vmaf_hip_kernel_collect_wait(" not in _body(pipeline, "speed_hip_pipeline_wait"):
         failures.append(f"{SPEED_PIPELINE}: the frame's one wait moved out of collect")
     flags = re.search(r"'speed_pipeline'\s*:\s*\[([^\]]*)\]", src["meson.build"])
     wanted = ("'-ffp-contract=off'", "'-fhip-fp32-correctly-rounded-divide-sqrt'")
     if not flags or any(flag not in flags.group(1) for flag in wanted):
         failures.append("meson.build: the speed_pipeline kernel lost its exact-arithmetic flags")
-    device = _code(src[SPEED_DEVICE])
-    if not re.search(
-        r"#if defined\(SPEED_HD_HOST_LIBM_LOG2\) && !defined\(__HIP_DEVICE_COMPILE__\)", device
-    ):
+    seam = r"#if defined\(SPEED_HD_HOST_LIBM_LOG2\) && !defined\(__HIP_DEVICE_COMPILE__\)"
+    if not re.search(seam, _code(src[SPEED_DEVICE])):
         failures.append(f"{SPEED_DEVICE}: the host log2f test seam can reach device code")
     return failures
 
