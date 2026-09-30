@@ -18,5 +18,7 @@
   every frame into `apsnr_*` under `--subsample`, and its chroma accumulators
   can no longer be cleared while the chroma kernels run. `float_ssim_cuda`
   still accepts `enable_chroma`, which the CPU `float_ssim` does not have, and
-  warns that it is ignored. Not yet measured on an NVIDIA GPU; see
+  warns that it is ignored. Measured on an RTX 4090: the PSNR, `motion_v2`
+  and `float_motion` options give the CPU's scores exactly, `ssim` stays
+  within 7.3e-13 dB and `float_ssim` within 6.9e-6 dB of the CPU; see
   [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).

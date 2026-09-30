@@ -8,8 +8,10 @@
   is the CPU's (weighted by `motion_fps_weight`, capped at `motion_max_val`).
   Each frame is ordered against the previous one on the device instead of by
   the engine's context barrier, and the eight-frame batch readback waits once
-  instead of twice. `motion_v2_cuda`'s SAD is unchanged. Not yet measured on
-  an NVIDIA GPU (ADR-1372; check in `docs/state.md`,
+  instead of twice. `motion_v2_cuda`'s SAD is unchanged. On an RTX 4090
+  `integer_motion2` / `integer_motion3` now equal the CPU's on the Netflix
+  pair and on 50 frames of a 3840x2160 clip, where they were 1.26e-5 and
+  6.9e-5 off (ADR-1372; `docs/state.md`,
   `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`;
   [CUDA backend](docs/backends/cuda/overview.md#cpu-parity-motion-options-and-tiny-frames-2026-09-30)).
 - **CUDA integer ADM and VIF guard tiny frames like their SYCL twins.** The

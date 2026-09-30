@@ -708,8 +708,18 @@ pipeline has done.
 ## CPU parity: motion, options and tiny frames (2026-09-30)
 
 Three changes bring CUDA twins to their CPU extractors' arithmetic and options.
-None of them was run on an NVIDIA GPU when it landed; the verification steps are
-in `docs/state.md` under the rows each one names.
+An RTX 4090 run on 2026-09-30 confirmed them; each row that `docs/state.md`
+names below carries the commands and the measured results:
+
+| Check on an RTX 4090 | Result |
+|---|---|
+| `motion` against the CPU, Netflix pair and 50 frames of 3840x2160 | 0.0 (a `master` build: 1.26e-5 and 6.9e-5) |
+| `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse`, also with `--subsample 2` | identical, `apsnr_*` included |
+| `motion_v2` and `float_motion` with `motion_fps_weight` and `motion_max_val` | identical |
+| `ssim` with `enable_db` / `clip_db` | within 7.3e-13 dB |
+| `float_ssim` with `enable_lcs` / `enable_db` | within 6.9e-6 dB (1.8e-7 linear) |
+| `float_ssim` with `enable_db`, identical flat 64x64 frames | 72.247198959355487 dB on both |
+| `compute-sanitizer` on the ADM and VIF tiny-frame tests | 0 errors |
 
 ### `motion_cuda` blurs the frame difference, like the CPU
 
@@ -729,9 +739,15 @@ It now runs the kernel `motion_v2_cuda` already used, through one host helper
   readback ([ADR-0845](../../adr/0845-cuda-motion-launch-overhead.md)) waits
   once instead of twice;
 - `motion_v2_cuda`'s SAD is unchanged (same kernel); its host scoring now
-  weights and caps it like the CPU (see the option section below).
+  weights and caps it like the CPU (see the option section below);
+- with `motion_force_zero`, `motion_cuda` and `float_motion_cuda` publish zeros
+  from the first frame. Their `init()` switches them to a synchronous
+  `extract()`, and the engine used to call the cleared `submit()` on the first
+  frame and crash (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`); it
+  now initialises an extractor before it picks the path.
 
-Check it on the Netflix pair (expected: `0.0`):
+Check it on the Netflix pair (prints `0.0`; a build from before the change
+prints about 1.3e-5):
 
 ```bash
 Y=python/test/resource/yuv

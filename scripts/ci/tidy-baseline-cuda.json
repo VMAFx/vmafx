@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1289,
+  "total_warnings": 1266,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -396,9 +396,9 @@
     "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_moment_cuda.c": 1,
     "core/src/feature/cuda/integer_motion_cuda.c": 1,
-    "core/src/feature/cuda/integer_motion_v2_cuda.c": 5,
+    "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
-    "core/src/feature/cuda/integer_psnr_cuda.c": 2,
+    "core/src/feature/cuda/integer_psnr_cuda.c": 1,
     "core/src/feature/cuda/integer_ssim_cuda.c": 2,
     "core/src/feature/cuda/integer_vif_cuda.c": 12,
     "core/src/feature/cuda/ssim_cuda.c": 2,
@@ -722,6 +722,28 @@
         }
       },
       "previous_baseline_sha256": "b39032799a1c26e152df8b66c81a80503cfddecfbe6aa244941af16719633342"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_motion_v2_cuda.c",
+        "core/src/feature/cuda/integer_psnr_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": {
+          "warnings": [
+            5,
+            1
+          ]
+        },
+        "core/src/feature/cuda/integer_psnr_cuda.c": {
+          "warnings": [
+            2,
+            1
+          ]
+        }
+      },
+      "previous_baseline_sha256": "311ef1c85d16e815ad29794715c890aefe9528a689e5e5b1226bd6ae155f54fc"
     }
   ]
 }

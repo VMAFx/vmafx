@@ -23,7 +23,11 @@ case that edits the live source the way the old code read and must fail:
 - integer SSIM: the combine compiles with --fmad=false and groups the term
   as the CPU does, ((w * a) * b) / den;
 - ADM: the DWT kernels read their rows and taps through adm_dwt2_rows.h;
-- VIF: vif_cuda declares its minimum size through the ADR-1324 gate.
+- VIF: vif_cuda declares its minimum size through the ADR-1324 gate;
+- engine: libvmaf.c initialises a submit / collect extractor before it picks
+  the asynchronous or the extract() path, because the motion twins' init()
+  swaps the first for the second under motion_force_zero (the first frame
+  used to call the submit() init() had cleared).
 """
 
 from __future__ import annotations
@@ -42,6 +46,8 @@ SSIM_KERNEL = "integer_ssim/ssim_score.cu"
 ADM_KERNEL = "integer_adm/adm_dwt2.cu"
 MESON = "meson.build"
 MESON_PATH = ROOT / "core" / "src" / MESON
+LIBVMAF = "libvmaf.c"
+LIBVMAF_PATH = ROOT / "core" / "src" / LIBVMAF
 INTEGER_SSIM_FMAD = "'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
 INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
 MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
@@ -85,6 +91,7 @@ def _code_meson(source: str) -> str:
 def _sources() -> dict[str, str]:
     sources = {name: (CUDA_ROOT / name).read_text(encoding="utf-8") for name in SOURCES}
     sources[MESON] = MESON_PATH.read_text(encoding="utf-8")
+    sources[LIBVMAF] = LIBVMAF_PATH.read_text(encoding="utf-8")
     return sources
 
 
@@ -235,12 +242,39 @@ def _guard_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+# (engine function, the init call, the first text of the path decision)
+DISPATCH_SITES = (
+    (
+        "read_pictures_cuda_submit_current",
+        "init_before_dispatch(fex_ctx, ref_device)",
+        "!fex_ctx->fex->submit || !fex_ctx->fex->collect",
+    ),
+    (
+        "read_pictures_dispatch_one",
+        "init_before_dispatch(fex_ctx, ref)",
+        "dispatch_gpu_double_buffer(",
+    ),
+)
+
+
+def _dispatch_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for function, init_call, decision in DISPATCH_SITES:
+        body = _code(_function_body(sources[LIBVMAF], function))
+        at_init = body.find(init_call)
+        at_decision = body.find(decision)
+        if at_init < 0 or at_decision < 0 or at_init > at_decision:
+            failures.append(f"core/src/libvmaf.c: {function}() picks a path before init()")
+    return failures
+
+
 def _all_failures(sources: dict[str, str]) -> list[str]:
     return [
         *_motion_failures(sources),
         *_option_failures(sources),
         *_ssim_failures(sources),
         *_guard_failures(sources),
+        *_dispatch_failures(sources),
     ]
 
 
@@ -389,6 +423,18 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             ".context_fallback_name = NULL",
         )
         self._assert_detected(sources, "CPU fallback")
+
+    def test_cuda_dispatch_before_init_is_detected(self) -> None:
+        sources = self._edit(LIBVMAF, "err = init_before_dispatch(fex_ctx, ref_device);", "")
+        self._assert_detected(sources, "read_pictures_cuda_submit_current() picks a path")
+
+    def test_gpu_dispatch_before_init_is_detected(self) -> None:
+        sources = self._edit(
+            LIBVMAF,
+            "const int init_err = init_before_dispatch(fex_ctx, ref);",
+            "const int init_err = 0;",
+        )
+        self._assert_detected(sources, "read_pictures_dispatch_one() picks a path")
 
 
 if __name__ == "__main__":

@@ -132,11 +132,23 @@
 - Tests: `core/test/test_cuda_module_lifecycle_contract.py` inventory lists
   `integer_motion_sad_cuda.c` as the motion module owner;
   `test_device_target_header_dependencies.py` counts 21 CUDA fatbin targets.
+- `core/src/libvmaf.c` (engine, found by the RTX 4090 run):
+  `init_before_dispatch()` initialises an extractor that has `submit()` and
+  `collect()` before `read_pictures_cuda_submit_current()` and
+  `read_pictures_dispatch_one()` choose between the asynchronous path and
+  `extract()`. The motion twins' `init()` swaps in `extract()` under
+  `motion_force_zero`; with the choice made first, the first frame called the
+  cleared `submit()` and crashed. A sync or refactor of those two functions
+  must keep the init ahead of the decision; `test_cuda_kernel_source_contract.py`
+  pins the order, and `test_cuda_motion_tiny_frames` / `test_cuda_twin_option_parity`
+  run `motion_force_zero` on a device.
 
 No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
-bit-identical (no CPU source changed). `motion_cuda` scores move to the CPU's
-(expected up to 2.0e-4 on 17x17 frames, 1.3e-5 on the Netflix pair, from the
-SYCL measurement); `motion_v2_cuda` is unchanged; default `float_ssim_cuda`
+bit-identical (no CPU extractor changed; the engine change only moves the
+first-frame `init()` of a submit / collect extractor ahead of the dispatch
+decision). `motion_cuda` scores move to the CPU's (measured on an RTX 4090:
+from 1.26e-5 to 0.0 on the Netflix pair, from 6.9e-5 to 0.0 on 50 frames of
+3840x2160); `motion_v2_cuda` is unchanged; default `float_ssim_cuda`
 moves towards the CPU's by an fp32 rounding; default `integer_ssim_cuda`
 per-pixel terms move to the CPU's (no fused `c1`, `c2`, `y2 * w`; the CPU's
 grouping); `psnr_cuda`, `float_motion_cuda` and `motion_v2_cuda` default

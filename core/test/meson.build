@@ -102,7 +102,9 @@ test('test_sycl_kernel_source_contract',
 
 # ADR-1372 / ADR-1373 / ADR-1374: source-level guard for the CUDA RC3 parity
 # design (diff-first motion, no mid-frame host wait, shared option helpers,
-# exact-1 SSIM combine, clamped ADM rows, VIF CPU fallback). Device-free.
+# the CPU's SSIM arithmetic, clamped ADM rows, VIF CPU fallback, and the
+# engine initialising an extractor before it picks its dispatch path).
+# Device-free.
 test('test_cuda_kernel_source_contract',
     import('python').find_installation(),
     args : files('test_cuda_kernel_source_contract.py'),
