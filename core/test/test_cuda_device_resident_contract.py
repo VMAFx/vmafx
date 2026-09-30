@@ -11,12 +11,15 @@ the contract fails on the old design and passes on the new one.
 from __future__ import annotations
 
 import re
+import struct
 import unittest
+from decimal import Decimal, getcontext
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CUDA_ROOT = ROOT / "core" / "src" / "feature" / "cuda"
 MESON_BUILD = ROOT / "core" / "src" / "meson.build"
+LOG2_HARD_CASES = ROOT / "core" / "src" / "feature" / "speed_log2_hard_cases.h"
 
 CAMBI_HOST = "integer_cambi_cuda.c"
 CAMBI_KERNELS = "integer_cambi/cambi_score.cu"
@@ -190,6 +193,8 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
     for intrinsic in ("__fdiv_rn", "__fsqrt_rn", "__fadd_rn", "__fmul_rn"):
         if intrinsic not in kernels:
             failures.append(f"{SPEED_KERNELS}: {intrinsic} no longer spells the CPU rounding")
+    if "return speed_log2_hard_case(" not in kernels:
+        failures.append(f"{SPEED_KERNELS}: speed_log2 no longer applies the log2 hard cases")
     if "0x1.0c6f7ap-20f" not in kernels or "0x1.6bdb1ap-49f" not in kernels:
         failures.append(f"{SPEED_KERNELS}: EIGENVALUE_EPS no longer compared exactly")
     failures += _single_struct_kernels(kernels, SPEED_KERNELS, "SpeedCudaFrameArgs")
@@ -205,9 +210,59 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
     return _cambi_failures(sources) + _speed_failures(sources)
 
 
+def _hard_case_table(text: str) -> list[tuple[int, int]]:
+    def values(name: str) -> list[int]:
+        match = re.search(rf"#define {name}\b(.*?)\}}", text, re.S)
+        return [int(token, 16) for token in re.findall(r"0x([0-9a-f]{8})u", match.group(1))]
+
+    return list(zip(values("SPEED_LOG2_HARD_INPUTS"), values("SPEED_LOG2_HARD_OUTPUTS")))
+
+
+def _f32(bits: int) -> float:
+    return struct.unpack("<f", struct.pack("<I", bits))[0]
+
+
+def _is_nearest_log2(x_bits: int, y_bits: int) -> bool:
+    """Whether float32 `y` is the float nearest log2(x), decided in 60 digits."""
+    getcontext().prec = 60
+    exact = Decimal(_f32(x_bits)).ln() / Decimal(2).ln()
+    error = abs(Decimal(_f32(y_bits)) - exact)
+    neighbours = (y_bits - 1, y_bits + 1)
+    return all(error < abs(Decimal(_f32(other)) - exact) for other in neighbours)
+
+
+def _hard_case_failures(text: str) -> list[str]:
+    table = _hard_case_table(text)
+    failures = [] if len(table) == 48 else [f"log2 hard cases: {len(table)} entries, expected 48"]
+    inputs = [x for x, _ in table]
+    if inputs != sorted(set(inputs)):
+        failures.append("log2 hard cases: inputs not strictly ascending")
+    for x_bits, y_bits in table:
+        if x_bits & 0x7FFFFF not in (0x554996, 0x7FC006):
+            failures.append(f"log2 hard cases: 0x{x_bits:08x} outside the two known mantissas")
+        if not _is_nearest_log2(x_bits, y_bits):
+            failures.append(f"log2 hard cases: 0x{y_bits:08x} is not log2(0x{x_bits:08x}) rounded")
+    return failures
+
+
 class CudaKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_the_device_resident_contract(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
+
+    def test_log2_hard_cases_are_correctly_rounded(self) -> None:
+        self.assertEqual(_hard_case_failures(LOG2_HARD_CASES.read_text(encoding="utf-8")), [])
+
+    def test_wrong_log2_hard_case_is_detected(self) -> None:
+        # The device value of the first entry, one ulp off the correct one.
+        text = LOG2_HARD_CASES.read_text(encoding="utf-8").replace("0xc1fa1b55u", "0xc1fa1b54u", 1)
+        self.assertTrue(any("is not log2" in item for item in _hard_case_failures(text)))
+
+    def test_dropped_log2_hard_cases_are_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
+            "return speed_log2_hard_case(__float_as_uint(x), rounded);", "return rounded;", 1
+        )
+        self.assertTrue(any("log2 hard cases" in item for item in _contract_failures(sources)))
 
     def test_cambi_host_c_values_residual_is_detected(self) -> None:
         # The pre-ADR-1379 cambi_submit_scale() ran the c-values on the host.

@@ -129,6 +129,10 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
         for helper in SPEED_HOST_RESIDUAL:
             if helper.search(sources[name]):
                 failures.append(f"{name}: host residual {helper.pattern} reintroduced")
+    # ADR-1380 / Research-1379: the fp32-pair log2 misrounds 48 floats; the
+    # shared table in feature/speed_log2_hard_cases.h corrects them.
+    if "return speed_log2_hard_case(" not in _function_body(sources[SPEED_PIPELINE], "speed_log2"):
+        failures.append(f"{SPEED_PIPELINE}: speed_log2 no longer applies the log2 hard cases")
     for name in SPEED_HOST_TUS:
         if re.search(r"\b(?:parallel_for|single_task)\b", sources[name]):
             failures.append(f"{name}: device kernel outside {SPEED_PIPELINE}")
@@ -211,6 +215,16 @@ def _motion_failures(sources: dict[str, str]) -> list[str]:
 class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
+
+    def test_dropped_log2_hard_cases_are_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            "return speed_log2_hard_case(sycl::bit_cast<uint32_t>(x), rounded);",
+            "return rounded;",
+            1,
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("log2 hard cases" in item for item in failures))
 
     def test_fp64_speed_regression_is_detected(self) -> None:
         sources = _sources()

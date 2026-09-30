@@ -20,6 +20,8 @@
 
 #include "speed_sycl_pipeline.h"
 
+#include "feature/speed_log2_hard_cases.h"
+
 #include <sycl/sycl.hpp>
 
 #include <cassert>
@@ -104,9 +106,11 @@ inline bool below_eps(float x)
 
 /* log2f() of the reference. The device builtin differs from the host libm in
  * about 9% of the arguments SpEED feeds it, so log2 is evaluated here in fp32
- * pairs to about 2^-45 and rounded once: correctly rounded except in the rare
- * cases a host log2f is not either. ln(m) = 2 atanh(s), s = (m - 1)/(m + 1),
- * m in [sqrt(1/2), sqrt(2)], |s| <= 0.1716; the series stops at s^21. */
+ * pairs to about 2^-45 and rounded once. That rounds to nearest on every
+ * positive finite float except 48 hard cases, which speed_log2_hard_case()
+ * corrects from feature/speed_log2_hard_cases.h (exhaustive replay:
+ * Research-1379). ln(m) = 2 atanh(s), s = (m - 1)/(m + 1), m in
+ * [sqrt(1/2), sqrt(2)], |s| <= 0.1716; the series stops at s^21. */
 constexpr float kSqrt2 = std::numbers::sqrt2_v<float>;
 constexpr Ff kLog2e = {.hi = std::numbers::log2e_v<float>, .lo = 0x1.4ae0c0p-26f};
 constexpr Ff kInverseOdd[10] = {
@@ -141,6 +145,25 @@ inline Ff ln_mantissa(float m)
     return {.hi = 2.0f * half.hi, .lo = 2.0f * half.lo};
 }
 
+constexpr uint32_t kLog2HardInput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_INPUTS;
+constexpr uint32_t kLog2HardOutput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_OUTPUTS;
+
+/* The correctly rounded log2 of `bits` when it is one of the 48 inputs the
+ * pair evaluation misrounds, else `rounded`. */
+inline float speed_log2_hard_case(uint32_t bits, float rounded)
+{
+    const uint32_t fraction = bits & 0x007fffffu;
+    if (fraction != SPEED_LOG2_HARD_FRACTION_A && fraction != SPEED_LOG2_HARD_FRACTION_B) {
+        return rounded;
+    }
+    for (uint32_t i = 0; i < SPEED_LOG2_HARD_CASES; i++) {
+        if (kLog2HardInput[i] == bits) {
+            return sycl::bit_cast<float>(kLog2HardOutput[i]);
+        }
+    }
+    return rounded;
+}
+
 } // namespace
 
 namespace
@@ -168,7 +191,8 @@ inline float speed_log2(float x)
         exponent += 1;
     }
     const Ff log2m = ff_mul(ln_mantissa(m), kLog2e);
-    return ff_add(Ff{.hi = static_cast<float>(exponent), .lo = 0.0f}, log2m).hi;
+    const float rounded = ff_add(Ff{.hi = static_cast<float>(exponent), .lo = 0.0f}, log2m).hi;
+    return speed_log2_hard_case(sycl::bit_cast<uint32_t>(x), rounded);
 }
 
 /* ------------------------------------------------------------------ */
