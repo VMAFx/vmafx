@@ -440,39 +440,98 @@ that touches it, and unlike the other append-only bookkeeping files it is
 "Open bugs" and "Recently closed" sections, so a union merge would duplicate
 the row and leave a closed bug reading as open forever.
 
-That makes "keep both sides" the tempting wrong answer, and
-`scripts/ci/check-state-md-rows.sh` exists to catch it. The correct rule is:
-
-- **master's side wins for any row both sides carry.** master is the more
-  advanced state — it already has every row merged ahead of your branch,
-  including one your branch also touches but that master has since moved or
-  reworded.
-- **your branch contributes only rows master does not have at all** — its own
-  new bug id.
-
-[`scripts/dev/resolve-state-md-conflict.py`](../../scripts/dev/resolve-state-md-conflict.py)
-applies exactly that, deduplicating by bug id rather than by line so a row
-master reworded is not re-added in its stale form:
+When `git rebase` stops on it, run the resolver and continue:
 
 ```bash
 # mid-rebase, with docs/state.md conflicted
 python3 scripts/dev/resolve-state-md-conflict.py docs/state.md
-scripts/ci/check-state-md-rows.sh          # always verify
 git add docs/state.md && git rebase --continue
 ```
 
-The verification step is not optional. The script encodes the common case —
-a branch adding one new row against a master that has moved others. It cannot
-know that a row *your* branch moved to "Recently closed" should win over
-master's older "Open bugs" copy; there it keeps master's, and you redo the
-move by hand. The row count the gate prints is the cheapest way to notice.
+Exit 0 means the file is written and
+[`scripts/ci/check-state-md-rows.sh`](../../scripts/ci/check-state-md-rows.sh)
+already passed on it; the resolver runs the gate itself. The file is written
+with LF line endings on every platform.
 
-Its own regression test is
-[`scripts/dev/test-resolve-state-md-conflict.py`](../../scripts/dev/test-resolve-state-md-conflict.py):
+### What the resolver does
+
+[`scripts/dev/resolve-state-md-conflict.py`](../../scripts/dev/resolve-state-md-conflict.py)
+ignores the conflict markers. It reads the three versions git keeps in the
+index for a conflicted path (`git show :1:docs/state.md` is the merge base,
+`:2:` is *ours*, `:3:` is *theirs*) and merges them three-way:
+
+| Line | Keyed by | Rule |
+| --- | --- | --- |
+| Bug row (first cell opens with an id: `**T-ID**`, `T-ID`, `**T7-16**`, `Netflix#NNN`, `**Netflix/vmaf#NNN**`) | bug id | Its state is its text plus its `##` section. Same on both sides: kept. Changed on one side only: that side wins, so an edit, a move to "Recently closed", or a deletion carries over. Changed differently on both: conflict. |
+| Move tombstone (`<!-- T-ID moved to Recently closed ... -->`) | bug id | Same as a bug row. |
+| Disposition row under "First-release phase classification" (first cell a bold label such as `**RC3 performance ...**`, second cell a `<br>` list of ids) | bold label | Both sides changed it: the id list merges as a set (ours, plus the ids theirs added, minus the ids either side removed; ours' order, theirs' additions after) and every other cell three-way by text. Rows repeating a label on one side are folded into one first, and the resolver says so. |
+| Anything else (headings, prose, `_Updated` lines) | line text | Line-level three-way. Lines both sides add at the same place are all kept, theirs after ours. A non-blank line both sides added is kept once, which is what a branch stacked on an already squash-merged PR needs. Lines either side deleted go, even where the two deletions overlap. |
+
+The row and tombstone shapes are the ones `check-state-md-rows.sh` recognises,
+so the two agree on what a row is. Placement keeps ours' order; a line only
+theirs has goes after its nearest theirs neighbour that is still present in
+the same section. Two consequences are deliberate: your branch's new
+`_Updated` line and its newly closed rows land *below* the ones master added
+since you branched (move them up by hand if you want the ledger newest-first),
+and a reorder of existing rows within one section on your branch is not
+carried over.
+
+During a rebase *ours* is master **plus the branch commits already replayed**
+and *theirs* is the commit being replayed. That is why neither side may simply
+win. "Ours wins" keeps master's stale Open copy of a row the branch closes. It
+also keeps an earlier branch commit's text of a row that a later commit of the
+same branch rewrote. The resolver before this one did exactly that, three
+times on 2026-09-30 ([ADR-1383](../adr/1383-state-md-three-way-conflict-resolver.md)).
+
+### When it stops
+
+When both sides changed the same row, tombstone, disposition cell or line
+differently, the resolver writes nothing, names each one with its base, ours
+and theirs text, and exits 1. Decide which side is right and rerun with one
+`--take` per reported name:
 
 ```bash
-python3 scripts/dev/test-resolve-state-md-conflict.py
+python3 scripts/dev/resolve-state-md-conflict.py docs/state.md \
+    --take T-FOO-2026-09-30=theirs \
+    --take 'RC3 performance and backend acceleration=ours' \
+    --take line:468=theirs
 ```
+
+A bug id takes that side's row *and* tombstone; a disposition label takes that
+side's whole row; `line:N` is the handle the report prints for a conflicting
+plain line (N is its line number in the merge-base version). A `--take` that
+names nothing in the file is an error.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Written; the row gate passes. |
+| 1 | Conflicts; nothing written. |
+| 2 | Bad usage, or the path has no unmerged index stages (not mid-rebase, or already `git add`-ed). |
+| 3 | Written, but the row gate rejects the result or a bug id sits in two disposition rows. Fix the file before `git add`. |
+
+The resolver only works while git still holds the three stages. After a bad
+resolution has been committed, fix `docs/state.md` by hand; the gate in CI
+still catches duplicated and misfiled rows.
+
+### Tests
+
+[`scripts/dev/test-resolve-state-md-conflict.py`](../../scripts/dev/test-resolve-state-md-conflict.py)
+builds throwaway repositories and drives the resolver through real
+`git rebase` conflicts: a branch closing a bug, a later commit rewriting an
+earlier one's row, both sides adding `_Updated` lines and closed rows, a branch
+stacked on a PR master already squash-merged, a row closed on master while the
+branch edited it, one-side and overlapping deletions, tombstones, disposition
+rows edited on both sides, and the refusals. Every resolved file
+must pass the row gate.
+
+```bash
+python3 scripts/dev/test-resolve-state-md-conflict.py -v
+```
+
+CI runs it in the `state.md row hygiene (ADR-0165)` step of the
+`Release Script Contract` job in
+[`.github/workflows/rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml),
+next to the gate's own self-test.
 
 ### The other way a closed bug reads as open
 

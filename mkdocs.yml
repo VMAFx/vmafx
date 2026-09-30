@@ -1484,6 +1484,7 @@ nav:
         - "ADR-1369: sycl-shared-planes-light-twins": adr/1369-sycl-shared-planes-light-twins.md
         - "ADR-1370: sycl-float-ssim-device-decimation": adr/1370-sycl-float-ssim-device-decimation.md
         - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
+        - "ADR-1383: state-md-three-way-conflict-resolver": adr/1383-state-md-three-way-conflict-resolver.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

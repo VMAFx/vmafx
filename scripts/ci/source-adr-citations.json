@@ -786,7 +786,7 @@
         "scripts/ci/test-state-md-touch-check.sh": 1,
         "scripts/ci/tests/test-check-state-md-rows.sh": 1,
         "scripts/ci/tests/test-pr-body-input-selection.sh": 2,
-        "scripts/dev/resolve-state-md-conflict.py": 2
+        "scripts/dev/resolve-state-md-conflict.py": 1
       },
       "target": "0165-state-md-bug-tracking.md"
     },
@@ -7920,6 +7920,12 @@
         "core/test/test_sycl_kernel_source_contract.py": 1
       },
       "target": "1371-sycl-motion-diff-first-pipeline.md"
+    },
+    "1383": {
+      "sites": {
+        ".github/workflows/rule-enforcement.yml": 1
+      },
+      "target": "1383-state-md-three-way-conflict-resolver.md"
     }
   },
   "retired": {

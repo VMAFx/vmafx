@@ -143,6 +143,9 @@ class GitFixtureIsolation(unittest.TestCase):
     def test_cleanup_fixture(self) -> None:
         self.check_helper("scripts/dev/test-cleanup-agent-state.sh")
 
+    def test_state_md_resolver_fixture(self) -> None:
+        self.check_helper("scripts/dev/test-resolve-state-md-conflict.py")
+
     def test_dependency_classifier_fixture(self) -> None:
         self.check_helper("scripts/ci/test-classify-dependency-pr.sh")
 
@@ -214,6 +217,8 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/ci/test_ffmpeg_patch_stack.py",
             "scripts/ci/test_ffmpeg_patch_smoke_safety.py",
             "scripts/dev/test-cleanup-agent-state.sh",
+            "scripts/dev/test-resolve-state-md-conflict.py",
+            "scripts/dev/resolve-state-md-conflict.py",
             "scripts/ci/test-classify-dependency-pr.sh",
             "scripts/ci/tests/test_level_zero_single_source.py",
             ".pre-commit-config.yaml",

@@ -404,7 +404,7 @@ repos:
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
         language: system
-        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/(test-cleanup-agent-state\.sh|(test-)?resolve-state-md-conflict\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

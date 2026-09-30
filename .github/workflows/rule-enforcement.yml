@@ -788,10 +788,13 @@ jobs:
         # A keep-both rebase resolution can leave a bug id in both "## Open
         # bugs" and "## Recently closed", so a fixed bug reads as open forever
         # (five rows were in that state on 2026-09-05). The gate and its
-        # hermetic self-test run on every PR.
+        # hermetic self-test run on every PR, and so does the rebase-conflict
+        # resolver's suite (ADR-1383): it drives real `git rebase` conflicts in
+        # throwaway repositories and every result must pass the gate.
         run: |
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
+          python3 scripts/dev/test-resolve-state-md-conflict.py
 
       - name: Historical issue-reference provenance
         # BUG-048 Section E: the active fork reused old lusoris/vmaf numbers.

@@ -39,3 +39,21 @@ decode, score, or canonical-row failure must make the process return non-zero.
 Never turn a failed quality point into a successful partial corpus. Preserve
 the positive, failed-encode, empty-metrics, and missing-input controls in
 `tests/test_hw_encoder_corpus.py`.
+
+`resolve-state-md-conflict.py` (ADR-1383) resolves a conflicted
+`docs/state.md` from the index stages `:1:` / `:2:` / `:3:`, never from
+conflict markers. Preserve:
+
+- rows and move tombstones keyed by bug id; state = text plus `##` section
+- disposition rows keyed by bold label; id list merged as a set, ours' order
+  first, theirs' additions after; same-label repeats folded before the merge
+- one-side change wins; both sides changed differently -> exit 1, nothing
+  written
+- `--take NAME=ours|theirs` as the only override
+- LF bytes via `write_bytes`; row gate run on the result, exit 3 on reject
+
+Id and tombstone patterns mirror `scripts/ci/check-state-md-rows.sh`; change
+both together. Never restore "ours wins": mid-rebase ours already holds the
+replayed branch commits. `test-resolve-state-md-conflict.py` drives real
+`git rebase` conflicts and runs in the Rules workflow and under
+`scripts/ci/test_git_fixture_isolation.py`.

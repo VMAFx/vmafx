@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
+
+- `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf
+  has no `docs/state.md`). It reads the conflicted path's index stages
+  (`:1:` base, `:2:` ours, `:3:` theirs), never the conflict markers, and
+  merges rows and move tombstones by bug id, disposition rows by label, and
+  every other line three-way by line. Do not restore the old "ours wins, the
+  branch adds only unseen ids" rule: mid-rebase ours already contains the
+  branch's earlier commits, so that rule keeps stale rows.
+- `ID_PATTERN`, `ROW_RE` and `TOMBSTONE_RE` mirror the id and tombstone shapes
+  in `scripts/ci/check-state-md-rows.sh`; a change to one belongs in the other
+  in the same PR. `DISPOSITION_SECTION` must match the `##` heading of the
+  disposition table in `docs/state.md`.
+- The tool writes bytes with LF endings (`write_bytes`), not `write_text`,
+  which turns every line ending into CRLF on Windows.
+- `scripts/dev/test-resolve-state-md-conflict.py` runs in the
+  `state.md row hygiene (ADR-0165)` step of `.github/workflows/rule-enforcement.yml`
+  and in `scripts/ci/test_git_fixture_isolation.py`. It scrubs every `GIT_*`
+  variable before it creates a repository; keep it that way.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: fork-only (upstream Netflix/vmaf

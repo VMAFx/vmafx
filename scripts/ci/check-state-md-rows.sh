@@ -309,9 +309,12 @@ if [[ -n "$dupes" ]]; then
   echo "copies are often NOT interchangeable and the newer one is not always" >&2
   echo "the later line -- read both before deleting either." >&2
   echo "" >&2
-  echo "Mid-rebase, this resolves the common case for you:" >&2
+  echo "If a rebase is still stopped on docs/state.md (not yet 'git add'-ed)," >&2
+  echo "redo the resolution three-way by bug id instead. The resolver moves," >&2
+  echo "edits and deletes rows the way each side did, runs this check on its" >&2
+  echo "result, and names any row both sides changed differently:" >&2
   echo "  python3 scripts/dev/resolve-state-md-conflict.py docs/state.md" >&2
-  echo "then re-run this check before 'git rebase --continue'." >&2
+  echo "Once the resolution is committed, fix the rows by hand." >&2
   exit 1
 fi
 
