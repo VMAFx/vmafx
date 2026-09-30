@@ -97,6 +97,25 @@
   remain under 25 LOC.
 - `core/test/test_adm_cm_row_rounding_contract.py` continues to validate
   the fold in `adm_dev_fold_row`.
+## perf/sycl-psnr-hvs-no-scratch — scratch-free SYCL psnr_hvs kernel on Arc A380 under xe (ADR-1395) (2026-09-30)
+
+- `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL). The kernel eliminates all private memory and register spills on DG2
+  at SIMD16 (`private_size: 0`, `spill: 0`).
+  Dynamic plane indexing in `hvs_locate()` was replaced by `hvs_pick()` to avoid
+  spilling the 152-byte `PsnrHvsKernelArgs` struct into private memory.
+  The 4x4 sub-block accumulator arrays (`means[4]`, `variances[4]`) in
+  `hvs_variance_ratio()` were restructured into scalar members (`HvsQuadrants`)
+  with unrolled row-sum walks in the CPU's traversal order.
+  Do not reintroduce dynamic array indexing or thread-private arrays into the kernel lambda;
+  on the Linux `xe` kernel driver on Intel Arc A380, any private memory access produces
+  corrupted values (~20 dB drift at 4K).
+- Verified with `ocloc` inspecting `.ze_info` across `dg2-g11` (Arc A380, SIMD16),
+  `adl-s` (UHD 770, SIMD8), and `bmg-g21` (Arc B580, SIMD16).
+- Verified parity on physical Arc A380 (`ryzen-4090-arc`) under `xe`:
+  576x324 Netflix pair within 8.37e-5 dB (gate 5e-4), 1080p within 1.71e-3 dB,
+  4K BBB (22 frames) frame 0 `psnr_hvs_y` 33.161817 dB (CPU 33.171624 dB, delta 0.0098 dB).
+  4K BBB `(t(22) - t(2)) / 20` throughput: 12.55 ms/frame (corrupted) -> 10.90 ms/frame (correct).
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## fix/sycl-aot-check-single-target — the AOT image check accepts bare native images (2026-09-30)
 

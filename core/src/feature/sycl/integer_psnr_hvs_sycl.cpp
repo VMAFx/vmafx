@@ -314,21 +314,42 @@ struct HvsLaneBlock {
     int plane;
 };
 
+/* One value of the plane's geometry, picked among values the caller read with
+ * constant indices. Never index args.plane[] with the run-time plane: the
+ * compiler then keeps the whole kernel-argument struct in private memory,
+ * which is scratch (152 bytes per work-item on DG2), and scratch returns
+ * wrong values on the xe driver (T-SYCL-PSNR-HVS-XE-SCRATCH-2026-09-30). */
+template <typename T> static inline T hvs_pick(int plane, T luma, T cb, T cr)
+{
+    if (plane == 2) {
+        return cr;
+    }
+    return (plane == 1) ? cb : luma;
+}
+
 static inline HvsLaneBlock hvs_locate(const PsnrHvsKernelArgs &args, unsigned block, bool is_dist)
 {
+    const PsnrHvsPlaneArgs &y = args.plane[0];
+    const PsnrHvsPlaneArgs &cb = args.plane[1];
+    const PsnrHvsPlaneArgs &cr = args.plane[2];
     int plane = 0;
-    for (int p = 1; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (std::cmp_less(p, args.n_planes) && block >= args.plane[p].first_block) {
-            plane = p;
-        }
+    if (1U < args.n_planes && block >= cb.first_block) {
+        plane = 1;
     }
-    const PsnrHvsPlaneArgs &geometry = args.plane[plane];
-    const unsigned in_plane = block - geometry.first_block;
-    const size_t origin_x = (size_t)(in_plane % geometry.blocks_x) * PSNR_HVS_STEP;
-    const size_t origin_y = (size_t)(in_plane / geometry.blocks_x) * PSNR_HVS_STEP;
-    return {.src = is_dist ? geometry.dist : geometry.ref,
-            .origin = (origin_y * geometry.width) + origin_x,
-            .width = geometry.width,
+    if (2U < args.n_planes && block >= cr.first_block) {
+        plane = 2;
+    }
+    const unsigned first_block = hvs_pick(plane, y.first_block, cb.first_block, cr.first_block);
+    const unsigned blocks_x = hvs_pick(plane, y.blocks_x, cb.blocks_x, cr.blocks_x);
+    const unsigned width = hvs_pick(plane, y.width, cb.width, cr.width);
+    const void *src = is_dist ? hvs_pick(plane, y.dist, cb.dist, cr.dist) :
+                                hvs_pick(plane, y.ref, cb.ref, cr.ref);
+    const unsigned in_plane = block - first_block;
+    const size_t origin_x = (size_t)(in_plane % blocks_x) * PSNR_HVS_STEP;
+    const size_t origin_y = (size_t)(in_plane / blocks_x) * PSNR_HVS_STEP;
+    return {.src = src,
+            .origin = (origin_y * width) + origin_x,
+            .width = width,
             .block = block,
             .plane = plane};
 }
@@ -352,45 +373,111 @@ static inline void hvs_load_block(const HvsLocal &slm, size_t base, const HvsLan
 namespace
 {
 
+/* One accumulator per 4x4 quadrant of the block, numbered as calc_psnrhvs()
+ * numbers its sub-blocks: ((i & 12) >> 2) + ((j & 12) >> 1), so 0 = rows
+ * 0-3 x columns 0-3, 1 = rows 4-7 x columns 0-3, 2 = rows 0-3 x columns 4-7,
+ * 3 = rows 4-7 x columns 4-7. Named members, not a float[4]: an array indexed
+ * by a run-time quadrant number lives in private memory, which is scratch. */
+struct HvsQuadrants {
+    float q0;
+    float q1;
+    float q2;
+    float q3;
+};
+
+/* Adds row `row`'s samples, in column order, to the global sum and to the
+ * sums of the quadrants holding its left and right half. */
+static inline void hvs_row_sums(const HvsLocal &block, size_t base, size_t row, float &global,
+                                float &left, float &right)
+{
+    const size_t first = base + (row * WG_DIM);
+    for (size_t col = 0; col < WG_DIM / 2U; col++) {
+        const float sample = (float)block[first + col];
+        global += sample;
+        left += sample;
+    }
+    for (size_t col = WG_DIM / 2U; col < WG_DIM; col++) {
+        const float sample = (float)block[first + col];
+        global += sample;
+        right += sample;
+    }
+}
+
+/* The same walk for the squared deviations from the global mean and from the
+ * means of the row's two quadrants. */
+static inline void hvs_row_squares(const HvsLocal &block, size_t base, size_t row,
+                                   float global_mean, float left_mean, float right_mean,
+                                   float &global, float &left, float &right)
+{
+    const size_t first = base + (row * WG_DIM);
+    for (size_t col = 0; col < WG_DIM / 2U; col++) {
+        const float global_delta = (float)block[first + col] - global_mean;
+        const float quadrant_delta = (float)block[first + col] - left_mean;
+        global += global_delta * global_delta;
+        left += quadrant_delta * quadrant_delta;
+    }
+    for (size_t col = WG_DIM / 2U; col < WG_DIM; col++) {
+        const float global_delta = (float)block[first + col] - global_mean;
+        const float quadrant_delta = (float)block[first + col] - right_mean;
+        global += global_delta * global_delta;
+        right += quadrant_delta * quadrant_delta;
+    }
+}
+
+/* calc_psnrhvs()'s i, j walk over the block: each accumulator receives its
+ * samples in the CPU's order. */
+static inline void hvs_sample_sums(const HvsLocal &block, size_t base, float &global,
+                                   HvsQuadrants &sums)
+{
+    for (size_t row = 0; row < WG_DIM / 2U; row++) {
+        hvs_row_sums(block, base, row, global, sums.q0, sums.q2);
+    }
+    for (size_t row = WG_DIM / 2U; row < WG_DIM; row++) {
+        hvs_row_sums(block, base, row, global, sums.q1, sums.q3);
+    }
+}
+
+static inline void hvs_square_sums(const HvsLocal &block, size_t base, float global_mean,
+                                   const HvsQuadrants &means, float &global, HvsQuadrants &squares)
+{
+    for (size_t row = 0; row < WG_DIM / 2U; row++) {
+        hvs_row_squares(block, base, row, global_mean, means.q0, means.q2, global, squares.q0,
+                        squares.q2);
+    }
+    for (size_t row = WG_DIM / 2U; row < WG_DIM; row++) {
+        hvs_row_squares(block, base, row, global_mean, means.q1, means.q3, global, squares.q1,
+                        squares.q3);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
 /* Variance ratio of the untransformed samples, as calc_psnrhvs() takes it
  * before its DCT. Summation order is the CPU's, unchanged. */
 static inline float hvs_variance_ratio(const HvsLocal &block, size_t base)
 {
-    float means[4] = {0.f, 0.f, 0.f, 0.f};
+    HvsQuadrants means = {.q0 = 0.f, .q1 = 0.f, .q2 = 0.f, .q3 = 0.f};
     float global_mean = 0.f;
-    for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 8; col++) {
-            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
-            const int index = (row * 8) + col;
-            global_mean += (float)block[base + index];
-            means[subgroup] += (float)block[base + index];
-        }
-    }
+    hvs_sample_sums(block, base, global_mean, means);
     global_mean /= 64.f;
-    means[0] /= 16.f;
-    means[1] /= 16.f;
-    means[2] /= 16.f;
-    means[3] /= 16.f;
-    float variances[4] = {0.f, 0.f, 0.f, 0.f};
+    means.q0 /= 16.f;
+    means.q1 /= 16.f;
+    means.q2 /= 16.f;
+    means.q3 /= 16.f;
+    HvsQuadrants variances = {.q0 = 0.f, .q1 = 0.f, .q2 = 0.f, .q3 = 0.f};
     float global_variance = 0.f;
-    for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 8; col++) {
-            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
-            const int index = (row * 8) + col;
-            const float global_delta = (float)block[base + index] - global_mean;
-            const float subgroup_delta = (float)block[base + index] - means[subgroup];
-            global_variance += global_delta * global_delta;
-            variances[subgroup] += subgroup_delta * subgroup_delta;
-        }
-    }
+    hvs_square_sums(block, base, global_mean, means, global_variance, variances);
     global_variance *= 1.f / 63.f * 64.f;
-    variances[0] *= 1.f / 15.f * 16.f;
-    variances[1] *= 1.f / 15.f * 16.f;
-    variances[2] *= 1.f / 15.f * 16.f;
-    variances[3] *= 1.f / 15.f * 16.f;
+    variances.q0 *= 1.f / 15.f * 16.f;
+    variances.q1 *= 1.f / 15.f * 16.f;
+    variances.q2 *= 1.f / 15.f * 16.f;
+    variances.q3 *= 1.f / 15.f * 16.f;
     if (global_variance > 0.f) {
         global_variance =
-            (variances[0] + variances[1] + variances[2] + variances[3]) / global_variance;
+            (variances.q0 + variances.q1 + variances.q2 + variances.q3) / global_variance;
     }
     return global_variance;
 }
