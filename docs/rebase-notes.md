@@ -61,6 +61,36 @@
 - `core/test/test_meson_secret_env_sanitization.py`: `EXPECTED_RUNNER_PATHS` registers
   `scripts/dev/rc3-home-gpu-retest.sh` as an authorized caller of `scripts/ci/run_meson_test.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/sycl-aot-check-single-target — the AOT image check accepts bare native images (2026-09-30)
+
+- `core/src/sycl/check_aot_image.py`: fork-only (upstream Netflix/vmaf has no
+  SYCL). `ocloc` writes an image per TU in one of two forms: an `ar` fat
+  binary when `-device` names two or more acronyms (even two that share an IP
+  version), a bare zebin (plain ELF) when it names one. The check must accept
+  both; never narrow it back to `ar` archives, which failed every
+  single-target build (`-Dsycl_icpx_aot_targets=dg2-g11`, the single-target
+  example in `docs/backends/sycl/overview.md`). A TU that
+  `sycl_icpx_aot_igc_skip` leaves with one target is a bare zebin too.
+- A bare zebin's IP version is the u32 of its `.note.intelgt.compat` IntelGT
+  note of type 6 (`IntelGTSectionType::productConfig` in intel/compute-runtime
+  `shared/source/device_binary_format/zebin/zebin_elf.h`), laid out as
+  `HardwareIpVersion` in `shared/source/helpers/hw_ip_version.h`
+  (architecture bits 31:22, release 21:14, revision 5:0) and printed as
+  `architecture.release.revision`, the token `ocloc ids` prints. The bare
+  zebin is modelled as an image carrying that one IP version, so the
+  completeness and `--partial` rules, and the `count incomplete <= declared
+  partial TUs` rule, apply to both forms unchanged. `elf_sections()`,
+  `parse_images()` and `check()` are the three pieces; keep the walker strict
+  (zero padding is the only skippable byte) and keep the `ar` member alignment
+  relative to the archive start.
+- Summary text is unchanged for an all-fat-binary library (`31 spir64_gen fat
+  binaries; ...`); a bare zebin adds `N spir64_gen native images`. The stamp
+  content is informational, nothing parses it.
+- `core/test/test_sycl_aot_image_check.py` gains synthetic bare-zebin
+  fixtures (`zebin()`, `intelgt_notes()`, `ip_word()`); `elf64()` takes
+  section types and, as a list of pairs, repeated names. No device or oneAPI
+  is needed. No Netflix golden-data, public API or FFmpeg patch impact; the
+  Meson wiring (`sycl_aot_image_check` in `core/src/meson.build`) is unchanged.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

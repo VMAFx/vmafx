@@ -112,6 +112,23 @@ sycl/
   reworked kernel from `fix/sycl-b580-psnr-hvs-adm-tiny` lands (compiles for
   Xe2 under ocloc 26.35). **On rebase**: keep all three pieces together.
 
+- **AOT image check accepts both ocloc image forms.** ocloc writes one image
+  per TU; form follows count of device acronyms in `-device`: >= 2 (even one
+  shared IP, `dg2-g10,acm-g10`) -> fat binary, `ar` archive, members
+  `<bits>.<arch.release.revision>`; exactly 1 -> bare zebin, plain ELF, no
+  archive (`-Dsycl_icpx_aot_targets=dg2-g11`; a TU that
+  `sycl_icpx_aot_igc_skip` leaves one target). `check_aot_image.py` reads IP
+  of bare zebin from `.note.intelgt.compat` (`SHT_NOTE`), IntelGT note type 6
+  (`productConfig`, u32 laid out as NEO `HardwareIpVersion`: architecture
+  31:22, release 21:14, revision 5:0) = token `ocloc ids` prints (upstream:
+  intel/compute-runtime `zebin_elf.h`, `hw_ip_version.h`). Bare zebin = image
+  carrying one IP -> same completeness + `--partial` rules as fat binary; IP
+  no requested target uses -> fail; bytes neither `ar` nor ELF, or ELF
+  without that note -> fail. Fat-binary-only check failed every
+  single-target build. **On rebase**: keep both forms; never narrow check to
+  `ar` archives. Guard: `core/test/test_sycl_aot_image_check.py` (synthetic
+  ELF fixtures, no device).
+
 - **MSVC builds register images through one explicit device link
   (ADR-1364).** Meson links MSVC-syntax toolchains (`icx-cl`) with
   `link.exe` directly; it drops `-fsycl` (LNK4044) and never wraps device

@@ -10,10 +10,24 @@ This check reads the linked ELF shared object and requires what AOT promises:
 
 * a ``__CLANG_OFFLOAD_BUNDLE__sycl-spir64_gen`` section, where icpx puts the
   native images;
-* in every ocloc fat binary inside it (one ``ar`` archive per TU image, members
-  named ``<bits>.<GFX IP version>``), a member for the IP version of every
-  requested target, as ``ocloc ids <target>`` reports it. The build compresses
-  each image with ``--offload-compress``; zstd frames are decoded first.
+* in every image inside it, the GFX IP version of every requested target, as
+  ``ocloc ids <target>`` reports it. The build compresses each image with
+  ``--offload-compress``; zstd frames are decoded first. ocloc writes an image
+  in one of two forms, by the number of device acronyms it was given:
+
+  - two or more, even when they share an IP version: a fat binary, an ``ar``
+    archive with one member per acronym, named ``<bits>.<GFX IP version>``;
+  - exactly one, as with ``-Dsycl_icpx_aot_targets=dg2-g11``: a bare zebin, an
+    ELF file with no archive around it. Its IP version is the product-config
+    note (IntelGT note type 6) of its ``.note.intelgt.compat`` section, a 32-bit
+    word laid out as ``HardwareIpVersion`` (architecture in bits 31:22, release
+    in 21:14, revision in 5:0) that ``ocloc ids`` prints as
+    ``architecture.release.revision``. Layout source: intel/compute-runtime,
+    shared/source/device_binary_format/zebin/zebin_elf.h (``IntelGTSectionType``)
+    and shared/source/helpers/hw_ip_version.h.
+
+A bare zebin counts as an image that carries one IP version, so both forms
+obey the same rules. Anything else in the section is an error.
 
 TUs that the build deliberately compiles without some targets because IGC
 cannot compile them (``--partial``) may leave those targets out, and only those.
@@ -30,6 +44,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 SECTION = "__CLANG_OFFLOAD_BUNDLE__sycl-spir64_gen"
 AR_MAGIC = b"!<arch>\n"
@@ -37,6 +52,23 @@ AR_HEADER = 60
 ELF_MAGIC = b"\x7fELF"
 ELFCLASS64 = 2
 ELFDATA2LSB = 1
+ELF_HEADER = 64
+SHT_NOTE = 7
+SHT_NOBITS = 8
+# zebin_elf.h: SectionNames::noteIntelGT, intelGTNoteOwnerName, IntelGTSectionType::productConfig.
+NOTE_SECTION = ".note.intelgt.compat"
+NOTE_OWNER = b"IntelGT\0"
+NOTE_HEADER = 12
+NOTE_PRODUCT_CONFIG = 6
+PRODUCT_CONFIG_SIZE = 4
+MAX_NOTES = 64
+# hw_ip_version.h: HardwareIpVersion { revision : 6; reserved : 8; release : 8; architecture : 10 }.
+IP_ARCHITECTURE_SHIFT = 22
+IP_RELEASE_SHIFT = 14
+IP_RELEASE_MASK = 0xFF
+IP_REVISION_MASK = 0x3F
+FAT = "fat binary"
+NATIVE = "native image"
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 ZSTD_RLE_BLOCK = 1
 ZSTD_RESERVED_BLOCK = 3
@@ -55,20 +87,101 @@ class CheckError(Exception):
     """A violated AOT expectation, reported verbatim."""
 
 
-def elf_section(data: bytes, wanted: str) -> bytes | None:
-    """Return the contents of the named section of an ELF64 little-endian file."""
-    if data[:4] != ELF_MAGIC or data[4] != ELFCLASS64 or data[5] != ELFDATA2LSB:
+# A section of an ELF file: (name, type, file offset, size).
+Section = tuple[str, int, int, int]
+
+
+class Image(NamedTuple):
+    """One spir64_gen image: its form (FAT or NATIVE) and the GFX IP versions it carries."""
+
+    kind: str
+    ips: frozenset[str]
+
+
+def elf_sections(data: bytes, base: int = 0) -> list[Section]:
+    """List the sections of the ELF64 little-endian file at ``base``; offsets are file-relative."""
+    ident = data[base : base + ELF_HEADER]
+    if (
+        len(ident) < ELF_HEADER
+        or ident[:4] != ELF_MAGIC
+        or ident[4] != ELFCLASS64
+        or ident[5] != ELFDATA2LSB
+    ):
         raise CheckError("not an ELF64 little-endian object")
-    (shoff,) = struct.unpack_from("<Q", data, 0x28)
-    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
-    headers = [struct.unpack_from("<IIQQQQ", data, shoff + i * shentsize) for i in range(shnum)]
-    names_offset = headers[shstrndx][4]
-    for name_offset, _kind, _flags, _addr, offset, size in headers:
+    (shoff,) = struct.unpack_from("<Q", data, base + 0x28)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, base + 0x3A)
+    if shstrndx >= shnum:
+        raise CheckError("the ELF section name table index is out of range")
+    headers = [
+        struct.unpack_from("<IIQQQQ", data, base + shoff + i * shentsize) for i in range(shnum)
+    ]
+    names_offset = base + headers[shstrndx][4]
+    sections = []
+    for name_offset, kind, _flags, _addr, offset, size in headers:
         start = names_offset + name_offset
         name = data[start : data.index(b"\0", start)].decode("ascii", "replace")
+        sections.append((name, kind, offset, size))
+    return sections
+
+
+def elf_section(data: bytes, wanted: str) -> bytes | None:
+    """Return the contents of the named section of an ELF64 little-endian file."""
+    for name, _kind, offset, size in elf_sections(data):
         if name == wanted:
             return data[offset : offset + size]
     return None
+
+
+def elf_end(data: bytes, base: int, sections: list[Section]) -> int:
+    """Return where the ELF image at ``base`` ends: past its section table and section data."""
+    (shoff,) = struct.unpack_from("<Q", data, base + 0x28)
+    shentsize, shnum = struct.unpack_from("<HH", data, base + 0x3A)
+    ends: list[int] = [ELF_HEADER, shoff + shnum * shentsize]
+    ends += [offset + size for _name, kind, offset, size in sections if kind != SHT_NOBITS]
+    return base + max(ends)
+
+
+def intelgt_note(notes: bytes, wanted: int) -> bytes | None:
+    """Return the descriptor of the first IntelGT note of type ``wanted``, or None.
+
+    Notes are a 12-byte header, then the owner name and the descriptor, each padded to 4 bytes.
+    Notes of other owners are skipped.
+    """
+    position = 0
+    for _ in range(MAX_NOTES):
+        if position == len(notes):
+            return None
+        if position + NOTE_HEADER > len(notes):
+            raise CheckError(f"truncated note header in {NOTE_SECTION}")
+        name_size, desc_size, kind = struct.unpack_from("<III", notes, position)
+        name_at = position + NOTE_HEADER
+        desc_at = name_at + ((name_size + 3) & ~3)
+        position = desc_at + ((desc_size + 3) & ~3)
+        if position > len(notes):
+            raise CheckError(f"a note overruns {NOTE_SECTION}")
+        if kind == wanted and notes[name_at : name_at + name_size] == NOTE_OWNER:
+            return notes[desc_at : desc_at + desc_size]
+    raise CheckError(f"more than {MAX_NOTES} notes in {NOTE_SECTION}")
+
+
+def native_ip_version(data: bytes, base: int, sections: list[Section]) -> str:
+    """Return the GFX IP version of the bare zebin at ``base``, spelled as ``ocloc ids`` does."""
+    notes = [
+        data[base + offset : base + offset + size]
+        for name, kind, offset, size in sections
+        if name == NOTE_SECTION and kind == SHT_NOTE
+    ]
+    if len(notes) != 1:
+        raise CheckError(f"a native image has {len(notes)} {NOTE_SECTION} note sections, not one")
+    config = intelgt_note(notes[0], NOTE_PRODUCT_CONFIG)
+    if config is None or len(config) != PRODUCT_CONFIG_SIZE:
+        raise CheckError(
+            f"a native image has no 4-byte IntelGT product-config note (type "
+            f"{NOTE_PRODUCT_CONFIG}) in {NOTE_SECTION}"
+        )
+    (value,) = struct.unpack("<I", config)
+    release = (value >> IP_RELEASE_SHIFT) & IP_RELEASE_MASK
+    return f"{value >> IP_ARCHITECTURE_SHIFT}.{release}.{value & IP_REVISION_MASK}"
 
 
 def archive_members(blob: bytes, start: int) -> tuple[set[str], int]:
@@ -81,7 +194,7 @@ def archive_members(blob: bytes, start: int) -> tuple[set[str], int]:
             break
         names.add(header[:16].decode("ascii", "replace").strip().rstrip("/"))
         position += AR_HEADER + int(header[48:58].decode("ascii").strip())
-        position += position % 2
+        position += (position - start) % 2
     return names, position
 
 
@@ -140,11 +253,11 @@ def zstd_decompress(frame: bytes) -> bytes:
         raise CheckError(f"zstd could not decode an AOT image: {error}") from None
 
 
-def expand(blob: bytes) -> bytes:
-    """Return the section with any zstd-compressed images decoded in place."""
+def expand(blob: bytes) -> list[bytes]:
+    """Return the section's payloads: each zstd frame decoded, else the raw section as one."""
     if not blob.startswith(ZSTD_MAGIC):
-        return blob
-    images: list[bytes] = []
+        return [blob]
+    payloads: list[bytes] = []
     position = 0
     while position < len(blob):
         if blob[position] == 0:
@@ -153,21 +266,54 @@ def expand(blob: bytes) -> bytes:
         if not blob.startswith(ZSTD_MAGIC, position):
             raise CheckError(f"unexpected bytes at offset {position} between zstd frames")
         end = zstd_frame_end(blob, position)
-        images.append(zstd_decompress(blob[position:end]))
+        payloads.append(zstd_decompress(blob[position:end]))
         position = end
-    return b"".join(images)
+    return payloads
 
 
-def fat_binaries(blob: bytes) -> list[set[str]]:
-    """Split the section into its ocloc fat binaries and list each one's members."""
-    blob = expand(blob)
-    archives: list[set[str]] = []
-    start = blob.find(AR_MAGIC)
-    while start >= 0:
-        names, end = archive_members(blob, start)
-        archives.append(names)
-        start = blob.find(AR_MAGIC, max(end, start + len(AR_MAGIC)))
-    return archives
+def fat_image(data: bytes, base: int) -> tuple[Image, int]:
+    """Parse the ocloc fat binary at ``base``; return it and where it ends."""
+    names, end = archive_members(data, base)
+    return Image(FAT, frozenset(name.split(".", 1)[-1] for name in names)), end
+
+
+def native_image(data: bytes, base: int) -> tuple[Image, int]:
+    """Parse the bare zebin at ``base``; return it, with its one IP version, and where it ends."""
+    sections = elf_sections(data, base)
+    end = elf_end(data, base, sections)
+    if end > len(data):
+        raise CheckError("a native image in the spir64_gen section is truncated")
+    return Image(NATIVE, frozenset({native_ip_version(data, base, sections)})), end
+
+
+def parse_images(payload: bytes) -> list[Image]:
+    """Split a payload into its images, fat binaries and bare zebins in any mix.
+
+    Zero bytes between images are alignment padding. Bytes that start neither an ``ar``
+    archive nor an ELF file are an error, so a stray or unknown image cannot pass unseen.
+    """
+    images: list[Image] = []
+    position = 0
+    while position < len(payload):
+        if payload[position] == 0:
+            position += 1
+            continue
+        if payload.startswith(AR_MAGIC, position):
+            image, position = fat_image(payload, position)
+        elif payload.startswith(ELF_MAGIC, position):
+            image, position = native_image(payload, position)
+        else:
+            raise CheckError(
+                f"unexpected bytes at offset {position}: "
+                "neither an ocloc fat binary nor a native ELF image"
+            )
+        images.append(image)
+    return images
+
+
+def section_images(section: bytes) -> list[Image]:
+    """Return every image of the spir64_gen section, whichever form ocloc wrote it in."""
+    return [image for payload in expand(section) for image in parse_images(payload)]
 
 
 def ocloc_ip_version(ocloc: str, target: str) -> str:
@@ -185,29 +331,45 @@ def ocloc_ip_version(ocloc: str, target: str) -> str:
     return lines[-1]
 
 
-def check(archives: list[set[str]], wanted: dict[str, str], partial: dict[str, set[str]]) -> str:
-    """Validate the fat binaries against the per-target IP versions."""
-    if not archives:
-        raise CheckError(f"{SECTION} holds no ocloc fat binary. {REMEDY}")
+def count_images(images: list[Image]) -> str:
+    """Name what the section holds, e.g. ``31 spir64_gen fat binaries``."""
+    fat = sum(image.kind == FAT for image in images)
+    parts = [f"{fat} spir64_gen fat binaries"] if fat else []
+    if len(images) > fat:
+        parts.append(f"{len(images) - fat} spir64_gen native images")
+    return ", ".join(parts)
+
+
+def check(images: list[Image], wanted: dict[str, str], partial: dict[str, set[str]]) -> str:
+    """Validate the images against the per-target IP versions."""
+    if not images:
+        raise CheckError(f"{SECTION} holds no ocloc fat binary or native image. {REMEDY}")
+    requested = set(wanted.values())
     optional = {wanted[target] for targets in partial.values() for target in targets}
-    member_ips = [{name.split(".", 1)[-1] for name in names} for names in archives]
     incomplete = []
-    for index, ips in enumerate(member_ips):
-        missing = set(wanted.values()) - ips
+    for index, image in enumerate(images):
+        stray = image.ips - requested if image.kind == NATIVE else set()
+        if stray:
+            raise CheckError(
+                f"{image.kind} {index} is built for IP version {sorted(stray)}, which no "
+                f"requested target uses ({', '.join(f'{t}={ip}' for t, ip in wanted.items())}). "
+                f"{REMEDY}"
+            )
+        missing = requested - image.ips
         if missing - optional:
             raise CheckError(
-                f"fat binary {index} lacks IP versions {sorted(missing - optional)} "
+                f"{image.kind} {index} lacks IP versions {sorted(missing - optional)} "
                 f"({', '.join(t for t, ip in wanted.items() if ip in missing)}). {REMEDY}"
             )
         if missing:
             incomplete.append(index)
     if len(incomplete) > len(partial):
         raise CheckError(
-            f"{len(incomplete)} fat binaries omit targets, but only {len(partial)} TU(s) "
+            f"{len(incomplete)} images omit targets, but only {len(partial)} TU(s) "
             f"are declared partial ({', '.join(sorted(partial))}). {REMEDY}"
         )
     return (
-        f"{len(archives)} spir64_gen fat binaries; {len(set(wanted.values()))} IP versions "
+        f"{count_images(images)}; {len(requested)} IP versions "
         f"for {len(wanted)} targets; {len(incomplete)} partial by declaration"
     )
 
@@ -238,7 +400,7 @@ def main(argv: list[str]) -> int:
         if section is None:
             raise CheckError(f"{args.library.name} has no {SECTION} section. {REMEDY}")
         wanted = {target: ocloc_ip_version(args.ocloc, target) for target in targets}
-        summary = check(fat_binaries(section), wanted, parse_partial(args.partial, targets))
+        summary = check(section_images(section), wanted, parse_partial(args.partial, targets))
     except (CheckError, OSError, ValueError, struct.error, subprocess.SubprocessError) as error:
         print(f"check_aot_image: {args.library}: {error}", file=sys.stderr)
         return 1

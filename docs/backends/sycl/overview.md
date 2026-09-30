@@ -302,7 +302,16 @@ compile time (`-fno-sycl-rdc`), and the images are zstd-compressed
 `libvmaf.so`, static consumers of `libvmaf.a`, and the test executables. After
 linking `libvmaf.so` on Linux, the build runs `core/src/sycl/check_aot_image.py`,
 which fails the build unless the library holds a native image for every listed
-target. You can check a library yourself:
+target. `ocloc` writes the images of one source file in one of two forms: for two
+or more listed targets (even when some share a GPU IP version) a fat binary, an
+`ar` archive with one member per target, and for exactly one target, as in
+`-Dsycl_icpx_aot_targets=dg2-g11`, a bare native binary with no archive. The check
+accepts both. It reads the GPU IP version of a bare binary from the `IntelGT`
+product-config note in its `.note.intelgt.compat` section, which is the value
+`ocloc ids <target>` prints for that target, and rejects a binary built for a
+GPU IP version that no listed target uses. The test
+`core/test/test_sycl_aot_image_check.py` covers both forms without a GPU or
+oneAPI. You can check a library yourself:
 
 ```bash
 clang-offload-bundler --list --type=o --input=build/src/libvmaf.so
