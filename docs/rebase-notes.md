@@ -57,6 +57,17 @@
   oracle across `YUV420P`, `YUV422P`, and `YUV444P`.
 - Upstream-sync note: `motion_add_uv` is a fork-added option on `motion_sycl`.
   Upstream `integer_motion.c` does not have `motion_add_uv`.
+## docs/sycl-float-ssim-residual — float_ssim_sycl combined formula residual closed (2026-10-01)
+
+- PR #1645 (`9e9ea0571`) already aligned `float_ssim_sycl` with CPU reference
+  arithmetic in `core/src/feature/sycl/integer_ssim_sycl.cpp` (`ssim_terms` and
+  `ssim_term` evaluate exact per-pixel $l \cdot c \cdot s$ in fp32 pairs, fixed-point
+  work-group sums `term_fixed`, and double host reduction).
+- Verified on Intel Arc A380 under Linux `xe` kernel driver: max absolute difference
+  against `--backend cpu` is 0.000e+00 on Netflix 576x324 (48 frames) and BBB 3840x2160
+  (auto scale and `scale=1`), down from 7.8e-5. `test_sycl_twin_option_parity` passes
+  13/13 with exact match on flat identical frames (72.247199 dB).
+- Closes `T-SYCL-FLOAT-SSIM-COMBINED-FORMULA-RESIDUAL-2026-09-29`.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 
