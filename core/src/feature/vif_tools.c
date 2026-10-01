@@ -453,24 +453,16 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
         convolution_f32_avx_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
     }
-#else
-    (void)tmpbuf;
 #endif
 
-    /* fall back */
-
-    float *tmp = aligned_malloc(ALIGN_CEIL(w * sizeof(float)), MAX_ALIGN);
-    if (!tmp) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_filter1d_s: out of memory (w=%d)\n", w);
-        return;
-    }
+    /* fall back: reuse tmpbuf supplied by caller (PR #881 hoist pattern).
+     * tmpbuf is guaranteed >= w floats; no per-call malloc on any arch. */
+    float *tmp = tmpbuf;
 
     for (int i = 0; i < h; ++i) {
         vif_filter1d_vertical_s(f, fwidth, src, src_px_stride, w, h, i, tmp);
         vif_filter1d_horizontal_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
     }
-
-    aligned_free(tmp);
 }
 
 // Code optimized by adding intrinsic code for the functions,
@@ -487,24 +479,15 @@ void vif_filter1d_sq_s(const float *f, const float *src, float *dst, float *tmpb
         convolution_f32_avx_sq_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
     }
-#else
-    (void)tmpbuf;
 #endif
 
-    /* fall back */
-
-    float *tmp = aligned_malloc(ALIGN_CEIL(w * sizeof(float)), MAX_ALIGN);
-    if (!tmp) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_filter1d_sq_s: out of memory (w=%d)\n", w);
-        return;
-    }
+    /* fall back: reuse tmpbuf supplied by caller (PR #881 hoist pattern). */
+    float *tmp = tmpbuf;
 
     for (int i = 0; i < h; ++i) {
         vif_filter1d_vertical_sq_s(f, fwidth, src, src_px_stride, w, h, i, tmp);
         vif_filter1d_horizontal_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
     }
-
-    aligned_free(tmp);
 }
 
 void vif_filter1d_xy_s(const float *f, const float *src1, const float *src2, float *dst,
@@ -521,25 +504,16 @@ void vif_filter1d_xy_s(const float *f, const float *src1, const float *src2, flo
                                  src2_px_stride, dst_px_stride);
         return;
     }
-#else
-    (void)tmpbuf;
 #endif
 
-    /* fall back */
-
-    float *tmp = aligned_malloc(ALIGN_CEIL(w * sizeof(float)), MAX_ALIGN);
-    if (!tmp) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_filter1d_xy_s: out of memory (w=%d)\n", w);
-        return;
-    }
+    /* fall back: reuse tmpbuf supplied by caller (PR #881 hoist pattern). */
+    float *tmp = tmpbuf;
 
     for (int i = 0; i < h; ++i) {
         vif_filter1d_vertical_xy_s(f, fwidth, src1, src2, src1_px_stride, src2_px_stride, w, h, i,
                                    tmp);
         vif_filter1d_horizontal_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
     }
-
-    aligned_free(tmp);
 }
 
 int vif_get_scaling_method(char *scaling_method_str, enum vif_scaling_method *scale_method)

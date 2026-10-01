@@ -146,6 +146,17 @@
   and `float_motion_cuda`; no snapshot under `testdata/` is a CUDA output. No Netflix golden-data, public API or FFmpeg
   patch impact.
 
+## perf/vif-scalar-malloc-hoist — reuse tmpbuf in scalar VIF fallbacks (ADR-0463) (2026-10-01)
+
+- `core/src/feature/vif_tools.c`: in `vif_filter1d_s()`, `vif_filter1d_sq_s()`,
+  and `vif_filter1d_xy_s()`, reuses the caller-supplied `tmpbuf` scratch buffer
+  (allocated once per frame by `compute_vif()`) instead of allocating and
+  freeing `tmp` on every call.
+- Upstream Netflix/vmaf allocated `tmp` per filter call via `aligned_malloc()`.
+  On ARM64 and CPU architectures without AVX2 convolution, this fired 12 heap
+  allocations and deallocations per frame.
+- Scores remain 100% bit-identical. No change to algorithm or math.
+
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 
 - `core/src/model.c`, `vmaf_model_collection_append()`: when the `realloc()`
