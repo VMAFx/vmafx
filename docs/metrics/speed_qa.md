@@ -423,7 +423,9 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda \
 ```
 
 `--no-timing` skips the timing runs; `--reps` and `--threads` change the
-repetitions and the CPU thread count. The CPU side runs from the same `vmaf`
+repetitions and the CPU thread count. `--vmaf` takes an absolute path, a path
+relative to the working directory (the default is `build/tools/vmaf`), or a
+bare name to look up on `PATH`. The CPU side runs from the same `vmaf`
 binary, so build it with icx (as the dev image does) for an exact comparison;
 with a gcc build expect the few [`log2f`](#the-cpu-reference-and-log2f) frames
 to differ and the script to exit 1.

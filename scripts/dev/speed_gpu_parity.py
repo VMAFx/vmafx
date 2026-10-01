@@ -221,6 +221,15 @@ def check_pair(args: argparse.Namespace, fixture: Fixture, feature: str) -> bool
     return identical
 
 
+def executable_path(path: Path) -> Path:
+    """The form ``safe_subprocess`` accepts for an executable: absolute, or a
+    bare name for PATH lookup. A relative path with a directory part, such as
+    the default ``build/tools/vmaf``, is anchored at the working directory."""
+    if path.is_absolute() or len(path.parts) == 1:
+        return path
+    return Path.cwd() / path
+
+
 def parse(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--backend", required=True, choices=BACKENDS)
@@ -248,6 +257,7 @@ def parse(argv: Sequence[str]) -> argparse.Namespace:
     if not math.isfinite(args.max_abs_diff) or args.max_abs_diff < 0.0:
         parser.error("--max-abs-diff must be a finite non-negative number")
     args.feature = tuple(args.feature) if args.feature else FEATURES
+    args.vmaf = executable_path(args.vmaf)
     return args
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -87,6 +88,48 @@ class CommandTests(unittest.TestCase):
         for bound in ("-1e-9", "nan"):
             with self.assertRaises(SystemExit):
                 SGP.parse(["--backend", "sycl", "--max-abs-diff", bound])
+
+
+class ExecutablePathTests(unittest.TestCase):
+    """``--vmaf build/tools/vmaf``, the default and the form every documented
+    command uses, was refused by ``safe_subprocess`` ("allowlisted executable
+    must be bare or absolute"), so the script exited 2 before it ran anything."""
+
+    def test_relative_path_with_a_directory_is_anchored_at_the_working_directory(self) -> None:
+        args = SGP.parse(["--backend", "cuda", "--vmaf", "build-cuda/tools/vmaf"])
+        self.assertEqual(args.vmaf, Path.cwd() / "build-cuda/tools/vmaf")
+        self.assertTrue(SGP.parse(["--backend", "cuda"]).vmaf.is_absolute())
+
+    def test_absolute_path_and_bare_name_are_kept(self) -> None:
+        absolute = Path.cwd() / "elsewhere" / "vmaf"
+        self.assertEqual(SGP.parse(["--backend", "cuda", "--vmaf", str(absolute)]).vmaf, absolute)
+        # A bare name stays bare: safe_subprocess resolves it on PATH.
+        self.assertEqual(SGP.parse(["--backend", "cuda", "--vmaf", "vmaf"]).vmaf, Path("vmaf"))
+
+    @unittest.skipIf(os.name == "nt", "the stand-in executable is a POSIX script")
+    def test_relative_vmaf_runs_through_the_real_command_validation(self) -> None:
+        # No mock of run_command here: the validation that refused the path is
+        # the thing under test.
+        stand_in = (
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "out = sys.argv[sys.argv.index('-o') + 1]\n"
+            "frames = [{'metrics': {'speed_temporal': 7.0}}]\n"
+            "json.dump({'frames': frames}, open(out, 'w', encoding='utf-8'))\n"
+        )
+        with TemporaryDirectory() as tmp:
+            tool = Path(tmp) / "tools" / "vmaf"
+            tool.parent.mkdir()
+            tool.write_text(stand_in, encoding="utf-8")
+            tool.chmod(0o755)
+            previous = Path.cwd()
+            os.chdir(tmp)
+            try:
+                relative = ["--vmaf", "tools/vmaf", "--feature", "speed_temporal"]
+                status = SGP.main(["--backend", "sycl", "--no-timing", *relative])
+            finally:
+                os.chdir(previous)
+        self.assertEqual(status, 0)
 
 
 class MainTests(unittest.TestCase):
