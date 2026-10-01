@@ -7,7 +7,6 @@
 - **File**: `model/predictor_h264_qsv.onnx` (21877 bytes)
 - **SHA-256**: `a3165ee9e09c468f947701cc50eec2080cbc3dee11204ecea45bdd27f9ebd77a`
 
-
 ## 1. Purpose
 
 Per-shot VMAF predictor for the `h264_qsv` adapter. Consumed by
@@ -39,10 +38,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | 0.7945 |
-| SROCC  | 0.8555 |
-| RMSE   | 12.9497 VMAF |
+| --- | --- |
+| PLCC | 0.7945 |
+| SROCC | 0.8555 |
+| RMSE | 12.9497 VMAF |
 
 ## 5. Signing
 
@@ -53,7 +52,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

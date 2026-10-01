@@ -8,7 +8,7 @@
 version: 1
 rules:
   - id: HISS-01
-    title: Acyclic Control Flow
+    title: "Control Flow - Acyclic DAG Control Flow"
     coverage:
       - language: c
         state: partial
@@ -20,7 +20,7 @@ rules:
         rationale: direct recursion is detected; method-call cycles remain an explicit gap.
 
   - id: HISS-02
-    title: Bounded Loops and I/O Timeouts
+    title: "Loops & I/O - Bounded Loops & Mandatory I/O Timeouts"
     coverage:
       - language: c
         state: partial
@@ -36,7 +36,7 @@ rules:
         rationale: loop and while true are detected; I/O timeouts are not decided.
 
   - id: HISS-04
-    title: Complexity Bounds
+    title: "Complexity Bounds & Modular Sizing"
     coverage:
       - language: c
         state: partial
@@ -56,7 +56,7 @@ rules:
         rationale: function length is detected; cyclomatic complexity remains an explicit gap.
 
   - id: HISS-07
-    title: Checked Errors
+    title: "Checked Errors & Zero Unwrap"
     coverage:
       - language: go
         state: partial
@@ -68,7 +68,7 @@ rules:
         rationale: unwrap and expect calls are detected; other discarded errors are not decided.
 
   - id: HISS-08
-    title: Static Determinism and Banned Functions
+    title: "Static Determinism & Banned Functions"
     coverage:
       - language: c
         state: partial
@@ -84,12 +84,12 @@ rules:
         rationale: dynamic Go execution is delegated to repository linters, not Praetor's scanner.
 
   - id: HISS-09
-    title: Reference Safety
+    title: "Reference Safety & Mandatory Safety Proofs"
     coverage:
       - language: go
         state: partial
         mechanism: Praetor Go AST unsafe-use proof check
-        rationale: direct unsafe uses need a SAFETY proof; aliased imports remain a gap.
+        rationale: direct and aliased unsafe uses need a SAFETY proof.
       - language: rust
         state: partial
         mechanism: Praetor Rust unsafe-block proof check

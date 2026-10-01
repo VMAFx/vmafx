@@ -7,7 +7,6 @@
 - **File**: `model/predictor_av1_nvenc.onnx` (21877 bytes)
 - **SHA-256**: `56f84000fd3cbd4819b9f91f40abd5b02454303bc47633e556040aa5a56e060b`
 
-
 ## 1. Purpose
 
 Per-shot VMAF predictor for the `av1_nvenc` adapter. Consumed by
@@ -39,10 +38,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | 0.6561 |
-| SROCC  | 0.6154 |
-| RMSE   | 12.4922 VMAF |
+| --- | --- |
+| PLCC | 0.6561 |
+| SROCC | 0.6154 |
+| RMSE | 12.4922 VMAF |
 
 ## 5. Signing
 
@@ -53,7 +52,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

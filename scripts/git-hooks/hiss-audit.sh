@@ -31,9 +31,23 @@
 
 set -euo pipefail
 
+# A hook never waits on the forge. praetor 6c772713a133 and later read the live
+# Actions permissions and workflow runs during `audit` (about 40 s here against
+# 2 s offline); CI keeps that read, the hooks pass --offline. An engine without
+# the flag (the pre-bump pin) is run as before.
+offline_flag() {
+  local usage
+  # Captured first: `grep -q` closing the pipe early would fail the pipeline.
+  usage="$(praetorctl audit -h 2>&1 || true)"
+  case "$usage" in
+    *' -offline'*) printf '%s\n' --offline ;;
+  esac
+}
+
 run_audit() {
   if command -v praetorctl >/dev/null 2>&1; then
-    praetorctl audit "$@"
+    # shellcheck disable=SC2046 # the flag is one word or nothing
+    praetorctl audit $(offline_flag) "$@"
   elif [ -d ./cmd/standardsctl ]; then
     go run ./cmd/standardsctl audit "$@"
   else

@@ -1,10 +1,13 @@
+---
 id: "agent:sandboxed"
 name: "Autonomous Agent Sandboxing & Fleet Governance"
-description: "Enforces canonical AGENTS.md transpilation (HISS-16), cgroup resource caps, network isolation, anti-evasion hooks, and anti-loop interception"
+description: "Selects the semgrep linter, the devcontainer common-utils feature,
+  the Copilot editor extension and workspace trust for repositories driven by
+  autonomous agents; it provides no resource caps, network isolation or loop
+  interception"
 
 linters:
   - "semgrep"
-  - "gocyclo"
 
 devcontainer_features:
   - "ghcr.io/devcontainers/features/common-utils:2"

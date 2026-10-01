@@ -14,12 +14,12 @@
       "bootstrap": {
         "version": 1,
         "state": "source-bundle",
-        "builderImage": "docker.io/library/golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125",
+        "builderImage": "docker.io/library/golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414",
         "baseImage": "ghcr.io/vmafx/vmafx-dev-mcp@sha256:3956ebc9342a75cc0120804cee37144fff402dc1bab83849c68bf73a2cd6c9cc",
-        "sourceSHA256": "sha256:98c782557c81a83c96d33a68b7c3355fcb21244bf7fb0617569fe6abbafdd29a",
-        "archiveSHA256": "sha256:7f0efae8c905abb90af56d13d2db280eddaa89181c65ae9d870014253dc62502",
-        "archiveParts": 4,
-        "dockerfileSHA256": "sha256:d8330bd600580f6ed5f04af596ff450e8f1bd3a1c6729c118bd06198fa5aba6f"
+        "sourceSHA256": "sha256:9519c41b75d880302fec4b8cd59eb87fe9ade88f0835fb923ecad6772a1f3b85",
+        "archiveSHA256": "sha256:fed99be107d4c6ce571c1cbd67380839328640dcf42eba394561817fb208bd77",
+        "archiveParts": 5,
+        "dockerfileSHA256": "sha256:d60da68757ba4f0cf1ba40971862d3c1e2883a0d4c174eea6362a5448c567c6e"
       }
     },
     "vscode": {
@@ -38,7 +38,6 @@
       ],
       "settings": {
         "clangd.arguments": [
-          "--compile-commands-dir=core/build",
           "--header-insertion=never"
         ],
         "clangd.path": "clangd",

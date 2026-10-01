@@ -124,4 +124,42 @@ new_case
 track scripts/config.txt '.corpus/OPEN.md'
 expect 'state placed below corpus root fails' 1
 
+# ADR-1351 / cordanaLLM/praetor#641: praetor's audit-verified tail block in
+# .gitignore ignores the retired root and its locked docs gate names it.
+praetor_block() {
+  printf '%s\n' \
+    '# BEGIN praetor private artifacts (praetorctl adopt)' \
+    "/$state_root/" "/$retired_root/" '/.standards/worktrees/' \
+    '# END praetor private artifacts'
+}
+
+new_case
+praetor_block >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+track tools/markdownlint/verify.mjs "const SCRATCH_ROOTS = new Set([\"$state_root\", \"$retired_root\"]);"
+expect "praetor's managed ignore rule and locked docs gate are tolerated" 0
+
+new_case
+printf '/%s/\n' "$retired_root" >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'the same ignore rule outside the praetor block fails' 1
+
+new_case
+{
+  praetor_block
+  printf '%s*/\n' "$state_root"
+} >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'a wildcard after the praetor block still fails' 1
+
+new_case
+praetor_block >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+mkdir -p "$case_dir/$retired_root"
+expect 'a retired directory still fails under the praetor rule' 1
+
+new_case
+track tools/markdownlint-extra/rules.mjs "const root = \"$retired_root\";"
+expect 'a path beside the praetor gate still rejects the retired path' 1
+
 printf 'all local-data contract cases passed\n'

@@ -559,6 +559,26 @@
 - `tools/vmaf-tune`: batch `TuneCache` index writes via in-memory caching and a dirty flag, flushed once per sweep or on LRU eviction rather than rewriting `__index__.json` on every `get()` / `put()`.
 
 
+- The praetor governance engine moves from `f41e74d` to `6c772713a133`
+  (ADR-1351), the newest praetor commit whose own CI is green. Its HISS
+  scanners now find 244 existing issues the old engine did not measure: 140
+  Python functions over 60 lines, 61 process exits from library code in
+  Python, Go and Rust, 36 recursive Python functions and 7 Go calls without a
+  deadline. The debt baseline records them, so the ratchet starts from 378
+  entries instead of 182. The move refreshes the compiled agent context, the
+  README governance block, the Paperclip harness, the branch ruleset template
+  (now for `master`), the devcontainer's vendored praetor source and the
+  documentation gate's locked files; the devcontainer keeps its
+  `vmafx-dev-mcp` base image. `make verify-all` now also runs praetor's
+  Documentation Governance gate (`make docs-lint` and `make docs-figures`),
+  which needs Node.js 24. `.standards.yaml` declares the text register for
+  every surface (agent-only text is `internal`, the terse `caveman` form).
+  The audit in the git hooks passes `--offline`, which saves about 40 seconds
+  per commit and push. Every workstation's `praetorctl` has to move to the new
+  pin when this merges; the two engines do not read each other's trees
+  ([CI guide](docs/development/ci.md#moving-the-praetor-pin)).
+
+
 - **Cross-backend gate: the `psnr_hvs` tolerance grows with the frame size.**
   The CPU `psnr_hvs` adds every coefficient error of a plane into one `float`,
   so its rounding error grows with the number of 8x8 blocks, and a correct GPU
@@ -1643,7 +1663,6 @@
   (corrupted) to 10.90 ms/frame (correct) (`T-SYCL-PSNR-HVS-XE-SCRATCH-2026-09-30`).
 
 
-### Fixed
 - **SYCL**: Fixed identical/flat-frame handling in `float_ssim_sycl` and `integer_ssim_sycl` by implementing the CPU's exact arithmetic without identical-window shortcuts, grouping integer terms as `((w*a)*b)/den`, and preserving ADR-1370 fp32 frame-mean rounding.
 - **SYCL**: Fixed a bug where `psnr_sycl` produced incorrectly scaled scores under `--subsample` by adding the missing `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag.
 - **SYCL**: Fixed a bug where `motion_v2_sycl` diverged from the CPU by applying `motion_fps_weight` and the `motion_max_val` cap in `collect()` and emitting scores for one-frame inputs in `flush()`.

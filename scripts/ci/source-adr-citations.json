@@ -7808,6 +7808,16 @@
       },
       "target": "1350-recovery-overlay-ffmpeg-patches.md"
     },
+    "1351": {
+      "sites": {
+        ".pre-commit-config.yaml": 3,
+        "REUSE.toml": 1,
+        "scripts/ci/check-local-data-contract.sh": 1,
+        "scripts/ci/tests/test-check-local-data-contract.sh": 1,
+        "tools/vmaf-tune/tests/test_predictor_card_markdown.py": 1
+      },
+      "target": "1351-praetor-engine-pin-move.md"
+    },
     "1353": {
       "sites": {
         ".github/workflows/helm-chart.yml": 1,

@@ -71,7 +71,9 @@ pre-push:
     flavor-audit:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      # The same wrapper as pre-commit: one audit invocation, offline where the
+      # engine supports it (scripts/git-hooks/hiss-audit.sh).
+      run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     dedupe-scan:

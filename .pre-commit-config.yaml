@@ -93,14 +93,18 @@ repos:
         # pyproject.toml [tool.black] extend-exclude. Black's extend-exclude
         # only filters during directory walks, not explicitly-passed files,
         # so pre-commit needs its own exclude to skip them.
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
+        # tools/figures/ is praetor's figure engine: `standardsctl audit` locks
+        # it byte for byte, so a reformat would break the Standards gate
+        # (ADR-1351, cordanaLLM/praetor#578).
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.9
     hooks:
       - id: ruff-check
         files: '^(python|ai|scripts|tools)/.*\.py$'
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
+        # Same praetor-locked tools/figures/ exclusion as black above.
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
         args: ["--fix"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -161,7 +165,11 @@ repos:
         #   output rather than prose. The root-anchored form missed them, which
         #   only stayed hidden because this hook and `make lint-md` both scope
         #   to changed files.
-        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
+        #
+        #   tools/figures/ is praetor's figure engine, locked byte for byte by
+        #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
+        #   own `make docs-lint` styles its README under praetor's rules.
+        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/|^tools/figures/'
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
@@ -482,8 +490,12 @@ repos:
         # (d) core/src/pdjson.{c,h} — vendored 3rd-party JSON parser
         # retaining its own in-file "Vendored 3rd-party" banner,
         # (e) compat/python-vmaf/matlab/ — upstream Netflix training-harness MATLAB
-        # MEX C sources, already excluded from other hygiene hooks.
-        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
+        # MEX C sources, already excluded from other hygiene hooks,
+        # (f) praetor's byte-locked managed files (tools/figures/ and
+        # .config/agent/hooks/block_evasion.py): `praetorctl audit` compares them
+        # with praetor's own bytes, so they cannot take a header; REUSE.toml
+        # labels them (ADR-1351).
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$|^tools/figures/|^\.config/agent/hooks/block_evasion\.py$'
         types_or: [c, c++, cuda, go, python]
 
       - id: test-check-copyright

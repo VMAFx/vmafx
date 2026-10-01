@@ -3,7 +3,7 @@
     "ref_name": {
       "exclude": [],
       "include": [
-        "refs/heads/main",
+        "refs/heads/master",
         "refs/heads/lts-*"
       ]
     }
@@ -21,11 +21,14 @@
       "type": "required_linear_history"
     },
     {
+      "type": "required_signatures"
+    },
+    {
       "parameters": {
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": true,
         "require_last_push_approval": false,
-        "required_approving_review_count": 1,
+        "required_approving_review_count": 2,
         "required_review_thread_resolution": true
       },
       "type": "pull_request"
@@ -34,16 +37,85 @@
       "parameters": {
         "required_status_checks": [
           {
-            "context": "build"
+            "context": "Plan build impact"
+          },
+          {
+            "context": "Linux Intel LLVM"
+          },
+          {
+            "context": "macOS Clang+Metal"
+          },
+          {
+            "context": "Windows MSVC+CUDA (full)"
+          },
+          {
+            "context": "Dev Container Build"
+          },
+          {
+            "context": "Plan dev-container impact"
+          },
+          {
+            "context": "Docker Image Build"
+          },
+          {
+            "context": "Plan Docker image impact"
+          },
+          {
+            "context": "Docs Site Build"
+          },
+          {
+            "context": "Doxygen Public API"
+          },
+          {
+            "context": "Plan Doxygen impact"
           },
           {
             "context": "Gate — check label / trigger"
           },
           {
+            "context": "FFmpeg macOS clang"
+          },
+          {
+            "context": "FFmpeg SYCL"
+          },
+          {
+            "context": "FFmpeg Ubuntu gcc"
+          },
+          {
+            "context": "Plan FFmpeg impact"
+          },
+          {
+            "context": "helm lint + template"
+          },
+          {
+            "context": "Plan Helm impact"
+          },
+          {
+            "context": "Documentation Governance"
+          },
+          {
             "context": "Required Checks Aggregator"
           },
           {
+            "context": "cargo-deny"
+          },
+          {
+            "context": "Plan Rust impact"
+          },
+          {
+            "context": "vmafx-sys CI"
+          },
+          {
             "context": "Scorecard PR Gate"
+          },
+          {
+            "context": "HISS Replay Evidence (Linux)"
+          },
+          {
+            "context": "HISS Replay Evidence (macOS)"
+          },
+          {
+            "context": "HISS Replay Evidence (Windows)"
           },
           {
             "context": "Standards \u0026 Invariant Verification Gate"

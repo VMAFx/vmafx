@@ -1,0 +1,69 @@
+/*
+ * Documentation figures (docs/adr/0015-interactive-figures-from-vendored-interfig.md, section 4;
+ * docs/adr/0016-figures-for-adopters.md, section 6). The interfig player reads its colours from
+ * --fig-* variables. Each maps to Material for MkDocs' variable (--md-*) and falls back to Astro
+ * Starlight's (--sl-*), so one file serves both generators: the MkDocs hook links it, a Starlight
+ * site lists it in customCss. Both themes redefine their variables for the light and dark scheme,
+ * so the palette toggle reaches every figure without JavaScript.
+ */
+.praetor-figure {
+  --fig-accent: var(--md-accent-fg-color, var(--sl-color-accent));
+  --fig-fg: var(--md-default-fg-color, var(--sl-color-white));
+  --fig-muted: var(--md-default-fg-color--light, var(--sl-color-gray-3));
+  --fig-border: var(--md-default-fg-color--lightest, var(--sl-color-hairline-light));
+  --fig-bg: var(--md-default-bg-color, var(--sl-color-bg));
+  --fig-surface: var(--md-code-bg-color, var(--sl-color-gray-6));
+  --fig-font: var(--md-text-font-family, var(--sl-font, var(--sl-font-system)));
+  /* interfig sets its monospace from this Docusaurus variable, with a fallback stack. */
+  --ifm-font-family-monospace: var(--md-code-font-family, var(--sl-font-mono, var(--sl-font-system-mono)));
+  /* Material sizes a figure to its content (width: fit-content); the player needs the column's
+     width to decide how far to shrink a wide figure. */
+  width: auto;
+  margin: 1.5em 0 0.5em;
+  text-align: center;
+}
+
+.praetor-figure picture img {
+  max-width: 100%;
+  height: auto;
+}
+
+.praetor-figure figcaption {
+  font-size: 0.8rem;
+  color: var(--fig-muted);
+}
+
+.praetor-figure .praetor-figure__player {
+  text-align: initial;
+}
+
+/* The player draws its own <figure> and puts the tabs and narration in a <figcaption>. Material's
+   typeset rules for both (fit-content width, italic, a 24rem caption) would reach into it. */
+.praetor-figure .interfig {
+  width: auto;
+  text-align: initial;
+}
+
+.praetor-figure .interfig figcaption {
+  max-width: none;
+  margin-bottom: 0;
+  font-style: normal;
+  color: inherit;
+  font-size: inherit;
+}
+
+.praetor-figure :focus-visible {
+  outline: 2px solid var(--fig-accent);
+  outline-offset: 2px;
+}
+
+.praetor-figure__text {
+  margin: 0 0 1.5em;
+  font-size: 0.75rem;
+}
+
+/* The text description follows the figure element, outside it, so it cannot read the --fig-* variables. */
+.praetor-figure__text > summary {
+  cursor: pointer;
+  color: var(--md-default-fg-color--light, var(--sl-color-gray-3));
+}

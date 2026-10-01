@@ -609,6 +609,24 @@ def _set_input_normalisation(model: Any, x_train: Any) -> None:
         model.input_std.copy_(std)
 
 
+def _tensors_for(rows: Sequence[dict]):
+    """Project corpus rows to a (features, targets) tensor pair."""
+    import torch  # type: ignore[import-not-found]
+
+    x = torch.tensor([project_row(r) for r in rows], dtype=torch.float32)
+    y = torch.tensor([[float(r["vmaf_score"])] for r in rows], dtype=torch.float32)
+    return x, y
+
+
+def _export_and_hash(model, onnx_path: Path, opset: int) -> tuple[int, str, bool, tuple, int]:
+    """Export ONNX and return (bytes, sha256, allowlist ok, forbidden ops, node count)."""
+    _export_onnx(model.cpu().eval(), onnx_path, opset)
+    onnx_bytes = onnx_path.read_bytes()
+    op_ok, forbidden = _check_op_allowlist(onnx_path)
+    digest = hashlib.sha256(onnx_bytes).hexdigest()
+    return len(onnx_bytes), digest, op_ok, forbidden, _count_onnx_nodes(onnx_path)
+
+
 def train_one_codec(
     codec: str,
     rows: Sequence[dict],
@@ -618,40 +636,24 @@ def train_one_codec(
     corpus_kind: str,
 ) -> TrainResult:
     """Fit one codec, export ONNX, write the model card, return metrics."""
-    import torch  # type: ignore[import-not-found]
-
     _set_seed(cfg.seed)
     train_rows, val_rows = train_val_split(rows, cfg.val_fraction, cfg.seed)
     if not train_rows:
         raise ValueError(f"no training rows for codec {codec}")
 
-    x_train = torch.tensor([project_row(r) for r in train_rows], dtype=torch.float32)
-    y_train = torch.tensor([[float(r["vmaf_score"])] for r in train_rows], dtype=torch.float32)
-    if val_rows:
-        x_val = torch.tensor([project_row(r) for r in val_rows], dtype=torch.float32)
-        y_val = torch.tensor([[float(r["vmaf_score"])] for r in val_rows], dtype=torch.float32)
-    else:
-        x_val = x_train
-        y_val = y_train
+    x_train, y_train = _tensors_for(train_rows)
+    x_val, y_val = _tensors_for(val_rows) if val_rows else (x_train, y_train)
 
     model = _build_model()
     _set_input_normalisation(model, x_train)
     model.train()
     _fit(model, x_train, y_train, cfg)
-
     plcc, srocc, rmse = _evaluate(model, x_val, y_val)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     onnx_path = output_dir / f"predictor_{codec}.onnx"
     card_path = output_dir / f"predictor_{codec}_card.md"
-    model = model.cpu().eval()
-    _export_onnx(model, onnx_path, cfg.opset)
-
-    onnx_bytes = onnx_path.read_bytes()
-    digest = hashlib.sha256(onnx_bytes).hexdigest()
-    op_ok, forbidden = _check_op_allowlist(onnx_path)
-    node_count = _count_onnx_nodes(onnx_path)
-
+    onnx_bytes, digest, op_ok, forbidden, node_count = _export_and_hash(model, onnx_path, cfg.opset)
     _write_model_card(
         card_path,
         codec=codec,
@@ -663,12 +665,11 @@ def train_one_codec(
         srocc=srocc,
         rmse=rmse,
         onnx_sha256=digest,
-        onnx_bytes=len(onnx_bytes),
+        onnx_bytes=onnx_bytes,
         op_allowlist_ok=op_ok,
         forbidden_ops=forbidden,
         corpus_kind=corpus_kind,
     )
-
     return TrainResult(
         codec=codec,
         n_train=len(train_rows),
@@ -679,7 +680,7 @@ def train_one_codec(
         onnx_path=onnx_path,
         card_path=card_path,
         onnx_sha256=digest,
-        onnx_bytes=len(onnx_bytes),
+        onnx_bytes=onnx_bytes,
         op_allowlist_ok=op_ok,
         forbidden_ops=forbidden,
     )
@@ -703,48 +704,26 @@ def _count_onnx_nodes(onnx_path: Path) -> int:
 # ---------------------------------------------------------------------
 
 
-def _write_model_card(
-    path: Path,
-    *,
-    codec: str,
-    opset: int,
-    node_count: int,
-    n_train: int,
-    n_val: int,
-    plcc: float,
-    srocc: float,
-    rmse: float,
-    onnx_sha256: str,
-    onnx_bytes: int,
-    op_allowlist_ok: bool,
-    forbidden_ops: tuple[str, ...],
-    corpus_kind: str,
-) -> None:
-    """Write the per-codec model card per ADR-0042 (5-point bar)."""
-    today = _dt.date.today().isoformat()
-    is_synthetic = corpus_kind.startswith("synthetic")
-    warning = (
-        "> **Warning — synthetic-stub model.** Trained on a deterministic "
-        "synthetic-100 corpus seeded by the codec name. Predictions are a "
-        "smooth re-encoding of the analytical fallback; PLCC / SROCC / RMSE "
-        "below are artificially high because the regression target *is* the "
-        "fallback. **Do not use this model to drive production CRF picks.** "
-        "Generate a real corpus via `vmaftune.corpus` and re-run "
-        "`predictor_train.py` against it.\n"
-        if is_synthetic
-        else ""
-    )
-    signing_note = (
-        "- **Sigstore signature**: not applicable (synthetic-stub model card; "
-        "production models are signed via Sigstore — see "
-        "[docs/development/release.md](../docs/development/release.md))"
-        if is_synthetic
-        else "- **Sigstore signature**: unsigned in-tree artefact. Release "
-        "automation attaches the Sigstore-keyless OIDC signature for the "
-        "published tag; verify that bundle when consuming release assets."
-    )
-    op_status = "OK" if op_allowlist_ok else f"FAIL — forbidden: {', '.join(forbidden_ops)}"
-    body = f"""# `predictor_{codec}` — VMAF predictor model card
+_SYNTHETIC_WARNING = (
+    "> **Warning — synthetic-stub model.** Trained on a deterministic "
+    "synthetic-100 corpus seeded by the codec name. Predictions are a "
+    "smooth re-encoding of the analytical fallback; PLCC / SROCC / RMSE "
+    "below are artificially high because the regression target *is* the "
+    "fallback. **Do not use this model to drive production CRF picks.** "
+    "Generate a real corpus via `vmaftune.corpus` and re-run "
+    "`predictor_train.py` against it.\n\n"
+)
+_SYNTHETIC_SIGNING = (
+    "- **Sigstore signature**: not applicable (synthetic-stub model card; "
+    "production models are signed via Sigstore — see "
+    "[docs/development/release.md](../docs/development/release.md))"
+)
+_UNSIGNED_SIGNING = (
+    "- **Sigstore signature**: unsigned in-tree artefact. Release "
+    "automation attaches the Sigstore-keyless OIDC signature for the "
+    "published tag; verify that bundle when consuming release assets."
+)
+_CARD_TEMPLATE = """# `predictor_{codec}` — VMAF predictor model card
 
 - **Codec adapter**: `{codec}`
 - **Training date**: {today}
@@ -753,8 +732,7 @@ def _write_model_card(
 - **File**: `model/predictor_{codec}.onnx` ({onnx_bytes} bytes)
 - **SHA-256**: `{onnx_sha256}`
 
-{warning}
-## 1. Purpose
+{warning}## 1. Purpose
 
 Per-shot VMAF predictor for the `{codec}` adapter. Consumed by
 `vmaftune.predictor.Predictor` at runtime to pick the CRF that hits a
@@ -785,10 +763,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | {plcc:.4f} |
-| SROCC  | {srocc:.4f} |
-| RMSE   | {rmse:.4f} VMAF |
+| --- | --- |
+| PLCC | {plcc:.4f} |
+| SROCC | {srocc:.4f} |
+| RMSE | {rmse:.4f} VMAF |
 
 ## 5. Signing
 
@@ -799,7 +777,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```
@@ -831,6 +809,10 @@ PyTorch trainer's behaviour bit-for-bit.
 
 `vmaf` — single scalar in `[0, 100]`.
 """
+
+
+def _emit_card(path: Path, body: str) -> None:
+    """Write the card text to a path, or to any object with a ``write`` method."""
     if isinstance(path, Path):
         path.write_text(body, encoding="utf-8")
     else:
@@ -838,6 +820,46 @@ PyTorch trainer's behaviour bit-for-bit.
         # sys.stdout) so the --emit-stub-card-only smoke-test hook can collect
         # the card text without touching the filesystem.
         path.write(body)
+
+
+def _write_model_card(
+    path: Path,
+    *,
+    codec: str,
+    opset: int,
+    node_count: int,
+    n_train: int,
+    n_val: int,
+    plcc: float,
+    srocc: float,
+    rmse: float,
+    onnx_sha256: str,
+    onnx_bytes: int,
+    op_allowlist_ok: bool,
+    forbidden_ops: tuple[str, ...],
+    corpus_kind: str,
+) -> None:
+    """Write the per-codec model card per ADR-0042 (5-point bar)."""
+    is_synthetic = corpus_kind.startswith("synthetic")
+    op_status = "OK" if op_allowlist_ok else f"FAIL — forbidden: {', '.join(forbidden_ops)}"
+    body = _CARD_TEMPLATE.format(
+        codec=codec,
+        today=_dt.date.today().isoformat(),
+        opset=opset,
+        node_count=node_count,
+        onnx_bytes=onnx_bytes,
+        onnx_sha256=onnx_sha256,
+        warning=_SYNTHETIC_WARNING if is_synthetic else "",
+        corpus_kind=corpus_kind,
+        n_train=n_train,
+        n_val=n_val,
+        op_status=op_status,
+        plcc=plcc,
+        srocc=srocc,
+        rmse=rmse,
+        signing_note=_SYNTHETIC_SIGNING if is_synthetic else _UNSIGNED_SIGNING,
+    )
+    _emit_card(path, body)
 
 
 # ---------------------------------------------------------------------

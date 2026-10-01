@@ -1466,6 +1466,7 @@ nav:
         - "ADR-1348: release-candidate-prerelease-versioning": adr/1348-release-candidate-prerelease-versioning.md
         - "ADR-1349: native-arch-node-image-build": adr/1349-native-arch-node-image-build.md
         - "ADR-1350: recovery-overlay-ffmpeg-patches": adr/1350-recovery-overlay-ffmpeg-patches.md
+        - "ADR-1351: praetor-engine-pin-move": adr/1351-praetor-engine-pin-move.md
         - "ADR-1352: rc-phase-shift-plus-one": adr/1352-rc-phase-shift-plus-one.md
         - "ADR-1353: helm-server-component-selector": adr/1353-helm-server-component-selector.md
         - "ADR-1354: native-bundle-release-track": adr/1354-native-bundle-release-track.md

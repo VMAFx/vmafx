@@ -1,21 +1,26 @@
+---
 version: 1
-pinned_version: v1.0.0
-digest: sha256:786adc0930fe8f23fbe9d19702f622abeabc519d685997a5a4b525031c06ccbe
-generated_at: ""
+pinned_version: v0.0.0+catalog.3536de06c71a
+digest: sha256:637780bf94bf362667e2c2c29b5a980addef943f900c71ca729aba6b14e868a8
 profiles:
-    - id: native-gpu-systems
-      version: v1.0.0
-      digest: sha256:aabdfa13501105032bbecfb39eac49b482be4f426d7b409999e12e28f17b59c9
+  - id: native-gpu-systems
+    version: v0.0.0+catalog.3536de06c71a
+    digest:
+      sha256:9daa1ec1dc2da097e8a11553cc58448102091d018f034e30de891e40277d4e54
 facets:
-    - id: security:high
-      version: v1.0.0
-      digest: sha256:34de9dc4fe2b7da48c152c2e7457891ebc41ace8e671fd1db0f49e1fafcb567f
-    - id: api:public-contract
-      version: v1.0.0
-      digest: sha256:19963be9ae6292bc4ea0dcb44cbbc5f903886209387d33fbeb3bed8af9cde486
-    - id: docs:seo-portal
-      version: v1.0.0
-      digest: sha256:3381e1b7ab5cfb1029fa1b96cd84c7d3d5a890bc2d1f340a7b4e8b5bf61e2256
-    - id: agent:sandboxed
-      version: v1.0.0
-      digest: sha256:1a89a7a93d8f054d03edd203bb15006431468641d59ac61999b1997fa0a3233f
+  - id: security:high
+    version: v0.0.0+catalog.3536de06c71a
+    digest:
+      sha256:9bd59f0725d472b1516ba74556feada0e3868f4642bc08dd2d67a2cc26e87778
+  - id: api:public-contract
+    version: v0.0.0+catalog.3536de06c71a
+    digest:
+      sha256:5ddb1a0912620e0cd8c6cf6185fd5d4cdf01fe042d10caa043356560fe10824b
+  - id: docs:seo-portal
+    version: v0.0.0+catalog.3536de06c71a
+    digest:
+      sha256:145722c161ed8e436369d573c2b736fe7f579b8a1e33a85119e3b10268563428
+  - id: agent:sandboxed
+    version: v0.0.0+catalog.3536de06c71a
+    digest:
+      sha256:bc87486dea71e54d20549d6054dcf290d3d700e37b304cbdb6d6c1a2def895f2

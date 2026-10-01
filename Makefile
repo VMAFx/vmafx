@@ -702,3 +702,13 @@ hiss-coverage:
 
 dedupe-check:
 	@standardsctl dedupe scan .
+
+# BEGIN praetor documentation gate
+.PHONY: docs-lint docs-figures
+verify-all: docs-lint docs-figures
+docs-lint:
+	@node tools/markdownlint/verify.mjs
+docs-figures:
+	@node tools/figures/build.mjs check
+	@node tools/figures/build.mjs sources
+# END praetor documentation gate

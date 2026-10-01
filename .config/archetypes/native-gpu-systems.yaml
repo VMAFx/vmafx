@@ -1,6 +1,8 @@
+---
 id: "native-gpu-systems"
 name: "Native GPU & Compute Systems"
-description: "High-performance C/C++/Rust/CUDA/Vulkan systems with deterministic memory bounds and zero dynamic frame allocations"
+description: "High-performance C/C++/Rust/CUDA/Vulkan systems with deterministic
+  memory bounds and zero dynamic frame allocations"
 runtime: "native"
 
 complexity:

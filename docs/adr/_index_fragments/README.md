@@ -3,7 +3,7 @@
 The fork's `docs/adr/README.md` index table is **rendered**, not edited
 directly. Each PR that adds an ADR drops one fragment file here:
 
-```
+```text
 docs/adr/_index_fragments/
   _header.md     verbatim README prelude (intro + Format + Conventions
                  + Why + Tag palette + the table-header row). Edit when

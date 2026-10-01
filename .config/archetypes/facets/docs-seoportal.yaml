@@ -1,6 +1,8 @@
+---
 id: "docs:seo-portal"
 name: "Documentation SEO & Web Vitals Portal"
-description: "Enforces Schema.org JSON-LD structured data, sitemap generation, robots.txt integrity, and Core Web Vitals optimizations"
+description: "Enforces Schema.org JSON-LD structured data, sitemap generation,
+  robots.txt integrity, and Core Web Vitals optimizations"
 
 linters:
   - "markdownlint"

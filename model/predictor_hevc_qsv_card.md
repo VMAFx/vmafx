@@ -7,7 +7,6 @@
 - **File**: `model/predictor_hevc_qsv.onnx` (21877 bytes)
 - **SHA-256**: `3a157b816bb71b8fdc9fc42d1308e93880bf5d97d8d2f27253be1c55a138b609`
 
-
 ## 1. Purpose
 
 Per-shot VMAF predictor for the `hevc_qsv` adapter. Consumed by
@@ -39,10 +38,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | 0.8302 |
-| SROCC  | 0.8322 |
-| RMSE   | 9.7754 VMAF |
+| --- | --- |
+| PLCC | 0.8302 |
+| SROCC | 0.8322 |
+| RMSE | 9.7754 VMAF |
 
 ## 5. Signing
 
@@ -53,7 +52,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

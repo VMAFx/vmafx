@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-30T10:58:43Z",
-  "repository": "",
-  "commit_sha": "",
-  "total_infractions": 182,
+  "generated_at": "2026-10-01T18:27:31Z",
+  "repository": "VMAFx/vmafx",
+  "commit_sha": "bdfdde1a632251ad6133d85df79d2f2c38493eab",
+  "total_infractions": 378,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -15,11 +15,66 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "ai/scripts/aggregate_corpora.py",
+      "line_number": 373,
+      "symbol": "aggregate",
+      "message": "Function 'aggregate' (127 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/aggregate_corpora.py:373:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/analyze_knob_sweep.py",
+      "line_number": 391,
+      "symbol": "write_summary_md",
+      "message": "Function 'write_summary_md' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/analyze_knob_sweep.py:391:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/batch_materialize_mos_labels.py",
+      "line_number": 86,
+      "symbol": "run_batch",
+      "message": "Function 'run_batch' (91 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/batch_materialize_mos_labels.py:86:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/batch_materialize_saliency_features.py",
+      "line_number": 91,
+      "symbol": "run_batch",
+      "message": "Function 'run_batch' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/batch_materialize_saliency_features.py:91:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/batch_materialize_second_opinion_features.py",
+      "line_number": 86,
+      "symbol": "run_batch",
+      "message": "Function 'run_batch' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/batch_materialize_second_opinion_features.py:86:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "ai/scripts/build_bisect_cache.py",
       "line_number": 317,
       "symbol": "main",
       "message": "Function 'main' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/build_bisect_cache.py:317:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/build_calibration_set.py",
+      "line_number": 27,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/build_calibration_set.py:27:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/bvi_dvc_to_corpus_jsonl.py",
+      "line_number": 67,
+      "symbol": "_row_from_cache",
+      "message": "Function '_row_from_cache' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/bvi_dvc_to_corpus_jsonl.py:67:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -31,11 +86,98 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "ai/scripts/bvi_dvc_to_full_features.py",
+      "line_number": 478,
+      "symbol": "_run_zip_mode",
+      "message": "Function '_run_zip_mode' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/bvi_dvc_to_full_features.py:478:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/bvi_dvc_to_full_features.py",
+      "line_number": 563,
+      "symbol": "_run_dir_mode",
+      "message": "Function '_run_dir_mode' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/bvi_dvc_to_full_features.py:563:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/calibrate_nr_threshold.py",
+      "line_number": 385,
+      "symbol": "_write_calibration_report",
+      "message": "Function '_write_calibration_report' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/calibrate_nr_threshold.py:385:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/calibrate_nr_threshold.py",
+      "line_number": 493,
+      "symbol": "calibrate",
+      "message": "Function 'calibrate' (220 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/calibrate_nr_threshold.py:493:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "ai/scripts/calibrate_nr_threshold.py",
       "line_number": 720,
       "symbol": "_build_parser",
       "message": "Function '_build_parser' (159 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/calibrate_nr_threshold.py:720:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/calibrate_phase_f_recipes.py",
+      "line_number": 382,
+      "symbol": "calibrate",
+      "message": "Function 'calibrate' (132 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/calibrate_phase_f_recipes.py:382:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/chug_extract_features.py",
+      "line_number": 352,
+      "symbol": "audit_chug_hdr_metadata",
+      "message": "Function 'audit_chug_hdr_metadata' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/chug_extract_features.py:352:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/chug_extract_features.py",
+      "line_number": 640,
+      "symbol": "_extract_pair_payload",
+      "message": "Function '_extract_pair_payload' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/chug_extract_features.py:640:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/chug_extract_features.py",
+      "line_number": 778,
+      "symbol": "run",
+      "message": "Function 'run' (119 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/chug_extract_features.py:778:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/collect_gpu_calibration_data.py",
+      "line_number": 202,
+      "symbol": "collect_for_cell",
+      "message": "Function 'collect_for_cell' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/collect_gpu_calibration_data.py:202:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/collect_gpu_calibration_data.py",
+      "line_number": 307,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/collect_gpu_calibration_data.py:307:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/combine_full_feature_parquets.py",
+      "line_number": 70,
+      "symbol": "_normalise_shard",
+      "message": "Function '_normalise_shard' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/combine_full_feature_parquets.py:70:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -46,12 +188,77 @@
       "fingerprint": "ai/scripts/combine_full_feature_parquets.py:136:HISS-04"
     },
     {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/eval_loso_fr_regressor_v2.py",
+      "line_number": 26,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/eval_loso_fr_regressor_v2.py:26:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/export_ensemble_v2_seeds.py",
+      "line_number": 162,
+      "symbol": "_build_sidecar",
+      "message": "Function '_build_sidecar' (97 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/export_ensemble_v2_seeds.py:162:HISS-04"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/export_ensemble_v2_seeds.py",
       "line_number": 261,
       "symbol": "main",
       "message": "Function 'main' (156 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/export_ensemble_v2_seeds.py:261:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 111,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:111:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 117,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:117:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 122,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:122:HISS-07"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 163,
+      "symbol": "_replace_pixel_shuffle",
+      "message": "Direct recursion in _replace_pixel_shuffle; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:163:HISS-01"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 241,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:241:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 252,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:252:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre.py",
+      "line_number": 327,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:327:HISS-07"
     },
     {
       "rule_id": "HISS-04",
@@ -62,6 +269,62 @@
       "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:366:HISS-04"
     },
     {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_fastdvdnet_pre_placeholder.py",
+      "line_number": 146,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_fastdvdnet_pre_placeholder.py:146:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_tiny_models.py",
+      "line_number": 52,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_tiny_models.py:52:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_tiny_models.py",
+      "line_number": 129,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_tiny_models.py:129:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 106,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:106:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 113,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:113:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 120,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:120:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 241,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:241:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 243,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:243:HISS-07"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/export_transnet_v2.py",
       "line_number": 194,
@@ -70,12 +333,40 @@
       "fingerprint": "ai/scripts/export_transnet_v2.py:194:HISS-04"
     },
     {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 320,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:320:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 345,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:345:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2.py",
+      "line_number": 389,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2.py:389:HISS-07"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/export_transnet_v2.py",
       "line_number": 426,
       "symbol": "main",
       "message": "Function 'main' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/export_transnet_v2.py:426:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/export_transnet_v2_placeholder.py",
+      "line_number": 155,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/export_transnet_v2_placeholder.py:155:HISS-07"
     },
     {
       "rule_id": "HISS-04",
@@ -102,12 +393,51 @@
       "fingerprint": "ai/scripts/export_vmaf_tiny_v4.py:139:HISS-04"
     },
     {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/external_benchmark_pvmaf.py",
+      "line_number": 26,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/external_benchmark_pvmaf.py:26:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/extract_k150k_features.py",
+      "line_number": 640,
+      "symbol": "_run_feature_passes",
+      "message": "Function '_run_feature_passes' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/extract_k150k_features.py:640:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/extract_k150k_features.py",
+      "line_number": 1046,
+      "symbol": "_write_extraction_manifest",
+      "message": "Function '_write_extraction_manifest' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/extract_k150k_features.py:1046:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/extract_k150k_features.py",
+      "line_number": 1122,
+      "symbol": "_process_clip",
+      "message": "Function '_process_clip' (96 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/extract_k150k_features.py:1122:HISS-04"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/extract_konvid_frames.py",
       "line_number": 162,
       "symbol": "main",
       "message": "Function 'main' (104 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/extract_konvid_frames.py:162:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/extract_ugc_features.py",
+      "line_number": 124,
+      "symbol": "_run_vmaf",
+      "message": "Function '_run_vmaf' (103 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/extract_ugc_features.py:124:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -123,6 +453,112 @@
       "line_number": 100,
       "message": "Legacy unbounded while True loop in Python",
       "fingerprint": "ai/scripts/fetch_konvid_1k.py:100:HISS-02"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/fetch_lsvq.py",
+      "line_number": 26,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/fetch_lsvq.py:26:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/gen_calibration.py",
+      "line_number": 28,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/gen_calibration.py:28:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/gen_dists_sq_placeholder_onnx.py",
+      "line_number": 25,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/gen_dists_sq_placeholder_onnx.py:25:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/gen_mobilesal_placeholder_onnx.py",
+      "line_number": 34,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/gen_mobilesal_placeholder_onnx.py:34:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/gen_ssimulacra2_eotf_lut.py",
+      "line_number": 27,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/gen_ssimulacra2_eotf_lut.py:27:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/hardware_caps_loader.py",
+      "line_number": 287,
+      "symbol": "cap_vector_for",
+      "message": "Function 'cap_vector_for' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/hardware_caps_loader.py:287:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/hdrsdr_vqa_to_corpus_jsonl.py",
+      "line_number": 26,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/hdrsdr_vqa_to_corpus_jsonl.py:26:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/konvid_150k_to_corpus_jsonl.py",
+      "line_number": 111,
+      "symbol": "parse_manifest_csv",
+      "message": "Function 'parse_manifest_csv' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/konvid_150k_to_corpus_jsonl.py:111:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/lsvq_to_corpus_jsonl.py",
+      "line_number": 96,
+      "symbol": "parse_manifest_csv",
+      "message": "Function 'parse_manifest_csv' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/lsvq_to_corpus_jsonl.py:96:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/scripts/materialize_mos_labels.py",
+      "line_number": 165,
+      "symbol": "_json_safe",
+      "message": "Direct recursion in _json_safe; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/scripts/materialize_mos_labels.py:165:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/scripts/materialize_mos_labels.py",
+      "line_number": 167,
+      "symbol": "_json_safe",
+      "message": "Direct recursion in _json_safe; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/scripts/materialize_mos_labels.py:167:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/materialize_mos_labels.py",
+      "line_number": 351,
+      "symbol": "materialize",
+      "message": "Function 'materialize' (118 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/materialize_mos_labels.py:351:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/materialize_saliency_features.py",
+      "line_number": 124,
+      "symbol": "materialize_rows",
+      "message": "Function 'materialize_rows' (108 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/materialize_saliency_features.py:124:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/materialize_saliency_features.py",
+      "line_number": 234,
+      "symbol": "compute_row_saliency",
+      "message": "Function 'compute_row_saliency' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/materialize_saliency_features.py:234:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -141,6 +577,37 @@
       "fingerprint": "ai/scripts/materialize_saliency_features.py:499:HISS-04"
     },
     {
+      "rule_id": "HISS-01",
+      "file_path": "ai/scripts/materialize_second_opinion_features.py",
+      "line_number": 136,
+      "symbol": "_json_safe",
+      "message": "Direct recursion in _json_safe; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/scripts/materialize_second_opinion_features.py:136:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/scripts/materialize_second_opinion_features.py",
+      "line_number": 138,
+      "symbol": "_json_safe",
+      "message": "Direct recursion in _json_safe; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/scripts/materialize_second_opinion_features.py:138:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/materialize_second_opinion_features.py",
+      "line_number": 395,
+      "symbol": "materialize",
+      "message": "Function 'materialize' (109 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/materialize_second_opinion_features.py:395:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/my_corpus_to_corpus_jsonl.py",
+      "line_number": 27,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/my_corpus_to_corpus_jsonl.py:27:HISS-07"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/phase3_subset_sweep.py",
       "line_number": 258,
@@ -149,12 +616,87 @@
       "fingerprint": "ai/scripts/phase3_subset_sweep.py:258:HISS-04"
     },
     {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/ptq_static.py",
+      "line_number": 80,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/ptq_static.py:80:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/ptq_static.py",
+      "line_number": 159,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/ptq_static.py:159:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/ptq_static.py",
+      "line_number": 162,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/ptq_static.py:162:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/ptq_static.py",
+      "line_number": 166,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/ptq_static.py:166:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/quantize_int8.py",
+      "line_number": 28,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/quantize_int8.py:28:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/signal_mix_audit.py",
+      "line_number": 386,
+      "symbol": "audit_table",
+      "message": "Function 'audit_table' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/signal_mix_audit.py:386:HISS-04"
+    },
+    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/signal_mix_audit.py",
       "line_number": 550,
       "symbol": "render_markdown",
       "message": "Function 'render_markdown' (149 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/signal_mix_audit.py:550:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor.py",
+      "line_number": 280,
+      "symbol": "_export_and_register",
+      "message": "Function '_export_and_register' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor.py:280:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor_v2.py",
+      "line_number": 292,
+      "symbol": "_row_to_features",
+      "message": "Function '_row_to_features' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor_v2.py:292:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor_v2.py",
+      "line_number": 461,
+      "symbol": "_train",
+      "message": "Function '_train' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor_v2.py:461:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor_v2.py",
+      "line_number": 598,
+      "symbol": "_write_sidecar_and_registry",
+      "message": "Function '_write_sidecar_and_registry' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor_v2.py:598:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -190,11 +732,88 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor_v2_ensemble_loso.py",
+      "line_number": 437,
+      "symbol": "_train_one_seed",
+      "message": "Function '_train_one_seed' (119 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor_v2_ensemble_loso.py:437:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_fr_regressor_v3.py",
+      "line_number": 614,
+      "symbol": "write_sidecar_and_registry",
+      "message": "Function 'write_sidecar_and_registry' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_fr_regressor_v3.py:614:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/train_fr_regressor_v4.py",
+      "line_number": 27,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/train_fr_regressor_v4.py:27:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/train_konvid.py",
+      "line_number": 125,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/train_konvid.py:125:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/train_konvid.py",
+      "line_number": 148,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/train_konvid.py:148:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "ai/scripts/train_konvid.py",
       "line_number": 170,
       "symbol": "main",
       "message": "Function 'main' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/train_konvid.py:170:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_konvid_mos_head.py",
+      "line_number": 726,
+      "symbol": "_synthesize_corpus",
+      "message": "Function '_synthesize_corpus' (122 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_konvid_mos_head.py:726:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_konvid_mos_head.py",
+      "line_number": 954,
+      "symbol": "_train_one_fold",
+      "message": "Function '_train_one_fold' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_konvid_mos_head.py:954:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_konvid_mos_head.py",
+      "line_number": 1341,
+      "symbol": "_load_or_synthesize_konvid_corpus",
+      "message": "Function '_load_or_synthesize_konvid_corpus' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_konvid_mos_head.py:1341:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_konvid_mos_head.py",
+      "line_number": 1466,
+      "symbol": "_run_konvid_export",
+      "message": "Function '_run_konvid_export' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_konvid_mos_head.py:1466:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/train_predictor_v2_realcorpus.py",
+      "line_number": 542,
+      "symbol": "train_codec_loso",
+      "message": "Function 'train_codec_loso' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/train_predictor_v2_realcorpus.py:542:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -211,6 +830,13 @@
       "symbol": "main",
       "message": "Function 'main' (142 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/train_saliency_student_v2.py:450:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "ai/scripts/train_video_saliency_student.py",
+      "line_number": 27,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "ai/scripts/train_video_saliency_student.py:27:HISS-07"
     },
     {
       "rule_id": "HISS-04",
@@ -243,6 +869,14 @@
       "symbol": "main",
       "message": "Function 'main' (117 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/train_vmaf_tiny_v5.py:157:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/validate_chug_hdr_mos_head.py",
+      "line_number": 431,
+      "symbol": "_build_and_write_reports",
+      "message": "Function '_build_and_write_reports' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/validate_chug_hdr_mos_head.py:431:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -293,11 +927,107 @@
       "fingerprint": "ai/scripts/waterloo_ivc_to_corpus_jsonl.py:359:HISS-04"
     },
     {
+      "rule_id": "HISS-04",
+      "file_path": "ai/scripts/youtube_ugc_to_corpus_jsonl.py",
+      "line_number": 103,
+      "symbol": "parse_manifest_csv",
+      "message": "Function 'parse_manifest_csv' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/scripts/youtube_ugc_to_corpus_jsonl.py:103:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/sidecar/online_trainer.py",
+      "line_number": 675,
+      "symbol": "_run_server_with_claim",
+      "message": "Function '_run_server_with_claim' (117 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/sidecar/online_trainer.py:675:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/sidecar/sgd_ema.py",
+      "line_number": 121,
+      "symbol": "step",
+      "message": "Function 'step' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/sidecar/sgd_ema.py:121:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/sidecar/tests/test_online_trainer.py",
+      "line_number": 289,
+      "symbol": "test_failed_batch_retries_before_concurrent_samples",
+      "message": "Function 'test_failed_batch_retries_before_concurrent_samples' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/sidecar/tests/test_online_trainer.py:289:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/sidecar/tests/test_socket_permissions.py",
+      "line_number": 617,
+      "symbol": "test_server_registration_race_between_accept_and_shutdown",
+      "message": "Function 'test_server_registration_race_between_accept_and_shutdown' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/sidecar/tests/test_socket_permissions.py:617:HISS-04"
+    },
+    {
       "rule_id": "HISS-02",
       "file_path": "ai/src/aiutils/file_utils.py",
       "line_number": 50,
       "message": "Legacy unbounded while True loop in Python",
       "fingerprint": "ai/src/aiutils/file_utils.py:50:HISS-02"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/aiutils/jsonl_utils.py",
+      "line_number": 22,
+      "symbol": "_sanitize_nonfinite",
+      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/aiutils/jsonl_utils.py:22:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/aiutils/jsonl_utils.py",
+      "line_number": 24,
+      "symbol": "_sanitize_nonfinite",
+      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/aiutils/jsonl_utils.py:24:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/aiutils/parquet_utils.py",
+      "line_number": 131,
+      "symbol": "apply_standard_column_order",
+      "message": "Function 'apply_standard_column_order' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/aiutils/parquet_utils.py:131:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/aiutils/parquet_utils.py",
+      "line_number": 277,
+      "symbol": "write_parquet_atomic",
+      "message": "Function 'write_parquet_atomic' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/aiutils/parquet_utils.py:277:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/aiutils/run_manifest.py",
+      "line_number": 28,
+      "symbol": "normalise_manifest_value",
+      "message": "Direct recursion in normalise_manifest_value; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/aiutils/run_manifest.py:28:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/aiutils/run_manifest.py",
+      "line_number": 32,
+      "symbol": "normalise_manifest_value",
+      "message": "Direct recursion in normalise_manifest_value; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/aiutils/run_manifest.py:32:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/aiutils/run_manifest.py",
+      "line_number": 78,
+      "symbol": "_describe_path_value",
+      "message": "Direct recursion in _describe_path_value; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/aiutils/run_manifest.py:78:HISS-01"
     },
     {
       "rule_id": "HISS-02",
@@ -309,10 +1039,58 @@
     {
       "rule_id": "HISS-04",
       "file_path": "ai/src/corpus/base.py",
+      "line_number": 147,
+      "symbol": "probe_geometry",
+      "message": "Function 'probe_geometry' (90 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/corpus/base.py:147:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/corpus/base.py",
+      "line_number": 328,
+      "symbol": "download_clip",
+      "message": "Function 'download_clip' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/corpus/base.py:328:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/corpus/base.py",
       "line_number": 631,
       "symbol": "run",
       "message": "Function 'run' (145 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/src/corpus/base.py:631:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/bisect_model_quality.py",
+      "line_number": 88,
+      "symbol": "bisect_model_quality",
+      "message": "Function 'bisect_model_quality' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/bisect_model_quality.py:88:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/cli.py",
+      "line_number": 482,
+      "symbol": "audit_learned_filter_cmd",
+      "message": "Function 'audit_learned_filter_cmd' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/cli.py:482:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/cli.py",
+      "line_number": 611,
+      "symbol": "cross_backend_cmd",
+      "message": "Function 'cross_backend_cmd' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/cli.py:611:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/cli.py",
+      "line_number": 678,
+      "symbol": "bisect_model_quality_cmd",
+      "message": "Function 'bisect_model_quality_cmd' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/cli.py:678:HISS-04"
     },
     {
       "rule_id": "HISS-02",
@@ -322,11 +1100,91 @@
       "fingerprint": "ai/src/vmaf_train/data/frame_loader.py:101:HISS-02"
     },
     {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/data/frame_loader.py",
+      "line_number": 62,
+      "symbol": "iter_frames",
+      "message": "Function 'iter_frames' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/data/frame_loader.py:62:HISS-04"
+    },
+    {
       "rule_id": "HISS-02",
       "file_path": "ai/src/vmaf_train/data/manifest_scan.py",
       "line_number": 33,
       "message": "Legacy unbounded while True loop in Python",
       "fingerprint": "ai/src/vmaf_train/data/manifest_scan.py:33:HISS-02"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/learned_filter_audit.py",
+      "line_number": 85,
+      "symbol": "audit_learned_filter",
+      "message": "Function 'audit_learned_filter' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/learned_filter_audit.py:85:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/models/exports.py",
+      "line_number": 36,
+      "symbol": "export_to_onnx",
+      "message": "Function 'export_to_onnx' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/models/exports.py:36:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/op_allowlist.py",
+      "line_number": 77,
+      "symbol": "_collect_op_types",
+      "message": "Direct recursion in _collect_op_types; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/op_allowlist.py:77:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/op_allowlist.py",
+      "line_number": 80,
+      "symbol": "_collect_op_types",
+      "message": "Direct recursion in _collect_op_types; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/op_allowlist.py:80:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/src/vmaf_train/op_allowlist.py",
+      "line_number": 115,
+      "symbol": "_collect_loop_violations",
+      "message": "Function '_collect_loop_violations' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/src/vmaf_train/op_allowlist.py:115:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/op_allowlist.py",
+      "line_number": 162,
+      "symbol": "_collect_loop_violations",
+      "message": "Direct recursion in _collect_loop_violations; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/op_allowlist.py:162:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/op_allowlist.py",
+      "line_number": 171,
+      "symbol": "_collect_loop_violations",
+      "message": "Direct recursion in _collect_loop_violations; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/op_allowlist.py:171:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/registry.py",
+      "line_number": 153,
+      "symbol": "_sanitize_nonfinite",
+      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/registry.py:153:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ai/src/vmaf_train/registry.py",
+      "line_number": 155,
+      "symbol": "_sanitize_nonfinite",
+      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
+      "fingerprint": "ai/src/vmaf_train/registry.py:155:HISS-01"
     },
     {
       "rule_id": "HISS-04",
@@ -367,6 +1225,14 @@
       "symbol": "test_chug_feature_materialiser_writes_mean_features",
       "message": "Function 'test_chug_feature_materialiser_writes_mean_features' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/tests/test_chug.py:415:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/tests/test_chug_extract_features_smoke.py",
+      "line_number": 115,
+      "symbol": "test_chug_extract_features_floor_below_identity_on_degraded_pair",
+      "message": "Function 'test_chug_extract_features_floor_below_identity_on_degraded_pair' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/tests/test_chug_extract_features_smoke.py:115:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -441,6 +1307,296 @@
       "fingerprint": "ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py:141:HISS-04"
     },
     {
+      "rule_id": "HISS-04",
+      "file_path": "ai/tests/test_train_konvid_mos_head.py",
+      "line_number": 436,
+      "symbol": "test_chug_hdr_entrypoint_display_profile_selects_display_schema",
+      "message": "Function 'test_chug_hdr_entrypoint_display_profile_selects_display_schema' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/tests/test_train_konvid_mos_head.py:436:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ai/train/qat.py",
+      "line_number": 335,
+      "symbol": "run_qat",
+      "message": "Function 'run_qat' (147 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ai/train/qat.py:335:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "bindings/rust/vmafx/src/context.rs",
+      "line_number": 275,
+      "message": "process::abort ends the process from library code; return an error to fn main instead",
+      "fingerprint": "bindings/rust/vmafx/src/context.rs:275:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "bindings/rust/vmafx/src/context.rs",
+      "line_number": 461,
+      "message": "process::abort ends the process from library code; return an error to fn main instead",
+      "fingerprint": "bindings/rust/vmafx/src/context.rs:461:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "bindings/rust/vmafx-sys/examples/score.rs",
+      "line_number": 183,
+      "message": "process::exit ends the process from library code; return an error to fn main instead",
+      "fingerprint": "bindings/rust/vmafx-sys/examples/score.rs:183:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "bindings/rust/vmafx-sys/src/safe.rs",
+      "line_number": 166,
+      "message": "process::abort ends the process from library code; return an error to fn main instead",
+      "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:166:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "bindings/rust/vmafx-sys/src/safe.rs",
+      "line_number": 339,
+      "message": "process::abort ends the process from library code; return an error to fn main instead",
+      "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:339:HISS-07"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "cmd/vmafx-mcp/main.go",
+      "line_number": 213,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "cmd/vmafx-mcp/main.go:213:HISS-02"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "cmd/vmafx-ort-runner/main.go",
+      "line_number": 162,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "cmd/vmafx-ort-runner/main.go:162:HISS-02"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "cmd/vmafx-tune/cmd/golusoris.go",
+      "line_number": 96,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "cmd/vmafx-tune/cmd/golusoris.go:96:HISS-02"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "cmd/vmafx-tune/cmd/root.go",
+      "line_number": 96,
+      "message": "os.Exit ends the process from library code; return an error to main.main instead",
+      "fingerprint": "cmd/vmafx-tune/cmd/root.go:96:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "cmd/vmafx-tune/cmd/root.go",
+      "line_number": 99,
+      "message": "os.Exit ends the process from library code; return an error to main.main instead",
+      "fingerprint": "cmd/vmafx-tune/cmd/root.go:99:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "cmd/vmafx-tune/cmd/root.go",
+      "line_number": 102,
+      "message": "os.Exit ends the process from library code; return an error to main.main instead",
+      "fingerprint": "cmd/vmafx-tune/cmd/root.go:102:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "cmd/vmafx-tune/cmd/root.go",
+      "line_number": 105,
+      "message": "os.Exit ends the process from library code; return an error to main.main instead",
+      "fingerprint": "cmd/vmafx-tune/cmd/root.go:105:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "cmd/vmafx-tune/cmd/root.go",
+      "line_number": 109,
+      "message": "os.Exit ends the process from library code; return an error to main.main instead",
+      "fingerprint": "cmd/vmafx-tune/cmd/root.go:109:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/__init__.py",
+      "line_number": 204,
+      "symbol": "call_vmafexec_multi_features",
+      "message": "Function 'call_vmafexec_multi_features' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/__init__.py:204:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/__init__.py",
+      "line_number": 303,
+      "symbol": "call_vmafexec",
+      "message": "Function 'call_vmafexec' (118 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/__init__.py:303:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/core/cross_validation.py",
+      "line_number": 44,
+      "symbol": "run_kfold_cross_validation",
+      "message": "Function 'run_kfold_cross_validation' (85 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/core/cross_validation.py:44:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/core/cross_validation.py",
+      "line_number": 131,
+      "symbol": "run_nested_kfold_cross_validation",
+      "message": "Function 'run_nested_kfold_cross_validation' (134 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/core/cross_validation.py:131:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/core/executor.py",
+      "line_number": 765,
+      "symbol": "_open_workfile",
+      "message": "Function '_open_workfile' (100 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/core/executor.py:765:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/core/executor.py",
+      "line_number": 1077,
+      "symbol": "run_executors_in_parallel",
+      "message": "Function 'run_executors_in_parallel' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/core/executor.py:1077:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/core/result_store.py",
+      "line_number": 109,
+      "symbol": "_to_python_natives",
+      "message": "Direct recursion in _to_python_natives; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/core/result_store.py:109:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/core/result_store.py",
+      "line_number": 111,
+      "symbol": "_to_python_natives",
+      "message": "Direct recursion in _to_python_natives; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/core/result_store.py:111:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/core/result_store.py",
+      "line_number": 115,
+      "symbol": "_to_python_natives",
+      "message": "Direct recursion in _to_python_natives; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/core/result_store.py:115:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/core/result_store.py",
+      "line_number": 120,
+      "symbol": "_to_python_natives",
+      "message": "Direct recursion in _to_python_natives; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/core/result_store.py:120:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/routine.py",
+      "line_number": 417,
+      "symbol": "run_test_on_dataset",
+      "message": "Function 'run_test_on_dataset' (264 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/routine.py:417:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/routine.py",
+      "line_number": 693,
+      "symbol": "train_test_vmaf_on_dataset",
+      "message": "Function 'train_test_vmaf_on_dataset' (234 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/routine.py:693:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/routine.py",
+      "line_number": 939,
+      "symbol": "cv_on_dataset",
+      "message": "Function 'cv_on_dataset' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/routine.py:939:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/routine.py",
+      "line_number": 1019,
+      "symbol": "run_vmaf_cv",
+      "message": "Function 'run_vmaf_cv' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/routine.py:1019:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/routine.py",
+      "line_number": 1209,
+      "symbol": "run_vmaf_cv_from_raw",
+      "message": "Function 'run_vmaf_cv_from_raw' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/routine.py:1209:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/tests/test_decorator_extended.py",
+      "line_number": 441,
+      "symbol": "fib",
+      "message": "Direct recursion in fib; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/tests/test_decorator_extended.py:441:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/tests/test_decorator_extended.py",
+      "line_number": 506,
+      "symbol": "fact",
+      "message": "Direct recursion in fact; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/tests/test_decorator_extended.py:506:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/tools/bd_rate.py",
+      "line_number": 33,
+      "symbol": "calculate_bd_rate",
+      "message": "Function 'calculate_bd_rate' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/tools/bd_rate.py:33:HISS-04"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "compat/python-vmaf/tools/decorator.py",
+      "line_number": 227,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "compat/python-vmaf/tools/decorator.py:227:HISS-07"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/tools/misc.py",
+      "line_number": 154,
+      "symbol": "to_ordered_dict_recursively",
+      "message": "Direct recursion in to_ordered_dict_recursively; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/tools/misc.py:154:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/tools/misc.py",
+      "line_number": 155,
+      "symbol": "to_ordered_dict_recursively",
+      "message": "Direct recursion in to_ordered_dict_recursively; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/tools/misc.py:155:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "compat/python-vmaf/tools/misc.py",
+      "line_number": 232,
+      "symbol": "import_python_file",
+      "message": "Direct recursion in import_python_file; the call graph must form an acyclic DAG",
+      "fingerprint": "compat/python-vmaf/tools/misc.py:232:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "compat/python-vmaf/tools/testutils.py",
+      "line_number": 108,
+      "symbol": "assert_equivalent_commands",
+      "message": "Function 'assert_equivalent_commands' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "compat/python-vmaf/tools/testutils.py:108:HISS-04"
+    },
+    {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
       "line_number": 176,
@@ -503,22 +1659,6 @@
       "symbol": "compute_adm",
       "message": "Function 'compute_adm' (260 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/adm.c:125:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/adm_tools.c",
-      "line_number": 573,
-      "symbol": "adm_cm_s",
-      "message": "Function 'adm_cm_s' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/adm_tools.c:573:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/adm_tools.c",
-      "line_number": 694,
-      "symbol": "__attribute__",
-      "message": "Function '__attribute__' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/adm_tools.c:694:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -650,94 +1790,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/float_motion/float_motion_score.cu",
-      "line_number": 56,
-      "symbol": "float_motion_kernel_8bpc",
-      "message": "Function 'float_motion_kernel_8bpc' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/float_motion/float_motion_score.cu:56:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/float_motion/float_motion_score.cu",
-      "line_number": 130,
-      "symbol": "float_motion_kernel_16bpc",
-      "message": "Function 'float_motion_kernel_16bpc' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/float_motion/float_motion_score.cu:130:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/float_vif/float_vif_score.cu",
-      "line_number": 130,
-      "symbol": "float_vif_compute",
-      "message": "Function 'float_vif_compute' (152 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/float_vif/float_vif_score.cu:130:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_cambi/cambi_score.cu",
-      "line_number": 107,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_cambi/cambi_score.cu:107:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_motion/motion_score.cu",
-      "line_number": 69,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_motion/motion_score.cu:69:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_motion/motion_score.cu",
-      "line_number": 142,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_motion/motion_score.cu:142:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu",
-      "line_number": 62,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu:62:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu",
-      "line_number": 130,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu:130:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu",
-      "line_number": 152,
-      "symbol": "ms_ssim_vert_lcs",
-      "message": "Function 'ms_ssim_vert_lcs' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu:152:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu",
-      "line_number": 206,
-      "symbol": "__launch_bounds__",
-      "message": "Function '__launch_bounds__' (149 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu:206:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu",
-      "line_number": 187,
-      "symbol": "integer_ssim_vert_combine",
-      "message": "Function 'integer_ssim_vert_combine' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu:187:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/cuda/integer_vif/filter1d.cu",
       "line_number": 82,
       "symbol": "filter1d_8_vertical_kernel",
@@ -770,43 +1822,11 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/float_motion/float_motion_score.hip",
-      "line_number": 96,
-      "symbol": "float_motion_hip_kernel_8bpc",
-      "message": "Function 'float_motion_hip_kernel_8bpc' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:96:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/float_motion/float_motion_score.hip",
-      "line_number": 183,
-      "symbol": "float_motion_hip_kernel_16bpc",
-      "message": "Function 'float_motion_hip_kernel_16bpc' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/float_motion/float_motion_score.hip:183:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/float_vif/float_vif_score.hip",
       "line_number": 146,
       "symbol": "float_vif_compute",
       "message": "Function 'float_vif_compute' (152 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/hip/float_vif/float_vif_score.hip:146:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip",
-      "line_number": 192,
-      "symbol": "ms_ssim_vert_lcs",
-      "message": "Function 'ms_ssim_vert_lcs' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip:192:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip",
-      "line_number": 216,
-      "symbol": "psnr_hvs_hip",
-      "message": "Function 'psnr_hvs_hip' (141 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip:216:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -855,253 +1875,6 @@
       "symbol": "niqe_extract_aggd",
       "message": "Function 'niqe_extract_aggd' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/niqe_math.h:105:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 346,
-      "symbol": "create_recursive_gaussian",
-      "message": "Function 'create_recursive_gaussian' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:346:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 470,
-      "symbol": "picture_to_linear_rgb",
-      "message": "Function 'picture_to_linear_rgb' (111 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:470:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 1028,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/ssimulacra2.c:1028:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 1084,
-      "symbol": "extract",
-      "message": "Function 'extract' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:1084:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
-      "line_number": 466,
-      "symbol": "launch_dwt_vert_pair",
-      "message": "Function 'launch_dwt_vert_pair' (137 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:466:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
-      "line_number": 615,
-      "symbol": "launch_dwt_hori_pair",
-      "message": "Function 'launch_dwt_hori_pair' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:615:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 327,
-      "symbol": "ss2s_picture_to_linear_rgb",
-      "message": "Function 'ss2s_picture_to_linear_rgb' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:327:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 524,
-      "symbol": "launch_blur",
-      "message": "Function 'launch_blur' (91 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:524:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 798,
-      "symbol": "extract_fex_sycl",
-      "message": "Function 'extract_fex_sycl' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:798:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 781,
-      "symbol": "adm_decouple_avx2",
-      "message": "Function 'adm_decouple_avx2' (367 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:781:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 1152,
-      "symbol": "adm_dwt2_8_avx2",
-      "message": "Function 'adm_dwt2_8_avx2' (318 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:1152:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 1544,
-      "symbol": "adm_decouple_s123_avx2",
-      "message": "Function 'adm_decouple_s123_avx2' (747 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:1544:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 2316,
-      "symbol": "adm_cm_avx2",
-      "message": "Function 'adm_cm_avx2' (483 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:2316:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 2805,
-      "symbol": "i4_adm_cm_avx2",
-      "message": "Function 'i4_adm_cm_avx2' (551 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:2805:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 3360,
-      "symbol": "adm_dwt2_16_avx2",
-      "message": "Function 'adm_dwt2_16_avx2' (226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:3360:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 3591,
-      "symbol": "adm_dwt2_s123_combined_avx2",
-      "message": "Function 'adm_dwt2_s123_combined_avx2' (532 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:3591:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4129,
-      "symbol": "adm_csf_den_scale_avx2",
-      "message": "Function 'adm_csf_den_scale_avx2' (155 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4129:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4289,
-      "symbol": "adm_csf_avx2",
-      "message": "Function 'adm_csf_avx2' (179 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4289:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4473,
-      "symbol": "i4_adm_csf_avx2",
-      "message": "Function 'i4_adm_csf_avx2' (223 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4473:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4702,
-      "symbol": "adm_csf_den_s123_avx2",
-      "message": "Function 'adm_csf_den_s123_avx2' (151 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4702:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 762,
-      "symbol": "adm_decouple_avx512",
-      "message": "Function 'adm_decouple_avx512' (387 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:762:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 1211,
-      "symbol": "adm_decouple_s123_avx512",
-      "message": "Function 'adm_decouple_s123_avx512' (682 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:1211:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 1918,
-      "symbol": "adm_cm_avx512",
-      "message": "Function 'adm_cm_avx512' (476 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:1918:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 2400,
-      "symbol": "i4_adm_cm_avx512",
-      "message": "Function 'i4_adm_cm_avx512' (542 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:2400:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 2968,
-      "symbol": "adm_dwt2_s123_combined_avx512",
-      "message": "Function 'adm_dwt2_s123_combined_avx512' (492 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:2968:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 3464,
-      "symbol": "adm_dwt2_16_avx512",
-      "message": "Function 'adm_dwt2_16_avx512' (226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:3464:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 3715,
-      "symbol": "adm_dwt2_8_avx512",
-      "message": "Function 'adm_dwt2_8_avx512' (319 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:3715:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4039,
-      "symbol": "adm_csf_avx512",
-      "message": "Function 'adm_csf_avx512' (173 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4039:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4217,
-      "symbol": "i4_adm_csf_avx512",
-      "message": "Function 'i4_adm_csf_avx512' (226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4217:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4449,
-      "symbol": "adm_csf_den_scale_avx512",
-      "message": "Function 'adm_csf_den_scale_avx512' (161 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4449:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4616,
-      "symbol": "adm_csf_den_s123_avx512",
-      "message": "Function 'adm_csf_den_s123_avx512' (157 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4616:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1435,10 +2208,738 @@
     },
     {
       "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 132,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:132:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 138,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:138:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 144,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:144:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 147,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:147:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev/scripts/fetch-intel-neo.py",
+      "line_number": 185,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev/scripts/fetch-intel-neo.py:185:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 88,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:88:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 104,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:104:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 107,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:107:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 114,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:114:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 138,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:138:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 194,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:194:HISS-07"
+    },
+    {
+      "rule_id": "HISS-07",
+      "file_path": "dev-llm/src/vmaf_dev_llm/cli.py",
+      "line_number": 209,
+      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
+      "fingerprint": "dev-llm/src/vmaf_dev_llm/cli.py:209:HISS-07"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "ffmpeg-patches/test/check_input_contract.py",
+      "line_number": 358,
+      "symbol": "resolve_role",
+      "message": "Direct recursion in resolve_role; the call graph must form an acyclic DAG",
+      "fingerprint": "ffmpeg-patches/test/check_input_contract.py:358:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "ffmpeg-patches/test/test_input_contract.py",
+      "line_number": 35,
+      "symbol": "write_baseline",
+      "message": "Function 'write_baseline' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "ffmpeg-patches/test/test_input_contract.py:35:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py",
+      "line_number": 573,
+      "symbol": "_handle_score",
+      "message": "Function '_handle_score' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py:573:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 1193,
+      "symbol": "_eval_model_on_split",
+      "message": "Function '_eval_model_on_split' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:1193:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 1825,
+      "symbol": "_run_compare",
+      "message": "Function '_run_compare' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:1825:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 1909,
+      "symbol": "_run_ladder",
+      "message": "Function '_run_ladder' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:1909:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 1987,
+      "symbol": "_run_tune_per_shot",
+      "message": "Function '_run_tune_per_shot' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:1987:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 2068,
+      "symbol": "_run_benchmark",
+      "message": "Function '_run_benchmark' (97 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:2068:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 2385,
+      "symbol": "_build_roi_argv",
+      "message": "Function '_build_roi_argv' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:2385:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 2687,
+      "symbol": "_execute_probe",
+      "message": "Function '_execute_probe' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:2687:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 3012,
+      "symbol": "_run_vmaf_score_encoded",
+      "message": "Function '_run_vmaf_score_encoded' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:3012:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 4156,
+      "symbol": "_call_tool_dispatch",
+      "message": "Function '_call_tool_dispatch' (192 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:4156:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 4370,
+      "symbol": "_check_depth",
+      "message": "Direct recursion in _check_depth; the call graph must form an acyclic DAG",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:4370:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
+      "line_number": 4373,
+      "symbol": "_check_depth",
+      "message": "Direct recursion in _check_depth; the call graph must form an acyclic DAG",
+      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:4373:HISS-01"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "pkg/libvmaf/direct.go",
+      "line_number": 377,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "pkg/libvmaf/direct.go:377:HISS-02"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "pkg/libvmaf/libvmaf.go",
+      "line_number": 150,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "pkg/libvmaf/libvmaf.go:150:HISS-02"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "pkg/storage/fuse_mount.go",
+      "line_number": 206,
+      "message": "exec.Command takes no context, so no deadline bounds it; use exec.CommandContext",
+      "fingerprint": "pkg/storage/fuse_mount.go:206:HISS-02"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "pkg/tune/predictor/predictor.go",
+      "line_number": 44,
+      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
+      "fingerprint": "pkg/tune/predictor/predictor.go:44:HISS-02"
+    },
+    {
+      "rule_id": "HISS-07",
       "file_path": "pkg/tune/pyjson/pyjson.go",
       "line_number": 36,
       "message": "Legacy panic invocation in production code path",
       "fingerprint": "pkg/tune/pyjson/pyjson.go:36:HISS-07"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/check-adr-links.py",
+      "line_number": 205,
+      "symbol": "repair_one_file",
+      "message": "Function 'repair_one_file' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/check-adr-links.py:205:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/check_python_dependency_locks.py",
+      "line_number": 279,
+      "symbol": "_validate_alias_item",
+      "message": "Function '_validate_alias_item' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/check_python_dependency_locks.py:279:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/check_python_dependency_locks.py",
+      "line_number": 581,
+      "symbol": "_is_local_source",
+      "message": "Function '_is_local_source' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/check_python_dependency_locks.py:581:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/cross_backend_parity_gate.py",
+      "line_number": 557,
+      "symbol": "run_cell",
+      "message": "Function 'run_cell' (133 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/cross_backend_parity_gate.py:557:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/cross_backend_vif_diff.py",
+      "line_number": 272,
+      "symbol": "run_vmaf",
+      "message": "Function 'run_vmaf' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/cross_backend_vif_diff.py:272:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "scripts/ci/plan-ci-impact.py",
+      "line_number": 281,
+      "symbol": "_selector_value",
+      "message": "Direct recursion in _selector_value; the call graph must form an acyclic DAG",
+      "fingerprint": "scripts/ci/plan-ci-impact.py:281:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/ci/tests/test_install_cuda_toolkit.py",
+      "line_number": 49,
+      "symbol": "__init__",
+      "message": "Function '__init__' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/tests/test_install_cuda_toolkit.py:49:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "scripts/dev/check_repository_security.py",
+      "line_number": 71,
+      "symbol": "differences",
+      "message": "Direct recursion in differences; the call graph must form an acyclic DAG",
+      "fingerprint": "scripts/dev/check_repository_security.py:71:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "scripts/dev/check_repository_security.py",
+      "line_number": 90,
+      "symbol": "differences",
+      "message": "Direct recursion in differences; the call graph must form an acyclic DAG",
+      "fingerprint": "scripts/dev/check_repository_security.py:90:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/dev/hw_encoder_corpus.py",
+      "line_number": 73,
+      "symbol": "encode_hw",
+      "message": "Function 'encode_hw' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/dev/hw_encoder_corpus.py:73:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "scripts/dev/tests/test_merge_train_guard.py",
+      "line_number": 51,
+      "symbol": "git",
+      "message": "Direct recursion in git; the call graph must form an acyclic DAG",
+      "fingerprint": "scripts/dev/tests/test_merge_train_guard.py:51:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/lib/safe_subprocess.py",
+      "line_number": 598,
+      "symbol": "run_async",
+      "message": "Function 'run_async' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/lib/safe_subprocess.py:598:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "scripts/perf/check-regression.py",
+      "line_number": 58,
+      "symbol": "compare_runs",
+      "message": "Function 'compare_runs' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/perf/check-regression.py:58:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py",
+      "line_number": 66,
+      "symbol": "_redact",
+      "message": "Direct recursion in _redact; the call graph must form an acyclic DAG",
+      "fingerprint": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py:66:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py",
+      "line_number": 68,
+      "symbol": "_redact",
+      "message": "Direct recursion in _redact; the call graph must form an acyclic DAG",
+      "fingerprint": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py:68:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-roi-score/src/vmafroiscore/mask.py",
+      "line_number": 46,
+      "symbol": "apply_saliency_mask",
+      "message": "Function 'apply_saliency_mask' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-roi-score/src/vmafroiscore/mask.py:46:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/auto.py",
+      "line_number": 1003,
+      "symbol": "pick_auto_winner",
+      "message": "Function 'pick_auto_winner' (88 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/auto.py:1003:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/auto.py",
+      "line_number": 1100,
+      "symbol": "run_auto",
+      "message": "Function 'run_auto' (327 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/auto.py:1100:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
+      "line_number": 497,
+      "symbol": "bisect_target_vmaf",
+      "message": "Function 'bisect_target_vmaf' (368 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:497:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
+      "line_number": 935,
+      "symbol": "_encode_and_score",
+      "message": "Function '_encode_and_score' (305 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:935:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
+      "line_number": 1242,
+      "symbol": "make_bisect_predicate",
+      "message": "Function 'make_bisect_predicate' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:1242:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
+      "line_number": 227,
+      "symbol": "compare_codecs",
+      "message": "Function 'compare_codecs' (91 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:227:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
+      "line_number": 571,
+      "symbol": "probe_encoder_available",
+      "message": "Function 'probe_encoder_available' (108 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:571:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
+      "line_number": 700,
+      "symbol": "compare_codecs_sweep",
+      "message": "Function 'compare_codecs_sweep' (134 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:700:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
+      "line_number": 86,
+      "symbol": "_decode_source_to_yuv",
+      "message": "Function '_decode_source_to_yuv' (88 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:86:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
+      "line_number": 221,
+      "symbol": "_maybe_decode_reference",
+      "message": "Function '_maybe_decode_reference' (90 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:221:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
+      "line_number": 555,
+      "symbol": "iter_rows",
+      "message": "Function 'iter_rows' (428 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:555:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
+      "line_number": 985,
+      "symbol": "_row_for",
+      "message": "Function '_row_for' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:985:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
+      "line_number": 1284,
+      "symbol": "coarse_to_fine_search",
+      "message": "Function 'coarse_to_fine_search' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:1284:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/encode.py",
+      "line_number": 590,
+      "symbol": "build_pass1_stats_command",
+      "message": "Function 'build_pass1_stats_command' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/encode.py:590:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/encode.py",
+      "line_number": 772,
+      "symbol": "run_two_pass_encode",
+      "message": "Function 'run_two_pass_encode' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/encode.py:772:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/encoder_profile.py",
+      "line_number": 143,
+      "symbol": "build_encode_request",
+      "message": "Function 'build_encode_request' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/encoder_profile.py:143:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
+      "line_number": 137,
+      "symbol": "run_plan",
+      "message": "Function 'run_plan' (119 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:137:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
+      "line_number": 303,
+      "symbol": "run_plan_per_shot",
+      "message": "Function 'run_plan_per_shot' (162 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:303:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
+      "line_number": 490,
+      "symbol": "run_plan_saliency",
+      "message": "Function 'run_plan_saliency' (151 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:490:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
+      "line_number": 347,
+      "symbol": "_build_production_sample_extractor",
+      "message": "Function '_build_production_sample_extractor' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:347:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
+      "line_number": 502,
+      "symbol": "_build_production_encode_runner",
+      "message": "Function '_build_production_encode_runner' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:502:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
+      "line_number": 577,
+      "symbol": "fast_recommend",
+      "message": "Function 'fast_recommend' (180 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:577:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py",
+      "line_number": 285,
+      "symbol": "run",
+      "message": "Function 'run' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py:285:HISS-04"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "tools/vmaf-tune/src/vmaftune/jsonio.py",
+      "line_number": 18,
+      "symbol": "nan_to_none",
+      "message": "Direct recursion in nan_to_none; the call graph must form an acyclic DAG",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/jsonio.py:18:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "tools/vmaf-tune/src/vmaftune/jsonio.py",
+      "line_number": 20,
+      "symbol": "nan_to_none",
+      "message": "Direct recursion in nan_to_none; the call graph must form an acyclic DAG",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/jsonio.py:20:HISS-01"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
+      "line_number": 209,
+      "symbol": "make_default_sampler",
+      "message": "Function 'make_default_sampler' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:209:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
+      "line_number": 281,
+      "symbol": "_default_sampler",
+      "message": "Function '_default_sampler' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:281:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
+      "line_number": 718,
+      "symbol": "build_and_emit",
+      "message": "Function 'build_and_emit' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:718:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/per_shot.py",
+      "line_number": 174,
+      "symbol": "_detect_shots_with_status",
+      "message": "Function '_detect_shots_with_status' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/per_shot.py:174:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/per_shot.py",
+      "line_number": 404,
+      "symbol": "merge_shots",
+      "message": "Function 'merge_shots' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/per_shot.py:404:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/predictor_features.py",
+      "line_number": 383,
+      "symbol": "_compute_saliency",
+      "message": "Function '_compute_saliency' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/predictor_features.py:383:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/prefilter.py",
+      "line_number": 262,
+      "symbol": "_run_joint_tpe",
+      "message": "Function '_run_joint_tpe' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/prefilter.py:262:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/prefilter.py",
+      "line_number": 334,
+      "symbol": "recommend_prefilter",
+      "message": "Function 'recommend_prefilter' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/prefilter.py:334:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/proxy.py",
+      "line_number": 190,
+      "symbol": "run_proxy",
+      "message": "Function 'run_proxy' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/proxy.py:190:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/recommend.py",
+      "line_number": 313,
+      "symbol": "pick_target_vmaf_with_uncertainty",
+      "message": "Function 'pick_target_vmaf_with_uncertainty' (120 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/recommend.py:313:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/saliency.py",
+      "line_number": 278,
+      "symbol": "compute_saliency_map",
+      "message": "Function 'compute_saliency_map' (105 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/saliency.py:278:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/saliency.py",
+      "line_number": 839,
+      "symbol": "saliency_aware_encode",
+      "message": "Function 'saliency_aware_encode' (110 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/saliency.py:839:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/score.py",
+      "line_number": 237,
+      "symbol": "parse_feature_aggregates",
+      "message": "Function 'parse_feature_aggregates' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/score.py:237:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/score.py",
+      "line_number": 427,
+      "symbol": "run_score",
+      "message": "Function 'run_score' (81 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/score.py:427:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/src/vmaftune/score_backend.py",
+      "line_number": 682,
+      "symbol": "_extract_middle_luma_frame",
+      "message": "Function '_extract_middle_luma_frame' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/src/vmaftune/score_backend.py:682:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py",
+      "line_number": 141,
+      "symbol": "test_v6_1_iter_rows_threads_duration_into_encode_request",
+      "message": "Function 'test_v6_1_iter_rows_threads_duration_into_encode_request' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py:141:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_bisect.py",
+      "line_number": 46,
+      "symbol": "_make_runners",
+      "message": "Function '_make_runners' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_bisect.py:46:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
+      "line_number": 181,
+      "symbol": "test_fast_production_invokes_extractor_and_runner",
+      "message": "Function 'test_fast_production_invokes_extractor_and_runner' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:181:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
+      "line_number": 277,
+      "symbol": "test_fast_ood_gap_returns_nonzero",
+      "message": "Function 'test_fast_ood_gap_returns_nonzero' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:277:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
+      "line_number": 460,
+      "symbol": "test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up",
+      "message": "Function 'test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up' (98 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:460:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_cli_prefilter.py",
+      "line_number": 155,
+      "symbol": "test_live_loop_runs_with_mocked_encode_and_score",
+      "message": "Function 'test_live_loop_runs_with_mocked_encode_and_score' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_cli_prefilter.py:155:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py",
+      "line_number": 695,
+      "symbol": "_fake_bisect_predicate_with_samples",
+      "message": "Function '_fake_bisect_predicate_with_samples' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py:695:HISS-04"
     }
   ]
 }
