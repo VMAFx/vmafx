@@ -151,6 +151,8 @@ class TuneCache:
         self.path.mkdir(parents=True, exist_ok=True)
         (self.path / self.META_DIR).mkdir(exist_ok=True)
         (self.path / self.BLOB_DIR).mkdir(exist_ok=True)
+        self._index_cache: dict[str, float] | None = None
+        self._index_dirty = False
 
     # -- index helpers -----------------------------------------------
 
@@ -158,22 +160,35 @@ class TuneCache:
         return self.path / self.INDEX_NAME
 
     def _read_index(self) -> dict[str, float]:
+        """Load index into memory cache on first access.
+
+        Subsequent accesses return the in-memory copy; writes are
+        deferred via the dirty flag until ``flush()`` is called.
+        """
+        if self._index_cache is not None:
+            return self._index_cache
+
         idx = self._index_path()
         if not idx.exists():
+            self._index_cache = {}
             return {}
         try:
             with idx.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, dict):
                 # values are floats (epoch seconds); coerce defensively
-                return {str(k): float(v) for k, v in data.items()}
+                self._index_cache = {str(k): float(v) for k, v in data.items()}
+                return self._index_cache
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
-            # Corrupt index — rebuild from filesystem on next put.
-            return {}
+            # Corrupt index — rebuild from filesystem on next flush.
+            pass
+        self._index_cache = {}
         return {}
 
     def _write_index(self, index: dict[str, float]) -> None:
+        """Flush index to disk and clear the dirty flag."""
         write_json_strict(self._index_path(), index, indent=None, trailing_newline=False)
+        self._index_dirty = False
 
     def _meta_path(self, key: str) -> Path:
         return self.path / self.META_DIR / f"{key}.json"
@@ -212,11 +227,10 @@ class TuneCache:
         except (KeyError, TypeError, ValueError):
             return None
 
-        # Refresh LRU access time on hit.
+        # Refresh LRU access time in memory, mark dirty for deferred flush.
         index = self._read_index()
         index[key] = time.time()
-        with contextlib.suppress(OSError):
-            self._write_index(index)
+        self._index_dirty = True
 
         return result
 
@@ -257,12 +271,24 @@ class TuneCache:
 
         index = self._read_index()
         index[key] = time.time()
-        self._write_index(index)
+        self._index_dirty = True
 
         if self.size_bytes > 0:
             self.evict_lru(self.size_bytes)
 
         return dataclasses.replace(result, artifact_path=blob)
+
+    def flush(self) -> None:
+        """Write the index to disk if it has been modified.
+
+        Call this at the end of a batch operation (e.g., at the end of
+        a corpus sweep) to persist pending changes. If the index is not
+        dirty, this is a no-op.
+        """
+        if not self._index_dirty or self._index_cache is None:
+            return
+        with contextlib.suppress(OSError):
+            self._write_index(self._index_cache)
 
     def total_bytes(self) -> int:
         """Sum of meta + blob bytes across all entries."""

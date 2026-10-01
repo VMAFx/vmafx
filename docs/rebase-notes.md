@@ -56398,3 +56398,8 @@ Verification:
   treats HIP like SYCL; `core/tools/test/test_vmaf_feature_backend.sh` expects
   the HIP twin for `float_ssim=scale=2`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## `perf/vmaf-tune-cache-batch` — batch vmaf-tune TuneCache index writes via dirty flush
+
+- **Files changed**: `tools/vmaf-tune/src/vmaftune/cache.py`, `tools/vmaf-tune/src/vmaftune/corpus.py`, `tools/vmaf-tune/tests/test_cache.py`
+- **Rebase impact**: pure Python tooling changes in `tools/vmaf-tune/`. No upstream-shared C headers or core library impacted.

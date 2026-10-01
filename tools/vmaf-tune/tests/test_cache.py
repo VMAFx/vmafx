@@ -325,3 +325,34 @@ def test_corpus_different_crf_misses(tmp_path):
     )
     # Two distinct CRFs × 2 (stats-pass + real-encode per CRF) = 4.
     assert len(encode_calls) == 4
+
+
+def test_cache_batches_index_writes(tmp_path, monkeypatch):
+    """Verify that 100 cache puts result in at most 2 index file writes."""
+    c = TuneCache(tmp_path / "cache")
+    write_counts = {"index": 0}
+    orig_write = c._write_index
+
+    def counting_write(index):
+        write_counts["index"] += 1
+        return orig_write(index)
+
+    monkeypatch.setattr(c, "_write_index", counting_write)
+
+    # Perform 100 puts.
+    for i in range(100):
+        blob = tmp_path / f"blob{i}.bin"
+        blob.write_bytes(b"\x00" * 100)
+        c.put(f"key{i}", _result(), blob)
+
+    # Without flush, index writes should be 0 because puts only mark dirty.
+    assert write_counts["index"] == 0
+
+    # Now flush — should write once.
+    c.flush()
+    assert write_counts["index"] == 1
+
+    # Verify that the cache still works after flush.
+    hit = c.get("key0")
+    assert hit is not None
+    assert hit.vmaf_score == 92.5

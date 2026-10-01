@@ -476,6 +476,9 @@
   100% bit-identical.
 
 
+- `tools/vmaf-tune`: batch `TuneCache` index writes via in-memory caching and a dirty flag, flushed once per sweep or on LRU eviction rather than rewriting `__index__.json` on every `get()` / `put()`.
+
+
 - **Cross-backend gate: the `psnr_hvs` tolerance grows with the frame size.**
   The CPU `psnr_hvs` adds every coefficient error of a plane into one `float`,
   so its rounding error grows with the number of 8x8 blocks, and a correct GPU
