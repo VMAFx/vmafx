@@ -32,6 +32,19 @@
 - `vmaf_sycl_shared_frame_init()` now checks if existing buffers match the requested geometry; if not, it invokes `sycl_shared_frame_reinit_unwind()` to wait for queue completion, free existing command graphs, release shared frame and chroma buffers, and allocate new buffers with the updated geometry.
 - `core/src/libvmaf.c`: removed the `!vmaf_sycl_get_shared_ref(...)` check in `read_pictures_sycl_prep()`, calling `vmaf_sycl_shared_frame_init()` unconditionally so any geometry change is propagated cleanly.
 - `core/test/test_sycl_shared_frame_sticky_geometry.c`: added unit test running multiple consecutive `VmafContext` instances of different sizes (64x48, 128x96, 32x24) sharing a single `VmafSyclState`, asserting identical scores to CPU.
+## perf/adm-p3-fast-path — restore adm_p_norm==3.0 fast path (ADR-0463) (2026-10-01)
+
+- `core/src/feature/adm_tools.c`, `adm_tools.h`: restores
+  `adm_sum_cube_s_p3`, `adm_csf_den_scale_s_p3`, and `adm_cm_s_p3` (ADR-0463 /
+  BUG-048 B3) lost to stale merges. Dispatches in `adm_sum_cube_s()`,
+  `adm_csf_den_scale_s()`, and `adm_cm_s()` when `adm_p_norm == 3.0` (default for
+  standard VMAF evaluation).
+- Eliminates per-pixel `powf()` and inner-loop branching on the hot path.
+  Float accumulation matches generic path and outputs are 100% bit-identical
+  across all 48 frames at `--precision max` on the Netflix 576x324 reference pair
+  and 1080p checkerboard.
+- Functions kept within HISS-04 limits (<= 60 LOC) via helper refactoring.
+- Passes all 255 fast suite tests and full Netflix CPU golden gate.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 

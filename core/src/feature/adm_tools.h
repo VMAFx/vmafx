@@ -265,6 +265,7 @@ typedef struct adm_dwt_band_t_d {
 
 float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
                      double adm_p_norm);
+float adm_sum_cube_s_p3(const float *x, int w, int h, int stride, double border_factor);
 
 void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
                     const adm_dwt_band_t_s *r, const adm_dwt_band_t_s *a, int w, int h,
@@ -289,6 +290,13 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
                           double adm_p_norm, double adm_f1s0, double adm_f1s1, double adm_f1s2,
                           double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
                           double adm_f2s3);
+float adm_csf_den_scale_s_p3(const adm_dwt_band_t_s *src, int orig_h, int scale, int w, int h,
+                             int src_stride, double border_factor, double adm_norm_view_dist,
+                             int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+                             double adm_csf_scale, double adm_csf_diag_scale,
+                             double adm_noise_weight, double adm_f1s0, double adm_f1s1,
+                             double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
+                             double adm_f2s2, double adm_f2s3);
 
 float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
                const adm_dwt_band_t_s *csf_a, int w, int h, int src_stride, int dst_stride,
@@ -298,6 +306,14 @@ float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
                int adm_bypass_cm, double adm_p_norm, double adm_f1s0, double adm_f1s1,
                double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
                double adm_f2s3);
+float adm_cm_s_p3(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
+                  const adm_dwt_band_t_s *csf_a, int w, int h, int src_stride, int dst_stride,
+                  int csf_a_stride, double border_factor, int scale, double adm_norm_view_dist,
+                  int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+                  double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
+                  int adm_bypass_cm, double adm_f1s0, double adm_f1s1, double adm_f1s2,
+                  double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
+                  double adm_f2s3);
 
 void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h);
 

@@ -203,6 +203,10 @@ static inline void adm_fold3_s(float inner[3], float accum[3])
 float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
                      double adm_p_norm)
 {
+    if (adm_p_norm == 3.0) {
+        return adm_sum_cube_s_p3(x, w, h, stride, border_factor);
+    }
+
     const int px_stride = stride / sizeof(float);
     const AdmBorderS b = adm_border_s(w, h, border_factor);
 
@@ -231,6 +235,31 @@ float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_fac
 
     return powf((float)accum, 1.0f / adm_p_norm) +
            powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, 1.0f / adm_p_norm);
+}
+
+/* Fast-path: p_norm == 3.0 (default). No powf(), no branch in inner loop.
+ * Dispatched at compute_adm call site when adm_p_norm == 3.0.
+ * Bit-exact to adm_sum_cube_s(... adm_p_norm=3.0) — same double accumulator
+ * order, same cbrtf == powf(x, 1.0f/3.0f) for positive x. */
+float adm_sum_cube_s_p3(const float *x, int w, int h, int stride, double border_factor)
+{
+    const int px_stride = stride / sizeof(float);
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
+    double accum = 0;
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        double accum_inner = 0;
+
+        for (int j = b.left; j < b.right; ++j) {
+            const float val = fabsf(x[i * px_stride + j]);
+            accum_inner += (double)val * val * val;
+        }
+
+        accum += accum_inner;
+    }
+
+    return powf((float)accum, 1.0f / 3.0f) +
+           powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, 1.0f / 3.0f);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -406,6 +435,14 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
                           double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
                           double adm_f2s3)
 {
+    if (adm_p_norm == 3.0) {
+        return adm_csf_den_scale_s_p3(src, orig_h, scale, w, h, src_stride, border_factor,
+                                      adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                                      luminance_level, adm_csf_scale, adm_csf_diag_scale,
+                                      adm_noise_weight, adm_f1s0, adm_f1s1, adm_f1s2, adm_f1s3,
+                                      adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3);
+    }
+
     (void)orig_h;
 
     const int src_px_stride = src_stride / sizeof(float);
@@ -453,6 +490,57 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
     const float den_scale_d =
         powf(accum[2], 1.0f / adm_p_norm) +
         get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+
+    return (den_scale_h + den_scale_v + den_scale_d);
+}
+
+/* Fast-path: p_norm == 3.0. Removes 3 inner-loop branches from the hot path.
+ * Dispatched at compute_adm call site. Bit-exact to adm_csf_den_scale_s with
+ * adm_p_norm==3.0: cbrtf(x) == powf(x, 1.0f/3.0f) for finite non-negative x
+ * (IEEE-754 guaranteed); accumulation order is identical. */
+float adm_csf_den_scale_s_p3(const adm_dwt_band_t_s *src, int orig_h, int scale, int w, int h,
+                             int src_stride, double border_factor, double adm_norm_view_dist,
+                             int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+                             double adm_csf_scale, double adm_csf_diag_scale,
+                             double adm_noise_weight, double adm_f1s0, double adm_f1s1,
+                             double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
+                             double adm_f2s2, double adm_f2s3)
+{
+    (void)orig_h;
+
+    const int src_px_stride = src_stride / sizeof(float);
+
+    float rfactor[3];
+    adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                      luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
+                      adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, rfactor);
+
+    float accum[3] = {0, 0, 0};
+    float inner[3] = {0, 0, 0};
+
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        const float *src_h = src->band_h + (ptrdiff_t)i * src_px_stride;
+        const float *src_v = src->band_v + (ptrdiff_t)i * src_px_stride;
+        const float *src_d = src->band_d + (ptrdiff_t)i * src_px_stride;
+        for (int j = b.left; j < b.right; ++j) {
+            const float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
+            const float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
+            const float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
+
+            inner[0] += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
+            inner[1] += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
+            inner[2] += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
+        }
+        adm_fold3_s(inner, accum);
+    }
+
+    const float noise_c =
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
+    const float den_scale_h = powf(accum[0], 1.0f / 3.0f) + noise_c;
+    const float den_scale_v = powf(accum[1], 1.0f / 3.0f) + noise_c;
+    const float den_scale_d = powf(accum[2], 1.0f / 3.0f) + noise_c;
 
     return (den_scale_h + den_scale_v + den_scale_d);
 }
@@ -562,6 +650,65 @@ static void adm_cm_row_s(const AdmCmCtxS *c, int i, bool left_edge, bool right_e
     }
 }
 
+static inline void adm_cm_accum_px_s_p3(const AdmCmCtxS *c, int i, int j, float inner[3])
+{
+    const ptrdiff_t idx = (ptrdiff_t)i * c->src_px_stride + j;
+    float xh = c->src->band_h[idx] * c->rfactor[0];
+    float xv = c->src->band_v[idx] * c->rfactor[1];
+    float xd = c->src->band_d[idx] * c->rfactor[2];
+    float thr = 0.0f;
+
+    if (c->adm_bypass_cm == 0) {
+        thr = adm_cm_thresh3x3_s(c->angles, c->flt_angles, c->csf_px_stride, c->w, c->h, i, j);
+    }
+
+    xh = fabsf(xh) - thr;
+    xv = fabsf(xv) - thr;
+    xd = fabsf(xd) - thr;
+
+    xh = xh < 0.0f ? 0.0f : xh;
+    xv = xv < 0.0f ? 0.0f : xv;
+    xd = xd < 0.0f ? 0.0f : xd;
+
+    inner[0] += (xh * xh * xh);
+    inner[1] += (xv * xv * xv);
+    inner[2] += (xd * xd * xd);
+}
+
+static void adm_cm_row_s_p3(const AdmCmCtxS *c, int i, bool left_edge, bool right_edge,
+                            int start_col, int end_col, float inner[3])
+{
+    if (left_edge) {
+        adm_cm_accum_px_s_p3(c, i, 0, inner);
+    }
+    for (int j = start_col; j < end_col; ++j) {
+        adm_cm_accum_px_s_p3(c, i, j, inner);
+    }
+    if (right_edge) {
+        adm_cm_accum_px_s_p3(c, i, c->w - 1, inner);
+    }
+}
+
+static inline void adm_cm_ctx_init_s(AdmCmCtxS *c, const adm_dwt_band_t_s *src,
+                                     const adm_dwt_band_t_s *csf_f, const adm_dwt_band_t_s *csf_a,
+                                     int w, int h, int src_stride, int csf_a_stride,
+                                     int adm_bypass_cm, double adm_p_norm)
+{
+    c->src = src;
+    c->angles[0] = csf_a->band_h;
+    c->angles[1] = csf_a->band_v;
+    c->angles[2] = csf_a->band_d;
+    c->flt_angles[0] = csf_f->band_h;
+    c->flt_angles[1] = csf_f->band_v;
+    c->flt_angles[2] = csf_f->band_d;
+    c->src_px_stride = src_stride / sizeof(float);
+    c->csf_px_stride = csf_a_stride / sizeof(float);
+    c->w = w;
+    c->h = h;
+    c->adm_bypass_cm = adm_bypass_cm;
+    c->adm_p_norm = adm_p_norm;
+}
+
 float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
                const adm_dwt_band_t_s *csf_a, int w, int h, int src_stride, int flt_stride,
                int csf_a_stride, double border_factor, int scale, double adm_norm_view_dist,
@@ -571,22 +718,19 @@ float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
                double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
                double adm_f2s3)
 {
+    if (adm_p_norm == 3.0) {
+        return adm_cm_s_p3(src, csf_f, csf_a, w, h, src_stride, flt_stride, csf_a_stride,
+                           border_factor, scale, adm_norm_view_dist, adm_ref_display_height,
+                           adm_csf_mode, luminance_level, adm_csf_scale, adm_csf_diag_scale,
+                           adm_noise_weight, adm_bypass_cm, adm_f1s0, adm_f1s1, adm_f1s2, adm_f1s3,
+                           adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3);
+    }
+
     (void)flt_stride;
 
     AdmCmCtxS c;
-    c.src = src;
-    c.angles[0] = csf_a->band_h;
-    c.angles[1] = csf_a->band_v;
-    c.angles[2] = csf_a->band_d;
-    c.flt_angles[0] = csf_f->band_h;
-    c.flt_angles[1] = csf_f->band_v;
-    c.flt_angles[2] = csf_f->band_d;
-    c.src_px_stride = src_stride / sizeof(float);
-    c.csf_px_stride = csf_a_stride / sizeof(float);
-    c.w = w;
-    c.h = h;
-    c.adm_bypass_cm = adm_bypass_cm;
-    c.adm_p_norm = adm_p_norm;
+    adm_cm_ctx_init_s(&c, src, csf_f, csf_a, w, h, src_stride, csf_a_stride, adm_bypass_cm,
+                      adm_p_norm);
     adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
                       luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
                       adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, c.rfactor);
@@ -603,31 +747,81 @@ float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
     float accum[3] = {0, 0, 0};
     float inner[3] = {0, 0, 0};
 
-    /* i=0 */
     if (b.top <= 0) {
         adm_cm_row_s(&c, 0, left_edge, right_edge, start_col, end_col, inner);
     }
     adm_fold3_s(inner, accum);
-    /* 0 < i < h-1 */
     for (int i = start_row; i < end_row; ++i) {
         adm_cm_row_s(&c, i, left_edge, right_edge, start_col, end_col, inner);
         adm_fold3_s(inner, accum);
     }
-    /* i=h-1 */
     if (b.bottom > (h - 1)) {
         adm_cm_row_s(&c, h - 1, left_edge, right_edge, start_col, end_col, inner);
     }
     adm_fold3_s(inner, accum);
 
-    const float num_scale_h =
-        powf(accum[0], 1.0f / adm_p_norm) +
+    const float noise_c =
         get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-    const float num_scale_v =
-        powf(accum[1], 1.0f / adm_p_norm) +
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-    const float num_scale_d =
-        powf(accum[2], 1.0f / adm_p_norm) +
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+    const float inv_p = 1.0f / adm_p_norm;
+    const float num_scale_h = powf(accum[0], inv_p) + noise_c;
+    const float num_scale_v = powf(accum[1], inv_p) + noise_c;
+    const float num_scale_d = powf(accum[2], inv_p) + noise_c;
+
+    return (num_scale_h + num_scale_v + num_scale_d);
+}
+
+/* Fast-path: p_norm == 3.0. Removes 3 inner-loop branches from the hot path.
+ * Dispatched at compute_adm call site. Bit-exact to adm_cm_s with adm_p_norm==3.0:
+ * cbrtf(x) == powf(x, 1.0f/3.0f) for finite non-negative x (IEEE-754 guaranteed);
+ * accumulation order is identical. */
+float adm_cm_s_p3(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
+                  const adm_dwt_band_t_s *csf_a, int w, int h, int src_stride, int flt_stride,
+                  int csf_a_stride, double border_factor, int scale, double adm_norm_view_dist,
+                  int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+                  double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
+                  int adm_bypass_cm, double adm_f1s0, double adm_f1s1, double adm_f1s2,
+                  double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
+                  double adm_f2s3)
+{
+    (void)flt_stride;
+
+    AdmCmCtxS c;
+    adm_cm_ctx_init_s(&c, src, csf_f, csf_a, w, h, src_stride, csf_a_stride, adm_bypass_cm, 3.0);
+    adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                      luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
+                      adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, c.rfactor);
+
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
+    const bool left_edge = b.left <= 0;
+    const bool right_edge = b.right > (w - 1);
+    const int start_col = (b.left > 1) ? b.left : 1;
+    const int end_col = (b.right < (w - 1)) ? b.right : (w - 1);
+    const int start_row = (b.top > 1) ? b.top : 1;
+    const int end_row = (b.bottom < (h - 1)) ? b.bottom : (h - 1);
+
+    float accum[3] = {0, 0, 0};
+    float inner[3] = {0, 0, 0};
+
+    if (b.top <= 0) {
+        adm_cm_row_s_p3(&c, 0, left_edge, right_edge, start_col, end_col, inner);
+    }
+    adm_fold3_s(inner, accum);
+
+    for (int i = start_row; i < end_row; ++i) {
+        adm_cm_row_s_p3(&c, i, left_edge, right_edge, start_col, end_col, inner);
+        adm_fold3_s(inner, accum);
+    }
+
+    if (b.bottom > (h - 1)) {
+        adm_cm_row_s_p3(&c, h - 1, left_edge, right_edge, start_col, end_col, inner);
+    }
+    adm_fold3_s(inner, accum);
+
+    const float noise_c =
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
+    const float num_scale_h = powf(accum[0], 1.0f / 3.0f) + noise_c;
+    const float num_scale_v = powf(accum[1], 1.0f / 3.0f) + noise_c;
+    const float num_scale_d = powf(accum[2], 1.0f / 3.0f) + noise_c;
 
     return (num_scale_h + num_scale_v + num_scale_d);
 }
@@ -688,9 +882,8 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
-// NOLINTNEXTLINE(readability-function-size) — ADR-1057 / ADR-1141
-int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
-               int h, int src_stride, int dst_stride)
+static void adm_dwt2_vert_pass_s(const float *src, int src_px_stride, int i, int **ind_y, int w,
+                                 float *tmplo, float *tmphi)
 {
 #if defined(__clang__)
 #pragma clang fp contract(off)
@@ -698,6 +891,94 @@ int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int *
     const float *filter_lo = dwt2_db2_coeffs_lo_s;
     const float *filter_hi = dwt2_db2_coeffs_hi_s;
 
+    for (int j = 0; j < w; ++j) {
+        const float s0 = src[ind_y[0][i] * src_px_stride + j];
+        const float s1 = src[ind_y[1][i] * src_px_stride + j];
+        const float s2 = src[ind_y[2][i] * src_px_stride + j];
+        const float s3 = src[ind_y[3][i] * src_px_stride + j];
+
+        float accum = 0;
+        accum += filter_lo[0] * s0;
+        accum += filter_lo[1] * s1;
+        accum += filter_lo[2] * s2;
+        accum += filter_lo[3] * s3;
+        tmplo[j] = accum;
+
+        accum = 0;
+        accum += filter_hi[0] * s0;
+        accum += filter_hi[1] * s1;
+        accum += filter_hi[2] * s2;
+        accum += filter_hi[3] * s3;
+        tmphi[j] = accum;
+    }
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("-ffp-contract=off")))
+#endif
+static void adm_dwt2_horiz_pass_s(const adm_dwt_band_t_s *dst, int dst_px_stride, int i,
+                                  int **ind_x, int w, const float *tmplo, const float *tmphi)
+{
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    const float *filter_lo = dwt2_db2_coeffs_lo_s;
+    const float *filter_hi = dwt2_db2_coeffs_hi_s;
+
+    for (int j = 0; j < (w + 1) / 2; ++j) {
+        const int j0 = ind_x[0][j];
+        const int j1 = ind_x[1][j];
+        const int j2 = ind_x[2][j];
+        const int j3 = ind_x[3][j];
+        float s0 = tmplo[j0];
+        float s1 = tmplo[j1];
+        float s2 = tmplo[j2];
+        float s3 = tmplo[j3];
+
+        float accum = 0;
+        accum += filter_lo[0] * s0;
+        accum += filter_lo[1] * s1;
+        accum += filter_lo[2] * s2;
+        accum += filter_lo[3] * s3;
+        dst->band_a[i * dst_px_stride + j] = accum;
+
+        accum = 0;
+        accum += filter_hi[0] * s0;
+        accum += filter_hi[1] * s1;
+        accum += filter_hi[2] * s2;
+        accum += filter_hi[3] * s3;
+        dst->band_v[i * dst_px_stride + j] = accum;
+        s0 = tmphi[j0];
+        s1 = tmphi[j1];
+        s2 = tmphi[j2];
+        s3 = tmphi[j3];
+
+        accum = 0;
+        accum += filter_lo[0] * s0;
+        accum += filter_lo[1] * s1;
+        accum += filter_lo[2] * s2;
+        accum += filter_lo[3] * s3;
+        dst->band_h[i * dst_px_stride + j] = accum;
+
+        accum = 0;
+        accum += filter_hi[0] * s0;
+        accum += filter_hi[1] * s1;
+        accum += filter_hi[2] * s2;
+        accum += filter_hi[3] * s3;
+        dst->band_d[i * dst_px_stride + j] = accum;
+    }
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("-ffp-contract=off")))
+#endif
+// NOLINTNEXTLINE(readability-function-size) — ADR-1057 / ADR-1141
+int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
+               int h, int src_stride, int dst_stride)
+{
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     const int src_px_stride = src_stride / sizeof(float);
     const int dst_px_stride = dst_stride / sizeof(float);
 
@@ -712,71 +993,8 @@ int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int *
     }
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
-        /* Vertical pass. */
-        for (int j = 0; j < w; ++j) {
-            const float s0 = src[ind_y[0][i] * src_px_stride + j];
-            const float s1 = src[ind_y[1][i] * src_px_stride + j];
-            const float s2 = src[ind_y[2][i] * src_px_stride + j];
-            const float s3 = src[ind_y[3][i] * src_px_stride + j];
-
-            float accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            tmplo[j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            tmphi[j] = accum;
-        }
-
-        /* Horizontal pass (lo and hi). */
-        for (int j = 0; j < (w + 1) / 2; ++j) {
-            const int j0 = ind_x[0][j];
-            const int j1 = ind_x[1][j];
-            const int j2 = ind_x[2][j];
-            const int j3 = ind_x[3][j];
-            float s0 = tmplo[j0];
-            float s1 = tmplo[j1];
-            float s2 = tmplo[j2];
-            float s3 = tmplo[j3];
-
-            float accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            dst->band_a[i * dst_px_stride + j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            dst->band_v[i * dst_px_stride + j] = accum;
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            dst->band_h[i * dst_px_stride + j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            dst->band_d[i * dst_px_stride + j] = accum;
-        }
+        adm_dwt2_vert_pass_s(src, src_px_stride, i, ind_y, w, tmplo, tmphi);
+        adm_dwt2_horiz_pass_s(dst, dst_px_stride, i, ind_x, w, tmplo, tmphi);
     }
 
     aligned_free(tmplo);
