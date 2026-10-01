@@ -77,12 +77,18 @@
 
 static const int32_t fixed_blur_filter[FIXED_BLUR_TAPS] = {3571, 16004, 26386, 16004, 3571};
 
-/* Fill a YUV420P 8-bpc picture with a deterministic ramp on all three
- * planes.  Y, U, and V all vary with frame_idx so that consecutive
- * frames differ on all planes. */
-static int fill_yuv_fixture(VmafPicture *pic, unsigned frame_idx)
+static const enum VmafPixelFormat test_formats[] = {
+    VMAF_PIX_FMT_YUV420P,
+    VMAF_PIX_FMT_YUV422P,
+    VMAF_PIX_FMT_YUV444P,
+};
+
+/* Fill an 8-bpc picture with a deterministic ramp on all three planes.
+ * Y, U, and V all vary with frame_idx so that consecutive frames differ
+ * on all planes. */
+static int fill_yuv_fixture(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned frame_idx)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    int err = vmaf_picture_alloc(pic, pix_fmt, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
 
@@ -172,10 +178,12 @@ static double oracle_normalize_sad(int64_t sad, unsigned width, unsigned height)
     return (double)sad / FIXED_BLUR_SCALE / ((double)width * height);
 }
 
-static void oracle_motion_scores(double *y_only, double *add_uv)
+static void oracle_motion_scores(enum VmafPixelFormat pix_fmt, double *y_only, double *add_uv)
 {
-    const unsigned chroma_w = (FIXTURE_W + 1u) >> 1u;
-    const unsigned chroma_h = (FIXTURE_H + 1u) >> 1u;
+    const bool ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P);
+    const bool ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P);
+    const unsigned chroma_w = ss_hor ? (FIXTURE_W >> 1u) + (FIXTURE_W & 1u) : FIXTURE_W;
+    const unsigned chroma_h = ss_ver ? (FIXTURE_H >> 1u) + (FIXTURE_H & 1u) : FIXTURE_H;
     *y_only =
         oracle_normalize_sad(oracle_plane_sad(0u, FIXTURE_W, FIXTURE_H), FIXTURE_W, FIXTURE_H);
     *add_uv = *y_only;
@@ -228,14 +236,14 @@ static char *setup_sycl_pass_add_uv(VmafSyclState *sycl_state, VmafContext **out
     return NULL;
 }
 
-static char *feed_sycl_pass_add_uv_frames(VmafContext *vmaf)
+static char *feed_sycl_pass_add_uv_frames(VmafContext *vmaf, enum VmafPixelFormat pix_fmt)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        int err = fill_yuv_fixture(&ref, i);
+        int err = fill_yuv_fixture(&ref, pix_fmt, i);
         mu_assert("SYCL+UV: fill_yuv_fixture(ref) failed", !err);
-        err = fill_yuv_fixture(&dist, i);
+        err = fill_yuv_fixture(&dist, pix_fmt, i);
         mu_assert("SYCL+UV: fill_yuv_fixture(dist) failed", !err);
 
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
@@ -247,11 +255,12 @@ static char *feed_sycl_pass_add_uv_frames(VmafContext *vmaf)
     return NULL;
 }
 
-static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
+static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, enum VmafPixelFormat pix_fmt,
+                                  double *out_score)
 {
     VmafContext *vmaf = NULL;
     mu_assert_msg(setup_sycl_pass_add_uv(sycl_state, &vmaf));
-    mu_assert_msg(feed_sycl_pass_add_uv_frames(vmaf));
+    mu_assert_msg(feed_sycl_pass_add_uv_frames(vmaf, pix_fmt));
 
     /* motion_sycl with motion_add_uv=true stores scores under the aliased
      * name: integer_motion2_mau (VMAF_integer_feature_motion2_score aliased
@@ -284,14 +293,14 @@ static char *setup_sycl_pass_y_only(VmafSyclState *sycl_state, VmafContext **out
     return NULL;
 }
 
-static char *feed_sycl_pass_y_only_frames(VmafContext *vmaf2)
+static char *feed_sycl_pass_y_only_frames(VmafContext *vmaf2, enum VmafPixelFormat pix_fmt)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        int err = fill_yuv_fixture(&ref, i);
+        int err = fill_yuv_fixture(&ref, pix_fmt, i);
         mu_assert("SYCL-Y: fill_yuv_fixture(ref) failed", !err);
-        err = fill_yuv_fixture(&dist, i);
+        err = fill_yuv_fixture(&dist, pix_fmt, i);
         mu_assert("SYCL-Y: fill_yuv_fixture(dist) failed", !err);
 
         err = vmaf_read_pictures(vmaf2, &ref, &dist, i);
@@ -303,11 +312,12 @@ static char *feed_sycl_pass_y_only_frames(VmafContext *vmaf2)
     return NULL;
 }
 
-static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y_only)
+static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, enum VmafPixelFormat pix_fmt,
+                                  double *out_score_y_only)
 {
     VmafContext *vmaf2 = NULL;
     mu_assert_msg(setup_sycl_pass_y_only(sycl_state, &vmaf2));
-    mu_assert_msg(feed_sycl_pass_y_only_frames(vmaf2));
+    mu_assert_msg(feed_sycl_pass_y_only_frames(vmaf2, pix_fmt));
 
     /* motion_sycl with default options (motion_add_uv=false) has no
      * non-default FEATURE_PARAM options, so the feature-name system uses
@@ -323,7 +333,8 @@ static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y
 
 /* Run both passes over one SYCL state and report both scores. The state is
  * released on every exit path, including a failing pass. */
-static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
+static char *run_sycl_motion_uv(enum VmafPixelFormat pix_fmt, double *out_score,
+                                double *out_score_y_only)
 {
     *out_score = NAN;
     *out_score_y_only = NAN;
@@ -336,9 +347,9 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
         return NULL;
     }
 
-    char *msg = run_sycl_pass_add_uv(sycl_state, out_score);
+    char *msg = run_sycl_pass_add_uv(sycl_state, pix_fmt, out_score);
     if (!msg)
-        msg = run_sycl_pass_y_only(sycl_state, out_score_y_only);
+        msg = run_sycl_pass_y_only(sycl_state, pix_fmt, out_score_y_only);
 
     vmaf_sycl_state_free(&sycl_state);
     return msg;
@@ -349,24 +360,27 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
 /* ------------------------------------------------------------------ */
 static char *test_motion_add_uv_increases_score(void)
 {
-    double sycl_uv = NAN;
-    double sycl_y = NAN;
+    for (size_t f = 0; f < sizeof(test_formats) / sizeof(test_formats[0]); f++) {
+        const enum VmafPixelFormat pix_fmt = test_formats[f];
+        double sycl_uv = NAN;
+        double sycl_y = NAN;
 
-    char *msg = run_sycl_motion_uv(&sycl_uv, &sycl_y);
-    if (msg)
-        return msg;
+        char *msg = run_sycl_motion_uv(pix_fmt, &sycl_uv, &sycl_y);
+        if (msg)
+            return msg;
 
-    if (isnan(sycl_uv))
-        return NULL; /* no SYCL device — skip */
+        if (isnan(sycl_uv))
+            return NULL; /* no SYCL device — skip */
 
-    if (sycl_uv <= sycl_y) {
-        (void)fprintf(stderr,
-                      "\nmotion_add_uv FAIL: UV score (%.8f) <= Y-only score (%.8f); "
-                      "UV contribution should be positive\n",
-                      sycl_uv, sycl_y);
+        if (sycl_uv <= sycl_y) {
+            (void)fprintf(stderr,
+                          "\nmotion_add_uv FAIL (fmt %d): UV score (%.8f) <= Y-only score (%.8f); "
+                          "UV contribution should be positive\n",
+                          (int)pix_fmt, sycl_uv, sycl_y);
+        }
+        mu_assert("motion_add_uv score should exceed Y-only score (UV contribution must be > 0)",
+                  sycl_uv > sycl_y);
     }
-    mu_assert("motion_add_uv score should exceed Y-only score (UV contribution must be > 0)",
-              sycl_uv > sycl_y);
     return NULL;
 }
 
@@ -375,34 +389,37 @@ static char *test_motion_add_uv_increases_score(void)
 /* ------------------------------------------------------------------ */
 static char *test_motion_add_uv_fixed_oracle_parity(void)
 {
-    double sycl_score = NAN;
-    double sycl_y = NAN;
-    char *msg = run_sycl_motion_uv(&sycl_score, &sycl_y);
-    if (msg)
-        return msg;
+    for (size_t f = 0; f < sizeof(test_formats) / sizeof(test_formats[0]); f++) {
+        const enum VmafPixelFormat pix_fmt = test_formats[f];
+        double sycl_score = NAN;
+        double sycl_y = NAN;
+        char *msg = run_sycl_motion_uv(pix_fmt, &sycl_score, &sycl_y);
+        if (msg)
+            return msg;
 
-    if (isnan(sycl_score))
-        return NULL; /* no SYCL device — skip */
+        if (isnan(sycl_score))
+            return NULL; /* no SYCL device — skip */
 
-    double oracle_y = 0.0;
-    double oracle_uv = 0.0;
-    oracle_motion_scores(&oracle_y, &oracle_uv);
-    const double y_delta = fabs(sycl_y - oracle_y);
-    const double uv_delta = fabs(sycl_score - oracle_uv);
-    const double y_bound = oracle_score_roundoff_bound(oracle_y);
-    const double uv_bound = oracle_score_roundoff_bound(oracle_uv);
-    if (y_delta > y_bound || uv_delta > uv_bound) {
-        (void)fprintf(stderr,
-                      "\nmotion_add_uv fixed-oracle FAIL: "
-                      "y(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e) "
-                      "uv(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e)\n",
-                      sycl_y, oracle_y, y_delta, y_bound, sycl_score, oracle_uv, uv_delta,
-                      uv_bound);
+        double oracle_y = 0.0;
+        double oracle_uv = 0.0;
+        oracle_motion_scores(pix_fmt, &oracle_y, &oracle_uv);
+        const double y_delta = fabs(sycl_y - oracle_y);
+        const double uv_delta = fabs(sycl_score - oracle_uv);
+        const double y_bound = oracle_score_roundoff_bound(oracle_y);
+        const double uv_bound = oracle_score_roundoff_bound(oracle_uv);
+        if (y_delta > y_bound || uv_delta > uv_bound) {
+            (void)fprintf(stderr,
+                          "\nmotion_add_uv fixed-oracle FAIL (fmt %d): "
+                          "y(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e) "
+                          "uv(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e)\n",
+                          (int)pix_fmt, sycl_y, oracle_y, y_delta, y_bound, sycl_score, oracle_uv,
+                          uv_delta, uv_bound);
+        }
+        mu_assert("motion_add_uv: SYCL Y-only score differs from fixed-point oracle",
+                  y_delta <= y_bound);
+        mu_assert("motion_add_uv: SYCL Y+U+V score differs from fixed-point oracle",
+                  uv_delta <= uv_bound);
     }
-    mu_assert("motion_add_uv: SYCL Y-only score differs from fixed-point oracle",
-              y_delta <= y_bound);
-    mu_assert("motion_add_uv: SYCL Y+U+V score differs from fixed-point oracle",
-              uv_delta <= uv_bound);
     return NULL;
 }
 

@@ -45,6 +45,18 @@
   and 1080p checkerboard.
 - Functions kept within HISS-04 limits (<= 60 LOC) via helper refactoring.
 - Passes all 255 fast suite tests and full Netflix CPU golden gate.
+## fix/sycl-motion-chroma-geometry — motion_sycl motion_add_uv sizes chroma from pixel format (2026-10-01)
+
+- `core/src/feature/sycl/integer_motion_sycl.cpp`, `motion_configure_chroma()`:
+  derives `chroma_w` and `chroma_h` from the input `VmafPixelFormat` using
+  `vmaf_chroma_extent()` from `picture_geometry.h` for `YUV420P`, `YUV422P`,
+  and `YUV444P` (rejecting `YUV400P` and unknown formats). Previously, it
+  hardcoded `(w + 1) >> 1` and `(h + 1) >> 1` regardless of format.
+- `core/test/test_sycl_motion_add_uv_parity.c`: parametrized to verify both
+  non-zero UV contribution and bit-exact match against the fixed-point scalar
+  oracle across `YUV420P`, `YUV422P`, and `YUV444P`.
+- Upstream-sync note: `motion_add_uv` is a fork-added option on `motion_sycl`.
+  Upstream `integer_motion.c` does not have `motion_add_uv`.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 

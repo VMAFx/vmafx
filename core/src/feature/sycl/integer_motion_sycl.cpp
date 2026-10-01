@@ -52,6 +52,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "motion_blend_tools.h"
+#include "picture_geometry.h"
 #include "sycl/common.h"
 #include "log.h"
 
@@ -306,15 +307,24 @@ static int motion_configure_chroma(MotionStateSycl *s, enum VmafPixelFormat pix_
 {
     if (!s->motion_add_uv)
         return 0;
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+    case VMAF_PIX_FMT_YUV422P:
+    case VMAF_PIX_FMT_YUV444P:
+        break;
+    case VMAF_PIX_FMT_YUV400P:
+    case VMAF_PIX_FMT_UNKNOWN:
+    default:
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "motion_sycl: motion_add_uv=true requires a YUV format with chroma "
                  "planes (got %d)\n",
                  (int)pix_fmt);
         return -EINVAL;
     }
-    s->chroma_w = (w + 1U) >> 1U;
-    s->chroma_h = (h + 1U) >> 1U;
+    const bool ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P);
+    const bool ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P);
+    s->chroma_w = vmaf_chroma_extent(w, ss_hor);
+    s->chroma_h = vmaf_chroma_extent(h, ss_ver);
     return 0;
 }
 
