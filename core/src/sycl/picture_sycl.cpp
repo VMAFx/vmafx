@@ -28,10 +28,13 @@
 #include <utility>
 
 #include "picture.h"
+#include "picture_geometry.h"
 #include "common.h"
 #include "ref.h"
 #include "gpu_picture_pool.h"
 #include "picture_sycl.h"
+#include "log.h"
+#include <vector>
 
 /* ------------------------------------------------------------------ */
 /* Upload / download                                                   */
@@ -287,6 +290,156 @@ extern "C" int vmaf_sycl_picture_pool_close(VmafSyclPicturePool *pool)
         return err;
     pool->gpool = nullptr;
     delete pool;
+    return 0;
+}
+
+#define DATA_ALIGN_PINNED 32
+
+namespace
+{
+void picture_set_plane_dims(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                            unsigned w, unsigned h)
+{
+    std::memset(pic, 0, sizeof(*pic));
+    pic->pix_fmt = pix_fmt;
+    pic->bpc = bpc;
+    const bool ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const bool ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
+    pic->w[0] = w;
+    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, ss_hor);
+    pic->h[0] = h;
+    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, ss_ver);
+    if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
+        pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
+}
+
+size_t pinned_plane_sizes(VmafPicture *pic, size_t *y_sz, size_t *uv_sz)
+{
+    const unsigned aligned_y = (pic->w[0] + DATA_ALIGN_PINNED - 1u) & ~(DATA_ALIGN_PINNED - 1u);
+    const unsigned aligned_c = (pic->w[1] + DATA_ALIGN_PINNED - 1u) & ~(DATA_ALIGN_PINNED - 1u);
+    const int hbd = pic->bpc > 8;
+    pic->stride[0] = static_cast<ptrdiff_t>(aligned_y << hbd);
+    pic->stride[1] = pic->stride[2] = static_cast<ptrdiff_t>(aligned_c << hbd);
+    *y_sz = static_cast<size_t>(pic->stride[0]) * pic->h[0];
+    *uv_sz = static_cast<size_t>(pic->stride[1]) * pic->h[1];
+    return *y_sz + 2 * *uv_sz;
+}
+} // namespace
+
+extern "C" int vmaf_sycl_picture_alloc_pinned(VmafPicture *pic, enum VmafPixelFormat pix_fmt,
+                                              unsigned bpc, unsigned w, unsigned h,
+                                              VmafSyclState *state)
+{
+    if (!pic || !state)
+        return -EINVAL;
+    if (w == 0 || h == 0 || bpc < 8 || bpc > 16 || !pix_fmt)
+        return -EINVAL;
+
+    picture_set_plane_dims(pic, pix_fmt, bpc, w, h);
+
+    size_t y_sz = 0;
+    size_t uv_sz = 0;
+    const size_t pic_size = pinned_plane_sizes(pic, &y_sz, &uv_sz);
+
+    auto *data = static_cast<uint8_t *>(vmaf_sycl_malloc_host(state, pic_size));
+    if (!data)
+        return -ENOMEM;
+
+    std::memset(data, 0, pic_size);
+    pic->data[0] = data;
+    pic->data[1] = data + y_sz;
+    pic->data[2] = data + y_sz + uv_sz;
+    if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
+        pic->data[1] = pic->data[2] = nullptr;
+
+    int err = vmaf_picture_priv_init(pic);
+    if (err) {
+        vmaf_sycl_free(state, data);
+        return -ENOMEM;
+    }
+
+    auto *priv = static_cast<VmafPicturePrivate *>(pic->priv);
+    priv->buf_type = VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED;
+    priv->sycl.state = state;
+
+    err = vmaf_ref_init(&pic->ref);
+    if (err) {
+        std::free(priv);
+        pic->priv = nullptr;
+        vmaf_sycl_free(state, data);
+        return err;
+    }
+
+    return 0;
+}
+
+extern "C" int vmaf_sycl_picture_free_pinned(VmafPicture *pic, VmafSyclState *state)
+{
+    if (!pic || !state)
+        return -EINVAL;
+
+    if (pic->data[0]) {
+        vmaf_sycl_free(state, pic->data[0]);
+        pic->data[0] = pic->data[1] = pic->data[2] = nullptr;
+    }
+    if (pic->priv) {
+        std::free(pic->priv);
+        pic->priv = nullptr;
+    }
+    if (pic->ref) {
+        vmaf_ref_close(pic->ref);
+        pic->ref = nullptr;
+    }
+    return 0;
+}
+
+extern "C" void *vmaf_sycl_pinned_pool_init_events(VmafSyclState *state, unsigned pic_cnt)
+{
+    (void)state;
+    if (!pic_cnt)
+        return nullptr;
+    return new (std::nothrow) std::vector<sycl::event>(pic_cnt);
+}
+
+extern "C" void vmaf_sycl_pinned_pool_destroy_events(void *events)
+{
+    if (!events)
+        return;
+    delete static_cast<std::vector<sycl::event> *>(events);
+}
+
+extern "C" int vmaf_sycl_pinned_pool_attach_event(VmafPicture *pic, void *events, unsigned idx,
+                                                  VmafSyclState *state)
+{
+    if (!pic || !pic->priv || !events)
+        return -EINVAL;
+
+    auto *vec = static_cast<std::vector<sycl::event> *>(events);
+    if (idx >= vec->size())
+        return -EINVAL;
+
+    auto *priv = static_cast<VmafPicturePrivate *>(pic->priv);
+    priv->sycl.state = state;
+    priv->sycl.ready_event = &(*vec)[idx];
+    return 0;
+}
+
+extern "C" int vmaf_sycl_picture_sync_pinned(VmafPicture *pic, VmafSyclState *state)
+{
+    (void)state;
+    if (!pic || !pic->priv)
+        return 0;
+
+    auto *priv = static_cast<VmafPicturePrivate *>(pic->priv);
+    if (priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED && priv->sycl.ready_event) {
+        auto *ev = static_cast<sycl::event *>(priv->sycl.ready_event);
+        try {
+            ev->wait();
+        } catch (const sycl::exception &e) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL pinned picture sync: %s\n", e.what());
+            return -EIO;
+        }
+    }
     return 0;
 }
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

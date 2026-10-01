@@ -60,6 +60,7 @@ static double monotonic_ms()
     return duration<double, std::milli>(now).count();
 }
 
+#include "picture.h"
 #include "common.h"
 #include "dispatch_strategy.h"
 #include "feature/feature_extractor.h"
@@ -814,6 +815,17 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->last_upload_event = last_ev;
         state->has_uploaded = true;
 
+        auto *ref_priv = static_cast<VmafPicturePrivate *>(ref->priv);
+        auto *dis_priv = static_cast<VmafPicturePrivate *>(dis->priv);
+        if (ref_priv && ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
+            ref_priv->sycl.ready_event) {
+            *static_cast<sycl::event *>(ref_priv->sycl.ready_event) = last_ev;
+        }
+        if (dis_priv && dis_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
+            dis_priv->sycl.ready_event) {
+            *static_cast<sycl::event *>(dis_priv->sycl.ready_event) = last_ev;
+        }
+
         // Swap: the buffer we just uploaded becomes compute, old compute
         // becomes the next upload target.
         state->cur_compute = ui;
@@ -821,8 +833,8 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->frame_counter++;
 
         if (state->extractor_timing && state->frame_counter <= 30) {
-            vmaf_log(VMAF_LOG_LEVEL_DEBUG, "UPLOAD frame %lu: ref=%.1fms dis=%.1fms total=%.1fms\n",
-                     (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
+            fprintf(stderr, "UPLOAD frame %3lu: ref=%.2fms dis=%.2fms total=%.2fms\n",
+                    (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
         }
 
     } catch (const sycl::exception &e) {
@@ -946,6 +958,17 @@ static sycl::event sycl_enqueue_chroma_plane(VmafSyclState *state, void *dst, vo
                                              size_t row_bytes)
 {
     unsigned const rows = state->planes.h;
+    bool is_usm_host = false;
+    try {
+        is_usm_host = (sycl::get_pointer_type(src, state->copy_queue.get_context()) ==
+                       sycl::usm::alloc::host);
+    } catch (...) {
+        is_usm_host = false;
+    }
+    if (is_usm_host && std::cmp_equal(src_stride, row_bytes)) {
+        return state->copy_queue.memcpy(dst, src, state->planes.plane_bytes);
+    }
+
     auto *packed = static_cast<uint8_t *>(staging);
     const auto *row = static_cast<const uint8_t *>(src);
     if (std::cmp_equal(src_stride, row_bytes)) {
@@ -989,6 +1012,17 @@ extern "C" int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture 
         state->last_upload_event = last_ev;
         chroma.staged = last_ev;
         chroma.frame = state->frame_counter;
+
+        auto *ref_priv = static_cast<VmafPicturePrivate *>(ref->priv);
+        auto *dis_priv = static_cast<VmafPicturePrivate *>(dis->priv);
+        if (ref_priv && ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
+            ref_priv->sycl.ready_event) {
+            *static_cast<sycl::event *>(ref_priv->sycl.ready_event) = last_ev;
+        }
+        if (dis_priv && dis_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
+            dis_priv->sycl.ready_event) {
+            *static_cast<sycl::event *>(dis_priv->sycl.ready_event) = last_ev;
+        }
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL chroma upload: %s\n", e.what());
         return -EIO;

@@ -1,0 +1,1 @@
+| [ADR-1410](1410-sycl-cli-pinned-host-picture-pool.md) | SYCL CLI preallocates pinned host USM pictures for zero-copy DMA uploads, dropping 4K upload latency from ~2.5 ms to 0.70 ms while maintaining bit-identical scores. | Accepted | `sycl`, `performance`, `cli`, `zero-copy`, `usm`, `picture-pool`, `rc3`, `fork-local` |

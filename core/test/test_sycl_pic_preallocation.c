@@ -169,6 +169,51 @@ static char *test_sycl_preallocate_without_state(void)
     return NULL;
 }
 
+static char *test_sycl_cli_preallocate_pinned_pool(void)
+{
+    if (sycl_init_failed || sycl == NULL) {
+        (void)fprintf(stderr, "  [SKIP] test_sycl_cli_preallocate_pinned_pool (no GPU)\n");
+        return NULL;
+    }
+
+    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, vmaf_cfg);
+    mu_assert("vmaf_init should succeed", err == 0);
+
+    err = vmaf_sycl_import_state(vmaf, sycl);
+    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+
+    VmafPictureConfiguration pic_cfg = {
+        .pic_params =
+            {
+                .w = 1920,
+                .h = 1080,
+                .bpc = 8,
+                .pix_fmt = VMAF_PIX_FMT_YUV420P,
+            },
+        .pic_cnt = 6,
+    };
+    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
+    mu_assert("vmaf_preallocate_pictures should succeed", err == 0);
+
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    err = vmaf_fetch_preallocated_picture(vmaf, &pic);
+    mu_assert("vmaf_fetch_preallocated_picture should succeed", err == 0);
+    mu_assert("pic.data[0] should not be null", pic.data[0] != NULL);
+    mu_assert("pic.data[1] should not be null", pic.data[1] != NULL);
+    mu_assert("pic.data[2] should not be null", pic.data[2] != NULL);
+
+    err = vmaf_picture_unref(&pic);
+    mu_assert("vmaf_picture_unref should succeed", err == 0);
+
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close should succeed", err == 0);
+
+    return NULL;
+}
+
 static char *test_sycl_pool_release(void)
 {
     if (sycl_init_failed || sycl == NULL) {
@@ -187,6 +232,7 @@ char *run_tests(void)
     mu_run_test(test_sycl_preallocate_none);
     mu_run_test(test_sycl_preallocate_device_fetch_cycle);
     mu_run_test(test_sycl_preallocate_host_fetch_cycle);
+    mu_run_test(test_sycl_cli_preallocate_pinned_pool);
     mu_run_test(test_sycl_pool_release);
     return NULL;
 }

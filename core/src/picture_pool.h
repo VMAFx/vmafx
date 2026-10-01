@@ -40,6 +40,12 @@ typedef struct VmafPicturePoolConfig {
     unsigned h;
     enum VmafPixelFormat pix_fmt;
     unsigned bpc;
+    enum VmafPictureBufferType buf_type;
+    int (*alloc_picture_callback)(VmafPicture *pic, void *cookie);
+    int (*free_picture_callback)(VmafPicture *pic, void *cookie);
+    int (*sync_picture_callback)(VmafPicture *pic, void *cookie);
+    int (*attach_picture_callback)(VmafPicture *pic, unsigned idx, void *cookie);
+    void *cookie;
 } VmafPicturePoolConfig;
 
 /** @brief Opaque CPU picture pool handle. */

@@ -35,6 +35,7 @@ enum VmafPictureBufferType {
     VMAF_PICTURE_BUFFER_TYPE_CUDA_HOST_PINNED,
     VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE,
     VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE,
+    VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED,
     /* ADR-0726: Vulkan backend removed. Enum value deleted — no source file
      * referenced VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE after ADR-0726.
      * Any future Vulkan revival must use a new ADR and a new value. */
@@ -59,6 +60,12 @@ typedef struct VmafPicturePrivate {
         CUstream str;
         VmafCudaState *state;
     } cuda;
+#endif
+#ifdef HAVE_SYCL
+    struct {
+        void *state;
+        void *ready_event;
+    } sycl;
 #endif
     enum VmafPictureBufferType buf_type;
 } VmafPicturePrivate;

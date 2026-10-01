@@ -1514,6 +1514,7 @@ nav:
         - "ADR-1404: hip-float-motion-motion3-and-options": adr/1404-hip-float-motion-motion3-and-options.md
         - "ADR-1405: hip-float-ssim-device-decimation": adr/1405-hip-float-ssim-device-decimation.md
         - "ADR-1407: hip-strict-fp-every-kernel": adr/1407-hip-strict-fp-every-kernel.md
+        - "ADR-1410: sycl-cli-pinned-host-picture-pool": adr/1410-sycl-cli-pinned-host-picture-pool.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -2099,6 +2100,7 @@ nav:
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md
         - "upstream": adr/by-tag/upstream.md
+        - "usm": adr/by-tag/usm.md
         - "utf8": adr/by-tag/utf8.md
         - "ux": adr/by-tag/ux.md
         - "v4": adr/by-tag/v4.md

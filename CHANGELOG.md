@@ -358,6 +358,10 @@
   the host's core count.
 
 
+- **SYCL CLI preallocates pinned host USM pictures, dropping 4K upload latency from ~2.5 ms to 0.70 ms (ADR-1410).**
+  The CLI picture pool allocates pictures in SYCL host USM (`sycl::malloc_host`) when `--backend sycl` is active, avoiding pageable memory staging and host copies on upload. Chroma planes in contiguous pinned host memory bypass staging buffers for direct DMA transfers. Measured on an Intel Arc A380 (Linux `xe` driver) with BBB 3840x2160: upload time dropped from 2.2–3.0 ms per frame down to 0.70 ms steady-state. Scores are bit-identical. Closes `T-SYCL-PAGEABLE-UPLOAD-HOST-STAGING-2026-09-29`.
+
+
 - **`float_ssim` runs on SYCL at 1080p and 4K (ADR-1370).** The SYCL twin
   implemented only scale 1, so `--backend sycl --feature float_ssim` and every
   model on a picture with a short side of 384 px or more computed the feature

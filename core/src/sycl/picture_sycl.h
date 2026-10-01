@@ -130,6 +130,57 @@ int vmaf_sycl_picture_pool_fetch(VmafSyclPicturePool *pool, VmafPicture *pic);
  */
 int vmaf_sycl_picture_pool_close(VmafSyclPicturePool *pool);
 
+/**
+ * Allocate a SYCL pinned host USM VmafPicture with all three planes
+ * (Y, U, V) pre-allocated in a contiguous host USM buffer.
+ *
+ * @param pic      The picture to initialise.
+ * @param pix_fmt  Pixel format (YUV 4:2:0, 4:2:2, 4:4:4, or 4:0:0).
+ * @param bpc      Bits per component (8 to 16).
+ * @param w, h     Frame dimensions in pixels.
+ * @param state    The SYCL state (provides USM host allocator).
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vmaf_sycl_picture_alloc_pinned(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                                   unsigned w, unsigned h, VmafSyclState *state);
+
+/**
+ * Free a SYCL pinned host USM VmafPicture.
+ *
+ * @param pic    The picture to free.
+ * @param state  The SYCL state.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vmaf_sycl_picture_free_pinned(VmafPicture *pic, VmafSyclState *state);
+
+/**
+ * Synchronize on any pending DMA upload for a pinned host picture.
+ *
+ * @param pic    The picture to synchronize.
+ * @param state  The SYCL state.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vmaf_sycl_picture_sync_pinned(VmafPicture *pic, VmafSyclState *state);
+
+/**
+ * Initialise synchronization events for a pinned picture pool.
+ */
+void *vmaf_sycl_pinned_pool_init_events(VmafSyclState *state, unsigned pic_cnt);
+
+/**
+ * Destroy synchronization events for a pinned picture pool.
+ */
+void vmaf_sycl_pinned_pool_destroy_events(void *events);
+
+/**
+ * Attach a synchronization event slot to a fetched pinned picture.
+ */
+int vmaf_sycl_pinned_pool_attach_event(VmafPicture *pic, void *events, unsigned idx,
+                                       VmafSyclState *state);
+
 #ifdef __cplusplus
 }
 #endif

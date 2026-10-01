@@ -88,7 +88,9 @@ static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolCo
      * pass; the error unwind uses vmaf_picture_unref on intact pictures
      * since the strip pass has not run yet. */
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
-        int err = vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
+        int err = cfg.alloc_picture_callback ?
+                      cfg.alloc_picture_callback(&p->pictures[i], cfg.cookie) :
+                      vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
         if (err) {
             /* Free any pictures we've already fully allocated (priv/ref still
              * intact on these since the strip pass has not run yet).
@@ -227,7 +229,11 @@ int vmaf_picture_pool_close(VmafPicturePool *pool)
 
     /* Free all pictures (including their data buffers) */
     for (unsigned i = 0; i < pool->cfg.pic_cnt; i++) {
-        aligned_free(pool->pictures[i].data[0]);
+        if (pool->cfg.free_picture_callback) {
+            pool->cfg.free_picture_callback(&pool->pictures[i], pool->cfg.cookie);
+        } else {
+            aligned_free(pool->pictures[i].data[0]);
+        }
     }
 
     pthread_mutex_unlock(&pool->lock);
@@ -312,9 +318,19 @@ int pool_attach_priv(VmafPicturePool *pool, VmafPicture *pic, unsigned idx)
     std::memset(priv, 0, sizeof(*priv));
     priv->pool = pool;
     priv->pic_idx = idx;
+    priv->base.buf_type = pool->cfg.buf_type;
     /* C-style inheritance: VmafPicturePrivate is the first member of
      * PooledPicturePriv at offset 0; reinterpret_cast is safe here. */
     pic->priv = reinterpret_cast<VmafPicturePrivate *>(priv);
+
+    if (pool->cfg.attach_picture_callback) {
+        int err = pool->cfg.attach_picture_callback(pic, idx, pool->cfg.cookie);
+        if (err) {
+            std::free(priv);
+            pic->priv = nullptr;
+            return err;
+        }
+    }
 
     /* Set custom release callback to return picture to pool */
     int err = vmaf_picture_set_release_callback(pic, nullptr, pooled_picture_release);
@@ -358,8 +374,18 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     *pic = pic_snapshot;
 
     err = pool_attach_priv(pool, pic, idx);
-    if (err)
+    if (err) {
         pool_return_index(pool, idx);
+        return err;
+    }
 
-    return err;
+    if (pool->cfg.sync_picture_callback) {
+        err = pool->cfg.sync_picture_callback(pic, pool->cfg.cookie);
+        if (err) {
+            (void)vmaf_picture_unref(pic);
+            return err;
+        }
+    }
+
+    return 0;
 }

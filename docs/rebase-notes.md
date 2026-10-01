@@ -23,6 +23,16 @@
   block, not a copy of the file.
 - No CPU code changes. No Netflix golden-data, public API or FFmpeg patch
   impact.
+## perf/sycl-cli-pinned-host-picture-pool — SYCL CLI pinned host USM picture pool (2026-10-01)
+
+- `core/src/picture_pool.h`, `core/src/picture_pool.c`, `core/src/picture.h`:
+  `VmafPicturePoolConfig` gains custom allocation callbacks (`alloc_picture_callback`,
+  `free_picture_callback`, `sync_picture_callback`, `attach_picture_callback`, `cookie`)
+  and buffer type `VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED`.
+- `core/src/libvmaf.c`: `prepare_picture_pool()` configures the picture pool to allocate
+  SYCL host USM memory when a SYCL state is attached to the context.
+- Upstream sync note: Preserve custom allocation callbacks in `VmafPicturePoolConfig`
+  and picture pool fetch/close functions.
 
 ## fix/speed-lanczos4-host-weights — the CUDA SpEED twins read the CPU's lanczos4 weights (2026-10-01)
 
