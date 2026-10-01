@@ -57,7 +57,7 @@ jobs:
         run: scripts/sync-pelorus-interop.sh "${GITHUB_WORKSPACE}/.ci/pelorus"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       # pre-commit/action@v3.0.1 is the latest release (Feb 2024) and still
       # pins actions/cache@v4, which trips the Node.js 20 deprecation
       # warning (Node 20 removed from runners 2026-09-16). Inline the
@@ -761,7 +761,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       - name: Install mypy checker
         run: pip install --require-hashes -r requirements/locks/mypy.txt
       - name: Run merge-base mypy gate
@@ -793,7 +793,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       - name: Install jsonschema
         run: pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Validate model/tiny/registry.json
@@ -819,7 +819,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       - name: Verify documentation generator contracts
         run: python3 scripts/docs/tests/test_generators.py
       - name: Check generated documentation freshness

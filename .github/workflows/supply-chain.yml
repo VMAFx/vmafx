@@ -292,7 +292,7 @@ jobs:
         with: { name: mcp-dist, path: mcp-dist/ }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       - name: Prepare native and Python SBOM roots
         env:
           VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
@@ -575,7 +575,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.8"
       - name: Install build deps
         run: |
           python -m pip install --disable-pip-version-check --require-hashes \

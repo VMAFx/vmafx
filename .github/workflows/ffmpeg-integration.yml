@@ -73,7 +73,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: 3.14.7
+          python-version: 3.14.8
       - name: Install meson and ninja
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
       - name: Install dependencies (ubuntu)
@@ -154,7 +154,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: 3.14.7
+          python-version: 3.14.8
       - name: Install meson, ninja, and dependencies
         run: |
           python -m pip install --require-hashes -r requirements/locks/build.txt
