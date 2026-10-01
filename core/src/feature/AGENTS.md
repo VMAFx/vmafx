@@ -116,8 +116,11 @@ feature/
   the column bound nor, until #1629 merges, the row bounds).
   `test_calculate_c_values_short_frame` and
   `test_calculate_c_values_narrow_frame` (`core/test/test_cambi.c`) fail on
-  every driver that loses one. The CUDA, HIP and Metal twins run this walk on
-  the host through `vmaf_cambi_calculate_c_values()`.
+  every driver that loses one. The Metal twin runs this walk on the host
+  through `vmaf_cambi_calculate_c_values()`. The SYCL, CUDA and HIP twins
+  compute the c-values on the device and do not call it; `cambi_hip` clips
+  each window to the frame itself (`cambi_hd_cvals_begin()`,
+  `hip/integer_cambi/cambi_hip_device.h`) and must keep matching these bounds.
 
 - **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
   `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and

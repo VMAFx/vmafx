@@ -583,8 +583,9 @@ Quick facts:
   banding. Typical "bad" content sits in `1–10`.
 - **Input formats** — YUV 4:2:0, 8 / 10 bpc.
 - **Backends** — scalar (CPU), CUDA (`cambi_cuda`), SYCL (`cambi_sycl`),
-  HIP (`cambi_hip`) and Metal. The SYCL and HIP twins run every stage on the
-  device ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md),
+  HIP (`cambi_hip`) and Metal. The SYCL, CUDA and HIP twins run every stage on
+  the device ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md),
+  [ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
   [ADR-1378](../adr/1378-hip-cambi-device-resident.md)). (The original Vulkan
   kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
 

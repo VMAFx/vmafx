@@ -82,8 +82,9 @@ On a tall, narrow input the coarsest scale can have fewer columns than
 `pad_size`: with the default window, widths up to 80 at 1080 high, 160 at 1920
 high and 176 at 2160 high. Up to 2026-09-30 the scalar c-values walk read the
 columns past such a frame, pixels a finer scale left in the picture stride, while
-the SIMD paths did not. `--cpumask 63` builds and the CUDA, HIP and Metal twins,
-which run the scalar walk on the host, could therefore score such frames
+the SIMD paths did not. `--cpumask 63` builds and the GPU twins that ran the
+scalar walk on the host (CUDA, HIP and Metal at the time) could therefore
+score such frames
 differently from the default dispatch: scores change for frames narrower than
 `pad_size` at some scale (measured: 64x1920 vertical ramp master
 14.975700714938673 vs branch 14.964394451743877 on the C path; the SIMD paths

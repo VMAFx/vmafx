@@ -19,7 +19,8 @@
   `pad_size` columns at that scale (up to 80 wide at 1080 high, 160 at 1920
   high) the scalar walk read columns past the frame. Those frames now score on
   the C path (`--cpumask 63`, builds without SIMD) and on the CUDA, HIP and
-  Metal twins, which run that walk on the host, what the default dispatch
+  Metal twins, which ran that walk on the host (the CUDA and HIP twins have
+  since moved it to the device), what the default dispatch
   already gave (64x1920 vertical ramp moves from 14.975700714938673 to
   14.964394451743877; another vertical ramp variant moves from 16.141046 to
   16.131541). All other frame sizes score as before
