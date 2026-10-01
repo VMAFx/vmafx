@@ -433,6 +433,8 @@
   twins were not affected. Reported upstream as
   [Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)
   ([features](docs/metrics/features.md#options-shared)).
+
+
 - **The CPU `ssimulacra2` extractor no longer crashes on 4:0:0 input.** Its
   init ignored the pixel format, so a luma-only picture passed to
   `vmaf_read_pictures()` through the C API reached the colour conversion, which

@@ -344,7 +344,6 @@
     },
     "0130": {
       "sites": {
-        "core/src/feature/ssimulacra2.c": 1,
         "core/src/feature/ssimulacra2_math.h": 1
       },
       "target": "0130-ssimulacra2-scalar-implementation.md"
@@ -502,7 +501,7 @@
         "core/src/feature/offset.c": 2,
         "core/src/feature/psnr_tools.cpp": 1,
         "core/src/feature/speed_gpu_common.h": 1,
-        "core/src/feature/ssimulacra2.c": 9,
+        "core/src/feature/ssimulacra2.c": 6,
         "core/src/feature/sycl/float_adm_sycl.cpp": 2,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
