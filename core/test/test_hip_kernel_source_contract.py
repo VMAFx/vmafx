@@ -213,6 +213,31 @@ def _guard_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+def _issim_raster_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1400: frames up to the bound are summed in the CPU's raster order."""
+    failures: list[str] = []
+    terms = _function_body(
+        src[ISSIM_KERNEL].replace("__global__ void\n", "void "),
+        "integer_ssim_vert_terms",
+    )
+    if "partials[idx] = issim_cpu_term(issim_factors(m, samplemax));" not in terms:
+        failures.append(f"{ISSIM_KERNEL}: the per-pixel pass does not write the CPU's own term")
+    if "const size_t idx = (size_t)y * width + x;" not in terms:
+        failures.append(f"{ISSIM_KERNEL}: the per-pixel terms are not stored in raster order")
+    host = src[ISSIM_HOST]
+    if "s->raster = (size_t)w * h <= ISSIM_HIP_RASTER_MAX_PIXELS;" not in host:
+        failures.append(f"{ISSIM_HOST}: small frames no longer select the raster sum")
+    if "s->raster ? s->func_vert_terms : s->func_vert;" not in _function_body(
+        host, "issim_hip_launch_vert"
+    ):
+        failures.append(f"{ISSIM_HOST}: the raster path does not launch the per-pixel pass")
+    if "for (unsigned i = 0u; i < s->pair_count; i++) {" not in _function_body(
+        host, "collect_fex_hip"
+    ):
+        failures.append(f"{ISSIM_HOST}: collect() no longer adds the pairs in ascending order")
+    return failures
+
+
 def _option_failures(src: dict[str, str]) -> list[str]:
     failures: list[str] = []
     psnr = src[PSNR_HOST]
@@ -229,8 +254,9 @@ def _option_failures(src: dict[str, str]) -> list[str]:
     for name in (ISSIM_HOST, FSSIM_HOST):
         if "vmaf_ssim_max_db(" not in src[name] or "s->enable_db, s->max_db" not in src[name]:
             failures.append(f"{name}: enable_db / clip_db do not reach the SSIM emitter")
-    if "if (lum_num == lum_den && cs_num == cs_den)" not in src[ISSIM_KERNEL]:
+    if "if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)" not in src[ISSIM_KERNEL]:
         failures.append(f"{ISSIM_KERNEL}: an identical window no longer scores exactly 1")
+    failures += _issim_raster_failures(src)
     fssim = _function_body(
         src[FSSIM_KERNEL].replace("__device__ __forceinline__ void", "static void"),
         "ssim_lcs",
@@ -391,10 +417,46 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             ISSIM_KERNEL,
-            "    if (lum_num == lum_den && cs_num == cs_den)\n        return w_d;\n",
+            "    if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)\n        return f.w_d;\n",
             "",
         )
         self.assert_detected(src, "exactly 1")
+
+    def test_integer_ssim_raster_sum_with_tree_term_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            ISSIM_KERNEL,
+            "partials[idx] = issim_cpu_term(issim_factors(m, samplemax));",
+            "partials[idx] = issim_pixel_term(m, samplemax);",
+        )
+        self.assert_detected(src, "does not write the CPU's own term")
+
+    def test_integer_ssim_raster_path_dropped_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            ISSIM_HOST,
+            "s->raster = (size_t)w * h <= ISSIM_HIP_RASTER_MAX_PIXELS;",
+            "s->raster = false;",
+        )
+        self.assert_detected(src, "no longer select the raster sum")
+
+    def test_integer_ssim_raster_kernel_unselected_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            ISSIM_HOST,
+            "s->raster ? s->func_vert_terms : s->func_vert;",
+            "s->func_vert;",
+        )
+        self.assert_detected(src, "does not launch the per-pixel pass")
+
+    def test_integer_ssim_descending_collect_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            ISSIM_HOST,
+            "for (unsigned i = 0u; i < s->pair_count; i++) {",
+            "for (unsigned i = s->pair_count; i-- > 0u;) {",
+        )
+        self.assert_detected(src, "ascending order")
 
     def test_contracted_float_ssim_is_detected(self) -> None:
         src = _sources()

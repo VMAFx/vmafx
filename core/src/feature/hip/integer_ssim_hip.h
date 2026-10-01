@@ -24,6 +24,14 @@
 
 #include <stdint.h>
 
+/* Frames of at most this many luma pixels are summed in the CPU's raster
+ * order: the device writes one SSIM term per pixel
+ * (`integer_ssim_vert_terms`) and collect() adds them in index order, which
+ * makes the score equal `integer_ssim.c::calc_ssim()` bit for bit. Larger
+ * frames reduce per block on the device (ADR-1400). 4096 = 64 x 64, a 64 KiB
+ * read-back. */
+#define ISSIM_HIP_RASTER_MAX_PIXELS 4096u
+
 #ifdef HAVE_HIPCC
 /* HSACO fat binary embedded by xxd -i (analogous to
  * `integer_ssim_score_ptx` in the CUDA twin). The array is defined in the generated

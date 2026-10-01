@@ -1102,3 +1102,4 @@
 1395-sycl-kernels-no-scratch
 1398-cli-accept-odd-dimensions-chroma-subsampled
 1397-psnr-hvs-twins-cpu-float-sum
+1400-hip-integer-ssim-raster-sum-small-frames

@@ -14,17 +14,24 @@
  *
  *    Pass 1 (integer_ssim_horiz_{8,16}bpc): 9-tap integer Gaussian over each
  *      row, int64 moments into six W x H int64 planes.
- *    Pass 2 (integer_ssim_vert_combine): 9-tap over the columns of those
- *      planes, the per-pixel SSIM term in double, and one (term sum, int64
- *      weight sum) pair per 16x8 block.
- *  collect() adds the block pairs and returns sum(term) / sum(weight), the
- *  `ssim / ssimw` that calc_ssim() returns on the CPU.
+ *    Pass 2: 9-tap over the columns of those planes and the per-pixel SSIM
+ *      term in double. Frames above ISSIM_HIP_RASTER_MAX_PIXELS pixels run
+ *      integer_ssim_vert_combine, which reduces to one (term sum, int64
+ *      weight sum) pair per 16x8 block; smaller frames run
+ *      integer_ssim_vert_terms, which writes one (term, weight) pair per
+ *      pixel (ADR-1400).
+ *  collect() adds the pairs in index order and returns sum(term) /
+ *  sum(weight), the `ssim / ssimw` that calc_ssim() returns on the CPU. For
+ *  the per-pixel pairs index order is the CPU's raster order, so the sum is
+ *  the CPU's double.
  *
  *  Options mirror CPU integer_ssim.c (ADR-1382, the HIP port of ADR-1365):
  *  `enable_db` / `clip_db` convert the frame score on the host through the
- *  shared nonfinite_score.h helpers (vmaf_ssim_max_db()). An identical
- *  window scores exactly its weight, so identical frames report the CPU's
- *  +inf / clip_db ceiling (issim_pixel_term()).
+ *  shared nonfinite_score.h helpers (vmaf_ssim_max_db()). On the per-block
+ *  path an identical window scores exactly its weight, so identical frames
+ *  report +inf / the clip_db ceiling (issim_pixel_term()); on the per-pixel
+ *  path the score is the CPU's double, which on an identical frame is 1 or
+ *  an ulp or two away from it (156.54 dB for an identical 1x1 frame of zeros).
  *
  *  HIP adaptations from the CUDA twin:
  *  - Pictures arrive as host VmafPictures; the two luma planes are staged
@@ -76,7 +83,7 @@
 
 typedef struct IssimStateHip {
     VmafHipKernelLifecycle lc;
-    /* One double term sum and one int64 weight sum per block. */
+    /* One double term (sum) and one int64 weight (sum) per pair. */
     VmafHipKernelReadback rb_ssim;
     VmafHipKernelReadback rb_wgt;
     VmafHipContext *ctx;
@@ -92,13 +99,19 @@ typedef struct IssimStateHip {
     hipFunction_t func_horiz_8;
     hipFunction_t func_horiz_16;
     hipFunction_t func_vert;
+    hipFunction_t func_vert_terms;
 
     unsigned width;
     unsigned height;
     unsigned bpc;
     unsigned grid_x;
     unsigned grid_y;
-    unsigned block_count;
+    /* Number of (term, weight) pairs pass 2 writes: one per block, or one
+     * per pixel when `raster`. */
+    unsigned pair_count;
+    /* Pass 2 leaves the terms unreduced and collect() adds them in the CPU's
+     * raster order (ADR-1400). */
+    bool raster;
     /* (1 << bpc) - 1, the CPU's `samplemax`, as the kernel's double. */
     double samplemax;
     /* CPU integer_ssim.c options; host-side dB conversion. */
@@ -141,12 +154,13 @@ static void issim_hip_init_dims(IssimStateHip *s, unsigned w, unsigned h, unsign
     s->bpc = bpc;
     s->grid_x = (w + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
     s->grid_y = (h + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
-    s->block_count = s->grid_x * s->grid_y;
+    s->raster = (size_t)w * h <= ISSIM_HIP_RASTER_MAX_PIXELS;
+    s->pair_count = s->raster ? w * h : s->grid_x * s->grid_y;
     s->samplemax = (double)((1u << bpc) - 1u);
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 }
 
-/* Load the kernel blob and resolve the three kernels by their extern "C"
+/* Load the kernel blob and resolve the four kernels by their extern "C"
  * names. */
 static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
 {
@@ -160,6 +174,8 @@ static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
         rc = hipModuleGetFunction(&s->func_horiz_16, s->module, "integer_ssim_horiz_16bpc");
     if (rc == hipSuccess)
         rc = hipModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_vert_terms, s->module, "integer_ssim_vert_terms");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -267,11 +283,11 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         err = issim_hip_module_load(s, fex->name);
     if (err == 0) {
         err = vmaf_hip_kernel_readback_alloc(&s->rb_ssim, s->ctx,
-                                             (size_t)s->block_count * sizeof(double));
+                                             (size_t)s->pair_count * sizeof(double));
     }
     if (err == 0) {
         err = vmaf_hip_kernel_readback_alloc(&s->rb_wgt, s->ctx,
-                                             (size_t)s->block_count * sizeof(int64_t));
+                                             (size_t)s->pair_count * sizeof(int64_t));
     }
     if (err == 0)
         err = issim_hip_bufs_alloc(s);
@@ -316,23 +332,24 @@ static int issim_hip_launch_vert(IssimStateHip *s, hipStream_t str)
         (void *)&s->rb_ssim.device, (void *)&s->rb_wgt.device, (void *)&s->width,
         (void *)&s->height,         (void *)&s->samplemax,
     };
-    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u,
+    hipFunction_t fn = s->raster ? s->func_vert_terms : s->func_vert;
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(fn, s->grid_x, s->grid_y, 1u,
                                                       ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u,
                                                       str, args, NULL));
 }
 
-/* Copy both per-block partial arrays back and record the `finished` event
- * that collect() waits on. */
+/* Copy both pair arrays back and record the `finished` event that collect()
+ * waits on. */
 static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
 {
     hipError_t rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (rc == hipSuccess) {
         rc = hipMemcpyAsync(s->rb_ssim.host_pinned, s->rb_ssim.device,
-                            (size_t)s->block_count * sizeof(double), hipMemcpyDeviceToHost, str);
+                            (size_t)s->pair_count * sizeof(double), hipMemcpyDeviceToHost, str);
     }
     if (rc == hipSuccess) {
         rc = hipMemcpyAsync(s->rb_wgt.host_pinned, s->rb_wgt.device,
-                            (size_t)s->block_count * sizeof(int64_t), hipMemcpyDeviceToHost, str);
+                            (size_t)s->pair_count * sizeof(int64_t), hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
         return vmaf_hip_rc_to_errno(rc);
@@ -401,7 +418,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     const int64_t *weight_partials = s->rb_wgt.host_pinned;
     double total_term = 0.0;
     int64_t total_weight = 0;
-    for (unsigned i = 0u; i < s->block_count; i++) {
+    /* Ascending index order is load-bearing on the per-pixel path: it is the
+     * CPU's raster order, and a double sum depends on its order. */
+    for (unsigned i = 0u; i < s->pair_count; i++) {
         total_term += term_partials[i];
         total_weight += weight_partials[i];
     }

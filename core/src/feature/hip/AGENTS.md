@@ -959,8 +959,14 @@ Rebase-sensitive invariants:
 - `integer_ssim_hip`, `float_ssim_hip`: `enable_db` / `clip_db` via
   `vmaf_ssim_max_db()` + shared SSIM emitters. `integer_ssim_hip`:
   `issim_pixel_term()` returns weight when factors equal (CPU raster sum
-  absorbs the quotient's ulp; per-block tree does not). 1x1 / 2x2 still
-  differ: `T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30`.
+  absorbs the quotient's ulp on large frames; per-block tree does not).
+  Frames <= `ISSIM_HIP_RASTER_MAX_PIXELS` (4096): `integer_ssim_vert_terms`
+  writes `issim_cpu_term()` per pixel at `y * width + x`, no identical rule;
+  `collect()` adds in ascending index = CPU raster order -> score == CPU
+  double (ADR-1400). Do not reduce these on the device, reorder the collect
+  loop, or route them through `issim_pixel_term()`:
+  `test_hip_ssim_tiny_frames` (`==`, device) and
+  `test_hip_kernel_source_contract.py` fail.
 - `float_ssim_hip`: no identical-window shortcut. CPU is 1 - 2^-24 on some
   identical frames (fp32 luminance denominator, 72.247 dB). Pass 2 =
   CPU `ssim_accumulate_default_scalar()`: `ssim_pixel()` = `(l * c) * s` in

@@ -55989,3 +55989,28 @@ Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080 checkerboard
 pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals `--backend cpu` at
 `--precision max`. Re-verify after a rebase that touches these files with the
 reproducer of Research-1397.
+## ADR-1400 — integer_ssim_hip sums small frames in the CPU's raster order (2026-10-01)
+
+`fix/hip-integer-ssim-tiny-identical`, Research-1400, ADR-1400.
+
+- `core/src/feature/hip/integer_ssim/integer_ssim_score.hip`: the per-pixel
+  arithmetic is split into `issim_vert_moments()`, `issim_factors()` and
+  `issim_cpu_term()`; `issim_pixel_term()` (the ADR-1382 identical-window
+  rule) is now only what the per-block kernel `integer_ssim_vert_combine`
+  adds. New kernel `integer_ssim_vert_terms` writes `issim_cpu_term()` and
+  the weight of every pixel at `y * width + x`.
+- `core/src/feature/hip/integer_ssim_hip.c`: frames of at most
+  `ISSIM_HIP_RASTER_MAX_PIXELS` (4096, `integer_ssim_hip.h`) launch
+  `integer_ssim_vert_terms` and read back one pair per pixel; `collect()`
+  adds the pairs in ascending index order, which is the raster order of
+  `integer_ssim.c::calc_ssim()`. That loop order is load-bearing. Do not
+  move the small-frame sum onto the device (one device thread costs 9 ms a
+  frame at 64x64 on a gfx1036) and do not apply the identical-window rule to
+  it: the CPU is not exactly 1 on every identical small frame.
+- If upstream Netflix changes the expression in
+  `integer_ssim.c::ssim_reduce_row_range()`, mirror it in `issim_factors()` /
+  `issim_cpu_term()` (HIP) as well as in the CUDA and SYCL twins.
+- Tests: `core/test/test_hip_ssim_tiny_frames.c` (new, device, `==` with
+  `enable_db`), four planted regressions in
+  `core/test/test_hip_kernel_source_contract.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.

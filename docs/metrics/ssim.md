@@ -11,7 +11,7 @@ distorted frame.
 |---|---|---|---|---|
 | `integer_ssim` | CPU | Integer fixed-point | `ssim` | Reference |
 | `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM | `ssim` | bit-exact (diff=0, places=6) |
-| `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM | `ssim` | ≤ 1.1e-11 measured (summation order only) |
+| `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM | `ssim` | bit-exact up to 4096 pixels; ≤ 1.1e-11 measured above (summation order only) |
 | `vmaf_fex_integer_ssim_sycl` | SYCL | int64 moments + float32 SSIM | `ssim` | places=4–5 (fp64-free, ADR-0220) |
 | `vmaf_fex_integer_ssim_metal` | Metal | Fixed-point, two-pass separable Gaussian | `ssim` | places=4 (target, ADR-0214) |
 
@@ -69,7 +69,10 @@ gfx1036 run is in `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
 computes every per-pixel term as the CPU does, bit for bit, and sums them in
 a different order, so its score can differ from the CPU's by a double
 rounding; on identical frames with a side below 12 pixels that can separate
-`+inf` from a value near 156 dB when `clip_db` is off. A model that sets
+`+inf` from a value near 156 dB when `clip_db` is off. The HIP twin adds the
+terms of frames up to 4096 pixels (64x64) in the CPU's order, so on those it
+reports the CPU's value exactly, finite or `+inf`
+([ADR-1400](../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)). A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 

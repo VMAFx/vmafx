@@ -4611,6 +4611,23 @@ test('test_hip_motion_tiny_frames', test_hip_motion_tiny_frames,
     is_parallel : false,
     timeout : 120)
 
+# T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30 / ADR-1400 — integer_ssim_hip
+# against the CPU `ssim` with == and `enable_db` on frames of at most
+# ISSIM_HIP_RASTER_MAX_PIXELS pixels (identical 1x1 and 2x2 included), within
+# 1e-12 just above the bound, and rejection of an empty frame. Skips (77)
+# without a HIP device.
+test_hip_ssim_tiny_frames = executable('test_hip_ssim_tiny_frames',
+    ['test.c', 'test_hip_ssim_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_ssim_tiny_frames', test_hip_ssim_tiny_frames,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 180)
+
 # T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 / ADR-1381 — vif_hip declares its
 # 16-pixel minimum through the ADR-1324 gate (model dispatch runs the CPU `vif`
 # below it) and rejects smaller direct requests. The declaration and init

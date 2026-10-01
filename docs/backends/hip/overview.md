@@ -112,7 +112,12 @@ extractor (`integer_ssim.c`) and computes it the same way:
 - the per-pixel SSIM term in double, built with `-ffp-contract=off` so that it
   rounds like the CPU's.
 
-The only difference from the CPU is the order in which the per-pixel terms are
+Frames of at most 4096 pixels (64x64) are added up in the CPU's order too: the
+device writes one term per pixel and the host adds them row by row, so the
+score is the CPU's exactly, at every bit depth
+([ADR-1400](../../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)).
+Above that size the device reduces per 16x8 block, and the only difference
+from the CPU is the order in which the per-pixel terms are
 added up, so scores agree to about 1e-14 on natural content. The worst case
 measured on a gfx1036 against the scalar CPU, over 8-, 10-, 12- and 16-bit
 inputs from 1x1 up to 1920x1080 (odd sizes included), was 1.06e-11. That was
@@ -717,7 +722,11 @@ fails at init.
 | `float_motion_hip` | `motion_max_val` (`mmxv`) | Host; every emitted score, the debug one included, goes through the CPU's `motion_clip()` |
 
 With `enable_db`, identical frames report what the CPU reports. For
-`integer_ssim_hip` that is `+inf` (or the `clip_db` ceiling) from 3x3 up.
+`integer_ssim_hip` that is `+inf` (or the `clip_db` ceiling) on frames above
+4096 pixels. Smaller frames report the CPU's own value, which is usually `+inf`
+and sometimes a finite value one or two ulps below a perfect score: 156.54 dB
+on an identical 1x1 frame of zeros, 159.55 dB on a flat 3x3 frame of 51
+([ADR-1400](../../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)).
 `float_ssim_hip` computes each pixel's term as the CPU does, `l * c * s` from
 the CPU's own luminance, contrast and structure types, and rounds the frame
 mean to fp32 like the CPU. On some identical frames the CPU's fp32 arithmetic
