@@ -30,6 +30,7 @@
  *  cambi.c's own double sum is exact (ADR-1357).
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -458,6 +459,10 @@ static void cambi_hip_plan_scalars(CambiHipParams *p, const CambiHipPlanInput *i
  * c-values chunking and top-K counts (spatial_pooling's clip()). */
 void cambi_hip_plan(CambiHipParams *p, const CambiHipPlanInput *in)
 {
+    assert(p != NULL);
+    assert(in != NULL);
+    assert(in->proc_width > 0u);
+    assert(in->proc_height > 0u);
     cambi_hip_plan_scalars(p, in);
     unsigned width = in->proc_width;
     unsigned height = in->proc_height;
@@ -488,6 +493,8 @@ void cambi_hip_plan(CambiHipParams *p, const CambiHipPlanInput *in)
 void cambi_hip_plan_bind_scales(CambiHipParams *p, uint16_t *preproc, uint16_t *alt,
                                 uint16_t *filtered_h, unsigned speedup)
 {
+    assert(p != NULL);
+    assert(preproc != NULL);
     const uint16_t *previous = preproc;
     for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale) {
         CambiHipScale *g = &p->scale[scale];
