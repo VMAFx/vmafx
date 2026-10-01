@@ -56101,3 +56101,37 @@ reproducer of Research-1397.
   `enable_db`), four planted regressions in
   `core/test/test_hip_kernel_source_contract.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## perf/sycl-float-vif-no-scratch — scratch-free float_vif SYCL kernels (2026-10-01)
+
+On the Arc A380 (`dg2-g11`, PCI `56a5`) under the Linux `xe` driver, SYCL kernels
+that use scratch memory (private array allocations or register spills) return
+wrong values without error (ADR-1395, PR #1660).
+
+`core/src/feature/sycl/float_vif_sycl.cpp` had two kernels with private memory:
+- `launch_compute<0>`: spilled 14080 B of private memory per thread at SIMD-32.
+- `launch_decimate<1>`: allocated 2432 B of private memory due to dynamic array
+  indexing into the `coefficients` array inside unrolled loops, defeating IGC SROA.
+
+Changes:
+- `core/src/feature/sycl/sycl_compat.h`: added `VmafSyclKernelShape<SG, GRF>`
+  using oneAPI 2026 `<sycl/ext/intel/experimental/grf_size_properties.hpp>`.
+  When `GRF` is 256, it supplies `grf_size<256>` via the functor's `get(properties_tag)`,
+  granting 256 registers per hardware thread under `icpx`.
+- `core/src/feature/sycl/float_vif_sycl.cpp`:
+  - Replaced runtime coefficient copying with compile-time `VifFilterConstants<SCALE>`.
+  - Added `#pragma unroll` to convolution loops in `vertical_vif_moments`,
+    `horizontal_vif_moments`, and `decimate_vif_pixel`.
+  - Encapsulated kernel bodies into `FloatVifComputeKernel<SCALE>` and
+    `FloatVifDecimateKernel<SCALE>`.
+  - Configured `FloatVifComputeKernel<0>` with `VmafSyclKernelShape<32, 256>`.
+    Scales 1-3 maintain default 128 GRF for maximum EU thread occupancy.
+
+Verification:
+- Zero scratch: both JIT and dg2-g11 AOT zeinfo show `private_size: 0` and
+  `spill_size: 0` for all 7 kernels in the translation unit.
+- Parity restored on Arc A380 under xe: `test_sycl_float_vif_parity` and
+  `test_sycl_float_vif_parity_large` pass. `speed_gpu_parity.py --backend sycl
+  --feature float_vif` confirms max abs diff vs CPU < 4e-5 on Netflix 576x324 and
+  < 8e-6 on BBB 4K (was up to 0.3540 on master).
+- 4K runtime improved from 25.61 ms/frame to 19.98 ms/frame (22% speedup, median of 3).
+- Removes `float_vif_sycl` from `core/src/sycl/scratch_ratchet.txt` and `core/src/sycl/scratch_check.cpp` following PR #1660 merge.

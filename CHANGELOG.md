@@ -322,6 +322,10 @@
   [the SYCL backend guide](docs/backends/sycl/overview.md#float_ssim-decimation-on-the-device-2026-09-29).
 
 
+- **SYCL `float_vif` kernels eliminate scratch memory and restore parity on Intel Arc A380 under the Linux `xe` driver (ADR-1395).**
+  On the Arc A380 (`dg2-g11`, PCI `56a5`) under the Linux `xe` driver, SYCL kernels that use scratch memory or register spills return corrupted values. `launch_compute<0>` (previously spilled 14080 B private memory) and `launch_decimate<1>` (previously 2432 B private memory) are completely scratch-free (`private_mem_size == 0`, `spill_memory_size == 0` for both JIT and `dg2-g11` AOT). Filter coefficients are now evaluated via compile-time template constants with `#pragma unroll`, and `launch_compute<0>` utilizes the 256-register file (`VmafSyclKernelShape<32, 256>`), while scales 1-3 maintain default 128 GRF occupancy. Parity is restored: `test_sycl_float_vif_parity` and `test_sycl_float_vif_parity_large` pass; max absolute diff vs CPU is < 4e-5 on Netflix 576x324 and < 8e-6 on BBB 4K (was up to 0.3540 on master). 4K runtime improved from 25.61 ms/frame to 19.98 ms/frame (22% speedup).
+
+
 - **SYCL `psnr_hvs`, `psnr` and `motion_v2` read the frame the device already
   holds (ADR-1369).** A SYCL run uploads each plane of a frame once, and these
   twins now read it there: `psnr_hvs_sycl` no longer converts all three planes
