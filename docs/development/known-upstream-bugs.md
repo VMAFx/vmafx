@@ -188,6 +188,36 @@ landed in PR #69 (same commit).
 
 ---
 
+## Integer AIM is not clipped at 1, float AIM is — kept as upstream has it
+
+Found 2026-10-01; present on `upstream/master` `6ec23e8f2`; not reported
+upstream.
+
+The two ADM extractors finish the AIM ratio differently:
+
+```c
+/* libvmaf/src/feature/integer_adm.c:3006-3007 */
+// normalize AIM score by the DLM denominator
+*score_aim = aim_num / den;
+
+/* libvmaf/src/feature/adm.c:322-323 */
+// normalize AIM score by the DLM denominator and clip values larger than 1
+*score_aim = MIN(aim_num / aim_den, 1.0f);
+```
+
+On a reference without detail the denominator is the noise floor alone, and
+any visible additive impairment takes the ratio above 1. Upstream prints
+`integer_aim` 3.175585 and `aim` 1.000000 for a flat grey 64x64 reference
+against the same picture with isolated 4x2 patches; `adm3` follows
+(`integer_adm3` 0.0, `adm3` 0.5 at the default weight).
+
+It is not known which line upstream intends. The shipped `vmaf_v1.0.16` models
+read the integer feature. **The fork keeps both lines as they are**
+([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md)) and
+documents the two ranges in [features](../metrics/features.md#aim-above-1);
+`test_integer_adm_aim_unclipped` pins both. If upstream adds the clip to the
+integer extractor, port it and change that test in the same PR.
+
 ## `KBND_SYMMETRIC` single-reflection at sub-kernel-radius input sizes
 
 **Status:** fixed in this fork (PR #69), still present upstream.

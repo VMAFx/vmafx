@@ -409,23 +409,28 @@ to avoid divide-by-zero.
 - `adm2` — the fused final value (range `[0, 1]`), published as the
   VMAF-model input.
 - `adm_scale0..3` — per-wavelet-scale fidelity.
-- `aim_score` — Anchored Impairment Metric (AIM): CM of `decouple_a`
-  relative to the CSF of `decouple_r`, with `noise_weight = 0`.
-  Range `[0, 1]`. Required by the Netflix HDR VMAF model and by the
-  default model `vmaf_v1.0.16_3d0h`. Emitted by CPU `adm` /
-  `float_adm`, by `integer_adm_cuda` (ADR-0746) and by
-  `float_adm_cuda` (ADR-0574), and by `integer_adm_metal`. Not
-  emitted by the SYCL / HIP `integer_adm` twins — a request for it
-  falls back to the CPU twin.
-- `adm3_score` — ADM version 3: blends adm2 and AIM via harmonic
-  mean (`adm_adm3_apply_hm=true`, float path) or a linear combination
-  weighted by `adm_dlm_weight`, floored at `adm_min_val`. Range
-  `[adm_min_val, 1]`. This is the ADM feature the default model
+- `aim_score` — Additive Impairment Measure (AIM): the contrast-masked
+  additive impairment (CM of `decouple_a` relative to the CSF of
+  `decouple_r`, with `noise_weight = 0`) divided by the DLM denominator.
+  0 means no additive impairment; **higher is worse**. The fixed-point
+  `adm` extractor reports the ratio as it is, so its range is `[0, ∞)`;
+  `float_adm` clips it, range `[0, 1]`. See
+  [AIM above 1](#aim-above-1). Required by the Netflix HDR VMAF model and
+  by the default model `vmaf_v1.0.16_3d0h`. Backend coverage: footnotes ⁶
+  and ⁷ above.
+- `adm3_score` — ADM version 3: `max(w * adm2 + (1 - w) * (1 - aim),
+  adm_min_val)` with `w = adm_dlm_weight`, or the harmonic mean of adm2
+  and AIM (`adm_adm3_apply_hm=true`, float path), floored at
+  `adm_min_val` in both cases. This is the ADM feature the default model
   consumes. Same backend coverage as `aim_score` above.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
   numerator / denominator.
 
-**Output range** — `[0, 1]`. Higher is better.
+**Output range** — `adm2` and the scale scores lie in `[0, 1]` unless the
+distorted picture has more of the reference's detail than the reference, which
+a contrast enhancement produces under an `adm_enhn_gain_limit` above 1. Higher
+is better. `aim_score` is the exception on both counts: higher is worse, and
+the fixed-point one has no upper bound.
 
 **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
 only.
@@ -495,6 +500,45 @@ CPU. It now wraps at the same points and rounds its scale 1-3 terms the way
 the CPU, CUDA and HIP do, which moves SYCL's ordinary-video scores by less
 than 1e-6, toward the CPU. One of those intermediates, the centre term of the
 masking threshold, no longer wraps on any backend; see the next section.
+
+##### AIM above 1
+
+`adm` (fixed point) and `float_adm` report different AIM values on content
+whose additive impairment is larger than the reference's own detail: the
+fixed-point value goes above 1 and the float value stops at 1.
+
+Both are what upstream Netflix/vmaf defines. AIM is the additive impairment
+that survives contrast masking divided by the DLM denominator, which measures
+the detail of the reference. Upstream's float extractor then clips the ratio
+at 1 (`MIN(aim_num / aim_den, 1.0f)` in `adm.c`); its fixed-point extractor
+does not (`aim_num / den` in `integer_adm.c`). The fork keeps both as they
+are ([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md)).
+
+A reference without detail shows it most clearly, because its denominator is
+the noise-floor term alone:
+
+| Picture, flat grey reference | `integer_aim` | upstream master prints | `float_adm` `aim` |
+|---|---|---|---|
+| 64x64, 4x2 patches `255 0 0 0` every 16 pixels | 3.1755853876204676 | 3.175585 | 1 |
+| 576x324, the same patches | 2.602848185401339 | 2.602848 | 1 |
+| 576x324, uniform noise of ±24 | 1.2616298263467636 | 1.261630 | 1 |
+
+Stage by stage the two extractors agree before the clip: on the 64x64 picture
+the summed AIM numerators are 64.66445 (fixed point) and 64.66458 (float) over
+the same denominator of 20.363002.
+
+What this means in practice:
+
+- `adm3_score` follows. With the default model's `adm_dlm_weight=0.7` and
+  `adm_min_val=0.5`, the 64x64 picture gives a fixed-point `adm3` of 0.5 (the
+  floor) and a float `adm3` of 0.7.
+- The shipped `vmaf_v1.0.16` models read the fixed-point feature, and the fork
+  returns what upstream libvmaf returns for it: on the 576x324 patch picture
+  both report `integer_adm3` 0.5 and a VMAF of 0 with `vmaf_v1.0.16_3d0h`.
+- When you threshold or plot `integer_aim` yourself, do not assume it stays
+  within `[0, 1]`. Clip it at 1 if you want the float extractor's convention.
+- Ordinary encodes stay far below 1: the Netflix 576x324 pair has a mean
+  `integer_aim` of 0.0266.
 
 ##### Isolated impairments and very large coefficients
 

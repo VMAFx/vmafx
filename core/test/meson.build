@@ -2388,6 +2388,20 @@ test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
 test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
 
+# T-ADM-INTEGER-AIM-ABOVE-ONE-2026-10-01 (ADR-1417): integer AIM is the
+# unclipped ratio upstream defines, float AIM is clipped at 1. The float
+# extractor is compiled only with -Denable_float=true.
+if get_option('enable_float')
+test_integer_adm_aim_unclipped = executable('test_integer_adm_aim_unclipped',
+    ['test.c', 'test_integer_adm_aim_unclipped.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_aim_unclipped', test_integer_adm_aim_unclipped,
+    suite : ['fast'])
+endif
+
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',

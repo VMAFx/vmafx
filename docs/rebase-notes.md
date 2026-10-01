@@ -74,6 +74,21 @@
   block, not a copy of the file.
 - No CPU code changes. No Netflix golden-data, public API or FFmpeg patch
   impact.
+## docs/adm-integer-aim-unclipped — integer AIM is unclipped and float AIM is clipped, as upstream (ADR-1417, 2026-10-01)
+
+- No source change. `core/src/feature/integer_adm.c` `adm_result_finalise()`
+  reports `aim_num / den` and `core/src/feature/adm.c` `compute_adm()` reports
+  `MIN(aim_num / aim_den, 1)` (through `vmaf_adm_scale_ratios()` and
+  `vmaf_adm_finalize_scores()` in `adm_score.h`), matching upstream
+  `integer_adm.c:3007` and `adm.c:323` at `6ec23e8f2`. The integer value goes
+  above 1 on a reference without detail (3.1756 on the 64x64 patch picture).
+- **On a sync:** if upstream adds the clip to `integer_adm.c`, or removes it
+  from `adm.c`, port the change, update the integer or float expectations of
+  `core/test/test_integer_adm_aim_unclipped.c` in the same PR, re-run the
+  Netflix golden gate and move the "AIM above 1" section of
+  `docs/metrics/features.md`. Do not unify the two extractors on the fork's
+  own initiative: the shipped `vmaf_v1.0.16` models read the integer `adm3`.
+
 ## perf/sycl-cli-pinned-host-picture-pool — SYCL CLI pinned host USM picture pool (2026-10-01)
 
 - `core/src/picture_pool.h`, `core/src/picture_pool.c`, `core/src/picture.h`:

@@ -6248,6 +6248,7 @@
         "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_hip_upload_race.c": 1,
         "core/test/test_hip_vif_min_dim.c": 1,
+        "core/test/test_integer_adm_aim_unclipped.c": 1,
         "core/test/test_integer_adm_cm_threshold.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
@@ -8569,6 +8570,13 @@
         "core/test/test_ssim_x86_simd.c": 1
       },
       "target": "1415-x86-simd-libraries-strict-fp.md"
+    },
+    "1417": {
+      "sites": {
+        "core/test/meson.build": 1,
+        "core/test/test_integer_adm_aim_unclipped.c": 1
+      },
+      "target": "1417-integer-aim-unclipped-upstream-parity.md"
     },
     "1418": {
       "sites": {

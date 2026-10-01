@@ -364,6 +364,15 @@ linked AGENTS.md before resolving conflicts.
   `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
   tolerance 0 (`EXACT_TWINS`). See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **Integer AIM is not clipped, float AIM is ([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md))**:
+  `core/src/feature/integer_adm.c` reports `aim_num / den`
+  (`vmaf_adm_scale_ratios()`), `core/src/feature/adm.c` reports
+  `MIN(aim_num / aim_den, 1)` (`vmaf_adm_finalize_scores()`), each as its
+  upstream file does. The shipped `vmaf_v1.0.16` models read the integer
+  `adm3`, which the unclipped AIM takes down to `adm_min_val`. A sync or a
+  cleanup must not unify the two unless upstream does; the Netflix golden gate
+  has no integer AIM above 1 and would not notice.
+  `core/test/test_integer_adm_aim_unclipped.c` pins both sides.
 
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
