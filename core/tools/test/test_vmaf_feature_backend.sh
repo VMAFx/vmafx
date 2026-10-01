@@ -131,12 +131,22 @@ run no_twin 0 --no_prediction --feature brisque --backend "$BACKEND"
 has_warning no_twin brisque "has no twin"
 receipt no_twin cpu brisque=cpu
 
-# 4. An option the twin does not implement keeps the CPU extractor. No
-#    float_motion twin implements motion_filter_size (the SYCL and Metal
-#    float_ssim twins now mirror enable_lcs, ADR-1365), so every backend runs it.
+# 4. An option the twin does not implement keeps the CPU extractor. The CUDA,
+#    SYCL and Metal float_motion twins do not implement motion_filter_size
+#    (the SYCL and Metal float_ssim twins now mirror enable_lcs, ADR-1365).
+#    float_motion_hip does (ADR-1404) and runs it; on HIP the option without
+#    a twin implementation is float_adm's adm_skip_scale0.
 run option 0 --no_prediction --feature float_motion=motion_filter_size=3 --backend "$BACKEND"
-has_warning option float_motion "cannot honour option 'motion_filter_size'"
-receipt option cpu float_motion=cpu
+if [ "$BACKEND" = hip ]; then
+  no_warning option
+  receipt option hip float_motion_hip=hip
+  run option_cpu 0 --no_prediction --feature float_adm=adm_skip_scale0=true --backend hip
+  has_warning option_cpu float_adm "cannot honour option 'adm_skip_scale0'"
+  receipt option_cpu cpu float_adm=cpu
+else
+  has_warning option float_motion "cannot honour option 'motion_filter_size'"
+  receipt option cpu float_motion=cpu
+fi
 
 # 5. scale=2: the SYCL and CUDA twins decimate on the device (ADR-1370,
 #    ADR-1399) and run it; the HIP and Metal twins implement scale=1 only

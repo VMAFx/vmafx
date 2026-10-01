@@ -978,9 +978,26 @@ Rebase-sensitive invariants:
   `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
   (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),
   double per-block partials in `rb_lcs`. Default kernel stays LCS-free.
-- `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted score, debug
-  and flush tail included, through `fm_hip_motion_clip()`. No `motion3`, no
-  mbf / mbo / mdc / mfs / mau yet: `T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`.
+- `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted `motion` /
+  `motion2`, debug and flush tail included, through `fm_hip_motion_clip()`.
+- `float_motion_hip` option table == CPU `float_motion.c` table, same order
+  (order spells feature names: `motion3_mbf_0.5_mbo_2`). ADR-1404:
+  - `motion3` = `fm_hip_motion_blend_clip()` -> `motion_blend()` from shared
+    `motion_blend_tools.h`. Index 0 from first SAD (frame 1's collect), then
+    blended motion2 at `index - 1`, tail + one-frame 0 in `flush_fex_hip()`.
+    No local blend math.
+  - `motion_filter_size`: kernel arg, `fm_filter()` picks `FM_FILT` /
+    `FM_FILT_3` / `FM_FILT_NO_OP`; 3-tap and no-op = 5 taps with zero outer
+    weights (same tile, same halo). Min frame: 2x2 for mfs 3, else 3x3.
+  - `motion_add_scale1`: `float_motion_hip_scale1_sad` after the blur kernel
+    of the same plane, same stream. `fm_bilinear()` = `motion.c`
+    `motion_bilinear_interp()` operand for operand, contraction off. Frame 0
+    launches no scale-1 kernel; partials zeroed at init.
+  - `motion_add_uv`: `plane[3]`, each own `ref_in` + `blur[2]`; chroma dims
+    via `vmaf_chroma_extent()` (ceil). One `vmaf_hip_picture_upload()` call
+    for all planes, one read-back of every plane's partials, one wait.
+  - Upstream change to `motion_blur_plane()`, `vmaf_image_sad_c()`,
+    `motion_scale_bilinear()` or `motion_blend_clip()` -> mirror here.
 - `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2`
   folds stored value, never re-weights; one-frame run emits motion2_v2 /
   motion3_v2 = 0 (only `n_frames == 0` returns early).

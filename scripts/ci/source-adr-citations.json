@@ -7936,7 +7936,6 @@
         "core/src/feature/cuda/float_motion_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
-        "core/src/feature/hip/float_motion_hip.c": 1,
         "core/src/feature/hip/float_ssim_hip.c": 1,
         "core/src/feature/hip/integer_psnr_hip.c": 1,
         "core/src/feature/hip/integer_ssim_hip.c": 1,
@@ -8331,6 +8330,16 @@
         "core/test/test_hip_ssim_tiny_frames.c": 1
       },
       "target": "1400-hip-integer-ssim-raster-sum-small-frames.md"
+    },
+    "1404": {
+      "sites": {
+        "core/src/feature/hip/float_motion/float_motion_score.hip": 1,
+        "core/src/feature/hip/float_motion_hip.c": 1,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_twin_option_parity.c": 2,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1
+      },
+      "target": "1404-hip-float-motion-motion3-and-options.md"
     }
   },
   "retired": {

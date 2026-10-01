@@ -56,8 +56,10 @@ VERTICAL_ROUND = re.compile(r"\(\s*sum\s*\+\s*round_y\s*\)\s*>>\s*shift_y")
 HORIZONTAL_ROUND = re.compile(r"\(\s*blurred\s*\+\s*\(\(int64_t\)1 << 15\)\s*\)\s*>>\s*16")
 # The motion tile loader clamps both axes: x and y.
 TILE_AXES = 2
-# float_motion: both axes in each of the 8- and 16-bpc kernels.
-FM_TILE_LOADS = 4
+# float_motion: both axes of the one tile loader its kernels share.
+FM_TILE_LOADS = 2
+# float_motion: motion3 from collect() and from the flush() tail.
+FM_MOTION3_BLEND_EMITS = 2
 
 
 def _sources() -> dict[str, str]:
@@ -275,6 +277,32 @@ def _option_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{PSNR_HOST}: psnr_hip is not temporal like the CPU psnr")
     if not re.search(r"\"VMAF_feature_motion_score\",\s*fm_hip_motion_clip\(", src[FMOTION_HOST]):
         failures.append(f"{FMOTION_HOST}: the debug motion score skips motion_clip")
+    failures += _float_motion_option_failures(src)
+    return failures
+
+
+def _float_motion_option_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1404: motion3 and the CPU float_motion options on float_motion_hip."""
+    failures: list[str] = []
+    host = src[FMOTION_HOST]
+    kernel = src[FMOTION_KERNEL]
+    blend = _function_body(host, "fm_hip_motion_blend_clip")
+    if "motion_blend(score * s->motion_fps_weight, s->motion_blend_factor" not in blend:
+        failures.append(f"{FMOTION_HOST}: motion3 does not blend through motion_blend_tools.h")
+    emits = len(re.findall(r"\"VMAF_feature_motion3_score\",\s*fm_hip_motion_blend_clip\(", host))
+    if emits != FM_MOTION3_BLEND_EMITS:
+        failures.append(f"{FMOTION_HOST}: a motion3 score skips motion_blend_clip")
+    if '"VMAF_feature_motion3_score", 0.0, 0u);' not in _function_body(host, "flush_fex_hip"):
+        failures.append(f"{FMOTION_HOST}: a one-frame run emits no motion3")
+    if "fm_blur_pixel(s_tile, fm_filter(filter_size))" not in kernel:
+        failures.append(f"{FMOTION_KERNEL}: motion_filter_size does not select the blur filter")
+    launch = _function_body(host, "fm_hip_launch_kernels")
+    if "p->wg1 != 0u && compute_sad != 0u" not in launch or "fm_hip_launch_scale1(" not in launch:
+        failures.append(f"{FMOTION_HOST}: motion_add_scale1 does not run the scale-1 SAD kernel")
+    if "c < s->n_planes" not in launch or "s->n_planes = FMH_MAX_PLANES;" not in host:
+        failures.append(f"{FMOTION_HOST}: motion_add_uv does not run the chroma planes")
+    if HOST_WAIT.search(launch):
+        failures.append(f"{FMOTION_HOST}: the frame's kernels wait on the host")
     return failures
 
 
@@ -562,6 +590,58 @@ class HipKernelSourceContractTest(unittest.TestCase):
             "motion_score, index);",
         )
         self.assert_detected(src, "skips motion_clip")
+
+    def test_unblended_float_motion3_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            "fm_hip_motion_blend_clip(s, motion2), index - 1u);",
+            "fm_hip_motion_clip(s, motion2), index - 1u);",
+        )
+        self.assert_detected(src, "a motion3 score skips motion_blend_clip")
+
+    def test_local_float_motion_blend_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            "motion_blend(score * s->motion_fps_weight, s->motion_blend_factor",
+            "fm_local_blend(score * s->motion_fps_weight, s->motion_blend_factor",
+        )
+        self.assert_detected(src, "does not blend through motion_blend_tools.h")
+
+    def test_missing_one_frame_float_motion3_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            '"VMAF_feature_motion3_score", 0.0, 0u);',
+            '"VMAF_feature_motion2_score", 0.0, 0u);',
+        )
+        self.assert_detected(src, "a one-frame run emits no motion3")
+
+    def test_fixed_float_motion_filter_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_KERNEL,
+            "fm_blur_pixel(s_tile, fm_filter(filter_size))",
+            "fm_blur_pixel(s_tile, FM_FILT)",
+        )
+        self.assert_detected(src, "motion_filter_size does not select the blur filter")
+
+    def test_skipped_float_motion_scale1_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            "        if (err == 0 && p->wg1 != 0u && compute_sad != 0u)\n"
+            "            err = fm_hip_launch_scale1(s, p, pstr);\n",
+            "",
+        )
+        self.assert_detected(src, "motion_add_scale1 does not run the scale-1 SAD kernel")
+
+    def test_luma_only_float_motion_add_uv_is_detected(self) -> None:
+        src = _replace(
+            _sources(), FMOTION_HOST, "s->n_planes = FMH_MAX_PLANES;", "s->n_planes = 1u;"
+        )
+        self.assert_detected(src, "motion_add_uv does not run the chroma planes")
 
 
 if __name__ == "__main__":

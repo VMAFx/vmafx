@@ -272,8 +272,10 @@ core/src/feature/hip/          # per-feature kernels
 - **`float_psnr_hip`** — float (ref-dis)² reduction per block. Emits `float_psnr`.
 - **`float_motion_hip`** — temporal extractor. 5×5 separable Gaussian blur +
   per-block float SAD partials, blur ping-pong (`blur[2]`), first-frame
-  `compute_sad=0` short-circuit, motion2 tail emission in `flush()`. Emits
-  `VMAF_feature_motion_score` + `VMAF_feature_motion2_score`.
+  `compute_sad=0` short-circuit, motion2 / motion3 tail emission in `flush()`.
+  Emits `VMAF_feature_motion_score`, `VMAF_feature_motion2_score` and
+  `VMAF_feature_motion3_score`, and takes every CPU `float_motion` option;
+  see [float_motion_hip options](#float_motion_hip-options) below.
 - **`float_moment_hip`** — four uint64 atomic accumulator kernel (ref1st,
   dis1st, ref2nd, dis2nd), warp-64 two-uint32-shuffle reduction. Host divides
   by w×h. Emits four `float_moment_*` features.
@@ -741,8 +743,37 @@ frame under `--subsample`, so the `apsnr_*` totals cover the clip; and
 `VMAF_integer_feature_motion_sad_score` every frame, like the CPU `motion`.
 With `motion_force_zero=true`, `motion_hip` and `float_motion_hip` write the
 CPU's zero scores; before this change both crashed on the first frame.
-`float_motion_hip` does not emit `motion3` yet
-(`T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`).
+
+### float_motion_hip options
+
+`float_motion_hip` emits `motion3` and takes the whole CPU `float_motion`
+option table
+([ADR-1404](../../adr/1404-hip-float-motion-motion3-and-options.md)):
+
+| Option | Where it runs |
+|---|---|
+| `motion_blend_factor` (`mbf`), `motion_blend_offset` (`mbo`) | Host: `motion3` is the CPU's blend of the fps-weighted score, then the `motion_max_val` cap |
+| `motion_filter_size` (`mfs`) | Kernel argument: `3` selects the 3-tap filter, `1` no blur, anything else the 5-tap filter |
+| `motion_add_scale1` (`mdc`) | A second kernel scales both blurred frames to half size with the CPU's bilinear scaler and adds that SAD |
+| `motion_add_uv` (`mau`) | The same kernels run on the U and V planes and the three scores add up; 4:0:0 input is refused |
+
+A frame is still one upload call, one read-back and one wait, whatever the
+options. Measured on a gfx1036 against `--backend cpu` at `--precision max`
+(max abs diff over the Netflix 576x324 pair / 50 frames of a 3840x2160 clip):
+
+| Options | `motion2` | `motion3` |
+|---|---|---|
+| none | 2.78e-6 / 5.71e-6 | 2.78e-6 / 5.71e-6 |
+| `motion_blend_factor=0.5:motion_blend_offset=2` | 2.78e-6 | 1.39e-6 |
+| `motion_filter_size=3` | 2.67e-6 | 3.08e-6 |
+| `motion_add_scale1=true` | 3.17e-6 | 3.17e-6 |
+| `motion_add_uv=true` | 2.56e-6 | 2.56e-6 |
+| `motion_add_uv`, `motion_add_scale1`, `motion_filter_size=3`, `motion_fps_weight=2`, `motion_blend_factor=0.25:motion_blend_offset=3` | 8.07e-6 / 8.45e-6 | 2.02e-6 / 2.11e-6 |
+
+At 3840x2160 a frame takes 11.4 ms with the default options (11.5 ms before
+the change), 14.6 ms with `motion_add_scale1`, 17.3 ms with `motion_add_uv`
+and 25.8 ms with both; the CPU extractor on 16 threads takes 19.1, 61.9, 33.7
+and 75.4 ms.
 
 To confirm on an AMD host, build with HIP in the `vmaf-dev-mcp` container and
 run the device tests, which skip (exit 77) without a device:

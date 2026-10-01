@@ -14,7 +14,10 @@
  *   integer_ssim_hip   enable_db, clip_db
  *   float_ssim_hip     enable_lcs, enable_db, clip_db
  *   float_motion_hip   motion_max_val, and motion_fps_weight on the debug
- *                      `motion` score
+ *                      `motion` score; VMAF_feature_motion3_score with
+ *                      motion_blend_factor / motion_blend_offset,
+ *                      motion_filter_size, motion_add_scale1 and
+ *                      motion_add_uv (ADR-1404)
  *   motion_hip         motion_fps_weight / motion_max_val on the debug
  *                      `motion` score (it used to emit the raw SAD score),
  *                      the CPU's `debug` default (false) and its per-frame
@@ -94,6 +97,10 @@ static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false
 static const Fixture FX_FLAT8 = {VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u, 2u, true, true};
 /* One frame: the temporal twins still emit their frame-0 scores. */
 static const Fixture FX_ONE = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 1u, false, false};
+/* No chroma planes: motion_add_uv has nothing to read. */
+static const Fixture FX_GRAY = {VMAF_PIX_FMT_YUV400P, 8u, 161u, 91u, 3u, false, false};
+/* The smallest frame the 3-tap float_motion filter accepts. */
+static const Fixture FX_2X2 = {VMAF_PIX_FMT_YUV444P, 8u, 2u, 2u, 4u, false, false};
 
 typedef struct Pair {
     VmafContext *cpu;
@@ -366,6 +373,16 @@ static const OptionCase OPTION_CASES[] = {
     {"float_ssim_hip", "float_ssim", "clip_db", "true"},
     {"float_motion_hip", "float_motion", "motion_max_val", "2.5"},
     {"float_motion_hip", "float_motion", "mmxv", "2.5"},
+    {"float_motion_hip", "float_motion", "motion_blend_factor", "0.5"},
+    {"float_motion_hip", "float_motion", "mbf", "0.5"},
+    {"float_motion_hip", "float_motion", "motion_blend_offset", "2"},
+    {"float_motion_hip", "float_motion", "mbo", "2"},
+    {"float_motion_hip", "float_motion", "motion_add_scale1", "true"},
+    {"float_motion_hip", "float_motion", "mdc", "true"},
+    {"float_motion_hip", "float_motion", "motion_filter_size", "3"},
+    {"float_motion_hip", "float_motion", "mfs", "3"},
+    {"float_motion_hip", "float_motion", "motion_add_uv", "true"},
+    {"float_motion_hip", "float_motion", "mau", "true"},
     {"motion_hip", "motion", "motion_max_val", "2.5"},
     {"motion_hip", "motion", "motion_fps_weight", "2"},
     /* same_option() compares the default: the twin's used to be true. */
@@ -439,6 +456,19 @@ static bool sees_every_frame(const VmafFeatureExtractor *fex)
     return (fex->flags & (VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF)) != 0;
 }
 
+/* Whether `twin` provides every feature `cpu` provides. */
+static bool provides_all(const VmafFeatureExtractor *twin, const VmafFeatureExtractor *cpu)
+{
+    for (size_t i = 0; cpu->provided_features[i]; i++) {
+        bool found = false;
+        for (size_t j = 0; twin->provided_features[j] && !found; j++)
+            found = !strcmp(twin->provided_features[j], cpu->provided_features[i]);
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
 static char *test_twins_follow_cpu_flags_and_features(void)
 {
     static const char *const pairs[][2] = {{"psnr_hip", "psnr"},
@@ -452,13 +482,13 @@ static char *test_twins_follow_cpu_flags_and_features(void)
         mu_assert("--subsample would skip frames on the twin but not on the CPU, or back",
                   sees_every_frame(twin) == sees_every_frame(cpu));
     }
-    const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_by_name("motion_hip");
-    const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("motion");
-    for (size_t i = 0; cpu->provided_features[i]; i++) {
-        bool found = false;
-        for (size_t j = 0; twin->provided_features[j] && !found; j++)
-            found = !strcmp(twin->provided_features[j], cpu->provided_features[i]);
-        mu_assert("motion_hip does not provide a feature the CPU motion provides", found);
+    /* The motion twins provide every feature of their CPU extractor:
+     * pairs[1] is motion_hip, pairs[3] float_motion_hip (its motion3). */
+    for (size_t k = 1; k < sizeof(pairs) / sizeof(pairs[0]); k += 2u) {
+        const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_by_name(pairs[k][0]);
+        const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name(pairs[k][1]);
+        mu_assert("a motion twin lacks a feature its CPU extractor provides",
+                  provides_all(twin, cpu));
     }
     return NULL;
 }
@@ -709,9 +739,184 @@ static char *test_float_motion_force_zero(void)
     mu_assert_msg(pair_run(&pair, &FX_MOTION, "float_motion", "float_motion_hip", opts, &ran));
     mu_message_t msg = ran ? expect_all(&pair, "motion2_force_0", FX_MOTION.frames, 0.0) : NULL;
     if (ran && !msg)
+        msg = expect_all(&pair, "motion3_force_0", FX_MOTION.frames, 0.0);
+    if (ran && !msg)
         msg = expect_all(&pair, "motion_force_0", FX_MOTION.frames, 0.0);
     pair_close(&pair);
     return msg;
+}
+
+/* float_motion over `fx` with `opts` on both sides: the three scores, named
+ * with `suffix` (the option part of the feature names, "" for none). */
+static mu_message_t float_motion_scores(const Fixture *fx, const char *const *opts,
+                                        const char *suffix, double tol)
+{
+    static const char *const bases[] = {"motion", "motion2", "motion3"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, "float_motion", "float_motion_hip", opts, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(bases) / sizeof(bases[0]); i++) {
+        char name[2u * NAME_LEN];
+        if (suffix[0] != '\0') {
+            (void)snprintf(name, sizeof(name), "%s_%s", bases[i], suffix);
+        } else {
+            (void)snprintf(name, sizeof(name), "VMAF_feature_%s_score", bases[i]);
+        }
+        msg = expect_close(&pair, name, fx->frames, tol, false);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+/* Largest per-frame difference between two CPU float_motion features, the
+ * second computed with `opts`: how far an option moves a score on FX_MOTION.
+ * Negative on failure. A parity case proves nothing about an option that
+ * leaves the fixture's scores where they were. */
+static double cpu_option_effect(const char *const *opts, const char *plain, const char *with_opts)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *base = NULL;
+    VmafContext *moved = NULL;
+    double effect = -1.0;
+    if (!vmaf_init(&base, cfg) && !vmaf_init(&moved, cfg) &&
+        !use_feature(base, "float_motion", NULL) && !use_feature(moved, "float_motion", opts) &&
+        !feed(base, &FX_MOTION) && !feed(moved, &FX_MOTION)) {
+        effect = 0.0;
+        for (unsigned i = 0; i < FX_MOTION.frames; i++) {
+            double a = 0.0;
+            double b = 0.0;
+            if (vmaf_feature_score_at_index(base, plain, &a, i) ||
+                vmaf_feature_score_at_index(moved, with_opts, &b, i)) {
+                effect = -1.0;
+            } else if (effect >= 0.0 && fabs(a - b) > effect) {
+                effect = fabs(a - b);
+            }
+        }
+    }
+    if (base)
+        (void)vmaf_close(base);
+    if (moved)
+        (void)vmaf_close(moved);
+    return effect;
+}
+
+/* motion3 with the default options, and with a blend whose offset sits in
+ * the middle of the fixture's motion range, so that it bends some frames. */
+static char *test_float_motion_motion3(void)
+{
+    mu_assert_msg(float_motion_scores(&FX_MOTION, NULL, "", TOL_MOTION));
+    mu_assert_msg(float_motion_scores(&FX_ODD10, NULL, "", TOL_MOTION));
+
+    const double offset = motion_midpoint("float_motion", "VMAF_feature_motion2_score");
+    mu_assert("fixture motion does not span a blend offset", offset > 0.0);
+    char value[NAME_LEN];
+    char suffix[NAME_LEN];
+    char motion3[2u * NAME_LEN];
+    (void)snprintf(value, sizeof(value), "%.17g", offset);
+    (void)snprintf(suffix, sizeof(suffix), "mbf_0.25_mbo_%g", offset);
+    (void)snprintf(motion3, sizeof(motion3), "motion3_%s", suffix);
+    const char *const opts[] = {"motion_blend_factor", "0.25", "motion_blend_offset", value, NULL};
+    mu_assert("the blend leaves the fixture's motion3 where it was",
+              cpu_option_effect(opts, "VMAF_feature_motion3_score", motion3) > 100.0 * TOL_MOTION);
+    return float_motion_scores(&FX_MOTION, opts, suffix, TOL_MOTION);
+}
+
+/* One frame: motion2 and motion3 are 0 at index 0, exactly, on both sides. */
+static char *test_float_motion_one_frame(void)
+{
+    static const char *const names[] = {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_ONE, "float_motion", "float_motion_hip", NULL, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_ONE.frames, 0.0);
+    pair_close(&pair);
+    return msg;
+}
+
+/* motion_filter_size: the 3-tap filter and the no-op filter. */
+static char *test_float_motion_filter_size(void)
+{
+    static const char *const three[] = {"motion_filter_size", "3", NULL};
+    static const char *const one[] = {"motion_filter_size", "1", NULL};
+    mu_assert("the 3-tap filter leaves the fixture's motion2 where it was",
+              cpu_option_effect(three, "VMAF_feature_motion2_score", "motion2_mfs_3") >
+                  100.0 * TOL_MOTION);
+    mu_assert_msg(float_motion_scores(&FX_MOTION, three, "mfs_3", TOL_MOTION));
+    mu_assert_msg(float_motion_scores(&FX_MOTION, one, "mfs_1", TOL_MOTION));
+    /* Boundary: 2x2 is the 3-tap minimum (float_motion.c::motion_check_min_dim). */
+    return float_motion_scores(&FX_2X2, three, "mfs_3", TOL_MOTION);
+}
+
+/* motion_add_scale1 and motion_add_uv, each alone and together with every
+ * other option; 4:2:0 with odd luma (ceil chroma) and 10-bit 4:2:2. */
+static char *test_float_motion_scale1_and_uv(void)
+{
+    static const char *const mdc[] = {"motion_add_scale1", "true", NULL};
+    static const char *const mau[] = {"motion_add_uv", "true", NULL};
+    static const char *const all[] = {"motion_add_uv",
+                                      "true",
+                                      "motion_add_scale1",
+                                      "true",
+                                      "motion_filter_size",
+                                      "3",
+                                      "motion_fps_weight",
+                                      "2",
+                                      "motion_blend_factor",
+                                      "0.25",
+                                      "motion_blend_offset",
+                                      "3",
+                                      NULL};
+    mu_assert("scale 1 leaves the fixture's motion2 where it was",
+              cpu_option_effect(mdc, "VMAF_feature_motion2_score", "motion2_mdc") >
+                  100.0 * TOL_MOTION);
+    mu_assert("the chroma planes leave the fixture's motion2 where it was",
+              cpu_option_effect(mau, "VMAF_feature_motion2_score", "motion2_mau") >
+                  100.0 * TOL_MOTION);
+    mu_assert_msg(float_motion_scores(&FX_MOTION, mdc, "mdc", TOL_MOTION));
+    mu_assert_msg(float_motion_scores(&FX_MOTION, mau, "mau", TOL_MOTION));
+    mu_assert_msg(float_motion_scores(&FX_ODD10, mau, "mau", TOL_MOTION));
+    mu_assert_msg(float_motion_scores(&FX_MOTION, all, "mdc_mau_mbf_0.25_mbo_3_mfs_3_mfw_2",
+                                      4.0 * TOL_MOTION));
+    return float_motion_scores(&FX_ODD10, all, "mdc_mau_mbf_0.25_mbo_3_mfs_3_mfw_2",
+                               4.0 * TOL_MOTION);
+}
+
+/* Whether a float_motion run of `fx` with `opts` is refused on both sides.
+ * Sets mu_skipped and returns true when no device exists. */
+static bool float_motion_refused_by_both(const Fixture *fx, const char *const *opts)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *cpu = NULL;
+    Pair pair;
+    memset(&pair, 0, sizeof(pair));
+    if (!open_gpu(&pair)) {
+        pair_close(&pair);
+        mu_skipped = 1;
+        return true;
+    }
+    bool refused = false;
+    if (!vmaf_init(&cpu, cfg) && !use_feature(cpu, "float_motion", opts) &&
+        !use_feature(pair.gpu, "float_motion_hip", opts))
+        refused = feed(cpu, fx) != 0 && feed(pair.gpu, fx) != 0;
+    if (cpu)
+        (void)vmaf_close(cpu);
+    pair_close(&pair);
+    return refused;
+}
+
+/* Negative: motion_add_uv without chroma planes, and a frame below the
+ * default filter's 3x3 minimum, fail on both sides. */
+static char *test_float_motion_refusals(void)
+{
+    static const char *const mau[] = {"motion_add_uv", "true", NULL};
+    mu_assert("motion_add_uv on 4:0:0 must be refused by the CPU and the twin",
+              float_motion_refused_by_both(&FX_GRAY, mau));
+    mu_assert("a 2x2 frame with the 5-tap filter must be refused by the CPU and the twin",
+              float_motion_refused_by_both(&FX_2X2, NULL));
+    return NULL;
 }
 
 /* motion_force_zero on motion_hip through vmaf_read_pictures(): motion2,
@@ -861,6 +1066,17 @@ static char *run_float_motion_tests(void)
     return NULL;
 }
 
+/* motion3 and the options of ADR-1404. */
+static char *run_float_motion_option_tests(void)
+{
+    mu_run_test(test_float_motion_motion3);
+    mu_run_test(test_float_motion_one_frame);
+    mu_run_test(test_float_motion_filter_size);
+    mu_run_test(test_float_motion_scale1_and_uv);
+    mu_run_test(test_float_motion_refusals);
+    return NULL;
+}
+
 static char *run_integer_motion_tests(void)
 {
     mu_run_test(test_integer_motion_force_zero);
@@ -875,6 +1091,7 @@ char *run_tests(void)
     mu_assert_msg(run_table_and_psnr_tests());
     mu_assert_msg(run_ssim_tests());
     mu_assert_msg(run_float_motion_tests());
+    mu_assert_msg(run_float_motion_option_tests());
     mu_assert_msg(run_integer_motion_tests());
     return NULL;
 }

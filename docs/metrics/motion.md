@@ -241,19 +241,23 @@ additional options for chroma channels and a half-resolution scale-1 SAD term.
 | `motion_fps_weight`  | `mfw`     | double | `1.0`     | `0.0–5.0`     | FPS-aware multiplicative correction                                       |
 | `motion_blend_factor`| `mbf`     | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                          |
 | `motion_blend_offset`| `mbo`     | double | `40.0`    | `0.0–1000.0`  | Blend offset for `motion3_score`                                          |
-| `motion_add_scale1`  | —         | bool   | `false`   | —             | Add half-resolution SAD term on top of full-resolution Y-plane SAD        |
-| `motion_add_uv`      | —         | bool   | `false`   | —             | Sum U and V plane SADs into the score (CPU only)                          |
-| `motion_add_uv`      | `mau`     | bool   | `false`   | —             | Sum U and V plane SADs into the score (CPU + SYCL; other GPU backends return -ENOTSUP) |
-| `motion_filter_size` | —         | int    | `5`       | `1, 3, 5`     | Gaussian blur kernel size; `5` = original Motion2, `3` = cheaper variant  |
+| `motion_add_scale1`  | `mdc`     | bool   | `false`   | —             | Add half-resolution SAD term on top of the full-resolution SAD of each plane (CPU and `float_motion_hip`) |
+| `motion_add_uv`      | `mau`     | bool   | `false`   | —             | Sum U and V plane SADs into the score (CPU and `float_motion_hip`)        |
+| `motion_filter_size` | `mfs`     | int    | `5`       | `0–9`         | Blur filter: `3` = 3-tap, `1` = no blur, any other value = the 5-tap Motion2 filter (CPU and `float_motion_hip`) |
 | `motion_max_val`     | `mmxv`    | double | `10000.0` | `0.0–10000.0` | Upper clamp applied to emitted scores                                     |
 
 `motion_add_scale1`, `motion_add_uv`, `motion_filter_size`, and `motion_max_val`
 were ported from Netflix/vmaf commit `b949cebf`. With default settings the output
 is bit-identical to the pre-port baseline on the Y-plane SIMD fast path.
-`motion_add_uv=true` is CPU-only; GPU paths score the Y plane only.
-`motion_add_uv=true` is supported on the SYCL backend (`motion_sycl`, ADR-0989)
-and the CPU `float_motion` extractor; passing it to CUDA, HIP, or Metal
-returns `-ENOTSUP` with a warning until per-backend kernel ports land.
+Among the `float_motion` GPU twins, `float_motion_hip` implements all three
+device options ([ADR-1404](../adr/1404-hip-float-motion-motion3-and-options.md)):
+the filter is a kernel argument, the scale-1 term a second kernel, and
+`motion_add_uv` runs both on the U and V planes. The CUDA, SYCL and Metal
+`float_motion` twins do not declare them, so a request with one of them is
+computed on the CPU
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
+`motion_add_uv` needs a pixel format with chroma planes; 4:0:0 input is
+refused at init.
 
 ### Backend coverage
 
@@ -276,7 +280,11 @@ is the CPU's blend of `motion2` (`motion_fps_weight`, then the
 `motion_blend_factor` / `motion_blend_offset` blend, then the
 `motion_max_val` cap), with frame 0 taken from the first SAD and the last
 frame from the flush, and it takes both blend options (aliases `mbf` /
-`mbo`). The SYCL, HIP and Metal twins emit `motion` and `motion2` only, so a
+`mbo`). `float_motion_hip` does the same and takes the whole CPU option
+table ([ADR-1404](../adr/1404-hip-float-motion-motion3-and-options.md));
+on a gfx1036 its `motion3` is within 2.8e-6 of the CPU on the Netflix
+576x324 pair and 5.7e-6 on a 3840x2160 clip, like its `motion2`. The SYCL
+and Metal twins emit `motion` and `motion2` only, so a
 run on one of them (`--backend sycl --feature float_motion`, say) writes no
 `motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
 [`state.md`](../state.md)). The twins take `debug`, `motion_force_zero` and

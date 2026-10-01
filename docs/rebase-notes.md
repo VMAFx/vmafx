@@ -56174,3 +56174,28 @@ Verification:
 - `scripts/ci/cross_backend_parity_gate.py` and `scripts/ci/cross_backend_vif_diff.py`:
   `FEATURE_METRICS["motion"]` reads default emitted keys `integer_motion2` and
   `integer_motion3` (excluding debug-only `integer_motion`).
+## ADR-1404 — float_motion_hip emits motion3 and implements every CPU float_motion option (2026-10-01)
+
+`feat/hip-float-motion-motion3-options`, ADR-1404.
+
+- `core/src/feature/hip/float_motion/float_motion_score.hip`: the 8-bit and
+  16-bit kernels are one template (`fm_blur_sad<Sample>()` over
+  `fm_load_tile()`, `fm_blur_pixel()`, `fm_block_reduce()`); both entry
+  points take `filter_size` ahead of `compute_sad`. New kernel
+  `float_motion_hip_scale1_sad` (`fm_bilinear()` mirrors
+  `motion.c::motion_bilinear_interp()` with `#pragma clang fp contract(off)`).
+  If upstream Netflix changes `motion_blur_plane()`,
+  `vmaf_image_sad_c()` or `motion_scale_bilinear()`, mirror it here.
+- `core/src/feature/hip/float_motion_hip.c`: the option table is the CPU's
+  (`float_motion.c`), in its order; keep it in step, the order spells the
+  feature names. Per-plane state `FmPlaneHip plane[3]`; `motion3` through
+  `fm_hip_motion_blend_clip()`, which calls `motion_blend()` of
+  `motion_blend_tools.h`. Do not add a second copy of the blend.
+- `core/tools/test/test_vmaf_feature_backend.sh`: on HIP,
+  `float_motion=motion_filter_size=3` now runs the twin; the HIP fallback
+  case is `float_adm=adm_skip_scale0=true`. The other backends keep the
+  `motion_filter_size` fallback case until their twins implement it.
+- Tests: `test_hip_twin_option_parity` (`test_float_motion_motion3`,
+  `_one_frame`, `_filter_size`, `_scale1_and_uv`, `_refusals`), six planted
+  regressions in `test_hip_kernel_source_contract.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
