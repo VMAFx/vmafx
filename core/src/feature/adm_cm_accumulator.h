@@ -34,6 +34,22 @@ adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 }
 
 /**
+ * Apply the denominator rounding shift to one complete row total.
+ *
+ * The denominator reductions (adm_csf_den_scale(), adm_csf_den_s123()) add
+ * the cube terms of a row into an unsigned accumulator and fold the row once.
+ * The same rule as above applies: sum every partial of the row first. A twin
+ * that folds each warp, thread or tile of a row on its own gets a different
+ * accumulator, and on frames with little reference detail a different score
+ * (ADR-1416).
+ */
+static VMAF_ADM_CM_HOST_DEVICE inline uint64_t
+adm_csf_den_round_row_total(uint64_t row_sum, uint32_t add_shift_accum, uint32_t shift_accum)
+{
+    return (row_sum + add_shift_accum) >> shift_accum;
+}
+
+/**
  * Scale-0 masking excess `clamp(|x| - thr * 2^shift, 0, INT32_MAX)`.
  *
  * `thr` is the masking threshold: the 3x3 sum of the filtered neighbours with

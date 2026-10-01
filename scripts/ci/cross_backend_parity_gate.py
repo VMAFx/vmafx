@@ -199,6 +199,8 @@ DEFAULT_FP16_TOLERANCE = 1e-2  # T6-8 FP16 contract (future tiny-AI lane)
 FEATURE_TOLERANCE: dict[str, float] = {
     # Integer pipeline — places=4 (5e-5). ADR-0138 / ADR-0140.
     "vif": 5e-5,
+    # The CPU <-> CUDA cell is exact instead (EXACT_TWINS, ADR-1416) and
+    # never reads this value.
     "adm": 5e-5,
     "motion": 5e-5,
     "motion_debug": 5e-5,

@@ -252,7 +252,8 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_motion`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
 | `speed_chroma` | bit-identical except the frames where glibc misrounds `log2f` (6 of 312 outputs, 1.4e-6) |
 | `ssimulacra2`, `ssim` | 7.3e-11 and 1.1e-11 at most |
-| `adm`, `float_adm` | 2.1e-7 and 1.3e-5 at most |
+| `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |
+| `float_adm` | 1.3e-5 at most |
 | `ciede` | 1.1e-5 |
 | `float_vif` | bit-identical on every frame since [ADR-1412](../../adr/1412-cuda-float-vif-cpu-arithmetic.md) (3.8e-5 before: the kernel's tap table was not the one the CPU computes) |
 

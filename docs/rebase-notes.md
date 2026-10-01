@@ -56814,3 +56814,30 @@ IDs `T-RC2-BENCH-TUNE` and `T-RC3-MODEL-RETRAIN` stay stable (ADR-1303).
 `T-STATE-LEDGER-RC-RELABEL-2026-10-01` relabels them; the section
 "First-release phase classification" states how they read meanwhile. The
 Netflix golden assertions are untouched.
+## ADR-1416 — adm_cuda runs the CPU's host routines and folds the denominator per row (2026-10-01)
+
+`fix/cuda-adm-cpu-arithmetic`, Research-1416, ADR-1416.
+
+- `core/src/feature/cuda/integer_adm_cuda.c` includes
+  `feature/integer_adm_kernels.h` and has no copy of `dwt_quant_step()`,
+  `adm_csf_factors()`, `conclude_adm_cm()` or `conclude_adm_csf_den()`. The
+  CSF weights, the denominator border and shifts and the per-scale scores
+  come from the CPU's `adm_csf_factors()`, `adm_csf_den_ctx_init()` /
+  `i4_adm_csf_den_ctx_init()`, `adm_cm_ctx_init()` / `i4_adm_cm_ctx_init()`
+  and the four `*_result()` routines. If upstream Netflix changes any of
+  them, the twin follows through the header; do not reintroduce a copy.
+  `AdmStateCuda` lost `rfactor[]` and `csf_normalization_shift[]`.
+- `core/src/feature/cuda/integer_adm/adm_csf_den.cu` is rewritten: kernels
+  `adm_csf_den_scale_row_kernel` and `adm_csf_den_s123_row_kernel` (the
+  `_line_kernel_8_128` names are gone), one block of 128 threads per row and
+  band, one fold per row, shifts as arguments.
+- `core/src/feature/adm_cm_accumulator.h`: new
+  `adm_csf_den_round_row_total()`; `integer_adm_kernels.h::adm_csf_den_fold()`
+  calls it (same arithmetic, CPU scores unchanged). A twin that folds a
+  denominator row must call it on the whole row.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["adm"] = {"cuda"}`.
+  On a conflict with another twin's entry keep both.
+- `core/test/test_cuda_adm_parity.c` is rewritten around exact cases
+  (textured, sparse, 962x13542, 10-bit, options).
+- `adm_cm.cu`, the HIP, SYCL and Metal twins and every Netflix golden
+  assertion are untouched. No public C API or FFmpeg patch impact.

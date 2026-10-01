@@ -1258,7 +1258,6 @@
         "core/src/feature/sycl/sycl_exact_fp.h": 1,
         "core/src/feature/vif_tools.c": 1,
         "core/test/meson.build": 13,
-        "core/test/test_cuda_adm_parity.c": 1,
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_cuda_float_adm_parity.c": 2,
         "core/test/test_cuda_float_moment_parity.c": 1,
@@ -8580,6 +8579,21 @@
         "core/test/test_ssim_x86_simd.c": 1
       },
       "target": "1415-x86-simd-libraries-strict-fp.md"
+    },
+    "1416": {
+      "sites": {
+        "core/src/feature/adm_cm_accumulator.h": 1,
+        "core/src/feature/cuda/integer_adm/adm_csf_den.cu": 1,
+        "core/src/feature/cuda/integer_adm_cuda.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_adm_cm_row_rounding.c": 2,
+        "core/test/test_cuda_adm_exact_contract.py": 6,
+        "core/test/test_cuda_adm_parity.c": 6,
+        "scripts/ci/cross_backend_calibration.py": 1,
+        "scripts/ci/cross_backend_parity_gate.py": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 1
+      },
+      "target": "1416-cuda-adm-cpu-row-rounding.md"
     },
     "1417": {
       "sites": {

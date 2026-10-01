@@ -230,6 +230,19 @@ test('test_cuda_float_vif_exact_contract',
     timeout : 30,
 )
 
+# ADR-1416: adm_cuda returns the CPU's scores bit for bit -- the CSF weights,
+# the rounding shifts and the float conclusion are the CPU's routines
+# (integer_adm_kernels.h), and the denominator is folded once per row.
+# Device-free; the fold itself is test_adm_cm_row_rounding, the device check
+# is test_cuda_adm_parity.
+test('test_cuda_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.

@@ -534,8 +534,10 @@ absolute. Both gates compare metrics through `metric_delta()`: JSON
 mismatch. Keep both helpers in `cross_backend_calibration.py`, the
 module both gates import; tests in `test_cross_backend_parity_gate.py`.
 
-**Exact twins (ADR-1397, ADR-1401, ADR-1409, ADR-1411, ADR-1412).** `EXACT_TWINS` in
-`cross_backend_calibration.py` (`psnr_hvs`: `cuda`, `sycl`, `hip`;
+`adm`: `cuda` is in `EXACT_TWINS` too (ADR-1416; `adm_hip` places=4).
+
+**Exact twins (ADR-1397, ADR-1401, ADR-1409, ADR-1411, ADR-1412, ADR-1416).** `EXACT_TWINS` in
+`cross_backend_calibration.py` (`adm`: `cuda`; `psnr_hvs`: `cuda`, `sycl`, `hip`;
 `float_motion`: `cuda`, `sycl`; `float_vif`: `cuda`) = twins returning the CPU extractor's bits. Cell
 with both sides `cpu` or a listed twin (`is_exact_pair`) -> tolerance 0,
 source `exact:ADR-1397`, both runs get `--precision max` (default `%.6f`

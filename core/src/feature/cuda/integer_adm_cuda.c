@@ -36,6 +36,10 @@
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
+/* The CPU extractor's contexts and result routines: the CSF weights, the
+ * border, every rounding shift and the float conclusion of a scale come from
+ * here, not from a copy (ADR-1416). */
+#include "feature/integer_adm_kernels.h"
 #include "feature/nonfinite_score.h"
 #include "drain_batch.h"
 #include "picture_cuda.h"
@@ -71,12 +75,10 @@ typedef struct AdmStateCuda {
     double adm_csf_diag_scale;
     double adm_noise_weight;
     double adm_p_norm;
-    double adm_min_val;    /* ADR-0487: minimum score floor (mirrors CPU option). */
-    bool adm_skip_scale0;  /* host-side suppression: scale-0 excluded from score when set */
-    bool adm_skip_aim;     /* skip AIM CM computation when true (ADR-0746) */
-    double adm_dlm_weight; /* DLM/AIM blend: 1=DLM-only, 0=AIM-only (ADR-0746) */
-    float rfactor[12];
-    uint32_t csf_normalization_shift[4];
+    double adm_min_val;          /* ADR-0487: minimum score floor (mirrors CPU option). */
+    bool adm_skip_scale0;        /* host-side suppression: scale-0 excluded from score when set */
+    bool adm_skip_aim;           /* skip AIM CM computation when true (ADR-0746) */
+    double adm_dlm_weight;       /* DLM/AIM blend: 1=DLM-only, 0=AIM-only (ADR-0746) */
     unsigned submit_w, submit_h; // stored by submit for collect
     void (*dwt2_8)(const uint8_t *src, const cuda_adm_dwt_band_t *dst, void *tmp_buf,
                    AdmBufferCuda *buf, int w, int h, int src_stride, int dst_stride,
@@ -96,7 +98,7 @@ typedef struct AdmStateCuda {
         // adm_csf kernel
         func_i4_adm_csf_kernel_1_4, func_adm_csf_kernel_1_4,
         // adm_csf_den kernel
-        func_adm_csf_den_scale_line_kernel, func_adm_csf_den_s123_line_kernel,
+        func_adm_csf_den_scale_row_kernel, func_adm_csf_den_s123_row_kernel,
         // adm_cm kernel
         /* func_adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
         func_adm_cm_line_kernel_8, func_i4_adm_cm_line_kernel_fused,
@@ -132,56 +134,6 @@ typedef struct AdmStateCuda {
 static inline void *adm_device_ptr(CUdeviceptr dptr)
 {
     return (void *)dptr; // NOLINT(performance-no-int-to-ptr): Driver API device address (ADR-0747)
-}
-
-/*
- * lambda = 0 (finest scale), 1, 2, 3 (coarsest scale);
- * theta = 0 (ll), 1 (lh - vertical), 2 (hh - diagonal), 3(hl - horizontal).
- */
-static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
-                                   double adm_norm_view_dist, int adm_ref_display_height)
-{
-    // Formula (1), page 1165 - display visual resolution (DVR), in pixels/degree of visual angle. This should be 56.55
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
-
-    // Formula (9), page 1171
-    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
-    float Q = 2.0 * params->a * pow(10.0, params->k * temp * temp) /
-              dwt_7_9_basis_function_amplitudes[lambda][theta];
-
-    return Q;
-}
-
-typedef struct AdmCsfFactors {
-    float factor1; /* horizontal and vertical bands */
-    float factor2; /* diagonal band */
-} AdmCsfFactors;
-
-static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
-                                     int adm_ref_display_height, int adm_csf_mode,
-                                     double adm_csf_scale, double adm_csf_diag_scale)
-{
-    AdmCsfFactors f;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        f.factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
-                               DEFAULT_ADM_CSF_LUM, adm_csf_scale);
-        f.factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
-                               DEFAULT_ADM_CSF_LUM, adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        f.factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        f.factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        f.factor1 =
-            barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        f.factor2 =
-            barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        f.factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                          adm_ref_display_height);
-        f.factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                          adm_ref_display_height);
-    }
-    return f;
 }
 
 /**
@@ -411,69 +363,49 @@ static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int
     return 0;
 }
 
+/* Launch geometry of the denominator kernels: one block per row of the border
+ * region and band. */
+#define ADM_CSF_DEN_THREADS 128
+
 static int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
                                    int src_stride, CudaFunctions *cu_f, CUstream c_stream)
 {
-    /* The computation of the denominator scales is not required for the regions
-     * which lie outside the frame borders
-     */
+    /* The CPU's context: the border and every rounding shift of
+     * adm_csf_den_s123(). */
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    const int rows = c.b.bottom - c.b.top;
+    if (rows <= 0 || c.b.right <= c.b.left)
+        return 0;
 
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int right = w - left;
-    int bottom = h - top;
-
-    int buffer_stride = right - left;
-    int buffer_h = bottom - top;
-
-    int val_per_thread = 8;
-    int warps_per_cta = 4;
-    int BLOCKX = VMAF_CUDA_THREADS_PER_WARP * warps_per_cta;
-
-    uint32_t shift_sq[3] = {31, 30, 31};
-    uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};
-
-    void *args[] = {&buf->i4_ref_dwt2,
-                    &h,
-                    &top,
-                    &bottom,
-                    &left,
-                    &right,
-                    &src_stride,
-                    &add_shift_sq[scale - 1],
-                    &shift_sq[scale - 1],
-                    (void *)&buf->adm_csf_den[scale]};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_den_s123_line_kernel,
-                                           DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread),
-                                           buffer_h, 3, BLOCKX, 1, 1, 0, c_stream, args, NULL));
+    void *args[] = {&buf->i4_ref_dwt2,  &c.b.top,         &c.b.left,
+                    &c.b.right,         &src_stride,      &c.add_shift_sq,
+                    &c.shift_sq,        &c.add_shift_cub, &c.shift_cub,
+                    &c.add_shift_accum, &c.shift_accum,   (void *)&buf->adm_csf_den[scale]};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_den_s123_row_kernel, 1, (unsigned)rows,
+                                           3, ADM_CSF_DEN_THREADS, 1, 1, 0, c_stream, args, NULL));
     return 0;
 }
 
 static int adm_csf_den_scale_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h,
                                     int src_stride, CudaFunctions *cu_f, CUstream c_stream)
 {
-    /* The computation of the denominator scales is not required for the regions
-     * which lie outside the frame borders
-     */
-    int scale = 0;
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int right = w - left;
-    int bottom = h - top;
+    /* The CPU's context: the border and the rounding shift of
+     * adm_csf_den_scale(). */
+    AdmDenCtx c;
+    adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                         s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    const int rows = c.b.bottom - c.b.top;
+    if (rows <= 0 || c.b.right <= c.b.left)
+        return 0;
+    uint32_t add_shift_accum = (uint32_t)c.add_shift_accum;
+    uint32_t shift_accum = (uint32_t)c.shift_accum;
 
-    int buffer_stride = right - left;
-    int buffer_h = bottom - top;
-
-    int val_per_thread = 8;
-    int warps_per_cta = 4;
-
-    const int BLOCKX = VMAF_CUDA_THREADS_PER_WARP * warps_per_cta;
-
-    void *args[] = {&buf->ref_dwt2, &h,     &top,        &bottom,
-                    &left,          &right, &src_stride, (void *)&buf->adm_csf_den[scale]};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_den_scale_line_kernel,
-                                           DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread),
-                                           buffer_h, 3, BLOCKX, 1, 1, 0, c_stream, args, NULL));
+    void *args[] = {&buf->ref_dwt2, &c.b.top,         &c.b.left,    &c.b.right,
+                    &src_stride,    &add_shift_accum, &shift_accum, (void *)&buf->adm_csf_den[0]};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_den_scale_row_kernel, 1, (unsigned)rows,
+                                           3, ADM_CSF_DEN_THREADS, 1, 1, 0, c_stream, args, NULL));
     return 0;
 }
 
@@ -740,71 +672,44 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     return 0;
 }
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale,
-                            uint32_t normalization_shift, float noise_weight, double p_norm,
-                            float *result)
+/* The numerator of one scale from its three band accumulators: the CPU's
+ * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
+ * initialisers only take addresses inside the buffer they are given, so an
+ * empty one stands in for the host planes this twin does not have. */
+static float adm_cm_scale_result(const AdmStateCuda *s, const int64_t accum[3], int w, int h,
+                                 int scale, double noise_weight)
 {
-    int left = w * ADM_BORDER_FACTOR - 0.5;
-    int top = h * ADM_BORDER_FACTOR - 0.5;
-    int right = w - left;
-    int bottom = h - top;
-    const int shift_inner_accum = (int)ceil(log2(h));
-
-    // scale 0
-    const int shift_xcub[3] = {(int)ceil(log2(w) - 4), (int)ceil(log2(w) - 4),
-                               (int)ceil(log2(w) - 3)};
-    const int constant_offset[3] = {52, 52, 57};
-    const int restored_bits = 3 * (int)normalization_shift;
-
-    // scale 123
-    const int shift_cub = (int)ceil(log2(w));
-    const float final_shift[3] = {powf(2, (45 - restored_bits - shift_cub - shift_inner_accum)),
-                                  powf(2, (39 - restored_bits - shift_cub - shift_inner_accum)),
-                                  powf(2, (36 - restored_bits - shift_cub - shift_inner_accum))};
-    const float p_norm_exp = 1.0f / (float)p_norm;
-    float powf_add = powf((float)((bottom - top) * (right - left)) * noise_weight, p_norm_exp);
-
-    float f_accum;
-    *result = 0;
-    for (int i = 0; i < 3; ++i) {
-        if (scale == 0) {
-            f_accum = (float)(accum[i] / pow(2, (constant_offset[i] - restored_bits -
-                                                 shift_xcub[i] - shift_inner_accum)));
-        } else {
-            f_accum = (float)(accum[i] / final_shift[scale - 1]);
-        }
-        *result += powf(f_accum, p_norm_exp) + powf_add;
+    AdmBuffer no_planes;
+    memset(&no_planes, 0, sizeof(no_planes));
+    const AdmCmBounds bd = adm_cm_bounds(w, h);
+    if (scale == 0) {
+        AdmCmCtx c;
+        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist,
+                        s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                        s->adm_csf_diag_scale, false);
+        return adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
     }
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,
+                       s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                       s->adm_csf_diag_scale, false);
+    return i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
 }
 
-static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, float *result,
-                                 const float rfactor[3], float noise_weight)
+/* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
+static float adm_csf_den_scale_result(const AdmStateCuda *s, const uint64_t accum[3], int w, int h,
+                                      int scale)
 {
-    const int left = w * ADM_BORDER_FACTOR - 0.5;
-    const int top = h * ADM_BORDER_FACTOR - 0.5;
-    const int right = w - left;
-    const int bottom = h - top;
-    const uint32_t accum_convert_float[4] = {18, 32, 27, 23};
-
-    int32_t shift_accum;
-    double shift_csf;
     if (scale == 0) {
-        shift_accum = (int32_t)ceil(log2((bottom - top) * (right - left)) - 20);
-        shift_accum = shift_accum > 0 ? shift_accum : 0;
-        shift_csf = pow(2, (accum_convert_float[scale] - shift_accum));
-    } else {
-        shift_accum = (int32_t)ceil(log2(bottom - top));
-        const uint32_t shift_cub = (uint32_t)ceil(log2(right - left));
-        shift_csf = pow(2, (accum_convert_float[scale] - shift_accum - shift_cub));
+        AdmDenCtx c;
+        adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                             s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        return adm_csf_den_result(&c, accum, s->adm_noise_weight);
     }
-    const float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
-
-    *result = 0;
-    for (int i = 0; i < 3; ++i) {
-        const double csf = (double)(accum[i] / shift_csf) * pow(rfactor[i], 3);
-        *result += powf(csf, 1.0f / 3.0f) + powf_add;
-    }
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    return i4_adm_csf_den_result(&c, accum, s->adm_noise_weight);
 }
 
 static const VmafOption options_cuda[] = {
@@ -966,33 +871,29 @@ static void adm_dlm_terms(const AdmStateCuda *s, unsigned w, unsigned h, AdmDlmT
 
     t->num = 0;
     t->den = 0;
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const size_t slot = (size_t)scale * 3;
-        float num_scale;
-        float den_scale;
+    for (size_t scale = 0; scale < 4u; ++scale) {
+        const size_t slot = scale * 3u;
 
         w = (w + 1) / 2;
         h = (h + 1) / 2;
 
-        conclude_adm_cm(&adm_cm[slot], h, w, scale, s->csf_normalization_shift[scale],
-                        (float)s->adm_noise_weight, s->adm_p_norm, &num_scale);
-        conclude_adm_csf_den(&adm_csf[slot], h, w, scale, &den_scale, &s->rfactor[slot],
-                             (float)s->adm_noise_weight);
-
-        /* adm_skip_scale0: exclude scale 0 from the overall num/den accumulation,
-         * mirroring the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
-         * The GPU kernel still computes scale 0; suppression is host-side only. */
-        if (scale == 0u && s->adm_skip_scale0) {
-            t->scores[0] = 0.0;
-            t->scores[1] = 1e-10;
-            continue;
+        /* adm_skip_scale0: integer_adm_scale0() leaves the numerator at 0 and
+         * seeds the denominator with 1e-10 narrowed to float; both still enter
+         * the sums and the per-scale outputs. The kernels compute scale 0
+         * regardless; the suppression is host-side only. */
+        float num_scale = 0.0f;
+        float den_scale = (float)1e-10;
+        if (scale != 0u || !s->adm_skip_scale0) {
+            num_scale = adm_cm_scale_result(s, &adm_cm[slot], (int)w, (int)h, (int)scale,
+                                            s->adm_noise_weight);
+            den_scale = adm_csf_den_scale_result(s, &adm_csf[slot], (int)w, (int)h, (int)scale);
         }
 
         t->num += num_scale;
         t->den += den_scale;
 
-        t->scores[2 * scale + 0] = num_scale;
-        t->scores[2 * scale + 1] = den_scale;
+        t->scores[2u * scale] = num_scale;
+        t->scores[2u * scale + 1u] = den_scale;
     }
 }
 
@@ -1007,10 +908,9 @@ static double adm_aim_num(const AdmStateCuda *s, unsigned w, unsigned h)
     for (unsigned scale = 0; scale < 4; ++scale) {
         w = (w + 1) / 2;
         h = (h + 1) / 2;
-        float aim_num_scale = 0.0f;
-        conclude_adm_cm(&adm_aim_cm[(size_t)scale * 3], h, w, scale,
-                        s->csf_normalization_shift[scale], 0.0f /* noise_weight = 0 for AIM */,
-                        s->adm_p_norm, &aim_num_scale);
+        /* noise_weight = 0 for AIM, as integer_adm.c passes it. */
+        const float aim_num_scale =
+            adm_cm_scale_result(s, &adm_aim_cm[(size_t)scale * 3], (int)w, (int)h, (int)scale, 0.0);
         if (scale == 0u && s->adm_skip_scale0) {
             continue;
         }
@@ -1105,9 +1005,11 @@ static int write_scores(write_score_parameters_adm *params)
     return emit_adm_scores(params, &t, score, score_aim, score_adm3, scale_scores);
 }
 
-/* Fixed-point kernel parameters of one frame. Also caches the float CSF
- * weights in s->rfactor for the host-side score conclusion. */
-static AdmFixedParametersCuda adm_fixed_parameters(AdmStateCuda *s, int w, int h,
+/* Fixed-point kernel parameters of one frame. The CSF weights are the CPU's
+ * adm_csf_factors() (integer_adm_kernels.h), converted by the shared
+ * adm_csf_fixed_scale(); the host conclusion derives them again through the
+ * CPU's context initialisers, so nothing is cached here. */
+static AdmFixedParametersCuda adm_fixed_parameters(const AdmStateCuda *s, int w, int h,
                                                    double adm_enhn_gain_limit,
                                                    double adm_norm_view_dist,
                                                    int adm_ref_display_height)
@@ -1142,9 +1044,7 @@ static AdmFixedParametersCuda adm_fixed_parameters(AdmStateCuda *s, int w, int h
             p.i_rfactor[slot + 1] = (uint32_t)fixed[1];
             p.i_rfactor[slot + 2] = (uint32_t)fixed[2];
         }
-        s->csf_normalization_shift[scale] = normalization_shift;
     }
-    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
     return p;
 }
 
@@ -1537,12 +1437,12 @@ static int adm_cuda_get_csf_functions(CudaFunctions *cu_f, AdmStateCuda *s)
     CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
                                                 "i4_adm_csf_kernel_1_4"));
 
-    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
-                                                s->adm_csf_den_module,
-                                                "adm_csf_den_scale_line_kernel_8_128"));
-    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
-                                                s->adm_csf_den_module,
-                                                "adm_csf_den_s123_line_kernel_8_128"));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuModuleGetFunction(&s->func_adm_csf_den_scale_row_kernel,
+                                          s->adm_csf_den_module, "adm_csf_den_scale_row_kernel"));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuModuleGetFunction(&s->func_adm_csf_den_s123_row_kernel,
+                                          s->adm_csf_den_module, "adm_csf_den_s123_row_kernel"));
     return 0;
 }
 

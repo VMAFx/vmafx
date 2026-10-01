@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1149,
+  "total_warnings": 1110,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -468,7 +468,6 @@
     "core/test/test_ciede.c": 11,
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
-    "core/test/test_cuda_adm_parity.c": 39,
     "core/test/test_cuda_arch_floor.c": 5,
     "core/test/test_cuda_buffer_alloc_oom.c": 6,
     "core/test/test_cuda_ciede_parity.c": 18,
@@ -886,6 +885,23 @@
         }
       },
       "previous_baseline_sha256": "caf21f0a2ea690b4a9360daa0d6c26ec802e8d84e0a1ed646595d6ea7a28ef1f"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_adm_cuda.c",
+        "core/test/test_adm_cm_row_rounding.c",
+        "core/test/test_cuda_adm_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_cuda_adm_parity.c": {
+          "warnings": [
+            39,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "789b06af89c25c287baafad10d88bc80f0df1a8911a6aa7b0d475cb4ceb6fb06"
     }
   ]
 }

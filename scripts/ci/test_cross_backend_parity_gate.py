@@ -870,6 +870,7 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
+        "adm": frozenset({"cuda"}),
         "float_motion": frozenset({"cuda", "sycl"}),
         "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
         "float_vif": frozenset({"cuda"}),
@@ -887,6 +888,28 @@ def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     for backend in _EXACT_PSNR_HVS:
         assert not is_exact_pair("vif", "cpu", backend), backend
         assert not is_exact_pair("ciede", "cpu", backend), backend
+
+
+def test_adm_cuda_cell_is_exact_and_other_twins_are_not() -> None:
+    """ADR-1416: only the CUDA twin runs the CPU's ADM host routines."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "adm",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "hip")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["adm"]), pair
+        assert source == "default", pair
 
 
 def test_psnr_hvs_exact_cells_are_exact_at_every_size() -> None:

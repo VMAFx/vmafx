@@ -1526,6 +1526,7 @@ nav:
         - "ADR-1412: cuda-float-vif-cpu-arithmetic": adr/1412-cuda-float-vif-cpu-arithmetic.md
         - "ADR-1413: adm-gain-limit-truncated-double-product": adr/1413-adm-gain-limit-truncated-double-product.md
         - "ADR-1415: x86-simd-libraries-strict-fp": adr/1415-x86-simd-libraries-strict-fp.md
+        - "ADR-1416: cuda-adm-cpu-row-rounding": adr/1416-cuda-adm-cpu-row-rounding.md
         - "ADR-1417: integer-aim-unclipped-upstream-parity": adr/1417-integer-aim-unclipped-upstream-parity.md
         - "ADR-1418: motion-parity-gate-metric-alignment": adr/1418-motion-parity-gate-metric-alignment.md
         - "ADR-1421: rc3-rc8-candidate-map": adr/1421-rc3-rc8-candidate-map.md

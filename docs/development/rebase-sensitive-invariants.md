@@ -292,6 +292,22 @@ linked AGENTS.md before resolving conflicts.
   "fix/adm-decouple-fractional-gain-truncation" entry of
   [rebase-notes](../rebase-notes.md).
 
+- **`adm_cuda` returns the CPU's scores bit for bit ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md))**:
+  `core/src/feature/cuda/integer_adm_cuda.c` includes
+  `core/src/feature/integer_adm_kernels.h` and takes its CSF weights
+  (`adm_csf_factors()`), its denominator border and shifts
+  (`adm_csf_den_ctx_init()`, `i4_adm_csf_den_ctx_init()`) and its per-scale
+  scores (`adm_cm_result()`, `adm_csf_den_result()` and their `i4_` forms)
+  from it; it defines none of them itself. `integer_adm/adm_csf_den.cu` folds
+  one whole row per block through `adm_csf_den_round_row_total()`
+  (`adm_cm_accumulator.h`), with the shifts as kernel arguments. A change to
+  those CPU routines reaches the twin through the header; a change to how
+  the CPU folds a denominator row changes that kernel in the same PR.
+  `core/test/test_cuda_adm_exact_contract.py` and `test_adm_cm_row_rounding`
+  guard it without a device, `test_cuda_adm_parity` on one; the parity gate
+  compares the twin with tolerance 0 (`EXACT_TWINS`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **SYCL integer ADM AIM pass ([ADR-1362](../adr/1362-sycl-integer-adm-aim-device-pass.md))**:
   `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises every
   ADM output in the CPU's float arithmetic (bit-exact with the CPU).

@@ -3,7 +3,8 @@
  *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Raw-accumulator coverage for
- *  T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19.
+ *  T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19 and, for the
+ *  denominator fold, ADR-1416.
  */
 
 #include <stdint.h>
@@ -74,12 +75,46 @@ static char *test_signed_rounding_term_preserves_cuda_i4_semantics(void)
     return NULL;
 }
 
+/* The denominator fold, ADR-1416. A row whose four warps each hold 25 with a
+ * seven-bit shift: the row folds to (100 + 64) >> 7 == 1, while folding each
+ * warp gives 4 * ((25 + 64) >> 7) == 0. A denominator accumulator of small
+ * integers is what a frame with little reference detail produces, and its
+ * cube root is the score's denominator. */
+static char *test_denominator_row_rounding_is_observable(void)
+{
+    const uint64_t warp_total = 25u;
+    const uint64_t warps = 4u;
+    const uint32_t rounding = 64u;
+    const uint32_t shift = 7u;
+    const uint64_t per_row = adm_csf_den_round_row_total(warps * warp_total, rounding, shift);
+    const uint64_t per_warp = warps * adm_csf_den_round_row_total(warp_total, rounding, shift);
+
+    mu_assert("the row fold must produce the worked accumulator value", per_row == 1u);
+    mu_assert("the per-warp control must produce its worked value", per_warp == 0u);
+    mu_assert("folding each warp of a row must be distinguishable from folding the row",
+              per_row != per_warp);
+    return NULL;
+}
+
+static char *test_denominator_zero_shift_keeps_the_row_total(void)
+{
+    mu_assert("a zero-bit denominator fold must preserve the raw row total",
+              adm_csf_den_round_row_total(17u, 0u, 0u) == 17u);
+    /* The scale-0 accumulator may exceed 2^63 before its shift: unsigned. */
+    mu_assert("the denominator fold must stay unsigned above 2^63",
+              adm_csf_den_round_row_total(UINT64_C(0xC000000000000000), 1u, 1u) ==
+                  UINT64_C(0x6000000000000000));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_row_rounding_is_observable_before_float_conversion);
     mu_run_test(test_zero_shift_keeps_the_raw_row_total);
     mu_run_test(test_rounding_bias_is_observable_on_the_raw_total);
     mu_run_test(test_signed_rounding_term_preserves_cuda_i4_semantics);
+    mu_run_test(test_denominator_row_rounding_is_observable);
+    mu_run_test(test_denominator_zero_shift_keeps_the_row_total);
     return NULL;
 }
 

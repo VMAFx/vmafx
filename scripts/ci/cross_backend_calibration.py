@@ -100,6 +100,10 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # ---------------------------------------------------------------------------
 
 EXACT_TWINS: dict[str, frozenset[str]] = {
+    # ADR-1416: ``adm_cuda`` takes its CSF weights, rounding shifts and score
+    # conclusion from the CPU's routines (``integer_adm_kernels.h``) and folds
+    # the denominator once per row. The other ``adm`` twins keep places=4.
+    "adm": frozenset({"cuda"}),
     "float_motion": frozenset({"cuda", "sycl"}),
     "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
     # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,

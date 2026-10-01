@@ -665,7 +665,7 @@ static inline void adm_csf_den_fold(uint64_t inner[3], uint64_t accum[3], uint32
                                     uint32_t shift_accum)
 {
     for (int k = 0; k < 3; ++k) {
-        accum[k] += (inner[k] + add_shift_accum) >> shift_accum;
+        accum[k] += adm_csf_den_round_row_total(inner[k], add_shift_accum, shift_accum);
         inner[k] = 0;
     }
 }

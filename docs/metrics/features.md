@@ -637,6 +637,42 @@ vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
      --cpumask 4294967295
 ```
 
+##### `adm` on CUDA returns the CPU's values
+
+`adm_cuda` gives the same number as `--backend cpu --feature adm` for every
+output of every frame, down to the last bit of the `--precision max` output
+([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)). Its CSF weights, its
+rounding shifts and the conversion of the integer sums into scores are the
+CPU extractor's own routines, and its denominator is rounded once per row as
+on the CPU. Measured on an RTX 4090 on the Netflix 576x324 pair at 8, 10, 12
+and 16 bits, both 1920x1080 checkerboard pairs and 3840x2160, with
+`debug=true` and with every option the extractor has.
+
+What this means when you use it:
+
+- You can mix CPU and CUDA `adm` results in one data set. Before ADR-1416
+  the CUDA twin was up to 2.1e-7 from the CPU; `adm_cuda` outputs stored
+  before it differ from new ones by that much.
+- On a few unusual frame sizes the old twin was wrong, not merely imprecise:
+  where the scale-0 region inside the ADM border has an area just above a
+  power of two (81 areas up to 2^26, for example 962x13542), it reported
+  `integer_adm_scale0` up to 0.12 too low (0.860 instead of 0.979) and
+  `adm2` 0.014 too low. Re-score such material.
+- With `adm_skip_scale0=true` the debug output `integer_adm_den_scale0` is
+  now the CPU's `1.00000001335e-10` and it is part of `integer_adm_den`.
+- The SYCL twin is bit-identical as well (ADR-1362). The HIP and Metal twins
+  agree with the CPU to four decimal places.
+
+Check it on your own device:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend cuda \
+     --vmaf "$PWD/build/tools/vmaf" --feature adm
+```
+
+It prints, per output, how many frames are bit-identical and the largest
+difference, and exits 0 only when every frame is.
+
 ##### Fixed-point CSF limits
 
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:

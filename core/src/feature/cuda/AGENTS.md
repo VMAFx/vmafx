@@ -337,6 +337,31 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   include reintroduces 2-member `enum ADM_CSF_MODE` from
   `adm_options.h`, causes redeclaration error.
 
+- **`adm_cuda` = CPU bits** (ADR-1416, `EXACT_TWINS`). Host arithmetic =
+  CPU routines of `feature/integer_adm_kernels.h`, never a copy:
+  `adm_csf_factors()` (weights; old copy multiplied the exponent in
+  `float`, CPU in `double` -> 1-3 ulp, 2.1e-7 in scores),
+  `adm_csf_den_ctx_init()` / `i4_adm_csf_den_ctx_init()` (border + every
+  denominator shift, passed to the kernel), `adm_cm_ctx_init()` /
+  `i4_adm_cm_ctx_init()` on an empty `AdmBuffer` + `adm_cm_result()` /
+  `i4_adm_cm_result()` / `adm_csf_den_result()` / `i4_adm_csf_den_result()`
+  (scores). No `dwt_quant_step()`, `adm_csf_factors()`, `conclude_adm_*()`
+  definition in `integer_adm_cuda.c`. `adm_skip_scale0`: numerator 0,
+  denominator `(float)1e-10`, BOTH added to frame sums like
+  `integer_adm_scale0()`.
+  `adm_csf_den.cu`: one block per row + band (`grid = 1 x rows x 3`,
+  128 threads), block reduce, ONE fold per row through
+  `adm_csf_den_round_row_total()` (`adm_cm_accumulator.h`, also the CPU's
+  fold). Never fold per warp / thread / block-of-columns: accumulator
+  differs, score differs on low-detail frames (6.6e-7). No logarithm in that
+  file: fp32 `__log2f(area) - 20` is off by one for 81 areas just above a
+  power of two (962x13542: `adm_scale0` 0.860 vs 0.979).
+  `adm_cm.cu` device shifts `ceil(log2(w|h))` take integer extents: equal to
+  CPU for 1..131071, leave as is.
+  Guards: `test_cuda_adm_parity` (`==`, 9 exact cases),
+  `test_adm_cm_row_rounding`, `test_cuda_adm_exact_contract.py`,
+  `test_adm_cm_row_rounding_contract.py`.
+
 - **`integer_adm_cuda.c` / `float_adm_cuda.c` expose three ADM
   tuning parameters** (`adm_csf_scale`, `adm_csf_diag_scale`,
   `noise_weight`) with same defaults as CPU path (PR #731).

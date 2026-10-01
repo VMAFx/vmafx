@@ -28,6 +28,7 @@ explicitly accepts its skip.
   |---|---:|---|
   | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
+  | `adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1416 (the twin runs the CPU's host routines and folds the denominator per row); the `5e-5` row stays for the other twins |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
@@ -67,7 +68,10 @@ explicitly accepts its skip.
   Metal is not a gate backend), so no `psnr_hvs` cell of the matrix uses it;
   it stays for a caller that names no backends and for a twin added later.
 
-- **Exact twins.** `psnr_hvs_cuda`, `psnr_hvs_sycl` and
+- **Exact twins.** `adm_cuda` takes its CSF weights, rounding shifts and
+  score conclusion from the CPU's own routines and folds the denominator once
+  per row ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)).
+  `psnr_hvs_cuda`, `psnr_hvs_sycl` and
   `psnr_hvs_hip` store every term the CPU sums and the host adds them in the
   CPU's order, so their scores are the CPU's bit for bit
   ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) for CUDA,

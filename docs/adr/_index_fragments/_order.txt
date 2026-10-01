@@ -1121,3 +1121,4 @@
 1412-cuda-float-vif-cpu-arithmetic
 1413-adm-gain-limit-truncated-double-product
 1421-rc3-rc8-candidate-map
+1416-cuda-adm-cpu-row-rounding
