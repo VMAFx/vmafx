@@ -851,13 +851,13 @@ static void si_gpu_fill_geometry(const SpeedInternalDimensions *dim,
     g->sub_h = (uint32_t)dim->submatrix_height;
     g->bytes_per_sample = si_gpu_sample_bytes(bpc);
     g->sample_scale = si_gpu_sample_scale(bpc);
-    /* filter_and_downscale() resamples unless ALMOST_EQUAL(prescale, 1.0).
-     * When it skips the resample but lround() still changed the plane size,
-     * the reference filters memory beyond the copied picture; the device
-     * resamples instead of reading outside its raw plane. */
-    const bool identity = SI_ALMOST_EQUAL(opt->speed_prescale, 1.0);
-    const bool same_size = g->scaled_w == g->src_w && g->scaled_h == g->src_h;
-    g->prescale = (!identity || !same_size) ? 1 : 0;
+    /* The CPU's own rule (speed_prescale_resamples()): resample unless the
+     * prescale is the identity and lround() left the plane size unchanged, so
+     * the device never reads outside its raw plane. */
+    g->prescale = speed_prescale_resamples(opt->speed_prescale, g->src_w, g->src_h, g->scaled_w,
+                                           g->scaled_h) ?
+                      1 :
+                      0;
     g->scale_method = method;
 }
 
