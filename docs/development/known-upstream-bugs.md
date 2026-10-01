@@ -18,10 +18,8 @@ has been approved or merged. No CI has ever run on any of them: every workflow
 on the upstream repository sits at `action_required`, waiting for a maintainer
 to approve a first-time contributor's run.
 
-Per maintainer direction on 2026-10-01 the fork no longer updates, comments on
-or pushes to these pull requests while upstream does not act on them. What
-matters is that the fork's own tree carries each fix. The right-hand column is that
-status, checked on 2026-10-01 against the fork's code at master `591d53449`; the
+The right-hand column says whether the fork's own tree carries each fix,
+checked on 2026-10-01 against the fork's code at master `591d53449`; the
 evidence for each row is in [`docs/state.md`](../state.md) under "Confirmed
 not-affected".
 

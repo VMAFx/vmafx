@@ -82,9 +82,8 @@ the time: `6ec23e8f2`.
 - `aeaf2877d` (`-fps_mode passthrough`): ported as
   `T-FFMPEG9-VSYNC-REMOVED-2026-09-28`. Its `__version__` change is not taken.
 
-**The fork's own upstream pull requests: recognise them if they land.** Per
-maintainer direction on 2026-10-01 the fork no longer updates these pull
-requests while upstream does not act on them; the fork's tree is what counts.
+**The fork's own upstream pull requests: recognise them if they land.** The
+fork's tree already carries these fixes.
 
 - #1588, #1589, #1599, #1600, #1620, #1621, #1627, #1629: same fix already in
   the fork. Keep the fork's side of any conflict. One contract is wider here
