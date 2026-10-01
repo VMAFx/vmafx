@@ -13,34 +13,56 @@ file a follow-up ticket and link to it here.
 
 ## Open pull requests this fork has sent upstream
 
-Eight, all open on 2026-09-19 and all validated against upstream
-`86da14d0306a138fd3f01319860b905169746516`. No CI has ever run on any of them:
-every workflow on the upstream repository sits at `action_required`, waiting for
-a maintainer to approve a first-time contributor's run. Each was rebased onto
-that revision and re-validated locally on 2026-09-19.
+Fifteen, all open on 2026-10-01. One (#1602) has drawn a review comment; none
+has been approved or merged. No CI has ever run on any of them: every workflow
+on the upstream repository sits at `action_required`, waiting for a maintainer
+to approve a first-time contributor's run.
 
-| Upstream PR | What it fixes | Where the fork tracks it |
+Per maintainer direction on 2026-10-01 the fork no longer updates, comments on
+or pushes to these pull requests while upstream does not act on them. What
+matters is that the fork's own tree carries each fix. The right-hand column is that
+status, checked on 2026-10-01 against the fork's code at master `591d53449`; the
+evidence for each row is in [`docs/state.md`](../state.md) under "Confirmed
+not-affected".
+
+| Upstream PR | What it fixes | In the fork |
 | --- | --- | --- |
-| [#1588](https://github.com/Netflix/vmaf/pull/1588) | `vmaf_model_feature_overload()` leaks the caller's dictionary when a merge fails | `T-UPSTREAM-1242-FEATURE-DICT-OWNERSHIP-2026-09-03` |
-| [#1589](https://github.com/Netflix/vmaf/pull/1589) | percentile pooling methods on the C API | `T-UPSTREAM-818-POOLING-ENUM-NO-PERCENTILES-2026-09-03` |
-| [#1590](https://github.com/Netflix/vmaf/pull/1590) | model-collection allocation failure handling | ADR-1166 harvest |
-| [#1591](https://github.com/Netflix/vmaf/pull/1591) | thread-pool creation error paths | ADR-1166 harvest |
-| [#1599](https://github.com/Netflix/vmaf/pull/1599) | scale-3 DWT reads index -1 for frame dimensions 17 to 32 | `T-ADM-SCALE3-TINY-FRAME-OOB-READ-2026-09-18` |
-| [#1600](https://github.com/Netflix/vmaf/pull/1600) | `pow(2, shift - 1)` with a shift of 0 in `adm_cm` | `T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18` |
-| [#1601](https://github.com/Netflix/vmaf/pull/1601) | signed overflow in the 16-bit vertical DWT, and a left shift of negative taps | `T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18` |
-| [#1602](https://github.com/Netflix/vmaf/pull/1602) | the SIMD `adm_cm` centre tap keeps 32 bits where scalar wraps to int16 | `T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18` |
+| [#1588](https://github.com/Netflix/vmaf/pull/1588) | option dictionaries leak when an overload or a registration fails | Fixed and tested (`T-UPSTREAM-1242-FEATURE-DICT-OWNERSHIP-2026-09-03`) |
+| [#1589](https://github.com/Netflix/vmaf/pull/1589) | median and percentile pooling on the C API | Present and tested (`T-UPSTREAM-818-POOLING-ENUM-NO-PERCENTILES-2026-09-03`) |
+| [#1590](https://github.com/Netflix/vmaf/pull/1590) | a failed model-collection growth loses the collection | Fixed; test added by PR #1663 |
+| [#1591](https://github.com/Netflix/vmaf/pull/1591) | thread-pool creation ignores `pthread_create()` errors | Fixed and tested; a partly started pool stays usable here |
+| [#1599](https://github.com/Netflix/vmaf/pull/1599) | scale-3 DWT reads index -1 for frame dimensions 17 to 32 | Fixed and tested (`T-ADM-SCALE3-TINY-FRAME-OOB-READ-2026-09-18`) |
+| [#1600](https://github.com/Netflix/vmaf/pull/1600) | `pow(2, shift - 1)` with a shift of 0 in `adm_cm` | Fixed and tested (`T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18`) |
+| [#1601](https://github.com/Netflix/vmaf/pull/1601) | signed overflow in the 16-bit vertical DWT, and a left shift of negative taps | Fixed and tested, by widening to int64 (`T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`) |
+| [#1602](https://github.com/Netflix/vmaf/pull/1602) | `adm_cm` SIMD and scalar disagree above a coefficient of 15360 | First revision carried; second revision not taken (`T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01`); the undefined shift it implies is fixed by PR #1662 |
+| [#1603](https://github.com/Netflix/vmaf/pull/1603) | checkasm passes wrong strides to the ADM DWT tests | Not affected: no `checkasm` tree |
+| [#1604](https://github.com/Netflix/vmaf/pull/1604) | frames with an odd width or height lose framing; a reader error becomes a crash | Not affected; test added by PR #1664 |
+| [#1606](https://github.com/Netflix/vmaf/pull/1606) | a zero-length variable-length array with `--no_prediction` | Not affected: no VLA (ADR-0809) |
+| [#1620](https://github.com/Netflix/vmaf/pull/1620) | SpEED initialises on frames too small for one block | Fixed and tested |
+| [#1621](https://github.com/Netflix/vmaf/pull/1621) | a bit-depth mismatch between reference and distorted is accepted | Fixed and tested (`test_validate_pic_params_bpc`) |
+| [#1627](https://github.com/Netflix/vmaf/pull/1627) | `speed_temporal` overruns its buffers at `speed_prescale` above 1 | Ported, fork PR #1643 (`T-SPEED-TEMPORAL-PRESCALE-UP-OVERFLOW-2026-09-30`) |
+| [#1629](https://github.com/Netflix/vmaf/pull/1629) | `cambi` walks outside frames shorter than its window | Ported, fork PR #1642 (`T-CAMBI-SHORT-FRAME-OOB-2026-09-30`) |
 
-Two of these differ from what the fork carries, which matters at the next sync:
+Three of these differ from what the fork carries, which matters at the next sync:
 
 - **#1601 takes a cheaper fix than the fork's.** The fork widens the accumulator
   to int64 (PR #1477). Upstream measured that at 3.5 to 6 % of throughput, so
   the upstream patch starts the sum from the normalization offset instead, which
-  adds no operation and measures within noise. **That approach is worth bringing
-  back to the fork.**
-- **#1602 makes SIMD follow scalar**, as the fork does, and says plainly that
-  `float_adm` is closer to the unwrapped vector value than to scalar, so the
-  wrap is an artefact of the scalar reference. If upstream decides to remove the
-  int16 cast everywhere instead, the fork's PR #1474 needs revisiting.
+  adds no operation and measures within noise. Both are correct. **That
+  approach is worth bringing back to the fork** as a performance change; it has
+  not been done.
+- **#1602 changed direction after review.** Its first revision made SIMD follow
+  the scalar int16 wrap, as the fork does. Its second revision (2026-09-21)
+  removes the wrap from the scalar, x86 edge and CUDA code instead, after a
+  reviewer there called the wrap wrong. Measured in the fork on 2026-10-01, the
+  wrap is an artefact: a flat reference with isolated impairments scores
+  `integer_adm_scale0` above 1 where `float_adm` gives exactly 1. The fork has
+  not followed, since that changes the scalar reference away from upstream
+  master and every twin with it; `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01`
+  in `docs/state.md` holds the measurement and the decision.
+- **#1591 and #1588 are narrower than the fork.** The fork keeps a thread pool
+  that started at least one worker, and its `vmaf_use_feature()` consumes the
+  dictionary on a failed copy too. Keep both at a sync.
 
 Upstream PR [#1494](https://github.com/Netflix/vmaf/pull/1494) (open since April,
 by an upstream maintainer) refactors the same ADM functions. It does not touch

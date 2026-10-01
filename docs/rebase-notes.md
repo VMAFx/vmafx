@@ -58,6 +58,55 @@
   not touched.
 - No Netflix golden-data, public API or FFmpeg patch impact: scores are
   bit-identical on every input measured.
+## docs/upstream-reconcile-2026-10-01 — what an upstream sync can skip (2026-10-01)
+
+Checked against the fork's code at master `591d53449`, not against ledgers; the
+evidence is in `docs/state.md` under "Confirmed not-affected". Upstream head at
+the time: `6ec23e8f2`.
+
+**Upstream commits since the September port: take none.**
+
+- `6ec23e8f2` (`void *` arithmetic in `integer_vif.c`): the fork's
+  `vif_buffers_alloc()` already uses `uint8_t *`. A conflict there is two
+  spellings of one fix; keep ours.
+- `3c07efea6` (AVX2 casts and lane indexing): the fork already uses
+  `_mm256_castps_si256()` and `extract_epi64_128()`. Do not add
+  `mm_hadd_epi64()` next to it.
+- `15f1447c6` (no VLAs for MSVC): the fork has none. Its `alloca()` calls and
+  the `HAVE_MALLOC_H` / `HAVE_ALLOCA_H` probes are not wanted. One side change
+  is not in the fork: `-EINVAL` when a generated sub-model name is truncated
+  (`read_json_model`); take it by hand if that loader is touched.
+- `295293a76`, `2f92791c9` (bundled `ya_getopt`, `getopt_long` detection): the
+  fork has `core/tools/compat/win32/getopt.c`. Do not import
+  `libvmaf/src/compat/getopt/`.
+- `aeaf2877d` (`-fps_mode passthrough`): ported as
+  `T-FFMPEG9-VSYNC-REMOVED-2026-09-28`. Its `__version__` change is not taken.
+
+**The fork's own upstream pull requests: recognise them if they land.** Per
+maintainer direction on 2026-10-01 the fork no longer updates these pull
+requests while upstream does not act on them; the fork's tree is what counts.
+
+- #1588, #1589, #1599, #1600, #1620, #1621, #1627, #1629: same fix already in
+  the fork. Keep the fork's side of any conflict. One contract is wider here
+  than upstream's and must survive: `vmaf_use_feature()` consumes its
+  dictionary on a failed copy as well (#1588).
+- #1590: same fix; the fork's test is `test_model_collection_growth`
+  (PR #1663).
+- #1591: the fork keeps a pool that started at least one worker; upstream's
+  version tears it down. Keep `pool_spawn_workers()`.
+- #1601: the fork sums the 16-bit vertical DWT in int64
+  (`adm_dwt2_vpass16_tap4()`); upstream's version starts an int32 sum from the
+  offset. Either is correct. Do not end up with both.
+- #1602: **do not take piecemeal.** Its second revision removes the int16
+  centre tap; the fork keeps the tap in every path
+  (`T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` holds the decision). What
+  the fork did take from it is the undefined shift, in its own form
+  (PR #1662).
+- #1603: touches `libvmaf/test/checkasm/`, which the fork does not carry.
+- #1604: the fork needs none of its reader changes, and must not take its
+  `test_video_input.c`; the fork's test is `test_video_input_odd_dims`
+  (PR #1664).
+- #1606: patches a VLA the fork replaced with `ModelArrays`.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 
