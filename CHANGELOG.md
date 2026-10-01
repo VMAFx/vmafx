@@ -930,8 +930,6 @@
   (ADR-1395, `T-SYCL-XE-SCRATCH-WRONG-RESULTS-2026-10-01`).
 
 
-- **SYCL: `motion_sycl` and `motion_v2_sycl` kernels above 15 bpc are scratch-free on Intel Arc under xe (ADR-1395).**
-  On the Linux `xe` driver on Intel Arc A380, scratch memory (private arrays and register spills) produces corrupted reads and writes. The 16-bit vertical filtering pipeline (`submit_sad<int64_t>`) spilled 768 B/thread at SIMD-32 due to the 128-register limit, causing `test_sycl_motion_tiny_frames` to fail on 16-bit frames. Implementing `MotionSadHbdKernel` derived from `VmafSyclKernelShape<32, 256>` (`sycl_compat.h`) requests the 256-entry register file, eliminating all spills and private memory (`spill_size: 0`, `private_size: 0`). On physical Arc A380 under `xe`, `test_sycl_motion_tiny_frames` passes (8, 10, and 16-bit across all 9 geometries, bit-exact vs scalar CPU), `test_sycl_motion3_parity`, `test_sycl_motion_add_uv_parity`, and `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB match the CPU reference bit-for-bit (`T-SYCL-MOTION-HBD-XE-SCRATCH-2026-10-01`).
 - **`motion_sycl` sizes chroma planes correctly for 4:2:2 and 4:4:4 input.**
   With `motion_add_uv=true`, `motion_configure_chroma()` previously assumed
   4:2:0 subsampling (`chroma_w = (w + 1) >> 1`, `chroma_h = (h + 1) >> 1`)
@@ -941,6 +939,10 @@
   `vmaf_chroma_extent()` from `picture_geometry.h` according to the pixel
   format, and `test_sycl_motion_add_uv_parity` verifies parity with the
   fixed-point oracle across 4:2:0, 4:2:2, and 4:4:4.
+
+
+- **SYCL: `motion_sycl` and `motion_v2_sycl` kernels above 15 bpc are scratch-free on Intel Arc under xe (ADR-1395).**
+  On the Linux `xe` driver on Intel Arc A380, scratch memory (private arrays and register spills) produces corrupted reads and writes. The 16-bit vertical filtering pipeline (`submit_sad<int64_t>`) spilled 768 B/thread at SIMD-32 due to the 128-register limit, causing `test_sycl_motion_tiny_frames` to fail on 16-bit frames. Implementing `MotionSadHbdKernel` derived from `VmafSyclKernelShape<32, 256>` (`sycl_compat.h`) requests the 256-entry register file, eliminating all spills and private memory (`spill_size: 0`, `private_size: 0`). On physical Arc A380 under `xe`, `test_sycl_motion_tiny_frames` passes (8, 10, and 16-bit across all 9 geometries, bit-exact vs scalar CPU), `test_sycl_motion3_parity`, `test_sycl_motion_add_uv_parity`, and `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB match the CPU reference bit-for-bit (`T-SYCL-MOTION-HBD-XE-SCRATCH-2026-10-01`).
 
 
 - **`motion_sycl` matches the CPU `motion` exactly.** The SYCL twin blurred
