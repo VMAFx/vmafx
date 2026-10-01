@@ -17,1518 +17,116 @@
  *
  */
 
-#include <stdbool.h>
+/*
+ * AVX2 twins of the integer ADM stages.
+ *
+ * Each stage vectorises the interior of a row and hands the columns a vector
+ * does not cover, and the rows that need a mirrored neighbourhood, to the
+ * scalar kernels of feature/integer_adm_kernels.h. Those are the kernels the
+ * scalar reference in feature/integer_adm.c runs, so a tail column cannot
+ * disagree with it. The vector paths must stay bit-identical to the same
+ * kernels; core/test/test_integer_adm_simd*.c compare them.
+ */
 
-#include "feature/adm_csf_fixed_point.h"
-#include "feature/barten_csf_tools.h"
-#include "feature/compat_builtin.h"
-#include "feature/integer_adm.h"
-#include "adm_avx2.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <immintrin.h>
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#include "feature/common/macros.h"
+#include "feature/integer_adm_kernels.h"
+#include "adm_avx2.h"
 
-#define shift15_64b_signExt_256(a, r)                                                              \
-    do {                                                                                           \
-        (r) = _mm256_add_epi64(_mm256_srli_epi64((a), 15),                                         \
-                               _mm256_and_si256((a), _mm256_set1_epi64x(0xFFFE000000000000)));     \
-    } while (0)
+/* ------------------------------------------------------------------------- */
+/* Lane helpers                                                              */
+/* ------------------------------------------------------------------------- */
 
-// i = 0, j = 0: indices y: 1,0,1, x: 1,0,1  for Fixed-point
-#define ADM_CM_THRESH_S_0_0(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            const int16_t *src_ptr = (angles)[theta];                                              \
-            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[(src_stride)];                                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[(src_stride)];                                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 0, j = w-1: indices y: 1,0,1, x: w-2, w-1, w-1
-#define ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const int16_t *src_ptr = (angles)[theta];                                              \
-            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
-            int32_t sum = 0;                                                                       \
-            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 0, j = 1, ..., w-2: indices y: 1,0,1, x: j-1,j,j+1
-#define ADM_CM_THRESH_S_0_J(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            const int16_t *src_ptr = (angles)[theta];                                              \
-            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
-            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (j)];                                                    \
-            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (j)];                                                    \
-            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = 0: indices y: h-2,h-1,h-1, x: 1,0,1
-#define ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = w-1: indices y: h-2,h-1,h-1, x: w-2, w-1, w-1
-#define ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)             \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = 1, ..., w-2: indices y: h-2,h-1,h-1, x: j-1,j,j+1
-#define ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 1,..,h-2, j = 1,..,w-2: indices y: i-1,i,i+1, x: j-1,j,j+1
-#define ADM_CM_THRESH_S_I_J(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-#define ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, src_stride, accum, w, h, i, j, sum)         \
-    do {                                                                                           \
-        __m256i perm1 = _mm256_set_epi32(0, 7, 6, 5, 4, 3, 2, 1);                                  \
-        __m256i perm2 = _mm256_set_epi32(1, 0, 7, 6, 5, 4, 3, 2);                                  \
-        __m256i const_2048_32b = _mm256_set1_epi32(2048);                                          \
-        int16_t *src_ptr0 = (angles)[0];                                                           \
-        int16_t *flt_ptr0 = (flt_angles)[0];                                                       \
-        int16_t *src_ptr1 = (angles)[1];                                                           \
-        int16_t *flt_ptr1 = (flt_angles)[1];                                                       \
-        int16_t *src_ptr2 = (angles)[2];                                                           \
-        int16_t *flt_ptr2 = (flt_angles)[2];                                                       \
-        src_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        src_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        src_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        __m256i flt00 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt10 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt20 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        src_ptr0 += (src_stride);                                                                  \
-        flt_ptr0 += (src_stride);                                                                  \
-        src_ptr1 += (src_stride);                                                                  \
-        flt_ptr1 += (src_stride);                                                                  \
-        src_ptr2 += (src_stride);                                                                  \
-        flt_ptr2 += (src_stride);                                                                  \
-        __m256i src01 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr0 + (j) - 1)));         \
-        __m256i src11 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr1 + (j) - 1)));         \
-        __m256i src21 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr2 + (j) - 1)));         \
-        __m256i flt01 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt11 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt21 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        __m256i one_by_15 = _mm256_set1_epi32(ONE_BY_15);                                          \
-        src01 = _mm256_srai_epi32(                                                                 \
-            _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src01), one_by_15),               \
-                             const_2048_32b),                                                      \
-            12);                                                                                   \
-        /* Wrap each tap to int16, as adm_cm_thresh()'s (int16_t) cast does: */                    \
-        src01 = _mm256_srai_epi32(_mm256_slli_epi32(src01, 16), 16);                               \
-        src11 = _mm256_srai_epi32(                                                                 \
-            _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src11), one_by_15),               \
-                             const_2048_32b),                                                      \
-            12);                                                                                   \
-        src11 = _mm256_srai_epi32(_mm256_slli_epi32(src11, 16), 16);                               \
-        src21 = _mm256_srai_epi32(                                                                 \
-            _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src21), one_by_15),               \
-                             const_2048_32b),                                                      \
-            12);                                                                                   \
-        src21 = _mm256_srai_epi32(_mm256_slli_epi32(src21, 16), 16);                               \
-        src01 = _mm256_sub_epi32(src01, flt01);                                                    \
-        src11 = _mm256_sub_epi32(src11, flt11);                                                    \
-        src21 = _mm256_sub_epi32(src21, flt21);                                                    \
-        __m256i sum0 = _mm256_add_epi32(flt00, flt01);                                             \
-        __m256i sum1 = _mm256_add_epi32(flt10, flt11);                                             \
-        __m256i sum2 = _mm256_add_epi32(flt20, flt21);                                             \
-        src_ptr0 += (src_stride);                                                                  \
-        src_ptr1 += (src_stride);                                                                  \
-        src_ptr2 += (src_stride);                                                                  \
-        flt_ptr0 += (src_stride);                                                                  \
-        flt_ptr1 += (src_stride);                                                                  \
-        flt_ptr2 += (src_stride);                                                                  \
-        __m256i flt02 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt12 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt22 =                                                                            \
-            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        sum0 = _mm256_add_epi32(sum0, flt02);                                                      \
-        sum1 = _mm256_add_epi32(sum1, flt12);                                                      \
-        sum2 = _mm256_add_epi32(sum2, flt22);                                                      \
-        __m256i tmp0 = sum0;                                                                       \
-        __m256i tmp1 = sum1;                                                                       \
-        __m256i tmp2 = sum2;                                                                       \
-        sum0 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp0, perm1), sum0);                   \
-        sum1 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp1, perm1), sum1);                   \
-        sum2 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp2, perm1), sum2);                   \
-        sum0 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp0, perm2), sum0);                   \
-        sum1 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp1, perm2), sum1);                   \
-        sum2 = _mm256_add_epi32(_mm256_permutevar8x32_epi32(tmp2, perm2), sum2);                   \
-        sum0 = _mm256_add_epi32(sum0, _mm256_permutevar8x32_epi32(src01, perm1));                  \
-        sum1 = _mm256_add_epi32(sum1, _mm256_permutevar8x32_epi32(src11, perm1));                  \
-        sum2 = _mm256_add_epi32(sum2, _mm256_permutevar8x32_epi32(src21, perm1));                  \
-        __m256i mask_end = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);                               \
-        sum0 = _mm256_add_epi32(sum0, sum1);                                                       \
-        sum0 = _mm256_add_epi32(sum0, sum2);                                                       \
-        sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
-        _mm256_storeu_si256((__m256i *)(sum), sum0);                                               \
-    } while (0)
-
-// i = 1,..,h-2, j = 0: indices y: i-1,i,i+1, x: 1,0,1
-#define ADM_CM_THRESH_S_I_0(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 1,..,h-2, j = w-1: indices y: i-1,i,i+1, x: w-2,w-1,w-1
-#define ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 0, j = 0: indices y: 1,0,1, x: 1,0,1  for Fixed-point
-#define I4_ADM_CM_THRESH_S_0_0(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
-                               shift)                                                              \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            const int32_t *src_ptr = (angles)[theta];                                              \
-            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[(src_stride)];                                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs(src_ptr[0])) + (add_bef_shift)) >>      \
-                             (shift));                                                             \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            sum += flt_ptr[(src_stride)];                                                          \
-            sum += flt_ptr[(src_stride) + 1];                                                      \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 0, j = w-1: indices y: 1,0,1, x: w-2, w-1, w-1
-#define I4_ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,              \
-                                   add_bef_shift, shift)                                           \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const int32_t *src_ptr = (angles)[theta];                                              \
-            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
-            int32_t sum = 0;                                                                       \
-            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 0, j = 1, ..., w-2: indices y: 1,0,1, x: j-1,j,j+1
-#define I4_ADM_CM_THRESH_S_0_J(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
-                               shift)                                                              \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            const int32_t *src_ptr = (angles)[theta];                                              \
-            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
-            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (j)];                                                    \
-            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
-            sum += flt_ptr[(src_stride) + (j)];                                                    \
-            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = 0: indices y: h-2,h-1,h-1, x: 1,0,1
-#define I4_ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, src_stride, accum, w, h, i, j,              \
-                                   add_bef_shift, shift)                                           \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) +                 \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = w-1: indices y: h-2,h-1,h-1, x: w-2, w-1, w-1
-#define I4_ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,          \
-                                       add_bef_shift, shift)                                       \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = h-1, j = 1, ..., w-2: indices y: h-2,h-1,h-1, x: j-1,j,j+1
-#define I4_ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, src_stride, accum, w, h, i, j,              \
-                                   add_bef_shift, shift)                                           \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-#define I4_ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, src_stride, accum, w, h, i, j,           \
-                                      add_bef_shift, shift, mask_msb_shift, sum)                   \
-    do {                                                                                           \
-        __m256i add_bef_shift_256 = _mm256_set1_epi64x((add_bef_shift));                           \
-        int32_t *src_ptr0 = (angles)[0];                                                           \
-        int32_t *flt_ptr0 = (flt_angles)[0];                                                       \
-        int32_t *src_ptr1 = (angles)[1];                                                           \
-        int32_t *flt_ptr1 = (flt_angles)[1];                                                       \
-        int32_t *src_ptr2 = (angles)[2];                                                           \
-        int32_t *flt_ptr2 = (flt_angles)[2];                                                       \
-        src_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        src_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        src_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        flt_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
-        __m256i flt00 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt10 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt20 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        src_ptr0 += (src_stride);                                                                  \
-        flt_ptr0 += (src_stride);                                                                  \
-        src_ptr1 += (src_stride);                                                                  \
-        flt_ptr1 += (src_stride);                                                                  \
-        src_ptr2 += (src_stride);                                                                  \
-        flt_ptr2 += (src_stride);                                                                  \
-        __m256i src01 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr0 + (j) - 1)));         \
-        __m256i src11 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr1 + (j) - 1)));         \
-        __m256i src21 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr2 + (j) - 1)));         \
-        __m256i flt01 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt11 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt21 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        __m256i mask_src01_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src01);                \
-        __m256i mask_src11_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src11);                \
-        __m256i mask_src21_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src21);                \
-        __m256i src01_us =                                                                         \
-            _mm256_and_si256(_mm256_mul_epi32(src01, _mm256_set1_epi32(-1)), mask_src01_ltz);      \
-        __m256i src11_us =                                                                         \
-            _mm256_and_si256(_mm256_mul_epi32(src11, _mm256_set1_epi32(-1)), mask_src11_ltz);      \
-        __m256i src21_us =                                                                         \
-            _mm256_and_si256(_mm256_mul_epi32(src21, _mm256_set1_epi32(-1)), mask_src21_ltz);      \
-        src01 = _mm256_andnot_si256(mask_src01_ltz, src01);                                        \
-        src11 = _mm256_andnot_si256(mask_src11_ltz, src11);                                        \
-        src21 = _mm256_andnot_si256(mask_src21_ltz, src21);                                        \
-        src01 = _mm256_or_si256(src01, src01_us);                                                  \
-        src11 = _mm256_or_si256(src11, src11_us);                                                  \
-        src21 = _mm256_or_si256(src21, src21_us);                                                  \
-        __m256i i4_one_by_15 = _mm256_set1_epi64x(I4_ONE_BY_15);                                   \
-        src01 = _mm256_add_epi64(_mm256_mul_epi32(src01, i4_one_by_15), add_bef_shift_256);        \
-        src11 = _mm256_add_epi64(_mm256_mul_epi32(src11, i4_one_by_15), add_bef_shift_256);        \
-        src21 = _mm256_add_epi64(_mm256_mul_epi32(src21, i4_one_by_15), add_bef_shift_256);        \
-        __m256i mask_signed01 =                                                                    \
-            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src01)); \
-        __m256i mask_signed11 =                                                                    \
-            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src11)); \
-        __m256i mask_signed21 =                                                                    \
-            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src21)); \
-        src01 = _mm256_or_si256(_mm256_srli_epi64(src01, (shift)), mask_signed01);                 \
-        src11 = _mm256_or_si256(_mm256_srli_epi64(src11, (shift)), mask_signed11);                 \
-        src21 = _mm256_or_si256(_mm256_srli_epi64(src21, (shift)), mask_signed21);                 \
-        src01 = _mm256_sub_epi64(src01, flt01);                                                    \
-        src11 = _mm256_sub_epi64(src11, flt11);                                                    \
-        src21 = _mm256_sub_epi64(src21, flt21);                                                    \
-        __m256i sum0 = _mm256_add_epi64(flt00, flt01);                                             \
-        __m256i sum1 = _mm256_add_epi64(flt10, flt11);                                             \
-        __m256i sum2 = _mm256_add_epi64(flt20, flt21);                                             \
-        src_ptr0 += (src_stride);                                                                  \
-        src_ptr1 += (src_stride);                                                                  \
-        src_ptr2 += (src_stride);                                                                  \
-        flt_ptr0 += (src_stride);                                                                  \
-        flt_ptr1 += (src_stride);                                                                  \
-        flt_ptr2 += (src_stride);                                                                  \
-        __m256i flt02 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
-        __m256i flt12 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
-        __m256i flt22 =                                                                            \
-            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
-        sum0 = _mm256_add_epi64(sum0, flt02);                                                      \
-        sum1 = _mm256_add_epi64(sum1, flt12);                                                      \
-        sum2 = _mm256_add_epi64(sum2, flt22);                                                      \
-        __m256i tmp0 = sum0;                                                                       \
-        __m256i tmp1 = sum1;                                                                       \
-        __m256i tmp2 = sum2;                                                                       \
-        sum0 = _mm256_add_epi64(sum0, _mm256_permute4x64_epi64(tmp0, 0x39));                       \
-        sum1 = _mm256_add_epi64(sum1, _mm256_permute4x64_epi64(tmp1, 0x39));                       \
-        sum2 = _mm256_add_epi64(sum2, _mm256_permute4x64_epi64(tmp2, 0x39));                       \
-        sum0 = _mm256_add_epi64(sum0, _mm256_permute4x64_epi64(tmp0, 0x0E));                       \
-        sum1 = _mm256_add_epi64(sum1, _mm256_permute4x64_epi64(tmp1, 0x0E));                       \
-        sum2 = _mm256_add_epi64(sum2, _mm256_permute4x64_epi64(tmp2, 0x0E));                       \
-        sum0 = _mm256_add_epi64(sum0, _mm256_permute4x64_epi64(src01, 0x39));                      \
-        sum1 = _mm256_add_epi64(sum1, _mm256_permute4x64_epi64(src11, 0x39));                      \
-        sum2 = _mm256_add_epi64(sum2, _mm256_permute4x64_epi64(src21, 0x39));                      \
-        __m256i mask_end = _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL);                                \
-        sum0 = _mm256_add_epi64(sum0, sum1);                                                       \
-        sum0 = _mm256_add_epi64(sum0, sum2);                                                       \
-        sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
-        _mm256_storeu_si256((__m256i *)(sum), sum0);                                               \
-    } while (0)
-
-// i = 1,..,h-2, j = 1,..,w-2: indices y: i-1,i,i+1, x: j-1,j,j+1
-#define I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
-                               shift)                                                              \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(j) + 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(j) - 1];                                                               \
-            sum += flt_ptr[(j)];                                                                   \
-            sum += flt_ptr[(j) + 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 1,..,h-2, j = 0: indices y: i-1,i,i+1, x: 1,0,1
-#define I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
-                               shift)                                                              \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) +                 \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[1];                                                                     \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[0];                                                                     \
-            sum += flt_ptr[1];                                                                     \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-// i = 1,..,h-2, j = w-1: indices y: i-1,i,i+1, x: w-2,w-1,w-1
-#define I4_ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,              \
-                                   add_bef_shift, shift)                                           \
-    do {                                                                                           \
-        *(accum) = 0;                                                                              \
-        for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
-            int32_t sum = 0;                                                                       \
-            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
-                              (add_bef_shift)) >>                                                  \
-                             (shift));                                                             \
-            sum += flt_ptr[(w) - 1];                                                               \
-            src_ptr += (src_stride);                                                               \
-            flt_ptr += (src_stride);                                                               \
-            sum += flt_ptr[(w) - 2];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            sum += flt_ptr[(w) - 1];                                                               \
-            *(accum) += sum;                                                                       \
-        }                                                                                          \
-    } while (0)
-
-#define ADM_CM_ACCUM_ROUND(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,                \
-                           add_shift_xcub, shift_xcub, accum_inner)                                \
-    do {                                                                                           \
-        (x) = abs(x) - ((int32_t)(thr) << (shift_xsub));                                           \
-        (x) = (x) < 0 ? 0 : (x);                                                                   \
-        (x_sq) = (int32_t)((((int64_t)(x) * (x)) + (add_shift_xsq)) >> (shift_xsq));               \
-        (val) = (((int64_t)(x_sq) * (x)) + (add_shift_xcub)) >> (shift_xcub);                      \
-        (accum_inner) += (val);                                                                    \
-    } while (0)
-
-#define ADM_CM_ACCUM_ROUND_avx256(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,         \
-                                  add_shift_xcub, shift_xcub, accum_inner_lo, accum_inner_hi)      \
-    do {                                                                                           \
-        (x) = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_slli_epi32((thr), (shift_xsub)));       \
-        (x) = _mm256_max_epi32((x), _mm256_setzero_si256());                                       \
-        __m256i x_sq_lo = _mm256_srli_epi64(                                                       \
-            _mm256_add_epi64(_mm256_mul_epi32((x), (x)), _mm256_set1_epi64x((add_shift_xsq))),     \
-            (shift_xsq));                                                                          \
-        __m256i x_sq_hi =                                                                          \
-            _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(_mm256_srli_epi64((x), 32),        \
-                                                                _mm256_srli_epi64((x), 32)),       \
-                                               _mm256_set1_epi64x((add_shift_xsq))),               \
-                              (shift_xsq));                                                        \
-        x_sq_lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_sq_lo, (x)),               \
-                                                     _mm256_set1_epi64x((add_shift_xcub))),        \
-                                    (shift_xcub));                                                 \
-        x_sq_hi = _mm256_srli_epi64(                                                               \
-            _mm256_add_epi64(_mm256_mul_epi32(x_sq_hi, _mm256_srli_epi64((x), 32)),                \
-                             _mm256_set1_epi64x((add_shift_xcub))),                                \
-            (shift_xcub));                                                                         \
-        (accum_inner_lo) = _mm256_add_epi64((accum_inner_lo), x_sq_lo);                            \
-        (accum_inner_hi) = _mm256_add_epi64((accum_inner_hi), x_sq_hi);                            \
-    } while (0)
-
-#define I4_ADM_CM_ACCUM_ROUND(x, thr, shift_sub, x_sq, add_shift_sq, shift_sq, val, add_shift_cub, \
-                              shift_cub, accum_inner)                                              \
-    do {                                                                                           \
-        (x) = abs(x) - ((thr) >> (shift_sub));                                                     \
-        (x) = (x) < 0 ? 0 : (x);                                                                   \
-        (x_sq) = (int32_t)((((int64_t)(x) * (x)) + (add_shift_sq)) >> (shift_sq));                 \
-        (val) = (((int64_t)(x_sq) * (x)) + (add_shift_cub)) >> (shift_cub);                        \
-        (accum_inner) += (val);                                                                    \
-    } while (0)
-
-#define I4_ADM_CM_ACCUM_ROUND_avx256(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,      \
-                                     add_shift_xcub, shift_xcub, accum_inner)                      \
-    do {                                                                                           \
-        __m256i mask_x_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), (x));                      \
-        __m256i x_us = _mm256_and_si256(_mm256_mul_epi32((x), _mm256_set1_epi32(-1)), mask_x_ltz); \
-        (x) = _mm256_andnot_si256(mask_x_ltz, (x));                                                \
-        (x) = _mm256_or_si256((x), x_us);                                                          \
-        (x) = _mm256_sub_epi64((x), _mm256_srli_epi64((thr), (shift_xsub)));                       \
-        (x) = _mm256_and_si256((x), _mm256_cmpgt_epi64((x), _mm256_setzero_si256()));              \
-        __m256i x_sq_val = _mm256_srli_epi64(                                                      \
-            _mm256_add_epi64(_mm256_mul_epi32((x), (x)), _mm256_set1_epi64x((add_shift_xsq))),     \
-            (shift_xsq));                                                                          \
-        x_sq_val = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_sq_val, (x)),             \
-                                                      _mm256_set1_epi64x((add_shift_xcub))),       \
-                                     (shift_xcub));                                                \
-        (accum_inner) = _mm256_add_epi64((accum_inner), x_sq_val);                                 \
-    } while (0)
-
-#define calc_angle(ot_dp, o_mag_sq, t_mag_sq, angle_flag)                                          \
-    do {                                                                                           \
-        (angle_flag) =                                                                             \
-            ((((float)(ot_dp) / 4096.0) >= 0.0f) &&                                                \
-             (((float)(ot_dp) / 4096.0) * ((float)(ot_dp) / 4096.0) >=                             \
-              cos_1deg_sq * ((float)(o_mag_sq) / 4096.0) * ((float)(t_mag_sq) / 4096.0)));         \
-    } while (0)
-
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                       int32_t *adm_div_lookup)
+/* Eight int16 samples widened to int32 lanes. */
+static FORCE_INLINE __m256i load_epi16x8(const int16_t *p)
 {
-    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
-
-    const adm_dwt_band_t *ref = &buf->ref_dwt2;
-    const adm_dwt_band_t *dis = &buf->dis_dwt2;
-    const adm_dwt_band_t *r = &buf->decouple_r;
-    const adm_dwt_band_t *a = &buf->decouple_a;
-
-    int left = w * ADM_BORDER_FACTOR - 0.5 - 1; // -1 for filter tap
-    int top = h * ADM_BORDER_FACTOR - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    /* The vector loop starts at `left`, so the tail bound must be a multiple of
-     * 8 columns away from `left`, not from zero; otherwise the last 8-wide
-     * store runs past `right` (Netflix/vmaf 03b5562c5). */
-    int right_mod8 = right - ((right - left) % 8);
-
-    for (int i = top; i < bottom; ++i) {
-        for (int j = left; j < right_mod8; j += 8) {
-            __m256i oh = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(ref->band_h + (ptrdiff_t)i * stride + j)));
-            __m256i ov = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(ref->band_v + (ptrdiff_t)i * stride + j)));
-            __m256i od = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(ref->band_d + (ptrdiff_t)i * stride + j)));
-            __m256i th = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(dis->band_h + (ptrdiff_t)i * stride + j)));
-            __m256i tv = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(dis->band_v + (ptrdiff_t)i * stride + j)));
-            __m256i td = _mm256_cvtepi16_epi32(
-                _mm_loadu_si128((__m128i *)(dis->band_d + (ptrdiff_t)i * stride + j)));
-
-            __m256i oh_ov = _mm256_or_si256(_mm256_and_si256(oh, _mm256_set1_epi32(0xFFFF)),
-                                            _mm256_slli_epi32(ov, 16));
-            __m256i th_tv = _mm256_or_si256(_mm256_and_si256(th, _mm256_set1_epi32(0xFFFF)),
-                                            _mm256_slli_epi32(tv, 16));
-
-            __m256i o_mag_sq_256 = _mm256_madd_epi16(oh_ov, oh_ov);
-            __m256i ot_dp_256 = _mm256_madd_epi16(oh_ov, th_tv);
-            __m256i t_mag_sq_256 = _mm256_madd_epi16(th_tv, th_tv);
-
-            int angle_flag_r[8];
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 0), _mm256_extract_epi32(o_mag_sq_256, 0),
-                       _mm256_extract_epi32(t_mag_sq_256, 0), angle_flag_r[0]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 1), _mm256_extract_epi32(o_mag_sq_256, 1),
-                       _mm256_extract_epi32(t_mag_sq_256, 1), angle_flag_r[1]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 2), _mm256_extract_epi32(o_mag_sq_256, 2),
-                       _mm256_extract_epi32(t_mag_sq_256, 2), angle_flag_r[2]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 3), _mm256_extract_epi32(o_mag_sq_256, 3),
-                       _mm256_extract_epi32(t_mag_sq_256, 3), angle_flag_r[3]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 4), _mm256_extract_epi32(o_mag_sq_256, 4),
-                       _mm256_extract_epi32(t_mag_sq_256, 4), angle_flag_r[4]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 5), _mm256_extract_epi32(o_mag_sq_256, 5),
-                       _mm256_extract_epi32(t_mag_sq_256, 5), angle_flag_r[5]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 6), _mm256_extract_epi32(o_mag_sq_256, 6),
-                       _mm256_extract_epi32(t_mag_sq_256, 6), angle_flag_r[6]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 7), _mm256_extract_epi32(o_mag_sq_256, 7),
-                       _mm256_extract_epi32(t_mag_sq_256, 7), angle_flag_r[7]);
-
-            __m256i angle_flag = _mm256_mullo_epi32(
-                _mm256_setr_epi32(angle_flag_r[0], angle_flag_r[1], angle_flag_r[2],
-                                  angle_flag_r[3], angle_flag_r[4], angle_flag_r[5],
-                                  angle_flag_r[6], angle_flag_r[7]),
-                _mm256_set1_epi32(-1));
-
-            __m256i const_32768_32b = _mm256_set1_epi32(32768);
-            __m256i const_16384_64b = _mm256_set1_epi64x(16384);
-
-            __m256i oh_div =
-                _mm256_i32gather_epi32(adm_div_lookup, _mm256_add_epi32(oh, const_32768_32b), 4);
-            __m256i ov_div =
-                _mm256_i32gather_epi32(adm_div_lookup, _mm256_add_epi32(ov, const_32768_32b), 4);
-            __m256i od_div =
-                _mm256_i32gather_epi32(adm_div_lookup, _mm256_add_epi32(od, const_32768_32b), 4);
-
-            __m256i oh_div_th_lo = _mm256_mul_epi32(oh_div, th);
-            __m256i oh_div_th_hi =
-                _mm256_mul_epi32(_mm256_srli_epi64(oh_div, 32), _mm256_srli_epi64(th, 32));
-            __m256i ov_div_tv_lo = _mm256_mul_epi32(ov_div, tv);
-            __m256i ov_div_tv_hi =
-                _mm256_mul_epi32(_mm256_srli_epi64(ov_div, 32), _mm256_srli_epi64(tv, 32));
-            __m256i od_div_td_lo = _mm256_mul_epi32(od_div, td);
-            __m256i od_div_td_hi =
-                _mm256_mul_epi32(_mm256_srli_epi64(od_div, 32), _mm256_srli_epi64(td, 32));
-
-            oh_div_th_lo = _mm256_add_epi64(oh_div_th_lo, const_16384_64b);
-            oh_div_th_hi = _mm256_add_epi64(oh_div_th_hi, const_16384_64b);
-            od_div_td_lo = _mm256_add_epi64(od_div_td_lo, const_16384_64b);
-            od_div_td_hi = _mm256_add_epi64(od_div_td_hi, const_16384_64b);
-            ov_div_tv_lo = _mm256_add_epi64(ov_div_tv_lo, const_16384_64b);
-            ov_div_tv_hi = _mm256_add_epi64(ov_div_tv_hi, const_16384_64b);
-            shift15_64b_signExt_256(oh_div_th_lo, oh_div_th_lo);
-            shift15_64b_signExt_256(oh_div_th_hi, oh_div_th_hi);
-            shift15_64b_signExt_256(ov_div_tv_lo, ov_div_tv_lo);
-            shift15_64b_signExt_256(ov_div_tv_hi, ov_div_tv_hi);
-            shift15_64b_signExt_256(od_div_td_lo, od_div_td_lo);
-            shift15_64b_signExt_256(od_div_td_hi, od_div_td_hi);
-
-            __m256i tmp_kh =
-                _mm256_or_si256(_mm256_and_si256(oh_div_th_lo, _mm256_set1_epi64x(0xFFFFFFFF)),
-                                _mm256_slli_epi64(oh_div_th_hi, 32));
-            __m256i tmp_kv =
-                _mm256_or_si256(_mm256_and_si256(ov_div_tv_lo, _mm256_set1_epi64x(0xFFFFFFFF)),
-                                _mm256_slli_epi64(ov_div_tv_hi, 32));
-            __m256i tmp_kd =
-                _mm256_or_si256(_mm256_and_si256(od_div_td_lo, _mm256_set1_epi64x(0xFFFFFFFF)),
-                                _mm256_slli_epi64(od_div_td_hi, 32));
-
-            __m256i eqz_oh = _mm256_cmpeq_epi32(oh, _mm256_setzero_si256());
-            __m256i eqz_ov = _mm256_cmpeq_epi32(ov, _mm256_setzero_si256());
-            __m256i eqz_od = _mm256_cmpeq_epi32(od, _mm256_setzero_si256());
-
-            tmp_kh = _mm256_andnot_si256(eqz_oh, tmp_kh);
-            tmp_kh = _mm256_or_si256(tmp_kh, _mm256_and_si256(const_32768_32b, eqz_oh));
-
-            tmp_kv = _mm256_andnot_si256(eqz_ov, tmp_kv);
-            tmp_kv = _mm256_or_si256(tmp_kv, _mm256_and_si256(const_32768_32b, eqz_ov));
-
-            tmp_kd = _mm256_andnot_si256(eqz_od, tmp_kd);
-            tmp_kd = _mm256_or_si256(tmp_kd, _mm256_and_si256(const_32768_32b, eqz_od));
-
-            tmp_kh = _mm256_max_epi32(tmp_kh, _mm256_setzero_si256());
-            tmp_kh = _mm256_min_epi32(tmp_kh, const_32768_32b);
-            tmp_kv = _mm256_max_epi32(tmp_kv, _mm256_setzero_si256());
-            tmp_kv = _mm256_min_epi32(tmp_kv, const_32768_32b);
-            tmp_kd = _mm256_max_epi32(tmp_kd, _mm256_setzero_si256());
-            tmp_kd = _mm256_min_epi32(tmp_kd, const_32768_32b);
-
-            __m256i rst_h = _mm256_mullo_epi32(tmp_kh, oh);
-            __m256i rst_v = _mm256_mullo_epi32(tmp_kv, ov);
-            __m256i rst_d = _mm256_mullo_epi32(tmp_kd, od);
-
-            __m256i const_16384_32b = _mm256_set1_epi32(16384);
-            rst_h = _mm256_add_epi32(rst_h, const_16384_32b);
-            rst_v = _mm256_add_epi32(rst_v, const_16384_32b);
-            rst_d = _mm256_add_epi32(rst_d, const_16384_32b);
-
-            rst_h = _mm256_srai_epi32(rst_h, 15);
-            rst_v = _mm256_srai_epi32(rst_v, 15);
-            rst_d = _mm256_srai_epi32(rst_d, 15);
-
-            __m256 inv_32768 = _mm256_set1_ps((float)1 / 32768);
-            __m256 inv_64 = _mm256_set1_ps((float)1 / 64);
-
-            __m256 kh_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kh));
-            __m256 oh_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(oh));
-            __m256 rst_h_f = _mm256_mul_ps(kh_inv_32768, oh_inv_64);
-
-            __m256 kv_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kv));
-            __m256 ov_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(ov));
-            __m256 rst_v_f = _mm256_mul_ps(kv_inv_32768, ov_inv_64);
-
-            __m256 kd_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kd));
-            __m256 od_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(od));
-            __m256 rst_d_f = _mm256_mul_ps(kd_inv_32768, od_inv_64);
-
-            /* GCC/clang allow C-style cast `(__m256i)x` between vector types
-             * via the GNU vector extension; MSVC rejects it (C2440). The
-             * portable form is the dedicated bit-cast intrinsic. */
-            __m256i gt0_rst_h_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_h_f, _mm256_setzero_ps(), 14));
-            __m256i lt0_rst_h_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_h_f, _mm256_setzero_ps(), 1));
-            __m256i gt0_rst_v_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_v_f, _mm256_setzero_ps(), 14));
-            __m256i lt0_rst_v_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_v_f, _mm256_setzero_ps(), 1));
-            __m256i gt0_rst_d_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_d_f, _mm256_setzero_ps(), 14));
-            __m256i lt0_rst_d_f =
-                _mm256_castps_si256(_mm256_cmp_ps(rst_d_f, _mm256_setzero_ps(), 1));
-
-            __m256i mask_min_max_h = _mm256_or_si256(gt0_rst_h_f, lt0_rst_h_f);
-            __m256i mask_min_max_v = _mm256_or_si256(gt0_rst_v_f, lt0_rst_v_f);
-            __m256i mask_min_max_d = _mm256_or_si256(gt0_rst_d_f, lt0_rst_d_f);
-
-            __m256i mask_rst_h = _mm256_and_si256(mask_min_max_h, angle_flag);
-            __m256i mask_rst_v = _mm256_and_si256(mask_min_max_v, angle_flag);
-            __m256i mask_rst_d = _mm256_and_si256(mask_min_max_d, angle_flag);
-
-            __m256d adm_gain_d = _mm256_set1_pd(adm_enhn_gain_limit);
-            __m256d rst_h_gainlo_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_h, 0)), adm_gain_d);
-            __m256d rst_h_gainhi_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_h, 1)), adm_gain_d);
-            __m256i rst_h_gain =
-                _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvtpd_epi32(rst_h_gainlo_d)),
-                                        _mm256_cvtpd_epi32(rst_h_gainhi_d), 1);
-            __m256d rst_v_gainlo_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_v, 0)), adm_gain_d);
-            __m256d rst_v_gainhi_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_v, 1)), adm_gain_d);
-            __m256i rst_v_gain =
-                _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvtpd_epi32(rst_v_gainlo_d)),
-                                        _mm256_cvtpd_epi32(rst_v_gainhi_d), 1);
-            __m256d rst_d_gainlo_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_d, 0)), adm_gain_d);
-            __m256d rst_d_gainhi_d =
-                _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst_d, 1)), adm_gain_d);
-            __m256i rst_d_gain =
-                _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvtpd_epi32(rst_d_gainlo_d)),
-                                        _mm256_cvtpd_epi32(rst_d_gainhi_d), 1);
-
-            __m256i h_min = _mm256_min_epi32(rst_h_gain, th);
-            __m256i v_min = _mm256_min_epi32(rst_v_gain, tv);
-            __m256i d_min = _mm256_min_epi32(rst_d_gain, td);
-
-            __m256i h_max = _mm256_max_epi32(rst_h_gain, th);
-            __m256i v_max = _mm256_max_epi32(rst_v_gain, tv);
-            __m256i d_max = _mm256_max_epi32(rst_d_gain, td);
-
-            h_min = _mm256_and_si256(h_min, gt0_rst_h_f);
-            h_max = _mm256_and_si256(h_max, lt0_rst_h_f);
-            v_min = _mm256_and_si256(v_min, gt0_rst_v_f);
-            v_max = _mm256_and_si256(v_max, lt0_rst_v_f);
-            d_min = _mm256_and_si256(d_min, gt0_rst_d_f);
-            d_max = _mm256_and_si256(d_max, lt0_rst_d_f);
-
-            __m256i h_min_max = _mm256_and_si256(_mm256_or_si256(h_min, h_max), mask_rst_h);
-            __m256i v_min_max = _mm256_and_si256(_mm256_or_si256(v_min, v_max), mask_rst_v);
-            __m256i d_min_max = _mm256_and_si256(_mm256_or_si256(d_min, d_max), mask_rst_d);
-
-            rst_h = _mm256_andnot_si256(mask_rst_h, rst_h);
-            rst_v = _mm256_andnot_si256(mask_rst_v, rst_v);
-            rst_d = _mm256_andnot_si256(mask_rst_d, rst_d);
-
-            rst_h = _mm256_or_si256(h_min_max, rst_h);
-            rst_v = _mm256_or_si256(v_min_max, rst_v);
-            rst_d = _mm256_or_si256(d_min_max, rst_d);
-
-            th = _mm256_sub_epi32(th, rst_h);
-            tv = _mm256_sub_epi32(tv, rst_v);
-            td = _mm256_sub_epi32(td, rst_d);
-
-            rst_h = _mm256_packs_epi32(rst_h, _mm256_permute4x64_epi64(rst_h, 0x0E));
-            rst_v = _mm256_packs_epi32(rst_v, _mm256_permute4x64_epi64(rst_v, 0x0E));
-            rst_d = _mm256_packs_epi32(rst_d, _mm256_permute4x64_epi64(rst_d, 0x0E));
-            th = _mm256_packs_epi32(th, _mm256_permute4x64_epi64(th, 0x0E));
-            tv = _mm256_packs_epi32(tv, _mm256_permute4x64_epi64(tv, 0x0E));
-            td = _mm256_packs_epi32(td, _mm256_permute4x64_epi64(td, 0x0E));
-
-            _mm_storeu_si128((__m128i *)(r->band_h + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(rst_h));
-            _mm_storeu_si128((__m128i *)(r->band_v + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(rst_v));
-            _mm_storeu_si128((__m128i *)(r->band_d + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(rst_d));
-            _mm_storeu_si128((__m128i *)(a->band_h + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(th));
-            _mm_storeu_si128((__m128i *)(a->band_v + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(tv));
-            _mm_storeu_si128((__m128i *)(a->band_d + (ptrdiff_t)i * stride + j),
-                             _mm256_castsi256_si128(td));
-        }
-
-        for (int j = right_mod8; j < right; j++) {
-            int16_t oh = ref->band_h[i * stride + j];
-            int16_t ov = ref->band_v[i * stride + j];
-            int16_t od = ref->band_d[i * stride + j];
-            int16_t th = dis->band_h[i * stride + j];
-            int16_t tv = dis->band_v[i * stride + j];
-            int16_t td = dis->band_d[i * stride + j];
-            int16_t rst_h;
-            int16_t rst_v;
-            int16_t rst_d;
-
-            /* Determine if angle between (oh,ov) and (th,tv) is less than 1 degree.
-            * Given that u is the angle (oh,ov) and v is the angle (th,tv), this can
-            * be done by testing the inequvality.
-            *
-            * { (u.v.) >= 0 } AND { (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2 }
-            *
-            * Proof:
-            *
-            * cos(theta) = (u.v) / (||u|| * ||v||)
-            *
-            * IF u.v >= 0 THEN
-            *   cos(theta)^2 = (u.v)^2 / (||u||^2 * ||v||^2)
-            *   (u.v)^2 = cos(theta)^2 * ||u||^2 * ||v||^2
-            *
-            *   IF |theta| < 1deg THEN
-            *     (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2
-            *   END
-            * ELSE
-            *   |theta| > 90deg
-            * END
-            */
-            int64_t ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
-            int64_t o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
-            int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
-
-            /**
-             * angle_flag is calculated in floating-point by converting fixed-point variables back to
-             * floating-point
-             */
-
-            int angle_flag =
-                (((float)ot_dp / 4096.0) >= 0.0f) &&
-                (((float)ot_dp / 4096.0) * ((float)ot_dp / 4096.0) >=
-                 cos_1deg_sq * ((float)o_mag_sq / 4096.0) * ((float)t_mag_sq / 4096.0));
-
-            /**
-             * Division th/oh is carried using lookup table and converted to multiplication
-             */
-
-            int32_t tmp_kh =
-                (oh == 0) ? 32768 : (((int64_t)adm_div_lookup[oh + 32768] * th) + 16384) >> 15;
-            int32_t tmp_kv =
-                (ov == 0) ? 32768 : (((int64_t)adm_div_lookup[ov + 32768] * tv) + 16384) >> 15;
-            int32_t tmp_kd =
-                (od == 0) ? 32768 : (((int64_t)adm_div_lookup[od + 32768] * td) + 16384) >> 15;
-
-            int32_t kh = tmp_kh < 0 ? 0 : (tmp_kh > 32768 ? 32768 : tmp_kh);
-            int32_t kv = tmp_kv < 0 ? 0 : (tmp_kv > 32768 ? 32768 : tmp_kv);
-            int32_t kd = tmp_kd < 0 ? 0 : (tmp_kd > 32768 ? 32768 : tmp_kd);
-
-            /**
-             * kh,kv,kd are in Q15 type and oh,ov,od are in Q16 type hence shifted by
-             * 15 to make result Q16
-             */
-            rst_h = ((kh * oh) + 16384) >> 15;
-            rst_v = ((kv * ov) + 16384) >> 15;
-            rst_d = ((kd * od) + 16384) >> 15;
-
-            const float rst_h_f = ((float)kh / 32768) * ((float)oh / 64);
-            const float rst_v_f = ((float)kv / 32768) * ((float)ov / 64);
-            const float rst_d_f = ((float)kd / 32768) * ((float)od / 64);
-
-            if (angle_flag && (rst_h_f > 0.))
-                rst_h = MIN((rst_h * adm_enhn_gain_limit), th);
-            if (angle_flag && (rst_h_f < 0.))
-                rst_h = MAX((rst_h * adm_enhn_gain_limit), th);
-
-            if (angle_flag && (rst_v_f > 0.))
-                rst_v = MIN(rst_v * adm_enhn_gain_limit, tv);
-            if (angle_flag && (rst_v_f < 0.))
-                rst_v = MAX(rst_v * adm_enhn_gain_limit, tv);
-
-            if (angle_flag && (rst_d_f > 0.))
-                rst_d = MIN(rst_d * adm_enhn_gain_limit, td);
-            if (angle_flag && (rst_d_f < 0.))
-                rst_d = MAX(rst_d * adm_enhn_gain_limit, td);
-
-            r->band_h[i * stride + j] = rst_h;
-            r->band_v[i * stride + j] = rst_v;
-            r->band_d[i * stride + j] = rst_d;
-
-            a->band_h[i * stride + j] = th - rst_h;
-            a->band_v[i * stride + j] = tv - rst_v;
-            a->band_d[i * stride + j] = td - rst_d;
-        }
-    }
+    return _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)p));
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
-                     int src_stride, int dst_stride)
+/* Four int32 samples widened to int64 lanes. */
+static FORCE_INLINE __m256i load_epi32x4(const int32_t *p)
 {
-    const int16_t *filter_lo = dwt2_db2_coeffs_lo;
-    const int16_t *filter_hi = dwt2_db2_coeffs_hi;
-
-    const int16_t shift_VP = 8;
-    const int32_t add_shift_VP = 128;
-    const int16_t shift_HP = 16;
-    const int32_t add_shift_HP = 32768;
-    int **ind_y = buf->ind_y;
-    int **ind_x = buf->ind_x;
-
-    int16_t *tmplo = (int16_t *)buf->tmp_ref;
-    int16_t *tmphi = tmplo + w;
-    int32_t accum;
-
-    __m256i dwt2_db2_coeffs_lo_sum_const = _mm256_set1_epi32(dwt2_db2_coeffs_lo_sum * 128);
-    __m256i dwt2_db2_coeffs_hi_sum_const = _mm256_set1_epi32(dwt2_db2_coeffs_hi_sum * 128);
-    __m256i fl0 = _mm256_broadcastd_epi32(_mm_loadu_si128((__m128i *)filter_lo));
-    __m256i fl1 = _mm256_broadcastd_epi32(_mm_loadu_si128((__m128i *)(filter_lo + 2)));
-    __m256i fh0 = _mm256_broadcastd_epi32(_mm_loadu_si128((__m128i *)filter_hi));
-    __m256i fh1 = _mm256_broadcastd_epi32(_mm_loadu_si128((__m128i *)(filter_hi + 2)));
-    __m256i add_shift_VP_vex = _mm256_set1_epi32(128);
-    __m256i pad_register = _mm256_setzero_si256();
-    __m256i add_shift_HP_vex = _mm256_set1_epi32(32768);
-
-    int half_w = (w + 1) / 2;
-    int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
-
-    for (int i = 0; i < (h + 1) / 2; ++i) {
-        // Vertical pass 16 pixels at a time
-        // Ensure we only process complete 16 element chunks that fit entirely
-        // within bounds
-        int j_vp_end = (w / 16) * 16;
-
-        for (int j = 0; j < j_vp_end; j = j + 16) {
-
-            __m256i accum_mu2_lo;
-            __m256i accum_mu2_hi;
-            __m256i accum_mu1_lo;
-            __m256i accum_mu1_hi;
-            accum_mu2_lo = accum_mu2_hi = accum_mu1_lo = accum_mu1_hi = _mm256_setzero_si256();
-            __m256i s0;
-            __m256i s1;
-            __m256i s2;
-            __m256i s3;
-
-            s0 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[0][i] * src_stride) + j)));
-            s1 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[1][i] * src_stride) + j)));
-            s2 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[2][i] * src_stride) + j)));
-            s3 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[3][i] * src_stride) + j)));
-
-            __m256i s0lo = _mm256_unpacklo_epi16(s0, s1);
-            __m256i s0hi = _mm256_unpackhi_epi16(s0, s1);
-
-            accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s0lo, fl0));
-            accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s0hi, fl0));
-
-            __m256i s1lo = _mm256_unpacklo_epi16(s2, s3);
-            __m256i s1hi = _mm256_unpackhi_epi16(s2, s3);
-
-            accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s1lo, fl1));
-            accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s1hi, fl1));
-
-            accum_mu2_lo = _mm256_sub_epi32(accum_mu2_lo, dwt2_db2_coeffs_lo_sum_const);
-            accum_mu2_hi = _mm256_sub_epi32(accum_mu2_hi, dwt2_db2_coeffs_lo_sum_const);
-
-            accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, add_shift_VP_vex);
-            accum_mu2_lo = _mm256_srli_epi32(accum_mu2_lo, 0x08);
-            accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, add_shift_VP_vex);
-            accum_mu2_hi = _mm256_srli_epi32(accum_mu2_hi, 0x08);
-            accum_mu2_lo = _mm256_blend_epi16(accum_mu2_lo, pad_register, 0xAA);
-            accum_mu2_hi = _mm256_blend_epi16(accum_mu2_hi, pad_register, 0xAA);
-
-            accum_mu2_hi = _mm256_packus_epi32(accum_mu2_lo, accum_mu2_hi);
-            _mm256_storeu_si256((__m256i *)(tmplo + j), accum_mu2_hi);
-
-            accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s0lo, fh0));
-            accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s0hi, fh0));
-            accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s1lo, fh1));
-            accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s1hi, fh1));
-            accum_mu1_lo = _mm256_sub_epi32(accum_mu1_lo, dwt2_db2_coeffs_hi_sum_const);
-            accum_mu1_hi = _mm256_sub_epi32(accum_mu1_hi, dwt2_db2_coeffs_hi_sum_const);
-
-            accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, add_shift_VP_vex);
-            accum_mu1_lo = _mm256_srli_epi32(accum_mu1_lo, 0x08);
-            accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, add_shift_VP_vex);
-            accum_mu1_hi = _mm256_srli_epi32(accum_mu1_hi, 0x08);
-            accum_mu1_lo = _mm256_blend_epi16(accum_mu1_lo, pad_register, 0xAA);
-            accum_mu1_hi = _mm256_blend_epi16(accum_mu1_hi, pad_register, 0xAA);
-            accum_mu1_hi = _mm256_packus_epi32(accum_mu1_lo, accum_mu1_hi);
-            _mm256_storeu_si256((__m256i *)(tmphi + j), accum_mu1_hi);
-        }
-
-        // Vertical pass - tail loop for remaining elements that cannot be
-        // processed by SIMD
-
-        for (int j = j_vp_end; j < w; ++j) {
-            uint16_t u_s0 = src[ind_y[0][i] * src_stride + j];
-            uint16_t u_s1 = src[ind_y[1][i] * src_stride + j];
-            uint16_t u_s2 = src[ind_y[2][i] * src_stride + j];
-            uint16_t u_s3 = src[ind_y[3][i] * src_stride + j];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * (int32_t)u_s0;
-            accum += (int32_t)filter_lo[1] * (int32_t)u_s1;
-            accum += (int32_t)filter_lo[2] * (int32_t)u_s2;
-            accum += (int32_t)filter_lo[3] * (int32_t)u_s3;
-
-            accum -= (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP;
-            tmplo[j] = (accum + add_shift_VP) >> shift_VP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * (int32_t)u_s0;
-            accum += (int32_t)filter_hi[1] * (int32_t)u_s1;
-            accum += (int32_t)filter_hi[2] * (int32_t)u_s2;
-            accum += (int32_t)filter_hi[3] * (int32_t)u_s3;
-
-            accum -= (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP;
-            tmphi[j] = (accum + add_shift_VP) >> shift_VP;
-        }
-
-        // First-column (j == 0) special case: scope-tight to avoid shadowing
-        // the per-j tail-loop locals further below.
-        {
-            int j0 = ind_x[0][0];
-            int j1 = ind_x[1][0];
-            int j2 = ind_x[2][0];
-            int j3 = ind_x[3][0];
-
-            int16_t s0 = tmplo[j0];
-            int16_t s1 = tmplo[j1];
-            int16_t s2 = tmplo[j2];
-            int16_t s3 = tmplo[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_a[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_v[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
-
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_h[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_d[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
-        }
-
-        // Horizontal pass
-        for (int j = 1; j < half_w_mod16; j = j + 16) {
-            {
-                __m256i accum_mu2_lo;
-                __m256i accum_mu2_hi;
-                __m256i accum_mu1_lo;
-                __m256i accum_mu1_hi;
-                accum_mu2_lo = accum_mu2_hi = accum_mu1_lo = accum_mu1_hi = _mm256_setzero_si256();
-
-                __m256i s00;
-                __m256i s22;
-                __m256i s33;
-                __m256i s44;
-
-                s00 = _mm256_loadu_si256((__m256i *)(tmplo + ind_x[0][j]));
-                s22 = _mm256_loadu_si256((__m256i *)(tmplo + ind_x[2][j]));
-                s33 = _mm256_loadu_si256((__m256i *)(tmplo + 16 + ind_x[0][j]));
-                s44 = _mm256_loadu_si256((__m256i *)(tmplo + 16 + ind_x[2][j]));
-
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s00, fl0));
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s33, fl0));
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s22, fl1));
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s44, fl1));
-
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, add_shift_HP_vex);
-                accum_mu2_lo = _mm256_srli_epi32(accum_mu2_lo, 0x10);
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, add_shift_HP_vex);
-                accum_mu2_hi = _mm256_srli_epi32(accum_mu2_hi, 0x10);
-
-                accum_mu2_hi = _mm256_packus_epi32(accum_mu2_lo, accum_mu2_hi);
-                accum_mu2_hi = _mm256_permute4x64_epi64(accum_mu2_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_a + (ptrdiff_t)i * dst_stride + j),
-                                    accum_mu2_hi);
-
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s00, fh0));
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s33, fh0));
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s22, fh1));
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s44, fh1));
-
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, add_shift_HP_vex);
-                accum_mu1_lo = _mm256_srli_epi32(accum_mu1_lo, 0x10);
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, add_shift_HP_vex);
-                accum_mu1_hi = _mm256_srli_epi32(accum_mu1_hi, 0x10);
-
-                accum_mu1_hi = _mm256_packus_epi32(accum_mu1_lo, accum_mu1_hi);
-                accum_mu1_hi = _mm256_permute4x64_epi64(accum_mu1_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_v + (ptrdiff_t)i * dst_stride + j),
-                                    accum_mu1_hi);
-            }
-
-            {
-                __m256i accum_mu2_lo;
-                __m256i accum_mu2_hi;
-                __m256i accum_mu1_lo;
-                __m256i accum_mu1_hi;
-                accum_mu2_lo = accum_mu2_hi = accum_mu1_lo = accum_mu1_hi = _mm256_setzero_si256();
-
-                __m256i s00;
-                __m256i s22;
-                __m256i s33;
-                __m256i s44;
-
-                s00 = _mm256_loadu_si256((__m256i *)(tmphi + ind_x[0][j]));
-                s22 = _mm256_loadu_si256((__m256i *)(tmphi + ind_x[2][j]));
-                s33 = _mm256_loadu_si256((__m256i *)(tmphi + 16 + ind_x[0][j]));
-                s44 = _mm256_loadu_si256((__m256i *)(tmphi + 16 + ind_x[2][j]));
-
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s00, fl0));
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s33, fl0));
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, _mm256_madd_epi16(s22, fl1));
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, _mm256_madd_epi16(s44, fl1));
-
-                accum_mu2_lo = _mm256_add_epi32(accum_mu2_lo, add_shift_HP_vex);
-                accum_mu2_lo = _mm256_srli_epi32(accum_mu2_lo, 0x10);
-                accum_mu2_hi = _mm256_add_epi32(accum_mu2_hi, add_shift_HP_vex);
-                accum_mu2_hi = _mm256_srli_epi32(accum_mu2_hi, 0x10);
-
-                accum_mu2_hi = _mm256_packus_epi32(accum_mu2_lo, accum_mu2_hi);
-                accum_mu2_hi = _mm256_permute4x64_epi64(accum_mu2_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_h + (ptrdiff_t)i * dst_stride + j),
-                                    accum_mu2_hi);
-
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s00, fh0));
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s33, fh0));
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s22, fh1));
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s44, fh1));
-
-                accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, add_shift_HP_vex);
-                accum_mu1_lo = _mm256_srli_epi32(accum_mu1_lo, 0x10);
-                accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, add_shift_HP_vex);
-                accum_mu1_hi = _mm256_srli_epi32(accum_mu1_hi, 0x10);
-
-                accum_mu1_hi = _mm256_packus_epi32(accum_mu1_lo, accum_mu1_hi);
-                accum_mu1_hi = _mm256_permute4x64_epi64(accum_mu1_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_d + (ptrdiff_t)i * dst_stride + j),
-                                    accum_mu1_hi);
-            }
-        }
-
-        // Horizontal pass: tail loop for remaining elements
-        for (int j = half_w_mod16; j < half_w; ++j) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            int16_t s0 = tmplo[j0];
-            int16_t s1 = tmplo[j1];
-            int16_t s2 = tmplo[j2];
-            int16_t s3 = tmplo[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_a[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_v[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_h[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_d[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-        }
-    }
+    return _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)p));
 }
 
-static inline uint16_t get_best15_from32(uint32_t temp, int *x)
+/* The lower / upper four int32 lanes widened to int64 lanes. */
+static FORCE_INLINE __m256i widen_lo(__m256i v)
 {
-    if (temp < 32768u) {
-        *x = 0;
-        return (uint16_t)temp;
-    }
-
-    int k = __builtin_clz(temp); //built in for intel
-    k = 17 - k;
-    temp = (temp + (1 << (k - 1))) >> k;
-    *x = k;
-    return temp;
+    return _mm256_cvtepi32_epi64(_mm256_extracti128_si256(v, 0));
 }
 
-static inline __m256i blend(__m256i a, __m256i b, __m256i mask)
+static FORCE_INLINE __m256i widen_hi(__m256i v)
+{
+    return _mm256_cvtepi32_epi64(_mm256_extracti128_si256(v, 1));
+}
+
+/* Two vectors of four int64 truncated to one vector of eight int32. */
+static FORCE_INLINE __m256i narrow_epi64(__m256i lo, __m256i hi)
+{
+    int64_t t[8];
+    _mm256_storeu_si256((__m256i *)(&t[0]), lo);
+    _mm256_storeu_si256((__m256i *)(&t[4]), hi);
+    return _mm256_setr_epi32((int)t[0], (int)t[1], (int)t[2], (int)t[3], (int)t[4], (int)t[5],
+                             (int)t[6], (int)t[7]);
+}
+
+/* `mask ? a : b` per bit. */
+static FORCE_INLINE __m256i blend(__m256i a, __m256i b, __m256i mask)
 {
     return _mm256_or_si256(_mm256_and_si256(mask, a), _mm256_andnot_si256(mask, b));
 }
 
-static inline __m256i sra_epi64(__m256i a, __m256i mask)
+/* Arithmetic right shift of int64 lanes by a per-lane count; AVX2 has none. */
+static FORCE_INLINE __m256i sra_epi64(__m256i a, __m256i count)
 {
-    __m256i rl_shift = _mm256_srlv_epi64(a, mask); // logical shift
+    __m256i rl_shift = _mm256_srlv_epi64(a, count); // logical shift
     __m256i signmask = _mm256_cmpgt_epi64(_mm256_setzero_si256(), a);
-    __m256i newmask = _mm256_sub_epi64(_mm256_set1_epi64x(64), mask);
+    __m256i newmask = _mm256_sub_epi64(_mm256_set1_epi64x(64), count);
     signmask = _mm256_sllv_epi64(signmask, newmask);
     return _mm256_or_si256(rl_shift, signmask);
 }
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-#define extract_epi64 _mm256_extract_epi64
-#define extract_epi64_128 _mm_extract_epi64
-#else
-static inline int64_t extract_epi64(__m256i a, const int index)
+/* Arithmetic right shift by 15 of int64 lanes whose value fits in 49 bits:
+ * the top 15 bits of such a value are copies of its sign. */
+static FORCE_INLINE __m256i sra15_epi64(__m256i a)
 {
-    // Fallback for 32-bit where _mm256_extract_epi64 is not available.
-    // Based on how GCC implements _mm256_extract_epi64.
-    // Uses a switch to ensure constant indices since clang will complain.
-    switch (index) {
-    case 0: {
-        __m128i y = _mm256_extractf128_si256(a, 0);
-        return ((uint64_t)_mm_extract_epi32(y, 1) << 32) | (unsigned)_mm_extract_epi32(y, 0);
-    }
-    case 1: {
-        __m128i y = _mm256_extractf128_si256(a, 0);
-        return ((uint64_t)_mm_extract_epi32(y, 3) << 32) | (unsigned)_mm_extract_epi32(y, 2);
-    }
-    case 2: {
-        __m128i y = _mm256_extractf128_si256(a, 1);
-        return ((uint64_t)_mm_extract_epi32(y, 1) << 32) | (unsigned)_mm_extract_epi32(y, 0);
-    }
-    case 3: {
-        __m128i y = _mm256_extractf128_si256(a, 1);
-        return ((uint64_t)_mm_extract_epi32(y, 3) << 32) | (unsigned)_mm_extract_epi32(y, 2);
-    }
-    default:
-        return 0;
-    }
+    return _mm256_add_epi64(
+        _mm256_srli_epi64(a, 15),
+        _mm256_and_si256(a, _mm256_set1_epi64x((int64_t)0xFFFE000000000000ULL)));
 }
 
-/* 128-bit twin of the fallback above: _mm_extract_epi64 is x86-64 only too. */
-static inline int64_t extract_epi64_128(__m128i a, const int index)
+/* Arithmetic right shift by `shift` of int64 lanes whose value fits in
+ * 64 - shift bits; `msb_mask` has the top `shift` bits set. */
+static FORCE_INLINE __m256i sra_fit_epi64(__m256i a, int shift, __m256i msb_mask)
+{
+    return _mm256_or_si256(_mm256_srli_epi64(a, shift), _mm256_and_si256(a, msb_mask));
+}
+
+/* The same shift, written as upstream does where the sign is tested first. */
+static FORCE_INLINE __m256i sra_sign_epi64(__m256i a, int shift, __m256i msb_mask)
+{
+    const __m256i sign = _mm256_and_si256(msb_mask, _mm256_cmpgt_epi64(_mm256_setzero_si256(), a));
+    return _mm256_or_si256(_mm256_srli_epi64(a, shift), sign);
+}
+
+/* |a| of int64 lanes holding sign-extended int32 values. */
+static FORCE_INLINE __m256i abs_epi64_from32(__m256i a)
+{
+    const __m256i ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), a);
+    const __m256i neg = _mm256_and_si256(_mm256_mul_epi32(a, _mm256_set1_epi32(-1)), ltz);
+    return _mm256_or_si256(_mm256_andnot_si256(ltz, a), neg);
+}
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+#define extract_epi64_128 _mm_extract_epi64
+#else
+/* _mm_extract_epi64 is x86-64 only. */
+static FORCE_INLINE int64_t extract_epi64_128(__m128i a, const int index)
 {
     if (index == 0) {
         return ((uint64_t)_mm_extract_epi32(a, 1) << 32) | (unsigned)_mm_extract_epi32(a, 0);
@@ -1537,3316 +135,1206 @@ static inline int64_t extract_epi64_128(__m128i a, const int index)
 }
 #endif
 
-// No lzcnt in avx2
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                            int32_t *adm_div_lookup)
+/* Sum of the four int64 lanes. */
+static FORCE_INLINE int64_t hsum_epi64(__m256i v)
 {
-    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+    const __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+    return (int64_t)extract_epi64_128(r2, 0) + (int64_t)extract_epi64_128(r2, 1);
+}
 
+/* Sum of the four uint64 lanes. */
+static FORCE_INLINE uint64_t hsum_epu64(__m256i v)
+{
+    const __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+    return (uint64_t)extract_epi64_128(r2, 0) + (uint64_t)extract_epi64_128(r2, 1);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Decouple, scale 0                                                         */
+/* ------------------------------------------------------------------------- */
+
+/* angle_flag of eight samples as 0 / -1 lanes. The dot product and the
+ * squared magnitudes are formed in int32 by _mm256_madd_epi16. */
+static FORCE_INLINE __m256i decouple_angle_mask_avx2(__m256i oh, __m256i ov, __m256i th, __m256i tv,
+                                                     float cos_1deg_sq)
+{
+    const __m256i lo16 = _mm256_set1_epi32(0xFFFF);
+    const __m256i oh_ov = _mm256_or_si256(_mm256_and_si256(oh, lo16), _mm256_slli_epi32(ov, 16));
+    const __m256i th_tv = _mm256_or_si256(_mm256_and_si256(th, lo16), _mm256_slli_epi32(tv, 16));
+    int32_t o_mag_sq[8];
+    int32_t ot_dp[8];
+    int32_t t_mag_sq[8];
+    int32_t flag[8];
+
+    _mm256_storeu_si256((__m256i *)o_mag_sq, _mm256_madd_epi16(oh_ov, oh_ov));
+    _mm256_storeu_si256((__m256i *)ot_dp, _mm256_madd_epi16(oh_ov, th_tv));
+    _mm256_storeu_si256((__m256i *)t_mag_sq, _mm256_madd_epi16(th_tv, th_tv));
+    for (int k = 0; k < 8; ++k) {
+        flag[k] = -adm_angle_flag(ot_dp[k], o_mag_sq[k], t_mag_sq[k], cos_1deg_sq);
+    }
+    return _mm256_setr_epi32(flag[0], flag[1], flag[2], flag[3], flag[4], flag[5], flag[6],
+                             flag[7]);
+}
+
+/* Reciprocal-table entries of eight denominators. */
+static FORCE_INLINE __m256i decouple_div_avx2(__m256i o, const int32_t *lut)
+{
+    return _mm256_i32gather_epi32(lut, _mm256_add_epi32(o, _mm256_set1_epi32(32768)), 4);
+}
+
+/* Q15 ratio k = t / o of eight samples from their reciprocal-table entries
+ * `div`, clamped to [0, 32768]. */
+static FORCE_INLINE __m256i decouple_k_avx2(__m256i o, __m256i t, __m256i div)
+{
+    const __m256i const_32768 = _mm256_set1_epi32(32768);
+    const __m256i const_16384 = _mm256_set1_epi64x(16384);
+
+    __m256i lo = _mm256_mul_epi32(div, t);
+    __m256i hi = _mm256_mul_epi32(_mm256_srli_epi64(div, 32), _mm256_srli_epi64(t, 32));
+    lo = sra15_epi64(_mm256_add_epi64(lo, const_16384));
+    hi = sra15_epi64(_mm256_add_epi64(hi, const_16384));
+
+    __m256i k = _mm256_or_si256(_mm256_and_si256(lo, _mm256_set1_epi64x(0xFFFFFFFF)),
+                                _mm256_slli_epi64(hi, 32));
+    const __m256i eqz = _mm256_cmpeq_epi32(o, _mm256_setzero_si256());
+    k = _mm256_andnot_si256(eqz, k);
+    k = _mm256_or_si256(k, _mm256_and_si256(const_32768, eqz));
+    k = _mm256_max_epi32(k, _mm256_setzero_si256());
+    return _mm256_min_epi32(k, const_32768);
+}
+
+/* rst * gain of eight samples, converted back as _mm256_cvtpd_epi32 does. */
+static FORCE_INLINE __m256i decouple_gain_avx2(__m256i rst, double gain)
+{
+    const __m256d g = _mm256_set1_pd(gain);
+    const __m256d lo = _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst, 0)), g);
+    const __m256d hi = _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst, 1)), g);
+    return _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvtpd_epi32(lo)),
+                                   _mm256_cvtpd_epi32(hi), 1);
+}
+
+/* One band of eight samples: the restored signal and the additive impairment,
+ * each packed to int16 in the low half of its vector (adm_decouple_band()). */
+static FORCE_INLINE void decouple_band_avx2(__m256i o, __m256i t, __m256i div, __m256i angle_mask,
+                                            double gain, __m256i *r_out, __m256i *a_out)
+{
+    const __m256i k = decouple_k_avx2(o, t, div);
+    __m256i rst = _mm256_mullo_epi32(k, o);
+    rst = _mm256_srai_epi32(_mm256_add_epi32(rst, _mm256_set1_epi32(16384)), 15);
+
+    const __m256 k_f = _mm256_mul_ps(_mm256_set1_ps((float)1 / 32768), _mm256_cvtepi32_ps(k));
+    const __m256 o_f = _mm256_mul_ps(_mm256_set1_ps((float)1 / 64), _mm256_cvtepi32_ps(o));
+    const __m256 rst_f = _mm256_mul_ps(k_f, o_f);
+    /* GCC/clang allow C-style cast `(__m256i)x` between vector types
+     * via the GNU vector extension; MSVC rejects it (C2440). The
+     * portable form is the dedicated bit-cast intrinsic. */
+    const __m256i gt0 = _mm256_castps_si256(_mm256_cmp_ps(rst_f, _mm256_setzero_ps(), _CMP_GT_OS));
+    const __m256i lt0 = _mm256_castps_si256(_mm256_cmp_ps(rst_f, _mm256_setzero_ps(), _CMP_LT_OS));
+    const __m256i mask = _mm256_and_si256(_mm256_or_si256(gt0, lt0), angle_mask);
+
+    const __m256i rst_gain = decouple_gain_avx2(rst, gain);
+    const __m256i v_min = _mm256_and_si256(_mm256_min_epi32(rst_gain, t), gt0);
+    const __m256i v_max = _mm256_and_si256(_mm256_max_epi32(rst_gain, t), lt0);
+    const __m256i min_max = _mm256_and_si256(_mm256_or_si256(v_min, v_max), mask);
+    rst = _mm256_or_si256(min_max, _mm256_andnot_si256(mask, rst));
+
+    const __m256i a = _mm256_sub_epi32(t, rst);
+    *r_out = _mm256_packs_epi32(rst, _mm256_permute4x64_epi64(rst, 0x0E));
+    *a_out = _mm256_packs_epi32(a, _mm256_permute4x64_epi64(a, 0x0E));
+}
+
+/* Eight samples of all three bands, starting at `idx`. */
+static FORCE_INLINE void decouple_block_avx2(const AdmBuffer *buf, ptrdiff_t idx,
+                                             const int32_t *lut, double gain, float cos_1deg_sq)
+{
+    const adm_dwt_band_t *ref = &buf->ref_dwt2;
+    const adm_dwt_band_t *dis = &buf->dis_dwt2;
+    const adm_dwt_band_t *r = &buf->decouple_r;
+    const adm_dwt_band_t *a = &buf->decouple_a;
+
+    const __m256i oh = load_epi16x8(ref->band_h + idx);
+    const __m256i ov = load_epi16x8(ref->band_v + idx);
+    const __m256i od = load_epi16x8(ref->band_d + idx);
+    const __m256i th = load_epi16x8(dis->band_h + idx);
+    const __m256i tv = load_epi16x8(dis->band_v + idx);
+    const __m256i td = load_epi16x8(dis->band_d + idx);
+
+    const __m256i angle = decouple_angle_mask_avx2(oh, ov, th, tv, cos_1deg_sq);
+
+    /* The three table lookups stay back to back, ahead of the per-band work:
+     * a gather issued between the floating-point steps of two bands costs
+     * about a quarter of this stage's throughput. */
+    const __m256i div_h = decouple_div_avx2(oh, lut);
+    const __m256i div_v = decouple_div_avx2(ov, lut);
+    const __m256i div_d = decouple_div_avx2(od, lut);
+
+    __m256i rst[3];
+    __m256i add[3];
+    decouple_band_avx2(oh, th, div_h, angle, gain, &rst[0], &add[0]);
+    decouple_band_avx2(ov, tv, div_v, angle, gain, &rst[1], &add[1]);
+    decouple_band_avx2(od, td, div_d, angle, gain, &rst[2], &add[2]);
+
+    _mm_storeu_si128((__m128i *)(r->band_h + idx), _mm256_castsi256_si128(rst[0]));
+    _mm_storeu_si128((__m128i *)(r->band_v + idx), _mm256_castsi256_si128(rst[1]));
+    _mm_storeu_si128((__m128i *)(r->band_d + idx), _mm256_castsi256_si128(rst[2]));
+    _mm_storeu_si128((__m128i *)(a->band_h + idx), _mm256_castsi256_si128(add[0]));
+    _mm_storeu_si128((__m128i *)(a->band_v + idx), _mm256_castsi256_si128(add[1]));
+    _mm_storeu_si128((__m128i *)(a->band_d + idx), _mm256_castsi256_si128(add[2]));
+}
+
+/* `adm_div_lookup` keeps the mutable `int32_t *` of the dispatch signature it
+ * shares with the scalar twin (integer_adm.c, ADR-1141). */
+// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
+void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
+                       int32_t *adm_div_lookup)
+{
+    const float cos_1deg_sq = adm_cos_1deg_sq();
+
+    /* The computation of the score is not required for the regions
+     * which lie outside the frame borders */
+    const AdmBorder b = adm_border_filt(w, h);
+
+    /* The vector loop starts at `left`, so the tail bound must be a multiple of
+     * 8 columns away from `left`, not from zero; otherwise the last 8-wide
+     * store runs past `right` (Netflix/vmaf 03b5562c5). */
+    const int right_mod8 = b.right - ((b.right - b.left) % 8);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        for (int j = b.left; j < right_mod8; j += 8) {
+            decouple_block_avx2(buf, (ptrdiff_t)i * stride + j, adm_div_lookup, adm_enhn_gain_limit,
+                                cos_1deg_sq);
+        }
+        adm_decouple_cols(buf, i, stride, right_mod8, b.right, adm_enhn_gain_limit, adm_div_lookup,
+                          cos_1deg_sq);
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Decouple, scales 1..3                                                     */
+/* ------------------------------------------------------------------------- */
+
+/* angle_flag of four samples held in int64 lanes, as 0 / -1 lanes. */
+static FORCE_INLINE __m256i decouple_s123_angle_mask_avx2(__m256i oh, __m256i ov, __m256i th,
+                                                          __m256i tv, float cos_1deg_sq)
+{
+    int64_t ot_dp[4];
+    int64_t o_mag_sq[4];
+    int64_t t_mag_sq[4];
+    int64_t flag[4];
+
+    _mm256_storeu_si256((__m256i *)ot_dp,
+                        _mm256_add_epi64(_mm256_mul_epi32(oh, th), _mm256_mul_epi32(ov, tv)));
+    _mm256_storeu_si256((__m256i *)o_mag_sq,
+                        _mm256_add_epi64(_mm256_mul_epi32(oh, oh), _mm256_mul_epi32(ov, ov)));
+    _mm256_storeu_si256((__m256i *)t_mag_sq,
+                        _mm256_add_epi64(_mm256_mul_epi32(th, th), _mm256_mul_epi32(tv, tv)));
+    for (int k = 0; k < 4; ++k) {
+        flag[k] = -(int64_t)adm_angle_flag(ot_dp[k], o_mag_sq[k], t_mag_sq[k], cos_1deg_sq);
+    }
+    return _mm256_setr_epi64x(flag[0], flag[1], flag[2], flag[3]);
+}
+
+/* What the table division of one band of eight samples needs: the table
+ * entry, the sign of the denominator, the rounding term and the shift. */
+typedef struct DecoupleS123Div {
+    __m256i div;
+    __m256i sign;
+    __m256i round;
+    __m256i count;
+} DecoupleS123Div;
+
+/* get_best15_from32() of eight magnitudes. __builtin_clz has no AVX2
+ * equivalent, so the lanes take a scalar round trip. A magnitude below 32768
+ * is its own 15-bit value, with a shift of 0. */
+static FORCE_INLINE void decouple_s123_best15_avx2(__m256i abs_o, __m256i *msb, __m256i *shift)
+{
+    uint32_t v[8];
+    int32_t m[8];
+    int32_t s[8];
+
+    _mm256_storeu_si256((__m256i *)v, abs_o);
+    for (int k = 0; k < 8; ++k) {
+        s[k] = 0;
+        m[k] = (v[k] < 32768u) ? (int32_t)v[k] : (int32_t)get_best15_from32(v[k], &s[k]);
+    }
+    *msb = _mm256_setr_epi32(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7]);
+    *shift = _mm256_setr_epi32(s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]);
+}
+
+/* The division terms of one band from its 15-bit denominators `msb` and
+ * their shifts. */
+static FORCE_INLINE DecoupleS123Div decouple_s123_div_avx2(__m256i o, __m256i msb, __m256i shift,
+                                                           const int32_t *lut)
+{
+    const __m256i const_1 = _mm256_set1_epi32(1);
+    DecoupleS123Div d;
+    d.div = _mm256_i32gather_epi32(lut, _mm256_add_epi32(msb, _mm256_set1_epi32(32768)), 4);
+    // cmpgt_epi32 returns -1 : 0 if a > b. We really want -1 : 1 to match c code, so we include an or_si256.
+    d.sign = _mm256_or_si256(_mm256_cmpgt_epi32(_mm256_setzero_si256(), o), const_1);
+    d.round = _mm256_sllv_epi32(const_1, _mm256_add_epi32(_mm256_set1_epi32(14), shift));
+    d.count = _mm256_add_epi32(_mm256_set1_epi32(15), shift);
+    return d;
+}
+
+/* Table quotient k = t / o of four samples in int64 lanes, clamped to
+ * [0, 32768]. `div`, `sign`, `round` and `count` are the DecoupleS123Div
+ * members of the same four samples. */
+static FORCE_INLINE __m256i decouple_s123_k_half_avx2(__m256i o, __m256i t, __m256i div,
+                                                      __m256i sign, __m256i round, __m256i count)
+{
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i const_32768 = _mm256_set1_epi64x(32768);
+
+    __m256i tmp_k = _mm256_mul_epi32(div, _mm256_mul_epi32(t, sign));
+    tmp_k = sra_epi64(_mm256_add_epi64(tmp_k, round), count);
+    tmp_k = blend(const_32768, tmp_k, _mm256_cmpeq_epi64(o, zero));
+
+    const __m256i k = blend(const_32768, tmp_k, _mm256_cmpgt_epi64(tmp_k, const_32768));
+    return blend(zero, k, _mm256_cmpgt_epi64(zero, tmp_k));
+}
+
+/* (int64_t)(rst * gain) of four samples; the conversion truncates, as the C
+ * cast of the scalar kernel does. */
+static FORCE_INLINE __m256i decouple_s123_gain_half_avx2(__m128i rst, double gain)
+{
+    double g[4];
+    _mm256_storeu_pd(g, _mm256_mul_pd(_mm256_cvtepi32_pd(rst), _mm256_set1_pd(gain)));
+    return _mm256_setr_epi64x((int64_t)g[0], (int64_t)g[1], (int64_t)g[2], (int64_t)g[3]);
+}
+
+/* Bound four restored samples by the gain limit where the angle flag is set:
+ * min(rst * gain, t) for a positive rst_f, max(rst * gain, t) for a negative
+ * one. */
+static FORCE_INLINE __m256i decouple_s123_limit_half_avx2(__m256i rst, __m256i t, __m256i rst_gain,
+                                                          __m256i angle_mask, __m256d rst_f)
+{
+    const __m256d zero = _mm256_set1_pd(0.0);
+    const __m256i v_min = blend(rst_gain, t, _mm256_cmpgt_epi64(t, rst_gain));
+    const __m256i v_max = blend(rst_gain, t, _mm256_cmpgt_epi64(rst_gain, t));
+    const __m256i gt =
+        _mm256_and_si256(angle_mask, _mm256_castpd_si256(_mm256_cmp_pd(rst_f, zero, _CMP_GT_OS)));
+    const __m256i lt =
+        _mm256_and_si256(angle_mask, _mm256_castpd_si256(_mm256_cmp_pd(rst_f, zero, _CMP_LT_OS)));
+
+    rst = blend(v_min, rst, gt);
+    return blend(v_max, rst, lt);
+}
+
+/* k of eight samples of one band, as two vectors of four int64. */
+static FORCE_INLINE void decouple_s123_k_avx2(__m256i o, __m256i t, const DecoupleS123Div *d,
+                                              __m256i *k_lo, __m256i *k_hi)
+{
+    *k_lo = decouple_s123_k_half_avx2(widen_lo(o), widen_lo(t), widen_lo(d->div), widen_lo(d->sign),
+                                      widen_lo(d->round), widen_lo(d->count));
+    *k_hi = decouple_s123_k_half_avx2(widen_hi(o), widen_hi(t), widen_hi(d->div), widen_hi(d->sign),
+                                      widen_hi(d->round), widen_hi(d->count));
+}
+
+/* The restored signal of eight samples of one band from their k
+ * (adm_decouple_band_s123()). `angle_lo` and `angle_hi` are the angle masks of
+ * the lower and upper four samples. */
+static FORCE_INLINE __m256i decouple_s123_rst_avx2(__m256i o, __m256i t, __m256i k_lo, __m256i k_hi,
+                                                   __m256i angle_lo, __m256i angle_hi, double gain)
+{
+    const __m256i const_16384 = _mm256_set1_epi64x(16384);
+
+    /* The shift is logical: only the low 32 bits of each lane are kept. */
+    __m256i rst_lo =
+        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(k_lo, widen_lo(o)), const_16384), 15);
+    __m256i rst_hi =
+        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(k_hi, widen_hi(o)), const_16384), 15);
+    const __m256i rst_32 = narrow_epi64(rst_lo, rst_hi);
+
+    const __m256 k_f = _mm256_cvtepi32_ps(narrow_epi64(k_lo, k_hi));
+    const __m256 rst_f =
+        _mm256_mul_ps(_mm256_mul_ps(k_f, _mm256_set1_ps((double)1 / 32768)),
+                      _mm256_mul_ps(_mm256_cvtepi32_ps(o), _mm256_set1_ps((double)1 / 64)));
+
+    const __m256i gain_lo = decouple_s123_gain_half_avx2(_mm256_extracti128_si256(rst_32, 0), gain);
+    const __m256i gain_hi = decouple_s123_gain_half_avx2(_mm256_extracti128_si256(rst_32, 1), gain);
+    rst_lo = decouple_s123_limit_half_avx2(rst_lo, widen_lo(t), gain_lo, angle_lo,
+                                           _mm256_cvtps_pd(_mm256_extractf128_ps(rst_f, 0)));
+    rst_hi = decouple_s123_limit_half_avx2(rst_hi, widen_hi(t), gain_hi, angle_hi,
+                                           _mm256_cvtps_pd(_mm256_extractf128_ps(rst_f, 1)));
+    return narrow_epi64(rst_lo, rst_hi);
+}
+
+/* Eight samples of all three bands, starting at `idx`. The bands advance
+ * together, one step at a time: each step ends in a scalar round trip, and
+ * three of those chains only overlap when they are issued side by side. */
+static FORCE_INLINE void decouple_s123_block_avx2(const AdmBuffer *buf, ptrdiff_t idx,
+                                                  const int32_t *lut, double gain,
+                                                  float cos_1deg_sq)
+{
     const i4_adm_dwt_band_t *ref = &buf->i4_ref_dwt2;
     const i4_adm_dwt_band_t *dis = &buf->i4_dis_dwt2;
     const i4_adm_dwt_band_t *r = &buf->i4_decouple_r;
     const i4_adm_dwt_band_t *a = &buf->i4_decouple_a;
+    const int32_t *const ref_bands[3] = {ref->band_h, ref->band_v, ref->band_d};
+    const int32_t *const dis_bands[3] = {dis->band_h, dis->band_v, dis->band_d};
+    int32_t *const r_bands[3] = {r->band_h, r->band_v, r->band_d};
+    int32_t *const a_bands[3] = {a->band_h, a->band_v, a->band_d};
+    __m256i o[3];
+    __m256i t[3];
+    __m256i msb[3];
+    __m256i shift[3];
+    DecoupleS123Div div[3];
+    __m256i k_lo[3];
+    __m256i k_hi[3];
+    __m256i rst[3];
+
+    for (int n = 0; n < 3; ++n) {
+        o[n] = _mm256_loadu_si256((const __m256i *)(ref_bands[n] + idx));
+        t[n] = _mm256_loadu_si256((const __m256i *)(dis_bands[n] + idx));
+    }
+    const __m256i angle_lo = decouple_s123_angle_mask_avx2(
+        widen_lo(o[0]), widen_lo(o[1]), widen_lo(t[0]), widen_lo(t[1]), cos_1deg_sq);
+    const __m256i angle_hi = decouple_s123_angle_mask_avx2(
+        widen_hi(o[0]), widen_hi(o[1]), widen_hi(t[0]), widen_hi(t[1]), cos_1deg_sq);
+
+    for (int n = 0; n < 3; ++n) {
+        decouple_s123_best15_avx2(_mm256_abs_epi32(o[n]), &msb[n], &shift[n]);
+    }
+    for (int n = 0; n < 3; ++n) {
+        div[n] = decouple_s123_div_avx2(o[n], msb[n], shift[n], lut);
+    }
+    for (int n = 0; n < 3; ++n) {
+        decouple_s123_k_avx2(o[n], t[n], &div[n], &k_lo[n], &k_hi[n]);
+    }
+    for (int n = 0; n < 3; ++n) {
+        rst[n] = decouple_s123_rst_avx2(o[n], t[n], k_lo[n], k_hi[n], angle_lo, angle_hi, gain);
+    }
+    for (int n = 0; n < 3; ++n) {
+        _mm256_storeu_si256((__m256i *)(r_bands[n] + idx), rst[n]);
+    }
+    for (int n = 0; n < 3; ++n) {
+        _mm256_storeu_si256((__m256i *)(a_bands[n] + idx), _mm256_sub_epi32(t[n], rst[n]));
+    }
+}
+
+/* See adm_decouple_avx2() for the `adm_div_lookup` qualifier. */
+// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
+void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
+                            int32_t *adm_div_lookup)
+{
+    const float cos_1deg_sq = adm_cos_1deg_sq();
+
     /* The computation of the score is not required for the regions
-    which lie outside the frame borders */
-    int left = w * ADM_BORDER_FACTOR - 0.5 - 1; // -1 for filter tap
-    int top = h * ADM_BORDER_FACTOR - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
+     * which lie outside the frame borders */
+    const AdmBorder b = adm_border_filt(w, h);
+    const int right_mod8 = b.right - ((b.right - b.left) % 8);
 
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    int right_mod8 = right - ((right - left) % 8);
-    int64_t ot_dp;
-    int64_t o_mag_sq;
-    int64_t t_mag_sq;
-
-    const __m256d const_0_pd = _mm256_set1_pd(0.0);
-    const __m256i const_0_epi64 = _mm256_set1_epi64x(0);
-    const __m256i const_1_epi32 = _mm256_set1_epi32(1);
-    const __m256i const_14_epi32 = _mm256_set1_epi32(14);
-    const __m256i const_15_epi32 = _mm256_set1_epi32(15);
-    const __m256i const_16384_epi64 = _mm256_set1_epi64x(16384);
-    const __m256i const_32768_epi32 = _mm256_set1_epi32(32768);
-    const __m256i const_32768_epi64 = _mm256_set1_epi64x(32768);
-
-    for (int i = top; i < bottom; ++i) {
-        for (int j = left; j < right_mod8; j += 8) {
-            // oh, ov, od, th, tv, td as int32 * 8 elements
-            __m256i oh_epi32 =
-                _mm256_loadu_si256((__m256i *)(ref->band_h + (ptrdiff_t)i * stride + j));
-            __m256i ov_epi32 =
-                _mm256_loadu_si256((__m256i *)(ref->band_v + (ptrdiff_t)i * stride + j));
-            __m256i od_epi32 =
-                _mm256_loadu_si256((__m256i *)(ref->band_d + (ptrdiff_t)i * stride + j));
-            __m256i th_epi32 =
-                _mm256_loadu_si256((__m256i *)(dis->band_h + (ptrdiff_t)i * stride + j));
-            __m256i tv_epi32 =
-                _mm256_loadu_si256((__m256i *)(dis->band_v + (ptrdiff_t)i * stride + j));
-            __m256i td_epi32 =
-                _mm256_loadu_si256((__m256i *)(dis->band_d + (ptrdiff_t)i * stride + j));
-
-            // oh, ov, od, th, tv, td as int64
-            __m256i oh_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oh_epi32, 0));
-            __m256i oh_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oh_epi32, 1));
-            __m256i ov_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(ov_epi32, 0));
-            __m256i ov_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(ov_epi32, 1));
-            __m256i od_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(od_epi32, 0));
-            __m256i od_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(od_epi32, 1));
-            __m256i th_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(th_epi32, 0));
-            __m256i th_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(th_epi32, 1));
-            __m256i tv_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(tv_epi32, 0));
-            __m256i tv_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(tv_epi32, 1));
-            __m256i td_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(td_epi32, 0));
-            __m256i td_hi_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(td_epi32, 1));
-
-            // ot_dp, o_mag_sq, t_mag_sq as int64
-            __m256i ot_dp_lo_epi64 = _mm256_add_epi64(_mm256_mul_epi32(oh_lo_epi64, th_lo_epi64),
-                                                      _mm256_mul_epi32(ov_lo_epi64, tv_lo_epi64));
-            __m256i ot_dp_hi_epi64 = _mm256_add_epi64(_mm256_mul_epi32(oh_hi_epi64, th_hi_epi64),
-                                                      _mm256_mul_epi32(ov_hi_epi64, tv_hi_epi64));
-            __m256i o_mag_sq_lo_epi64 =
-                _mm256_add_epi64(_mm256_mul_epi32(oh_lo_epi64, oh_lo_epi64),
-                                 _mm256_mul_epi32(ov_lo_epi64, ov_lo_epi64));
-            __m256i o_mag_sq_hi_epi64 =
-                _mm256_add_epi64(_mm256_mul_epi32(oh_hi_epi64, oh_hi_epi64),
-                                 _mm256_mul_epi32(ov_hi_epi64, ov_hi_epi64));
-            __m256i t_mag_sq_lo_epi64 =
-                _mm256_add_epi64(_mm256_mul_epi32(th_lo_epi64, th_lo_epi64),
-                                 _mm256_mul_epi32(tv_lo_epi64, tv_lo_epi64));
-            __m256i t_mag_sq_hi_epi64 =
-                _mm256_add_epi64(_mm256_mul_epi32(th_hi_epi64, th_hi_epi64),
-                                 _mm256_mul_epi32(tv_hi_epi64, tv_hi_epi64));
-
-            // angle_flag as int64
-            int64_t angle_flag[8];
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 0), extract_epi64(o_mag_sq_lo_epi64, 0),
-                       extract_epi64(t_mag_sq_lo_epi64, 0), angle_flag[0]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 1), extract_epi64(o_mag_sq_lo_epi64, 1),
-                       extract_epi64(t_mag_sq_lo_epi64, 1), angle_flag[1]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 2), extract_epi64(o_mag_sq_lo_epi64, 2),
-                       extract_epi64(t_mag_sq_lo_epi64, 2), angle_flag[2]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 3), extract_epi64(o_mag_sq_lo_epi64, 3),
-                       extract_epi64(t_mag_sq_lo_epi64, 3), angle_flag[3]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 0), extract_epi64(o_mag_sq_hi_epi64, 0),
-                       extract_epi64(t_mag_sq_hi_epi64, 0), angle_flag[4]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 1), extract_epi64(o_mag_sq_hi_epi64, 1),
-                       extract_epi64(t_mag_sq_hi_epi64, 1), angle_flag[5]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 2), extract_epi64(o_mag_sq_hi_epi64, 2),
-                       extract_epi64(t_mag_sq_hi_epi64, 2), angle_flag[6]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 3), extract_epi64(o_mag_sq_hi_epi64, 3),
-                       extract_epi64(t_mag_sq_hi_epi64, 3), angle_flag[7]);
-            __m256i angle_flag_lo_epi64 = _mm256_loadu_si256((__m256i *)(&angle_flag[0]));
-            __m256i angle_flag_hi_epi64 = _mm256_loadu_si256((__m256i *)(&angle_flag[4]));
-
-            __m256i abs_oh_epi32 = _mm256_abs_epi32(oh_epi32);
-            __m256i abs_ov_epi32 = _mm256_abs_epi32(ov_epi32);
-            __m256i abs_od_epi32 = _mm256_abs_epi32(od_epi32);
-
-            // cmpgt_epi32 returns -1 : 0 if a > b. We really want -1 : 1 to match c code, so we include an or_si256.
-            __m256i kh_sign_epi32 = _mm256_or_si256(
-                _mm256_cmpgt_epi32(_mm256_setzero_si256(), oh_epi32), const_1_epi32);
-            __m256i kv_sign_epi32 = _mm256_or_si256(
-                _mm256_cmpgt_epi32(_mm256_setzero_si256(), ov_epi32), const_1_epi32);
-            __m256i kd_sign_epi32 = _mm256_or_si256(
-                _mm256_cmpgt_epi32(_mm256_setzero_si256(), od_epi32), const_1_epi32);
-
-            // get_best15_from32 uses builtin_clz, which has not SIMD equivalent. We convert to scalar for the clz
-            uint16_t tmp_kh_msb[8];
-            uint16_t tmp_kv_msb[8];
-            uint16_t tmp_kd_msb[8];
-            int32_t tmp_kh_shift[8];
-            int32_t tmp_kv_shift[8];
-            int32_t tmp_kd_shift[8];
-
-            tmp_kh_msb[0] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 0), &tmp_kh_shift[0]);
-            tmp_kh_msb[1] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 1), &tmp_kh_shift[1]);
-            tmp_kh_msb[2] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 2), &tmp_kh_shift[2]);
-            tmp_kh_msb[3] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 3), &tmp_kh_shift[3]);
-            tmp_kh_msb[4] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 4), &tmp_kh_shift[4]);
-            tmp_kh_msb[5] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 5), &tmp_kh_shift[5]);
-            tmp_kh_msb[6] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 6), &tmp_kh_shift[6]);
-            tmp_kh_msb[7] =
-                get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 7), &tmp_kh_shift[7]);
-
-            // convert from scalar back to vector
-            __m256i kh_shift_epi32 = _mm256_setr_epi32(
-                tmp_kh_shift[0], tmp_kh_shift[1], tmp_kh_shift[2], tmp_kh_shift[3], tmp_kh_shift[4],
-                tmp_kh_shift[5], tmp_kh_shift[6], tmp_kh_shift[7]);
-            __m256i tmp_kh_msb_epi32 =
-                _mm256_setr_epi32(tmp_kh_msb[0], tmp_kh_msb[1], tmp_kh_msb[2], tmp_kh_msb[3],
-                                  tmp_kh_msb[4], tmp_kh_msb[5], tmp_kh_msb[6], tmp_kh_msb[7]);
-
-            __m256i mask_kh_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_oh_epi32);
-            // Where abs_oh < 32768, scalar uses oh directly (signed); the AVX-512
-            // path here blends abs_oh_epi32. AVX2 previously blended const_32768,
-            // producing small float-feature drift visible on 10-bit content.
-            __m256i kh_msb_epi32 = blend(abs_oh_epi32, tmp_kh_msb_epi32, mask_kh_msb_epi32);
-            kh_shift_epi32 = blend(_mm256_setzero_si256(), kh_shift_epi32, mask_kh_msb_epi32);
-
-            tmp_kv_msb[0] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 0), &tmp_kv_shift[0]);
-            tmp_kv_msb[1] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 1), &tmp_kv_shift[1]);
-            tmp_kv_msb[2] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 2), &tmp_kv_shift[2]);
-            tmp_kv_msb[3] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 3), &tmp_kv_shift[3]);
-            tmp_kv_msb[4] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 4), &tmp_kv_shift[4]);
-            tmp_kv_msb[5] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 5), &tmp_kv_shift[5]);
-            tmp_kv_msb[6] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 6), &tmp_kv_shift[6]);
-            tmp_kv_msb[7] =
-                get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 7), &tmp_kv_shift[7]);
-
-            __m256i kv_shift_epi32 = _mm256_setr_epi32(
-                tmp_kv_shift[0], tmp_kv_shift[1], tmp_kv_shift[2], tmp_kv_shift[3], tmp_kv_shift[4],
-                tmp_kv_shift[5], tmp_kv_shift[6], tmp_kv_shift[7]);
-            __m256i tmp_kv_msb_epi32 =
-                _mm256_setr_epi32(tmp_kv_msb[0], tmp_kv_msb[1], tmp_kv_msb[2], tmp_kv_msb[3],
-                                  tmp_kv_msb[4], tmp_kv_msb[5], tmp_kv_msb[6], tmp_kv_msb[7]);
-            __m256i mask_kv_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_ov_epi32);
-            __m256i kv_msb_epi32 = blend(abs_ov_epi32, tmp_kv_msb_epi32, mask_kv_msb_epi32);
-            kv_shift_epi32 = blend(_mm256_setzero_si256(), kv_shift_epi32, mask_kv_msb_epi32);
-
-            tmp_kd_msb[0] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 0), &tmp_kd_shift[0]);
-            tmp_kd_msb[1] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 1), &tmp_kd_shift[1]);
-            tmp_kd_msb[2] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 2), &tmp_kd_shift[2]);
-            tmp_kd_msb[3] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 3), &tmp_kd_shift[3]);
-            tmp_kd_msb[4] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 4), &tmp_kd_shift[4]);
-            tmp_kd_msb[5] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 5), &tmp_kd_shift[5]);
-            tmp_kd_msb[6] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 6), &tmp_kd_shift[6]);
-            tmp_kd_msb[7] =
-                get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 7), &tmp_kd_shift[7]);
-
-            __m256i kd_shift_epi32 = _mm256_setr_epi32(
-                tmp_kd_shift[0], tmp_kd_shift[1], tmp_kd_shift[2], tmp_kd_shift[3], tmp_kd_shift[4],
-                tmp_kd_shift[5], tmp_kd_shift[6], tmp_kd_shift[7]);
-            __m256i tmp_kd_msb_epi32 =
-                _mm256_setr_epi32(tmp_kd_msb[0], tmp_kd_msb[1], tmp_kd_msb[2], tmp_kd_msb[3],
-                                  tmp_kd_msb[4], tmp_kd_msb[5], tmp_kd_msb[6], tmp_kd_msb[7]);
-            __m256i mask_kd_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_od_epi32);
-            __m256i kd_msb_epi32 = blend(abs_od_epi32, tmp_kd_msb_epi32, mask_kd_msb_epi32);
-            kd_shift_epi32 = blend(_mm256_setzero_si256(), kd_shift_epi32, mask_kd_msb_epi32);
-
-            // tmp_kh as int64
-            __m256i div_lookup_kh_epi32 = _mm256_i32gather_epi32(
-                adm_div_lookup, _mm256_add_epi32(kh_msb_epi32, const_32768_epi32), 4);
-            __m256i one_kh_shift_epi32 =
-                _mm256_sllv_epi32(const_1_epi32, _mm256_add_epi32(const_14_epi32, kh_shift_epi32));
-            __m256i fifteen_kh_epi32 = _mm256_add_epi32(const_15_epi32, kh_shift_epi32);
-            __m256i tmp_kh_lo_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kh_epi32, 0)),
-                _mm256_mul_epi32(th_lo_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kh_sign_epi32, 0))));
-            tmp_kh_lo_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kh_lo_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kh_shift_epi32, 0))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kh_epi32, 0)));
-            __m256i mask_kh_lo_epi64 = _mm256_cmpeq_epi64(oh_lo_epi64, const_0_epi64);
-            __m256i tmp_kh_lo_epi64 =
-                blend(const_32768_epi64, tmp_kh_lo_cond2_epi64, mask_kh_lo_epi64);
-            __m256i tmp_kh_hi_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kh_epi32, 1)),
-                _mm256_mul_epi32(th_hi_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kh_sign_epi32, 1))));
-            tmp_kh_hi_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kh_hi_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kh_shift_epi32, 1))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kh_epi32, 1)));
-            __m256i mask_kh_hi_epi64 = _mm256_cmpeq_epi64(oh_hi_epi64, const_0_epi64);
-            __m256i tmp_kh_hi_epi64 =
-                blend(const_32768_epi64, tmp_kh_hi_cond2_epi64, mask_kh_hi_epi64);
-            // tmp_kv as int64
-            __m256i div_lookup_kv_epi32 = _mm256_i32gather_epi32(
-                adm_div_lookup, _mm256_add_epi32(kv_msb_epi32, const_32768_epi32), 4);
-            __m256i one_kv_shift_epi32 =
-                _mm256_sllv_epi32(const_1_epi32, _mm256_add_epi32(const_14_epi32, kv_shift_epi32));
-            __m256i fifteen_kv_epi32 = _mm256_add_epi32(const_15_epi32, kv_shift_epi32);
-            __m256i tmp_kv_lo_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kv_epi32, 0)),
-                _mm256_mul_epi32(tv_lo_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kv_sign_epi32, 0))));
-            tmp_kv_lo_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kv_lo_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kv_shift_epi32, 0))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kv_epi32, 0)));
-            __m256i mask_kv_lo_epi64 = _mm256_cmpeq_epi64(ov_lo_epi64, const_0_epi64);
-            __m256i tmp_kv_lo_epi64 =
-                blend(const_32768_epi64, tmp_kv_lo_cond2_epi64, mask_kv_lo_epi64);
-            __m256i tmp_kv_hi_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kv_epi32, 1)),
-                _mm256_mul_epi32(tv_hi_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kv_sign_epi32, 1))));
-            tmp_kv_hi_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kv_hi_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kv_shift_epi32, 1))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kv_epi32, 1)));
-            __m256i mask_kv_hi_epi64 = _mm256_cmpeq_epi64(ov_hi_epi64, const_0_epi64);
-            __m256i tmp_kv_hi_epi64 =
-                blend(const_32768_epi64, tmp_kv_hi_cond2_epi64, mask_kv_hi_epi64);
-            // tmp_kd as int64
-            __m256i div_lookup_kd_epi32 = _mm256_i32gather_epi32(
-                adm_div_lookup, _mm256_add_epi32(kd_msb_epi32, const_32768_epi32), 4);
-            __m256i one_kd_shift_epi32 =
-                _mm256_sllv_epi32(const_1_epi32, _mm256_add_epi32(const_14_epi32, kd_shift_epi32));
-            __m256i fifteen_kd_epi32 = _mm256_add_epi32(const_15_epi32, kd_shift_epi32);
-            __m256i tmp_kd_lo_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kd_epi32, 0)),
-                _mm256_mul_epi32(td_lo_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kd_sign_epi32, 0))));
-            tmp_kd_lo_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kd_lo_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kd_shift_epi32, 0))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kd_epi32, 0)));
-            __m256i mask_kd_lo_epi64 = _mm256_cmpeq_epi64(od_lo_epi64, const_0_epi64);
-            __m256i tmp_kd_lo_epi64 =
-                blend(const_32768_epi64, tmp_kd_lo_cond2_epi64, mask_kd_lo_epi64);
-            __m256i tmp_kd_hi_cond2_epi64 = _mm256_mul_epi32(
-                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(div_lookup_kd_epi32, 1)),
-                _mm256_mul_epi32(td_hi_epi64, _mm256_cvtepi32_epi64(
-                                                  _mm256_extracti128_si256(kd_sign_epi32, 1))));
-            tmp_kd_hi_cond2_epi64 =
-                sra_epi64(_mm256_add_epi64(tmp_kd_hi_cond2_epi64,
-                                           _mm256_cvtepi32_epi64(
-                                               _mm256_extracti128_si256(one_kd_shift_epi32, 1))),
-                          _mm256_cvtepi32_epi64(_mm256_extracti128_si256(fifteen_kd_epi32, 1)));
-            __m256i mask_kd_hi_epi64 = _mm256_cmpeq_epi64(od_hi_epi64, const_0_epi64);
-            __m256i tmp_kd_hi_epi64 =
-                blend(const_32768_epi64, tmp_kd_hi_cond2_epi64, mask_kd_hi_epi64);
-
-            // kh as int64
-            __m256i kh_lo_epi64 = blend(const_32768_epi64, tmp_kh_lo_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kh_lo_epi64, const_32768_epi64));
-            kh_lo_epi64 = blend(const_0_epi64, kh_lo_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kh_lo_epi64));
-            __m256i kh_hi_epi64 = blend(const_32768_epi64, tmp_kh_hi_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kh_hi_epi64, const_32768_epi64));
-            kh_hi_epi64 = blend(const_0_epi64, kh_hi_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kh_hi_epi64));
-            // kv as int64
-            __m256i kv_lo_epi64 = blend(const_32768_epi64, tmp_kv_lo_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kv_lo_epi64, const_32768_epi64));
-            kv_lo_epi64 = blend(const_0_epi64, kv_lo_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kv_lo_epi64));
-            __m256i kv_hi_epi64 = blend(const_32768_epi64, tmp_kv_hi_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kv_hi_epi64, const_32768_epi64));
-            kv_hi_epi64 = blend(const_0_epi64, kv_hi_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kv_hi_epi64));
-            // kd as int64
-            __m256i kd_lo_epi64 = blend(const_32768_epi64, tmp_kd_lo_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kd_lo_epi64, const_32768_epi64));
-            kd_lo_epi64 = blend(const_0_epi64, kd_lo_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kd_lo_epi64));
-            __m256i kd_hi_epi64 = blend(const_32768_epi64, tmp_kd_hi_epi64,
-                                        _mm256_cmpgt_epi64(tmp_kd_hi_epi64, const_32768_epi64));
-            kd_hi_epi64 = blend(const_0_epi64, kd_hi_epi64,
-                                _mm256_cmpgt_epi64(const_0_epi64, tmp_kd_hi_epi64));
-
-            // rst convert 64 -> 32 is done in scalar
-            // rst_h (int32_t)
-            __m256i rst_h_lo_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kh_lo_epi64, oh_lo_epi64), const_16384_epi64),
-                15);
-            __m256i rst_h_hi_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kh_hi_epi64, oh_hi_epi64), const_16384_epi64),
-                15);
-            int64_t tmp_rst_h_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_h_c[0])), rst_h_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_h_c[4])), rst_h_hi_epi64);
-            __m256i rst_h_epi32 = _mm256_setr_epi32(
-                (int)tmp_rst_h_c[0], (int)tmp_rst_h_c[1], (int)tmp_rst_h_c[2], (int)tmp_rst_h_c[3],
-                (int)tmp_rst_h_c[4], (int)tmp_rst_h_c[5], (int)tmp_rst_h_c[6], (int)tmp_rst_h_c[7]);
-            // rst_v (int32_t)
-            __m256i rst_v_lo_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kv_lo_epi64, ov_lo_epi64), const_16384_epi64),
-                15);
-            __m256i rst_v_hi_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kv_hi_epi64, ov_hi_epi64), const_16384_epi64),
-                15);
-            int64_t tmp_rst_v_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_v_c[0])), rst_v_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_v_c[4])), rst_v_hi_epi64);
-            __m256i rst_v_epi32 = _mm256_setr_epi32(
-                (int)tmp_rst_v_c[0], (int)tmp_rst_v_c[1], (int)tmp_rst_v_c[2], (int)tmp_rst_v_c[3],
-                (int)tmp_rst_v_c[4], (int)tmp_rst_v_c[5], (int)tmp_rst_v_c[6], (int)tmp_rst_v_c[7]);
-            // rst_d (int32_t)
-            __m256i rst_d_lo_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kd_lo_epi64, od_lo_epi64), const_16384_epi64),
-                15);
-            __m256i rst_d_hi_epi64 = _mm256_srli_epi64(
-                _mm256_add_epi64(_mm256_mul_epi32(kd_hi_epi64, od_hi_epi64), const_16384_epi64),
-                15);
-            int64_t tmp_rst_d_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_d_c[0])), rst_d_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_d_c[4])), rst_d_hi_epi64);
-            __m256i rst_d_epi32 = _mm256_setr_epi32(
-                (int)tmp_rst_d_c[0], (int)tmp_rst_d_c[1], (int)tmp_rst_d_c[2], (int)tmp_rst_d_c[3],
-                (int)tmp_rst_d_c[4], (int)tmp_rst_d_c[5], (int)tmp_rst_d_c[6], (int)tmp_rst_d_c[7]);
-
-            __m256 inv_32768_f = _mm256_set1_ps((double)1 / 32768);
-            __m256 inv_64_f = _mm256_set1_ps((double)1 / 64);
-
-            // kh convert 64 -> float needs to be done in scalar :(
-            // rst_h_f
-            int64_t tmp_kh_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_kh_c[0])), kh_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_kh_c[4])), kh_hi_epi64);
-            __m256 kh_f = _mm256_cvtepi32_ps(_mm256_setr_epi32(
-                (int)tmp_kh_c[0], (int)tmp_kh_c[1], (int)tmp_kh_c[2], (int)tmp_kh_c[3],
-                (int)tmp_kh_c[4], (int)tmp_kh_c[5], (int)tmp_kh_c[6], (int)tmp_kh_c[7]));
-            __m256 rst_h_f = _mm256_mul_ps(_mm256_mul_ps(kh_f, inv_32768_f),
-                                           _mm256_mul_ps(_mm256_cvtepi32_ps(oh_epi32), inv_64_f));
-            // rst_v_f
-            int64_t tmp_kv_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_kv_c[0])), kv_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_kv_c[4])), kv_hi_epi64);
-            __m256 kv_f = _mm256_cvtepi32_ps(_mm256_setr_epi32(
-                (int)tmp_kv_c[0], (int)tmp_kv_c[1], (int)tmp_kv_c[2], (int)tmp_kv_c[3],
-                (int)tmp_kv_c[4], (int)tmp_kv_c[5], (int)tmp_kv_c[6], (int)tmp_kv_c[7]));
-            __m256 rst_v_f = _mm256_mul_ps(_mm256_mul_ps(kv_f, inv_32768_f),
-                                           _mm256_mul_ps(_mm256_cvtepi32_ps(ov_epi32), inv_64_f));
-            // rst_d_f
-            int64_t tmp_kd_c[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_kd_c[0])), kd_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_kd_c[4])), kd_hi_epi64);
-            __m256 kd_f = _mm256_cvtepi32_ps(_mm256_setr_epi32(
-                (int)tmp_kd_c[0], (int)tmp_kd_c[1], (int)tmp_kd_c[2], (int)tmp_kd_c[3],
-                (int)tmp_kd_c[4], (int)tmp_kd_c[5], (int)tmp_kd_c[6], (int)tmp_kd_c[7]));
-            __m256 rst_d_f = _mm256_mul_ps(_mm256_mul_ps(kd_f, inv_32768_f),
-                                           _mm256_mul_ps(_mm256_cvtepi32_ps(od_epi32), inv_64_f));
-
-            __m256d adm_gain_d = _mm256_set1_pd(adm_enhn_gain_limit);
-
-            // rst_h min/max as int64
-            __m256d rst_h_lo_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_h_epi32, 0)), adm_gain_d);
-            __m256d rst_h_hi_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_h_epi32, 1)), adm_gain_d);
-            // convert double -> 64 done in scalar
-            double tmp_rst_h_gain_c[8];
-            _mm256_storeu_pd((double *)(&(tmp_rst_h_gain_c[0])), rst_h_lo_gain_pd);
-            _mm256_storeu_pd((double *)(&(tmp_rst_h_gain_c[4])), rst_h_hi_gain_pd);
-            __m256i rst_h_lo_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_h_gain_c[0], (int64_t)tmp_rst_h_gain_c[1],
-                                   (int64_t)tmp_rst_h_gain_c[2], (int64_t)tmp_rst_h_gain_c[3]);
-            __m256i rst_h_hi_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_h_gain_c[4], (int64_t)tmp_rst_h_gain_c[5],
-                                   (int64_t)tmp_rst_h_gain_c[6], (int64_t)tmp_rst_h_gain_c[7]);
-            __m256i rst_h_min_lo_epi64 =
-                blend(rst_h_lo_gain_epi64, th_lo_epi64,
-                      _mm256_cmpgt_epi64(th_lo_epi64, rst_h_lo_gain_epi64));
-            __m256i rst_h_min_hi_epi64 =
-                blend(rst_h_hi_gain_epi64, th_hi_epi64,
-                      _mm256_cmpgt_epi64(th_hi_epi64, rst_h_hi_gain_epi64));
-            __m256i rst_h_max_lo_epi64 =
-                blend(rst_h_lo_gain_epi64, th_lo_epi64,
-                      _mm256_cmpgt_epi64(rst_h_lo_gain_epi64, th_lo_epi64));
-            __m256i rst_h_max_hi_epi64 =
-                blend(rst_h_hi_gain_epi64, th_hi_epi64,
-                      _mm256_cmpgt_epi64(rst_h_hi_gain_epi64, th_hi_epi64));
-
-            // rst_h as int64 to int32 after conditionals
-            __m256d rst_h_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_h_f, 0));
-            __m256d rst_h_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_h_f, 1));
-            __m256i mask_gt_h_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_h_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_h_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_h_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_h_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_h_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_h_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_h_hi_d, const_0_pd, _CMP_LT_OS)));
-            rst_h_lo_epi64 = blend(rst_h_min_lo_epi64, rst_h_lo_epi64, mask_gt_h_lo_epi64);
-            rst_h_hi_epi64 = blend(rst_h_min_hi_epi64, rst_h_hi_epi64, mask_gt_h_hi_epi64);
-            rst_h_lo_epi64 = blend(rst_h_max_lo_epi64, rst_h_lo_epi64, mask_lt_h_lo_epi64);
-            rst_h_hi_epi64 = blend(rst_h_max_hi_epi64, rst_h_hi_epi64, mask_lt_h_hi_epi64);
-            // convert 64 -> 32 is done in scalar
-            int64_t tmp_rst_h_c2[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_h_c2[0])), rst_h_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_h_c2[4])), rst_h_hi_epi64);
-            rst_h_epi32 =
-                _mm256_setr_epi32((int)tmp_rst_h_c2[0], (int)tmp_rst_h_c2[1], (int)tmp_rst_h_c2[2],
-                                  (int)tmp_rst_h_c2[3], (int)tmp_rst_h_c2[4], (int)tmp_rst_h_c2[5],
-                                  (int)tmp_rst_h_c2[6], (int)tmp_rst_h_c2[7]);
-
-            // rst_v min/max as int64
-            __m256d rst_v_lo_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_v_epi32, 0)), adm_gain_d);
-            __m256d rst_v_hi_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_v_epi32, 1)), adm_gain_d);
-            // convert double -> 64 done in scalar
-            double tmp_rst_v_gain_c[8];
-            _mm256_storeu_pd((double *)(&(tmp_rst_v_gain_c[0])), rst_v_lo_gain_pd);
-            _mm256_storeu_pd((double *)(&(tmp_rst_v_gain_c[4])), rst_v_hi_gain_pd);
-            __m256i rst_v_lo_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_v_gain_c[0], (int64_t)tmp_rst_v_gain_c[1],
-                                   (int64_t)tmp_rst_v_gain_c[2], (int64_t)tmp_rst_v_gain_c[3]);
-            __m256i rst_v_hi_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_v_gain_c[4], (int64_t)tmp_rst_v_gain_c[5],
-                                   (int64_t)tmp_rst_v_gain_c[6], (int64_t)tmp_rst_v_gain_c[7]);
-            __m256i rst_v_min_lo_epi64 =
-                blend(rst_v_lo_gain_epi64, tv_lo_epi64,
-                      _mm256_cmpgt_epi64(tv_lo_epi64, rst_v_lo_gain_epi64));
-            __m256i rst_v_min_hi_epi64 =
-                blend(rst_v_hi_gain_epi64, tv_hi_epi64,
-                      _mm256_cmpgt_epi64(tv_hi_epi64, rst_v_hi_gain_epi64));
-            __m256i rst_v_max_lo_epi64 =
-                blend(rst_v_lo_gain_epi64, tv_lo_epi64,
-                      _mm256_cmpgt_epi64(rst_v_lo_gain_epi64, tv_lo_epi64));
-            __m256i rst_v_max_hi_epi64 =
-                blend(rst_v_hi_gain_epi64, tv_hi_epi64,
-                      _mm256_cmpgt_epi64(rst_v_hi_gain_epi64, tv_hi_epi64));
-
-            // rst_v as int64 to int32 after conditionals
-            __m256d rst_v_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_v_f, 0));
-            __m256d rst_v_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_v_f, 1));
-            __m256i mask_gt_v_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_v_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_v_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_v_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_v_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_v_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_v_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_v_hi_d, const_0_pd, _CMP_LT_OS)));
-
-            rst_v_lo_epi64 = blend(rst_v_min_lo_epi64, rst_v_lo_epi64, mask_gt_v_lo_epi64);
-            rst_v_hi_epi64 = blend(rst_v_min_hi_epi64, rst_v_hi_epi64, mask_gt_v_hi_epi64);
-            rst_v_lo_epi64 = blend(rst_v_max_lo_epi64, rst_v_lo_epi64, mask_lt_v_lo_epi64);
-            rst_v_hi_epi64 = blend(rst_v_max_hi_epi64, rst_v_hi_epi64, mask_lt_v_hi_epi64);
-            // convert 64 -> 32 needs done in scalar
-            int64_t tmp_rst_v_c2[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_v_c2[0])), rst_v_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_v_c2[4])), rst_v_hi_epi64);
-            rst_v_epi32 =
-                _mm256_setr_epi32((int)tmp_rst_v_c2[0], (int)tmp_rst_v_c2[1], (int)tmp_rst_v_c2[2],
-                                  (int)tmp_rst_v_c2[3], (int)tmp_rst_v_c2[4], (int)tmp_rst_v_c2[5],
-                                  (int)tmp_rst_v_c2[6], (int)tmp_rst_v_c2[7]);
-
-            // rst_d min/max as int64
-            __m256d rst_d_lo_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_d_epi32, 0)), adm_gain_d);
-            __m256d rst_d_hi_gain_pd = _mm256_mul_pd(
-                _mm256_cvtepi32_pd(_mm256_extracti128_si256(rst_d_epi32, 1)), adm_gain_d);
-            // convert double -> 64 done in scalar
-            double tmp_rst_d_gain_c[8];
-            _mm256_storeu_pd((double *)(&(tmp_rst_d_gain_c[0])), rst_d_lo_gain_pd);
-            _mm256_storeu_pd((double *)(&(tmp_rst_d_gain_c[4])), rst_d_hi_gain_pd);
-            __m256i rst_d_lo_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_d_gain_c[0], (int64_t)tmp_rst_d_gain_c[1],
-                                   (int64_t)tmp_rst_d_gain_c[2], (int64_t)tmp_rst_d_gain_c[3]);
-            __m256i rst_d_hi_gain_epi64 =
-                _mm256_setr_epi64x((int64_t)tmp_rst_d_gain_c[4], (int64_t)tmp_rst_d_gain_c[5],
-                                   (int64_t)tmp_rst_d_gain_c[6], (int64_t)tmp_rst_d_gain_c[7]);
-            __m256i rst_d_min_lo_epi64 =
-                blend(rst_d_lo_gain_epi64, td_lo_epi64,
-                      _mm256_cmpgt_epi64(td_lo_epi64, rst_d_lo_gain_epi64));
-            __m256i rst_d_min_hi_epi64 =
-                blend(rst_d_hi_gain_epi64, td_hi_epi64,
-                      _mm256_cmpgt_epi64(td_hi_epi64, rst_d_hi_gain_epi64));
-            __m256i rst_d_max_lo_epi64 =
-                blend(rst_d_lo_gain_epi64, td_lo_epi64,
-                      _mm256_cmpgt_epi64(rst_d_lo_gain_epi64, td_lo_epi64));
-            __m256i rst_d_max_hi_epi64 =
-                blend(rst_d_hi_gain_epi64, td_hi_epi64,
-                      _mm256_cmpgt_epi64(rst_d_hi_gain_epi64, td_hi_epi64));
-
-            // rst_d as int64 to int32 after conditionals
-            __m256d rst_d_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_d_f, 0));
-            __m256d rst_d_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_d_f, 1));
-            __m256i mask_gt_d_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_d_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_d_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_d_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_d_lo_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_d_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_d_hi_epi64 = _mm256_and_si256(
-                _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
-                                 _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
-                _mm256_castpd_si256(_mm256_cmp_pd(rst_d_hi_d, const_0_pd, _CMP_LT_OS)));
-
-            rst_d_lo_epi64 = blend(rst_d_min_lo_epi64, rst_d_lo_epi64, mask_gt_d_lo_epi64);
-            rst_d_hi_epi64 = blend(rst_d_min_hi_epi64, rst_d_hi_epi64, mask_gt_d_hi_epi64);
-            rst_d_lo_epi64 = blend(rst_d_max_lo_epi64, rst_d_lo_epi64, mask_lt_d_lo_epi64);
-            rst_d_hi_epi64 = blend(rst_d_max_hi_epi64, rst_d_hi_epi64, mask_lt_d_hi_epi64);
-            // convert 64 -> 32 done in scalar
-            int64_t tmp_rst_d_c2[8];
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_d_c2[0])), rst_d_lo_epi64);
-            _mm256_storeu_si256((__m256i *)(&(tmp_rst_d_c2[4])), rst_d_hi_epi64);
-            rst_d_epi32 =
-                _mm256_setr_epi32((int)tmp_rst_d_c2[0], (int)tmp_rst_d_c2[1], (int)tmp_rst_d_c2[2],
-                                  (int)tmp_rst_d_c2[3], (int)tmp_rst_d_c2[4], (int)tmp_rst_d_c2[5],
-                                  (int)tmp_rst_d_c2[6], (int)tmp_rst_d_c2[7]);
-
-            __m256i th_sub_rst_h_epi32 = _mm256_sub_epi32(th_epi32, rst_h_epi32);
-            __m256i tv_sub_rst_v_epi32 = _mm256_sub_epi32(tv_epi32, rst_v_epi32);
-            __m256i td_sub_rst_d_epi32 = _mm256_sub_epi32(td_epi32, rst_d_epi32);
-
-            // store
-            _mm256_storeu_si256((__m256i *)(r->band_h + (ptrdiff_t)i * stride + j), rst_h_epi32);
-            _mm256_storeu_si256((__m256i *)(r->band_v + (ptrdiff_t)i * stride + j), rst_v_epi32);
-            _mm256_storeu_si256((__m256i *)(r->band_d + (ptrdiff_t)i * stride + j), rst_d_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_h + (ptrdiff_t)i * stride + j),
-                                th_sub_rst_h_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_v + (ptrdiff_t)i * stride + j),
-                                tv_sub_rst_v_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_d + (ptrdiff_t)i * stride + j),
-                                td_sub_rst_d_epi32);
+    for (int i = b.top; i < b.bottom; ++i) {
+        for (int j = b.left; j < right_mod8; j += 8) {
+            decouple_s123_block_avx2(buf, (ptrdiff_t)i * stride + j, adm_div_lookup,
+                                     adm_enhn_gain_limit, cos_1deg_sq);
         }
-
-        for (int j = right_mod8; j < right; ++j) {
-            int32_t oh = ref->band_h[i * stride + j];
-            int32_t ov = ref->band_v[i * stride + j];
-            int32_t od = ref->band_d[i * stride + j];
-            int32_t th = dis->band_h[i * stride + j];
-            int32_t tv = dis->band_v[i * stride + j];
-            int32_t td = dis->band_d[i * stride + j];
-            int32_t rst_h;
-            int32_t rst_v;
-            int32_t rst_d;
-
-            /* Determine if angle between (oh,ov) and (th,tv) is less than 1 degree.
-             * Given that u is the angle (oh,ov) and v is the angle (th,tv), this can
-             * be done by testing the inequvality.
-             *
-             * { (u.v.) >= 0 } AND { (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2 }
-             *
-             * Proof:
-             *
-             * cos(theta) = (u.v) / (||u|| * ||v||)
-             *
-             * IF u.v >= 0 THEN
-             *   cos(theta)^2 = (u.v)^2 / (||u||^2 * ||v||^2)
-             *   (u.v)^2 = cos(theta)^2 * ||u||^2 * ||v||^2
-             *
-             *   IF |theta| < 1deg THEN
-             *     (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2
-             *   END
-             * ELSE
-             *   |theta| > 90deg
-             * END
-             */
-            ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
-            o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
-            t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
-
-// cast to float changes the precision of the convertion, it can change the value of angle_flag
-#if 1
-            int angle_flag =
-                (((float)ot_dp / 4096.0) >= 0.0f) &&
-                (((float)ot_dp / 4096.0) * ((float)ot_dp / 4096.0) >=
-                 cos_1deg_sq * ((float)o_mag_sq / 4096.0) * ((float)t_mag_sq / 4096.0));
-#else
-            int angle_flag =
-                (((double)ot_dp / 4096.0) >= 0.0f) &&
-                (((double)ot_dp / 4096.0) * ((double)ot_dp / 4096.0) >=
-                 cos_1deg_sq * ((double)o_mag_sq / 4096.0) * ((double)t_mag_sq / 4096.0));
-#endif
-
-            /**
-             * Division th/oh is carried using lookup table and converted to multiplication
-             * int64 / int32 is converted to multiplication using following method
-             * num /den :
-             * DenAbs = Abs(den)
-             * MSBDen = MSB(DenAbs)     (gives position of first 1 bit form msb side)
-             * If (DenAbs < (1 << 15))
-             *      Round = (1<<14)
-             *      Score = (num *  div_lookup[den] + Round ) >> 15
-             * else
-             *      RoundD  = (1<< (16 - MSBDen))
-             *      Round   = (1<< (14 + (17 - MSBDen))
-             *      Score   = (num * div_lookup[(DenAbs + RoundD )>>(17 - MSBDen)]*sign(Denominator) + Round)
-             *                  >> ((15 + (17 - MSBDen))
-             */
-
-            int32_t kh_shift = 0;
-            int32_t kv_shift = 0;
-            int32_t kd_shift = 0;
-
-            uint32_t abs_oh = abs(oh);
-            uint32_t abs_ov = abs(ov);
-            uint32_t abs_od = abs(od);
-
-            int8_t kh_sign = (oh < 0 ? -1 : 1);
-            int8_t kv_sign = (ov < 0 ? -1 : 1);
-            int8_t kd_sign = (od < 0 ? -1 : 1);
-
-            uint16_t kh_msb = (abs_oh < (32768) ? abs_oh : get_best15_from32(abs_oh, &kh_shift));
-            uint16_t kv_msb = (abs_ov < (32768) ? abs_ov : get_best15_from32(abs_ov, &kv_shift));
-            uint16_t kd_msb = (abs_od < (32768) ? abs_od : get_best15_from32(abs_od, &kd_shift));
-
-            int64_t tmp_kh = (oh == 0) ?
-                                 32768 :
-                                 (((int64_t)adm_div_lookup[kh_msb + 32768] * th) * (kh_sign) +
-                                  (1 << (14 + kh_shift))) >>
-                                     (15 + kh_shift);
-            int64_t tmp_kv = (ov == 0) ?
-                                 32768 :
-                                 (((int64_t)adm_div_lookup[kv_msb + 32768] * tv) * (kv_sign) +
-                                  (1 << (14 + kv_shift))) >>
-                                     (15 + kv_shift);
-            int64_t tmp_kd = (od == 0) ?
-                                 32768 :
-                                 (((int64_t)adm_div_lookup[kd_msb + 32768] * td) * (kd_sign) +
-                                  (1 << (14 + kd_shift))) >>
-                                     (15 + kd_shift);
-
-            int64_t kh = tmp_kh < 0 ? 0 : (tmp_kh > 32768 ? 32768 : tmp_kh);
-            int64_t kv = tmp_kv < 0 ? 0 : (tmp_kv > 32768 ? 32768 : tmp_kv);
-            int64_t kd = tmp_kd < 0 ? 0 : (tmp_kd > 32768 ? 32768 : tmp_kd);
-
-            rst_h = ((kh * oh) + 16384) >> 15;
-            rst_v = ((kv * ov) + 16384) >> 15;
-            rst_d = ((kd * od) + 16384) >> 15;
-#if 1
-            const float rst_h_f = ((float)kh / 32768) * ((float)oh / 64);
-            const float rst_v_f = ((float)kv / 32768) * ((float)ov / 64);
-            const float rst_d_f = ((float)kd / 32768) * ((float)od / 64);
-#else
-            const double rst_h_f = ((double)kh / 32768) * ((double)oh / 64);
-            const double rst_v_f = ((double)kv / 32768) * ((double)ov / 64);
-            const double rst_d_f = ((double)kd / 32768) * ((double)od / 64);
-
-#endif
-
-            if (angle_flag && (rst_h_f > 0.))
-                rst_h = MIN((rst_h * adm_enhn_gain_limit), th);
-            if (angle_flag && (rst_h_f < 0.))
-                rst_h = MAX((rst_h * adm_enhn_gain_limit), th);
-
-            if (angle_flag && (rst_v_f > 0.))
-                rst_v = MIN(rst_v * adm_enhn_gain_limit, tv);
-            if (angle_flag && (rst_v_f < 0.))
-                rst_v = MAX(rst_v * adm_enhn_gain_limit, tv);
-
-            if (angle_flag && (rst_d_f > 0.))
-                rst_d = MIN(rst_d * adm_enhn_gain_limit, td);
-            if (angle_flag && (rst_d_f < 0.))
-                rst_d = MAX(rst_d * adm_enhn_gain_limit, td);
-
-            r->band_h[i * stride + j] = rst_h;
-            r->band_v[i * stride + j] = rst_v;
-            r->band_d[i * stride + j] = rst_d;
-            a->band_h[i * stride + j] = th - rst_h;
-            a->band_v[i * stride + j] = tv - rst_v;
-            a->band_d[i * stride + j] = td - rst_d;
-        }
+        adm_decouple_s123_cols(buf, i, stride, right_mod8, b.right, adm_enhn_gain_limit,
+                               adm_div_lookup, cos_1deg_sq);
     }
 }
 
-/*
- * lambda = 0 (finest scale), 1, 2, 3 (coarsest scale);
- * theta = 0 (ll), 1 (lh - vertical), 2 (hh - diagonal), 3(hl - horizontal).
- */
-static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
-                                   double adm_norm_view_dist, int adm_ref_display_height)
+/* ------------------------------------------------------------------------- */
+/* DWT, scale 0                                                              */
+/* ------------------------------------------------------------------------- */
+
+/* The low-pass and high-pass taps as int16 pairs for _mm256_madd_epi16. */
+typedef struct Dwt2Filters {
+    __m256i lo01;
+    __m256i lo23;
+    __m256i hi01;
+    __m256i hi23;
+} Dwt2Filters;
+
+static FORCE_INLINE Dwt2Filters dwt2_filters_avx2(void)
 {
-    // Formula (1), page 1165 - display visual resolution (DVR), in pixels/degree
-    // of visual angle. This should be 56.55
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
-
-    // Formula (9), page 1171
-    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
-    float Q = 2.0 * params->a * pow(10.0, params->k * (double)temp * temp) /
-              dwt_7_9_basis_function_amplitudes[lambda][theta];
-
-    return Q;
+    Dwt2Filters f;
+    f.lo01 = _mm256_broadcastd_epi32(_mm_loadu_si128((const __m128i *)dwt2_db2_coeffs_lo));
+    f.lo23 = _mm256_broadcastd_epi32(_mm_loadu_si128((const __m128i *)(dwt2_db2_coeffs_lo + 2)));
+    f.hi01 = _mm256_broadcastd_epi32(_mm_loadu_si128((const __m128i *)dwt2_db2_coeffs_hi));
+    f.hi23 = _mm256_broadcastd_epi32(_mm_loadu_si128((const __m128i *)(dwt2_db2_coeffs_hi + 2)));
+    return f;
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
-                  double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
-                  double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                  double adm_p_norm, bool measure_aim)
+/* Sixteen outputs of one filter of the 8-bit vertical pass. `s01` and `s23`
+ * interleave the rows of taps 0, 1 and 2, 3; `sum_const` is the coefficient
+ * sum that recentres the unsigned input. */
+static FORCE_INLINE __m256i dwt2_8_vfilter_avx2(__m256i s01_lo, __m256i s01_hi, __m256i s23_lo,
+                                                __m256i s23_hi, __m256i f01, __m256i f23,
+                                                __m256i sum_const)
 {
-    const adm_dwt_band_t *src;
-    const adm_dwt_band_t *csf_f;
-    const adm_dwt_band_t *csf_a;
+    const __m256i add_shift_VP = _mm256_set1_epi32(128);
+    const __m256i pad = _mm256_setzero_si256();
 
-    if (measure_aim) {
-        src = &buf->decouple_a;
-        csf_f = &buf->csf_a;
-        csf_a = &buf->csf_f;
-    } else {
-        src = &buf->decouple_r;
-        csf_f = &buf->csf_f;
-        csf_a = &buf->csf_a;
-    }
-
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    // 0 is scale zero passed to dwt_quant_step
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor1[3] = {factor1, factor1, factor2};
-
-    /**
-     * rfactor is converted to fixed-point for scale0 and stored in i_rfactor
-     * multiplied by 2^21 for rfactor[0,1] and by 2^23 for rfactor[2].
-     * For adm_norm_view_dist 3.0 and adm_ref_display_height 1080,
-     * i_rfactor is around { 36453,36453,49417 } for ADM_CSF_MODE_WATSON97
-     */
-    uint16_t i_rfactor[3];
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
-    }
-
-    const int32_t shift_xhsq = 29;
-    const int32_t shift_xvsq = 29;
-    const int32_t shift_xdsq = 30;
-    const int32_t add_shift_xhsq = 268435456;
-    const int32_t add_shift_xvsq = 268435456;
-    const int32_t add_shift_xdsq = 536870912;
-
-    const uint32_t shift_xhcub = (uint32_t)ceil(log2(w) - 4);
-    const uint32_t add_shift_xhcub = adm_half_shift(shift_xhcub);
-
-    const uint32_t shift_xvcub = (uint32_t)ceil(log2(w) - 4);
-    const uint32_t add_shift_xvcub = adm_half_shift(shift_xvcub);
-
-    const uint32_t shift_xdcub = (uint32_t)ceil(log2(w) - 3);
-    const uint32_t add_shift_xdcub = adm_half_shift(shift_xdcub);
-
-    const uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
-    const uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
-
-    const int32_t shift_xhsub = 10;
-    const int32_t shift_xvsub = 10;
-    const int32_t shift_xdsub = 12;
-
-    int16_t *angles[3] = {csf_a->band_h, csf_a->band_v, csf_a->band_d};
-    int16_t *flt_angles[3] = {csf_f->band_h, csf_f->band_v, csf_f->band_d};
-
-    /* The computation of the scales is not required for the regions which lie
-     * outside the frame borders
-     */
-    int left = w * ADM_BORDER_FACTOR - 0.5;
-    int top = h * ADM_BORDER_FACTOR - 0.5;
-    int right = w - left;
-    int bottom = h - top;
-
-    const int start_col = (left > 1) ? left : 1;
-    const int end_col = (right < (w - 1)) ? right : (w - 1);
-    const int start_row = (top > 1) ? top : 1;
-    const int end_row = (bottom < (h - 1)) ? bottom : (h - 1);
-
-    int i;
-    int j;
-    int64_t val;
-    int32_t xh;
-    int32_t xv;
-    int32_t xd;
-    int32_t thr;
-    int32_t xh_sq;
-    int32_t xv_sq;
-    int32_t xd_sq;
-    int64_t accum_h = 0;
-    int64_t accum_v = 0;
-    int64_t accum_d = 0;
-    int64_t accum_inner_h = 0;
-    int64_t accum_inner_v = 0;
-    int64_t accum_inner_d = 0;
-
-    __m256i thr_256;
-
-    /* i=0,j=0 */
-    if ((top <= 0) && (left <= 0)) {
-        xh = (int32_t)src->band_h[0] * i_rfactor[0];
-        xv = (int32_t)src->band_v[0] * i_rfactor[1];
-        xd = (int32_t)src->band_d[0] * i_rfactor[2];
-        ADM_CM_THRESH_S_0_0(angles, flt_angles, csf_a_stride, &thr, w, h, 0, 0);
-
-        //thr is shifted to make it's Q format equivalent to xh,xv,xd
-
-        /**
-         * max value of xh_sq and xv_sq is 1301381973 and that of xd_sq is 1195806729
-         *
-         * max(val before shift for h and v) is 9.995357299 * —10^17.
-         * 9.995357299 * —10^17 * 2^4 is close to 2^64.
-         * Hence shift is done based on width subtracting 4
-         *
-         * max(val before shift for d) is 1.355006643 * —10^18
-         * 1.355006643 * —10^18 * 2^3 is close to 2^64
-         * Hence shift is done based on width subtracting 3
-         */
-        ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                           add_shift_xhcub, shift_xhcub, accum_inner_h);
-        ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                           add_shift_xvcub, shift_xvcub, accum_inner_v);
-        ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                           add_shift_xdcub, shift_xdcub, accum_inner_d);
-    }
-
-    /* i=0, j */
-    if (top <= 0) {
-        for (j = start_col; j < end_col; ++j) {
-            xh = src->band_h[j] * i_rfactor[0];
-            xv = src->band_v[j] * i_rfactor[1];
-            xd = src->band_d[j] * i_rfactor[2];
-            ADM_CM_THRESH_S_0_J(angles, flt_angles, csf_a_stride, &thr, w, h, 0, j);
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-        }
-    }
-
-    /* i=0,j=w-1 */
-    if ((top <= 0) && (right > (w - 1))) {
-        xh = src->band_h[w - 1] * i_rfactor[0];
-        xv = src->band_v[w - 1] * i_rfactor[1];
-        xd = src->band_d[w - 1] * i_rfactor[2];
-        ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, 0, (w - 1));
-
-        ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                           add_shift_xhcub, shift_xhcub, accum_inner_h);
-        ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                           add_shift_xvcub, shift_xvcub, accum_inner_v);
-        ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                           add_shift_xdcub, shift_xdcub, accum_inner_d);
-    }
-    //Shift is done based on height
-    accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-    accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-    accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-
-    if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
-    {
-        const int end_col_mod6 = end_col - ((end_col - start_col) % 6);
-        __m256i i_rfactor0 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[0]),
-                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
-        __m256i i_rfactor1 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[1]),
-                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
-        __m256i i_rfactor2 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[2]),
-                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
-
-        for (i = start_row; i < end_row; ++i) {
-            __m256i accum_inner_h_lo_256;
-            __m256i accum_inner_h_hi_256;
-            __m256i accum_inner_v_lo_256;
-            __m256i accum_inner_v_hi_256;
-            __m256i accum_inner_d_lo_256;
-            __m256i accum_inner_d_hi_256;
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-            accum_inner_h_lo_256 = accum_inner_h_hi_256 = _mm256_setzero_si256();
-            accum_inner_v_lo_256 = accum_inner_v_hi_256 = _mm256_setzero_si256();
-            accum_inner_d_lo_256 = accum_inner_d_hi_256 = _mm256_setzero_si256();
-
-            for (j = start_col; j < end_col_mod6; j += 6) {
-                __m256i xh_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
-                __m256i xv_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
-                __m256i xd_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
-
-                xh_256 = _mm256_mullo_epi32(xh_256, i_rfactor0);
-                xv_256 = _mm256_mullo_epi32(xv_256, i_rfactor1);
-                xd_256 = _mm256_mullo_epi32(xd_256, i_rfactor2);
-
-                ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                           &thr_256);
-
-                ADM_CM_ACCUM_ROUND_avx256(xh_256, thr_256, shift_xhsub, xh_sq, add_shift_xhsq,
-                                          shift_xhsq, val, add_shift_xhcub, shift_xhcub,
-                                          accum_inner_h_lo_256, accum_inner_h_hi_256);
-                ADM_CM_ACCUM_ROUND_avx256(xv_256, thr_256, shift_xvsub, xv_sq, add_shift_xvsq,
-                                          shift_xvsq, val, add_shift_xvcub, shift_xvcub,
-                                          accum_inner_v_lo_256, accum_inner_v_hi_256);
-                ADM_CM_ACCUM_ROUND_avx256(xd_256, thr_256, shift_xdsub, xd_sq, add_shift_xdsq,
-                                          shift_xdsq, val, add_shift_xdcub, shift_xdcub,
-                                          accum_inner_d_lo_256, accum_inner_d_hi_256);
-            }
-            accum_inner_h_lo_256 = _mm256_add_epi64(accum_inner_h_lo_256, accum_inner_h_hi_256);
-            __m128i r2_h = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_h_lo_256),
-                                         _mm256_extracti128_si256(accum_inner_h_lo_256, 1));
-            int64_t res_h =
-                (int64_t)extract_epi64_128(r2_h, 0) + (int64_t)extract_epi64_128(r2_h, 1);
-
-            accum_inner_v_lo_256 = _mm256_add_epi64(accum_inner_v_lo_256, accum_inner_v_hi_256);
-            __m128i r2_v = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_v_lo_256),
-                                         _mm256_extracti128_si256(accum_inner_v_lo_256, 1));
-            int64_t res_v =
-                (int64_t)extract_epi64_128(r2_v, 0) + (int64_t)extract_epi64_128(r2_v, 1);
-
-            accum_inner_d_lo_256 = _mm256_add_epi64(accum_inner_d_lo_256, accum_inner_d_hi_256);
-            __m128i r2_d = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_d_lo_256),
-                                         _mm256_extracti128_si256(accum_inner_d_lo_256, 1));
-            int64_t res_d =
-                (int64_t)extract_epi64_128(r2_d, 0) + (int64_t)extract_epi64_128(r2_d, 1);
-
-            for (j = end_col_mod6; j < end_col; ++j) {
-                xh = src->band_h[i * src_stride + j] * i_rfactor[0];
-                xv = src->band_v[i * src_stride + j] * i_rfactor[1];
-                xd = src->band_d[i * src_stride + j] * i_rfactor[2];
-
-                ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j);
-                ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                                   add_shift_xhcub, shift_xhcub, accum_inner_h);
-
-                ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                                   add_shift_xvcub, shift_xvcub, accum_inner_v);
-
-                ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                                   add_shift_xdcub, shift_xdcub, accum_inner_d);
-            }
-
-            accum_h += (accum_inner_h + res_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + res_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + res_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else if ((left <= 0) && (right <= (w - 1))) /* Right border within frame, left outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = src->band_h[(ptrdiff_t)i * src_stride] * i_rfactor[0];
-            xv = src->band_v[(ptrdiff_t)i * src_stride] * i_rfactor[1];
-            xd = src->band_d[(ptrdiff_t)i * src_stride] * i_rfactor[2];
-            ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0);
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_stride + j] * i_rfactor[0];
-                xv = src->band_v[i * src_stride + j] * i_rfactor[1];
-                xd = src->band_d[i * src_stride + j] * i_rfactor[2];
-                ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j);
-
-                ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                                   add_shift_xhcub, shift_xhcub, accum_inner_h);
-                ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                                   add_shift_xvcub, shift_xvcub, accum_inner_v);
-                ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                                   add_shift_xdcub, shift_xdcub, accum_inner_d);
-            }
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else if ((left > 0) && (right > (w - 1))) /* Left border within frame, right outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_stride + j] * i_rfactor[0];
-                xv = src->band_v[i * src_stride + j] * i_rfactor[1];
-                xd = src->band_d[i * src_stride + j] * i_rfactor[2];
-                ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j);
-
-                ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                                   add_shift_xhcub, shift_xhcub, accum_inner_h);
-                ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                                   add_shift_xvcub, shift_xvcub, accum_inner_v);
-                ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                                   add_shift_xdcub, shift_xdcub, accum_inner_d);
-            }
-            /* j = w-1 */
-            xh = src->band_h[i * src_stride + w - 1] * i_rfactor[0];
-            xv = src->band_v[i * src_stride + w - 1] * i_rfactor[1];
-            xd = src->band_d[i * src_stride + w - 1] * i_rfactor[2];
-            ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, i, (w - 1));
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else /* Both borders outside frame */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = src->band_h[(ptrdiff_t)i * src_stride] * i_rfactor[0];
-            xv = src->band_v[(ptrdiff_t)i * src_stride] * i_rfactor[1];
-            xd = src->band_d[(ptrdiff_t)i * src_stride] * i_rfactor[2];
-            ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0);
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_stride + j] * i_rfactor[0];
-                xv = src->band_v[i * src_stride + j] * i_rfactor[1];
-                xd = src->band_d[i * src_stride + j] * i_rfactor[2];
-                ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j);
-
-                ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                                   add_shift_xhcub, shift_xhcub, accum_inner_h);
-                ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                                   add_shift_xvcub, shift_xvcub, accum_inner_v);
-                ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                                   add_shift_xdcub, shift_xdcub, accum_inner_d);
-            }
-            /* j = w-1 */
-            xh = src->band_h[i * src_stride + w - 1] * i_rfactor[0];
-            xv = src->band_v[i * src_stride + w - 1] * i_rfactor[1];
-            xd = src->band_d[i * src_stride + w - 1] * i_rfactor[2];
-            ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, i, (w - 1));
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    }
-    accum_inner_h = 0;
-    accum_inner_v = 0;
-    accum_inner_d = 0;
-
-    /* i=h-1,j=0 */
-    if ((bottom > (h - 1)) && (left <= 0)) {
-        xh = src->band_h[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[0];
-        xv = src->band_v[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[1];
-        xd = src->band_d[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[2];
-        ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), 0);
-
-        ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                           add_shift_xhcub, shift_xhcub, accum_inner_h);
-        ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                           add_shift_xvcub, shift_xvcub, accum_inner_v);
-        ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                           add_shift_xdcub, shift_xdcub, accum_inner_d);
-    }
-
-    /* i=h-1,j */
-    if (bottom > (h - 1)) {
-        for (j = start_col; j < end_col; ++j) {
-            xh = src->band_h[(h - 1) * src_stride + j] * i_rfactor[0];
-            xv = src->band_v[(h - 1) * src_stride + j] * i_rfactor[1];
-            xd = src->band_d[(h - 1) * src_stride + j] * i_rfactor[2];
-            ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), j);
-
-            ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                               add_shift_xhcub, shift_xhcub, accum_inner_h);
-            ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                               add_shift_xvcub, shift_xvcub, accum_inner_v);
-            ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                               add_shift_xdcub, shift_xdcub, accum_inner_d);
-        }
-    }
-
-    /* i-h-1,j=w-1 */
-    if ((bottom > (h - 1)) && (right > (w - 1))) {
-        xh = src->band_h[(h - 1) * src_stride + w - 1] * i_rfactor[0];
-        xv = src->band_v[(h - 1) * src_stride + w - 1] * i_rfactor[1];
-        xd = src->band_d[(h - 1) * src_stride + w - 1] * i_rfactor[2];
-        ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), (w - 1));
-
-        ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
-                           add_shift_xhcub, shift_xhcub, accum_inner_h);
-        ADM_CM_ACCUM_ROUND(xv, thr, shift_xvsub, xv_sq, add_shift_xvsq, shift_xvsq, val,
-                           add_shift_xvcub, shift_xvcub, accum_inner_v);
-        ADM_CM_ACCUM_ROUND(xd, thr, shift_xdsub, xd_sq, add_shift_xdsq, shift_xdsq, val,
-                           add_shift_xdcub, shift_xdcub, accum_inner_d);
-    }
-    accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-    accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-    accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-
-    /**
-     * For h and v total shifts pending from last stage is 6 rfactor[0,1] has 21 shifts
-     * => after cubing (6+21)*3=81 after squaring shifted by 29
-     * hence pending is 52-shift's done based on width and height
-     *
-     * For d total shifts pending from last stage is 6 rfactor[2] has 23 shifts
-     * => after cubing (6+23)*3=87 after squaring shifted by 30
-     * hence pending is 57-shift's done based on width and height
-     */
-
-    /* ADR-0138 bit-exactness fix: scalar (integer_adm.c:2009) computes
-     *   f_accum_h = (float)(accum_h / pow(2, ...))
-     * which is int64 → double → divide → float.  The AVX2 path originally
-     * had a spurious inner `(float)` cast on accum_h only:
-     *   (float)((float)accum_h / pow(...))
-     * This converts int64 to float first — losing mantissa bits for large
-     * accum_h — before the division, producing up to 498M ULP error on
-     * adm_scale3 (max 2.3e-6 in the final score).  Mirror the scalar
-     * exactly for all three accumulators. */
-    float f_accum_h = (float)(accum_h / pow(2, (52 - shift_xhcub - shift_inner_accum)));
-    float f_accum_v = (float)(accum_v / pow(2, (52 - shift_xvcub - shift_inner_accum)));
-    float f_accum_d = (float)(accum_d / pow(2, (57 - shift_xdcub - shift_inner_accum)));
-
-    const float p_norm_exp = 1.0f / (float)adm_p_norm;
-    float num_scale_h = powf(f_accum_h, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-    float num_scale_v = powf(f_accum_v, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-    float num_scale_d = powf(f_accum_d, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-
-    return (num_scale_h + num_scale_v + num_scale_d);
+    __m256i lo = _mm256_add_epi32(_mm256_madd_epi16(s01_lo, f01), _mm256_madd_epi16(s23_lo, f23));
+    __m256i hi = _mm256_add_epi32(_mm256_madd_epi16(s01_hi, f01), _mm256_madd_epi16(s23_hi, f23));
+    lo = _mm256_sub_epi32(lo, sum_const);
+    hi = _mm256_sub_epi32(hi, sum_const);
+    lo = _mm256_srli_epi32(_mm256_add_epi32(lo, add_shift_VP), 0x08);
+    hi = _mm256_srli_epi32(_mm256_add_epi32(hi, add_shift_VP), 0x08);
+    lo = _mm256_blend_epi16(lo, pad, 0xAA);
+    hi = _mm256_blend_epi16(hi, pad, 0xAA);
+    return _mm256_packus_epi32(lo, hi);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
-                     double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
-                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                     double adm_p_norm, bool measure_aim)
+/* Vertical pass of sixteen columns of output row `i`, starting at `j`. */
+static FORCE_INLINE void dwt2_8_vpass_block_avx2(const uint8_t *src, int *const *ind_y, int i,
+                                                 int src_stride, int j, const Dwt2Filters *f,
+                                                 int16_t *tmplo, int16_t *tmphi)
 {
-    const i4_adm_dwt_band_t *src;
-    const i4_adm_dwt_band_t *csf_f;
-    const i4_adm_dwt_band_t *csf_a;
+    const __m256i lo_sum = _mm256_set1_epi32(dwt2_db2_coeffs_lo_sum * 128);
+    const __m256i hi_sum = _mm256_set1_epi32(dwt2_db2_coeffs_hi_sum * 128);
+    const __m256i s0 = _mm256_cvtepu8_epi16(
+        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[0][i] * src_stride) + j)));
+    const __m256i s1 = _mm256_cvtepu8_epi16(
+        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[1][i] * src_stride) + j)));
+    const __m256i s2 = _mm256_cvtepu8_epi16(
+        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[2][i] * src_stride) + j)));
+    const __m256i s3 = _mm256_cvtepu8_epi16(
+        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[3][i] * src_stride) + j)));
 
-    if (measure_aim) {
-        src = &buf->i4_decouple_a;
-        csf_f = &buf->i4_csf_a;
-        csf_a = &buf->i4_csf_f;
-    } else {
-        src = &buf->i4_decouple_r;
-        csf_f = &buf->i4_csf_f;
-        csf_a = &buf->i4_csf_a;
-    }
+    const __m256i s01_lo = _mm256_unpacklo_epi16(s0, s1);
+    const __m256i s01_hi = _mm256_unpackhi_epi16(s0, s1);
+    const __m256i s23_lo = _mm256_unpacklo_epi16(s2, s3);
+    const __m256i s23_hi = _mm256_unpackhi_epi16(s2, s3);
 
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor1[3] = {factor1, factor1, factor2};
-
-    const uint32_t rfactor[3] = {(uint32_t)(rfactor1[0] * pow(2, 32)),
-                                 (uint32_t)(rfactor1[1] * pow(2, 32)),
-                                 (uint32_t)(rfactor1[2] * pow(2, 32))};
-
-    const uint32_t shift_dst[3] = {28, 28, 28};
-    const uint32_t shift_flt[3] = {32, 32, 32};
-    int32_t add_bef_shift_dst[3];
-    int32_t add_bef_shift_flt[3];
-
-    for (unsigned idx = 0; idx < 3; ++idx) {
-        add_bef_shift_dst[idx] = (1u << (shift_dst[idx] - 1));
-        add_bef_shift_flt[idx] = (1u << (shift_flt[idx] - 1));
-    }
-
-    uint32_t shift_cub = (uint32_t)ceil(log2(w));
-    uint32_t add_shift_cub = adm_half_shift(shift_cub);
-
-    uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
-    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
-
-    const float final_shift[3] = {pow(2, (45 - shift_cub - shift_inner_accum)),
-                                  pow(2, (39 - shift_cub - shift_inner_accum)),
-                                  pow(2, (36 - shift_cub - shift_inner_accum))};
-
-    __m256i mask_msb_shift_dst = _mm256_set1_epi64x(0xFFFFFFF000000000);
-    __m256i mask_msb_shift_flt = _mm256_set1_epi64x(0xFFFFFFFF00000000);
-
-    const int32_t shift_sq = 30;
-    const int32_t add_shift_sq = 536870912; //2^29
-    const int32_t shift_sub = 0;
-    int32_t *angles[3] = {csf_a->band_h, csf_a->band_v, csf_a->band_d};
-    int32_t *flt_angles[3] = {csf_f->band_h, csf_f->band_v, csf_f->band_d};
-
-    /* The computation of the scales is not required for the regions which lie
-     * outside the frame borders
-     */
-    const int left = w * ADM_BORDER_FACTOR - 0.5;
-    const int top = h * ADM_BORDER_FACTOR - 0.5;
-    const int right = w - left;
-    const int bottom = h - top;
-
-    const int start_col = (left > 1) ? left : 1;
-    const int end_col = (right < (w - 1)) ? right : (w - 1);
-    const int start_row = (top > 1) ? top : 1;
-    const int end_row = (bottom < (h - 1)) ? bottom : (h - 1);
-
-    int i;
-    int j;
-    int32_t xh;
-    int32_t xv;
-    int32_t xd;
-    int32_t thr;
-    int32_t xh_sq;
-    int32_t xv_sq;
-    int32_t xd_sq;
-    int64_t val;
-    int64_t accum_h = 0;
-    int64_t accum_v = 0;
-    int64_t accum_d = 0;
-    int64_t accum_inner_h = 0;
-    int64_t accum_inner_v = 0;
-    int64_t accum_inner_d = 0;
-
-    __m256i thr_256;
-
-    /* i=0,j=0 */
-    if ((top <= 0) && (left <= 0)) {
-        xh = (int32_t)((((int64_t)src->band_h[0] * rfactor[0]) + add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xv = (int32_t)((((int64_t)src->band_v[0] * rfactor[1]) + add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xd = (int32_t)((((int64_t)src->band_d[0] * rfactor[2]) + add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        I4_ADM_CM_THRESH_S_0_0(angles, flt_angles, csf_a_stride, &thr, w, h, 0, 0,
-                               add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-        I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_h);
-        I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_v);
-        I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_d);
-    }
-
-    /* i=0, j */
-    if (top <= 0) {
-        for (j = start_col; j < end_col; ++j) {
-            xh =
-                (int32_t)((((int64_t)src->band_h[j] * rfactor[0]) + add_bef_shift_dst[scale - 1]) >>
-                          shift_dst[scale - 1]);
-            xv =
-                (int32_t)((((int64_t)src->band_v[j] * rfactor[1]) + add_bef_shift_dst[scale - 1]) >>
-                          shift_dst[scale - 1]);
-            xd =
-                (int32_t)((((int64_t)src->band_d[j] * rfactor[2]) + add_bef_shift_dst[scale - 1]) >>
-                          shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_0_J(angles, flt_angles, csf_a_stride, &thr, w, h, 0, j,
-                                   add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-        }
-    }
-
-    /* i=0,j=w-1 */
-    if ((top <= 0) && (right > (w - 1))) {
-        xh =
-            (int32_t)((((int64_t)src->band_h[w - 1] * rfactor[0]) + add_bef_shift_dst[scale - 1]) >>
-                      shift_dst[scale - 1]);
-        xv =
-            (int32_t)((((int64_t)src->band_v[w - 1] * rfactor[1]) + add_bef_shift_dst[scale - 1]) >>
-                      shift_dst[scale - 1]);
-        xd =
-            (int32_t)((((int64_t)src->band_d[w - 1] * rfactor[2]) + add_bef_shift_dst[scale - 1]) >>
-                      shift_dst[scale - 1]);
-        I4_ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, 0, (w - 1),
-                                   add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-        I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_h);
-        I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_v);
-        I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_d);
-    }
-
-    accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-    accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-    accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-
-    if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
-    {
-        const int end_col_mod2 = end_col - ((end_col - start_col) % 2);
-        __m256i rfactor_v0 = _mm256_and_si256(_mm256_set1_epi32(rfactor[0]),
-                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
-        __m256i rfactor_v1 = _mm256_and_si256(_mm256_set1_epi32(rfactor[1]),
-                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
-        __m256i rfactor_v2 = _mm256_and_si256(_mm256_set1_epi32(rfactor[2]),
-                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
-
-        for (i = start_row; i < end_row; ++i) {
-            __m256i accum_inner_h_256;
-            __m256i accum_inner_v_256;
-            __m256i accum_inner_d_256;
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            accum_inner_h_256 = _mm256_setzero_si256();
-            accum_inner_v_256 = _mm256_setzero_si256();
-            accum_inner_d_256 = _mm256_setzero_si256();
-
-            for (j = start_col; j < end_col_mod2; j += 2) {
-                __m256i xh_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
-                __m256i xv_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
-                __m256i xd_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
-
-                __m256i add_shift = _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]);
-
-                xh_256 = _mm256_add_epi64(_mm256_mul_epi32(xh_256, rfactor_v0), add_shift);
-                __m256i xh_mask_msb_shift_dst = _mm256_and_si256(
-                    mask_msb_shift_dst, _mm256_cmpgt_epi64(_mm256_setzero_si256(), xh_256));
-                xh_256 = _mm256_or_si256(_mm256_srli_epi64(xh_256, shift_dst[scale - 1]),
-                                         xh_mask_msb_shift_dst);
-
-                xv_256 = _mm256_add_epi64(_mm256_mul_epi32(xv_256, rfactor_v1), add_shift);
-                __m256i xv_mask_msb_shift_dst = _mm256_and_si256(
-                    mask_msb_shift_dst, _mm256_cmpgt_epi64(_mm256_setzero_si256(), xv_256));
-                xv_256 = _mm256_or_si256(_mm256_srli_epi64(xv_256, shift_dst[scale - 1]),
-                                         xv_mask_msb_shift_dst);
-
-                xd_256 = _mm256_add_epi64(_mm256_mul_epi32(xd_256, rfactor_v2), add_shift);
-                __m256i xd_mask_msb_shift_dst = _mm256_and_si256(
-                    mask_msb_shift_dst, _mm256_cmpgt_epi64(_mm256_setzero_si256(), xd_256));
-                xd_256 = _mm256_or_si256(_mm256_srli_epi64(xd_256, shift_dst[scale - 1]),
-                                         xd_mask_msb_shift_dst);
-
-                I4_ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                              add_bef_shift_flt[scale - 1], shift_flt[scale - 1],
-                                              mask_msb_shift_flt, &thr_256);
-
-                I4_ADM_CM_ACCUM_ROUND_avx256(xh_256, thr_256, shift_sub, xh_sq, add_shift_sq,
-                                             shift_sq, val, add_shift_cub, shift_cub,
-                                             accum_inner_h_256);
-
-                I4_ADM_CM_ACCUM_ROUND_avx256(xv_256, thr_256, shift_sub, xv_sq, add_shift_sq,
-                                             shift_sq, val, add_shift_cub, shift_cub,
-                                             accum_inner_v_256);
-
-                I4_ADM_CM_ACCUM_ROUND_avx256(xd_256, thr_256, shift_sub, xd_sq, add_shift_sq,
-                                             shift_sq, val, add_shift_cub, shift_cub,
-                                             accum_inner_d_256);
-            }
-
-            __m128i r2_h = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_h_256),
-                                         _mm256_extracti128_si256(accum_inner_h_256, 1));
-            int64_t res_h =
-                (int64_t)extract_epi64_128(r2_h, 0) + (int64_t)extract_epi64_128(r2_h, 1);
-
-            __m128i r2_v = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_v_256),
-                                         _mm256_extracti128_si256(accum_inner_v_256, 1));
-            int64_t res_v =
-                (int64_t)extract_epi64_128(r2_v, 0) + (int64_t)extract_epi64_128(r2_v, 1);
-
-            __m128i r2_d = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_d_256),
-                                         _mm256_extracti128_si256(accum_inner_d_256, 1));
-            int64_t res_d =
-                (int64_t)extract_epi64_128(r2_d, 0) + (int64_t)extract_epi64_128(r2_d, 1);
-
-            for (j = end_col_mod2; j < end_col; ++j) {
-                xh = (int32_t)((((int64_t)src->band_h[i * src_stride + j] * rfactor[0]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xv = (int32_t)((((int64_t)src->band_v[i * src_stride + j] * rfactor[1]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xd = (int32_t)((((int64_t)src->band_d[i * src_stride + j] * rfactor[2]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-                I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_h);
-                I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_v);
-                I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_d);
-            }
-
-            accum_h += (accum_inner_h + res_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + res_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + res_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else if ((left <= 0) && (right <= (w - 1))) /* Right border within frame, left outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)i * src_stride] * rfactor[0]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)i * src_stride] * rfactor[1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)i * src_stride] * rfactor[2]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0,
-                                   add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = (int32_t)((((int64_t)src->band_h[i * src_stride + j] * rfactor[0]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xv = (int32_t)((((int64_t)src->band_v[i * src_stride + j] * rfactor[1]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xd = (int32_t)((((int64_t)src->band_d[i * src_stride + j] * rfactor[2]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-                I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_h);
-                I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_v);
-                I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_d);
-            }
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else if ((left > 0) && (right > (w - 1))) /* Left border within frame, right outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = (int32_t)((((int64_t)src->band_h[i * src_stride + j] * rfactor[0]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xv = (int32_t)((((int64_t)src->band_v[i * src_stride + j] * rfactor[1]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xd = (int32_t)((((int64_t)src->band_d[i * src_stride + j] * rfactor[2]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-                I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_h);
-                I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_v);
-                I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_d);
-            }
-            /* j = w-1 */
-            xh = (int32_t)((((int64_t)src->band_h[i * src_stride + w - 1] *
-                             rfactor[i * src_stride + w - 1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[i * src_stride + w - 1] *
-                             rfactor[i * src_stride + w - 1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[i * src_stride + w - 1] *
-                             rfactor[i * src_stride + w - 1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, i, (w - 1),
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    } else /* Both borders outside frame */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)i * src_stride] * rfactor[0]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)i * src_stride] * rfactor[1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)i * src_stride] * rfactor[2]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0,
-                                   add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = (int32_t)((((int64_t)src->band_h[i * src_stride + j] * rfactor[0]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xv = (int32_t)((((int64_t)src->band_v[i * src_stride + j] * rfactor[1]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                xd = (int32_t)((((int64_t)src->band_d[i * src_stride + j] * rfactor[2]) +
-                                add_bef_shift_dst[scale - 1]) >>
-                               shift_dst[scale - 1]);
-                I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_a_stride, &thr, w, h, i, j,
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-                I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_h);
-                I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_v);
-                I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                      add_shift_cub, shift_cub, accum_inner_d);
-            }
-            /* j = w-1 */
-            xh = (int32_t)((((int64_t)src->band_h[i * src_stride + w - 1] * rfactor[0]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[i * src_stride + w - 1] * rfactor[1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[i * src_stride + w - 1] * rfactor[2]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, i, (w - 1),
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-
-            accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-            accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-            accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-        }
-    }
-    accum_inner_h = 0;
-    accum_inner_v = 0;
-    accum_inner_d = 0;
-
-    /* i=h-1,j=0 */
-    if ((bottom > (h - 1)) && (left <= 0)) {
-        xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)(h - 1) * src_stride] * rfactor[0]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)(h - 1) * src_stride] * rfactor[1]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)(h - 1) * src_stride] * rfactor[2]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        I4_ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), 0,
-                                   add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-        I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_h);
-        I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_v);
-        I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_d);
-    }
-
-    /* i=h-1,j */
-    if (bottom > (h - 1)) {
-        for (j = start_col; j < end_col; ++j) {
-            xh = (int32_t)((((int64_t)src->band_h[(h - 1) * src_stride + j] * rfactor[0]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[(h - 1) * src_stride + j] * rfactor[1]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[(h - 1) * src_stride + j] * rfactor[2]) +
-                            add_bef_shift_dst[scale - 1]) >>
-                           shift_dst[scale - 1]);
-            I4_ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), j,
-                                       add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-            I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_h);
-            I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_v);
-            I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val,
-                                  add_shift_cub, shift_cub, accum_inner_d);
-        }
-    }
-
-    /* i-h-1,j=w-1 */
-    if ((bottom > (h - 1)) && (right > (w - 1))) {
-        xh = (int32_t)((((int64_t)src->band_h[(h - 1) * src_stride + w - 1] * rfactor[0]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xv = (int32_t)((((int64_t)src->band_v[(h - 1) * src_stride + w - 1] * rfactor[1]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        xd = (int32_t)((((int64_t)src->band_d[(h - 1) * src_stride + w - 1] * rfactor[2]) +
-                        add_bef_shift_dst[scale - 1]) >>
-                       shift_dst[scale - 1]);
-        I4_ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1),
-                                       (w - 1), add_bef_shift_flt[scale - 1], shift_flt[scale - 1]);
-
-        I4_ADM_CM_ACCUM_ROUND(xh, thr, shift_sub, xh_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_h);
-        I4_ADM_CM_ACCUM_ROUND(xv, thr, shift_sub, xv_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_v);
-        I4_ADM_CM_ACCUM_ROUND(xd, thr, shift_sub, xd_sq, add_shift_sq, shift_sq, val, add_shift_cub,
-                              shift_cub, accum_inner_d);
-    }
-    accum_h += (accum_inner_h + add_shift_inner_accum) >> shift_inner_accum;
-    accum_v += (accum_inner_v + add_shift_inner_accum) >> shift_inner_accum;
-    accum_d += (accum_inner_d + add_shift_inner_accum) >> shift_inner_accum;
-
-    /**
-     * Converted to floating-point for calculating the final scores
-     * Final shifts is calculated from 3*(shifts_from_previous_stage(i.e src comes from dwt)+32)-total_shifts_done_in_this_function
-     */
-    float f_accum_h = (float)(accum_h / final_shift[scale - 1]);
-    float f_accum_v = (float)(accum_v / final_shift[scale - 1]);
-    float f_accum_d = (float)(accum_d / final_shift[scale - 1]);
-
-    const float p_norm_exp = 1.0f / (float)adm_p_norm;
-    float num_scale_h = powf(f_accum_h, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-    float num_scale_v = powf(f_accum_v, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-    float num_scale_d = powf(f_accum_d, p_norm_exp) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
-
-    return (num_scale_h + num_scale_v + num_scale_d);
+    _mm256_storeu_si256((__m256i *)(tmplo + j), dwt2_8_vfilter_avx2(s01_lo, s01_hi, s23_lo, s23_hi,
+                                                                    f->lo01, f->lo23, lo_sum));
+    _mm256_storeu_si256((__m256i *)(tmphi + j), dwt2_8_vfilter_avx2(s01_lo, s01_hi, s23_lo, s23_hi,
+                                                                    f->hi01, f->hi23, hi_sum));
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* Sixteen outputs of one filter of the horizontal pass. `s0` / `s2` hold the
+ * samples of taps 0, 1 and 2, 3 of the first eight outputs, `s0_next` /
+ * `s2_next` those of the last eight. */
+static FORCE_INLINE __m256i dwt2_hfilter_avx2(__m256i s0, __m256i s2, __m256i s0_next,
+                                              __m256i s2_next, __m256i f01, __m256i f23)
+{
+    const __m256i add_shift_HP = _mm256_set1_epi32(32768);
+
+    __m256i lo = _mm256_add_epi32(_mm256_madd_epi16(s0, f01), _mm256_madd_epi16(s2, f23));
+    __m256i hi = _mm256_add_epi32(_mm256_madd_epi16(s0_next, f01), _mm256_madd_epi16(s2_next, f23));
+    lo = _mm256_srai_epi32(_mm256_add_epi32(lo, add_shift_HP), 16);
+    hi = _mm256_srai_epi32(_mm256_add_epi32(hi, add_shift_HP), 16);
+    return _mm256_permute4x64_epi64(_mm256_packs_epi32(lo, hi), 0xD8);
+}
+
+/* Horizontal pass of sixteen outputs from one row buffer: its low-pass into
+ * `dst_lo`, its high-pass into `dst_hi`. */
+static FORCE_INLINE void dwt2_hpass_block_avx2(const int16_t *tmp, int *const *ind_x, int j,
+                                               const Dwt2Filters *f, int16_t *dst_lo,
+                                               int16_t *dst_hi)
+{
+    const __m256i s0 = _mm256_loadu_si256((const __m256i *)(tmp + ind_x[0][j]));
+    const __m256i s2 = _mm256_loadu_si256((const __m256i *)(tmp + ind_x[2][j]));
+    const __m256i s0_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + ind_x[0][j]));
+    const __m256i s2_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + ind_x[2][j]));
+
+    _mm256_storeu_si256((__m256i *)dst_lo,
+                        dwt2_hfilter_avx2(s0, s2, s0_next, s2_next, f->lo01, f->lo23));
+    _mm256_storeu_si256((__m256i *)dst_hi,
+                        dwt2_hfilter_avx2(s0, s2, s0_next, s2_next, f->hi01, f->hi23));
+}
+
+/* Horizontal pass of output row `i`: the first column and the tail in scalar
+ * code, sixteen outputs at a time in between. */
+static FORCE_INLINE void dwt2_hpass_row_avx2(const int16_t *tmplo, const int16_t *tmphi,
+                                             const adm_dwt_band_t *dst, int *const *ind_x, int i,
+                                             int w, int dst_stride, const Dwt2Filters *f)
+{
+    const ptrdiff_t row = (ptrdiff_t)i * dst_stride;
+    const int half_w = (w + 1) / 2;
+    const int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
+
+    adm_dwt2_hpass(tmplo, tmphi, dst, ind_x, i, 0, 1, dst_stride);
+    for (int j = 1; j < half_w_mod16; j += 16) {
+        dwt2_hpass_block_avx2(tmplo, ind_x, j, f, dst->band_a + row + j, dst->band_v + row + j);
+        dwt2_hpass_block_avx2(tmphi, ind_x, j, f, dst->band_h + row + j, dst->band_d + row + j);
+    }
+    adm_dwt2_hpass(tmplo, tmphi, dst, ind_x, i, half_w_mod16, half_w, dst_stride);
+}
+
+void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
+                     int src_stride, int dst_stride)
+{
+    int **ind_y = buf->ind_y;
+    int **ind_x = buf->ind_x;
+    int16_t *tmplo = (int16_t *)buf->tmp_ref;
+    int16_t *tmphi = tmplo + w;
+    const Dwt2Filters f = dwt2_filters_avx2();
+
+    // Vertical pass 16 pixels at a time
+    // Ensure we only process complete 16 element chunks that fit entirely
+    // within bounds
+    const int j_vp_end = (w / 16) * 16;
+
+    for (int i = 0; i < (h + 1) / 2; ++i) {
+        for (int j = 0; j < j_vp_end; j += 16) {
+            dwt2_8_vpass_block_avx2(src, ind_y, i, src_stride, j, &f, tmplo, tmphi);
+        }
+        adm_dwt2_vpass_8(src, ind_y, i, src_stride, j_vp_end, w, tmplo, tmphi);
+        dwt2_hpass_row_avx2(tmplo, tmphi, dst, ind_x, i, w, dst_stride, &f);
+    }
+}
+
 void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                       int src_stride, int dst_stride, int inp_size_bits)
 {
-    const int16_t *filter_lo = dwt2_db2_coeffs_lo;
-    const int16_t *filter_hi = dwt2_db2_coeffs_hi;
-
-    const int16_t shift_VP = inp_size_bits;
-    const int16_t shift_HP = 16;
-    const int32_t add_shift_VP = 1 << (inp_size_bits - 1);
-    const int32_t add_shift_HP = 32768;
-
     int **ind_y = buf->ind_y;
     int **ind_x = buf->ind_x;
-
     int16_t *tmplo = (int16_t *)buf->tmp_ref;
     int16_t *tmphi = tmplo + w;
-    int32_t accum;
-
-    /* Cast each filter coefficient to uint32_t BEFORE the shift —
-     * `filter_*[k]` may be negative, and `(int) << 16` on a negative
-     * value is C undefined behaviour (caught by UBSan). The cast on
-     * the result `(uint32_t)(filter[k] << 16)` does not save us
-     * because precedence makes the shift execute on the signed type
-     * first. Reordering to `((uint32_t)filter[k] << 16)` is bit-exact
-     * with the previous wrap-on-overflow behaviour on every platform
-     * we target (two's complement, defined unsigned wrap). */
-    __m256i f01_lo =
-        _mm256_set1_epi32(filter_lo[0] + ((uint32_t)filter_lo[1] << 16) /* + (1 << 16) */);
-    __m256i f23_lo =
-        _mm256_set1_epi32(filter_lo[2] + ((uint32_t)filter_lo[3] << 16) /* + (1 << 16) */);
-    __m256i f01_hi = _mm256_set1_epi32(filter_hi[0] + ((uint32_t)filter_hi[1] << 16) + (1 << 16));
-    __m256i f23_hi =
-        _mm256_set1_epi32(filter_hi[2] + ((uint32_t)filter_hi[3] << 16) /*+ (1 << 16)*/);
-
-    int half_w = (w + 1) / 2;
-    int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
+    const Dwt2Filters f = dwt2_filters_avx2();
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
-        /* Vertical pass. */
-
-        for (int j = 0; j < w; ++j) {
-            uint16_t u_s0 = src[ind_y[0][i] * src_stride + j];
-            uint16_t u_s1 = src[ind_y[1][i] * src_stride + j];
-            uint16_t u_s2 = src[ind_y[2][i] * src_stride + j];
-            uint16_t u_s3 = src[ind_y[3][i] * src_stride + j];
-
-            /* int64 inside: a bright 16-bit column overflows int32. */
-            tmplo[j] = (int16_t)adm_dwt2_vpass16_tap4(filter_lo, dwt2_db2_coeffs_lo_sum, u_s0, u_s1,
-                                                      u_s2, u_s3, add_shift_VP, shift_VP);
-            tmphi[j] = (int16_t)adm_dwt2_vpass16_tap4(filter_hi, dwt2_db2_coeffs_hi_sum, u_s0, u_s1,
-                                                      u_s2, u_s3, add_shift_VP, shift_VP);
-        }
-
-        /* Horizontal pass (lo and hi). */
-        for (int j = 0; j < 1; ++j) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            int16_t s0 = tmplo[j0];
-            int16_t s1 = tmplo[j1];
-            int16_t s2 = tmplo[j2];
-            int16_t s3 = tmplo[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_a[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_v[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_h[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_d[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-        }
-
-        for (int j = 1; j < half_w_mod16; j += 16) {
-            int j0 = ind_x[0][j];
-            int j2 = ind_x[2][j];
-            int j16 = ind_x[0][j + 8];
-            int j18 = ind_x[2][j + 8];
-
-            __m256i s0 = _mm256_loadu_si256((__m256i *)(tmplo + j0));
-            __m256i s2 = _mm256_loadu_si256((__m256i *)(tmplo + j2));
-            __m256i s0_32 = _mm256_loadu_si256((__m256i *)(tmplo + j16));
-            __m256i s2_32 = _mm256_loadu_si256((__m256i *)(tmplo + j18));
-
-            __m256i accum0_lo = _mm256_setzero_si256();
-            __m256i accum0_hi = _mm256_setzero_si256();
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s0, f01_lo));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s0_32, f01_lo));
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s2, f23_lo));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s2_32, f23_lo));
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_set1_epi32(add_shift_HP));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_set1_epi32(add_shift_HP));
-
-            accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
-            accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
-
-            accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_a + (ptrdiff_t)i * dst_stride + j),
-                                _mm256_permute4x64_epi64(accum0_lo, 0xD8));
-
-            accum0_lo = _mm256_setzero_si256();
-            accum0_hi = _mm256_setzero_si256();
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s0, f01_hi));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s0_32, f01_hi));
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s2, f23_hi));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s2_32, f23_hi));
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_set1_epi32(add_shift_HP));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_set1_epi32(add_shift_HP));
-            accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
-            accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
-            accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_v + (ptrdiff_t)i * dst_stride + j),
-                                _mm256_permute4x64_epi64(accum0_lo, 0xD8));
-
-            s0 = _mm256_loadu_si256((__m256i *)(tmphi + j0));
-            s2 = _mm256_loadu_si256((__m256i *)(tmphi + j2));
-            s0_32 = _mm256_loadu_si256((__m256i *)(tmphi + j16));
-            s2_32 = _mm256_loadu_si256((__m256i *)(tmphi + j18));
-
-            accum0_lo = _mm256_setzero_si256();
-            accum0_hi = _mm256_setzero_si256();
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s0, f01_lo));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s0_32, f01_lo));
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s2, f23_lo));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s2_32, f23_lo));
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_set1_epi32(add_shift_HP));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_set1_epi32(add_shift_HP));
-            accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
-            accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
-            accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_h + (ptrdiff_t)i * dst_stride + j),
-                                _mm256_permute4x64_epi64(accum0_lo, 0xD8));
-
-            accum0_lo = _mm256_setzero_si256();
-            accum0_hi = _mm256_setzero_si256();
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s0, f01_hi));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s0_32, f01_hi));
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_madd_epi16(s2, f23_hi));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_madd_epi16(s2_32, f23_hi));
-
-            accum0_lo = _mm256_add_epi32(accum0_lo, _mm256_set1_epi32(add_shift_HP));
-            accum0_hi = _mm256_add_epi32(accum0_hi, _mm256_set1_epi32(add_shift_HP));
-            accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
-            accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
-            accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_d + (ptrdiff_t)i * dst_stride + j),
-                                _mm256_permute4x64_epi64(accum0_lo, 0xD8));
-        }
-
-        for (int j = half_w_mod16; j < (w + 1) / 2; ++j) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            int16_t s0 = tmplo[j0];
-            int16_t s1 = tmplo[j1];
-            int16_t s2 = tmplo[j2];
-            int16_t s3 = tmplo[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_a[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_v[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * s0;
-            accum += (int32_t)filter_lo[1] * s1;
-            accum += (int32_t)filter_lo[2] * s2;
-            accum += (int32_t)filter_lo[3] * s3;
-            dst->band_h[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * s0;
-            accum += (int32_t)filter_hi[1] * s1;
-            accum += (int32_t)filter_hi[2] * s2;
-            accum += (int32_t)filter_hi[3] * s3;
-            dst->band_d[i * dst_stride + j] = (accum + add_shift_HP) >> shift_HP;
-        }
+        /* The vertical pass forms its response in int64 (a bright 16-bit
+         * column overflows int32) and stays scalar. */
+        adm_dwt2_vpass_16(src, ind_y, i, src_stride, 0, w, inp_size_bits, tmplo, tmphi);
+        dwt2_hpass_row_avx2(tmplo, tmphi, dst, ind_x, i, w, dst_stride, &f);
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* ------------------------------------------------------------------------- */
+/* DWT, scales 1..3                                                          */
+/* ------------------------------------------------------------------------- */
+
+typedef struct I4Dwt2Consts {
+    __m256i f_lo[4];
+    __m256i f_hi[4];
+    __m256i add_vp;
+    __m256i add_hp;
+    __m256i mask_vp;
+    __m256i mask_hp;
+    int shift_vp;
+    int shift_hp;
+} I4Dwt2Consts;
+
+static FORCE_INLINE I4Dwt2Consts i4_dwt2_consts_avx2(const I4Dwt2Round *r)
+{
+    I4Dwt2Consts k;
+    for (int t = 0; t < 4; ++t) {
+        k.f_lo[t] = _mm256_set1_epi64x(dwt2_db2_coeffs_lo[t]);
+        k.f_hi[t] = _mm256_set1_epi64x(dwt2_db2_coeffs_hi[t]);
+    }
+    k.add_vp = _mm256_set1_epi64x(r->add_vp);
+    k.add_hp = _mm256_set1_epi64x(r->add_hp);
+    k.shift_vp = r->shift_vp;
+    k.shift_hp = r->shift_hp;
+    k.mask_vp = _mm256_andnot_si256(_mm256_srli_epi64(_mm256_set1_epi64x(-1LL), k.shift_vp),
+                                    _mm256_set1_epi8((char)0xFF));
+    k.mask_hp = _mm256_andnot_si256(_mm256_srli_epi64(_mm256_set1_epi64x(-1LL), k.shift_hp),
+                                    _mm256_set1_epi8((char)0xFF));
+    return k;
+}
+
+/* Four-tap response of four samples held in the even int32 lanes. */
+static FORCE_INLINE __m256i i4_dwt2_taps_avx2(__m256i s0, __m256i s1, __m256i s2, __m256i s3,
+                                              const __m256i f[4])
+{
+    __m256i accum = _mm256_add_epi64(_mm256_mul_epi32(s0, f[0]), _mm256_mul_epi32(s1, f[1]));
+    accum = _mm256_add_epi64(accum, _mm256_mul_epi32(s2, f[2]));
+    return _mm256_add_epi64(accum, _mm256_mul_epi32(s3, f[3]));
+}
+
+/* (accum + add) >> shift of four int64 lanes, narrowed to four int32. */
+static FORCE_INLINE __m128i i4_dwt2_round_avx2(__m256i accum, __m256i add, int shift,
+                                               __m256i msb_mask)
+{
+    accum = sra_fit_epi64(_mm256_add_epi64(accum, add), shift, msb_mask);
+    return _mm256_castsi256_si128(
+        _mm256_permutevar8x32_epi32(accum, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0)));
+}
+
+/* Vertical pass of four columns of one plane of output row `i`. */
+static FORCE_INLINE void i4_dwt2_vpass_block_avx2(const int32_t *src, int *const *ind_y, int i,
+                                                  int stride, int j, const I4Dwt2Consts *k,
+                                                  int32_t *tmplo, int32_t *tmphi)
+{
+    const __m256i s0 = load_epi32x4(src + ((ptrdiff_t)ind_y[0][i] * stride) + j);
+    const __m256i s1 = load_epi32x4(src + ((ptrdiff_t)ind_y[1][i] * stride) + j);
+    const __m256i s2 = load_epi32x4(src + ((ptrdiff_t)ind_y[2][i] * stride) + j);
+    const __m256i s3 = load_epi32x4(src + ((ptrdiff_t)ind_y[3][i] * stride) + j);
+
+    _mm_storeu_si128((__m128i *)(tmplo + j),
+                     i4_dwt2_round_avx2(i4_dwt2_taps_avx2(s0, s1, s2, s3, k->f_lo), k->add_vp,
+                                        k->shift_vp, k->mask_vp));
+    _mm_storeu_si128((__m128i *)(tmphi + j),
+                     i4_dwt2_round_avx2(i4_dwt2_taps_avx2(s0, s1, s2, s3, k->f_hi), k->add_vp,
+                                        k->shift_vp, k->mask_vp));
+}
+
+/* Horizontal pass of four outputs from one row buffer: its low-pass into
+ * `dst_lo`, its high-pass into `dst_hi`. */
+static FORCE_INLINE void i4_dwt2_hpass_block_avx2(const int32_t *tmp, const int jx[4],
+                                                  const I4Dwt2Consts *k, int32_t *dst_lo,
+                                                  int32_t *dst_hi)
+{
+    const __m256i s0 = _mm256_loadu_si256((const __m256i *)(tmp + jx[0]));
+    const __m256i s1 = _mm256_loadu_si256((const __m256i *)(tmp + jx[1]));
+    const __m256i s2 = _mm256_loadu_si256((const __m256i *)(tmp + jx[2]));
+    const __m256i s3 = _mm256_loadu_si256((const __m256i *)(tmp + jx[3]));
+
+    _mm_storeu_si128((__m128i *)dst_lo,
+                     i4_dwt2_round_avx2(i4_dwt2_taps_avx2(s0, s1, s2, s3, k->f_lo), k->add_hp,
+                                        k->shift_hp, k->mask_hp));
+    _mm_storeu_si128((__m128i *)dst_hi,
+                     i4_dwt2_round_avx2(i4_dwt2_taps_avx2(s0, s1, s2, s3, k->f_hi), k->add_hp,
+                                        k->shift_hp, k->mask_hp));
+}
+
+/* Horizontal pass of four outputs of both planes of output row `i`. */
+static FORCE_INLINE void i4_dwt2_hpass_planes_avx2(const int32_t *tmp, const AdmBuffer *buf,
+                                                   int *const *ind_x, int w, ptrdiff_t out, int j,
+                                                   const I4Dwt2Consts *k)
+{
+    const i4_adm_dwt_band_t *ref = &buf->i4_ref_dwt2;
+    const i4_adm_dwt_band_t *dis = &buf->i4_dis_dwt2;
+    const int32_t *tmplo_ref = tmp;
+    const int32_t *tmphi_ref = tmplo_ref + w;
+    const int32_t *tmplo_dis = tmphi_ref + w;
+    const int32_t *tmphi_dis = tmplo_dis + w;
+    const int jx[4] = {ind_x[0][j], ind_x[1][j], ind_x[2][j], ind_x[3][j]};
+
+    i4_dwt2_hpass_block_avx2(tmplo_ref, jx, k, ref->band_a + out, ref->band_v + out);
+    i4_dwt2_hpass_block_avx2(tmphi_ref, jx, k, ref->band_h + out, ref->band_d + out);
+    i4_dwt2_hpass_block_avx2(tmplo_dis, jx, k, dis->band_a + out, dis->band_v + out);
+    i4_dwt2_hpass_block_avx2(tmphi_dis, jx, k, dis->band_h + out, dis->band_d + out);
+}
+
 void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                  AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,
                                  int dst_stride, int scale)
 {
-    const i4_adm_dwt_band_t *i4_ref_dwt2 = &buf->i4_ref_dwt2;
-    const i4_adm_dwt_band_t *i4_dis_dwt2 = &buf->i4_dis_dwt2;
+    const I4Dwt2Round r = i4_dwt2_round(scale);
+    const I4Dwt2Consts k = i4_dwt2_consts_avx2(&r);
     int **ind_y = buf->ind_y;
     int **ind_x = buf->ind_x;
+    int32_t *tmp = buf->tmp_ref;
+    int32_t *tmplo_dis = tmp + ((ptrdiff_t)2 * w);
 
-    const int16_t *filter_lo = dwt2_db2_coeffs_lo;
-    const int16_t *filter_hi = dwt2_db2_coeffs_hi;
-
-    const int32_t add_bef_shift_round_VP[3] = {0, 32768, 32768};
-    const int32_t add_bef_shift_round_HP[3] = {16384, 32768, 16384};
-    const int16_t shift_VerticalPass[3] = {0, 16, 16};
-    const int16_t shift_HorizontalPass[3] = {15, 16, 15};
-
-    int32_t *tmplo_ref = buf->tmp_ref;
-    int32_t *tmphi_ref = tmplo_ref + w;
-    int32_t *tmplo_dis = tmphi_ref + w;
-    int32_t *tmphi_dis = tmplo_dis + w;
-    int32_t s10;
-    int32_t s11;
-    int32_t s12;
-    int32_t s13;
-
-    int64_t accum_ref;
-
-    int shift_VP = shift_VerticalPass[scale - 1];
-    int shift_HP = shift_HorizontalPass[scale - 1];
-    int add_bef_shift_VP = add_bef_shift_round_VP[scale - 1];
-    int add_bef_shift_HP = add_bef_shift_round_HP[scale - 1];
-
-    __m256i mask_msb_shift_VP = _mm256_andnot_si256(
-        _mm256_srli_epi64(_mm256_set1_epi64x(-1LL), shift_VP), _mm256_set1_epi8((char)0xFF));
-    __m256i mask_msb_shift_HP = _mm256_andnot_si256(
-        _mm256_srli_epi64(_mm256_set1_epi64x(-1LL), shift_HP), _mm256_set1_epi8((char)0xFF));
-
-    __m256i accum_ref_lo_256;
-    __m256i accum_ref_hi_256;
-    __m256i accum_dis_lo_256;
-    __m256i accum_dis_hi_256;
-    __m256i f0_lo = _mm256_set1_epi64x(filter_lo[0]);
-    __m256i f1_lo = _mm256_set1_epi64x(filter_lo[1]);
-    __m256i f2_lo = _mm256_set1_epi64x(filter_lo[2]);
-    __m256i f3_lo = _mm256_set1_epi64x(filter_lo[3]);
-
-    __m256i f0_hi = _mm256_set1_epi64x(filter_hi[0]);
-    __m256i f1_hi = _mm256_set1_epi64x(filter_hi[1]);
-    __m256i f2_hi = _mm256_set1_epi64x(filter_hi[2]);
-    __m256i f3_hi = _mm256_set1_epi64x(filter_hi[3]);
-    __m256i add_bef_shift_round_VP_256 = _mm256_set1_epi64x(add_bef_shift_round_VP[scale - 1]);
-    __m256i add_bef_shift_round_HP_256 = _mm256_set1_epi64x(add_bef_shift_round_HP[scale - 1]);
-
-    int w_mod4 = (w - (w % 4));
-    int half_w = (w + 1) / 2;
-    int half_w_mod4 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 4) : 1;
+    const int w_mod4 = (w - (w % 4));
+    const int half_w = (w + 1) / 2;
+    const int half_w_mod4 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 4) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
         for (int j = 0; j < w_mod4; j += 4) {
-            __m256i ref10_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[0][i] * ref_stride) + j)));
-            __m256i ref11_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[1][i] * ref_stride) + j)));
-            __m256i ref12_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[2][i] * ref_stride) + j)));
-            __m256i ref13_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[3][i] * ref_stride) + j)));
-
-            __m256i dis10_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[0][i] * dis_stride) + j)));
-            __m256i dis11_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[1][i] * dis_stride) + j)));
-            __m256i dis12_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[2][i] * dis_stride) + j)));
-            __m256i dis13_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
-                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[3][i] * dis_stride) + j)));
-
-            __m256i ref10_lo = _mm256_mul_epi32(ref10_256, f0_lo);
-            __m256i ref11_lo = _mm256_mul_epi32(ref11_256, f1_lo);
-            __m256i ref12_lo = _mm256_mul_epi32(ref12_256, f2_lo);
-            __m256i ref13_lo = _mm256_mul_epi32(ref13_256, f3_lo);
-
-            __m256i ref10_hi = _mm256_mul_epi32(ref10_256, f0_hi);
-            __m256i ref11_hi = _mm256_mul_epi32(ref11_256, f1_hi);
-            __m256i ref12_hi = _mm256_mul_epi32(ref12_256, f2_hi);
-            __m256i ref13_hi = _mm256_mul_epi32(ref13_256, f3_hi);
-
-            __m256i dis10_lo = _mm256_mul_epi32(dis10_256, f0_lo);
-            __m256i dis11_lo = _mm256_mul_epi32(dis11_256, f1_lo);
-            __m256i dis12_lo = _mm256_mul_epi32(dis12_256, f2_lo);
-            __m256i dis13_lo = _mm256_mul_epi32(dis13_256, f3_lo);
-
-            __m256i dis10_hi = _mm256_mul_epi32(dis10_256, f0_hi);
-            __m256i dis11_hi = _mm256_mul_epi32(dis11_256, f1_hi);
-            __m256i dis12_hi = _mm256_mul_epi32(dis12_256, f2_hi);
-            __m256i dis13_hi = _mm256_mul_epi32(dis13_256, f3_hi);
-
-            accum_ref_lo_256 = _mm256_add_epi64(ref10_lo, ref11_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref12_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref13_lo);
-
-            accum_ref_hi_256 = _mm256_add_epi64(ref10_hi, ref11_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref12_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref13_hi);
-
-            accum_dis_lo_256 = _mm256_add_epi64(dis10_lo, dis11_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis12_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis13_lo);
-
-            accum_dis_hi_256 = _mm256_add_epi64(dis10_hi, dis11_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis12_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis13_hi);
-
-            // 0 1 2 3
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, add_bef_shift_round_VP_256);
-            accum_ref_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_lo_256, shift_VP),
-                                _mm256_and_si256(accum_ref_lo_256, mask_msb_shift_VP));
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, add_bef_shift_round_VP_256);
-            accum_ref_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_hi_256, shift_VP),
-                                _mm256_and_si256(accum_ref_hi_256, mask_msb_shift_VP));
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, add_bef_shift_round_VP_256);
-            accum_dis_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_lo_256, shift_VP),
-                                _mm256_and_si256(accum_dis_lo_256, mask_msb_shift_VP));
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, add_bef_shift_round_VP_256);
-            accum_dis_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_hi_256, shift_VP),
-                                _mm256_and_si256(accum_dis_hi_256, mask_msb_shift_VP));
-
-            _mm_storeu_si128((__m128i *)(tmplo_ref + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(tmphi_ref + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(tmplo_dis + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(tmphi_dis + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
+            i4_dwt2_vpass_block_avx2(i4_ref_scale, ind_y, i, ref_stride, j, &k, tmp, tmp + w);
+            i4_dwt2_vpass_block_avx2(i4_curr_dis, ind_y, i, dis_stride, j, &k, tmplo_dis,
+                                     tmplo_dis + w);
         }
-
-        for (int j = w_mod4; j < w; ++j) {
-            s10 = i4_ref_scale[ind_y[0][i] * ref_stride + j];
-            s11 = i4_ref_scale[ind_y[1][i] * ref_stride + j];
-            s12 = i4_ref_scale[ind_y[2][i] * ref_stride + j];
-            s13 = i4_ref_scale[ind_y[3][i] * ref_stride + j];
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            tmplo_ref[j] = (int32_t)((accum_ref + add_bef_shift_VP) >> shift_VP);
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            tmphi_ref[j] = (int32_t)((accum_ref + add_bef_shift_VP) >> shift_VP);
-
-            s10 = i4_curr_dis[ind_y[0][i] * dis_stride + j];
-            s11 = i4_curr_dis[ind_y[1][i] * dis_stride + j];
-            s12 = i4_curr_dis[ind_y[2][i] * dis_stride + j];
-            s13 = i4_curr_dis[ind_y[3][i] * dis_stride + j];
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            tmplo_dis[j] = (int32_t)((accum_ref + add_bef_shift_VP) >> shift_VP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            tmphi_dis[j] = (int32_t)((accum_ref + add_bef_shift_VP) >> shift_VP);
-        }
-
-        // j == 0
-        {
-            int j = 0;
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            s10 = tmplo_ref[j0];
-            s11 = tmplo_ref[j1];
-            s12 = tmplo_ref[j2];
-            s13 = tmplo_ref[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_ref_dwt2->band_a[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_ref_dwt2->band_v[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            s10 = tmphi_ref[j0];
-            s11 = tmphi_ref[j1];
-            s12 = tmphi_ref[j2];
-            s13 = tmphi_ref[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_ref_dwt2->band_h[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_ref_dwt2->band_d[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            s10 = tmplo_dis[j0];
-            s11 = tmplo_dis[j1];
-            s12 = tmplo_dis[j2];
-            s13 = tmplo_dis[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_dis_dwt2->band_a[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_dis_dwt2->band_v[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            s10 = tmphi_dis[j0];
-            s11 = tmphi_dis[j1];
-            s12 = tmphi_dis[j2];
-            s13 = tmphi_dis[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_dis_dwt2->band_h[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_dis_dwt2->band_d[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-        }
+        i4_dwt2_vpass(i4_ref_scale, i4_curr_dis, ind_y, i, ref_stride, dis_stride, w, w_mod4, w,
+                      tmp, r.add_vp, r.shift_vp);
 
         /* Horizontal pass (lo and hi). */
+        i4_dwt2_hpass(tmp, &buf->i4_ref_dwt2, &buf->i4_dis_dwt2, ind_x, i, w, 0, 1, dst_stride,
+                      r.add_hp, r.shift_hp);
         for (int j = 1; j < half_w_mod4; j += 4) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            __m256i ref10_lo = _mm256_loadu_si256((__m256i *)(tmplo_ref + j0));
-            __m256i ref11_lo = _mm256_loadu_si256((__m256i *)(tmplo_ref + j1));
-            __m256i ref12_lo = _mm256_loadu_si256((__m256i *)(tmplo_ref + j2));
-            __m256i ref13_lo = _mm256_loadu_si256((__m256i *)(tmplo_ref + j3));
-
-            __m256i ref10_lo_f0_lo = _mm256_mul_epi32(ref10_lo, f0_lo);
-            __m256i ref11_lo_f1_lo = _mm256_mul_epi32(ref11_lo, f1_lo);
-            __m256i ref12_lo_f2_lo = _mm256_mul_epi32(ref12_lo, f2_lo);
-            __m256i ref13_lo_f3_lo = _mm256_mul_epi32(ref13_lo, f3_lo);
-
-            __m256i ref10_lo_f0_hi = _mm256_mul_epi32(ref10_lo, f0_hi);
-            __m256i ref11_lo_f1_hi = _mm256_mul_epi32(ref11_lo, f1_hi);
-            __m256i ref12_lo_f2_hi = _mm256_mul_epi32(ref12_lo, f2_hi);
-            __m256i ref13_lo_f3_hi = _mm256_mul_epi32(ref13_lo, f3_hi);
-
-            accum_ref_lo_256 = _mm256_add_epi64(ref10_lo_f0_lo, ref11_lo_f1_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref12_lo_f2_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref13_lo_f3_lo);
-
-            accum_ref_hi_256 = _mm256_add_epi64(ref10_lo_f0_hi, ref11_lo_f1_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref12_lo_f2_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref13_lo_f3_hi);
-
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, add_bef_shift_round_HP_256);
-            accum_ref_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_lo_256, shift_HP),
-                                _mm256_and_si256(accum_ref_lo_256, mask_msb_shift_HP));
-
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, add_bef_shift_round_HP_256);
-            accum_ref_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_hi_256, shift_HP),
-                                _mm256_and_si256(accum_ref_hi_256, mask_msb_shift_HP));
-
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_a + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_v + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-
-            __m256i ref10_hi = _mm256_loadu_si256((__m256i *)(tmphi_ref + j0));
-            __m256i ref11_hi = _mm256_loadu_si256((__m256i *)(tmphi_ref + j1));
-            __m256i ref12_hi = _mm256_loadu_si256((__m256i *)(tmphi_ref + j2));
-            __m256i ref13_hi = _mm256_loadu_si256((__m256i *)(tmphi_ref + j3));
-
-            __m256i ref10_hi_f0_lo = _mm256_mul_epi32(ref10_hi, f0_lo);
-            __m256i ref11_hi_f1_lo = _mm256_mul_epi32(ref11_hi, f1_lo);
-            __m256i ref12_hi_f2_lo = _mm256_mul_epi32(ref12_hi, f2_lo);
-            __m256i ref13_hi_f3_lo = _mm256_mul_epi32(ref13_hi, f3_lo);
-
-            __m256i ref10_hi_f0_hi = _mm256_mul_epi32(ref10_hi, f0_hi);
-            __m256i ref11_hi_f1_hi = _mm256_mul_epi32(ref11_hi, f1_hi);
-            __m256i ref12_hi_f2_hi = _mm256_mul_epi32(ref12_hi, f2_hi);
-            __m256i ref13_hi_f3_hi = _mm256_mul_epi32(ref13_hi, f3_hi);
-
-            accum_ref_lo_256 = _mm256_add_epi64(ref10_hi_f0_lo, ref11_hi_f1_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref12_hi_f2_lo);
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, ref13_hi_f3_lo);
-
-            accum_ref_hi_256 = _mm256_add_epi64(ref10_hi_f0_hi, ref11_hi_f1_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref12_hi_f2_hi);
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, ref13_hi_f3_hi);
-
-            accum_ref_lo_256 = _mm256_add_epi64(accum_ref_lo_256, add_bef_shift_round_HP_256);
-            accum_ref_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_lo_256, shift_HP),
-                                _mm256_and_si256(accum_ref_lo_256, mask_msb_shift_HP));
-            accum_ref_hi_256 = _mm256_add_epi64(accum_ref_hi_256, add_bef_shift_round_HP_256);
-            accum_ref_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_ref_hi_256, shift_HP),
-                                _mm256_and_si256(accum_ref_hi_256, mask_msb_shift_HP));
-
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_h + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_d + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_ref_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-
-            __m256i dis10_lo = _mm256_loadu_si256((__m256i *)(tmplo_dis + j0));
-            __m256i dis11_lo = _mm256_loadu_si256((__m256i *)(tmplo_dis + j1));
-            __m256i dis12_lo = _mm256_loadu_si256((__m256i *)(tmplo_dis + j2));
-            __m256i dis13_lo = _mm256_loadu_si256((__m256i *)(tmplo_dis + j3));
-
-            __m256i dis10_lo_f0_lo = _mm256_mul_epi32(dis10_lo, f0_lo);
-            __m256i dis11_lo_f1_lo = _mm256_mul_epi32(dis11_lo, f1_lo);
-            __m256i dis12_lo_f2_lo = _mm256_mul_epi32(dis12_lo, f2_lo);
-            __m256i dis13_lo_f3_lo = _mm256_mul_epi32(dis13_lo, f3_lo);
-
-            __m256i dis10_lo_f0_hi = _mm256_mul_epi32(dis10_lo, f0_hi);
-            __m256i dis11_lo_f1_hi = _mm256_mul_epi32(dis11_lo, f1_hi);
-            __m256i dis12_lo_f2_hi = _mm256_mul_epi32(dis12_lo, f2_hi);
-            __m256i dis13_lo_f3_hi = _mm256_mul_epi32(dis13_lo, f3_hi);
-
-            accum_dis_lo_256 = _mm256_add_epi64(dis10_lo_f0_lo, dis11_lo_f1_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis12_lo_f2_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis13_lo_f3_lo);
-
-            accum_dis_hi_256 = _mm256_add_epi64(dis10_lo_f0_hi, dis11_lo_f1_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis12_lo_f2_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis13_lo_f3_hi);
-
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, add_bef_shift_round_HP_256);
-            accum_dis_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_lo_256, shift_HP),
-                                _mm256_and_si256(accum_dis_lo_256, mask_msb_shift_HP));
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, add_bef_shift_round_HP_256);
-            accum_dis_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_hi_256, shift_HP),
-                                _mm256_and_si256(accum_dis_hi_256, mask_msb_shift_HP));
-
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_a + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_v + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-
-            __m256i dis10_hi = _mm256_loadu_si256((__m256i *)(tmphi_dis + j0));
-            __m256i dis11_hi = _mm256_loadu_si256((__m256i *)(tmphi_dis + j1));
-            __m256i dis12_hi = _mm256_loadu_si256((__m256i *)(tmphi_dis + j2));
-            __m256i dis13_hi = _mm256_loadu_si256((__m256i *)(tmphi_dis + j3));
-
-            __m256i dis10_hi_f0_lo = _mm256_mul_epi32(dis10_hi, f0_lo);
-            __m256i dis11_hi_f1_lo = _mm256_mul_epi32(dis11_hi, f1_lo);
-            __m256i dis12_hi_f2_lo = _mm256_mul_epi32(dis12_hi, f2_lo);
-            __m256i dis13_hi_f3_lo = _mm256_mul_epi32(dis13_hi, f3_lo);
-
-            __m256i dis10_hi_f0_hi = _mm256_mul_epi32(dis10_hi, f0_hi);
-            __m256i dis11_hi_f1_hi = _mm256_mul_epi32(dis11_hi, f1_hi);
-            __m256i dis12_hi_f2_hi = _mm256_mul_epi32(dis12_hi, f2_hi);
-            __m256i dis13_hi_f3_hi = _mm256_mul_epi32(dis13_hi, f3_hi);
-
-            accum_dis_lo_256 = _mm256_add_epi64(dis10_hi_f0_lo, dis11_hi_f1_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis12_hi_f2_lo);
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, dis13_hi_f3_lo);
-
-            accum_dis_hi_256 = _mm256_add_epi64(dis10_hi_f0_hi, dis11_hi_f1_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis12_hi_f2_hi);
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, dis13_hi_f3_hi);
-
-            accum_dis_lo_256 = _mm256_add_epi64(accum_dis_lo_256, add_bef_shift_round_HP_256);
-            accum_dis_lo_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_lo_256, shift_HP),
-                                _mm256_and_si256(accum_dis_lo_256, mask_msb_shift_HP));
-            accum_dis_hi_256 = _mm256_add_epi64(accum_dis_hi_256, add_bef_shift_round_HP_256);
-            accum_dis_hi_256 =
-                _mm256_or_si256(_mm256_srli_epi64(accum_dis_hi_256, shift_HP),
-                                _mm256_and_si256(accum_dis_hi_256, mask_msb_shift_HP));
-
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_h + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_d + ((ptrdiff_t)i * dst_stride) + j),
-                             _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
-                                 accum_dis_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
+            i4_dwt2_hpass_planes_avx2(tmp, buf, ind_x, w, (ptrdiff_t)i * dst_stride + j, j, &k);
         }
+        i4_dwt2_hpass(tmp, &buf->i4_ref_dwt2, &buf->i4_dis_dwt2, ind_x, i, w, half_w_mod4, half_w,
+                      dst_stride, r.add_hp, r.shift_hp);
+    }
+}
 
-        for (int j = half_w_mod4; j < (w + 1) / 2; ++j) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
+/* ------------------------------------------------------------------------- */
+/* Contrast sensitivity filtering                                            */
+/* ------------------------------------------------------------------------- */
 
-            s10 = tmplo_ref[j0];
-            s11 = tmplo_ref[j1];
-            s12 = tmplo_ref[j2];
-            s13 = tmplo_ref[j3];
+/* Eight samples of one scale-0 band (adm_csf_cols()). */
+static FORCE_INLINE void csf_block_avx2(const int16_t *src, int16_t *dst, int16_t *flt,
+                                        __m256i i_rfactor, __m256i shiftadd, int shift)
+{
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i dst_val = _mm256_mullo_epi32(load_epi16x8(src), i_rfactor);
+    const __m256i i16_dst_val = _mm256_srai_epi32(_mm256_add_epi32(dst_val, shiftadd), shift);
+    _mm_storeu_si128((__m128i *)dst, _mm256_castsi256_si128(_mm256_permute4x64_epi64(
+                                         _mm256_packs_epi32(i16_dst_val, zero), 0x8)));
 
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_ref_dwt2->band_a[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
+    __m256i f =
+        _mm256_mullo_epi32(_mm256_set1_epi32(ADM_FIX_ONE_BY_30), _mm256_abs_epi32(i16_dst_val));
+    f = _mm256_srai_epi32(_mm256_add_epi32(f, _mm256_set1_epi32(2048)), 12);
+    f = _mm256_packs_epi32(f, zero);
+    _mm_storeu_si128((__m128i *)flt, _mm256_castsi256_si128(_mm256_permute4x64_epi64(f, 0x8)));
+}
 
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_ref_dwt2->band_v[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
+/* Columns [j0, j1) of the three bands of row `offset`, eight at a time. The
+ * pointers and constants are read once here: the stores of the loop may alias
+ * anything, so the compiler would otherwise reload them for every block. */
+static FORCE_INLINE void csf_row_avx2(const AdmCsfBands *b, const uint16_t i_rfactor[3],
+                                      ptrdiff_t offset, int j0, int j1)
+{
+    const int16_t *const src[3] = {b->src[0] + offset, b->src[1] + offset, b->src[2] + offset};
+    int16_t *const dst[3] = {b->dst[0] + offset, b->dst[1] + offset, b->dst[2] + offset};
+    int16_t *const flt[3] = {b->flt[0] + offset, b->flt[1] + offset, b->flt[2] + offset};
+    const __m256i rfactor[3] = {_mm256_set1_epi32(i_rfactor[0]), _mm256_set1_epi32(i_rfactor[1]),
+                                _mm256_set1_epi32(i_rfactor[2])};
+    const __m256i shiftadd[3] = {_mm256_set1_epi32(adm_csf_shiftsadd[0]),
+                                 _mm256_set1_epi32(adm_csf_shiftsadd[1]),
+                                 _mm256_set1_epi32(adm_csf_shiftsadd[2])};
 
-            s10 = tmphi_ref[j0];
-            s11 = tmphi_ref[j1];
-            s12 = tmphi_ref[j2];
-            s13 = tmphi_ref[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_ref_dwt2->band_h[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_ref_dwt2->band_d[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            s10 = tmplo_dis[j0];
-            s11 = tmplo_dis[j1];
-            s12 = tmplo_dis[j2];
-            s13 = tmplo_dis[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-
-            i4_dis_dwt2->band_a[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_dis_dwt2->band_v[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            s10 = tmphi_dis[j0];
-            s11 = tmphi_dis[j1];
-            s12 = tmphi_dis[j2];
-            s13 = tmphi_dis[j3];
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_lo[0] * s10;
-            accum_ref += (int64_t)filter_lo[1] * s11;
-            accum_ref += (int64_t)filter_lo[2] * s12;
-            accum_ref += (int64_t)filter_lo[3] * s13;
-            i4_dis_dwt2->band_h[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
-
-            accum_ref = 0;
-            accum_ref += (int64_t)filter_hi[0] * s10;
-            accum_ref += (int64_t)filter_hi[1] * s11;
-            accum_ref += (int64_t)filter_hi[2] * s12;
-            accum_ref += (int64_t)filter_hi[3] * s13;
-            i4_dis_dwt2->band_d[i * dst_stride + j] =
-                (int32_t)((accum_ref + add_bef_shift_HP) >> shift_HP);
+    for (int j = j0; j < j1; j += 8) {
+        for (int theta = 0; theta < 3; ++theta) {
+            csf_block_avx2(src[theta] + j, dst[theta] + j, flt[theta] + j, rfactor[theta],
+                           shiftadd[theta], adm_csf_shifts[theta]);
         }
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view_dist,
+                  int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
+                  double adm_csf_diag_scale, bool measure_aim)
+{
+    const AdmCsfBands bands = adm_csf_bands(buf, measure_aim);
+    uint16_t i_rfactor[3];
+    (void)adm_csf_i_rfactor(adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, adm_csf_scale,
+                            adm_csf_diag_scale, i_rfactor);
+
+    /* The computation of the csf values is not required for the regions which
+     * lie outside the frame borders */
+    const AdmBorder b = adm_border_filt(w, h);
+    const int right_mod_8 = b.right - ((b.right - b.left) % 8);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        const ptrdiff_t offset = (ptrdiff_t)i * stride;
+
+        csf_row_avx2(&bands, i_rfactor, offset, b.left, right_mod_8);
+        for (int theta = 0; theta < 3; ++theta) {
+            adm_csf_cols(&bands, i_rfactor, theta, offset, right_mod_8, b.right);
+        }
+    }
+}
+
+/* Eight samples of one band of scales 1..3 (i4_adm_csf_cols()). */
+static FORCE_INLINE void i4_csf_block_avx2(const int32_t *src, int32_t *dst, int32_t *flt,
+                                           __m256i r_factor, __m256i add_dst, __m256i add_flt,
+                                           int shift_dst, int shift_flt)
+{
+    const __m256i msb_mask = _mm256_set1_epi64x((int64_t)0xFFFFFFF000000000ULL);
+    const __m256i lo32 = _mm256_set1_epi64x(0x00000000FFFFFFFF);
+    const __m256i one_by_30 = _mm256_set1_epi32((int)I4_ADM_FIX_ONE_BY_30);
+    const __m256i s = _mm256_loadu_si256((const __m256i *)src);
+
+    __m256i dst_lo = _mm256_mul_epi32(s, r_factor);
+    __m256i dst_hi = _mm256_mul_epi32(_mm256_srli_epi64(s, 32), r_factor);
+    dst_lo = sra_fit_epi64(_mm256_add_epi64(dst_lo, add_dst), shift_dst, msb_mask);
+    dst_hi = sra_fit_epi64(_mm256_add_epi64(dst_hi, add_dst), shift_dst, msb_mask);
+    dst_lo = _mm256_or_si256(_mm256_and_si256(dst_lo, lo32), _mm256_slli_epi64(dst_hi, 32));
+    _mm256_storeu_si256((__m256i *)dst, dst_lo);
+
+    const __m256i abs_dst = _mm256_abs_epi32(dst_lo);
+    __m256i flt_lo = _mm256_mul_epi32(one_by_30, abs_dst);
+    __m256i flt_hi = _mm256_mul_epi32(one_by_30, _mm256_srli_epi64(abs_dst, 32));
+    flt_lo = _mm256_srli_epi64(_mm256_add_epi64(flt_lo, add_flt), shift_flt);
+    flt_hi = _mm256_srli_epi64(_mm256_add_epi64(flt_hi, add_flt), shift_flt);
+    flt_lo = _mm256_or_si256(_mm256_and_si256(flt_lo, lo32), _mm256_slli_epi64(flt_hi, 32));
+    _mm256_storeu_si256((__m256i *)flt, flt_lo);
+}
+
+/* Columns [j0, j1) of the three bands of row `offset`, eight at a time; see
+ * csf_row_avx2() for why the context is read once up front. */
+static FORCE_INLINE void i4_csf_row_avx2(const I4AdmCsfCtx *c, ptrdiff_t offset, int j0, int j1)
+{
+    const int32_t *const src[3] = {c->src[0] + offset, c->src[1] + offset, c->src[2] + offset};
+    int32_t *const dst[3] = {c->dst[0] + offset, c->dst[1] + offset, c->dst[2] + offset};
+    int32_t *const flt[3] = {c->flt[0] + offset, c->flt[1] + offset, c->flt[2] + offset};
+    const __m256i r_factor[3] = {_mm256_set1_epi32((int)c->i_rfactor[0]),
+                                 _mm256_set1_epi32((int)c->i_rfactor[1]),
+                                 _mm256_set1_epi32((int)c->i_rfactor[2])};
+    const __m256i add_dst = _mm256_set1_epi64x(c->add_bef_shift_dst);
+    const __m256i add_flt = _mm256_set1_epi64x(c->add_bef_shift_flt);
+    const int shift_dst = (int)c->shift_dst;
+    const int shift_flt = (int)c->shift_flt;
+
+    for (int j = j0; j < j1; j += 8) {
+        for (int theta = 0; theta < 3; ++theta) {
+            i4_csf_block_avx2(src[theta] + j, dst[theta] + j, flt[theta] + j, r_factor[theta],
+                              add_dst, add_flt, shift_dst, shift_flt);
+        }
+    }
+}
+
+void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double adm_norm_view_dist,
+                     int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
+                     double adm_csf_diag_scale, bool measure_aim)
+{
+    I4AdmCsfCtx c;
+    i4_adm_csf_ctx_init(&c, buf, scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                        adm_csf_scale, adm_csf_diag_scale, measure_aim);
+
+    /* The computation of the csf values is not required for the regions
+     * which lie outside the frame borders */
+    const AdmBorder b = adm_border_filt(w, h);
+    const int right_mod_8 = b.right - ((b.right - b.left) % 8);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        const ptrdiff_t offset = (ptrdiff_t)i * stride;
+
+        i4_csf_row_avx2(&c, offset, b.left, right_mod_8);
+        for (int theta = 0; theta < 3; ++theta) {
+            i4_adm_csf_cols(&c, theta, offset, right_mod_8, b.right);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Denominator (reference-energy) reductions                                 */
+/* ------------------------------------------------------------------------- */
+
+/* Cubed magnitudes of eight samples of one scale-0 band, added to two
+ * accumulators of four uint64 lanes. */
+static FORCE_INLINE void csf_den_cube_avx2(const int16_t *src, __m256i *accum_lo, __m256i *accum_hi)
+{
+    const __m256i v = _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((const __m128i *)src)));
+    const __m256i sq = _mm256_mullo_epi32(v, v);
+    *accum_lo = _mm256_add_epi64(*accum_lo, _mm256_mul_epu32(sq, v));
+    *accum_hi = _mm256_add_epi64(
+        *accum_hi, _mm256_mul_epu32(_mm256_srli_epi64(sq, 32), _mm256_srli_epi64(v, 32)));
+}
+
+/* Sums of the cubed magnitudes of columns [j0, j1) of the three bands of one
+ * row, eight at a time. */
+static FORCE_INLINE void csf_den_row_avx2(const int16_t *src_h, const int16_t *src_v,
+                                          const int16_t *src_d, int j0, int j1, uint64_t inner[3])
+{
+    __m256i accum_lo[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
+    __m256i accum_hi[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
+
+    for (int j = j0; j < j1; j += 8) {
+        csf_den_cube_avx2(src_h + j, &accum_lo[0], &accum_hi[0]);
+        csf_den_cube_avx2(src_v + j, &accum_lo[1], &accum_hi[1]);
+        csf_den_cube_avx2(src_d + j, &accum_lo[2], &accum_hi[2]);
+    }
+    for (int k = 0; k < 3; ++k) {
+        inner[k] = hsum_epu64(_mm256_add_epi64(accum_lo[k], accum_hi[k]));
+    }
+}
+
 float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_stride,
                              double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
                              double adm_noise_weight)
 {
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor[3] = {factor1, factor1, factor2};
+    AdmDenCtx c;
+    adm_csf_den_ctx_init(&c, w, h, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                         adm_csf_scale, adm_csf_diag_scale);
+    const int right_mod_8 = c.b.right - ((c.b.right - c.b.left) % 8);
 
-    uint64_t accum_h = 0;
-    uint64_t accum_v = 0;
-    uint64_t accum_d = 0;
+    uint64_t accum[3] = {0, 0, 0};
+    uint64_t inner[3] = {0, 0, 0};
 
-    /* The computation of the denominator scales is not required for the regions
-     * which lie outside the frame borders
-     */
-    const int left = w * ADM_BORDER_FACTOR - 0.5;
-    const int top = h * ADM_BORDER_FACTOR - 0.5;
-    const int right = w - left;
-    const int bottom = h - top;
-
-    int32_t shift_accum = (int32_t)ceil(log2((bottom - top) * (right - left)) - 20);
-    shift_accum = shift_accum > 0 ? shift_accum : 0;
-    int32_t add_shift_accum = shift_accum > 0 ? (1 << (shift_accum - 1)) : 0;
-
-    /**
-     * The rfactor is multiplied at the end after cubing
-     * Because d+ = (a[i]^3)*(r^3)
-     * is equivalent to d+=a[i]^3 and d=d*(r^3)
-     */
-    int16_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
-    int16_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;
-    int16_t *src_d = src->band_d + (ptrdiff_t)top * src_stride;
-
-    int right_mod_8 = right - ((right - left) % 8);
-
-    for (int i = top; i < bottom; ++i) {
-        uint64_t accum_inner_h = 0;
-        uint64_t accum_inner_v = 0;
-        uint64_t accum_inner_d = 0;
-        __m256i accum_inner_h_lo;
-        __m256i accum_inner_h_hi;
-        __m256i accum_inner_v_lo;
-        __m256i accum_inner_v_hi;
-        __m256i accum_inner_d_lo;
-        __m256i accum_inner_d_hi;
-        accum_inner_h_lo = accum_inner_h_hi = accum_inner_v_lo = accum_inner_v_hi =
-            accum_inner_d_lo = accum_inner_d_hi = _mm256_setzero_si256();
-
-        for (int j = left; j < right_mod_8; j += 8) {
-            __m256i vh =
-                _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_h + j))));
-            __m256i vv =
-                _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_v + j))));
-            __m256i vd =
-                _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_d + j))));
-
-            __m256i h_sq = _mm256_mullo_epi32(vh, vh);
-            __m256i h_cu_lo = _mm256_mul_epu32(h_sq, vh);
-            __m256i h_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(h_sq, 32), _mm256_srli_epi64(vh, 32));
-            accum_inner_h_lo = _mm256_add_epi64(accum_inner_h_lo, h_cu_lo);
-            accum_inner_h_hi = _mm256_add_epi64(accum_inner_h_hi, h_cu_hi);
-
-            __m256i v_sq = _mm256_mullo_epi32(vv, vv);
-            __m256i v_cu_lo = _mm256_mul_epu32(v_sq, vv);
-            __m256i v_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(v_sq, 32), _mm256_srli_epi64(vv, 32));
-            accum_inner_v_lo = _mm256_add_epi64(accum_inner_v_lo, v_cu_lo);
-            accum_inner_v_hi = _mm256_add_epi64(accum_inner_v_hi, v_cu_hi);
-
-            __m256i d_sq = _mm256_mullo_epi32(vd, vd);
-            __m256i d_cu_lo = _mm256_mul_epu32(d_sq, vd);
-            __m256i d_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(d_sq, 32), _mm256_srli_epi64(vd, 32));
-            accum_inner_d_lo = _mm256_add_epi64(accum_inner_d_lo, d_cu_lo);
-            accum_inner_d_hi = _mm256_add_epi64(accum_inner_d_hi, d_cu_hi);
-        }
-
-        accum_inner_h_lo = _mm256_add_epi64(accum_inner_h_lo, accum_inner_h_hi);
-        __m128i h_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_h_lo),
-                                     _mm256_extracti128_si256(accum_inner_h_lo, 1));
-        uint64_t h_r1 = (uint64_t)extract_epi64_128(h_r2, 0) + (uint64_t)extract_epi64_128(h_r2, 1);
-
-        accum_inner_v_lo = _mm256_add_epi64(accum_inner_v_lo, accum_inner_v_hi);
-        __m128i v_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_v_lo),
-                                     _mm256_extracti128_si256(accum_inner_v_lo, 1));
-        uint64_t v_r1 = (uint64_t)extract_epi64_128(v_r2, 0) + (uint64_t)extract_epi64_128(v_r2, 1);
-
-        accum_inner_d_lo = _mm256_add_epi64(accum_inner_d_lo, accum_inner_d_hi);
-        __m128i d_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_d_lo),
-                                     _mm256_extracti128_si256(accum_inner_d_lo, 1));
-        uint64_t d_r1 = (uint64_t)extract_epi64_128(d_r2, 0) + (uint64_t)extract_epi64_128(d_r2, 1);
-
-        for (int j = right_mod_8; j < right; ++j) {
-            uint16_t h_abs = (uint16_t)abs(src_h[j]);
-            uint16_t v_abs = (uint16_t)abs(src_v[j]);
-            uint16_t d_abs = (uint16_t)abs(src_d[j]);
-
-            uint64_t val = ((uint64_t)h_abs * h_abs) * h_abs;
-            accum_inner_h += val;
-            val = ((uint64_t)v_abs * v_abs) * v_abs;
-            accum_inner_v += val;
-            val = ((uint64_t)d_abs * d_abs) * d_abs;
-            accum_inner_d += val;
-        }
-
-        /**
-         * max_value of h^3, v^3, d^3 is 1.205624776 * —10^13
-         * accum_h can hold till 1.844674407 * —10^19
-         * accum_h's maximum is reached when it is 2^20 * max(h^3)
-         * Therefore the accum_h,v,d is shifted based on width and height subtracted by 20
-         */
-        accum_h += (accum_inner_h + h_r1 + add_shift_accum) >> shift_accum;
-        accum_v += (accum_inner_v + v_r1 + add_shift_accum) >> shift_accum;
-        accum_d += (accum_inner_d + d_r1 + add_shift_accum) >> shift_accum;
+    const int16_t *src_h = src->band_h + (ptrdiff_t)c.b.top * src_stride;
+    const int16_t *src_v = src->band_v + (ptrdiff_t)c.b.top * src_stride;
+    const int16_t *src_d = src->band_d + (ptrdiff_t)c.b.top * src_stride;
+    for (int i = c.b.top; i < c.b.bottom; ++i) {
+        csf_den_row_avx2(src_h, src_v, src_d, c.b.left, right_mod_8, inner);
+        adm_csf_den_cols(src_h, src_v, src_d, right_mod_8, c.b.right, inner);
+        adm_csf_den_fold(inner, accum, (uint32_t)c.add_shift_accum, (uint32_t)c.shift_accum);
         src_h += src_stride;
         src_v += src_stride;
         src_d += src_stride;
     }
-
-    /**
-     * rfactor is multiplied after cubing
-     * accum_h,v,d is converted to floating-point for score calculation
-     * 6bits are yet to be shifted from previous stage that is after dwt hence
-     * after cubing 18bits are to shifted
-     * Hence final shift is 18-shift_accum
-     */
-    double shift_csf = pow(2, (18 - shift_accum));
-    double csf_h = (double)(accum_h / shift_csf) * pow(rfactor[0], 3);
-    double csf_v = (double)(accum_v / shift_csf) * pow(rfactor[1], 3);
-    double csf_d = (double)(accum_d / shift_csf) * pow(rfactor[2], 3);
-
-    float powf_add = powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float den_scale_h = powf(csf_h, 1.0f / 3.0f) + powf_add;
-    float den_scale_v = powf(csf_v, 1.0f / 3.0f) + powf_add;
-    float den_scale_d = powf(csf_d, 1.0f / 3.0f) + powf_add;
-
-    return (den_scale_h + den_scale_v + den_scale_d);
+    return adm_csf_den_result(&c, accum, adm_noise_weight);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view_dist,
-                  int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
-                  double adm_csf_diag_scale, bool measure_aim)
+/* Cube terms of four samples of one band of scales 1..3 (i4_cube_term()). */
+static FORCE_INLINE __m256i i4_csf_den_cube_avx2(const int32_t *src, __m256i add_sq,
+                                                 __m256i add_cub, int shift_sq, int shift_cub)
 {
-    const adm_dwt_band_t *src;
-    const adm_dwt_band_t *dst;
-    const adm_dwt_band_t *flt;
-
-    if (measure_aim) {
-        src = &buf->decouple_r;
-        dst = &buf->csf_f;
-        flt = &buf->csf_a;
-    } else {
-        src = &buf->decouple_a;
-        dst = &buf->csf_a;
-        flt = &buf->csf_f;
-    }
-
-    const int16_t *src_angles[3] = {src->band_h, src->band_v, src->band_d};
-    int16_t *dst_angles[3] = {dst->band_h, dst->band_v, dst->band_d};
-    int16_t *flt_angles[3] = {flt->band_h, flt->band_v, flt->band_d};
-
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    // 0 is scale zero passed to dwt_quant_step
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(0, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(0, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(0, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], 0, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor1[3] = {factor1, factor1, factor2};
-
-    /**
-     * rfactor is converted to fixed-point for scale0 and stored in i_rfactor
-     * multiplied by 2^21 for rfactor[0,1] and by 2^23 for rfactor[2].
-     * For adm_norm_view_dist 3.0 and adm_ref_display_height 1080,
-     * i_rfactor is around { 36453,36453,49417 } for ADM_CSF_MODE_WATSON97
-     */
-    uint16_t i_rfactor[3];
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
-    }
-
-    /**
-     * Shifts pending from previous stage is 6
-     * hence variables multiplied by i_rfactor[0,1] has to be shifted by 21+6=27 to convert
-     * into floating-point. But shifted by 15 to make it Q16
-     * and variables multiplied by i_factor[2] has to be shifted by 23+6=29 to convert into
-     * floating-point. But shifted by 17 to make it Q16
-     * Hence remaining shifts after shifting by i_shifts is 12 to make it equivalent to
-     * floating-point
-     */
-    uint8_t i_shifts[3] = {15, 15, 17};
-    uint16_t i_shiftsadd[3] = {16384, 16384, 65535};
-    uint16_t FIX_ONE_BY_30 = 4369; //(1/30)*2^17
-    /* The computation of the csf values is not required for the regions which
-     *lie outside the frame borders
-     */
-    int left = w * ADM_BORDER_FACTOR - 0.5 - 1; // -1 for filter tap
-    int top = h * ADM_BORDER_FACTOR - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    int right_mod_8 = right - ((right - left) % 8);
-
-    for (int i = top; i < bottom; ++i) {
-        /* Source and destination share one stride in this pass, so the row
-         * offset is literally the same value; deriving one from the other says
-         * so and stops cppcheck reading two identical initialisers as a
-         * copy-paste slip (duplicateAssignExpression). */
-        const int src_offset = i * stride;
-        const int dst_offset = src_offset;
-
-        for (int j = left; j < right_mod_8; j += 8) {
-            __m256i src0 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_angles[0] + src_offset + j)));
-            __m256i r_factor0 = _mm256_set1_epi32(i_rfactor[0]);
-            __m256i dst_val0 = _mm256_mullo_epi32(src0, r_factor0);
-            __m256i i16_dst_val0 = _mm256_srai_epi32(
-                _mm256_add_epi32(dst_val0, _mm256_set1_epi32(i_shiftsadd[0])), i_shifts[0]);
-            _mm_storeu_si128((__m128i *)(dst_angles[0] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(
-                                 _mm256_packs_epi32(i16_dst_val0, _mm256_setzero_si256()), 0x8)));
-            __m256i flt0 = _mm256_mullo_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                              _mm256_abs_epi32(i16_dst_val0));
-            flt0 = _mm256_srai_epi32(_mm256_add_epi32(flt0, _mm256_set1_epi32(2048)), 12);
-            flt0 = _mm256_packs_epi32(flt0, _mm256_setzero_si256());
-            _mm_storeu_si128((__m128i *)(flt_angles[0] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(flt0, 0x8)));
-
-            __m256i src1 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_angles[1] + src_offset + j)));
-            __m256i r_factor1 = _mm256_set1_epi32(i_rfactor[1]);
-            __m256i dst_val1 = _mm256_mullo_epi32(src1, r_factor1);
-            __m256i i16_dst_val1 = _mm256_srai_epi32(
-                _mm256_add_epi32(dst_val1, _mm256_set1_epi32(i_shiftsadd[1])), i_shifts[1]);
-            _mm_storeu_si128((__m128i *)(dst_angles[1] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(
-                                 _mm256_packs_epi32(i16_dst_val1, _mm256_setzero_si256()), 0x8)));
-            __m256i flt1 = _mm256_mullo_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                              _mm256_abs_epi32(i16_dst_val1));
-            flt1 = _mm256_srai_epi32(_mm256_add_epi32(flt1, _mm256_set1_epi32(2048)), 12);
-            flt1 = _mm256_packs_epi32(flt1, _mm256_setzero_si256());
-            _mm_storeu_si128((__m128i *)(flt_angles[1] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(flt1, 0x8)));
-
-            __m256i src2 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_angles[2] + src_offset + j)));
-            __m256i r_factor2 = _mm256_set1_epi32(i_rfactor[2]);
-            __m256i dst_val2 = _mm256_mullo_epi32(src2, r_factor2);
-            __m256i i16_dst_val2 = _mm256_srai_epi32(
-                _mm256_add_epi32(dst_val2, _mm256_set1_epi32(i_shiftsadd[2])), i_shifts[2]);
-            _mm_storeu_si128((__m128i *)(dst_angles[2] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(
-                                 _mm256_packs_epi32(i16_dst_val2, _mm256_setzero_si256()), 0x8)));
-            __m256i flt2 = _mm256_mullo_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                              _mm256_abs_epi32(i16_dst_val2));
-            flt2 = _mm256_srai_epi32(_mm256_add_epi32(flt2, _mm256_set1_epi32(2048)), 12);
-            flt2 = _mm256_packs_epi32(flt2, _mm256_setzero_si256());
-            _mm_storeu_si128((__m128i *)(flt_angles[2] + dst_offset + j),
-                             _mm256_castsi256_si128(_mm256_permute4x64_epi64(flt2, 0x8)));
-        }
-
-        for (int j = right_mod_8; j < right; ++j) {
-
-            int32_t dst_val0 = i_rfactor[0] * (int32_t)src_angles[0][src_offset + j];
-            int16_t i16_dst_val0 = ((int16_t)((dst_val0 + i_shiftsadd[0]) >> i_shifts[0]));
-            dst_angles[0][dst_offset + j] = i16_dst_val0;
-            flt_angles[0][dst_offset + j] =
-                ((int16_t)(((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val0)) + 2048) >> 12));
-
-            int32_t dst_val1 = i_rfactor[1] * (int32_t)src_angles[1][src_offset + j];
-            int16_t i16_dst_val1 = ((int16_t)((dst_val1 + i_shiftsadd[1]) >> i_shifts[1]));
-            dst_angles[1][dst_offset + j] = i16_dst_val1;
-            flt_angles[1][dst_offset + j] =
-                ((int16_t)(((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val1)) + 2048) >> 12));
-
-            int32_t dst_val2 = i_rfactor[2] * (int32_t)src_angles[2][src_offset + j];
-            int16_t i16_dst_val2 = ((int16_t)((dst_val2 + i_shiftsadd[2]) >> i_shifts[2]));
-            dst_angles[2][dst_offset + j] = i16_dst_val2;
-            flt_angles[2][dst_offset + j] =
-                ((int16_t)(((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val2)) + 2048) >> 12));
-        }
-    }
+    const __m256i v = _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((const __m128i *)src)));
+    __m256i sq = _mm256_add_epi64(_mm256_mul_epu32(v, v), add_sq);
+    sq = _mm256_srli_epi64(sq, shift_sq);
+    const __m256i cu = _mm256_add_epi64(_mm256_mul_epu32(sq, v), add_cub);
+    return _mm256_srli_epi64(cu, shift_cub);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
-void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double adm_norm_view_dist,
-                     int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
-                     double adm_csf_diag_scale, bool measure_aim)
+/* Sums of the cube terms of columns [j0, j1) of the three bands of one row,
+ * four at a time. */
+static FORCE_INLINE void i4_csf_den_row_avx2(const I4AdmDenCtx *c, const int32_t *src_h,
+                                             const int32_t *src_v, const int32_t *src_d, int j0,
+                                             int j1, uint64_t inner[3])
 {
-    const i4_adm_dwt_band_t *src;
-    const i4_adm_dwt_band_t *dst;
-    const i4_adm_dwt_band_t *flt;
+    const __m256i add_sq = _mm256_set1_epi64x(c->add_shift_sq);
+    const __m256i add_cub = _mm256_set1_epi64x(c->add_shift_cub);
+    const int shift_sq = (int)c->shift_sq;
+    const int shift_cub = (int)c->shift_cub;
+    __m256i accum[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
 
-    if (measure_aim) {
-        src = &buf->i4_decouple_r;
-        dst = &buf->i4_csf_f;
-        flt = &buf->i4_csf_a;
-    } else {
-        src = &buf->i4_decouple_a;
-        dst = &buf->i4_csf_a;
-        flt = &buf->i4_csf_f;
+    for (int j = j0; j < j1; j += 4) {
+        accum[0] = _mm256_add_epi64(
+            accum[0], i4_csf_den_cube_avx2(src_h + j, add_sq, add_cub, shift_sq, shift_cub));
+        accum[1] = _mm256_add_epi64(
+            accum[1], i4_csf_den_cube_avx2(src_v + j, add_sq, add_cub, shift_sq, shift_cub));
+        accum[2] = _mm256_add_epi64(
+            accum[2], i4_csf_den_cube_avx2(src_d + j, add_sq, add_cub, shift_sq, shift_cub));
     }
-
-    const int32_t *src_angles[3] = {src->band_h, src->band_v, src->band_d};
-    int32_t *dst_angles[3] = {dst->band_h, dst->band_v, dst->band_d};
-    int32_t *flt_angles[3] = {flt->band_h, flt->band_v, flt->band_d};
-
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor1[3] = {factor1, factor1, factor2};
-
-    //i_rfactor in fixed-point
-    const double pow2_32 = pow(2, 32);
-    const uint32_t i_rfactor[3] = {(uint32_t)(rfactor1[0] * pow2_32),
-                                   (uint32_t)(rfactor1[1] * pow2_32),
-                                   (uint32_t)(rfactor1[2] * pow2_32)};
-
-    const uint32_t FIX_ONE_BY_30 = 143165577;
-    const uint32_t shift_dst[3] = {28, 28, 28};
-    const uint32_t shift_flt[3] = {32, 32, 32};
-    int32_t add_bef_shift_dst[3];
-    int32_t add_bef_shift_flt[3];
-
-    __m256i mask_msb_shift_dst = _mm256_set1_epi64x(0xFFFFFFF000000000);
-
-    for (unsigned idx = 0; idx < 3; ++idx) {
-        add_bef_shift_dst[idx] = (1u << (shift_dst[idx] - 1));
-        add_bef_shift_flt[idx] = (1u << (shift_flt[idx] - 1));
-    }
-
-    /* The computation of the csf values is not required for the regions
-     * which lie outside the frame borders
-     */
-    int left = w * ADM_BORDER_FACTOR - 0.5 - 1; // -1 for filter tap
-    int top = h * ADM_BORDER_FACTOR - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    int right_mod_8 = right - ((right - left) % 8);
-
-    for (int i = top; i < bottom; ++i) {
-        /* Source and destination share one stride in this pass, so the row
-         * offset is literally the same value; deriving one from the other says
-         * so and stops cppcheck reading two identical initialisers as a
-         * copy-paste slip (duplicateAssignExpression). */
-        const int src_offset = i * stride;
-        const int dst_offset = src_offset;
-
-        for (int j = left; j < right_mod_8; j += 8) {
-            __m256i src0 = _mm256_loadu_si256((__m256i *)(src_angles[0] + src_offset + j));
-            __m256i r_factor0 = _mm256_set1_epi32(i_rfactor[0]);
-            __m256i dst_val0_lo = _mm256_mul_epi32(src0, r_factor0);
-            __m256i dst_val0_hi = _mm256_mul_epi32(_mm256_srli_epi64(src0, 32), r_factor0);
-
-            dst_val0_lo =
-                _mm256_add_epi64(dst_val0_lo, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val0_lo = _mm256_or_si256(_mm256_srli_epi64(dst_val0_lo, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val0_lo, mask_msb_shift_dst));
-            dst_val0_hi =
-                _mm256_add_epi64(dst_val0_hi, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val0_hi = _mm256_or_si256(_mm256_srli_epi64(dst_val0_hi, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val0_hi, mask_msb_shift_dst));
-            dst_val0_lo = _mm256_or_si256(
-                _mm256_and_si256(dst_val0_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                _mm256_slli_epi64(dst_val0_hi, 32));
-            _mm256_storeu_si256((__m256i *)(dst_angles[0] + dst_offset + j), dst_val0_lo);
-
-            __m256i flt0_lo =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30), _mm256_abs_epi32(dst_val0_lo));
-            __m256i flt0_hi =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                 _mm256_srli_epi64(_mm256_abs_epi32(dst_val0_lo), 32));
-            flt0_lo = _mm256_srli_epi64(
-                _mm256_add_epi64(flt0_lo, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt0_hi = _mm256_srli_epi64(
-                _mm256_add_epi64(flt0_hi, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt0_lo =
-                _mm256_or_si256(_mm256_and_si256(flt0_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                                _mm256_slli_epi64(flt0_hi, 32));
-            _mm256_storeu_si256((__m256i *)(flt_angles[0] + dst_offset + j), flt0_lo);
-
-            __m256i src1 = _mm256_loadu_si256((__m256i *)(src_angles[1] + src_offset + j));
-            __m256i r_factor1 = _mm256_set1_epi32(i_rfactor[1]);
-            __m256i dst_val1_lo = _mm256_mul_epi32(src1, r_factor1);
-            __m256i dst_val1_hi = _mm256_mul_epi32(_mm256_srli_epi64(src1, 32), r_factor1);
-
-            dst_val1_lo =
-                _mm256_add_epi64(dst_val1_lo, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val1_lo = _mm256_or_si256(_mm256_srli_epi64(dst_val1_lo, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val1_lo, mask_msb_shift_dst));
-            dst_val1_hi =
-                _mm256_add_epi64(dst_val1_hi, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val1_hi = _mm256_or_si256(_mm256_srli_epi64(dst_val1_hi, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val1_hi, mask_msb_shift_dst));
-            dst_val1_lo = _mm256_or_si256(
-                _mm256_and_si256(dst_val1_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                _mm256_slli_epi64(dst_val1_hi, 32));
-            _mm256_storeu_si256((__m256i *)(dst_angles[1] + dst_offset + j), dst_val1_lo);
-
-            __m256i flt1_lo =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30), _mm256_abs_epi32(dst_val1_lo));
-            __m256i flt1_hi =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                 _mm256_srli_epi64(_mm256_abs_epi32(dst_val1_lo), 32));
-            flt1_lo = _mm256_srli_epi64(
-                _mm256_add_epi64(flt1_lo, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt1_hi = _mm256_srli_epi64(
-                _mm256_add_epi64(flt1_hi, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt1_lo =
-                _mm256_or_si256(_mm256_and_si256(flt1_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                                _mm256_slli_epi64(flt1_hi, 32));
-            _mm256_storeu_si256((__m256i *)(flt_angles[1] + dst_offset + j), flt1_lo);
-
-            __m256i src2 = _mm256_loadu_si256((__m256i *)(src_angles[2] + src_offset + j));
-            __m256i r_factor2 = _mm256_set1_epi32(i_rfactor[2]);
-            __m256i dst_val2_lo = _mm256_mul_epi32(src2, r_factor2);
-            __m256i dst_val2_hi = _mm256_mul_epi32(_mm256_srli_epi64(src2, 32), r_factor2);
-
-            dst_val2_lo =
-                _mm256_add_epi64(dst_val2_lo, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val2_lo = _mm256_or_si256(_mm256_srli_epi64(dst_val2_lo, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val2_lo, mask_msb_shift_dst));
-            dst_val2_hi =
-                _mm256_add_epi64(dst_val2_hi, _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]));
-            dst_val2_hi = _mm256_or_si256(_mm256_srli_epi64(dst_val2_hi, shift_dst[scale - 1]),
-                                          _mm256_and_si256(dst_val2_hi, mask_msb_shift_dst));
-            dst_val2_lo = _mm256_or_si256(
-                _mm256_and_si256(dst_val2_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                _mm256_slli_epi64(dst_val2_hi, 32));
-            _mm256_storeu_si256((__m256i *)(dst_angles[2] + dst_offset + j), dst_val2_lo);
-
-            __m256i flt2_lo =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30), _mm256_abs_epi32(dst_val2_lo));
-            __m256i flt2_hi =
-                _mm256_mul_epi32(_mm256_set1_epi32(FIX_ONE_BY_30),
-                                 _mm256_srli_epi64(_mm256_abs_epi32(dst_val2_lo), 32));
-            flt2_lo = _mm256_srli_epi64(
-                _mm256_add_epi64(flt2_lo, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt2_hi = _mm256_srli_epi64(
-                _mm256_add_epi64(flt2_hi, _mm256_set1_epi64x(add_bef_shift_flt[scale - 1])),
-                shift_flt[scale - 1]);
-            flt2_lo =
-                _mm256_or_si256(_mm256_and_si256(flt2_lo, _mm256_set1_epi64x(0x00000000FFFFFFFF)),
-                                _mm256_slli_epi64(flt2_hi, 32));
-            _mm256_storeu_si256((__m256i *)(flt_angles[2] + dst_offset + j), flt2_lo);
-        }
-
-        for (int j = right_mod_8; j < right; ++j) {
-            int32_t dst_val0 = (int32_t)(((i_rfactor[0] * (int64_t)src_angles[0][src_offset + j]) +
-                                          add_bef_shift_dst[scale - 1]) >>
-                                         shift_dst[scale - 1]);
-            dst_angles[0][dst_offset + j] = dst_val0;
-            flt_angles[0][dst_offset + j] = (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val0)) +
-                                                       add_bef_shift_flt[scale - 1]) >>
-                                                      shift_flt[scale - 1]);
-
-            int32_t dst_val1 = (int32_t)(((i_rfactor[1] * (int64_t)src_angles[1][src_offset + j]) +
-                                          add_bef_shift_dst[scale - 1]) >>
-                                         shift_dst[scale - 1]);
-            dst_angles[1][dst_offset + j] = dst_val1;
-            flt_angles[1][dst_offset + j] = (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val1)) +
-                                                       add_bef_shift_flt[scale - 1]) >>
-                                                      shift_flt[scale - 1]);
-
-            int32_t dst_val2 = (int32_t)(((i_rfactor[2] * (int64_t)src_angles[2][src_offset + j]) +
-                                          add_bef_shift_dst[scale - 1]) >>
-                                         shift_dst[scale - 1]);
-            dst_angles[2][dst_offset + j] = dst_val2;
-            flt_angles[2][dst_offset + j] = (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val2)) +
-                                                       add_bef_shift_flt[scale - 1]) >>
-                                                      shift_flt[scale - 1]);
-        }
+    for (int k = 0; k < 3; ++k) {
+        inner[k] = hsum_epu64(accum[k]);
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int h, int src_stride,
                             double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                             double adm_csf_scale, double adm_csf_diag_scale,
                             double adm_noise_weight)
 {
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1;
-    float factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_scale);
-        factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, DEFAULT_ADM_CSF_LUM,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        factor1 = barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        factor2 = barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    const float rfactor[3] = {factor1, factor1, factor2};
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, adm_norm_view_dist, adm_ref_display_height,
+                            adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
+    const int right_mod_4 = c.b.right - ((c.b.right - c.b.left) % 4);
 
-    uint64_t accum_h = 0;
-    uint64_t accum_v = 0;
-    uint64_t accum_d = 0;
-    const uint32_t shift_sq[3] = {31, 30, 31};
-    const uint32_t accum_convert_float[3] = {32, 27, 23};
-    const uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};
+    uint64_t accum[3] = {0, 0, 0};
+    uint64_t inner[3] = {0, 0, 0};
 
-    /* The computation of the denominator scales is not required for the regions
-     * which lie outside the frame borders
-     */
-    const int left = w * ADM_BORDER_FACTOR - 0.5;
-    const int top = h * ADM_BORDER_FACTOR - 0.5;
-    const int right = w - left;
-    const int bottom = h - top;
-
-    uint32_t shift_cub = (uint32_t)ceil(log2(right - left));
-    uint32_t add_shift_cub = adm_half_shift(shift_cub);
-    uint32_t shift_accum = (uint32_t)ceil(log2(bottom - top));
-    uint32_t add_shift_accum = adm_half_shift(shift_accum);
-
-    int32_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
-    int32_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;
-    int32_t *src_d = src->band_d + (ptrdiff_t)top * src_stride;
-
-    int right_mod_4 = right - ((right - left) % 4);
-    for (int i = top; i < bottom; ++i) {
-        uint64_t accum_inner_h = 0;
-        uint64_t accum_inner_v = 0;
-        uint64_t accum_inner_d = 0;
-        __m256i accum_inner_h_256;
-        __m256i accum_inner_v_256;
-        __m256i accum_inner_d_256;
-        accum_inner_h_256 = accum_inner_v_256 = accum_inner_d_256 = _mm256_setzero_si256();
-        for (int j = left; j < right_mod_4; j += 4) {
-            __m256i vh =
-                _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_h + j))));
-            __m256i vv =
-                _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_v + j))));
-            __m256i vd =
-                _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_d + j))));
-
-            __m256i h_sq = _mm256_add_epi64(_mm256_mul_epu32(vh, vh),
-                                            _mm256_set1_epi64x(add_shift_sq[scale - 1]));
-            h_sq = _mm256_srli_epi64(h_sq, shift_sq[scale - 1]);
-            __m256i h_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(h_sq, vh), _mm256_set1_epi64x(add_shift_cub));
-            h_cu = _mm256_srli_epi64(h_cu, shift_cub);
-            accum_inner_h_256 = _mm256_add_epi64(accum_inner_h_256, h_cu);
-
-            __m256i v_sq = _mm256_add_epi64(_mm256_mul_epu32(vv, vv),
-                                            _mm256_set1_epi64x(add_shift_sq[scale - 1]));
-            v_sq = _mm256_srli_epi64(v_sq, shift_sq[scale - 1]);
-            __m256i v_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(v_sq, vv), _mm256_set1_epi64x(add_shift_cub));
-            v_cu = _mm256_srli_epi64(v_cu, shift_cub);
-            accum_inner_v_256 = _mm256_add_epi64(accum_inner_v_256, v_cu);
-
-            __m256i d_sq = _mm256_add_epi64(_mm256_mul_epu32(vd, vd),
-                                            _mm256_set1_epi64x(add_shift_sq[scale - 1]));
-            d_sq = _mm256_srli_epi64(d_sq, shift_sq[scale - 1]);
-            __m256i d_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(d_sq, vd), _mm256_set1_epi64x(add_shift_cub));
-            d_cu = _mm256_srli_epi64(d_cu, shift_cub);
-            accum_inner_d_256 = _mm256_add_epi64(accum_inner_d_256, d_cu);
-        }
-        __m128i h_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_h_256),
-                                     _mm256_extracti128_si256(accum_inner_h_256, 1));
-        uint64_t h_r1 = (uint64_t)extract_epi64_128(h_r2, 0) + (uint64_t)extract_epi64_128(h_r2, 1);
-
-        __m128i d_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_d_256),
-                                     _mm256_extracti128_si256(accum_inner_d_256, 1));
-        uint64_t d_r1 = (uint64_t)extract_epi64_128(d_r2, 0) + (uint64_t)extract_epi64_128(d_r2, 1);
-
-        __m128i v_r2 = _mm_add_epi64(_mm256_castsi256_si128(accum_inner_v_256),
-                                     _mm256_extracti128_si256(accum_inner_v_256, 1));
-        uint64_t v_r1 = (uint64_t)extract_epi64_128(v_r2, 0) + (uint64_t)extract_epi64_128(v_r2, 1);
-
-        for (int j = right_mod_4; j < right; ++j) {
-            uint32_t h_abs = (uint32_t)abs(src_h[j]);
-            uint32_t v_abs = (uint32_t)abs(src_v[j]);
-            uint32_t d_abs = (uint32_t)abs(src_d[j]);
-
-            uint64_t val =
-                ((((((uint64_t)h_abs * h_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
-                  h_abs) +
-                 add_shift_cub) >>
-                shift_cub;
-
-            accum_inner_h += val;
-
-            val = ((((((uint64_t)v_abs * v_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
-                    v_abs) +
-                   add_shift_cub) >>
-                  shift_cub;
-            accum_inner_v += val;
-
-            val = ((((((uint64_t)d_abs * d_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
-                    d_abs) +
-                   add_shift_cub) >>
-                  shift_cub;
-            accum_inner_d += val;
-        }
-
-        accum_h += (accum_inner_h + h_r1 + add_shift_accum) >> shift_accum;
-        accum_v += (accum_inner_v + v_r1 + add_shift_accum) >> shift_accum;
-        accum_d += (accum_inner_d + d_r1 + add_shift_accum) >> shift_accum;
-
+    const int32_t *src_h = src->band_h + (ptrdiff_t)c.b.top * src_stride;
+    const int32_t *src_v = src->band_v + (ptrdiff_t)c.b.top * src_stride;
+    const int32_t *src_d = src->band_d + (ptrdiff_t)c.b.top * src_stride;
+    for (int i = c.b.top; i < c.b.bottom; ++i) {
+        i4_csf_den_row_avx2(&c, src_h, src_v, src_d, c.b.left, right_mod_4, inner);
+        i4_adm_csf_den_cols(&c, src_h, src_v, src_d, right_mod_4, c.b.right, inner);
+        adm_csf_den_fold(inner, accum, c.add_shift_accum, c.shift_accum);
         src_h += src_stride;
         src_v += src_stride;
         src_d += src_stride;
     }
-    /**
-     * All the results are converted to floating-point to calculate the scores
-     * For all scales the final shift is 3*shifts from dwt - total shifts done here
-     */
-    double shift_csf = pow(2, (accum_convert_float[scale - 1] - shift_accum - shift_cub));
-    double csf_h = (double)(accum_h / shift_csf) * pow(rfactor[0], 3);
-    double csf_v = (double)(accum_v / shift_csf) * pow(rfactor[1], 3);
-    double csf_d = (double)(accum_d / shift_csf) * pow(rfactor[2], 3);
+    return i4_adm_csf_den_result(&c, accum, adm_noise_weight);
+}
 
-    float powf_add = powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float den_scale_h = powf(csf_h, 1.0f / 3.0f) + powf_add;
-    float den_scale_v = powf(csf_v, 1.0f / 3.0f) + powf_add;
-    float den_scale_d = powf(csf_d, 1.0f / 3.0f) + powf_add;
+/* ------------------------------------------------------------------------- */
+/* Contrast masking (numerator), scale 0                                     */
+/* ------------------------------------------------------------------------- */
 
-    return (den_scale_h + den_scale_v + den_scale_d);
+/* One band's share of the masking threshold of the six columns starting at
+ * `j` of an interior row `i`: the 3x3 sum of the filtered band, its centre
+ * replaced by the unfiltered sample scaled by 1/15 (adm_cm_thresh()). Lanes 6
+ * and 7 are not complete sums. */
+static FORCE_INLINE __m256i cm_thresh_band_avx2(const int16_t *src, const int16_t *flt, int stride,
+                                                int i, int j)
+{
+    const __m256i perm1 = _mm256_set_epi32(0, 7, 6, 5, 4, 3, 2, 1);
+    const __m256i perm2 = _mm256_set_epi32(1, 0, 7, 6, 5, 4, 3, 2);
+    const int16_t *flt_row = flt + ((ptrdiff_t)stride * (i - 1)) + j - 1;
+    const __m256i flt0 = load_epi16x8(flt_row);
+    const __m256i flt1 = load_epi16x8(flt_row + stride);
+    const __m256i flt2 = load_epi16x8(flt_row + 2 * (ptrdiff_t)stride);
+
+    __m256i centre = load_epi16x8(src + ((ptrdiff_t)stride * i) + j - 1);
+    centre = _mm256_mullo_epi32(_mm256_abs_epi32(centre), _mm256_set1_epi32(ONE_BY_15));
+    centre = _mm256_srai_epi32(_mm256_add_epi32(centre, _mm256_set1_epi32(2048)), 12);
+    /* Wrap each tap to int16, as adm_cm_thresh()'s (int16_t) cast does: */
+    centre = _mm256_srai_epi32(_mm256_slli_epi32(centre, 16), 16);
+    centre = _mm256_sub_epi32(centre, flt1);
+
+    const __m256i rows = _mm256_add_epi32(_mm256_add_epi32(flt0, flt1), flt2);
+    __m256i sum = _mm256_add_epi32(_mm256_permutevar8x32_epi32(rows, perm1), rows);
+    sum = _mm256_add_epi32(_mm256_permutevar8x32_epi32(rows, perm2), sum);
+    return _mm256_add_epi32(sum, _mm256_permutevar8x32_epi32(centre, perm1));
+}
+
+/* Masking threshold of the six columns starting at `j`; lanes 6 and 7 are 0. */
+static FORCE_INLINE __m256i cm_thresh_avx2(const AdmCmCtx *c, int i, int j)
+{
+    const __m256i mask_end = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);
+    __m256i sum = cm_thresh_band_avx2(c->angles[0], c->flt_angles[0], c->csf_a_stride, i, j);
+    sum = _mm256_add_epi32(
+        sum, cm_thresh_band_avx2(c->angles[1], c->flt_angles[1], c->csf_a_stride, i, j));
+    sum = _mm256_add_epi32(
+        sum, cm_thresh_band_avx2(c->angles[2], c->flt_angles[2], c->csf_a_stride, i, j));
+    return _mm256_and_si256(mask_end, sum);
+}
+
+/* Rounded (|x| - thr)^3 of eight samples of one band, added to two
+ * accumulators of four int64 lanes (adm_cm_accum_round()). */
+static FORCE_INLINE void cm_accum_avx2(__m256i x, __m256i thr, const AdmCmBand *p,
+                                       __m256i *accum_lo, __m256i *accum_hi)
+{
+    const __m256i add_sq = _mm256_set1_epi64x(p->add_shift_sq);
+    const __m256i add_cub = _mm256_set1_epi64x(p->add_shift_cub);
+
+    x = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_slli_epi32(thr, p->shift_sub));
+    x = _mm256_max_epi32(x, _mm256_setzero_si256());
+    const __m256i x_hi = _mm256_srli_epi64(x, 32);
+
+    __m256i lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x, x), add_sq), p->shift_sq);
+    __m256i hi =
+        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_hi, x_hi), add_sq), p->shift_sq);
+    lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(lo, x), add_cub), (int)p->shift_cub);
+    hi =
+        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(hi, x_hi), add_cub), (int)p->shift_cub);
+    *accum_lo = _mm256_add_epi64(*accum_lo, lo);
+    *accum_hi = _mm256_add_epi64(*accum_hi, hi);
+}
+
+/* An interior row, six columns at a time. A row that reaches the first or
+ * the last column needs the mirrored neighbourhood and stays scalar. */
+static void cm_row_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
+{
+    if (bd->left_edge || bd->right_edge) {
+        adm_cm_row(c, i, bd, inner);
+        return;
+    }
+
+    const __m256i lanes = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);
+    const int end_col_mod6 = bd->end_col - ((bd->end_col - bd->start_col) % 6);
+    __m256i accum_lo[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
+    __m256i accum_hi[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
+
+    for (int j = bd->start_col; j < end_col_mod6; j += 6) {
+        const ptrdiff_t idx = (ptrdiff_t)i * c->src_stride + j;
+        const __m256i thr = cm_thresh_avx2(c, i, j);
+        const int16_t *const src[3] = {c->src->band_h, c->src->band_v, c->src->band_d};
+
+        for (int k = 0; k < 3; ++k) {
+            const __m256i rfactor = _mm256_and_si256(_mm256_set1_epi32(c->i_rfactor[k]), lanes);
+            const __m256i x = _mm256_mullo_epi32(load_epi16x8(src[k] + idx), rfactor);
+            cm_accum_avx2(x, thr, &c->band[k], &accum_lo[k], &accum_hi[k]);
+        }
+    }
+    for (int k = 0; k < 3; ++k) {
+        inner[k] += hsum_epi64(_mm256_add_epi64(accum_lo[k], accum_hi[k]));
+    }
+    for (int j = end_col_mod6; j < bd->end_col; ++j) {
+        adm_cm_accum_px(c, i, j, inner);
+    }
+}
+
+float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
+                  double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
+                  double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
+                  double adm_p_norm, bool measure_aim)
+{
+    AdmCmCtx c;
+    adm_cm_ctx_init(&c, buf, w, h, src_stride, csf_a_stride, adm_norm_view_dist,
+                    adm_ref_display_height, adm_csf_mode, adm_csf_scale, adm_csf_diag_scale,
+                    measure_aim);
+    const AdmCmBounds bd = adm_cm_bounds(w, h);
+
+    int64_t accum[3] = {0, 0, 0};
+    adm_cm_rows(&c, &bd, cm_row_avx2, accum);
+    return adm_cm_result(&c, &bd, accum, adm_noise_weight, adm_p_norm);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Contrast masking (numerator), scales 1..3                                 */
+/* ------------------------------------------------------------------------- */
+
+/* Constants of one i4 contrast-masking row. */
+typedef struct I4CmConsts {
+    __m256i rfactor[3];
+    __m256i add_dst;
+    __m256i add_flt;
+    __m256i msb_dst;
+    __m256i msb_flt;
+} I4CmConsts;
+
+static FORCE_INLINE I4CmConsts i4_cm_consts_avx2(const I4AdmCmCtx *c)
+{
+    const __m256i lanes = _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL);
+    I4CmConsts k;
+    for (int t = 0; t < 3; ++t) {
+        k.rfactor[t] = _mm256_and_si256(_mm256_set1_epi32((int)c->rfactor[t]), lanes);
+    }
+    k.add_dst = _mm256_set1_epi64x(c->add_bef_shift_dst);
+    k.add_flt = _mm256_set1_epi64x(c->add_bef_shift_flt);
+    k.msb_dst = _mm256_set1_epi64x((int64_t)0xFFFFFFF000000000ULL);
+    k.msb_flt = _mm256_set1_epi64x((int64_t)0xFFFFFFFF00000000ULL);
+    return k;
+}
+
+/* One band's share of the masking threshold of the two columns starting at
+ * `j` of an interior row `i` (i4_adm_cm_thresh()). Lanes 2 and 3 are not
+ * complete sums. */
+static FORCE_INLINE __m256i i4_cm_thresh_band_avx2(const I4AdmCmCtx *c, const I4CmConsts *k,
+                                                   int theta, int i, int j)
+{
+    const ptrdiff_t stride = c->csf_a_stride;
+    const int32_t *flt_row = c->flt_angles[theta] + (stride * (i - 1)) + j - 1;
+    const __m256i flt0 = load_epi32x4(flt_row);
+    const __m256i flt1 = load_epi32x4(flt_row + stride);
+    const __m256i flt2 = load_epi32x4(flt_row + 2 * stride);
+
+    __m256i centre = abs_epi64_from32(load_epi32x4(c->angles[theta] + (stride * i) + j - 1));
+    centre = _mm256_mul_epi32(centre, _mm256_set1_epi64x(I4_ONE_BY_15));
+    centre = sra_sign_epi64(_mm256_add_epi64(centre, k->add_flt), (int)c->shift_flt, k->msb_flt);
+    centre = _mm256_sub_epi64(centre, flt1);
+
+    const __m256i rows = _mm256_add_epi64(_mm256_add_epi64(flt0, flt1), flt2);
+    __m256i sum = _mm256_add_epi64(rows, _mm256_permute4x64_epi64(rows, 0x39));
+    sum = _mm256_add_epi64(sum, _mm256_permute4x64_epi64(rows, 0x0E));
+    return _mm256_add_epi64(sum, _mm256_permute4x64_epi64(centre, 0x39));
+}
+
+/* Masking threshold of the two columns starting at `j`; lanes 2 and 3 are 0. */
+static FORCE_INLINE __m256i i4_cm_thresh_avx2(const I4AdmCmCtx *c, const I4CmConsts *k, int i,
+                                              int j)
+{
+    const __m256i mask_end = _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL);
+    __m256i sum = i4_cm_thresh_band_avx2(c, k, 0, i, j);
+    sum = _mm256_add_epi64(sum, i4_cm_thresh_band_avx2(c, k, 1, i, j));
+    sum = _mm256_add_epi64(sum, i4_cm_thresh_band_avx2(c, k, 2, i, j));
+    return _mm256_and_si256(mask_end, sum);
+}
+
+/* Rounded (|x| - thr)^3 of the samples of one band held in int64 lanes
+ * (i4_adm_cm_accum_round()). */
+static FORCE_INLINE __m256i i4_cm_cube_avx2(__m256i x, __m256i thr, const AdmCmBand *p)
+{
+    x = abs_epi64_from32(x);
+    x = _mm256_sub_epi64(x, _mm256_srli_epi64(thr, p->shift_sub));
+    x = _mm256_and_si256(x, _mm256_cmpgt_epi64(x, _mm256_setzero_si256()));
+
+    __m256i v = _mm256_add_epi64(_mm256_mul_epi32(x, x), _mm256_set1_epi64x(p->add_shift_sq));
+    v = _mm256_srli_epi64(v, p->shift_sq);
+    v = _mm256_add_epi64(_mm256_mul_epi32(v, x), _mm256_set1_epi64x(p->add_shift_cub));
+    return _mm256_srli_epi64(v, (int)p->shift_cub);
+}
+
+/* An interior row, two columns at a time; see cm_row_avx2(). */
+static void i4_cm_row_avx2(const I4AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
+{
+    if (bd->left_edge || bd->right_edge) {
+        i4_adm_cm_row(c, i, bd, inner);
+        return;
+    }
+
+    const I4CmConsts k = i4_cm_consts_avx2(c);
+    const int end_col_mod2 = bd->end_col - ((bd->end_col - bd->start_col) % 2);
+    const int32_t *const src[3] = {c->src->band_h, c->src->band_v, c->src->band_d};
+    __m256i accum[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
+
+    for (int j = bd->start_col; j < end_col_mod2; j += 2) {
+        const ptrdiff_t idx = (ptrdiff_t)i * c->src_stride + j;
+        __m256i x[3];
+
+        for (int t = 0; t < 3; ++t) {
+            x[t] = _mm256_mul_epi32(load_epi32x4(src[t] + idx), k.rfactor[t]);
+            x[t] = sra_sign_epi64(_mm256_add_epi64(x[t], k.add_dst), (int)c->shift_dst, k.msb_dst);
+        }
+        const __m256i thr = i4_cm_thresh_avx2(c, &k, i, j);
+        for (int t = 0; t < 3; ++t) {
+            accum[t] = _mm256_add_epi64(accum[t], i4_cm_cube_avx2(x[t], thr, &c->band));
+        }
+    }
+    for (int t = 0; t < 3; ++t) {
+        inner[t] += hsum_epi64(accum[t]);
+    }
+    for (int j = end_col_mod2; j < bd->end_col; ++j) {
+        i4_adm_cm_accum_px(c, i, j, inner);
+    }
+}
+
+float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
+                     double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
+                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
+                     double adm_p_norm, bool measure_aim)
+{
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, buf, w, h, src_stride, csf_a_stride, scale, adm_norm_view_dist,
+                       adm_ref_display_height, adm_csf_mode, adm_csf_scale, adm_csf_diag_scale,
+                       measure_aim);
+    const AdmCmBounds bd = adm_cm_bounds(w, h);
+
+    int64_t accum[3] = {0, 0, 0};
+    i4_adm_cm_rows(&c, &bd, i4_cm_row_avx2, accum);
+    return i4_adm_cm_result(&c, &bd, accum, adm_noise_weight, adm_p_norm);
 }

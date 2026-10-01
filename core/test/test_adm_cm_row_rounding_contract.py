@@ -12,6 +12,7 @@ from pathlib import Path
 FEATURE_DIR = Path(__file__).resolve().parents[1] / "src" / "feature"
 SOURCE_PATHS = {
     "header": "adm_cm_accumulator.h",
+    "kernels": "integer_adm_kernels.h",
     "cpu": "integer_adm.c",
     "avx2": "x86/adm_avx2.c",
     "avx512": "x86/adm_avx512.c",
@@ -23,7 +24,7 @@ SOURCE_PATHS = {
 
 NATIVE_FOLD_CALLS = (
     (
-        "cpu",
+        "kernels",
         "adm_cm_fold",
         "accum[k] += adm_cm_round_row_total(inner[k], add_shift_inner_accum, shift_inner_accum);",
     ),
@@ -65,15 +66,28 @@ METAL_FOLD_CALLS = (
     ("iadm_aim_cm_s123", "out", "total"),
 )
 
-X86_FOLD_FUNCTIONS = (
-    ("avx2", "adm_cm_avx2"),
-    ("avx2", "i4_adm_cm_avx2"),
-    ("avx512", "adm_cm_avx512"),
-    ("avx512", "i4_adm_cm_avx512"),
+# The scalar reference and both x86 twins walk the rows through the shared
+# drivers of integer_adm_kernels.h. A driver folds the first row, every
+# interior row and the last row: three calls, each after a complete row.
+ROW_DRIVERS = ("adm_cm_rows", "i4_adm_cm_rows")
+ROW_DRIVER_FOLD = "adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);"
+ROW_DRIVER_FOLDS = 3
+ROW_DRIVER_INTERIOR = "interior_row(c, i, bd, inner);"
+
+# Every reduction entry point hands its rows to a driver exactly once.
+ROW_REDUCERS = (
+    ("cpu", "adm_cm", "adm_cm_rows(&c, &bd, adm_cm_row, accum);"),
+    ("cpu", "i4_adm_cm", "i4_adm_cm_rows(&c, &bd, i4_adm_cm_row, accum);"),
+    ("avx2", "adm_cm_avx2", "adm_cm_rows(&c, &bd, cm_row_avx2, accum);"),
+    ("avx2", "i4_adm_cm_avx2", "i4_adm_cm_rows(&c, &bd, i4_cm_row_avx2, accum);"),
+    ("avx512", "adm_cm_avx512", "adm_cm_rows(&c, &bd, cm_row_avx512, accum);"),
+    ("avx512", "i4_adm_cm_avx512", "i4_adm_cm_rows(&c, &bd, i4_cm_row_avx512, accum);"),
 )
-X86_ORDINARY_FOLDS_PER_BAND = 5
-X86_VECTOR_TAIL_FOLDS_PER_BAND = 1
-X86_FOLDS_PER_BAND = X86_ORDINARY_FOLDS_PER_BAND + X86_VECTOR_TAIL_FOLDS_PER_BAND
+
+# An x86 row function only adds to the row accumulator. It never sees the row
+# shift, so it cannot round a vector partial or a tail column on its own.
+X86_ROLES = ("avx2", "avx512")
+X86_FORBIDDEN_TOKENS = ("shift_inner_accum", "adm_cm_round_row_total", "adm_cm_fold")
 
 
 def _strip_comments(source: str) -> str:
@@ -197,7 +211,8 @@ def _require_native_contract(failures: list[str], sources: dict[str, str]) -> No
         failures.append("header: raw row fold arithmetic changed")
 
     for role, include in {
-        "cpu": '#include "adm_cm_accumulator.h"',
+        "kernels": '#include "adm_cm_accumulator.h"',
+        "cpu": '#include "integer_adm_kernels.h"',
         "cuda": '#include "adm_cm_accumulator.h"',
         "hip": '#include "adm_cm_accumulator.h"',
         "sycl": '#include "feature/adm_cm_accumulator.h"',
@@ -209,30 +224,38 @@ def _require_native_contract(failures: list[str], sources: dict[str, str]) -> No
         _require_exact_call(failures, role, sources[role], function, statement)
 
 
-def _require_x86_contract(failures: list[str], sources: dict[str, str]) -> None:
-    for role, function in X86_FOLD_FUNCTIONS:
+def _require_row_driver_contract(failures: list[str], sources: dict[str, str]) -> None:
+    for driver in ROW_DRIVERS:
+        try:
+            body = _compact(_function(sources["kernels"], driver))
+        except ValueError as error:
+            failures.append(f"kernels: {error}")
+            continue
+        if body.count(_compact(ROW_DRIVER_FOLD)) != ROW_DRIVER_FOLDS:
+            failures.append(f"kernels:{driver}: incomplete full-row fold coverage")
+        if body.count("adm_cm_fold(") != ROW_DRIVER_FOLDS:
+            failures.append(f"kernels:{driver}: a fold escaped the three row folds")
+        if body.count(_compact(ROW_DRIVER_INTERIOR)) != 1:
+            failures.append(f"kernels:{driver}: interior rows must reach the row callback once")
+        if ">>" in body:
+            failures.append(f"kernels:{driver}: rounding shift escaped adm_cm_fold")
+
+    for role, function, statement in ROW_REDUCERS:
         try:
             body = _compact(_function(sources[role], function))
         except ValueError as error:
             failures.append(f"{role}: {error}")
             continue
-        expected_folds = 0
-        for band in "hvd":
-            ordinary = (
-                f"accum_{band}+=(accum_inner_{band}+add_shift_inner_accum)>>shift_inner_accum;"
-            )
-            vector_tail = (
-                f"accum_{band}+=(accum_inner_{band}+res_{band}+add_shift_inner_accum)"
-                ">>shift_inner_accum;"
-            )
-            if (
-                body.count(ordinary) != X86_ORDINARY_FOLDS_PER_BAND
-                or body.count(vector_tail) != X86_VECTOR_TAIL_FOLDS_PER_BAND
-            ):
-                failures.append(f"{role}:{function}: incomplete full-row fold coverage")
-            expected_folds += X86_FOLDS_PER_BAND
-        if body.count(">>shift_inner_accum") != expected_folds:
-            failures.append(f"{role}:{function}: rounding shift escaped the 18 row folds")
+        if body.count(_compact(statement)) != 1:
+            failures.append(f"{role}:{function}: rows must go through the shared row driver")
+
+
+def _require_x86_contract(failures: list[str], sources: dict[str, str]) -> None:
+    for role in X86_ROLES:
+        body = _compact(sources[role])
+        for token in X86_FORBIDDEN_TOKENS:
+            if token in body:
+                failures.append(f"{role}: {token} escaped the shared row fold")
 
 
 def _require_metal_contract(failures: list[str], source: str) -> None:
@@ -255,6 +278,7 @@ def _require_metal_contract(failures: list[str], source: str) -> None:
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     _require_native_contract(failures, sources)
+    _require_row_driver_contract(failures, sources)
     _require_x86_contract(failures, sources)
     _require_metal_contract(failures, sources["metal"])
     return failures
@@ -288,11 +312,35 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["avx2"] = _sub_exact(
             sources["avx2"],
-            r"accum_h\s*\+=\s*\(accum_inner_h\s*\+\s*add_shift_inner_accum\)\s*"
-            r">>\s*shift_inner_accum",
-            "accum_h += (accum_inner_h >> shift_inner_accum) + add_shift_inner_accum",
+            r"inner\[k\]\s*\+=\s*hsum_epi64\(_mm256_add_epi64\(accum_lo\[k\],\s*"
+            r"accum_hi\[k\]\)\);",
+            "inner[k] += hsum_epi64(_mm256_add_epi64(accum_lo[k], accum_hi[k])) >> "
+            "c->shift_inner_accum;",
         )
-        self.assertTrue(any("avx2:adm_cm_avx2" in item for item in _contract_failures(sources)))
+        self.assertTrue(any(item.startswith("avx2:") for item in _contract_failures(sources)))
+
+    def test_missing_row_fold_mutation_is_detected(self) -> None:
+        sources = _sources()
+        sources["kernels"] = _sub_exact(
+            sources["kernels"],
+            r"interior_row\(c, i, bd, inner\);\s*adm_cm_fold\(inner, accum, "
+            r"c->add_shift_inner_accum,\s*c->shift_inner_accum\);",
+            "interior_row(c, i, bd, inner);",
+        )
+        self.assertTrue(
+            any("kernels:adm_cm_rows" in item for item in _contract_failures(sources))
+        )
+
+    def test_private_row_loop_mutation_is_detected(self) -> None:
+        sources = _sources()
+        sources["avx512"] = _sub_exact(
+            sources["avx512"],
+            r"adm_cm_rows\(&c, &bd, cm_row_avx512, accum\);",
+            "cm_row_avx512(&c, bd.start_row, &bd, accum);",
+        )
+        self.assertTrue(
+            any("avx512:adm_cm_avx512" in item for item in _contract_failures(sources))
+        )
 
     def test_truncation_mutation_is_detected(self) -> None:
         sources = _sources()

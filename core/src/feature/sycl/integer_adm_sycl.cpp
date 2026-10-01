@@ -451,45 +451,136 @@ inline int32_t adm_s0_csf_a(uint32_t i_rfactor, int32_t a_val, int band)
 /* SYCL Kernel: DWT Vertical Pass (ref+dis fused)                     */
 /* ------------------------------------------------------------------ */
 
+/* What the vertical pass of one scale reads and writes. The row buffers
+ * interleave the low- and high-pass rows: row i holds lo(i) then hi(i). */
+struct AdmDwtVertArgs {
+    const void *in_ref; // 8- or 16-bit picture at scale 0, int32 band_a above
+    const void *in_dis;
+    int32_t *tmp_ref; // row buffers, 2 * w wide
+    int32_t *tmp_dis;
+    int scale;
+    unsigned w;
+    unsigned h;
+    unsigned in_stride;
+    unsigned bpc;
+    unsigned v_shift;
+    unsigned v_add;
+};
+
+constexpr int ADM_DWT_WG_X = 32;
+constexpr int ADM_DWT_WG_Y = 8;
+// Each output row n needs input rows 2n-1..2n+2 (4 taps).
+// For WG_Y outputs: 2*WG_Y + 2 input rows in the tile.
+constexpr int ADM_DWT_TILE_H = (2 * ADM_DWT_WG_Y) + 2; // 18
+
+/* One source sample at (x, y), inside the plane. */
+inline int32_t adm_dev_dwt_src(const AdmDwtVertArgs &a, const void *p_in, int x, int y)
+{
+    if (a.scale != 0) {
+        return static_cast<const int32_t *>(p_in)[y * a.in_stride + x];
+    }
+    if (a.bpc <= 8) {
+        return static_cast<const uint8_t *>(p_in)[y * a.in_stride + x];
+    }
+    return static_cast<const uint16_t *>(p_in)[y * (a.in_stride / 2) + x];
+}
+
 /* Output row n reads input rows 2n-1 .. 2n+2, inside [-1, h + 1], which one
  * reflection covers. The SLM tile also holds the rows of padding work-items,
  * up to 2 * n_start + 16: on a plane of 8 rows or fewer one reflection leaves
  * those below zero (row 16 of an 8-row plane mirrors to -1, of a 3-row plane
  * to -11), so every frame 64 rows high or less read before the band's
- * allocation at scale 3 and lost the device. read_px clamps the reflected row
- * with vmaf_sycl_tile_index() (sycl_tile_index.h). */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t *dwt_tmp_ref,
-                                 const void *input_dis, int32_t *dwt_tmp_dis, int scale,
-                                 unsigned width, unsigned height, unsigned in_stride, unsigned bpc,
-                                 unsigned v_shift, unsigned v_add)
+ * allocation at scale 3 and lost the device. The reflected row is clamped
+ * with vmaf_sycl_tile_index() (sycl_tile_index.h); a column past the plane
+ * reads 0. */
+inline int32_t adm_dev_dwt_src_mirrored(const AdmDwtVertArgs &a, const void *p_in, int x, int y)
 {
-    // Output: dwt_tmp has interleaved lo/hi rows:
-    //   row i contains lo(i) and hi(i) for half_h rows
-    unsigned half_h = (height + 1) / 2;
-    auto e_scale = scale;
-    auto e_bpc = bpc;
-    auto e_w = width;
-    auto e_h = height;
-    auto e_in_stride = in_stride;
-    auto e_v_shift = v_shift;
-    auto e_v_add = v_add;
-    auto p_ref_in = input_ref;
-    auto p_dis_in = input_dis;
+    y = vmaf_sycl_tile_index(dev_mirror_adm(y, (int)a.h), (int)a.h);
+    if (std::cmp_greater_equal(x, a.w)) {
+        return 0;
+    }
+    return adm_dev_dwt_src(a, p_in, x, y);
+}
 
-    constexpr int WG_X = 32;
-    constexpr int WG_Y = 8;
-    // Each output row n needs input rows 2n-1..2n+2 (4 taps).
-    // For WG_Y outputs: 2*WG_Y + 2 input rows in the tile.
-    constexpr int TILE_H = 2 * WG_Y + 2; // 18
+/* Cooperative load of the work-group's tile, TILE_H rows by WG_X columns. */
+inline void adm_dev_dwt_load_tile(const AdmDwtVertArgs &a, const void *p_in, sycl::nd_item<3> item,
+                                  const sycl::local_accessor<int32_t, 2> &tile)
+{
+    constexpr int WG_SIZE = ADM_DWT_WG_X * ADM_DWT_WG_Y;
+    constexpr int TILE_ELEMS = ADM_DWT_TILE_H * ADM_DWT_WG_X;
+    const int lx = item.get_local_id(2);
+    const int ly = item.get_local_id(1);
+    const int lid = (ly * ADM_DWT_WG_X) + lx;
+
+    // Tile origin in input space
+    int const tile_col = (int)(item.get_group(2) * ADM_DWT_WG_X);
+    int const n_start = (int)(item.get_group(1) * ADM_DWT_WG_Y);
+    int const row_start = (2 * n_start) - 1; // first input row
+    bool const interior = (row_start >= 0) && (row_start + ADM_DWT_TILE_H <= (int)a.h) &&
+                          (tile_col + ADM_DWT_WG_X <= (int)a.w);
+
+    if (interior) {
+        // Fast path: no boundary checks
+        for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
+            int const tr = i / ADM_DWT_WG_X;
+            int const tc = i % ADM_DWT_WG_X;
+            tile[tr][tc] = adm_dev_dwt_src(a, p_in, tile_col + tc, row_start + tr);
+        }
+    } else {
+        // Boundary path: mirror + bounds check
+        for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
+            int const tr = i / ADM_DWT_WG_X;
+            int const tc = i % ADM_DWT_WG_X;
+            tile[tr][tc] = adm_dev_dwt_src_mirrored(a, p_in, tile_col + tc, row_start + tr);
+        }
+    }
+}
+
+/* Filter the four taps of output sample (gx, gy) and store its low- and
+ * high-pass values, lo followed by hi. */
+inline void adm_dev_dwt_vert_store(const AdmDwtVertArgs &a, int32_t *dwt_out, int gx, int gy,
+                                   int32_t s0, int32_t s1, int32_t s2, int32_t s3)
+{
+    // Lo-pass: coeffs = {15826, 27411, 7345, -4240}
+    int64_t lo_val = ((int64_t)dwt_lo[0] * s0) + ((int64_t)dwt_lo[1] * s1) +
+                     ((int64_t)dwt_lo[2] * s2) + ((int64_t)dwt_lo[3] * s3);
+
+    // Hi-pass: coeffs = {-4240, -7345, 27411, -15826}
+    int64_t const hi_val = ((int64_t)dwt_hi[0] * s0) + ((int64_t)dwt_hi[1] * s1) +
+                           ((int64_t)dwt_hi[2] * s2) + ((int64_t)dwt_hi[3] * s3);
+
+    // Scale 0: subtract DC offset from lo
+    if (a.scale == 0) {
+        lo_val -= (int64_t)dwt_lo_sum * a.v_add;
+    }
+
+    // Quantize
+    auto lo_out = (int32_t)lo_val;
+    auto hi_out = (int32_t)hi_val;
+    if (a.v_shift > 0) {
+        lo_out = (int32_t)((lo_val + ((int64_t)1 << (a.v_shift - 1))) >> a.v_shift);
+        hi_out = (int32_t)((hi_val + ((int64_t)1 << (a.v_shift - 1))) >> a.v_shift);
+    }
+
+    unsigned const out_stride = a.w * 2;
+    dwt_out[gy * out_stride + gx] = lo_out;
+    dwt_out[gy * out_stride + a.w + gx] = hi_out;
+}
+
+sycl::event launch_dwt_vert_pair(sycl::queue &q, const AdmDwtVertArgs &args)
+{
+    AdmDwtVertArgs const a = args;
+    unsigned const half_h = (a.h + 1) / 2;
     // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((size_t)(width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<3> local(1, WG_Y, WG_X);
+    sycl::range<3> const global(2,
+                                ((size_t)(half_h + ADM_DWT_WG_Y - 1) / ADM_DWT_WG_Y) * ADM_DWT_WG_Y,
+                                ((size_t)(a.w + ADM_DWT_WG_X - 1) / ADM_DWT_WG_X) * ADM_DWT_WG_X);
+    sycl::range<3> const local(1, ADM_DWT_WG_Y, ADM_DWT_WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
         // SLM tile: TILE_H rows × WG_X columns
-        sycl::local_accessor<int32_t, 2> const tile(sycl::range<2>(TILE_H, WG_X), cgh);
+        sycl::local_accessor<int32_t, 2> const tile(sycl::range<2>(ADM_DWT_TILE_H, ADM_DWT_WG_X),
+                                                    cgh);
 
         cgh.parallel_for(sycl::nd_range<3>(global, local), [=](sycl::nd_item<3> item) {
             // dim 0 = ref(0) or dis(1), dim 1 = row, dim 2 = col
@@ -498,105 +589,18 @@ sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t 
             const int gy = item.get_global_id(1);
             const int lx = item.get_local_id(2);
             const int ly = item.get_local_id(1);
-            const int lid = ly * WG_X + lx;
-            constexpr int WG_SIZE = WG_X * WG_Y;
 
-            const void *p_in = (is_dis == 0) ? p_ref_in : p_dis_in;
-            int32_t *dwt_out = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
-
-            // Tile origin in input space
-            int const tile_col = (int)(item.get_group(2) * WG_X);
-            int const n_start = (int)(item.get_group(1) * WG_Y);
-            int const row_start = 2 * n_start - 1; // first input row
-
-            // Read pixel from source at (x, y) with mirroring (clamped, see above)
-            auto read_px = [&](int x, int y) -> int32_t {
-                y = vmaf_sycl_tile_index(dev_mirror_adm(y, (int)e_h), (int)e_h);
-                if (std::cmp_greater_equal(x, e_w))
-                    return 0;
-                if (e_scale == 0) {
-                    if (e_bpc <= 8) {
-                        return static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
-                    } else {
-                        return static_cast<const uint16_t *>(p_in)[y * (e_in_stride / 2) + x];
-                    }
-                } else {
-                    return static_cast<const int32_t *>(p_in)[y * e_in_stride + x];
-                }
-            };
-
-            // Cooperative tile load: TILE_H * WG_X elements
-            constexpr int TILE_ELEMS = TILE_H * WG_X;
-            bool const interior = (row_start >= 0) && (row_start + TILE_H <= (int)e_h) &&
-                                  (tile_col + WG_X <= (int)e_w);
-
-            if (interior) {
-                // Fast path: no boundary checks
-                for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
-                    int const tr = i / WG_X;
-                    int const tc = i % WG_X;
-                    int const x = tile_col + tc;
-                    int const y = row_start + tr;
-                    if (e_scale == 0) {
-                        if (e_bpc <= 8) {
-                            tile[tr][tc] = static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
-                        } else {
-                            tile[tr][tc] =
-                                static_cast<const uint16_t *>(p_in)[y * (e_in_stride / 2) + x];
-                        }
-                    } else {
-                        tile[tr][tc] = static_cast<const int32_t *>(p_in)[y * e_in_stride + x];
-                    }
-                }
-            } else {
-                // Boundary path: mirror + bounds check
-                for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
-                    int const tr = i / WG_X;
-                    int const tc = i % WG_X;
-                    tile[tr][tc] = read_px(tile_col + tc, row_start + tr);
-                }
-            }
-
+            adm_dev_dwt_load_tile(a, (is_dis == 0) ? a.in_ref : a.in_dis, item, tile);
             item.barrier(sycl::access::fence_space::local_space);
 
-            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, half_h))
+            if (std::cmp_greater_equal(gx, a.w) || std::cmp_greater_equal(gy, half_h)) {
                 return;
+            }
 
             // Read 4 filter taps from shared memory
             int const base = 2 * ly; // tile row offset
-            int32_t const s0 = tile[base][lx];
-            int32_t const s1 = tile[base + 1][lx];
-            int32_t const s2 = tile[base + 2][lx];
-            int32_t const s3 = tile[base + 3][lx];
-
-            // Lo-pass: coeffs = {15826, 27411, 7345, -4240}
-            int64_t lo_val = (int64_t)dwt_lo[0] * s0 + (int64_t)dwt_lo[1] * s1 +
-                             (int64_t)dwt_lo[2] * s2 + (int64_t)dwt_lo[3] * s3;
-
-            // Hi-pass: coeffs = {-4240, -7345, 27411, -15826}
-            int64_t const hi_val = (int64_t)dwt_hi[0] * s0 + (int64_t)dwt_hi[1] * s1 +
-                                   (int64_t)dwt_hi[2] * s2 + (int64_t)dwt_hi[3] * s3;
-
-            // Scale 0: subtract DC offset from lo
-            if (e_scale == 0) {
-                lo_val -= (int64_t)dwt_lo_sum * e_v_add;
-            }
-
-            // Quantize
-            int32_t lo_out;
-            int32_t hi_out;
-            if (e_v_shift > 0) {
-                lo_out = (int32_t)((lo_val + ((int64_t)1 << (e_v_shift - 1))) >> e_v_shift);
-                hi_out = (int32_t)((hi_val + ((int64_t)1 << (e_v_shift - 1))) >> e_v_shift);
-            } else {
-                lo_out = (int32_t)lo_val;
-                hi_out = (int32_t)hi_val;
-            }
-
-            // Interleaved output: lo followed by hi
-            unsigned const out_stride = e_w * 2;
-            dwt_out[gy * out_stride + gx] = lo_out;
-            dwt_out[gy * out_stride + e_w + gx] = hi_out;
+            adm_dev_dwt_vert_store(a, (is_dis == 0) ? a.tmp_ref : a.tmp_dis, gx, gy, tile[base][lx],
+                                   tile[base + 1][lx], tile[base + 2][lx], tile[base + 3][lx]);
         });
     });
 }
@@ -605,104 +609,92 @@ sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t 
 /* SYCL Kernel: DWT Horizontal Pass (ref+dis fused)                   */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref, int32_t *ref_band_a,
-                                 int32_t *ref_band_h, int32_t *ref_band_v, int32_t *ref_band_d,
-                                 const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
-                                 int32_t *dis_band_h, int32_t *dis_band_v, int32_t *dis_band_d,
-                                 unsigned width, unsigned height, unsigned buf_stride,
-                                 unsigned h_shift)
-{
-    unsigned const half_w = (width + 1) / 2;
-    unsigned const half_h = (height + 1) / 2;
-    auto e_w = width;
-    auto e_half_w = half_w;
-    auto e_half_h = half_h;
-    auto e_buf_stride = buf_stride;
-    auto e_h_shift = h_shift;
+/* What the horizontal pass of one scale reads and writes: the row buffers
+ * of the vertical pass and the four sub-bands (a, h, v, d) of each picture. */
+struct AdmDwtHoriArgs {
+    const int32_t *tmp_ref;
+    const int32_t *tmp_dis;
+    int32_t *ref_band[4];
+    int32_t *dis_band[4];
+    unsigned w;
+    unsigned half_w;
+    unsigned half_h;
+    unsigned buf_stride;
+    unsigned h_shift;
+};
 
+/* The four taps of output column gx read from the row of `dwt_tmp` that
+ * starts at `row_off` (w wide), mirrored at the plane edge, and filtered:
+ * low-pass into `lo`, high-pass into `hi`. */
+inline void adm_dev_dwt_hori_taps(const int32_t *dwt_tmp, unsigned row_off, int gx, unsigned w,
+                                  int64_t &lo, int64_t &hi)
+{
+    int const base_x = 2 * gx;
+    int32_t const s0 = dwt_tmp[row_off + dev_mirror_adm(base_x - 1, (int)w)];
+    int32_t const s1 = dwt_tmp[row_off + dev_mirror_adm(base_x, (int)w)];
+    int32_t const s2 = dwt_tmp[row_off + dev_mirror_adm(base_x + 1, (int)w)];
+    int32_t const s3 = dwt_tmp[row_off + dev_mirror_adm(base_x + 2, (int)w)];
+
+    lo = ((int64_t)dwt_lo[0] * s0) + ((int64_t)dwt_lo[1] * s1) + ((int64_t)dwt_lo[2] * s2) +
+         ((int64_t)dwt_lo[3] * s3);
+    hi = ((int64_t)dwt_hi[0] * s0) + ((int64_t)dwt_hi[1] * s1) + ((int64_t)dwt_hi[2] * s2) +
+         ((int64_t)dwt_hi[3] * s3);
+}
+
+/* (v + rounding) >> h_shift, or v itself when the scale does not shift. */
+inline int32_t adm_dev_dwt_quantize(int64_t v, unsigned h_shift)
+{
+    if (h_shift > 0) {
+        return (int32_t)((v + ((int64_t)1 << (h_shift - 1))) >> h_shift);
+    }
+    return (int32_t)v;
+}
+
+/* One output sample of one picture: the low-pass row gives band_a and band_h,
+ * the high-pass row band_v and band_d. */
+inline void adm_dev_dwt_hori_px(const AdmDwtHoriArgs &a, const int32_t *dwt_tmp,
+                                int32_t *const band[4], int gx, int gy)
+{
+    unsigned const tmp_stride = a.w * 2;
+    int64_t a_val = 0;
+    int64_t h_val = 0;
+    int64_t v_val = 0;
+    int64_t d_val = 0;
+    // Horizontal filter on lo row (first half of tmp) -> band_a, band_h
+    adm_dev_dwt_hori_taps(dwt_tmp, gy * tmp_stride, gx, a.w, a_val, h_val);
+    // Horizontal filter on hi row (second half of tmp) -> band_v, band_d
+    adm_dev_dwt_hori_taps(dwt_tmp, (gy * tmp_stride) + a.w, gx, a.w, v_val, d_val);
+
+    unsigned const idx = gy * a.buf_stride + gx;
+    band[0][idx] = adm_dev_dwt_quantize(a_val, a.h_shift);
+    band[1][idx] = adm_dev_dwt_quantize(h_val, a.h_shift);
+    band[2][idx] = adm_dev_dwt_quantize(v_val, a.h_shift);
+    band[3][idx] = adm_dev_dwt_quantize(d_val, a.h_shift);
+}
+
+sycl::event launch_dwt_hori_pair(sycl::queue &q, const AdmDwtHoriArgs &args)
+{
     constexpr int WG_X = 32;
     constexpr int WG_Y = 8;
+    AdmDwtHoriArgs const a = args;
     // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<3> local(1, WG_Y, WG_X);
+    sycl::range<3> const global(2, ((size_t)(a.half_h + WG_Y - 1) / WG_Y) * WG_Y,
+                                ((size_t)(a.half_w + WG_X - 1) / WG_X) * WG_X);
+    sycl::range<3> const local(1, WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<3>(global, local), [=](sycl::nd_item<3> item) {
             const int is_dis = item.get_global_id(0);
             const int gx = item.get_global_id(2);
             const int gy = item.get_global_id(1);
-            if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
+            if (std::cmp_greater_equal(gx, a.half_w) || std::cmp_greater_equal(gy, a.half_h)) {
                 return;
-
-            const int32_t *dwt_tmp = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
-            int32_t *band_a = (is_dis == 0) ? ref_band_a : dis_band_a;
-            int32_t *band_h = (is_dis == 0) ? ref_band_h : dis_band_h;
-            int32_t *band_v = (is_dis == 0) ? ref_band_v : dis_band_v;
-            int32_t *band_d = (is_dis == 0) ? ref_band_d : dis_band_d;
-
-            unsigned tmp_stride = e_w * 2;
-
-            // Read from lo row (first half of tmp)
-            auto read_lo = [&](int x) -> int32_t {
-                x = dev_mirror_adm(x, (int)e_w);
-                return dwt_tmp[gy * tmp_stride + x];
-            };
-
-            // Read from hi row (second half of tmp)
-            auto read_hi = [&](int x) -> int32_t {
-                x = dev_mirror_adm(x, (int)e_w);
-                return dwt_tmp[gy * tmp_stride + e_w + x];
-            };
-
-            int const base_x = 2 * gx;
-
-            // Horizontal filter on lo row -> band_a, band_h
-            int32_t const l0 = read_lo(base_x - 1);
-            int32_t const l1 = read_lo(base_x);
-            int32_t const l2 = read_lo(base_x + 1);
-            int32_t const l3 = read_lo(base_x + 2);
-
-            int64_t const a_val = (int64_t)dwt_lo[0] * l0 + (int64_t)dwt_lo[1] * l1 +
-                                  (int64_t)dwt_lo[2] * l2 + (int64_t)dwt_lo[3] * l3;
-            int64_t const h_val = (int64_t)dwt_hi[0] * l0 + (int64_t)dwt_hi[1] * l1 +
-                                  (int64_t)dwt_hi[2] * l2 + (int64_t)dwt_hi[3] * l3;
-
-            // Horizontal filter on hi row -> band_v, band_d
-            int32_t const h0 = read_hi(base_x - 1);
-            int32_t const h1 = read_hi(base_x);
-            int32_t const h2 = read_hi(base_x + 1);
-            int32_t const h3 = read_hi(base_x + 2);
-
-            int64_t const v_val = (int64_t)dwt_lo[0] * h0 + (int64_t)dwt_lo[1] * h1 +
-                                  (int64_t)dwt_lo[2] * h2 + (int64_t)dwt_lo[3] * h3;
-            int64_t const d_val = (int64_t)dwt_hi[0] * h0 + (int64_t)dwt_hi[1] * h1 +
-                                  (int64_t)dwt_hi[2] * h2 + (int64_t)dwt_hi[3] * h3;
-
-            // Quantize
-            int32_t a_out;
-            int32_t h_out;
-            int32_t v_out;
-            int32_t d_out;
-            if (e_h_shift > 0) {
-                int64_t const rnd = (int64_t)1 << (e_h_shift - 1);
-                a_out = (int32_t)((a_val + rnd) >> e_h_shift);
-                h_out = (int32_t)((h_val + rnd) >> e_h_shift);
-                v_out = (int32_t)((v_val + rnd) >> e_h_shift);
-                d_out = (int32_t)((d_val + rnd) >> e_h_shift);
-            } else {
-                a_out = (int32_t)a_val;
-                h_out = (int32_t)h_val;
-                v_out = (int32_t)v_val;
-                d_out = (int32_t)d_val;
             }
-
-            unsigned const idx = gy * e_buf_stride + gx;
-            band_a[idx] = a_out;
-            band_h[idx] = h_out;
-            band_v[idx] = v_out;
-            band_d[idx] = d_out;
+            if (is_dis == 0) {
+                adm_dev_dwt_hori_px(a, a.tmp_ref, a.ref_band, gx, gy);
+            } else {
+                adm_dev_dwt_hori_px(a, a.tmp_dis, a.dis_band, gx, gy);
+            }
         });
     });
 }
@@ -1582,28 +1574,70 @@ void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, int scale, in
     (void)launch_csf_den_cm(q, cm, r.bottom - r.top);
 }
 
+/* DWT shift parameters of one scale. Scale 0 shifts by bpc. */
+struct AdmDwtShifts {
+    unsigned v_shift;
+    unsigned v_add;
+    unsigned h_shift;
+};
+
+AdmDwtShifts adm_dwt_shifts(int scale, unsigned bpc)
+{
+    AdmDwtShifts const shifts[ADM_NUM_SCALES] = {
+        {.v_shift = bpc, .v_add = 1U << (bpc - 1), .h_shift = 16U},
+        {.v_shift = 0U, .v_add = 0U, .h_shift = 15U},
+        {.v_shift = 16U, .v_add = 32768U, .h_shift = 16U},
+        {.v_shift = 16U, .v_add = 32768U, .h_shift = 15U},
+    };
+    return shifts[scale];
+}
+
+/* Both DWT passes of one scale, reference and distorted fused. Scale 0 reads
+ * the shared frame, the others the previous scale's LL band. */
+void enqueue_adm_dwt(sycl::queue &q, const AdmStateSycl *s, int scale, const void *ref_src,
+                     const void *dis_src, unsigned cur_w, unsigned cur_h)
+{
+    AdmDwtShifts const sh = adm_dwt_shifts(scale, s->bpc);
+    unsigned const scale0_stride = (s->bpc <= 8) ? cur_w : cur_w * 2;
+
+    AdmDwtVertArgs const vert = {.in_ref = ref_src,
+                                 .in_dis = dis_src,
+                                 .tmp_ref = s->d_dwt_tmp_ref,
+                                 .tmp_dis = s->d_dwt_tmp_dis,
+                                 .scale = scale,
+                                 .w = cur_w,
+                                 .h = cur_h,
+                                 .in_stride = (scale != 0) ? s->buf_stride : scale0_stride,
+                                 .bpc = s->bpc,
+                                 .v_shift = sh.v_shift,
+                                 .v_add = sh.v_add};
+    (void)launch_dwt_vert_pair(q, vert);
+
+    AdmDwtHoriArgs const hori = {
+        .tmp_ref = s->d_dwt_tmp_ref,
+        .tmp_dis = s->d_dwt_tmp_dis,
+        .ref_band = {s->d_ref_band[0], s->d_ref_band[1], s->d_ref_band[2], s->d_ref_band[3]},
+        .dis_band = {s->d_dis_band[0], s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3]},
+        .w = cur_w,
+        .half_w = (cur_w + 1) / 2,
+        .half_h = (cur_h + 1) / 2,
+        .buf_stride = s->buf_stride,
+        .h_shift = sh.h_shift};
+    (void)launch_dwt_hori_pair(q, hori);
+}
+
 void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, void *shared_dis)
 {
     assert(s != nullptr);
     assert(shared_ref != nullptr);
     assert(shared_dis != nullptr);
     /* Scale 0 shifts by bpc; a zero bpc would make the `1u << (s->bpc - 1)`
-     * rounding term below shift by 2^32 - 1. libvmaf accepts 8 to 16. */
-    assert(s->bpc >= 8u && s->bpc <= 16u);
-
-    // DWT shift parameters per scale
-    struct DwtShifts {
-        unsigned v_shift, v_add, h_shift;
-    };
-    DwtShifts dwt_shifts[4];
-    dwt_shifts[0] = {.v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u};
-    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u};
-    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u};
-    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u};
+     * rounding term of adm_dwt_shifts() shift by 2^32 - 1. libvmaf accepts 8
+     * to 16. */
+    assert(s->bpc >= 8U && s->bpc <= 16U);
 
     unsigned cur_w = s->width;
     unsigned cur_h = s->height;
-    unsigned const cur_stride = s->buf_stride;
 
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
         unsigned const half_w = (cur_w + 1) / 2;
@@ -1612,19 +1646,8 @@ void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, vo
         // Input source: scale 0 reads from shared frame, others from LL band
         const void *ref_src = (scale == 0) ? shared_ref : (const void *)s->d_ref_band[0];
         const void *dis_src = (scale == 0) ? shared_dis : (const void *)s->d_dis_band[0];
-        unsigned const in_stride = (scale != 0) ? cur_stride : ((s->bpc <= 8) ? cur_w : cur_w * 2);
 
-        // DWT vertical pass: ref + dis fused
-        launch_dwt_vert_pair(q, ref_src, s->d_dwt_tmp_ref, dis_src, s->d_dwt_tmp_dis, scale, cur_w,
-                             cur_h, in_stride, s->bpc, dwt_shifts[scale].v_shift,
-                             dwt_shifts[scale].v_add);
-
-        // DWT horizontal pass: ref + dis fused
-        launch_dwt_hori_pair(q, s->d_dwt_tmp_ref, s->d_ref_band[0], s->d_ref_band[1],
-                             s->d_ref_band[2], s->d_ref_band[3], s->d_dwt_tmp_dis, s->d_dis_band[0],
-                             s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], cur_w, cur_h,
-                             cur_stride, dwt_shifts[scale].h_shift);
-
+        enqueue_adm_dwt(q, s, scale, ref_src, dis_src, cur_w, cur_h);
         enqueue_adm_reductions(q, s, scale, (int)half_w, (int)half_h);
 
         // Next scale dimensions

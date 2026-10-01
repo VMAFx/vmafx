@@ -578,9 +578,10 @@ feature/
   64-bit precision across the entire width `[start_col, end_col)` before
   applying the shift once per row. Scalar CPU, CUDA, HIP and SYCL (since
   ADR-1362, `adm_dev_fold_row`) use the private `adm_cm_round_row_total()`
-  seam; AVX2/AVX-512 keep equivalent inline expressions to avoid
-  behavior-only refactors in their inherited functions; Metal uses an
-  MSL-local twin.
+  seam; AVX2/AVX-512 hold no fold of their own: their entry points hand an
+  interior-row callback to the scalar drivers `adm_cm_rows()` /
+  `i4_adm_cm_rows()` (`integer_adm_kernels.h`), which fold once per row
+  through `adm_cm_fold()`; Metal uses an MSL-local twin.
   The helper's rounding term stays signed: CUDA i4 passes ADR-0155's negative
   `INT32_MIN` term, which must never be cast through `uint32_t`.
   Kernel launch grids must use `gridDim.x = 1` to ensure single-block/warp
@@ -589,8 +590,9 @@ feature/
   evaluate `csf_a` at row 0 center (`i * src_stride + j`), never walking running
   pointer offsets. Score parity cannot observe one-unit placement errors after
   float conversion; preserve `test_adm_cm_row_rounding` and
-  `test_adm_cm_row_rounding_contract` as the raw-value and all-backend guards,
-  including all 72 AVX2/AVX-512 band-fold sites.
+  `test_adm_cm_row_rounding_contract` as the raw-value and all-backend guards;
+  the contract rejects a private row loop or fold in `adm_avx2.c` /
+  `adm_avx512.c`.
   See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md) and
   [Research-2111](../../../docs/research/2111-adm-cm-row-rounding-observability.md).
 
@@ -602,11 +604,10 @@ feature/
   undefined for `thr < 0` (int16 centre tap wraps on isolated coefficient)
   -> UBSan halt on scalar path. Rebase: keep helper call, never restore
   signed shift. AVX2 / AVX-512 vector code (`_mm*_slli_epi32`) and SYCL
-  (`adm_dev_cm_excess_s0()`) already modular. Still upstream spelling:
-  x86 macro `ADM_CM_ACCUM_ROUND` (edge columns + scalar tails,
-  `T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01`; switch to
-  helper when HISS-04 split of `adm_avx2.c` / `adm_avx512.c` lands) and
-  CUDA / HIP / Metal device code. Guard: `test_integer_adm_cm_threshold`
+  (`adm_dev_cm_excess_s0()`) already modular. x86 edge columns + scalar
+  tails run shared scalar `adm_cm_row()` / `adm_cm_accum_px()`
+  (`integer_adm_kernels.h`) -> same helper, no private copy. Still upstream
+  spelling: CUDA / HIP / Metal device code. Guard: `test_integer_adm_cm_threshold`
   (sanitizer lane stops on old expression; helper pinned for positive,
   negative, wrapping operands).
 
