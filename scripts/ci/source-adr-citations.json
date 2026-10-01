@@ -6223,6 +6223,7 @@
         "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_hip_upload_race.c": 1,
         "core/test/test_hip_vif_min_dim.c": 1,
+        "core/test/test_integer_adm_cm_threshold.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
         "core/test/test_integer_adm_simd.c": 1,

@@ -2,7 +2,7 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: EUPL-1.2
  *
- *  Internal integer-ADM contrast-masking row accumulator primitive.
+ *  Internal integer-ADM contrast-masking accumulator primitives.
  */
 
 #ifndef VMAF_FEATURE_ADM_CM_ACCUMULATOR_H_
@@ -31,6 +31,28 @@ static VMAF_ADM_CM_HOST_DEVICE inline int64_t
 adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 {
     return (row_total + rounding) >> shift;
+}
+
+/**
+ * Scale-0 masking excess `|x| - (thr << shift)`, computed modulo 2^32.
+ *
+ * `thr` is the masking threshold. Its centre tap is narrowed to int16, so one
+ * large coefficient among small neighbours makes the whole sum negative, and a
+ * large enough sum can shift out of int32. Shifting a negative `int`, or
+ * shifting a value out of `int`, is undefined in C. The AVX2 and AVX-512
+ * vector loops (`_mm*_slli_epi32`, `_mm*_sub_epi32`) and the SYCL twin compute
+ * this expression modulo 2^32, so unsigned arithmetic gives the scalar
+ * reference the result those paths produce without the undefined shift. The
+ * magnitude is taken the same way, which keeps `INT32_MIN` defined as well.
+ *
+ * The result is negative when the threshold exceeds the magnitude; the caller
+ * clamps it to zero.
+ */
+static VMAF_ADM_CM_HOST_DEVICE inline int32_t adm_cm_excess_s0(int32_t x, int32_t thr,
+                                                               uint32_t shift)
+{
+    const uint32_t magnitude = (x < 0) ? (0u - (uint32_t)x) : (uint32_t)x;
+    return (int32_t)(magnitude - ((uint32_t)thr << shift));
 }
 
 #undef VMAF_ADM_CM_HOST_DEVICE

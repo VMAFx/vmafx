@@ -2175,6 +2175,19 @@ test_hip_adm_dwt2_rows = executable('test_hip_adm_dwt2_rows',
 test('test_hip_adm_dwt2_rows', test_hip_adm_dwt2_rows,
     suite : ['fast'])
 
+# T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01: the scalar scale-0 masking
+# excess is computed modulo 2^32, like the vector code. The picture test reaches
+# a negative threshold, which the sanitizer lane stops on in the old scalar
+# expression (left shift of a negative value).
+test_integer_adm_cm_threshold = executable('test_integer_adm_cm_threshold',
+    ['test.c', 'test_integer_adm_cm_threshold.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_cm_threshold', test_integer_adm_cm_threshold,
+    suite : ['fast'])
+
 # T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
 # against scalar on full-range noise.
 test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',

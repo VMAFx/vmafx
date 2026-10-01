@@ -33,6 +33,31 @@
 - The y4m 4:2:2 case is left out on purpose: the y4m reader resamples `C422`
   chroma to the jpeg siting, so its output is not the file's samples.
 - No reader change. No Netflix golden-data, public API or FFmpeg patch impact.
+## port/upstream-1602-adm-cm-threshold-shift — the scalar scale-0 ADM masking excess is modular (2026-10-01)
+
+- `core/src/feature/adm_cm_accumulator.h` gains `adm_cm_excess_s0(x, thr, shift)`:
+  `|x| - (thr << shift)` modulo 2^32, in `uint32_t`. `adm_cm_accum_round()`
+  (`core/src/feature/integer_adm.c`) calls it. Upstream Netflix/vmaf spells
+  the expression `abs(x) - ((int32_t)(thr) << shift_xsub)` in its
+  `ADM_CM_ACCUM_ROUND` macro, which is undefined once `thr` is negative.
+  **Upstream-sync note:** when re-porting an upstream change to that macro into
+  `adm_cm_accum_round()`, keep the helper call. The sanitizer lane stops
+  `test_integer_adm_cm_threshold` on the old expression.
+- `core/src/feature/x86/adm_avx2.c` and `adm_avx512.c` still carry upstream's
+  macro for their edge columns and scalar tails
+  (`T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01` in `docs/state.md`).
+  Switch them to the helper when those files are next touched; the commit hook
+  refuses any change to them until their oversized functions are split.
+- Not a port of Netflix/vmaf PR #1602 as it stands. Its second revision removes
+  the `(int16_t)` cast from the centre tap, which changes scores; the fork keeps
+  the cast (`T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18`) until
+  `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` is decided. If upstream
+  merges #1602, do not take its hunks piecemeal: the scalar, AVX2, AVX-512,
+  CUDA, HIP, Metal and SYCL paths must change together.
+- The CUDA, HIP and Metal kernels write `thr << shift` in device code and were
+  not touched.
+- No Netflix golden-data, public API or FFmpeg patch impact: scores are
+  bit-identical on every input measured.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 

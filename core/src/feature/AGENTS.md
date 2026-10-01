@@ -584,6 +584,22 @@ feature/
   See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md) and
   [Research-2111](../../../docs/research/2111-adm-cm-row-rounding-observability.md).
 
+- **`integer_adm` scale-0 masking excess is modular** (fork-local,
+  `T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01`): scalar
+  `adm_cm_accum_round()` calls `adm_cm_excess_s0()`
+  (`adm_cm_accumulator.h`) = `|x| - (thr << shift)` modulo 2^32, in
+  `uint32_t`. Upstream spelling `abs(x) - ((int32_t)(thr) << shift)` is
+  undefined for `thr < 0` (int16 centre tap wraps on isolated coefficient)
+  -> UBSan halt on scalar path. Rebase: keep helper call, never restore
+  signed shift. AVX2 / AVX-512 vector code (`_mm*_slli_epi32`) and SYCL
+  (`adm_dev_cm_excess_s0()`) already modular. Still upstream spelling:
+  x86 macro `ADM_CM_ACCUM_ROUND` (edge columns + scalar tails,
+  `T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01`; switch to
+  helper when HISS-04 split of `adm_avx2.c` / `adm_avx512.c` lands) and
+  CUDA / HIP / Metal device code. Guard: `test_integer_adm_cm_threshold`
+  (sanitizer lane stops on old expression; helper pinned for positive,
+  negative, wrapping operands).
+
 - **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
   files** (ADR-1141, 2026-09-02): every kernel expression is verbatim
   but code no longer lines up textually with Netflix/vmaf — re-port

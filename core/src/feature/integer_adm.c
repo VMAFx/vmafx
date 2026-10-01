@@ -1112,10 +1112,12 @@ typedef struct AdmCmBand {
 } AdmCmBand;
 
 /* Rounded (|x| - thr)^3 contribution of one band
- * (upstream ADM_CM_ACCUM_ROUND). */
+ * (upstream ADM_CM_ACCUM_ROUND). Upstream writes the excess as
+ * `abs(x) - ((int32_t)(thr) << shift_sub)`; thr can be negative, and that
+ * shift is then undefined (adm_cm_excess_s0()). */
 static inline int64_t adm_cm_accum_round(int32_t x, int32_t thr, const AdmCmBand *p)
 {
-    int32_t v = abs(x) - ((int32_t)(thr) << p->shift_sub);
+    int32_t v = adm_cm_excess_s0(x, thr, (uint32_t)p->shift_sub);
     v = v < 0 ? 0 : v;
     const int32_t v_sq = (int32_t)((((int64_t)v * v) + p->add_shift_sq) >> p->shift_sq);
     return (((int64_t)v_sq * v) + p->add_shift_cub) >> p->shift_cub;
