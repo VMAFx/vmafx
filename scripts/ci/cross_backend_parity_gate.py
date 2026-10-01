@@ -89,6 +89,11 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_motion2",
         "integer_motion3",
     ),
+    "motion_debug": (
+        "integer_motion",
+        "integer_motion2",
+        "integer_motion3",
+    ),
     "motion_v2": (
         "VMAF_integer_feature_motion_v2_sad_score",
         "VMAF_integer_feature_motion2_v2_score",
@@ -196,6 +201,7 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "vif": 5e-5,
     "adm": 5e-5,
     "motion": 5e-5,
+    "motion_debug": 5e-5,
     "motion_v2": 5e-5,
     "psnr": 5e-5,
     "float_moment": 5e-5,
@@ -306,6 +312,7 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
     # ADR-1382: the float_ssim L / C / S outputs.
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
+    "motion_debug": ("motion", "debug=true"),
 }
 
 # Extractors whose backend twin is not `<feature><suffix>`, keyed by the
@@ -428,6 +435,12 @@ def load_frames(path: Path) -> list[dict[str, Any]]:
     if not all(isinstance(frame, dict) for frame in frames):
         raise ValueError(f"{path}: every frame must be an object")
     return [cast(dict[str, Any], frame) for frame in frames]
+
+
+def missing_metrics(frames: list[dict[str, Any]], metrics: tuple[str, ...]) -> list[str]:
+    """Metrics of ``metrics`` that at least one frame of a run does not carry."""
+
+    return [m for m in metrics if any(m not in frame.get("metrics", {}) for frame in frames)]
 
 
 def diff_frames(
@@ -621,6 +634,27 @@ def run_cell(
             per_metric_mismatches=dict.fromkeys(metrics, 0),
             status="ERROR",
             note=f"frame-count mismatch a={len(a_frames)} b={len(b_frames)}",
+            tolerance_source=tolerance_source,
+        )
+
+    missing_a = missing_metrics(a_frames, metrics)
+    missing_b = missing_metrics(b_frames, metrics)
+    if missing_a or missing_b:
+        # A twin that stops emitting a metric must not pass: the cell reports
+        # which side lacks what and the matrix carries on (ADR-1418).
+        return CellResult(
+            feature=cell.feature,
+            backend_a=cell.backend_a,
+            backend_b=cell.backend_b,
+            tolerance=tolerance,
+            n_frames=len(a_frames),
+            per_metric_max=dict.fromkeys(metrics, 0.0),
+            per_metric_mismatches=dict.fromkeys(metrics, 0),
+            status="ERROR",
+            note=(
+                f"missing metrics: backend_a {cell.backend_a} lacks {missing_a}; "
+                f"backend_b {cell.backend_b} lacks {missing_b}"
+            ),
             tolerance_source=tolerance_source,
         )
 

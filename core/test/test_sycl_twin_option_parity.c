@@ -348,6 +348,9 @@ static const OptionCase OPTION_CASES[] = {
     {"float_ssim_sycl", "float_ssim", "clip_db", "true"},
     {"float_motion_sycl", "float_motion", "motion_max_val", "2.5"},
     {"float_motion_sycl", "float_motion", "mmxv", "2.5"},
+    /* ADR-1418: `debug` defaults to false on the twin as on the CPU, so a
+     * default run emits the same score set on both. */
+    {"motion_sycl", "motion", "debug", "true"},
 };
 
 static const VmafOption *lookup_option(const VmafFeatureExtractor *fex, const char *key)

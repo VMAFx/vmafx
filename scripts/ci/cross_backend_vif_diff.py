@@ -68,6 +68,11 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_motion2",
         "integer_motion3",
     ),
+    "motion_debug": (
+        "integer_motion",
+        "integer_motion2",
+        "integer_motion3",
+    ),
     # GPU long-tail batch 3 part 1 (T7-23 / ADR-0192 / ADR-0193):
     # motion_v2 stateless variant. Same 5-tap separable filter as
     # motion, applied to (prev_ref - cur_ref) — exploits convolution
@@ -229,6 +234,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
 FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
+    "motion_debug": ("motion", "debug=true"),
 }
 
 # Twins not named `<feature><suffix>`, keyed by the base extractor name.
@@ -364,6 +370,13 @@ def diff(
 
     if len(cpu) != len(gpu):
         print(f"FAIL: frame count mismatch (cpu={len(cpu)}, gpu={len(gpu)})")
+        return 1
+
+    missing_cpu = [m for m in metrics if any(m not in f.get("metrics", {}) for f in cpu)]
+    missing_gpu = [m for m in metrics if any(m not in f.get("metrics", {}) for f in gpu)]
+    if missing_cpu or missing_gpu:
+        # A twin that stops emitting a metric must not pass (ADR-1418).
+        print(f"FAIL: missing metrics: cpu lacks {missing_cpu}; gpu lacks {missing_gpu}")
         return 1
 
     threshold = tolerance_override if tolerance_override is not None else 0.5 * (10**-places)

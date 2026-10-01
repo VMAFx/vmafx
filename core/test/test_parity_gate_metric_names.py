@@ -72,10 +72,12 @@ class ParityGateMetricNamesTest(unittest.TestCase):
 
     def test_motion_cells_read_emitted_keys(self) -> None:
         for gate in GATES:
+            metrics = feature_metrics(gate)
             with self.subTest(gate=gate.name):
+                self.assertEqual(metrics["motion"], ("integer_motion2", "integer_motion3"))
                 self.assertEqual(
-                    feature_metrics(gate)["motion"],
-                    ("integer_motion2", "integer_motion3"),
+                    metrics["motion_debug"],
+                    ("integer_motion", "integer_motion2", "integer_motion3"),
                 )
 
 

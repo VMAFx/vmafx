@@ -547,6 +547,16 @@ drifts -> fix twin, never give it a tolerance back. Both sides of a cell
 must come from one binary: the dB value goes through the host `log10`,
 and glibc and Intel's libimf differ by one ulp on some frames.
 
+**Missing metric = cell ERROR (ADR-1418).** Cell compares every metric
+in `FEATURE_METRICS[feature]`; never a common subset. Metric absent
+from any frame of either run -> `missing_metrics()` names it, cell
+`ERROR` (gate fails), matrix continues; `cross_backend_vif_diff.py`
+prints `FAIL: missing metrics` and exits 1. `motion` = default runs
+(`integer_motion2`, `integer_motion3`); `motion_debug` = `debug=true`
+both sides, adds `integer_motion`. Twin emits a different default set
+-> fix the twin's option default (`test_sycl_twin_option_parity.c`),
+never shrink the cell.
+
 ## When adding a new lane
 
 1. New `--feature` value → add to `FEATURE_METRICS` in *both*

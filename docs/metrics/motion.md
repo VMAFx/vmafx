@@ -44,7 +44,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 
 | Option                    | Alias    | Type   | Default   | Range         | Effect                                                                 |
 |---------------------------|----------|--------|-----------|---------------|------------------------------------------------------------------------|
-| `debug`                   | —        | bool   | `false`   | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score`; `motion_cuda` and `motion_hip` default to false too, `motion_sycl` to true |
+| `debug`                   | —        | bool   | `false`   | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score`; `motion_cuda`, `motion_sycl` and `motion_hip` default to false too |
 | `motion_force_zero`       | `force_0`| bool   | `false`   | —             | Override all emitted scores to `0.0`; used for deterministic fixtures  |
 | `motion_fps_weight`       | `mfw`    | double | `1.0`     | `0.0–5.0`     | Multiplicative FPS-aware correction applied before clamping            |
 | `motion_blend_factor`     | `mbf`    | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                       |

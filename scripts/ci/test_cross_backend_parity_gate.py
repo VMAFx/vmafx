@@ -44,7 +44,9 @@ from scripts.ci.cross_backend_parity_gate import (
     emit_json,
     emit_md,
     feature_extractor_name,
+    missing_metrics,
     resolve_cell_tolerance,
+    run_cell,
 )
 
 
@@ -1012,3 +1014,112 @@ def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
 
 def test_feature_metrics_motion_reads_default_emitted_keys() -> None:
     assert FEATURE_METRICS["motion"] == ("integer_motion2", "integer_motion3")
+
+
+# ---------------------------------------------------------------------------
+# ADR-1418: motion cells and metrics a backend does not emit
+# ---------------------------------------------------------------------------
+
+
+def test_motion_and_motion_debug_feature_names() -> None:
+    assert feature_extractor_name("motion", "cpu") == "motion"
+    assert feature_extractor_name("motion", "cuda") == "motion_cuda"
+    assert feature_extractor_name("motion", "sycl") == "motion_sycl"
+    assert feature_extractor_name("motion", "hip") == "motion_hip"
+    assert feature_extractor_name("motion_debug", "cpu") == "motion=debug=true"
+    assert feature_extractor_name("motion_debug", "cuda") == "motion_cuda=debug=true"
+    assert feature_extractor_name("motion_debug", "sycl") == "motion_sycl=debug=true"
+    assert feature_extractor_name("motion_debug", "hip") == "motion_hip=debug=true"
+
+
+def test_motion_feature_metrics_definitions() -> None:
+    assert FEATURE_METRICS["motion"] == ("integer_motion2", "integer_motion3")
+    assert FEATURE_METRICS["motion_debug"] == (
+        "integer_motion",
+        "integer_motion2",
+        "integer_motion3",
+    )
+    assert FEATURE_TOLERANCE["motion_debug"] == FEATURE_TOLERANCE["motion"]
+
+
+def test_missing_metrics_names_what_any_frame_lacks() -> None:
+    metrics = ("integer_motion", "integer_motion2", "integer_motion3")
+    full = _make_frame({"integer_motion": 0.5, "integer_motion2": 1.0, "integer_motion3": 2.0})
+    short = _make_frame({"integer_motion2": 1.0, "integer_motion3": 2.0})
+    assert missing_metrics([full, full], metrics) == []
+    assert missing_metrics([short], metrics) == ["integer_motion"]
+    # One frame without the metric is enough: a twin must emit it on every frame.
+    assert missing_metrics([full, short], metrics) == ["integer_motion"]
+    assert missing_metrics([{"frameNum": 0}], metrics) == list(metrics)
+
+
+def _run_motion_debug_cell(
+    tmp_path: Path, monkeypatch: Any, metrics_by_backend: dict[str, dict[str, float]]
+) -> CellResult:
+    def fake_run_one(
+        binary: Path,
+        ref: Path,
+        dist: Path,
+        width: int,
+        height: int,
+        pix_fmt: str,
+        bitdepth: int,
+        feature: str,
+        backend: str,
+        device: int | None,
+        output: Path,
+        precision: str | None = None,
+    ) -> tuple[int, str]:
+        data = {"frames": [{"frameNum": 0, "metrics": metrics_by_backend[backend]}]}
+        output.write_text(json.dumps(data), encoding="utf-8")
+        return 0, ""
+
+    monkeypatch.setattr("scripts.ci.cross_backend_parity_gate.run_one", fake_run_one)
+    return run_cell(
+        Cell(feature="motion_debug", backend_a="cpu", backend_b="sycl"),
+        binary=tmp_path / "vmaf",
+        ref=tmp_path / "ref.yuv",
+        dist=tmp_path / "dist.yuv",
+        width=576,
+        height=324,
+        pix_fmt="420",
+        bitdepth=8,
+        workdir=tmp_path,
+        devices={},
+        tolerance=5e-5,
+    )
+
+
+def test_run_cell_reports_a_metric_one_backend_lacks_as_error(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A twin that drops a metric must not pass, and must not stop the matrix."""
+
+    result = _run_motion_debug_cell(
+        tmp_path,
+        monkeypatch,
+        {
+            "cpu": {"integer_motion2": 1.5, "integer_motion3": 2.5},
+            "sycl": {"integer_motion": 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5},
+        },
+    )
+    assert result.status == "ERROR"
+    assert "backend_a cpu lacks ['integer_motion']" in result.note
+    assert "backend_b sycl lacks []" in result.note
+
+
+def test_run_cell_compares_every_metric_when_both_backends_emit_them(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    emitted = {"integer_motion": 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5}
+    result = _run_motion_debug_cell(
+        tmp_path,
+        monkeypatch,
+        {"cpu": emitted, "sycl": dict(emitted, integer_motion=0.76)},
+    )
+    assert result.status == "FAIL"
+    assert result.per_metric_mismatches == {
+        "integer_motion": 1,
+        "integer_motion2": 0,
+        "integer_motion3": 0,
+    }

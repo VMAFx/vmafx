@@ -26,7 +26,7 @@ explicitly accepts its skip.
 
   | Feature | Tolerance | Contract source |
   |---|---:|---|
-  | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
+  | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
@@ -148,7 +148,7 @@ A cell's status is one of:
 |---|---|
 | `OK` | Every per-frame metric is within tolerance. |
 | `FAIL` | At least one per-frame mismatch exceeds `tolerance_abs`. |
-| `ERROR` | Execution failed before diffing, or the frame counts differ. |
+| `ERROR` | Execution failed before diffing, the frame counts differ, or one backend does not emit a metric the cell compares (the note names the backend and the metrics). |
 
 ## Add a feature or backend
 

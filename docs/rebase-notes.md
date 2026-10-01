@@ -56652,3 +56652,4 @@ rebase that touches these files with the reproducer of Research-1401.
   `test_hip_speed_device_math` has two lanczos4 cases;
   `test_hip_device_resident_contract.py` forbids a device sine and a table
   that is not the host's (four planted regressions).
+- `T-CI-PARITY-GATE-MOTION-DEBUG-DEFAULT-2026-09-29` ([ADR-1418](adr/1418-motion-parity-gate-metric-alignment.md)): `core/src/feature/sycl/integer_motion_sycl.cpp` declares `debug` with default `false`, like the CPU, CUDA and HIP motion extractors; keep the four declarations equal (`core/test/test_sycl_twin_option_parity.c`). `scripts/ci/cross_backend_parity_gate.py` and `scripts/ci/cross_backend_vif_diff.py` carry a `motion_debug` cell (`motion` with `debug=true`) and fail a cell whose runs emit different metric sets; do not restore a comparison over the common subset.
