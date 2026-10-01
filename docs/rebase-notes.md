@@ -202,6 +202,74 @@
   allocations and deallocations per frame.
 - Scores remain 100% bit-identical. No change to algorithm or math.
 
+## fix/adm-cm-centre-tap-wrap — integer ADM departs from upstream master's masking centre tap (ADR-1402, 2026-10-01)
+
+**The fork's integer ADM is not upstream master's on one kind of content.**
+Upstream narrows the centre tap of the scale-0 masking threshold to `int16_t`
+and subtracts `thr << shift` in 32 bits. The fork keeps the tap in int32 and
+clamps `|x| - thr * 2^shift` to [0, INT32_MAX] in int64, in every
+implementation. This is the second revision of the fork's own Netflix/vmaf
+PR #1602, which upstream has not merged. Scores differ from upstream master
+only where a scale-0 coefficient reaches 15360: isolated impairments on flat
+content, full-range noise. The Netflix golden pairs are unchanged.
+
+- **When upstream merges #1602 as it stands:** the scalar code is already the
+  fork's (`adm_cm_thresh()`, `adm_cm_excess_s0()`); keep the fork's side of
+  every conflict. Do not take upstream's vector hunks
+  (`threshold_overflow` / `threshold_fits`): they differ from the scalar for a
+  negative threshold, and `test_integer_adm_simd` fails on them. Do not take
+  its CUDA hunk either: `adm_cm.cu` already calls `adm_cm_excess_s0()`. Then
+  drop this entry.
+- **When upstream changes #1602 again, or fixes the wrap another way:** all of
+  these must change together, and the golden gate must be re-run:
+  `core/src/feature/adm_cm_accumulator.h` (`adm_cm_excess_s0()`),
+  `core/src/feature/integer_adm_kernels.h` (`adm_cm_thresh()`),
+  `x86/adm_avx2.c` (`cm_thresh_band_avx2()`, `cm_excess_avx2()`),
+  `x86/adm_avx512.c` (`cm_thresh_band_avx512()`, `cm_excess_avx512()`),
+  `cuda/integer_adm/adm_cm.cu` (DLM and AIM), `hip/integer_adm/adm_cm.hip`,
+  `sycl/integer_adm_sycl.cpp` (`adm_dev_csf_centre()`,
+  `adm_dev_cm_excess_s0()`), `metal/integer_adm.metal`
+  (`adm_cm_excess_s0()`). NEON has no contrast-masking kernel.
+- **A sync must not restore** the `(int16_t)` cast on the centre tap, the
+  `_mm*_srai_epi32(_mm*_slli_epi32(centre, 16), 16)` pair in the vector
+  thresholds, `adm_i16()` around the SYCL centre term, or
+  `abs(x) - (thr << shift)` in any of the files above.
+  `test_integer_adm_cm_threshold` (CPU) and `test_gpu_adm_tiny_frames`
+  (device twins) fail on the first three, because a patch picture scores
+  above 1 or a twin leaves the scalar; the sanitizer lane stops on the last.
+
+**`x86/adm_avx2.c`, `x86/adm_avx512.c` and `integer_adm.c` no longer line up
+with upstream.** To edit the two x86 files at all, their functions had to fit
+the 60-line limit (ADR-1298). The scalar kernels moved out of `integer_adm.c`
+into `core/src/feature/integer_adm_kernels.h` (same names as in the
+"refactor/c-rework-adm" entry below, plus column-range variants such as
+`adm_decouple_cols()`, `adm_csf_cols()`, `adm_dwt2_hpass()`), and the x86
+files call them for edge rows and leftover columns instead of expanding their
+own copies of upstream's macros. Every upstream `*_avx256` / `*_avx512` macro
+is now a `static` function:
+
+- `ADM_CM_THRESH_S_I_J_*` is `cm_thresh_band_*()` + `cm_thresh_*()`;
+  `ADM_CM_ACCUM_ROUND_*` is `cm_excess_*()` + `cm_accum_*()`; the row loop is
+  `cm_block_*()`, `cm_tail_block_*()`, `cm_row_pass_*()` and `cm_row_*()`,
+  driven by the scalar `adm_cm_rows()`, which owns the per-row fold
+  (ADR-1167). The `I4_*` macros are `i4_cm_thresh_band_*()`, `i4_cm_cube_*()`
+  and `i4_cm_row_*()`, driven by `i4_adm_cm_rows()`.
+- The decouple, CSF, denominator and DWT bodies are `decouple_*`, `csf_*`,
+  `csf_den_*`, `dwt2_*` and `i4_dwt2_*` helpers with the upstream arithmetic
+  unchanged. ADR-0502's prefetch is `decouple_prefetch_avx512()`.
+- Re-port an upstream hunk to these files by hand into the helper that owns
+  the expression. A hunk to a scalar tail or edge macro in an x86 file has no
+  counterpart: the code is the shared kernel.
+- Two things are deliberately not upstream's: the leftover columns of a
+  contrast-masking row are the top lanes of one more vector block that ends at
+  the last column (upstream runs them in scalar code), and the AVX2 cube shift
+  is arithmetic, by a bias folded into the rounding term (upstream's second
+  revision calls a variable-count `sra_epi64` helper).
+- `sycl/integer_adm_sycl.cpp`: the two DWT launches were split the same way
+  (`AdmDwtVertArgs`, `AdmDwtHoriArgs`, `adm_dev_dwt_*()` helpers); the kernels
+  compute the same values and still use no scratch memory (ADR-1395).
+
+No public API, CLI or FFmpeg patch impact.
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 
 - `core/src/model.c`, `vmaf_model_collection_append()`: when the `realloc()`
@@ -244,19 +312,10 @@
   **Upstream-sync note:** when re-porting an upstream change to that macro into
   `adm_cm_accum_round()`, keep the helper call. The sanitizer lane stops
   `test_integer_adm_cm_threshold` on the old expression.
-- `core/src/feature/x86/adm_avx2.c` and `adm_avx512.c` still carry upstream's
-  macro for their edge columns and scalar tails
-  (`T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01` in `docs/state.md`).
-  Switch them to the helper when those files are next touched; the commit hook
-  refuses any change to them until their oversized functions are split.
-- Not a port of Netflix/vmaf PR #1602 as it stands. Its second revision removes
-  the `(int16_t)` cast from the centre tap, which changes scores; the fork keeps
-  the cast (`T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18`) until
-  `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` is decided. If upstream
-  merges #1602, do not take its hunks piecemeal: the scalar, AVX2, AVX-512,
-  CUDA, HIP, Metal and SYCL paths must change together.
-- The CUDA, HIP and Metal kernels write `thr << shift` in device code and were
-  not touched.
+- **Superseded the same day by ADR-1402** (entry
+  "fix/adm-cm-centre-tap-wrap" above): the helper now clamps in int64, the
+  x86 files and the CUDA, HIP and Metal kernels use the same definition, and
+  the `(int16_t)` cast on the centre tap is gone.
 - No Netflix golden-data, public API or FFmpeg patch impact: scores are
   bit-identical on every input measured.
 ## docs/upstream-reconcile-2026-10-01 — what an upstream sync can skip (2026-10-01)
@@ -297,11 +356,9 @@ fork's tree already carries these fixes.
 - #1601: the fork sums the 16-bit vertical DWT in int64
   (`adm_dwt2_vpass16_tap4()`); upstream's version starts an int32 sum from the
   offset. Either is correct. Do not end up with both.
-- #1602: **do not take piecemeal.** Its second revision removes the int16
-  centre tap; the fork keeps the tap in every path
-  (`T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` holds the decision). What
-  the fork did take from it is the undefined shift, in its own form
-  (PR #1662).
+- #1602: **do not take piecemeal.** The fork has taken its second revision
+  in every path, with its own vector forms (ADR-1402; entry
+  "fix/adm-cm-centre-tap-wrap" above says which hunks to refuse).
 - #1603: touches `libvmaf/test/checkasm/`, which the fork does not carry.
 - #1604: the fork needs none of its reader changes, and must not take its
   `test_video_input.c`; the fork's test is `test_video_input_odd_dims`
@@ -4767,7 +4824,8 @@ conflict keep the fork's version. Function map:
   the row / column before the first edge mirrors to index 1, the one past
   the last edge clamps to the last index (`i_m1 = i == 0 ? 1 : i - 1`,
   `i_p1 = i == h - 1 ? h - 1 : i + 1`, same for `j`), nine terms added in the
-  macro order with the `(int16_t)` / `(int32_t)` centre-term casts kept.
+  macro order with the `(int32_t)` centre-term cast of scales 1..3 kept (the
+  scale-0 `(int16_t)` cast was removed by ADR-1402, 2026-10-01).
   `adm_cm_accum_round()` / `i4_adm_cm_accum_round()` carry the cube
   rounding over an `AdmCmBand` (shift_sub, add_shift_sq, shift_sq,
   add_shift_cub, shift_cub). An upstream change to the neighbourhood or the

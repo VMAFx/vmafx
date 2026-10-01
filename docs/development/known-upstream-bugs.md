@@ -32,7 +32,7 @@ not-affected".
 | [#1599](https://github.com/Netflix/vmaf/pull/1599) | scale-3 DWT reads index -1 for frame dimensions 17 to 32 | Fixed and tested (`T-ADM-SCALE3-TINY-FRAME-OOB-READ-2026-09-18`) |
 | [#1600](https://github.com/Netflix/vmaf/pull/1600) | `pow(2, shift - 1)` with a shift of 0 in `adm_cm` | Fixed and tested (`T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18`) |
 | [#1601](https://github.com/Netflix/vmaf/pull/1601) | signed overflow in the 16-bit vertical DWT, and a left shift of negative taps | Fixed and tested, by widening to int64 (`T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`) |
-| [#1602](https://github.com/Netflix/vmaf/pull/1602) | `adm_cm` SIMD and scalar disagree above a coefficient of 15360 | First revision carried; second revision not taken (`T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01`); the undefined shift it implies is fixed by PR #1662 |
+| [#1602](https://github.com/Netflix/vmaf/pull/1602) | `adm_cm` SIMD and scalar disagree above a coefficient of 15360 | Second revision taken in every implementation ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md)); the fork differs from upstream master on such content until upstream merges it |
 | [#1603](https://github.com/Netflix/vmaf/pull/1603) | checkasm passes wrong strides to the ADM DWT tests | Not affected: no `checkasm` tree |
 | [#1604](https://github.com/Netflix/vmaf/pull/1604) | frames with an odd width or height lose framing; a reader error becomes a crash | Not affected; test added by PR #1664 |
 | [#1606](https://github.com/Netflix/vmaf/pull/1606) | a zero-length variable-length array with `--no_prediction` | Not affected: no VLA (ADR-0809) |
@@ -49,15 +49,19 @@ Three of these differ from what the fork carries, which matters at the next sync
   adds no operation and measures within noise. Both are correct. **That
   approach is worth bringing back to the fork** as a performance change; it has
   not been done.
-- **#1602 changed direction after review.** Its first revision made SIMD follow
-  the scalar int16 wrap, as the fork does. Its second revision (2026-09-21)
-  removes the wrap from the scalar, x86 edge and CUDA code instead, after a
-  reviewer there called the wrap wrong. Measured in the fork on 2026-10-01, the
-  wrap is an artefact: a flat reference with isolated impairments scores
-  `integer_adm_scale0` above 1 where `float_adm` gives exactly 1. The fork has
-  not followed, since that changes the scalar reference away from upstream
-  master and every twin with it; `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01`
-  in `docs/state.md` holds the measurement and the decision.
+- **#1602 changed direction after review, and the fork followed.** Its first
+  revision made SIMD follow the scalar int16 wrap of the masking centre tap.
+  Its second revision (2026-09-21) removes the wrap from the scalar, x86 edge
+  and CUDA code instead, after a reviewer there called the wrap wrong. Measured
+  in the fork on 2026-10-01, the wrap is an artefact: a flat reference with
+  isolated impairments scored `integer_adm_scale0` above 1 where `float_adm`
+  gives exactly 1. The fork removed the wrap from the scalar, AVX2, AVX-512,
+  CUDA, HIP, SYCL and Metal code the same day
+  ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md)), after checking that no
+  Netflix golden assertion moves. Until upstream merges the pull request the
+  fork's integer ADM differs from upstream master on content that reaches a
+  centre coefficient of 15360, such as full-range noise; `docs/state.md` row
+  `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` has the measured deltas.
 - **#1591 and #1588 are narrower than the fork.** The fork keeps a thread pool
   that started at least one worker, and its `vmaf_use_feature()` consumes the
   dictionary on a failed copy too. Keep both at a sync.

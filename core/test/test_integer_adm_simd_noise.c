@@ -8,12 +8,13 @@
  * (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18).
  *
  * The scale-0 contrast-masking threshold adds a centre tap of
- * (int16_t)(((ONE_BY_15 * |a|) + 2048) >> 12). For |a| above about 15360 the
- * shifted value no longer fits int16 and the scalar reference wraps it. The
- * AVX2 and AVX-512 kernels kept the 32-bit value, so they drifted from scalar
- * wherever the CSF-weighted band is that large: independent full-range noise
- * gets there, smooth content does not. This test scores such noise with the
- * default dispatch and with the scalar path and requires identical results.
+ * ((ONE_BY_15 * |a|) + 2048) >> 12. For |a| of 15360 and above that value no
+ * longer fits int16. The scalar reference used to narrow it to int16 while
+ * the AVX2 and AVX-512 kernels kept the 32-bit value, so they drifted from
+ * scalar wherever the CSF-weighted band is that large: independent full-range
+ * noise gets there, smooth content does not. Every implementation keeps the
+ * tap in int32 now (ADR-1402). This test scores such noise with the default
+ * dispatch and with the scalar path and requires identical results.
  */
 
 #include <stdint.h>

@@ -577,21 +577,35 @@ static FORCE_INLINE __m256i dwt2_8_vfilter_avx2(__m256i s01_lo, __m256i s01_hi, 
     return _mm256_packus_epi32(lo, hi);
 }
 
-/* Vertical pass of sixteen columns of output row `i`, starting at `j`. */
-static FORCE_INLINE void dwt2_8_vpass_block_avx2(const uint8_t *src, int *const *ind_y, int i,
-                                                 int src_stride, int j, const Dwt2Filters *f,
+/* The four source rows the vertical pass of one output row reads. They are
+ * resolved once per row: the vector stores of the pass may alias the index
+ * tables, so a lookup inside the column loop is repeated for every block. */
+typedef struct Dwt2Rows8 {
+    const uint8_t *r0;
+    const uint8_t *r1;
+    const uint8_t *r2;
+    const uint8_t *r3;
+} Dwt2Rows8;
+
+static FORCE_INLINE Dwt2Rows8 dwt2_rows8_avx2(const uint8_t *src, int *const *ind_y, int i,
+                                              int src_stride)
+{
+    const Dwt2Rows8 rows = {
+        src + ((ptrdiff_t)ind_y[0][i] * src_stride), src + ((ptrdiff_t)ind_y[1][i] * src_stride),
+        src + ((ptrdiff_t)ind_y[2][i] * src_stride), src + ((ptrdiff_t)ind_y[3][i] * src_stride)};
+    return rows;
+}
+
+/* Vertical pass of sixteen columns of one output row, starting at `j`. */
+static FORCE_INLINE void dwt2_8_vpass_block_avx2(Dwt2Rows8 rows, int j, const Dwt2Filters *f,
                                                  int16_t *tmplo, int16_t *tmphi)
 {
     const __m256i lo_sum = _mm256_set1_epi32(dwt2_db2_coeffs_lo_sum * 128);
     const __m256i hi_sum = _mm256_set1_epi32(dwt2_db2_coeffs_hi_sum * 128);
-    const __m256i s0 = _mm256_cvtepu8_epi16(
-        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[0][i] * src_stride) + j)));
-    const __m256i s1 = _mm256_cvtepu8_epi16(
-        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[1][i] * src_stride) + j)));
-    const __m256i s2 = _mm256_cvtepu8_epi16(
-        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[2][i] * src_stride) + j)));
-    const __m256i s3 = _mm256_cvtepu8_epi16(
-        _mm_loadu_si128((const __m128i *)(src + ((ptrdiff_t)ind_y[3][i] * src_stride) + j)));
+    const __m256i s0 = _mm256_cvtepu8_epi16(_mm_loadu_si128((const __m128i *)(rows.r0 + j)));
+    const __m256i s1 = _mm256_cvtepu8_epi16(_mm_loadu_si128((const __m128i *)(rows.r1 + j)));
+    const __m256i s2 = _mm256_cvtepu8_epi16(_mm_loadu_si128((const __m128i *)(rows.r2 + j)));
+    const __m256i s3 = _mm256_cvtepu8_epi16(_mm_loadu_si128((const __m128i *)(rows.r3 + j)));
 
     const __m256i s01_lo = _mm256_unpacklo_epi16(s0, s1);
     const __m256i s01_hi = _mm256_unpackhi_epi16(s0, s1);
@@ -619,16 +633,17 @@ static FORCE_INLINE __m256i dwt2_hfilter_avx2(__m256i s0, __m256i s2, __m256i s0
     return _mm256_permute4x64_epi64(_mm256_packs_epi32(lo, hi), 0xD8);
 }
 
-/* Horizontal pass of sixteen outputs from one row buffer: its low-pass into
- * `dst_lo`, its high-pass into `dst_hi`. */
-static FORCE_INLINE void dwt2_hpass_block_avx2(const int16_t *tmp, int *const *ind_x, int j,
+/* Horizontal pass of sixteen outputs from one row buffer: its low-pass
+ * into `dst_lo`, its high-pass into `dst_hi`. `i0` and `i2` are the buffer
+ * positions of taps 0 and 2 of the first output. */
+static FORCE_INLINE void dwt2_hpass_block_avx2(const int16_t *tmp, int i0, int i2,
                                                const Dwt2Filters *f, int16_t *dst_lo,
                                                int16_t *dst_hi)
 {
-    const __m256i s0 = _mm256_loadu_si256((const __m256i *)(tmp + ind_x[0][j]));
-    const __m256i s2 = _mm256_loadu_si256((const __m256i *)(tmp + ind_x[2][j]));
-    const __m256i s0_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + ind_x[0][j]));
-    const __m256i s2_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + ind_x[2][j]));
+    const __m256i s0 = _mm256_loadu_si256((const __m256i *)(tmp + i0));
+    const __m256i s2 = _mm256_loadu_si256((const __m256i *)(tmp + i2));
+    const __m256i s0_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + i0));
+    const __m256i s2_next = _mm256_loadu_si256((const __m256i *)(tmp + 16 + i2));
 
     _mm256_storeu_si256((__m256i *)dst_lo,
                         dwt2_hfilter_avx2(s0, s2, s0_next, s2_next, f->lo01, f->lo23));
@@ -637,7 +652,8 @@ static FORCE_INLINE void dwt2_hpass_block_avx2(const int16_t *tmp, int *const *i
 }
 
 /* Horizontal pass of output row `i`: the first column and the tail in scalar
- * code, sixteen outputs at a time in between. */
+ * code, sixteen outputs at a time in between. The index tables and the band
+ * rows are read before the loop, for the reason given at Dwt2Rows8. */
 static FORCE_INLINE void dwt2_hpass_row_avx2(const int16_t *tmplo, const int16_t *tmphi,
                                              const adm_dwt_band_t *dst, int *const *ind_x, int i,
                                              int w, int dst_stride, const Dwt2Filters *f)
@@ -645,11 +661,19 @@ static FORCE_INLINE void dwt2_hpass_row_avx2(const int16_t *tmplo, const int16_t
     const ptrdiff_t row = (ptrdiff_t)i * dst_stride;
     const int half_w = (w + 1) / 2;
     const int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
+    const int *const ind0 = ind_x[0];
+    const int *const ind2 = ind_x[2];
+    int16_t *const band_a = dst->band_a + row;
+    int16_t *const band_v = dst->band_v + row;
+    int16_t *const band_h = dst->band_h + row;
+    int16_t *const band_d = dst->band_d + row;
 
     adm_dwt2_hpass(tmplo, tmphi, dst, ind_x, i, 0, 1, dst_stride);
     for (int j = 1; j < half_w_mod16; j += 16) {
-        dwt2_hpass_block_avx2(tmplo, ind_x, j, f, dst->band_a + row + j, dst->band_v + row + j);
-        dwt2_hpass_block_avx2(tmphi, ind_x, j, f, dst->band_h + row + j, dst->band_d + row + j);
+        const int i0 = ind0[j];
+        const int i2 = ind2[j];
+        dwt2_hpass_block_avx2(tmplo, i0, i2, f, band_a + j, band_v + j);
+        dwt2_hpass_block_avx2(tmphi, i0, i2, f, band_h + j, band_d + j);
     }
     adm_dwt2_hpass(tmplo, tmphi, dst, ind_x, i, half_w_mod16, half_w, dst_stride);
 }
@@ -669,8 +693,9 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
     const int j_vp_end = (w / 16) * 16;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
+        const Dwt2Rows8 rows = dwt2_rows8_avx2(src, ind_y, i, src_stride);
         for (int j = 0; j < j_vp_end; j += 16) {
-            dwt2_8_vpass_block_avx2(src, ind_y, i, src_stride, j, &f, tmplo, tmphi);
+            dwt2_8_vpass_block_avx2(rows, j, &f, tmplo, tmphi);
         }
         adm_dwt2_vpass_8(src, ind_y, i, src_stride, j_vp_end, w, tmplo, tmphi);
         dwt2_hpass_row_avx2(tmplo, tmphi, dst, ind_x, i, w, dst_stride, &f);
@@ -1121,8 +1146,6 @@ static FORCE_INLINE __m256i cm_thresh_band_avx2(const int16_t *src, const int16_
     __m256i centre = load_epi16x8(src + ((ptrdiff_t)stride * i) + j - 1);
     centre = _mm256_mullo_epi32(_mm256_abs_epi32(centre), _mm256_set1_epi32(ONE_BY_15));
     centre = _mm256_srai_epi32(_mm256_add_epi32(centre, _mm256_set1_epi32(2048)), 12);
-    /* Wrap each tap to int16, as adm_cm_thresh()'s (int16_t) cast does: */
-    centre = _mm256_srai_epi32(_mm256_slli_epi32(centre, 16), 16);
     centre = _mm256_sub_epi32(centre, flt1);
 
     const __m256i rows = _mm256_add_epi32(_mm256_add_epi32(flt0, flt1), flt2);
@@ -1131,70 +1154,222 @@ static FORCE_INLINE __m256i cm_thresh_band_avx2(const int16_t *src, const int16_
     return _mm256_add_epi32(sum, _mm256_permutevar8x32_epi32(centre, perm1));
 }
 
-/* Masking threshold of the six columns starting at `j`; lanes 6 and 7 are 0. */
+/* Masking threshold of the six columns starting at `j`; lanes 6 and 7 are
+ * not complete sums. */
 static FORCE_INLINE __m256i cm_thresh_avx2(const AdmCmCtx *c, int i, int j)
 {
-    const __m256i mask_end = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);
     __m256i sum = cm_thresh_band_avx2(c->angles[0], c->flt_angles[0], c->csf_a_stride, i, j);
     sum = _mm256_add_epi32(
         sum, cm_thresh_band_avx2(c->angles[1], c->flt_angles[1], c->csf_a_stride, i, j));
-    sum = _mm256_add_epi32(
+    return _mm256_add_epi32(
         sum, cm_thresh_band_avx2(c->angles[2], c->flt_angles[2], c->csf_a_stride, i, j));
-    return _mm256_and_si256(mask_end, sum);
+}
+
+/* Frame-wide operands of one band of the scale-0 contrast-masking rows. */
+typedef struct CmBandConsts {
+    __m256i limit;     /* 2^(31 - shift_sub) */
+    __m256i neg_limit; /* -2^(31 - shift_sub) */
+    __m256i add_sq;
+    __m256i add_cub; /* add_shift_cub + 2^63, see cm_accum_avx2() */
+    __m128i shift_sub;
+    __m128i shift_sq;
+    __m128i shift_cub;
+    uint64_t cub_bias; /* 2^63 >> shift_cub */
+} CmBandConsts;
+
+/* Frame-wide operands of the scale-0 contrast-masking rows. The entry point
+ * builds one and hands it to the rows through AdmCmCtx.row_data. */
+typedef struct CmFrameConsts {
+    CmBandConsts band[3];
+    __m256i rfactor[3]; /* i_rfactor in lanes 0..5, 0 in lanes 6 and 7 */
+    __m256i lanes;      /* lanes 0..5 */
+    /* The bits no threshold in [0, 2^(31 - shift_sub)) of any band has set.
+     * A row whose thresholds leave them all clear is exact in the short form
+     * of the excess in cm_excess_avx2(). */
+    __m256i rare;
+} CmFrameConsts;
+
+static FORCE_INLINE CmBandConsts cm_band_consts_avx2(const AdmCmBand *p)
+{
+    const __m256i limit = _mm256_set1_epi32((int32_t)(UINT32_C(1) << (31 - p->shift_sub)));
+    CmBandConsts out;
+    out.limit = limit;
+    out.neg_limit = _mm256_sub_epi32(_mm256_setzero_si256(), limit);
+    out.add_sq = _mm256_set1_epi64x(p->add_shift_sq);
+    out.add_cub = _mm256_set1_epi64x((int64_t)((uint64_t)p->add_shift_cub ^ (UINT64_C(1) << 63)));
+    out.shift_sub = _mm_cvtsi32_si128(p->shift_sub);
+    out.shift_sq = _mm_cvtsi32_si128(p->shift_sq);
+    out.shift_cub = _mm_cvtsi32_si128((int)p->shift_cub);
+    out.cub_bias = (UINT64_C(1) << 63) >> p->shift_cub;
+    return out;
+}
+
+static FORCE_INLINE CmFrameConsts cm_frame_consts_avx2(const AdmCmCtx *c)
+{
+    int32_t max_shift = c->band[0].shift_sub;
+    CmFrameConsts out;
+    out.lanes = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);
+    for (int k = 0; k < 3; ++k) {
+        max_shift = (c->band[k].shift_sub > max_shift) ? c->band[k].shift_sub : max_shift;
+        out.band[k] = cm_band_consts_avx2(&c->band[k]);
+        out.rfactor[k] = _mm256_and_si256(_mm256_set1_epi32(c->i_rfactor[k]), out.lanes);
+    }
+    out.rare = _mm256_set1_epi32((int32_t)(UINT32_MAX << (31 - max_shift)));
+    return out;
+}
+
+/* Scale-0 masking excess of eight samples, clamp(|x| - thr * 2^shift, 0,
+ * INT32_MAX), bit for bit adm_cm_excess_s0(). `x` is an int16 sample times a
+ * uint16 factor, so |x| < 2^31.
+ *
+ * Short form (`exact` false): valid when the threshold lies in
+ * [0, 2^(31 - shift)), so that thr * 2^shift fits int32, the difference is
+ * exact and only the clamp at 0 can act. Decoded pictures stay there: the
+ * filtered neighbours are non-negative and far below 2^19 / 27. Outside that
+ * range the short form returns a wrong value without any undefined
+ * operation; the row then discards it (cm_row_avx2()).
+ *
+ * Exact form: the threshold is clamped to +/-2^(31 - shift) first; beyond
+ * that the result is already saturated, and the clamped product is a multiple
+ * of 2^shift of magnitude at most 2^31. A non-negative threshold then leaves
+ * a difference that is exact as int32, or wraps negative when the product is
+ * 2^31: both clamp at 0. A negative threshold leaves an exact uint32 sum,
+ * which clamps at INT32_MAX. */
+static FORCE_INLINE __m256i cm_excess_avx2(__m256i x, __m256i thr, const CmBandConsts *k,
+                                           bool exact)
+{
+    const __m256i zero = _mm256_setzero_si256();
+    if (!exact) {
+        const __m256i d =
+            _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_sll_epi32(thr, k->shift_sub));
+        return _mm256_max_epi32(d, zero);
+    }
+    const __m256i thr_c = _mm256_max_epi32(_mm256_min_epi32(thr, k->limit), k->neg_limit);
+    const __m256i d = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_sll_epi32(thr_c, k->shift_sub));
+    const __m256i raised = _mm256_min_epu32(d, _mm256_set1_epi32(INT32_MAX));
+    return _mm256_blendv_epi8(_mm256_max_epi32(d, zero), raised, _mm256_srai_epi32(thr, 31));
 }
 
 /* Rounded (|x| - thr)^3 of eight samples of one band, added to two
- * accumulators of four int64 lanes (adm_cm_accum_round()). */
-static FORCE_INLINE void cm_accum_avx2(__m256i x, __m256i thr, const AdmCmBand *p,
+ * accumulators of four uint64 lanes (adm_cm_accum_round()).
+ *
+ * The scalar narrows the squared excess to int32, so the cube can be negative
+ * and its shift is arithmetic, which AVX2 lacks. An arithmetic shift of `a`
+ * by n is the logical shift of a + 2^63 minus 2^63 >> n, modulo 2^64. The
+ * 2^63 is folded into the rounding term (CmBandConsts.add_cub) and each lane
+ * accumulates the biased term; cm_row_avx2() takes the bias of every lane
+ * back out of the row total. */
+static FORCE_INLINE void cm_accum_avx2(__m256i x, __m256i thr, const CmBandConsts *k, bool exact,
                                        __m256i *accum_lo, __m256i *accum_hi)
 {
-    const __m256i add_sq = _mm256_set1_epi64x(p->add_shift_sq);
-    const __m256i add_cub = _mm256_set1_epi64x(p->add_shift_cub);
-
-    x = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_slli_epi32(thr, p->shift_sub));
-    x = _mm256_max_epi32(x, _mm256_setzero_si256());
+    x = cm_excess_avx2(x, thr, k, exact);
     const __m256i x_hi = _mm256_srli_epi64(x, 32);
 
-    __m256i lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x, x), add_sq), p->shift_sq);
+    __m256i lo = _mm256_srl_epi64(_mm256_add_epi64(_mm256_mul_epi32(x, x), k->add_sq), k->shift_sq);
     __m256i hi =
-        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_hi, x_hi), add_sq), p->shift_sq);
-    lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(lo, x), add_cub), (int)p->shift_cub);
-    hi =
-        _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(hi, x_hi), add_cub), (int)p->shift_cub);
+        _mm256_srl_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_hi, x_hi), k->add_sq), k->shift_sq);
+    lo = _mm256_srl_epi64(_mm256_add_epi64(_mm256_mul_epi32(lo, x), k->add_cub), k->shift_cub);
+    hi = _mm256_srl_epi64(_mm256_add_epi64(_mm256_mul_epi32(hi, x_hi), k->add_cub), k->shift_cub);
     *accum_lo = _mm256_add_epi64(*accum_lo, lo);
     *accum_hi = _mm256_add_epi64(*accum_hi, hi);
 }
 
-/* An interior row, six columns at a time. A row that reaches the first or
- * the last column needs the mirrored neighbourhood and stays scalar. */
+/* The six columns from `j` of interior row `i`. `lanes` selects the
+ * columns that count and `rfactor` holds the three band factors in those
+ * lanes only: a lane that does not count has x = 0 and thr = 0, which
+ * accumulates the
+ * bias alone. Returns the thresholds, for the caller to check that
+ * the short form of the excess applied. */
+static FORCE_INLINE __m256i cm_block_avx2(const AdmCmCtx *c, int i, int j, __m256i lanes,
+                                          const __m256i rfactor[3], bool exact, __m256i accum_lo[3],
+                                          __m256i accum_hi[3])
+{
+    const CmFrameConsts *f = c->row_data;
+    const int16_t *const src[3] = {c->src->band_h, c->src->band_v, c->src->band_d};
+    const ptrdiff_t idx = (ptrdiff_t)i * c->src_stride + j;
+    const __m256i thr = _mm256_and_si256(lanes, cm_thresh_avx2(c, i, j));
+
+    for (int b = 0; b < 3; ++b) {
+        const __m256i x = _mm256_mullo_epi32(load_epi16x8(src[b] + idx), rfactor[b]);
+        cm_accum_avx2(x, thr, &f->band[b], exact, &accum_lo[b], &accum_hi[b]);
+    }
+    return thr;
+}
+
+/* Reinterpret a uint64 as the int64 with the same bits. */
+static FORCE_INLINE int64_t cm_as_int64(uint64_t v)
+{
+    return (v <= (uint64_t)INT64_MAX) ? (int64_t)v : (-(int64_t)(~v)) - 1;
+}
+
+/* The block that ends at the last column of the row, for the `tail` columns
+ * the six-column blocks left over: they are its top lanes. */
+static FORCE_INLINE __m256i cm_tail_block_avx2(const AdmCmCtx *c, int i, int end_col, int tail,
+                                               bool exact, __m256i accum_lo[3], __m256i accum_hi[3])
+{
+    const CmFrameConsts *f = c->row_data;
+    const __m256i lane_index = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    const __m256i lanes =
+        _mm256_and_si256(f->lanes, _mm256_cmpgt_epi32(lane_index, _mm256_set1_epi32(5 - tail)));
+    const __m256i rfactor[3] = {_mm256_and_si256(f->rfactor[0], lanes),
+                                _mm256_and_si256(f->rfactor[1], lanes),
+                                _mm256_and_si256(f->rfactor[2], lanes)};
+    return cm_block_avx2(c, i, end_col - 6, lanes, rfactor, exact, accum_lo, accum_hi);
+}
+
+/* The interior columns of row `i`, six at a time, with one form of the
+ * excess. The columns left over are the top lanes of one more block that
+ * ends at the last column, so no sample is read outside the row. Returns the
+ * OR of every threshold of the row. */
+static FORCE_INLINE __m256i cm_row_pass_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd,
+                                             bool exact, __m256i accum_lo[3], __m256i accum_hi[3])
+{
+    const CmFrameConsts *f = c->row_data;
+    const int tail = (bd->end_col - bd->start_col) % 6;
+    const int end_col_mod6 = bd->end_col - tail;
+    __m256i seen = _mm256_setzero_si256();
+
+    for (int b = 0; b < 3; ++b) {
+        accum_lo[b] = _mm256_setzero_si256();
+        accum_hi[b] = _mm256_setzero_si256();
+    }
+    for (int j = bd->start_col; j < end_col_mod6; j += 6) {
+        seen = _mm256_or_si256(
+            seen, cm_block_avx2(c, i, j, f->lanes, f->rfactor, exact, accum_lo, accum_hi));
+    }
+    if (tail > 0) {
+        seen = _mm256_or_si256(
+            seen, cm_tail_block_avx2(c, i, bd->end_col, tail, exact, accum_lo, accum_hi));
+    }
+    return seen;
+}
+
+/* An interior row. It is summed with the short form of the excess; when a
+ * threshold of the row turns out to lie outside that form's range, which no
+ * decoded picture produces, the row is summed again with the exact form. A
+ * row that reaches the first or the last column needs the mirrored
+ * neighbourhood, and a row narrower than a block has no block to overlap:
+ * both stay scalar. */
 static void cm_row_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
 {
-    if (bd->left_edge || bd->right_edge) {
+    const int cols = bd->end_col - bd->start_col;
+    if (bd->left_edge || bd->right_edge || cols < 6) {
         adm_cm_row(c, i, bd, inner);
         return;
     }
 
-    const __m256i lanes = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);
-    const int end_col_mod6 = bd->end_col - ((bd->end_col - bd->start_col) % 6);
-    __m256i accum_lo[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
-    __m256i accum_hi[3] = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256()};
-
-    for (int j = bd->start_col; j < end_col_mod6; j += 6) {
-        const ptrdiff_t idx = (ptrdiff_t)i * c->src_stride + j;
-        const __m256i thr = cm_thresh_avx2(c, i, j);
-        const int16_t *const src[3] = {c->src->band_h, c->src->band_v, c->src->band_d};
-
-        for (int k = 0; k < 3; ++k) {
-            const __m256i rfactor = _mm256_and_si256(_mm256_set1_epi32(c->i_rfactor[k]), lanes);
-            const __m256i x = _mm256_mullo_epi32(load_epi16x8(src[k] + idx), rfactor);
-            cm_accum_avx2(x, thr, &c->band[k], &accum_lo[k], &accum_hi[k]);
-        }
+    const CmFrameConsts *f = c->row_data;
+    const uint64_t lanes = 8u * (uint64_t)((cols + 5) / 6);
+    __m256i accum_lo[3];
+    __m256i accum_hi[3];
+    const __m256i seen = cm_row_pass_avx2(c, i, bd, false, accum_lo, accum_hi);
+    if (!_mm256_testz_si256(seen, f->rare)) {
+        (void)cm_row_pass_avx2(c, i, bd, true, accum_lo, accum_hi);
     }
-    for (int k = 0; k < 3; ++k) {
-        inner[k] += hsum_epi64(_mm256_add_epi64(accum_lo[k], accum_hi[k]));
-    }
-    for (int j = end_col_mod6; j < bd->end_col; ++j) {
-        adm_cm_accum_px(c, i, j, inner);
+    for (int b = 0; b < 3; ++b) {
+        /* Every lane of every block carries the bias, the idle ones too. */
+        const uint64_t biased = hsum_epu64(_mm256_add_epi64(accum_lo[b], accum_hi[b]));
+        inner[b] += cm_as_int64(biased - (lanes * f->band[b].cub_bias));
     }
 }
 
@@ -1208,6 +1383,8 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
                     adm_ref_display_height, adm_csf_mode, adm_csf_scale, adm_csf_diag_scale,
                     measure_aim);
     const AdmCmBounds bd = adm_cm_bounds(w, h);
+    const CmFrameConsts frame = cm_frame_consts_avx2(&c);
+    c.row_data = &frame;
 
     int64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, cm_row_avx2, accum);

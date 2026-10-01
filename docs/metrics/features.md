@@ -492,7 +492,62 @@ coefficients, such as independent random noise, where the CPU's 16-bit
 intermediates wrap: `integer_adm_scale0` came out up to 2.1e-4 away from the
 CPU. It now wraps at the same points and rounds its scale 1-3 terms the way
 the CPU, CUDA and HIP do, which moves SYCL's ordinary-video scores by less
-than 1e-6, toward the CPU.
+than 1e-6, toward the CPU. One of those intermediates, the centre term of the
+masking threshold, no longer wraps on any backend; see the next section.
+
+##### Isolated impairments and very large coefficients
+
+Since ADR-1402 the fixed-point `adm` extractor cannot score above 1 because
+of its masking threshold, and it differs from upstream Netflix/vmaf master on
+one kind of content.
+
+Scale 0 masks every coefficient with a threshold built from its eight
+neighbours and from 1/15 of the coefficient itself. Upstream stores that last
+term in 16 bits, so it wraps negative once the coefficient reaches 15360
+(8-bit content gets there with a one-pixel-wide full-contrast edge next to
+flat picture). A negative threshold adds contrast instead of masking it. On a
+flat grey reference against the same picture with a few isolated patches, the
+extractor used to report more detail in the distorted picture than in the
+reference:
+
+| Picture (flat grey reference, patches `255 0 0 0`, two rows high) | Before | Now | `float_adm` |
+|---|---|---|---|
+| 64x64, a patch every 16 pixels: `integer_adm_scale0` | 1.0829225419556654 | 1 | 1 |
+| the same: `integer_adm2` | 1.035481944668303 | 1 | 1 |
+| 24x24, one patch at (3, 3): `integer_adm_scale0` | 1.0701309766616138 | 1 | 1 |
+| the same: `integer_adm2` | 1.0301034698295983 | 1 | 1 |
+
+The term is 32 bits wide now, on every backend: the scalar path, AVX2,
+AVX-512, and the `adm_cuda`, `adm_hip`, `adm_sycl` and `integer_adm_metal`
+twins. (The Metal twin was changed in source only; it has not been run on a
+device.) The change is the second revision of Netflix/vmaf pull request 1602,
+which upstream has not merged.
+
+What this means for scores:
+
+- Ordinary video is unaffected. The three Netflix reference pairs and the
+  other ten fixture pairs under `python/test/resource/yuv/` give identical output
+  at `--precision max`, on the CPU and on the CUDA, HIP and SYCL twins.
+- Content with scale-0 coefficients of 15360 or more moves. Independent
+  full-range noise at 576x324 (reference and distorted unrelated):
+  `integer_adm2` 0.38954843646923215 to 0.38950305912838107,
+  `integer_adm_scale0` 0.4549724278265123 to 0.45480076976959144. Noise
+  against the same noise plus a small perturbation: `integer_aim`
+  7.166752298663627e-05 to 0, `integer_adm3` 0.9771812019019719 to
+  0.9772170356634652. The default model's own ADM features and its VMAF score
+  did not change on either.
+- On such content the fork's `adm` no longer equals upstream master's, until
+  upstream merges the pull request. Results from the fork's own earlier
+  releases differ by the same amounts.
+
+To see the old behaviour, compare with a build of the fork before ADR-1402:
+
+```bash
+vmaf -r flat_64x64.yuv -d patches_64x64.yuv -w 64 -h 64 -p 420 -b 8 \
+     --feature adm --feature float_adm --no_prediction --precision max --json
+```
+
+`core/test/test_integer_adm_cm_threshold.c` draws both pictures.
 
 ##### Fixed-point CSF limits
 

@@ -417,14 +417,13 @@ inline int dev_mirror_adm(int idx, int sup)
  * conversion rule.
  *
  * Where the CPU narrows, and where this twin now does too:
- *   - csf_a, adm_csf() (integer_adm.c:743-746): adm_s0_csf_a();
- *   - csf_f, adm_csf() (integer_adm.c:747-748): launch_decouple_csf();
- *   - the 1/15 centre tap, adm_cm_thresh() (integer_adm.c:1028):
- *     adm_dev_csf_centre(). This is the one 8-bit content reaches
- *     with the default weights: |csf_a| >= 15360 on the h and v bands.
+ *   - csf_a, adm_csf() (integer_adm_kernels.h, adm_csf_cols()): adm_s0_csf_a();
+ *   - csf_f, adm_csf() (same function): adm_dev_csf_f().
  * csf_a and csf_f wrap only with h / v weights above ~44000 (the default is
- * 36453). The contrast measure itself is int32_t on the CPU, and
- * adm_dev_cm_excess_s0() evaluates it modulo 2^32 too. Stores that
+ * 36453). The 1/15 centre tap of the masking threshold is not narrowed any
+ * more, here or on the CPU (ADR-1402): adm_cm_thresh() keeps it in int32 and
+ * adm_cm_excess_s0() clamps the excess over the threshold in int64, which
+ * adm_dev_csf_centre() and adm_dev_cm_excess_s0() reproduce. Stores that
  * cannot overflow need no narrowing: the DWT row buffers and bands stay
  * within +-27.4k, |r| <= |o|, and a = t - r lies between 0 and t.
  */
@@ -570,6 +569,9 @@ inline void adm_dev_dwt_vert_store(const AdmDwtVertArgs &a, int32_t *dwt_out, in
 sycl::event launch_dwt_vert_pair(sycl::queue &q, const AdmDwtVertArgs &args)
 {
     AdmDwtVertArgs const a = args;
+    assert(a.in_ref != nullptr && a.in_dis != nullptr);
+    assert(a.tmp_ref != nullptr && a.tmp_dis != nullptr);
+    assert(a.w > 0u && a.h > 0u);
     unsigned const half_h = (a.h + 1) / 2;
     // Z=2: ref(0) + dis(1)
     sycl::range<3> const global(2,
@@ -677,6 +679,8 @@ sycl::event launch_dwt_hori_pair(sycl::queue &q, const AdmDwtHoriArgs &args)
     constexpr int WG_X = 32;
     constexpr int WG_Y = 8;
     AdmDwtHoriArgs const a = args;
+    assert(a.tmp_ref != nullptr && a.tmp_dis != nullptr);
+    assert(a.half_w > 0u && a.half_h > 0u);
     // Z=2: ref(0) + dis(1)
     sycl::range<3> const global(2, ((size_t)(a.half_h + WG_Y - 1) / WG_Y) * WG_Y,
                                 ((size_t)(a.half_w + WG_X - 1) / WG_X) * WG_X);
@@ -872,14 +876,13 @@ inline int32_t adm_dev_csf_f(int scale, int32_t csf)
 }
 
 /* |csf| / 15, the centre term of the masking threshold: CPU adm_cm_thresh()
- * / i4_adm_cm_thresh(). int16 at scale 0, where it wraps negative once
- * |csf| >= 15360 -- the one narrowing 8-bit content reaches with the default
- * weights. */
+ * / i4_adm_cm_thresh(). int32 at every scale: the scale-0 term reaches 69904
+ * and is not narrowed to int16 (ADR-1402). */
 inline int32_t adm_dev_csf_centre(int scale, int32_t csf)
 {
     int32_t const abs_csf = csf < 0 ? -csf : csf;
     if (scale == 0) {
-        return adm_i16((ONE_BY_15 * abs_csf + 2048) >> 12);
+        return (ONE_BY_15 * abs_csf + 2048) >> 12;
     }
     return (int32_t)(((int64_t)I4_ONE_BY_15 * abs_csf + I4_FLT_ROUND) >> 32);
 }
@@ -1072,14 +1075,14 @@ inline int64_t adm_dev_threshold(const AdmBandInputs &in, const int32_t *const f
     return thr;
 }
 
-/* |x| - thr at scale 0, x = v * rfactor. The CPU subtracts the shifted
- * threshold in int32_t, where thr << 12 can wrap on the diagonal band; so
- * does this, modulo 2^32. */
+/* |x| - thr * 2^shift_sub at scale 0, x = v * rfactor, capped at INT32_MAX:
+ * the CPU's adm_cm_excess_s0(), which forms the excess in int64 (ADR-1402).
+ * The caller clamps a negative excess to 0. */
 inline int64_t adm_dev_cm_excess_s0(uint32_t i_rfactor, int32_t v, int64_t thr, uint32_t shift_sub)
 {
     int64_t const x = (int64_t)i_rfactor * v;
-    auto const abs_x = static_cast<uint32_t>(x < 0 ? -x : x);
-    return static_cast<int32_t>(abs_x - (static_cast<uint32_t>(thr) << shift_sub));
+    int64_t const excess = (x < 0 ? -x : x) - (thr * ((int64_t)1 << shift_sub));
+    return excess > INT32_MAX ? INT32_MAX : excess;
 }
 
 /* |x| - thr at scales 1-3, x the CSF-weighted sample (i4_adm_cm_scale). */

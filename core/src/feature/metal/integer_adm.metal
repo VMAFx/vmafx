@@ -858,6 +858,20 @@ static inline ulong iadm_cm_cube(long accum_thread, int shift_sq, long add_shift
     return (ulong)cube;
 }
 
+/* MSL twin of adm_cm_excess_s0() in feature/adm_cm_accumulator.h: the scale-0
+ * masking excess clamp(|x| - thr * 2^shift, 0, INT32_MAX), formed in 64 bits
+ * because thr * 2^shift can leave int (ADR-1402). The centre tap of `thr`
+ * stays an int at its call sites; it is never narrowed to short. */
+static inline int adm_cm_excess_s0(int x, int thr, int shift)
+{
+    const long magnitude = (x < 0) ? -(long)x : (long)x;
+    const long excess = magnitude - ((long)thr * (1l << shift));
+    if (excess <= 0l) {
+        return 0;
+    }
+    return (excess > 2147483647l) ? 2147483647 : (int)excess;
+}
+
 /* MSL twin of feature/adm_cm_accumulator.h. Keep the full row total as ulong
  * until this final fold; shifting per lane/threadgroup is not distributive. */
 static inline ulong adm_cm_round_row_total(ulong row_total, ulong rounding, uint shift)
@@ -952,10 +966,7 @@ static void iadm_csf_cm_s0(const device short *ref_band, const device short *dis
         int t_val = ((int)band_idx == 0) ? th : ((int)band_idx == 1) ? tv : td;
         (void)td;
         int decouple_r = iadm_decouple_r_s0(o_val, t_val, af, c.gain_limit);
-        int x = abs((int)(irf * (uint)decouple_r)) - (thr << shift_sub);
-        if (x < 0) {
-            x = 0;
-        }
+        const int x = adm_cm_excess_s0((int)(irf * (uint)decouple_r), thr, shift_sub);
         local_cm += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
 
@@ -1197,10 +1208,7 @@ static void iadm_aim_cm_s0(const device short *ref_band, const device short *dis
         int a_band;
         (void)iadm_s0_band_vals(ref_band, dis_band, row, col, d.buf_stride, d.half_h, (int)band_idx,
                                 false, c, &a_band);
-        int x = abs((int)(irf * (uint)a_band)) - (thr << shift_sub);
-        if (x < 0) {
-            x = 0;
-        }
+        const int x = adm_cm_excess_s0((int)(irf * (uint)a_band), thr, shift_sub);
         local_aim += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
 

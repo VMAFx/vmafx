@@ -203,11 +203,25 @@ Skill scaffolds:
   `test_integer_adm_tiny_frames` sweeps w 17..32 vs scalar; UBSan lane
   flags the old form (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
 
-- **Integer ADM scale-0 CM centre tap wraps to int16, like scalar.**
-  Vector threshold macros: `srai(slli(tap, 16), 16)` after `>> 12`. Scalar
-  `adm_cm_thresh()` casts `(int16_t)`; |a| > ~15360 wraps. Drop the wrap ->
-  SIMD != scalar on full-range noise. Guard: `test_integer_adm_simd_noise`
-  (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18).
+- **Integer ADM scale-0 CM: int32 centre tap, exact excess (ADR-1402).**
+  `cm_thresh_band_*()`: tap stays int32 after `>> 12`, no
+  `srai(slli(tap, 16), 16)` (scalar `adm_cm_thresh()` has no `(int16_t)`
+  cast). `cm_excess_*()`: short form `max(|x| - (thr << s), 0)` exact only
+  for thr in [0, 2^(31 - s)); `cm_row_*()` ORs the row's thresholds and sums
+  the row again with the exact form (thr clamped to +/-2^(31 - s), signed
+  max for thr >= 0, unsigned min with INT32_MAX for thr < 0) when a
+  `CmFrameConsts.rare` bit is set. Decoded pictures never take pass two.
+  AVX2 cube shift = arithmetic via bias: `add_cub` carries 2^63, row total
+  minus `lanes * cub_bias`, every lane of every block counted (idle lanes
+  too). Tail = `cm_tail_block_*()`, overlapped, lane-masked. Upstream's
+  `threshold_overflow` vector form != scalar for thr < 0: do not port.
+  Guards: `test_integer_adm_simd` (16 planted defects fail it),
+  `test_integer_adm_simd_noise`, `test_integer_adm_cm_threshold`.
+- **Vector stores may alias anything.** `_mm*_storeu_si*` -> compiler reloads
+  pointers / tables read through `buf`, `ind_x`, `ind_y`, `dst` for every
+  block. Read them once per row or frame (`Dwt2Rows8`, `DecoupleBands`,
+  `CmFrameConsts`, `csf_row_*()` locals). Measured: AVX-512 `adm_dwt2_8`
+  +10% instructions without it.
 
 ## Governing ADRs
 

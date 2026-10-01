@@ -4,29 +4,32 @@
  */
 
 /*
- * Integer ADM scale-0 contrast masking with a negative threshold
- * (T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01).
+ * Integer ADM scale-0 contrast masking of an isolated coefficient (ADR-1402;
+ * T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01,
+ * T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01,
+ * T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01).
  *
- * The masking threshold sums nine taps per band. Its centre tap is narrowed
- * to int16, so a coefficient above about 13800 wraps it negative, and when
- * that coefficient stands alone the eight small neighbours do not bring the
- * sum back above zero. The scalar reference then evaluated
- * abs(x) - (thr << shift) with a negative thr, which C leaves undefined; the
- * AVX2 and AVX-512 kernels compute the same expression modulo 2^32.
+ * The masking threshold sums nine taps per band. Its centre tap, 1/15 of the
+ * coefficient, reaches 69904. The fork used to narrow that tap to int16, as
+ * the first revision of upstream Netflix/vmaf PR #1602 did, so a coefficient
+ * above 15359 wrapped it negative. Where such a coefficient stands alone the
+ * eight small neighbours do not bring the sum back above zero, and a negative
+ * threshold adds contrast instead of masking it: on a flat reference the
+ * scale-0 score came out above 1 where float_adm reports exactly 1. The
+ * expression that subtracted the threshold, abs(x) - (thr << shift), was also
+ * undefined for a negative thr; the scalar tails of the x86 kernels kept it
+ * after the scalar reference stopped using it.
  *
- * The first three tests pin the modular arithmetic of adm_cm_excess_s0(),
- * which the scalar reference now calls. The last one scores a picture that
- * reaches a negative threshold, on the scalar path and on every SIMD level
- * the host has, and requires identical results. On the sanitizer lane, which
- * halts on the first report, the old scalar expression stops that test with
- * "left shift of negative value -15176". The picture is wide enough for the
- * x86 vector loops to cover every patch; their scalar tails keep upstream's
- * expression (T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01).
- *
- * The scores themselves are not pinned. With a flat reference the negative
- * threshold turns into masked contrast that is not in the picture, so scale 0
- * comes out above 1 where float_adm reports exactly 1; that follows from the
- * int16 centre tap, not from the shift, and this test must not freeze it.
+ * The centre tap is int32 now and the excess is clamp(|x| - thr * 2^shift, 0,
+ * INT32_MAX), formed in int64. The first four tests pin that clamp in
+ * adm_cm_excess_s0(), which the scalar reference and the x86 tails share. The
+ * picture tests score a flat reference against the same picture with isolated
+ * patches, on the scalar path and on every SIMD level the host has: no
+ * integer ADM score may exceed 1, and every level must return the scalar's
+ * bits. One picture is wide enough for the vector loops to cover every patch;
+ * the other is 24x24 with its patch at (3, 3), which lands in the scalar tail
+ * of both x86 kernels. On the sanitizer lane, which halts on the first
+ * report, the old tail stops that picture with "left shift of negative value".
  */
 
 #include <limits.h>
@@ -47,67 +50,99 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
-#define FRAME_W 64u
-#define FRAME_H 64u
 #define NUM_FRAMES 2u
-#define NUM_SCALES 4u
+#define NUM_KEYS 5u
 
 /* The horizontal and vertical bands shift the threshold by 10 bits, the
  * diagonal band by 12 (adm_cm_ctx_init() in integer_adm.c). */
 #define SHIFT_HV 10u
 #define SHIFT_D 12u
 
-static const char *const SCALE_KEYS[NUM_SCALES] = {
+static const char *const SCORE_KEYS[NUM_KEYS] = {
     "integer_adm_scale0",
     "integer_adm_scale1",
     "integer_adm_scale2",
     "integer_adm_scale3",
+    "VMAF_integer_feature_adm2_score",
 };
 
-/* positive: an ordinary threshold is subtracted from the magnitude of x. */
+/* positive: a threshold below the magnitude is subtracted from it. */
 static char *test_excess_subtracts_a_positive_threshold(void)
 {
-    mu_assert("positive x: 100000 - (3 << 10) is 96928",
+    mu_assert("positive x: 100000 - 3 * 2^10 is 96928",
               adm_cm_excess_s0(100000, 3, SHIFT_HV) == 96928);
     mu_assert("negative x uses its magnitude", adm_cm_excess_s0(-100000, 3, SHIFT_HV) == 96928);
-    mu_assert("a threshold above |x| gives a negative excess for the caller to clamp",
-              adm_cm_excess_s0(100, 1, SHIFT_HV) == -924);
     mu_assert("a shift of 0 subtracts the threshold itself", adm_cm_excess_s0(100, 7, 0u) == 93);
+    mu_assert("the diagonal shift of 12 scales the threshold by 4096",
+              adm_cm_excess_s0(100000, 3, SHIFT_D) == 87712);
     return NULL;
 }
 
-/* negative: a negative threshold raises the excess, as the SIMD kernels do. */
-static char *test_excess_adds_a_negative_threshold(void)
+/* negative: a threshold above the magnitude masks the sample completely, and
+ * a negative threshold raises the excess. */
+static char *test_excess_clamps_at_zero_and_adds_a_negative_threshold(void)
 {
-    /* -15176 is the threshold the picture below produces. */
-    mu_assert("-15176 << 10 is -15540224, so the excess is |x| + 15540224",
+    mu_assert("a threshold above |x| masks the sample", adm_cm_excess_s0(100, 1, SHIFT_HV) == 0);
+    mu_assert("a threshold equal to |x| masks the sample",
+              adm_cm_excess_s0(1024, 1, SHIFT_HV) == 0);
+    /* 69904 is the centre tap of a coefficient of -32768; a lone one in each
+     * of the three bands gives a threshold of 209712. */
+    mu_assert("three full-scale centre taps mask a sample of a million",
+              adm_cm_excess_s0(1000000, 3 * 69904, SHIFT_HV) == 0);
+    mu_assert("-15176 * 2^10 is -15540224, so the excess is |x| + 15540224",
               adm_cm_excess_s0(1000, -15176, SHIFT_HV) == 15541224);
-    mu_assert("the diagonal shift of 12 scales the same threshold by 4096",
-              adm_cm_excess_s0(-1000, -15176, SHIFT_D) == 62161896);
-    mu_assert("-1 << 10 is -1024", adm_cm_excess_s0(0, -1, SHIFT_HV) == 1024);
+    mu_assert("-1 * 2^10 is -1024", adm_cm_excess_s0(0, -1, SHIFT_HV) == 1024);
     return NULL;
 }
 
-/* boundary: operands at the edge of int32 wrap modulo 2^32 instead of
- * overflowing. */
-static char *test_excess_wraps_modulo_two_to_the_32(void)
+/* boundary: a threshold product that leaves int32 masks the sample; the
+ * 32-bit expression wrapped it. */
+static char *test_excess_masks_when_the_product_leaves_int32(void)
 {
-    /* 2^20 << 12 is 2^32, which is 0 modulo 2^32. */
-    mu_assert("a threshold that shifts out of 32 bits wraps to 0",
-              adm_cm_excess_s0(12345, INT32_C(1) << 20, SHIFT_D) == 12345);
-    /* 2^19 << 12 is 2^31; 5 - 2^31 wraps to INT32_MIN + 5. */
-    mu_assert("a threshold that shifts into the sign bit wraps",
-              adm_cm_excess_s0(5, INT32_C(1) << 19, SHIFT_D) == INT32_MIN + 5);
-    mu_assert("the magnitude of INT32_MIN is 2^31, not an overflow",
-              adm_cm_excess_s0(INT32_MIN, 0, SHIFT_HV) == INT32_MIN);
+    /* 2^20 * 2^12 is 2^32: modulo 2^32 that is 0 and nothing was masked. */
+    mu_assert("a threshold product of 2^32 masks the sample",
+              adm_cm_excess_s0(12345, INT32_C(1) << 20, SHIFT_D) == 0);
+    /* 2^19 * 2^12 is 2^31: modulo 2^32, 5 - 2^31 wrapped to INT32_MIN + 5. */
+    mu_assert("a threshold product of 2^31 masks the sample",
+              adm_cm_excess_s0(5, INT32_C(1) << 19, SHIFT_D) == 0);
+    mu_assert("the largest threshold masks the largest sample",
+              adm_cm_excess_s0(INT32_MAX, INT32_MAX, SHIFT_D) == 0);
+    return NULL;
+}
+
+/* boundary: an excess above INT32_MAX saturates instead of wrapping. */
+static char *test_excess_saturates_at_int32_max(void)
+{
+    mu_assert("a negative threshold product of -2^31 saturates",
+              adm_cm_excess_s0(0, -(INT32_C(1) << 19), SHIFT_D) == INT32_MAX);
+    mu_assert("|x| + 1024 above INT32_MAX saturates",
+              adm_cm_excess_s0(INT32_MAX, -1, SHIFT_HV) == INT32_MAX);
+    mu_assert("the most negative threshold saturates",
+              adm_cm_excess_s0(0, INT32_MIN, SHIFT_D) == INT32_MAX);
+    mu_assert("the magnitude of INT32_MIN is 2^31, which saturates",
+              adm_cm_excess_s0(INT32_MIN, 0, SHIFT_HV) == INT32_MAX);
     mu_assert("INT32_MAX passes through unchanged",
               adm_cm_excess_s0(INT32_MAX, 0, SHIFT_D) == INT32_MAX);
     return NULL;
 }
 
-static int alloc_grey(VmafPicture *pic)
+/* A flat grey reference and the same picture with isolated patches. */
+typedef struct {
+    unsigned w;
+    unsigned h;
+    unsigned first; /* row and column of the first patch */
+    unsigned pitch; /* distance between patches; 0 draws one patch */
+} Fixture;
+
+/* Patches every 16 pixels: every one lies inside the x86 vector loops. */
+static const Fixture PATCH_GRID = {64u, 64u, 1u, 16u};
+/* One patch at (3, 3) of a 24x24 picture: the 12-sample band leaves the
+ * vector loops nothing but tail columns. */
+static const Fixture PATCH_IN_TAIL = {24u, 24u, 3u, 0u};
+
+static int alloc_grey(VmafPicture *pic, const Fixture *fx)
 {
-    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, FRAME_W, FRAME_H);
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, fx->w, fx->h);
     if (err) {
         return err;
     }
@@ -120,15 +155,17 @@ static int alloc_grey(VmafPicture *pic)
     return 0;
 }
 
-/* One white column next to three black ones, two rows high, every 16 pixels
- * on mid grey. Each patch gives one large scale-0 coefficient with small
- * neighbours, which is what drives the masking threshold below zero. */
-static void draw_isolated_patches(VmafPicture *pic, unsigned shift)
+/* One white column next to three black ones, two rows high, on mid grey. Each
+ * patch gives one large scale-0 coefficient with small neighbours, which is
+ * what drove the int16 centre tap, and with it the threshold, below zero.
+ * `shift` moves the patches down. */
+static void draw_isolated_patches(VmafPicture *pic, const Fixture *fx, unsigned shift)
 {
     static const uint8_t PATCH[4] = {255u, 0u, 0u, 0u};
+    const unsigned pitch = fx->pitch ? fx->pitch : fx->w + fx->h;
     uint8_t *luma = (uint8_t *)pic->data[0];
-    for (unsigned row = 1u + shift; row + 1u < pic->h[0]; row += 16u) {
-        for (unsigned col = 1u; col + 4u <= pic->w[0]; col += 16u) {
+    for (unsigned row = fx->first + shift; row + 1u < pic->h[0]; row += pitch) {
+        for (unsigned col = fx->first; col + 4u <= pic->w[0]; col += pitch) {
             (void)memcpy(luma + (row * pic->stride[0]) + col, PATCH, sizeof(PATCH));
             (void)memcpy(luma + ((row + 1u) * pic->stride[0]) + col, PATCH, sizeof(PATCH));
         }
@@ -137,21 +174,21 @@ static void draw_isolated_patches(VmafPicture *pic, unsigned shift)
 
 /* The reference stays flat, so every patch is an additive impairment. The
  * patches move down by two rows in the second frame. */
-static int feed_frames(VmafContext *vmaf)
+static int feed_frames(VmafContext *vmaf, const Fixture *fx)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        int err = alloc_grey(&ref);
+        int err = alloc_grey(&ref, fx);
         if (err) {
             return err;
         }
-        err = alloc_grey(&dist);
+        err = alloc_grey(&dist, fx);
         if (err) {
             (void)vmaf_picture_unref(&ref);
             return err;
         }
-        draw_isolated_patches(&dist, 2u * i);
+        draw_isolated_patches(&dist, fx, 2u * i);
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         if (err) {
             return err;
@@ -162,7 +199,7 @@ static int feed_frames(VmafContext *vmaf)
 
 /* `cpumask` 0 lets the extractor dispatch every SIMD level the host has; all
  * bits set forces the scalar path. */
-static int run_adm(uint64_t cpumask, double scores[NUM_FRAMES * NUM_SCALES])
+static int run_adm(const Fixture *fx, uint64_t cpumask, double scores[NUM_FRAMES * NUM_KEYS])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
     VmafContext *vmaf = NULL;
@@ -172,11 +209,10 @@ static int run_adm(uint64_t cpumask, double scores[NUM_FRAMES * NUM_SCALES])
     }
     err = vmaf_use_feature(vmaf, "adm", NULL);
     if (!err) {
-        err = feed_frames(vmaf);
+        err = feed_frames(vmaf, fx);
     }
-    for (unsigned k = 0; !err && k < NUM_FRAMES * NUM_SCALES; k++) {
-        err = vmaf_feature_score_at_index(vmaf, SCALE_KEYS[k % NUM_SCALES], &scores[k],
-                                          k / NUM_SCALES);
+    for (unsigned k = 0; !err && k < NUM_FRAMES * NUM_KEYS; k++) {
+        err = vmaf_feature_score_at_index(vmaf, SCORE_KEYS[k % NUM_KEYS], &scores[k], k / NUM_KEYS);
     }
     (void)vmaf_close(vmaf);
     return err;
@@ -193,43 +229,59 @@ static int bit_identical(double a, double b)
     return a_bits == b_bits;
 }
 
-/* Every SIMD level the host has, then AVX2 alone (cpumask bits 16 and 32 turn
- * off AVX-512 and AVX-512 ICL), so an AVX-512 host checks both x86 kernels. */
-static const uint64_t SIMD_MASKS[] = {0u, 16u | 32u};
-#define NUM_SIMD_MASKS (sizeof(SIMD_MASKS) / sizeof(SIMD_MASKS[0]))
+/* The scalar path, every SIMD level the host has, then AVX2 alone (cpumask
+ * bits 16 and 32 turn off AVX-512 and AVX-512 ICL), so an AVX-512 host checks
+ * both x86 kernels. */
+static const uint64_t CPU_MASKS[] = {~(uint64_t)0, 0u, 16u | 32u};
+#define NUM_CPU_MASKS (sizeof(CPU_MASKS) / sizeof(CPU_MASKS[0]))
 
-static char *test_negative_threshold_scores_the_same_on_every_dispatch(void)
+/* No score of the fixture above 1 on any dispatch level, and every level
+ * bit-identical to the scalar path. */
+static char *check_fixture(const Fixture *fx)
 {
-    double scalar[NUM_FRAMES * NUM_SCALES] = {0};
-    mu_assert("integer ADM failed on the isolated patches (scalar)",
-              !run_adm(~(uint64_t)0, scalar));
-    for (unsigned k = 0; k < NUM_FRAMES * NUM_SCALES; k++) {
-        mu_assert("integer ADM scored the isolated patches as a non-finite value",
-                  isfinite(scalar[k]));
-    }
-
-    for (size_t m = 0; m < NUM_SIMD_MASKS; m++) {
-        double simd[NUM_FRAMES * NUM_SCALES] = {0};
-        mu_assert("integer ADM failed on the isolated patches (SIMD)",
-                  !run_adm(SIMD_MASKS[m], simd));
-        for (unsigned k = 0; k < NUM_FRAMES * NUM_SCALES; k++) {
-            if (!bit_identical(simd[k], scalar[k])) {
-                (void)fprintf(stderr, "\n  cpumask %u frame %u %s: SIMD %.17g vs scalar %.17g\n",
-                              (unsigned)SIMD_MASKS[m], k / NUM_SCALES, SCALE_KEYS[k % NUM_SCALES],
-                              simd[k], scalar[k]);
-                return "integer ADM SIMD dispatch differs from scalar on a negative threshold";
+    double scalar[NUM_FRAMES * NUM_KEYS] = {0};
+    for (size_t m = 0; m < NUM_CPU_MASKS; m++) {
+        double scores[NUM_FRAMES * NUM_KEYS] = {0};
+        mu_assert("integer ADM failed on the isolated patches", !run_adm(fx, CPU_MASKS[m], scores));
+        if (m == 0u) {
+            (void)memcpy(scalar, scores, sizeof(scalar));
+        }
+        for (unsigned k = 0; k < NUM_FRAMES * NUM_KEYS; k++) {
+            if (!(scores[k] >= 0.0 && scores[k] <= 1.0)) {
+                (void)fprintf(stderr, "\n  %ux%u cpumask %u frame %u %s: %.17g\n", fx->w, fx->h,
+                              (unsigned)CPU_MASKS[m], k / NUM_KEYS, SCORE_KEYS[k % NUM_KEYS],
+                              scores[k]);
+                return "integer ADM scored an additive impairment outside [0, 1]";
+            }
+            if (!bit_identical(scores[k], scalar[k])) {
+                (void)fprintf(stderr, "\n  %ux%u cpumask %u frame %u %s: %.17g vs scalar %.17g\n",
+                              fx->w, fx->h, (unsigned)CPU_MASKS[m], k / NUM_KEYS,
+                              SCORE_KEYS[k % NUM_KEYS], scores[k], scalar[k]);
+                return "integer ADM SIMD dispatch differs from scalar on an isolated coefficient";
             }
         }
     }
     return NULL;
 }
 
+static char *test_isolated_patches_stay_at_or_below_one(void)
+{
+    return check_fixture(&PATCH_GRID);
+}
+
+static char *test_isolated_patch_in_the_simd_tail(void)
+{
+    return check_fixture(&PATCH_IN_TAIL);
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_excess_subtracts_a_positive_threshold);
-    mu_run_test(test_excess_adds_a_negative_threshold);
-    mu_run_test(test_excess_wraps_modulo_two_to_the_32);
-    mu_run_test(test_negative_threshold_scores_the_same_on_every_dispatch);
+    mu_run_test(test_excess_clamps_at_zero_and_adds_a_negative_threshold);
+    mu_run_test(test_excess_masks_when_the_product_leaves_int32);
+    mu_run_test(test_excess_saturates_at_int32_max);
+    mu_run_test(test_isolated_patches_stay_at_or_below_one);
+    mu_run_test(test_isolated_patch_in_the_simd_tail);
     return NULL;
 }
 

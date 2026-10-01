@@ -34,25 +34,33 @@ adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 }
 
 /**
- * Scale-0 masking excess `|x| - (thr << shift)`, computed modulo 2^32.
+ * Scale-0 masking excess `clamp(|x| - thr * 2^shift, 0, INT32_MAX)`.
  *
- * `thr` is the masking threshold. Its centre tap is narrowed to int16, so one
- * large coefficient among small neighbours makes the whole sum negative, and a
- * large enough sum can shift out of int32. Shifting a negative `int`, or
- * shifting a value out of `int`, is undefined in C. The AVX2 and AVX-512
- * vector loops (`_mm*_slli_epi32`, `_mm*_sub_epi32`) and the SYCL twin compute
- * this expression modulo 2^32, so unsigned arithmetic gives the scalar
- * reference the result those paths produce without the undefined shift. The
- * magnitude is taken the same way, which keeps `INT32_MIN` defined as well.
+ * `thr` is the masking threshold: the 3x3 sum of the filtered neighbours with
+ * a centre tap of up to 69904 per band, so the product with `2^shift` can
+ * leave int32. The excess is therefore formed in int64 and clamped, as
+ * upstream Netflix/vmaf does since the second revision of its PR #1602
+ * (ADR-1402). A threshold above the magnitude masks the sample completely
+ * (0); a negative threshold, which only hand-built buffers produce, raises
+ * the excess and saturates at INT32_MAX.
  *
- * The result is negative when the threshold exceeds the magnitude; the caller
- * clamps it to zero.
+ * Every implementation returns this value bit for bit: the AVX2 / AVX-512
+ * vector loops (`cm_excess_avx2()` / `cm_excess_avx512()`), the CUDA and HIP
+ * kernels (which call this function), SYCL `adm_dev_cm_excess_s0()` and the
+ * Metal twin `adm_cm_excess_s0()` in `integer_adm.metal`.
+ *
+ * `shift` must be in [1, 30]; the callers pass 10 (horizontal / vertical
+ * band) and 12 (diagonal band).
  */
 static VMAF_ADM_CM_HOST_DEVICE inline int32_t adm_cm_excess_s0(int32_t x, int32_t thr,
                                                                uint32_t shift)
 {
-    const uint32_t magnitude = (x < 0) ? (0u - (uint32_t)x) : (uint32_t)x;
-    return (int32_t)(magnitude - ((uint32_t)thr << shift));
+    const int64_t magnitude = (x < 0) ? -(int64_t)x : (int64_t)x;
+    const int64_t excess = magnitude - ((int64_t)thr * ((int64_t)1 << shift));
+    /* Two selects, not an early return: whether a sample is masked is as good
+     * as random on noisy content, and a branch on it mispredicts. */
+    const int64_t floored = (excess < 0) ? 0 : excess;
+    return (int32_t)((floored > INT32_MAX) ? INT32_MAX : floored);
 }
 
 #undef VMAF_ADM_CM_HOST_DEVICE

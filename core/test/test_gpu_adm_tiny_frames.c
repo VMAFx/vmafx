@@ -32,6 +32,13 @@
  * either way, so no score can show the overflow. What this case adds is the
  * 16-bit sample path itself, which no GPU ADM parity fixture exercised.
  *
+ * Isolated coefficients (ADR-1402): the centre tap of the scale-0 masking
+ * threshold is int32 and the excess over the threshold is clamped in int64, on
+ * the CPU and on every twin. A flat reference against the same picture with
+ * isolated patches is the content that told a narrowed tap from an unnarrowed
+ * one: integer_adm_scale0 came out at 1.08 with the int16 tap and is 1
+ * without it.
+ *
  * The size-rejection test calls init() directly and needs no device. The
  * viewing-geometry rejection uses a real backend state because it pins the
  * public first-frame contract for CSF modes 1 and 2. The parity tests score
@@ -96,6 +103,15 @@ static const Geometry NOISE[] = {
     {576u, 324u},
 };
 #define NUM_NOISE (sizeof(NOISE) / sizeof(NOISE[0]))
+
+/* Isolated patches: a tiny frame, whose 12-sample band keeps them out of the
+ * x86 vector loops, and two larger grids. */
+static const Geometry PATCHES[] = {
+    {24u, 24u},
+    {64u, 64u},
+    {176u, 144u},
+};
+#define NUM_PATCHES (sizeof(PATCHES) / sizeof(PATCHES[0]))
 
 static const Geometry REJECTED[] = {
     {8u, 8u},
@@ -167,6 +183,19 @@ static uint16_t noise_sample(unsigned row, unsigned col, int distorted)
 static uint16_t bright16_sample(unsigned row, unsigned col, int distorted)
 {
     return (uint16_t)(49152u + (position_hash(row, col, distorted) >> 18));
+}
+
+/* Flat mid grey; the distorted picture adds a white column next to three
+ * black ones, two rows high, every 16 pixels from (3, 3). Each patch gives one
+ * large scale-0 coefficient with small neighbours. */
+static uint16_t isolated_patch_sample(unsigned row, unsigned col, int distorted)
+{
+    const unsigned patch_row = (row + 13u) % 16u;
+    const unsigned patch_col = (col + 13u) % 16u;
+    if (!distorted || patch_row > 1u || patch_col > 3u) {
+        return 128u;
+    }
+    return (patch_col == 0u) ? 255u : 0u;
 }
 
 /* One content family of the parity tests. */
@@ -394,6 +423,12 @@ static const Content BRIGHT_16BIT = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on bright 16-bit input",
 };
 
+static const Content ISOLATED_PATCHES = {
+    isolated_patch_sample,
+    8u,
+    "GPU integer ADM differs from scalar CPU by more than 1e-4 on isolated patches",
+};
+
 #if defined(HAVE_SYCL)
 /* Bit-for-bit equality of two scores (compares the IEEE-754 bit patterns, not
  * the object representations, which tidy rejects for double). */
@@ -472,6 +507,11 @@ static char *test_gpu_adm_full_range_noise_parity(void)
 static char *test_gpu_adm_bright_16bit_parity(void)
 {
     return check_parity_list(NOISE, NUM_NOISE, &BRIGHT_16BIT);
+}
+
+static char *test_gpu_adm_isolated_patch_parity(void)
+{
+    return check_parity_list(PATCHES, NUM_PATCHES, &ISOLATED_PATCHES);
 }
 
 static char *test_gpu_adm_csf_modes_parity(void)
@@ -611,6 +651,7 @@ char *run_tests(void)
         MU_TEST(test_gpu_adm_tiny_frame_parity),
         MU_TEST(test_gpu_adm_full_range_noise_parity),
         MU_TEST(test_gpu_adm_bright_16bit_parity),
+        MU_TEST(test_gpu_adm_isolated_patch_parity),
         MU_TEST(test_gpu_adm_csf_modes_parity),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));

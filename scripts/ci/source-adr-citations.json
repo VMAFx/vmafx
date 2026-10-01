@@ -6107,6 +6107,7 @@
         "core/src/feature/hip/speed_temporal_hip.c": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/integer_adm.c": 1,
+        "core/src/feature/integer_adm_kernels.h": 1,
         "core/src/feature/integer_psnr.c": 1,
         "core/src/feature/integer_ssim.c": 1,
         "core/src/feature/integer_vif.c": 1,
@@ -8350,6 +8351,22 @@
         "core/test/test_hip_ssim_tiny_frames.c": 1
       },
       "target": "1400-hip-integer-ssim-raster-sum-small-frames.md"
+    },
+    "1402": {
+      "sites": {
+        "core/src/feature/adm_cm_accumulator.h": 1,
+        "core/src/feature/cuda/integer_adm/adm_cm.cu": 1,
+        "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
+        "core/src/feature/integer_adm_kernels.h": 1,
+        "core/src/feature/metal/integer_adm.metal": 1,
+        "core/src/feature/sycl/integer_adm_sycl.cpp": 3,
+        "core/test/meson.build": 1,
+        "core/test/test_gpu_adm_tiny_frames.c": 1,
+        "core/test/test_integer_adm_cm_threshold.c": 1,
+        "core/test/test_integer_adm_simd.c": 2,
+        "core/test/test_integer_adm_simd_noise.c": 1
+      },
+      "target": "1402-adm-cm-centre-tap-int32.md"
     },
     "1403": {
       "sites": {

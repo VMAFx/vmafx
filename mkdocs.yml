@@ -1511,6 +1511,7 @@ nav:
         - "ADR-1399: cuda-float-ssim-device-decimation": adr/1399-cuda-float-ssim-device-decimation.md
       - "1400-1499 — Misc":
         - "ADR-1400: hip-integer-ssim-raster-sum-small-frames": adr/1400-hip-integer-ssim-raster-sum-small-frames.md
+        - "ADR-1402: adm-cm-centre-tap-int32": adr/1402-adm-cm-centre-tap-int32.md
         - "ADR-1403: cuda-strict-fp-every-kernel": adr/1403-cuda-strict-fp-every-kernel.md
         - "ADR-1404: hip-float-motion-motion3-and-options": adr/1404-hip-float-motion-motion3-and-options.md
         - "ADR-1405: hip-float-ssim-device-decimation": adr/1405-hip-float-ssim-device-decimation.md

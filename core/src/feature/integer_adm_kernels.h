@@ -780,6 +780,11 @@ static inline float i4_adm_csf_den_result(const I4AdmDenCtx *c, const uint64_t a
  * form of the nine upstream ADM_CM_THRESH_S_{0_0, 0_J, 0_W_M_1, I_0, I_J,
  * I_W_M_1, H_M_1_0, H_M_1_J, H_M_1_W_M_1} corner / edge / interior macro
  * variants; the term order matches them one-to-one.
+ *
+ * The centre tap stays in int32. It reaches 69904 for a coefficient of
+ * magnitude 32768; narrowing it to int16, as the first revision of upstream
+ * PR #1602 did, wraps every tap above 32767 (|coefficient| > 15359) negative
+ * and lets an isolated coefficient unmask itself (ADR-1402).
  */
 static inline int32_t adm_cm_thresh(int16_t *const *angles, int16_t *const *flt_angles,
                                     int src_stride, int w, int h, int i, int j)
@@ -800,7 +805,7 @@ static inline int32_t adm_cm_thresh(int16_t *const *angles, int16_t *const *flt_
         sum += flt_m1[j];
         sum += flt_m1[j_p1];
         sum += flt_0[j_m1];
-        sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[j])) + 2048) >> 12);
+        sum += ((ONE_BY_15 * abs((int32_t)src_ptr[j])) + 2048) >> 12;
         sum += flt_0[j_p1];
         sum += flt_p1[j_m1];
         sum += flt_p1[j];
@@ -852,13 +857,11 @@ typedef struct AdmCmBand {
 } AdmCmBand;
 
 /* Rounded (|x| - thr)^3 contribution of one band
- * (upstream ADM_CM_ACCUM_ROUND). Upstream writes the excess as
- * `abs(x) - ((int32_t)(thr) << shift_sub)`; thr can be negative, and that
- * shift is then undefined (adm_cm_excess_s0()). */
+ * (upstream ADM_CM_ACCUM_ROUND). The excess over the threshold is clamped
+ * to [0, INT32_MAX] in int64 (adm_cm_excess_s0()). */
 static inline int64_t adm_cm_accum_round(int32_t x, int32_t thr, const AdmCmBand *p)
 {
-    int32_t v = adm_cm_excess_s0(x, thr, (uint32_t)p->shift_sub);
-    v = v < 0 ? 0 : v;
+    const int32_t v = adm_cm_excess_s0(x, thr, (uint32_t)p->shift_sub);
     const int32_t v_sq = (int32_t)((((int64_t)v * v) + p->add_shift_sq) >> p->shift_sq);
     return (((int64_t)v_sq * v) + p->add_shift_cub) >> p->shift_cub;
 }
@@ -933,6 +936,10 @@ typedef struct AdmCmCtx {
     AdmCmBand band[3];
     uint32_t shift_inner_accum;
     uint32_t add_shift_inner_accum;
+    /* Frame-wide operands of the interior-row callback handed to
+     * adm_cm_rows(): the vector kernels keep their broadcast constants here.
+     * NULL for the scalar rows. */
+    const void *row_data;
 } AdmCmCtx;
 
 static inline void adm_cm_ctx_init(AdmCmCtx *c, AdmBuffer *buf, int w, int h, int src_stride,
@@ -954,6 +961,8 @@ static inline void adm_cm_ctx_init(AdmCmCtx *c, AdmBuffer *buf, int w, int h, in
     c->csf_a_stride = csf_a_stride;
     c->w = w;
     c->h = h;
+    // NOLINTNEXTLINE(modernize-use-nullptr) — C header; MSVC's C has no nullptr (ADR-1138)
+    c->row_data = NULL;
 
     c->normalization_shift =
         adm_csf_i_rfactor(adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, adm_csf_scale,

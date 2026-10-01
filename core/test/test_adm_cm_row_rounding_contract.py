@@ -312,12 +312,22 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["avx2"] = _sub_exact(
             sources["avx2"],
-            r"inner\[k\]\s*\+=\s*hsum_epi64\(_mm256_add_epi64\(accum_lo\[k\],\s*"
-            r"accum_hi\[k\]\)\);",
-            "inner[k] += hsum_epi64(_mm256_add_epi64(accum_lo[k], accum_hi[k])) >> "
+            r"inner\[b\]\s*\+=\s*cm_as_int64\(biased - \(lanes \* "
+            r"f->band\[b\]\.cub_bias\)\);",
+            "inner[b] += cm_as_int64(biased - (lanes * f->band[b].cub_bias)) >> "
             "c->shift_inner_accum;",
         )
         self.assertTrue(any(item.startswith("avx2:") for item in _contract_failures(sources)))
+
+        sources = _sources()
+        sources["avx512"] = _sub_exact(
+            sources["avx512"],
+            r"inner\[b\]\s*\+=\s*hsum_epi64\(_mm512_add_epi64\(accum_lo\[b\],\s*"
+            r"accum_hi\[b\]\)\);",
+            "inner[b] += hsum_epi64(_mm512_add_epi64(accum_lo[b], accum_hi[b])) >> "
+            "c->shift_inner_accum;",
+        )
+        self.assertTrue(any(item.startswith("avx512:") for item in _contract_failures(sources)))
 
     def test_missing_row_fold_mutation_is_detected(self) -> None:
         sources = _sources()

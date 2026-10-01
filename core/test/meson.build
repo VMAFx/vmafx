@@ -2272,10 +2272,13 @@ test_hip_adm_dwt2_rows = executable('test_hip_adm_dwt2_rows',
 test('test_hip_adm_dwt2_rows', test_hip_adm_dwt2_rows,
     suite : ['fast'])
 
-# T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01: the scalar scale-0 masking
-# excess is computed modulo 2^32, like the vector code. The picture test reaches
-# a negative threshold, which the sanitizer lane stops on in the old scalar
-# expression (left shift of a negative value).
+# ADR-1402 (T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01,
+# T-ADM-CM-X86-TAIL-NEGATIVE-THRESHOLD-SHIFT-2026-10-01): the scale-0 masking
+# threshold keeps its centre tap in int32 and the excess over it is clamped in
+# int64. The picture tests score isolated patches on a flat reference on every
+# dispatch level: nothing above 1, every level bit-identical to scalar. The
+# 24x24 picture lands in the x86 scalar tails, where the sanitizer lane stopped
+# on the old expression (left shift of a negative value).
 test_integer_adm_cm_threshold = executable('test_integer_adm_cm_threshold',
     ['test.c', 'test_integer_adm_cm_threshold.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],

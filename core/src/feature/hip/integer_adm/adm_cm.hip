@@ -287,7 +287,9 @@ __device__ __forceinline__ int32_t i4_cm_masked(const hip_i4_adm_dwt_band_t *ref
  * s0 (scale 0) CM helpers — see adm_cm_line_kernel_8 below.
  * -------------------------------------------------------------------- */
 
-/* Fold one filtered row into the threshold of every output row it borders. */
+/* Fold one filtered row into the threshold of every output row it borders.
+ * The centre tap stays int32: it reaches 69904, and narrowing it to int16
+ * would wrap it negative (ADR-1402, adm_cm_thresh() on the CPU). */
 template <int rows_per_thread>
 __device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], int row,
                                               const int16_t (&flt_row)[3], int16_t csf_a_val)
@@ -300,7 +302,7 @@ __device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], i
             if (thread_row != 1) {
                 thr[thread_item] += flt_row[1];
             } else {
-                thr[thread_item] += (int16_t)(((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
+                thr[thread_item] += ((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12;
             }
         }
     }
@@ -348,9 +350,8 @@ s0_cm_accumulate(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
             sb = inline_s0_decouple_r(ref, dis, (y + row) * src_stride + x, band - 1,
                                       adm_enhn_gain_limit);
         }
-        const int32_t val =
-            abs(int32_t(i_rfactor[blockIdx.z] * sb)) - (thr[row] << sh.shift_sub_block);
-        const int32_t accum_thread = max(0, val);
+        const int32_t accum_thread = adm_cm_excess_s0(int32_t(i_rfactor[blockIdx.z] * sb), thr[row],
+                                                      (uint32_t)sh.shift_sub_block);
         const int32_t x_sq =
             (int32_t)((((int64_t)accum_thread * accum_thread) + sh.add_shift_sq) >> sh.shift_sq);
         accum_row[row] += (((int64_t)x_sq * accum_thread) + sh.add_shift_cub) >> sh.shift_cub;

@@ -233,6 +233,24 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_metal_ms_ssim_options_contract.py`, and
   `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
+- **Integer ADM scale-0 masking centre tap ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md))**:
+  the fork keeps the 1/15 centre tap of the masking threshold in int32 and
+  clamps `|x| - thr * 2^shift` to [0, INT32_MAX] in int64, where upstream
+  master narrows the tap to int16 and subtracts in 32 bits (the fork's own
+  Netflix/vmaf PR #1602, second revision, is not merged upstream). The scalar
+  definition is `adm_cm_thresh()` in `core/src/feature/integer_adm_kernels.h`
+  and `adm_cm_excess_s0()` in `core/src/feature/adm_cm_accumulator.h`; the
+  AVX2, AVX-512, CUDA, HIP, SYCL and Metal twins return its value bit for bit
+  and change together with it. A sync must not restore the `(int16_t)` cast,
+  the 16-bit sign extension in the vector thresholds, `adm_i16()` on the SYCL
+  centre term or `abs(x) - (thr << shift)`. `adm_avx2.c` and `adm_avx512.c`
+  no longer carry upstream's macros: their scalar parts are the shared
+  kernels. `test_integer_adm_cm_threshold`, `test_integer_adm_simd` and
+  `test_gpu_adm_tiny_frames` guard it; the Netflix golden gate must be re-run
+  on any change. See [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md)
+  and the "fix/adm-cm-centre-tap-wrap" entry of
+  [rebase-notes](../rebase-notes.md).
+
 - **SYCL integer ADM AIM pass ([ADR-1362](../adr/1362-sycl-integer-adm-aim-device-pass.md))**:
   `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises every
   ADM output in the CPU's float arithmetic (bit-exact with the CPU).

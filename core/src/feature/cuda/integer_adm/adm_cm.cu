@@ -453,11 +453,12 @@ __device__ __forceinline__ int s0_cm_row(int pos, int h)
  * output rows it borders. A thread owns rows_per_thread consecutive output
  * rows, so input row `row` is the top, centre or bottom row of the windows of
  * outputs row - 2 .. row. The centre sample of a window takes `center`
- * instead of `mid`. */
+ * instead of `mid`. `center` is int32: it reaches 69904, and narrowing it to
+ * int16 would wrap it negative (ADR-1402, adm_cm_thresh() on the CPU). */
 template <int rows_per_thread>
 __device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], int row,
                                               int16_t left, int16_t mid, int16_t right,
-                                              int16_t center)
+                                              int32_t center)
 {
 #pragma unroll
     for (int thread_item = 0; thread_item < rows_per_thread; ++thread_item) {
@@ -493,7 +494,7 @@ __device__ __forceinline__ void s0_dlm_thresholds(const S0CmParams &p, int16_t *
             const int16_t csf_a_val = inline_s0_csf_a(p.ref, p.dis, row_offset + pos_x[1], theta,
                                                       p.i_rfactor, p.adm_enhn_gain_limit);
             const int16_t *flt_ptr = flt_angles[theta] + row_offset;
-            const int16_t center = (int16_t)(((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
+            const int32_t center = ((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12;
             s0_cm_add_row<rows_per_thread>(thr, row, flt_ptr[pos_x[0]], flt_ptr[pos_x[1]],
                                            flt_ptr[pos_x[2]], center);
         }
@@ -554,9 +555,8 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
                 sb = inline_s0_decouple_r(p.ref, p.dis, (y + row) * src_stride + x, band2,
                                           p.adm_enhn_gain_limit);
             }
-            const int32_t val =
-                abs(int32_t(p.i_rfactor[blockIdx.z] * sb)) - (thr[row] << shift_sub_block);
-            const int32_t accum_thread = max(0, val);
+            const int32_t accum_thread = adm_cm_excess_s0(int32_t(p.i_rfactor[blockIdx.z] * sb),
+                                                          thr[row], (uint32_t)shift_sub_block);
             accum_row[row] += cm_cube(accum_thread, cube);
         }
     }
@@ -844,8 +844,7 @@ __device__ __forceinline__ void s0_aim_thresholds(const S0CmParams &p, const int
                 (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r0)) + 2048) >> 12);
             const int16_t flt1_neighbor =
                 (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r1)) + 2048) >> 12);
-            const int16_t flt1_center =
-                (int16_t)(((ONE_BY_15 * abs((int32_t)csf_r1)) + 2048) >> 12);
+            const int32_t flt1_center = ((ONE_BY_15 * abs((int32_t)csf_r1)) + 2048) >> 12;
             const int16_t flt2 =
                 (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r2)) + 2048) >> 12);
 
@@ -889,8 +888,8 @@ __device__ __forceinline__ void adm_cm_aim_line_kernel(
             if ((y + row) < end_row) {
                 aim_signal = s0_aim_signal(p, (y + row) * src_stride + x);
             }
-            const int32_t val = aim_signal - (thr[row] << shift_sub_block);
-            const int32_t accum_thread_val = max(0, val);
+            const int32_t accum_thread_val =
+                adm_cm_excess_s0(aim_signal, thr[row], (uint32_t)shift_sub_block);
             accum_row[row] += cm_cube(accum_thread_val, cube);
         }
     }

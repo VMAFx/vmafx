@@ -37,6 +37,15 @@
  *      decouple region untouched, with AVX2 and AVX-512 agreeing inside it.
  *      Regression test for Netflix/vmaf 03b5562c5.
  *
+ *   4. test_adm_cm_matches_scalar_kernels: runs adm_cm_avx2 (and
+ *      adm_cm_avx512 where the host has it) against the scalar kernels of
+ *      integer_adm_kernels.h on hand-built bands and requires the same float
+ *      bit for bit, DLM and AIM. The bands reach what a decoded picture never
+ *      does: thresholds of either sign in every column, thresholds whose
+ *      product with 2^12 leaves int32, and an excess that saturates
+ *      (ADR-1402). test_adm_cm_centre_tap_stays_int32 pins the unnarrowed
+ *      centre tap itself.
+ *
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
@@ -61,6 +70,7 @@
 /* clang-format on */
 
 #include "feature/integer_adm.h"
+#include "feature/integer_adm_kernels.h"
 #include "mem.h"
 
 #if ARCH_X86
@@ -397,6 +407,348 @@ static char *test_i4_adm_cm_avx2_p_norm(void)
 }
 
 /* ---------------------------------------------------------------------
+ * Test 4: adm_cm_avx2 / adm_cm_avx512 against the scalar kernels on
+ * hand-built bands (ADR-1402).
+ *
+ * The scalar side is the body of adm_cm() in integer_adm.c, assembled from
+ * the kernels it shares with the vector files. The vector kernels return a
+ * float, so each fixture keeps the accumulators small or sparse enough for a
+ * single wrong sample to change that float, and every case also runs with
+ * adm_p_norm 1, where a negative accumulator stays a number instead of NaN.
+ *
+ * The vector rows sum with a short form of the excess and repeat the row with
+ * the exact form when a threshold is negative or its product leaves int32.
+ * The dense fills with filtered bands of either sign repeat every row, the
+ * event and block fills the rows near the event or block; the dense fills
+ * with non-negative filtered bands never repeat a row.
+ * ------------------------------------------------------------------- */
+
+typedef float (*adm_cm_fn)(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
+                           double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
+                           double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
+                           double adm_p_norm, bool measure_aim);
+
+/* One band geometry with its nine bands bound into an AdmBuffer. `planes`
+ * lists the same nine arrays: decoupled h, v, d, then csf_f, then csf_a. */
+typedef struct CmFixture {
+    AdmBands16 bands;
+    AdmBuffer buf;
+    int16_t *planes[9];
+    int w;
+    int h;
+    int stride;
+} CmFixture;
+
+static void cm_fixture_free(CmFixture *f)
+{
+    adm_bands16_free(&f->bands);
+}
+
+static int cm_fixture_alloc(CmFixture *f, int w, int h)
+{
+    (void)memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    f->stride = (w + 15) & ~15;
+    const size_t bytes = (size_t)f->stride * (size_t)h * sizeof(int16_t);
+    if (adm_bands16_alloc(&f->bands, bytes)) {
+        return -1;
+    }
+    int16_t *const planes[9] = {f->bands.dr_h, f->bands.dr_v, f->bands.dr_d,
+                                f->bands.cf_h, f->bands.cf_v, f->bands.cf_d,
+                                f->bands.ca_h, f->bands.ca_v, f->bands.ca_d};
+    for (unsigned p = 0; p < 9u; ++p) {
+        f->planes[p] = planes[p];
+    }
+    /* The AIM pass measures decouple_a; both passes read the same bands here. */
+    f->buf.decouple_r =
+        (adm_dwt_band_t){.band_h = planes[0], .band_v = planes[1], .band_d = planes[2]};
+    f->buf.decouple_a = f->buf.decouple_r;
+    f->buf.csf_f = (adm_dwt_band_t){.band_h = planes[3], .band_v = planes[4], .band_d = planes[5]};
+    f->buf.csf_a = (adm_dwt_band_t){.band_h = planes[6], .band_v = planes[7], .band_d = planes[8]};
+    return 0;
+}
+
+static void cm_fixture_clear(CmFixture *f)
+{
+    const size_t bytes = (size_t)f->stride * (size_t)f->h * sizeof(int16_t);
+    for (unsigned p = 0; p < 9u; ++p) {
+        (void)memset(f->planes[p], 0, bytes);
+    }
+}
+
+/* A sample in [-limit, limit]. */
+static int16_t cm_sample(uint32_t *state, int limit)
+{
+    const uint32_t r = simd_test_xorshift32(state);
+    return (int16_t)((int)(r % (uint32_t)((2 * limit) + 1)) - limit);
+}
+
+/* Any int16 value, -32768 included. */
+static int16_t cm_sample_full(uint32_t *state)
+{
+    return (int16_t)((int)(simd_test_xorshift32(state) & 0xFFFFu) - 32768);
+}
+
+/* Write `v` (or a full-range sample when `state` is given) to planes
+ * [first, first + 3) at (row, col); positions outside the band are skipped. */
+static void cm_poke(CmFixture *f, unsigned first, int row, int col, uint32_t *state, int16_t v)
+{
+    if (row < 0 || row >= f->h || col < 0 || col >= f->w) {
+        return;
+    }
+    for (unsigned p = first; p < first + 3u; ++p) {
+        f->planes[p][((ptrdiff_t)row * f->stride) + col] = state ? cm_sample_full(state) : v;
+    }
+}
+
+/* Every band holds moderate samples. With `any_sign` the filtered bands take
+ * either sign, so the threshold is negative in about half the columns:
+ * vector body, tail block and edge rows. Without it they are non-negative,
+ * as in a decoded picture, and every vector row keeps its short form. */
+static void cm_fill_dense(CmFixture *f, uint32_t seed, bool any_sign)
+{
+    uint32_t state = seed;
+    const size_t count = (size_t)f->stride * (size_t)f->h;
+    for (unsigned p = 0; p < 9u; ++p) {
+        for (size_t i = 0; i < count; ++i) {
+            const int16_t v = cm_sample(&state, 2000);
+            f->planes[p][i] = (p < 3u || any_sign || v >= 0) ? v : (int16_t)-v;
+        }
+    }
+}
+
+/* One full-range coefficient at (row, col) with full-range filtered values on
+ * it and on one neighbour; everything else is 0. */
+static void cm_fill_event(CmFixture *f, int row, int col, uint32_t seed)
+{
+    uint32_t state = seed;
+    cm_fixture_clear(f);
+    cm_poke(f, 0u, row, col, &state, 0);
+    cm_poke(f, 3u, row, col, &state, 0);
+    cm_poke(f, 6u, row, col, &state, 0);
+    const int d_row = (int)(simd_test_xorshift32(&state) % 3u) - 1;
+    const int d_col = (int)(simd_test_xorshift32(&state) % 3u) - 1;
+    cm_poke(f, 3u, row + d_row, col + d_col, &state, 0);
+    cm_poke(f, 6u, row + d_row, col + d_col, &state, 0);
+}
+
+/* A block of three rows by four columns whose filtered bands all hold
+ * `level`, with full-range coefficients on the block and the ring around it:
+ * the samples whose 3x3 window reaches the block. With `level` -32768 the
+ * threshold falls to -786432 and its product with 2^12 leaves int32 on the
+ * negative side (the excess saturates); with 32767 it leaves int32 on the
+ * positive side (the sample is masked). At most six samples of a row carry a
+ * cube, each below 2^62 >> shift_cub, so a row total stays inside int64 for
+ * the band widths above 32 this fill is used with. */
+static void cm_fill_block(CmFixture *f, int row0, int col0, int16_t level, uint32_t seed)
+{
+    uint32_t state = seed;
+    cm_fixture_clear(f);
+    for (int row = row0 - 1; row <= row0 + 3; ++row) {
+        for (int col = col0 - 1; col <= col0 + 4; ++col) {
+            const bool inside = row >= row0 && row < row0 + 3 && col >= col0 && col < col0 + 4;
+            cm_poke(f, 0u, row, col, &state, 0);
+            if (inside) {
+                cm_poke(f, 3u, row, col, NULL, level);
+                cm_poke(f, 6u, row, col, NULL, level);
+            }
+        }
+    }
+}
+
+#define CM_NVD DEFAULT_ADM_NORM_VIEW_DIST
+#define CM_RDH DEFAULT_ADM_REF_DISPLAY_HEIGHT
+#define CM_NW DEFAULT_ADM_NOISE_WEIGHT
+
+/* adm_cm() of integer_adm.c, from the kernels it is built on. */
+static float cm_scalar(CmFixture *f, bool aim, double p_norm)
+{
+    AdmCmCtx c;
+    adm_cm_ctx_init(&c, &f->buf, f->w, f->h, f->stride, f->stride, CM_NVD, CM_RDH,
+                    ADM_CSF_MODE_WATSON97, 1.0, 1.0, aim);
+    const AdmCmBounds bd = adm_cm_bounds(f->w, f->h);
+    int64_t accum[3] = {0, 0, 0};
+    adm_cm_rows(&c, &bd, adm_cm_row, accum);
+    return adm_cm_result(&c, &bd, accum, CM_NW, p_norm);
+}
+
+/* Lowest and highest DLM masking threshold over the band. */
+static void cm_threshold_range(CmFixture *f, int32_t *lo, int32_t *hi)
+{
+    AdmCmCtx c;
+    adm_cm_ctx_init(&c, &f->buf, f->w, f->h, f->stride, f->stride, CM_NVD, CM_RDH,
+                    ADM_CSF_MODE_WATSON97, 1.0, 1.0, false);
+    for (int i = 0; i < f->h; ++i) {
+        for (int j = 0; j < f->w; ++j) {
+            const int32_t thr = adm_cm_thresh(c.angles, c.flt_angles, f->stride, f->w, f->h, i, j);
+            *lo = (thr < *lo) ? thr : *lo;
+            *hi = (thr > *hi) ? thr : *hi;
+        }
+    }
+}
+
+static uint32_t cm_float_bits(float v)
+{
+    uint32_t bits = 0;
+    (void)memcpy(&bits, &v, sizeof(bits));
+    return bits;
+}
+
+/* The vector kernels the host can run. */
+typedef struct CmKernels {
+    adm_cm_fn fn[2];
+    const char *name[2];
+    unsigned count;
+} CmKernels;
+
+static CmKernels cm_kernels(void)
+{
+    CmKernels k = {{adm_cm_avx2, NULL}, {"adm_cm_avx2", NULL}, 1u};
+#if HAVE_AVX512
+    if (simd_test_have_avx512()) {
+        k.fn[1] = adm_cm_avx512;
+        k.name[1] = "adm_cm_avx512";
+        k.count = 2u;
+    }
+#endif
+    return k;
+}
+
+/* Every kernel against the scalar on the fixture as filled, for the DLM and
+ * the AIM pass and for adm_p_norm 3 and 1. */
+static char *cm_check(CmFixture *f, const CmKernels *k, const char *fill, int id)
+{
+    static const double P_NORMS[2] = {3.0, 1.0};
+    for (unsigned variant = 0; variant < 4u; ++variant) {
+        const bool aim = (variant & 1u) != 0u;
+        const double p_norm = P_NORMS[variant >> 1];
+        const float want = cm_scalar(f, aim, p_norm);
+        for (unsigned n = 0; n < k->count; ++n) {
+            const float got = k->fn[n](&f->buf, f->w, f->h, f->stride, f->stride, CM_NVD, CM_RDH,
+                                       ADM_CSF_MODE_WATSON97, 1.0, 1.0, CM_NW, p_norm, aim);
+            if (cm_float_bits(got) != cm_float_bits(want)) {
+                (void)fprintf(stderr, "\n  %s %dx%d %s case %d aim=%d p_norm=%g: %a, scalar %a\n",
+                              k->name[n], f->w, f->h, fill, id, (int)aim, p_norm, (double)got,
+                              (double)want);
+                return "adm_cm vector kernel differs from the scalar kernels";
+            }
+        }
+    }
+    return NULL;
+}
+
+/* Dense fills over eight seeds, half of them with filtered bands of either
+ * sign, then one event at every position. */
+static char *cm_check_geometry(CmFixture *f, const CmKernels *k)
+{
+    for (int seed = 1; seed <= 8; ++seed) {
+        cm_fill_dense(f, 0x9E3779B9u * (uint32_t)seed, (seed & 1) != 0);
+        char *msg = cm_check(f, k, (seed & 1) ? "dense" : "dense, non-negative", seed);
+        if (msg) {
+            return msg;
+        }
+    }
+    for (int pos = 0; pos < f->w * f->h; ++pos) {
+        cm_fill_event(f, pos / f->w, pos % f->w, 0x85EBCA6Bu + (uint32_t)pos);
+        char *msg = cm_check(f, k, "event", pos);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
+/* The block at every column, moving down the rows; `range` collects the
+ * thresholds the fixtures reached. */
+static char *cm_check_blocks(CmFixture *f, const CmKernels *k, int16_t level, int32_t range[2])
+{
+    for (int col0 = 0; col0 + 4 <= f->w; ++col0) {
+        cm_fill_block(f, col0 % (f->h - 2), col0, level, 0xC2B2AE35u + (uint32_t)col0);
+        cm_threshold_range(f, &range[0], &range[1]);
+        char *msg = cm_check(f, k, (level < 0) ? "negative block" : "positive block", col0);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
+typedef struct CmGeometry {
+    int w;
+    int h;
+    bool blocks; /* wide enough for cm_fill_block() */
+} CmGeometry;
+
+static char *cm_check_one_geometry(CmGeometry g, const CmKernels *k, int32_t range[2])
+{
+    CmFixture f;
+    if (cm_fixture_alloc(&f, g.w, g.h)) {
+        cm_fixture_free(&f);
+        return "aligned_malloc failed";
+    }
+    char *msg = cm_check_geometry(&f, k);
+    if (!msg && g.blocks) {
+        msg = cm_check_blocks(&f, k, INT16_MIN, range);
+    }
+    if (!msg && g.blocks) {
+        msg = cm_check_blocks(&f, k, INT16_MAX, range);
+    }
+    cm_fixture_free(&f);
+    return msg;
+}
+
+static char *test_adm_cm_matches_scalar_kernels(void)
+{
+    /* 12 columns put the first and the last column inside the region (the
+     * scalar row path). 15 and 16 give 13 and 14 interior columns: one short
+     * of a fourteen-column block, which stays scalar, and exactly one. The
+     * others leave 1 to 13 columns for the overlapped tail block behind the
+     * six- and fourteen-column vector blocks. */
+    static const CmGeometry geometries[] = {
+        {12, 10, false}, {15, 9, false}, {16, 9, false},  {23, 17, false},
+        {40, 30, true},  {67, 21, true}, {130, 12, true},
+    };
+    const CmKernels k = cm_kernels();
+    int32_t range[2] = {0, 0};
+
+    for (size_t g = 0; g < sizeof(geometries) / sizeof(geometries[0]); ++g) {
+        char *msg = cm_check_one_geometry(geometries[g], &k, range);
+        if (msg) {
+            return msg;
+        }
+    }
+    /* The block fills must have reached both regimes the 32-bit excess got
+     * wrong: |thr| * 2^12 at or beyond 2^31. */
+    mu_assert("no fixture reached a threshold of -2^19 or below", range[0] <= -(INT32_C(1) << 19));
+    mu_assert("no fixture reached a threshold of 2^19 or above", range[1] >= (INT32_C(1) << 19));
+    return NULL;
+}
+
+/* The centre tap of the masking threshold is not narrowed to int16: a lone
+ * coefficient of 15360 gives 32768 and one of -32768 gives 69904, where the
+ * int16 store gave -32768 and 4368. */
+static char *test_adm_cm_centre_tap_stays_int32(void)
+{
+    int16_t src[3][9] = {{0}, {0}, {0}};
+    int16_t flt[3][9] = {{0}, {0}, {0}};
+    int16_t *const angles[3] = {src[0], src[1], src[2]};
+    int16_t *const flt_angles[3] = {flt[0], flt[1], flt[2]};
+
+    src[0][4] = 15360;
+    mu_assert("a centre coefficient of 15360 must give a threshold of 32768",
+              adm_cm_thresh(angles, flt_angles, 3, 3, 3, 1, 1) == 32768);
+    src[1][4] = INT16_MIN;
+    mu_assert("coefficients of 15360 and -32768 must give 32768 + 69904",
+              adm_cm_thresh(angles, flt_angles, 3, 3, 3, 1, 1) == 32768 + 69904);
+    flt[2][0] = -7;
+    flt[2][8] = 5;
+    mu_assert("the filtered neighbours are added unchanged",
+              adm_cm_thresh(angles, flt_angles, 3, 3, 3, 1, 1) == 32768 + 69904 - 2);
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------
  * Test 3: guard band + small-size sweep for adm_decouple_avx2 / _avx512.
  *
  * Netflix/vmaf 03b5562c5: adm_decouple_avx2 computed its 8-wide tail bound
@@ -596,6 +948,8 @@ char *run_tests(void)
     div_lookup_generator();
     mu_run_test(test_adm_cm_avx2_smoke);
     mu_run_test(test_i4_adm_cm_avx2_p_norm);
+    mu_run_test(test_adm_cm_centre_tap_stays_int32);
+    mu_run_test(test_adm_cm_matches_scalar_kernels);
     mu_run_test(test_adm_decouple_guard_band);
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");

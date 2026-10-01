@@ -596,20 +596,33 @@ feature/
   See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md) and
   [Research-2111](../../../docs/research/2111-adm-cm-row-rounding-observability.md).
 
-- **`integer_adm` scale-0 masking excess is modular** (fork-local,
-  `T-ADM-CM-NEGATIVE-THRESHOLD-SHIFT-2026-10-01`): scalar
-  `adm_cm_accum_round()` calls `adm_cm_excess_s0()`
-  (`adm_cm_accumulator.h`) = `|x| - (thr << shift)` modulo 2^32, in
-  `uint32_t`. Upstream spelling `abs(x) - ((int32_t)(thr) << shift)` is
-  undefined for `thr < 0` (int16 centre tap wraps on isolated coefficient)
-  -> UBSan halt on scalar path. Rebase: keep helper call, never restore
-  signed shift. AVX2 / AVX-512 vector code (`_mm*_slli_epi32`) and SYCL
-  (`adm_dev_cm_excess_s0()`) already modular. x86 edge columns + scalar
-  tails run shared scalar `adm_cm_row()` / `adm_cm_accum_px()`
-  (`integer_adm_kernels.h`) -> same helper, no private copy. Still upstream
-  spelling: CUDA / HIP / Metal device code. Guard: `test_integer_adm_cm_threshold`
-  (sanitizer lane stops on old expression; helper pinned for positive,
-  negative, wrapping operands).
+- **`integer_adm` scale-0 masking: int32 centre tap, int64 clamped excess**
+  (fork-local, ADR-1402; departs from upstream master until Netflix/vmaf
+  #1602 merges). Centre tap `((8738 * |a|) + 2048) >> 12` stays int32
+  (max 69904): `adm_cm_thresh()` in `integer_adm_kernels.h`. Excess =
+  `clamp(|x| - thr * 2^shift, 0, INT32_MAX)` in int64:
+  `adm_cm_excess_s0()` in `adm_cm_accumulator.h`, two selects, no branch
+  (branch mispredicts on noise: scalar AIM stage +90%). Every twin = scalar
+  bit for bit: `cm_excess_avx2()` / `cm_excess_avx512()`, CUDA + HIP call the
+  helper, SYCL `adm_dev_cm_excess_s0()`, Metal `adm_cm_excess_s0()` (MSL).
+  Never restore: `(int16_t)` cast on the tap, `srai(slli(centre, 16), 16)`
+  in vector thresholds, `adm_i16()` on the SYCL centre term,
+  `abs(x) - (thr << shift)` anywhere (undefined for `thr < 0`). Change one
+  implementation -> change all seven, rerun golden gate. x86 edge rows + rows
+  narrower than one block run shared scalar `adm_cm_row()`; leftover columns
+  = top lanes of one more vector block, no scalar tail. Guards:
+  `test_integer_adm_cm_threshold` (clamp pinned; patch pictures <= 1 on every
+  dispatch level), `test_integer_adm_simd` (vector vs scalar kernels,
+  thresholds of either sign, products past int32), `test_gpu_adm_tiny_frames`
+  (patch content on CUDA / HIP / SYCL). Rebase map:
+  [rebase-notes](../../../docs/rebase-notes.md) "fix/adm-cm-centre-tap-wrap".
+
+- **`integer_adm_kernels.h` = the scalar integer ADM kernels** (fork-local,
+  ADR-1402 PR): `integer_adm.c` drivers and the x86 twins share them. No
+  second copy of a scalar kernel in `x86/adm_avx2.c` / `x86/adm_avx512.c`.
+  `AdmCmCtx.row_data` = frame-wide vector constants of the interior-row
+  callback (`CmFrameConsts`); NULL on the scalar path. Row fold stays in
+  `adm_cm_rows()` / `i4_adm_cm_rows()` (ADR-1167).
 
 - **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
   files** (ADR-1141, 2026-09-02): every kernel expression is verbatim
@@ -621,8 +634,8 @@ feature/
   `adm_cm_thresh3x3_s()` are closed form of nine upstream
   `ADM_CM_THRESH_S_*` corner / edge / interior macros — mirror-to-1
   before first edge, clamp-to-last past last edge, nine terms in
-  macro order (float twin's summation order is golden-gated);
-  `(int16_t)` cast on integer centre term truncates on purpose.
+  macro order (float twin's summation order is golden-gated); scale-0
+  integer centre term is int32, no `(int16_t)` cast (ADR-1402).
   (2) border branch is predicate pair `left_edge = left <= 0` /
   `right_edge = right > w - 1` — do not restore upstream's four-way
   branch (its unreachable third arm read `rfactor[]` out of bounds).
