@@ -37,6 +37,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Test fixture geometry — large enough for the 5-tap Gaussian, small enough
  * for a fast CI run. Motion3 requires ≥ 2 frames (index 0 and index 1). */
 #ifndef FIXTURE_W
@@ -81,13 +87,30 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run the "motion" extractor for NUM_FRAMES frames.        */
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* ------------------------------------------------------------------ */
+static char *feed_motion_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i);
+        mu_assert("fill_fixture(ref) failed", !err);
+        err = fill_fixture(&dist, i);
+        mu_assert("fill_fixture(dist) failed", !err);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("vmaf_read_pictures failed", !err);
+    }
+
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_cpu_motion3(const char *fps_weight, const char *key, double *out_score)
 {
-    int err = 0;
-
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
+    int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
     VmafFeatureDictionary *opts = NULL;
@@ -101,20 +124,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-
-    /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    mu_assert_msg(feed_motion_frames(vmaf));
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
     mu_assert("CPU: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
@@ -124,21 +134,16 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     return NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/* CUDA path — run the "motion_cuda" extractor for NUM_FRAMES frames. */
-/* Returns the motion3_score at frame index 1 via *out_score.         */
-/* Returns a skip sentinel (out_score = NaN) if no CUDA device.      */
-/* ------------------------------------------------------------------ */
-static char *run_cuda_motion3(const char *fps_weight, const char *key, double *out_score)
+static char *setup_cuda_motion_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state,
+                                       const char *fps_weight)
 {
-    *out_score = NAN;
-    int err = 0;
+    *out_vmaf = NULL;
+    *out_cu_state = NULL;
 
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
-        /* No CUDA runtime / no device — caller treats NaN as skip. */
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
@@ -162,21 +167,24 @@ static char *run_cuda_motion3(const char *fps_weight, const char *key, double *o
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CUDA: vmaf_use_feature(motion_cuda) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CUDA: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CUDA: fill_fixture(dist) failed", !err);
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
 
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
+static char *run_cuda_motion3(const char *fps_weight, const char *key, double *out_score)
+{
+    *out_score = NAN;
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(setup_cuda_motion_context(&vmaf, &cu_state, fps_weight));
+    if (!vmaf)
+        return NULL;
 
-    err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
+    mu_assert_msg(feed_motion_frames(vmaf));
+
+    int err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
     mu_assert("CUDA: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -264,3 +272,5 @@ char *run_tests(void)
     mu_run_test(test_motion3_fps_weight_applied_once);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

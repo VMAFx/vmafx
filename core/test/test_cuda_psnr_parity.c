@@ -36,6 +36,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Fixture geometry — small enough for fast CI, large enough that the
  * reference and distorted frames produce a finite (not +inf) PSNR. */
 #ifndef FIXTURE_W
@@ -190,6 +196,17 @@ static int feed_one_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
+static char *read_psnr_scores(VmafContext *vmaf, double *psnr_y, double *psnr_cb, double *psnr_cr)
+{
+    int err = vmaf_feature_score_at_index(vmaf, "psnr_y", psnr_y, 0u);
+    mu_assert("vmaf_feature_score_at_index(psnr_y) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", psnr_cb, 0u);
+    mu_assert("vmaf_feature_score_at_index(psnr_cb) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", psnr_cr, 0u);
+    mu_assert("vmaf_feature_score_at_index(psnr_cr) failed", !err);
+    return NULL;
+}
+
 static char *run_cpu_psnr(double *psnr_y, double *psnr_cb, double *psnr_cr)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -206,23 +223,17 @@ static char *run_cpu_psnr(double *psnr_y, double *psnr_cb, double *psnr_cr)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", psnr_y, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(psnr_y) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", psnr_cb, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(psnr_cb) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", psnr_cr, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(psnr_cr) failed", !err);
+    mu_assert_msg(read_psnr_scores(vmaf, psnr_y, psnr_cb, psnr_cr));
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_cuda_psnr(double *psnr_y, double *psnr_cb, double *psnr_cr)
+static char *setup_cuda_psnr_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state)
 {
-    *psnr_y = NAN;
-    *psnr_cb = NAN;
-    *psnr_cr = NAN;
+    *out_vmaf = NULL;
+    *out_cu_state = NULL;
 
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
@@ -243,18 +254,30 @@ static char *run_cuda_psnr(double *psnr_y, double *psnr_cb, double *psnr_cr)
     err = vmaf_use_feature(vmaf, "psnr_cuda", NULL);
     mu_assert("CUDA: vmaf_use_feature(psnr_cuda) failed", !err);
 
-    err = feed_one_frame(vmaf);
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
+
+static char *run_cuda_psnr(double *psnr_y, double *psnr_cb, double *psnr_cr)
+{
+    *psnr_y = NAN;
+    *psnr_cb = NAN;
+    *psnr_cr = NAN;
+
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(setup_cuda_psnr_context(&vmaf, &cu_state));
+    if (!vmaf)
+        return NULL;
+
+    int err = feed_one_frame(vmaf);
     mu_assert("CUDA: feed_one_frame failed", !err);
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", psnr_y, 0u);
-    mu_assert("CUDA: vmaf_feature_score_at_index(psnr_y) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", psnr_cb, 0u);
-    mu_assert("CUDA: vmaf_feature_score_at_index(psnr_cb) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", psnr_cr, 0u);
-    mu_assert("CUDA: vmaf_feature_score_at_index(psnr_cr) failed", !err);
+    mu_assert_msg(read_psnr_scores(vmaf, psnr_y, psnr_cb, psnr_cr));
 
     err = vmaf_close(vmaf);
     mu_assert("CUDA: vmaf_close failed", !err);
@@ -333,3 +356,5 @@ char *run_tests(void)
     mu_run_test(test_psnr_cpu_cuda_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

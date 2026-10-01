@@ -31,6 +31,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Fixture geometry: big enough for SpEED's 4x downscale + 5x5 blocking
  * (chroma at 4:2:0 = 384x216 -> ops at 24x13 -> 4x2 blocks), small
  * enough for CI. */
@@ -72,6 +78,23 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
     return 0;
 }
 
+static char *feed_chroma_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i, 0);
+        mu_assert("fill_fixture(ref) failed", !err);
+        err = fill_fixture(&dist, i, 1);
+        mu_assert("fill_fixture(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("vmaf_read_pictures failed", !err);
+    }
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_cpu(double *out_score)
 {
     *out_score = NAN;
@@ -83,17 +106,7 @@ static char *run_cpu(double *out_score)
     err = vmaf_use_feature(vmaf, "speed_chroma", NULL);
     mu_assert("CPU: vmaf_use_feature(speed_chroma) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i, 0);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i, 1);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    mu_assert_msg(feed_chroma_frames(vmaf));
 
     err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score", out_score,
                                       0u);
@@ -104,9 +117,11 @@ static char *run_cpu(double *out_score)
     return NULL;
 }
 
-static char *run_cuda(double *out_score)
+static char *setup_cuda_speed_chroma_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state)
 {
-    *out_score = NAN;
+    *out_vmaf = NULL;
+    *out_cu_state = NULL;
+
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
@@ -127,20 +142,25 @@ static char *run_cuda(double *out_score)
     err = vmaf_use_feature(vmaf, "speed_chroma_cuda", NULL);
     mu_assert("CUDA: vmaf_use_feature(speed_chroma_cuda) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i, 0);
-        mu_assert("CUDA: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i, 1);
-        mu_assert("CUDA: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
 
-    err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score", out_score,
-                                      0u);
+static char *run_cuda(double *out_score)
+{
+    *out_score = NAN;
+
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(setup_cuda_speed_chroma_context(&vmaf, &cu_state));
+    if (!vmaf)
+        return NULL;
+
+    mu_assert_msg(feed_chroma_frames(vmaf));
+
+    int err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score",
+                                          out_score, 0u);
     mu_assert("CUDA: vmaf_feature_score_at_index(speed_chroma_uv, idx=0) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -182,3 +202,5 @@ char *run_tests(void)
     mu_run_test(test_speed_chroma_cpu_cuda_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

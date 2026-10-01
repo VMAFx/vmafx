@@ -35,6 +35,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -117,6 +123,20 @@ static char *run_cpu(double scores_out[NUM_MOTION_V2_FEATURES])
     return NULL;
 }
 
+static char *setup_cuda_motion_v2_context(VmafContext **vmaf, VmafCudaState *cu_state)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    mu_assert("CUDA: vmaf_init failed", !err);
+
+    err = vmaf_cuda_import_state(*vmaf, cu_state);
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
+
+    err = vmaf_use_feature(*vmaf, "motion_v2_cuda", NULL);
+    mu_assert("CUDA: vmaf_use_feature(motion_v2_cuda) failed", !err);
+    return NULL;
+}
+
 static char *run_cuda(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++)
@@ -130,18 +150,14 @@ static char *run_cuda(double scores_out[NUM_MOTION_V2_FEATURES])
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
+    char *msg = setup_cuda_motion_v2_context(&vmaf, cu_state);
+    if (msg) {
+        (void)vmaf_cuda_state_free(cu_state);
+        return msg;
+    }
 
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "motion_v2_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(motion_v2_cuda) failed", !err);
-
-    char *msg = feed_stream(vmaf);
+    msg = feed_stream(vmaf);
     if (msg)
         return msg;
 
@@ -166,8 +182,8 @@ static char *test_motion_v2_cuda_registered(void)
 
 static char *test_motion_v2_cpu_cuda_parity(void)
 {
-    double cpu[NUM_MOTION_V2_FEATURES] = {0.0, 0.0};
-    double gpu[NUM_MOTION_V2_FEATURES] = {NAN, NAN};
+    double cpu[NUM_MOTION_V2_FEATURES] = {0.0};
+    double gpu[NUM_MOTION_V2_FEATURES] = {NAN};
 
     char *msg = run_cpu(cpu);
     if (msg)
@@ -203,3 +219,5 @@ char *run_tests(void)
     mu_run_test(test_motion_v2_cpu_cuda_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

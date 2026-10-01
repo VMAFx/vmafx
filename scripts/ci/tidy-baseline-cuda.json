@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1094,
+  "total_warnings": 844,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -470,20 +470,9 @@
     "core/test/test_cpu.c": 2,
     "core/test/test_cuda_arch_floor.c": 5,
     "core/test/test_cuda_buffer_alloc_oom.c": 6,
-    "core/test/test_cuda_ciede_parity.c": 18,
     "core/test/test_cuda_drain_batch.c": 12,
-    "core/test/test_cuda_float_adm_parity.c": 26,
-    "core/test/test_cuda_float_moment_parity.c": 20,
-    "core/test/test_cuda_float_ms_ssim_parity.c": 22,
-    "core/test/test_cuda_float_psnr_parity.c": 20,
-    "core/test/test_cuda_motion3_parity.c": 24,
-    "core/test/test_cuda_motion_v2_parity.c": 17,
-    "core/test/test_cuda_pic_preallocation.c": 44,
     "core/test/test_cuda_picture_pinned_overflow.c": 7,
-    "core/test/test_cuda_preallocation_leak.c": 16,
-    "core/test/test_cuda_psnr_parity.c": 23,
     "core/test/test_cuda_single_frame_flush.c": 6,
-    "core/test/test_cuda_speed_chroma_parity.c": 20,
     "core/test/test_cuda_speed_chroma_smoke.c": 13,
     "core/test/test_cuda_speed_singular_parity.c": 13,
     "core/test/test_cuda_speed_temporal_parity.c": 13,
@@ -916,6 +905,91 @@
         }
       },
       "previous_baseline_sha256": "99019a62da5da7df3d38e1e2870a9eb3d0373ab7997dc881de569b952c21f33f"
+    },
+    {
+      "sources": [
+        "core/test/test_cuda_ciede_parity.c",
+        "core/test/test_cuda_float_adm_parity.c",
+        "core/test/test_cuda_float_moment_parity.c",
+        "core/test/test_cuda_float_ms_ssim_parity.c",
+        "core/test/test_cuda_float_psnr_parity.c",
+        "core/test/test_cuda_motion3_parity.c",
+        "core/test/test_cuda_motion_v2_parity.c",
+        "core/test/test_cuda_pic_preallocation.c",
+        "core/test/test_cuda_preallocation_leak.c",
+        "core/test/test_cuda_psnr_parity.c",
+        "core/test/test_cuda_speed_chroma_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_cuda_ciede_parity.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_adm_parity.c": {
+          "warnings": [
+            26,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_moment_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_ms_ssim_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_psnr_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        },
+        "core/test/test_cuda_motion3_parity.c": {
+          "warnings": [
+            24,
+            0
+          ]
+        },
+        "core/test/test_cuda_motion_v2_parity.c": {
+          "warnings": [
+            17,
+            0
+          ]
+        },
+        "core/test/test_cuda_pic_preallocation.c": {
+          "warnings": [
+            44,
+            0
+          ]
+        },
+        "core/test/test_cuda_preallocation_leak.c": {
+          "warnings": [
+            16,
+            0
+          ]
+        },
+        "core/test/test_cuda_psnr_parity.c": {
+          "warnings": [
+            23,
+            0
+          ]
+        },
+        "core/test/test_cuda_speed_chroma_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c9af66d3f9e28be30af9dc17baeec351e506a7fbe0af284fd58b9aaf6f2a7978"
     }
   ]
 }

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2023 Netflix, Inc.
@@ -23,194 +24,17 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 
-static char *test_cuda_no_init()
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
+static char *init_cuda_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state)
 {
-    int err = 0;
+    *out_vmaf = NULL;
+    *out_cu_state = NULL;
 
-    VmafConfiguration vmaf_cfg = {0};
-
-    VmafContext *vmaf = NULL;
-    vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("problem during vmaf_init", vmaf);
-
-    VmafModelConfig model_cfg = {0};
-    VmafModel *model;
-    vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
-    mu_assert("problem during vmaf_model_load", model);
-
-    err = vmaf_use_features_from_model(vmaf, model);
-    mu_assert("problem during vmaf_use_features_from_model", !err);
-
-    for (unsigned i = 0; i < 10; i++) {
-        VmafPicture ref, dist;
-        err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
-        mu_assert("problem during vmaf_picture_alloc", !err);
-        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
-        mu_assert("problem during vmaf_picture_alloc", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("problem during vmaf_read_pictures", !err);
-    }
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    vmaf_model_destroy(model);
-
-    return NULL;
-}
-
-static char *test_cuda_picture_preallocation_method_none()
-{
-    int err = 0;
-
-    VmafConfiguration vmaf_cfg = {0};
-
-    VmafContext *vmaf = NULL;
-    vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("problem during vmaf_init", vmaf);
-
-    VmafCudaState *cu_state;
-    VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err || !cu_state) {
-        (void)vmaf_close(vmaf);
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("problem during vmaf_cuda_import_state", !err);
-
-    VmafModelConfig model_cfg = {0};
-    VmafModel *model;
-    vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
-    mu_assert("problem during vmaf_model_load", model);
-
-    err = vmaf_use_features_from_model(vmaf, model);
-    mu_assert("problem during vmaf_use_features_from_model", !err);
-
-    for (unsigned i = 0; i < 10; i++) {
-        VmafPicture ref, dist;
-        err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
-        mu_assert("problem during vmaf_picture_alloc", !err);
-        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
-        mu_assert("problem during vmaf_picture_alloc", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("problem during vmaf_read_pictures", !err);
-    }
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("problem during vmaf_cuda_state_free", !err);
-    vmaf_model_destroy(model);
-
-    return NULL;
-}
-
-/* Push ten preallocated frame pairs through `vmaf`. Split out so the driver
- * below stays inside the 60-line function budget. */
-static char *feed_preallocated_frames(VmafContext *vmaf)
-{
-    for (unsigned i = 0; i < 10; i++) {
-        VmafPicture ref, dist;
-        int err = vmaf_cuda_fetch_preallocated_picture(vmaf, &ref);
-        mu_assert("problem during vmaf_cuda_fetch_preallocated_picture", !err);
-        err = vmaf_cuda_fetch_preallocated_picture(vmaf, &dist);
-        mu_assert("problem during vmaf_cuda_fetch_preallocated_picture", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("problem during vmaf_read_pictures", !err);
-    }
-    return NULL;
-}
-
-/* Drive one preallocation method end to end: import a CUDA state, preallocate
- * a 1920x1080 8-bit YUV420P pool with `method`, register the reference model's
- * features, push ten frame pairs through it and tear everything down. The
- * three per-method cases below differ only in `method`, so they share this
- * body rather than each carrying a copy of it. On a machine without a CUDA
- * device the run reports the skip and returns without asserting. */
-static char *run_preallocation_method(enum VmafCudaPicturePreallocationMethod method)
-{
-    int err = 0;
-
-    VmafConfiguration vmaf_cfg = {0};
-
-    VmafContext *vmaf = NULL;
-    vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("problem during vmaf_init", vmaf);
-
-    VmafCudaState *cu_state;
-    VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err || !cu_state) {
-        (void)vmaf_close(vmaf);
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("problem during vmaf_cuda_import_state", !err);
-
-    VmafCudaPictureConfiguration cuda_pic_cfg = {
-        .pic_params =
-            {
-                .w = 1920,
-                .h = 1080,
-                .bpc = 8,
-                .pix_fmt = VMAF_PIX_FMT_YUV420P,
-            },
-        .pic_prealloc_method = method,
-    };
-
-    err = vmaf_cuda_preallocate_pictures(vmaf, cuda_pic_cfg);
-    mu_assert("problem during vmaf_cuda_preallocate_pictures", !err);
-
-    VmafModelConfig model_cfg = {0};
-    VmafModel *model;
-    vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
-    mu_assert("problem during vmaf_model_load", model);
-
-    err = vmaf_use_features_from_model(vmaf, model);
-    mu_assert("problem during vmaf_use_features_from_model", !err);
-
-    mu_assert_msg(feed_preallocated_frames(vmaf));
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("problem during vmaf_read_pictures", !err);
-
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("problem during vmaf_cuda_state_free", !err);
-    vmaf_model_destroy(model);
-
-    return NULL;
-}
-
-static char *test_cuda_picture_preallocation_method_host()
-{
-    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST);
-}
-
-static char *test_cuda_picture_preallocation_method_host_pinned()
-{
-    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED);
-}
-
-static char *test_cuda_picture_preallocation_method_device()
-{
-    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE);
-}
-
-static char *test_cuda_cli_preallocate_pinned_pool(void)
-{
     VmafConfiguration vmaf_cfg = {0};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, vmaf_cfg);
@@ -227,6 +51,192 @@ static char *test_cuda_cli_preallocate_pinned_pool(void)
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("problem during vmaf_cuda_import_state", !err);
 
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
+
+static char *feed_allocated_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < 10; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
+        mu_assert("problem during vmaf_picture_alloc", !err);
+        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, 1920, 1080);
+        mu_assert("problem during vmaf_picture_alloc", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("problem during vmaf_read_pictures", !err);
+    }
+    return NULL;
+}
+
+static char *test_cuda_no_init(void)
+{
+    VmafConfiguration vmaf_cfg = {0};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, vmaf_cfg);
+    mu_assert("problem during vmaf_init", !err && vmaf);
+
+    VmafModelConfig model_cfg = {0};
+    VmafModel *model = NULL;
+    err = vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load", !err && model);
+
+    err = vmaf_use_features_from_model(vmaf, model);
+    mu_assert("problem during vmaf_use_features_from_model", !err);
+
+    mu_assert_msg(feed_allocated_frames(vmaf));
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("problem during vmaf_read_pictures", !err);
+
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+
+    vmaf_model_destroy(model);
+    return NULL;
+}
+
+static char *test_cuda_picture_preallocation_method_none(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(init_cuda_context(&vmaf, &cu_state));
+    if (!vmaf)
+        return NULL;
+
+    VmafModelConfig model_cfg = {0};
+    VmafModel *model = NULL;
+    int err = vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load", !err && model);
+
+    err = vmaf_use_features_from_model(vmaf, model);
+    mu_assert("problem during vmaf_use_features_from_model", !err);
+
+    mu_assert_msg(feed_allocated_frames(vmaf));
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("problem during vmaf_read_pictures", !err);
+
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+
+    err = vmaf_cuda_state_free(cu_state);
+    mu_assert("problem during vmaf_cuda_state_free", !err);
+    vmaf_model_destroy(model);
+
+    return NULL;
+}
+
+/* Push ten preallocated frame pairs through `vmaf`. Split out so the driver
+ * below stays inside the 60-line function budget. */
+static char *feed_preallocated_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < 10; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = vmaf_cuda_fetch_preallocated_picture(vmaf, &ref);
+        mu_assert("problem during vmaf_cuda_fetch_preallocated_picture", !err);
+        err = vmaf_cuda_fetch_preallocated_picture(vmaf, &dist);
+        mu_assert("problem during vmaf_cuda_fetch_preallocated_picture", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("problem during vmaf_read_pictures", !err);
+    }
+    return NULL;
+}
+
+static char *init_preallocated_vmaf(VmafContext **out_vmaf, VmafCudaState **out_cu_state,
+                                    enum VmafCudaPicturePreallocationMethod method)
+{
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(init_cuda_context(&vmaf, &cu_state));
+    if (!vmaf) {
+        *out_vmaf = NULL;
+        *out_cu_state = NULL;
+        return NULL;
+    }
+
+    VmafCudaPictureConfiguration cuda_pic_cfg = {
+        .pic_params =
+            {
+                .w = 1920,
+                .h = 1080,
+                .bpc = 8,
+                .pix_fmt = VMAF_PIX_FMT_YUV420P,
+            },
+        .pic_prealloc_method = method,
+    };
+
+    int err = vmaf_cuda_preallocate_pictures(vmaf, cuda_pic_cfg);
+    mu_assert("problem during vmaf_cuda_preallocate_pictures", !err);
+
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
+
+/* Drive one preallocation method end to end: import a CUDA state, preallocate
+ * a 1920x1080 8-bit YUV420P pool with `method`, register the reference model's
+ * features, push ten frame pairs through it and tear everything down. The
+ * three per-method cases below differ only in `method`, so they share this
+ * body rather than each carrying a copy of it. On a machine without a CUDA
+ * device the run reports the skip and returns without asserting. */
+static char *run_preallocation_method(enum VmafCudaPicturePreallocationMethod method)
+{
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(init_preallocated_vmaf(&vmaf, &cu_state, method));
+    if (!vmaf)
+        return NULL;
+
+    VmafModelConfig model_cfg = {0};
+    VmafModel *model = NULL;
+    int err = vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load", !err && model);
+
+    err = vmaf_use_features_from_model(vmaf, model);
+    mu_assert("problem during vmaf_use_features_from_model", !err);
+
+    mu_assert_msg(feed_preallocated_frames(vmaf));
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("problem during vmaf_read_pictures", !err);
+
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+
+    err = vmaf_cuda_state_free(cu_state);
+    mu_assert("problem during vmaf_cuda_state_free", !err);
+    vmaf_model_destroy(model);
+
+    return NULL;
+}
+
+static char *test_cuda_picture_preallocation_method_host(void)
+{
+    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST);
+}
+
+static char *test_cuda_picture_preallocation_method_host_pinned(void)
+{
+    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED);
+}
+
+static char *test_cuda_picture_preallocation_method_device(void)
+{
+    return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE);
+}
+
+static char *test_cuda_cli_preallocate_pinned_pool(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(init_cuda_context(&vmaf, &cu_state));
+    if (!vmaf)
+        return NULL;
+
     VmafPictureConfiguration pic_cfg = {
         .pic_params =
             {
@@ -237,7 +247,7 @@ static char *test_cuda_cli_preallocate_pinned_pool(void)
             },
         .pic_cnt = 6,
     };
-    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
+    int err = vmaf_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("problem during vmaf_preallocate_pictures", !err);
 
     VmafPicture pic;
@@ -257,7 +267,7 @@ static char *test_cuda_cli_preallocate_pinned_pool(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_cuda_no_init);
     mu_run_test(test_cuda_picture_preallocation_method_none);
@@ -267,3 +277,5 @@ char *run_tests()
     mu_run_test(test_cuda_cli_preallocate_pinned_pool);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

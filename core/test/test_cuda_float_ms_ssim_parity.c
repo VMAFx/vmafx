@@ -38,6 +38,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* The 5-level 11-tap MS-SSIM pyramid requires min(w,h) >= 11<<4 = 176.
  * 256x192 keeps both axes above the floor with a clean 16-px multiple. */
 #ifndef FIXTURE_W
@@ -106,12 +112,28 @@ static int ms_ssim_db_opts(VmafFeatureDictionary **opts)
     return vmaf_feature_dictionary_set(opts, "clip_db", "true");
 }
 
+static char *feed_ms_ssim_frames(VmafContext *vmaf, bool identical)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_ref(&ref, i);
+        mu_assert("fill_ref failed", !err);
+        err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
+        mu_assert("fill_dist failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("vmaf_read_pictures failed", !err);
+    }
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_cpu(bool db, bool identical, double *out_score)
 {
-    int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
+    int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
     VmafFeatureDictionary *opts = NULL;
@@ -124,17 +146,7 @@ static char *run_cpu(bool db, bool identical, double *out_score)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CPU: fill_ref failed", !err);
-        err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
-        mu_assert("CPU: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    mu_assert_msg(feed_ms_ssim_frames(vmaf, identical));
 
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_score, 1u);
     mu_assert("CPU: vmaf_feature_score_at_index(float_ms_ssim, idx=1) failed", !err);
@@ -144,14 +156,15 @@ static char *run_cpu(bool db, bool identical, double *out_score)
     return NULL;
 }
 
-static char *run_cuda(bool db, bool identical, double *out_score)
+static char *setup_cuda_ms_ssim_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state,
+                                        bool db)
 {
-    *out_score = NAN;
-    int err = 0;
+    *out_vmaf = NULL;
+    *out_cu_state = NULL;
 
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
@@ -175,19 +188,24 @@ static char *run_cuda(bool db, bool identical, double *out_score)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CUDA: vmaf_use_feature(float_ms_ssim_cuda) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CUDA: fill_ref failed", !err);
-        err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
-        mu_assert("CUDA: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
+    *out_vmaf = vmaf;
+    *out_cu_state = cu_state;
+    return NULL;
+}
 
-    err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_score, 1u);
+static char *run_cuda(bool db, bool identical, double *out_score)
+{
+    *out_score = NAN;
+
+    VmafContext *vmaf = NULL;
+    VmafCudaState *cu_state = NULL;
+    mu_assert_msg(setup_cuda_ms_ssim_context(&vmaf, &cu_state, db));
+    if (!vmaf)
+        return NULL;
+
+    mu_assert_msg(feed_ms_ssim_frames(vmaf, identical));
+
+    int err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_score, 1u);
     mu_assert("CUDA: vmaf_feature_score_at_index(float_ms_ssim, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -288,8 +306,6 @@ static char *test_float_ms_ssim_clip_db_ceiling(void)
 /* With enable_lcs the 15 per-scale l / c / s means are compared too:   */
 /* every one of the 16 outputs of every frame must equal the CPU's.     */
 /* ------------------------------------------------------------------ */
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
- * support and upstream-compatible C test conventions. */
 #define MS_EXACT_KEYS 16u
 
 typedef struct MsExactScores {
@@ -411,8 +427,6 @@ static char *test_float_ms_ssim_matches_cpu_bit_for_bit(void)
     return NULL;
 }
 
-/* NOLINTEND(modernize-use-nullptr) */
-
 char *run_tests(void)
 {
     mu_run_test(test_float_ms_ssim_cpu_cuda_parity);
@@ -420,3 +434,5 @@ char *run_tests(void)
     mu_run_test(test_float_ms_ssim_matches_cpu_bit_for_bit);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

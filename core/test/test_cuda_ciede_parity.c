@@ -31,6 +31,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -97,6 +103,18 @@ static char *run_cpu_ciede(double *score)
     return NULL;
 }
 
+static char *setup_cuda_ciede_context(VmafContext **vmaf, VmafCudaState *cu_state)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    mu_assert("CUDA: vmaf_init failed", !err);
+    err = vmaf_cuda_import_state(*vmaf, cu_state);
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
+    err = vmaf_use_feature(*vmaf, "ciede_cuda", NULL);
+    mu_assert("CUDA: vmaf_use_feature(ciede_cuda) failed", !err);
+    return NULL;
+}
+
 static char *run_cuda_ciede(double *score)
 {
     *score = NAN;
@@ -107,14 +125,12 @@ static char *run_cuda_ciede(double *score)
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "ciede_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(ciede_cuda) failed", !err);
+    char *msg = setup_cuda_ciede_context(&vmaf, cu_state);
+    if (msg) {
+        (void)vmaf_cuda_state_free(cu_state);
+        return msg;
+    }
     err = feed_frame(vmaf);
     mu_assert("CUDA: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
@@ -164,3 +180,5 @@ char *run_tests(void)
     mu_run_test(test_ciede_cpu_cuda_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
