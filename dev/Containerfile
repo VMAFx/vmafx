@@ -729,6 +729,11 @@ USER vmaf
 # touch-once-build-everywhere cycle doesn't pay the full nvcc/icpx/hipcc compile
 # cost again. Meson auto-detects ccache when it's on PATH; passing the
 # environment hint keeps the cache scoped to the dev-mcp image.
+#
+# ADR-1317 / T-DEV-IMAGE-ICX-NATIVE-FMA-DRIFT-2026-09-30: do not pass -march=native
+# to the reference binary build. Intel icx contracts multiply-adds when FMA is
+# enabled by -march=native, causing SpEED and CPU extractor scores to drift from
+# default builds.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     export CCACHE_DIR=/home/vmaf/.cache/ccache \
     && CC=icx CXX=icpx meson setup core/build core \
@@ -745,7 +750,6 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --buildtype=release \
         -Db_lto=false \
         --prefix=/usr/local \
-        -Dc_args="-march=native" \
     && ninja -C core/build
 
 USER root

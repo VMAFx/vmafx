@@ -33,6 +33,18 @@
   SYCL host USM memory when a SYCL state is attached to the context.
 - Upstream sync note: Preserve custom allocation callbacks in `VmafPicturePoolConfig`
   and picture pool fetch/close functions.
+## fix/dev-image-icx-native-fma-drift — omit -march=native from dev container reference build (2026-10-01)
+
+`fix/dev-image-icx-native-fma-drift`, ADR-1317, T-DEV-IMAGE-ICX-NATIVE-FMA-DRIFT-2026-09-30.
+
+- `dev/Containerfile`: omitted `-Dc_args="-march=native"` from the `libvmaf-build` stage
+  reference binary compilation (`CC=icx CXX=icpx meson setup core/build core`). Under Intel
+  oneAPI `icx`, `-march=native` enables FMA contraction in unvectorized CPU feature extractors
+  (generating 102 `vfmadd` instructions in `speed.c`), leading to SpEED score drift against
+  standard reference builds.
+- Tests: `scripts/ci/tests/test_dev_container_reference_build_flags.py` guards against
+  re-introducing `-march=native` in the reference binary build stage.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/speed-lanczos4-host-weights — the CUDA SpEED twins read the CPU's lanczos4 weights (2026-10-01)
 

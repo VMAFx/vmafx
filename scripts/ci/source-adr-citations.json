@@ -7530,7 +7530,9 @@
     },
     "1317": {
       "sites": {
-        "scripts/ci/setup-golden-build.sh": 1
+        "dev/Containerfile": 1,
+        "scripts/ci/setup-golden-build.sh": 1,
+        "scripts/ci/tests/test_dev_container_reference_build_flags.py": 6
       },
       "target": "1317-golden-gate-build-isolation.md"
     },

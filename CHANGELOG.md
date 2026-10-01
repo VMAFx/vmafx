@@ -742,6 +742,16 @@
   ([SpEED](docs/metrics/speed_qa.md#cuda-the-same-chain-on-the-device)).
 
 
+- **Omit `-march=native` from the reference binary build in `vmaf-dev-mcp`.**
+  Intel oneAPI `icx` contracts multiply-accumulate operations in unvectorized CPU
+  extractor scalar loops when `-march=native` exposes FMA target capabilities,
+  drifting SpEED scores from uncontracted reference builds by up to 7.9e-4 on
+  1080p content and 3.38e-7 on the Netflix 576x324 48-frame pair. Removing
+  `-Dc_args="-march=native"` restores bit-exact CPU reference parity with
+  standard GCC reference builds, following the golden-gate isolation principles
+  of [ADR-1317](docs/adr/1317-golden-gate-build-isolation.md).
+
+
 - **`--backend <gpu> --feature float_moment` runs the backend's twin.** The
   command computed `float_moment` on the CPU and warned that the backend had
   no twin, although `float_moment_cuda`, `float_moment_sycl`,
