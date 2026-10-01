@@ -593,6 +593,8 @@
   `T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01`. The HIP and SYCL twins
   keep their per-block sums until their rewrites land. See
   [the psnr_hvs page](docs/metrics/psnr-hvs.md#agreement-with-the-cpu-extractor).
+
+
 - **`speed_chroma_cuda` and `speed_temporal_cuda` match the CPU with
   `speed_prescale_method=lanczos4`.** The CPU scaler evaluates each lanczos4
   weight in fp64 with `sin()` and rounds it once; the CUDA scale kernel
