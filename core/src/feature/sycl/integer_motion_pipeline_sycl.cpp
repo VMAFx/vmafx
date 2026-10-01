@@ -174,6 +174,43 @@ template <typename Acc> void submit_sad(sycl::queue &queue, const SadArgs &args)
     });
 }
 
+class MotionSadHbdKernel : public VmafSyclKernelShape<32, 256>
+{
+  public:
+    MotionSadHbdKernel(const sycl::local_accessor<int32_t, 2> &diff,
+                       const sycl::local_accessor<int64_t, 1> &scratch, const SadArgs &args)
+        : diff_(diff), scratch_(scratch), args_(args)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(32) void operator()(sycl::nd_item<2> item) const
+    {
+        load_diff(item, diff_, args_);
+        item.barrier(sycl::access::fence_space::local_space);
+        const int64_t value = filtered_abs<int64_t>(item, diff_, args_);
+        reduce_sad(item, scratch_, value, args_.sad);
+    }
+
+  private:
+    sycl::local_accessor<int32_t, 2> diff_;
+    sycl::local_accessor<int64_t, 1> scratch_;
+    SadArgs args_;
+};
+
+template <> void submit_sad<int64_t>(sycl::queue &queue, const SadArgs &args)
+{
+    const size_t global_h = (((size_t)args.height + kWgY - 1) / kWgY) * kWgY;
+    const size_t global_w = (((size_t)args.width + kWgX - 1) / kWgX) * kWgX;
+    const sycl::nd_range<2> range({global_h, global_w}, {(size_t)kWgY, (size_t)kWgX});
+
+    queue.submit([&](sycl::handler &cgh) {
+        const sycl::local_accessor<int32_t, 2> diff(sycl::range<2>(kTileH, kTileW), cgh);
+        const sycl::local_accessor<int64_t, 1> scratch(sycl::range<1>(kMaxSubgroups), cgh);
+        const MotionSadHbdKernel kernel(diff, scratch, args);
+        cgh.parallel_for(range, kernel);
+    });
+}
+
 } // namespace
 
 void enqueue_sad(sycl::queue &queue, const SadArgs &args)

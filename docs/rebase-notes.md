@@ -162,6 +162,21 @@ fork's tree already carries these fixes.
 - `core/src/feature/sycl/integer_cambi_sycl.cpp` `launch_reset()`: uses an explicit 1D `nd_range<1>` (`TOTAL_ITEMS = 5 * RADIX_BINS`, local size 256) and a scalar select chain for `topk` instead of an indexed array in the lambda closure. Capturing `unsigned topk[CAMBI_SYCL_NUM_SCALES]` by value caused IGC on the Arc A380 under the Linux xe driver to allocate 1280 B of private stack memory, and the basic 2D `range` caused DPC++ to wrap the launch in `RoundedRangeKernel` with 896 B of private memory.
 - Invariant: both kernels eliminated their private memory (0 B private, 0 B spill in `.zeinfo`, `RoundedRangeKernel` wrapper dropped). Parity is bit-identical to `--backend cpu` on all tested fixtures (48/48 on Netflix 576x324, 50/50 on BBB 4K, max abs diff 0.0). Throughput at 4K on Arc A380 is 17.05 ms/frame.
 - When PR #1660 (ADR-1395) lands, the two `cambi_sycl` lines in `core/src/sycl/scratch_ratchet.txt` and `cambi_sycl` in `kScratchExtractors` in `core/src/sycl/scratch_check.cpp` must be deleted as no `cambi_sycl` kernel uses scratch memory.
+## perf/sycl-motion-hbd-no-scratch — scratch-free SYCL motion and motion_v2 kernels above 15 bpc on Arc A380 under xe (ADR-1395) (2026-10-01)
+
+- `core/src/feature/sycl/integer_motion_pipeline_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL backend). The 16-bit vertical accumulation pipeline (`submit_sad<int64_t>`)
+  is specialized with `MotionSadHbdKernel`, derived from `VmafSyclKernelShape<32, 256>` in
+  `core/src/feature/sycl/sycl_compat.h`. On Intel Arc A380 under the Linux `xe` driver,
+  128-register allocation caused 768 B register spills per thread for `int64_t` vertical taps,
+  which corrupted calculations without an error (e.g. `test_sycl_motion_tiny_frames` 16-bit 3x3 frame 0 failed).
+  Requesting the 256-entry register file completely eliminates the 768 B spill (`spill_size: 0`, `private_size: 0`).
+- `core/src/feature/sycl/sycl_compat.h`: `VmafSyclKernelShape<SG, GRF>` (ADR-1395) already landed on master via PR #1660.
+- `core/src/sycl/scratch_ratchet.txt` and `core/src/sycl/scratch_check.cpp`: removed `motion_sycl` and `motion_v2_sycl` now that `submit_sad<int64_t>` is scratch-free.
+- Verified on Arc A380 (`ryzen-4090-arc`) under `xe`: `test_sycl_motion_tiny_frames` passes (8, 10,
+  and 16-bit across all 9 geometries, bit-for-bit exact vs scalar CPU), `test_sycl_motion3_parity`,
+  `test_sycl_motion_add_uv_parity`, `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB
+  match the CPU reference bit-for-bit (max abs diff 0.0).
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## perf/sycl-speed-no-scratch — make SpEED kernels scratch-free on Intel Arc GPUs (ADR-1395) (2026-10-01)
 

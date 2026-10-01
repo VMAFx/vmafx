@@ -29,9 +29,6 @@ float_vif_sycl	14080	0	_ZTSZZN12_GLOBAL__N_114launch_computeILi0EEEN4sycl3_V15ev
 # launch_decimate<1>
 float_vif_sycl	2432	0	_ZTSZZN12_GLOBAL__N_115launch_decimateILi1EEEN4sycl3_V15eventERNS2_5queueEPKvS7_jPKfS9_jPfSA_jjjjjjENKUlRNS2_7handlerEE_clESC_EUlNS2_7nd_itemILi2EEEE_
 
-# motion_sycl, motion_v2_sycl: core/src/feature/sycl/integer_motion_pipeline_sycl.cpp
-# submit_sad<int64_t>, used above 15 bits per component
-motion_sycl,motion_v2_sycl	0	768	_ZTSZZN20motion_sycl_pipeline12_GLOBAL__N_110submit_sadIlEEvRN4sycl3_V15queueERKNS_7SadArgsEENKUlRNS3_7handlerEE_clESA_EUlNS3_7nd_itemILi2EEEE_
 
 # speed_chroma_sycl, speed_temporal_sycl: core/src/feature/sycl/speed_sycl_pipeline.cpp
 # launch_decimate<RawSource<uint16_t>>
