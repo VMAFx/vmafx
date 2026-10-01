@@ -37,6 +37,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -100,6 +105,29 @@ static char *run_cpu_float_psnr(double *score)
     return NULL;
 }
 
+static char *hip_run_pipeline(VmafContext *vmaf, VmafHipState **hip_state, double *score,
+                              int *skipped)
+{
+    int err = vmaf_use_feature(vmaf, "float_psnr_hip", NULL);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, "");
+    }
+    mu_assert("HIP: vmaf_use_feature(float_psnr_hip) failed", !err);
+    err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on EOS");
+    }
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "float_psnr", score, 0u);
+    mu_assert("HIP: float_psnr missing", !err);
+    return NULL;
+}
+
 static char *run_hip_float_psnr(double *score, int *skipped)
 {
     *score = NAN;
@@ -118,31 +146,12 @@ static char *run_hip_float_psnr(double *score, int *skipped)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_psnr_hip", NULL);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, "");
-    mu_assert("HIP: vmaf_use_feature(float_psnr_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+
+    char *msg = hip_run_pipeline(vmaf, &hip_state, score, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "float_psnr", score, 0u);
-    mu_assert("HIP: float_psnr missing", !err);
+
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
@@ -169,8 +178,9 @@ static char *test_float_psnr_cpu_hip_parity(void)
     msg = run_hip_float_psnr(&gpu, &skipped);
     if (msg)
         return msg;
-    if (skipped || isnan(gpu))
+    if (skipped || isnan(gpu)) {
         return NULL;
+    }
     double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\nfloat_psnr parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
@@ -187,3 +197,5 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

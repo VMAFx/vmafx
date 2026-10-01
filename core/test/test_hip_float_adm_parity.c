@@ -36,6 +36,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* Wide enough for the ADM DWT2 pyramid (each scale halves the
  * dimensions, so >= 32x32 keeps scale 3 from collapsing). */
 #ifndef FIXTURE_W
@@ -135,6 +140,19 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
+static char *collect_adm_scores(VmafContext *vmaf, const char *const *keys,
+                                double scores[NUM_ADM_FEATURES], const char *tag)
+{
+    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
+        int err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
+        if (err) {
+            (void)fprintf(stderr, "%s: feature %s missing (err=%d)\n", tag, kAdmFeatures[f], err);
+        }
+        mu_assert("vmaf_feature_score_at_index failed", !err);
+    }
+    return NULL;
+}
+
 static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
                                double scores[NUM_ADM_FEATURES])
 {
@@ -146,29 +164,54 @@ static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const 
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CPU: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm", opts);
-    if (err)
+    if (err) {
         (void)vmaf_feature_dictionary_free(&opts);
+    }
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
-        if (err)
-            (void)fprintf(stderr, "CPU: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
-        mu_assert("CPU: vmaf_feature_score_at_index failed", !err);
+    char *msg = collect_adm_scores(vmaf, keys, scores, "CPU");
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
     }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
+static char *execute_hip_float_adm(VmafContext *vmaf, VmafHipState **hip_state,
+                                   const char *opt_name, const char *opt_val, int *skipped)
+{
+    VmafFeatureDictionary *opts = NULL;
+    int err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("HIP: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, "");
+    }
+    mu_assert("HIP: vmaf_use_feature(float_adm_hip) failed", !err);
+    err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on EOS");
+    }
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
                                double scores[NUM_ADM_FEATURES], int *skipped)
 {
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++)
+    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         scores[f] = NAN;
+    }
     *skipped = 0;
 
     VmafHipState *hip_state = NULL;
@@ -185,41 +228,19 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("HIP: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, "");
-    mu_assert("HIP: vmaf_use_feature(float_adm_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+
+    char *msg = execute_hip_float_adm(vmaf, &hip_state, opt_name, opt_val, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
-        if (err)
-            (void)fprintf(stderr, "HIP: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
-        mu_assert("HIP: vmaf_feature_score_at_index failed", !err);
-    }
+
+    msg = collect_adm_scores(vmaf, keys, scores, "HIP");
     err = vmaf_close(vmaf);
-    mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
+    if (msg) {
+        return msg;
+    }
+    mu_assert("HIP: vmaf_close failed", !err);
     return NULL;
 }
 
@@ -374,3 +395,4 @@ char *run_tests(void)
     mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
     return NULL;
 }
+/* NOLINTEND(modernize-use-nullptr) */

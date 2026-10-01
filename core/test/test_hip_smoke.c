@@ -28,7 +28,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 #include "test.h"
@@ -38,6 +37,11 @@
 #include "hip/kernel_template.h"
 #include "libvmaf/libvmaf_hip.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /*
  * Pinned-host -> device -> pinned-host memcpy round-trip helper.
  * Returns 0 on success or a negative POSIX errno on a HIP failure.
@@ -46,8 +50,7 @@
  * trip" contract without hauling in a kernel launch. Mirrors the
  * SYCL T5-1b smoke's `q.copy()`-based round-trip.
  */
-int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t bytes);
-int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t bytes)
+static int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t bytes)
 {
     if (device == NULL || host_pinned == NULL || bytes == 0) {
         return -EINVAL;
@@ -156,21 +159,8 @@ static char *test_import_state_validates_arguments(void)
     return NULL;
 }
 
-static char *test_import_state_succeeds_with_real_state(void)
+static char *check_import_state_flow(VmafHipState *state)
 {
-    /* ADR-0519: end-to-end happy-path on a host with a visible HIP
-     * device. Skip cleanly when no device is visible (CI without an
-     * AMD GPU). The success branch is the load-bearing assertion the
-     * `vmaf --backend hip` CLI exit-status gate depends on. */
-    if (vmaf_hip_device_count() <= 0) {
-        return NULL;
-    }
-    VmafHipConfiguration cfg = {.device_index = -1, .flags = 0};
-    VmafHipState *state = NULL;
-    int rc = vmaf_hip_state_init(&state, cfg);
-    mu_assert("state_init returns 0 with a real HIP device", rc == 0);
-    mu_assert("state_init populates out-pointer on success", state != NULL);
-
     VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, vcfg);
@@ -190,11 +180,30 @@ static char *test_import_state_succeeds_with_real_state(void)
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close returns 0", err == 0);
+    return NULL;
+}
+
+static char *test_import_state_succeeds_with_real_state(void)
+{
+    /* ADR-0519: end-to-end happy-path on a host with a visible HIP
+     * device. Skip cleanly when no device is visible (CI without an
+     * AMD GPU). The success branch is the load-bearing assertion the
+     * `vmaf --backend hip` CLI exit-status gate depends on. */
+    if (vmaf_hip_device_count() <= 0) {
+        return NULL;
+    }
+    VmafHipConfiguration cfg = {.device_index = -1, .flags = 0};
+    VmafHipState *state = NULL;
+    int rc = vmaf_hip_state_init(&state, cfg);
+    mu_assert("state_init returns 0 with a real HIP device", rc == 0);
+    mu_assert("state_init populates out-pointer on success", state != NULL);
+
+    char *msg = check_import_state_flow(state);
 
     /* Caller still owns the state — must free after vmaf_close. */
     vmaf_hip_state_free(&state);
     mu_assert("state_free clears the slot", state == NULL);
-    return NULL;
+    return msg;
 }
 
 static char *test_state_free_null_is_noop(void)
@@ -228,6 +237,19 @@ static char *test_list_devices_returns_count(void)
  * argument paths stay verifiable on every host.
  */
 
+static char *check_kernel_lifecycle_device(VmafHipKernelLifecycle *lc)
+{
+    mu_assert("kernel_lifecycle_init populates stream handle", lc->str != 0);
+    mu_assert("kernel_lifecycle_init populates submit event", lc->submit != 0);
+    mu_assert("kernel_lifecycle_init populates finished event", lc->finished != 0);
+    const int close_rc = vmaf_hip_kernel_lifecycle_close(lc, NULL);
+    mu_assert("kernel_lifecycle_close clean tear-down", close_rc == 0);
+    mu_assert("kernel_lifecycle_close clears stream handle", lc->str == 0);
+    mu_assert("kernel_lifecycle_close clears submit event", lc->submit == 0);
+    mu_assert("kernel_lifecycle_close clears finished event", lc->finished == 0);
+    return NULL;
+}
+
 static char *test_kernel_lifecycle_init_runtime(void)
 {
     /* Init creates a stream + 2 events. On hosts without HIP it
@@ -244,14 +266,24 @@ static char *test_kernel_lifecycle_init_runtime(void)
         return NULL;
     }
     mu_assert("kernel_lifecycle_init returns 0 on a real device", rc == 0);
-    mu_assert("kernel_lifecycle_init populates stream handle", lc.str != 0);
-    mu_assert("kernel_lifecycle_init populates submit event", lc.submit != 0);
-    mu_assert("kernel_lifecycle_init populates finished event", lc.finished != 0);
-    const int close_rc = vmaf_hip_kernel_lifecycle_close(&lc, NULL);
-    mu_assert("kernel_lifecycle_close clean tear-down", close_rc == 0);
-    mu_assert("kernel_lifecycle_close clears stream handle", lc.str == 0);
-    mu_assert("kernel_lifecycle_close clears submit event", lc.submit == 0);
-    mu_assert("kernel_lifecycle_close clears finished event", lc.finished == 0);
+    return check_kernel_lifecycle_device(&lc);
+}
+
+static char *check_kernel_readback_round_trip(VmafHipKernelReadback *rb)
+{
+    /* Round-trip: pinned host -> device -> back. */
+    uint64_t sentinel = 0xCAFEBABE12345678ULL;
+    /* Use volatile so the optimiser cannot fold the read after the
+     * second hipMemcpy into the original `sentinel` constant. */
+    volatile uint64_t *host = (volatile uint64_t *)rb->host_pinned;
+    *host = sentinel;
+    const int trip_rc = test_hip_memcpy_round_trip(rb->device, rb->host_pinned, rb->bytes);
+    mu_assert("hipMemcpy round-trip succeeds", trip_rc == 0);
+    mu_assert("round-trip preserves the sentinel byte pattern", *host == sentinel);
+    const int free_rc = vmaf_hip_kernel_readback_free(rb, NULL);
+    mu_assert("kernel_readback_free clean release", free_rc == 0);
+    mu_assert("kernel_readback_free clears device pointer", rb->device == NULL);
+    mu_assert("kernel_readback_free clears host_pinned pointer", rb->host_pinned == NULL);
     return NULL;
 }
 
@@ -277,21 +309,7 @@ static char *test_kernel_readback_alloc_runtime(void)
     mu_assert("kernel_readback_alloc populates device pointer", rb.device != NULL);
     mu_assert("kernel_readback_alloc populates host_pinned pointer", rb.host_pinned != NULL);
     mu_assert("kernel_readback_alloc records requested byte count", rb.bytes == sizeof(uint64_t));
-    /* Round-trip: pinned host -> device -> back. */
-    uint64_t sentinel = 0xCAFEBABE12345678ULL;
-    /* Use volatile so the optimiser cannot fold the read after the
-     * second hipMemcpy into the original `sentinel` constant. */
-    volatile uint64_t *host = (volatile uint64_t *)rb.host_pinned;
-    *host = sentinel;
-    extern int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t bytes);
-    const int trip_rc = test_hip_memcpy_round_trip(rb.device, rb.host_pinned, rb.bytes);
-    mu_assert("hipMemcpy round-trip succeeds", trip_rc == 0);
-    mu_assert("round-trip preserves the sentinel byte pattern", *host == sentinel);
-    const int free_rc = vmaf_hip_kernel_readback_free(&rb, NULL);
-    mu_assert("kernel_readback_free clean release", free_rc == 0);
-    mu_assert("kernel_readback_free clears device pointer", rb.device == NULL);
-    mu_assert("kernel_readback_free clears host_pinned pointer", rb.host_pinned == NULL);
-    return NULL;
+    return check_kernel_readback_round_trip(&rb);
 }
 
 static char *test_kernel_lifecycle_close_zero_is_noop(void)
@@ -650,3 +668,4 @@ char *run_tests(void)
     }
     return NULL;
 }
+/* NOLINTEND(modernize-use-nullptr) */

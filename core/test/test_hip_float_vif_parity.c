@@ -45,6 +45,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 #define FIXTURE_BPC 8u
@@ -104,6 +109,17 @@ static int neg_opts_build(VmafFeatureDictionary **opts)
     return vmaf_feature_dictionary_set(opts, "vif_sigma_nsq", NEG_SNSQ);
 }
 
+static char *cpu_vif_execute(VmafContext *vmaf, const char *key, double *score)
+{
+    int err = feed_frame(vmaf);
+    mu_assert("CPU: feed_frame failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
+    mu_assert("CPU: vif_scale0 score missing", !err);
+    return NULL;
+}
+
 static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -117,24 +133,58 @@ static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
         mu_assert("CPU: neg_opts_build failed", !err);
     }
     err = vmaf_use_feature(vmaf, "float_vif", opts);
-    if (err)
+    if (err) {
         (void)vmaf_feature_dictionary_free(&opts);
+    }
     mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
 
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
-    mu_assert("CPU: vif_scale0 score missing", !err);
+    char *msg = cpu_vif_execute(vmaf, key, score);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
+    }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): the ADR-1264 -ENOSYS scaffold skip
- * contract has to be checked after each of the four HIP entry points, which is what
- * makes this longer than the CPU leg. Mirrors test_hip_float_psnr_parity.c. */
+static char *hip_vif_execute(VmafContext *vmaf, VmafHipState **hip_state, int *skipped)
+{
+    int err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on EOS");
+    }
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
+static char *hip_vif_setup_feature(VmafContext *vmaf, VmafHipState **hip_state, bool neg_opts,
+                                   int *skipped)
+{
+    VmafFeatureDictionary *opts = NULL;
+    if (neg_opts) {
+        int err = neg_opts_build(&opts);
+        mu_assert("HIP: neg_opts_build failed", !err);
+    }
+    int err = vmaf_use_feature(vmaf, "float_vif_hip", opts);
+    /* ADR-1264 -ENOSYS scaffold skip */
+    if (err == -ENOSYS) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return hip_parity_skip(vmaf, hip_state, skipped, "");
+    }
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts);
+    }
+    mu_assert("HIP: vmaf_use_feature(float_vif_hip) failed", !err);
+    return NULL;
+}
+
 static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, int *skipped)
 {
     *score = NAN;
@@ -154,40 +204,15 @@ static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, in
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
-    if (neg_opts) {
-        err = neg_opts_build(&opts);
-        mu_assert("HIP: neg_opts_build failed", !err);
+    char *msg = hip_vif_setup_feature(vmaf, &hip_state, neg_opts, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-    err = vmaf_use_feature(vmaf, "float_vif_hip", opts);
-    if (err == -ENOSYS) {
-        (void)vmaf_feature_dictionary_free(&opts);
-        return hip_parity_skip(vmaf, &hip_state, skipped, "");
-    }
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("HIP: vmaf_use_feature(float_vif_hip) failed", !err);
 
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+    msg = hip_vif_execute(vmaf, &hip_state, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
     mu_assert("HIP: vif_scale0 score missing", !err);
@@ -255,3 +280,4 @@ char *run_tests(void)
     mu_run_test(test_float_vif_options_reach_kernel);
     return NULL;
 }
+/* NOLINTEND(modernize-use-nullptr) */

@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1155,
+  "total_warnings": 910,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -459,22 +459,13 @@
     "core/test/test_feature_collector.c": 12,
     "core/test/test_framesync.c": 8,
     "core/test/test_hip_adm_parity.c": 19,
-    "core/test/test_hip_cambi_parity.c": 22,
     "core/test/test_hip_ciede_parity.c": 18,
-    "core/test/test_hip_float_adm_parity.c": 30,
-    "core/test/test_hip_float_moment_parity.c": 22,
-    "core/test/test_hip_float_psnr_parity.c": 21,
-    "core/test/test_hip_float_vif_parity.c": 22,
-    "core/test/test_hip_motion3_parity.c": 26,
     "core/test/test_hip_motion_parity.c": 18,
-    "core/test/test_hip_motion_v2_parity.c": 21,
     "core/test/test_hip_psnr_hvs_parity.c": 18,
     "core/test/test_hip_psnr_parity.c": 20,
-    "core/test/test_hip_smoke.c": 60,
     "core/test/test_hip_speed_chroma_parity.c": 14,
     "core/test/test_hip_speed_singular_parity.c": 13,
     "core/test/test_hip_speed_temporal_parity.c": 14,
-    "core/test/test_hip_ssimulacra2_parity.c": 21,
     "core/test/test_hip_vif_parity.c": 18,
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
@@ -673,6 +664,77 @@
         }
       },
       "previous_baseline_sha256": "8bf6c82cda91d0961e033b7209d7bca96c06b791eceea56f24a5bf0b9641b5e3"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_cambi_parity.c",
+        "core/test/test_hip_float_adm_parity.c",
+        "core/test/test_hip_float_moment_parity.c",
+        "core/test/test_hip_float_psnr_parity.c",
+        "core/test/test_hip_float_vif_parity.c",
+        "core/test/test_hip_motion3_parity.c",
+        "core/test/test_hip_motion_v2_parity.c",
+        "core/test/test_hip_smoke.c",
+        "core/test/test_hip_ssimulacra2_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_cambi_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        },
+        "core/test/test_hip_float_adm_parity.c": {
+          "warnings": [
+            30,
+            0
+          ]
+        },
+        "core/test/test_hip_float_moment_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        },
+        "core/test/test_hip_float_psnr_parity.c": {
+          "warnings": [
+            21,
+            0
+          ]
+        },
+        "core/test/test_hip_float_vif_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        },
+        "core/test/test_hip_motion3_parity.c": {
+          "warnings": [
+            26,
+            0
+          ]
+        },
+        "core/test/test_hip_motion_v2_parity.c": {
+          "warnings": [
+            21,
+            0
+          ]
+        },
+        "core/test/test_hip_smoke.c": {
+          "warnings": [
+            60,
+            0
+          ]
+        },
+        "core/test/test_hip_ssimulacra2_parity.c": {
+          "warnings": [
+            21,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "db98837a71c5c9f393c4d295e9347ef08798a31d3c8595f8bcb20c1e3a160f32"
     }
   ]
 }

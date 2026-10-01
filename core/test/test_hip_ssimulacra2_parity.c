@@ -100,10 +100,11 @@ static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, unsigne
         uint8_t *line = (uint8_t *)pic->data[plane] + (size_t)row * pic->stride[plane];
         for (unsigned col = 0u; col < pic->w[plane]; col++) {
             const unsigned v = sample_at(plane, row, col, frame, salt) << shift;
-            if (pic->bpc > 8u)
+            if (pic->bpc > 8u) {
                 ((uint16_t *)line)[col] = (uint16_t)v;
-            else
+            } else {
                 line[col] = (uint8_t)v;
+            }
         }
     }
 }
@@ -238,16 +239,18 @@ static char *test_ssimulacra2_cpu_hip_parity(void)
     return NULL;
 }
 
-/* ADR-1324 / ADR-1359: what init rejects goes to the CPU extractor when the
- * twin was picked for a model or a `--backend hip` request. */
-static char *test_ssimulacra2_hip_context_check(void)
+static char *check_context_meta(VmafFeatureExtractor *fex)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2_hip");
     mu_assert("ssimulacra2_hip extractor must be registered", fex != NULL);
     mu_assert("ssimulacra2_hip declares a context check", fex->context_check != NULL);
     mu_assert("ssimulacra2_hip falls back to the CPU extractor",
               fex->context_fallback_name != NULL &&
                   !strcmp(fex->context_fallback_name, "ssimulacra2"));
+    return NULL;
+}
+
+static char *check_context_resolutions(VmafFeatureExtractor *fex)
+{
     mu_assert("8x8 4:2:0 runs on the twin",
               fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, 8u, 8u) == 0);
     mu_assert("3840x2160 4:4:4 10-bit runs on the twin",
@@ -259,6 +262,17 @@ static char *test_ssimulacra2_hip_context_check(void)
     mu_assert("4:0:0 goes to the CPU",
               fex->context_check(fex, VMAF_PIX_FMT_YUV400P, 8u, 576u, 324u) == -ENOTSUP);
     return NULL;
+}
+
+/* ADR-1324 / ADR-1359: what init rejects goes to the CPU extractor when the
+ * twin was picked for a model or a `--backend hip` request. */
+static char *test_ssimulacra2_hip_context_check(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2_hip");
+    char *msg = check_context_meta(fex);
+    if (msg)
+        return msg;
+    return check_context_resolutions(fex);
 }
 
 /* 4:0:0 has no chroma to convert; init refuses it before touching the

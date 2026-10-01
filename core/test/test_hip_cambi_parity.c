@@ -46,6 +46,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* 320×240 clears CAMBI_MIN_WIDTH_HEIGHT (216) on both dims for cambi.c
  * and CAMBI_HIP_MIN_WIDTH_HEIGHT (216) for integer_cambi_hip.c. */
 /* ADR-1219 chose 640x480 at 10 bpc for this test specifically: CAMBI needs
@@ -92,9 +97,11 @@ static int fill_pic(VmafPicture *pic, unsigned salt)
     for (unsigned p = 1; p < 3; p++) {
         uint16_t *plane = (uint16_t *)pic->data[p];
         const unsigned cstride = pic->stride[p] / 2u;
-        for (unsigned row = 0; row < pic->h[p]; row++)
-            for (unsigned col = 0; col < pic->w[p]; col++)
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            for (unsigned col = 0; col < pic->w[p]; col++) {
                 plane[row * cstride + col] = 512u;
+            }
+        }
     }
     return 0;
 }
@@ -133,6 +140,21 @@ static char *run_cpu_cambi(double *score)
     return NULL;
 }
 
+static char *hip_cambi_execute(VmafContext *vmaf, VmafHipState **hip_state, int *skipped)
+{
+    int err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err == -ENOSYS) {
+        return hip_parity_skip(vmaf, hip_state, skipped, " on EOS");
+    }
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_hip_cambi(double *score, int *skipped)
 {
     *score = NAN;
@@ -152,28 +174,16 @@ static char *run_hip_cambi(double *score, int *skipped)
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
     err = vmaf_use_feature(vmaf, "cambi_hip", NULL);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, "");
-    mu_assert("HIP: vmaf_use_feature(cambi_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
     if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return hip_parity_skip(vmaf, &hip_state, skipped, "");
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    mu_assert("HIP: vmaf_use_feature(cambi_hip) failed", !err);
+
+    char *msg = hip_cambi_execute(vmaf, &hip_state, skipped);
+    if (msg || *skipped) {
+        return msg;
+    }
+
     err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", score, 0u);
     mu_assert("HIP: Cambi_feature_cambi_score missing", !err);
     err = vmaf_close(vmaf);
@@ -223,3 +233,4 @@ char *run_tests(void)
     mu_run_test(test_cambi_cpu_hip_parity);
     return NULL;
 }
+/* NOLINTEND(modernize-use-nullptr) */

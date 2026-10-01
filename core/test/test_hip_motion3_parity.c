@@ -61,6 +61,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* Test fixture geometry — large enough for the 5-tap Gaussian, small enough
  * for a fast CI run. Motion3 requires >= 2 frames (index 0 and index 1). */
 #ifndef FIXTURE_W
@@ -105,6 +110,22 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run the "motion" extractor for NUM_FRAMES frames.           */
 /* Returns the motion3_score at frame index 1 via *out_score.            */
 /* ---------------------------------------------------------------------- */
+static char *cpu_feed_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i);
+        mu_assert("CPU: fill_fixture(ref) failed", !err);
+        err = fill_fixture(&dist, i);
+        mu_assert("CPU: fill_fixture(dist) failed", !err);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("CPU: vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
 static char *run_cpu_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     int err = 0;
@@ -121,19 +142,15 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     }
 
     err = vmaf_use_feature(vmaf, "motion", opts);
-    if (err)
+    if (err) {
         (void)vmaf_feature_dictionary_free(&opts);
+    }
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
+    char *msg = cpu_feed_frames(vmaf);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
@@ -158,7 +175,8 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 static char *hip_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_skip)
 {
     *enosys_skip = 0;
-    VmafPicture ref, dist;
+    VmafPicture ref;
+    VmafPicture dist;
     int err = fill_fixture(&ref, i);
     mu_assert("HIP: fill_fixture(ref) failed", !err);
     err = fill_fixture(&dist, i);
@@ -177,6 +195,40 @@ static char *hip_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_ski
         return NULL;
     }
     mu_assert("HIP: vmaf_read_pictures failed", !err);
+    return NULL;
+}
+
+static char *hip_feed_all_frames(VmafContext *vmaf, VmafHipState **hip_state, int *skipped)
+{
+    *skipped = 0;
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        int enosys_skip = 0;
+        char *msg = hip_submit_one_frame(vmaf, i, &enosys_skip);
+        if (msg) {
+            return msg;
+        }
+        if (enosys_skip) {
+            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+            (void)vmaf_close(vmaf);
+            vmaf_hip_state_free(hip_state);
+            *skipped = 1;
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
+static char *hip_finish_motion3(VmafContext *vmaf, const char *key, double *out_score)
+{
+    /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+
+    err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
+    mu_assert("HIP: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
+
+    err = vmaf_close(vmaf);
+    mu_assert("HIP: vmaf_close failed", !err);
     return NULL;
 }
 
@@ -214,35 +266,20 @@ static char *run_hip_motion3(const char *fps_weight, const char *key, double *ou
     }
 
     err = vmaf_use_feature(vmaf, "motion_hip", opts);
-    if (err)
+    if (err) {
         (void)vmaf_feature_dictionary_free(&opts);
+    }
     mu_assert("HIP: vmaf_use_feature(motion_hip) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        int enosys_skip = 0;
-        char *msg = hip_submit_one_frame(vmaf, i, &enosys_skip);
-        if (msg)
-            return msg;
-        if (enosys_skip) {
-            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
-            (void)vmaf_close(vmaf);
-            vmaf_hip_state_free(&hip_state);
-            return NULL;
-        }
+    int skipped = 0;
+    char *msg = hip_feed_all_frames(vmaf, &hip_state, &skipped);
+    if (msg || skipped) {
+        return msg;
     }
 
-    /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-
-    err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
-    mu_assert("HIP: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("HIP: vmaf_close failed", !err);
-
+    msg = hip_finish_motion3(vmaf, key, out_score);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return msg;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -322,3 +359,4 @@ char *run_tests(void)
     mu_run_test(test_motion3_fps_weight_applied_once);
     return NULL;
 }
+/* NOLINTEND(modernize-use-nullptr) */
