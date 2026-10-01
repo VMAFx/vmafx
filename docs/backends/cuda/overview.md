@@ -738,7 +738,7 @@ names below carries the commands and the measured results:
 | `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse`, also with `--subsample 2` | identical, `apsnr_*` included |
 | `motion_v2` and `float_motion` with `motion_fps_weight` and `motion_max_val` | identical |
 | `ssim` with `enable_db` / `clip_db` | within 7.3e-13 dB |
-| `float_ssim` with `enable_lcs` / `enable_db` | within 6.9e-6 dB (1.8e-7 linear) |
+| `float_ssim` with `enable_lcs` / `enable_db` | within 6.9e-6 dB (1.8e-7 linear); identical since [ADR-1399](../../adr/1399-cuda-float-ssim-device-decimation.md) |
 | `float_ssim` with `enable_db`, identical flat 64x64 frames | 72.247198959355487 dB on both |
 | `compute-sanitizer` on the ADM and VIF tiny-frame tests | 0 errors |
 
@@ -844,6 +844,62 @@ vmaf --reference ref.yuv --distorted dist.yuv \
   and match it bit for bit; `--feature vif_cuda` on such a frame fails with
   `vif_cuda requires width >= 16 and height >= 16`
   (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
+
+## `float_ssim` runs on the device at every scale (ADR-1399, 2026-10-01)
+
+CPU `float_ssim` reduces both pictures before it scores them: by
+`max(1, round(min(w, h) / 256))`, which is 1 below a 384-pixel short side, 4
+at 1920x1080 and 8 at 3840x2160, or by the `scale` option. `float_ssim_cuda`
+used to compute scale 1 only, so at 1080p and 4K `--backend cuda --feature
+float_ssim` and models ran the CPU extractor and printed a fallback warning.
+It now reduces on the device, with the CPU's arithmetic
+([ADR-1399](../../adr/1399-cuda-float-ssim-device-decimation.md)):
+
+```shell
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend cuda --feature float_ssim --json -o out.json
+# feature_backends lists float_ssim_cuda; no warning
+vmaf ... --backend cuda --feature float_ssim=scale=3:enable_lcs=true
+```
+
+What you can rely on:
+
+- **Any `scale` from 1 to 10 and the automatic one.** The twin falls back to
+  the CPU (or fails, when you name `float_ssim_cuda` yourself) only when the
+  reduced picture is smaller than SSIM's 11x11 window, for example 100x100
+  at `scale=10`.
+- **The CPU's score.** The reduced pictures are the CPU's byte for byte, and
+  both Gaussian passes add in double precision as the CPU does. On an RTX
+  4090 every frame equals `--backend cpu` at `--precision max`: the Netflix
+  576x324 pair at 8, 10, 12 and 16 bits and scales 1 to 10, the 1920x1080
+  checkerboard pairs, a 1920x1080 pair and BBB 3840x2160 at 8 and 10 bits,
+  with `enable_lcs`, `enable_db` and `clip_db` too. Before, the twin was 1
+  to 3 units in the last fp32 place from the CPU on every frame. The frame
+  sum is still added per block, so a one-unit difference on a rare frame is
+  possible; none of the measured frames has one.
+- **No host pass.** The kernels read the uploaded picture; each frame is
+  three kernels (two at scale 1) and one result read-back.
+
+Cost on an RTX 4090, BBB 3840x2160 8-bit (2026-10-01, load average 16 to 19):
+
+| Request | Before | After |
+|---|---|---|
+| `--backend cuda --feature float_ssim` (automatic scale 8), per frame through the CLI | 18.9 ms (CPU fallback) | 3.0 ms |
+| the same on `--backend cpu --threads 16` | 11.0 ms | 11.0 ms |
+| GPU time of the kernels at the automatic scale | — | 88 us |
+| `--feature float_ssim_cuda=scale=1`, per frame through the CLI | 3.1 ms | 3.9 ms |
+| GPU time of the kernels at `scale=1` | 0.71 ms | 3.58 ms |
+
+An explicit `scale=1` on a large picture is the one case that got slower:
+the double-precision sums then run over the full picture. The CPU extractor
+takes 43.8 ms per frame for the same request on 16 threads.
+
+Reproduce the parity and the timing:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature float_ssim \
+    --vmaf "$PWD/build/tools/vmaf"
+```
 
 ## Licensing of the CUDA kernels (ADR-1250)
 

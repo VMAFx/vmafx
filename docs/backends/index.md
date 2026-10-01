@@ -161,14 +161,15 @@ Three separate defects hid behind that gap — the speed_chroma 4K launch bug
 ([ADR-1202](../adr/1202-cuda-speed-chroma-4k-launch-bounds.md)), the float-ADM
 edge-indexing bug
 ([ADR-1204](../adr/1204-adm-cm-edge-clamp-gpu-twins.md)) and the
-`float_ssim_cuda` scale=1-only limitation. Every CUDA parity test therefore
-also runs as a `*_large` variant against a 960x540 fixture
+`float_ssim_cuda` scale=1-only limitation (lifted by
+[ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md)). Every CUDA
+parity test therefore also runs as a `*_large` variant against a 960x540 fixture
 ([ADR-1206](../adr/1206-gpu-parity-large-fixture-variants.md)), which crosses
 the decimation boundary and is not a multiple of the kernel block width. When
 adding a parity test, add it to the large-fixture list in
 `core/test/meson.build` too.
 
-The CUDA, HIP and Metal `float_ssim` twins remain v1 **scale=1-only**
+The HIP and Metal `float_ssim` twins remain v1 **scale=1-only**
 extractors. For automatic model dispatch through the host-picture API, libvmaf
 evaluates the first picture before backend initialization: auto-scale `1`
 stays on the selected twin, while a resolved value above `1` replaces only
@@ -185,7 +186,14 @@ at the automatic scale and every explicit `scale`
 It falls back only when the reduced picture is smaller than SSIM's 11x11
 window.
 
-Explicitly naming `float_ssim_{cuda,hip,metal}` retains the direct capability
+`float_ssim_cuda` does the same on the device picture and also adds the two
+Gaussian passes the way the CPU does, so its `float_ssim` equals
+`--backend cpu` at `--precision max` on every frame measured, at 576x324,
+1920x1080 and 3840x2160, 8 to 16 bits
+([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md),
+[CUDA guide](cuda/overview.md#float_ssim-runs-on-the-device-at-every-scale-adr-1399-2026-10-01)).
+
+Explicitly naming `float_ssim_{hip,metal}` retains the direct capability
 contract: auto at `min(w, h) >= 384` returns `-EINVAL`, and `scale=1` opts
 into full-resolution GPU SSIM. Pinning `scale=1` on the GPU while leaving the
 CPU on `auto` still compares different quantities rather than two backends.

@@ -177,9 +177,10 @@ CUDA_EXTRACTOR_NAMES: tuple[str, ...] = (
     # segfaults on every input on the rebuilt 2026-05-15 binary
     # (Issue #857). cambi stays on the CPU residual pass below
     # until that's fixed.
-    # float_ssim_cuda needs an explicit scale=1: libvmaf v1 supports
-    # scale=1 only and refuses on auto-detected scale=4 at 1080p
-    # ("libvmaf ERROR ssim_cuda: v1 supports scale=1 only").
+    # float_ssim_cuda is pinned to scale=1: the corpus was extracted that way
+    # while the twin implemented scale 1 only. The twin now decimates like
+    # the CPU (ADR-1399), so dropping the pin would change the feature
+    # (auto scale 2 at 960x540, 4 at 1080p) and needs a re-extract.
 )
 # ssimulacra2 omitted from K150K/CHUG self-vs-self extraction — produces ~100 constant
 # for identity pairs (ref == distorted), yielding zero training signal while consuming

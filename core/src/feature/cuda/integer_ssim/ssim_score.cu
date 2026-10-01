@@ -6,29 +6,40 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
  *  CUDA compute kernels for the float_ssim feature extractor
- *  (T7-23 / batch 2 part 1b / ADR-0188 / ADR-0189). CUDA twin of
- *  ssim_vulkan (PR #139). Two-pass design mirrors the GLSL
- *  shader byte-for-byte modulo language differences:
+ *  (T7-23 / batch 2 part 1b / ADR-0188 / ADR-0189; decimation ADR-1399).
+ *  The pipeline is the CPU's (ssim.c, iqa/decimate.c, iqa/convolve.c,
+ *  iqa/ssim_tools.c), stage for stage and rounding for rounding:
  *
- *    1. calculate_ssim_horiz_{8,16}bpc — reads the picture's
- *       data[0] (uint8 or uint16) at the appropriate bpc, does
- *       the picture_copy normalisation inline (uint → float
- *       in [0, 255]), then horizontal 11-tap separable Gaussian
- *       over ref / cmp / ref² / cmp² / ref·cmp.
+ *    0. calculate_ssim_decimate_{8,16}bpc — scale > 1 only. ssim.c's box
+ *       low-pass and iqa_decimate(): each output is the scale x scale
+ *       window at (x * scale, y * scale) with KBND_SYMMETRIC edges, the
+ *       fp32 product `sample * (1.0f / (scale * scale))` summed exactly in
+ *       int64 units of 2^-52 and rounded to fp32 once. Writes the two
+ *       decimated fp32 planes.
  *
- *    2. calculate_ssim_vert_combine — vertical 11-tap on the
- *       five intermediates, then the CPU's per-pixel l * c * s with the
- *       CPU's types and rounding points (ssim_terms()), then a per-block
- *       double partial sum (tree reduce in shared memory).
- *       calculate_ssim_vert_combine_lcs is the `enable_lcs` variant:
- *       the same SSIM value plus the per-pixel luminance, contrast and
- *       structure terms, reduced per block next to it (ADR-1373).
+ *    1. calculate_ssim_horiz_{8,16}bpc (scale 1: reads the picture's
+ *       data[0] with the picture_copy normalisation inline) or
+ *       calculate_ssim_horiz_planes (scale > 1: reads the decimated
+ *       planes) — horizontal 11-tap Gaussian over ref / cmp / ref² /
+ *       cmp² / ref·cmp, each fp32 product added to a double sum that is
+ *       rounded to fp32 once, as iqa_convolve() does.
  *
- *  The host sums the double partials, divides by (W-10)·(H-10) and rounds
- *  the mean to fp32, as iqa_ssim() returns it.
+ *    2. calculate_ssim_vert_combine — vertical 11-tap on the five
+ *       intermediates (same double sum), then the CPU's per-pixel
+ *       l * c * s with the CPU's types and rounding points
+ *       (ssim_terms()), then a per-block double partial sum (tree reduce
+ *       in shared memory). calculate_ssim_vert_combine_lcs is the
+ *       `enable_lcs` variant: the same SSIM value plus the per-pixel
+ *       luminance, contrast and structure terms, reduced per block next
+ *       to it (ADR-1373).
  *
- *  v1: scale=1 only — same constraint as ssim_vulkan. Auto-
- *  decimation rejection happens host-side.
+ *  The host sums the double partials, divides by (W'-10)·(H'-10) of the
+ *  decimated plane and rounds the mean to fp32, as iqa_ssim() returns it.
+ *  Every per-pixel value is the CPU's bit for bit; only the order of the
+ *  frame sum differs.
+ *
+ *  NVCC contracts `a * b + c` by default (--fmad=true): every rounding
+ *  that matters here is spelled with an intrinsic.
  */
 
 #include "cuda_helper.cuh"
@@ -107,21 +118,222 @@ __device__ inline SsimVertInputs vert_inputs(const VmafCudaBuffer &ref_mu,
         reinterpret_cast<const float *>(refcmp.data)};
 }
 
+/* The five sums of one convolution pass, in iqa/convolve.c's type. */
+struct MomentSums {
+    double ref_mu;
+    double cmp_mu;
+    double ref_sq;
+    double cmp_sq;
+    double refcmp;
+};
+
+/* One tap of iqa/convolve.c: `const float prod = img * kernel;
+ * sum += (double)prod;` — the product rounds to fp32, the sum is a double. */
+__device__ inline double add_tap(double sum, float sample, float weight)
+{
+    return __dadd_rn(sum, (double)__fmul_rn(sample, weight));
+}
+
+/* Horizontal pass: the CPU convolves ref, cmp and the fp32 products
+ * ref * ref, cmp * cmp and ref * cmp (ssim_tools.c::ssim_precompute_scalar). */
+__device__ inline void add_horizontal_tap(MomentSums &sums, float ref, float cmp, float weight)
+{
+    sums.ref_mu = add_tap(sums.ref_mu, ref, weight);
+    sums.cmp_mu = add_tap(sums.cmp_mu, cmp, weight);
+    sums.ref_sq = add_tap(sums.ref_sq, __fmul_rn(ref, ref), weight);
+    sums.cmp_sq = add_tap(sums.cmp_sq, __fmul_rn(cmp, cmp), weight);
+    sums.refcmp = add_tap(sums.refcmp, __fmul_rn(ref, cmp), weight);
+}
+
+/* A pass result: iqa/convolve.c's `(float)(sum * scale)` with scale 1. */
+__device__ inline SsimMoments round_moments(const MomentSums &sums)
+{
+    return {__double2float_rn(sums.ref_mu), __double2float_rn(sums.cmp_mu),
+            __double2float_rn(sums.ref_sq), __double2float_rn(sums.cmp_sq),
+            __double2float_rn(sums.refcmp)};
+}
+
 /* Vertical 11-tap of the five horizontal-pass moments at (x, y). */
 __device__ inline SsimMoments vertical_moments(const SsimVertInputs &in, unsigned x, unsigned y,
                                                unsigned w_horiz)
 {
-    SsimMoments m = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    MomentSums sums = {0.0, 0.0, 0.0, 0.0, 0.0};
     for (int v = 0; v < K; v++) {
         const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
         const float w = G[v];
-        m.ref_mu += w * __ldg(&in.ref_mu[src_idx]);
-        m.cmp_mu += w * __ldg(&in.cmp_mu[src_idx]);
-        m.ref_sq += w * __ldg(&in.ref_sq[src_idx]);
-        m.cmp_sq += w * __ldg(&in.cmp_sq[src_idx]);
-        m.refcmp += w * __ldg(&in.refcmp[src_idx]);
+        sums.ref_mu = add_tap(sums.ref_mu, __ldg(&in.ref_mu[src_idx]), w);
+        sums.cmp_mu = add_tap(sums.cmp_mu, __ldg(&in.cmp_mu[src_idx]), w);
+        sums.ref_sq = add_tap(sums.ref_sq, __ldg(&in.ref_sq[src_idx]), w);
+        sums.cmp_sq = add_tap(sums.cmp_sq, __ldg(&in.cmp_sq[src_idx]), w);
+        sums.refcmp = add_tap(sums.refcmp, __ldg(&in.refcmp[src_idx]), w);
     }
-    return m;
+    return round_moments(sums);
+}
+
+/* Pass-1 sample sources: the picture's luma at scale 1, the decimated fp32
+ * planes above it. */
+struct LumaPicture8 {
+    const VmafPicture &ref;
+    const VmafPicture &cmp;
+    __device__ float reference(unsigned x, unsigned y) const
+    {
+        return read_norm_8bpc(ref, x, y);
+    }
+    __device__ float comparison(unsigned x, unsigned y) const
+    {
+        return read_norm_8bpc(cmp, x, y);
+    }
+};
+
+struct LumaPicture16 {
+    const VmafPicture &ref;
+    const VmafPicture &cmp;
+    float scaler;
+    __device__ float reference(unsigned x, unsigned y) const
+    {
+        return read_norm_16bpc(ref, x, y, scaler);
+    }
+    __device__ float comparison(unsigned x, unsigned y) const
+    {
+        return read_norm_16bpc(cmp, x, y, scaler);
+    }
+};
+
+struct LumaPlanes {
+    const float *__restrict__ ref;
+    const float *__restrict__ cmp;
+    unsigned width;
+    __device__ float reference(unsigned x, unsigned y) const
+    {
+        return __ldg(&ref[y * width + x]);
+    }
+    __device__ float comparison(unsigned x, unsigned y) const
+    {
+        return __ldg(&cmp[y * width + x]);
+    }
+};
+
+/* The five pass-1 output planes, w_horiz x h_horiz each. */
+struct SsimHorizOutputs {
+    float *ref_mu;
+    float *cmp_mu;
+    float *ref_sq;
+    float *cmp_sq;
+    float *refcmp;
+};
+
+__device__ inline SsimHorizOutputs horiz_outputs(const VmafCudaBuffer &ref_mu,
+                                                 const VmafCudaBuffer &cmp_mu,
+                                                 const VmafCudaBuffer &ref_sq,
+                                                 const VmafCudaBuffer &cmp_sq,
+                                                 const VmafCudaBuffer &refcmp)
+{
+    return {reinterpret_cast<float *>(ref_mu.data), reinterpret_cast<float *>(cmp_mu.data),
+            reinterpret_cast<float *>(ref_sq.data), reinterpret_cast<float *>(cmp_sq.data),
+            reinterpret_cast<float *>(refcmp.data)};
+}
+
+/* Pass 1 for one thread: output pixel (x, y) of the (W-10) x H "valid"
+ * buffer reads input columns [x, x+10] of row y. */
+template <typename Source>
+__device__ inline void horizontal_pass(const Source &source, const SsimHorizOutputs &out,
+                                       unsigned w_horiz, unsigned h_horiz)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w_horiz || y >= h_horiz)
+        return;
+    MomentSums sums = {0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int u = 0; u < K; u++) {
+        const unsigned src_x = x + (unsigned)u;
+        add_horizontal_tap(sums, source.reference(src_x, y), source.comparison(src_x, y), G[u]);
+    }
+    const SsimMoments m = round_moments(sums);
+    const unsigned dst_idx = y * w_horiz + x;
+    out.ref_mu[dst_idx] = m.ref_mu;
+    out.cmp_mu[dst_idx] = m.cmp_mu;
+    out.ref_sq[dst_idx] = m.ref_sq;
+    out.cmp_sq[dst_idx] = m.cmp_sq;
+    out.refcmp[dst_idx] = m.refcmp;
+}
+
+/* ADR-1399 fixed point of the decimation sum. ssim.c's low-pass tap is
+ * 1.0f / (scale * scale) and every sample is a multiple of 2^-8 (16-bit
+ * picture_copy()), so up to scale 128 each fp32 product is a multiple of
+ * 2^-52 and a whole window sums below 2^8.001: the int64 sum in units of
+ * 2^-52 is exact, as is the CPU's double sum over that range, and one
+ * round-to-nearest conversion to fp32 gives the CPU's (float)sum bit for
+ * bit (Research-2130). The host refuses scales above 128. */
+#define DECIMATE_FIXED_ONE 0x1p52f
+#define DECIMATE_FIXED_INV 0x1p-52f
+
+/* What a decimation thread needs besides the two pictures. */
+struct DecimateGeometry {
+    int width;
+    int height;
+    unsigned out_width;
+    unsigned out_height;
+    int scale;
+    /* picture_copy()'s divisor as an exact reciprocal: 1, 1/4, 1/16, 1/256. */
+    float sample_scale;
+    /* ssim.c::ssim_low_pass_alloc's inv2 = 1.0f / (float)(scale * scale). */
+    float tap_weight;
+};
+
+/* iqa/convolve.c::KBND_SYMMETRIC: period-2n mirror, edge sample repeated.
+ * Identity inside the plane, so it also covers iqa_filter_pixel()'s
+ * direct-read interior path. */
+__device__ inline int symmetric_index(int position, int extent)
+{
+    const int period = 2 * extent;
+    int folded = position % period;
+    if (folded < 0)
+        folded += period;
+    return folded >= extent ? period - folded - 1 : folded;
+}
+
+/* One output of iqa_decimate() with ssim.c's low-pass kernel. Row r of the
+ * window is offset r - scale / 2: iqa_filter_pixel()'s -vc .. vc - kh_even
+ * for odd and even scales alike. No float add, so nothing to contract. */
+template <typename T>
+__device__ inline float decimate_sample(const VmafPicture &pic, const DecimateGeometry &g,
+                                        int centre_x, int centre_y)
+{
+    const int half = g.scale / 2;
+    long long sum = 0;
+    for (int row = 0; row < g.scale; row++) {
+        const int src_y = symmetric_index(centre_y + row - half, g.height);
+        const T *line = reinterpret_cast<const T *>(reinterpret_cast<const uint8_t *>(pic.data[0]) +
+                                                    src_y * pic.stride[0]);
+        for (int column = 0; column < g.scale; column++) {
+            const int src_x = symmetric_index(centre_x + column - half, g.width);
+            const float sample = __fmul_rn((float)line[src_x], g.sample_scale);
+            const float product = __fmul_rn(sample, g.tap_weight);
+            sum += __float2ll_rz(__fmul_rn(product, DECIMATE_FIXED_ONE));
+        }
+    }
+    return __fmul_rn(__ll2float_rn(sum), DECIMATE_FIXED_INV);
+}
+
+/* Pass 0 for one thread: output pixel (x, y) of both decimated planes. The
+ * windows do not overlap (stride == window), so there is no tap reuse a
+ * shared-memory tile could exploit. */
+template <typename T>
+__device__ inline void decimate_pass(const VmafPicture &ref, const VmafPicture &cmp,
+                                     const VmafCudaBuffer &ref_out, const VmafCudaBuffer &cmp_out,
+                                     const DecimateGeometry &g)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= g.out_width || y >= g.out_height)
+        return;
+    const int centre_x = (int)x * g.scale;
+    const int centre_y = (int)y * g.scale;
+    const unsigned dst_idx = y * g.out_width + x;
+    reinterpret_cast<float *>(ref_out.data)[dst_idx] =
+        decimate_sample<T>(ref, g, centre_x, centre_y);
+    reinterpret_cast<float *>(cmp_out.data)[dst_idx] =
+        decimate_sample<T>(cmp, g, centre_x, centre_y);
 }
 
 /* One pixel's SSIM and its luminance, contrast and structure terms. */
@@ -210,6 +422,31 @@ __device__ inline bool is_block_leader()
 
 extern "C" {
 
+/* Pass 0 — decimation (scale > 1): each thread is one output pixel of the
+ * out_width x out_height decimated planes. `width` x `height` is the luma
+ * plane of both pictures. */
+__global__ void calculate_ssim_decimate_8bpc(const VmafPicture ref, const VmafPicture cmp,
+                                             VmafCudaBuffer ref_out, VmafCudaBuffer cmp_out,
+                                             int width, int height, unsigned out_width,
+                                             unsigned out_height, int scale, float sample_scale,
+                                             float tap_weight)
+{
+    const DecimateGeometry g = {width, height,       out_width, out_height,
+                                scale, sample_scale, tap_weight};
+    decimate_pass<uint8_t>(ref, cmp, ref_out, cmp_out, g);
+}
+
+__global__ void calculate_ssim_decimate_16bpc(const VmafPicture ref, const VmafPicture cmp,
+                                              VmafCudaBuffer ref_out, VmafCudaBuffer cmp_out,
+                                              int width, int height, unsigned out_width,
+                                              unsigned out_height, int scale, float sample_scale,
+                                              float tap_weight)
+{
+    const DecimateGeometry g = {width, height,       out_width, out_height,
+                                scale, sample_scale, tap_weight};
+    decimate_pass<uint16_t>(ref, cmp, ref_out, cmp_out, g);
+}
+
 /* Pass 1 — horizontal: each thread is one output pixel of the
  * (W-10) × H "valid" buffer. Reads input columns [x, x+10] and
  * writes the 5 horizontal-pass values. */
@@ -217,75 +454,36 @@ __global__ void calculate_ssim_horiz_8bpc(const VmafPicture ref, const VmafPictu
                                           VmafCudaBuffer h_ref_mu, VmafCudaBuffer h_cmp_mu,
                                           VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
                                           VmafCudaBuffer h_refcmp, unsigned w_horiz,
-                                          unsigned h_horiz, unsigned width)
+                                          unsigned h_horiz)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= w_horiz || y >= h_horiz)
-        return;
-    (void)width;
-
-    float ref_mu_h = 0.0f;
-    float cmp_mu_h = 0.0f;
-    float ref_sq_h = 0.0f;
-    float cmp_sq_h = 0.0f;
-    float refcmp_h = 0.0f;
-
-    for (int u = 0; u < K; u++) {
-        const unsigned src_x = x + (unsigned)u;
-        const float r = read_norm_8bpc(ref, src_x, y);
-        const float c = read_norm_8bpc(cmp, src_x, y);
-        const float w = G[u];
-        ref_mu_h += w * r;
-        cmp_mu_h += w * c;
-        ref_sq_h += w * (r * r);
-        cmp_sq_h += w * (c * c);
-        refcmp_h += w * (r * c);
-    }
-    const unsigned dst_idx = y * w_horiz + x;
-    reinterpret_cast<float *>(h_ref_mu.data)[dst_idx] = ref_mu_h;
-    reinterpret_cast<float *>(h_cmp_mu.data)[dst_idx] = cmp_mu_h;
-    reinterpret_cast<float *>(h_ref_sq.data)[dst_idx] = ref_sq_h;
-    reinterpret_cast<float *>(h_cmp_sq.data)[dst_idx] = cmp_sq_h;
-    reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
+    const LumaPicture8 source = {ref, cmp};
+    horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
+                    w_horiz, h_horiz);
 }
 
 __global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPicture cmp,
                                            VmafCudaBuffer h_ref_mu, VmafCudaBuffer h_cmp_mu,
                                            VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
                                            VmafCudaBuffer h_refcmp, unsigned w_horiz,
-                                           unsigned h_horiz, unsigned bpc, unsigned width)
+                                           unsigned h_horiz, unsigned bpc)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= w_horiz || y >= h_horiz)
-        return;
-    (void)width;
-    const float scaler = scaler_for_bpc(bpc);
+    const LumaPicture16 source = {ref, cmp, scaler_for_bpc(bpc)};
+    horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
+                    w_horiz, h_horiz);
+}
 
-    float ref_mu_h = 0.0f;
-    float cmp_mu_h = 0.0f;
-    float ref_sq_h = 0.0f;
-    float cmp_sq_h = 0.0f;
-    float refcmp_h = 0.0f;
-
-    for (int u = 0; u < K; u++) {
-        const unsigned src_x = x + (unsigned)u;
-        const float r = read_norm_16bpc(ref, src_x, y, scaler);
-        const float c = read_norm_16bpc(cmp, src_x, y, scaler);
-        const float w = G[u];
-        ref_mu_h += w * r;
-        cmp_mu_h += w * c;
-        ref_sq_h += w * (r * r);
-        cmp_sq_h += w * (c * c);
-        refcmp_h += w * (r * c);
-    }
-    const unsigned dst_idx = y * w_horiz + x;
-    reinterpret_cast<float *>(h_ref_mu.data)[dst_idx] = ref_mu_h;
-    reinterpret_cast<float *>(h_cmp_mu.data)[dst_idx] = cmp_mu_h;
-    reinterpret_cast<float *>(h_ref_sq.data)[dst_idx] = ref_sq_h;
-    reinterpret_cast<float *>(h_cmp_sq.data)[dst_idx] = cmp_sq_h;
-    reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
+/* Pass 1 above scale 1: the same taps over the decimated planes, `width`
+ * samples per row. */
+__global__ void calculate_ssim_horiz_planes(VmafCudaBuffer ref_plane, VmafCudaBuffer cmp_plane,
+                                            VmafCudaBuffer h_ref_mu, VmafCudaBuffer h_cmp_mu,
+                                            VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
+                                            VmafCudaBuffer h_refcmp, unsigned w_horiz,
+                                            unsigned h_horiz, unsigned width)
+{
+    const LumaPlanes source = {reinterpret_cast<const float *>(ref_plane.data),
+                               reinterpret_cast<const float *>(cmp_plane.data), width};
+    horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
+                    w_horiz, h_horiz);
 }
 
 /* Pass 2 — vertical + SSIM combine + per-block double partial sum.

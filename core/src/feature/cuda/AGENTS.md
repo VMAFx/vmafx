@@ -575,6 +575,25 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   block partials; host rounds frame means to fp32 (`float_ssim_frame_mean`).
   NEVER force identical windows to 1: CPU flat identical frames = 72.247 dB,
   not `+inf` (#1637 review). Both pass-2 kernels share `ssim_terms()`.
+- **`float_ssim_cuda` = CPU pipeline on device, every scale** (ADR-1399).
+  Mirror list, same PR when CPU side changes: `ssim.c` low-pass tap
+  (`1.0f / (scale * scale)`) + `iqa/decimate.c::iqa_decimate` ->
+  `ssim_score.cu::decimate_sample` (window `r - scale / 2`,
+  `symmetric_index` = `KBND_SYMMETRIC`, exact int64 sum in units of 2^-52,
+  ONE `__ll2float_rn`); `iqa/convolve.c` -> `add_tap` (fp32 product,
+  `__dadd_rn` double sum, ONE `__double2float_rn` per pass, both passes);
+  plane size = `iqa/decimate_dim.h::iqa_decimate_dim` (host
+  `decimated_extent`). NVCC fuses `a * b + c` in this TU (`--fmad` default):
+  NEVER write a rounding there as plain `*` / `+`. Gate: `check_context_cuda`
+  and `init` share `float_ssim_geometry_supported` (plane >= 11x11, scale <=
+  128). Scale 1 reads picture direct (`horiz_{8,16}bpc`), above reads
+  `d_ref` / `d_cmp` (`horiz_planes`); one templated `horizontal_pass` body.
+  Kernel argument arrays follow signatures exactly (ADR-1215). No host wait
+  in submit. Result: score == CPU on every measured frame; frame sum order
+  still per block. Guards: `test_cuda_float_ssim_decimate` (planes byte
+  for byte), `test_cuda_float_ssim_parity` (+ `_large`, equality),
+  `test_cuda_kernel_source_contract.py`,
+  `test_gpu_float_ssim_auto_scale_contract.py`.
 - **`integer_ssim_score` builds with `--fmad=false`** (`cuda_cu_extra_flags`,
   as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:
   `w_d * a * b / den` = `((w * a) * b) / den`. Per-pixel terms = CPU bit for

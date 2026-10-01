@@ -438,6 +438,40 @@ fork's tree already carries these fixes.
 - Public header documentation only; no symbol, signature or FFmpeg patch
   change (the FFmpeg filters pass a zeroed `LIBVMAFContext` member). No
   Netflix golden-data impact.
+## feat/cuda-float-ssim-scale — `float_ssim_cuda` decimates and convolves like the CPU (ADR-1399) (2026-10-01)
+
+- All touched library files are fork-only (`core/src/feature/cuda/integer_ssim_cuda.c`,
+  `core/src/feature/cuda/integer_ssim/ssim_score.cu`); no upstream-mirror file
+  changes, and no Netflix golden-data, public C API or FFmpeg patch impact.
+- `ssim_score.cu` now mirrors three CPU files. A sync or rebase that changes
+  any of these on the CPU side must change the kernel in the same PR, or
+  `test_cuda_float_ssim_parity` (equality with the CPU) and
+  `test_cuda_float_ssim_decimate` (planes byte for byte) fail:
+  - `core/src/feature/ssim.c`: the automatic scale rule, `ssim_low_pass_alloc()`'s
+    tap `1.0f / (float)(scale * scale)`, and the in-place `iqa_decimate()` of
+    both planes;
+  - `core/src/feature/iqa/decimate.c` / `convolve.c`: `iqa_filter_pixel()`'s
+    window offsets, `KBND_SYMMETRIC`, the fp32 `prod` and its `double` sum; and
+    `iqa_convolve_1d_separable()`'s fp32 product, `double` sum and one
+    `(float)` rounding per pass;
+  - `core/src/feature/iqa/ssim_tools.c`: `ssim_precompute_scalar()`'s fp32
+    products (already mirrored for the combine by ADR-1373).
+- The plane size comes from `core/src/feature/iqa/decimate_dim.h`, which the
+  SYCL twin shares (ADR-1370). Keep that header include-free.
+- NVCC compiles `ssim_score.cu` with FMA contraction on. Every rounding in it
+  is an intrinsic (`__fmul_rn`, `__dadd_rn`, `__double2float_rn`,
+  `__ll2float_rn`); a conflict resolution that rewrites one as a plain `*` or
+  `+` changes scores. `test_cuda_kernel_source_contract.py` pins them.
+- The 8bpc and 16bpc pass-1 kernels lost their unused `width` argument and a
+  `calculate_ssim_horiz_planes` and two `calculate_ssim_decimate_*` kernels
+  were added; the launch argument arrays in `integer_ssim_cuda.c` follow the
+  new signatures (ADR-1215). Resolve a conflict in one file together with the
+  other.
+- `float_ssim_hip` and `float_ssim_metal` still implement scale 1 only; the
+  HIP counterpart is a separate branch. `core/test/test_gpu_float_ssim_auto_scale_contract.py`,
+  `core/test/test_feature_backend_twin.c` and
+  `core/tools/test/test_vmaf_feature_backend.sh` list which backends decimate:
+  a rebase across the HIP change keeps both.
 ## perf/cuda-ssimulacra2-device-resident — device-resident `ssimulacra2_cuda` (ADR-1391) (2026-10-01)
 
 - All touched files are fork-only (upstream Netflix/vmaf has no CUDA

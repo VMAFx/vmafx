@@ -242,6 +242,18 @@ linked AGENTS.md before resolving conflicts.
   ([ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)).
   Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
+- **CUDA `float_ssim` is the CPU pipeline on the device ([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md))**:
+  `core/src/feature/cuda/integer_ssim/ssim_score.cu` reproduces `ssim.c`'s box
+  low-pass and `iqa/decimate.c::iqa_decimate()` (exact int64 window sum, one
+  rounding, `KBND_SYMMETRIC`), `iqa/convolve.c`'s fp32 products added to a
+  `double` sum in both Gaussian passes, and the ADR-1373 per-pixel combine;
+  the host sizes the planes with the shared `iqa/decimate_dim.h`. Its score
+  equals the CPU's on every measured frame, and `test_cuda_float_ssim_parity`
+  asserts equality. A change on the CPU side of that pipeline changes the
+  kernel in the same PR. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
+  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

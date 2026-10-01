@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1197,
+  "total_warnings": 1176,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -479,7 +479,6 @@
     "core/test/test_cuda_float_moment_parity.c": 20,
     "core/test/test_cuda_float_ms_ssim_parity.c": 22,
     "core/test/test_cuda_float_psnr_parity.c": 20,
-    "core/test/test_cuda_float_ssim_parity.c": 21,
     "core/test/test_cuda_float_vif_parity.c": 22,
     "core/test/test_cuda_motion3_parity.c": 24,
     "core/test/test_cuda_motion_v2_parity.c": 17,
@@ -834,6 +833,24 @@
         }
       },
       "previous_baseline_sha256": "384d423f90e58f089f86d6f154804622e792c42255fe99ad6cfad1d930090642"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_ssim_cuda.c",
+        "core/test/test_cuda_float_ssim_decimate.c",
+        "core/test/test_cuda_float_ssim_parity.c",
+        "core/test/test_feature_backend_twin.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_cuda_float_ssim_parity.c": {
+          "warnings": [
+            21,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "7d449b03d6db1add242c4c505c476a044023ffc40c961ce08976b11b69c79dfa"
     }
   ]
 }

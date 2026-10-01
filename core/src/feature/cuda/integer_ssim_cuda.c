@@ -8,19 +8,23 @@
  *
  *  float_ssim feature extractor on the CUDA backend
  *  (T7-23 / ADR-0188 / ADR-0189, GPU long-tail batch 2 part 1b).
- *  CUDA twin of ssim_vulkan (PR #139). Two-pass design mirrors
- *  the GLSL shader: horizontal 11-tap separable Gaussian over
+ *  The CPU pipeline on the device (ADR-1399): above scale 1 a decimation
+ *  kernel reproduces ssim.c's box low-pass and iqa_decimate() into two fp32
+ *  planes; then a horizontal 11-tap separable Gaussian over
  *  ref / cmp / ref² / cmp² / ref·cmp into 5 intermediate float
  *  buffers, then vertical 11-tap + per-pixel SSIM combine +
  *  per-block double partial sums. Host sums the partials, divides
- *  by (W-10)·(H-10), rounds the mean to fp32 and emits `float_ssim`.
+ *  by (W'-10)·(H'-10) of the decimated plane, rounds the mean to fp32 and
+ *  emits `float_ssim`. One result read-back per frame, no host pass.
  *
  *  Mirrors the psnr_cuda submit/collect scaffolding and the
  *  ciede_cuda per-block-partials precision pattern.
  *
- *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
- *  back to CPU before init when auto resolves above 1; direct requests keep
- *  the -EINVAL capability error.
+ *  Scale: the CPU's rule, max(1, round(min(w, h) / 256)) unless `scale`
+ *  names one. The ADR-1324 context check refuses only what the device
+ *  cannot compute exactly: a decimated plane smaller than the 11x11
+ *  Gaussian, or a scale above 128. Model dispatch then falls back to the
+ *  CPU; a direct request gets -EINVAL.
  *
  *  Options: the CPU float_ssim.c table (ADR-1373, following ADR-1365 for
  *  SYCL). `enable_db` / `clip_db` act on the host through the
@@ -53,6 +57,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
+#include "feature/iqa/decimate_dim.h"
 #include "cuda/integer_ssim_cuda.h"
 #include "cuda/kernel_template.h"
 #include "log.h"
@@ -70,6 +75,10 @@
 #define SSIM_BLOCK_X 16
 #define SSIM_BLOCK_Y 8
 #define SSIM_K 11
+/* Largest scale whose decimation window sums exactly in int64 units of 2^-52
+ * (ssim_score.cu, Research-2130); past it the CPU's double sum is not exact
+ * either. */
+#define SSIM_MAX_EXACT_SCALE 128
 
 typedef struct SsimStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
@@ -83,8 +92,11 @@ typedef struct SsimStateCuda {
      * partials_capacity doubles, device + pinned host. */
     VmafCudaKernelReadback rb_lcs;
 
+    CUfunction func_decimate_8;
+    CUfunction func_decimate_16;
     CUfunction func_horiz_8;
     CUfunction func_horiz_16;
+    CUfunction func_horiz_planes;
     CUfunction func_vert;
     CUfunction func_vert_lcs;
     int scale_override;
@@ -97,6 +109,18 @@ typedef struct SsimStateCuda {
     bool enable_db;
     bool clip_db;
     double max_db;
+
+    /* ADR-1399 decimation: the resolved scale, the decimated plane the SSIM
+     * passes run on (== width x height at scale 1), picture_copy()'s divisor
+     * as an exact reciprocal and ssim.c's low-pass tap. The two decimated
+     * fp32 planes exist above scale 1 only. */
+    int scale;
+    unsigned dec_width;
+    unsigned dec_height;
+    float sample_scale;
+    float tap_weight;
+    VmafCudaBuffer *d_ref;
+    VmafCudaBuffer *d_cmp;
 
     /* 5 intermediate float buffers — kept outside the template's
      * readback bundle since the bundle models a single device+host
@@ -144,6 +168,20 @@ static int compute_scale(unsigned w, unsigned h, int override)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ssim.c decimates only above scale 1, to iqa_decimate_dim() samples. */
+static unsigned decimated_extent(unsigned extent, int scale)
+{
+    return scale > 1 ? (unsigned)iqa_decimate_dim((int)extent, scale) : extent;
+}
+
+/* ADR-1399: what the device computes exactly — a decimated plane that holds
+ * the 11x11 Gaussian and a scale whose window sum is exact in int64. */
+static bool float_ssim_geometry_supported(unsigned w, unsigned h, int scale)
+{
+    return scale <= SSIM_MAX_EXACT_SCALE && decimated_extent(w, scale) >= (unsigned)SSIM_K &&
+           decimated_extent(h, scale) >= (unsigned)SSIM_K;
+}
+
 /* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
 static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                               unsigned w, unsigned h)
@@ -151,7 +189,8 @@ static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     (void)pix_fmt;
     (void)bpc;
     const SsimStateCuda *s = fex->priv;
-    return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+    const int scale = compute_scale(w, h, s->scale_override);
+    return float_ssim_geometry_supported(w, h, scale) ? 0 : -ENOTSUP;
 }
 
 /* The CPU float_ssim.c table: same names, defaults and range. */
@@ -179,9 +218,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "scale",
-        .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
-                "when auto resolves above 1.",
+        .help = "decimation scale factor (0=auto, 1=no downscaling, 2-10=explicit)",
         .offset = offsetof(SsimStateCuda, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
@@ -214,7 +251,13 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
     if (phase_rc)
         return rc ? rc : phase_rc;
 
-    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_ref_mu);
+    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_ref);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_cmp);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_ref_mu);
     if (e && !rc)
         rc = e;
     e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_cmp_mu);
@@ -244,25 +287,43 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
     return rc;
 }
 
-/* integer_ssim_setup_geometry - plane geometry, SSIM constants, buffers.
+/* picture_copy(): 10 / 12 / 16-bit samples are uint16 divided by 4 / 16 /
+ * 256 (exact, so a reciprocal multiply matches); 8-bit samples are unscaled. */
+static float float_ssim_sample_scale(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 1.0f / 4.0f;
+    if (bpc == 12u)
+        return 1.0f / 16.0f;
+    if (bpc == 16u)
+        return 1.0f / 256.0f;
+    return 1.0f;
+}
+
+/* float_ssim_configure - the resolved scale, the decimated plane and the SSIM
+ * constants (no allocation).
  *
- * HISS-04: the geometry-and-allocation tail of init_fex_cuda, moved whole.
- * The c1 / c2 stabiliser expressions are copied character for character and
- * stay inside a single statement each, so the compiler contracts them exactly
- * as it did inline - splitting `(K1 * L) * (K1 * L)` across a call boundary is
- * precisely what would change the score. Each allocation failure keeps its
- * exact errno and enters the common unwind path.
+ * The c1 / c2 stabiliser expressions stay inside a single statement each, so
+ * the compiler contracts them exactly as it always did - splitting
+ * `(K1 * L) * (K1 * L)` across a call boundary is precisely what would
+ * change the score. `max_db` takes the picture's size, not the decimated
+ * plane's, as the CPU float_ssim.c::init does.
  */
-static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda *s, unsigned w,
-                                       unsigned h, unsigned bpc)
+static void float_ssim_configure(SsimStateCuda *s, unsigned w, unsigned h, unsigned bpc)
 {
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    s->w_horiz = w - (SSIM_K - 1);
-    s->h_horiz = h;
-    s->w_final = w - (SSIM_K - 1);
-    s->h_final = h - (SSIM_K - 1);
+    s->scale = compute_scale(w, h, s->scale_override);
+    s->dec_width = decimated_extent(w, s->scale);
+    s->dec_height = decimated_extent(h, s->scale);
+    s->sample_scale = float_ssim_sample_scale(bpc);
+    /* ssim.c::ssim_low_pass_alloc: inv2 = 1.0f / (float)(scale * scale). */
+    s->tap_weight = 1.0f / (float)(s->scale * s->scale);
+    s->w_horiz = s->dec_width - (SSIM_K - 1);
+    s->h_horiz = s->dec_height;
+    s->w_final = s->dec_width - (SSIM_K - 1);
+    s->h_final = s->dec_height - (SSIM_K - 1);
     const float L = 255.0f;
     const float K1 = 0.01f;
     const float K2 = 0.03f;
@@ -273,22 +334,41 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
     const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
     s->partials_capacity = grid_x * grid_y;
+}
+
+/* float_ssim_alloc_planes - the two decimated planes (above scale 1 only) and
+ * the five pass-1 planes. The first failure's errno is returned; the caller
+ * unwinds. */
+static int float_ssim_alloc_planes(VmafFeatureExtractor *fex, SsimStateCuda *s)
+{
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
+    VmafCudaBuffer **const horiz_planes[] = {&s->h_ref_mu, &s->h_cmp_mu, &s->h_ref_sq, &s->h_cmp_sq,
+                                             &s->h_refcmp};
+    int ret = 0;
+    for (unsigned i = 0; i < 5u && !ret; i++)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, horiz_planes[i], horiz_bytes);
+    if (ret || s->scale == 1)
+        return ret;
+
+    const size_t dec_bytes = (size_t)s->dec_width * s->dec_height * sizeof(float);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref, dec_bytes);
+    if (ret)
+        return ret;
+    return vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_cmp, dec_bytes);
+}
+
+/* integer_ssim_setup_geometry - plane geometry, SSIM constants, buffers.
+ *
+ * Each allocation failure keeps its exact errno and enters the common unwind
+ * path.
+ */
+static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda *s, unsigned w,
+                                       unsigned h, unsigned bpc)
+{
+    float_ssim_configure(s, w, h, bpc);
     const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(double);
 
-    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
-    if (ret)
-        return integer_ssim_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
-    if (ret)
-        return integer_ssim_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
-    if (ret)
-        return integer_ssim_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
-    if (ret)
-        return integer_ssim_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
+    int ret = float_ssim_alloc_planes(fex, s);
     if (ret)
         return integer_ssim_init_unwind(fex, s, ret);
 
@@ -312,9 +392,8 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
 
 /* float_ssim_check_geometry - the entry guards of init_fex_cuda.
  *
- * HISS-04: moved whole out of init_fex_cuda — the same enable_chroma
- * warning, the same scale and 11x11 checks with the same messages and the
- * same -EINVAL, in the same order.
+ * The enable_chroma warning, then the ADR-1324 geometry the context check
+ * also tests: a direct request the device cannot compute fails with -EINVAL.
  */
 static int float_ssim_check_geometry(const SsimStateCuda *s, unsigned w, unsigned h)
 {
@@ -323,47 +402,48 @@ static int float_ssim_check_geometry(const SsimStateCuda *s, unsigned w, unsigne
                  "float_ssim_cuda: enable_chroma is ignored; float_ssim scores luma only\n");
     }
 
-    int scale = compute_scale(w, h, s->scale_override);
-    if (scale != 1) {
+    const int scale = compute_scale(w, h, s->scale_override);
+    if (!float_ssim_geometry_supported(w, h, scale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_cuda: v1 supports scale=1 only (auto-detected scale=%d at %ux%u). "
-                 "Pin --feature float_ssim_cuda=scale=1 if intended.\n",
-                 scale, w, h);
-        return -EINVAL;
-    }
-    if (w < SSIM_K || h < SSIM_K) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_cuda: input %ux%u smaller than 11x11 Gaussian footprint.\n", w, h);
+                 "ssim_cuda: %ux%u at scale=%d decimates to %ux%u; needs at least the 11x11 "
+                 "Gaussian footprint and scale <= %d.\n",
+                 w, h, scale, decimated_extent(w, scale), decimated_extent(h, scale),
+                 SSIM_MAX_EXACT_SCALE);
         return -EINVAL;
     }
     return 0;
 }
 
-/* float_ssim_load_kernels - load the module and resolve its four kernels
- * with the owning context current.
+/* float_ssim_load_kernels - load the module and resolve its kernels with the
+ * owning context current.
  *
- * HISS-04: moved whole out of init_fex_cuda — the same push, loads and pop,
- * and every failure still pops a pushed context and unwinds through
+ * Every failure pops a pushed context and unwinds through
  * integer_ssim_init_unwind() with the CUDA error.
  */
 static int float_ssim_load_kernels(VmafFeatureExtractor *fex, SsimStateCuda *s, CudaFunctions *cu_f)
 {
+    const struct {
+        CUfunction *function;
+        const char *name;
+    } kernels[] = {
+        {&s->func_decimate_8, "calculate_ssim_decimate_8bpc"},
+        {&s->func_decimate_16, "calculate_ssim_decimate_16bpc"},
+        {&s->func_horiz_8, "calculate_ssim_horiz_8bpc"},
+        {&s->func_horiz_16, "calculate_ssim_horiz_16bpc"},
+        {&s->func_horiz_planes, "calculate_ssim_horiz_planes"},
+        {&s->func_vert, "calculate_ssim_vert_combine"},
+        {&s->func_vert_lcs, "calculate_ssim_vert_combine_lcs"},
+    };
     int _cuda_err = 0;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, ssim_score_ptx), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_horiz_8, s->module, "calculate_ssim_horiz_8bpc"), fail);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_horiz_16, s->module, "calculate_ssim_horiz_16bpc"),
-                    fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_vert_combine"), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_vert_lcs, s->module, "calculate_ssim_vert_combine_lcs"),
-        fail);
+    for (size_t i = 0; i < sizeof(kernels) / sizeof(kernels[0]); i++) {
+        CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(kernels[i].function, s->module, kernels[i].name),
+                        fail);
+    }
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
@@ -405,7 +485,7 @@ static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstr
                                     unsigned grid_x, unsigned grid_y)
 {
     /* Pass 2 — vertical + SSIM combine. Grid sized over
-     * (W-10) × (H-10). The horiz pass writes happen-before
+     * (W'-10) × (H'-10). The horiz pass writes happen-before
      * the vert pass reads on the same stream — implicit
      * stream ordering, no extra event needed. */
     void *params2[] = {
@@ -442,51 +522,101 @@ static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstr
     return 0;
 }
 
-/* integer_ssim_launch_horiz - pass 1: the 8bpc or 16bpc horizontal kernel.
+/* float_ssim_launch_decimate - pass 0 (scale > 1): ssim.c's low-pass and
+ * iqa_decimate() of both luma planes into d_ref / d_cmp.
  *
- * HISS-04: the pass-1 branch of submit_fex_cuda, moved whole. Both parameter
- * arrays keep their exact element order (the 16bpc one still carries the extra
- * &bpc slot) and the grid geometry is passed in unchanged, so each kernel sees
- * identical arguments. cuLaunchKernel copies the parameter values before it
- * returns, so pointing at this frame's `width` / `bpc` copies is safe.
+ * The parameter array follows calculate_ssim_decimate_{8,16}bpc exactly
+ * (ADR-1215). cuLaunchKernel copies the values before it returns, so pointing
+ * at this frame's copies is safe.
+ */
+static int float_ssim_launch_decimate(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
+                                      VmafPicture *ref_pic, VmafPicture *dist_pic)
+{
+    int width = (int)s->width;
+    int height = (int)s->height;
+    void *params[] = {
+        (void *)ref_pic, (void *)dist_pic, (void *)s->d_ref, (void *)s->d_cmp,
+        &width,          &height,          &s->dec_width,    &s->dec_height,
+        &s->scale,       &s->sample_scale, &s->tap_weight,
+    };
+    const unsigned grid_x = (s->dec_width + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_y = (s->dec_height + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    CUfunction func = s->bpc == 8 ? s->func_decimate_8 : s->func_decimate_16;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_x, grid_y, 1, SSIM_BLOCK_X, SSIM_BLOCK_Y, 1,
+                                           0, stream, params, NULL));
+    return 0;
+}
+
+/* float_ssim_launch_horiz_planes - pass 1 above scale 1, over the decimated
+ * planes. The parameter array follows calculate_ssim_horiz_planes exactly. */
+static int float_ssim_launch_horiz_planes(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
+                                          unsigned grid_horiz_x, unsigned grid_horiz_y)
+{
+    void *params[] = {
+        (void *)s->d_ref,    (void *)s->d_cmp,    (void *)s->h_ref_mu, (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq, (void *)s->h_cmp_sq, (void *)s->h_refcmp, &s->w_horiz,
+        &s->h_horiz,         &s->dec_width,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz_planes, grid_horiz_x, grid_horiz_y, 1,
+                                           SSIM_BLOCK_X, SSIM_BLOCK_Y, 1, 0, stream, params, NULL));
+    return 0;
+}
+
+/* integer_ssim_launch_horiz - pass 1 at scale 1: the 8bpc or 16bpc kernel
+ * that reads the device picture.
+ *
+ * Each parameter array follows its kernel's signature exactly (ADR-1215): the
+ * 16bpc one ends with &bpc, the 8bpc one has no such slot. cuLaunchKernel
+ * copies the parameter values before it returns, so pointing at this frame's
+ * `bpc` copy is safe.
  */
 static int integer_ssim_launch_horiz(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
                                      VmafPicture *ref_pic, VmafPicture *dist_pic,
                                      unsigned grid_horiz_x, unsigned grid_horiz_y)
 {
-    if (s->bpc == 8) {
-        unsigned width = s->width;
-        void *params[] = {
-            (void *)ref_pic,     (void *)dist_pic,
-            (void *)s->h_ref_mu, (void *)s->h_cmp_mu,
-            (void *)s->h_ref_sq, (void *)s->h_cmp_sq,
-            (void *)s->h_refcmp, &s->w_horiz,
-            &s->h_horiz,         &width,
-        };
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_horiz_8, grid_horiz_x, grid_horiz_y, 1,
-                                         SSIM_BLOCK_X, SSIM_BLOCK_Y, 1, 0, stream, params, NULL));
-    } else {
-        unsigned bpc = s->bpc;
-        unsigned width = s->width;
-        void *params[] = {
-            (void *)ref_pic,
-            (void *)dist_pic,
-            (void *)s->h_ref_mu,
-            (void *)s->h_cmp_mu,
-            (void *)s->h_ref_sq,
-            (void *)s->h_cmp_sq,
-            (void *)s->h_refcmp,
-            &s->w_horiz,
-            &s->h_horiz,
-            &bpc,
-            &width,
-        };
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1,
-                                         SSIM_BLOCK_X, SSIM_BLOCK_Y, 1, 0, stream, params, NULL));
-    }
+    unsigned bpc = s->bpc;
+    void *params_8[] = {
+        (void *)ref_pic,     (void *)dist_pic,    (void *)s->h_ref_mu,
+        (void *)s->h_cmp_mu, (void *)s->h_ref_sq, (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp, &s->w_horiz,         &s->h_horiz,
+    };
+    void *params_16[] = {
+        (void *)ref_pic,     (void *)dist_pic,
+        (void *)s->h_ref_mu, (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq, (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp, &s->w_horiz,
+        &s->h_horiz,         &bpc,
+    };
+    CUfunction func = s->bpc == 8 ? s->func_horiz_8 : s->func_horiz_16;
+    void **params = s->bpc == 8 ? params_8 : params_16;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_horiz_x, grid_horiz_y, 1, SSIM_BLOCK_X,
+                                           SSIM_BLOCK_Y, 1, 0, stream, params, NULL));
     return 0;
+}
+
+/* float_ssim_launch_passes - decimation (above scale 1), pass 1 and pass 2 on
+ * the picture stream; implicit stream ordering sequences them. */
+static int float_ssim_launch_passes(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
+                                    VmafPicture *ref_pic, VmafPicture *dist_pic)
+{
+    /* Pass 1 — horizontal. Grid sized over (W'-10) × H'. */
+    const unsigned grid_horiz_x = (s->w_horiz + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_horiz_y = (s->h_horiz + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    int err = 0;
+    if (s->scale > 1) {
+        err = float_ssim_launch_decimate(s, cu_f, stream, ref_pic, dist_pic);
+        if (!err)
+            err = float_ssim_launch_horiz_planes(s, cu_f, stream, grid_horiz_x, grid_horiz_y);
+    } else {
+        err = integer_ssim_launch_horiz(s, cu_f, stream, ref_pic, dist_pic, grid_horiz_x,
+                                        grid_horiz_y);
+    }
+    if (err)
+        return err;
+
+    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    return integer_ssim_launch_vert(s, cu_f, stream, grid_x, grid_y);
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -498,9 +628,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
 
     s->index = index;
-    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
-    s->partials_count = grid_x * grid_y;
+    s->partials_count = s->partials_capacity;
 
     /* The kernels read data[0]: float_ssim is luma only, like the CPU. */
 
@@ -510,18 +638,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                               vmaf_cuda_picture_get_ready_event(dist_pic),
                                               CU_EVENT_WAIT_DEFAULT));
 
-    /* Pass 1 — horizontal. Grid sized over (W-10) × H. */
-    const unsigned grid_horiz_x = (s->w_horiz + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_horiz_y = (s->h_horiz + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
-    const int horiz_err =
-        integer_ssim_launch_horiz(s, cu_f, stream, ref_pic, dist_pic, grid_horiz_x, grid_horiz_y);
-    if (horiz_err)
-        return horiz_err;
-
-    const int vert_err = integer_ssim_launch_vert(s, cu_f, stream, grid_x, grid_y);
-    if (vert_err)
-        return vert_err;
+    const int launch_err = float_ssim_launch_passes(s, cu_f, stream, ref_pic, dist_pic);
+    if (launch_err)
+        return launch_err;
 
     /* DtoH copy of the partials on our private stream. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
@@ -592,7 +712,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         return sync_err;
 
     /* Per-block double partials -> host double sum -> mean SSIM over
-     * (W-10)·(H-10) pixels, rounded to fp32 like the CPU. */
+     * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
     const double total = sum_partials(s->rb.host_pinned, s->partials_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
     double score = 0.0;
@@ -628,7 +748,7 @@ VmafFeatureExtractor vmaf_fex_float_ssim_cuda = {
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
     .chars =
         {
-            .n_dispatches_per_frame = 2,
+            .n_dispatches_per_frame = 3,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,

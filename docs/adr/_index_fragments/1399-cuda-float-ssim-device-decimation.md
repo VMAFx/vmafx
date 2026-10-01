@@ -1,0 +1,1 @@
+| [ADR-1399](1399-cuda-float-ssim-device-decimation.md) | `float_ssim_cuda` decimates on the device with planes byte-identical to the CPU's and adds both Gaussian passes in double like `iqa_convolve()`, so `float_ssim` runs on CUDA at 1080p and 4K and equals the CPU's score on every measured frame | Accepted | cuda, gpu, ssim, performance, numerics, gpu-parity, rc3, fork-local |

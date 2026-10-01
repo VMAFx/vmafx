@@ -762,7 +762,7 @@ report the CPU's `+inf` or `clip_db` ceiling on the device too
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). `float_ssim_sycl`
 decimates on the device at the automatic scale and every explicit one, with
 the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
-SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
+SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the
 HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
 scales to the CPU extractor. The CUDA twins
 `integer_ssim_cuda` and `float_ssim_cuda` implement the same options
@@ -770,7 +770,11 @@ scales to the CPU extractor. The CUDA twins
 computes the CPU's per-pixel `l * c * s` and fp32 frame mean, so identical
 frames report the CPU's value (`+inf`, or 72.247 dB for flat frames), and
 still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
-had. The HIP twins `integer_ssim_hip` and `float_ssim_hip` implement
+had. `float_ssim_cuda` also decimates on the device at the automatic scale
+and every explicit one and convolves with the CPU's double sums, so 1080p and
+4K `float_ssim` run on CUDA and every measured frame equals the CPU's score
+([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md)). The HIP
+twins `integer_ssim_hip` and `float_ssim_hip` implement
 `enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`); `float_ssim_hip`
 scores each pixel with the CPU's own `l * c * s` arithmetic too, so its
 identical frames report what the CPU reports, including the finite 72.247 dB

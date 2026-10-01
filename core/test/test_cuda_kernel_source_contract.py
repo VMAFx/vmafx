@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin the CUDA RC3 parity design at source level (ADR-1372, ADR-1373, ADR-1374, ADR-1392).
+"""Pin the CUDA RC3 parity design at source level (ADR-1372 to ADR-1374, ADR-1392, ADR-1399).
 
 Device-free, so it runs on every host. Each contract has a planted-regression
 case that edits the live source the way the old code read and must fail:
@@ -20,6 +20,10 @@ case that edits the live source the way the old code read and must fail:
 - float SSIM: each pixel is the CPU's l * c * s with double numerators over
   fp32 denominators (no forced exact 1), and the frame mean is rounded to
   fp32; `enable_chroma` stays declared as an ignored option (HISS-14);
+- float SSIM pipeline (ADR-1399): the decimation window is summed exactly in
+  int64 and rounded once, every convolution tap is an fp32 product added to
+  a double sum (iqa/convolve.c), the plane size is the CPU's
+  iqa_decimate_dim(), and submit never waits on the host;
 - integer SSIM: the combine compiles with --fmad=false and groups the term
   as the CPU does, ((w * a) * b) / den;
 - ADM: the DWT kernels read their rows and taps through adm_dwt2_rows.h;
@@ -244,6 +248,51 @@ def _ssim_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+FLOAT_SSIM_TAP = "return __dadd_rn(sum, (double)__fmul_rn(sample, weight));"
+# add_tap(): one definition, five horizontal and five vertical taps.
+FLOAT_SSIM_TAP_USES = 11
+FLOAT_SSIM_WINDOW_TERM = "sum += __float2ll_rz(__fmul_rn(product, DECIMATE_FIXED_ONE));"
+FLOAT_SSIM_WINDOW_ROUND = "return __fmul_rn(__ll2float_rn(sum), DECIMATE_FIXED_INV);"
+FLOAT_SSIM_PLANE_SIZE = "(unsigned)iqa_decimate_dim((int)extent, scale)"
+FLOAT_SSIM_SUBMIT_FNS = (
+    "submit_fex_cuda",
+    "float_ssim_launch_passes",
+    "float_ssim_launch_decimate",
+    "float_ssim_launch_horiz_planes",
+    "integer_ssim_launch_horiz",
+    "integer_ssim_launch_vert",
+)
+
+
+def _float_ssim_pipeline_failures(sources: dict[str, str]) -> list[str]:
+    """ADR-1399: the CPU's decimation and convolution arithmetic on the device."""
+    failures: list[str] = []
+    kernel = _code(sources[SSIM_KERNEL])
+    if FLOAT_SSIM_TAP not in kernel or kernel.count("add_tap(") != FLOAT_SSIM_TAP_USES:
+        failures.append(
+            f"{SSIM_KERNEL}: a convolution tap is not an fp32 product added to a double sum"
+        )
+    if re.search(r"\+=\s*(?:w|weight|G\[\w+\])\s*\*", kernel):
+        failures.append(f"{SSIM_KERNEL}: a convolution sum accumulates in fp32")
+    for piece in (FLOAT_SSIM_WINDOW_TERM, FLOAT_SSIM_WINDOW_ROUND, "const int half = g.scale / 2;"):
+        if piece not in kernel:
+            failures.append(
+                f"{SSIM_KERNEL}: the decimation window is not iqa_decimate()'s exact sum ({piece})"
+            )
+    host = sources["integer_ssim_cuda.c"]
+    if FLOAT_SSIM_PLANE_SIZE not in _function_body(host, "decimated_extent"):
+        failures.append("integer_ssim_cuda.c: the decimated plane size is not iqa_decimate_dim()")
+    if "s->tap_weight = 1.0f / (float)(s->scale * s->scale);" not in _code(host):
+        failures.append("integer_ssim_cuda.c: the low-pass tap is not ssim.c's fp32 reciprocal")
+    for fn in FLOAT_SSIM_SUBMIT_FNS:
+        body = _function_body(host, fn)
+        if not body:
+            failures.append(f"integer_ssim_cuda.c: {fn}() not found")
+        elif HOST_WAIT.search(body):
+            failures.append(f"integer_ssim_cuda.c: {fn}() waits on the host mid-frame")
+    return failures
+
+
 def _guard_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     adm = sources[ADM_KERNEL]
@@ -321,6 +370,7 @@ def _all_failures(sources: dict[str, str]) -> list[str]:
         *_reduction_failures(sources),
         *_option_failures(sources),
         *_ssim_failures(sources),
+        *_float_ssim_pipeline_failures(sources),
         *_guard_failures(sources),
         *_dispatch_failures(sources),
     ]
@@ -428,6 +478,39 @@ class CudaKernelSourceContractTest(unittest.TestCase):
     def test_unrounded_frame_mean_is_detected(self) -> None:
         sources = self._edit("integer_ssim_cuda.c", FLOAT_SSIM_MEAN, "(void)mean;")
         self._assert_detected(sources, "rounded to fp32")
+
+    def test_fp32_convolution_sum_is_detected(self) -> None:
+        # The pre-ADR-1399 passes accumulated in fp32 (and NVCC fused each tap).
+        sources = self._edit(
+            SSIM_KERNEL,
+            FLOAT_SSIM_TAP,
+            "return (double)((float)sum + sample * weight);",
+        )
+        self._assert_detected(sources, "added to a double sum")
+        sources = _sources()
+        sources[SSIM_KERNEL] += "\nvoid f(float &m, float w, float r) { m += w * r; }\n"
+        self._assert_detected(sources, "accumulates in fp32")
+
+    def test_fp32_decimation_window_is_detected(self) -> None:
+        sources = self._edit(SSIM_KERNEL, FLOAT_SSIM_WINDOW_TERM, "fsum += product;")
+        self._assert_detected(sources, "iqa_decimate()'s exact sum")
+        sources = self._edit(SSIM_KERNEL, FLOAT_SSIM_WINDOW_ROUND, "return (float)sum * 0x1p-52f;")
+        self._assert_detected(sources, "iqa_decimate()'s exact sum")
+
+    def test_own_decimated_size_rule_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_ssim_cuda.c", FLOAT_SSIM_PLANE_SIZE, "(extent + scale - 1) / scale"
+        )
+        self._assert_detected(sources, "iqa_decimate_dim()")
+
+    def test_float_ssim_submit_host_wait_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_ssim_cuda.c",
+            "    return integer_ssim_launch_vert(s, cu_f, stream, grid_x, grid_y);\n",
+            "    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));\n"
+            "    return integer_ssim_launch_vert(s, cu_f, stream, grid_x, grid_y);\n",
+        )
+        self._assert_detected(sources, "float_ssim_launch_passes() waits on the host")
 
     def test_contracted_integer_ssim_is_detected(self) -> None:
         sources = self._edit(MESON, INTEGER_SSIM_FMAD, "'integer_ssim_score' : []")

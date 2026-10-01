@@ -2867,6 +2867,21 @@ test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# ADR-1399 — the float_ssim_cuda decimation kernel against iqa_decimate():
+# launches calculate_ssim_decimate_{8,16}bpc directly and compares the
+# decimated planes byte for byte (scales 2-10, 16 and 128; 8 / 10 / 12 / 16
+# bits; odd sizes). GPU-gated: skips cleanly when no CUDA device is visible.
+test_cuda_float_ssim_decimate = executable('test_cuda_float_ssim_decimate',
+    ['test.c', 'test_cuda_float_ssim_decimate.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ssim_decimate', test_cuda_float_ssim_decimate,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
 # `speed_temporal_cuda` have no CPU twin emitting the same
 # `Speed_*_feature_*_score` family, so the gate is a smoke test:

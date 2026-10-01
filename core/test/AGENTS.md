@@ -658,12 +658,13 @@ When adding parity test, add it to matching
 `*_parity_large_fixture_tests` list too. Two deliberate exceptions,
 both documented in ADR-1206:
 
-- `test_*_float_ssim_parity` stays registered but treats twin's
-  `-EINVAL` at decimating resolution as **skip**, because GPU twins
+- HIP + Metal `test_*_float_ssim_parity` stay registered but treat twin's
+  `-EINVAL` at decimating resolution as **skip**, because those twins
   are v1 scale=1-only while CPU decimates — no parity to assert.
   Variant is kept so twin which stops refusing and starts returning
   scale=1 score fails loudly instead of silently comparing two
-  metrics.
+  metrics. SYCL (ADR-1370) + CUDA (ADR-1399) twins decimate on device:
+  their `_large` variants assert parity at auto scale 2, no skip.
 - `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle for
   coefficients, both rounding stages, reflect-101 borders, integer SAD and
   per-plane normalization (ADR-1326). Its error budget is only the derived
