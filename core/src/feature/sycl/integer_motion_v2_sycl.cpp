@@ -21,12 +21,14 @@
  *  ping-pong (`d_pix[2]`); the next frame's submit reads it as "prev"
  *  (ADR-1369). No host copy, no second upload.
  *
- *  motion2_v2_score = min(score[i], score[i+1]) and motion3_v2_score
- *  (per-frame blend + clip + optional moving-average) are both emitted
- *  host-side in flush() — mirrors CPU integer_motion_v2.c::flush and the
- *  CUDA twin integer_motion_v2_cuda.c::flush_fex_cuda. The motion3_v2
- *  post-process and its option surface were added in ADR-1108 (the
- *  cross-backend follow-up to the CUDA twin landed in #909).
+ *  collect() publishes the CPU's motion_v2_sad_score: the normalised SAD,
+ *  fps-weighted and capped at motion_max_val (integer_motion_v2.c::extract).
+ *  motion2_v2_score = min(score[i], score[i+1]) of those stored scores and
+ *  motion3_v2_score (per-frame blend + clip + optional moving-average) are
+ *  both emitted host-side in flush() with the CPU flush's formula, including
+ *  its 0 / 0 for a one-frame input (T-SYCL-MOTION-V2-OPTION-PARITY-2026-09-30).
+ *  The motion3_v2 post-process and its option surface were added in ADR-1108
+ *  (the cross-backend follow-up to the CUDA twin landed in #909).
  *
  *  The SAD kernel is the motion pipeline shared with `motion_sycl`
  *  (integer_motion_pipeline_sycl.h): difference first, then the blur with
@@ -83,9 +85,9 @@ struct MotionV2StateSycl {
     unsigned pending_index;
     unsigned frame_index;
 
-    /* fps-aware weight applied to the v2 SAD score in flush().
-     * Default 1.0 is a no-op. Mirrors motion_sycl and motion_cuda
-     * (ADR-0192 / PR #851). */
+    /* fps-aware weight applied to the v2 SAD score in collect(), before
+     * the motion_max_val cap, as integer_motion_v2.c::extract does. Default
+     * 1.0 is a no-op. */
     double motion_fps_weight;
 
     /* motion3_v2 post-process options — mirror the CPU reference
@@ -339,10 +341,13 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                                                        0.0, index);
     }
 
+    /* The CPU's SAD score (integer_motion_v2.c::extract): normalised, then
+     * fps-weighted and capped at motion_max_val. flush() derives motion2_v2
+     * and motion3_v2 from these stored values, as the CPU does. */
     const double sad_score = (double)*s->h_sad / 256.0 / ((double)s->width * (double)s->height);
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_motion_v2_sad_score",
-                                                   sad_score, index);
+    return vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score",
+        MIN(sad_score * s->motion_fps_weight, s->motion_max_val), index);
 }
 
 } // namespace
@@ -383,14 +388,15 @@ static int append_motion_frame(VmafFeatureCollector *collector, MotionV2StateSyc
                                const char *sad_name, unsigned index, unsigned frame_count,
                                double stamp_value, double &previous)
 {
+    /* The stored SAD scores already carry motion_fps_weight and the
+     * motion_max_val cap (collect), so motion2_v2 is their plain minimum, as
+     * in integer_motion_v2.c::flush. */
     double score_current;
     vmaf_feature_collector_get_score(collector, sad_name, &score_current, index);
-    score_current *= s->motion_fps_weight;
     double motion2 = score_current;
     if (index + 1 < frame_count) {
         double score_next;
         vmaf_feature_collector_get_score(collector, sad_name, &score_next, index + 1);
-        score_next *= s->motion_fps_weight;
         motion2 = score_current < score_next ? score_current : score_next;
     }
     int err = vmaf_feature_collector_append_with_dict(
@@ -430,8 +436,10 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
         vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
     const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
 
+    /* A one-frame input still gets motion2_v2 = motion3_v2 = 0 at index 0,
+     * as the CPU flush emits them; only an empty run emits nothing. */
     const unsigned n_frames = motion_frame_count(feature_collector, sad_name);
-    if (n_frames < 2) {
+    if (n_frames == 0) {
         return 1;
     }
     const double stamp_value = motion_stamp_value(feature_collector, s, sad_name, n_frames);

@@ -56,6 +56,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <new>
+#include <vector>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -66,6 +68,7 @@
 #include "picture.h"
 #include "../iqa/decimate_dim.h"
 #include "sycl/common.h"
+#include "sycl_exact_fp.h"
 
 namespace
 {
@@ -92,6 +95,22 @@ constexpr float G[SSIM_K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
     0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
 };
+
+/* float_ssim reduction (Research-2133): every per-pixel term goes to int64 in
+ * units of 2^-52 before the work-group sum. |term| <= 2 and a work-group has
+ * 128 items, so a group sum stays below 2^60, and integer addition makes the
+ * sum exact and independent of the reduction order. */
+constexpr float SSIM_TERM_FIXED_ONE = 0x1p52f;
+constexpr double SSIM_TERM_FIXED_INV = 0x1p-52;
+
+using vmaf_sycl_exact::div_rn;
+using vmaf_sycl_exact::Ff;
+using vmaf_sycl_exact::ff_add;
+using vmaf_sycl_exact::ff_div;
+using vmaf_sycl_exact::ff_mul;
+using vmaf_sycl_exact::sqrt_rn;
+using vmaf_sycl_exact::two_prod;
+using vmaf_sycl_exact::two_sum;
 
 } // namespace
 
@@ -148,13 +167,14 @@ struct SsimStateSycl {
     float *d_ref_sq;
     float *d_cmp_sq;
     float *d_refcmp;
-    float *d_partials;
+    /* Per-WG sums of the SSIM terms in units of 2^-52. */
+    std::int64_t *d_partials;
     /* Host-pinned partials for D2H. */
-    float *h_partials;
-    /* enable_lcs only: per-WG L / C / S partials, 3 x wg_count floats
-     * laid out [l | c | s]; NULL otherwise. */
-    float *d_lcs_partials;
-    float *h_lcs_partials;
+    std::int64_t *h_partials;
+    /* enable_lcs only: per-WG L / C / S sums, 3 x wg_count laid out
+     * [l | c | s]; NULL otherwise. */
+    std::int64_t *d_lcs_partials;
+    std::int64_t *h_lcs_partials;
 
     bool has_pending;
     unsigned pending_index;
@@ -195,9 +215,10 @@ struct FloatVertArgs {
     const float *reference_square;
     const float *comparison_square;
     const float *cross_product;
-    float *partials;
-    /* enable_lcs kernel only: 3 x group_count floats, [l | c | s]. */
-    float *lcs_partials;
+    /* Per-work-group sums of the SSIM terms in units of 2^-52. */
+    std::int64_t *partials;
+    /* enable_lcs kernel only: 3 x group_count sums, [l | c | s]. */
+    std::int64_t *lcs_partials;
     unsigned horizontal_width;
     unsigned final_width;
     unsigned final_height;
@@ -215,11 +236,156 @@ struct SsimMoments {
     float cross_product;
 };
 
-struct SsimLcs {
-    float luminance;
-    float contrast;
+/* The five sums of one convolution pass, as pairs (Research-2133). */
+struct MomentPairs {
+    Ff reference_mean;
+    Ff comparison_mean;
+    Ff reference_square;
+    Ff comparison_square;
+    Ff cross_product;
+};
+
+/* One pixel's luminance, contrast and structure terms in the CPU's types:
+ * L and C are doubles on the CPU (pairs here), S is an fp32 quotient. */
+struct SsimTerms {
+    Ff luminance;
+    Ff contrast;
     float structure;
 };
+
+} // namespace
+
+namespace
+{
+
+/* One tap of iqa/convolve.c: the fp32 product `img * kernel`, added to the
+ * pass's sum. The CPU adds these products in double and rounds the sum to
+ * fp32 once; a pair sum carries it to about 2^-46, so the rounded pair is the
+ * CPU's fp32 value except within that distance of a rounding midpoint. */
+inline Ff add_tap(Ff sum, float sample, float weight)
+{
+    const float product = sample * weight;
+    return ff_add(sum, Ff{.hi = product, .lo = 0.0f});
+}
+
+/* Horizontal pass: the CPU convolves ref, cmp and the fp32 products
+ * ref * ref, cmp * cmp and ref * cmp (ssim_precompute). */
+inline void add_horizontal_tap(MomentPairs &sums, float ref, float cmp, float weight)
+{
+    const float ref_sq = ref * ref;
+    const float cmp_sq = cmp * cmp;
+    const float ref_cmp = ref * cmp;
+    sums.reference_mean = add_tap(sums.reference_mean, ref, weight);
+    sums.comparison_mean = add_tap(sums.comparison_mean, cmp, weight);
+    sums.reference_square = add_tap(sums.reference_square, ref_sq, weight);
+    sums.comparison_square = add_tap(sums.comparison_square, cmp_sq, weight);
+    sums.cross_product = add_tap(sums.cross_product, ref_cmp, weight);
+}
+
+/* Vertical pass over the five horizontal results. */
+inline void add_vertical_tap(MomentPairs &sums, const SsimMoments &row, float weight)
+{
+    sums.reference_mean = add_tap(sums.reference_mean, row.reference_mean, weight);
+    sums.comparison_mean = add_tap(sums.comparison_mean, row.comparison_mean, weight);
+    sums.reference_square = add_tap(sums.reference_square, row.reference_square, weight);
+    sums.comparison_square = add_tap(sums.comparison_square, row.comparison_square, weight);
+    sums.cross_product = add_tap(sums.cross_product, row.cross_product, weight);
+}
+
+/* A pass result, `(float)(sum * scale)` with scale 1 on the CPU: ff_add keeps
+ * a pair normalised, so hi is hi + lo rounded to fp32. */
+inline SsimMoments round_moments(const MomentPairs &sums)
+{
+    return {.reference_mean = sums.reference_mean.hi,
+            .comparison_mean = sums.comparison_mean.hi,
+            .reference_square = sums.reference_square.hi,
+            .comparison_square = sums.comparison_square.hi,
+            .cross_product = sums.cross_product.hi};
+}
+
+/* iqa/ssim_tools.c for one pixel (ssim_variance_scalar, then
+ * ssim_accumulate_default_scalar, which ssim_accumulate_lane.h shares with the
+ * SIMD paths): fp32 variances clamped at zero, the covariance, one fp32
+ * square root of their product, the fp32 denominators and S, then
+ * L = (2.0 * mu_ref * mu_cmp + C1) / l_den and C = (2.0 * srsc + C2) / c_den,
+ * which the CPU forms in double and this twin as pairs. Every fp32 operation
+ * is the CPU's, in its order: contraction is off for this TU
+ * (sycl_exact_fp_sources) and the division and square root are correctly
+ * rounded. There is no identical-window shortcut: on a flat identical window
+ * the fp32 l_den rounds below 2 * mu^2 + C1, and the CPU keeps that. */
+inline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)
+{
+    const float ref_mean_sq = m.reference_mean * m.reference_mean;
+    const float cmp_mean_sq = m.comparison_mean * m.comparison_mean;
+    const float mean_product = m.reference_mean * m.comparison_mean;
+    const float ref_var_raw = m.reference_square - ref_mean_sq;
+    const float cmp_var_raw = m.comparison_square - cmp_mean_sq;
+    const float ref_var = ref_var_raw < 0.0f ? 0.0f : ref_var_raw;
+    const float cmp_var = cmp_var_raw < 0.0f ? 0.0f : cmp_var_raw;
+    const float covariance = m.cross_product - mean_product;
+    const float var_product = ref_var * cmp_var;
+    const float srsc = sqrt_rn(var_product);
+    const float l_den_sum = ref_mean_sq + cmp_mean_sq;
+    const float l_den = l_den_sum + c1;
+    const float c_den_sum = ref_var + cmp_var;
+    const float c_den = c_den_sum + c2;
+    const float c3 = c2 / 2.0f;
+    const float flat_covariance = (covariance < 0.0f && srsc <= 0.0f) ? 0.0f : covariance;
+    const float s_num = flat_covariance + c3;
+    const float s_den = srsc + c3;
+    const Ff product = two_prod(m.reference_mean, m.comparison_mean);
+    const Ff doubled = {.hi = 2.0f * product.hi, .lo = 2.0f * product.lo};
+    const Ff l_num = ff_add(doubled, Ff{.hi = c1, .lo = 0.0f});
+    const Ff c_num = two_sum(2.0f * srsc, c2);
+    return {.luminance = ff_div(l_num, Ff{.hi = l_den, .lo = 0.0f}),
+            .contrast = ff_div(c_num, Ff{.hi = c_den, .lo = 0.0f}),
+            .structure = div_rn(s_num, s_den)};
+}
+
+/* The pixel's SSIM term, `lv * cv * sv` in double on the CPU. */
+inline Ff ssim_term(const SsimTerms &t)
+{
+    return ff_mul(ff_mul(t.luminance, t.contrast), Ff{.hi = t.structure, .lo = 0.0f});
+}
+
+/* A pair in int64 units of 2^-52, rounded to nearest: hi * 2^52 is exact and
+ * integral for |hi| >= 2^-28, lo adds its rounded share. */
+inline std::int64_t term_fixed(Ff value)
+{
+    const float hi = sycl::rint(value.hi * SSIM_TERM_FIXED_ONE);
+    const float lo = sycl::rint(value.lo * SSIM_TERM_FIXED_ONE);
+    return static_cast<std::int64_t>(hi) + static_cast<std::int64_t>(lo);
+}
+
+/* Exact sum of fixed-point terms of any count (host side): each is split
+ * into multiples of 2^32 and a remainder, so neither half overflows, and the
+ * halves join in one double rounding. */
+struct FixedSum {
+    std::int64_t high = 0;
+    std::int64_t low = 0;
+
+    void add(std::int64_t value)
+    {
+        const std::int64_t value_high = value / 0x100000000LL;
+        high += value_high;
+        low += value - value_high * 0x100000000LL;
+    }
+
+    [[nodiscard]] double value() const
+    {
+        return ((double)high * 0x1p32 + (double)low) * SSIM_TERM_FIXED_INV;
+    }
+};
+
+/* ssim_init_args' C1 and C2 for L = 255, K1 = 0.01, K2 = 0.03, in fp32. */
+inline void float_ssim_constants(float *c1, float *c2)
+{
+    const float range = 255.0f;
+    const float k1 = 0.01f;
+    const float k2 = 0.03f;
+    *c1 = (k1 * range) * (k1 * range);
+    *c2 = (k2 * range) * (k2 * range);
+}
 
 } // namespace
 
@@ -372,19 +538,12 @@ static inline SsimMoments horizontal_moments(size_t local_x, size_t local_y,
                                              const sycl::local_accessor<float, 1> &reference,
                                              const sycl::local_accessor<float, 1> &comparison)
 {
-    SsimMoments result{};
+    MomentPairs sums{};
     for (int tap = 0; tap < SSIM_K; ++tap) {
         const size_t index = local_y * SSIM_TILE_W + local_x + (size_t)tap;
-        const float ref = reference[index];
-        const float cmp = comparison[index];
-        const float weight = G[tap];
-        result.reference_mean += weight * ref;
-        result.comparison_mean += weight * cmp;
-        result.reference_square += weight * (ref * ref);
-        result.comparison_square += weight * (cmp * cmp);
-        result.cross_product += weight * (ref * cmp);
+        add_horizontal_tap(sums, reference[index], comparison[index], G[tap]);
     }
-    return result;
+    return round_moments(sums);
 }
 
 } // namespace
@@ -442,17 +601,17 @@ namespace
 
 static inline SsimMoments vertical_moments(const FloatVertArgs &args, size_t x, size_t y)
 {
-    SsimMoments result{};
+    MomentPairs sums{};
     for (int tap = 0; tap < SSIM_K; ++tap) {
         const size_t index = (y + (size_t)tap) * args.horizontal_width + x;
-        const float weight = G[tap];
-        result.reference_mean += weight * args.reference_mean[index];
-        result.comparison_mean += weight * args.comparison_mean[index];
-        result.reference_square += weight * args.reference_square[index];
-        result.comparison_square += weight * args.comparison_square[index];
-        result.cross_product += weight * args.cross_product[index];
+        const SsimMoments row = {.reference_mean = args.reference_mean[index],
+                                 .comparison_mean = args.comparison_mean[index],
+                                 .reference_square = args.reference_square[index],
+                                 .comparison_square = args.comparison_square[index],
+                                 .cross_product = args.cross_product[index]};
+        add_vertical_tap(sums, row, G[tap]);
     }
-    return result;
+    return round_moments(sums);
 }
 
 } // namespace
@@ -460,96 +619,15 @@ static inline SsimMoments vertical_moments(const FloatVertArgs &args, size_t x, 
 namespace
 {
 
-/* SSIM of one window. Every product sits in a named temporary so icpx
- * cannot contract it into an FMA (-fp-model=precise still contracts
- * `a * b + c` inside one expression, ADR-1358), which keeps the numerator
- * and the denominator the same operation sequence mirrored. Identical
- * windows therefore compare equal and score exactly 1, as the CPU does, and
- * `enable_db` reports the CPU's +inf / `clip_db` ceiling for them instead of
- * a finite dB value of an fp32 rounding residue (ADR-1221). */
-static inline float float_ssim_from_moments(const SsimMoments &moments, float c1, float c2)
+/* Exact work-group sum of one fixed-point term into `out`. Every work-item
+ * of the group must call it (reduce_over_group). */
+static inline void store_fixed_group(sycl::nd_item<2> item, const FloatVertArgs &args,
+                                     std::int64_t *out, std::int64_t value)
 {
-    const float reference_mean_sq = moments.reference_mean * moments.reference_mean;
-    const float comparison_mean_sq = moments.comparison_mean * moments.comparison_mean;
-    const float mean_product = moments.reference_mean * moments.comparison_mean;
-    const float reference_variance = moments.reference_square - reference_mean_sq;
-    const float comparison_variance = moments.comparison_square - comparison_mean_sq;
-    const float covariance = moments.cross_product - mean_product;
-    const float numerator = (2.0f * mean_product + c1) * (2.0f * covariance + c2);
-    const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
-                              (reference_variance + comparison_variance + c2);
-    return numerator == denominator ? 1.0f : numerator / denominator;
-}
-
-static inline float float_ssim_value(const FloatVertArgs &args, size_t x, size_t y)
-{
-    return float_ssim_from_moments(vertical_moments(args, x, y), args.c1, args.c2);
-}
-
-} // namespace
-
-namespace
-{
-
-/* Per-pixel L / C / S of CPU iqa/ssim_tools.c in fp32 (ADR-0220):
- * ssim_variance_scalar clamps both variances at zero, and
- * ssim_accumulate_default_scalar takes sigma_ref * sigma_cmp as one
- * square root and clamps a negative covariance to zero on a flat
- * window, with C3 = C2 / 2. */
-static inline SsimLcs float_ssim_lcs(const SsimMoments &moments, float c1, float c2)
-{
-    const float reference_mean_sq = moments.reference_mean * moments.reference_mean;
-    const float comparison_mean_sq = moments.comparison_mean * moments.comparison_mean;
-    const float mean_product = moments.reference_mean * moments.comparison_mean;
-    const float reference_raw = moments.reference_square - reference_mean_sq;
-    const float comparison_raw = moments.comparison_square - comparison_mean_sq;
-    const float reference_variance = reference_raw < 0.0f ? 0.0f : reference_raw;
-    const float comparison_variance = comparison_raw < 0.0f ? 0.0f : comparison_raw;
-    const float covariance = moments.cross_product - mean_product;
-    const float variance_product = reference_variance * comparison_variance;
-    const float sigma_product = sycl::sqrt(variance_product);
-    const float c3 = c2 / 2.0f;
-    const float flat_covariance = (covariance < 0.0f && sigma_product <= 0.0f) ? 0.0f : covariance;
-    return {
-        .luminance = (2.0f * mean_product + c1) / (reference_mean_sq + comparison_mean_sq + c1),
-        .contrast = (2.0f * sigma_product + c2) / (reference_variance + comparison_variance + c2),
-        .structure = (flat_covariance + c3) / (sigma_product + c3),
-    };
-}
-
-} // namespace
-
-namespace
-{
-
-static inline void store_float_group(sycl::nd_item<2> item, const FloatVertArgs &args, float value)
-{
-    const float sum = sycl::reduce_over_group(item.get_group(), value, sycl::plus<float>{});
+    const std::int64_t sum =
+        sycl::reduce_over_group(item.get_group(), value, sycl::plus<std::int64_t>{});
     if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
-        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
-        args.partials[index] = sum;
-    }
-}
-
-} // namespace
-
-namespace
-{
-
-static inline void store_lcs_group(sycl::nd_item<2> item, const FloatVertArgs &args,
-                                   const SsimLcs &lcs)
-{
-    const float luminance =
-        sycl::reduce_over_group(item.get_group(), lcs.luminance, sycl::plus<float>{});
-    const float contrast =
-        sycl::reduce_over_group(item.get_group(), lcs.contrast, sycl::plus<float>{});
-    const float structure =
-        sycl::reduce_over_group(item.get_group(), lcs.structure, sycl::plus<float>{});
-    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
-        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
-        args.lcs_partials[index] = luminance;
-        args.lcs_partials[args.group_count + index] = contrast;
-        args.lcs_partials[2U * args.group_count + index] = structure;
+        out[item.get_group(0) * args.group_columns + item.get_group(1)] = sum;
     }
 }
 
@@ -566,6 +644,8 @@ static sycl::nd_range<2> vert_combine_range(const FloatVertArgs &args)
                              sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
 }
 
+/* Pass 2: vertical moments, the CPU's per-pixel SSIM term and its exact
+ * work-group sum; out-of-frame work-items contribute zero. */
 static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
 {
     sycl::nd_range<2> const range = vert_combine_range(args);
@@ -573,15 +653,18 @@ static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
         handler.parallel_for(range, [=](sycl::nd_item<2> item) {
             const size_t x = item.get_global_id(1);
             const size_t y = item.get_global_id(0);
-            const float value =
-                x < args.final_width && y < args.final_height ? float_ssim_value(args, x, y) : 0.0f;
-            store_float_group(item, args, value);
+            std::int64_t value = 0;
+            if (x < args.final_width && y < args.final_height) {
+                const SsimTerms terms = ssim_terms(vertical_moments(args, x, y), args.c1, args.c2);
+                value = term_fixed(ssim_term(terms));
+            }
+            store_fixed_group(item, args, args.partials, value);
         });
     });
 }
 
-/* enable_lcs variant: one set of vertical moments feeds the SSIM value
- * and the L / C / S terms; out-of-frame work-items contribute zeros. */
+/* enable_lcs variant: the same terms feed the SSIM sum and the L / C / S
+ * sums, stored as [l | c | s] rows of group_count each. */
 static void launch_vert_combine_lcs(sycl::queue &queue, const FloatVertArgs &args)
 {
     sycl::nd_range<2> const range = vert_combine_range(args);
@@ -589,15 +672,21 @@ static void launch_vert_combine_lcs(sycl::queue &queue, const FloatVertArgs &arg
         handler.parallel_for(range, [=](sycl::nd_item<2> item) {
             const size_t x = item.get_global_id(1);
             const size_t y = item.get_global_id(0);
-            float value = 0.0f;
-            SsimLcs lcs{};
+            std::int64_t value = 0;
+            std::int64_t luminance = 0;
+            std::int64_t contrast = 0;
+            std::int64_t structure = 0;
             if (x < args.final_width && y < args.final_height) {
-                const SsimMoments moments = vertical_moments(args, x, y);
-                value = float_ssim_from_moments(moments, args.c1, args.c2);
-                lcs = float_ssim_lcs(moments, args.c1, args.c2);
+                const SsimTerms terms = ssim_terms(vertical_moments(args, x, y), args.c1, args.c2);
+                value = term_fixed(ssim_term(terms));
+                luminance = term_fixed(terms.luminance);
+                contrast = term_fixed(terms.contrast);
+                structure = term_fixed(Ff{.hi = terms.structure, .lo = 0.0f});
             }
-            store_float_group(item, args, value);
-            store_lcs_group(item, args, lcs);
+            store_fixed_group(item, args, args.partials, value);
+            store_fixed_group(item, args, args.lcs_partials, luminance);
+            store_fixed_group(item, args, args.lcs_partials + args.group_count, contrast);
+            store_fixed_group(item, args, args.lcs_partials + 2U * args.group_count, structure);
         });
     });
 }
@@ -733,11 +822,7 @@ static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, 
     s->wg_count_x = (s->w_final + (unsigned)SSIM_WG_X - 1) / (unsigned)SSIM_WG_X;
     s->wg_count_y = (s->h_final + (unsigned)SSIM_WG_Y - 1) / (unsigned)SSIM_WG_Y;
     s->wg_count = s->wg_count_x * s->wg_count_y;
-    const float range = 255.0f;
-    const float k1 = 0.01f;
-    const float k2 = 0.03f;
-    s->c1 = (k1 * range) * (k1 * range);
-    s->c2 = (k2 * range) * (k2 * range);
+    float_ssim_constants(&s->c1, &s->c2);
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, width, height);
     return 0;
 }
@@ -767,7 +852,7 @@ static void allocate_float_ssim(SsimStateSycl *s)
     const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
     const size_t input_bytes = (size_t)s->dec_width * s->dec_height * sizeof(float);
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
+    const size_t partials_bytes = (size_t)s->wg_count * sizeof(std::int64_t);
     s->h_ref_raw = allocate_host<void>(s->sycl_state, raw_bytes);
     s->h_cmp_raw = allocate_host<void>(s->sycl_state, raw_bytes);
     s->d_ref_raw = allocate_device<void>(s->sycl_state, raw_bytes);
@@ -779,11 +864,11 @@ static void allocate_float_ssim(SsimStateSycl *s)
     s->d_ref_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
     s->d_cmp_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
     s->d_refcmp = allocate_device<float>(s->sycl_state, horiz_bytes);
-    s->d_partials = allocate_device<float>(s->sycl_state, partials_bytes);
-    s->h_partials = allocate_host<float>(s->sycl_state, partials_bytes);
+    s->d_partials = allocate_device<std::int64_t>(s->sycl_state, partials_bytes);
+    s->h_partials = allocate_host<std::int64_t>(s->sycl_state, partials_bytes);
     if (s->enable_lcs) {
-        s->d_lcs_partials = allocate_device<float>(s->sycl_state, 3U * partials_bytes);
-        s->h_lcs_partials = allocate_host<float>(s->sycl_state, 3U * partials_bytes);
+        s->d_lcs_partials = allocate_device<std::int64_t>(s->sycl_state, 3U * partials_bytes);
+        s->h_lcs_partials = allocate_host<std::int64_t>(s->sycl_state, 3U * partials_bytes);
     }
 }
 
@@ -890,7 +975,7 @@ static void enqueue_float_vertical(SsimStateSycl *s, sycl::queue &q)
                                   .group_count = s->wg_count,
                                   .c1 = s->c1,
                                   .c2 = s->c2};
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
+    const size_t partials_bytes = (size_t)s->wg_count * sizeof(std::int64_t);
     if (s->enable_lcs) {
         launch_vert_combine_lcs(q, vert_args);
         q.memcpy(s->h_lcs_partials, s->d_lcs_partials, 3U * partials_bytes);
@@ -966,12 +1051,13 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 namespace
 {
 
-static double sum_partials(const float *partials, unsigned count)
+/* The exact sum of the per-WG fixed-point partials, as a double. */
+static double sum_partials(const std::int64_t *partials, unsigned count)
 {
-    double total = 0.0;
+    FixedSum total;
     for (unsigned i = 0; i < count; i++)
-        total += (double)partials[i];
-    return total;
+        total.add(partials[i]);
+    return total.value();
 }
 
 /* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
@@ -1019,7 +1105,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     qptr->wait();
 
-    /* Per-WG float partials → host double sum → mean SSIM over
+    /* Exact sum of the per-WG fixed-point partials -> mean SSIM over
      * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
     const double total = sum_partials(s->h_partials, s->wg_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
@@ -1036,6 +1122,80 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 }
 
 } // namespace
+
+namespace
+{
+
+/* Host copy of pass 1 for the test hook below: the kernel's taps over a
+ * plain plane instead of the local-memory tile. */
+static void host_horizontal_pass(const float *reference, const float *comparison, unsigned width,
+                                 unsigned height, std::vector<SsimMoments> &rows)
+{
+    const unsigned w_out = width - (unsigned)(SSIM_K - 1);
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < w_out; ++x) {
+            MomentPairs sums{};
+            for (int tap = 0; tap < SSIM_K; ++tap) {
+                const size_t index = (size_t)y * width + x + (size_t)tap;
+                add_horizontal_tap(sums, reference[index], comparison[index], G[tap]);
+            }
+            rows[(size_t)y * w_out + x] = round_moments(sums);
+        }
+    }
+}
+
+/* Host copy of pass 2 and the fixed-point sums of SSIM, L, C and S. */
+static void host_vertical_sums(const std::vector<SsimMoments> &rows, unsigned w_out, unsigned h_out,
+                               FixedSum totals[4])
+{
+    float c1 = 0.0f;
+    float c2 = 0.0f;
+    float_ssim_constants(&c1, &c2);
+    for (unsigned y = 0; y < h_out; ++y) {
+        for (unsigned x = 0; x < w_out; ++x) {
+            MomentPairs sums{};
+            for (int tap = 0; tap < SSIM_K; ++tap)
+                add_vertical_tap(sums, rows[((size_t)y + (size_t)tap) * w_out + x], G[tap]);
+            const SsimTerms terms = ssim_terms(round_moments(sums), c1, c2);
+            totals[0].add(term_fixed(ssim_term(terms)));
+            totals[1].add(term_fixed(terms.luminance));
+            totals[2].add(term_fixed(terms.contrast));
+            totals[3].add(term_fixed(Ff{.hi = terms.structure, .lo = 0.0f}));
+        }
+    }
+}
+
+} // namespace
+
+/* Test hook (core/test/test_sycl_float_ssim_math.c): the float_ssim pipeline
+ * after decimation, run on the host with the kernels' own arithmetic
+ * (add_horizontal_tap, add_vertical_tap, ssim_terms, term_fixed). The group
+ * sums on the device are exact integer sums, so the host result is the
+ * device's for the same per-pixel values; the test compares it with
+ * iqa_ssim() without a device. `means` receives the fp32-rounded frame means
+ * of SSIM, L, C and S. Returns 0, -EINVAL for a plane smaller than the
+ * 11 x 11 window, or -ENOMEM. */
+extern "C" int vmaf_sycl_float_ssim_host_means(const float *reference, const float *comparison,
+                                               unsigned width, unsigned height, double means[4])
+{
+    if (!reference || !comparison || !means || width < (unsigned)SSIM_K ||
+        height < (unsigned)SSIM_K)
+        return -EINVAL;
+    const unsigned w_out = width - (unsigned)(SSIM_K - 1);
+    const unsigned h_out = height - (unsigned)(SSIM_K - 1);
+    FixedSum totals[4];
+    try {
+        std::vector<SsimMoments> rows((size_t)w_out * height);
+        host_horizontal_pass(reference, comparison, width, height, rows);
+        host_vertical_sums(rows, w_out, h_out, totals);
+    } catch (const std::bad_alloc &) {
+        return -ENOMEM;
+    }
+    const double n_pixels = (double)w_out * (double)h_out;
+    for (unsigned k = 0; k < 4U; ++k)
+        means[k] = (double)(float)(totals[k].value() / n_pixels);
+    return 0;
+}
 
 namespace
 {
@@ -1376,9 +1536,9 @@ static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs 
     const float c2 = args.sample_max * args.sample_max * 0.0009f * weight * weight;
     const float reference_mean = (float)moments.reference_mean;
     const float comparison_mean = (float)moments.comparison_mean;
-    /* Named products and the two variances summed as a pair: the same
-     * mirrored-operation contract as float_ssim_from_moments(), so an
-     * identical window scores exactly 1 like the exact-integer CPU path. */
+    /* The CPU integer_ssim.c::ssim_reduce_row_range groups the term as
+     * ((weight * a) * b) / denominator: on border pixels, where weight is
+     * not a power of two, the two round differently. */
     const float reference_mean_sq = reference_mean * reference_mean;
     const float comparison_mean_sq = comparison_mean * comparison_mean;
     const float mean_product = reference_mean * comparison_mean;
@@ -1388,14 +1548,15 @@ static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs 
     const float reference_variance = reference_weighted - reference_mean_sq;
     const float comparison_variance = comparison_weighted - comparison_mean_sq;
     const float covariance = cross_weighted - mean_product;
-    const float numerator = (2.0f * mean_product + c1) * (2.0f * covariance + c2);
+    const float a = 2.0f * mean_product + c1;
+    const float b = 2.0f * covariance + c2;
     const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
                               (reference_variance + comparison_variance + c2);
     if (denominator == 0.0f || moments.weight <= 0LL) {
         return {};
     }
-    const float ratio = numerator == denominator ? 1.0f : numerator / denominator;
-    return {.weighted_score = weight * ratio, .weight = weight};
+    const float weighted_score = ((weight * a) * b) / denominator;
+    return {.weighted_score = weighted_score, .weight = weight};
 }
 
 } // namespace

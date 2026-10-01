@@ -658,7 +658,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_psnr_sycl = {
     .collect = collect_fex_sycl,
     .options = options_psnr_sycl,
     .priv_size = sizeof(PsnrStateSycl),
-    .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
+    .flags = VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     .provided_features = provided_features_psnr_sycl,
     /* 3 dispatches/frame (one per plane), reduction-dominated;
      * AUTO + 1080p area matches motion's profile (see ADR-0181 /
