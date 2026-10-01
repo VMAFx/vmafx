@@ -124,6 +124,13 @@ fork's tree already carries these fixes.
   in `core/test/test_model_collection_api.c` exercise 10,000 minimal submodels
   forcing `++i == 10000` to verify `-EINVAL` and zero leaks.
 - No Netflix golden-data, score arithmetic, or public API impact.
+## fix/cli-raw-odd-420 — CLI accepts odd dimensions for raw YUV chroma-subsampled inputs (ADR-1398) (2026-10-01)
+
+- `core/tools/vmaf.cpp`: `validate_chroma_alignment()` formerly rejected odd widths for 4:2:0 and 4:2:2 and odd heights for 4:2:0 with `odd width/height %d not allowed...` (ADR-0461). Because `.y4m` padded dimensions to 16, odd dimensions were already accepted and evaluated using ceiling chroma (`(dim + 1) / 2`, `core/src/picture_geometry.h`). Per user decision 2026-10-01 ("Accept both (Recommended)"), the raw YUV reader accepts odd dimensions matching `.y4m`. `validate_chroma_alignment()` returns 0.
+- `core/tools/test/test_vmaf_option_dict_ownership.sh`: Case 2 previously relied on odd height refusal to verify early CLI options cleanup. Case 2 now tests mismatched dimensions (`64x64` ref vs `64x32` dist) to test pre-registration failure cleanup without tripping on odd dimensions.
+- `core/tools/test/test_vmaf_raw_odd_dims.sh`: added positive, negative, and boundary tests (19x19, 1921x1081, 19x20, 20x19, 19x19 422, 1x1 boundary, and truncated file size tests).
+- `python/test/vmafx_cli_test.py`: added `test_raw_odd_dimensions_matches_y4m`, `test_raw_odd_boundary_1x1`, and `test_raw_odd_file_size_mismatch_fails_cleanly`.
+- No Netflix golden assertions or C-API ABI impact. Upstream sync notes: keep `validate_chroma_alignment()` accepting odd dimensions unless upstream adopts an equivalent or superseding contract.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 

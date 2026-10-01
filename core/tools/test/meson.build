@@ -187,6 +187,18 @@ test('test_vmaf_frame_readahead', test_vmaf_frame_readahead,
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
 
+# ADR-1398 — raw input with odd width or height in 4:2:0 and odd width in 4:2:2
+# is accepted and read with ceil chroma, matching Y4M.
+test_vmaf_raw_odd_dims = find_program('test_vmaf_raw_odd_dims.sh')
+test('test_vmaf_raw_odd_dims', test_vmaf_raw_odd_dims,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])
+
 # T-WINDOWS-CLI-UTF8-ARGV-2026-09-24 — CreateProcessW supplies an exact
 # Unicode command line so this does not depend on the launching shell's code
 # page. The child must preserve those paths through the CLI's argv boundary.

@@ -263,6 +263,139 @@ class VmafxCliTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(len(match.group(1).split(".")[1]), 6)
 
+    def _run_cli_json(self, args, out_json):
+        cmd = [self.vmaf_bin] + args + ["--json", "-o", out_json]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        with open(out_json, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_raw_odd_dimensions_matches_y4m(self):
+        """ADR-1398: Raw 19x19 4:2:0 YUV input is accepted and scores match Y4M."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            w, h, cw, ch = 19, 19, 10, 10
+            frame_sz = w * h + 2 * cw * ch
+            ref_bytes = bytes((i * 17 + 11) % 256 for i in range(frame_sz))
+            dis_bytes = bytes((i * 23 + 47) % 256 for i in range(frame_sz))
+
+            ref_yuv, dis_yuv = os.path.join(tmpdir, "ref.yuv"), os.path.join(tmpdir, "dis.yuv")
+            with open(ref_yuv, "wb") as f:
+                f.write(ref_bytes)
+            with open(dis_yuv, "wb") as f:
+                f.write(dis_bytes)
+
+            hdr = f"YUV4MPEG2 W{w} H{h} F25:1 Ip A1:1 C420jpeg\nFRAME\n".encode("ascii")
+            ref_y4m, dis_y4m = os.path.join(tmpdir, "ref.y4m"), os.path.join(tmpdir, "dis.y4m")
+            with open(ref_y4m, "wb") as f:
+                f.write(hdr + ref_bytes)
+            with open(dis_y4m, "wb") as f:
+                f.write(hdr + dis_bytes)
+
+            yuv_args = [
+                "-r",
+                ref_yuv,
+                "-d",
+                dis_yuv,
+                "-w",
+                str(w),
+                "-h",
+                str(h),
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "--no_prediction",
+                "--feature",
+                "psnr",
+            ]
+            data_yuv = self._run_cli_json(yuv_args, os.path.join(tmpdir, "yuv.json"))
+
+            y4m_args = [
+                "-r",
+                ref_y4m,
+                "-d",
+                dis_y4m,
+                "--no_prediction",
+                "--feature",
+                "psnr",
+            ]
+            data_y4m = self._run_cli_json(y4m_args, os.path.join(tmpdir, "y4m.json"))
+
+            for m in ("psnr_y", "psnr_cb", "psnr_cr"):
+                score_yuv = data_yuv["pooled_metrics"][m]["mean"]
+                score_y4m = data_y4m["pooled_metrics"][m]["mean"]
+                self.assertAlmostEqual(score_yuv, score_y4m, places=5)
+
+    def test_raw_odd_boundary_1x1(self):
+        """ADR-1398: 1x1 4:2:0 boundary edge is accepted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1x1 4:2:0: 1*1 + 2*1*1 = 3 bytes
+            ref_bytes = b"\x64\x96\xc8"
+            dis_bytes = b"\x6e\x8c\xd2"
+            ref_yuv = os.path.join(tmpdir, "ref1x1.yuv")
+            dis_yuv = os.path.join(tmpdir, "dis1x1.yuv")
+            with open(ref_yuv, "wb") as f:
+                f.write(ref_bytes)
+            with open(dis_yuv, "wb") as f:
+                f.write(dis_bytes)
+
+            out_json = os.path.join(tmpdir, "out.json")
+            cmd = [
+                self.vmaf_bin,
+                "-r",
+                ref_yuv,
+                "-d",
+                dis_yuv,
+                "-w",
+                "1",
+                "-h",
+                "1",
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "--no_prediction",
+                "--feature",
+                "psnr",
+                "--json",
+                "-o",
+                out_json,
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            with open(out_json, encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertIn("psnr_y", data["pooled_metrics"])
+
+    def test_raw_odd_file_size_mismatch_fails_cleanly(self):
+        """ADR-1398: Mismatched file size for odd geometry exits 2 with diagnostic."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bad_yuv = os.path.join(tmpdir, "bad.yuv")
+            # 19x19 needs 561 bytes; 560 bytes is too small
+            with open(bad_yuv, "wb") as f:
+                f.write(b"\x00" * 560)
+            cmd = [
+                self.vmaf_bin,
+                "-r",
+                bad_yuv,
+                "-d",
+                bad_yuv,
+                "-w",
+                "19",
+                "-h",
+                "19",
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "--no_prediction",
+                "--feature",
+                "psnr",
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 2)
+            self.assertIn("file too small", res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1100,3 +1100,4 @@
 1388-release-pat-mode-gate-exemption
 1389-codeql-actions-universal-pr-sast
 1395-sycl-kernels-no-scratch
+1398-cli-accept-odd-dimensions-chroma-subsampled

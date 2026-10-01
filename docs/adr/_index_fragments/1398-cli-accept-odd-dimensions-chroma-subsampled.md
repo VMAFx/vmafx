@@ -1,0 +1,1 @@
+| [ADR-1398](1398-cli-accept-odd-dimensions-chroma-subsampled.md) | CLI accepts odd dimensions for chroma-subsampled raw YUV inputs with ceil chroma, matching Y4M. Supersedes ADR-0461 odd-dimension refusal per user decision 2026-10-01 ("Accept both"). | Accepted | `cli`, `validation`, `correctness`, `fork-local` |

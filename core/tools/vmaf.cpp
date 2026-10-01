@@ -228,28 +228,14 @@ namespace
     return err_cnt;
 }
 
-/* Chroma-subsampled formats require even dimensions on the subsampled axes so
- * that the chroma planes contain whole pixels.  PF_420 subsamples both X and
- * Y; PF_422 subsamples X only. */
+/* Chroma-subsampled formats (4:2:0, 4:2:2) accept odd dimensions; planes are
+ * allocated and read using ceiling division (vmaf_chroma_extent(),
+ * Research-0094, ADR-1398; User decision 2026-10-01 "Accept both (Recommended)").
+ * Both raw YUV and Y4M inputs are accepted with ceil chroma. */
 [[nodiscard]] int validate_chroma_alignment(const video_input_info *info)
 {
-    int err_cnt = 0;
-
-    if (info->pixel_fmt == PF_420 || info->pixel_fmt == PF_422) {
-        if (info->frame_w % 2 != 0) {
-            (void)fprintf(stderr, "odd width %d not allowed for chroma-subsampled format\n",
-                          info->frame_w);
-            err_cnt++;
-        }
-    }
-    if (info->pixel_fmt == PF_420) {
-        if (info->frame_h % 2 != 0) {
-            (void)fprintf(stderr, "odd height %d not allowed for 4:2:0 format\n", info->frame_h);
-            err_cnt++;
-        }
-    }
-
-    return err_cnt;
+    (void)info;
+    return 0;
 }
 
 } // namespace

@@ -1506,6 +1506,7 @@ nav:
         - "ADR-1393: cambi-clip-window-to-frame": adr/1393-cambi-clip-window-to-frame.md
         - "ADR-1395: sycl-kernels-no-scratch": adr/1395-sycl-kernels-no-scratch.md
         - "ADR-1396: vmaf-init-output-only-handle": adr/1396-vmaf-init-output-only-handle.md
+        - "ADR-1398: cli-accept-odd-dimensions-chroma-subsampled": adr/1398-cli-accept-odd-dimensions-chroma-subsampled.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1877,6 +1878,7 @@ nav:
         - "nvidia": adr/by-tag/nvidia.md
         - "observability": adr/by-tag/observability.md
         - "occupancy": adr/by-tag/occupancy.md
+        - "odd-dimensions": adr/by-tag/odd-dimensions.md
         - "oidc": adr/by-tag/oidc.md
         - "online-learning": adr/by-tag/online-learning.md
         - "onnx": adr/by-tag/onnx.md

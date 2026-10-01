@@ -32,9 +32,11 @@ mkdir -p "${WORK}"
 # 64x64 4:2:0 8-bit, two frames of 64*64 + 2*32*32 = 6144 bytes. Too small for
 # cambi (a side of 216 or more) and for the vmaf_v1.0.16 model, which uses it.
 dd if=/dev/zero of="${WORK}/small.yuv" bs=6144 count=2 2>/dev/null
-# 64x63 4:2:0: 64*63 + 2*32*32 = 6080 bytes a frame, so the reader accepts the
-# file and the odd height is what stops the run.
-dd if=/dev/zero of="${WORK}/odd.yuv" bs=6080 count=2 2>/dev/null
+# Mismatched dimensions: 64x64 ref vs 64x32 dist. validate_videos() stops the run.
+printf "YUV4MPEG2 W64 H64 F25:1 Ip A1:1 C420jpeg\nFRAME\n" >"${WORK}/ref64.y4m"
+dd if=/dev/zero bs=6144 count=1 2>/dev/null >>"${WORK}/ref64.y4m"
+printf "YUV4MPEG2 W64 H32 F25:1 Ip A1:1 C420jpeg\nFRAME\n" >"${WORK}/dist32.y4m"
+dd if=/dev/zero bs=3072 count=1 2>/dev/null >>"${WORK}/dist32.y4m"
 
 # The leak of a model-overload dictionary is hidden by a stale pointer that the
 # conservative scan finds on the stack at exit; scan the heap and globals only.
@@ -85,9 +87,9 @@ run_case missing-input error "could not open file" \
   -r "${WORK}/missing.yuv" -d "${WORK}/missing.yuv" -w 64 -h 64 -p 420 -b 8 \
   --feature "${FEATURE_OPTS}" --model "path=${MODEL_DIR}/vmaf_v0.6.1.json:${OVERLOAD}"
 
-# 2. An odd height for 4:2:0: the same stop, from the geometry check.
-run_case odd-height error "odd height 63 not allowed" \
-  -r "${WORK}/odd.yuv" -d "${WORK}/odd.yuv" -w 64 -h 63 -p 420 -b 8 \
+# 2. Mismatched dimensions: the same stop, from the geometry check.
+run_case mismatched-dimensions error "dimensions do not match: 64x64, 64x32" \
+  -r "${WORK}/ref64.y4m" -d "${WORK}/dist32.y4m" \
   --feature "${FEATURE_OPTS}" --model "path=${MODEL_DIR}/vmaf_v0.6.1.json:${OVERLOAD}"
 
 # 3. A model whose features do not fit the frame: load_cli_models() stops

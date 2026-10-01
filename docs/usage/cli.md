@@ -57,6 +57,12 @@ no `--xml|--json|--csv|--sub` is passed: XML.
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied
 the input is treated as raw YUV and **all four** become mandatory.
 
+Odd frame dimensions (e.g. 1921×1081 or 19×19) are accepted for both raw `.yuv`
+and `.y4m` inputs across chroma-subsampled formats (4:2:0 and 4:2:2). Subsampled
+chroma plane extents are derived using ceiling division (`(dim + 1) / 2`),
+matching container layouts and covering the last boundary samples
+([ADR-1398](../adr/1398-cli-accept-odd-dimensions-chroma-subsampled.md)).
+
 ### Windows UTF-8 paths
 
 On Windows, VMAFx-owned file operations interpret path strings as UTF-8 and
