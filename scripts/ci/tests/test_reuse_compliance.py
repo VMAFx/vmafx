@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -49,10 +50,13 @@ class ReuseComplianceTests(unittest.TestCase):
 
     def test_reuse_lint_cli_passes(self) -> None:
         """'reuse lint' CLI command must exit with code 0 and report compliance."""
+        # reuse localises its report; the assertions below read the English text.
+        environment = dict(os.environ, LC_ALL="C.UTF-8", LANGUAGE="C")
         result = run_command(
             ["reuse", "lint"],
             allowed_executables=["reuse"],
             cwd=ROOT,
+            env=environment,
             capture_output=True,
             text=True,
             timeout_seconds=30.0,
