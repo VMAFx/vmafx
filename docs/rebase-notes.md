@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## perf/sycl-float-adm-no-scratch — eliminate scratch memory from float_adm_sycl kernels (ADR-1395) (2026-10-01)
+
+- `core/src/feature/sycl/float_adm_sycl.cpp`: `FadmDecouplePixel` had `float original[3]`
+  and `float transformed[3]`. Indexing by dynamic variable `band` prevented IGC/LLVM
+  from allocating to registers, resulting in an 896-byte private array on the stack.
+  Replaced with scalar loads `fadm_load_cm_band_pixel`, eliminating private arrays
+  and register spills (`private_mem_size == 0`, `spill_memory_size == 0` in both
+  JIT and `dg2-g11` AOT).
+- `core/src/sycl/scratch_ratchet.txt`: removed `launch_aim_cm` and `launch_csf_cm`,
+  clearing the ratchet to 0 entries.
+- `core/src/sycl/scratch_check.cpp`: `kScratchExtractors` set to `""`.
+  **On rebase**: a conflict in either file with another scratch-free PR is a set
+  difference; keep every removal.
+- No CPU code changes. No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## ADR-1415 — every x86 SIMD library is built without FP contraction (2026-10-01)
 
 `fix/icx-ssim-avx512-fp-contract`, ADR-1415.

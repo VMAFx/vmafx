@@ -15,10 +15,3 @@
 #
 # Columns (tab-separated): extractors  private-bytes  spill-bytes  kernel-id.
 # The byte columns record the measurement; only the kernel id is matched.
-
-
-# float_adm_sycl: core/src/feature/sycl/float_adm_sycl.cpp
-# launch_aim_cm
-float_adm_sycl	896	0	_ZTSZZN12_GLOBAL__N_113launch_aim_cmERN4sycl3_V15queueEPKfS5_S5_S5_PfjjjiiiifffffiENKUlRNS1_7handlerEE_clES8_EUlNS1_7nd_itemILi1EEEE_
-# launch_csf_cm
-float_adm_sycl	896	0	_ZTSZZN12_GLOBAL__N_113launch_csf_cmERN4sycl3_V15queueEPKfS5_S5_S5_PfjjjiiiifffffiENKUlRNS1_7handlerEE_clES8_EUlNS1_7nd_itemILi1EEEE_

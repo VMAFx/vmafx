@@ -438,6 +438,10 @@
   The CLI picture pool allocates pictures in SYCL host USM (`sycl::malloc_host`) when `--backend sycl` is active, avoiding pageable memory staging and host copies on upload. Chroma planes in contiguous pinned host memory bypass staging buffers for direct DMA transfers. Measured on an Intel Arc A380 (Linux `xe` driver) with BBB 3840x2160: upload time dropped from 2.2–3.0 ms per frame down to 0.70 ms steady-state. Scores are bit-identical. Closes `T-SYCL-PAGEABLE-UPLOAD-HOST-STAGING-2026-09-29`.
 
 
+- **SYCL `float_adm` kernels eliminate scratch memory and restore parity on Intel Arc A380 under the Linux `xe` driver (ADR-1395).**
+  On the Arc A380 (`dg2-g11`, PCI `56a5`) under the Linux `xe` driver, SYCL kernels that use scratch memory or register spills return corrupted values. In `float_adm_sycl`, `launch_aim_cm` and `launch_csf_cm` previously allocated 896 B of private memory each due to dynamic indexing of `original` and `transformed` band arrays in `FadmDecouplePixel`. Refactoring to scalar band pixel loads `fadm_load_cm_band_pixel` eliminates all private arrays and register spills (`private_mem_size == 0`, `spill_memory_size == 0` for both JIT and `dg2-g11` AOT). All 110 SYCL kernels in the repository are now completely scratch-free; `core/src/sycl/scratch_ratchet.txt` is cleared to zero entries, and `kScratchExtractors` in `core/src/sycl/scratch_check.cpp` is set to `""`. `test_sycl_kernel_scratch` passes with 0 kernels using scratch memory. Parity is restored: `test_sycl_float_adm_parity` and `test_sycl_float_adm_parity_large` pass on Arc A380; parity against CPU reference at `--precision max` is within 2.53e-06 on Netflix 576x324 and within 1.28e-05 on BBB 4K. 4K execution no longer fails with NaN reduction errors, completing at 20.71 ms/frame median of 3 (19.64 ms/frame via `speed_gpu_parity.py`).
+
+
 - **`float_ssim` runs on SYCL at 1080p and 4K (ADR-1370).** The SYCL twin
   implemented only scale 1, so `--backend sycl --feature float_ssim` and every
   model on a picture with a short side of 384 px or more computed the feature
