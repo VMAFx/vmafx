@@ -56798,3 +56798,19 @@ No FFmpeg patch impact. CPU scores are unchanged.
   `integer_ms_ssim_hip.c` no longer has `g_alphas` / `g_betas` / `g_gammas`.
 - `scripts/ci/tidy-baseline-hip.json`: `integer_ms_ssim_hip.c` 1 -> 0,
   `test_hip_ms_ssim_parity.c` 21 -> 0.
+## docs/rc-phase-map-rc3-rc8 — first-release candidate map RC3 to RC8 (2026-10-01)
+
+No upstream source impact: this is fork-only release governance and
+documentation. [ADR-1421](adr/1421-rc3-rc8-candidate-map.md) supersedes the
+candidate mapping of [ADR-1352](adr/1352-rc-phase-shift-plus-one.md) (ADR-1341's
+other rules stay). RC3 owns twin exactness, RC4 the first full Rust metric, RC5
+deduplication, RC6 the GPU capability table, RC7 benchmarks, profiling and
+tuning, and RC8 the one-shot real retrain. When rebasing release, roadmap,
+runbook, tester or ledger documents, never restore "RC3 = benchmarks" or
+"RC4 = retrain" in forward-looking text; the `tools/rc1-tester` catalog phases
+are `RC1`, `RC7` and `RC8`. `tools/rc1-tester/` keeps its name and the backlog
+IDs `T-RC2-BENCH-TUNE` and `T-RC3-MODEL-RETRAIN` stay stable (ADR-1303).
+`docs/state.md` keeps its two ADR-1352 disposition labels until
+`T-STATE-LEDGER-RC-RELABEL-2026-10-01` relabels them; the section
+"First-release phase classification" states how they read meanwhile. The
+Netflix golden assertions are untouched.

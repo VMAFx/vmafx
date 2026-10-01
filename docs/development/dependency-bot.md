@@ -20,7 +20,7 @@ grouped dependency-update PRs on the configured weekday schedule.
 ## Merge policy during release candidates
 
 Ordinary Renovate and other version-update pull requests are **not frozen**
-during any release candidate, RC1 through RC4. Merge them when the
+during any release candidate, RC1 through RC8. Merge them when the
 repository's normal required checks, review, digest/pin policy, and
 component-specific validation pass.
 Security updates are prioritised, but they are not the only version changes

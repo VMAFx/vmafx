@@ -12,7 +12,7 @@ map of where that plan lives and how the releases are sequenced.
 
 | Milestone | Theme |
 | --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 benchmarking and tuning, RC4 real model retraining, then final |
+| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric, RC5 deduplication, RC6 GPU capability table, RC7 benchmarking and tuning, RC8 real model retraining, then final |
 | [1.1](https://github.com/VMAFx/vmafx/milestone/2) | New metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), their GPU twins, and the tools surface |
 | [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Cloud-native foundation: server mode, observability, containers and Kubernetes |
 | [1.3](https://github.com/VMAFx/vmafx/milestone/4) | Cloud-native scale-out: operator, controller/node, multi-vendor GPU scheduling |
@@ -31,26 +31,34 @@ The fork's first release candidate, `v1.0.0-rc.1`, was published on
 2026-09-27; older tags are inherited upstream history.
 [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gives each
 first-release candidate one responsibility, and
-[ADR-1352](adr/1352-rc-phase-shift-plus-one.md) inserts a stabilisation
-candidate after rc.1 so that each stage number matches its `v1.0.0-rc.N` tag:
+[ADR-1421](adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags (it
+supersedes the candidate mapping of
+[ADR-1352](adr/1352-rc-phase-shift-plus-one.md)), so that each stage number
+matches its `v1.0.0-rc.N` tag:
 
 | Stage | In scope | Exit boundary |
 | --- | --- | --- |
 | **RC1 — correctness and tester readiness** | Release-blocking correctness, reliability, security, build, packaging, backend usability, and a portable report path for outside hardware | The exact candidate head is green; no confirmed RC1 blocker or untriaged `docs/state.md` row remains; a tester can return artifact/environment identity, device and tool versions, backend availability, correctness/parity results, commands, logs, and failures |
 | **RC2 — stabilisation and repair** | The dependency updates and correctness fixes merged since rc.1, delivered to testers through the same report path; no benchmark or training work | The RC1 boundary, re-established on the rc.2 head |
-| **RC3 — benchmark and tune** | Comparable benchmark baselines, profiling, hardware-generation retuning, and measured performance fixes | Results identify the exact artifact, fixtures, host, drivers and runtimes; accepted wins are re-measured and preserve correctness/parity |
-| **RC4 — real retraining** | The locked one-shot model retraining programme on the clean, tuned tree | Model-quality gates, model cards, registry/signing metadata, and unchanged Netflix golden assertions pass |
-| **Final `v1.0.0`** | Accepted RC4 output plus any required repair candidate | Publication preflight passes on the immutable final tag |
+| **RC3 — twin exactness** ([#1721](https://github.com/VMAFx/vmafx/issues/1721)) | Every GPU and SIMD twin returns the CPU extractor's scores bit for bit, or carries a measured tolerance recorded in an ADR; no SYCL kernel uses scratch memory | Per-twin parity measured at `--precision max` on the Netflix pairs, the 1080p checkerboard pairs and the 4K fixture; Netflix golden assertions unchanged |
+| **RC4 — first full Rust metric** ([#1723](https://github.com/VMAFx/vmafx/issues/1723)) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) in Rust; the C ABI is unchanged and the GPU twins stay CUDA, SYCL and HIP code | The Rust path is bit-identical to the C path on the parity fixtures |
+| **RC5 — deduplication** ([#1724](https://github.com/VMAFx/vmafx/issues/1724)) | One implementation per behaviour across GPU twins and host code, the Rust code included; `libgpudispatch` extracted ([#1455](https://github.com/VMAFx/vmafx/issues/1455)) | Scores unchanged against the RC3 reference; duplicated code removed rather than moved |
+| **RC6 — GPU capability source of truth** ([#1725](https://github.com/VMAFx/vmafx/issues/1725)) | A per-vendor capability table generated from `nvcc --list-gpu-arch`, `ocloc` and ROCm `llc -mcpu=help`, checked in with a CI drift check; dispatch and kernel parameters read it, with a generic fallback for unknown devices; every kernel compiled and statically audited for every target (scratch, spills, register ceiling, fp64) | Drift check green; audit clean for every listed target |
+| **RC7 — benchmark and tune** ([#1245](https://github.com/VMAFx/vmafx/issues/1245)) | Comparable benchmark baselines, profiling, hardware-generation retuning, and measured performance fixes, including the speed RC3 gave up for exactness | Results identify the exact artifact, fixtures, host, drivers and runtimes; accepted wins are re-measured and preserve correctness/parity |
+| **RC8 — real retraining** ([#1246](https://github.com/VMAFx/vmafx/issues/1246), [#1242](https://github.com/VMAFx/vmafx/issues/1242)) | The locked one-shot model retraining programme on the clean, tuned tree | Model-quality gates, model cards, registry/signing metadata, and unchanged Netflix golden assertions pass |
+| **Final `v1.0.0`** | Accepted RC8 output plus any required repair candidate | Publication preflight passes on the immutable final tag |
 
 “Done fixing” is deliberately bounded rather than a promise that no future bug
 will be found. RC1 and RC2 are ready when there are no confirmed, actionable
 release blockers and no untriaged rows. Performance-only findings belong to
-RC3, real training belongs to RC4, and externally blocked work stays explicitly
+RC7, real training belongs to RC8, and externally blocked work stays explicitly
 deferred with its trigger and evidence.
 
-If RC3 or RC4 exposes a correctness regression, fix it and rerun the affected
-stage evidence before proceeding. Do not pull general benchmarking into RC1 or
-RC2, or real training before RC4. The RC1 and RC2 report envelope may run a
+If any later candidate exposes a correctness regression, fix it and rerun the
+affected stage evidence before proceeding. Do not pull general benchmarking
+into RC1 to RC6, or real training before RC7 evidence is accepted. Speed that
+RC3 gives up for exactness is recorded as a tuning row and recovered in RC7; it
+is not traded back for a tolerance. The RC1 and RC2 report envelope may run a
 short correctness and device-engagement smoke; it does not make a performance
 claim.
 

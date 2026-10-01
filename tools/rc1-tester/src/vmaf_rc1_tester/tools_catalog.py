@@ -1,6 +1,6 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Tester-facing inventory with honest RC1/RC2, RC3, and RC4 boundaries."""
+"""Tester-facing inventory with honest RC1/RC2, RC7, and RC8 boundaries."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ REPO_TOOLS: tuple[ToolEntry, ...] = (
     ),
     ToolEntry(
         "vmaf_bench",
-        "RC3",
+        "RC7",
         "Performance benchmarking",
         "build/tools/vmaf_bench",
         "Measures feature-extractor throughput.",
@@ -73,17 +73,17 @@ REPO_TOOLS: tuple[ToolEntry, ...] = (
     ),
     ToolEntry(
         "Backend benchmark harness",
-        "RC3",
+        "RC7",
         "Performance benchmarking",
         "testdata/bench_backends.py",
         "Runs backend benchmark rows over checked-in fixtures.",
         "CPU, CUDA, SYCL, HIP on Linux",
-        "Uses Linux /proc load data and has no Metal lane; cross-platform cleanup belongs to RC3.",
+        "Uses Linux /proc load data and has no Metal lane; cross-platform cleanup belongs to RC7.",
         False,
     ),
     ToolEntry(
         "vmaf-tune",
-        "RC3",
+        "RC7",
         "Encoder tuning",
         "tools/vmaf-tune/vmaf-tune",
         "Runs rate-quality sweeps, bisection, and encoder parameter search.",
@@ -93,22 +93,22 @@ REPO_TOOLS: tuple[ToolEntry, ...] = (
     ),
     ToolEntry(
         "ensemble-training-kit",
-        "RC4",
+        "RC8",
         "Model training",
         "tools/ensemble-training-kit/run-full-pipeline.sh",
         "Runs LOSO validation and production model export.",
         "CPU, CUDA, SYCL",
-        "Real training is deferred until RC4.",
+        "Real training is deferred until RC8.",
         False,
     ),
     ToolEntry(
         "tiny-AI training",
-        "RC4",
+        "RC8",
         "Model training",
         "ai/",
         "Contains the PyTorch training and ONNX export workflows.",
         "CPU, CUDA",
-        "Real training is deferred until RC4.",
+        "Real training is deferred until RC8.",
         False,
     ),
 )
@@ -139,7 +139,7 @@ def render_tools_markdown() -> str:
     lines.extend(
         [
             "",
-            "> RC1 and the RC2 stabilisation candidate collect build, environment, compiled-test, and bounded backend-correctness evidence. Performance benchmarking/tuning starts in RC3; real model training starts in RC4.",
+            "> RC1 and the RC2 stabilisation candidate collect build, environment, compiled-test, and bounded backend-correctness evidence. Performance benchmarking/tuning starts in RC7; real model training starts in RC8.",
         ]
     )
     return "\n".join(lines)

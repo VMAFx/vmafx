@@ -4,7 +4,9 @@
 RC1 testing answers a narrow question: can another person build VMAFx, run its
 compiled tests, initialize an explicitly requested CPU or accelerator backend,
 and return enough evidence for a maintainer to reproduce a failure? Performance
-benchmarking and tuning start in RC3. Real model training starts in RC4.
+benchmarking and tuning start in RC7. Real model training starts in RC8.
+RC3 to RC6 (twin exactness, the Rust metric, deduplication, the GPU capability
+table) do not change what the collector does.
 
 RC2 (`v1.0.0-rc.2`) is a stabilisation candidate that carries the dependency
 updates and fixes merged since RC1. It asks the same question, so RC2 testers
@@ -13,8 +15,8 @@ follow this guide unchanged and use the RC2 tag wherever it says RC1.
 | Release phase | Scope |
 | :--- | :--- |
 | RC1 and RC2 | Build/correctness readiness, device discovery, bounded four-frame backend checks, and report collection. |
-| RC3 | Performance benchmarking and tuning (`vmaf_bench`, `vmaf-tune`, backend harness cleanup). |
-| RC4 | Real corpus materialization, LOSO runs, and model training (`ai/`, `ensemble-training-kit`). |
+| RC7 | Performance benchmarking and tuning (`vmaf_bench`, `vmaf-tune`, backend harness cleanup). |
+| RC8 | Real corpus materialization, LOSO runs, and model training (`ai/`, `ensemble-training-kit`). |
 
 The RC1 collector never starts a benchmark sweep, encoder search, corpus job, or
 training run.
@@ -73,7 +75,7 @@ the resulting binary is easy to reason about:
     The current `vmaf-dev-mcp:local` image uses oneAPI 2026.1.1, whose full
     release build hits a binutils/LTO-plugin link mismatch. `-Db_lto=false` is
     the validated RC1 correctness-build workaround; six Arc A380 ADM tests pass
-    with it. Performance/LTO characterization remains RC3 work.
+    with it. Performance/LTO characterization remains RC7 work.
 
 === "HIP"
 
@@ -127,10 +129,10 @@ On Windows:
 py tools\rc1-tester\vmaf-rc1-report list-tools
 ```
 
-The inventory distinguishes tools ready for RC1 from deferred RC3/RC4 tools and
+The inventory distinguishes tools ready for RC1 from deferred RC7/RC8 tools and
 states known gaps. In particular, the current C `vmaf_bench` covers
 CPU/CUDA/SYCL rather than HIP/Metal, and its `--list-devices` mode is SYCL-only.
-Those benchmark-coverage gaps belong to the RC3 work, not to RC1 or RC2
+Those benchmark-coverage gaps belong to the RC7 work, not to RC1 or RC2
 correctness reporting.
 
 ## 4. Probe the host

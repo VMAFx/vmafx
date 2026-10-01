@@ -962,7 +962,7 @@ feature/
   change to `c_value_pixel`, the histogram window walk,
   `spatial_pooling`, `cambi_preprocessing` or `filter_mode` must be
   mirrored into `sycl/integer_cambi_sycl.cpp` in same PR
-  (`test_sycl_cambi_parity` asserts bit-exact per frame). Open RC3 rows
+  (`test_sycl_cambi_parity` asserts bit-exact per frame). Open host-residual rows
   `T-{CUDA,HIP,METAL}-CAMBI-HOST-RESIDUAL-2026-09-29` in
   `docs/state.md` port the SYCL design to the other twins.
   - **`cambi_internal.h` invariant**: this internal-only header

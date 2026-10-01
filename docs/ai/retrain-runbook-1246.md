@@ -5,14 +5,15 @@ This runbook defines the end-to-end operational procedure for the one-shot
 retraining pass of the fork's tiny-AI models against the canonical
 `vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/VMAFx/vmafx/issues/1246)).
 
-The retrain executes **once** as RC4 (`v1.0.0-rc.4`), after RC3 evidence is
+The retrain executes **once** as RC8 (`v1.0.0-rc.8`), after RC7 evidence is
 accepted and the remaining preconditions are satisfied. Under
 [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), with the
-tag mapping from [ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), this is
-an **RC4-only** operation: RC1 and RC2 complete correctness and tester
-reporting, RC3 completes benchmark/tuning evidence, and the real training run
-starts only after the accepted RC3 tree is clean and frozen. Do not start this
-run during RC1, RC2 or RC3.
+tag mapping from [ADR-1421](../adr/1421-rc3-rc8-candidate-map.md), this is
+an **RC8-only** operation: RC1 and RC2 complete correctness and tester
+reporting, RC3 to RC6 complete twin exactness, the Rust metric, deduplication
+and the GPU capability table, RC7 completes benchmark/tuning evidence, and the
+real training run starts only after the accepted RC7 tree is clean and frozen.
+Do not start this run during RC1 to RC7.
 
 ---
 
@@ -21,8 +22,8 @@ run during RC1, RC2 or RC3.
 All procedures in this runbook strictly enforce the binding maintainer decisions
 and architectural records:
 
-- **Release sequence (ADR-1341, ADR-1352)**: this one-shot programme is the
-  RC4 gate. Accepted RC3 benchmark/tuning evidence, an exact-head green tree, and an
+- **Release sequence (ADR-1341, ADR-1421)**: this one-shot programme is the
+  RC8 gate. Accepted RC7 benchmark/tuning evidence, an exact-head green tree, and an
   explicit maintainer go-ahead are preconditions. Any later code or version
   merge invalidates the frozen-head evidence and must be reconciled before
   training starts.

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1352: Shift the first-release candidate mapping by one
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1421](1421-rc3-rc8-candidate-map.md)
 - **Date**: 2026-09-28
 - **Deciders**: lusoris
 - **Tags**: release, rc
