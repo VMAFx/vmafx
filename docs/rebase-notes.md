@@ -68,6 +68,15 @@
   (auto scale and `scale=1`), down from 7.8e-5. `test_sycl_twin_option_parity` passes
   13/13 with exact match on flat identical frames (72.247199 dB).
 - Closes `T-SYCL-FLOAT-SSIM-COMBINED-FORMULA-RESIDUAL-2026-09-29`.
+## perf/cuda-adm-cm-register-pressure — adm_cm.fatbin zero-spill and bounded registers (2026-10-01)
+
+- `core/test/test_cuda_adm_cm_register_pressure.py`: new Python regression test
+  verifying that all kernel functions in `adm_cm.fatbin` across all compiled
+  CUDA architectures (`sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120`)
+  have zero stack spill (`STACK:0`), zero local memory spill (`LOCAL:0`), and
+  bounded register usage (`REG <= 208`, on `sm_89` `REG <= 176`).
+- Closes `T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07` in `docs/state.md`.
+- No Netflix golden-data, public C API or FFmpeg patch impact.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 

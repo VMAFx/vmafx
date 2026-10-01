@@ -262,6 +262,17 @@ test('test_cuda_module_lifecycle_contract',
     timeout : 30,
 )
 
+# ADR-1226 / T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07: verify zero stack spill
+# and bounded register usage across all architectures in adm_cm.fatbin.
+test('test_cuda_adm_cm_register_pressure',
+    import('python').find_installation(),
+    args : files('test_cuda_adm_cm_register_pressure.py'),
+    env : {'VMAFX_DEVICE_DEP_BUILD_DIR': meson.project_build_root()},
+    suite : ['fast'],
+    timeout : 30,
+)
+
+
 # BUG-048 B2 / ADR-0759: keep the four large HIP ADM compute kernels on the
 # device-resident AdmBufferHip pointer contract, including host launch wiring,
 # one-time upload, and the BUG-092-compatible failure/close lifecycle.
