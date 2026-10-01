@@ -729,6 +729,24 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
     test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
 endif
 
+# T-MODEL-COLLECTION-GROWTH-FAILURE-UNTESTED-2026-10-01: a failed growth of the
+# model array must leave the collection intact (the fix of Netflix/vmaf PR
+# #1590, which the fork already carries). `-Wl,--wrap=realloc` fails one chosen
+# realloc inside the library, so this needs the static archive and a linker
+# that sees the reference: same constraints as test_registration_partial_copy.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_model_collection_growth = executable('test_model_collection_growth',
+        ['test.c', 'test_model_collection_growth.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        link_args : ['-Wl,--wrap=realloc'],
+        c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
+        dependencies : [math_lib, pthread_dependency, thread_lib],
+    )
+    test('test_model_collection_growth', test_model_collection_growth, suite : ['fast'])
+endif
+
 # Coverage for model-collection public API: vmaf_model_collection_load,
 # vmaf_use_features_from_model_collection, vmaf_score_at_index_model_collection,
 # vmaf_score_pooled_model_collection, vmaf_model_collection_load_from_path,

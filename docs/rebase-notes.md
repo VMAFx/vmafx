@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
+
+- `core/src/model.c`, `vmaf_model_collection_append()`: when the `realloc()`
+  that doubles the model array fails, the function returns `-ENOMEM` directly.
+  Upstream Netflix/vmaf has `if (!m) goto fail;` there, and its `fail` label
+  clears `*model_collection`, which loses the existing collection. The fork's
+  own upstream PR #1590 proposes the direct return; it is open. **Upstream-sync
+  note:** a conflict in this function will offer `goto fail` as "theirs". Keep
+  the direct return. `core/test/test_model_collection_growth.c` (new,
+  fork-only) fails if it comes back. Drop this entry when upstream merges #1590
+  or an equivalent.
+- The test links with `-Wl,--wrap=realloc`, so it is built only on Linux with
+  the static archive and without LTO, like `test_registration_partial_copy`.
+- No library change. No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 
 - `core/tools/cli_parse.cpp` `cli_free()` (upstream-mirror function, fork

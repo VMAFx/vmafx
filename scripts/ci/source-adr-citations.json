@@ -4391,6 +4391,7 @@
         "core/src/fex_ctx_vector.cpp": 1,
         "core/test/meson.build": 2,
         "core/test/test_fex_ctx_vector.cpp": 4,
+        "core/test/test_model_collection_growth.c": 2,
         "core/test/test_registration_partial_copy.cpp": 2
       },
       "target": "0723-cpp23-pilot-fex-ctx-vector.md"
@@ -6267,6 +6268,7 @@
         "core/test/test_mobilesal.c": 1,
         "core/test/test_model.c": 1,
         "core/test/test_model_collection_api.c": 1,
+        "core/test/test_model_collection_growth.c": 1,
         "core/test/test_model_feature_overload_ownership.c": 1,
         "core/test/test_model_libsvm_dup_key.c": 1,
         "core/test/test_moment_simd.c": 1,

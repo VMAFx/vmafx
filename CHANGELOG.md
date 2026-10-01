@@ -388,6 +388,14 @@
   [the SYCL backend guide](docs/backends/sycl/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins-2026-09-29).
 
 
+- **Regression test for model-collection growth failure.** When the array of a
+  model collection cannot grow, `libvmaf` returns `-ENOMEM` and keeps the
+  collection and its models intact; upstream Netflix/vmaf loses them
+  (Netflix/vmaf PR #1590). The behaviour is unchanged, and
+  `test_model_collection_growth` now holds it in place
+  ([C API](docs/api/index.md)).
+
+
 ### Fixed
 
 - **`cambi` no longer reads and writes outside its buffers on wide, short
