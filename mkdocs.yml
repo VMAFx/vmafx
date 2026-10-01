@@ -1499,6 +1499,7 @@ nav:
         - "ADR-1384: hip-speed-device-resident": adr/1384-hip-speed-device-resident.md
         - "ADR-1386: rc3-home-gpu-retest-kit": adr/1386-rc3-home-gpu-retest-kit.md
         - "ADR-1387: mingw-ucrt64-migration": adr/1387-mingw-ucrt64-migration.md
+        - "ADR-1388: release-pat-mode-gate-exemption": adr/1388-release-pat-mode-gate-exemption.md
         - "ADR-1391: cuda-ssimulacra2-device-resident": adr/1391-cuda-ssimulacra2-device-resident.md
         - "ADR-1392: cuda-integer-reductions-one-atomic-per-block": adr/1392-cuda-integer-reductions-one-atomic-per-block.md
         - "ADR-1393: cambi-clip-window-to-frame": adr/1393-cambi-clip-window-to-frame.md
@@ -1544,6 +1545,7 @@ nav:
         - "audit-first": adr/by-tag/audit-first.md
         - "audit": adr/by-tag/audit.md
         - "auth": adr/by-tag/auth.md
+        - "authoring-gates": adr/by-tag/authoring-gates.md
         - "automation": adr/by-tag/automation.md
         - "autotune": adr/by-tag/autotune.md
         - "av1": adr/by-tag/av1.md

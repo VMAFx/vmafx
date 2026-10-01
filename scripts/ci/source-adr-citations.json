@@ -6476,8 +6476,8 @@
         "docker/Dockerfile.node": 1,
         "pkg/version/version.go": 1,
         "pyproject.toml": 1,
-        "scripts/ci/release-pr-exempt.sh": 3,
-        "scripts/ci/tests/test-release-pr-exempt.sh": 1,
+        "scripts/ci/release-pr-exempt.sh": 5,
+        "scripts/ci/tests/test-release-pr-exempt.sh": 2,
         "scripts/git-hooks/pre-push-pr-body-lint.sh": 6,
         "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2,
         "scripts/release/check-release-bot-secrets.sh": 2,
@@ -7326,6 +7326,7 @@
         ".github/workflows/rule-enforcement.yml": 2,
         "Makefile": 2,
         "scripts/ci/check-silent-revert.py": 2,
+        "scripts/ci/release-pr-exempt.sh": 1,
         "scripts/ci/tests/test_check_silent_revert.py": 2
       },
       "target": "1284-silent-revert-detection-gate.md"
@@ -8196,6 +8197,15 @@
         ".github/workflows/libvmaf-build-matrix.yml": 1
       },
       "target": "1387-mingw-ucrt64-migration.md"
+    },
+    "1388": {
+      "sites": {
+        ".github/workflows/rule-enforcement.yml": 5,
+        "scripts/ci/release-pr-exempt.sh": 5,
+        "scripts/ci/tests/test-release-pr-exempt.sh": 2,
+        "scripts/git-hooks/pre-push-pr-body-lint.sh": 1
+      },
+      "target": "1388-release-pat-mode-gate-exemption.md"
     },
     "1391": {
       "sites": {
