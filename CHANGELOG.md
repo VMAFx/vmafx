@@ -394,6 +394,8 @@
   (Netflix/vmaf PR #1590). The behaviour is unchanged, and
   `test_model_collection_growth` now holds it in place
   ([C API](docs/api/index.md)).
+
+
 - **Regression test for reading frames with an odd width or height.** The raw
   and y4m readers consume a whole frame when a dimension is odd, where upstream
   Netflix/vmaf loses framing and crashes (Netflix/vmaf PR #1604). The behaviour
