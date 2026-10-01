@@ -131,10 +131,17 @@ fork's tree already carries these fixes.
 - `core/tools/test/test_vmaf_raw_odd_dims.sh`: added positive, negative, and boundary tests (19x19, 1921x1081, 19x20, 20x19, 19x19 422, 1x1 boundary, and truncated file size tests).
 - `python/test/vmafx_cli_test.py`: added `test_raw_odd_dimensions_matches_y4m`, `test_raw_odd_boundary_1x1`, and `test_raw_odd_file_size_mismatch_fails_cleanly`.
 - No Netflix golden assertions or C-API ABI impact. Upstream sync notes: keep `validate_chroma_alignment()` accepting odd dimensions unless upstream adopts an equivalent or superseding contract.
+## perf/sycl-cambi-no-scratch — cambi_sycl launch_reset scratch-free on Intel GPUs (2026-10-01)
+
+- `core/src/feature/sycl/integer_cambi_sycl.cpp` `launch_reset()`: uses an explicit 1D `nd_range<1>` (`TOTAL_ITEMS = 5 * RADIX_BINS`, local size 256) and a scalar select chain for `topk` instead of an indexed array in the lambda closure. Capturing `unsigned topk[CAMBI_SYCL_NUM_SCALES]` by value caused IGC on the Arc A380 under the Linux xe driver to allocate 1280 B of private stack memory, and the basic 2D `range` caused DPC++ to wrap the launch in `RoundedRangeKernel` with 896 B of private memory.
+- Invariant: both kernels eliminated their private memory (0 B private, 0 B spill in `.zeinfo`, `RoundedRangeKernel` wrapper dropped). Parity is bit-identical to `--backend cpu` on all tested fixtures (48/48 on Netflix 576x324, 50/50 on BBB 4K, max abs diff 0.0). Throughput at 4K on Arc A380 is 17.05 ms/frame.
+- When PR #1660 (ADR-1395) lands, the two `cambi_sycl` lines in `core/src/sycl/scratch_ratchet.txt` and `cambi_sycl` in `kScratchExtractors` in `core/src/sycl/scratch_check.cpp` must be deleted as no `cambi_sycl` kernel uses scratch memory.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 
 - `core/tools/cli_parse.cpp` `cli_free()` (upstream-mirror function, fork
+
   body): it frees every `feature_cfg[i].opts_dict` and every
   `model_config[i].feature_overload[j].opts_dict` still in `CLISettings`, as
   well as the option buffers. Upstream Netflix/vmaf frees only the buffers and

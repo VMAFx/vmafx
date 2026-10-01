@@ -1125,33 +1125,62 @@ void launch_topk_pooling(sycl::queue &queue, const PoolArgs &args)
     launch_topk_final(queue, args);
 }
 
-/* Frame start: clear every scale's selection state and the readback block. */
+struct ResetArgs {
+    CambiSyclSelect *select;
+    CambiSyclResults *results;
+    unsigned topk0;
+    unsigned topk1;
+    unsigned topk2;
+    unsigned topk3;
+    unsigned topk4;
+};
+
+inline void reset_lane(const ResetArgs &a, unsigned gid)
+{
+    const unsigned scale = gid / RADIX_BINS;
+    const unsigned bin = gid % RADIX_BINS;
+    a.select[scale].hist[bin] = 0U;
+    if (bin == 0U && scale == 0U) {
+        a.results->status = 0U;
+    }
+    if (bin == 0U) {
+        const unsigned topk = (scale == 0U) ? a.topk0 :
+                              (scale == 1U) ? a.topk1 :
+                              (scale == 2U) ? a.topk2 :
+                              (scale == 3U) ? a.topk3 :
+                                              a.topk4;
+        a.select[scale].k_rem[0] = topk;
+        a.select[scale].prefix = 0U;
+        a.select[scale].resolved = 0U;
+        a.results->sum_lo[scale] = 0U;
+        a.results->sum_hi[scale] = 0U;
+    } else if (bin <= (unsigned)RADIX_PASSES) {
+        a.select[scale].k_rem[bin] = 0U;
+    }
+}
+
+/* Frame start: clear every scale's selection state and the readback block.
+ * Uses an explicit 1D nd_range (work-group 256) and a scalar select chain
+ * for top-K instead of an indexed array in the closure, eliminating private
+ * array scratch memory and dropping RoundedRangeKernel on Intel GPUs. */
 void launch_reset(sycl::queue &queue, CambiSyclSelect *select, CambiSyclResults *results,
                   const CambiScaleGeom (&geom)[CAMBI_SYCL_NUM_SCALES])
 {
-    unsigned topk[CAMBI_SYCL_NUM_SCALES];
-    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
-        topk[scale] = geom[scale].topk;
-    }
-    const sycl::range<2> range{(size_t)CAMBI_SYCL_NUM_SCALES, (size_t)RADIX_BINS};
+    static_assert(CAMBI_SYCL_NUM_SCALES == 5, "launch_reset topk select chain matches 5 scales");
+    const ResetArgs a{.select = select,
+                      .results = results,
+                      .topk0 = geom[0].topk,
+                      .topk1 = geom[1].topk,
+                      .topk2 = geom[2].topk,
+                      .topk3 = geom[3].topk,
+                      .topk4 = geom[4].topk};
+
+    constexpr size_t RESET_WG = 256;
+    constexpr size_t TOTAL_ITEMS = (size_t)CAMBI_SYCL_NUM_SCALES * RADIX_BINS;
+    const sycl::nd_range<1> range{sycl::range<1>{TOTAL_ITEMS}, sycl::range<1>{RESET_WG}};
     queue.submit([=](sycl::handler &handler) {
-        handler.parallel_for(range, [=](sycl::id<2> id) {
-            const size_t scale = id[0];
-            const size_t bin = id[1];
-            select[scale].hist[bin] = 0U;
-            if (bin <= (size_t)RADIX_PASSES) {
-                select[scale].k_rem[bin] = bin == 0U ? topk[scale] : 0U;
-            }
-            if (bin == 0U) {
-                select[scale].prefix = 0U;
-                select[scale].resolved = 0U;
-                results->sum_lo[scale] = 0U;
-                results->sum_hi[scale] = 0U;
-            }
-            if (scale == 0U && bin == 0U) {
-                results->status = 0U;
-            }
-        });
+        handler.parallel_for(
+            range, [=](sycl::nd_item<1> item) { reset_lane(a, (unsigned)item.get_global_id(0)); });
     });
 }
 

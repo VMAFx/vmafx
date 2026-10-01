@@ -38,7 +38,7 @@ namespace
 /* Extractors that still run a kernel listed in scratch_ratchet.txt. Keep in
  * step with that file; test_sycl_kernel_scratch compares the two. */
 constexpr const char *kScratchExtractors =
-    "cambi_sycl, float_adm_sycl, float_vif_sycl, motion_sycl, motion_v2_sycl, "
+    "float_adm_sycl, float_vif_sycl, motion_sycl, motion_v2_sycl, "
     "speed_chroma_sycl, speed_temporal_sycl";
 
 bool selftest_disabled()
