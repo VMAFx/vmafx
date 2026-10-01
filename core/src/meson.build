@@ -351,6 +351,9 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/float_ssim/ssim_decimate.h',
         'feature/hip/integer_ssim_hip.h',
         'feature/hip/integer_ms_ssim_hip.h',
+        # ADR-1403: the per-sample float_ms_ssim arithmetic, shared by the
+        # kernels and the device-free test.
+        'feature/hip/integer_ms_ssim/ms_ssim_arith.h',
         'feature/hip/integer_psnr_hvs_hip.h',
         'feature/hip/float_psnr_hip.h',
         'feature/hip/float_motion_hip.h',

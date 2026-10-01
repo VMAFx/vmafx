@@ -143,6 +143,61 @@ vmaf --reference ref.yuv --distorted dist.yuv \
 
 The output has one `ssim` value per frame, as with `--feature ssim`.
 
+## integer_ms_ssim_hip
+
+`integer_ms_ssim_hip` publishes the `float_ms_ssim` feature of the CPU
+extractor `float_ms_ssim` and returns the same numbers, bit for bit: the
+score and, with `enable_lcs=true`, the 15 per-scale means
+`float_ms_ssim_{l,c,s}_scale{0..4}`. `--backend hip` selects it for
+`--feature float_ms_ssim` and for a model that lists the feature:
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --backend hip --feature float_ms_ssim=enable_lcs=true \
+     --no_prediction --json --output ms_ssim.json --precision max
+```
+
+It takes the CPU's options (`enable_lcs`, `enable_db`, `clip_db`;
+`enable_chroma` is accepted and scores luma only) and the CPU's minimum
+frame size of 176x176.
+
+The kernels compute each sample the way the CPU does
+([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md), which made the
+CUDA twin exact first):
+
+- the decimation between pyramid levels fuses every tap, as
+  `ms_ssim_decimate.c` does;
+- the Gaussian window sums are fp32 products added without rounding and
+  rounded to fp32 once per pass, which is what the CPU's fp64 sum gives. The
+  device carries the sum as an fp32 pair, because fp64 arithmetic is slow on
+  it: an fp64 sum gave the same scores and 299 instead of 173 ms per
+  3840x2160 frame;
+- luminance and contrast divide an fp64 numerator by an fp32 denominator and
+  structure is an fp32 quotient, as in `iqa/ssim_tools.c`;
+- the host rounds each per-scale mean to fp32 and combines the scales with
+  `fabs()` on all three terms, as `ms_ssim.c` does.
+
+Measured on a gfx1036 against `--backend cpu` at `--precision max` with
+`enable_lcs=true`: the Netflix 576x324 pair (48 frames), the same pair at 10
+bits (3), both 1080p checkerboard pairs (3 each) and BBB 3840x2160 (50) give
+1712 values, all identical. Before, 6 were and no score: it was up to 3.0e-6 off
+and a per-scale mean up to 2.1e-5. `enable_db` / `clip_db` scores are
+identical as well. The exact sums cost time on this device: `float_ms_ssim` goes
+from 30.3 to 36.9 ms per 1920x1080 frame and from 158 to 169 ms per 3840x2160
+frame (medians of seven interleaved runs under other load; a second set of
+nine gave 32.4 to 39.5 and 126 to 137).
+
+The one thing left that is not the CPU's is the order in which the device adds
+the l, c and s terms of a scale (per block, where the CPU adds in raster
+order). The sums are fp64 and each mean is rounded to fp32, so the orders
+would have to differ by about one part in 10^8 of a mean to show; they differ
+by about one part in 10^14.
+
+`test_hip_ms_ssim_arith` replays the kernels' arithmetic on the host against
+the CPU extractor and needs no AMD device; `test_hip_ms_ssim_parity` compares
+on one.
+
 ## Building
 
 ROCm 7.0 or later is required; **10.0.0** is the version tested in CI, in the
@@ -324,7 +379,8 @@ core/src/feature/hip/          # per-feature kernels
   Emits `ssim`. See [integer_ssim_hip](#integer_ssim_hip).
 - **`integer_ms_ssim_hip`** — multi-scale SSIM over 5 pyramid levels; 9-tap
   biorthogonal LPF decimation + separable 11-tap Gaussian per scale. Emits
-  `float_ms_ssim`. Per ADR-0285.
+  `float_ms_ssim`, bit-identical to the CPU extractor. See
+  [integer_ms_ssim_hip](#integer_ms_ssim_hip).
 - **`integer_adm_hip`** — full ADM DWT2 + CSF + CM + decouple pipeline (five
   kernel files). Mirrors `integer_adm_cuda.c`. Emits `adm2` + per-scale values.
 - **`integer_vif_hip`** — multi-scale VIF integer pyramid; respects

@@ -56756,3 +56756,25 @@ No FFmpeg patch impact. CPU scores are unchanged.
   `float_vif_sycl`, `float_vif_hip` and `float_vif_metal` twins are untouched
   and still hold the old tap table
   (`T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`).
+
+## `float_ms_ssim` on HIP follows the CPU's arithmetic through one header (2026-10-01)
+
+`fix/hip-float-ms-ssim-cpu-arithmetic`, `T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`
+(HIP part), ADR-1403.
+
+- New `core/src/feature/hip/integer_ms_ssim/ms_ssim_arith.h` (plain C and HIP
+  C++, listed in `hip_kernel_shared_headers`): the decimate sample, both
+  window passes, the l / c / s terms, and on the host the constants, the
+  per-scale mean and the Wang combine. `ms_ssim_score.hip` and
+  `integer_ms_ssim_hip.c` call it and keep no arithmetic of their own.
+- It mirrors `ms_ssim_decimate.c` (fused taps), `iqa/convolve.c` (fp32
+  products, fp64 sum, one rounding per pass; carried as an fp32 pair),
+  `iqa/ssim_tools.c::ssim_variance_scalar()` /
+  `ssim_accumulate_default_scalar()` and the product in
+  `ms_ssim.c::ms_ssim_score_scales()`. An upstream change to any of those has
+  to be made in the header in the same PR; `test_hip_ms_ssim_arith` fails
+  otherwise, with or without an AMD device.
+- The dead `ms_ssim_warp_reduce()` helper is gone from the kernel, and
+  `integer_ms_ssim_hip.c` no longer has `g_alphas` / `g_betas` / `g_gammas`.
+- `scripts/ci/tidy-baseline-hip.json`: `integer_ms_ssim_hip.c` 1 -> 0,
+  `test_hip_ms_ssim_parity.c` 21 -> 0.

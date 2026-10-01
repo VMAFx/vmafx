@@ -465,6 +465,39 @@ gate on AMD hardware).
 required for parity with CPU (`float_ms_ssim`) and CUDA
 (`float_ms_ssim_cuda`) paths.
 
+## float_ms_ssim_hip = CPU arithmetic, bit for bit (ADR-1403)
+
+Scores = `float_ms_ssim.c`'s bits (16 outputs with `enable_lcs`; measured on
+gfx1036: Netflix 8/10-bit, 1080p checkerboards, BBB 4K, 1712 of 1712 values).
+Rebase-sensitive:
+
+- All sample arithmetic lives in `integer_ms_ssim/ms_ssim_arith.h` (plain C +
+  HIP C++). `ms_ssim_score.hip` and `integer_ms_ssim_hip.c` call it and own no
+  `fmaf` / `sqrtf` / `pow` / multiply-accumulate. Change the header, never a
+  copy.
+- Decimate: one `fmaf()` per tap, row sums then column
+  (`ms_ssim_decimate.c::vmaf_fmaf_exact()`). Not `acc += a * b`: contraction is
+  off (ADR-1407), so that rounds twice.
+- Window sums (`iqa_convolve()`): fp32 product per tap, summed as an exact
+  fp32 pair (`VmafHipMsPair`, two-sum, six fp32 ops), rounded once per pass.
+  Stands for the CPU's fp64 sum. fp64 accumulator = same scores, 299 vs 173 ms
+  per 4K frame on gfx1036; plain fp32 sum = wrong on about every second
+  window.
+- l / c / s (`ssim_accumulate_default_scalar()`): fp32 variances with
+  `MAX(0.0, x)`, fp64 numerator over fp32 denominator for l and c, s = fp32
+  quotient. Constants fp32 (`vmaf_hip_ms_ssim_constants()`), passed to the
+  kernel as doubles and narrowed back (item 5 above still holds).
+- Host: `vmaf_hip_ms_ssim_scale_mean()` rounds each mean to fp32 (also absorbs
+  the block-order fp64 sum), `vmaf_hip_ms_ssim_combine()` = `ms_ssim.c`
+  product with `fabs()` on l, c, s.
+- CPU change to `ms_ssim_decimate.c`, `iqa/convolve.c`, `iqa/ssim_tools.c`
+  (default accumulate) or `ms_ssim.c` (combine) -> same change in the header,
+  same PR.
+- Guards: `test_hip_ms_ssim_arith` (device-free replay vs CPU extractor, 8 and
+  10 bit, odd size; two-sum exactness), `test_hip_ms_ssim_parity` +
+  `_large` (device, `==`, 48 outputs), `test_hip_kernel_source_contract.py`
+  (10 planted regressions).
+
 ## Wiring a new HIP extractor into the build (ADR-0852 lesson)
 
 Three files must be updated together — omitting any one silently

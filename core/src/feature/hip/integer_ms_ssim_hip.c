@@ -16,12 +16,19 @@
  *    2. ms_ssim_horiz — horizontal 11-tap separable Gaussian over
  *       ref / cmp / ref² / cmp² / ref·cmp.
  *    3. ms_ssim_vert_lcs — vertical 11-tap + per-pixel l/c/s +
- *       per-block float partial triples (l, c, s).
+ *       per-block double partial triples (l, c, s).
  *
  *  Host side normalises uint → float [0,255] via picture_copy, uploads
  *  to level 0, builds the pyramid, runs horiz + vert_lcs for all 5
  *  scales on a single stream, reads back per-scale partials, then
- *  accumulates in double and applies Wang weights in collect().
+ *  adds them in double, rounds each per-scale mean to fp32 and applies
+ *  the Wang weights in collect().
+ *
+ *  The arithmetic is the CPU extractor's (ADR-1403): the kernels compute
+ *  every sample through integer_ms_ssim/ms_ssim_arith.h, and collect()
+ *  uses the host helpers of the same header, so the twin returns
+ *  float_ms_ssim.c's scores bit for bit. test_hip_ms_ssim_arith replays
+ *  those lines against the CPU extractor without a device.
  *
  *  HIP adaptation from the CUDA twin:
  *  - Raw float* device pointers (hipMalloc) instead of VmafCudaBuffer.
@@ -57,6 +64,10 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#ifdef HAVE_HIPCC
+#include "../../hip/hip_handle.h"
+#endif /* HAVE_HIPCC */
+#include "integer_ms_ssim/ms_ssim_arith.h"
 #include "integer_ms_ssim_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -69,14 +80,10 @@
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
-#define MS_SSIM_SCALES 5
+#define MS_SSIM_SCALES VMAF_HIP_MS_SSIM_SCALES
 #define MS_SSIM_K 11
 #define MS_SSIM_BLOCK_X 16u
 #define MS_SSIM_BLOCK_Y 8u
-
-static const float g_alphas[MS_SSIM_SCALES] = {0.0000f, 0.0000f, 0.0000f, 0.0000f, 0.1333f};
-static const float g_betas[MS_SSIM_SCALES] = {0.0448f, 0.2856f, 0.3001f, 0.2363f, 0.1333f};
-static const float g_gammas[MS_SSIM_SCALES] = {0.0448f, 0.2856f, 0.3001f, 0.2363f, 0.1333f};
 
 /* ------------------------------------------------------------------ */
 /* HIP-to-errno translation                                            */
@@ -124,6 +131,9 @@ typedef struct MsSsimStateHip {
     unsigned scale_grid_y[MS_SSIM_SCALES];
     unsigned scale_block_count[MS_SSIM_SCALES];
 
+    /* iqa_ssim()'s fp32 stabilisation constants, carried as doubles: the
+     * kernel's argument list takes doubles (ADR-0990) and narrows them back
+     * without loss (ADR-1403). */
     double c1;
     double c2;
     double c3;
@@ -247,12 +257,14 @@ static void ms_ssim_hip_init_dims(MsSsimStateHip *s, unsigned w, unsigned h, uns
         s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
     }
 
-    const double L = 255.0;
-    const double K1 = 0.01;
-    const double K2 = 0.03;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
-    s->c3 = s->c2 * 0.5;
+    /* iqa_ssim(): the stabilisation constants are fp32. */
+    float c1 = 0.0f;
+    float c2 = 0.0f;
+    float c3 = 0.0f;
+    vmaf_hip_ms_ssim_constants(&c1, &c2, &c3);
+    s->c1 = (double)c1;
+    s->c2 = (double)c2;
+    s->c3 = (double)c3;
 }
 
 /* ------------------------------------------------------------------ */
@@ -664,7 +676,7 @@ static int ms_ssim_hip_launch_decimate(MsSsimStateHip *s, hipStream_t str, void 
 {
     const unsigned gx = (w_out + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
     const unsigned gy = (h_out + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
-    void *args[] = {&src, &dst, &w_in, &h_in, &w_out, &h_out};
+    void *args[] = {(void *)&src, (void *)&dst, &w_in, &h_in, &w_out, &h_out};
     return ms_ssim_hip_rc(hipModuleLaunchKernel(s->func_decimate, gx, gy, 1u, MS_SSIM_BLOCK_X,
                                                 MS_SSIM_BLOCK_Y, 1u, 0, str, args, NULL));
 }
@@ -681,8 +693,16 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
     const unsigned hgy = (h_horiz + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
 
     void *horiz_args[] = {
-        &s->pyramid_ref[i], &s->pyramid_cmp[i], &s->d_ref_mu, &s->d_cmp_mu, &s->d_ref_sq,
-        &s->d_cmp_sq,       &s->d_refcmp,       &width,       &w_horiz,     &h_horiz,
+        (void *)&s->pyramid_ref[i],
+        (void *)&s->pyramid_cmp[i],
+        (void *)&s->d_ref_mu,
+        (void *)&s->d_cmp_mu,
+        (void *)&s->d_ref_sq,
+        (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp,
+        &width,
+        &w_horiz,
+        &h_horiz,
     };
     hipError_t hip_rc = hipModuleLaunchKernel(s->func_horiz, hgx, hgy, 1u, MS_SSIM_BLOCK_X,
                                               MS_SSIM_BLOCK_Y, 1u, 0, str, horiz_args, NULL);
@@ -690,14 +710,14 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
         return ms_ssim_hip_rc(hip_rc);
 
     void *vert_args[] = {
-        &s->d_ref_mu,
-        &s->d_cmp_mu,
-        &s->d_ref_sq,
-        &s->d_cmp_sq,
-        &s->d_refcmp,
-        &s->l_partials[i],
-        &s->c_partials[i],
-        &s->s_partials[i],
+        (void *)&s->d_ref_mu,
+        (void *)&s->d_cmp_mu,
+        (void *)&s->d_ref_sq,
+        (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp,
+        (void *)&s->l_partials[i],
+        (void *)&s->c_partials[i],
+        (void *)&s->s_partials[i],
         &w_horiz,
         &w_final,
         &h_final,
@@ -786,11 +806,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     (void)pix_fmt;
     MsSsimStateHip *s = fex->priv;
 
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma) {
-        s->n_planes = 1u;
-    } else {
-        s->n_planes = 1u; /* reserved: MS-SSIM chroma extension not yet impl. */
-    }
+    /* Luma only, whatever `enable_chroma` and the pixel format say: the
+     * MS-SSIM chroma extension is not implemented on this backend. */
+    s->n_planes = 1u;
 
     int err = ms_ssim_hip_validate(w, h);
     if (err != 0)
@@ -918,7 +936,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #else
     MsSsimStateHip *s = fex->priv;
     s->index = index;
-    const hipStream_t str = (hipStream_t)s->lc.str;
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
     /* Normalise + upload both luma planes to float device buffers.
      * picture_copy() converts uint → float [0,255] into the pinned
@@ -945,7 +963,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     }
 
     /* Record the submit event and register with the lifecycle. */
-    hipError_t hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
+    hipError_t hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
@@ -968,30 +986,30 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* Accumulate per-block partials in double per scale, then apply
-     * the Wang weights for the final product combine. */
+    /* Add the per-block partials in double per scale, round each mean to
+     * fp32 and combine with the Wang weights, as the CPU extractor does. */
     double l_means[MS_SSIM_SCALES] = {0};
     double c_means[MS_SSIM_SCALES] = {0};
     double s_means[MS_SSIM_SCALES] = {0};
 
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        double total_l = 0.0, total_c = 0.0, total_s = 0.0;
+        double total_l = 0.0;
+        double total_c = 0.0;
+        double total_s = 0.0;
         for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
             total_l += s->h_l_partials[i][j];
             total_c += s->h_c_partials[i][j];
             total_s += s->h_s_partials[i][j];
         }
         const double n_pix = (double)s->scale_w_final[i] * (double)s->scale_h_final[i];
-        l_means[i] = total_l / n_pix;
-        c_means[i] = total_c / n_pix;
-        s_means[i] = total_s / n_pix;
+        /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
+         * floats (ADR-1403). */
+        l_means[i] = vmaf_hip_ms_ssim_scale_mean(total_l, n_pix);
+        c_means[i] = vmaf_hip_ms_ssim_scale_mean(total_c, n_pix);
+        s_means[i] = vmaf_hip_ms_ssim_scale_mean(total_s, n_pix);
     }
 
-    double msssim = 1.0;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
-                  pow(fabs(s_means[i]), (double)g_gammas[i]);
-    }
+    const double msssim = vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);
     return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_hip",
                                     "float_ms_ssim", msssim, s->enable_db, s->max_db, l_means,
                                     c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index);

@@ -10,8 +10,12 @@ kernel differences prev - cur before it filters and rounds after each pass,
 the motion twins keep raw frames and wait on the host only in collect(), the
 tile loads and the ADM scale-0 vertical DWT clamp their indices, vif_hip
 declares its CPU fallback, and the option twins call the CPU's shared helpers
-instead of copies of the math. Every check has a planted-regression case that
-reintroduces the old code and must be detected.
+instead of copies of the math. ADR-1403 makes float_ms_ssim_hip the CPU's
+arithmetic: the kernels and the extractor compute through
+integer_ms_ssim/ms_ssim_arith.h (fused decimate taps, window sums as an exact
+fp32 pair, the CPU's fp32 denominators and quotient, fp32 per-scale means)
+and keep no arithmetic of their own. Every check has a planted-regression
+case that reintroduces the old code and must be detected.
 """
 
 from __future__ import annotations
@@ -43,7 +47,51 @@ FSSIM_KERNEL = "float_ssim/ssim_score.hip"
 FSSIM_DECIMATE = "float_ssim/ssim_decimate.h"
 FMOTION_HOST = "float_motion_hip.c"
 FMOTION_KERNEL = "float_motion/float_motion_score.hip"
+MS_ARITH = "integer_ms_ssim/ms_ssim_arith.h"
+MS_KERNEL = "integer_ms_ssim/ms_ssim_score.hip"
+MS_HOST = "integer_ms_ssim_hip.c"
 PICTURE = "picture_hip.c"
+# What makes float_ms_ssim_hip the CPU's arithmetic (ADR-1403).
+MS_ARITH_PIECES = (
+    "row_acc = fmaf(row[xi], vmaf_hip_ms_ssim_lpf_tap(ku), row_acc);",
+    "acc = fmaf(row_acc, vmaf_hip_ms_ssim_lpf_tap(kv), acc);",
+    "vmaf_hip_ms_pair_add(&sums.ref_mu, r * tap);",
+    "vmaf_hip_ms_pair_add(&sums.ref_sq, r_sq * tap);",
+    "vmaf_hip_ms_pair_add(&sums.refcmp, r_c * tap);",
+    "vmaf_hip_ms_pair_add(&sums.ref_mu, planes->ref_mu[idx] * tap);",
+    "const float error = (sum->hi - hi_virtual) + (term - term_virtual);",
+    "sum->lo = sum->lo + error;",
+    "return sum->hi + sum->lo;",
+    "const float ref_var = (0.0f > ref_diff) ? 0.0f : ref_diff;",
+    "const float sigma = sqrtf(ref_var * cmp_var);",
+    "(double)(ref_mu * ref_mu + cmp_mu * cmp_mu + c1);",
+    "(double)(ref_var + cmp_var + c2);",
+    "out.s = (double)((clamped_covar + c3) / (sigma + c3));",
+    "*c1 = (K1 * (float)L) * (K1 * (float)L);",
+    "*c3 = *c2 / 2.0f;",
+    "return (double)(float)(sum / samples);",
+    "pow(fabs(l_means[i]), (double)alphas[i])",
+    "pow(fabs(c_means[i]), (double)betas[i])",
+)
+# The kernels and the extractor go through the header for every sample.
+MS_KERNEL_CALLS = (
+    "vmaf_hip_ms_ssim_decimate_sample(src, (int)w, (int)h, (int)x_out, (int)y_out);",
+    "vmaf_hip_ms_ssim_horizontal(ref_in + src_idx, cmp_in + src_idx);",
+    "vmaf_hip_ms_ssim_vertical(&planes, (size_t)y * w_horiz + x, w_horiz);",
+    "vmaf_hip_ms_ssim_lcs(&stats, (float)c1, (float)c2, (float)c3);",
+)
+MS_HOST_CALLS = (
+    "vmaf_hip_ms_ssim_constants(&c1, &c2, &c3);",
+    "l_means[i] = vmaf_hip_ms_ssim_scale_mean(total_l, n_pix);",
+    "c_means[i] = vmaf_hip_ms_ssim_scale_mean(total_c, n_pix);",
+    "s_means[i] = vmaf_hip_ms_ssim_scale_mean(total_s, n_pix);",
+    "vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);",
+)
+# `x += a * b`: neither the reference's fused decimate tap nor its fp64
+# window sum.
+MULTIPLY_ACCUMULATE = re.compile(r"\b[\w.>-]+ \+= [^;]*\*[^;]*;")
+# Arithmetic the float_ms_ssim kernels or the extractor would have to own.
+MS_OWN_MATH = re.compile(r"\b(?:fmaf?|sqrtf?|pow)\s*\(")
 
 # A host wait or a synchronous copy: none may run between a frame's submit()
 # and its collect().
@@ -84,6 +132,9 @@ def _sources() -> dict[str, str]:
         FSSIM_DECIMATE,
         FMOTION_HOST,
         FMOTION_KERNEL,
+        MS_ARITH,
+        MS_KERNEL,
+        MS_HOST,
     )
     sources = {name: (HIP_FEATURE / name).read_text(encoding="utf-8") for name in names}
     sources[PICTURE] = (HIP_RUNTIME / PICTURE).read_text(encoding="utf-8")
@@ -354,6 +405,37 @@ def _float_motion_option_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+def _code(source: str) -> str:
+    """C / HIP source without its comments."""
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
+
+
+def _ms_ssim_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1403: float_ms_ssim_hip computes with the CPU's arithmetic."""
+    failures: list[str] = []
+    arith = _code(src[MS_ARITH])
+    for piece in MS_ARITH_PIECES:
+        if piece not in arith:
+            failures.append(f"{MS_ARITH}: no longer the CPU's arithmetic ({piece})")
+    if MULTIPLY_ACCUMULATE.search(arith):
+        failures.append(f"{MS_ARITH}: an fp32 multiply-accumulate replaces the CPU's sum")
+    if "#pragma" in arith:
+        failures.append(f"{MS_ARITH}: a pragma changes the arithmetic the build flags set")
+    kernel = _code(src[MS_KERNEL])
+    for call in MS_KERNEL_CALLS:
+        if call not in kernel:
+            failures.append(f"{MS_KERNEL}: a kernel no longer computes through {MS_ARITH} ({call})")
+    if MULTIPLY_ACCUMULATE.search(kernel) or MS_OWN_MATH.search(kernel):
+        failures.append(f"{MS_KERNEL}: a kernel has sample arithmetic of its own")
+    host = _code(src[MS_HOST])
+    for call in MS_HOST_CALLS:
+        if call not in host:
+            failures.append(f"{MS_HOST}: no longer combines as the CPU does ({call})")
+    if re.search(r"\bpow\s*\(", host):
+        failures.append(f"{MS_HOST}: the extractor has a Wang combine of its own")
+    return failures
+
+
 def _failures(src: dict[str, str]) -> list[str]:
     return (
         _motion_failures(src)
@@ -361,6 +443,7 @@ def _failures(src: dict[str, str]) -> list[str]:
         + _option_failures(src)
         + _staging_failures(src)
         + _float_ssim_decimation_failures(src)
+        + _ms_ssim_failures(src)
     )
 
 
@@ -757,6 +840,93 @@ class HipKernelSourceContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "motion_add_uv does not run the chroma planes")
 
+
+    def test_unfused_ms_ssim_decimate_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_ARITH,
+            "acc = fmaf(row_acc, vmaf_hip_ms_ssim_lpf_tap(kv), acc);",
+            "acc += row_acc * vmaf_hip_ms_ssim_lpf_tap(kv);",
+        )
+        self.assert_detected(src, "fmaf(row_acc")
+        self.assert_detected(src, "fp32 multiply-accumulate")
+
+    def test_fp32_ms_ssim_window_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_ARITH,
+            "vmaf_hip_ms_pair_add(&sums.ref_sq, r_sq * tap);",
+            "sums.ref_sq.hi += r_sq * tap;",
+        )
+        self.assert_detected(src, "fp32 multiply-accumulate")
+
+    def test_ms_ssim_pair_sum_without_its_error_term_is_detected(self) -> None:
+        src = _replace(_sources(), MS_ARITH, "sum->lo = sum->lo + error;", "(void)error;")
+        self.assert_detected(src, "sum->lo = sum->lo + error;")
+
+    def test_fp64_ms_ssim_denominator_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_ARITH,
+            "(double)(ref_var + cmp_var + c2);",
+            "((double)ref_var + (double)cmp_var + (double)c2);",
+        )
+        self.assert_detected(src, "ref_var + cmp_var + c2")
+
+    def test_fp64_ms_ssim_structure_quotient_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_ARITH,
+            "out.s = (double)((clamped_covar + c3) / (sigma + c3));",
+            "out.s = ((double)clamped_covar + (double)c3) / ((double)sigma + (double)c3);",
+        )
+        self.assert_detected(src, "clamped_covar + c3")
+
+    def test_unrounded_ms_ssim_scale_mean_is_detected(self) -> None:
+        src = _replace(
+            _sources(), MS_ARITH, "return (double)(float)(sum / samples);", "return sum / samples;"
+        )
+        self.assert_detected(src, "(float)(sum / samples)")
+
+    def test_ms_ssim_combine_without_fabs_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_ARITH,
+            "pow(fabs(l_means[i]), (double)alphas[i])",
+            "pow(l_means[i], (double)alphas[i])",
+        )
+        self.assert_detected(src, "pow(fabs(l_means[i])")
+
+    def test_ms_ssim_kernel_with_its_own_window_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_KERNEL,
+            "const VmafHipMsWindow sums = vmaf_hip_ms_ssim_horizontal(ref_in + src_idx, "
+            "cmp_in + src_idx);",
+            "VmafHipMsWindow sums = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};\n"
+            "    for (int u = 0; u < 11; u++)\n"
+            "        sums.ref_mu += ref_in[src_idx + u] * vmaf_hip_ms_ssim_window_tap(u);",
+        )
+        self.assert_detected(src, "vmaf_hip_ms_ssim_horizontal")
+        self.assert_detected(src, "sample arithmetic of its own")
+
+    def test_fp64_ms_ssim_host_constants_are_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "vmaf_hip_ms_ssim_constants(&c1, &c2, &c3);",
+            "c1 = (float)((0.01 * 255.0) * (0.01 * 255.0));",
+        )
+        self.assert_detected(src, "vmaf_hip_ms_ssim_constants")
+
+    def test_ms_ssim_host_combine_of_its_own_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "const double msssim = vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);",
+            "const double msssim = pow(l_means[4], 0.1333) * pow(c_means[4], 0.1333);",
+        )
+        self.assert_detected(src, "Wang combine of its own")
 
 if __name__ == "__main__":
     unittest.main()

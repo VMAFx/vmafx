@@ -907,7 +907,10 @@ backend was removed in ADR-0726.)
 bit-identical to it at `--precision max`, per-scale `enable_lcs` outputs
 included, on the Netflix pair, the 1080p checkerboard pairs and BBB
 3840x2160 on an RTX 4090
-([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). The SYCL, HIP and
+([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). The HIP twin
+(`integer_ms_ssim_hip`) carries the same arithmetic and is bit-identical on
+the same fixtures and the 10-bit Netflix pair on a gfx1036
+([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)). The SYCL and
 Metal twins stay within the cross-backend tolerance of 5e-5.
 
 For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:

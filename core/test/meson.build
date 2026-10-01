@@ -5352,6 +5352,23 @@ test('test_hip_float_ssim_decimate', test_hip_float_ssim_decimate,
     suite : ['fast'],
     timeout : 120)
 
+# ADR-1403 — float_ms_ssim_hip's per-sample arithmetic
+# (integer_ms_ssim/ms_ssim_arith.h, the lines the kernels and the extractor
+# compile) replayed on the host against the CPU extractor: all 16 outputs of
+# `enable_lcs`, bit for bit, at 8 and 10 bits and an odd size. No AMD device
+# is needed.
+test_hip_ms_ssim_arith = executable('test_hip_ms_ssim_arith',
+    ['test.c', 'test_hip_ms_ssim_arith.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: hip_device_math_args
+)
+test('test_hip_ms_ssim_arith', test_hip_ms_ssim_arith,
+    suite : ['fast'],
+    timeout : 120)
+
 test_hip_speed_device_math = executable('test_hip_speed_device_math',
     ['test.c', 'test_hip_speed_device_math.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),

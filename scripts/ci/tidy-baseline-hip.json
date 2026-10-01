@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1177,
+  "total_warnings": 1155,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -381,7 +381,6 @@
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/integer_ms_ssim_hip.c": 1,
     "core/src/feature/hip/speed_chroma_hip.c": 1,
     "core/src/feature/hip/speed_temporal_hip.c": 1,
     "core/src/feature/hip/ssimulacra2_hip.c": 2,
@@ -469,7 +468,6 @@
     "core/test/test_hip_motion3_parity.c": 26,
     "core/test/test_hip_motion_parity.c": 18,
     "core/test/test_hip_motion_v2_parity.c": 21,
-    "core/test/test_hip_ms_ssim_parity.c": 21,
     "core/test/test_hip_psnr_hvs_parity.c": 18,
     "core/test/test_hip_psnr_parity.c": 20,
     "core/test/test_hip_smoke.c": 60,
@@ -653,6 +651,28 @@
         }
       },
       "previous_baseline_sha256": "fdb197e22984a36959127d5ab792ea251d5b92dd128dde6583c3ab0982352955"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/integer_ms_ssim_hip.c",
+        "core/test/test_hip_ms_ssim_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/integer_ms_ssim_hip.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/test/test_hip_ms_ssim_parity.c": {
+          "warnings": [
+            21,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8bf6c82cda91d0961e033b7209d7bca96c06b791eceea56f24a5bf0b9641b5e3"
     }
   ]
 }
