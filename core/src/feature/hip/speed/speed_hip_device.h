@@ -67,13 +67,14 @@
 /* NOLINTBEGIN(modernize-use-nullptr): C header, also compiled as C. ADR-1138. */
 
 #define SPEED_HIP_BLOCK SPEED_GPU_BLOCK
-#define SPEED_HIP_N SPEED_GPU_ELEMENTS /* elements per block */
-#define SPEED_HIP_MATRIX 625u          /* 25 x 25 */
-#define SPEED_HIP_TRIANGLE 325u        /* 25 * 26 / 2 */
+#define SPEED_HIP_N 25u         /* elements per block (SPEED_GPU_ELEMENTS), as one literal */
+#define SPEED_HIP_MATRIX 625u   /* 25 x 25 */
+#define SPEED_HIP_TRIANGLE 325u /* 25 * 26 / 2 */
 #define SPEED_HIP_MAX_CHANNELS SPEED_GPU_MAX_CHANNELS
 #define SPEED_HIP_MAX_PAIRS SPEED_GPU_MAX_PAIRS
 #define SPEED_HIP_MAX_RAW_PLANES SPEED_GPU_MAX_RAW_PLANES
 #define SPEED_HIP_MAX_TAPS SPEED_GPU_MAX_TAPS
+#define SPEED_HIP_LANCZOS_TAPS SPEED_GPU_LANCZOS_TAPS /* lanczos4 weights per axis sample */
 #define SPEED_HIP_BINDING_SETS 2u
 #define SPEED_HIP_GROUP 256u       /* score work-group; covariance upper bound */
 #define SPEED_HIP_LINALG_GROUP 64u /* 25x25 linear algebra */
@@ -99,19 +100,22 @@
 typedef struct SpeedHipParams {
     const uint8_t *raw; /* raw planes, raw_planes x plane_bytes */
     float *taps;        /* antialias[128], then lowpass[128] */
-    float *scaled;      /* channels x scaled_h x scaled_w, prescale only */
-    float *down;        /* channels x down_h x down_w */
-    float *centered;    /* channels x trunc_h x trunc_w */
-    float *indterm;     /* channels x 25 x blocks */
-    float *means;       /* channels x 25 */
-    float *cov;         /* channels x 625 */
-    float *eig;         /* channels x 25 */
-    float *qmat;        /* channels x 625, accumulated reflector product */
-    float *rmat;        /* channels x 625 */
-    float *var;         /* channels x blocks */
-    float *ent;         /* channels x blocks */
-    float *contrib;     /* pairs x blocks */
-    int32_t *status;    /* channels x 2: singular, iteration cap */
+    /* lanczos4 prescale weights from the host: SPEED_HIP_LANCZOS_TAPS per
+     * scaled column, then per scaled row; NULL for every other method. */
+    const float *lanczos;
+    float *scaled;   /* channels x scaled_h x scaled_w, prescale only */
+    float *down;     /* channels x down_h x down_w */
+    float *centered; /* channels x trunc_h x trunc_w */
+    float *indterm;  /* channels x 25 x blocks */
+    float *means;    /* channels x 25 */
+    float *cov;      /* channels x 625 */
+    float *eig;      /* channels x 25 */
+    float *qmat;     /* channels x 625, accumulated reflector product */
+    float *rmat;     /* channels x 625 */
+    float *var;      /* channels x blocks */
+    float *ent;      /* channels x blocks */
+    float *contrib;  /* pairs x blocks */
+    int32_t *status; /* channels x 2: singular, iteration cap */
     SpeedGpuFrameResult *result;
     SpeedGpuGeometry geometry;
     SpeedGpuScoring scoring;
@@ -125,9 +129,10 @@ typedef struct SpeedHipParams {
 } SpeedHipParams;
 
 /* The host C compiler and hipcc must agree on every offset. */
+SPEED_HIP_STATIC_ASSERT(SPEED_HIP_N == SPEED_GPU_ELEMENTS, "SPEED_HIP_N is elements_in_block");
 SPEED_HIP_STATIC_ASSERT(sizeof(SpeedGpuGeometry) == 64u, "SpeedGpuGeometry layout");
 SPEED_HIP_STATIC_ASSERT(sizeof(SpeedGpuFrameResult) == 40u, "SpeedGpuFrameResult layout");
-SPEED_HIP_STATIC_ASSERT(sizeof(SpeedHipParams) == 16u * 8u + 64u + 16u + 64u + 24u,
+SPEED_HIP_STATIC_ASSERT(sizeof(SpeedHipParams) == 17u * 8u + 64u + 16u + 64u + 24u,
                         "SpeedHipParams layout");
 
 /* ------------------------------------------------------------------ */
@@ -355,12 +360,12 @@ static inline SPEED_HD uint32_t speed_hd_tap(int32_t centre, int32_t radius, uin
 }
 
 /* picture_copy(): 8-bit `(float)v + offset`, else `(float)v / scaler + offset`. */
-static inline SPEED_HD float speed_hd_sample(const SpeedGpuGeometry *g, const uint8_t *plane,
+static inline SPEED_HD float speed_hd_sample(const SpeedGpuGeometry *g, const void *plane,
                                              size_t offset)
 {
     if (g->bytes_per_sample == 1u)
-        return (float)plane[offset] + SPEED_HIP_PICTURE_OFFSET;
-    const float sample = (float)((const uint16_t *)(const void *)plane)[offset];
+        return (float)((const uint8_t *)plane)[offset] + SPEED_HIP_PICTURE_OFFSET;
+    const float sample = (float)((const uint16_t *)plane)[offset];
     const float scaled = sample / g->sample_scale;
     return scaled + SPEED_HIP_PICTURE_OFFSET;
 }
@@ -493,49 +498,20 @@ static inline SPEED_HD float speed_hd_scale_bicubic(const SpeedHipParams *p, uin
     return value;
 }
 
-/* sin(pi x): the device's fp32 sinpi. The reference evaluates the lanczos
- * weight in fp64 with sin(), so that option is within the ADR-0214 tolerance
- * but not bit for bit (ADR-1358); the host fallback only lets the unit test
- * compile the path, which it does not score. */
-static inline SPEED_HD float speed_hd_sinpi(float x)
-{
-#if defined(__HIP_DEVICE_COMPILE__)
-    return sinpif(x);
-#else
-    return sinf(x * 0x1.921fb6p+1f);
-#endif
-}
-
-/* lanczos4_kernel(), vif_tools.c. */
-static inline SPEED_HD float speed_hd_lanczos_weight(float x)
-{
-    const float a = 4.0f;
-    if (x == 0.0f)
-        return 1.0f;
-    if (x > -a && x < a) {
-        const float pi = 0x1.921fb6p+1f;
-        const float s1 = speed_hd_sinpi(x);
-        const float s2 = speed_hd_sinpi(x / a);
-        const float num = (a * s1) * s2;
-        const float den = ((pi * pi) * x) * x;
-        return num / den;
-    }
-    return 0.0f;
-}
-
+/* lanczos4_interpolation(), vif_tools.c. The CPU evaluates each weight in
+ * fp64 with sin() and rounds it once; a device that evaluates it in fp32
+ * with sinpif() is a few ulp off on some weights, which SpEED amplifies on
+ * smooth content (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). The
+ * weights depend only on the output column and row, so the host evaluates
+ * them once per run with the CPU scaler's own routine
+ * (speed_internal_gpu_lanczos_weights()) and this reads them: `wx` are the
+ * nine taps of this output column, `wy` of this output row. */
 static inline SPEED_HD float speed_hd_scale_lanczos(const SpeedHipParams *p, uint32_t set,
-                                                    uint32_t ch, float x, float y)
+                                                    uint32_t ch, const float *wx, const float *wy,
+                                                    float x, float y)
 {
     const int32_t x0 = (int32_t)floorf(x);
     const int32_t y0 = (int32_t)floorf(y);
-    const float dx = x - (float)x0;
-    const float dy = y - (float)y0;
-    float wx[9];
-    float wy[9];
-    for (int32_t i = -4; i <= 4; i++) {
-        wx[i + 4] = speed_hd_lanczos_weight((float)i - dx);
-        wy[i + 4] = speed_hd_lanczos_weight((float)i - dy);
-    }
     const float right = (float)(p->geometry.src_w - 1u);
     const float bottom = (float)(p->geometry.src_h - 1u);
     float value = 0.0f;
@@ -571,8 +547,11 @@ static inline SPEED_HD float speed_hd_scale_sample(const SpeedHipParams *p, uint
     const float yy = speed_hd_centre_coordinate(y, ratio_y);
     if (g->scale_method == 1) /* vif_scale_bicubic */
         return speed_hd_scale_bicubic(p, set, ch, xx, yy);
-    if (g->scale_method == 2) /* vif_scale_lanczos4 */
-        return speed_hd_scale_lanczos(p, set, ch, xx, yy);
+    if (g->scale_method == 2) { /* vif_scale_lanczos4 */
+        const float *wx = p->lanczos + ((size_t)SPEED_HIP_LANCZOS_TAPS * x);
+        const float *wy = p->lanczos + ((size_t)SPEED_HIP_LANCZOS_TAPS * ((size_t)g->scaled_w + y));
+        return speed_hd_scale_lanczos(p, set, ch, wx, wy, xx, yy);
+    }
     return speed_hd_scale_bilinear(p, set, ch, xx, yy); /* vif_scale_bilinear */
 }
 
@@ -779,19 +758,19 @@ typedef struct SpeedHdSlm {
 
 static inline SPEED_HD SpeedHdSlm speed_hd_slm_layout(float *base)
 {
-    float *vectors = base + 6u * SPEED_HIP_SLM_STRIDE;
+    float *vectors = base + (size_t)6u * SPEED_HIP_SLM_STRIDE;
     SpeedHdSlm m;
     m.a = base;
     m.cov = base + SPEED_HIP_SLM_STRIDE;
-    m.z = base + 2u * SPEED_HIP_SLM_STRIDE;
-    m.q = base + 3u * SPEED_HIP_SLM_STRIDE;
-    m.h = base + 4u * SPEED_HIP_SLM_STRIDE;
-    m.t = base + 5u * SPEED_HIP_SLM_STRIDE;
+    m.z = base + (size_t)2u * SPEED_HIP_SLM_STRIDE;
+    m.q = base + (size_t)3u * SPEED_HIP_SLM_STRIDE;
+    m.h = base + (size_t)4u * SPEED_HIP_SLM_STRIDE;
+    m.t = base + (size_t)5u * SPEED_HIP_SLM_STRIDE;
     m.vec = vectors;
     m.x = vectors + SPEED_HIP_SLM_VECTOR;
-    m.d = vectors + 2u * SPEED_HIP_SLM_VECTOR;
-    m.sd = vectors + 3u * SPEED_HIP_SLM_VECTOR;
-    m.scalar = vectors + 4u * SPEED_HIP_SLM_VECTOR;
+    m.d = vectors + (size_t)2u * SPEED_HIP_SLM_VECTOR;
+    m.sd = vectors + (size_t)3u * SPEED_HIP_SLM_VECTOR;
+    m.scalar = vectors + (size_t)4u * SPEED_HIP_SLM_VECTOR;
     return m;
 }
 

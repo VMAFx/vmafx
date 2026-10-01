@@ -5226,6 +5226,20 @@ test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     is_parallel : false,
     timeout : 60)
 
+# lanczos4 prescale on HIP (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30):
+# the source of test_cuda_speed_lanczos4_parity, built for the HIP twins.
+test_hip_speed_lanczos4_parity = executable('test_hip_speed_lanczos4_parity',
+    ['test.c', 'test_gpu_speed_lanczos4_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1', '-DLZ_BACKEND_HIP=1']
+)
+test('test_hip_speed_lanczos4_parity', test_hip_speed_lanczos4_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 180)
+
 test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
     ['test.c', 'test_hip_speed_singular_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

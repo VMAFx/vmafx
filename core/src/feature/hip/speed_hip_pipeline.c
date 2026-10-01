@@ -228,6 +228,7 @@ typedef struct SpeedHipArena {
     size_t params;
     size_t raw;
     size_t taps;
+    size_t lanczos;
     size_t scaled;
     size_t down;
     size_t centered;
@@ -255,7 +256,8 @@ static SpeedHipArena speed_hip_arena_layout(const SpeedHipPipeline *p)
     SpeedHipArena a;
     a.params = speed_hip_take(&cursor, sizeof(SpeedHipParams));
     a.raw = speed_hip_take(&cursor, p->plane_bytes * p->config.raw_planes);
-    a.taps = speed_hip_take(&cursor, 2u * SPEED_HIP_MAX_TAPS * f);
+    a.taps = speed_hip_take(&cursor, f * 2u * SPEED_HIP_MAX_TAPS);
+    a.lanczos = speed_hip_take(&cursor, speed_internal_gpu_lanczos_count(g) * f);
     a.scaled = speed_hip_take(&cursor, scaled);
     a.down = speed_hip_take(&cursor, ch * g->down_w * g->down_h * f);
     a.centered = speed_hip_take(&cursor, ch * g->trunc_w * g->trunc_h * f);
@@ -274,29 +276,40 @@ static SpeedHipArena speed_hip_arena_layout(const SpeedHipPipeline *p)
     return a;
 }
 
+/* The arena block at `offset`. speed_hip_take() aligns every offset to
+ * SPEED_HIP_ARENA_ALIGN, which covers each element type stored in the arena. */
+static void *speed_hip_at(unsigned char *base, size_t offset)
+{
+    // SAFETY: every offset comes from speed_hip_arena_layout() and lies inside the
+    // one allocation of `SpeedHipArena::total` bytes that `base` addresses.
+    return base + offset;
+}
+
 /* Point the parameter block at the arena at device address `base`. */
 static void speed_hip_bind(SpeedHipPipeline *p, unsigned char *base, const SpeedHipArena *a)
 {
     SpeedHipParams *q = &p->params;
     p->d_raw = base + a->raw;
     q->raw = p->d_raw;
-    q->taps = (float *)(void *)(base + a->taps);
-    q->scaled =
-        p->config.shared.geometry.prescale != 0 ? (float *)(void *)(base + a->scaled) : NULL;
-    q->down = (float *)(void *)(base + a->down);
-    q->centered = (float *)(void *)(base + a->centered);
-    q->indterm = (float *)(void *)(base + a->indterm);
-    q->means = (float *)(void *)(base + a->means);
-    q->cov = (float *)(void *)(base + a->cov);
-    q->eig = (float *)(void *)(base + a->eig);
-    q->qmat = (float *)(void *)(base + a->qmat);
-    q->rmat = (float *)(void *)(base + a->rmat);
-    q->var = (float *)(void *)(base + a->var);
-    q->ent = (float *)(void *)(base + a->ent);
-    q->contrib = (float *)(void *)(base + a->contrib);
-    q->status = (int32_t *)(void *)(base + a->status);
-    q->result = (SpeedGpuFrameResult *)(void *)(base + a->result);
-    p->d_params = (SpeedHipParams *)(void *)(base + a->params);
+    q->taps = speed_hip_at(base, a->taps);
+    q->lanczos = speed_internal_gpu_lanczos_count(&p->config.shared.geometry) != 0u ?
+                     speed_hip_at(base, a->lanczos) :
+                     NULL;
+    q->scaled = p->config.shared.geometry.prescale != 0 ? speed_hip_at(base, a->scaled) : NULL;
+    q->down = speed_hip_at(base, a->down);
+    q->centered = speed_hip_at(base, a->centered);
+    q->indterm = speed_hip_at(base, a->indterm);
+    q->means = speed_hip_at(base, a->means);
+    q->cov = speed_hip_at(base, a->cov);
+    q->eig = speed_hip_at(base, a->eig);
+    q->qmat = speed_hip_at(base, a->qmat);
+    q->rmat = speed_hip_at(base, a->rmat);
+    q->var = speed_hip_at(base, a->var);
+    q->ent = speed_hip_at(base, a->ent);
+    q->contrib = speed_hip_at(base, a->contrib);
+    q->status = speed_hip_at(base, a->status);
+    q->result = speed_hip_at(base, a->result);
+    p->d_params = speed_hip_at(base, a->params);
 }
 
 static int speed_hip_load_module(SpeedHipPipeline *p)
@@ -311,8 +324,32 @@ static int speed_hip_load_module(SpeedHipPipeline *p)
     return vmaf_hip_rc_to_errno(rc);
 }
 
+/* The lanczos4 prescale weights, evaluated on the host with the CPU scaler's
+ * own routine and uploaded once (init only): the device reads them instead
+ * of evaluating sinpif() in fp32, which drifted from the CPU on smooth
+ * content (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). Nothing to do
+ * for the other prescale methods. */
+static int speed_hip_upload_lanczos(const SpeedHipPipeline *p, void *d_lanczos)
+{
+    const SpeedGpuGeometry *g = &p->config.shared.geometry;
+    const size_t count = speed_internal_gpu_lanczos_count(g);
+    if (count == 0u)
+        return 0;
+    float *weights = malloc(count * sizeof(*weights));
+    if (weights == NULL)
+        return -ENOMEM;
+    int err = speed_internal_gpu_lanczos_weights(g, weights, count);
+    if (err == 0) {
+        err = vmaf_hip_rc_to_errno(
+            hipMemcpy(d_lanczos, weights, count * sizeof(*weights), hipMemcpyHostToDevice));
+    }
+    free(weights);
+    return err;
+}
+
 /* The device arena, the pinned staging and result blocks, and the one-time
- * upload of the taps and the parameter block (init only). */
+ * upload of the taps, the lanczos4 weights and the parameter block (init
+ * only). */
 static int speed_hip_allocate(SpeedHipPipeline *p, const SpeedHipBindingSets *bindings)
 {
     const SpeedHipArena a = speed_hip_arena_layout(p);
@@ -339,7 +376,9 @@ static int speed_hip_allocate(SpeedHipPipeline *p, const SpeedHipBindingSets *bi
     rc = hipMemcpy(p->params.taps, taps, sizeof(taps), hipMemcpyHostToDevice);
     if (rc == hipSuccess)
         rc = hipMemcpy(p->d_params, &p->params, sizeof(p->params), hipMemcpyHostToDevice);
-    return vmaf_hip_rc_to_errno(rc);
+    if (rc != hipSuccess)
+        return vmaf_hip_rc_to_errno(rc);
+    return speed_hip_upload_lanczos(p, (unsigned char *)p->d_arena + a.lanczos);
 }
 
 /* Release in the safe order: drain and destroy the stream first, so no
@@ -430,7 +469,7 @@ int speed_hip_pipeline_upload(SpeedHipPipeline *p, uint32_t first, const SpeedHi
 static int speed_hip_launch(SpeedHipPipeline *p, int kernel, unsigned gx, unsigned gy, unsigned gz,
                             unsigned block_x, unsigned block_y, uint32_t set)
 {
-    void *args[] = {&p->d_params, &set};
+    void *args[] = {(void *)&p->d_params, &set};
     const hipError_t rc = hipModuleLaunchKernel(p->kernels[kernel], gx, gy, gz, block_x, block_y,
                                                 1u, 0u, vmaf_hip_stream_of(p->lc.str), args, NULL);
     return vmaf_hip_rc_to_errno(rc);
@@ -458,17 +497,20 @@ static int speed_hip_enqueue_chain(SpeedHipPipeline *p, uint32_t set)
         err = speed_hip_launch_planes(p, SPEED_K_DECIMATE, g->down_w, g->down_h, set);
     if (!err)
         err = speed_hip_launch_planes(p, SPEED_K_CENTRE, g->trunc_w, g->trunc_h, set);
-    if (!err)
+    if (!err) {
         err = speed_hip_launch(p, SPEED_K_MEANS, (ch * SPEED_HIP_N + items - 1u) / items, 1u, 1u,
                                items, 1u, set);
-    if (!err)
+    }
+    if (!err) {
         err = speed_hip_launch(p, SPEED_K_COVARIANCE, ch * SPEED_HIP_TRIANGLE, 1u, 1u,
                                p->params.cov_group, 1u, set);
+    }
     if (!err)
         err = speed_hip_launch(p, SPEED_K_LINALG, ch, 1u, 1u, SPEED_HIP_LINALG_GROUP, 1u, set);
-    if (!err)
+    if (!err) {
         err = speed_hip_launch(p, SPEED_K_SOLVE, (g->blocks + items - 1u) / items, ch, 1u, items,
                                1u, set);
+    }
     if (!err)
         err = speed_hip_launch(p, SPEED_K_SCORE, ch / 2u, 1u, 1u, SPEED_HIP_GROUP, 1u, set);
     return err;
@@ -479,10 +521,11 @@ int speed_hip_pipeline_submit(SpeedHipPipeline *p, uint32_t set)
     if (!p || set >= SPEED_HIP_BINDING_SETS)
         return -EINVAL;
     int err = speed_hip_enqueue_chain(p, set);
-    if (!err)
+    if (!err) {
         err = vmaf_hip_rc_to_errno(
             hipMemcpyAsync(p->h_result, p->params.result, sizeof(SpeedGpuFrameResult),
                            hipMemcpyDeviceToHost, vmaf_hip_stream_of(p->lc.str)));
+    }
     if (!err)
         err = vmaf_hip_kernel_submit_post_record(&p->lc, p->ctx);
     return err;

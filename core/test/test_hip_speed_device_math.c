@@ -30,11 +30,14 @@
  * speed_hd_log2_rn(), is correctly rounded over a sweep of the arguments SpEED
  * produces. Fixtures: the Netflix-derived 576x324 pair in testdata/
  * (48 frames), a 10-bit synthetic frame (the 2-byte picture_copy() path),
- * prescale with nearest, bilinear and bicubic, every chroma weighting mode,
- * speed_use_ref_diff, and a flat chroma plane (the singular-matrix rule). The
- * lanczos4 prescale is out of scope: the reference evaluates its weights in
- * fp64 (ADR-1358). The device run itself is test_hip_speed_*_parity on an AMD
- * device and scripts/dev/speed_gpu_parity.py.
+ * prescale with nearest, bilinear, bicubic and lanczos4 (down and up), every
+ * chroma weighting mode, speed_use_ref_diff, and a flat chroma plane (the
+ * singular-matrix rule). The lanczos4 weights are the table the pipeline
+ * uploads at init (speed_internal_gpu_lanczos_weights(), the CPU scaler's own
+ * routine): the reference evaluates them in fp64, and a device that evaluated
+ * them in fp32 drifted (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). The
+ * device run itself is test_hip_speed_*_parity on an AMD device and
+ * scripts/dev/speed_gpu_parity.py.
  */
 
 #include <errno.h>
@@ -80,6 +83,7 @@ typedef struct SpEmu {
     size_t plane_bytes;
     unsigned char *raw;
     float *buffers[13];
+    float *lanczos; /* the host's lanczos4 table, as uploaded at init */
     int32_t *status;
 } SpEmu;
 
@@ -97,7 +101,7 @@ static int sp_alloc(SpEmu *e, const SpeedHipConfig *c)
     e->raw = calloc(e->plane_bytes * c->raw_planes, 1u);
     e->status = calloc(ch * 2u, sizeof(int32_t));
     SpeedHipParams *p = &e->p;
-    p->taps = sp_alloc_floats(e, 0u, 2u * SPEED_HIP_MAX_TAPS);
+    p->taps = sp_alloc_floats(e, 0u, (size_t)2u * SPEED_HIP_MAX_TAPS);
     p->scaled = sp_alloc_floats(e, 1u, ch * g->scaled_w * g->scaled_h);
     p->down = sp_alloc_floats(e, 2u, ch * g->down_w * g->down_h);
     p->centered = sp_alloc_floats(e, 3u, ch * g->trunc_w * g->trunc_h);
@@ -120,8 +124,23 @@ static void sp_free(SpEmu *e)
 {
     free(e->raw);
     free(e->status);
+    free(e->lanczos);
     for (unsigned i = 0u; i < 13u; i++)
         free(e->buffers[i]);
+}
+
+/* speed_hip_upload_lanczos(): the weight table the pipeline uploads when the
+ * prescale method is lanczos4, from the same routine; no table otherwise. */
+static int sp_create_lanczos(SpEmu *e, const SpeedGpuGeometry *g)
+{
+    const size_t count = speed_internal_gpu_lanczos_count(g);
+    if (count == 0u)
+        return 0;
+    e->lanczos = calloc(count, sizeof(float));
+    if (!e->lanczos)
+        return -ENOMEM;
+    e->p.lanczos = e->lanczos;
+    return speed_internal_gpu_lanczos_weights(g, e->lanczos, count);
 }
 
 /* speed_hip_pipeline.c's parameter block, on host buffers: the scalars and
@@ -138,7 +157,7 @@ static int sp_create(SpEmu *e, const SpeedHipConfig *c, const SpeedHipBindingSet
     p->raw = e->raw;
     p->status = e->status;
     p->result = &e->result;
-    return 0;
+    return sp_create_lanczos(e, &c->shared.geometry);
 }
 
 /* The upload of vmaf_hip_picture_upload_staged(): the plane, packed, into
@@ -163,16 +182,18 @@ static void sp_pixels(const SpEmu *e, uint32_t set)
     const SpeedGpuGeometry *g = &p->geometry;
     for (uint32_t ch = 0u; ch < p->channels && g->prescale != 0; ch++) {
         for (uint32_t y = 0u; y < g->scaled_h; y++) {
-            for (uint32_t x = 0u; x < g->scaled_w; x++)
+            for (uint32_t x = 0u; x < g->scaled_w; x++) {
                 p->scaled[((size_t)ch * g->scaled_h + y) * g->scaled_w + x] =
                     speed_hd_scale_sample(p, set, ch, y, x);
+            }
         }
     }
     for (uint32_t ch = 0u; ch < p->channels; ch++) {
         for (uint32_t i = 0u; i < g->down_h; i++) {
-            for (uint32_t j = 0u; j < g->down_w; j++)
+            for (uint32_t j = 0u; j < g->down_w; j++) {
                 p->down[((size_t)ch * g->down_h + i) * g->down_w + j] =
                     speed_hd_antialias_at(p, set, ch, i, j);
+            }
         }
     }
     for (uint32_t ch = 0u; ch < p->channels; ch++) {
@@ -187,8 +208,8 @@ static void sp_pixels(const SpEmu *e, uint32_t set)
  * level by level, exactly as the work-group reduces them. */
 static void sp_covariance_entry(const SpeedHipParams *p, uint32_t ch, uint32_t entry)
 {
-    float hi[SPEED_HIP_GROUP];
-    float lo[SPEED_HIP_GROUP];
+    float hi[SPEED_HIP_GROUP] = {0.0f};
+    float lo[SPEED_HIP_GROUP] = {0.0f};
     uint32_t x = 0u;
     uint32_t y = 0u;
     speed_hd_triangle_entry(entry, &x, &y);
@@ -271,10 +292,11 @@ static uint32_t sp_lcg(uint32_t x)
 
 static void sp_put(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
 {
-    if (pic->bpc <= 8u)
+    if (pic->bpc <= 8u) {
         ((uint8_t *)pic->data[plane])[row * pic->stride[plane] + col] = (uint8_t)v;
-    else
+    } else {
         ((uint16_t *)pic->data[plane])[row * (pic->stride[plane] / 2u) + col] = (uint16_t)v;
+    }
 }
 
 /* Smooth texture plus deterministic noise; the distorted side is noisier. */
@@ -460,10 +482,11 @@ static int sp_configure(const SpCase *c, unsigned w, unsigned h, unsigned bpc,
     config->channels = c->temporal ? 2u : 4u;
     config->raw_planes = 4u;
     config->staged = c->temporal ? 2u : 4u;
-    if (c->temporal)
+    if (c->temporal) {
         speed_hip_bindings_temporal(o.use_ref_diff, b);
-    else
+    } else {
         speed_hip_bindings_chroma(b);
+    }
     if (!err && !speed_hip_config_valid(config, b))
         err = -EINVAL;
     return err;
@@ -543,9 +566,10 @@ static int sp_frames(SpEmu *e, SpCpu *cpu, const SpCase *c, const SpSource *src)
         memset(&ref, 0, sizeof(ref));
         memset(&dis, 0, sizeof(dis));
         fail = sp_frame(src, c, frame, &ref, &dis) != 0;
-        if (!fail)
+        if (!fail) {
             fail = vmaf_feature_extractor_context_extract(cpu->ctx, &ref, NULL, &dis, NULL, frame,
                                                           cpu->fc) != 0;
+        }
         if (!fail)
             fail = sp_step(e, cpu, c, frame, &ref, &dis);
         if (ref.ref)
@@ -611,6 +635,24 @@ static const SpCase sp_pair_cases[] = {
      30u,
      0,
      {"speed_prescale=0.75", "speed_prescale_method=bicubic"}},
+    {"chroma, prescale 1.5 lanczos4",
+     0,
+     0u,
+     0u,
+     8u,
+     20u,
+     8u,
+     0,
+     {"speed_prescale=1.5", "speed_prescale_method=lanczos4"}},
+    {"temporal, prescale 0.5 lanczos4",
+     1,
+     0u,
+     0u,
+     8u,
+     0u,
+     12u,
+     0,
+     {"speed_prescale=0.5", "speed_prescale_method=lanczos4"}},
     {"chroma, kernelscale 0.5", 0, 0u, 0u, 8u, 20u, 8u, 0, {"speed_kernelscale=0.5", NULL}},
     {"temporal, speed_use_ref_diff", 1, 0u, 0u, 8u, 0u, 30u, 0, {"speed_use_ref_diff=true", NULL}},
     {"chroma, weight mode 1", 0, 0u, 0u, 8u, 20u, 8u, 0, {"speed_weight_var_mode=1", NULL}},
@@ -670,9 +712,10 @@ static char *test_device_log2_is_correctly_rounded(void)
         mismatches += speed_hd_log2_rn(x) != oracle;
         checked++;
     }
-    if (mismatches)
+    if (mismatches) {
         (void)fprintf(stderr, "\nspeed_hd_log2_rn: %u of %u arguments misrounded\n", mismatches,
                       checked);
+    }
     mu_assert("device log2 is not correctly rounded", mismatches == 0u);
     mu_assert("device log2: special values", speed_hd_log2_rn(1.0f) == 0.0f &&
                                                  speed_hd_log2_rn(0.0f) == -HUGE_VALF &&

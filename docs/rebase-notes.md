@@ -56624,3 +56624,23 @@ every frame of the Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080
 checkerboard pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals
 `--backend cpu` of the same binary at `--precision max`. Re-verify after a
 rebase that touches these files with the reproducer of Research-1401.
+## HIP SpEED twins read the host's lanczos4 weight table (2026-10-01)
+
+`fix/hip-speed-lanczos4-host-weights`, `T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`
+(HIP half; CUDA and SYCL landed before).
+
+- `core/src/feature/hip/speed/speed_hip_device.h`: `SpeedHipParams` has a
+  seventeenth pointer, `lanczos` (the layout assert follows);
+  `speed_hd_lanczos_weight()` and `speed_hd_sinpi()` are gone, and
+  `speed_hd_scale_lanczos()` takes the nine column and nine row taps.
+- `core/src/feature/hip/speed_hip_pipeline.c`: the arena has a `lanczos`
+  block, filled at init by `speed_hip_upload_lanczos()` from
+  `speed_internal_gpu_lanczos_weights()`. An upstream change to
+  `lanczos4_kernel()` or to the sample position of
+  `vif_scale_frame_lanczos4_s()` reaches the three device backends through
+  `vif_scale_lanczos4_axis_weights()`; nothing HIP-specific has to follow.
+- `core/test/test_gpu_speed_lanczos4_parity.c` is built a third time
+  (`-DLZ_BACKEND_HIP=1`, `test_hip_speed_lanczos4_parity`);
+  `test_hip_speed_device_math` has two lanczos4 cases;
+  `test_hip_device_resident_contract.py` forbids a device sine and a table
+  that is not the host's (four planted regressions).

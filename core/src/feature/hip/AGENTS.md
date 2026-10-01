@@ -1155,7 +1155,12 @@ Rebase-sensitive invariants:
   only behind `SPEED_HD_HOST_LIBM_LOG2 && !__HIP_DEVICE_COMPILE__` (test
   seam). glibc `log2f` misrounds ~0.4 %: vs glibc CPU a few chroma frames
   differ in last bits; compare with correctly rounded `log2f` preload.
-- No fp64 in `speed/`. lanczos4 prescale (`sinpif`) = ADR-0214 tolerance only.
+- No fp64 in `speed/`. lanczos4 prescale weights = host table
+  (`speed_hip_upload_lanczos()`, `speed_internal_gpu_lanczos_weights()`,
+  CPU scaler's own routine), 9 taps per scaled column then per scaled row,
+  read through `SpeedHipParams::lanczos`. No device sine: fp32 `sinpif`
+  weights were 8.8e-3 relative off the CPU on smooth content
+  (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
 - Guards: `test_hip_speed_device_math` (replay vs CPU extractor),
   `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
   device.

@@ -262,8 +262,8 @@ gradient with noise, the Netflix pair, both 1080p checkerboard pairs, a
 10-bit 720p gradient and BBB 3840x2160 (the CPU run with the [correctly
 rounded `log2f`](#the-cpu-reference-and-log2f)); the scale kernels use no
 scratch memory there ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)).
-The HIP twin still evaluates the weights on the device
-(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in [`state.md`](../state.md)).
+The HIP twins read the same table; see
+[HIP](#hip-device-resident-cpu-fp32-arithmetic).
 
 Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
 one UHD 770 through WSL2 Level Zero, i9-12900K, the icx/icpx 2026.1 build of the
@@ -378,15 +378,23 @@ LD_PRELOAD=/tmp/crlog2f.so python3 scripts/dev/speed_gpu_parity.py --backend hip
   --bbb-dir testdata/bbb --no-timing
 ```
 
-`speed_prescale_method=lanczos4` is not exact on HIP: the CPU evaluates its
-weights with fp64 `sin` and the HIP twins still evaluate them on the device
-in fp32, which on smooth content leaves the ADR-0214 tolerance
-(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`; the CUDA and SYCL twins
-read the host's table instead). The twins have not yet run
-on an AMD device; the verify and timing commands are in
-[`state.md`](../state.md) under `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`, and a
-host test replays the kernels against the CPU extractor
-(`test_hip_speed_device_math`, no device needed).
+`speed_prescale_method=lanczos4` is exact on HIP as well. The twins used to
+evaluate the lanczos4 weights on the device in fp32 (`sinpif`), where the CPU
+uses fp64 `sin`, and on smooth content that left the ADR-0214 tolerance. They
+now read the table the host builds once per run with the CPU scaler's own
+routine (`vif_scale_lanczos4_axis_weights()`), like the CUDA and SYCL twins.
+Measured on a gfx1036 against `--backend cpu` at `--precision max`, lanczos4
+at `speed_prescale` 0.5 and 2.0, `speed_chroma` and `speed_temporal`, on the
+Netflix 576x324 pair (48 frames, and 3 frames at 10 bits), both 1080p
+checkerboard pairs and BBB 3840x2160 (6 frames): before, 228 of 504
+frame values were identical and the worst was 0.238 away (`speed_temporal` at
+2.0 on a checkerboard pair); after, all 504 are identical with the [correctly
+rounded `log2f`](#the-cpu-reference-and-log2f), and with glibc's own `log2f`
+9 values differ by at most 1.9e-6, the same residual the bicubic prescale
+shows. `speed_chroma_hip` with lanczos4 at 0.5 went from 21.8 to 16.0 ms per
+3840x2160 frame. `test_hip_speed_device_math` replays the kernels with the
+table against the CPU extractor without a device, and
+`test_hip_speed_lanczos4_parity` runs the twins on one.
 
 ### The CPU reference and `log2f`
 

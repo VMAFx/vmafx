@@ -190,6 +190,28 @@ def _speed_failures(src: dict[str, str]) -> list[str]:
     seam = r"#if defined\(SPEED_HD_HOST_LIBM_LOG2\) && !defined\(__HIP_DEVICE_COMPILE__\)"
     if not re.search(seam, _code(src[SPEED_DEVICE])):
         failures.append(f"{SPEED_DEVICE}: the host log2f test seam can reach device code")
+    failures += _speed_lanczos_failures(src, pipeline)
+    return failures
+
+
+def _speed_lanczos_failures(src: dict[str, str], pipeline: str) -> list[str]:
+    """lanczos4 prescale: the CPU scaler evaluates each weight in fp64 with
+    sin() and rounds once. No fp32 device sine reproduces that, and SpEED
+    amplifies the last-bit differences, so the host builds the weight table
+    with the scaler's own routine and the device only reads it
+    (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30)."""
+    failures: list[str] = []
+    device = _code(src[SPEED_DEVICE])
+    if re.search(r"\b(?:__)?(?:sin|cos|sincos)(?:pi)?f?\s*\(", device):
+        failures.append(f"{SPEED_DEVICE}: a device sine evaluates a prescale weight")
+    scale = _body(src[SPEED_DEVICE], "speed_hd_scale_sample")
+    if "p->lanczos +" not in scale:
+        failures.append(f"{SPEED_DEVICE}: the lanczos4 scaler does not read the host's table")
+    upload = _body(pipeline, "speed_hip_upload_lanczos")
+    if "speed_internal_gpu_lanczos_weights(" not in upload or "hipMemcpy(" not in upload:
+        failures.append(f"{SPEED_PIPELINE}: the lanczos4 weight table is not built on the host")
+    if "speed_hip_upload_lanczos(" not in _body(pipeline, "speed_hip_allocate"):
+        failures.append(f"{SPEED_PIPELINE}: init no longer uploads the lanczos4 weight table")
     return failures
 
 
@@ -414,6 +436,50 @@ class HipDeviceResidentContractTest(unittest.TestCase):
             "hip_strict_fp_args = ['-fhip-fp32-correctly-rounded-divide-sqrt']",
         )
         self.assert_detected(src, "exact-arithmetic flags")
+
+    def test_speed_device_sine_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_DEVICE,
+            "static inline SPEED_HD float speed_hd_scale_lanczos(",
+            "static inline SPEED_HD float speed_hd_lanczos_weight(float x)\n{\n"
+            "    return sinpif(x);\n}\n\n"
+            "static inline SPEED_HD float speed_hd_scale_lanczos(",
+        )
+        self.assert_detected(src, "device sine")
+
+    def test_speed_scaler_without_the_table_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_DEVICE,
+            "p->lanczos + ((size_t)SPEED_HIP_LANCZOS_TAPS * x)",
+            "local_weights",
+        )
+        src = _replace(
+            src,
+            SPEED_DEVICE,
+            "p->lanczos + ((size_t)SPEED_HIP_LANCZOS_TAPS * ((size_t)g->scaled_w + y))",
+            "local_weights",
+        )
+        self.assert_detected(src, "does not read the host's table")
+
+    def test_speed_local_lanczos_table_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_PIPELINE,
+            "speed_internal_gpu_lanczos_weights(",
+            "speed_local_lanczos_weights(",
+        )
+        self.assert_detected(src, "weight table is not built on the host")
+
+    def test_speed_missing_lanczos_upload_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_PIPELINE,
+            "    return speed_hip_upload_lanczos(p, (unsigned char *)p->d_arena + a.lanczos);",
+            "    return 0;",
+        )
+        self.assert_detected(src, "init no longer uploads")
 
     def test_native_sqrt_is_detected(self) -> None:
         src = _replace(

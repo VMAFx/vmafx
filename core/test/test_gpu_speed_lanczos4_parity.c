@@ -5,11 +5,13 @@
  *  The device-resident SpEED twins against the CPU extractors with
  *  speed_prescale_method=lanczos4 (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
  *  One source, one executable per backend: test_cuda_speed_lanczos4_parity
- *  (the default) and test_sycl_speed_lanczos4_parity (-DLZ_BACKEND_SYCL=1).
+ *  (the default), test_sycl_speed_lanczos4_parity (-DLZ_BACKEND_SYCL=1) and
+ *  test_hip_speed_lanczos4_parity (-DLZ_BACKEND_HIP=1).
  *
  *  The CPU scaler evaluates each lanczos4 weight in fp64 with sin() and rounds
  *  it once. The scale kernels used to evaluate the weights themselves in fp32
- *  (sinpif() on CUDA, sycl::sinpi() on SYCL), a few ulp off on some of them,
+ *  (sinpif() on CUDA and HIP, sycl::sinpi() on SYCL), a few ulp off on some of
+ *  them,
  *  and SpEED amplifies that on smooth content. They now read the weights the
  *  host evaluates once per run with the scaler's own routine
  *  (speed_internal_gpu_lanczos_weights()).
@@ -36,7 +38,8 @@
  *  about 0.4% of arguments (ADR-1380): a different libm may move a score by
  *  an ulp, 1.2e-7 relative at most.
  *
- *  Skips (exit 77) when the backend has no device.
+ *  Skips (exit 77) when the backend has no device, and on a HIP build without
+ *  device kernels (-Denable_hipcc=false), whose twins are scaffolds.
  */
 
 #include <errno.h>
@@ -76,6 +79,30 @@ static int lz_device_close(LzDevice *device)
     vmaf_sycl_state_free(&device);
     return 0;
 }
+#elif defined(LZ_BACKEND_HIP)
+#include "libvmaf/libvmaf_hip.h"
+#define LZ_BACKEND "HIP"
+#define LZ_TWIN(feature) feature "_hip"
+/* A HIP build without hipcc registers scaffold twins: init() is -ENOSYS. */
+#define LZ_SCAFFOLD_ERRNO (-ENOSYS)
+typedef VmafHipState LzDevice;
+
+static int lz_device_open(LzDevice **device)
+{
+    VmafHipConfiguration cfg = {.device_index = -1};
+    return vmaf_hip_state_init(device, cfg);
+}
+
+static int lz_device_import(VmafContext *vmaf, LzDevice *device)
+{
+    return vmaf_hip_import_state(vmaf, device);
+}
+
+static int lz_device_close(LzDevice *device)
+{
+    vmaf_hip_state_free(&device);
+    return 0;
+}
 #else
 #include "libvmaf/libvmaf_cuda.h"
 #define LZ_BACKEND "CUDA"
@@ -97,6 +124,12 @@ static int lz_device_close(LzDevice *device)
 {
     return vmaf_cuda_state_free(device);
 }
+#endif
+
+/* The error a twin without device kernels reports; 0 for a backend that has
+ * no such build, where nothing compares equal to it. */
+#ifndef LZ_SCAFFOLD_ERRNO
+#define LZ_SCAFFOLD_ERRNO 0
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
@@ -279,8 +312,9 @@ static char *lz_check(const LzRun *run)
     memset(&cpu, 0, sizeof(cpu));
     memset(&gpu, 0, sizeof(gpu));
     const int device = lz_score_twin(run, &gpu);
-    if (device == 1) {
-        (void)fprintf(stderr, "[skip: no " LZ_BACKEND " device] ");
+    if (device == 1 || (device != 0 && device == LZ_SCAFFOLD_ERRNO)) {
+        (void)fprintf(stderr, "[skip: no " LZ_BACKEND " device%s] ",
+                      device == 1 ? "" : " kernels in this build");
         mu_skipped = 1; /* exit 77, not a pass */
         return NULL;
     }
