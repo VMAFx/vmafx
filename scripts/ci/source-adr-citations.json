@@ -3474,10 +3474,14 @@
       "sites": {
         "core/include/libvmaf/libvmaf.h": 1,
         "core/src/feature/feature_extractor.cpp": 5,
+        "core/src/feature/hip/float_moment_hip.c": 1,
+        "core/src/feature/hip/float_psnr_hip.c": 1,
+        "core/src/feature/hip/float_ssim_hip.c": 1,
         "core/src/feature/hip/integer_adm_hip.c": 3,
         "core/src/feature/hip/integer_motion_hip.c": 4,
         "core/src/feature/hip/integer_vif_hip.c": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
+        "core/src/hip/shared_frame.h": 1,
         "core/src/libvmaf.c": 3,
         "core/src/picture.h": 1,
         "core/test/test_feature_extractor.c": 1,
@@ -3557,7 +3561,7 @@
         "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
         "core/src/feature/hip/integer_adm/adm_csf_den.hip": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 4,
-        "core/src/feature/hip/integer_vif_hip.c": 9,
+        "core/src/feature/hip/integer_vif_hip.c": 8,
         "core/src/hip/meson.build": 1,
         "core/src/meson.build": 1,
         "core/test/test_hip_smoke.c": 6
@@ -6136,6 +6140,7 @@
         "core/src/hip/dispatch_strategy.c": 1,
         "core/src/hip/kernel_template.c": 1,
         "core/src/hip/picture_hip.c": 2,
+        "core/src/hip/shared_frame.c": 1,
         "core/src/libvmaf.c": 1,
         "core/src/mcp/3rdparty/cJSON/cJSON.c": 1,
         "core/src/metal/dispatch_strategy.c": 1,
@@ -6234,6 +6239,7 @@
         "core/test/test_hip_float_ssim_parity.c": 1,
         "core/test/test_hip_fp_arith_probe.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
+        "core/test/test_hip_shared_frame.c": 1,
         "core/test/test_hip_speed_device_math.c": 1,
         "core/test/test_hip_ssim_parity.c": 1,
         "core/test/test_hip_ssim_tiny_frames.c": 1,
@@ -6886,7 +6892,7 @@
     },
     "1211": {
       "sites": {
-        "core/src/feature/hip/integer_adm_hip.c": 3,
+        "core/src/feature/hip/integer_adm_hip.c": 2,
         "core/test/meson.build": 2
       },
       "target": "1211-hip-integer-adm-picture-staging.md"
@@ -8423,6 +8429,37 @@
         "core/test/test_sycl_fp_arith_contract.c": 1
       },
       "target": "1407-hip-strict-fp-every-kernel.md"
+    },
+    "1408": {
+      "sites": {
+        "core/src/feature/feature_extractor.h": 1,
+        "core/src/feature/hip/ciede_hip.c": 1,
+        "core/src/feature/hip/float_adm_hip.c": 1,
+        "core/src/feature/hip/float_moment_hip.c": 1,
+        "core/src/feature/hip/float_motion_hip.c": 3,
+        "core/src/feature/hip/float_psnr_hip.c": 1,
+        "core/src/feature/hip/float_ssim_hip.c": 3,
+        "core/src/feature/hip/float_vif_hip.c": 2,
+        "core/src/feature/hip/integer_adm_hip.c": 3,
+        "core/src/feature/hip/integer_motion_hip.c": 4,
+        "core/src/feature/hip/integer_motion_sad_hip.h": 1,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 3,
+        "core/src/feature/hip/integer_psnr_hip.c": 1,
+        "core/src/feature/hip/integer_ssim_hip.c": 2,
+        "core/src/feature/hip/integer_vif_hip.c": 2,
+        "core/src/hip/meson.build": 1,
+        "core/src/hip/shared_frame.c": 1,
+        "core/src/hip/shared_frame.h": 1,
+        "core/src/libvmaf.c": 4,
+        "core/src/libvmaf_priv.h": 1,
+        "core/test/meson.build": 3,
+        "core/test/test_hip_adm_init_unwind.c": 2,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_shared_frame.c": 1,
+        "core/test/test_hip_shared_frame_contract.py": 1,
+        "core/test/test_hip_upload_race.c": 2
+      },
+      "target": "1408-hip-shared-frame-planes.md"
     },
     "1409": {
       "sites": {
