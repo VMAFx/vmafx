@@ -46,6 +46,13 @@
  *      (ADR-1402). test_adm_cm_centre_tap_stays_int32 pins the unnarrowed
  *      centre tap itself.
  *
+ *   5. test_adm_decouple_matches_scalar_for_gains: runs the scale-0 and the
+ *      scale 1-3 decouple kernels of AVX2 (and of AVX-512 where the host has
+ *      it) against the scalar kernels at enhancement gain limits of 1, 1.2,
+ *      1.5 and 100 and requires the same restored and additive samples. The
+ *      scalar kernels truncate rst * gain toward zero; a vector kernel that
+ *      rounds it differs at 1.2 and 1.5.
+ *
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
@@ -934,6 +941,285 @@ static char *test_adm_decouple_guard_band(void)
     return NULL;
 }
 
+/* ---------------------------------------------------------------------
+ * Test 5: the decouple kernels against the scalar kernels, for integer and
+ * non-integer enhancement gain limits.
+ *
+ * adm_decouple_band() and adm_decouple_band_s123() bound the restored sample
+ * with MIN(rst * gain, t) / MAX(rst * gain, t) in double and store the result
+ * in an integer, which truncates toward zero. The scale-0 AVX2 and AVX-512
+ * kernels and the AVX-512 scale 1-3 kernel converted rst * gain with the
+ * rounding conversions, so with a gain such as 1.2 they left the scalar by one
+ * in every limited sample whose product has a fraction of one half or more
+ * (T-ADM-DECOUPLE-X86-FRACTIONAL-GAIN-ROUNDING-2026-10-01). The gains of the
+ * shipped models, 1 and 100, give integral products and hid it.
+ *
+ * The bands are built so that the limit is taken: in three samples of four
+ * the distorted sample is the reference scaled by one factor, which passes
+ * the one-degree angle test, and the factor runs from 1/2 to 8 and, in one
+ * sample of eight, to 150, past every gain under test.
+ *
+ * They also reach the bottom of the int16 range, which a decoded picture does
+ * not (its scale-0 coefficients stay within about 22900): with h = v = -32768
+ * the vector angle test's _mm256_madd_epi16 / _mm512_madd_epi16 sum is 2^31
+ * and read INT32_MIN, which set the angle flag where the scalar clears it.
+ * ------------------------------------------------------------------- */
+
+/* Sixteen-bit planes feed the scale-0 kernels, 32-bit planes the scale 1-3
+ * kernels; both sets use the plane order of DecoupleFixture. */
+typedef struct GainFixture {
+    int w;
+    int h;
+    int stride;
+    size_t elems;
+    int16_t *p16[DEC_PLANES];
+    int32_t *p32[DEC_PLANES];
+    AdmBuffer buf;
+} GainFixture;
+
+/* Reference and distorted sample of the three bands at one position. */
+typedef struct GainSample {
+    int32_t o[3];
+    int32_t t[3];
+} GainSample;
+
+static int32_t gain_clamp(int64_t v, int32_t limit)
+{
+    if (v < -(int64_t)limit) {
+        return -limit;
+    }
+    return (v >= limit) ? limit - 1 : (int32_t)v;
+}
+
+static int32_t gain_random(uint32_t *state, int32_t mag)
+{
+    return (int32_t)(simd_test_xorshift32(state) % (2u * (uint32_t)mag)) - mag;
+}
+
+/* One position of bands whose samples lie in [-limit, limit); `classes` is
+ * the number of magnitude classes, each half the one before. */
+static GainSample gain_sample(uint32_t *state, int32_t limit, uint32_t classes)
+{
+    GainSample s;
+    const uint32_t kind = simd_test_xorshift32(state);
+    const int32_t shifted = limit >> (kind % classes);
+    const int32_t mag = shifted < 4 ? 4 : shifted;
+    /* The enhancement factor, in eighths. */
+    const int64_t num = ((kind >> 8) % 8u == 0u) ? 1200 : 4 + (int64_t)((kind >> 12) % 60u);
+    const int independent = ((kind >> 20) % 4u == 0u);
+
+    for (int b = 0; b < 3; ++b) {
+        s.o[b] = gain_random(state, mag);
+        s.t[b] =
+            independent ? gain_random(state, mag) : gain_clamp(((int64_t)s.o[b] * num) / 8, limit);
+    }
+    /* The angle test reads h and v only; d may point the other way. */
+    if ((kind >> 24) & 1u) {
+        s.t[2] = gain_clamp(-(int64_t)s.t[2], limit);
+    }
+    /* h and v at the bottom of the range in both pictures: at scale 0 the
+     * int32 dot product and squared magnitudes of the angle test are 2^31. */
+    if ((kind >> 25) % 32u == 0u) {
+        s.o[0] = s.o[1] = s.t[0] = s.t[1] = -limit;
+    }
+    return s;
+}
+
+static void gain_fixture_free(GainFixture *f)
+{
+    for (int k = 0; k < DEC_PLANES; ++k) {
+        simd_test_aligned_free(f->p16[k]);
+        simd_test_aligned_free(f->p32[k]);
+        f->p16[k] = NULL;
+        f->p32[k] = NULL;
+    }
+}
+
+static void gain_fixture_bind(GainFixture *f)
+{
+    adm_dwt_band_t *const b16[4] = {&f->buf.ref_dwt2, &f->buf.dis_dwt2, &f->buf.decouple_r,
+                                    &f->buf.decouple_a};
+    i4_adm_dwt_band_t *const b32[4] = {&f->buf.i4_ref_dwt2, &f->buf.i4_dis_dwt2,
+                                       &f->buf.i4_decouple_r, &f->buf.i4_decouple_a};
+
+    for (size_t n = 0; n < 4; ++n) {
+        const size_t first = 3u * n;
+        b16[n]->band_h = f->p16[first];
+        b16[n]->band_v = f->p16[first + 1u];
+        b16[n]->band_d = f->p16[first + 2u];
+        b32[n]->band_h = f->p32[first];
+        b32[n]->band_v = f->p32[first + 1u];
+        b32[n]->band_d = f->p32[first + 2u];
+    }
+}
+
+static void gain_fixture_fill(GainFixture *f, uint32_t seed)
+{
+    uint32_t state = seed;
+
+    for (size_t i = 0; i < f->elems; ++i) {
+        const GainSample s16 = gain_sample(&state, 32768, 12u);
+        const GainSample s32 = gain_sample(&state, 1 << 26, 24u);
+        for (int b = 0; b < 3; ++b) {
+            f->p16[b][i] = (int16_t)s16.o[b];
+            f->p16[3 + b][i] = (int16_t)s16.t[b];
+            f->p32[b][i] = s32.o[b];
+            f->p32[3 + b][i] = s32.t[b];
+        }
+    }
+}
+
+/* Inputs get the enhanced bands of `seed`, outputs zeros. Returns 0, or -1
+ * after freeing whatever was allocated. */
+static int gain_fixture_alloc(GainFixture *f, int w, int h, uint32_t seed)
+{
+    (void)memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    f->stride = ALIGN_CEIL(w * (int)sizeof(int32_t)) / (int)sizeof(int32_t);
+    f->elems = ((size_t)f->stride * (size_t)h) + DEC_SLACK;
+
+    for (int k = 0; k < DEC_PLANES; ++k) {
+        f->p16[k] = (int16_t *)simd_test_aligned_malloc(f->elems * sizeof(int16_t), 64);
+        f->p32[k] = (int32_t *)simd_test_aligned_malloc(f->elems * sizeof(int32_t), 64);
+        if (!f->p16[k] || !f->p32[k]) {
+            gain_fixture_free(f);
+            return -1;
+        }
+        (void)memset(f->p16[k], 0, f->elems * sizeof(int16_t));
+        (void)memset(f->p32[k], 0, f->elems * sizeof(int32_t));
+    }
+    gain_fixture_fill(f, seed);
+    gain_fixture_bind(f);
+    return 0;
+}
+
+/* adm_decouple() and adm_decouple_s123() of integer_adm.c, from the kernels
+ * they are built on. */
+static void gain_scalar(GainFixture *f, double gain)
+{
+    const float cos_1deg_sq = adm_cos_1deg_sq();
+    const AdmBorder b = adm_border_filt(f->w, f->h);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        adm_decouple_cols(&f->buf, i, f->stride, b.left, b.right, gain, div_lookup, cos_1deg_sq);
+        adm_decouple_s123_cols(&f->buf, i, f->stride, b.left, b.right, gain, div_lookup,
+                               cos_1deg_sq);
+    }
+}
+
+/* Output samples of the 16-bit (`n[0]`) and 32-bit (`n[1]`) planes on which
+ * the two fixtures differ. */
+static void gain_outputs_differ(const GainFixture *a, const GainFixture *b, size_t n[2])
+{
+    n[0] = 0;
+    n[1] = 0;
+    for (int k = 6; k < DEC_PLANES; ++k) {
+        for (size_t i = 0; i < a->elems; ++i) {
+            n[0] += (a->p16[k][i] != b->p16[k][i]) ? 1u : 0u;
+            n[1] += (a->p32[k][i] != b->p32[k][i]) ? 1u : 0u;
+        }
+    }
+}
+
+/* The vector decouple kernels the host can run. */
+typedef struct GainKernels {
+    adm_decouple_fn s0[2];
+    adm_decouple_fn s123[2];
+    const char *name[2];
+    int count;
+} GainKernels;
+
+static GainKernels gain_kernels(void)
+{
+    GainKernels k = {{adm_decouple_avx2, NULL}, {adm_decouple_s123_avx2, NULL}, {"AVX2", NULL}, 1};
+#if HAVE_AVX512
+    if (simd_test_have_avx512()) {
+        k.s0[1] = adm_decouple_avx512;
+        k.s123[1] = adm_decouple_s123_avx512;
+        k.name[1] = "AVX-512";
+        k.count = 2;
+    }
+#endif
+    return k;
+}
+
+/* Runs every vector kernel on `simd` and counts the output samples that are
+ * not the scalar kernels' in `ref`. */
+static size_t gain_mismatches(const GainKernels *k, const GainFixture *ref, GainFixture *simd,
+                              double gain)
+{
+    size_t total = 0;
+
+    for (int n = 0; n < k->count; ++n) {
+        size_t bad[2];
+        k->s0[n](&simd->buf, simd->w, simd->h, simd->stride, gain, div_lookup);
+        k->s123[n](&simd->buf, simd->w, simd->h, simd->stride, gain, div_lookup);
+        gain_outputs_differ(ref, simd, bad);
+        if (bad[0] != 0 || bad[1] != 0) {
+            (void)fprintf(stderr,
+                          "  decouple %s, band %dx%d, gain limit %g: %zu scale-0 and %zu "
+                          "scale 1-3 samples are not the scalar kernels'\n",
+                          k->name[n], simd->w, simd->h, gain, bad[0], bad[1]);
+        }
+        total += bad[0] + bad[1];
+    }
+    return total;
+}
+
+/* One geometry at one gain limit. `limited` receives the number of scalar
+ * output samples the limit changed, taken against the scalar output at the
+ * default limit of 100, which only the factor of 150 reaches. */
+static char *gain_check(const GainKernels *k, int w, int h, double gain, size_t limited[2])
+{
+    GainFixture ref;
+    GainFixture simd;
+    const uint32_t seed = 0x6a17u ^ (uint32_t)((w * 257) + h);
+
+    mu_assert("allocation failed for the gain fixture", gain_fixture_alloc(&ref, w, h, seed) == 0);
+    if (gain_fixture_alloc(&simd, w, h, seed) != 0) {
+        gain_fixture_free(&ref);
+        return "allocation failed for the gain fixture";
+    }
+
+    gain_scalar(&simd, 100.0);
+    gain_scalar(&ref, gain);
+    gain_outputs_differ(&ref, &simd, limited);
+    const size_t bad = gain_mismatches(k, &ref, &simd, gain);
+
+    gain_fixture_free(&ref);
+    gain_fixture_free(&simd);
+    mu_assert("a vector decouple kernel and the scalar kernels disagree", bad == 0);
+    return NULL;
+}
+
+static char *test_adm_decouple_matches_scalar_for_gains(void)
+{
+    static const double gains[] = {1.0, 1.2, 1.5, 100.0};
+    static const int geometry[][2] = {{24, 12}, {37, 17}, {64, 24}, {80, 36}};
+    const GainKernels k = gain_kernels();
+
+    for (size_t g = 0; g < sizeof(gains) / sizeof(gains[0]); ++g) {
+        size_t limited[2] = {0, 0};
+        for (size_t n = 0; n < sizeof(geometry) / sizeof(geometry[0]); ++n) {
+            size_t part[2];
+            char *msg = gain_check(&k, geometry[n][0], geometry[n][1], gains[g], part);
+            if (msg) {
+                return msg;
+            }
+            limited[0] += part[0];
+            limited[1] += part[1];
+        }
+        /* A gain limit below 100 has to bind somewhere, or the comparison
+         * above proves nothing about the limited branch. */
+        if (gains[g] < 100.0) {
+            mu_assert("the gain limit never bound a scale-0 sample", limited[0] > 100);
+            mu_assert("the gain limit never bound a scale 1-3 sample", limited[1] > 100);
+        }
+    }
+    return NULL;
+}
+
 #endif /* ARCH_X86 */
 
 char *run_tests(void)
@@ -951,6 +1237,7 @@ char *run_tests(void)
     mu_run_test(test_adm_cm_centre_tap_stays_int32);
     mu_run_test(test_adm_cm_matches_scalar_kernels);
     mu_run_test(test_adm_decouple_guard_band);
+    mu_run_test(test_adm_decouple_matches_scalar_for_gains);
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");
 #endif

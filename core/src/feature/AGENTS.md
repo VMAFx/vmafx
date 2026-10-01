@@ -617,6 +617,19 @@ feature/
   (patch content on CUDA / HIP / SYCL). Rebase map:
   [rebase-notes](../../../docs/rebase-notes.md) "fix/adm-cm-centre-tap-wrap".
 
+- **`integer_adm` enhancement gain limit = the scalar's truncated double
+  product** (fork-local, ADR-1413). Scalar: `rst = MIN(rst * gain, t)` /
+  `MAX(...)`, double stored in an integer -> `trunc(fl(rst * gain))`, then
+  integer min / max (`t` integral, so the order does not matter). Every twin
+  returns it for any limit in [1, 100]: x86 `cvttpd` conversions, CUDA + HIP
+  C cast (`cvt.rzi.s32.f64`), SYCL `adm_gain_limit_product()` from
+  `adm_gain_limit.h` (two 64-bit products + bit-length comparison, no
+  double; exact, not Q31). Never: a rounding conversion, a floor, a
+  fixed-point limit. Metal still multiplies in binary32
+  (`T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01`). Guards:
+  `test_integer_adm_simd`, `test_adm_gain_limit` (host),
+  `test_gpu_adm_tiny_frames` (limits 1.2, 1.5; bit-exact on SYCL).
+
 - **`integer_adm_kernels.h` = the scalar integer ADM kernels** (fork-local,
   ADR-1402 PR): `integer_adm.c` drivers and the x86 twins share them. No
   second copy of a scalar kernel in `x86/adm_avx2.c` / `x86/adm_avx512.c`.

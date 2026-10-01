@@ -62,8 +62,8 @@ sycl/
   even when offending kernel never submitted. `double` allowed
   *outside* kernel lambda (host-side post-processing in `extract` /
   `flush` callbacks, score aggregation, log10 normalisation). ADM gain
-  limiting uses int64 Q31 (`gain_limit_to_q31` +
-  `launch_decouple_csf<false>` in `integer_adm_sycl.cpp`); VIF gain
+  limiting uses the integer form of the CPU's truncated double product
+  (`adm_gain_limit_product()` in `feature/adm_gain_limit.h`, ADR-1413); VIF gain
   limiting uses fp32 `sycl::fmin`. **On rebase**: upstream cherry-pick
   bringing `double` into kernel lambda -> refactor to int64 / fp32
   before merging.

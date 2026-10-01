@@ -164,12 +164,16 @@ devices.
 
 Concretely:
 
-- **ADM gain limiting** uses an int64 Q31 fixed-point split-multiply
-  (`gain_limit_to_q31` in `integer_adm_sycl.cpp`). The CPU reference
-  multiplies a 32-bit DWT coefficient by a `double` gain in `[1.0, 100.0]`;
-  the device path replaces this with `gain_q31 = round(gain * 2^31)` and a
-  16-bit-split int64 multiply, exact for the production gain values
-  (`1.0`, `100.0`) and within ±1 LSB for fractional gains.
+- **ADM gain limiting** uses 64-bit integer arithmetic
+  (`adm_gain_limit_product()` in `core/src/feature/adm_gain_limit.h`). The
+  CPU reference multiplies a 32-bit DWT coefficient by a `double` gain in
+  `[1.0, 100.0]` and truncates the product toward zero; the device path
+  returns that truncated double product exactly, from the gain's 53-bit
+  significand and two 64-bit products, for the production values (`1.0`,
+  `100.0`) and for non-integer gains alike
+  ([ADR-1413](../../adr/1413-adm-gain-limit-truncated-double-product.md)).
+  Until ADR-1413 this was a Q31 fixed-point product, which was up to one
+  off per sample for a non-integer gain.
 - **VIF gain limiting** runs entirely in fp32 (`sycl::fmin(g,
   vif_enhn_gain_limit)` over float operands). The host stores the gain as
   a `double` for parity with the CPU API; the launcher casts to `float`

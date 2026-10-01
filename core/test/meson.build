@@ -493,6 +493,17 @@ test_adm_angle_flag = executable('test_adm_angle_flag',
 )
 test('test_adm_angle_flag', test_adm_angle_flag, suite : ['fast'])
 
+# T-SYCL-ADM-FRACTIONAL-GAIN-LIMIT-2026-09-29 (ADR-1413): the integer form of
+# the enhancement gain limit's truncated double product, against the double
+# product itself. Host-only: exercises the header the SYCL kernels include.
+test_adm_gain_limit = executable('test_adm_gain_limit',
+    ['test.c', 'test_adm_gain_limit.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_adm_gain_limit', test_adm_gain_limit, suite : ['fast'])
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],

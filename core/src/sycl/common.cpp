@@ -272,8 +272,8 @@ static int sycl_resolve_device(const VmafSyclConfiguration &cfg, sycl::device &o
 }
 
 /* T7-17 (ADR-0220): all SYCL feature kernels are designed to be fp64-free. ADM
- * gain limiting uses an int64 Q31 fixed-point path (see integer_adm_sycl.cpp
- * `gain_limit_to_q31`), VIF gain limiting runs entirely in fp32 (`sycl::fmin`
+ * gain limiting forms the CPU's truncated double product in 64-bit integers
+ * (feature/adm_gain_limit.h, ADR-1413), VIF gain limiting runs entirely in fp32 (`sycl::fmin`
  * over float operands), and CIEDE / SSIM accumulators avoid
  * `sycl::reduction<double>`. No fp64-emulation fallback runs; the kernels are
  * already native-fast on Intel Arc A-series, Intel iGPUs, and other fp64-less

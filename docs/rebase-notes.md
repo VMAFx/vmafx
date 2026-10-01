@@ -23,6 +23,34 @@
   group).
 - No source file of a library changes. GCC builds produce the same objects.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/adm-decouple-fractional-gain-truncation — the integer ADM gain limit truncates on every path (ADR-1413, 2026-10-01)
+
+- `core/src/feature/x86/adm_avx2.c` `decouple_gain_avx2()` and
+  `core/src/feature/x86/adm_avx512.c` `decouple_gain_avx512()` /
+  `decouple_s123_limit_half_avx512()` convert `rst * gain` with
+  `_mm256_cvttpd_epi32`, `_mm512_cvttpd_epi32` and `_mm512_cvttpd_epi64`.
+  Upstream master uses the rounding `cvtpd` forms in all three places
+  (`adm_avx2.c:854`, `adm_avx512.c:964`, `adm_avx512.c:1407` at `6ec23e8f2`),
+  which differ from its own scalar code for a non-integer
+  `adm_enhn_gain_limit`. **On a sync keep the fork's truncating conversions**;
+  `test_adm_decouple_matches_scalar_for_gains` (`test_integer_adm_simd`) fails
+  on upstream's.
+- The scale-0 angle masks (`decouple_angle_mask_avx2()`,
+  `decouple_angle_mask_avx512()`) read the `madd_epi16` squared magnitudes as
+  unsigned and the dot product as 2^31 where it is `INT32_MIN`. Upstream reads
+  all three as int32. Keep the fork's reading; the same test covers it.
+- `core/src/feature/adm_gain_limit.h` is fork-only (no upstream counterpart):
+  the integer form of `(int64_t)((double)rst * gain)`. The SYCL twin
+  (`core/src/feature/sycl/integer_adm_sycl.cpp`, also fork-only) calls it from
+  `adm_dev_gain_limit()`; `gain_limit_to_q31` and `GainLimitQ31` are gone and
+  must not come back. If upstream changes how the scalar forms or converts the
+  product in `adm_decouple_band()` / `adm_decouple_band_s123()`
+  (`integer_adm_kernels.h` here, `integer_adm.c` upstream), change the header,
+  the two x86 files and `test_adm_gain_limit` in the same PR, and re-run the
+  Netflix golden gate: three of its assertions use the integer extractor at a
+  limit of 1.2.
+- The CUDA and HIP twins (`adm_decouple_inline.cuh` / `.hip`) are untouched;
+  they assign the double product to an `int32_t`.
 
 ## fix/sycl-speed-lanczos4-host-weights — the SYCL SpEED twins read the CPU's lanczos4 weights (2026-10-01)
 

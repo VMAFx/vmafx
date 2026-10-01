@@ -94,6 +94,40 @@ inside the tolerance.
 
 ---
 
+## Integer ADM vector decouple rounds the gain-limited sample — fixed in this fork
+
+Found 2026-10-01; present on `upstream/master` `6ec23e8f2`; not reported
+upstream.
+
+The scalar decouple stores `MIN(rst * adm_enhn_gain_limit, t)` (or `MAX`), a
+double, in an integer, which truncates toward zero. Upstream's vector kernels
+convert the product with rounding conversions: `_mm256_cvtpd_epi32` in
+`adm_decouple_avx2` (`adm_avx2.c:854`), `_mm512_cvtpd_epi32` in
+`adm_decouple_avx512` (`adm_avx512.c:964`) and `_mm512_cvtpd_epi64` in
+`adm_decouple_s123_avx512` (`adm_avx512.c:1407`). With an integral limit (the
+default 100, the 1 of the NEG models) the product is integral and nothing
+shows. With a non-integer limit the vector result is one off wherever the
+product has a fraction of one half or more.
+
+Reproduce on any x86 host:
+
+```bash
+vmaf -r src01_hrc00_576x324.yuv -d src01_hrc01_576x324.yuv -w 576 -h 324 -p 420 -b 8 \
+     --feature 'adm=adm_enhn_gain_limit=1.2' --json -o simd.json
+vmaf ... --feature 'adm=adm_enhn_gain_limit=1.2' --json -o scalar.json --cpumask 4294967295
+```
+
+`integer_adm_scale0` differs by up to 1.2e-6 per frame on that pair, 6.2e-6 on
+the 352x288 `akiyo` pair and 3.5e-5 on blurred blocks.
+
+**Fix applied in this fork:** the truncating conversions (`_mm256_cvttpd_epi32`,
+`_mm512_cvttpd_epi32`, `_mm512_cvttpd_epi64`), so every dispatch level returns
+the scalar's sample. See
+[ADR-1413](../adr/1413-adm-gain-limit-truncated-double-product.md). Until
+upstream changes its kernels, the fork's AVX2 / AVX-512 output under a
+non-integer limit equals upstream's scalar output, not upstream's vector
+output.
+
 ## `adm_decouple_s123_avx512` LTO+release SEGV — fixed in this fork
 
 **Status:** fixed in this fork (PR #69 follow-up commit), still present upstream.

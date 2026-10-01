@@ -435,7 +435,7 @@ only.
 | Option                   | Alias  | Type   | Default   | Range       | Effect                                                                                                                                                    |
 | ------------------------ | ------ | ------ | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `debug`                  | —      | bool   | `false`   | —           | Emit debug metrics                                                                                                                                        |
-| `adm_enhn_gain_limit`    | `egl`  | double | `1.2`     | `1.0–1.2`   | Cap enhancement-gain ratio                                                                                                                                |
+| `adm_enhn_gain_limit`    | `egl`  | double | `100.0`   | `1.0–100.0` | Enhancement gain limit: how many times its reference value a restored coefficient may count for. `1.0` counts no enhancement as restored detail (what the NEG models and `vmaf_v1.0.16_*` set); the default `100.0` is upstream's. Non-integer values such as `1.2` are valid; see [Non-integer enhancement gain limits](#non-integer-enhancement-gain-limits) |
 | `adm_norm_view_dist`     | `nvd`  | double | `3.0`     | `0.75–24.0` | Normalised viewing distance (distance ÷ display height)                                                                                                   |
 | `adm_ref_display_height` | `rdh`  | int    | `1080`    | `1–4320`    | Reference display height in pixels (for viewing-distance scaling)                                                                                         |
 | `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model: `0` Watson97 (upstream-canonical), `1` Barten, `2` Barten/Watson blend, `3` Barten/Watson blend (MAE-fitted). The default model `vmaf_v1.0.16_3d0h` requests `2`. Fixed-point `adm` normalizes finite over-range weights without changing the three bands' ratios; unsupported blend-table viewing geometry still returns `-EINVAL` — see [Fixed-point CSF limits](#fixed-point-csf-limits). |
@@ -549,6 +549,49 @@ vmaf -r flat_64x64.yuv -d patches_64x64.yuv -w 64 -h 64 -p 420 -b 8 \
 ```
 
 `core/test/test_integer_adm_cm_threshold.c` draws both pictures.
+
+##### Non-integer enhancement gain limits
+
+`adm_enhn_gain_limit` accepts any value from 1 to 100. Since ADR-1413 the
+fixed-point `adm` score for a non-integer limit such as `1.2` no longer depends
+on which code path computes it: the scalar path, AVX2, AVX-512 and the SYCL
+twin give the same output bit for bit.
+
+Nothing changes at the limits the shipped models use (1 and 100), on any path.
+
+The limited sample is the product of an integer coefficient and the limit,
+formed in double precision and truncated toward zero. The AVX2 and AVX-512
+kernels used to round that product to nearest, and the SYCL twin formed it in
+fixed point; each was one off in a share of the limited samples. Worst frame
+of `integer_adm_scale0` against the scalar path, before the change:
+
+| Input | AVX2, limit 1.2 | AVX-512, limit 1.2 | SYCL (Arc A380), limit 1.2 |
+|---|---|---|---|
+| Netflix pair `src01` 576x324 | 1.23e-6 | 1.15e-6 | 1.23e-6 |
+| `akiyo` 352x288 | 6.23e-6 | 6.23e-6 | 7.28e-6 |
+| Blurred blocks 576x324 | 3.56e-5 | 3.44e-5 | 3.60e-5 |
+| Big Buck Bunny 3840x2160 | 1.99e-6 | 1.99e-6 | 2.31e-6 |
+
+On x86 the result of a run with a non-integer limit therefore moves by up to
+these amounts against earlier builds of the fork and against upstream master,
+whose vector kernels round in the same way.
+
+The other device twins:
+
+- `adm_cuda` and `adm_hip` always truncated and are unchanged.
+- `integer_adm_metal` multiplies in single precision and can still differ from
+  the CPU under a non-integer limit
+  (`T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01` in [state](../state.md)).
+
+To compare two paths yourself:
+
+```bash
+vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
+     --feature 'adm=adm_enhn_gain_limit=1.2' --precision max --json -o simd.json
+vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
+     --feature 'adm=adm_enhn_gain_limit=1.2' --precision max --json -o scalar.json \
+     --cpumask 4294967295
+```
 
 ##### Fixed-point CSF limits
 

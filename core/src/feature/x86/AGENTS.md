@@ -233,6 +233,18 @@ Skill scaffolds:
   `threshold_overflow` vector form != scalar for thr < 0: do not port.
   Guards: `test_integer_adm_simd` (16 planted defects fail it),
   `test_integer_adm_simd_noise`, `test_integer_adm_cm_threshold`.
+- **Integer ADM decouple gain limit: truncate, never round (ADR-1413).**
+  Scalar stores `MIN(rst * gain, t)` / `MAX(...)` (double) in an integer ->
+  truncation toward zero. `decouple_gain_avx2()` / `decouple_gain_avx512()`:
+  `_mm256_cvttpd_epi32` / `_mm512_cvttpd_epi32`; AVX-512 scale 1-3
+  (`decouple_s123_limit_half_avx512()`): `_mm512_cvttpd_epi64`; AVX2 scale
+  1-3 casts in C. `cvtpd` (round to nearest) = one off at limit 1.2 in every
+  limited sample with product fraction >= 1/2; limits 1 and 100 hide it.
+  Scale-0 angle mask: `madd_epi16` sum wraps only as 2^31 -> `INT32_MIN`;
+  squared magnitudes read unsigned (`uint32_t` lanes / `cvtepu32_ps`), dot
+  product replaced where it is `INT32_MIN`. Guard:
+  `test_adm_decouple_matches_scalar_for_gains` in `test_integer_adm_simd`
+  (limits 1, 1.2, 1.5, 100; 7 planted defects fail it).
 - **Vector stores may alias anything.** `_mm*_storeu_si*` -> compiler reloads
   pointers / tables read through `buf`, `ind_x`, `ind_y`, `dst` for every
   block. Read them once per row or frame (`Dwt2Rows8`, `DecoupleBands`,

@@ -277,6 +277,21 @@ linked AGENTS.md before resolving conflicts.
   and the "fix/adm-cm-centre-tap-wrap" entry of
   [rebase-notes](../rebase-notes.md).
 
+- **Integer ADM enhancement gain limit ([ADR-1413](../adr/1413-adm-gain-limit-truncated-double-product.md))**:
+  the limited sample is the double product `rst * adm_enhn_gain_limit`
+  truncated toward zero, as the scalar kernels in
+  `core/src/feature/integer_adm_kernels.h` store it. The AVX2 and AVX-512
+  decouple kernels use the truncating conversions (upstream master rounds),
+  and the SYCL twin forms the same value in integers with
+  `adm_gain_limit_product()` from `core/src/feature/adm_gain_limit.h`. A sync
+  must not restore `_mm256_cvtpd_epi32` / `_mm512_cvtpd_epi32` /
+  `_mm512_cvtpd_epi64` on the product or a fixed-point limit in the twin.
+  `test_integer_adm_simd`, `test_adm_gain_limit` and
+  `test_gpu_adm_tiny_frames` guard it. See
+  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md) and the
+  "fix/adm-decouple-fractional-gain-truncation" entry of
+  [rebase-notes](../rebase-notes.md).
+
 - **SYCL integer ADM AIM pass ([ADR-1362](../adr/1362-sycl-integer-adm-aim-device-pass.md))**:
   `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises every
   ADM output in the CPU's float arithmetic (bit-exact with the CPU).

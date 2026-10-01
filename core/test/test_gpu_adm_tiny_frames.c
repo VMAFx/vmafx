@@ -39,6 +39,15 @@
  * one: integer_adm_scale0 came out at 1.08 with the int16 tap and is 1
  * without it.
  *
+ * Fractional gain limits (ADR-1413): the CPU bounds a restored sample with the
+ * double product rst * adm_enhn_gain_limit, truncated toward zero. The SYCL
+ * twin, which has no double on the device, formed it in Q31 fixed point, which
+ * floors and does not round like the double product; integer_adm_scale0 came
+ * out up to 3.6e-5 off at a limit of 1.2. It forms the truncated double product
+ * from integer arithmetic now. The limits of the shipped models, 1 and 100,
+ * give integral products and never showed it, so this case scores a picture
+ * whose contrast the distorted copy doubles, at limits of 1.2 and 1.5.
+ *
  * The size-rejection test calls init() directly and needs no device. The
  * viewing-geometry rejection uses a real backend state because it pins the
  * public first-frame contract for CSF modes 1 and 2. The parity tests score
@@ -131,7 +140,12 @@ static const Geometry REJECTED[] = {
 #else
 #define NUM_KEYS (5u)
 #endif
-static const char *const CSF_SCORE_KEYS[4][7] = {
+/* Option variants of the parity tests: 0 to 3 are the CSF modes, the default
+ * first; the last two set a fractional enhancement gain limit. */
+#define VARIANT_GAIN_1_2 (4u)
+#define VARIANT_GAIN_1_5 (5u)
+#define NUM_VARIANTS (6u)
+static const char *const VARIANT_SCORE_KEYS[NUM_VARIANTS][7] = {
     {"integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3",
      "VMAF_integer_feature_adm2_score", "VMAF_integer_feature_aim_score",
      "VMAF_integer_feature_adm3_score"},
@@ -141,6 +155,12 @@ static const char *const CSF_SCORE_KEYS[4][7] = {
      "integer_adm_scale3_csf_2", "integer_adm2_csf_2", "integer_aim_csf_2", "integer_adm3_csf_2"},
     {"integer_adm_scale0_csf_3", "integer_adm_scale1_csf_3", "integer_adm_scale2_csf_3",
      "integer_adm_scale3_csf_3", "integer_adm2_csf_3", "integer_aim_csf_3", "integer_adm3_csf_3"},
+    {"integer_adm_scale0_egl_1.2", "integer_adm_scale1_egl_1.2", "integer_adm_scale2_egl_1.2",
+     "integer_adm_scale3_egl_1.2", "integer_adm2_egl_1.2", "integer_aim_egl_1.2",
+     "integer_adm3_egl_1.2"},
+    {"integer_adm_scale0_egl_1.5", "integer_adm_scale1_egl_1.5", "integer_adm_scale2_egl_1.5",
+     "integer_adm_scale3_egl_1.5", "integer_adm2_egl_1.5", "integer_aim_egl_1.5",
+     "integer_adm3_egl_1.5"},
 };
 static const char *const CSF_MODE_VALUES[4] = {"0", "1", "2", "3"};
 
@@ -196,6 +216,16 @@ static uint16_t isolated_patch_sample(unsigned row, unsigned col, int distorted)
         return 128u;
     }
     return (patch_col == 0u) ? 255u : 0u;
+}
+
+/* Low-contrast noise around mid grey; the distorted picture doubles the
+ * contrast. Doubling keeps the direction of every (h, v) coefficient pair, so
+ * the one-degree angle test passes, and takes the distorted coefficient past
+ * any gain limit below 2: the decouple stores the limited product. */
+static uint16_t enhanced_sample(unsigned row, unsigned col, int distorted)
+{
+    const int noise = (int)(position_hash(row, col, 0) >> 26) - 32;
+    return (uint16_t)(128 + (distorted ? 2 * noise : noise));
 }
 
 /* One content family of the parity tests. */
@@ -273,16 +303,35 @@ static VmafFeatureDictionary *csf_options(unsigned mode, const char *nvd, const 
     return opts;
 }
 
-static char *score_cpu_scalar(Geometry g, const Content *c, unsigned csf_mode, double out[NUM_KEYS])
+/* The options of one variant; NULL for variant 0 (every default) and when
+ * the allocation fails. */
+static VmafFeatureDictionary *variant_options(unsigned variant)
+{
+    if (variant == 0u) {
+        return NULL;
+    }
+    if (variant < VARIANT_GAIN_1_2) {
+        return csf_options(variant, NULL, NULL);
+    }
+    VmafFeatureDictionary *opts = NULL;
+    if (vmaf_feature_dictionary_set(&opts, "adm_enhn_gain_limit",
+                                    variant == VARIANT_GAIN_1_2 ? "1.2" : "1.5")) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return NULL;
+    }
+    return opts;
+}
+
+static char *score_cpu_scalar(Geometry g, const Content *c, unsigned variant, double out[NUM_KEYS])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = ~(uint64_t)0};
     VmafContext *vmaf = NULL;
     mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
-    VmafFeatureDictionary *opts = csf_mode ? csf_options(csf_mode, NULL, NULL) : NULL;
-    mu_assert("CPU: CSF option allocation failed", !csf_mode || opts != NULL);
+    VmafFeatureDictionary *opts = variant_options(variant);
+    mu_assert("CPU: option allocation failed", !variant || opts != NULL);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !vmaf_use_feature(vmaf, "adm", opts));
     int skipped = 0;
-    char *msg = score_frame(vmaf, g, c, CSF_SCORE_KEYS[csf_mode], out, &skipped);
+    char *msg = score_frame(vmaf, g, c, VARIANT_SCORE_KEYS[variant], out, &skipped);
     (void)vmaf_close(vmaf);
     return msg;
 }
@@ -373,7 +422,7 @@ static void gpu_free(GpuState **state)
 
 /* Score `g` on the GPU twin. `*skipped` is set when there is no device or the
  * kernels were not built. */
-static char *score_gpu(Geometry g, const Content *c, unsigned csf_mode, double out[NUM_KEYS],
+static char *score_gpu(Geometry g, const Content *c, unsigned variant, double out[NUM_KEYS],
                        int *skipped)
 {
     GpuState *state = NULL;
@@ -389,13 +438,13 @@ static char *score_gpu(Geometry g, const Content *c, unsigned csf_mode, double o
     } else if (gpu_import(vmaf, state)) {
         msg = "GPU: importing the device state failed";
     } else {
-        VmafFeatureDictionary *opts = csf_mode ? csf_options(csf_mode, NULL, NULL) : NULL;
-        if (csf_mode && opts == NULL) {
-            msg = "GPU: CSF option allocation failed";
+        VmafFeatureDictionary *opts = variant_options(variant);
+        if (variant && opts == NULL) {
+            msg = "GPU: option allocation failed";
         } else if (vmaf_use_feature(vmaf, GPU_FEATURE, opts)) {
             msg = "GPU: vmaf_use_feature failed";
         } else {
-            msg = score_frame(vmaf, g, c, CSF_SCORE_KEYS[csf_mode], out, skipped);
+            msg = score_frame(vmaf, g, c, VARIANT_SCORE_KEYS[variant], out, skipped);
         }
     }
     if (vmaf) {
@@ -429,6 +478,12 @@ static const Content ISOLATED_PATCHES = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on isolated patches",
 };
 
+static const Content ENHANCED_CONTRAST = {
+    enhanced_sample,
+    8u,
+    "GPU integer ADM differs from scalar CPU by more than 1e-4 under a fractional gain limit",
+};
+
 #if defined(HAVE_SYCL)
 /* Bit-for-bit equality of two scores (compares the IEEE-754 bit patterns, not
  * the object representations, which tidy rejects for double). */
@@ -442,15 +497,15 @@ static bool same_bits(double a, double b)
 }
 #endif
 
-static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *skipped)
+static char *check_parity(Geometry g, const Content *c, unsigned variant, int *skipped)
 {
     double cpu[NUM_KEYS];
     double gpu[NUM_KEYS];
-    char *msg = score_cpu_scalar(g, c, csf_mode, cpu);
+    char *msg = score_cpu_scalar(g, c, variant, cpu);
     if (msg) {
         return msg;
     }
-    msg = score_gpu(g, c, csf_mode, gpu, skipped);
+    msg = score_gpu(g, c, variant, gpu, skipped);
     if (msg || *skipped) {
         return msg;
     }
@@ -458,7 +513,7 @@ static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *
         const double delta = fabs(cpu[k] - gpu[k]);
         if (!(delta <= PARITY_TOL)) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.8f gpu=%.8f delta=%.2e\n", g.w, g.h,
-                          CSF_SCORE_KEYS[csf_mode][k], cpu[k], gpu[k], delta);
+                          VARIANT_SCORE_KEYS[variant][k], cpu[k], gpu[k], delta);
             return c->mismatch;
         }
     }
@@ -468,7 +523,7 @@ static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *
     for (size_t k = 0; k < NUM_KEYS; k++) {
         if (!same_bits(cpu[k], gpu[k])) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.17g gpu=%.17g not bit-exact\n", g.w, g.h,
-                          CSF_SCORE_KEYS[csf_mode][k], cpu[k], gpu[k]);
+                          VARIANT_SCORE_KEYS[variant][k], cpu[k], gpu[k]);
             return "SYCL integer ADM differs from the scalar CPU bits";
         }
     }
@@ -526,6 +581,46 @@ static char *test_gpu_adm_csf_modes_parity(void)
             (void)fprintf(stderr, "[skip: no %s device or kernels] ", GPU_FEATURE);
             mu_skipped = 1;
             return NULL;
+        }
+    }
+    return NULL;
+}
+
+/* The gain limit has to bind for the comparison to mean anything: on this
+ * content the scalar CPU scores must move with the limit. */
+static char *check_gain_limit_binds(Geometry g)
+{
+    double at_1_2[NUM_KEYS] = {0.0};
+    double at_1_5[NUM_KEYS] = {0.0};
+    char *msg = score_cpu_scalar(g, &ENHANCED_CONTRAST, VARIANT_GAIN_1_2, at_1_2);
+    if (msg) {
+        return msg;
+    }
+    msg = score_cpu_scalar(g, &ENHANCED_CONTRAST, VARIANT_GAIN_1_5, at_1_5);
+    if (msg) {
+        return msg;
+    }
+    mu_assert("the gain limit does not bind on the enhanced-contrast picture",
+              fabs(at_1_2[0] - at_1_5[0]) > 0.01);
+    return NULL;
+}
+
+static char *test_gpu_adm_fractional_gain_limit_parity(void)
+{
+    static const unsigned variants[] = {VARIANT_GAIN_1_2, VARIANT_GAIN_1_5};
+    for (size_t i = 0; i < NUM_NOISE; i++) {
+        char *msg = check_gain_limit_binds(NOISE[i]);
+        for (size_t v = 0; !msg && v < sizeof(variants) / sizeof(variants[0]); v++) {
+            int skipped = 0;
+            msg = check_parity(NOISE[i], &ENHANCED_CONTRAST, variants[v], &skipped);
+            if (skipped) {
+                (void)fprintf(stderr, "[skip: no %s device or kernels] ", GPU_FEATURE);
+                mu_skipped = 1;
+                return NULL;
+            }
+        }
+        if (msg) {
+            return msg;
         }
     }
     return NULL;
@@ -653,6 +748,7 @@ char *run_tests(void)
         MU_TEST(test_gpu_adm_bright_16bit_parity),
         MU_TEST(test_gpu_adm_isolated_patch_parity),
         MU_TEST(test_gpu_adm_csf_modes_parity),
+        MU_TEST(test_gpu_adm_fractional_gain_limit_parity),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

@@ -54,6 +54,7 @@
 #include "feature/adm_angle_flag.h"
 #include "feature/adm_cm_accumulator.h"
 #include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_gain_limit.h"
 #include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
@@ -708,41 +709,23 @@ sycl::event launch_dwt_hori_pair(sycl::queue &q, const AdmDwtHoriArgs &args)
 /* ------------------------------------------------------------------ */
 
 /*
- * Enhancement gain limiting: emulate double-precision multiply using int64.
+ * Enhancement gain limiting.
  *
- * The CPU reference does: rst = (int)(r_val * gain_limit_double), then
- * clamps via min/max against th.  gain_limit is in [1.0, 100.0].
- *
- * For production models (gain = 1.0 or 100.0), the Q31 fixed-point
- * representation is exact.  For non-integer gain values (e.g. 1.2 in
- * unit tests), the result may differ by at most ±1 from double precision
- * for extreme DWT coefficient magnitudes (|r_val| near 2^31).
- *
- * The split-multiply avoids int64 overflow:
- *   gain_q31 = round(gain * 2^31)      -- up to 38 bits
- *   gain_hi  = gain_q31 >> 16           -- up to 22 bits
- *   gain_lo  = gain_q31 & 0xFFFF        -- 16 bits
- *   product  = r_val * gain_hi << 16 + r_val * gain_lo
- *   result   = product >> 31
+ * The CPU reference stores MIN(rst * gain, t) or MAX(rst * gain, t), a
+ * double, in an integer: the double product of the restored sample and
+ * adm_enhn_gain_limit, truncated toward zero, then bounded by t.
+ * adm_gain_limit_product() (feature/adm_gain_limit.h) returns that truncated
+ * double product from 64-bit integer arithmetic, bit for bit, for every limit
+ * the option admits ([1, 100]) -- the integral limits of the shipped models
+ * and non-integer ones such as 1.2 alike (ADR-1413). The limit travels to the
+ * device as its 53-bit significand in two halves and the position of its
+ * binary point (AdmGainLimit), split once per frame on the host.
  *
  * No kernel may use 'double': all kernels of a SYCL translation unit share
  * one SPIR-V module, and one fp64 instruction in it makes the runtime reject
  * the whole module on devices without fp64 (Intel Arc A-series, iGPUs) --
  * even kernels that are never submitted (ADR-0220).
  */
-struct GainLimitQ31 {
-    int32_t gain_hi; // upper 22 bits of gain_q31
-    int32_t gain_lo; // lower 16 bits of gain_q31
-};
-
-inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
-{
-    int64_t const gain_q31 = (int64_t)llround(gain_limit * (1LL << 31));
-    return {
-        .gain_hi = (int32_t)(gain_q31 >> 16),
-        .gain_lo = (int32_t)(gain_q31 & 0xFFFF),
-    };
-}
 
 /* The CPU's get_best15_from32() (integer_adm.c): |o| >= 2^15 at scales 1-3
  * rounded to its top 15 bits, and the shift that took it there. */
@@ -815,7 +798,7 @@ inline int32_t adm_dev_decouple_k(int scale, int32_t oh, int32_t th, const int32
 /* Enhancement gain limit of one decoupled sample whose angle_flag is set.
  * rst_f is the CPU's (k / 32768) * (o / 64); only its sign is used. The
  * limit clamps against the distorted sample t, not the reference. */
-inline int32_t adm_dev_gain_limit(int32_t r_val, int32_t k, int32_t oh, int32_t th, GainLimitQ31 g)
+inline int32_t adm_dev_gain_limit(int32_t r_val, int32_t k, int32_t oh, int32_t th, AdmGainLimit g)
 {
     // No-contract block (T7-16): the pragma has to head a compound statement.
     float rst_f;
@@ -825,13 +808,10 @@ inline int32_t adm_dev_gain_limit(int32_t r_val, int32_t k, int32_t oh, int32_t 
         float const b = (float)oh / 64.0f;
         rst_f = a * b;
     }
-    // gained = (r_val * gain_q31) >> 31 = (r_val*hi << 16 + r_val*lo) >> 31,
-    // kept in int64: at scales 1-3 r_val * 100 exceeds int32.
-    int64_t const prod_hi = (int64_t)r_val * g.gain_hi;
-    int64_t const prod_lo = (int64_t)r_val * g.gain_lo;
-    int64_t const main_part = prod_hi >> 15;
-    int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
-    int64_t const gained = main_part + (rem >> 31);
+    // The CPU's (int64_t)(r_val * gain); int64 because at scales 1-3
+    // r_val * 100 exceeds int32. Truncating before the integer min / max is
+    // the CPU's integer store of the double min / max, since th is an integer.
+    int64_t const gained = adm_gain_limit_product(r_val, g);
     if (rst_f > 0.0f) {
         return (int32_t)((gained < (int64_t)th) ? gained : (int64_t)th);
     }
@@ -843,7 +823,7 @@ inline int32_t adm_dev_gain_limit(int32_t r_val, int32_t k, int32_t oh, int32_t 
 
 /* Restored part r of one band sample, the CPU's decouple_r. o == 0 gives
  * k = 32768 and r = 0, which the gain limit leaves alone (rst_f == 0). */
-inline int32_t adm_dev_decouple(int scale, int32_t oh, int32_t th, bool angle_flag, GainLimitQ31 g,
+inline int32_t adm_dev_decouple(int scale, int32_t oh, int32_t th, bool angle_flag, AdmGainLimit g,
                                 const int32_t *div_lookup)
 {
     if (oh == 0) {
@@ -893,7 +873,7 @@ struct AdmBandInputs {
     const int32_t *dis[3]; // distorted h, v, d bands
     const int32_t *div_lookup;
     uint32_t i_rfactor[3];
-    GainLimitQ31 gain;
+    AdmGainLimit gain;
     int scale;
     int w; // band width
     int h; // band height
@@ -1546,7 +1526,7 @@ void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, int scale, in
         in.i_rfactor[b] = s->i_rfactor[(scale * ADM_NUM_BANDS) + b];
     }
     in.div_lookup = s->d_div_lookup;
-    in.gain = gain_limit_to_q31(s->adm_enhn_gain_limit);
+    in.gain = adm_gain_limit_split(s->adm_enhn_gain_limit);
     in.scale = scale;
     in.w = half_w;
     in.h = half_h;

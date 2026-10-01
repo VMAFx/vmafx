@@ -154,23 +154,28 @@ static FORCE_INLINE uint64_t hsum_epu64(__m256i v)
 /* ------------------------------------------------------------------------- */
 
 /* angle_flag of eight samples as 0 / -1 lanes. The dot product and the
- * squared magnitudes are formed in int32 by _mm256_madd_epi16. */
+ * squared magnitudes are formed in int32 by _mm256_madd_epi16, whose sum wraps
+ * in one case only: both products are 2^30 (four operands of -32768) and the
+ * lane reads INT32_MIN for 2^31. The unsigned reading of that lane is the sum,
+ * so the squared magnitudes, which are never negative, are read as unsigned,
+ * and the dot product is where it is INT32_MIN. */
 static FORCE_INLINE __m256i decouple_angle_mask_avx2(__m256i oh, __m256i ov, __m256i th, __m256i tv,
                                                      float cos_1deg_sq)
 {
     const __m256i lo16 = _mm256_set1_epi32(0xFFFF);
     const __m256i oh_ov = _mm256_or_si256(_mm256_and_si256(oh, lo16), _mm256_slli_epi32(ov, 16));
     const __m256i th_tv = _mm256_or_si256(_mm256_and_si256(th, lo16), _mm256_slli_epi32(tv, 16));
-    int32_t o_mag_sq[8];
+    uint32_t o_mag_sq[8];
     int32_t ot_dp[8];
-    int32_t t_mag_sq[8];
+    uint32_t t_mag_sq[8];
     int32_t flag[8];
 
     _mm256_storeu_si256((__m256i *)o_mag_sq, _mm256_madd_epi16(oh_ov, oh_ov));
     _mm256_storeu_si256((__m256i *)ot_dp, _mm256_madd_epi16(oh_ov, th_tv));
     _mm256_storeu_si256((__m256i *)t_mag_sq, _mm256_madd_epi16(th_tv, th_tv));
     for (int k = 0; k < 8; ++k) {
-        flag[k] = -adm_angle_flag(ot_dp[k], o_mag_sq[k], t_mag_sq[k], cos_1deg_sq);
+        const int64_t dp = (ot_dp[k] == INT32_MIN) ? -(int64_t)INT32_MIN : (int64_t)ot_dp[k];
+        flag[k] = -adm_angle_flag(dp, o_mag_sq[k], t_mag_sq[k], cos_1deg_sq);
     }
     return _mm256_setr_epi32(flag[0], flag[1], flag[2], flag[3], flag[4], flag[5], flag[6],
                              flag[7]);
@@ -203,14 +208,20 @@ static FORCE_INLINE __m256i decouple_k_avx2(__m256i o, __m256i t, __m256i div)
     return _mm256_min_epi32(k, const_32768);
 }
 
-/* rst * gain of eight samples, converted back as _mm256_cvtpd_epi32 does. */
+/* (int32_t)(rst * gain) of eight samples. The conversion truncates toward
+ * zero, as the scalar kernel does when it stores MIN(rst * gain, t) or
+ * MAX(rst * gain, t) in an integer: t is an integer, so truncating the product
+ * and then taking the integer minimum or maximum gives the same sample. A
+ * rounding conversion does not: with a gain limit of 1.2 it is one off wherever
+ * the product has a fraction of one half or more. |rst| <= 2^15 and the gain
+ * limit is at most 100, so the product fits int32. */
 static FORCE_INLINE __m256i decouple_gain_avx2(__m256i rst, double gain)
 {
     const __m256d g = _mm256_set1_pd(gain);
     const __m256d lo = _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst, 0)), g);
     const __m256d hi = _mm256_mul_pd(_mm256_cvtepi32_pd(_mm256_extractf128_si256(rst, 1)), g);
-    return _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvtpd_epi32(lo)),
-                                   _mm256_cvtpd_epi32(hi), 1);
+    return _mm256_insertf128_si256(_mm256_castsi128_si256(_mm256_cvttpd_epi32(lo)),
+                                   _mm256_cvttpd_epi32(hi), 1);
 }
 
 /* One band of eight samples: the restored signal and the additive impairment,

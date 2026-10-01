@@ -82,8 +82,10 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
   - `double` allowed **outside** kernel lambda — host-side
     post-processing in `extract` / `flush` callbacks, score
     aggregation, log10 normalisation.
-  - ADM gain limiting uses int64 Q31 (`gain_limit_to_q31` +
-    `launch_decouple_csf<false>` in `integer_adm_sycl.cpp`).
+  - ADM gain limiting: `adm_gain_limit_product()` (`../adm_gain_limit.h`,
+    64-bit integer only) = the CPU's truncated double product, exact for
+    every limit in [1, 100] (ADR-1413); limit split on the host by
+    `adm_gain_limit_split()`.
   - VIF gain limiting uses fp32 `sycl::fmin`.
 - **No scratch memory in kernels ([ADR-1395](../../../../docs/adr/1395-sycl-kernels-no-scratch.md)).**
   No private array indexed at run time outside local memory, no live set above
@@ -860,9 +862,11 @@ tests catch per-kernel regressions automatically.
   shortcut here breaks `test_sycl_adm_parity` / `test_sycl_adm_tiny_frames`.
 - CM kernel sub-group size 16: 9 int64 sums spill at 32 lanes on Xe-LP.
 - `adm_skip_aim` mirrors the CPU: AIM sums skipped, aim = 0.
-- Non-integer `adm_enhn_gain_limit` (e.g. 1.2): Q31 floor emulation != CPU
-  trunc(double) -> aim / adm3 ~1.4e-7 off, as adm2. Integer gains (1.0, 100.0,
-  every shipped model) exact.
+- Non-integer `adm_enhn_gain_limit` (e.g. 1.2): bit-exact too (ADR-1413).
+  `adm_dev_gain_limit()` -> `adm_gain_limit_product()` = `trunc(fl(r * gain))`
+  from integers. Do not bring back Q31 (`gain_limit_to_q31`): floor + limit
+  rounded to 2^-31 -> `5 * 1.2` = 5, CPU stores 6; scale0 up to 3.6e-5 off.
+  Guard: `test_gpu_adm_fractional_gain_limit_parity`, `test_adm_gain_limit`.
 - Guards: `test_sycl_adm_parity` (`test_adm_cpu_sycl_aim_bit_exact`),
   `test_sycl_adm_tiny_frames` (aim / adm3 bit-exact under `HAVE_SYCL`: tiny,
   noise, 16-bit, CSF modes 0-3), `python/test/gpu_default_model_test.py`.

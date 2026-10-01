@@ -123,7 +123,11 @@ static FORCE_INLINE __mmask8 decouple_angle_half_avx512(__m256 ot_dp, __m256 o_m
 
 /* angle_flag of sixteen samples. The dot product and the squared magnitudes
  * are formed in int32 by _mm512_madd_epi16, narrowed to float and compared in
- * double, as adm_angle_flag_fp64() does. */
+ * double, as adm_angle_flag_fp64() does. The int32 sum wraps in one case only:
+ * both products are 2^30 (four operands of -32768) and the lane reads INT32_MIN
+ * for 2^31. The unsigned conversion of that lane is the sum, so the squared
+ * magnitudes, which are never negative, convert as unsigned, and the dot
+ * product does where it is INT32_MIN. */
 static FORCE_INLINE __mmask16 decouple_angle_mask_avx512(__m512i oh, __m512i ov, __m512i th,
                                                          __m512i tv, float cos_1deg_sq)
 {
@@ -132,13 +136,15 @@ static FORCE_INLINE __mmask16 decouple_angle_mask_avx512(__m512i oh, __m512i ov,
     const __m512i lo16 = _mm512_set1_epi32(0xFFFF);
     const __m512i oh_ov = _mm512_or_si512(_mm512_and_si512(oh, lo16), _mm512_slli_epi32(ov, 16));
     const __m512i th_tv = _mm512_or_si512(_mm512_and_si512(th, lo16), _mm512_slli_epi32(tv, 16));
+    const __m512i dp = _mm512_madd_epi16(oh_ov, th_tv);
+    const __mmask16 wrapped = _mm512_cmpeq_epi32_mask(dp, _mm512_set1_epi32(INT32_MIN));
 
     const __m512 o_mag_sq =
-        _mm512_mul_ps(inv_4096, _mm512_cvtepi32_ps(_mm512_madd_epi16(oh_ov, oh_ov)));
+        _mm512_mul_ps(inv_4096, _mm512_cvtepu32_ps(_mm512_madd_epi16(oh_ov, oh_ov)));
     const __m512 ot_dp =
-        _mm512_mul_ps(inv_4096, _mm512_cvtepi32_ps(_mm512_madd_epi16(oh_ov, th_tv)));
+        _mm512_mul_ps(inv_4096, _mm512_mask_cvtepu32_ps(_mm512_cvtepi32_ps(dp), wrapped, dp));
     const __m512 t_mag_sq =
-        _mm512_mul_ps(inv_4096, _mm512_cvtepi32_ps(_mm512_madd_epi16(th_tv, th_tv)));
+        _mm512_mul_ps(inv_4096, _mm512_cvtepu32_ps(_mm512_madd_epi16(th_tv, th_tv)));
 
     const __mmask16 ge_0 = _mm512_cmp_ps_mask(ot_dp, _mm512_setzero_ps(), _CMP_GE_OS);
     const __mmask8 lo =
@@ -230,15 +236,20 @@ static FORCE_INLINE __m512i decouple_k_avx512(__m512i o, __m512i t, __m512i div)
     return _mm512_min_epi32(k, const_32768);
 }
 
-/* rst * gain of sixteen samples, in double precision, converted back as
- * _mm512_cvtpd_epi32 does. */
+/* (int32_t)(rst * gain) of sixteen samples, the product taken in double. The
+ * conversion truncates toward zero, as the scalar kernel does when it stores
+ * MIN(rst * gain, t) or MAX(rst * gain, t) in an integer: t is an integer, so
+ * truncating the product and then taking the integer minimum or maximum gives
+ * the same sample. A rounding conversion is one off wherever the product has a
+ * fraction of one half or more. |rst| <= 2^15 and the gain limit is at most
+ * 100, so the product fits int32. */
 static FORCE_INLINE __m512i decouple_gain_avx512(__m512i rst, double gain)
 {
     const __m512d g = _mm512_set1_pd(gain);
     const __m512d lo = _mm512_mul_pd(_mm512_cvtepi32_pd(_mm512_extracti32x8_epi32(rst, 0)), g);
     const __m512d hi = _mm512_mul_pd(_mm512_cvtepi32_pd(_mm512_extracti32x8_epi32(rst, 1)), g);
-    return _mm512_inserti32x8(_mm512_castsi256_si512(_mm512_cvtpd_epi32(lo)),
-                              _mm512_cvtpd_epi32(hi), 1);
+    return _mm512_inserti32x8(_mm512_castsi256_si512(_mm512_cvttpd_epi32(lo)),
+                              _mm512_cvttpd_epi32(hi), 1);
 }
 
 /* Even int16 lanes gathered into the low half: sixteen int32 lanes narrowed
@@ -434,14 +445,17 @@ static FORCE_INLINE void decouple_s123_k_avx512(__m512i o, __m512i t, const Deco
 
 /* Bound eight restored samples by the gain limit where the angle flag is set:
  * min(rst * gain, t) for a positive rst_f, max(rst * gain, t) for a negative
- * one. `rst_32` holds the same samples as int32. */
+ * one. `rst_32` holds the same samples as int32. The product is truncated
+ * toward zero before the integer minimum or maximum, which is what the scalar
+ * kernel's integer store of the double minimum or maximum gives; see
+ * decouple_gain_avx512(). */
 static FORCE_INLINE __m512i decouple_s123_limit_half_avx512(__m512i rst, __m256i rst_32, __m512i t,
                                                             __mmask8 angle_mask, __m256 rst_f,
                                                             double gain)
 {
     const __m512d zero = _mm512_set1_pd(0.0);
     const __m512i rst_gain =
-        _mm512_cvtpd_epi64(_mm512_mul_pd(_mm512_cvtepi32_pd(rst_32), _mm512_set1_pd(gain)));
+        _mm512_cvttpd_epi64(_mm512_mul_pd(_mm512_cvtepi32_pd(rst_32), _mm512_set1_pd(gain)));
     const __m512i v_min =
         _mm512_mask_blend_epi64(_mm512_cmpgt_epi64_mask(t, rst_gain), t, rst_gain);
     const __m512i v_max =
