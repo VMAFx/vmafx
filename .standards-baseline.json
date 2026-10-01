@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T18:27:31Z",
+  "generated_at": "2026-10-01T18:54:31Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "bdfdde1a632251ad6133d85df79d2f2c38493eab",
+  "commit_sha": "c0b5ee34bbf428a22533a6245fad0a41cf99e914",
   "total_infractions": 378,
   "infractions": [
     {
@@ -2464,18 +2464,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "scripts/ci/cross_backend_parity_gate.py",
-      "line_number": 557,
+      "line_number": 567,
       "symbol": "run_cell",
-      "message": "Function 'run_cell' (133 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "scripts/ci/cross_backend_parity_gate.py:557:HISS-04"
+      "message": "Function 'run_cell' (135 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "scripts/ci/cross_backend_parity_gate.py:567:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "scripts/ci/cross_backend_vif_diff.py",
-      "line_number": 272,
+      "line_number": 274,
       "symbol": "run_vmaf",
       "message": "Function 'run_vmaf' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "scripts/ci/cross_backend_vif_diff.py:272:HISS-04"
+      "fingerprint": "scripts/ci/cross_backend_vif_diff.py:274:HISS-04"
     },
     {
       "rule_id": "HISS-01",
