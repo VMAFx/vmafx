@@ -186,7 +186,7 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   per-scale partials buffers so all DtoH copies could enqueue back-to-back
   on the same stream ([ADR-0271](../../adr/0271-cuda-drain-batch-ms-ssim.md));
   PSNR-HVS follows the same submit-side readback + `lc.finished` registration
-  pattern for its unified partial buffer.
+  pattern for its one term buffer (64 floats per block, ADR-1397).
   Bit-exactness is preserved (same kernels, same stream order — only the
   host wait point moves).
   **Note**: `motion_cuda` no longer participates in the drain batch (ADR-0845).
@@ -342,9 +342,8 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   640×480 testdata fixtures, RTX 4090, 8-bit 4:2:0).
 - **SSIM / MS-SSIM / PSNR-HVS** — SSIM, MS-SSIM, and PSNR-HVS have
   CUDA kernels and participate in the cross-backend parity gate
-  (`psnr_hvs` uses the relaxed DCT/reduction tolerance from
-  [ADR-0191](../../adr/0191-psnr-hvs-vulkan.md) /
-  [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)). The CUDA
+  (`psnr_hvs_cuda` is compared with the CPU exactly, tolerance 0, per
+  [ADR-1397](../../adr/1397-psnr-hvs-twins-cpu-float-sum.md)). The CUDA
   `float_ansnr` extractor was removed together with its CPU twin in
   [ADR-0709](../../adr/0709-vmafx-phase4b-distributed-platform.md)
   (PR #38); ANSNR is no longer dispatched on any backend.
@@ -383,12 +382,22 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   host conversion or float upload per frame. The kernel reads the raw 8- to
   12-bit samples with the picture pitch, runs two threads per 8x8 block (one per
   image, exchanging their statistics with `__shfl_xor_sync`) with the DCT in
-  shared memory, and covers every plane in one launch; the host sums each plane's
-  block partials in block order in `float`. Output is bit-identical to the
-  previous twin except at 9 and 11 bits, which it used to score wrongly. On an
-  RTX 4090 a 3840x2160 frame takes 3.20 ms instead of 18.28 ms. At 3840x2160 the
-  CPU extractor's own `float` sum sets the difference to the CPU; see
-  [the psnr_hvs page](../../metrics/psnr-hvs.md#difference-to-the-cpu-extractor-at-large-frame-sizes).
+  shared memory, and covers every plane in one launch.
+- **`psnr_hvs_cuda` returns the CPU extractor's scores bit for bit**
+  ([ADR-1397](../../adr/1397-psnr-hvs-twins-cpu-float-sum.md), closes
+  `T-PSNR-HVS-CPU-FLOAT-SUM-4K-2026-09-30`). The CPU adds every masked
+  coefficient error of a plane into one running `float`, so its score depends
+  on the order of the additions. The kernel stores the 64 terms of every block,
+  computed in the CPU's arithmetic (the fatbin is built with `--fmad=false`),
+  and the host adds them in the CPU's order. `psnr_hvs`, `psnr_hvs_y`,
+  `psnr_hvs_cb` and `psnr_hvs_cr` equal `--backend cpu` at `--precision max` on
+  576x324, 1920x1080 and 3840x2160 content at 8 to 12 bits; before, the twin
+  summed per block and was up to 1.66e-2 dB away at 3840x2160. The price is a
+  256-byte readback per block and a sequential host sum: on an RTX 4090 a
+  3840x2160 frame takes 12.2 ms instead of 2.4 ms (1920x1080: 3.1 instead of
+  0.6), more than sixteen CPU threads need (6.5 ms). Details, memory use and
+  the open tuning row are on
+  [the psnr_hvs page](../../metrics/psnr-hvs.md#agreement-with-the-cpu-extractor).
 - **SSIMULACRA 2** — `ssimulacra2_cuda` shipped per
   [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) and has run the
   whole frame on the device since

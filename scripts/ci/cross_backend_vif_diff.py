@@ -43,7 +43,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # script execution and package-aware type checking.
 from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
+    EXACT_TWIN_PRECISION,
+    EXACT_TWIN_SOURCE,
+    EXACT_TWIN_TOLERANCE,
     area_tolerance_factor,
+    is_exact_pair,
     load_calibration_table,
     metric_delta,
 )
@@ -272,6 +276,7 @@ def run_vmaf(
     output: Path,
     backend: str | None,
     device: int | None,
+    precision: str | None = None,
 ) -> None:
     """Invoke `vmaf` with `--feature <feature>` (or its backend twin)
     and `--no_prediction` so the default model doesn't auto-load the
@@ -312,6 +317,8 @@ def run_vmaf(
             cmd += [BACKEND_DEVICE_FLAG[backend], str(device)]
     if backend is None:
         cmd += ["--backend", "cpu"]
+    if precision is not None:
+        cmd += ["--precision", precision]
     proc = run_command(
         cmd,
         allowed_executables=(binary,),
@@ -457,7 +464,12 @@ def normalize_device(args: argparse.Namespace) -> None:
 
 
 def run_pair(args: argparse.Namespace, cpu_json: Path, gpu_json: Path) -> None:
-    """Run the CPU reference and selected device twin."""
+    """Run the CPU reference and selected device twin.
+
+    A twin that is bit-exact with the CPU (ADR-1397) is run at
+    ``--precision max`` on both sides, so the exact comparison sees every bit.
+    """
+    precision = EXACT_TWIN_PRECISION if is_exact_pair(args.feature, "cpu", args.backend) else None
     print(f"running CPU {args.feature} → {cpu_json}")
     run_vmaf(
         args.vmaf_binary,
@@ -471,6 +483,7 @@ def run_pair(args: argparse.Namespace, cpu_json: Path, gpu_json: Path) -> None:
         cpu_json,
         backend=None,
         device=None,
+        precision=precision,
     )
     print(f"running {args.backend} {args.feature} (device {args.device}) → {gpu_json}")
     run_vmaf(
@@ -485,6 +498,7 @@ def run_pair(args: argparse.Namespace, cpu_json: Path, gpu_json: Path) -> None:
         gpu_json,
         backend=args.backend,
         device=args.device,
+        precision=precision,
     )
 
 
@@ -545,7 +559,12 @@ def main() -> int:
     # ADR-1361: the resolved tolerance is the reference-geometry contract;
     # area-scaled features widen it with the fixture's term count.
     factor = area_tolerance_factor(args.feature, args.width, args.height)
-    if factor > 1.0:
+    if is_exact_pair(args.feature, "cpu", args.backend):
+        # ADR-1397: this twin returns the CPU's bits; no tolerance, at any
+        # frame size, whatever --places or a calibration row say.
+        tolerance_override = EXACT_TWIN_TOLERANCE
+        tolerance_source = EXACT_TWIN_SOURCE
+    elif factor > 1.0:
         base = tolerance_override if tolerance_override is not None else 0.5 * (10**-args.places)
         tolerance_override = base * factor
         tolerance_source = f"{tolerance_source} +area x{factor:.2f}"

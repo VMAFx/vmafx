@@ -1255,6 +1255,12 @@ if is_cuda_enabled
         'ssimulacra2_device' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
+        # `psnr_hvs_score` (ADR-1397) stores the terms calc_psnrhvs() sums, in
+        # the CPU's arithmetic. The CPU reference is built without
+        # contraction, so one fused multiply-add here (the masking energy,
+        # the variances or the squared error) changes a term's last bit and
+        # with it the score.
+        'psnr_hvs_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
     }
     message(cuda_cu_sources)
     # gpu_picture_pool.cpp moved to libvmaf_sources (always-compiled) per
@@ -2281,9 +2287,13 @@ endif
 # 14.191670308986598 against scalar 14.191669969203765 on the ARM clang lane.
 # The file is vendored from xiph, so the policy goes here rather than into the
 # source, keeping the next upstream sync a clean diff.
+# `psnr_hvs_score.c` (ADR-1397) is the host tail of calc_psnrhvs() the GPU
+# twins call; it shares this library so its combined-score expression is built
+# with the same no-contraction policy as the CPU extract() it reproduces.
 libvmaf_psnr_hvs_scalar_static_lib = static_library(
     'libvmaf_psnr_hvs_scalar',
-    feature_src_dir + 'third_party/xiph/psnr_hvs.c',
+    [feature_src_dir + 'third_party/xiph/psnr_hvs.c',
+     feature_src_dir + 'psnr_hvs_score.c'],
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
     c_args: vmaf_cflags_common + vmaf_strict_fp_args,

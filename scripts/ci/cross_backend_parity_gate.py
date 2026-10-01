@@ -56,8 +56,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # script execution and package-aware type checking.
 from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
+    EXACT_TWIN_PRECISION,
+    EXACT_TWIN_SOURCE,
+    EXACT_TWIN_TOLERANCE,
     CalibrationTable,
     area_tolerance_factor,
+    is_exact_pair,
     load_calibration_table,
     metric_delta,
 )
@@ -211,7 +215,10 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # Transcendentals / DCT — relaxed contract per ADR-0187 / ADR-0188.
     "ciede": 5e-3,  # per-pixel pow/sqrt/sin/atan2 — places=2.
     # DCT + per-block float reductions — places=3 at 576x324; grows with
-    # sqrt(term count) above it (area_tolerance_factor, ADR-1361).
+    # sqrt(term count) above it (area_tolerance_factor, ADR-1361). This is the
+    # contract of a twin that sums per block (SYCL). A cell between the CPU
+    # and a twin listed in EXACT_TWINS (CUDA, ADR-1397) is compared exactly
+    # instead and never reads this value.
     "psnr_hvs": 5e-4,
     # XYB cube root + IIR blur reassociation — places=2 per ADR-0192.
     "ssimulacra2": 5e-3,
@@ -334,6 +341,7 @@ def build_command(
     backend: str,
     device: int | None,
     output: Path,
+    precision: str | None = None,
 ) -> list[str]:
     extractor = feature_extractor_name(feature, backend)
     cmd: list[str] = [
@@ -361,6 +369,8 @@ def build_command(
     ]
     if backend != "cpu" and device is not None:
         cmd += [BACKEND_DEVICE_FLAG[backend], str(device)]
+    if precision is not None:
+        cmd += ["--precision", precision]
     return cmd
 
 
@@ -376,6 +386,7 @@ def run_one(
     backend: str,
     device: int | None,
     output: Path,
+    precision: str | None = None,
 ) -> tuple[int, str]:
     """Run a single ``vmaf`` invocation. Returns (returncode, stderr)."""
 
@@ -391,6 +402,7 @@ def run_one(
         backend,
         device,
         output,
+        precision,
     )
     proc = run_command(
         cmd,
@@ -444,8 +456,14 @@ def resolve_cell_tolerance(
     gpu_id: str | None,
     width: int | None = None,
     height: int | None = None,
+    backends: tuple[str, str] | None = None,
 ) -> tuple[float, str]:
     """Resolve ``(tolerance_abs, source_label)`` for one cell.
+
+    ``backends`` names the two sides of the cell. When both return the CPU
+    extractor's bits for the feature (``is_exact_pair``, ADR-1397) the cell
+    is compared exactly: tolerance 0, whatever the frame size or calibration
+    row. Callers that pass no backends get the feature's tolerance contract.
 
     The FP32 tolerance (table default or calibration row) is the contract at
     the reference geometry; for an area-scaled feature it is multiplied by
@@ -455,6 +473,8 @@ def resolve_cell_tolerance(
     Source-label vocabulary (recorded on every CellResult):
 
     * ``"fp16"``      — feature opted into the FP16 contract.
+    * ``"exact:ADR-1397"`` — both sides are bit-exact with the CPU
+      extractor; tolerance 0.
     * ``"calibrated:<pattern>"`` — calibration table matched and
       supplied a per-feature override; ``status: calibrated`` row.
     * ``"placeholder:<pattern>"`` — calibration table matched but
@@ -471,6 +491,8 @@ def resolve_cell_tolerance(
 
     if feature in fp16_features:
         return DEFAULT_FP16_TOLERANCE, "fp16"
+    if backends is not None and is_exact_pair(feature, *backends):
+        return EXACT_TWIN_TOLERANCE, EXACT_TWIN_SOURCE
 
     tolerance, source = _reference_tolerance(feature, calibration=calibration, gpu_id=gpu_id)
     factor = area_tolerance_factor(feature, width, height)
@@ -517,9 +539,15 @@ def run_cell(
     tolerance: float,
     tolerance_source: str = "default",
 ) -> CellResult:
-    """Execute one cell of the parity matrix and diff it."""
+    """Execute one cell of the parity matrix and diff it.
+
+    An exact cell (``tolerance_source`` is ``EXACT_TWIN_SOURCE``) runs both
+    sides with ``--precision max``, so the comparison sees every bit of the
+    scores rather than six decimals.
+    """
 
     metrics = FEATURE_METRICS[cell.feature]
+    precision = EXACT_TWIN_PRECISION if tolerance_source == EXACT_TWIN_SOURCE else None
     out_a = workdir / f"{cell.feature}_{cell.backend_a}.json"
     out_b = workdir / f"{cell.feature}_{cell.backend_b}.json"
 
@@ -535,6 +563,7 @@ def run_cell(
         cell.backend_a,
         devices.get(cell.backend_a),
         out_a,
+        precision,
     )
     if rc_a != 0:
         return CellResult(
@@ -562,6 +591,7 @@ def run_cell(
         cell.backend_b,
         devices.get(cell.backend_b),
         out_b,
+        precision,
     )
     if rc_b != 0:
         return CellResult(
@@ -798,6 +828,7 @@ def run_cells(
             gpu_id=args.gpu_id,
             width=args.width,
             height=args.height,
+            backends=(cell.backend_a, cell.backend_b),
         )
         result = run_cell(
             cell,

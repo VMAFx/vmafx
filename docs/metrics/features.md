@@ -683,10 +683,11 @@ quality than plain PSNR on blocking-style distortions.
 
 **Output range** — dB, typically `20–60`.
 
-**Input formats** — 8 bpc only, YUV 4:2:0 / 4:2:2 / 4:4:4. **10-bit content
-is rejected at init.**
+**Input formats** — 8 to 12 bpc, YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4. Deeper
+input is rejected at init.
 
-**Options** — none.
+**Options** — `enable_chroma` (default `true`); see
+[the psnr_hvs page](psnr-hvs.md).
 
 **Backends** — scalar (Xiph reference), AVX2
 ([ADR-0159](../adr/0159-psnr-hvs-avx2-bitexact.md)), NEON aarch64
@@ -695,7 +696,10 @@ DCT block is vectorized 8-rows-in-parallel via butterfly→transpose→
 butterfly→transpose; float accumulators stay scalar by construction
 to preserve byte-identity with the reference. Verified bit-identical
 to scalar on all three Netflix golden pairs; ~3.58× DCT microbench
-speedup on AVX2.
+speedup on AVX2. GPU twins: `psnr_hvs_cuda` (bit-identical to the CPU,
+[ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)), `psnr_hvs_sycl` and
+`psnr_hvs_hip` (held to a tolerance); see
+[agreement with the CPU extractor](psnr-hvs.md#agreement-with-the-cpu-extractor).
 
 ### SSIM / MS-SSIM
 

@@ -4,21 +4,26 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  psnr_hvs feature extractor on the CUDA backend
- *  (T7-23 / ADR-0188 / ADR-0191 / ADR-1369).
+ *  (T7-23 / ADR-0188 / ADR-0191 / ADR-1369 / ADR-1397).
  *
  *  CUDA port of ADR-1369: the kernel reads the raw 8- to 12-bit samples of
  *  the device pictures with their pitch (no host copy, host conversion or
  *  private upload), two threads per 8x8 block exchange their statistics with
  *  a warp shuffle, the integer DCT runs in shared memory, and one launch
- *  covers every active plane. The per-block float expressions are the
- *  previous CUDA kernel's, and reduce_hvs_planes() adds the partials in block
- *  order in float, so the output is bit-identical to the previous twin
- *  (except at 9 and 11 bits, which it scored wrongly). 4:0:0 input is luma
- *  only, as in the CPU extractor.
+ *  covers every active plane. 4:0:0 input is luma only, as in the CPU
+ *  extractor.
+ *
+ *  ADR-1397: the scores are the CPU extractor's bit for bit. The kernel
+ *  stores the 64 masked coefficient errors of every block, computed in the
+ *  arithmetic of calc_psnrhvs() (third_party/xiph/psnr_hvs.c), and
+ *  reduce_hvs_planes() hands each plane's terms to
+ *  vmaf_psnr_hvs_plane_score(), which adds them into one running float in the
+ *  CPU's order. The readback is 256 bytes per block (about 65 MB for a
+ *  3840x2160 4:2:0 frame); summing per block on the device is cheaper but
+ *  rounds differently from the CPU.
  */
 
 #include <errno.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -30,6 +35,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/psnr_hvs_score.h"
 #include "log.h"
 #include "mem.h"
 #include "picture.h"
@@ -40,6 +46,9 @@
  * translation unit whose sources spell the null pointer constant `NULL` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+_Static_assert(PSNR_HVS_TERMS == VMAF_PSNR_HVS_TERMS_PER_BLOCK,
+               "the kernel stores what vmaf_psnr_hvs_plane_score() sums per block");
 
 typedef struct PsnrHvsStateCuda {
     VmafCudaKernelLifecycle lc;
@@ -56,7 +65,6 @@ typedef struct PsnrHvsStateCuda {
     unsigned total_blocks;
 
     unsigned bpc;
-    int32_t samplemax_sq;
 
     bool enable_chroma;
     unsigned n_planes;
@@ -143,6 +151,12 @@ static int configure_hvs_blocks(PsnrHvsStateCuda *s)
     return 0;
 }
 
+/* Bytes of the term buffer: PSNR_HVS_TERMS floats per block of every plane. */
+static size_t hvs_terms_bytes(const PsnrHvsStateCuda *s)
+{
+    return (size_t)s->total_blocks * (size_t)PSNR_HVS_TERMS * sizeof(float);
+}
+
 static int psnr_hvs_init_unwind(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s, int cause)
 {
     int rc = cause;
@@ -176,8 +190,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return err;
 
     s->bpc = bpc;
-    const int32_t samplemax = (1 << bpc) - 1;
-    s->samplemax_sq = samplemax * samplemax;
 
     err = configure_hvs_geometry(s, pix_fmt, w, h);
     if (err)
@@ -198,8 +210,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
-    const size_t partials_bytes = (size_t)s->total_blocks * sizeof(float);
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
+    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, hvs_terms_bytes(s));
     if (err)
         return psnr_hvs_init_unwind(fex, s, err);
 
@@ -240,7 +251,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         args.plane[p].first_block = s->first_block[p];
     }
     // NOLINTNEXTLINE(performance-no-int-to-ptr): Driver API device address the kernel dereferences (ADR-0747)
-    args.partials = (float *)s->rb.device->data;
+    args.terms = (float *)s->rb.device->data;
     args.n_planes = s->n_planes;
     args.total_blocks = s->total_blocks;
     args.wide = (s->bpc > 8u) ? 1 : 0;
@@ -258,27 +269,21 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    const size_t partials_bytes = (size_t)s->total_blocks * sizeof(float);
     CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                              partials_bytes, s->lc.str));
+                                              hvs_terms_bytes(s), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
+/* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void reduce_hvs_planes(const PsnrHvsStateCuda *s, double scores[PSNR_HVS_NUM_PLANES])
 {
-    // SAFETY: s->rb.host_pinned has s->total_blocks elements allocated, and
-    // s->first_block[p] + s->num_blocks[p] <= s->total_blocks holds by construction.
-    const float *partials = (const float *)s->rb.host_pinned;
+    // SAFETY: s->rb.host_pinned holds PSNR_HVS_TERMS floats for each of the
+    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
+    // s->total_blocks holds by construction (configure_hvs_blocks).
+    const float *terms = (const float *)s->rb.host_pinned;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        const float *plane_partials = partials + s->first_block[p];
-        float sum = 0.0f;
-        for (unsigned i = 0; i < s->num_blocks[p]; i++) {
-            sum += plane_partials[i];
-        }
-        const int pixels = (int)(s->num_blocks[p] * 64u);
-        sum /= (float)pixels;
-        sum /= (float)s->samplemax_sq;
-        scores[p] = (double)sum;
+        const float *plane_terms = terms + (size_t)s->first_block[p] * (size_t)PSNR_HVS_TERMS;
+        scores[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
     }
 }
 
@@ -289,13 +294,12 @@ static int append_hvs_scores(VmafFeatureCollector *collector, const PsnrHvsState
                                                                     "psnr_hvs_cr"};
     int err = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        const double db = 10.0 * (-1.0 * log10(scores[p]));
-        err |= vmaf_feature_collector_append(collector, plane_features[p], db, index);
+        err |= vmaf_feature_collector_append(collector, plane_features[p],
+                                             vmaf_psnr_hvs_score_db(scores[p]), index);
     }
-    const double combined =
-        (s->n_planes == 1U) ? scores[0] : 0.8 * scores[0] + 0.1 * (scores[1] + scores[2]);
-    const double db_combined = 10.0 * (-1.0 * log10(combined));
-    err |= vmaf_feature_collector_append(collector, "psnr_hvs", db_combined, index);
+    const double combined = vmaf_psnr_hvs_combined_score(scores, s->n_planes);
+    err |= vmaf_feature_collector_append(collector, "psnr_hvs", vmaf_psnr_hvs_score_db(combined),
+                                         index);
     return err;
 }
 

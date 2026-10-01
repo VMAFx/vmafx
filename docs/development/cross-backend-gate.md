@@ -29,7 +29,8 @@ explicitly accepts its skip.
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `psnr_hvs` | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
+  | `psnr_hvs` (CPU ↔ SYCL, CUDA ↔ SYCL) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
+  | `psnr_hvs` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1397 (the twin reproduces the CPU's running float sum) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
@@ -59,6 +60,22 @@ explicitly accepts its skip.
   `3.34e-3`. The label in the output shows the factor, for example
   `default+area x6.69`. [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
   derives the factor from the float-accumulation bound.
+  This is the contract of a twin that sums each block on the device
+  (`psnr_hvs_sycl`).
+
+- **Exact `psnr_hvs` twins.** `psnr_hvs_cuda` stores every term the CPU sums
+  and the host adds them in the CPU's order, so its scores are the CPU's bit
+  for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)).
+  `EXACT_TWINS` in `scripts/ci/cross_backend_calibration.py` lists such twins.
+  A cell whose two sides are the CPU extractor or a listed twin is compared
+  with tolerance `0`, at every frame size and ahead of any calibration row,
+  and both sides run with `--precision max` so that a last-bit difference
+  is not rounded away by the default `%.6f` output. The label in the output is
+  `exact:ADR-1397`. Measured on an RTX 4090: 0 on all 200 frames of the BBB
+  3840x2160 fixture and on the Netflix 576x324 pair. An explicit
+  `--fp16-features psnr_hvs` still selects the FP16 contract. Adding a twin to
+  the table needs a measurement that shows bit-identity and an ADR that
+  records it.
 
 - **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
   FP16 absolute-tolerance contract.

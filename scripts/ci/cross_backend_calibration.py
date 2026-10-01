@@ -70,6 +70,41 @@ AREA_SCALED_REFERENCE_GEOMETRY = (576, 324)
 AREA_SCALED_FEATURES = ("psnr_hvs",)
 
 
+# ---------------------------------------------------------------------------
+# ADR-1397: twins that reproduce the CPU extractor bit for bit.
+#
+# ``psnr_hvs_cuda`` stores the terms ``calc_psnrhvs()`` sums, computed in the
+# CPU's arithmetic, and the host adds them into one running float in the CPU's
+# order. Its scores are therefore the CPU's, at every frame size, and a cell
+# whose two sides are the CPU extractor or such a twin is compared exactly:
+# tolerance 0, no area scaling, no calibration row, and ``--precision max`` so
+# that a last-bit difference reaches the comparison instead of being rounded
+# away by the default ``%.6f``. A twin joins this table only with a
+# measurement that shows bit-identity and an ADR that records it; a twin that
+# still sums per block (``psnr_hvs_sycl``) keeps the ADR-1361 tolerance.
+# ---------------------------------------------------------------------------
+
+EXACT_TWINS: dict[str, frozenset[str]] = {
+    "psnr_hvs": frozenset({"cuda"}),
+}
+EXACT_TWIN_TOLERANCE = 0.0
+EXACT_TWIN_PRECISION = "max"
+EXACT_TWIN_SOURCE = "exact:ADR-1397"
+
+
+def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
+    """True when both sides of a cell return the CPU extractor's bits for ``feature``.
+
+    A side qualifies when it is ``cpu`` or a backend listed for the feature
+    in ``EXACT_TWINS``; a feature without an entry never qualifies.
+    """
+
+    exact = EXACT_TWINS.get(feature)
+    if exact is None:
+        return False
+    return all(backend == "cpu" or backend in exact for backend in (backend_a, backend_b))
+
+
 def psnr_hvs_term_count(width: int, height: int) -> int:
     """Terms ``calc_psnrhvs()`` adds into one float for a ``width x height`` luma plane.
 

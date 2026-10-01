@@ -635,6 +635,21 @@ feature/
   against baseline binary — goldens alone do not reach
   small-scale border branches.
 
+- **`psnr_hvs_score.c` = host tail of `calc_psnrhvs()` for GPU twins**
+  (fork-local, ADR-1397). `vmaf_psnr_hvs_plane_score()` adds a plane's
+  terms one by one into a single `float` (the CPU's `ret`), then
+  `/ pixels`, `/ samplemax^2` in `float`; `vmaf_psnr_hvs_combined_score()`
+  and `vmaf_psnr_hvs_score_db()` = CPU `extract()` expressions. Built in
+  `libvmaf_psnr_hvs_scalar_static_lib` (strict FP: combined score must
+  not contract). Loop must stay sequential, `float`, index order: no
+  vectorising, pairwise sum, `double`, or per-block subtotal (each
+  changes the rounding; guards `test_psnr_hvs_score`,
+  `test_psnr_hvs_twin_exact_sum_contract.py`). Zero terms may be skipped
+  (`x + 0.0f == x`); nothing else. **On rebase**: upstream change to the
+  tail of `calc_psnrhvs()` or to `extract()` in
+  `third_party/xiph/psnr_hvs.c` -> same change here + every twin that
+  calls it (`cuda/integer_psnr_hvs_cuda.c`).
+
 - **`psnr_hvs` AVX2 DCT bit-exactness** (fork-local, ADR-0159):
   [`x86/psnr_hvs_avx2.c`](x86/psnr_hvs_avx2.c) vectorizes
   Xiph/Daala 8×8 integer DCT across 8 rows in parallel

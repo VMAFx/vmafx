@@ -6,20 +6,21 @@
  */
 
 /*
- * Round-2 GPU-kernel coverage gap-fill — psnr_hvs CPU vs. CUDA parity.
+ * psnr_hvs CPU vs. CUDA: the twin returns the CPU's scores bit for bit
+ * (ADR-1397).
  *
  * PSNR-HVS is a perceptual peak-signal-to-noise variant that applies the
  * HVS contrast-sensitivity weighting before the MSE reduction. CPU is in
  * third_party/xiph/psnr_hvs.c (Xiph reference port); CUDA path is in
  * integer_psnr_hvs_cuda.c + integer_psnr_hvs/psnr_hvs_score.cu.
  *
- * Both backends emit psnr_hvs_y / psnr_hvs_cb / psnr_hvs_cr per-plane plus
- * a combined psnr_hvs. Per the kernel header the CUDA path runs all three
- * planes; cross-checking the combined score is the highest-coverage
- * single assertion.
- *
- * Round-1 (PR #351) covered psnr_cuda + ciede_cuda — neither exercises the
- * HVS-weighted DCT-coefficient path.
+ * calc_psnrhvs() adds every masked coefficient error of a plane into one
+ * running float, so its result depends on the order of the additions. The
+ * twin stores the same terms and the host adds them in that order; every
+ * comparison here is therefore exact, on psnr_hvs_y / psnr_hvs_cb /
+ * psnr_hvs_cr and the combined psnr_hvs. The 3840x2160 cases are the ones a
+ * twin that sums per block fails by the widest margin: about 10.8 million
+ * luma terms, where the CPU's float sum is furthest from the exact one.
  *
  * Skip behaviour: skips with "[skip: no CUDA device]" when no CUDA driver.
  */
@@ -46,147 +47,59 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define FIXTURE_BPC 8u
 
-#define PARITY_TOL 1e-4
+#define HVS_FEATURES 4u
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+enum HvsPattern {
+    HVS_PATTERN_RAMP,  /* shifted ramps: mostly DC error */
+    HVS_PATTERN_MIXED, /* xor-scrambled ramps over the full sample range */
+    HVS_PATTERN_NOISE, /* smooth reference, pseudo-random error of a few codes */
+};
+
+typedef struct HvsFixture {
+    enum VmafPixelFormat fmt;
+    unsigned bpc;
+    unsigned w;
+    unsigned h;
+    enum HvsPattern pattern;
+} HvsFixture;
+
+static const char *const hvs_features[HVS_FEATURES] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
+                                                       "psnr_hvs"};
+
+/* Deterministic 32-bit mix of a sample position (no libc rand). */
+static unsigned hvs_hash(unsigned col, unsigned row, unsigned plane)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 5u + col + salt * 11u) & 0xFFu);
-        }
+    unsigned h = (col * 0x9E3779B1u) ^ (row * 0x85EBCA77u) ^ (plane * 0xC2B2AE3Du);
+    h ^= h >> 15;
+    h *= 0x2C1B3C6Du;
+    h ^= h >> 12;
+    return h;
+}
+
+static unsigned hvs_sample(const HvsFixture *fx, unsigned col, unsigned row, unsigned plane,
+                           unsigned salt)
+{
+    const unsigned range = 1u << fx->bpc;
+    if (fx->pattern == HVS_PATTERN_RAMP) {
+        const unsigned luma = row * 5u + col + salt * 11u;
+        const unsigned chroma = row + col * (1u + plane) + salt * 7u;
+        return (plane == 0u ? luma : chroma) % range;
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row + col * (1u + p) + salt * 7u) & 0xFFu);
-            }
-        }
-    }
-    return 0;
+    if (fx->pattern == HVS_PATTERN_MIXED)
+        return ((col * 37u + row * 11u + plane * 5u) ^ (salt * 91u)) % range;
+    /* A slow ramp well inside the range, plus up to +-4 codes on the distorted
+     * picture: little masking, so most coefficient errors reach the sum. */
+    const unsigned base = range / 4u + ((col + 2u * row + 3u * plane) / 8u) % (range / 2u);
+    return salt == 0u ? base : base + hvs_hash(col, row, plane) % 9u - 4u;
 }
 
-static char *feed_one_frame(VmafContext *vmaf)
+static void fill_hvs_row(uint8_t *line, unsigned width, const HvsFixture *fx, unsigned row,
+                         unsigned plane, unsigned salt)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    mu_assert("fill_pic(ref) failed", !err);
-    err = fill_pic(&dist, 1u);
-    mu_assert("fill_pic(dist) failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    mu_assert("vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
-}
-
-static char *run_cpu(double *score)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "psnr_hvs", NULL);
-    mu_assert("CPU: vmaf_use_feature(psnr_hvs) failed", !err);
-
-    char *msg = feed_one_frame(vmaf);
-    if (msg)
-        return msg;
-
-    err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(psnr_hvs) failed", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *run_cuda(double *score)
-{
-    *score = NAN;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "psnr_hvs_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(psnr_hvs_cuda) failed", !err);
-
-    char *msg = feed_one_frame(vmaf);
-    if (msg)
-        return msg;
-
-    err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
-    mu_assert("CUDA: vmaf_feature_score_at_index(psnr_hvs) failed", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CUDA: vmaf_close failed", !err);
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
-}
-
-static char *test_psnr_hvs_cuda_registered(void)
-{
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_cuda");
-    mu_assert("psnr_hvs_cuda extractor must be registered", fex != NULL);
-    mu_assert("psnr_hvs_cuda name matches", !strcmp(fex->name, "psnr_hvs_cuda"));
-    return NULL;
-}
-
-static char *test_psnr_hvs_cpu_cuda_parity(void)
-{
-    double cpu = 0.0;
-    double gpu = NAN;
-
-    char *msg = run_cpu(&cpu);
-    if (msg)
-        return msg;
-    msg = run_cuda(&gpu);
-    if (msg)
-        return msg;
-    if (isnan(gpu))
-        return NULL;
-
-    const double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\npsnr_hvs parity FAIL: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                      cpu, gpu, delta, PARITY_TOL);
-    }
-    mu_assert("psnr_hvs CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
-}
-
-/* 9- and 11-bit input: calc_psnrhvs() uses the raw sample at every depth. The
- * twin used to convert only 10- and 12-bit samples back exactly and scored
- * 9 / 11 bits on 16 times the sample (-1.57 against 22.47 dB at 9 bits).
- * 4:0:0 input: the CPU extractor scores luma only; the twin must do the same
- * instead of refusing the format. */
-static void fill_deep_row(uint8_t *line, unsigned width, unsigned row, unsigned plane, unsigned bpc,
-                          unsigned salt)
-{
-    const unsigned range = 1u << bpc;
     for (unsigned col = 0; col < width; col++) {
-        const unsigned v = ((col * 37u + row * 11u + plane * 5u) ^ (salt * 91u)) % range;
-        if (bpc > 8u) {
+        const unsigned v = hvs_sample(fx, col, row, plane, salt);
+        if (fx->bpc > 8u) {
             ((uint16_t *)line)[col] = (uint16_t)v;
         } else {
             line[col] = (uint8_t)v;
@@ -194,22 +107,22 @@ static void fill_deep_row(uint8_t *line, unsigned width, unsigned row, unsigned 
     }
 }
 
-static int fill_deep_pic(VmafPicture *pic, enum VmafPixelFormat fmt, unsigned bpc, unsigned salt)
+static int fill_hvs_pic(VmafPicture *pic, const HvsFixture *fx, unsigned salt)
 {
-    const int err = vmaf_picture_alloc(pic, fmt, bpc, 64u, 48u);
+    const int err = vmaf_picture_alloc(pic, fx->fmt, fx->bpc, fx->w, fx->h);
     if (err)
         return err;
-    const unsigned planes = (fmt == VMAF_PIX_FMT_YUV400P) ? 1u : 3u;
+    const unsigned planes = (fx->fmt == VMAF_PIX_FMT_YUV400P) ? 1u : 3u;
     for (unsigned p = 0; p < planes; p++) {
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint8_t *line = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
-            fill_deep_row(line, pic->w[p], row, p, bpc, salt);
+            uint8_t *line = (uint8_t *)pic->data[p] + (size_t)row * (size_t)pic->stride[p];
+            fill_hvs_row(line, pic->w[p], fx, row, p, salt);
         }
     }
     return 0;
 }
 
-static char *open_deep(VmafCudaState *cuda_state, VmafContext **vmaf)
+static char *open_hvs(VmafCudaState *cuda_state, VmafContext **vmaf)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     mu_assert("vmaf_init failed", !vmaf_init(vmaf, cfg));
@@ -220,24 +133,65 @@ static char *open_deep(VmafCudaState *cuda_state, VmafContext **vmaf)
     return NULL;
 }
 
-static char *score_deep(VmafCudaState *cuda_state, enum VmafPixelFormat fmt, unsigned bpc,
-                        double *score)
+/* Reads the emitted scores of frame 0. A 4:0:0 fixture has no chroma scores;
+ * those slots stay 0 on both sides. */
+static char *read_hvs_scores(VmafContext *vmaf, const HvsFixture *fx, double scores[HVS_FEATURES])
+{
+    const int luma_only = (fx->fmt == VMAF_PIX_FMT_YUV400P);
+    for (unsigned i = 0; i < HVS_FEATURES; i++) {
+        scores[i] = 0.0;
+        if (luma_only && (i == 1u || i == 2u))
+            continue;
+        mu_assert("score", !vmaf_feature_score_at_index(vmaf, hvs_features[i], &scores[i], 0u));
+    }
+    return NULL;
+}
+
+/* Scores of one frame on the CPU (`cuda_state` NULL) or on the twin. */
+static char *score_hvs(VmafCudaState *cuda_state, const HvsFixture *fx, double scores[HVS_FEATURES])
 {
     VmafContext *vmaf = NULL;
-    mu_assert_msg(open_deep(cuda_state, &vmaf));
+    mu_assert_msg(open_hvs(cuda_state, &vmaf));
     VmafPicture ref;
     VmafPicture dist;
-    mu_assert("ref alloc", !fill_deep_pic(&ref, fmt, bpc, 0u));
-    mu_assert("dist alloc", !fill_deep_pic(&dist, fmt, bpc, 1u));
+    mu_assert("ref alloc", !fill_hvs_pic(&ref, fx, 0u));
+    mu_assert("dist alloc", !fill_hvs_pic(&dist, fx, 1u));
     mu_assert("read", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
     mu_assert("flush", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
-    mu_assert("score", !vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u));
+    mu_assert_msg(read_hvs_scores(vmaf, fx, scores));
     mu_assert("vmaf_close failed", !vmaf_close(vmaf));
     return NULL;
 }
 
-/* One CPU-vs-CUDA comparison of the combined psnr_hvs on a 64x48 picture. */
-static char *compare_deep(enum VmafPixelFormat fmt, unsigned bpc)
+/* The bit pattern of a score: two scores are the same value, to the last bit
+ * and including infinities, exactly when their patterns are equal. */
+static uint64_t score_bits(double score)
+{
+    uint64_t bits = 0u;
+    memcpy(&bits, &score, sizeof(bits));
+    return bits;
+}
+
+/* Bit-for-bit comparison of every score; reports each one that differs. */
+static char *require_identical(const HvsFixture *fx, const double cpu[HVS_FEATURES],
+                               const double gpu[HVS_FEATURES])
+{
+    unsigned differing = 0u;
+    for (unsigned i = 0; i < HVS_FEATURES; i++) {
+        if (score_bits(cpu[i]) == score_bits(gpu[i]))
+            continue;
+        differing++;
+        (void)fprintf(stderr, "\n%ux%u %u-bit %s: cpu=%.17g cuda=%.17g delta=%.3e", fx->w, fx->h,
+                      fx->bpc, hvs_features[i], cpu[i], gpu[i], fabs(cpu[i] - gpu[i]));
+    }
+    if (differing != 0u)
+        (void)fprintf(stderr, "\n");
+    mu_assert("psnr_hvs_cuda must return the CPU's psnr_hvs scores bit for bit (ADR-1397)",
+              differing == 0u);
+    return NULL;
+}
+
+static char *compare_hvs(const HvsFixture *fx)
 {
     VmafCudaState *cuda_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
@@ -245,39 +199,78 @@ static char *compare_deep(enum VmafPixelFormat fmt, unsigned bpc)
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
-    double cpu = 0.0;
-    double gpu = NAN;
-    char *msg = score_deep(NULL, fmt, bpc, &cpu);
+    double cpu[HVS_FEATURES] = {0.0, 0.0, 0.0, 0.0};
+    double gpu[HVS_FEATURES] = {NAN, NAN, NAN, NAN};
+    char *msg = score_hvs(NULL, fx, cpu);
     if (!msg)
-        msg = score_deep(cuda_state, fmt, bpc, &gpu);
-    if (!msg && !(fabs(cpu - gpu) <= PARITY_TOL)) {
-        (void)fprintf(stderr, "\nformat %d, %u-bit psnr_hvs: cpu=%.8f cuda=%.8f\n", (int)fmt, bpc,
-                      cpu, gpu);
-        msg = "psnr_hvs_cuda must score the raw samples of every plane the CPU scores";
-    }
+        msg = score_hvs(cuda_state, fx, gpu);
+    if (!msg)
+        msg = require_identical(fx, cpu, gpu);
     const int free_err = vmaf_cuda_state_free(cuda_state);
     if (!msg && free_err)
         msg = "vmaf_cuda_state_free failed";
     return msg;
 }
 
-static char *test_psnr_hvs_odd_depth_parity(void)
+static char *test_psnr_hvs_cuda_registered(void)
 {
-    char *msg = compare_deep(VMAF_PIX_FMT_YUV420P, 9u);
-    return msg ? msg : compare_deep(VMAF_PIX_FMT_YUV420P, 11u);
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_cuda");
+    mu_assert("psnr_hvs_cuda extractor must be registered", fex != NULL);
+    mu_assert("psnr_hvs_cuda name matches", !strcmp(fex->name, "psnr_hvs_cuda"));
+    return NULL;
 }
 
-static char *test_psnr_hvs_yuv400_parity(void)
+static char *test_psnr_hvs_cpu_cuda_identical(void)
 {
-    return compare_deep(VMAF_PIX_FMT_YUV400P, 8u);
+    const HvsFixture ramp = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_RAMP};
+    mu_assert_msg(compare_hvs(&ramp));
+    const HvsFixture noise = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_NOISE};
+    return compare_hvs(&noise);
+}
+
+/* 9- and 11-bit input: calc_psnrhvs() uses the raw sample at every depth. The
+ * twin used to convert only 10- and 12-bit samples back exactly and scored
+ * 9 / 11 bits on 16 times the sample (-1.57 against 22.47 dB at 9 bits). */
+static char *test_psnr_hvs_every_depth_identical(void)
+{
+    for (unsigned bpc = 9u; bpc <= 12u; bpc++) {
+        const HvsFixture fx = {VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u, HVS_PATTERN_MIXED};
+        mu_assert_msg(compare_hvs(&fx));
+    }
+    return NULL;
+}
+
+/* 4:0:0 input: the CPU extractor scores luma only; the twin must do the same
+ * instead of refusing the format. 4:2:2 and 4:4:4 change the chroma block
+ * counts and with them the length of each chroma sum. */
+static char *test_psnr_hvs_every_layout_identical(void)
+{
+    static const enum VmafPixelFormat layouts[] = {VMAF_PIX_FMT_YUV400P, VMAF_PIX_FMT_YUV422P,
+                                                   VMAF_PIX_FMT_YUV444P};
+    for (unsigned i = 0; i < sizeof(layouts) / sizeof(layouts[0]); i++) {
+        const HvsFixture fx = {layouts[i], 8u, 64u, 48u, HVS_PATTERN_MIXED};
+        mu_assert_msg(compare_hvs(&fx));
+    }
+    return NULL;
+}
+
+/* 3840x2160: 10.8 million luma terms in one running float. A twin that sums
+ * each block first is 1e-2 dB away from the CPU here on real content. */
+static char *test_psnr_hvs_2160p_identical(void)
+{
+    const HvsFixture uhd8 = {VMAF_PIX_FMT_YUV420P, 8u, 3840u, 2160u, HVS_PATTERN_NOISE};
+    mu_assert_msg(compare_hvs(&uhd8));
+    const HvsFixture uhd10 = {VMAF_PIX_FMT_YUV420P, 10u, 3840u, 2160u, HVS_PATTERN_NOISE};
+    return compare_hvs(&uhd10);
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_cuda_registered);
-    mu_run_test(test_psnr_hvs_cpu_cuda_parity);
-    mu_run_test(test_psnr_hvs_odd_depth_parity);
-    mu_run_test(test_psnr_hvs_yuv400_parity);
+    mu_run_test(test_psnr_hvs_cpu_cuda_identical);
+    mu_run_test(test_psnr_hvs_every_depth_identical);
+    mu_run_test(test_psnr_hvs_every_layout_identical);
+    mu_run_test(test_psnr_hvs_2160p_identical);
     return NULL;
 }
 

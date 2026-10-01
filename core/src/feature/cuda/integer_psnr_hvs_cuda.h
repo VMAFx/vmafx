@@ -18,6 +18,10 @@
 #define PSNR_HVS_NUM_PLANES 3
 #define PSNR_HVS_WG 64
 #define PSNR_HVS_LANE_STRIDE (64 + 1)
+/* Masked coefficient errors calc_psnrhvs() adds per 8x8 block; the value of
+ * VMAF_PSNR_HVS_TERMS_PER_BLOCK (feature/psnr_hvs_score.h), which the host TU
+ * checks. */
+#define PSNR_HVS_TERMS 64
 
 typedef struct PsnrHvsPlaneArgs {
     const void *ref;
@@ -32,7 +36,7 @@ typedef struct PsnrHvsPlaneArgs {
 
 typedef struct PsnrHvsKernelArgs {
     PsnrHvsPlaneArgs plane[PSNR_HVS_NUM_PLANES];
-    float *partials;
+    float *terms; /* PSNR_HVS_TERMS per block, blocks in plane then raster order */
     unsigned n_planes;
     unsigned total_blocks;
     int wide;

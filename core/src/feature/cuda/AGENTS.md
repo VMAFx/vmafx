@@ -202,8 +202,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   parameter"](../../AGENTS.md).
 
 - **`integer_psnr_hvs_cuda.c` participates in engine-scope CUDA
-  drain batch.** `submit_fex_cuda` queues one DtoH copy of the block
-  partials (`s->rb`) on `s->lc.str`, then
+  drain batch.** `submit_fex_cuda` queues one DtoH copy of the term
+  buffer (`s->rb`, 64 floats per block, ADR-1397) on `s->lc.str`, then
   `vmaf_cuda_kernel_submit_post_record`. `collect_fex_cuda` calls
   `vmaf_cuda_kernel_collect_wait` before reading `s->rb.host_pinned`;
   raw `cuStreamSynchronize` in collect reopens T-GPU-OPT-3's per-frame
@@ -222,12 +222,32 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   reference, odd = distorted), raw 8- to 12-bit samples via the picture
   pitch (`hvs_load_block`; no depth scaling, T-CUDA-PSNR-HVS-ODD-BPC-2026-09-30),
   DCT in shared memory, `__shfl_xor_sync` swaps variance ratio + masking
-  energy, reference thread scores the block. Tail threads run block 0 and
-  never store, so the whole warp reaches the shuffle. Per-block float
-  expressions = the previous thread-0 kernel's (output bit-identical to
-  it); `reduce_hvs_planes` sums each plane's partials in block order in
-  `float` (the sum ADR-1361 calibrated). Changing either moves scores:
-  numeric-contract ADR + tolerance review first.
+  energy, reference thread stores the block's terms. Tail threads run
+  block 0 and never store, so the whole warp reaches the shuffle.
+
+- **`psnr_hvs_cuda` = CPU scores bit for bit (ADR-1397).** Kernel
+  stores the 64 terms `calc_psnrhvs()` sums per block (`hvs_store_terms`,
+  row-major, blocks in plane then raster order); host hands each plane
+  to `vmaf_psnr_hvs_plane_score()` (`../psnr_hvs_score.c`: one running
+  `float`, CPU order), combined score + dB via the same file. Load-bearing,
+  each one breaks bit-identity on its own (Research-1397 §3):
+  - masking table = `(csf * 0.3885746225901003)^2` in `double`, stored
+    `float` (`hvs_mask_value`, constexpr -> static data);
+  - threshold = `sqrt((double)energy * ratio) / 32`, one rounding to
+    `float` (`hvs_threshold`);
+  - `--fmad=false` on the fatbin (`cuda_cu_extra_flags` in
+    `core/src/meson.build`);
+  - coefficient error = integer `abs()` cast to `float`;
+  - no sum of terms in kernel or host TU (per-block partials round
+    differently: 1e-2 dB at 3840x2160).
+  Guards: `test_cuda_psnr_hvs_parity{,_large}` (device, `==` on all four
+  outputs, 3840x2160 included), `test_psnr_hvs_twin_exact_sum_contract.py`
+  and `test_psnr_hvs_score` (device-free). Gate cell = tolerance 0
+  (`EXACT_TWINS`, `scripts/ci/cross_backend_calibration.py`). Upstream
+  change to `calc_psnrhvs()` arithmetic or order -> mirror it here in
+  the same PR. Readback = 256 bytes per block (65 MB per 3840x2160
+  4:2:0 frame); tuning tracked as
+  T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01, must stay bit-exact.
 
 - **`integer_cambi_cuda.c` + `integer_cambi/cambi_score.cu` are
   device-resident since ADR-1379** (was Strategy II hybrid, ADR-0360).

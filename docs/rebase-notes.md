@@ -55934,3 +55934,51 @@ exactly 1. None of this was measured on an AMD device in this change.
 - Tests: `test_hip_cambi_device_math`, `test_hip_speed_device_math` (fast
   suite, no device) and `test_hip_device_resident_contract.py` (imports the
   helpers of `test_hip_kernel_source_contract.py`).
+
+## ADR-1397 — psnr_hvs_cuda returns the CPU's scores bit for bit (2026-10-01)
+
+`fix/psnr-hvs-twins-cpu-float-sum`, Research-1397, ADR-1397 (amends ADR-1361).
+
+- `core/src/feature/psnr_hvs_score.{c,h}` (new, fork-local): the host tail of
+  `calc_psnrhvs()` for GPU twins. `vmaf_psnr_hvs_plane_score()` adds a plane's
+  terms into one running `float` in index order and normalises in `float`;
+  `vmaf_psnr_hvs_combined_score()` and `vmaf_psnr_hvs_score_db()` are the CPU
+  `extract()` expressions. Built in `libvmaf_psnr_hvs_scalar_static_lib`
+  (`core/src/meson.build`), so it gets the strict floating-point arguments of
+  the scalar reference. An upstream change to the end of `calc_psnrhvs()`
+  (`ret /= pixels`, `ret /= samplemax * samplemax`) or to the combination in
+  `extract()` of `third_party/xiph/psnr_hvs.c` needs the same change here.
+- `core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`: the kernel stores
+  the 64 terms of every block instead of their sum (`hvs_store_terms`). The
+  masking table is built at compile time from the CPU's double product
+  (`hvs_mask_value`, `HVS_TABLES`), the threshold takes a double product and
+  square root (`hvs_threshold`), and the coefficient error is an integer
+  `abs()`. An upstream change to the per-block arithmetic of `calc_psnrhvs()`
+  (means, variances, masking, the error term or its order) needs the matching
+  kernel change in the same PR, or `test_cuda_psnr_hvs_parity` fails.
+- `core/src/meson.build`: `'psnr_hvs_score'` joins `cuda_cu_extra_flags` with
+  `--fmad=false`. Keep it when resolving a conflict in that dictionary; without
+  it single frames differ in the last bit.
+- `core/src/feature/cuda/integer_psnr_hvs_cuda.{c,h}`: the readback is
+  `PSNR_HVS_TERMS` (64) floats per block (`hvs_terms_bytes`), `args.terms`
+  replaces `args.partials`, and `reduce_hvs_planes()` / `append_hvs_scores()`
+  call the helpers above. Do not restore a host or kernel sum of partials.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS` /
+  `is_exact_pair()`; `cross_backend_parity_gate.py` and
+  `cross_backend_vif_diff.py` compare a CPU-and-listed-twin cell with tolerance
+  0 at `--precision max`. `FEATURE_TOLERANCE["psnr_hvs"]`, the calibration rows
+  and `area_tolerance_factor()` are unchanged and still govern `psnr_hvs_sycl`.
+- Tests: `test_cuda_psnr_hvs_parity` compares all four outputs with `==`
+  (ramp and noise fixtures, 9 to 12 bits, 4:0:0 / 4:2:2 / 4:4:4, 3840x2160 at
+  8 and 10 bits); `test_psnr_hvs_score` and
+  `test_psnr_hvs_twin_exact_sum_contract.py` are new and device-free.
+
+No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
+are unchanged (no CPU extractor code is touched). `psnr_hvs_cuda` scores move
+to the CPU's: by up to 8.4e-5 dB on the Netflix 576x324 pair and 1.7e-2 dB at
+3840x2160. `psnr_hvs_hip`, `psnr_hvs_sycl` and the Metal twin are untouched
+and still sum per block. Measured on an RTX 4090 (`zeus`): every frame of the
+Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080 checkerboard
+pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals `--backend cpu` at
+`--precision max`. Re-verify after a rebase that touches these files with the
+reproducer of Research-1397.

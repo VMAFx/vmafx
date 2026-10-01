@@ -22,28 +22,29 @@ reference `"psnr_hvs"`.
 
 | Feature name | Description | Condition |
 |---|---|---|
-| `psnr_hvs` | HVS-weighted PSNR on the luma (Y) plane | Always |
-| `psnr_hvs_cb` | HVS-weighted PSNR on the Cb (U) plane | `enable_chroma=true` only |
-| `psnr_hvs_cr` | HVS-weighted PSNR on the Cr (V) plane | `enable_chroma=true` only |
+| `psnr_hvs_y` | HVS-weighted PSNR on the luma (Y) plane | Always |
+| `psnr_hvs_cb` | HVS-weighted PSNR on the Cb (U) plane | `enable_chroma=true` (the default), not for 4:0:0 |
+| `psnr_hvs_cr` | HVS-weighted PSNR on the Cr (V) plane | `enable_chroma=true` (the default), not for 4:0:0 |
+| `psnr_hvs` | Combined score: 0.8 Y + 0.1 (Cb + Cr) of the linear plane values, in dB; the luma value when chroma is off | Always |
 
 ## Options
 
-- `enable_chroma` (bool, default `false`): emit per-plane `_cb` and `_cr` scores in addition to luma. YUV400P sources are always luma-only.
+- `enable_chroma` (bool, default `true`): score the Cb and Cr planes and weight them into `psnr_hvs`. With `false`, or for YUV400P sources, only luma is scored and `psnr_hvs` equals `psnr_hvs_y`.
 
 ### How to run
 
 ```bash
-# Luma-only PSNR-HVS (default)
+# Per-plane scores and the combined psnr_hvs (default)
 core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature psnr_hvs --output /dev/stdout
 
-# Per-channel PSNR-HVS (luma + Cb + Cr)
+# Luma only
 core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature 'psnr_hvs:enable_chroma=true' --output /dev/stdout
+    --no_prediction --feature 'psnr_hvs=enable_chroma=false' --output /dev/stdout
 ```
 
 ## Backend parity (chroma plane dimensions)
@@ -68,29 +69,58 @@ integer samples of the device pictures at every supported depth, 8 to 12 bits
 (every backend rejects deeper input, like the CPU extractor), eliminating host
 float conversions and redundant pinned host staging allocations. Two threads share
 each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
-launch covers every plane. Each block's float sum goes to a partials buffer, and
-the host adds each plane's partials in block order. 4:0:0 input is scored on luma
-only, as on the CPU.
+launch covers every plane. 4:0:0 input is scored on luma only, as on the CPU.
 
-Both `psnr_hvs_cuda` and `psnr_hvs_hip` return the same values, bit for bit, as
-the host-conversion twins they replaced, on the Netflix 576x324 pair, on 1920x1080
-and on 3840x2160 content, except at 9 and 11 bits, where the previous twins were
-wrong (-1.57 dB and NaN on a 64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
+`psnr_hvs_hip` returns the same values, bit for bit, as the host-conversion twin
+it replaced, on the Netflix 576x324 pair, on 1920x1080 and on 3840x2160 content,
+except at 9 and 11 bits, where the previous twin was wrong (-1.57 dB and NaN on a
+64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
 
-### Difference to the CPU extractor at large frame sizes
+### Agreement with the CPU extractor
 
 The CPU extractor (`third_party/xiph/psnr_hvs.c`, `calc_psnrhvs()`) adds every
-masked coefficient error of a plane to one running `float`, about 10.8 million
-terms for a 3840x2160 luma plane. Its rounding error grows with the frame: on 22
-frames of the 3840x2160 Big Buck Bunny fixture that
-[docs/state.md](../state.md) uses, the CPU values are up to 1.1e-2 dB from the
-same sum taken in `double`, while `psnr_hvs_cuda` is within 5.1e-5 dB of it. The
-difference between a GPU twin and the CPU at that size is therefore mostly the
-CPU's. It exceeds the 3.34e-3 dB that
-[ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md) allows at
-3840x2160 on this content; `T-PSNR-HVS-CPU-FLOAT-SUM-4K-2026-09-30` tracks it. The
-CPU extractor keeps its `float` sum because the Netflix golden values of
+masked coefficient error of a plane to one running `float`: 64 terms per block,
+about 10.8 million for a 3840x2160 luma plane. The rounding of each addition
+depends on the sum so far, so the score depends on the order of the additions.
+The CPU's value is the reference; it is not the most accurate one (it is up to
+1.1e-2 dB above the same sum taken in `double` on 3840x2160 content), and it
+stays as it is because the Netflix golden values of
 `python/test/third_party/xiph/vmafexec_feature_extractor_test.py` pin it.
+
+| Twin | How it sums | Agreement with `--backend cpu` |
+|---|---|---|
+| `psnr_hvs_cuda` | The kernel stores the 64 terms of every block, computed in the CPU's arithmetic; the host adds them in the CPU's order ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)) | Bit-identical on every output, at every frame size and depth |
+| `psnr_hvs_sycl`, `psnr_hvs_hip` | 64 terms per block on the device, then the blocks on the host | Held to a tolerance: 5e-4 dB at 576x324, growing with the frame size ([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)) |
+
+`psnr_hvs_cuda` was measured against the CPU at `--precision max` on the
+Netflix 576x324 pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080
+checkerboard pairs and Big Buck Bunny at 1920x1080 and 3840x2160 (8 and 10
+bits): every frame of `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr`
+has the same bits. Check it on your device with:
+
+```bash
+for b in cpu cuda; do
+  build/tools/vmaf -r ref.yuv -d dist.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend $b --no_prediction --feature psnr_hvs --precision max --json -o $b.json
+done
+python3 - <<'PY'
+import json
+a, b = (json.load(open(f"{n}.json"))["frames"] for n in ("cpu", "cuda"))
+print(all(x["metrics"] == y["metrics"] for x, y in zip(a, b)))
+PY
+```
+
+The exact sum has a cost. `psnr_hvs_cuda` reads 256 bytes per block back to the
+host (65 MB for a 3840x2160 4:2:0 frame, 259 MB at 7680x4320, held on the
+device and in pinned host memory) and adds the terms on one host thread. On an
+RTX 4090 a frame takes 0.29 ms at 576x324, 3.1 ms at 1920x1080 and 12.2 ms at
+3840x2160, where sixteen CPU threads take 0.14, 1.7 and 6.5 ms; use
+`--backend cpu` when throughput matters more than keeping the frame on the
+device. [Research-1397](../research/1397-psnr-hvs-twins-cpu-float-sum.md) has
+the measurements; `T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` in
+[docs/state.md](../state.md) tracks the tuning, and
+`T-HIP-PSNR-HVS-EXACT-SUM-2026-10-01` / `T-SYCL-PSNR-HVS-EXACT-SUM-2026-10-01`
+the same change for the other twins.
 
 ## See also
 

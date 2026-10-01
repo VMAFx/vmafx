@@ -82,6 +82,17 @@ linked AGENTS.md before resolving conflicts.
   if it relaxes places=4, (3) row in
   `docs/development/cross-backend-gate.md`. See
   [core/AGENTS.md](../../core/AGENTS.md).
+- **`psnr_hvs_cuda` returns the CPU's scores bit for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md))**:
+  `psnr_hvs_score.cu` stores the 64 terms `calc_psnrhvs()` sums per block, in
+  the CPU's arithmetic (double masking table and threshold, integer coefficient
+  difference, fatbin built with `--fmad=false`), and
+  `core/src/feature/psnr_hvs_score.c` adds them into one running `float` in the
+  CPU's order. A change to `calc_psnrhvs()` or `extract()` in
+  `third_party/xiph/psnr_hvs.c` changes the kernel and that file in the same
+  PR. `core/test/test_psnr_hvs_twin_exact_sum_contract.py` and
+  `test_psnr_hvs_score` guard it without a device, `test_cuda_psnr_hvs_parity`
+  on one; the parity gate compares the twin with tolerance 0 (`EXACT_TWINS`).
+  See [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
 - **psnr chroma GPU twins (T3-15(b), PR #204)** — `psnr_cb` /

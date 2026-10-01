@@ -165,6 +165,17 @@ test('test_cuda_device_resident_contract',
     timeout : 30,
 )
 
+# ADR-1397: psnr_hvs_cuda returns the CPU's scores bit for bit -- the kernel
+# stores every term calc_psnrhvs() sums, in the CPU's arithmetic and built
+# without contraction, and the host adds them in the CPU's order through
+# psnr_hvs_score.c. Device-free; the device check is test_cuda_psnr_hvs_parity.
+test('test_psnr_hvs_twin_exact_sum_contract',
+    import('python').find_installation(),
+    args : files('test_psnr_hvs_twin_exact_sum_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
@@ -1519,6 +1530,16 @@ test_adm_csf_representable = executable('test_adm_csf_representable',
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
+)
+
+# ADR-1397: host tail of calc_psnrhvs() for the GPU twins. One running float
+# over every term of a plane, in term order and across block boundaries;
+# device-free, built with the strict FP arguments the library uses for it.
+test_psnr_hvs_score = executable('test_psnr_hvs_score',
+    ['test.c', 'test_psnr_hvs_score.c', '../src/feature/psnr_hvs_score.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
 )
 
 # Coverage round 3 — psnr_hvs.c: bpc>12 rejection, YUV400P chroma-disable,
@@ -3107,8 +3128,9 @@ test('test_cuda_cambi_parity', test_cuda_cambi_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
-# Round-2 GPU-kernel coverage gap-fill — psnr_hvs CPU vs. CUDA parity
-# (places=4). Covers the HVS contrast-sensitivity-weighted DCT path
+# psnr_hvs CPU vs. CUDA: bit-identical scores (ADR-1397) on every plane and
+# the combined score, at 8 to 12 bits, in 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4, and
+# at 3840x2160, where a twin that sums per block is 1e-2 dB from the CPU
 # (third_party/xiph/psnr_hvs.c vs. integer_psnr_hvs/psnr_hvs_score.cu).
 test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
     ['test.c', 'test_cuda_psnr_hvs_parity.c'],
@@ -5377,6 +5399,7 @@ test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
 test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
 test('test_adm_csf_representable', test_adm_csf_representable, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
+test('test_psnr_hvs_score', test_psnr_hvs_score, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_niqe', test_niqe, suite : ['fast'])
 test('test_brisque', test_brisque, suite : ['fast'])
