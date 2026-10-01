@@ -635,17 +635,6 @@
   now avoids intervals; CI's Ubuntu runner was not affected.
 
 
-- **A SYCL build with a single AOT target no longer fails the image check.**
-  Configuring `-Dsycl_icpx_aot_targets=dg2-g11`, the single-target example in
-  the SYCL overview, stopped at `sycl_aot_image_check` with "holds no ocloc fat
-  binary" although the build was correct: with exactly one target `ocloc`
-  writes each image as a bare native binary instead of a fat binary, and the
-  check only knew the fat binary. It now accepts both forms and reads the GPU
-  IP version of a bare binary from its product-config note, the value
-  `ocloc ids` prints for the target. It still fails the build when an image
-  lacks a listed target, is built for a GPU IP version that no listed target
-  uses, or is neither form. Builds with two or more targets are checked as
-  before.
 - **SYCL integer ADM row reduction runs spill-free on DG2 and restores Arc A380 parity under `xe`.**
   In `integer_adm_sycl.cpp`, `launch_csf_den_cm` kept nine 64-bit accumulators live across the
   column loop, which IGC compiled at SIMD16 with an 864 B/thread register spill on DG2 (Arc A380).
@@ -659,6 +648,19 @@
   (0.000e+00 delta) against CPU on both 576x324 (48/48 frames) and 3840x2160 (50/50 frames).
   Throughput at 4K on BBB 3840x2160 8-bit is 10.92 ms/frame vs 10.70 ms/frame before
   (ADR-1395, `T-SYCL-ADM-CM-SCRATCH-2026-09-30`).
+
+
+- **A SYCL build with a single AOT target no longer fails the image check.**
+  Configuring `-Dsycl_icpx_aot_targets=dg2-g11`, the single-target example in
+  the SYCL overview, stopped at `sycl_aot_image_check` with "holds no ocloc fat
+  binary" although the build was correct: with exactly one target `ocloc`
+  writes each image as a bare native binary instead of a fat binary, and the
+  check only knew the fat binary. It now accepts both forms and reads the GPU
+  IP version of a bare binary from its product-config note, the value
+  `ocloc ids` prints for the target. It still fails the build when an image
+  lacks a listed target, is built for a GPU IP version that no listed target
+  uses, or is neither form. Builds with two or more targets are checked as
+  before.
 
 
 - SYCL builds now contain the native Intel GPU code that `sycl_icpx_aot_targets`
