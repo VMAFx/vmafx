@@ -39,6 +39,38 @@ def aks():
 # ---------------------------------------------------------------------------
 
 
+_SYNTHETIC_SPECS = [
+    # source_a / libx264 / cq — three rows, includes a regression
+    ("source_a", "libx264", "cq", "p4", "30", "knob=bare", 2000, 92.0, 4000, True),
+    ("source_a", "libx264", "cq", "p4", "30", "knob=hq_recipe", 2010, 88.0, 5500, False),
+    ("source_a", "libx264", "cq", "p4", "26", "knob=better", 3500, 95.5, 4500, False),
+    # source_a / libx264 / vbr — bare + one improvement
+    ("source_a", "libx264", "vbr", "p4", "vbr2M", "knob=bare", 2000, 89.0, 3800, True),
+    ("source_a", "libx264", "vbr", "p4", "vbr2M", "knob=hq_recipe", 2050, 92.5, 5200, False),
+    # source_a / libx265 / cq
+    ("source_a", "libx265", "cq", "medium", "28", "knob=bare", 1500, 93.0, 8000, True),
+    ("source_a", "libx265", "cq", "slow", "28", "knob=better", 1450, 94.2, 12000, False),
+    # source_a / libx265 / vbr — tiebreaker case
+    ("source_a", "libx265", "vbr", "medium", "vbr1.5M", "knob=bare", 1500, 91.0, 8000, True),
+    ("source_a", "libx265", "vbr", "medium", "vbr1.5M", "knob=tieA", 1500, 91.0, 7500, False),
+    ("source_a", "libx265", "vbr", "medium", "vbr1.5M", "knob=tieB", 1500, 91.0, 9000, False),
+    # source_b / libx264 / cq
+    ("source_b", "libx264", "cq", "p4", "30", "knob=bare", 4000, 88.0, 3500, True),
+    ("source_b", "libx264", "cq", "p4", "26", "knob=better", 6000, 93.0, 4200, False),
+    # source_b / libx264 / vbr
+    ("source_b", "libx264", "vbr", "p4", "vbr3M", "knob=bare", 3000, 85.0, 3300, True),
+    ("source_b", "libx264", "vbr", "p4", "vbr3M", "knob=hq_recipe", 3050, 89.0, 4800, False),
+    # source_b / libx265 / cq
+    ("source_b", "libx265", "cq", "medium", "28", "knob=bare", 2500, 90.5, 8500, True),
+    ("source_b", "libx265", "cq", "slow", "28", "knob=better", 2400, 91.8, 11000, False),
+    ("source_b", "libx265", "cq", "veryslow", "26", "knob=best", 3500, 94.0, 18000, False),
+    # source_b / libx265 / vbr
+    ("source_b", "libx265", "vbr", "medium", "vbr2.5M", "knob=bare", 2500, 89.0, 8200, True),
+    ("source_b", "libx265", "vbr", "medium", "vbr2.5M", "knob=hq_recipe", 2550, 91.5, 10500, False),
+    ("source_b", "libx265", "vbr", "slow", "vbr2.5M", "knob=hq_recipe", 2530, 92.2, 14000, False),
+]
+
+
 def _synthetic_rows() -> list[dict]:
     """20-row synthetic JSONL fixture covering every code path.
 
@@ -54,306 +86,10 @@ def _synthetic_rows() -> list[dict]:
       vmaf at the same bitrate; one has lower encode_time_ms. The
       tiebreaker should pick the cheaper one.
     """
-    rows: list[dict] = []
-
-    # source_a / libx264 / cq — three rows, includes a regression
-    rows.append(
-        _row(
-            "source_a",
-            "libx264",
-            "cq",
-            "p4",
-            "30",
-            "knob=bare",
-            bitrate=2000,
-            vmaf=92.0,
-            enc_ms=4000,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx264",
-            "cq",
-            "p4",
-            "30",
-            "knob=hq_recipe",
-            bitrate=2010,
-            vmaf=88.0,
-            enc_ms=5500,
-            bare=False,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx264",
-            "cq",
-            "p4",
-            "26",
-            "knob=better",
-            bitrate=3500,
-            vmaf=95.5,
-            enc_ms=4500,
-            bare=False,
-        )
-    )
-
-    # source_a / libx264 / vbr — bare + one improvement
-    rows.append(
-        _row(
-            "source_a",
-            "libx264",
-            "vbr",
-            "p4",
-            "vbr2M",
-            "knob=bare",
-            bitrate=2000,
-            vmaf=89.0,
-            enc_ms=3800,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx264",
-            "vbr",
-            "p4",
-            "vbr2M",
-            "knob=hq_recipe",
-            bitrate=2050,
-            vmaf=92.5,
-            enc_ms=5200,
-            bare=False,
-        )
-    )
-
-    # source_a / libx265 / cq
-    rows.append(
-        _row(
-            "source_a",
-            "libx265",
-            "cq",
-            "medium",
-            "28",
-            "knob=bare",
-            bitrate=1500,
-            vmaf=93.0,
-            enc_ms=8000,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx265",
-            "cq",
-            "slow",
-            "28",
-            "knob=better",
-            bitrate=1450,
-            vmaf=94.2,
-            enc_ms=12000,
-            bare=False,
-        )
-    )
-
-    # source_a / libx265 / vbr — tiebreaker case (two rows tie on vmaf
-    # at the same bitrate; lower enc_ms wins)
-    rows.append(
-        _row(
-            "source_a",
-            "libx265",
-            "vbr",
-            "medium",
-            "vbr1.5M",
-            "knob=bare",
-            bitrate=1500,
-            vmaf=91.0,
-            enc_ms=8000,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx265",
-            "vbr",
-            "medium",
-            "vbr1.5M",
-            "knob=tieA",
-            bitrate=1500,
-            vmaf=91.0,
-            enc_ms=7500,
-            bare=False,
-        )
-    )
-    rows.append(
-        _row(
-            "source_a",
-            "libx265",
-            "vbr",
-            "medium",
-            "vbr1.5M",
-            "knob=tieB",
-            bitrate=1500,
-            vmaf=91.0,
-            enc_ms=9000,
-            bare=False,
-        )
-    )
-
-    # source_b / libx264 / cq
-    rows.append(
-        _row(
-            "source_b",
-            "libx264",
-            "cq",
-            "p4",
-            "30",
-            "knob=bare",
-            bitrate=4000,
-            vmaf=88.0,
-            enc_ms=3500,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx264",
-            "cq",
-            "p4",
-            "26",
-            "knob=better",
-            bitrate=6000,
-            vmaf=93.0,
-            enc_ms=4200,
-            bare=False,
-        )
-    )
-
-    # source_b / libx264 / vbr
-    rows.append(
-        _row(
-            "source_b",
-            "libx264",
-            "vbr",
-            "p4",
-            "vbr3M",
-            "knob=bare",
-            bitrate=3000,
-            vmaf=85.0,
-            enc_ms=3300,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx264",
-            "vbr",
-            "p4",
-            "vbr3M",
-            "knob=hq_recipe",
-            bitrate=3050,
-            vmaf=89.0,
-            enc_ms=4800,
-            bare=False,
-        )
-    )
-
-    # source_b / libx265 / cq
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "cq",
-            "medium",
-            "28",
-            "knob=bare",
-            bitrate=2500,
-            vmaf=90.5,
-            enc_ms=8500,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "cq",
-            "slow",
-            "28",
-            "knob=better",
-            bitrate=2400,
-            vmaf=91.8,
-            enc_ms=11000,
-            bare=False,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "cq",
-            "veryslow",
-            "26",
-            "knob=best",
-            bitrate=3500,
-            vmaf=94.0,
-            enc_ms=18000,
-            bare=False,
-        )
-    )
-
-    # source_b / libx265 / vbr
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "vbr",
-            "medium",
-            "vbr2.5M",
-            "knob=bare",
-            bitrate=2500,
-            vmaf=89.0,
-            enc_ms=8200,
-            bare=True,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "vbr",
-            "medium",
-            "vbr2.5M",
-            "knob=hq_recipe",
-            bitrate=2550,
-            vmaf=91.5,
-            enc_ms=10500,
-            bare=False,
-        )
-    )
-    rows.append(
-        _row(
-            "source_b",
-            "libx265",
-            "vbr",
-            "slow",
-            "vbr2.5M",
-            "knob=hq_recipe",
-            bitrate=2530,
-            vmaf=92.2,
-            enc_ms=14000,
-            bare=False,
-        )
-    )
-
-    return rows
+    return [
+        _row(s, c, rc, p, q, k, bitrate=b, vmaf=v, enc_ms=e, bare=bare)
+        for s, c, rc, p, q, k, b, v, e, bare in _SYNTHETIC_SPECS
+    ]
 
 
 def _row(source, codec, rc_mode, preset, quality, knob_combo, *, bitrate, vmaf, enc_ms, bare):

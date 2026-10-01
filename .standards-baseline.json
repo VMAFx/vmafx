@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T19:52:53Z",
+  "generated_at": "2026-10-01T20:23:19Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "c0b5ee34bbf428a22533a6245fad0a41cf99e914",
-  "total_infractions": 378,
+  "commit_sha": "e955b2fe61893fc15f8db2b60501e2f04f363f3d",
+  "total_infractions": 364,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1188,123 +1188,11 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_batch_materialize_mos_labels.py",
-      "line_number": 45,
-      "symbol": "test_batch_manifest_materializes_multiple_tables",
-      "message": "Function 'test_batch_manifest_materializes_multiple_tables' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_batch_materialize_mos_labels.py:45:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_batch_materialize_second_opinion_features.py",
-      "line_number": 39,
-      "symbol": "test_batch_manifest_joins_multiple_tables",
-      "message": "Function 'test_batch_manifest_joins_multiple_tables' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_batch_materialize_second_opinion_features.py:39:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_calibrate_nr_threshold.py",
-      "line_number": 87,
-      "symbol": "test_nr_threshold_calibration_records_run_provenance",
-      "message": "Function 'test_nr_threshold_calibration_records_run_provenance' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_calibrate_nr_threshold.py:87:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_calibrate_nr_threshold.py",
-      "line_number": 206,
-      "symbol": "test_nr_threshold_quality_gate_rejects_weak_correlation",
-      "message": "Function 'test_nr_threshold_quality_gate_rejects_weak_correlation' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_calibrate_nr_threshold.py:206:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_chug.py",
-      "line_number": 415,
-      "symbol": "test_chug_feature_materialiser_writes_mean_features",
-      "message": "Function 'test_chug_feature_materialiser_writes_mean_features' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_chug.py:415:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "ai/tests/test_chug_extract_features_smoke.py",
       "line_number": 115,
       "symbol": "test_chug_extract_features_floor_below_identity_on_degraded_pair",
       "message": "Function 'test_chug_extract_features_floor_below_identity_on_degraded_pair' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/tests/test_chug_extract_features_smoke.py:115:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_enrich_k150k_parquet_metadata.py",
-      "line_number": 81,
-      "symbol": "test_cli_enriches_existing_parquet",
-      "message": "Function 'test_cli_enriches_existing_parquet' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_enrich_k150k_parquet_metadata.py:81:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_extract_k150k_consistency.py",
-      "line_number": 84,
-      "symbol": "test_consistency_check_raises_on_done_parquet_mismatch",
-      "message": "Function 'test_consistency_check_raises_on_done_parquet_mismatch' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_extract_k150k_consistency.py:84:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_knob_sweep_analysis.py",
-      "line_number": 42,
-      "symbol": "_synthetic_rows",
-      "message": "Function '_synthetic_rows' (315 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_knob_sweep_analysis.py:42:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_measure_quant_drop_per_ep.py",
-      "line_number": 17,
-      "symbol": "test_quant_ep_report_records_run_provenance",
-      "message": "Function 'test_quant_ep_report_records_run_provenance' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_measure_quant_drop_per_ep.py:17:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_merge_corpora.py",
-      "line_number": 41,
-      "symbol": "_fixture_row",
-      "message": "Function '_fixture_row' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_merge_corpora.py:41:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_mos_label_batch_runs_smoke.py",
-      "line_number": 176,
-      "symbol": "test_konvid_batch_synthetic_run",
-      "message": "Function 'test_konvid_batch_synthetic_run' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_mos_label_batch_runs_smoke.py:176:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_mos_label_batch_runs_smoke.py",
-      "line_number": 251,
-      "symbol": "test_chug_batch_synthetic_run",
-      "message": "Function 'test_chug_batch_synthetic_run' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_mos_label_batch_runs_smoke.py:251:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_ptq_scripts.py",
-      "line_number": 149,
-      "symbol": "test_ptq_static_full_roundtrip",
-      "message": "Function 'test_ptq_static_full_roundtrip' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_ptq_scripts.py:149:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py",
-      "line_number": 141,
-      "symbol": "test_main_loso_report_records_run_provenance",
-      "message": "Function 'test_main_loso_report_records_run_provenance' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py:141:HISS-04"
     },
     {
       "rule_id": "HISS-04",

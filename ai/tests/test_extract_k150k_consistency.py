@@ -81,6 +81,23 @@ def _build_args(out_path: Path) -> argparse.Namespace:
     )
 
 
+def _setup_mismatched_checkpoint(k150k_module, out_path: Path) -> tuple[Path, set[str]]:
+    done_path = out_path.with_suffix(".done")
+    done_path.write_text(
+        "\n".join(f"clip_{i:04d}.mp4" for i in range(100)) + "\n",
+        encoding="utf-8",
+    )
+    done_set = k150k_module._load_done_set(done_path)
+    assert len(done_set) == 100
+
+    parquet_rows = pd.DataFrame(
+        [{"clip_name": f"clip_{i:04d}.mp4", "vmaf": 95.0} for i in range(50)]
+    )
+    parquet_rows.to_parquet(out_path, index=False)
+    assert k150k_module._parquet_row_count(out_path) == 50
+    return done_path, done_set
+
+
 def test_consistency_check_raises_on_done_parquet_mismatch(k150k_module, tmp_path: Path) -> None:
     """Restart no-op branch must raise when ``.done`` > parquet rows.
 
@@ -95,24 +112,9 @@ def test_consistency_check_raises_on_done_parquet_mismatch(k150k_module, tmp_pat
     re-extracts.
     """
     out_path = tmp_path / "k150k_features.parquet"
-    done_path = out_path.with_suffix(".done")
+    done_path, done_set = _setup_mismatched_checkpoint(k150k_module, out_path)
 
-    # 1. Build a .done checkpoint with 100 entries.
-    done_path.write_text(
-        "\n".join(f"clip_{i:04d}.mp4" for i in range(100)) + "\n",
-        encoding="utf-8",
-    )
-    done_set = k150k_module._load_done_set(done_path)
-    assert len(done_set) == 100
-
-    # 2. Write a parquet with only 50 rows.
-    parquet_rows = pd.DataFrame(
-        [{"clip_name": f"clip_{i:04d}.mp4", "vmaf": 95.0} for i in range(50)]
-    )
-    parquet_rows.to_parquet(out_path, index=False)
-    assert k150k_module._parquet_row_count(out_path) == 50
-
-    # 3. Staging is absent (operator-cleaned).
+    # Staging is absent (operator-cleaned).
     staging_path = k150k_module._staging_path(out_path)
     assert not staging_path.exists()
 

@@ -412,6 +412,34 @@ class _FakeFeatureRunner:
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
 
+def _assert_chug_materialised_row(row: dict[str, object]) -> None:
+    assert row["feature_source"] == "chug-fr-ref-aligned"
+    assert row["feature_alignment"] == "distorted_scaled_to_reference"
+    assert row["feature_ref_src"] == "ref.mp4"
+    assert row["feature_width"] == 32
+    assert row["feature_height"] == 18
+    assert row["split"] in {"train", "val", "test"}
+    assert row["chug_split_key"] == "content-a.mp4"
+    assert row["chug_split_policy"] == "content-name-blake2s-80-10-10"
+    assert row["n_feature_frames"] == 2
+    assert row["feature_ref_color_transfer"] == "smpte2084"
+    assert row["feature_ref_transfer_class"] == "pq"
+    assert row["feature_dis_color_transfer"] == "arib-std-b67"
+    assert row["feature_dis_transfer_class"] == "hlg"
+    assert row["feature_ref_color_primaries"] == "bt2020"
+    assert row["feature_dis_color_space"] == "bt2020nc"
+    assert row["feature_ref_max_content_nits"] == 1000.0
+    assert row["feature_dis_max_average_nits"] == 400.0
+    assert row["feature_ref_luma_std"] == 0.0
+    assert row["feature_ref_sharpness_laplacian_var"] == 0.0
+    assert row["feature_dis_luma_std"] > 0.0
+    assert row["feature_dis_sharpness_laplacian_var"] > 0.0
+    assert row["feature_delta_luma_std"] > 0.0
+    assert row["feature_delta_noise_lap_mad"] > 0.0
+    assert row["adm2"] == 2.0
+    assert row["adm2_mean"] == 2.0
+
+
 def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
     chug_jsonl = tmp_path / "chug.jsonl"
     output = tmp_path / "features.jsonl"
@@ -461,31 +489,7 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
 
     assert written == 1
     row = json.loads(output.read_text(encoding="utf-8"))
-    assert row["feature_source"] == "chug-fr-ref-aligned"
-    assert row["feature_alignment"] == "distorted_scaled_to_reference"
-    assert row["feature_ref_src"] == "ref.mp4"
-    assert row["feature_width"] == 32
-    assert row["feature_height"] == 18
-    assert row["split"] in {"train", "val", "test"}
-    assert row["chug_split_key"] == "content-a.mp4"
-    assert row["chug_split_policy"] == "content-name-blake2s-80-10-10"
-    assert row["n_feature_frames"] == 2
-    assert row["feature_ref_color_transfer"] == "smpte2084"
-    assert row["feature_ref_transfer_class"] == "pq"
-    assert row["feature_dis_color_transfer"] == "arib-std-b67"
-    assert row["feature_dis_transfer_class"] == "hlg"
-    assert row["feature_ref_color_primaries"] == "bt2020"
-    assert row["feature_dis_color_space"] == "bt2020nc"
-    assert row["feature_ref_max_content_nits"] == 1000.0
-    assert row["feature_dis_max_average_nits"] == 400.0
-    assert row["feature_ref_luma_std"] == 0.0
-    assert row["feature_ref_sharpness_laplacian_var"] == 0.0
-    assert row["feature_dis_luma_std"] > 0.0
-    assert row["feature_dis_sharpness_laplacian_var"] > 0.0
-    assert row["feature_delta_luma_std"] > 0.0
-    assert row["feature_delta_noise_lap_mad"] > 0.0
-    assert row["adm2"] == 2.0
-    assert row["adm2_mean"] == 2.0
+    _assert_chug_materialised_row(row)
 
 
 def test_chug_visual_signal_helper_reads_yuv10_luma(tmp_path: Path) -> None:

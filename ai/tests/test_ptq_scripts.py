@@ -142,24 +142,10 @@ OP_ALLOWLIST_STATIC = {
 }
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("onnxruntime") is None or importlib.util.find_spec("onnx") is None,
-    reason="onnxruntime or onnx not installed; skipping full ptq_static round-trip",
-)
-def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
-    """End-to-end static PTQ: build a tiny Conv+Gemm ONNX, calibrate with .npz,
-    and assert output is in QDQ format (all node op_types within allowlist,
-    no QLinear* or QGemm ops). Proof test: fails if format ever flips to QOperator."""
-    pytest.importorskip("onnxruntime.quantization")
-
+def _build_tiny_conv_gemm_onnx(src: Path) -> None:
     import numpy as np
     import onnx
     from onnx import TensorProto, helper
-
-    src = tmp_path / "tiny_conv_gemm.onnx"
-    cal = tmp_path / "calibration.npz"
-    dst = tmp_path / "tiny_conv_gemm.int8.onnx"
-    report = tmp_path / "ptq_static_report.json"
 
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 2])
@@ -195,6 +181,27 @@ def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
     )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
     onnx.save(model, str(src))
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("onnxruntime") is None or importlib.util.find_spec("onnx") is None,
+    reason="onnxruntime or onnx not installed; skipping full ptq_static round-trip",
+)
+def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
+    """End-to-end static PTQ: build a tiny Conv+Gemm ONNX, calibrate with .npz,
+    and assert output is in QDQ format (all node op_types within allowlist,
+    no QLinear* or QGemm ops). Proof test: fails if format ever flips to QOperator."""
+    pytest.importorskip("onnxruntime.quantization")
+
+    import numpy as np
+    import onnx
+
+    src = tmp_path / "tiny_conv_gemm.onnx"
+    cal = tmp_path / "calibration.npz"
+    dst = tmp_path / "tiny_conv_gemm.int8.onnx"
+    report = tmp_path / "ptq_static_report.json"
+
+    _build_tiny_conv_gemm_onnx(src)
 
     cal_data = np.random.RandomState(42).randn(4, 1, 4, 4).astype(np.float32)
     np.savez(cal, x=cal_data)

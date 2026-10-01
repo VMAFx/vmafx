@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import measure_quant_drop_per_ep
 
 
-def test_quant_ep_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def _setup_quant_test_fixtures(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
     repo = tmp_path / "repo"
     script_path = repo / "ai" / "scripts" / "measure_quant_drop_per_ep.py"
     model_dir = repo / "model" / "tiny"
@@ -40,6 +40,11 @@ def test_quant_ep_report_records_run_provenance(monkeypatch, tmp_path: Path) -> 
         ),
         encoding="utf-8",
     )
+    return repo, script_path, model_dir, out_dir, registry
+
+
+def test_quant_ep_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+    repo, script_path, model_dir, out_dir, registry = _setup_quant_test_fixtures(tmp_path)
 
     def fake_run_model(*_args, **_kwargs):
         return {

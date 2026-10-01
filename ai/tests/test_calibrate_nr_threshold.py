@@ -84,7 +84,7 @@ def test_detect_yuv_geometry_knows_netflix_public_1080p_names() -> None:
     )
 
 
-def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def _setup_nr_test_fixtures(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     yuv = corpus / "sample_64x64.yuv"
@@ -95,6 +95,23 @@ def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: 
     model_onnx = tmp_path / "nr_metric_v1.onnx"
     model_onnx.write_bytes(b"fake-onnx")
     report_dir = tmp_path / "reports"
+    return corpus, model_json, model_onnx, report_dir
+
+
+def _assert_calibration_provenance(payload: dict, model_json: Path, report_dir: Path) -> None:
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/calibrate_nr_threshold.py"
+    assert provenance["inputs"]["requested_corpus"]["kind"] == "directory"
+    assert provenance["inputs"]["model_onnx"]["kind"] == "file"
+    assert provenance["outputs"]["model_json"]["path"] == str(model_json)
+    assert provenance["outputs"]["markdown_report"]["path"].startswith(str(report_dir))
+    assert provenance["args"]["max_clips"] == 1
+    assert provenance["args"]["nr_ep"] == "cpu"
+
+
+def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+    corpus, model_json, model_onnx, report_dir = _setup_nr_test_fixtures(tmp_path)
 
     def fake_encode(*_args, output: Path, **_kwargs) -> bool:
         output.write_bytes(b"encoded")
@@ -147,15 +164,7 @@ def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: 
     assert payload["calibration_min_samples"] == 2
     assert payload["calibration_min_plcc"] == 0.7
     assert payload["calibration_allow_weak"] is False
-    provenance = payload["run_provenance"]
-    assert provenance["schema"] == "ai-run-provenance-v1"
-    assert provenance["entrypoint"]["path"] == "ai/scripts/calibrate_nr_threshold.py"
-    assert provenance["inputs"]["requested_corpus"]["kind"] == "directory"
-    assert provenance["inputs"]["model_onnx"]["kind"] == "file"
-    assert provenance["outputs"]["model_json"]["path"] == str(model_json)
-    assert provenance["outputs"]["markdown_report"]["path"].startswith(str(report_dir))
-    assert provenance["args"]["max_clips"] == 1
-    assert provenance["args"]["nr_ep"] == "cpu"
+    _assert_calibration_provenance(payload, model_json, report_dir)
 
 
 def test_nr_threshold_single_sample_requires_delta_override(monkeypatch, tmp_path: Path) -> None:
@@ -204,16 +213,7 @@ def test_nr_threshold_single_sample_requires_delta_override(monkeypatch, tmp_pat
 
 
 def test_nr_threshold_quality_gate_rejects_weak_correlation(monkeypatch, tmp_path: Path) -> None:
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
-    yuv = corpus / "sample_64x64.yuv"
-    yuv.write_bytes(b"\x00" * 64)
-
-    model_json = tmp_path / "nr_metric_v1.json"
-    model_json.write_text('{"id": "nr_metric_v1"}\n', encoding="utf-8")
-    model_onnx = tmp_path / "nr_metric_v1.onnx"
-    model_onnx.write_bytes(b"fake-onnx")
-    report_dir = tmp_path / "reports"
+    corpus, model_json, model_onnx, report_dir = _setup_nr_test_fixtures(tmp_path)
 
     def fake_encode(*_args: Any, output: Path, **_kwargs: Any) -> bool:
         output.write_bytes(b"encoded")

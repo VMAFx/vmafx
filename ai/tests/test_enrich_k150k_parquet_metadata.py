@@ -78,7 +78,7 @@ def test_enrich_frame_overwrite_replaces_existing_metadata() -> None:
     assert stats["updated_cells"] == 1
 
 
-def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+def _setup_enrich_fixture_data(tmp_path: Path) -> tuple[Path, Path, Path]:
     features = tmp_path / "features.parquet"
     metadata = tmp_path / "chug.jsonl"
     out = tmp_path / "enriched.parquet"
@@ -110,6 +110,11 @@ def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+    return features, metadata, out
+
+
+def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+    features, metadata, out = _setup_enrich_fixture_data(tmp_path)
 
     proc = subprocess.run(
         [

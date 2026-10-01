@@ -42,8 +42,7 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
-    module = _load_module()
+def _setup_batch_manifest_fixtures(tmp_path: Path) -> Path:
     _write_jsonl(tmp_path / "features-a.jsonl", [{"video_id": "a"}, {"video_id": "b"}])
     _write_jsonl(tmp_path / "features-b.jsonl", [{"video_id": "c"}])
     _write_jsonl(
@@ -78,6 +77,12 @@ def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    return manifest
+
+
+def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
+    module = _load_module()
+    manifest = _setup_batch_manifest_fixtures(tmp_path)
     report_json = tmp_path / "report.json"
     report_md = tmp_path / "report.md"
 

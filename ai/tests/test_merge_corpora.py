@@ -38,6 +38,43 @@ def _load_merge_module():
     return module
 
 
+def _fixture_row_aggregates() -> dict[str, object]:
+    return {
+        # HDR metadata trio (ADR-0223): defaults for SDR sources.
+        "hdr_transfer": "bt709",
+        "hdr_primaries": "bt709",
+        "hdr_forced": False,
+        # TransNet-V2 shot-metadata trio (ADR-0223 / research-0086):
+        "shot_count": 0,
+        "shot_avg_duration_sec": 0.0,
+        "shot_duration_std_sec": 0.0,
+        # CANONICAL6_AGGREGATE_KEYS: canonical-6 per-feature mean+std aggregates.
+        "vif_scale0_mean": 0.0,
+        "vif_scale1_mean": 0.0,
+        "vif_scale2_mean": 0.0,
+        "vif_scale3_mean": 0.0,
+        "motion2_mean": 0.0,
+        "adm2_mean": 0.0,
+        "vif_scale0_std": 0.0,
+        "vif_scale1_std": 0.0,
+        "vif_scale2_std": 0.0,
+        "vif_scale3_std": 0.0,
+        "motion2_std": 0.0,
+        "adm2_std": 0.0,
+        # ADR-0332: per-frame encoder-internal stats aggregates.
+        "enc_internal_qp_mean": 0.0,
+        "enc_internal_qp_std": 0.0,
+        "enc_internal_bits_mean": 0.0,
+        "enc_internal_bits_std": 0.0,
+        "enc_internal_mv_mean": 0.0,
+        "enc_internal_mv_std": 0.0,
+        "enc_internal_itex_mean": 0.0,
+        "enc_internal_ptex_mean": 0.0,
+        "enc_internal_intra_ratio": 0.0,
+        "enc_internal_skip_ratio": 0.0,
+    }
+
+
 def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
     """Build a minimal :data:`CORPUS_ROW_KEYS`-complete row."""
     base = {
@@ -67,43 +104,8 @@ def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
         "vmaf_binary_version": "v3.0.0-lusoris.1",
         "exit_status": 0,
         "clip_mode": "full",
-        # HDR metadata trio (ADR-0223): defaults for SDR sources.
-        "hdr_transfer": "bt709",
-        "hdr_primaries": "bt709",
-        "hdr_forced": False,
-        # TransNet-V2 shot-metadata trio (ADR-0223 / research-0086):
-        # `shot_count == 0` flags "shot detection unavailable" so
-        # downstream consumers can opt out without a schema bump.
-        "shot_count": 0,
-        "shot_avg_duration_sec": 0.0,
-        "shot_duration_std_sec": 0.0,
-        # CANONICAL6_AGGREGATE_KEYS: canonical-6 per-feature mean+std
-        # aggregates. Zeros are fine for fixture rows.
-        "vif_scale0_mean": 0.0,
-        "vif_scale1_mean": 0.0,
-        "vif_scale2_mean": 0.0,
-        "vif_scale3_mean": 0.0,
-        "motion2_mean": 0.0,
-        "adm2_mean": 0.0,
-        "vif_scale0_std": 0.0,
-        "vif_scale1_std": 0.0,
-        "vif_scale2_std": 0.0,
-        "vif_scale3_std": 0.0,
-        "motion2_std": 0.0,
-        "adm2_std": 0.0,
-        # ADR-0332: per-frame encoder-internal stats aggregates.
-        # Default zeros for hardware/non-internal-stats codecs.
-        "enc_internal_qp_mean": 0.0,
-        "enc_internal_qp_std": 0.0,
-        "enc_internal_bits_mean": 0.0,
-        "enc_internal_bits_std": 0.0,
-        "enc_internal_mv_mean": 0.0,
-        "enc_internal_mv_std": 0.0,
-        "enc_internal_itex_mean": 0.0,
-        "enc_internal_ptex_mean": 0.0,
-        "enc_internal_intra_ratio": 0.0,
-        "enc_internal_skip_ratio": 0.0,
     }
+    base.update(_fixture_row_aggregates())
     # Sanity: every fixture row must satisfy the schema we test against.
     assert set(base.keys()) >= set(CORPUS_ROW_KEYS)
     return base

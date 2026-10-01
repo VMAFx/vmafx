@@ -173,18 +173,7 @@ def test_chug_manifest_key_columns(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_konvid_batch_synthetic_run(tmp_path: Path) -> None:
-    """End-to-end batch run using synthetic KonViD-shaped data.
-
-    Replaces corpus paths with in-memory JSONL fixtures so CI can run
-    without real corpus data on disk.  Verifies the batch runner emits
-    ``mos`` on matched rows and writes a valid ``mos-label-materializer-batch-v1``
-    report.
-    """
-    module = _load_module()
-
-    # Build synthetic feature + label tables that match the KonViD key schema.
-    # KonViD clip ids are 6-digit integers embedded in the filename.
+def _setup_konvid_synthetic_manifest(tmp_path: Path) -> tuple[Path, Path, Path]:
     feature_rows = [
         {"key": "KoNViD_1k_video/123456_600.mp4"},
         {"key": "KoNViD_1k_video/234567_600.mp4"},
@@ -224,6 +213,19 @@ def test_konvid_batch_synthetic_run(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    return manifest, report_json, out_path
+
+
+def test_konvid_batch_synthetic_run(tmp_path: Path) -> None:
+    """End-to-end batch run using synthetic KonViD-shaped data.
+
+    Replaces corpus paths with in-memory JSONL fixtures so CI can run
+    without real corpus data on disk.  Verifies the batch runner emits
+    ``mos`` on matched rows and writes a valid ``mos-label-materializer-batch-v1``
+    report.
+    """
+    module = _load_module()
+    manifest, report_json, out_path = _setup_konvid_synthetic_manifest(tmp_path)
 
     rc = module.main(["--manifest", str(manifest), "--report-json", str(report_json)])
     assert rc == 0, f"batch runner exited {rc}"
@@ -248,15 +250,7 @@ def test_konvid_batch_synthetic_run(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_chug_batch_synthetic_run(tmp_path: Path) -> None:
-    """End-to-end batch run using synthetic CHUG-shaped data.
-
-    CHUG video IDs are opaque strings (not file paths), so the manifest
-    uses ``key_normalize: raw`` and the same column on both sides.
-    Verifies the batch runner joins on raw-string keys and emits ``mos``.
-    """
-    module = _load_module()
-
+def _setup_chug_synthetic_manifest(tmp_path: Path) -> tuple[Path, Path, Path]:
     feature_rows = [
         {"chug_video_id": "chug-clip-001", "adm2": 0.95},
         {"chug_video_id": "chug-clip-002", "adm2": 0.88},
@@ -294,6 +288,18 @@ def test_chug_batch_synthetic_run(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    return manifest, report_json, out_path
+
+
+def test_chug_batch_synthetic_run(tmp_path: Path) -> None:
+    """End-to-end batch run using synthetic CHUG-shaped data.
+
+    CHUG video IDs are opaque strings (not file paths), so the manifest
+    uses ``key_normalize: raw`` and the same column on both sides.
+    Verifies the batch runner joins on raw-string keys and emits ``mos``.
+    """
+    module = _load_module()
+    manifest, report_json, out_path = _setup_chug_synthetic_manifest(tmp_path)
 
     rc = module.main(["--manifest", str(manifest), "--report-json", str(report_json)])
     assert rc == 0, f"batch runner exited {rc}"
