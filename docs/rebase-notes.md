@@ -56551,3 +56551,53 @@ Verification:
   `submit` / `collect`, before `init()` can swap callbacks.
 - Guard: `core/test/test_async_extractor_thread_pool.c` (mock extractors, no
   device).
+## ADR-1401 — psnr_hvs_sycl and psnr_hvs_hip return the CPU's scores bit for bit (2026-10-01)
+
+`fix/psnr-hvs-sycl-hip-exact-sum`, Research-1401, ADR-1401 (implements ADR-1397 for SYCL and HIP).
+
+- `core/src/feature/sycl/sycl_exact_fp.h`: `isqrt_floor50()` and
+  `sqrt_prod_rn(a, b)` (new, fork-local): the fp32 rounding of the square root
+  of the exact product, which is what a host returns for
+  `(float)sqrt((double)a * (double)b)`. Integer arithmetic only; the header
+  still must not name the fp64 type.
+- `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: the kernel stores the 64
+  terms of every block (`hvs_store_terms`) instead of their sum. The masking
+  table is a compile-time constant built from the CPU's double product
+  (`hvs_mask_value`, `MASK_TABLES`), each work-item forms its own threshold
+  with `sqrt_prod_rn()` (`hvs_threshold`) and the pair exchanges that value,
+  and the coefficient error is an integer `sycl::abs()`. The readback is
+  `HVS_TERMS` (64) floats per block (`hvs_terms_bytes`), `args.terms` replaces
+  `args.partials`, and `reduce_hvs_planes()` / `append_hvs_scores()` call
+  `psnr_hvs_score.h`. Keep the kernel free of private arrays and of a sum of
+  terms; `hvs_mask_value()` is the only place the TU may use `double` for
+  device data, and only at compile time.
+- `core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip`,
+  `integer_psnr_hvs_hip.{c,h}`: the same change in the CUDA kernel's form
+  (`HVS_TABLES`, `hvs_threshold` with a double product and root,
+  `hvs_store_terms`, `PSNR_HVS_HIP_TERMS`, `psnr_hvs_terms_bytes`).
+- `core/src/meson.build`: `'psnr_hvs_score'` joins `hip_cu_extra_flags` with
+  `-ffp-contract=off -fhip-fp32-correctly-rounded-divide-sqrt`. Keep it when
+  resolving a conflict in that dictionary. The SYCL TU needs no entry: every
+  SYCL feature TU has the strict line of ADR-1367.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["psnr_hvs"]` is
+  `cuda`, `sycl`, `hip`. `FEATURE_TOLERANCE["psnr_hvs"]`, the calibration rows
+  and `area_tolerance_factor()` are unchanged; no gate backend reads them for
+  `psnr_hvs` any more.
+- Tests: `core/test/psnr_hvs_twin_parity.h` (new) holds the fixtures and the
+  bit comparison; `test_cuda_psnr_hvs_parity`, `test_sycl_psnr_hvs_parity` and
+  `test_hip_psnr_hvs_parity` are thin wrappers that describe their backend. A
+  test without a device now exits 77 (skipped) instead of 0.
+  `test_sycl_fp_arith_contract` and its probe gain a fourth result
+  (`sqrt_prod_rn`) and a midpoint operand set;
+  `test_psnr_hvs_twin_exact_sum_contract.py` covers the three twins and the
+  helper.
+
+No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
+are unchanged (no CPU extractor code is touched). `psnr_hvs_sycl` and
+`psnr_hvs_hip` scores move to the CPU's: by up to 8.4e-5 dB on the Netflix
+576x324 pair and 1.7e-2 dB at 3840x2160. The Metal twin is untouched and still
+sums per block. Measured on an Arc A380 (`xe` driver) and a gfx1036 (`zeus`):
+every frame of the Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080
+checkerboard pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals
+`--backend cpu` of the same binary at `--precision max`. Re-verify after a
+rebase that touches these files with the reproducer of Research-1401.

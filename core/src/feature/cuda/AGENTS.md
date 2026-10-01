@@ -262,7 +262,9 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   - no sum of terms in kernel or host TU (per-block partials round
     differently: 1e-2 dB at 3840x2160).
   Guards: `test_cuda_psnr_hvs_parity{,_large}` (device, `==` on all four
-  outputs, 3840x2160 included), `test_psnr_hvs_twin_exact_sum_contract.py`
+  outputs, 3840x2160 included; cases live in
+  `core/test/psnr_hvs_twin_parity.h`, shared with the SYCL and HIP twins,
+  ADR-1401), `test_psnr_hvs_twin_exact_sum_contract.py`
   and `test_psnr_hvs_score` (device-free). Gate cell = tolerance 0
   (`EXACT_TWINS`, `scripts/ci/cross_backend_calibration.py`). Upstream
   change to `calc_psnrhvs()` arithmetic or order -> mirror it here in

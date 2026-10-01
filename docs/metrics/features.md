@@ -756,9 +756,10 @@ DCT block is vectorized 8-rows-in-parallel via butterfly→transpose→
 butterfly→transpose; float accumulators stay scalar by construction
 to preserve byte-identity with the reference. Verified bit-identical
 to scalar on all three Netflix golden pairs; ~3.58× DCT microbench
-speedup on AVX2. GPU twins: `psnr_hvs_cuda` (bit-identical to the CPU,
-[ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)), `psnr_hvs_sycl` and
-`psnr_hvs_hip` (held to a tolerance); see
+speedup on AVX2. GPU twins: `psnr_hvs_cuda`, `psnr_hvs_sycl` and
+`psnr_hvs_hip`, all three bit-identical to the CPU
+([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md),
+[ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md)); see
 [agreement with the CPU extractor](psnr-hvs.md#agreement-with-the-cpu-extractor).
 
 ### SSIM / MS-SSIM

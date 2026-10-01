@@ -93,6 +93,22 @@ linked AGENTS.md before resolving conflicts.
   `test_psnr_hvs_score` guard it without a device, `test_cuda_psnr_hvs_parity`
   on one; the parity gate compares the twin with tolerance 0 (`EXACT_TWINS`).
   See [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **`psnr_hvs_sycl` and `psnr_hvs_hip` return the CPU's scores bit for bit ([ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md))**:
+  both store the 64 terms `calc_psnrhvs()` sums per block and call
+  `core/src/feature/psnr_hvs_score.c`, as the CUDA twin does. The HIP kernel
+  (`psnr_hvs_score.hip`) takes the masking table and the threshold in
+  `double` and is built with `-ffp-contract=off
+  -fhip-fp32-correctly-rounded-divide-sqrt` (`hip_cu_extra_flags`). The SYCL
+  kernel has no fp64: its masking table is a compile-time constant and its
+  threshold comes from `sqrt_prod_rn()` in
+  `core/src/feature/sycl/sycl_exact_fp.h` (integer product and integer square
+  root); it must stay free of scratch memory. A change to `calc_psnrhvs()` or
+  `extract()` in `third_party/xiph/psnr_hvs.c` changes both kernels in the
+  same PR. `test_psnr_hvs_twin_exact_sum_contract.py` guards all three twins
+  without a device; `test_sycl_psnr_hvs_parity`, `test_hip_psnr_hvs_parity`
+  and `test_sycl_fp_arith_contract` on one. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
 - **psnr chroma GPU twins (T3-15(b), PR #204)** — `psnr_cb` /

@@ -4,7 +4,8 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  psnr_hvs feature extractor on the SYCL backend
- *  (T7-23 / ADR-0188 / ADR-0191, GPU long-tail batch 2 part 3c).
+ *  (T7-23 / ADR-0188 / ADR-0191 / ADR-1397 / ADR-1401, GPU long-tail batch 2
+ *  part 3c).
  *  SYCL twin of psnr_hvs_cuda and psnr_hvs_hip.
  *
  *  Self-contained submit/collect on the primary queue. Reads the
@@ -16,23 +17,41 @@
  *  One dispatch for all active planes, two work-items per 8x8 block
  *  (step 7): one for the reference, one for the distorted image. Each
  *  stages its 64 samples in local memory, takes the variance ratio,
- *  runs the integer 8x8 DCT in place and sums its masking energy, all
- *  in calc_psnrhvs()'s i, j order; the reference work-item then scores
- *  the block from both coefficient sets. Per-block float arithmetic is
- *  the previous kernel's expression for expression, so block scores
- *  and the host's block-order plane sums are bit-identical to it.
+ *  runs the integer 8x8 DCT in place, sums its masking energy and forms
+ *  its masking threshold, all in calc_psnrhvs()'s i, j order; the
+ *  reference work-item then stores the block's 64 masked coefficient
+ *  errors from both coefficient sets.
  *  The DCT must stay in local memory, never in a work-item's private
  *  arrays: that footprint crashed the Xe2 GPU compiler at SIMD32
  *  (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29).
  *
- *  fp64-free (Intel Arc A380 lacks native fp64 — same constraint
- *  as ssim_sycl / ms_ssim_sycl).
+ *  ADR-1397 / ADR-1401: the scores are the CPU extractor's bit for bit. The kernel
+ *  reproduces calc_psnrhvs() (third_party/xiph/psnr_hvs.c) operation for
+ *  operation and stores every term it adds to its running sum, in its
+ *  order; reduce_hvs_planes() hands each plane's terms to
+ *  vmaf_psnr_hvs_plane_score(), which adds them into one float as the CPU
+ *  does. Four things carry that and must stay:
+ *    - the masking table is the CPU's, (csf * 0.3885746225901003)^2 taken
+ *      in the host's wide type at compile time and stored as float
+ *      (hvs_mask_value);
+ *    - the masking threshold is the fp32 rounding of the square root of
+ *      the exact energy * ratio product (sqrt_prod_rn in sycl_exact_fp.h),
+ *      which is what the CPU's wide product and root give;
+ *    - the coefficient error is the integer difference, converted once;
+ *    - the TU is built with the SYCL strict FP line (ADR-1367): no
+ *      contraction, correctly rounded `/`.
+ *  The readback is 256 bytes per block (about 65 MB for a 3840x2160
+ *  4:2:0 frame); a per-block sum on the device is cheaper but rounds
+ *  differently from the CPU.
+ *
+ *  The kernel is fp64-free (Intel Arc A380 lacks native fp64, ADR-0220)
+ *  and uses no scratch memory: no private arrays, no spilled registers
+ *  (ADR-1395, T-SYCL-PSNR-HVS-XE-SCRATCH-2026-09-30).
  */
 
 #include <sycl/sycl.hpp>
 
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -42,9 +61,11 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/psnr_hvs_score.h"
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
+#include "sycl_exact_fp.h"
 
 namespace
 {
@@ -54,6 +75,11 @@ static constexpr int PSNR_HVS_STEP = 7;
 static constexpr int PSNR_HVS_NUM_PLANES = 3;
 static constexpr size_t WG_DIM = 8;
 static constexpr size_t BLOCK_AREA = WG_DIM * WG_DIM;
+/* Masked coefficient errors calc_psnrhvs() adds per 8x8 block: what the
+ * kernel stores and vmaf_psnr_hvs_plane_score() sums. */
+static constexpr size_t HVS_TERMS = BLOCK_AREA;
+static_assert(HVS_TERMS == VMAF_PSNR_HVS_TERMS_PER_BLOCK,
+              "the kernel stores what vmaf_psnr_hvs_plane_score() sums per block");
 
 static constexpr float CSF_TABLES[3][64] = {
     /* Y */
@@ -99,6 +125,33 @@ static constexpr float CSF_TABLES[3][64] = {
      0.330555063063f, 0.593906509971f, 0.802254508198f, 0.706020324706f, 0.587716619023f,
      0.478717061273f, 0.393021669543f, 0.330555063063f, 0.285345396658f}};
 
+/* calc_psnrhvs(): mask = (csf * 0.3885746225901003) * (csf * 0.3885746225901003),
+ * a double product stored as float. Evaluated by the host compiler only: the
+ * kernel reads the finished float table and stays fp64-free (ADR-0220). */
+static constexpr float hvs_mask_value(float csf)
+{
+    const double scaled = (double)csf * 0.3885746225901003;
+    return (float)(scaled * scaled);
+}
+
+struct HvsMaskTables {
+    float value[PSNR_HVS_NUM_PLANES][BLOCK_AREA];
+};
+
+static constexpr HvsMaskTables hvs_make_mask_tables()
+{
+    HvsMaskTables tables = {};
+    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; plane++) {
+        for (size_t index = 0; index < BLOCK_AREA; index++) {
+            tables.value[plane][index] = hvs_mask_value(CSF_TABLES[plane][index]);
+        }
+    }
+    return tables;
+}
+
+/* Constant-initialised: the device image carries it as static data. */
+static constexpr HvsMaskTables MASK_TABLES = hvs_make_mask_tables();
+
 } // namespace
 
 namespace
@@ -118,11 +171,10 @@ struct PsnrHvsStateSycl {
     unsigned num_blocks_x[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks_y[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks[PSNR_HVS_NUM_PLANES];
-    /* Offset of each plane's blocks in the one partials buffer. */
+    /* Offset of each plane's blocks in the one term buffer, in blocks. */
     unsigned first_block[PSNR_HVS_NUM_PLANES];
     unsigned total_blocks;
     unsigned bpc;
-    int32_t samplemax_sq;
     /* enable_chroma: when false, only the luma (Y) plane is dispatched.
      * Default true mirrors CPU integer_psnr_hvs — see ADR-0453. */
     bool enable_chroma;
@@ -131,9 +183,10 @@ struct PsnrHvsStateSycl {
 
     VmafSyclState *sycl_state;
 
-    /* Device block scores of every active plane, and their host copy. */
-    float *d_partials;
-    float *h_partials;
+    /* HVS_TERMS masked coefficient errors per block of every active plane,
+     * and their host copy. */
+    float *d_terms;
+    float *h_terms;
 
     bool has_pending;
     unsigned pending_index;
@@ -151,7 +204,7 @@ struct PsnrHvsPlaneArgs {
 
 struct PsnrHvsKernelArgs {
     PsnrHvsPlaneArgs plane[PSNR_HVS_NUM_PLANES];
-    float *partials;
+    float *terms; /* HVS_TERMS per block, blocks in plane then raster order */
     unsigned n_planes;
     unsigned total_blocks;
     bool wide; /* 16-bit samples (bpc > 8) */
@@ -487,14 +540,6 @@ static inline float hvs_variance_ratio(const HvsLocal &block, size_t base)
 namespace
 {
 
-/* mask[i][j] of calc_psnrhvs(), recomputed per coefficient instead of held in
- * a private float[64]; the same two float multiplies, so the same value. */
-static inline float hvs_mask_at(int plane, int index)
-{
-    const float scaled = CSF_TABLES[plane][index] * 0.3885746225901003f;
-    return scaled * scaled;
-}
-
 static inline float hvs_mask_energy(const HvsLocal &block, size_t base, int plane)
 {
     float energy = 0.f;
@@ -503,30 +548,40 @@ static inline float hvs_mask_energy(const HvsLocal &block, size_t base, int plan
         for (int col = first_col; col < 8; col++) {
             const int index = (row * 8) + col;
             const int coefficient = block[base + index];
-            energy += (float)(coefficient * coefficient) * hvs_mask_at(plane, index);
+            energy += (float)(coefficient * coefficient) * MASK_TABLES.value[plane][index];
         }
     }
     return energy;
 }
 
-static inline float hvs_error(const HvsLocal &block, size_t ref_base, size_t dist_base,
-                              float threshold, int plane)
+/* calc_psnrhvs(): s_mask = sqrt((double)s_mask * s_gvar) / 32.f, stored as
+ * float. sqrt_prod_rn() is that product and root without fp64. The division
+ * by 32 only changes the exponent, as it does on the CPU, for every threshold
+ * a block can have: a nonzero energy * ratio is above 2^-48, far from the
+ * subnormal range. */
+static inline float hvs_threshold(float energy, float ratio)
 {
-    float error_sum = 0.f;
+    return vmaf_sycl_exact::sqrt_prod_rn(energy, ratio) / 32.f;
+}
+
+/* The 64 values calc_psnrhvs() adds to its running sum for one block, in its
+ * order (row-major), written straight to the term buffer: no per-block sum
+ * and no private array. */
+static inline void hvs_store_terms(float *terms, const HvsLocal &block, size_t ref_base,
+                                   size_t dist_base, float threshold, int plane)
+{
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             const int index = (row * 8) + col;
             const float csf = CSF_TABLES[plane][index];
-            float error =
-                sycl::fabs((float)block[ref_base + index] - (float)block[dist_base + index]);
-            if (row != 0 || col != 0) {
-                const float masking = threshold / hvs_mask_at(plane, index);
+            float error = (float)sycl::abs(block[ref_base + index] - block[dist_base + index]);
+            if (index != 0) {
+                const float masking = threshold / MASK_TABLES.value[plane][index];
                 error = error < masking ? 0.f : error - masking;
             }
-            error_sum += (error * csf) * (error * csf);
+            terms[index] = (error * csf) * (error * csf);
         }
     }
-    return error_sum;
 }
 
 } // namespace
@@ -534,29 +589,10 @@ static inline float hvs_error(const HvsLocal &block, size_t ref_base, size_t dis
 namespace
 {
 
-/* Variance ratio and masking energy of one image of a block. */
-struct HvsImageStats {
-    float ratio;
-    float energy;
-};
-
-/* Runs on the reference work-item; the distorted coefficients sit one
- * work-item stride further on. */
-static inline float score_hvs_block(const HvsLocal &block, size_t ref_base, HvsImageStats ref,
-                                    HvsImageStats dist, int plane)
-{
-    float threshold = sycl::sqrt(ref.energy * ref.ratio) / 32.f;
-    const float dist_threshold = sycl::sqrt(dist.energy * dist.ratio) / 32.f;
-    if (dist_threshold > threshold) {
-        threshold = dist_threshold;
-    }
-    return hvs_error(block, ref_base, ref_base + HVS_LANE_STRIDE, threshold, plane);
-}
-
 /* Work-item 2k takes block k's reference image, 2k + 1 its distorted one;
- * both sit in one sub-group, which exchanges their statistics. Work-items
- * past the last block run on block 0 so the sub-group stays converged,
- * and never store. */
+ * both sit in one sub-group, which exchanges their masking thresholds.
+ * Work-items past the last block run on block 0 so the sub-group stays
+ * converged, and never store. */
 static void psnr_hvs_item(sycl::nd_item<1> item, const HvsLocal &block,
                           const PsnrHvsKernelArgs &args)
 {
@@ -568,13 +604,17 @@ static void psnr_hvs_item(sycl::nd_item<1> item, const HvsLocal &block,
     hvs_load_block(block, base, lane, args.wide);
     const float ratio = hvs_variance_ratio(block, base);
     hvs_fdct8x8(block, base);
-    const HvsImageStats mine = {.ratio = ratio, .energy = hvs_mask_energy(block, base, lane.plane)};
+    const float mine = hvs_threshold(hvs_mask_energy(block, base, lane.plane), ratio);
     const sycl::sub_group group = item.get_sub_group();
-    const HvsImageStats partner = {.ratio = sycl::permute_group_by_xor(group, mine.ratio, 1U),
-                                   .energy = sycl::permute_group_by_xor(group, mine.energy, 1U)};
+    const float partner = sycl::permute_group_by_xor(group, mine, 1U);
     sycl::group_barrier(group);
     if (active && !is_dist) {
-        args.partials[lane.block] = score_hvs_block(block, base, mine, partner, lane.plane);
+        /* calc_psnrhvs(): if (d_mask > s_mask) s_mask = d_mask. */
+        const float threshold = partner > mine ? partner : mine;
+        // SAFETY: args.terms holds HVS_TERMS floats per block and
+        // lane.block < args.total_blocks on an active work-item.
+        hvs_store_terms(args.terms + ((size_t)lane.block * HVS_TERMS), block, base,
+                        base + HVS_LANE_STRIDE, threshold, lane.plane);
     }
 }
 
@@ -701,13 +741,19 @@ static int configure_hvs_blocks(PsnrHvsStateSycl *s)
 namespace
 {
 
-/* Block scores only: the samples come from the state's shared planes. */
+/* Bytes of the term buffer: HVS_TERMS floats per block of every plane. */
+static size_t hvs_terms_bytes(const PsnrHvsStateSycl *s)
+{
+    return (size_t)s->total_blocks * HVS_TERMS * sizeof(float);
+}
+
+/* The terms only: the samples come from the state's shared planes. */
 static int allocate_hvs_buffers(PsnrHvsStateSycl *s)
 {
-    const size_t partials_bytes = (size_t)s->total_blocks * sizeof(float);
-    s->d_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partials_bytes));
-    s->h_partials = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partials_bytes));
-    if (!s->d_partials || !s->h_partials) {
+    const size_t terms_bytes = hvs_terms_bytes(s);
+    s->d_terms = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, terms_bytes));
+    s->h_terms = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, terms_bytes));
+    if (!s->d_terms || !s->h_terms) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -746,8 +792,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     s->bpc = bpc;
-    const int32_t samplemax = (1 << bpc) - 1;
-    s->samplemax_sq = samplemax * samplemax;
 
     const int geometry_err = configure_hvs_geometry(s, pix_fmt, w, h);
     if (geometry_err) {
@@ -796,7 +840,7 @@ static PsnrHvsKernelArgs hvs_kernel_args(const PsnrHvsStateSycl *s)
                          .blocks_x = s->num_blocks_x[p],
                          .first_block = s->first_block[p]};
     }
-    args.partials = s->d_partials;
+    args.terms = s->d_terms;
     args.n_planes = s->n_active_planes;
     args.total_blocks = s->total_blocks;
     args.wide = s->bpc > 8U;
@@ -810,8 +854,8 @@ namespace
 
 /* The luma of this frame is already on the device (the host read path
  * uploads it before any extractor submits); the chroma goes up once for all
- * twins here. The kernel waits for both on the device, the block scores
- * are read back in the same in-order stream, and collect() only waits. */
+ * twins here. The kernel waits for both on the device, the terms are read
+ * back in the same in-order stream, and collect() only waits. */
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -839,7 +883,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     try {
         launch_psnr_hvs(*qptr, hvs_kernel_args(s));
-        qptr->memcpy(s->h_partials, s->d_partials, (size_t)s->total_blocks * sizeof(float));
+        qptr->memcpy(s->h_terms, s->d_terms, hvs_terms_bytes(s));
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: submitting frame %u: %s\n", index, e.what());
         return -EIO;
@@ -858,36 +902,27 @@ static const char *const plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "p
                                                                 "psnr_hvs_cr"};
 
 /* A device fault surfaces here as a sycl::exception; it must not cross the C
- * collect callback, and the partials it leaves behind are stale. */
-static int wait_hvs_partials(sycl::queue &queue)
+ * collect callback, and the terms it leaves behind are stale. */
+static int wait_hvs_terms(sycl::queue &queue)
 {
     try {
         queue.wait_and_throw();
     } catch (const sycl::exception &e) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: reading back the block errors: %s\n",
-                 e.what());
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: reading back the terms: %s\n", e.what());
         return -EIO;
     }
     return 0;
 }
 
-/* Block order, one float accumulator per plane: the sum the gate was
- * calibrated on (ADR-1361). */
+/* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_NUM_PLANES])
 {
-    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
-        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
-            break;
-        }
-        const float *partials = s->h_partials + s->first_block[plane];
-        float sum = 0.0f;
-        for (unsigned block = 0; block < s->num_blocks[plane]; block++) {
-            sum += partials[block];
-        }
-        const int pixels = (int)(s->num_blocks[plane] * 64u);
-        sum /= (float)pixels;
-        sum /= (float)s->samplemax_sq;
-        scores[plane] = (double)sum;
+    // SAFETY: s->h_terms holds HVS_TERMS floats for each of the
+    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
+    // s->total_blocks holds by construction (configure_hvs_blocks).
+    for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+        const float *plane_terms = s->h_terms + ((size_t)s->first_block[plane] * HVS_TERMS);
+        scores[plane] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[plane], s->bpc);
     }
 }
 
@@ -896,21 +931,18 @@ static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_
 namespace
 {
 
+/* The CPU extract() expressions: dB per plane, then the weighted score. */
 static int append_hvs_scores(VmafFeatureCollector *collector, const PsnrHvsStateSycl *s,
                              const double scores[PSNR_HVS_NUM_PLANES], unsigned index)
 {
     int err = 0;
-    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
-        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
-            break;
-        }
-        const double db = 10.0 * (-1.0 * std::log10(scores[plane]));
-        err |= vmaf_feature_collector_append(collector, plane_features[plane], db, index);
+    for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+        err |= vmaf_feature_collector_append(collector, plane_features[plane],
+                                             vmaf_psnr_hvs_score_db(scores[plane]), index);
     }
-    const double combined =
-        (s->n_active_planes == 1U) ? scores[0] : 0.8 * scores[0] + 0.1 * (scores[1] + scores[2]);
-    const double db = 10.0 * (-1.0 * std::log10(combined));
-    err |= vmaf_feature_collector_append(collector, "psnr_hvs", db, index);
+    const double combined = vmaf_psnr_hvs_combined_score(scores, s->n_active_planes);
+    err |= vmaf_feature_collector_append(collector, "psnr_hvs", vmaf_psnr_hvs_score_db(combined),
+                                         index);
     return err;
 }
 
@@ -927,7 +959,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (!qptr) {
         return -EINVAL;
     }
-    const int wait_err = wait_hvs_partials(*qptr);
+    const int wait_err = wait_hvs_terms(*qptr);
     if (wait_err) {
         return wait_err;
     }
@@ -945,11 +977,11 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->d_partials) {
-            vmaf_sycl_free(s->sycl_state, s->d_partials);
+        if (s->d_terms) {
+            vmaf_sycl_free(s->sycl_state, s->d_terms);
         }
-        if (s->h_partials) {
-            vmaf_sycl_free(s->sycl_state, s->h_partials);
+        if (s->h_terms) {
+            vmaf_sycl_free(s->sycl_state, s->h_terms);
         }
     }
     if (s->feature_name_dict) {

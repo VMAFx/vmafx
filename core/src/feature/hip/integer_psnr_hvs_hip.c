@@ -4,20 +4,28 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  psnr_hvs feature extractor on the HIP backend (port of the ADR-1369
- *  kernel of the SYCL twin to HIP).
+ *  kernel of the SYCL twin to HIP; exact terms per ADR-1397 / ADR-1401).
  *
  *  Per frame, on the extractor's private stream:
  *  - submit() packs the six raw planes (Y, Cb, Cr of both pictures; uint8_t
  *    at 8 bpc, uint16_t above) into extractor-owned pinned buffers and
  *    enqueues their copies to the device, one dispatch of
- *    `psnr_hvs_score.hip` that scores every block of every plane (two
- *    work-items per 8x8 block, step 7), and one copy of the block errors
- *    back. The pictures are not read after submit() returns, and submit()
- *    does not wait for the device.
- *  - collect() waits once, sums each plane's block errors in block order
- *    (the float accumulator of the previous kernel, ADR-1361) and emits
- *    `psnr_hvs_y/cb/cr` and `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)`.
- *  - Rejects YUV400P (no chroma) and bpc > 12 (matches CPU + CUDA).
+ *    `psnr_hvs_score.hip` that covers every block of every plane (two
+ *    work-items per 8x8 block, step 7), and one copy of the terms back.
+ *    The pictures are not read after submit() returns, and submit() does
+ *    not wait for the device.
+ *  - collect() waits once and emits `psnr_hvs_y/cb/cr` and
+ *    `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)`.
+ *  - Rejects YUV400P (no chroma) and bpc > 12.
+ *
+ *  ADR-1397: the scores are the CPU extractor's bit for bit. The kernel
+ *  stores the 64 masked coefficient errors of every block, computed in the
+ *  arithmetic of calc_psnrhvs() (third_party/xiph/psnr_hvs.c), and
+ *  psnr_hvs_plane_scores() hands each plane's terms to
+ *  vmaf_psnr_hvs_plane_score(), which adds them into one running float in the
+ *  CPU's order. The readback is 256 bytes per block (about 65 MB for a
+ *  3840x2160 4:2:0 frame); summing per block on the device is cheaper but
+ *  rounds differently from the CPU.
  *
  *  Without `HAVE_HIPCC` (CPU-only builds, `enable_hip=true` but
  *  `enable_hipcc=false`), `init()` returns -ENOSYS so the feature
@@ -25,7 +33,6 @@
  */
 
 #include <errno.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -34,6 +41,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/psnr_hvs_score.h"
 #include "libvmaf/picture.h"
 #include "log.h"
 
@@ -57,6 +65,9 @@
 #define PSNR_HVS_STEP 7
 #define PSNR_HVS_NUM_PLANES PSNR_HVS_HIP_NUM_PLANES
 
+_Static_assert(PSNR_HVS_HIP_TERMS == VMAF_PSNR_HVS_TERMS_PER_BLOCK,
+               "the kernel stores what vmaf_psnr_hvs_plane_score() sums per block");
+
 typedef struct PsnrHvsStateHip {
     VmafHipKernelLifecycle lc;
     VmafHipContext *ctx;
@@ -66,12 +77,11 @@ typedef struct PsnrHvsStateHip {
     unsigned num_blocks_x[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks_y[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks[PSNR_HVS_NUM_PLANES];
-    /* Offset of each plane's blocks in the one partials buffer. */
+    /* Offset of each plane's blocks in the one term buffer, in blocks. */
     unsigned first_block[PSNR_HVS_NUM_PLANES];
     unsigned total_blocks;
     size_t row_bytes[PSNR_HVS_NUM_PLANES];
     unsigned bpc;
-    int32_t samplemax_sq;
 
 #ifdef HAVE_HIPCC
     hipModule_t module;
@@ -83,9 +93,10 @@ typedef struct PsnrHvsStateHip {
     void *d_dist[PSNR_HVS_NUM_PLANES];
     void *h_ref[PSNR_HVS_NUM_PLANES];
     void *h_dist[PSNR_HVS_NUM_PLANES];
-    /* One masked-error sum per block, every plane, and its pinned copy. */
-    float *d_partials;
-    float *h_partials;
+    /* PSNR_HVS_HIP_TERMS masked coefficient errors per block, every plane,
+     * and their pinned copy. */
+    float *d_terms;
+    float *h_terms;
 #endif /* HAVE_HIPCC */
 
     unsigned index;
@@ -157,8 +168,15 @@ static void psnr_hvs_free_buffers(PsnrHvsStateHip *s)
         psnr_hvs_free_pinned(&s->h_ref[p]);
         psnr_hvs_free_pinned(&s->h_dist[p]);
     }
-    psnr_hvs_free_device((void **)&s->d_partials);
-    psnr_hvs_free_pinned((void **)&s->h_partials);
+    psnr_hvs_free_device((void **)&s->d_terms);
+    psnr_hvs_free_pinned((void **)&s->h_terms);
+}
+
+/* Bytes of the term buffer: PSNR_HVS_HIP_TERMS floats per block of every
+ * plane. */
+static size_t psnr_hvs_terms_bytes(const PsnrHvsStateHip *s)
+{
+    return (size_t)s->total_blocks * (size_t)PSNR_HVS_HIP_TERMS * sizeof(float);
 }
 
 /* One device and one pinned buffer of `bytes`; -ENOMEM on the first failure,
@@ -186,8 +204,8 @@ static int psnr_hvs_alloc_buffers(PsnrHvsStateHip *s)
             err = psnr_hvs_alloc_pair(&s->d_dist[p], &s->h_dist[p], bytes);
     }
     if (!err) {
-        err = psnr_hvs_alloc_pair((void **)&s->d_partials, (void **)&s->h_partials,
-                                  (size_t)s->total_blocks * sizeof(float));
+        err = psnr_hvs_alloc_pair((void **)&s->d_terms, (void **)&s->h_terms,
+                                  psnr_hvs_terms_bytes(s));
     }
     return err;
 }
@@ -250,8 +268,8 @@ static int psnr_hvs_set_plane_dims(PsnrHvsStateHip *s, enum VmafPixelFormat pix_
     return 0;
 }
 
-/* Block grid of every plane and the planes' offsets in the one partials
- * buffer the single dispatch writes. */
+/* Block grid of every plane and the planes' offsets in the one term buffer
+ * the single dispatch writes. */
 static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
                                        unsigned h)
 {
@@ -308,8 +326,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         return err;
 
     s->bpc = bpc;
-    const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
-    s->samplemax_sq = samplemax * samplemax;
 
     err = psnr_hvs_set_plane_geometry(s, pix_fmt, w, h);
     if (err != 0)
@@ -389,7 +405,7 @@ static int psnr_hvs_enqueue_uploads(const PsnrHvsStateHip *s, hipStream_t str)
 }
 
 /* The frame's device work: raw planes up, one dispatch over every block of
- * every plane, the block errors back. */
+ * every plane, the terms back. */
 static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
@@ -406,7 +422,7 @@ static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
         args.plane[p].blocks_x = s->num_blocks_x[p];
         args.plane[p].first_block = s->first_block[p];
     }
-    args.partials = s->d_partials;
+    args.terms = s->d_terms;
     args.n_planes = PSNR_HVS_NUM_PLANES;
     args.total_blocks = s->total_blocks;
     args.wide = (s->bpc > 8u) ? 1u : 0u;
@@ -416,8 +432,8 @@ static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
     hipError_t rc = hipModuleLaunchKernel(s->func_psnr_hvs, groups, 1, 1, PSNR_HVS_HIP_WG, 1, 1, 0,
                                           str, params, NULL);
     if (rc == hipSuccess) {
-        rc = hipMemcpyAsync(s->h_partials, s->d_partials, (size_t)s->total_blocks * sizeof(float),
-                            hipMemcpyDeviceToHost, str);
+        rc = hipMemcpyAsync(s->h_terms, s->d_terms, psnr_hvs_terms_bytes(s), hipMemcpyDeviceToHost,
+                            str);
     }
     return psnr_hvs_hip_rc(rc);
 }
@@ -472,22 +488,20 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 }
 
 #ifdef HAVE_HIPCC
-/* Block order, one float accumulator per plane: the sum the ADR-1361 gate
- * was calibrated on. */
+/* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void psnr_hvs_plane_scores(const PsnrHvsStateHip *s, double plane_score[])
 {
+    // SAFETY: s->h_terms holds PSNR_HVS_HIP_TERMS floats for each of the
+    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
+    // s->total_blocks holds by construction (psnr_hvs_set_plane_geometry).
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const float *partials = s->h_partials + s->first_block[p];
-        float ret = 0.0f;
-        for (unsigned i = 0; i < s->num_blocks[p]; i++)
-            ret += partials[i];
-        const int pixels = (int)(s->num_blocks[p] * 64u);
-        ret /= (float)pixels;
-        ret /= (float)s->samplemax_sq;
-        plane_score[p] = (double)ret;
+        const float *plane_terms =
+            s->h_terms + ((size_t)s->first_block[p] * (size_t)PSNR_HVS_HIP_TERMS);
+        plane_score[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
     }
 }
 
+/* The CPU extract() expressions: dB per plane, then the weighted score. */
 static int psnr_hvs_append_scores(VmafFeatureCollector *feature_collector,
                                   const double plane_score[], unsigned index)
 {
@@ -495,12 +509,12 @@ static int psnr_hvs_append_scores(VmafFeatureCollector *feature_collector,
                                                               "psnr_hvs_cr"};
     int err = 0;
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const double db = 10.0 * (-1.0 * log10(plane_score[p]));
-        err |= vmaf_feature_collector_append(feature_collector, plane_features[p], db, index);
+        err |= vmaf_feature_collector_append(feature_collector, plane_features[p],
+                                             vmaf_psnr_hvs_score_db(plane_score[p]), index);
     }
-    const double combined = 0.8 * plane_score[0] + 0.1 * (plane_score[1] + plane_score[2]);
-    const double db_combined = 10.0 * (-1.0 * log10(combined));
-    err |= vmaf_feature_collector_append(feature_collector, "psnr_hvs", db_combined, index);
+    const double combined = vmaf_psnr_hvs_combined_score(plane_score, PSNR_HVS_NUM_PLANES);
+    err |= vmaf_feature_collector_append(feature_collector, "psnr_hvs",
+                                         vmaf_psnr_hvs_score_db(combined), index);
     return err;
 }
 #endif /* HAVE_HIPCC */

@@ -206,10 +206,11 @@ test('test_cuda_device_resident_contract',
     timeout : 30,
 )
 
-# ADR-1397: psnr_hvs_cuda returns the CPU's scores bit for bit -- the kernel
-# stores every term calc_psnrhvs() sums, in the CPU's arithmetic and built
-# without contraction, and the host adds them in the CPU's order through
-# psnr_hvs_score.c. Device-free; the device check is test_cuda_psnr_hvs_parity.
+# ADR-1397 / ADR-1401: psnr_hvs_cuda, psnr_hvs_sycl and psnr_hvs_hip return the
+# CPU's scores bit for bit -- each kernel stores every term calc_psnrhvs()
+# sums, in the CPU's arithmetic and built without contraction, and the host
+# adds them in the CPU's order through psnr_hvs_score.c. Device-free; the
+# device checks are test_{cuda,sycl,hip}_psnr_hvs_parity.
 test('test_psnr_hvs_twin_exact_sum_contract',
     import('python').find_installation(),
     args : files('test_psnr_hvs_twin_exact_sum_contract.py'),
@@ -3928,6 +3929,8 @@ if not is_sycl_acpp
     sycl_fp_arith_probe = custom_target('sycl_fp_arith_probe',
         output : 'sycl_fp_arith_probe.o',
         input : 'test_sycl_fp_arith_probe.cpp',
+        # ADR-1401: the probe also runs sqrt_prod_rn() of this header.
+        depend_files : files('../src/feature/sycl/sycl_exact_fp.h'),
         command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
                   + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
     )
@@ -4123,6 +4126,11 @@ test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# psnr_hvs CPU vs. SYCL: bit-identical scores (ADR-1397, ADR-1401) on every
+# plane and the combined score, at 8 to 12 bits, in 4:2:0 / 4:2:2 / 4:4:4, and
+# at 3840x2160 (third_party/xiph/psnr_hvs.c vs. integer_psnr_hvs_sycl.cpp).
+# The fixtures and the comparison are psnr_hvs_twin_parity.h's, shared with
+# the CUDA and HIP tests.
 test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     ['test.c', 'test_sycl_psnr_hvs_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -5047,6 +5055,9 @@ test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     is_parallel : false,
     timeout : 60)
 
+# psnr_hvs CPU vs. HIP: bit-identical scores (ADR-1397, ADR-1401), the same
+# cases as test_cuda_psnr_hvs_parity through psnr_hvs_twin_parity.h
+# (third_party/xiph/psnr_hvs.c vs. integer_psnr_hvs/psnr_hvs_score.hip).
 test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
     ['test.c', 'test_hip_psnr_hvs_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

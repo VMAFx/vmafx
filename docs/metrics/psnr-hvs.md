@@ -69,12 +69,14 @@ integer samples of the device pictures at every supported depth, 8 to 12 bits
 (every backend rejects deeper input, like the CPU extractor), eliminating host
 float conversions and redundant pinned host staging allocations. Two threads share
 each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
-launch covers every plane. 4:0:0 input is scored on luma only, as on the CPU.
+launch covers every plane. Samples at 9 and 11 bits are scored as they are, like
+every other depth (the twins that converted on the host scored them wrongly).
 
-`psnr_hvs_hip` returns the same values, bit for bit, as the host-conversion twin
-it replaced, on the Netflix 576x324 pair, on 1920x1080 and on 3840x2160 content,
-except at 9 and 11 bits, where the previous twin was wrong (-1.57 dB and NaN on a
-64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
+`psnr_hvs_cuda` scores 4:0:0 input on luma only, as the CPU does.
+`psnr_hvs_sycl` and `psnr_hvs_hip` refuse 4:0:0 input (`init()` fails with
+`YUV400P unsupported`); `T-SYCL-HIP-PSNR-HVS-YUV400-REFUSED-2026-10-01` in
+[docs/state.md](../state.md) tracks that. `psnr_hvs_hip` has no `enable_chroma`
+option and always scores the three planes.
 
 ### Agreement with the CPU extractor
 
@@ -87,16 +89,26 @@ The CPU's value is the reference; it is not the most accurate one (it is up to
 stays as it is because the Netflix golden values of
 `python/test/third_party/xiph/vmafexec_feature_extractor_test.py` pin it.
 
-| Twin | How it sums | Agreement with `--backend cpu` |
-|---|---|---|
-| `psnr_hvs_cuda` | The kernel stores the 64 terms of every block, computed in the CPU's arithmetic; the host adds them in the CPU's order ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)) | Bit-identical on every output, at every frame size and depth |
-| `psnr_hvs_sycl`, `psnr_hvs_hip` | 64 terms per block on the device, then the blocks on the host | Held to a tolerance: 5e-4 dB at 576x324, growing with the frame size ([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)) |
+The three GPU twins of the parity gate return the CPU's scores bit for bit, on
+every output, at every frame size and depth
+([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) for CUDA,
+[ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) for SYCL and HIP).
+The kernel stores the 64 terms of every block, computed in the CPU's
+arithmetic, and the host adds them in the CPU's order.
 
-`psnr_hvs_cuda` was measured against the CPU at `--precision max` on the
-Netflix 576x324 pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080
-checkerboard pairs and Big Buck Bunny at 1920x1080 and 3840x2160 (8 and 10
-bits): every frame of `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr`
-has the same bits. Check it on your device with:
+| Twin | Masking threshold (`sqrt` of a `double` product on the CPU) | Measured on |
+|---|---|---|
+| `psnr_hvs_cuda` | `double` product and root | RTX 4090 |
+| `psnr_hvs_hip` | `double` product and root | gfx1036 (integrated) |
+| `psnr_hvs_sycl` | No fp64 in the kernel: integer square root of the exact product, rounded to `float` | Arc A380 |
+
+Each was measured against the CPU at `--precision max` on the Netflix 576x324
+pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080 checkerboard pairs
+and Big Buck Bunny at 1920x1080 and 3840x2160 (8 and 10 bits): every frame of
+`psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr` has the same bits.
+The Metal twin still sums each block on the device and is held to a tolerance
+([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)). Check a
+twin on your device with (replace `cuda` by `sycl` or `hip`):
 
 ```bash
 for b in cpu cuda; do
@@ -110,17 +122,32 @@ print(all(x["metrics"] == y["metrics"] for x, y in zip(a, b)))
 PY
 ```
 
-The exact sum has a cost. `psnr_hvs_cuda` reads 256 bytes per block back to the
-host (65 MB for a 3840x2160 4:2:0 frame, 259 MB at 7680x4320, held on the
-device and in pinned host memory) and adds the terms on one host thread. On an
-RTX 4090 a frame takes 0.29 ms at 576x324, 3.1 ms at 1920x1080 and 12.2 ms at
-3840x2160, where sixteen CPU threads take 0.14, 1.7 and 6.5 ms; use
-`--backend cpu` when throughput matters more than keeping the frame on the
-device. [Research-1397](../research/1397-psnr-hvs-twins-cpu-float-sum.md) has
-the measurements; `T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` in
-[docs/state.md](../state.md) tracks the tuning, and
-`T-HIP-PSNR-HVS-EXACT-SUM-2026-10-01` / `T-SYCL-PSNR-HVS-EXACT-SUM-2026-10-01`
-the same change for the other twins.
+Run both sides with the same `vmaf` binary. The dB value goes through the
+host's `log10`, and a binary built with oneAPI `icx` (Intel's `libimf`) and
+one built with gcc (glibc) differ by one unit in the last place on a few
+frames, on the CPU extractor and on the twins alike.
+
+The exact sum has a cost. A twin reads 256 bytes per block back to the host
+(65 MB for a 3840x2160 4:2:0 frame, 259 MB at 7680x4320, held on the device
+and in host memory) and adds the terms on one host thread. Milliseconds per
+frame, with `--backend cpu --threads 16` for comparison:
+
+| Frame size | `psnr_hvs_cuda`, RTX 4090 | `psnr_hvs_sycl`, Arc A380 | `psnr_hvs_hip`, gfx1036 | CPU, 16 threads |
+|---|---|---|---|---|
+| 576x324 | 0.29 | 0.61 | 0.65 | 0.16 |
+| 1920x1080 | 3.1 | 9.2 | 8.7 | 1.7 |
+| 3840x2160 | 12.2 | 35.9 | 37.9 | 6.7 |
+
+The CUDA column is from
+[Research-1397](../research/1397-psnr-hvs-twins-cpu-float-sum.md), the others
+from [Research-1401](../research/1401-psnr-hvs-sycl-hip-exact-twins.md), on a
+Ryzen 9 9950X3D that other work shared (the integrated gfx1036 varied between
+31 and 45 ms at 3840x2160). Every twin is slower than the CPU threads here:
+use `--backend cpu` when throughput matters more than keeping the frame on the
+device.
+`T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` and
+`T-SYCL-HIP-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` in
+[docs/state.md](../state.md) track the tuning.
 
 ## See also
 

@@ -14,6 +14,11 @@
  *  -DFP_ARITH_PROBE=vmaf_test_hip_fp_arith -DFP_ARITH_DEVICE="HIP", against
  *  the probe in test_hip_fp_arith_probe.{hip,c}: one set of operands and one
  *  set of host references for both backends.
+ *
+ *  ADR-1401: sqrt_prod_rn() (feature/sycl/sycl_exact_fp.h) returns on the
+ *  device, without fp64, what the host returns for the fp64 square root of an
+ *  fp64 product of two fp32 operands, converted to fp32. psnr_hvs_sycl takes
+ *  its masking threshold from it; the CPU extractor uses the fp64 expression.
  */
 
 #include <errno.h>
@@ -36,15 +41,29 @@
 #ifndef FP_ARITH_PROBE
 #define FP_ARITH_PROBE vmaf_test_sycl_fp_arith
 #define FP_ARITH_DEVICE "SYCL GPU"
+#define FP_ARITH_HAS_PROD_ROOT 1
+#else
+#ifndef FP_ARITH_HAS_PROD_ROOT
+#define FP_ARITH_HAS_PROD_ROOT 0
+#endif
 #endif
 
+#if FP_ARITH_HAS_PROD_ROOT
+int FP_ARITH_PROBE(const float *a, const float *b, const float *c, size_t n, float *mad,
+                   float *quot, float *root, float *prod_root);
+#else
 int FP_ARITH_PROBE(const float *a, const float *b, const float *c, size_t n, float *mad,
                    float *quot, float *root);
+#endif
 
 enum {
     RANDOM_COUNT = 1 << 20,
     BOUNDARY_VALUES = 13,
     BOUNDARY_COUNT = BOUNDARY_VALUES * BOUNDARY_VALUES * BOUNDARY_VALUES,
+    MIDPOINT_COUNT = 1 << 16,
+    MIDPOINT_FORMS = 4,
+    MIDPOINT_OPERANDS = MIDPOINT_COUNT * MIDPOINT_FORMS,
+    RESULTS = 7,
 };
 
 typedef struct {
@@ -54,6 +73,7 @@ typedef struct {
     float *mad;
     float *quot;
     float *root;
+    float *prod_root;
     size_t n;
 } Operands;
 
@@ -61,6 +81,7 @@ typedef struct {
     size_t mad;
     size_t quot;
     size_t root;
+    size_t prod_root;
 } Mismatches;
 
 static uint32_t next_random(uint32_t *state)
@@ -98,33 +119,50 @@ static int same_float(float x, float y)
 
 static Mismatches count_mismatches(const Operands *op)
 {
-    Mismatches m = {0, 0, 0};
+    Mismatches m = {0, 0, 0, 0};
     for (size_t i = 0; i < op->n; i++) {
         const float product = (float)((double)op->a[i] * (double)op->b[i]);
         const float mad = (float)((double)product + (double)op->c[i]);
         const float quot = (float)((double)op->a[i] / (double)op->b[i]);
         const float root = (float)sqrt((double)fabsf(op->a[i]));
+        /* calc_psnrhvs()'s threshold expression: both operands widened, the
+         * product exact, the root rounded to fp64 and then to fp32. */
+        const float prod_root = (float)sqrt((double)fabsf(op->a[i]) * (double)fabsf(op->b[i]));
         m.mad += !same_float(mad, op->mad[i]);
         m.quot += !same_float(quot, op->quot[i]);
         m.root += !same_float(root, op->root[i]);
+#if FP_ARITH_HAS_PROD_ROOT
+        m.prod_root += !same_float(prod_root, op->prod_root[i]);
+#endif
     }
     return m;
 }
 
 static int operands_alloc(Operands *op, size_t n)
 {
-    float *block = calloc(6 * n, sizeof(float));
+    float *block = calloc(RESULTS * n, sizeof(float));
     if (!block)
         return -ENOMEM;
-    *op = (Operands){block,           block + n, block + (2 * n), block + (3 * n), block + (4 * n),
-                     block + (5 * n), n};
+    *op = (Operands){.a = block,
+                     .b = block + n,
+                     .c = block + (2 * n),
+                     .mad = block + (3 * n),
+                     .quot = block + (4 * n),
+                     .root = block + (5 * n),
+                     .prod_root = block + (6 * n),
+                     .n = n};
     return 0;
 }
 
 /* Runs the device probe; NULL when the check passed or was skipped. */
 static char *run_and_check(Operands *op, const char *label)
 {
+#if FP_ARITH_HAS_PROD_ROOT
+    const int err =
+        FP_ARITH_PROBE(op->a, op->b, op->c, op->n, op->mad, op->quot, op->root, op->prod_root);
+#else
     const int err = FP_ARITH_PROBE(op->a, op->b, op->c, op->n, op->mad, op->quot, op->root);
+#endif
     if (err == -ENODEV) {
         (void)fprintf(stderr, "  [SKIP] %s: no " FP_ARITH_DEVICE " device\n", label);
         mu_skipped = 1;
@@ -132,22 +170,40 @@ static char *run_and_check(Operands *op, const char *label)
     }
     mu_assert("device probe failed", err == 0);
     const Mismatches m = count_mismatches(op);
+#if FP_ARITH_HAS_PROD_ROOT
+    (void)fprintf(stderr, "  %s: %zu operands, mismatches mad=%zu div=%zu sqrt=%zu sqrt_prod=%zu\n",
+                  label, op->n, m.mad, m.quot, m.root, m.prod_root);
+#else
     (void)fprintf(stderr, "  %s: %zu operands, mismatches mad=%zu div=%zu sqrt=%zu\n", label, op->n,
                   m.mad, m.quot, m.root);
+#endif
     mu_assert("a * b + c was contracted into an FMA on the device", m.mad == 0);
     mu_assert("device fp32 division is not correctly rounded", m.quot == 0);
     mu_assert("device fp32 sqrt is not correctly rounded", m.root == 0);
+#if FP_ARITH_HAS_PROD_ROOT
+    mu_assert("sqrt_prod_rn() differs from the host's fp64 product and root", m.prod_root == 0);
+#endif
     return NULL;
 }
 
 static char *test_invalid_arguments(void)
 {
     float x = 1.0f;
+#if FP_ARITH_HAS_PROD_ROOT
+    mu_assert("NULL operand must be rejected",
+              FP_ARITH_PROBE(NULL, &x, &x, 1, &x, &x, &x, &x) == -EINVAL);
+    mu_assert("NULL result must be rejected",
+              FP_ARITH_PROBE(&x, &x, &x, 1, &x, &x, NULL, &x) == -EINVAL);
+    mu_assert("NULL product root must be rejected",
+              FP_ARITH_PROBE(&x, &x, &x, 1, &x, &x, &x, NULL) == -EINVAL);
+    mu_assert("an empty probe is a no-op", FP_ARITH_PROBE(&x, &x, &x, 0, &x, &x, &x, &x) == 0);
+#else
     mu_assert("NULL operand must be rejected",
               FP_ARITH_PROBE(NULL, &x, &x, 1, &x, &x, &x) == -EINVAL);
     mu_assert("NULL result must be rejected",
               FP_ARITH_PROBE(&x, &x, &x, 1, &x, &x, NULL) == -EINVAL);
     mu_assert("an empty probe is a no-op", FP_ARITH_PROBE(&x, &x, &x, 0, &x, &x, &x) == 0);
+#endif
     mu_assert("an empty probe leaves results alone", x == 1.0f);
     return NULL;
 }
@@ -192,11 +248,37 @@ static char *test_boundary_operands(void)
     return msg;
 }
 
+/* Products nearest a rounding boundary of their root. For a 24-bit k,
+ * sqrt(k * (k + 1)) is 1 / (8 k) below k + 1/2, the midpoint of two fp32
+ * values: the hardest operands for sqrt_prod_rn(), which must still round
+ * down. k * k has an exact root, k * (k + 2) one just below k + 1, and the
+ * doubled operand moves the product to an odd binary exponent. A root taken
+ * from the fp32-rounded product gets many of these wrong. */
+static char *test_midpoint_operands(void)
+{
+    Operands op;
+    mu_assert("operand allocation failed", operands_alloc(&op, MIDPOINT_OPERANDS) == 0);
+    size_t n = 0;
+    for (uint32_t i = 0; i < MIDPOINT_COUNT; i++) {
+        const float k = (float)((1u << 23) + (i * 127u));
+        const float partner[MIDPOINT_FORMS] = {k + 1.0f, k, k + 2.0f, 2.0f * (k + 1.0f)};
+        for (size_t form = 0; form < MIDPOINT_FORMS; form++, n++) {
+            op.a[n] = k;
+            op.b[n] = partner[form];
+            op.c[n] = 1.0f;
+        }
+    }
+    char *msg = run_and_check(&op, "midpoint");
+    free(op.a);
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_invalid_arguments);
     mu_run_test(test_random_operands);
     mu_run_test(test_boundary_operands);
+    mu_run_test(test_midpoint_operands);
     return NULL;
 }
 

@@ -310,7 +310,13 @@ core/src/feature/hip/          # per-feature kernels
   porting the CUDA twin and ADR-1369 native upload design. Uploads raw native
   samples via `vmaf_hip_picture_upload()` and converts on the device, eliminating
   host float conversions and unused pinned staging allocations. Emits `psnr_hvs`
-  and per-channel variants.
+  and per-channel variants. Its scores are the CPU extractor's bit for bit
+  ([ADR-1401](../../adr/1401-psnr-hvs-sycl-hip-exact-twins.md)): the kernel
+  stores the 64 masked coefficient errors of every block and the host adds them
+  in the CPU's order, which costs a readback of 256 bytes per block (65 MB per
+  3840x2160 frame); see
+  [the psnr_hvs page](../../metrics/psnr-hvs.md#agreement-with-the-cpu-extractor).
+  4:0:0 input is refused.
 - **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
   the CUDA twin (`ssim_cuda.c`): a 9-tap integer Gaussian, int64 moments, the
   window truncated at the frame border, and the per-pixel SSIM term in double.

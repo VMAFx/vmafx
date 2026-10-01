@@ -20,6 +20,10 @@
 /* Work-items per work-group: 32 blocks, a reference and a distorted
  * work-item each (ADR-1369 shape). */
 #define PSNR_HVS_HIP_WG 64
+/* Masked coefficient errors calc_psnrhvs() adds per 8x8 block; the value of
+ * VMAF_PSNR_HVS_TERMS_PER_BLOCK (feature/psnr_hvs_score.h), which the host TU
+ * checks. */
+#define PSNR_HVS_HIP_TERMS 64
 
 /* One plane as the kernel sees it: packed raw samples of both images. */
 struct PsnrHvsHipPlaneArgs {
@@ -27,12 +31,12 @@ struct PsnrHvsHipPlaneArgs {
     const void *dist;
     unsigned width;
     unsigned blocks_x;
-    unsigned first_block; /* offset of this plane's blocks in `partials` */
+    unsigned first_block; /* offset of this plane's blocks in `terms`, in blocks */
 };
 
 struct PsnrHvsHipKernelArgs {
     struct PsnrHvsHipPlaneArgs plane[PSNR_HVS_HIP_NUM_PLANES];
-    float *partials; /* one masked-error sum per block, planes back to back */
+    float *terms; /* PSNR_HVS_HIP_TERMS per block, blocks in plane then raster order */
     unsigned n_planes;
     unsigned total_blocks;
     unsigned wide; /* 16-bit samples (bpc > 8) */

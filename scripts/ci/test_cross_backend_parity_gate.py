@@ -841,6 +841,17 @@ def test_area_scaling_leaves_fp16_contract_absolute() -> None:
 # the ADR-1361 tolerance (psnr_hvs_y, 24 BBB frames).
 _PRE_1397_CUDA_576 = 2.861e-5
 _PRE_1397_CUDA_4K = 1.099e-2
+# The same two for the SYCL and HIP twins before ADR-1401 (Arc A380, gfx1036),
+# and what a float product and root in the masking threshold alone leaves on
+# the 576x324 pair once the sum is the CPU's (psnr_hvs_cr).
+_PRE_1401_TWIN_576 = 2.893e-5
+_PRE_1401_TWIN_4K = 1.099e-2
+_FLOAT_THRESHOLD_576 = 4.374e-7
+# One unit in the last place of a 30 dB score: what a different host log10
+# moves (glibc against Intel's libimf), and so what two binaries may differ by.
+_ONE_ULP_30_DB = 3.553e-15
+# Backends whose psnr_hvs twin returns the CPU's bits.
+_EXACT_PSNR_HVS = ("cuda", "sycl", "hip")
 
 
 def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> tuple[float, str]:
@@ -858,23 +869,30 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
         "float_motion": frozenset({"cuda", "sycl"}),
-        "psnr_hvs": frozenset({"cuda"}),
+        "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
     } == EXACT_TWINS
-    assert is_exact_pair("psnr_hvs", "cpu", "cuda")
-    assert is_exact_pair("psnr_hvs", "cuda", "cpu")
-    # The SYCL twin still sums per block: neither side of such a cell is exact.
-    assert not is_exact_pair("psnr_hvs", "cpu", "sycl")
-    assert not is_exact_pair("psnr_hvs", "cuda", "sycl")
+    for backend in _EXACT_PSNR_HVS:
+        assert is_exact_pair("psnr_hvs", "cpu", backend), backend
+        assert is_exact_pair("psnr_hvs", backend, "cpu"), backend
+    # Two exact twins agree with each other as well.
+    assert is_exact_pair("psnr_hvs", "cuda", "sycl")
+    assert is_exact_pair("psnr_hvs", "sycl", "hip")
+    # The Metal twin still sums per block: no cell with it on a side is exact.
+    assert not is_exact_pair("psnr_hvs", "cpu", "metal")
+    assert not is_exact_pair("psnr_hvs", "cuda", "metal")
     # A feature without an entry is never exact, whatever the backends.
-    assert not is_exact_pair("vif", "cpu", "cuda")
-    assert not is_exact_pair("ciede", "cpu", "cuda")
+    for backend in _EXACT_PSNR_HVS:
+        assert not is_exact_pair("vif", "cpu", backend), backend
+        assert not is_exact_pair("ciede", "cpu", backend), backend
 
 
-def test_psnr_hvs_cuda_cell_is_exact_at_every_size() -> None:
-    for width, height in ((8, 8), (576, 324), (1920, 1080), (3840, 2160), (7680, 4320)):
-        tolerance, source = _psnr_hvs_cell("cpu", "cuda", width, height)
-        assert tolerance == 0.0, (width, height)
-        assert source == EXACT_TWIN_SOURCE
+def test_psnr_hvs_exact_cells_are_exact_at_every_size() -> None:
+    pairs = [("cpu", backend) for backend in _EXACT_PSNR_HVS] + [("cuda", "sycl"), ("hip", "sycl")]
+    for pair in pairs:
+        for width, height in ((8, 8), (576, 324), (1920, 1080), (3840, 2160), (7680, 4320)):
+            tolerance, source = _psnr_hvs_cell(*pair, width, height)
+            assert tolerance == 0.0, (pair, width, height)
+            assert source == EXACT_TWIN_SOURCE
 
 
 def test_float_motion_cuda_and_sycl_cells_are_exact_and_other_twins_are_not() -> None:
@@ -899,29 +917,37 @@ def test_float_motion_cuda_and_sycl_cells_are_exact_and_other_twins_are_not() ->
         assert source == "default", pair
 
 
-def test_psnr_hvs_sycl_cells_keep_area_scaled_tolerance() -> None:
-    for pair in (("cpu", "sycl"), ("cuda", "sycl")):
+def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
+    # ADR-1361 stays the contract of a twin outside EXACT_TWINS, and of a
+    # caller that names no backends.
+    for pair in (("cpu", "metal"), ("cuda", "metal")):
         tolerance, source = _psnr_hvs_cell(*pair, 576, 324)
         assert _close(tolerance, FEATURE_TOLERANCE["psnr_hvs"]), pair
         assert source == "default"
         tolerance, source = _psnr_hvs_cell(*pair, 3840, 2160)
         assert _close(tolerance, _psnr_hvs_tolerance(3840, 2160)), pair
         assert "+area x" in source
+    tolerance, source = resolve_cell_tolerance(
+        "psnr_hvs", fp16_features=[], calibration=None, gpu_id=None, width=3840, height=2160
+    )
+    assert _close(tolerance, _psnr_hvs_tolerance(3840, 2160))
+    assert "+area x" in source
 
 
 def test_exact_cell_ignores_a_calibration_row() -> None:
     table = _calibration_table(("cuda:8.9", {"psnr_hvs": 5e-4}))
-    tolerance, source = resolve_cell_tolerance(
-        "psnr_hvs",
-        fp16_features=[],
-        calibration=table,
-        gpu_id="cuda:8.9",
-        width=3840,
-        height=2160,
-        backends=("cpu", "cuda"),
-    )
-    assert tolerance == 0.0
-    assert source == EXACT_TWIN_SOURCE
+    for backend in _EXACT_PSNR_HVS:
+        tolerance, source = resolve_cell_tolerance(
+            "psnr_hvs",
+            fp16_features=[],
+            calibration=table,
+            gpu_id="cuda:8.9",
+            width=3840,
+            height=2160,
+            backends=("cpu", backend),
+        )
+        assert tolerance == 0.0, backend
+        assert source == EXACT_TWIN_SOURCE
 
 
 def test_exact_cell_yields_to_an_explicit_fp16_contract() -> None:
@@ -940,14 +966,24 @@ def test_exact_cell_yields_to_an_explicit_fp16_contract() -> None:
 
 def test_exact_cell_fails_the_differences_a_per_block_sum_left() -> None:
     metrics = FEATURE_METRICS["psnr_hvs"]
-    tolerance, _ = _psnr_hvs_cell("cpu", "cuda", 3840, 2160)
-    reference = [_make_frame(dict.fromkeys(metrics, 40.0))]
-    for delta in (_PRE_1397_CUDA_576, _PRE_1397_CUDA_4K, 2.0**-45):
-        drifted = [_make_frame(dict.fromkeys(metrics, 40.0 + delta))]
-        _, mismatches = diff_frames(reference, drifted, metrics, tolerance)
-        assert all(count == 1 for count in mismatches.values()), delta
-    _, mismatches = diff_frames(reference, reference, metrics, tolerance)
-    assert all(count == 0 for count in mismatches.values())
+    reference = [_make_frame(dict.fromkeys(metrics, 30.0))]
+    deltas = (
+        _PRE_1397_CUDA_576,
+        _PRE_1397_CUDA_4K,
+        _PRE_1401_TWIN_576,
+        _PRE_1401_TWIN_4K,
+        _FLOAT_THRESHOLD_576,
+        2.0**-45,
+        _ONE_ULP_30_DB,
+    )
+    for backend in _EXACT_PSNR_HVS:
+        tolerance, _ = _psnr_hvs_cell("cpu", backend, 3840, 2160)
+        for delta in deltas:
+            drifted = [_make_frame(dict.fromkeys(metrics, 30.0 + delta))]
+            _, mismatches = diff_frames(reference, drifted, metrics, tolerance)
+            assert all(count == 1 for count in mismatches.values()), (backend, delta)
+        _, mismatches = diff_frames(reference, reference, metrics, tolerance)
+        assert all(count == 0 for count in mismatches.values()), backend
 
 
 def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
@@ -962,12 +998,12 @@ def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
             bitdepth=8,
             feature="psnr_hvs",
             backend=backend,
-            device=1 if backend == "cuda" else None,
+            device=None if backend == "cpu" else 1,
             output=tmp_path / "out.json",
             precision=precision,
         )
 
-    for backend in ("cpu", "cuda"):
+    for backend in ("cpu", *_EXACT_PSNR_HVS):
         cmd = command(backend, "max")
         assert cmd[cmd.index("--precision") + 1] == "max"
         # A tolerance cell keeps the CLI's default output precision.

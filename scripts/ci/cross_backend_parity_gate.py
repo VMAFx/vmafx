@@ -217,9 +217,9 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "ciede": 5e-3,  # per-pixel pow/sqrt/sin/atan2 — places=2.
     # DCT + per-block float reductions — places=3 at 576x324; grows with
     # sqrt(term count) above it (area_tolerance_factor, ADR-1361). This is the
-    # contract of a twin that sums per block (SYCL). A cell between the CPU
-    # and a twin listed in EXACT_TWINS (CUDA, ADR-1397) is compared exactly
-    # instead and never reads this value.
+    # contract of a twin that sums per block. A cell whose sides are the CPU
+    # or a twin listed in EXACT_TWINS (CUDA, SYCL and HIP: ADR-1397, ADR-1401)
+    # is compared exactly instead and never reads this value.
     "psnr_hvs": 5e-4,
     # XYB cube root + IIR blur reassociation — places=2 per ADR-0192.
     "ssimulacra2": 5e-3,

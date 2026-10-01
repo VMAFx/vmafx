@@ -73,15 +73,18 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # ---------------------------------------------------------------------------
 # ADR-1397: twins that reproduce the CPU extractor bit for bit.
 #
-# ``psnr_hvs_cuda`` stores the terms ``calc_psnrhvs()`` sums, computed in the
-# CPU's arithmetic, and the host adds them into one running float in the CPU's
-# order. Its scores are therefore the CPU's, at every frame size, and a cell
+# ``psnr_hvs_cuda`` (ADR-1397), ``psnr_hvs_sycl`` and ``psnr_hvs_hip``
+# (ADR-1401) store the terms ``calc_psnrhvs()`` sums, computed in the CPU's
+# arithmetic, and the host adds them into one running float in the CPU's
+# order. Their scores are therefore the CPU's, at every frame size, and a cell
 # whose two sides are the CPU extractor or such a twin is compared exactly:
 # tolerance 0, no area scaling, no calibration row, and ``--precision max`` so
 # that a last-bit difference reaches the comparison instead of being rounded
-# away by the default ``%.6f``. A twin joins this table only with a
-# measurement that shows bit-identity and an ADR that records it; a twin that
-# still sums per block (``psnr_hvs_sycl``) keeps the ADR-1361 tolerance.
+# away by the default ``%.6f``. Both sides of a cell come from one ``vmaf``
+# binary, so they share the host ``log10`` behind the dB value. A twin joins
+# this table only with a measurement that shows bit-identity and an ADR that
+# records it; a twin that sums per block (``psnr_hvs_metal``, outside the
+# gates' backend list) keeps the ADR-1361 tolerance.
 #
 # ADR-1409: ``float_motion_cuda`` joins it. The CPU's SAD is a running fp32
 # sum per row and another over the rows; the twin adds each row on the device
@@ -98,7 +101,7 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 
 EXACT_TWINS: dict[str, frozenset[str]] = {
     "float_motion": frozenset({"cuda", "sycl"}),
-    "psnr_hvs": frozenset({"cuda"}),
+    "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
 }
 EXACT_TWIN_TOLERANCE = 0.0
 EXACT_TWIN_PRECISION = "max"

@@ -7,6 +7,10 @@
  *  sycl_feature_tail_args) and links it through sycl_dependency, so the kernel
  *  below is built exactly like an extractor's: AOT images at compile time,
  *  the SPIR-V JIT image at the link. fp32 only (ADR-0220).
+ *
+ *  The fourth result is sqrt_prod_rn() of sycl_exact_fp.h (ADR-1401): the
+ *  root of the exact product of two operands, which the host forms in its
+ *  wide type and the device has to form without one.
  */
 
 #include <cerrno>
@@ -16,6 +20,8 @@
 #include <optional>
 
 #include <sycl/sycl.hpp>
+
+#include "../src/feature/sycl/sycl_exact_fp.h"
 
 namespace
 {
@@ -27,6 +33,7 @@ struct ProbeBuffers {
     float *mad;
     float *quot;
     float *root;
+    float *prod_root;
     size_t n;
 };
 
@@ -61,12 +68,13 @@ class DeviceBlock
 
 /* One multiply-add written as a single expression, one division and one square
  * root per element: the three operations icpx changes on the device when the
- * strict FP line is incomplete. */
+ * strict FP line is incomplete. Then the square root of the exact product of
+ * the first two operands' magnitudes. */
 void run_kernel(sycl::queue &q, const ProbeBuffers &host)
 {
     const size_t n = host.n;
     const size_t bytes = n * sizeof(float);
-    const DeviceBlock block(q, 6 * n);
+    const DeviceBlock block(q, 7 * n);
     float *dev = block.get();
     float *da = dev;
     float *db = dev + n;
@@ -74,6 +82,7 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host)
     float *dmad = dev + (3 * n);
     float *dquot = dev + (4 * n);
     float *droot = dev + (5 * n);
+    float *dprod_root = dev + (6 * n);
     q.memcpy(da, host.a, bytes);
     q.memcpy(db, host.b, bytes);
     q.memcpy(dc, host.c, bytes);
@@ -82,21 +91,23 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host)
         dmad[i] = da[i] * db[i] + dc[i];
         dquot[i] = da[i] / db[i];
         droot[i] = sycl::sqrt(sycl::fabs(da[i]));
+        dprod_root[i] = vmaf_sycl_exact::sqrt_prod_rn(sycl::fabs(da[i]), sycl::fabs(db[i]));
     });
     q.wait_and_throw();
     q.memcpy(host.mad, dmad, bytes);
     q.memcpy(host.quot, dquot, bytes);
     q.memcpy(host.root, droot, bytes);
+    q.memcpy(host.prod_root, dprod_root, bytes);
     q.wait_and_throw();
 }
 
 } // namespace
 
 extern "C" int vmaf_test_sycl_fp_arith(const float *a, const float *b, const float *c, size_t n,
-                                       float *mad, float *quot, float *root)
+                                       float *mad, float *quot, float *root, float *prod_root)
 {
     if (a == nullptr || b == nullptr || c == nullptr || mad == nullptr || quot == nullptr ||
-        root == nullptr) {
+        root == nullptr || prod_root == nullptr) {
         return -EINVAL;
     }
     if (n == 0) {
@@ -110,8 +121,14 @@ extern "C" int vmaf_test_sycl_fp_arith(const float *a, const float *b, const flo
     }
     try {
         sycl::queue q(*device);
-        run_kernel(q, ProbeBuffers{
-                          .a = a, .b = b, .c = c, .mad = mad, .quot = quot, .root = root, .n = n});
+        run_kernel(q, ProbeBuffers{.a = a,
+                                   .b = b,
+                                   .c = c,
+                                   .mad = mad,
+                                   .quot = quot,
+                                   .root = root,
+                                   .prod_root = prod_root,
+                                   .n = n});
     } catch (const std::exception &) {
         return -EIO;
     }

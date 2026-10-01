@@ -205,6 +205,79 @@ inline float sqrt_rn(float x)
 }
 
 /* ------------------------------------------------------------------ */
+/* Correctly rounded square root of an exact product                   */
+/* ------------------------------------------------------------------ */
+
+/* floor(sqrt(n)) for n < 2^50, one result bit per step, integers only. On
+ * return the root is exact whatever the device's sqrt unit does. */
+inline uint64_t isqrt_floor50(uint64_t n)
+{
+    uint64_t root = 0u;
+    for (int shift = 48; shift >= 0; shift -= 2) {
+        const uint64_t bit = uint64_t{1} << shift;
+        const uint64_t trial = root + bit;
+        const bool take = n >= trial;
+        n -= take ? trial : uint64_t{0};
+        root = (root >> 1) + (take ? bit : uint64_t{0});
+    }
+    return root;
+}
+
+/* sqrt(a * b), the product taken exactly and the root rounded to fp32 once
+ * (ADR-1397). This is the value a host returns for the fp64 square root of
+ * the fp64 product of two fp32 operands, converted back to fp32: the fp64
+ * product of two 24-bit significands is exact, and rounding its root to 53
+ * bits before 24 changes nothing: the root of a 48-bit integer is either an
+ * fp32 value or more than 2^-27 of an fp32 spacing away from the midpoint of
+ * two neighbours, and an fp64 rounding moves it by at most 2^-30 of that
+ * spacing.
+ *
+ * The significands are multiplied as integers into P in [2^48, 2^50) with an
+ * even binary exponent, so sqrt(P) lies in [2^24, 2^25), where fp32 values are
+ * the even integers. With s = floor(sqrt(P)): an even s is the answer (the
+ * root is below the midpoint s + 1), an odd s is itself the midpoint and the
+ * root is above it (P is even, s * s is odd, so they differ), which rounds to
+ * s + 1. No tie exists.
+ *
+ * Exact for normal positive operands, whose root is always a normal fp32
+ * value. Any other operand takes sqrt_rn(a * b): exact when the product is
+ * zero, infinite or NaN, one fp32 rounding too many when an operand is
+ * subnormal. 0 mismatches against the host on 400M random operand pairs over
+ * the whole normal range and on every k * (k + 1), k * k and k * (k + 2) with
+ * a 24-bit k (the pairs nearest a midpoint). */
+inline float sqrt_prod_rn(float a, float b)
+{
+    const float top = std::numeric_limits<float>::max();
+    if (!(a >= kNormalLow && a <= top && b >= kNormalLow && b <= top)) {
+        return sqrt_rn(a * b);
+    }
+    constexpr uint32_t fraction_mask = 0x7fffffu;
+    constexpr uint32_t implicit_one = 0x800000u;
+    const auto a_bits = sycl::bit_cast<uint32_t>(a);
+    const auto b_bits = sycl::bit_cast<uint32_t>(b);
+    /* a = A * 2^(Ea - 150) with A in [2^23, 2^24) and Ea the biased exponent. */
+    uint64_t product = uint64_t{(a_bits & fraction_mask) | implicit_one} *
+                       uint64_t{(b_bits & fraction_mask) | implicit_one};
+    int32_t exponent = (int32_t)(a_bits >> 23) + (int32_t)(b_bits >> 23) - 300;
+    const uint32_t odd = (uint32_t)exponent & 1u;
+    product <<= odd;
+    exponent -= (int32_t)odd;
+    const uint32_t low = product < (uint64_t{1} << 48) ? 2u : 0u;
+    product <<= low;
+    exponent -= (int32_t)low;
+    const uint64_t floor_root = isqrt_floor50(product);
+    const uint64_t rounded = floor_root + (floor_root & uint64_t{1});
+    /* rounded * 2^(exponent / 2) = (rounded / 2) * 2^(biased - 150). */
+    auto significand = (uint32_t)(rounded >> 1);
+    int32_t biased = (exponent / 2) + 151;
+    if (significand == (implicit_one << 1)) {
+        significand >>= 1;
+        biased += 1;
+    }
+    return sycl::bit_cast<float>(((uint32_t)biased << 23) | (significand & fraction_mask));
+}
+
+/* ------------------------------------------------------------------ */
 /* Exact fp32 pair arithmetic                                          */
 /* ------------------------------------------------------------------ */
 

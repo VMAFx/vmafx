@@ -672,7 +672,12 @@ feature/
   (`x + 0.0f == x`); nothing else. **On rebase**: upstream change to the
   tail of `calc_psnrhvs()` or to `extract()` in
   `third_party/xiph/psnr_hvs.c` -> same change here + every twin that
-  calls it (`cuda/integer_psnr_hvs_cuda.c`).
+  calls it (`cuda/integer_psnr_hvs_cuda.c`,
+  `sycl/integer_psnr_hvs_sycl.cpp`, `hip/integer_psnr_hvs_hip.c`;
+  ADR-1401). `log10` behind the dB value = host libm: an icx-built
+  binary (libimf) and a gcc-built one (glibc) differ by one ulp on some
+  frames, CPU extractor and twins alike, so compare twin and CPU from
+  one binary.
 
 - **`psnr_hvs` AVX2 DCT bit-exactness** (fork-local, ADR-0159):
   [`x86/psnr_hvs_avx2.c`](x86/psnr_hvs_avx2.c) vectorizes

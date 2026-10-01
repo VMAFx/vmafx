@@ -29,8 +29,8 @@ explicitly accepts its skip.
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `psnr_hvs` (CPU ↔ SYCL, CUDA ↔ SYCL) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
-  | `psnr_hvs` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1397 (the twin reproduces the CPU's running float sum) |
+  | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
+  | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `float_motion` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411 (the twins add their SAD in the CPU's order); the row above stays for HIP and Metal |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
@@ -61,12 +61,16 @@ explicitly accepts its skip.
   `3.34e-3`. The label in the output shows the factor, for example
   `default+area x6.69`. [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
   derives the factor from the float-accumulation bound.
-  This is the contract of a twin that sums each block on the device
-  (`psnr_hvs_sycl`).
+  This is the contract of a twin that sums each block on the device. None of
+  the gate's backends has such a twin any more (the Metal twin does, and
+  Metal is not a gate backend), so no `psnr_hvs` cell of the matrix uses it;
+  it stays for a caller that names no backends and for a twin added later.
 
-- **Exact twins.** `psnr_hvs_cuda` stores every term the CPU sums
-  and the host adds them in the CPU's order, so its scores are the CPU's bit
-  for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)).
+- **Exact twins.** `psnr_hvs_cuda`, `psnr_hvs_sycl` and
+  `psnr_hvs_hip` store every term the CPU sums and the host adds them in the
+  CPU's order, so their scores are the CPU's bit for bit
+  ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) for CUDA,
+  [ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) for SYCL and HIP).
   `float_motion_cuda` adds the absolute differences of each row on the device
   in the CPU's order and the rows on the host, with the same result
   ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)), and
@@ -79,12 +83,19 @@ explicitly accepts its skip.
   with tolerance `0`, at every frame size and ahead of any calibration row,
   and both sides run with `--precision max` so that a last-bit difference
   is not rounded away by the default `%.6f` output. The label in the output is
-  `exact:ADR-1397` for every listed twin. Measured on an RTX 4090: 0 on all
-  200 frames of the BBB 3840x2160 fixture and on the Netflix 576x324 pair, for
-  both features. An explicit `--fp16-features psnr_hvs` still selects the FP16
-  contract. Adding a twin to
-  the table needs a measurement that shows bit-identity and an ADR that
-  records it.
+  `exact:ADR-1397` for every listed twin. Measured on an RTX 4090 (CUDA, for
+  both features), an Arc A380 (SYCL, for `psnr_hvs`) and a gfx1036 (HIP, for
+  `psnr_hvs`): 0 on all 200 frames of the BBB 3840x2160 fixture and on the
+  Netflix 576x324 pair. An explicit `--fp16-features psnr_hvs` still selects
+  the FP16 contract. Adding a twin to the table needs a measurement that shows
+  bit-identity and an ADR that records it.
+
+  The equality holds between runs of one `vmaf` binary, which is how the gate
+  runs a cell. The dB value goes through the host's `log10`: a binary built
+  with oneAPI `icx` uses Intel's `libimf`, a gcc build uses glibc, and the
+  two round differently by one unit in the last place on a few frames (3 of
+  the 48 Netflix frames), for the CPU extractor and the twins alike. Do not
+  compare a twin from one build with the CPU extractor of another.
 
 - **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
   FP16 absolute-tolerance contract.

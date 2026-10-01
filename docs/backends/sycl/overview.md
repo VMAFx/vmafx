@@ -868,14 +868,24 @@ Three fixes from one investigation on an Arc B580 (Xe2) and a UHD 770
   for the faulted frame from stale buffers (about 1.0 for every ADM scale);
   only a later frame's upload noticed the fault, so a one-frame run exited 0.
 
-At 3840x2160, `psnr_hvs_sycl` differs from the CPU `psnr_hvs` by up to
-8.4e-4 dB per frame; at 576x324 the difference is 8.4e-5. The CPU accumulates
-all per-coefficient errors of a plane in one `float`, whose rounding error
-grows with the frame size, and the twin sums per block. The cross-backend gate
-therefore scales the `psnr_hvs` tolerance with the frame's block count: 5e-4
-up to 576x324, 3.34e-3 at 3840x2160
-([ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md),
-[the gate guide](../../development/cross-backend-gate.md)).
+`psnr_hvs_sycl` returns the CPU `psnr_hvs` scores bit for bit, at every frame
+size and at 8 to 12 bits
+([ADR-1401](../../adr/1401-psnr-hvs-sycl-hip-exact-twins.md)). The CPU
+accumulates all per-coefficient errors of a plane in one `float`, so its score
+depends on the order of the additions; the kernel stores the 64 terms of every
+block and the host adds them in the CPU's order. The CPU takes its masking
+threshold as a `double` product and square root; the kernel, which has no fp64,
+gets the same `float` from an integer square root of the exact product. The
+cross-backend gate compares this twin with tolerance 0
+([the gate guide](../../development/cross-backend-gate.md)). The price is a
+readback of 256 bytes per block (65 MB per 3840x2160 frame) and a sequential
+host sum; see
+[the psnr_hvs page](../../metrics/psnr-hvs.md#agreement-with-the-cpu-extractor)
+for the timings. Before, the twin summed per block and was up to 1.1e-2 dB
+from the CPU at 3840x2160 (8.4e-5 at 576x324), under a tolerance that grew
+with the frame size
+([ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)). 4:0:0
+input is refused.
 
 ## CPU options on the PSNR, SSIM and float-motion twins (2026-09-29)
 

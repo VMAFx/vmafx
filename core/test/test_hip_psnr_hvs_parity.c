@@ -6,247 +6,93 @@
  */
 
 /*
- * ADR-0883 round-2 — psnr_hvs CPU vs. HIP parity test.
+ * psnr_hvs CPU vs. HIP: the twin returns the CPU's scores bit for bit
+ * (ADR-1397, ADR-1401; first added as a places=4 parity test, ADR-0883).
  *
- * The PSNR-HVS (PSNR with Human Visual System weighting) metric is
- * computed by third_party/xiph/psnr_hvs.c (CPU) and by
- * integer_psnr_hvs_hip.c + integer_psnr_hvs/psnr_hvs_score.hip on AMD.
- * PR #351 closed the equivalent CUDA/SYCL coverage gap for the
- * plain PSNR kernel; psnr_hvs has its own DCT-based contrast-masking
- * path that needed its own gate.
+ * CPU is in third_party/xiph/psnr_hvs.c (Xiph reference port); the HIP path
+ * is integer_psnr_hvs_hip.c + integer_psnr_hvs/psnr_hvs_score.hip.
  *
- * Asserts the chroma-summary `psnr_hvs` channel — the single user-facing
- * score consumed by the libvmaf-2.x.x default model and CHUG re-extract.
+ * The fixtures, the comparison and the cases are psnr_hvs_twin_parity.h's,
+ * shared with the CUDA and SYCL twins: 8 to 12 bits, 4:2:0 / 4:2:2 / 4:4:4,
+ * and 3840x2160, each compared exactly on psnr_hvs_y / psnr_hvs_cb /
+ * psnr_hvs_cr and the combined psnr_hvs. The twin refuses 4:0:0 input, so
+ * that layout is not compared.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime or
- * no device visible) the test emits "[skip: no HIP device]" and passes.
+ * Skip behaviour: exits 77 when there is no HIP device or the twin is built
+ * without its device kernels (enable_hipcc=false, -ENOSYS).
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
-#include "libvmaf/picture.h"
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
+#include "psnr_hvs_twin_parity.h"
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
+
+static int twin_open(void **state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 3u + col * 2u + salt * 13u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    VmafHipState *hip_state = NULL;
+    VmafHipConfiguration hip_cfg = {.device_index = -1};
+    const int err = vmaf_hip_state_init(&hip_state, hip_cfg);
+    *state = hip_state;
+    return err;
+}
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_hip_import_state(vmaf, (VmafHipState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafHipState *hip_state = (VmafHipState *)state;
+    vmaf_hip_state_free(&hip_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *run_cpu_psnr_hvs(double *score)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "psnr_hvs", NULL);
-    mu_assert("CPU: vmaf_use_feature(psnr_hvs) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(psnr_hvs) failed", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *run_hip_psnr_hvs(double *score)
-{
-    *score = NAN;
-    VmafHipState *hip_state = NULL;
-    VmafHipConfiguration hip_cfg = {.device_index = -1};
-    int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
-        (void)fprintf(stderr, "[skip: no HIP device] ");
-        return NULL;
-    }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("HIP: vmaf_init failed", !err);
-    err = vmaf_hip_import_state(vmaf, hip_state);
-    mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "psnr_hvs_hip", NULL);
-    mu_assert("HIP: vmaf_use_feature(psnr_hvs_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
-    mu_assert("HIP: vmaf_feature_score_at_index(psnr_hvs) failed", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("HIP: vmaf_close failed", !err);
-    vmaf_hip_state_free(&hip_state);
-    return NULL;
-}
+static const HvsTwin twin = {
+    .extractor = "psnr_hvs_hip",
+    .backend = "HIP",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+    .scores_yuv400 = 0,
+};
 
 static char *test_psnr_hvs_hip_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_hip");
-    mu_assert("psnr_hvs_hip extractor must be registered", fex != NULL);
-    mu_assert("psnr_hvs_hip name matches", !strcmp(fex->name, "psnr_hvs_hip"));
-    return NULL;
+    return hvs_twin_registered(&twin);
 }
 
-static char *test_psnr_hvs_cpu_hip_parity(void)
+static char *test_psnr_hvs_cpu_hip_identical(void)
 {
-    double cpu = 0.0;
-    double gpu = NAN;
-    char *msg = run_cpu_psnr_hvs(&cpu);
-    if (msg)
-        return msg;
-    msg = run_hip_psnr_hvs(&gpu);
-    if (msg)
-        return msg;
-    if (isnan(gpu))
-        return NULL;
-    double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\npsnr_hvs parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                      cpu, gpu, delta, PARITY_TOL);
-    }
-    mu_assert("psnr_hvs CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return hvs_twin_identical(&twin);
 }
 
-/* 9- to 12-bit input: calc_psnrhvs() uses the raw sample at every depth. The
- * twin used to convert only 10- and 12-bit samples back exactly and scored
- * 9 / 11 bits on 16 times the sample (-1.57 against 22.47 dB at 9 bits).
- * This test fails on the old host-convert path and passes with on-device
- * native sample upload and conversion. */
-static int fill_deep_pic(VmafPicture *pic, unsigned bpc, unsigned salt)
+static char *test_psnr_hvs_every_depth_identical(void)
 {
-    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u);
-    if (err)
-        return err;
-    const unsigned range = 1u << bpc;
-    for (unsigned p = 0; p < 3u; p++) {
-        uint16_t *data = (uint16_t *)pic->data[p];
-        const size_t stride = (size_t)pic->stride[p] / sizeof(uint16_t);
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                data[row * stride + col] =
-                    (uint16_t)(((col * 37u + row * 11u + p * 5u) ^ (salt * 91u)) % range);
-            }
-        }
-    }
-    return 0;
+    return hvs_twin_every_depth_identical(&twin);
 }
 
-static char *open_deep(VmafHipState *hip_state, VmafContext **vmaf)
+static char *test_psnr_hvs_every_layout_identical(void)
 {
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    mu_assert("vmaf_init failed", !vmaf_init(vmaf, cfg));
-    if (hip_state)
-        mu_assert("vmaf_hip_import_state failed", !vmaf_hip_import_state(*vmaf, hip_state));
-    mu_assert("vmaf_use_feature failed",
-              !vmaf_use_feature(*vmaf, hip_state ? "psnr_hvs_hip" : "psnr_hvs", NULL));
-    return NULL;
+    return hvs_twin_every_layout_identical(&twin);
 }
 
-static char *score_deep(VmafHipState *hip_state, unsigned bpc, double *score)
+static char *test_psnr_hvs_2160p_identical(void)
 {
-    VmafContext *vmaf = NULL;
-    mu_assert_msg(open_deep(hip_state, &vmaf));
-    VmafPicture ref;
-    VmafPicture dist;
-    mu_assert("ref alloc", !fill_deep_pic(&ref, bpc, 0u));
-    mu_assert("dist alloc", !fill_deep_pic(&dist, bpc, 1u));
-    mu_assert("read", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
-    mu_assert("flush", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
-    mu_assert("score", !vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u));
-    mu_assert("vmaf_close failed", !vmaf_close(vmaf));
-    return NULL;
-}
-
-static char *test_psnr_hvs_deep_parity(void)
-{
-    char *msg = NULL;
-    for (unsigned bpc = 9u; bpc <= 12u && !msg; bpc++) {
-        VmafHipState *hip_state = NULL;
-        VmafHipConfiguration hip_cfg = {.device_index = -1};
-        if (vmaf_hip_state_init(&hip_state, hip_cfg) != 0 || hip_state == NULL) {
-            (void)fprintf(stderr, "[skip: no HIP device] ");
-            return NULL;
-        }
-        double cpu = 0.0;
-        double hip = NAN;
-        msg = score_deep(NULL, bpc, &cpu);
-        if (!msg)
-            msg = score_deep(hip_state, bpc, &hip);
-        if (!msg && !(fabs(cpu - hip) <= PARITY_TOL)) {
-            (void)fprintf(stderr, "\n%u-bit psnr_hvs: cpu=%.8f hip=%.8f delta=%.2e\n", bpc, cpu,
-                          hip, fabs(cpu - hip));
-            msg = "psnr_hvs at 9-12 bits must score the raw sample like the CPU";
-        }
-        vmaf_hip_state_free(&hip_state);
-    }
-    return msg;
+    return hvs_twin_2160p_identical(&twin);
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_hip_registered);
-    mu_run_test(test_psnr_hvs_cpu_hip_parity);
-    mu_run_test(test_psnr_hvs_deep_parity);
+    mu_run_test(test_psnr_hvs_cpu_hip_identical);
+    mu_run_test(test_psnr_hvs_every_depth_identical);
+    mu_run_test(test_psnr_hvs_every_layout_identical);
+    mu_run_test(test_psnr_hvs_2160p_identical);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
