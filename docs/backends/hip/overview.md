@@ -316,7 +316,8 @@ core/src/feature/hip/          # per-feature kernels
   in the CPU's order, which costs a readback of 256 bytes per block (65 MB per
   3840x2160 frame); see
   [the psnr_hvs page](../../metrics/psnr-hvs.md#agreement-with-the-cpu-extractor).
-  4:0:0 input is refused.
+  Takes the CPU extractor's `enable_chroma` option; with `enable_chroma=false`
+  or 4:0:0 input only the luma plane is uploaded and scored.
 - **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
   the CUDA twin (`ssim_cuda.c`): a 9-tap integer Gaussian, int64 moments, the
   window truncated at the frame border, and the per-pixel SSIM term in double.

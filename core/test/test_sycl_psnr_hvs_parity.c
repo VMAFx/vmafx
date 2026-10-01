@@ -17,10 +17,9 @@
  * exact comparisons catch.
  *
  * The fixtures, the comparison and the cases are psnr_hvs_twin_parity.h's,
- * shared with the CUDA and HIP twins: 8 to 12 bits, 4:2:0 / 4:2:2 / 4:4:4,
- * and 3840x2160, each compared exactly on psnr_hvs_y / psnr_hvs_cb /
- * psnr_hvs_cr and the combined psnr_hvs. The twin refuses 4:0:0 input, so
- * that layout is not compared.
+ * shared with the CUDA and HIP twins: 8 to 12 bits, 4:0:0 / 4:2:0 / 4:2:2 /
+ * 4:4:4, enable_chroma=false, and 3840x2160, each compared exactly on
+ * psnr_hvs_y / psnr_hvs_cb / psnr_hvs_cr and the combined psnr_hvs.
  *
  * Skip behaviour: exits 77 when there is no SYCL device.
  */
@@ -60,7 +59,6 @@ static const HvsTwin twin = {
     .open = twin_open,
     .import = twin_import,
     .close = twin_close,
-    .scores_yuv400 = 0,
 };
 
 static char *test_psnr_hvs_sycl_registered(void)
@@ -83,6 +81,11 @@ static char *test_psnr_hvs_every_layout_identical(void)
     return hvs_twin_every_layout_identical(&twin);
 }
 
+static char *test_psnr_hvs_luma_only_identical(void)
+{
+    return hvs_twin_luma_only_identical(&twin);
+}
+
 static char *test_psnr_hvs_2160p_identical(void)
 {
     return hvs_twin_2160p_identical(&twin);
@@ -94,6 +97,7 @@ char *run_tests(void)
     mu_run_test(test_psnr_hvs_cpu_sycl_identical);
     mu_run_test(test_psnr_hvs_every_depth_identical);
     mu_run_test(test_psnr_hvs_every_layout_identical);
+    mu_run_test(test_psnr_hvs_luma_only_identical);
     mu_run_test(test_psnr_hvs_2160p_identical);
     return NULL;
 }

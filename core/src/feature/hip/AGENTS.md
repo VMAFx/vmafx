@@ -249,8 +249,14 @@ Load-bearing, each one breaks bit-identity on its own:
 - no sum of terms in kernel or host TU (per-block partials round differently:
   1e-2 dB at 3840x2160).
 
+Plane count = `psnr_hvs_plane_count(s)` (`s->n_planes` clamped to 3): 1 for
+`enable_chroma=false` or 4:0:0 (CPU `psnr_hvs.c::init` rule), else 3. Staging,
+uploads, kernel `args.n_planes`, scores and emitted features all loop to it; a
+fixed `PSNR_HVS_NUM_PLANES` loop there re-breaks 4:0:0 (reads `data[1]` of a
+luma-only picture).
+
 Guards: `test_hip_psnr_hvs_parity{,_large}` (device, `==` on all four outputs,
-3840x2160 included), `test_psnr_hvs_twin_exact_sum_contract.py` and
+3840x2160, 4:0:0 and `enable_chroma=false` included), `test_psnr_hvs_twin_exact_sum_contract.py` and
 `test_psnr_hvs_score` (device-free). Gate cell = tolerance 0 (`EXACT_TWINS`,
 `scripts/ci/cross_backend_calibration.py`). Upstream change to
 `calc_psnrhvs()` arithmetic or order -> mirror it here in the same PR.

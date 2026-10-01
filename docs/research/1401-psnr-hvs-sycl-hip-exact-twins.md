@@ -184,8 +184,10 @@ integer correction once that is proven.
 - **4:0:0.** `psnr_hvs_sycl` and `psnr_hvs_hip` refuse 4:0:0 input at `init()`;
   the CPU extractor and `psnr_hvs_cuda` score its luma plane.
   `docs/metrics/psnr-hvs.md` claimed luma-only scoring for all three twins and
-  is corrected; `T-SYCL-HIP-PSNR-HVS-YUV400-REFUSED-2026-10-01` tracks the
-  twins. The shared test compares 4:0:0 only for a twin that scores it.
+  is corrected; `T-SYCL-HIP-PSNR-HVS-YUV400-REFUSED-2026-10-01` tracked the
+  twins. Fixed on `fix/psnr-hvs-sycl-hip-yuv400`: both score the luma plane,
+  `psnr_hvs_hip` takes `enable_chroma`, and the shared test compares 4:0:0
+  and `enable_chroma=false` for every twin.
 - **A GPU memory access fault on the gfx1036.** One run of the new HIP twin on
   24 frames of the 3840x2160 10-bit fixture, the first after a 3840x2160 8-bit
   run, was killed with `Memory access fault by GPU node-1 ... Page not present

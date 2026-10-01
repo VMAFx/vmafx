@@ -357,7 +357,9 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   Kernel stays scratch-free (ADR-1395): `private_mem_size` and
   `spill_memory_size` 0 on the A380 at SIMD16 and forced SIMD32; terms go
   straight to USM, no private `float[64]`; `test_sycl_kernel_scratch` fails
-  if the kernel gains any. Guards:
+  if the kernel gains any. `n_active_planes` = 1 for `enable_chroma=false`
+  or 4:0:0 (CPU `psnr_hvs.c::init` rule, set in `configure_hvs_geometry()`),
+  else 3; 4:0:0 must not reach the shared chroma planes. Guards:
   `test_sycl_psnr_hvs_parity{,_simd32,_large}` (device, `==` on all four
   outputs, 3840x2160 included), `test_sycl_fp_arith_contract`
   (`sqrt_prod_rn` on the device vs the host's fp64 expression),

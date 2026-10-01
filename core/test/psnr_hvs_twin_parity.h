@@ -20,8 +20,9 @@
  * exact one.
  *
  * A test describes its backend in one HvsTwin and wraps the hvs_twin_*()
- * cases. Each comparison opens its own device state: a SYCL state keeps the
- * geometry of its first frame. Without a device, or with a twin that is not
+ * cases: 8 to 12 bits, 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4, `enable_chroma=false`,
+ * and 3840x2160. Each comparison opens its own device state: a SYCL state
+ * keeps the geometry of its first frame. Without a device, or with a twin that is not
  * built (-ENOSYS, the HIP scaffold contract), a case is skipped and the test
  * exits 77.
  */
@@ -64,9 +65,6 @@ typedef struct HvsTwin {
     int (*open)(void **state);
     int (*import)(VmafContext *vmaf, void *state);
     int (*close)(void *state);
-    /* Non-zero when the twin scores 4:0:0 input (luma only) as the CPU does;
-     * zero when it refuses the format. */
-    int scores_yuv400;
 } HvsTwin;
 
 enum HvsPattern {
@@ -81,6 +79,7 @@ typedef struct HvsFixture {
     unsigned w;
     unsigned h;
     enum HvsPattern pattern;
+    int luma_only; /* run both sides with enable_chroma=false */
 } HvsFixture;
 
 static const char *const hvs_features[HVS_FEATURES] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
@@ -141,16 +140,23 @@ static inline int hvs_fill_pic(VmafPicture *pic, const HvsFixture *fx, unsigned 
     return 0;
 }
 
-/* A context scoring psnr_hvs on the CPU (`state` NULL) or on the twin.
- * `*unbuilt` is set when the twin's registration reports -ENOSYS. */
-static inline mu_message_t hvs_open_context(const HvsTwin *twin, void *state, VmafContext **vmaf,
-                                            int *unbuilt)
+/* A context scoring psnr_hvs on the CPU (`state` NULL) or on the twin, with
+ * the fixture's options. `*unbuilt` is set when the twin's registration
+ * reports -ENOSYS. */
+static inline mu_message_t hvs_open_context(const HvsTwin *twin, void *state, const HvsFixture *fx,
+                                            VmafContext **vmaf, int *unbuilt)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     mu_assert("vmaf_init failed", !vmaf_init(vmaf, cfg));
     if (state)
         mu_assert("importing the device state failed", !twin->import(*vmaf, state));
-    const int err = vmaf_use_feature(*vmaf, state ? twin->extractor : "psnr_hvs", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (fx->luma_only) {
+        mu_assert("setting enable_chroma failed",
+                  !vmaf_feature_dictionary_set(&opts, "enable_chroma", "false"));
+    }
+    /* vmaf_use_feature() takes the dictionary over, on failure too. */
+    const int err = vmaf_use_feature(*vmaf, state ? twin->extractor : "psnr_hvs", opts);
     if (state && err == -ENOSYS) {
         *unbuilt = 1;
     } else {
@@ -159,12 +165,12 @@ static inline mu_message_t hvs_open_context(const HvsTwin *twin, void *state, Vm
     return NULL;
 }
 
-/* Reads the emitted scores of frame 0. A 4:0:0 fixture has no chroma scores;
- * those slots stay 0 on both sides. */
+/* Reads the emitted scores of frame 0. A 4:0:0 or enable_chroma=false fixture
+ * has no chroma scores; those slots stay 0 on both sides. */
 static inline mu_message_t hvs_read_scores(VmafContext *vmaf, const HvsFixture *fx,
                                            double scores[HVS_FEATURES])
 {
-    const int luma_only = (fx->fmt == VMAF_PIX_FMT_YUV400P);
+    const int luma_only = (fx->fmt == VMAF_PIX_FMT_YUV400P) || fx->luma_only;
     for (unsigned i = 0; i < HVS_FEATURES; i++) {
         scores[i] = 0.0;
         if (luma_only && (i == 1u || i == 2u))
@@ -206,7 +212,7 @@ static inline mu_message_t hvs_score(const HvsTwin *twin, void *state, const Hvs
                                      double scores[HVS_FEATURES], int *unbuilt)
 {
     VmafContext *vmaf = NULL;
-    mu_message_t msg = hvs_open_context(twin, state, &vmaf, unbuilt);
+    mu_message_t msg = hvs_open_context(twin, state, fx, &vmaf, unbuilt);
     if (!msg && !*unbuilt)
         msg = hvs_feed(vmaf, fx, state != NULL, unbuilt);
     if (!msg && !*unbuilt)
@@ -284,9 +290,9 @@ static inline mu_message_t hvs_twin_registered(const HvsTwin *twin)
 /* FIXTURE_W x FIXTURE_H at 8 bits: 256x144, or what a `_large` variant sets. */
 static inline mu_message_t hvs_twin_identical(const HvsTwin *twin)
 {
-    const HvsFixture ramp = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_RAMP};
+    const HvsFixture ramp = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_RAMP, 0};
     mu_assert_msg(hvs_compare(twin, &ramp));
-    const HvsFixture noise = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_NOISE};
+    const HvsFixture noise = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_NOISE, 0};
     return hvs_compare(twin, &noise);
 }
 
@@ -296,34 +302,43 @@ static inline mu_message_t hvs_twin_identical(const HvsTwin *twin)
 static inline mu_message_t hvs_twin_every_depth_identical(const HvsTwin *twin)
 {
     for (unsigned bpc = 9u; bpc <= 12u; bpc++) {
-        const HvsFixture fx = {VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u, HVS_PATTERN_MIXED};
+        const HvsFixture fx = {VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u, HVS_PATTERN_MIXED, 0};
         mu_assert_msg(hvs_compare(twin, &fx));
     }
     return NULL;
 }
 
-/* 4:2:2 and 4:4:4 change the chroma block counts and with them the length of
- * each chroma sum. 4:0:0 input: the CPU extractor scores luma only; a twin
- * that does the same (`scores_yuv400`) is compared on it too. */
+/* 4:0:0 input: the CPU extractor scores luma only; a twin must do the same
+ * instead of refusing the format. 4:2:2 and 4:4:4 change the chroma block
+ * counts and with them the length of each chroma sum. */
 static inline mu_message_t hvs_twin_every_layout_identical(const HvsTwin *twin)
 {
-    static const enum VmafPixelFormat layouts[] = {VMAF_PIX_FMT_YUV422P, VMAF_PIX_FMT_YUV444P,
-                                                   VMAF_PIX_FMT_YUV400P};
-    const unsigned count = twin->scores_yuv400 ? 3u : 2u;
-    for (unsigned i = 0; i < count; i++) {
-        const HvsFixture fx = {layouts[i], 8u, 64u, 48u, HVS_PATTERN_MIXED};
+    static const enum VmafPixelFormat layouts[] = {VMAF_PIX_FMT_YUV400P, VMAF_PIX_FMT_YUV422P,
+                                                   VMAF_PIX_FMT_YUV444P};
+    for (unsigned i = 0; i < sizeof(layouts) / sizeof(layouts[0]); i++) {
+        const HvsFixture fx = {layouts[i], 8u, 64u, 48u, HVS_PATTERN_MIXED, 0};
         mu_assert_msg(hvs_compare(twin, &fx));
     }
     return NULL;
+}
+
+/* enable_chroma=false: luma is scored, the chroma planes are neither staged
+ * nor dispatched, and psnr_hvs is the luma score. */
+static inline mu_message_t hvs_twin_luma_only_identical(const HvsTwin *twin)
+{
+    const HvsFixture fx = {VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, HVS_PATTERN_NOISE, 1};
+    mu_assert_msg(hvs_compare(twin, &fx));
+    const HvsFixture deep = {VMAF_PIX_FMT_YUV422P, 10u, 64u, 48u, HVS_PATTERN_MIXED, 1};
+    return hvs_compare(twin, &deep);
 }
 
 /* 3840x2160: 10.8 million luma terms in one running float. A twin that sums
  * each block first is 1e-2 dB away from the CPU here on real content. */
 static inline mu_message_t hvs_twin_2160p_identical(const HvsTwin *twin)
 {
-    const HvsFixture uhd8 = {VMAF_PIX_FMT_YUV420P, 8u, 3840u, 2160u, HVS_PATTERN_NOISE};
+    const HvsFixture uhd8 = {VMAF_PIX_FMT_YUV420P, 8u, 3840u, 2160u, HVS_PATTERN_NOISE, 0};
     mu_assert_msg(hvs_compare(twin, &uhd8));
-    const HvsFixture uhd10 = {VMAF_PIX_FMT_YUV420P, 10u, 3840u, 2160u, HVS_PATTERN_NOISE};
+    const HvsFixture uhd10 = {VMAF_PIX_FMT_YUV420P, 10u, 3840u, 2160u, HVS_PATTERN_NOISE, 0};
     return hvs_compare(twin, &uhd10);
 }
 

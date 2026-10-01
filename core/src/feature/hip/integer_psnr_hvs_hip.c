@@ -16,7 +16,10 @@
  *    not wait for the device.
  *  - collect() waits once and emits `psnr_hvs_y/cb/cr` and
  *    `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)`.
- *  - Rejects YUV400P (no chroma) and bpc > 12.
+ *  - With `enable_chroma=false`, or for 4:0:0 input, only the luma plane is
+ *    staged, dispatched and scored, and `psnr_hvs` is the luma score, as in
+ *    the CPU extractor (third_party/xiph/psnr_hvs.c::init).
+ *  - Rejects bpc > 12.
  *
  *  ADR-1397: the scores are the CPU extractor's bit for bit. The kernel
  *  stores the 64 masked coefficient errors of every block, computed in the
@@ -33,6 +36,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -82,6 +86,12 @@ typedef struct PsnrHvsStateHip {
     unsigned total_blocks;
     size_t row_bytes[PSNR_HVS_NUM_PLANES];
     unsigned bpc;
+    /* enable_chroma: when false, only the luma plane is scored. Default true,
+     * as in the CPU extractor. */
+    bool enable_chroma;
+    /* Planes staged, dispatched and scored: 1 when enable_chroma is false or
+     * the input is 4:0:0, else 3. */
+    unsigned n_planes;
 
 #ifdef HAVE_HIPCC
     hipModule_t module;
@@ -103,7 +113,25 @@ typedef struct PsnrHvsStateHip {
     VmafDictionary *feature_name_dict;
 } PsnrHvsStateHip;
 
-static const VmafOption options[] = {{0}};
+/* Planes the twin stages, dispatches and scores: s->n_planes, never more than
+ * the three the state's arrays hold. */
+static unsigned psnr_hvs_plane_count(const PsnrHvsStateHip *s)
+{
+    return s->n_planes < (unsigned)PSNR_HVS_NUM_PLANES ? s->n_planes :
+                                                         (unsigned)PSNR_HVS_NUM_PLANES;
+}
+
+static const VmafOption options[] = {
+    {
+        .name = "enable_chroma",
+        .help = "enable psnr_hvs calculation for chroma channels (Cb and Cr); "
+                "when false only the luma plane is scored and psnr_hvs equals "
+                "psnr_hvs_y",
+        .offset = offsetof(PsnrHvsStateHip, enable_chroma),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = true,
+    },
+    {0}};
 
 #ifdef HAVE_HIPCC
 static int psnr_hvs_hip_rc(hipError_t rc)
@@ -197,7 +225,7 @@ static int psnr_hvs_alloc_pair(void **device, void **pinned, size_t bytes)
 static int psnr_hvs_alloc_buffers(PsnrHvsStateHip *s)
 {
     int err = 0;
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES && !err; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s) && !err; p++) {
         const size_t bytes = s->row_bytes[p] * s->height[p];
         err = psnr_hvs_alloc_pair(&s->d_ref[p], &s->h_ref[p], bytes);
         if (!err)
@@ -242,13 +270,22 @@ static int psnr_hvs_unwind_module(PsnrHvsStateHip *s, int err)
 }
 #endif /* HAVE_HIPCC */
 
-/* Per-plane dimensions for `pix_fmt`, by picture.c's ceil rule. */
+/* Per-plane dimensions for `pix_fmt`, by picture.c's ceil rule, and the number
+ * of planes to score. */
 static int psnr_hvs_set_plane_dims(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
                                    unsigned h)
 {
     s->width[0] = w;
     s->height[0] = h;
+    /* 4:0:0 has no chroma planes: luma only whatever enable_chroma says, as in
+     * the CPU extractor (third_party/xiph/psnr_hvs.c::init). */
+    s->n_planes =
+        (s->enable_chroma && pix_fmt != VMAF_PIX_FMT_YUV400P) ? (unsigned)PSNR_HVS_NUM_PLANES : 1u;
     switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV400P:
+        s->width[1] = s->width[2] = 0u;
+        s->height[1] = s->height[2] = 0u;
+        break;
     case VMAF_PIX_FMT_YUV420P:
         s->width[1] = s->width[2] = (w + 1u) >> 1;
         s->height[1] = s->height[2] = (h + 1u) >> 1;
@@ -268,8 +305,8 @@ static int psnr_hvs_set_plane_dims(PsnrHvsStateHip *s, enum VmafPixelFormat pix_
     return 0;
 }
 
-/* Block grid of every plane and the planes' offsets in the one term buffer
- * the single dispatch writes. */
+/* Block grid of every active plane and the planes' offsets in the one term
+ * buffer the single dispatch writes. */
 static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
                                        unsigned h)
 {
@@ -279,10 +316,10 @@ static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat 
 
     const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
     s->total_blocks = 0u;
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "psnr_hvs_hip: plane %d dims %ux%u smaller than 8x8 block\n", p, s->width[p],
+                     "psnr_hvs_hip: plane %u dims %ux%u smaller than 8x8 block\n", p, s->width[p],
                      s->height[p]);
             return -EINVAL;
         }
@@ -296,17 +333,11 @@ static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat 
     return 0;
 }
 
-static int psnr_hvs_validate_input(enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
-                                   unsigned h)
+static int psnr_hvs_validate_input(unsigned bpc, unsigned w, unsigned h)
 {
     if (bpc > 12u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: invalid bitdepth (%u); bpc must be <= 12\n",
                  bpc);
-        return -EINVAL;
-    }
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "psnr_hvs_hip: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
         return -EINVAL;
     }
     if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
@@ -321,7 +352,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 {
     PsnrHvsStateHip *s = fex->priv;
 
-    int err = psnr_hvs_validate_input(pix_fmt, bpc, w, h);
+    int err = psnr_hvs_validate_input(bpc, w, h);
     if (err != 0)
         return err;
 
@@ -366,7 +397,7 @@ static int psnr_hvs_picture_matches(const PsnrHvsStateHip *s, const VmafPicture 
 {
     if (pic == NULL || pic->bpc != s->bpc)
         return 0;
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         if (pic->data[p] == NULL || pic->w[p] != s->width[p] || pic->h[p] != s->height[p])
             return 0;
     }
@@ -377,7 +408,8 @@ static int psnr_hvs_picture_matches(const PsnrHvsStateHip *s, const VmafPicture 
  * caller when submit() returns, so the device copy must not read it
  * (core/src/feature/hip/AGENTS.md, "Picture uploads"); the staging buffer is
  * the extractor's until the next submit(), which follows collect(). */
-static void psnr_hvs_stage_plane(const PsnrHvsStateHip *s, const VmafPicture *pic, int p, void *dst)
+static void psnr_hvs_stage_plane(const PsnrHvsStateHip *s, const VmafPicture *pic, unsigned p,
+                                 void *dst)
 {
     const uint8_t *src = (const uint8_t *)pic->data[p];
     uint8_t *out = (uint8_t *)dst;
@@ -393,7 +425,7 @@ static void psnr_hvs_stage_plane(const PsnrHvsStateHip *s, const VmafPicture *pi
 
 static int psnr_hvs_enqueue_uploads(const PsnrHvsStateHip *s, hipStream_t str)
 {
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         const size_t bytes = s->row_bytes[p] * s->height[p];
         hipError_t rc = hipMemcpyAsync(s->d_ref[p], s->h_ref[p], bytes, hipMemcpyHostToDevice, str);
         if (rc == hipSuccess)
@@ -415,7 +447,7 @@ static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
 
     struct PsnrHvsHipKernelArgs args;
     (void)memset(&args, 0, sizeof(args));
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         args.plane[p].ref = s->d_ref[p];
         args.plane[p].dist = s->d_dist[p];
         args.plane[p].width = s->width[p];
@@ -423,7 +455,7 @@ static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
         args.plane[p].first_block = s->first_block[p];
     }
     args.terms = s->d_terms;
-    args.n_planes = PSNR_HVS_NUM_PLANES;
+    args.n_planes = psnr_hvs_plane_count(s);
     args.total_blocks = s->total_blocks;
     args.wide = (s->bpc > 8u) ? 1u : 0u;
     void *params[] = {&args};
@@ -450,7 +482,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #ifdef HAVE_HIPCC
     if (!psnr_hvs_picture_matches(s, ref_pic) || !psnr_hvs_picture_matches(s, dist_pic))
         return -EINVAL;
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         psnr_hvs_stage_plane(s, ref_pic, p, s->h_ref[p]);
         psnr_hvs_stage_plane(s, dist_pic, p, s->h_dist[p]);
     }
@@ -494,7 +526,7 @@ static void psnr_hvs_plane_scores(const PsnrHvsStateHip *s, double plane_score[]
     // SAFETY: s->h_terms holds PSNR_HVS_HIP_TERMS floats for each of the
     // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
     // s->total_blocks holds by construction (psnr_hvs_set_plane_geometry).
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         const float *plane_terms =
             s->h_terms + ((size_t)s->first_block[p] * (size_t)PSNR_HVS_HIP_TERMS);
         plane_score[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
@@ -502,17 +534,17 @@ static void psnr_hvs_plane_scores(const PsnrHvsStateHip *s, double plane_score[]
 }
 
 /* The CPU extract() expressions: dB per plane, then the weighted score. */
-static int psnr_hvs_append_scores(VmafFeatureCollector *feature_collector,
+static int psnr_hvs_append_scores(VmafFeatureCollector *feature_collector, const PsnrHvsStateHip *s,
                                   const double plane_score[], unsigned index)
 {
     static const char *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
                                                               "psnr_hvs_cr"};
     int err = 0;
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
         err |= vmaf_feature_collector_append(feature_collector, plane_features[p],
                                              vmaf_psnr_hvs_score_db(plane_score[p]), index);
     }
-    const double combined = vmaf_psnr_hvs_combined_score(plane_score, PSNR_HVS_NUM_PLANES);
+    const double combined = vmaf_psnr_hvs_combined_score(plane_score, psnr_hvs_plane_count(s));
     err |= vmaf_feature_collector_append(feature_collector, "psnr_hvs",
                                          vmaf_psnr_hvs_score_db(combined), index);
     return err;
@@ -529,9 +561,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return wait_err;
 
 #ifdef HAVE_HIPCC
-    double plane_score[PSNR_HVS_NUM_PLANES];
+    double plane_score[PSNR_HVS_NUM_PLANES] = {0.0, 0.0, 0.0};
     psnr_hvs_plane_scores(s, plane_score);
-    return psnr_hvs_append_scores(feature_collector, plane_score, index);
+    return psnr_hvs_append_scores(feature_collector, s, plane_score, index);
 #else
     (void)feature_collector;
     (void)index;

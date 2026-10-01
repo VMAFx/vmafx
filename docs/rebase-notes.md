@@ -56653,3 +56653,30 @@ rebase that touches these files with the reproducer of Research-1401.
   `test_hip_device_resident_contract.py` forbids a device sine and a table
   that is not the host's (four planted regressions).
 - `T-CI-PARITY-GATE-MOTION-DEBUG-DEFAULT-2026-09-29` ([ADR-1418](adr/1418-motion-parity-gate-metric-alignment.md)): `core/src/feature/sycl/integer_motion_sycl.cpp` declares `debug` with default `false`, like the CPU, CUDA and HIP motion extractors; keep the four declarations equal (`core/test/test_sycl_twin_option_parity.c`). `scripts/ci/cross_backend_parity_gate.py` and `scripts/ci/cross_backend_vif_diff.py` carry a `motion_debug` cell (`motion` with `debug=true`) and fail a cell whose runs emit different metric sets; do not restore a comparison over the common subset.
+
+## psnr_hvs_sycl and psnr_hvs_hip score 4:0:0; psnr_hvs_hip takes enable_chroma (2026-10-01)
+
+`fix/psnr-hvs-sycl-hip-yuv400`, closes `T-SYCL-HIP-PSNR-HVS-YUV400-REFUSED-2026-10-01`. No ADR: the
+behaviour is the CPU extractor's (`third_party/xiph/psnr_hvs.c::init`) and the
+CUDA twin's.
+
+- `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: `validate_hvs_input()` no
+  longer rejects `VMAF_PIX_FMT_YUV400P`; `configure_hvs_geometry()` sets
+  `n_active_planes` to 1 for 4:0:0 or `enable_chroma=false` and gives the
+  format a case in its switch.
+- `core/src/feature/hip/integer_psnr_hvs_hip.c`: new `enable_chroma` option and
+  `n_planes` state member. `psnr_hvs_set_plane_dims()` sets `n_planes` (and
+  accepts 4:0:0); buffer allocation, staging, uploads, the kernel's
+  `args.n_planes`, the plane scores and the emitted features loop to
+  `psnr_hvs_plane_count(s)` (`n_planes`, clamped to the three planes the state
+  holds) instead of `PSNR_HVS_NUM_PLANES`. Keep it that way when
+  resolving conflicts: a fixed three-plane loop reads `data[1]` of a luma-only
+  picture.
+- `core/test/psnr_hvs_twin_parity.h`: `HvsTwin.scores_yuv400` is gone (every
+  twin scores 4:0:0), `HvsFixture.luma_only` runs both sides with
+  `enable_chroma=false`, and `hvs_twin_luma_only_identical()` is a new shared
+  case that the three twin tests call.
+
+No public C API or CLI syntax change. One new extractor option
+(`psnr_hvs_hip`: `enable_chroma`), documented in `docs/metrics/psnr-hvs.md`.
+No FFmpeg patch impact. CPU scores are unchanged.

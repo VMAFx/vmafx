@@ -659,17 +659,11 @@ static const VmafOption options_psnr_hvs_sycl[] = {
 namespace
 {
 
-static int validate_hvs_input(enum VmafPixelFormat format, unsigned bpc, unsigned width,
-                              unsigned height)
+static int validate_hvs_input(unsigned bpc, unsigned width, unsigned height)
 {
     if (bpc > 12) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: invalid bitdepth (%u); bpc must be ≤ 12\n",
                  bpc);
-        return -EINVAL;
-    }
-    if (format == VMAF_PIX_FMT_YUV400P) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "psnr_hvs_sycl: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
         return -EINVAL;
     }
     if (width < (unsigned)PSNR_HVS_BLOCK || height < (unsigned)PSNR_HVS_BLOCK) {
@@ -690,7 +684,15 @@ static int configure_hvs_geometry(PsnrHvsStateSycl *s, enum VmafPixelFormat form
 {
     s->width[0] = width;
     s->height[0] = height;
+    /* 4:0:0 has no chroma planes: luma only whatever enable_chroma says, as in
+     * the CPU extractor (third_party/xiph/psnr_hvs.c::init). */
+    s->n_active_planes =
+        (s->enable_chroma && format != VMAF_PIX_FMT_YUV400P) ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
     switch (format) {
+    case VMAF_PIX_FMT_YUV400P:
+        s->width[1] = s->width[2] = 0U;
+        s->height[1] = s->height[2] = 0U;
+        break;
     case VMAF_PIX_FMT_YUV420P:
         s->width[1] = s->width[2] = (width + 1u) >> 1;
         s->height[1] = s->height[2] = (height + 1u) >> 1;
@@ -717,7 +719,6 @@ namespace
 
 static int configure_hvs_blocks(PsnrHvsStateSycl *s)
 {
-    s->n_active_planes = s->enable_chroma ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
     s->total_blocks = 0U;
     for (int plane = 0; std::cmp_less(plane, s->n_active_planes); plane++) {
         if (s->width[plane] < (unsigned)PSNR_HVS_BLOCK ||
@@ -786,7 +787,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
 
-    const int input_err = validate_hvs_input(pix_fmt, bpc, w, h);
+    const int input_err = validate_hvs_input(bpc, w, h);
     if (input_err) {
         return input_err;
     }

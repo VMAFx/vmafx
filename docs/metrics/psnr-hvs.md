@@ -72,11 +72,9 @@ each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
 launch covers every plane. Samples at 9 and 11 bits are scored as they are, like
 every other depth (the twins that converted on the host scored them wrongly).
 
-`psnr_hvs_cuda` scores 4:0:0 input on luma only, as the CPU does.
-`psnr_hvs_sycl` and `psnr_hvs_hip` refuse 4:0:0 input (`init()` fails with
-`YUV400P unsupported`); `T-SYCL-HIP-PSNR-HVS-YUV400-REFUSED-2026-10-01` in
-[docs/state.md](../state.md) tracks that. `psnr_hvs_hip` has no `enable_chroma`
-option and always scores the three planes.
+All three twins take the `enable_chroma` option. With `enable_chroma=false`, or
+for 4:0:0 input, they stage, dispatch and score the luma plane only and emit
+`psnr_hvs_y` and `psnr_hvs`, as the CPU does.
 
 ### Agreement with the CPU extractor
 

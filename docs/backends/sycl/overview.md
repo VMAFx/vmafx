@@ -885,7 +885,7 @@ for the timings. Before, the twin summed per block and was up to 1.1e-2 dB
 from the CPU at 3840x2160 (8.4e-5 at 576x324), under a tolerance that grew
 with the frame size
 ([ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)). 4:0:0
-input is refused.
+input is scored on luma only, as on the CPU.
 
 ## CPU options on the PSNR, SSIM and float-motion twins (2026-09-29)
 
