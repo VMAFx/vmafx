@@ -1524,6 +1524,7 @@ nav:
         - "ADR-1410: sycl-cli-pinned-host-picture-pool": adr/1410-sycl-cli-pinned-host-picture-pool.md
         - "ADR-1411: sycl-float-motion-cpu-float-sum": adr/1411-sycl-float-motion-cpu-float-sum.md
         - "ADR-1415: x86-simd-libraries-strict-fp": adr/1415-x86-simd-libraries-strict-fp.md
+        - "ADR-1418: motion-parity-gate-metric-alignment": adr/1418-motion-parity-gate-metric-alignment.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1915,6 +1916,7 @@ nav:
         - "packaging": adr/by-tag/packaging.md
         - "panel": adr/by-tag/panel.md
         - "pareto": adr/by-tag/pareto.md
+        - "parity-gate": adr/by-tag/parity-gate.md
         - "parity": adr/by-tag/parity.md
         - "parquet": adr/by-tag/parquet.md
         - "parser": adr/by-tag/parser.md

@@ -8540,6 +8540,15 @@
         "core/test/test_ssim_x86_simd.c": 1
       },
       "target": "1415-x86-simd-libraries-strict-fp.md"
+    },
+    "1418": {
+      "sites": {
+        "core/test/test_sycl_twin_option_parity.c": 1,
+        "scripts/ci/cross_backend_parity_gate.py": 1,
+        "scripts/ci/cross_backend_vif_diff.py": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 1
+      },
+      "target": "1418-motion-parity-gate-metric-alignment.md"
     }
   },
   "retired": {
