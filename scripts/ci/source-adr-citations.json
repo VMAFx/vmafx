@@ -5522,6 +5522,7 @@
         "core/src/dnn/dnn_attach_api.c": 4,
         "core/src/dnn/ort_backend.c": 2,
         "core/src/dnn/ort_backend.h": 1,
+        "core/src/libvmaf.c": 1,
         "core/test/dnn/test_dnn_session_api.c": 3,
         "core/test/dnn/test_vmaf_use_tiny_model.c": 1,
         "core/test/test_context.c": 1
@@ -8161,6 +8162,13 @@
         "core/test/test_cuda_kernel_source_contract.py": 3
       },
       "target": "1392-cuda-integer-reductions-one-atomic-per-block.md"
+    },
+    "1396": {
+      "sites": {
+        "core/src/libvmaf.c": 1,
+        "core/test/test_context.c": 1
+      },
+      "target": "1396-vmaf-init-output-only-handle.md"
     }
   },
   "retired": {

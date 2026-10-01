@@ -697,6 +697,8 @@
   an Arc B580 changed by more than the run-to-run spread. AdaptiveCpp builds
   keep contraction-off only. See
   [the SYCL backend guide](docs/backends/sycl/overview.md#what-the-sycl-compile-line-guarantees).
+
+
 - **`vmaf_init()` accepts an uninitialised handle again, as upstream libvmaf
   does.** Since ADR-1032 it returned `-EINVAL` whenever `*vmaf` was not NULL.
   Callers written against upstream, whose own CLI and tests declare
