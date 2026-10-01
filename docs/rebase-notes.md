@@ -56461,3 +56461,37 @@ Verification:
 
 - **Files changed**: `tools/vmaf-tune/src/vmaftune/cache.py`, `tools/vmaf-tune/src/vmaftune/corpus.py`, `tools/vmaf-tune/tests/test_cache.py`
 - **Rebase impact**: pure Python tooling changes in `tools/vmaf-tune/`. No upstream-shared C headers or core library impacted.
+## ADR-1408 — a VmafContext uploads each frame plane once for all HIP twins (2026-10-01)
+
+`perf/hip-shared-plane-uploads`, Research-1408, ADR-1408.
+
+- `core/src/hip/shared_frame.{c,h}` (new): `VmafHipSharedFrame`, owned by the
+  `VmafContext` (`vmaf->hip.frame` in `core/src/libvmaf.c`), and
+  `VmafHipPlaneSource`, a twin's handle. `VmafFeatureExtractor::hip_frame`
+  (under `HAVE_HIP`, next to `cu_state` / `sycl_state`) is set by
+  `set_fex_hip_frame()` and copied in `refresh_fex_runtime_state()`.
+- `core/src/libvmaf.c`: the old `read_pictures_extractor_loop()` body is now
+  `read_pictures_dispatch_extractors()`; the new `read_pictures_extractor_loop()`
+  wraps it in `vmaf_hip_shared_frame_begin()` / `_end()` under `HAVE_HIP`. An
+  upstream change to the dispatch loop goes into
+  `read_pictures_dispatch_extractors()`. `vmaf_close_backends()` destroys the
+  shared frame; it must stay after the extractors are closed.
+- Thirteen HIP twins (`psnr`, `float_psnr`, `float_moment`, `ciede`,
+  `integer_ssim`, `float_ssim`, `vif`, `float_vif`, `adm`, `float_adm`,
+  `motion`, `motion_v2`, `float_motion`) no longer allocate picture staging
+  or call `vmaf_hip_picture_upload()`: `submit()` calls
+  `vmaf_hip_plane_source_acquire[_luma]()` and `close()` calls
+  `vmaf_hip_plane_source_close()`. A twin ported or rebased from the CUDA
+  side must keep that shape; `core/test/test_hip_shared_frame_contract.py`
+  lists the adopted twins (`ADOPTED`) and fails on an own upload.
+- `integer_motion_sad_hip.{c,h}`: `VmafHipMotionSadFrame` is now
+  `{cur, keep, have_prev, sad, width, height, bpc}`. The motion twins keep one
+  `prev_luma` plane and copy the frame's luma into it device-to-device behind
+  the SAD; the pinned staging plane and the `pix[2]` ping-pong are gone.
+- `integer_vif_hip.c`: `buf.stride` (the raw planes' byte stride) is packed,
+  `w * bytes-per-sample`, no longer rounded up to 64.
+- `core/test/test_hip_adm_init_unwind.c` stubs the two plane-source entry
+  points `integer_adm_hip.c` calls; a new call from that TU into
+  `shared_frame.c` needs a stub there.
+- No output changes: every metric of every adopted twin is bit-identical
+  before and after.

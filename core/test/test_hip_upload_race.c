@@ -16,7 +16,13 @@
  * samples, a different set on every run. Every extractor now stages its
  * pictures through vmaf_hip_picture_upload(), which waits for the copies.
  *
- * Two checks, over every HIP extractor that uploads from VmafPicture::data:
+ * Since ADR-1408 the upload of a frame is shared: a context uploads each
+ * plane once and every extractor reads that copy
+ * (core/src/hip/shared_frame.h). The wait moved with it, so checks 3 and 4
+ * repeat 1 and 2 with every extractor in one frame, which is where the
+ * planes are shared.
+ *
+ * Four checks, over every HIP extractor that uploads from VmafPicture::data:
  *
  *   1. test_pooled_parity: the path a user takes. N_FRAMES frames from a
  *      picture pool sized like the CLI's (hip_pooled_fixture.h) through
@@ -30,7 +36,19 @@
  *      leaves them alone. vmaf_read_pictures() holds the reference picture
  *      for one more frame (prev_ref), so check 1 cannot see an extractor
  *      that uploads the reference only (motion_hip, motion_v2_hip,
- *      float_motion_hip); this check can.
+ *      float_motion_hip); this check can. Without a context the extractor
+ *      uploads into planes of its own, so this is the unshared path.
+ *
+ *   3. test_shared_pooled_parity: check 1 with every extractor registered in
+ *      one context, with and without frame subsampling (the temporal
+ *      extractors then run on frames the others skip, and an upload must not
+ *      overwrite a plane a skipped extractor's kernels still read). Each
+ *      plane of a frame is uploaded at most once.
+ *
+ *   4. test_shared_recycle_after_frame: check 2 on the shared path. Every
+ *      extractor submits the frame between vmaf_hip_shared_frame_begin() and
+ *      vmaf_hip_shared_frame_end(), exactly as vmaf_read_pictures() drives
+ *      them, and both pictures are overwritten the moment the frame ended.
  *
  * Skip behaviour: no HIP device, or a build without device kernels
  * (-ENOSYS from init), prints "[skip: ...]" and exits as skipped.
@@ -38,6 +56,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -47,10 +66,12 @@
 
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
+#include "hip/shared_frame.h"
 #include "hip_pooled_fixture.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
+#include "libvmaf_priv.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -338,10 +359,258 @@ static char *test_recycle_after_submit(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* Every extractor in one frame: the shared planes (ADR-1408)           */
+/* ------------------------------------------------------------------ */
+
+/* Planes of a 4:2:0 frame pair: Y, U and V of both pictures. */
+#define FRAME_PLANES 6u
+
+/* scores[c][k * N_FRAMES + f] and have[...] for every case of one run. */
+typedef struct AllScores {
+    double value[N_CASES][MAX_KEYS * N_FRAMES];
+    bool have[N_CASES][MAX_KEYS * N_FRAMES];
+} AllScores;
+
+/* Register every case's extractor (`hip` or its CPU twin), feed the pooled
+ * frames and read back every score that was written. */
+static int run_pooled_all(VmafContext *vmaf, bool hip, AllScores *out)
+{
+    int err = 0;
+    for (size_t i = 0u; i < N_CASES && !err; i++) {
+        const RaceCase *c = &race_cases[i];
+        VmafFeatureDictionary *opts = NULL;
+        err = case_opts(c, &opts);
+        if (!err)
+            err = vmaf_use_feature(vmaf, hip ? c->hip : c->cpu, opts);
+    }
+    if (!err)
+        err = hip_fixture_feed_frames(vmaf);
+    if (!err)
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    for (size_t i = 0u; i < N_CASES && !err; i++) {
+        const RaceCase *c = &race_cases[i];
+        for (unsigned k = 0u; k < MAX_KEYS && c->keys[k] != NULL; k++) {
+            for (unsigned f = 0u; f < N_FRAMES; f++) {
+                const unsigned at = (k * N_FRAMES) + f;
+                out->have[i][at] =
+                    vmaf_feature_score_at_index(vmaf, c->keys[k], &out->value[i][at], f) == 0;
+            }
+        }
+    }
+    return err;
+}
+
+/* One context with every extractor; *uploads is what the shared frame
+ * uploaded over the run (HIP only). */
+static int run_all(bool hip, unsigned n_subsample, AllScores *out, uint64_t *uploads)
+{
+    VmafHipState *hip_state = NULL;
+    if (hip) {
+        VmafHipConfiguration hip_cfg = {.device_index = -1};
+        if (vmaf_hip_state_init(&hip_state, hip_cfg) != 0 || hip_state == NULL)
+            return -ENODEV;
+    }
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    if (!err && hip)
+        err = vmaf_hip_import_state(vmaf, hip_state);
+    if (!err)
+        err = run_pooled_all(vmaf, hip, out);
+    if (hip && vmaf != NULL)
+        *uploads = vmaf_context_hip_plane_uploads_for_test(vmaf);
+    const int close_err = (vmaf != NULL) ? vmaf_close(vmaf) : 0;
+    if (hip)
+        vmaf_hip_state_free(&hip_state);
+    return err ? err : close_err;
+}
+
+/* Number of cases with a score missing on one side or beyond the tolerance. */
+static unsigned count_off_cases(const AllScores *cpu, const AllScores *gpu)
+{
+    unsigned off = 0u;
+    for (size_t i = 0u; i < N_CASES; i++) {
+        const RaceCase *c = &race_cases[i];
+        bool bad = false;
+        for (unsigned at = 0u; at < MAX_KEYS * N_FRAMES; at++) {
+            if (c->keys[at / N_FRAMES] == NULL)
+                break;
+            const bool same_frames = cpu->have[i][at] == gpu->have[i][at];
+            const double delta = fabs(cpu->value[i][at] - gpu->value[i][at]);
+            if (!same_frames || (cpu->have[i][at] && delta > c->tol)) {
+                (void)fprintf(stderr, "\n%s %s frame %u: cpu=%.17g hip=%.17g", c->hip,
+                              c->keys[at / N_FRAMES], at % N_FRAMES, cpu->value[i][at],
+                              gpu->value[i][at]);
+                bad = true;
+            }
+        }
+        off += bad ? 1u : 0u;
+    }
+    return off;
+}
+
+static char *check_shared_pooled(unsigned n_subsample)
+{
+    static AllScores cpu;
+    static AllScores gpu;
+    (void)memset(&cpu, 0, sizeof(cpu));
+    (void)memset(&gpu, 0, sizeof(gpu));
+    uint64_t uploads = 0u;
+    mu_assert("CPU extraction of every twin failed", run_all(false, n_subsample, &cpu, NULL) == 0);
+    mu_assert("HIP extraction of every twin in one context failed",
+              run_all(true, n_subsample, &gpu, &uploads) == 0);
+    const unsigned off = count_off_cases(&cpu, &gpu);
+    (void)fprintf(stderr,
+                  "[subsample %u: %zu extractors, %u off, %llu plane uploads in %u frames] ",
+                  n_subsample, N_CASES, off, (unsigned long long)uploads, N_FRAMES);
+    mu_assert("an extractor scored a shared frame against other samples than its own", off == 0u);
+    mu_assert("the extractors of a context did not share the frame's planes", uploads > 0u);
+    mu_assert("a plane of a frame was uploaded more than once",
+              uploads <= (uint64_t)FRAME_PLANES * N_FRAMES);
+    if (n_subsample <= 1u) {
+        mu_assert("every plane of every frame is uploaded exactly once",
+                  uploads == (uint64_t)FRAME_PLANES * N_FRAMES);
+    }
+    return NULL;
+}
+
+static char *test_shared_pooled_parity(void)
+{
+    if (!probe_hip())
+        return NULL;
+    char *msg = check_shared_pooled(1u);
+    if (msg == NULL)
+        msg = check_shared_pooled(2u);
+    return msg;
+}
+
+/* Every case's extractor, driven through the extractor API on one shared
+ * frame. */
+typedef struct DirectRun {
+    VmafHipSharedFrame *frame;
+    VmafFeatureExtractorContext *ctx[N_CASES];
+    VmafPicture ref;
+    VmafPicture dist;
+} DirectRun;
+
+static int direct_open(DirectRun *run)
+{
+    int err = vmaf_hip_shared_frame_create(&run->frame);
+    for (size_t i = 0u; i < N_CASES && !err; i++) {
+        const RaceCase *c = &race_cases[i];
+        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(c->hip);
+        VmafDictionary *opts = NULL;
+        err = (fex == NULL) ? -EINVAL : 0;
+        if (!err && c->opt_key != NULL)
+            err = vmaf_dictionary_set(&opts, c->opt_key, c->opt_val, 0);
+        if (!err)
+            err = vmaf_feature_extractor_context_create(&run->ctx[i], fex, opts);
+        if (err && opts != NULL)
+            (void)vmaf_dictionary_free(&opts);
+        if (!err) {
+            /* What fex_ctx_bind_backends() does for a registered extractor. */
+            run->ctx[i]->fex->hip_frame = run->frame;
+            err = vmaf_feature_extractor_context_init(run->ctx[i], VMAF_PIX_FMT_YUV420P,
+                                                      FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+        }
+    }
+    if (!err) {
+        err =
+            vmaf_picture_alloc(&run->ref, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    }
+    if (!err) {
+        err =
+            vmaf_picture_alloc(&run->dist, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    }
+    return err;
+}
+
+static void direct_close(DirectRun *run)
+{
+    for (size_t i = 0u; i < N_CASES; i++) {
+        if (run->ctx[i] == NULL)
+            continue;
+        (void)vmaf_feature_extractor_context_close(run->ctx[i]);
+        (void)vmaf_feature_extractor_context_destroy(run->ctx[i]);
+    }
+    if (run->ref.ref != NULL)
+        (void)vmaf_picture_unref(&run->ref);
+    if (run->dist.ref != NULL)
+        (void)vmaf_picture_unref(&run->dist);
+    /* After the extractors: they hold planes of it until they are closed. */
+    vmaf_hip_shared_frame_destroy(&run->frame);
+}
+
+/* One frame as vmaf_read_pictures() drives it: every extractor submits
+ * between begin() and end(). With `recycle`, both pictures are overwritten
+ * with the next frame as soon as the frame ended. */
+static int direct_frame(DirectRun *run, unsigned f, int recycle, VmafFeatureCollector *fc)
+{
+    hip_fixture_fill(&run->ref, f, 0u);
+    hip_fixture_fill(&run->dist, f, 1u);
+    int err = vmaf_hip_shared_frame_begin(run->frame, &run->ref, &run->dist);
+    for (size_t i = 0u; i < N_CASES && !err; i++) {
+        err = vmaf_feature_extractor_context_submit(run->ctx[i], &run->ref, NULL, &run->dist, NULL,
+                                                    f);
+    }
+    vmaf_hip_shared_frame_end(run->frame);
+    if (!err && recycle) {
+        hip_fixture_fill(&run->ref, f + 1u, 0u);
+        hip_fixture_fill(&run->dist, f + 1u, 1u);
+    }
+    for (size_t i = 0u; i < N_CASES && !err; i++)
+        err = vmaf_feature_extractor_context_collect(run->ctx[i], f, fc);
+    return err;
+}
+
+static int run_direct_shared(int recycle, VmafFeatureCollector *fc, uint64_t *uploads)
+{
+    DirectRun run = {0};
+    int err = direct_open(&run);
+    for (unsigned f = 0u; f < N_FRAMES && !err; f++)
+        err = direct_frame(&run, f, recycle, fc);
+    for (size_t i = 0u; i < N_CASES && !err; i++)
+        (void)vmaf_feature_extractor_context_flush(run.ctx[i], fc);
+    *uploads = vmaf_hip_shared_frame_upload_count(run.frame);
+    direct_close(&run);
+    return err;
+}
+
+static char *test_shared_recycle_after_frame(void)
+{
+    if (!probe_hip())
+        return NULL;
+    VmafFeatureCollector *clean = NULL;
+    VmafFeatureCollector *recycled = NULL;
+    mu_assert("feature collector init failed", vmaf_feature_collector_init(&clean) == 0);
+    mu_assert("feature collector init failed", vmaf_feature_collector_init(&recycled) == 0);
+    uint64_t uploads_clean = 0u;
+    uint64_t uploads_recycled = 0u;
+    const int err_clean = run_direct_shared(0, clean, &uploads_clean);
+    const int err_recycled = run_direct_shared(1, recycled, &uploads_recycled);
+    unsigned compared = 0u;
+    const unsigned differing = count_differing(clean, recycled, &compared);
+    vmaf_feature_collector_destroy(clean);
+    vmaf_feature_collector_destroy(recycled);
+    (void)fprintf(stderr,
+                  "[%zu extractors on one shared frame, %u scores, %u changed, %llu uploads] ",
+                  N_CASES, compared, differing, (unsigned long long)uploads_recycled);
+    mu_assert("HIP extraction on a shared frame failed", !err_clean && !err_recycled);
+    mu_assert("the extractors emitted no score to compare", compared > 0u);
+    mu_assert("the extractors did not share the frame's planes",
+              uploads_clean == (uint64_t)FRAME_PLANES * N_FRAMES &&
+                  uploads_recycled == uploads_clean);
+    mu_assert("a shared plane was still being uploaded when the frame ended", differing == 0u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_pooled_parity);
     mu_run_test(test_recycle_after_submit);
+    mu_run_test(test_shared_pooled_parity);
+    mu_run_test(test_shared_recycle_after_frame);
     return NULL;
 }
 

@@ -49,6 +49,9 @@
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
 
+#include "../../hip/hip_handle.h"
+#include "../../hip/shared_frame.h"
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
  * translation unit whose sources spell the null pointer constant `NULL` and
@@ -123,16 +126,16 @@ typedef struct AdmStateHip {
      * that, so the copy stays equal to it until close(). */
     AdmBufferHip *buf_dev;
 
-    /* ADR-1211: device staging for the scale-0 luma plane.
-     * The HIP backend is host-pic (ADR-0530): `VmafPicture::data[]` points at
-     * HOST memory. The DWT2 kernel is a device kernel, so the plane has to be
-     * copied across before it can be read — the CUDA twin gets a device
-     * picture from the pool and needs no equivalent. Mirrors the staging
-     * `integer_psnr_hip.c` already does with `ref_in` / `dis_in`. */
+    /* ADR-1211: the device copy of the scale-0 luma planes, packed (width *
+     * bytes-per-sample per row). The HIP backend is host-pic (ADR-0530):
+     * `VmafPicture::data[]` points at HOST memory. The DWT2 kernel is a
+     * device kernel, so the plane has to be copied across before it can be
+     * read — the CUDA twin gets a device picture from the pool and needs no
+     * equivalent. The copy is the context's shared frame, or `planes`' own
+     * buffers when there is none (ADR-1408). */
     void *d_ref_luma;
     void *d_dis_luma;
-    size_t luma_pitch; /* bytes per staged row = width * bytes-per-sample */
-    unsigned luma_h;
+    VmafHipPlaneSource planes;
 #endif /* HAVE_HIPCC */
 
     VmafDictionary *feature_name_dict;
@@ -1032,30 +1035,21 @@ static void adm_hip_fixed_params(const AdmStateHip *s, int w, int h, double adm_
     memcpy(p->i_rfactor, s->i_rfactor, sizeof(p->i_rfactor));
 }
 
-/* ADR-1211: stage the host-resident luma planes onto the device.
+/* ADR-1211: get the host-resident luma planes onto the device.
  * `VmafPicture::data[]` is HOST memory under the host-pic HIP backend
  * (ADR-0530), so handing it straight to the DWT2 kernel faults the GPU
- * ("Memory access fault ... Page not present"). Copy it across first and
- * point the kernel at the device buffer. Rows are tightly packed on the
- * device side, so the element stride the kernels see is `w`, not the
- * picture's. */
-static int adm_hip_stage_luma(AdmStateHip *s, const VmafPicture *ref_pic,
-                              const VmafPicture *dis_pic, int w, int h)
+ * ("Memory access fault ... Page not present"). The kernel reads a device
+ * copy instead: the one the context shares between its twins (ADR-1408), or
+ * this twin's own when there is no shared frame. Rows are tightly packed on
+ * the device side, so the element stride the kernels see is `w`, not the
+ * picture's. Returns once both pictures are read
+ * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+static int adm_hip_stage_luma(AdmStateHip *s, VmafHipSharedFrame *frame, const VmafPicture *ref_pic,
+                              const VmafPicture *dis_pic)
 {
-    const size_t bpp = (ref_pic->bpc > 8) ? sizeof(uint16_t) : sizeof(uint8_t);
-    const size_t row_bytes = (size_t)w * bpp;
-    hipError_t crc =
-        hipMemcpy2DAsync(s->d_ref_luma, s->luma_pitch, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         row_bytes, (size_t)h, hipMemcpyHostToDevice, s->str);
-    if (crc != hipSuccess)
-        return hip_rc(crc);
-    crc =
-        hipMemcpy2DAsync(s->d_dis_luma, s->luma_pitch, dis_pic->data[0], (size_t)dis_pic->stride[0],
-                         row_bytes, (size_t)h, hipMemcpyHostToDevice, s->str);
-    if (crc != hipSuccess)
-        return hip_rc(crc);
-    crc = hipStreamSynchronize(s->str);
-    return hip_rc(crc);
+    return vmaf_hip_plane_source_acquire_luma(&s->planes, frame, ref_pic, dis_pic,
+                                              vmaf_hip_stream_bits(s->str), &s->d_ref_luma,
+                                              &s->d_dis_luma);
 }
 
 /* Scale-0 DWT of both staged luma planes, queued on the picture stream. */
@@ -1156,10 +1150,12 @@ static int adm_hip_scale123(AdmStateHip *s, AdmBufferHip *buf, int scale, int *w
     return i4_adm_cm_device_hip(s, buf, *w, *h, buf_stride, buf_stride, scale, p, s->str);
 }
 
-static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPicture *dis_pic,
-                                   AdmBufferHip *buf, double adm_enhn_gain_limit,
-                                   double adm_norm_view_dist, int adm_ref_display_height)
+static int integer_compute_adm_hip(AdmStateHip *s, VmafHipSharedFrame *frame, VmafPicture *ref_pic,
+                                   VmafPicture *dis_pic, AdmBufferHip *buf)
 {
+    const double adm_enhn_gain_limit = s->adm_enhn_gain_limit;
+    const double adm_norm_view_dist = s->adm_norm_view_dist;
+    const int adm_ref_display_height = s->adm_ref_display_height;
     int w = (int)ref_pic->w[0];
     int h = (int)ref_pic->h[0];
 
@@ -1171,7 +1167,7 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
     if (hip_err != hipSuccess)
         return hip_rc(hip_err);
 
-    int err = adm_hip_stage_luma(s, ref_pic, dis_pic, w, h);
+    int err = adm_hip_stage_luma(s, frame, ref_pic, dis_pic);
     if (err)
         return err;
 
@@ -1381,35 +1377,13 @@ static void adm_hip_free_buffers(AdmStateHip *s)
     }
 }
 
-/* ADR-1211: staging buffers for the host-resident luma plane. Sized for the
- * full frame at this bit depth; the staged rows are tightly packed, so the
- * element stride handed to the kernel is `w`, not the picture's stride. On
- * failure, frees what it allocated. */
-static int adm_hip_alloc_luma(AdmStateHip *s, unsigned w, unsigned h, unsigned bpc)
-{
-    s->luma_pitch = (size_t)w * ((bpc > 8u) ? sizeof(uint16_t) : sizeof(uint8_t));
-    s->luma_h = h;
-    hipError_t hip_err = hipMalloc(&s->d_ref_luma, s->luma_pitch * (size_t)h);
-    if (hip_err != hipSuccess)
-        return hip_rc(hip_err);
-    hip_err = hipMalloc(&s->d_dis_luma, s->luma_pitch * (size_t)h);
-    if (hip_err != hipSuccess) {
-        (void)hipFree(s->d_ref_luma);
-        s->d_ref_luma = NULL;
-    }
-    return hip_rc(hip_err);
-}
-
+/* Let go of the luma planes (ADR-1408): the hold on the context's shared
+ * frame, and this twin's own copies when it made any. */
 static void adm_hip_free_luma(AdmStateHip *s)
 {
-    if (s->d_ref_luma != NULL) {
-        (void)hipFree(s->d_ref_luma);
-        s->d_ref_luma = NULL;
-    }
-    if (s->d_dis_luma != NULL) {
-        (void)hipFree(s->d_dis_luma);
-        s->d_dis_luma = NULL;
-    }
+    vmaf_hip_plane_source_close(&s->planes);
+    s->d_ref_luma = NULL;
+    s->d_dis_luma = NULL;
 }
 
 /* Slice the backing buffer into band pointers — mirrors init_dwt_band_cuda logic */
@@ -1503,7 +1477,7 @@ static void adm_hip_free_buf_dev(AdmStateHip *s)
 
 /* Every device resource init_fex_hip() needs, in dependency order. On
  * failure, releases what it created. */
-static int adm_hip_init_device(AdmStateHip *s, unsigned w, unsigned h, unsigned bpc)
+static int adm_hip_init_device(AdmStateHip *s, unsigned w, unsigned h)
 {
     int err = adm_hip_create_stream(s);
     if (err)
@@ -1517,11 +1491,6 @@ static int adm_hip_init_device(AdmStateHip *s, unsigned w, unsigned h, unsigned 
     err = adm_hip_get_functions(s);
     if (err == 0) {
         err = adm_hip_alloc_buffers(s, w, h);
-    }
-    if (err == 0) {
-        err = adm_hip_alloc_luma(s, w, h, bpc);
-        if (err)
-            adm_hip_free_buffers(s);
     }
     if (err) {
         adm_hip_unload_modules(s);
@@ -1586,7 +1555,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     /* Scaffold: no runtime available. */
     return -ENOSYS;
 #else
-    const int dev_err = adm_hip_init_device(s, w, h, bpc);
+    const int dev_err = adm_hip_init_device(s, w, h);
     if (dev_err) {
         return dev_err;
     }
@@ -1622,8 +1591,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)dist_pic;
     return -ENOSYS;
 #else
-    return integer_compute_adm_hip(s, ref_pic, dist_pic, &s->buf, s->adm_enhn_gain_limit,
-                                   s->adm_norm_view_dist, s->adm_ref_display_height);
+    return integer_compute_adm_hip(s, fex->hip_frame, ref_pic, dist_pic, &s->buf);
 #endif
 }
 

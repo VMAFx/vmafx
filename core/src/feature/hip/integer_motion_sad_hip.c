@@ -27,7 +27,6 @@ size_t vmaf_hip_motion_sad_plane_bytes(unsigned width, unsigned height, unsigned
 
 #include "../../hip/common.h"
 #include "../../hip/hip_handle.h"
-#include "../../hip/picture_hip.h"
 #include "integer_motion_v2_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -79,7 +78,7 @@ static int motion_sad_launch(const VmafHipMotionSad *k, const VmafHipMotionSadFr
     if (rc != hipSuccess)
         return vmaf_hip_rc_to_errno(rc);
 
-    const void *prev = f->prev;
+    const void *prev = f->keep;
     const void *cur = f->cur;
     ptrdiff_t pitch = (ptrdiff_t)(vmaf_hip_motion_sad_plane_bytes(f->width, 1u, f->bpc));
     uint64_t *sad = f->sad;
@@ -99,7 +98,7 @@ static int motion_sad_launch(const VmafHipMotionSad *k, const VmafHipMotionSadFr
     return vmaf_hip_rc_to_errno(rc);
 }
 
-/* Error path only: the upload is already enqueued from `staging` into `cur`,
+/* Error path only: the SAD is already enqueued and reads `keep` and `cur`,
  * so wait for it before the caller may reuse either, then pass `err` on. */
 static int motion_sad_drain_after_error(uintptr_t stream, int err)
 {
@@ -111,26 +110,23 @@ static int motion_sad_drain_after_error(uintptr_t stream, int err)
 int vmaf_hip_motion_sad_submit(const VmafHipMotionSad *k, const VmafHipMotionSadFrame *frame,
                                uintptr_t stream)
 {
-    if (k == NULL || frame == NULL || k->module == NULL || frame->pic == NULL ||
-        frame->cur == NULL || frame->staging == NULL)
+    if (k == NULL || frame == NULL || k->module == NULL || frame->cur == NULL ||
+        frame->keep == NULL)
         return -EINVAL;
-    const size_t row_bytes = vmaf_hip_motion_sad_plane_bytes(frame->width, 1u, frame->bpc);
-    const VmafHipPlaneUpload plane = {.dst = frame->cur,
-                                      .dst_pitch = row_bytes,
-                                      .pic = frame->pic,
-                                      .plane = 0u,
-                                      .row_bytes = row_bytes,
-                                      .rows = frame->height};
-    /* The host copy reads the picture now; the device copy runs later from
-     * `staging`, ahead of the kernel on the same stream. No host wait. */
-    const int err =
-        vmaf_hip_picture_upload_staged(&plane, 1u, frame->staging, frame->staging_bytes, stream);
-    if (err != 0 || frame->prev == NULL)
-        return err;
-    const int launch_err = motion_sad_launch(k, frame, vmaf_hip_stream_of(stream));
-    if (launch_err != 0)
-        return motion_sad_drain_after_error(stream, launch_err);
-    return 0;
+    hipStream_t str = vmaf_hip_stream_of(stream);
+    if (frame->have_prev) {
+        const int launch_err = motion_sad_launch(k, frame, str);
+        if (launch_err != 0)
+            return launch_err;
+    }
+    /* Behind the SAD on the same stream, so the kernel reads the previous
+     * frame before this one replaces it. */
+    const size_t bytes = vmaf_hip_motion_sad_plane_bytes(frame->width, frame->height, frame->bpc);
+    const hipError_t rc =
+        hipMemcpyAsync(frame->keep, frame->cur, bytes, hipMemcpyDeviceToDevice, str);
+    if (rc != hipSuccess && frame->have_prev)
+        return motion_sad_drain_after_error(stream, vmaf_hip_rc_to_errno(rc));
+    return vmaf_hip_rc_to_errno(rc);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

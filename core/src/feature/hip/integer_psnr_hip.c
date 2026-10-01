@@ -58,6 +58,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "integer_psnr_hip.h"
 
 #define PSNR_NUM_PLANES 3U
@@ -124,12 +125,12 @@ typedef struct PsnrStateHip {
     hipModule_t module;
     hipFunction_t funcbpc8;
     hipFunction_t funcbpc16;
-    /* Per-plane staging buffers: ref and dis for each active plane,
-     * copied from VmafPicture data pointers at submit time.
-     * Sized at init() for the maximum geometry (luma at [0],
-     * chroma at [1]/[2]).  NULL when n_planes < 3. */
+    /* This frame's planes on the device, ref and dis for each active plane
+     * (luma at [0], chroma at [1]/[2]; NULL when n_planes < 3): the context's
+     * shared frame, or `planes`' own buffers when there is none (ADR-1408). */
     void *ref_in[PSNR_NUM_PLANES];
     void *dis_in[PSNR_NUM_PLANES];
+    VmafHipPlaneSource planes;
 #endif /* HAVE_HIPCC */
     VmafDictionary *feature_name_dict;
 } PsnrStateHip;
@@ -278,29 +279,44 @@ static int psnr_hip_launch(PsnrStateHip *s, uintptr_t pic_stream)
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Allocate a tightly-pitched ref and dis staging buffer per active plane. */
-static int psnr_hip_bufs_alloc(PsnrStateHip *s)
+/* Get the tightly-pitched ref and dis plane of every active plane on the
+ * device. Returns once every plane is read: the caller recycles the pictures
+ * when submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). A plane no
+ * other twin uploaded yet is uploaded on the private stream, never on the
+ * null stream the kernels use: a null-stream copy would queue behind every
+ * other extractor's kernels of this frame, and the wait would block the host
+ * on all of them. */
+static int psnr_hip_acquire_planes(PsnrStateHip *s, VmafHipSharedFrame *frame,
+                                   const VmafPicture *ref_pic, const VmafPicture *dist_pic)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    hipError_t rc = hipSuccess;
-    for (unsigned p = 0; p < s->n_planes && rc == hipSuccess; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * bpp;
-        rc = hipMalloc(&s->ref_in[p], plane_bytes);
-        if (rc == hipSuccess)
-            rc = hipMalloc(&s->dis_in[p], plane_bytes);
+    VmafHipPlaneUpload planes[2u * PSNR_NUM_PLANES];
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        const size_t plane_pitch = (size_t)s->width[p] * bpp;
+        const size_t i = (size_t)p * 2u;
+        planes[i] = (VmafHipPlaneUpload){
+            .pic = ref_pic, .plane = p, .row_bytes = plane_pitch, .rows = s->height[p]};
+        planes[i + 1u] = (VmafHipPlaneUpload){
+            .pic = dist_pic, .plane = p, .row_bytes = plane_pitch, .rows = s->height[p]};
     }
-    return (rc == hipSuccess) ? 0 : -ENOMEM;
+    void *device[2u * PSNR_NUM_PLANES] = {NULL};
+    const int err = vmaf_hip_plane_source_acquire(&s->planes, frame, planes, 2u * s->n_planes,
+                                                  s->lc.str, device);
+    if (err != 0)
+        return err;
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        s->ref_in[p] = device[(size_t)p * 2u];
+        s->dis_in[p] = device[((size_t)p * 2u) + 1u];
+    }
+    return 0;
 }
 
-/* Free the staging buffers and unload the module. Safe on a partially set
- * up state. Returns -EIO when the module fails to unload. */
+/* Let go of the planes and unload the module. Safe on a partially set up
+ * state. Returns -EIO when the module fails to unload. */
 static int psnr_hip_bufs_free(PsnrStateHip *s)
 {
+    vmaf_hip_plane_source_close(&s->planes);
     for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
-        if (s->dis_in[p] != NULL)
-            (void)hipFree(s->dis_in[p]);
-        if (s->ref_in[p] != NULL)
-            (void)hipFree(s->ref_in[p]);
         s->dis_in[p] = NULL;
         s->ref_in[p] = NULL;
     }
@@ -398,8 +414,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = psnr_hip_module_load(s);
-    if (err == 0)
-        err = psnr_hip_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
     if (err == 0) {
         s->feature_name_dict =
@@ -425,34 +439,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     /* Use picture_stream = 0 (HIP scaffold: no per-picture stream handle
      * yet — mirrors float_psnr_hip.c and the CUDA twin pre-runtime). */
     const uintptr_t pic_stream_handle = 0;
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-
-    /* Returns once every plane is read: the caller recycles the pictures
-     * when submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    VmafHipPlaneUpload planes[2u * PSNR_NUM_PLANES];
-    for (unsigned p = 0; p < s->n_planes; ++p) {
-        const size_t plane_pitch = (size_t)s->width[p] * bpp;
-        const size_t i = (size_t)p * 2u;
-        planes[i] = (VmafHipPlaneUpload){.dst = s->ref_in[p],
-                                         .dst_pitch = plane_pitch,
-                                         .pic = ref_pic,
-                                         .plane = p,
-                                         .row_bytes = plane_pitch,
-                                         .rows = s->height[p]};
-        planes[i + 1u] = (VmafHipPlaneUpload){.dst = s->dis_in[p],
-                                              .dst_pitch = plane_pitch,
-                                              .pic = dist_pic,
-                                              .plane = p,
-                                              .row_bytes = plane_pitch,
-                                              .rows = s->height[p]};
-    }
-    /* Upload on the private stream, not the null stream the kernels use: a
-     * null-stream copy would queue behind every other extractor's kernels of
-     * this frame, and the wait would block the host on all of them. The
-     * copies are complete before the kernels are enqueued, and collect() of
-     * the previous frame has already drained the kernels that read these
-     * buffers. */
-    const int err = vmaf_hip_picture_upload(planes, 2u * s->n_planes, s->lc.str);
+    const int err = psnr_hip_acquire_planes(s, fex->hip_frame, ref_pic, dist_pic);
     if (err != 0)
         return err;
 

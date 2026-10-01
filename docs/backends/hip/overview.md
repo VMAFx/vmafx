@@ -63,7 +63,7 @@
 > `float_moment_hip`, `float_psnr_hip`, `float_ssim_hip`, `float_vif_hip`,
 > `psnr_hip` and `vif_hip` (up to 10.7 dB on `float_psnr`, 0.30 on `vif`).
 > Scores from a multi-frame HIP run made before this fix should be recomputed.
-> Every extractor now waits for its uploads; see
+> Every upload now waits until it has read the picture; see
 > [Picture uploads](#picture-uploads) below.
 >
 > One extractor legitimately retains `.flags = 0` (silently falling back to CPU):
@@ -572,50 +572,73 @@ the HIP backend currently does not provide zero-copy picture buffer import
 (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
 
 Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
-Each HIP feature extractor allocates internal device staging buffers and copies
-the planes it needs to the device; see [Picture uploads](#picture-uploads).
+The planes the extractors of a run read are copied to the device once per
+frame; see [Picture uploads](#picture-uploads).
 Supporting direct DMA-BUF external memory import on AMD ROCm requires ROCm
 `hipImportExternalMemory` plumbing and device picture pool support (T7-10c),
 which is tracked as a deferred enhancement.
 
 ### Picture uploads
 
-A HIP extractor copies the picture planes it needs with
-`vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`) and does not return
-from `submit()` until the copy has finished reading them. The pictures are
-pageable host memory that the caller refills as soon as `submit()` returns, and
-`hipMemcpy2DAsync` alone can still be reading at that point.
+A frame's planes are uploaded once, whatever the number of extractors
+([ADR-1408](../../adr/1408-hip-shared-frame-planes.md)). The first HIP
+extractor of a frame that needs a plane uploads it into a buffer the
+`VmafContext` owns, together with the other planes the extractors read in the
+frame before; every other extractor reads that device copy. A plane no
+extractor needs is not uploaded, so a luma-only run (the default model)
+uploads no chroma. Thirteen extractors read the shared planes: `psnr_hip`,
+`float_psnr_hip`, `float_moment_hip`, `ciede_hip`, `integer_ssim_hip`,
+`float_ssim_hip`, `vif_hip`, `float_vif_hip`, `adm_hip`, `float_adm_hip`,
+`motion_hip`, `motion_v2_hip` and `float_motion_hip`. With all of them in one
+process a 4:2:0 frame pair used to be uploaded as 31 planes; it is now 6.
+
+The upload does not return until the copy has finished reading the picture
+(`vmaf_hip_picture_upload()`, `core/src/hip/picture_hip.h`). The pictures are
+pageable host memory that the caller refills as soon as
+`vmaf_read_pictures()` returns, and `hipMemcpy2DAsync` alone can still be
+reading at that point. Pictures are read only while their frame is being
+submitted, never afterwards.
 
 What this means for a run:
 
 - Scores are reproducible: every extractor gives the same per-frame output on
-  every run and agrees with the CPU within its parity tolerance. Measured on a
-  gfx1036 over the 48-frame Netflix pair at 576x324 and scaled to 1920x1080,
-  ten runs each, one extractor per process and all of them in one. Longer
-  runs on that device also show rare wrong frames that have nothing to do
-  with uploads; see
+  every run and agrees with the CPU within its parity tolerance, and sharing
+  the planes changes no output bit (thirteen extractors, both shipped models,
+  576x324 to 3840x2160, 8 and 10 bits, with and without `--subsample`).
+  Longer runs on a gfx1036 also show rare wrong frames that have nothing to
+  do with uploads; see
   [Known issue: the gfx1036 loses stream commands](#known-issue-the-gfx1036-loses-stream-commands).
-- Throughput on a small device can drop. On the gfx1036 iGPU at 1080p,
-  `--model version=vmaf_float_v0.6.1` went from 18.8 to 14.8 frames per second
-  (-21 %), because a copy cannot start until the previous extractor's kernels
-  leave the GPU and the host now waits for it. `--model version=vmaf_v0.6.1`
-  (17.1 to 17.0), eleven extractors in one process (7.3 to 7.2) and the single
-  extractors were within run-to-run noise, except `vif_hip` (-7 %). Pinned
-  staging buffers remove the wait and are tracked as
-  T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in [`docs/state.md`](../../state.md).
+- The host waits for the device when planes are uploaded, which is once per
+  frame from the second frame on, instead of once per extractor.
+- Throughput on a gfx1036, ms per frame before and after sharing:
+  `--model version=vmaf_float_v0.6.1` 57.3 to 46.9 at 1920x1080 (17.5 to
+  21.3 frames per second) and 294 to 226 at 3840x2160, which gives back what
+  the per-extractor wait had cost that model; `--model version=vmaf_v0.6.1`
+  37.4 and 37.4 at 1080p; thirteen extractors in one process 183 and 184 at
+  1080p, because their kernels are nearly all of the time; `motion_hip` and
+  `motion_v2_hip` on their own 12.4 to 11.0 at 4K.
+- `--subsample` is safe: an extractor that skips frames keeps the planes of
+  the last frame it read until its kernels have finished, and the next upload
+  into those buffers waits for the device first.
 
-`motion_hip` and `motion_v2_hip` already stage that way (ADR-1377):
-`vmaf_hip_picture_upload_staged()` copies the reference luma on the host into
-a pinned buffer the extractor owns, so the picture is read before `submit()`
-returns, and enqueues the device copy from that buffer without waiting. The
-buffer is reused next frame, which is safe because libvmaf collects frame
-N - 1, and `collect()` drains the extractor's stream, before it submits frame
-N. `cambi_hip`, `speed_chroma_hip` and `speed_temporal_hip` stage the same way
-(ADR-1378, ADR-1384). The other extractors still use
-`vmaf_hip_picture_upload()`. On the gfx1036 iGPU the staged path measured
-slower than the waiting upload for a single motion twin at 4K, because the
-runtime there copies a pageable picture without a host copy; see
-[Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01).
+Extractors that convert or pack their input on the host still stage it
+themselves: `float_ms_ssim_hip` (to `float`), `psnr_hvs_hip`, `cambi_hip`,
+`speed_chroma_hip`, `speed_temporal_hip` and `ssimulacra2_hip`. They copy the
+picture into pinned memory they own before `submit()` returns
+(`vmaf_hip_picture_upload_staged()` for CAMBI and SpEED,
+[ADR-1378](../../adr/1378-hip-cambi-device-resident.md),
+[ADR-1384](../../adr/1384-hip-speed-device-resident.md)) and the device copy
+runs from that buffer without a wait.
+`T-HIP-SHARED-FRAME-REMAINING-TWINS-2026-10-01` in
+[`docs/state.md`](../../state.md) tracks moving them onto the shared planes.
+
+Three upload strategies were measured on the gfx1036 for the shared planes
+([Research-1408](../../research/1408-hip-shared-frame-planes.md)): the waiting
+upload, a host copy into pinned memory that the kernels read in place, and a
+host copy into pinned staging followed by a device copy. The waiting upload
+was the fastest or tied in every configuration, because this iGPU's runtime
+copies a pageable picture without a host copy. A discrete AMD GPU is
+unmeasured.
 
 To check a build on your own hardware, run one extractor twice and compare:
 
@@ -637,6 +660,11 @@ one process the old defect was deterministic. Compare against
 python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
   -C build test_hip_upload_race
 ```
+
+That test also runs every extractor in one context, where the planes are
+shared, with and without `n_subsample`, and refills both pictures the moment
+a frame has been submitted. `test_hip_shared_frame` and
+`test_hip_shared_frame_contract` check the sharing rules without a device.
 
 ### Dispatch strategy predicates and environment overrides
 
@@ -712,8 +740,8 @@ page). It now runs the kernel `motion_v2_hip` already used
 (`integer_motion_v2/motion_v2_score.hip`, launched only by
 `integer_motion_sad_hip.c`), and its debug `motion` score carries
 `motion_fps_weight` and `motion_max_val` like the CPU's. Both motion twins
-upload through pinned staging and wait on the host only in `collect()` (see
-[Picture uploads](#picture-uploads)).
+read the frame's luma from the shared planes and keep the previous frame in a
+device plane of their own (see [Picture uploads](#picture-uploads)).
 
 **Small frames stay inside the device buffers**
 ([ADR-1381](../../adr/1381-hip-integer-tiny-frame-guards.md)). A tiled kernel
@@ -865,7 +893,8 @@ the runtime copies a pageable picture without an extra host copy, so the
 staged path's copy into pinned memory costs more than the wait it saves.
 `T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19` in [`docs/state.md`](../../state.md)
 has the numbers, including runs with several twins, where the two uploads are
-within noise.
+within noise. Since ADR-1408 both motion twins read the shared planes through
+the waiting upload again; see [Picture uploads](#picture-uploads).
 
 ### Known issue: the gfx1036 loses stream commands
 

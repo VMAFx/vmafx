@@ -83,6 +83,7 @@
 #include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "float_ssim/ssim_decimate.h"
 #include "float_ssim_hip.h"
 
@@ -136,11 +137,12 @@ typedef struct SsimStateHip {
     void *d_cmp_sq;
     void *d_refcmp;
 
-    /* Staging buffers: CPU luma planes → device (HtoD). One each for
-     * ref and cmp (luma-only, no chroma). Sized in_width * in_height * bpp.
-     * Also allocated via hipMalloc. */
+    /* This frame's luma planes on the device, ref and cmp, packed at
+     * in_width * bpp per row: the context's shared frame, or `planes`' own
+     * buffers when there is none (ADR-1408). */
     void *ref_in;
     void *cmp_in;
+    VmafHipPlaneSource planes;
 
     /* Decimated fp32 planes, width * height floats; scale > 1 only. */
     void *d_ref_dec;
@@ -344,13 +346,12 @@ static int ssim_hip_module_load(SsimStateHip *s)
     return vmaf_hip_rc_to_errno(hip_rc);
 }
 
-/* Number of device buffers: five horiz-pass planes, two luma staging and
- * two decimated planes. */
-#define SSIM_HIP_N_BUFS 9u
+/* Number of device buffers the twin owns: five horiz-pass planes and two
+ * decimated planes. The luma planes come from the shared frame (ADR-1408). */
+#define SSIM_HIP_N_BUFS 7u
 #define SSIM_HIP_N_HORIZ 5u
-#define SSIM_HIP_N_STAGE 2u
 
-/* The nine device buffers: horiz-pass planes, staging, decimated planes. */
+/* The seven device buffers: horiz-pass planes, decimated planes. */
 static void ssim_hip_buf_slots(SsimStateHip *s, void **slots[SSIM_HIP_N_BUFS])
 {
     slots[0] = &s->d_ref_mu;
@@ -358,10 +359,8 @@ static void ssim_hip_buf_slots(SsimStateHip *s, void **slots[SSIM_HIP_N_BUFS])
     slots[2] = &s->d_ref_sq;
     slots[3] = &s->d_cmp_sq;
     slots[4] = &s->d_refcmp;
-    slots[5] = &s->ref_in;
-    slots[6] = &s->cmp_in;
-    slots[7] = &s->d_ref_dec;
-    slots[8] = &s->d_cmp_dec;
+    slots[5] = &s->d_ref_dec;
+    slots[6] = &s->d_cmp_dec;
 }
 
 static size_t ssim_hip_bytes_per_sample(const SsimStateHip *s)
@@ -369,35 +368,30 @@ static size_t ssim_hip_bytes_per_sample(const SsimStateHip *s)
     return (s->bpc <= 8u) ? 1u : 2u;
 }
 
-/* Allocate five intermediate float device buffers, two luma staging buffers
- * and, above scale 1, the two decimated planes. On failure the buffers
- * already allocated stay set; the caller's ssim_hip_release() frees them. */
+/* Allocate five intermediate float device buffers and, above scale 1, the
+ * two decimated planes. On failure the buffers already allocated stay set;
+ * the caller's ssim_hip_release() frees them. */
 static int ssim_hip_bufs_alloc(SsimStateHip *s)
 {
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t stage_bytes = (size_t)s->in_width * s->in_height * ssim_hip_bytes_per_sample(s);
     const size_t dec_bytes = (size_t)s->width * s->height * sizeof(float);
-    const unsigned count = (s->scale > 1) ? SSIM_HIP_N_BUFS : SSIM_HIP_N_HORIZ + SSIM_HIP_N_STAGE;
+    const unsigned count = (s->scale > 1) ? SSIM_HIP_N_BUFS : SSIM_HIP_N_HORIZ;
 
     void **slots[SSIM_HIP_N_BUFS];
     ssim_hip_buf_slots(s, slots);
     hipError_t hip_rc = hipSuccess;
-    for (unsigned i = 0u; i < count && hip_rc == hipSuccess; i++) {
-        size_t bytes = dec_bytes;
-        if (i < SSIM_HIP_N_HORIZ) {
-            bytes = horiz_bytes;
-        } else if (i < SSIM_HIP_N_HORIZ + SSIM_HIP_N_STAGE) {
-            bytes = stage_bytes;
-        }
-        hip_rc = hipMalloc(slots[i], bytes);
-    }
+    for (unsigned i = 0u; i < count && hip_rc == hipSuccess; i++)
+        hip_rc = hipMalloc(slots[i], (i < SSIM_HIP_N_HORIZ) ? horiz_bytes : dec_bytes);
     return vmaf_hip_rc_to_errno(hip_rc);
 }
 
-/* Free every device buffer, last allocated first. Safe to call with
- * NULL pointers. */
+/* Free every device buffer, last allocated first, and let go of the frame's
+ * planes. Safe to call with NULL pointers. */
 static void ssim_hip_bufs_free(SsimStateHip *s)
 {
+    vmaf_hip_plane_source_close(&s->planes);
+    s->ref_in = NULL;
+    s->cmp_in = NULL;
     void **slots[SSIM_HIP_N_BUFS];
     ssim_hip_buf_slots(s, slots);
     for (unsigned i = SSIM_HIP_N_BUFS; i > 0u; i--) {
@@ -659,30 +653,15 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
     s->partials_count = grid_x * grid_y;
 
-    /* Copy both luma planes HtoD on the private stream, then dispatch the
-     * decimation (scale > 1), Pass 1 (horiz Gaussian) and Pass 2 (vert +
-     * SSIM combine) on the same stream. VMAF_FEATURE_EXTRACTOR_HIP is not
-     * set (T7-10b posture), so pictures arrive as CPU VmafPictures. */
+    /* Get both luma planes on the device, then dispatch the decimation
+     * (scale > 1), Pass 1 (horiz Gaussian) and Pass 2 (vert + SSIM combine)
+     * on the private stream. Pictures arrive as host VmafPictures
+     * (ADR-0530); the device copy is the context's shared frame (ADR-1408).
+     * The call returns once both pictures are read: the caller recycles them
+     * when submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
-    const size_t row_bytes = (size_t)s->in_width * ssim_hip_bytes_per_sample(s);
-
-    /* Returns once both pictures are read: the caller recycles them when
-     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_in,
-         .dst_pitch = row_bytes,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = s->in_height},
-        {.dst = s->cmp_in,
-         .dst_pitch = row_bytes,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = s->in_height},
-    };
-    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, fex->hip_frame, ref_pic, dist_pic,
+                                                 s->lc.str, &s->ref_in, &s->cmp_in);
     if (err == 0 && s->scale > 1)
         err = ssim_hip_launch_decimate(s, str);
     if (err == 0)

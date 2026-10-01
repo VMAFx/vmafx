@@ -141,6 +141,18 @@ test('test_hip_kernel_source_contract',
     timeout : 30,
 )
 
+# ADR-1408: device-free source guard for the HIP shared frame (an adopted twin
+# asks the context's shared frame for its planes and uploads nothing itself,
+# vmaf_read_pictures() announces and ends the frame around the dispatch loop,
+# the shared upload waits, a slot is fenced before it is written), with a
+# planted regression per check.
+test('test_hip_shared_frame_contract',
+    import('python').find_installation(),
+    args : files('test_hip_shared_frame_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1378 / ADR-1384: device-free source guard for the device-resident HIP
 # CAMBI and SpEED twins (no host stage, one staged upload, one readback and
 # one wait per frame, CPU helpers for the host combine, fp64-free device code
@@ -4661,8 +4673,8 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 #
 # integer_adm_hip.c is compiled straight into this target rather than linked
 # from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
-# references: the ~17 hip* entry points, the four HSACO blobs, and five
-# libvmaf helpers. `vmaf_feature_name_dict_from_provided_features` is the
+# references: the ~17 hip* entry points, the four HSACO blobs, and seven
+# libvmaf helpers (the shared-frame plane source of ADR-1408 among them). `vmaf_feature_name_dict_from_provided_features` is the
 # injection point and returns NULL, which drives the one init path that used
 # to release every resource and then report success (hipSuccess through the
 # unwind ladder's terminal hip_rc()), leaking the two luma stagers on the way
@@ -4689,6 +4701,22 @@ test_hip_adm_init_unwind = executable('test_hip_adm_init_unwind',
     c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
 )
 test('test_hip_adm_init_unwind', test_hip_adm_init_unwind, suite : ['fast'])
+
+# T-HIP-TWIN-PRIVATE-PLANE-UPLOADS-2026-09-29 / ADR-1408 -- the frame planes a
+# context uploads once and every HIP twin reads (core/src/hip/shared_frame.c).
+# Same device-free interposition as the ADM gate above: shared_frame.c is
+# compiled into the target against stubs of the three hip* calls and the
+# waiting upload it uses, so the contract of shared_frame.h (one upload per
+# plane per frame, pictures read before an acquire returns and never after
+# the frame ended, a held slot is not overwritten under a running kernel)
+# runs in the `fast` suite on any host.
+test_hip_shared_frame = executable('test_hip_shared_frame',
+    ['test.c', 'test_hip_shared_frame.c', '../src/hip/shared_frame.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+)
+test('test_hip_shared_frame', test_hip_shared_frame, suite : ['fast'])
 
 # ADR-1407: `hip_strict_fp_args` gives every HIP kernel the CPU reference's
 # fp32 arithmetic. The probe kernel is compiled by hipcc with that list, as

@@ -92,6 +92,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #endif
 
 #ifdef HAVE_HIP
+#include "hip/shared_frame.h"
 #include "libvmaf/libvmaf_hip.h"
 #endif
 
@@ -175,6 +176,10 @@ typedef struct VmafContext {
      * picture-buffer-type plumbing that flips the flag on. */
     struct {
         VmafHipState *state;
+        /* ADR-1408: the device copy of the frame the HIP twins of this
+         * context read, uploaded once per frame for all of them. Created
+         * with the first HIP twin, destroyed by vmaf_close(). */
+        struct VmafHipSharedFrame *frame;
     } hip;
 #endif
     struct {
@@ -945,6 +950,19 @@ int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
     vmaf->active_backend = VMAF_BACKEND_HIP;
     return 0;
 }
+
+/* ADR-1408: a HIP twin reads the frame's planes through the context's shared
+ * frame, which uploads each plane once per frame for all of them. A context
+ * whose frame cannot be allocated leaves the pointer NULL, and the twin
+ * uploads into buffers of its own. */
+static void set_fex_hip_frame(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_HIP))
+        return;
+    if (!vmaf->hip.frame)
+        (void)vmaf_hip_shared_frame_create(&vmaf->hip.frame);
+    fex_ctx->fex->hip_frame = vmaf->hip.frame;
+}
 #endif
 
 static void set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
@@ -962,6 +980,9 @@ static void fex_ctx_bind_backends(VmafFeatureExtractorContext *fex_ctx, VmafCont
 #endif
 #ifdef HAVE_SYCL
     set_fex_sycl_state(fex_ctx, vmaf);
+#endif
+#ifdef HAVE_HIP
+    set_fex_hip_frame(fex_ctx, vmaf);
 #endif
     set_fex_framesync(fex_ctx, vmaf);
 }
@@ -1772,6 +1793,9 @@ static int vmaf_close_backends(VmafContext *vmaf)
     vmaf->metal.state = NULL;
 #endif
 #ifdef HAVE_HIP
+    /* The extractors are closed, so no twin holds a plane of the shared
+     * frame any more (ADR-1408). */
+    vmaf_hip_shared_frame_destroy(&vmaf->hip.frame);
     vmaf->hip.state = NULL;
 #endif
 #if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_METAL) && !defined(HAVE_HIP)
@@ -3385,7 +3409,8 @@ static int cuda_order_pictures_against_producer(VmafContext *vmaf)
 }
 #endif /* HAVE_CUDA */
 
-static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr, unsigned index)
+static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFrame *fr,
+                                             unsigned index)
 {
 #ifdef HAVE_CUDA
     const int sync_err = cuda_order_pictures_against_producer(vmaf);
@@ -3429,6 +3454,39 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr
             return err_one;
     }
     return 0;
+}
+
+#ifdef HAVE_HIP
+/* ADR-1408: tell the shared frame which host pictures this frame's HIP twins
+ * read, so the first twin that asks for a plane uploads it and the others
+ * reuse the device copy. A context without HIP twins has no shared frame,
+ * and the call does nothing. */
+static int read_pictures_hip_frame_begin(VmafContext *vmaf, ReadPicturesFrame *fr)
+{
+#ifdef HAVE_CUDA
+    return vmaf_hip_shared_frame_begin(vmaf->hip.frame, &fr->ref_host, &fr->dist_host);
+#else
+    return vmaf_hip_shared_frame_begin(vmaf->hip.frame, fr->ref, fr->dist);
+#endif
+}
+#endif
+
+static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr, unsigned index)
+{
+#ifdef HAVE_HIP
+    int err = read_pictures_hip_frame_begin(vmaf, fr);
+    if (err)
+        return err;
+    err = read_pictures_dispatch_extractors(vmaf, fr, index);
+    /* Every twin has submitted. The caller gets its pictures back when
+     * vmaf_read_pictures() returns and may refill them at once, so nothing
+     * may upload from them after this point (the pageable-upload race,
+     * T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    vmaf_hip_shared_frame_end(vmaf->hip.frame);
+    return err;
+#else
+    return read_pictures_dispatch_extractors(vmaf, fr, index);
+#endif
 }
 
 /* Post-extractor stage: per-frame DNN inference + optional thread-pool
@@ -4314,6 +4372,16 @@ int vmaf_backend_twin_verdict_for_test(const VmafFeatureExtractor *twin, const V
                                        const char **unsupported_option)
 {
     return backend_twin_verdict(twin, opts, pic_cfg, unsupported_option);
+}
+
+uint64_t vmaf_context_hip_plane_uploads_for_test(const VmafContext *vmaf)
+{
+#ifdef HAVE_HIP
+    return vmaf ? vmaf_hip_shared_frame_upload_count(vmaf->hip.frame) : 0u;
+#else
+    (void)vmaf;
+    return 0u;
+#endif
 }
 
 unsigned vmaf_context_fake_backend_for_test(VmafContext *vmaf, void *token)

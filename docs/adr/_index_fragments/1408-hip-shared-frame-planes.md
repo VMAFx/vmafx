@@ -1,0 +1,1 @@
+| [ADR-1408](1408-hip-shared-frame-planes.md) | A `VmafContext` uploads each plane of a frame once into a shared frame (`core/src/hip/shared_frame.c`) and every HIP twin reads that copy; the pageable-upload wait happens once per plane set and frame instead of once per twin. | Accepted | hip, gpu, performance, rc3, fork-local |

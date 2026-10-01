@@ -108,20 +108,29 @@ def _drains_only_on_error_returns(body: str) -> bool:
     return all(line.strip().startswith("return ") for line in DRAIN_CALL.findall(body))
 
 
+# The SAD reads the kept plane as `prev`; the copy that replaces it with this
+# frame's luma is enqueued behind the SAD on the same stream (ADR-1408).
+SAD_READS_KEPT = "const void *prev = f->keep;"
+SAD_LAUNCH_CALL = "motion_sad_launch(k, frame, str)"
+KEEP_COPY_CALL = "hipMemcpyAsync(frame->keep, frame->cur,"
+
+
 def _staging_failures(src: dict[str, str]) -> list[str]:
     failures: list[str] = []
     for name in MOTION_TUS:
         text = src[name]
-        if ".staging_bytes = s->plane_bytes" not in _function_body(text, MOTION_LAUNCH_FNS[name]):
-            failures.append(f"{name}: the staged upload no longer gets the allocated size")
         if re.search(r"s->frame_[wh]\s*=", _function_body(text, "submit_fex_hip")):
             failures.append(f"{name}: submit() rewrites the geometry init() sized the buffers for")
     submit = _function_body(src[MOTION_SAD], "vmaf_hip_motion_sad_submit")
     staged = _function_body(src[PICTURE], "vmaf_hip_picture_upload_staged")
-    if "frame->staging_bytes" not in submit:
-        failures.append(f"{MOTION_SAD}: the staging bound is derived from the frame, not the owner")
+    launch_at = submit.find(SAD_LAUNCH_CALL)
+    keep_at = submit.find(KEEP_COPY_CALL)
+    if SAD_READS_KEPT not in src[MOTION_SAD] or launch_at < 0 or keep_at < launch_at:
+        failures.append(
+            f"{MOTION_SAD}: the kept plane is replaced before the SAD read the previous frame"
+        )
     if "motion_sad_drain_after_error(" not in submit or "hip_pic_drain_after_error(" not in staged:
-        failures.append("a failed enqueue returns while earlier copies still use the staging")
+        failures.append("a failed enqueue returns while earlier work still uses the buffers")
     if not _drains_only_on_error_returns(submit) or not _drains_only_on_error_returns(staged):
         failures.append("an error-path drain is reachable outside an error return")
     return failures
@@ -149,11 +158,13 @@ def _motion_failures(src: dict[str, str]) -> list[str]:
             failures.append(
                 f"{name}: the frame is not staged through the SAD pipeline without a wait"
             )
+        elif "vmaf_hip_plane_source_acquire_luma(" not in body:
+            failures.append(f"{name}: the frame's luma does not come from the shared frame")
         if "vmaf_hip_kernel_collect_wait" not in _function_body(text, "collect_fex_hip"):
             failures.append(f"{name}: collect() no longer holds the frame's one wait")
     submit = _function_body(src[MOTION_SAD], "vmaf_hip_motion_sad_submit")
-    if not submit or HOST_WAIT.search(submit) or "vmaf_hip_picture_upload_staged" not in submit:
-        failures.append(f"{MOTION_SAD}: the frame upload waits on the host or skips the staging")
+    if not submit or HOST_WAIT.search(submit) or "vmaf_hip_picture_upload" in submit:
+        failures.append(f"{MOTION_SAD}: the SAD pipeline waits on the host or uploads a picture")
     staged = _function_body(src[PICTURE], "vmaf_hip_picture_upload_staged")
     if not staged or re.search(r"Synchronize\s*\(", staged):
         failures.append(f"{PICTURE}: the staged upload waits on the host")
@@ -396,8 +407,8 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             "integer_motion_hip.c",
-            "    void *pix[2];",
-            "    void *pix[2];\n    void *blur[2];",
+            "    void *prev_luma;",
+            "    void *prev_luma;\n    void *blur[2];",
         )
         self.assert_detected(src, "blurred-frame ping-pong")
 
@@ -405,9 +416,9 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             "integer_motion_hip.c",
-            "    const int err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);",
+            "    err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);",
             "    (void)vmaf_hip_picture_upload(NULL, 0u, s->lc.str);\n"
-            "    const int err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);",
+            "    err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);",
         )
         self.assert_detected(src, "without a wait")
 
@@ -415,8 +426,8 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             MOTION_SAD,
-            "    if (err != 0 || frame->prev == NULL)",
-            "    (void)hipStreamSynchronize(NULL);\n    if (err != 0 || frame->prev == NULL)",
+            "    if (frame->have_prev) {",
+            "    (void)hipStreamSynchronize(NULL);\n    if (frame->have_prev) {",
         )
         self.assert_detected(src, "waits on the host")
 
@@ -630,23 +641,48 @@ class HipKernelSourceContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "defaults to false")
 
-    def test_frame_derived_staging_bound_is_detected(self) -> None:
+    def test_private_motion_upload_is_detected(self) -> None:
         src = _replace(
             _sources(),
-            MOTION_SAD,
-            "frame->staging, frame->staging_bytes, stream);",
-            "frame->staging,\n"
-            "        vmaf_hip_motion_sad_plane_bytes(frame->width, frame->height, frame->bpc), stream);",
+            "integer_motion_v2_hip.c",
+            "vmaf_hip_plane_source_acquire_luma(&s->planes, shared,",
+            "mv2_hip_own_upload(&s->planes, shared,",
         )
-        self.assert_detected(src, "derived from the frame")
+        self.assert_detected(src, "does not come from the shared frame")
+
+    def test_keep_copy_ahead_of_the_sad_is_detected(self) -> None:
+        text = _sources()[MOTION_SAD]
+        copy = (
+            "    const hipError_t rc =\n"
+            "        hipMemcpyAsync(frame->keep, frame->cur, bytes, hipMemcpyDeviceToDevice, str);\n"
+        )
+        guard = "    if (frame->have_prev) {\n"
+        assert copy in text and guard in text
+        size = (
+            "    const size_t bytes = vmaf_hip_motion_sad_plane_bytes(frame->width, frame->height, "
+            "frame->bpc);\n"
+        )
+        assert size in text
+        moved = (
+            text.replace(copy, "", 1).replace(size, "", 1).replace(guard, size + copy + guard, 1)
+        )
+        src = _sources()
+        src[MOTION_SAD] = moved
+        self.assert_detected(src, "replaced before the SAD read the previous frame")
+
+    def test_sad_against_the_current_frame_is_detected(self) -> None:
+        src = _replace(_sources(), MOTION_SAD, SAD_READS_KEPT, "const void *prev = f->cur;")
+        self.assert_detected(src, "replaced before the SAD read the previous frame")
 
     def test_drain_on_the_success_path_is_detected(self) -> None:
         src = _replace(
             _sources(),
             MOTION_SAD,
-            "        return motion_sad_drain_after_error(stream, launch_err);\n    return 0;",
-            "        return launch_err;\n    (void)motion_sad_drain_after_error(stream, 0);\n"
-            "    return 0;",
+            "        return motion_sad_drain_after_error(stream, vmaf_hip_rc_to_errno(rc));\n"
+            "    return vmaf_hip_rc_to_errno(rc);",
+            "        return vmaf_hip_rc_to_errno(rc);\n"
+            "    (void)motion_sad_drain_after_error(stream, 0);\n"
+            "    return vmaf_hip_rc_to_errno(rc);",
         )
         self.assert_detected(src, "reachable outside an error return")
 

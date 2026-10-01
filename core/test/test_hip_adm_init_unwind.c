@@ -9,7 +9,7 @@
  *
  * `adm_hip_init_device()` ends by building the feature-name dictionary. When
  * that host allocation fails the extractor has already claimed a stream, three
- * events, four HSACO modules and eleven device / pinned allocations, and it
+ * events, four HSACO modules and nine device / pinned allocations, and it
  * must release all of them AND report a failure. Two defects used to live on
  * that one path:
  *
@@ -20,6 +20,10 @@
  *   2. the ladder was entered at a tier that skipped `d_dis_luma` and
  *      `d_ref_luma`, leaking both staging buffers — and `close` is never
  *      invoked after a failed `init`, so nothing downstream reclaimed them.
+ *      Since ADR-1408 the luma planes come from the context's shared frame
+ *      through a `VmafHipPlaneSource`, which init allocates nothing for; the
+ *      ladder must still close it, so a twin that ever acquires during init
+ *      cannot leak its own copies.
  *
  * The target compiles integer_adm_hip.c against the stubs below instead of the
  * ROCm runtime, so the whole init path runs with no AMD device present: every
@@ -54,6 +58,7 @@
 #include "test.h"
 
 #include "hip/integer_adm_hip.h"
+#include "hip/shared_frame.h"
 
 /* ------------------------------------------------------------------ */
 /* Allocation ledger                                                    */
@@ -342,6 +347,30 @@ int vmaf_dictionary_free(VmafDictionary **dict)
     return 0;
 }
 
+/* The plane source of core/src/hip/shared_frame.c (ADR-1408). init() never
+ * acquires; the unwind ladder must close the source all the same. */
+static unsigned g_plane_source_closes;
+
+int vmaf_hip_plane_source_acquire_luma(VmafHipPlaneSource *src, VmafHipSharedFrame *frame,
+                                       const VmafPicture *ref, const VmafPicture *dist,
+                                       uintptr_t stream, void **ref_dev, void **dis_dev)
+{
+    (void)src;
+    (void)frame;
+    (void)ref;
+    (void)dist;
+    (void)stream;
+    (void)ref_dev;
+    (void)dis_dev;
+    return -ENOSYS;
+}
+
+void vmaf_hip_plane_source_close(VmafHipPlaneSource *src)
+{
+    (void)src;
+    g_plane_source_closes++;
+}
+
 int vmaf_feature_collector_append(VmafFeatureCollector *fc, const char *name, double score,
                                   unsigned index)
 {
@@ -421,6 +450,7 @@ static mu_message_t check_memory_released(void)
 {
     /* Defect 2: the path skipped the two luma-staging tiers, so d_ref_luma and
      * d_dis_luma survived an init that nothing downstream ever closes. */
+    mu_assert("the failed init path must close the luma plane source", g_plane_source_closes > 0u);
     mu_assert("every device allocation must be released on the failed init path",
               ledger_outstanding(g_dev_ledger, g_dev_used) == 0u);
     mu_assert("every pinned host allocation must be released on the failed init path",
@@ -445,6 +475,7 @@ static mu_message_t check_handles_released(void)
 static char *test_dict_failure_reports_error_and_frees_every_allocation(void)
 {
     ledger_reset();
+    g_plane_source_closes = 0u;
 
     VmafFeatureExtractor fex = vmaf_fex_integer_adm_hip;
     void *priv = calloc(1u, fex.priv_size);

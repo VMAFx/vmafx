@@ -505,9 +505,9 @@ Invariants:
   (GCN / CDNA) add in same order. Tree sized for 16x8 launch:
   `ISSIM_BLOCK_X/Y` in kernel and `ISSIM_HIP_BLOCK_X/Y` in host change
   together.
-- **Wait for picture upload.** `submit()` stages host pictures through
-  `vmaf_hip_picture_upload()`; see "Picture uploads" below. Race first seen in
-  this twin: off by up to 0.2 on Netflix 576x324 pair.
+- **Wait for picture upload.** `submit()` gets both luma planes from the
+  context's shared frame (waiting upload inside); see "Picture uploads" below.
+  Race first seen in this twin: off by up to 0.2 on Netflix 576x324 pair.
 
 ## Picture uploads: never return from submit() with one in flight
 
@@ -524,25 +524,48 @@ Different set on every run. With several extractors in one process: same wrong
 
 Rules:
 
-- Stage every plane from `VmafPicture::data` with
-  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues
-  copies, waits on event recorded after them. Or, with an extractor-owned
-  pinned buffer (`vmaf_hip_picture_staging_alloc()`), with
-  `vmaf_hip_picture_upload_staged()`: host copy into buffer before return,
-  device copy from buffer, no wait (ADR-1377; `motion_hip`, `motion_v2_hip`).
-  Buffer reuse next frame safe only because `collect()` drains the stream the
-  copies ran on and libvmaf collects frame N - 1 before submit N. Do not call
-  `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly. Copy from
-  extractor-owned pinned buffer (`integer_ms_ssim_hip`,
-  `integer_psnr_hvs_hip`) not affected: extractor owns that memory until it
-  reuses it. `cambi_hip` and the SpEED twins upload through
-  `vmaf_hip_picture_upload_staged()` (ADR-1378, ADR-1384).
-- Pass extractor's private stream (`lc.str`), even when kernels run on null
-  stream. Null-stream copy queues behind every null-stream kernel of frame;
-  wait then blocks host on all of them. Copy completes before any kernel is
-  enqueued -> no cross-stream ordering needed. About ordering guarantee, not
-  speed: on gfx1036 one hardware queue serialises copy behind running kernels
-  either way.
+- Twin reads frame planes -> ask the context's shared frame (ADR-1408,
+  `core/src/hip/shared_frame.h`): `vmaf_hip_plane_source_acquire_luma()` for
+  ref + dis luma, `vmaf_hip_plane_source_acquire()` for any set of whole
+  planes; `fex->hip_frame` + a `VmafHipPlaneSource` in the private state;
+  `vmaf_hip_plane_source_close()` in close after the stream is drained. First
+  twin of a frame that asks uploads the plane (waiting upload, on its own
+  stream) plus every plane any twin asked for in the frame before; every
+  other twin gets the same device pointer, uploads nothing, waits for
+  nothing -> normally one wait per frame. No own `hipMalloc` staging for picture planes, no
+  `vmaf_hip_picture_upload()` in a twin. Adopted: `psnr_hip`, `float_psnr_hip`,
+  `float_moment_hip`, `ciede_hip`, `integer_ssim_hip`, `float_ssim_hip`,
+  `vif_hip`, `float_vif_hip`, `adm_hip`, `float_adm_hip`, `motion_hip`,
+  `motion_v2_hip`, `float_motion_hip`.
+  Not yet: see T-HIP-SHARED-FRAME-REMAINING-TWINS-2026-10-01 in
+  `docs/state.md`.
+- Shared plane = read-only, packed (`width * bytes-per-sample` per row), valid
+  until the twin's next acquire or close. Frames alternate between two slots;
+  libvmaf collects frame N - 1 of a twin before its submit N, so slot N % 2 is
+  free again at frame N + 2. Twin that needs frame N's plane at frame N + 1
+  keeps a copy: motion twins copy device-to-device into `prev_luma` behind
+  the SAD on their stream (`integer_motion_sad_hip.c`).
+- Pictures are read only between `vmaf_hip_shared_frame_begin()` and
+  `vmaf_hip_shared_frame_end()`, which `vmaf_read_pictures()` puts around the
+  dispatch loop. Do not move `end()`, do not acquire outside the pair: the
+  caller refills the pictures when `vmaf_read_pictures()` returns.
+- Twin without shared frame (extractor API used directly, picture not the
+  announced one, part of a plane) uploads into own buffers inside the same
+  call, with the same wait. Nothing for the twin to do.
+- Extractor-owned pinned staging stays valid for twins that convert or pack
+  on the host: `vmaf_hip_picture_upload_staged()` (host copy into
+  `vmaf_hip_picture_staging_alloc()` buffer before return, device copy from
+  it, no wait; `cambi_hip`, SpEED twins, ADR-1378, ADR-1384) and the float
+  staging of `integer_ms_ssim_hip` / `integer_psnr_hvs_hip`. Buffer reuse next
+  frame safe only because `collect()` drains the stream the copies ran on and
+  libvmaf collects frame N - 1 before submit N. Do not call
+  `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly.
+- Upload stream = extractor's private stream (`lc.str`), even when kernels
+  run on null stream. Null-stream copy queues behind every null-stream kernel
+  of frame; wait then blocks host on all of them. Copy completes before any
+  kernel is enqueued -> no cross-stream ordering needed. About ordering
+  guarantee, not speed: on gfx1036 one hardware queue serialises copy behind
+  running kernels either way.
 - Reference picture looks safe, is not. `vmaf_read_pictures()` keeps it alive
   one more frame through `prev_ref`; hence `motion_hip`, `motion_v2_hip`,
   `float_motion_hip` never misbehaved under CLI. libvmaf implementation
@@ -550,24 +573,28 @@ Rules:
   after `submit()` on 10 of 10 runs.
 - Single-frame fixture cannot see any of this; neither can determinism check
   alone. `core/test/test_hip_upload_race.c` covers every uploading extractor
-  twice: pooled frames against CPU (`hip_pooled_fixture.h`), and both pictures
-  refilled the moment `submit()` returns, where every score must be
-  bit-identical. Add new extractor to its `race_cases[]` table.
+  four ways: pooled frames against CPU (`hip_pooled_fixture.h`), both pictures
+  refilled the moment `submit()` returns (bit-identical scores), and both
+  again with every extractor on one shared frame, with and without
+  `n_subsample`. Add new extractor to its `race_cases[]` table.
+  `core/test/test_hip_shared_frame.c` checks the shared-frame contract
+  without a device.
 
-Wait costs host time: 21 % of `vmaf_float_v0.6.1` throughput at 1080p on
-gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers
-remove it (`vmaf_hip_picture_upload_staged()`, motion twins first); rest =
-T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in `docs/state.md`. Do not buy
-throughput back by dropping wait.
+Wait costs host time, normally once per frame instead of once per twin since
+ADR-1408.
+Numbers: `docs/backends/hip/overview.md` "Picture uploads". Pinned planes the
+kernels read in place and pinned staging both measured slower on gfx1036
+(Research-1408); discrete AMD GPU unmeasured. Do not buy throughput back by
+dropping wait.
 
 ## Integer ADM staging buffer requirement (ADR-1154, ADR-1211)
 
 HIP pictures arrive with host pointers (host-pic backend, ADR-0530);
 a host pointer handed to a device kernel faults the GPU
 (T-HIP-INTEGER-ADM-GPU-PAGE-FAULT-2026-09-05). `integer_adm_hip.c`
-stages the scale-0 luma plane per side in `init_fex_hip` and copies
-it with `hipMemcpy2DAsync` before the DWT2 launch (ADR-1211,
-PR #1370); staged rows are packed, so the kernel stride is `w`. The
+reads a device copy of the scale-0 luma plane per side (ADR-1211,
+PR #1370), since ADR-1408 the context's shared frame
+(`adm_hip_stage_luma()`); rows are packed, so the kernel stride is `w`. The
 ADR-1154 deferral is over: do not re-add `should_fail` to the HIP ADM
 tests for it. `.flags` is still `0`, so model-driven dispatch under
 `--backend hip` keeps the CPU `adm`; the twin runs when named

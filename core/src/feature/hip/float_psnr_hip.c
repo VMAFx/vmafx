@@ -48,6 +48,7 @@
 #include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "float_psnr_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -90,9 +91,12 @@ static int hip_err(hipError_t rc)
 typedef struct FloatPsnrStateHip {
     VmafHipKernelLifecycle lc;
     VmafHipKernelReadback rb;
-    /* Device-side staging buffers (luma planes, ref + dis). */
+    /* This frame's luma planes on the device, ref + dis: the context's shared
+     * frame, or `planes`' own buffers when there is none (ADR-1408). */
     void *ref_in;
     void *dis_in;
+    VmafHipPlaneSource planes;
+    VmafHipSharedFrame *hip_frame;
     VmafHipContext *ctx;
     /* HIP module + per-bpc kernel function handles. */
     hipModule_t module;
@@ -174,17 +178,6 @@ static int float_psnr_hip_module_load(FloatPsnrStateHip *s)
     return hip_err(hip_rc);
 }
 
-/* Allocate the two luma staging buffers. The caller releases them. */
-static int float_psnr_hip_bufs_alloc(FloatPsnrStateHip *s)
-{
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)s->frame_w * s->frame_h * bpp;
-    hipError_t hip_rc = hipMalloc(&s->ref_in, plane_bytes);
-    if (hip_rc == hipSuccess)
-        hip_rc = hipMalloc(&s->dis_in, plane_bytes);
-    return hip_err(hip_rc);
-}
-
 /* Launch the per-bpc kernel on `str`. */
 static int float_psnr_hip_launch_kernel(FloatPsnrStateHip *s, ptrdiff_t plane_pitch,
                                         hipStream_t str)
@@ -220,21 +213,8 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
 
     /* Returns once both pictures are read: the caller recycles them when
      * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_in,
-         .dst_pitch = (size_t)plane_pitch,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)plane_pitch,
-         .rows = s->frame_h},
-        {.dst = s->dis_in,
-         .dst_pitch = (size_t)plane_pitch,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)plane_pitch,
-         .rows = s->frame_h},
-    };
-    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, s->hip_frame, ref_pic, dist_pic,
+                                                 s->lc.str, &s->ref_in, &s->dis_in);
     if (err == 0)
         err = float_psnr_hip_launch_kernel(s, plane_pitch, str);
     if (err != 0)
@@ -252,20 +232,14 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Free the staging buffers and unload the module. Safe with NULL handles.
+/* Let go of the planes and unload the module. Safe with NULL handles.
  * Returns the first error. */
 static int float_psnr_hip_module_free(FloatPsnrStateHip *s)
 {
-    void **bufs[] = {&s->dis_in, &s->ref_in};
+    vmaf_hip_plane_source_close(&s->planes);
+    s->ref_in = NULL;
+    s->dis_in = NULL;
     int rc = 0;
-    for (unsigned i = 0u; i < 2u; i++) {
-        if (*bufs[i] == NULL)
-            continue;
-        const int e = hip_err(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
-        if (rc == 0)
-            rc = e;
-    }
     if (s->module != NULL) {
         const int e = hip_err(hipModuleUnload(s->module));
         s->module = NULL;
@@ -332,8 +306,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = float_psnr_hip_module_load(s);
-    if (err == 0)
-        err = float_psnr_hip_bufs_alloc(s);
 #else
     if (err == 0)
         err = -ENOSYS;
@@ -374,10 +346,11 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     FloatPsnrStateHip *s = fex->priv;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag is not yet set (T7-10b posture),
-     * so pictures arrive as CPU VmafPictures. float_psnr_hip_launch()
-     * copies the luma planes host->device, launches the kernel, copies
-     * partials device->host, and records the finished event. */
+    s->hip_frame = fex->hip_frame;
+    /* Pictures arrive as host VmafPictures (ADR-0530).
+     * float_psnr_hip_launch() gets the luma planes on the device, launches
+     * the kernel, copies partials device->host, and records the finished
+     * event. */
     return float_psnr_hip_launch(s, ref_pic, dist_pic);
 #endif /* HAVE_HIPCC */
 }

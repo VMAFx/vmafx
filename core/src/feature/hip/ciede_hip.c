@@ -37,6 +37,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "ciede_hip.h"
 
 #ifdef HAVE_HIPCC
@@ -72,16 +73,18 @@ typedef struct CiedeStateHip {
     hipModule_t module;
     hipFunction_t funcbpc8;
     hipFunction_t funcbpc16;
-    /* Staging device buffers for all 6 YUV planes (ref + dis, Y/U/V).
-     * Chroma planes are sized at chroma width/height which may be
-     * half of luma when subsampled. */
+    /* This frame's 6 YUV planes on the device (ref + dis, Y/U/V): the
+     * context's shared frame, or `planes`' own buffers when there is none
+     * (ADR-1408). Chroma planes have chroma width/height, which may be half
+     * of luma when subsampled. */
     void *ref_y;
     void *ref_u;
     void *ref_v;
     void *dis_y;
     void *dis_u;
     void *dis_v;
-    /* Dimensions of the chroma plane staging buffers. */
+    VmafHipPlaneSource planes;
+    /* Dimensions of the chroma planes. */
     unsigned chroma_w;
     unsigned chroma_h;
 #endif /* HAVE_HIPCC */
@@ -139,101 +142,61 @@ static int ciede_hip_module_load(CiedeStateHip *s)
     return 0;
 }
 
-/* Allocate the 6 YUV staging device buffers. */
-static int ciede_hip_bufs_alloc(CiedeStateHip *s, unsigned w, unsigned h, unsigned bpc,
-                                unsigned ss_hor, unsigned ss_ver)
+/* The chroma plane geometry of a `w` x `h` frame. */
+static void ciede_hip_chroma_geometry(CiedeStateHip *s, unsigned w, unsigned h, unsigned ss_hor,
+                                      unsigned ss_ver)
 {
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t luma_bytes = (size_t)w * h * bpp;
     /* ADR-1213: chroma plane dimensions are CEIL(w / 2^ss), exactly as
      * core/src/picture.c allocates them (`(w + ss_hor) >> ss_hor`). Plain
-     * `w >> 1` under-sizes the staging buffer by one column/row on odd luma
+     * `w >> 1` under-sizes the plane by one column/row on odd luma
      * dimensions, so the last chroma column is never uploaded and the
      * kernel's `cx = x >> 1` for the last luma column reads one element past
-     * the staged row — into the next row, and past the allocation on the last
+     * the row — into the next row, and past the allocation on the last
      * row. CPU, CUDA, SYCL and Metal all consume the picture's real
      * `w[1]`/`h[1]`; this twin was the only one re-deriving them with floor. */
     s->chroma_w = (w + ss_hor) >> ss_hor;
     s->chroma_h = (h + ss_ver) >> ss_ver;
-    const size_t chroma_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
-
-    void **bufs[6] = {&s->ref_y, &s->ref_u, &s->ref_v, &s->dis_y, &s->dis_u, &s->dis_v};
-    const size_t sizes[6] = {luma_bytes, chroma_bytes, chroma_bytes,
-                             luma_bytes, chroma_bytes, chroma_bytes};
-    /* On failure the buffers already allocated stay set; the caller's
-     * ciede_hip_release() frees them. */
-    for (unsigned i = 0u; i < 6u; i++) {
-        if (hipMalloc(bufs[i], sizes[i]) != hipSuccess)
-            return -ENOMEM;
-    }
-    return 0;
 }
 
-/* Free all 6 YUV staging device buffers and unload the module. Safe to
- * call with NULL handles. */
+/* Let go of the planes and unload the module. Safe to call with NULL
+ * handles. */
 static void ciede_hip_bufs_free(CiedeStateHip *s)
 {
+    vmaf_hip_plane_source_close(&s->planes);
     void **bufs[6] = {&s->dis_v, &s->dis_u, &s->dis_y, &s->ref_v, &s->ref_u, &s->ref_y};
-    for (int i = 0; i < 6; i++) {
-        if (*bufs[i] != NULL) {
-            (void)hipFree(*bufs[i]);
-            *bufs[i] = NULL;
-        }
-    }
+    for (int i = 0; i < 6; i++)
+        *bufs[i] = NULL;
     if (s->module != NULL) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
 }
 
-/* HtoD copy of all six planes into the packed staging buffers. Returns once
- * the pictures are read: the caller recycles them when submit() returns
+/* Get all six planes on the device, packed. Returns once the pictures are
+ * read: the caller recycles them when submit() returns
  * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-static int ciede_hip_upload(const CiedeStateHip *s, const VmafPicture *ref_pic,
+static int ciede_hip_upload(CiedeStateHip *s, VmafHipSharedFrame *frame, const VmafPicture *ref_pic,
                             const VmafPicture *dist_pic)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const size_t luma = (size_t)s->frame_w * bpp;
     const size_t chroma = (size_t)s->chroma_w * bpp;
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_y,
-         .dst_pitch = luma,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = luma,
-         .rows = s->frame_h},
-        {.dst = s->ref_u,
-         .dst_pitch = chroma,
-         .pic = ref_pic,
-         .plane = 1u,
-         .row_bytes = chroma,
-         .rows = s->chroma_h},
-        {.dst = s->ref_v,
-         .dst_pitch = chroma,
-         .pic = ref_pic,
-         .plane = 2u,
-         .row_bytes = chroma,
-         .rows = s->chroma_h},
-        {.dst = s->dis_y,
-         .dst_pitch = luma,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = luma,
-         .rows = s->frame_h},
-        {.dst = s->dis_u,
-         .dst_pitch = chroma,
-         .pic = dist_pic,
-         .plane = 1u,
-         .row_bytes = chroma,
-         .rows = s->chroma_h},
-        {.dst = s->dis_v,
-         .dst_pitch = chroma,
-         .pic = dist_pic,
-         .plane = 2u,
-         .row_bytes = chroma,
-         .rows = s->chroma_h},
+    const VmafHipPlaneUpload planes[6] = {
+        {.pic = ref_pic, .plane = 0u, .row_bytes = luma, .rows = s->frame_h},
+        {.pic = ref_pic, .plane = 1u, .row_bytes = chroma, .rows = s->chroma_h},
+        {.pic = ref_pic, .plane = 2u, .row_bytes = chroma, .rows = s->chroma_h},
+        {.pic = dist_pic, .plane = 0u, .row_bytes = luma, .rows = s->frame_h},
+        {.pic = dist_pic, .plane = 1u, .row_bytes = chroma, .rows = s->chroma_h},
+        {.pic = dist_pic, .plane = 2u, .row_bytes = chroma, .rows = s->chroma_h},
     };
-    return vmaf_hip_picture_upload(planes, 6u, s->lc.str);
+    void *device[6] = {NULL};
+    const int err = vmaf_hip_plane_source_acquire(&s->planes, frame, planes, 6u, s->lc.str, device);
+    if (err != 0)
+        return err;
+    void **bufs[6] = {&s->ref_y, &s->ref_u, &s->ref_v, &s->dis_y, &s->dis_u, &s->dis_v};
+    for (unsigned i = 0u; i < 6u; i++)
+        *bufs[i] = device[i];
+    return 0;
 }
 
 /* Launch the appropriate bpc kernel. Extracted to keep submit under 60 lines. */
@@ -283,12 +246,13 @@ static int ciede_hip_launch(CiedeStateHip *s, hipStream_t str)
     return (rc == hipSuccess) ? 0 : ciede_hip_rc(rc);
 }
 
-/* Submit: HtoD copies of all 6 YUV planes, kernel launch, event/DtoH. */
-static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+/* Submit: all 6 YUV planes on the device, kernel launch, event/DtoH. */
+static int ciede_hip_do_submit(CiedeStateHip *s, VmafHipSharedFrame *frame, VmafPicture *ref_pic,
+                               VmafPicture *dist_pic)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    int err = ciede_hip_upload(s, ref_pic, dist_pic);
+    int err = ciede_hip_upload(s, frame, ref_pic, dist_pic);
     if (err)
         return err;
 
@@ -312,7 +276,7 @@ static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPictu
 /* Tear down everything init() may have set up. Every step tolerates a handle
  * that was never created, so this serves both a failed init() and close().
  * The stream is drained first, so no kernel still uses a buffer. Returns the
- * first error; freeing the staging buffers and the module is best-effort. */
+ * first error; releasing the planes and the module is best-effort. */
 static int ciede_hip_release(CiedeStateHip *s)
 {
     int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -358,7 +322,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0)
         err = ciede_hip_module_load(s);
     if (err == 0)
-        err = ciede_hip_bufs_alloc(s, w, h, bpc, s->ss_hor, s->ss_ver);
+        ciede_hip_chroma_geometry(s, w, h, s->ss_hor, s->ss_ver);
 #endif /* HAVE_HIPCC */
     if (err == 0) {
         s->feature_name_dict =
@@ -386,7 +350,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->partials_count = grid_x * grid_y;
 
 #ifdef HAVE_HIPCC
-    return ciede_hip_do_submit(s, ref_pic, dist_pic);
+    return ciede_hip_do_submit(s, fex->hip_frame, ref_pic, dist_pic);
 #else
     (void)dist_pic;
     return -ENOSYS;

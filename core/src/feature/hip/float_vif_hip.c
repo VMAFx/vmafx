@@ -27,8 +27,9 @@
  *  - HtoD copy uses hipMemcpy2DAsync with hipMemcpyHostToDevice because
  *    pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
  *    flag not yet set — same posture as all other HIP consumers).
- *  - Device-only buffers (ref_raw, dis_raw, ref_buf[], dis_buf[],
- *    num_partials[], den_partials[]) are plain hipMalloc allocations.
+ *  - Device-only buffers (ref_buf[], dis_buf[], num_partials[],
+ *    den_partials[]) are plain hipMalloc allocations; the raw planes
+ *    (ref_raw, dis_raw) come from the context's shared frame (ADR-1408).
  *  - Pinned host readback for (num, den) partials uses hipHostMalloc,
  *    mirroring the CUDA twin's vmaf_cuda_buffer_host_alloc pattern.
  */
@@ -52,6 +53,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
@@ -84,9 +86,11 @@ typedef struct FloatVifStateHip {
     hipFunction_t func_compute;
     hipFunction_t func_decimate;
 
-    /* Staging buffers (raw pixel planes, HtoD each frame). */
+    /* This frame's raw luma planes on the device: the context's shared frame,
+     * or `planes`' own buffers when there is none (ADR-1408). */
     void *ref_raw;
     void *dis_raw;
+    VmafHipPlaneSource planes;
     /* Intermediate float buffers — ping-pong across scales 1-3. */
     void *ref_buf[2];
     void *dis_buf[2];
@@ -233,14 +237,11 @@ static bool fvif_hip_partials_alloc(FloatVifStateHip *s, int i)
  * fvif_hip_bufs_free(). */
 static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
 {
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)s->width * s->height * bpp;
     /* Intermediate float buffers: scale_w[1]*scale_h[1] floats each.
      * Ping-pong: even scales use ref_buf[0]/dis_buf[0], odd use [1]. */
     const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
 
-    bool ok = (hipMalloc(&s->ref_raw, raw_bytes) == hipSuccess) &&
-              (hipMalloc(&s->dis_raw, raw_bytes) == hipSuccess);
+    bool ok = true;
     for (int i = 0; i < 2 && ok; i++) {
         ok = (hipMalloc(&s->ref_buf[i], fbytes) == hipSuccess) &&
              (hipMalloc(&s->dis_buf[i], fbytes) == hipSuccess);
@@ -282,14 +283,9 @@ static void fvif_hip_bufs_free(FloatVifStateHip *s)
             s->ref_buf[i] = NULL;
         }
     }
-    if (s->dis_raw != NULL) {
-        (void)hipFree(s->dis_raw);
-        s->dis_raw = NULL;
-    }
-    if (s->ref_raw != NULL) {
-        (void)hipFree(s->ref_raw);
-        s->ref_raw = NULL;
-    }
+    vmaf_hip_plane_source_close(&s->planes);
+    s->dis_raw = NULL;
+    s->ref_raw = NULL;
     if (s->module != NULL) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -516,30 +512,16 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t raw_stride = (ptrdiff_t)(s->width * bpp);
 
-    /* HtoD copy of ref and dist luma planes into tightly-pitched staging.
-     * Returns once both pictures are read: the caller recycles them when
-     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_raw,
-         .dst_pitch = (size_t)raw_stride,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)raw_stride,
-         .rows = s->height},
-        {.dst = s->dis_raw,
-         .dst_pitch = (size_t)raw_stride,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)raw_stride,
-         .rows = s->height},
-    };
-    /* Upload on the private stream, not the null stream the kernels use: a
-     * null-stream copy would queue behind every other extractor's kernels of
-     * this frame, and the wait would block the host on all of them. The
-     * copies are complete before the kernels are enqueued, and collect() of
-     * the previous frame has already drained the kernels that read these
-     * buffers. */
-    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    /* The tightly-pitched ref and dist luma planes on the device. Returns
+     * once both pictures are read: the caller recycles them when submit()
+     * returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). A plane no other twin
+     * uploaded yet is uploaded on the private stream, never on the null
+     * stream the kernels use: a null-stream copy would queue behind every
+     * other extractor's kernels of this frame, and the wait would block the
+     * host on all of them. The copies are complete before the kernels are
+     * enqueued. */
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, fex->hip_frame, ref_pic, dist_pic,
+                                                 s->lc.str, &s->ref_raw, &s->dis_raw);
     if (err != 0)
         return err;
 

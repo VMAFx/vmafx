@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1185,
+  "total_warnings": 1177,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -380,9 +380,7 @@
     "core/src/feature/float_ms_ssim.c": 3,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
-    "core/src/feature/hip/float_adm_hip.c": 1,
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/integer_adm_hip.c": 7,
     "core/src/feature/hip/integer_ms_ssim_hip.c": 1,
     "core/src/feature/hip/speed_chroma_hip.c": 1,
     "core/src/feature/hip/speed_temporal_hip.c": 1,
@@ -633,6 +631,28 @@
         }
       },
       "previous_baseline_sha256": "8506b3c2a76ca752d34db05a6915f448e08d2b0839b28eafbd8eed8d4af62138"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/float_adm_hip.c",
+        "core/src/feature/hip/integer_adm_hip.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/float_adm_hip.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/hip/integer_adm_hip.c": {
+          "warnings": [
+            7,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fdb197e22984a36959127d5ab792ea251d5b92dd128dde6583c3ab0982352955"
     }
   ]
 }

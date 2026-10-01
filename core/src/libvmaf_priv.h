@@ -17,6 +17,7 @@
 #ifndef __cplusplus
 #include <stdbool.h>
 #endif
+#include <stdint.h>
 
 #include "feature/feature_collector.h"
 
@@ -58,6 +59,9 @@ int vmaf_backend_twin_verdict_for_test(const VmafFeatureExtractor *twin, const V
                                        const VmafPictureConfiguration *pic_cfg,
                                        const char **unsupported_option);
 unsigned vmaf_context_fake_backend_for_test(VmafContext *vmaf, void *token);
+/* ADR-1408: planes the context's HIP shared frame has uploaded so far; 0 in a
+ * build without HIP or for a context without HIP twins. */
+uint64_t vmaf_context_hip_plane_uploads_for_test(const VmafContext *vmaf);
 void vmaf_context_set_gpumask_for_test(VmafContext *vmaf, unsigned gpumask);
 int vmaf_context_append_registered_feature_extractor_for_test(VmafContext *vmaf,
                                                               const VmafFeatureExtractor *fex,

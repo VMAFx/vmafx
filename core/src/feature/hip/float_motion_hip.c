@@ -68,6 +68,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
@@ -108,7 +109,8 @@ typedef struct FmPlaneHip {
     unsigned off0;
     unsigned off1;
 #ifdef HAVE_HIPCC
-    /* Device-only raw plane staging buffer (HtoD copy each frame). */
+    /* This frame's raw plane on the device: the context's shared frame, or
+     * the twin's own copy when there is none (ADR-1408). */
     void *ref_in;
     /* Blurred frame ping-pong (float, w*h pixels each). */
     void *blur[2];
@@ -133,6 +135,8 @@ typedef struct FloatMotionStateHip {
 
     FmPlaneHip plane[FMH_MAX_PLANES];
     unsigned n_planes;
+    /* Where every plane's `ref_in` comes from (ADR-1408). */
+    VmafHipPlaneSource source;
     /* Floats in the readback: the partials of every plane and scale. */
     unsigned partial_count;
 
@@ -491,42 +495,48 @@ static int fm_hip_launch_kernels(FloatMotionStateHip *s, unsigned compute_sad, h
     return err;
 }
 
-/* HtoD copy of every plane the extractor reads into its tightly-pitched
- * staging buffer. Returns once the picture is read: the caller may recycle
- * it when submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
- *
- * Upload on the private stream, not the null stream the kernels use: a
- * null-stream copy would queue behind every other extractor's kernels of
- * this frame, and the wait would block the host on all of them. The copies
- * are complete before the kernels are enqueued, and collect() of the
- * previous frame has already drained the kernels that read these buffers. */
-static int fm_hip_upload(const FloatMotionStateHip *s, const VmafPicture *ref_pic)
+/* Get every plane the extractor reads on the device, packed. Returns once
+ * the picture is read: the caller may recycle it when submit() returns
+ * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). The planes are the context's
+ * shared frame (ADR-1408): a plane no other twin asked for yet is uploaded
+ * on the private stream, never on the null stream the kernels use, where the
+ * copy would queue behind every other extractor's kernels of this frame and
+ * the wait would block the host on all of them. */
+static int fm_hip_upload(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
+                         const VmafPicture *ref_pic)
 {
     VmafHipPlaneUpload planes[FMH_MAX_PLANES];
+    void *device[FMH_MAX_PLANES] = {NULL};
     for (unsigned c = 0u; c < s->n_planes; c++) {
-        const size_t row_bytes = (size_t)s->plane[c].w * fm_hip_bytes_per_sample(s);
-        planes[c] = (VmafHipPlaneUpload){.dst = s->plane[c].ref_in,
-                                         .dst_pitch = row_bytes,
-                                         .pic = ref_pic,
-                                         .plane = c,
-                                         .row_bytes = row_bytes,
-                                         .rows = s->plane[c].h};
+        planes[c] = (VmafHipPlaneUpload){
+            .pic = ref_pic,
+            .plane = c,
+            .row_bytes = (size_t)s->plane[c].w * fm_hip_bytes_per_sample(s),
+            .rows = s->plane[c].h,
+        };
     }
-    return vmaf_hip_picture_upload(planes, s->n_planes, s->lc.str);
+    const int err =
+        vmaf_hip_plane_source_acquire(&s->source, frame, planes, s->n_planes, s->lc.str, device);
+    if (err != 0)
+        return err;
+    for (unsigned c = 0u; c < s->n_planes; c++)
+        s->plane[c].ref_in = device[c];
+    return 0;
 }
 
-/* HtoD copy of the reference planes, launch the motion kernels, record
+/* Get the reference planes on the device, launch the motion kernels, record
  * events, enqueue DtoH copy of per-block SAD partials.
  *
  * `compute_sad`: 0 for the first frame (no previous blur — partials will
  * all be 0.0 by kernel contract), 1 for subsequent frames. */
-static int fm_hip_launch(FloatMotionStateHip *s, const VmafPicture *ref_pic, unsigned compute_sad)
+static int fm_hip_launch(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
+                         const VmafPicture *ref_pic, unsigned compute_sad)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     hipStream_t pstr = vmaf_hip_stream_of(0u); /* no VmafPicture stream handle yet */
     hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
 
-    int err = fm_hip_upload(s, ref_pic);
+    int err = fm_hip_upload(s, frame, ref_pic);
     if (err == 0)
         err = fm_hip_launch_kernels(s, compute_sad, pstr);
     if (err != 0)
@@ -547,7 +557,7 @@ static int fm_hip_launch(FloatMotionStateHip *s, const VmafPicture *ref_pic, uns
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Allocate the staging buffer and the blur ping-pong of every plane, and
+/* Allocate the blur ping-pong of every plane, and
  * zero the partials: frame 0 runs no scale-1 kernel, and its read-back must
  * not carry uninitialised device memory. On failure the buffers already
  * allocated stay set; the caller's fm_hip_release() frees them. */
@@ -557,20 +567,21 @@ static int fm_hip_bufs_alloc(FloatMotionStateHip *s)
     for (unsigned c = 0u; c < s->n_planes && rc == hipSuccess; c++) {
         FmPlaneHip *p = &s->plane[c];
         const size_t pixels = (size_t)p->w * p->h;
-        rc = hipMalloc(&p->ref_in, pixels * fm_hip_bytes_per_sample(s));
-        if (rc == hipSuccess)
-            rc = hipMalloc(&p->blur[0], pixels * sizeof(float));
+        rc = hipMalloc(&p->blur[0], pixels * sizeof(float));
         if (rc == hipSuccess)
             rc = hipMalloc(&p->blur[1], pixels * sizeof(float));
     }
     return vmaf_hip_rc_to_errno(rc);
 }
 
-/* Release module + device buffers.  Safe to call with NULL handles. */
+/* Release module + device buffers and let go of the frame's planes.  Safe
+ * to call with NULL handles. */
 static void fm_hip_bufs_free(FloatMotionStateHip *s)
 {
+    vmaf_hip_plane_source_close(&s->source);
     for (unsigned c = 0u; c < FMH_MAX_PLANES; c++) {
-        void **bufs[] = {&s->plane[c].blur[1], &s->plane[c].blur[0], &s->plane[c].ref_in};
+        s->plane[c].ref_in = NULL;
+        void **bufs[] = {&s->plane[c].blur[1], &s->plane[c].blur[0]};
         for (unsigned i = 0u; i < sizeof(bufs) / sizeof(bufs[0]); i++) {
             if (*bufs[i] != NULL)
                 (void)hipFree(*bufs[i]);
@@ -623,7 +634,7 @@ static int fm_hip_init_device(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = fm_hip_module_load(s);
-    /* Staging buffers (ref_in) and blurred-frame ping-pongs (blur[0/1]). */
+    /* Blurred-frame ping-pongs (blur[0/1]). */
     if (err == 0)
         err = fm_hip_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
@@ -684,7 +695,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     /* First frame has no previous blurred frame — kernel writes cur_blur
      * but computes no SAD (compute_sad=0, partials all 0.0 by contract). */
     const unsigned compute_sad = (index > 0u) ? 1u : 0u;
-    return fm_hip_launch(s, ref_pic, compute_sad);
+    return fm_hip_launch(s, fex->hip_frame, ref_pic, compute_sad);
 #else
     (void)ref_pic;
     /* Scaffold posture: surface -ENOSYS via the pre-launch helper so the

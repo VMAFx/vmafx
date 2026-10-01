@@ -160,6 +160,12 @@ typedef struct VmafFeatureExtractor {
 #ifdef HAVE_SYCL
     struct VmafSyclState *sycl_state; ///< VmafSyclState, set by framework
 #endif
+#ifdef HAVE_HIP
+    /** The frame planes the HIP twins of a context share (ADR-1408), set by
+     *  the framework; NULL when the extractor is driven without a context,
+     *  and it then uploads into buffers of its own. */
+    struct VmafHipSharedFrame *hip_frame;
+#endif
     /* HAVE_VULKAN block removed per ADR-0726 (Vulkan backend dropped
      * 2026-05-28). The VMAF_FEATURE_EXTRACTOR_VULKAN bit below is kept
      * as a reserved gap to preserve the ABI numbering of subsequent

@@ -47,6 +47,7 @@
 #include "integer_vif_hip.h"
 
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
@@ -98,14 +99,14 @@ typedef struct VifStateHip {
     /* Device buffer holding the 4x18 VIF filter table. ADR-0537. */
     void *vif_filt_dev;
 
-    /* Device-side staging buffers for the host ref / dis pictures.
-     * VmafPicture arrives as VMAF_PICTURE_BUFFER_TYPE_HOST; we copy the
-     * Y plane into these per-frame via hipMemcpy2DAsync before launching
-     * the scale-0 kernel.  Without this the kernel reads host memory and
-     * the GPU faults (ADR-0537).  Same pattern as integer_motion_hip.c. */
+    /* This frame's ref / dis luma on the device, packed (buf.stride bytes
+     * per row). VmafPicture arrives as VMAF_PICTURE_BUFFER_TYPE_HOST; the
+     * scale-0 kernel must read a device copy, or the GPU faults on host
+     * memory (ADR-0537). The copy is the context's shared frame, or `planes`'
+     * own buffers when there is none (ADR-1408). */
     void *ref_in_dev;
     void *dis_in_dev;
-    size_t pic_dev_bytes;
+    VmafHipPlaneSource planes;
 
     /* The half-resolution planes inside data_buf that scales 1..3 read: the
      * same addresses as buf.ref / buf.dis, which the kernels take as
@@ -380,7 +381,8 @@ static int vif_hip_stream_init(VifStateHip *s)
     return vif_hip_err(rc);
 }
 
-/* Byte strides of every plane, cache-line aligned. Returns the size of the
+/* Byte strides of every plane, cache-line aligned apart from the raw planes.
+ * Returns the size of the
  * one device slab that holds the planes, and the half-resolution plane size
  * through `rd_size`. */
 static size_t vif_hip_layout_strides(VifBufferHip *buf, unsigned w, unsigned h, unsigned bpc,
@@ -388,7 +390,9 @@ static size_t vif_hip_layout_strides(VifBufferHip *buf, unsigned w, unsigned h, 
 {
     const int cache_line = 64;
     const ptrdiff_t bpp = (bpc > 8) ? 2 : 1;
-    buf->stride = ((ptrdiff_t)w * bpp + cache_line - 1) / cache_line * cache_line;
+    /* The raw planes are packed, as the shared frame hands them out
+     * (ADR-1408): no row padding. */
+    buf->stride = (ptrdiff_t)w * bpp;
     buf->rd_stride = (((ptrdiff_t)((w + 1) / 2) * 2) + cache_line - 1) / cache_line * cache_line;
     buf->stride_16 =
         (ptrdiff_t)(((w * sizeof(uint16_t)) + cache_line - 1) / cache_line * cache_line);
@@ -440,17 +444,12 @@ static void vif_hip_layout_planes(VifStateHip *s, size_t rd_size, unsigned h)
     }
 }
 
-/* Allocate the plane slab, the picture staging buffers (ADR-0537), the
- * accumulators and the filter-table buffer. On failure the buffers already
- * allocated stay set; vif_hip_release() frees them. */
-static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz, unsigned h)
+/* Allocate the plane slab, the accumulators and the filter-table buffer. On
+ * failure the buffers already allocated stay set; vif_hip_release() frees
+ * them. */
+static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz)
 {
-    s->pic_dev_bytes = (size_t)s->buf.stride * (size_t)h;
     hipError_t rc = hipMalloc(&s->data_buf, data_sz);
-    if (rc == hipSuccess)
-        rc = hipMalloc(&s->ref_in_dev, s->pic_dev_bytes);
-    if (rc == hipSuccess)
-        rc = hipMalloc(&s->dis_in_dev, s->pic_dev_bytes);
     if (rc == hipSuccess)
         rc = hipMalloc(&s->accum_dev, sizeof(vif_accums_hip) * 4u);
     if (rc == hipSuccess)
@@ -475,9 +474,11 @@ static int vif_hip_release(VifStateHip *s)
     if (ret == 0)
         ret = vif_hip_err(rc);
 
-    void **dev_bufs[] = {&s->accum_dev, &s->ref_in_dev, &s->dis_in_dev, &s->data_buf,
-                         &s->vif_filt_dev};
-    for (unsigned i = 0; i < 5u; i++) {
+    vmaf_hip_plane_source_close(&s->planes);
+    s->ref_in_dev = NULL;
+    s->dis_in_dev = NULL;
+    void **dev_bufs[] = {&s->accum_dev, &s->data_buf, &s->vif_filt_dev};
+    for (unsigned i = 0; i < 3u; i++) {
         rc = (*dev_bufs[i] != NULL) ? hipFree(*dev_bufs[i]) : hipSuccess;
         *dev_bufs[i] = NULL;
         if (ret == 0)
@@ -577,7 +578,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0)
         err = vif_hip_module_load(s);
     if (err == 0)
-        err = vif_hip_bufs_alloc(s, data_sz, h);
+        err = vif_hip_bufs_alloc(s, data_sz);
     if (err == 0) {
         vif_hip_layout_planes(s, rd_size, h);
         /* ADR-0537: upload the host-side static `vif_filter1d_table` to a
@@ -599,8 +600,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 }
 
 #ifdef HAVE_HIPCC
-/* Launch the four scales on the private stream. Scale 0 reads the staged
- * picture (ADR-0537); scales 1..3 read the half-resolution planes the
+/* Launch the four scales on the private stream. Scale 0 reads the device
+ * copy of the picture (ADR-0537); scales 1..3 read the half-resolution planes the
  * previous scale wrote. */
 static int vif_hip_launch_scales(VifStateHip *s, unsigned w0, unsigned h0, unsigned bpc)
 {
@@ -646,26 +647,12 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
-    /* ADR-0537: stage the host Y plane into device memory. Returns once both
+    /* ADR-0537: the host Y planes in device memory. Returns once both
      * pictures are read: the caller recycles them when submit() returns
      * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const ptrdiff_t bpp = (ref_pic->bpc > 8) ? 2 : 1;
-    const size_t row_bytes = (size_t)ref_pic->w[0] * (size_t)bpp;
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_in_dev,
-         .dst_pitch = (size_t)s->buf.stride,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = ref_pic->h[0]},
-        {.dst = s->dis_in_dev,
-         .dst_pitch = (size_t)s->buf.stride,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = dist_pic->h[0]},
-    };
-    int err = vmaf_hip_picture_upload(planes, 2u, vmaf_hip_stream_bits(s->str));
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, fex->hip_frame, ref_pic, dist_pic,
+                                                 vmaf_hip_stream_bits(s->str), &s->ref_in_dev,
+                                                 &s->dis_in_dev);
     if (err == 0)
         err = vif_hip_launch_scales(s, ref_pic->w[0], ref_pic->h[0], ref_pic->bpc);
     if (err != 0)

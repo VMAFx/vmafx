@@ -66,6 +66,8 @@
 hip_sources += files(
     'common.c',
     'picture_hip.c',
+    # ADR-1408: the frame planes a state uploads once and every twin reads.
+    'shared_frame.c',
     'dispatch_strategy.c',
     'kernel_template.c',
     # adm_hip.c, vif_hip.c, motion_hip.c were deleted by ADR-0546:

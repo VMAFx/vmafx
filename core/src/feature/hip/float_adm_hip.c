@@ -48,6 +48,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "float_adm_hip.h"
 
 #ifdef HAVE_HIPCC
@@ -112,8 +113,11 @@ typedef struct FloatAdmStateHip {
     hipFunction_t func_csf_r;
     hipFunction_t func_aim_cm;
 
+    /* This frame's raw luma planes on the device: the context's shared frame,
+     * or `planes`' own buffers when there is none (ADR-1408). */
     void *src_ref;
     void *src_dis;
+    VmafHipPlaneSource planes;
     void *dwt_tmp_ref;
     void *dwt_tmp_dis;
     void *ref_band[FADM_NUM_SCALES];
@@ -501,18 +505,15 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
  * them through fadm_hip_bufs_free(). */
 static int fadm_hip_bufs_alloc(FloatAdmStateHip *s)
 {
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)s->width * s->height * bpp;
     const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
     const size_t csf_bytes =
         (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
 
-    void **flat[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis,
-                     &s->csf_a,   &s->csf_f,   &s->csf_a_aim,   &s->csf_f_aim};
-    const size_t flat_bytes[] = {raw_bytes, raw_bytes, dwt_bytes, dwt_bytes,
-                                 csf_bytes, csf_bytes, csf_bytes, csf_bytes};
+    void **flat[] = {&s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
+                     &s->csf_f,       &s->csf_a_aim,   &s->csf_f_aim};
+    const size_t flat_bytes[] = {dwt_bytes, dwt_bytes, csf_bytes, csf_bytes, csf_bytes, csf_bytes};
     hipError_t rc = hipSuccess;
-    for (unsigned i = 0; i < 8u && rc == hipSuccess; i++)
+    for (unsigned i = 0; i < 6u && rc == hipSuccess; i++)
         rc = hipMalloc(flat[i], flat_bytes[i]);
 
     for (int scale = 0; scale < FADM_NUM_SCALES && rc == hipSuccess; scale++) {
@@ -547,13 +548,16 @@ static int fadm_hip_bufs_free(FloatAdmStateHip *s)
             *per_scale[i] = NULL;
         }
     }
-    void **flat[] = {&s->csf_f_aim,   &s->csf_a_aim,   &s->csf_f,   &s->csf_a,
-                     &s->dwt_tmp_dis, &s->dwt_tmp_ref, &s->src_dis, &s->src_ref};
-    for (unsigned i = 0; i < 8u; i++) {
+    void **flat[] = {&s->csf_f_aim, &s->csf_a_aim,   &s->csf_f,
+                     &s->csf_a,     &s->dwt_tmp_dis, &s->dwt_tmp_ref};
+    for (unsigned i = 0; i < 6u; i++) {
         if (*flat[i] != NULL)
             (void)hipFree(*flat[i]);
         *flat[i] = NULL;
     }
+    vmaf_hip_plane_source_close(&s->planes);
+    s->src_dis = NULL;
+    s->src_ref = NULL;
     int rc = 0;
     if (s->module != NULL) {
         if (hipModuleUnload(s->module) != hipSuccess)
@@ -664,33 +668,18 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     FloatAdmStateHip *s = fex->priv;
 
 #ifdef HAVE_HIPCC
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t raw_stride = (ptrdiff_t)(s->width * bpp);
     const uintptr_t pic_stream_handle = 0;
 
-    /* Returns once both pictures are read: the caller recycles them when
-     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->src_ref,
-         .dst_pitch = (size_t)raw_stride,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)raw_stride,
-         .rows = s->height},
-        {.dst = s->src_dis,
-         .dst_pitch = (size_t)raw_stride,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)raw_stride,
-         .rows = s->height},
-    };
-    /* Upload on the private stream, not the null stream the kernels use: a
-     * null-stream copy would queue behind every other extractor's kernels of
-     * this frame, and the wait would block the host on all of them. The
-     * copies are complete before the kernels are enqueued, and collect() of
-     * the previous frame has already drained the kernels that read these
-     * buffers. */
-    const int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    /* The packed luma planes on the device. Returns once both pictures are
+     * read: the caller recycles them when submit() returns
+     * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). A plane no other twin
+     * uploaded yet is uploaded on the private stream, never on the null
+     * stream the kernels use: a null-stream copy would queue behind every
+     * other extractor's kernels of this frame, and the wait would block the
+     * host on all of them. The copies are complete before the kernels are
+     * enqueued. */
+    const int err = vmaf_hip_plane_source_acquire_luma(
+        &s->planes, fex->hip_frame, ref_pic, dist_pic, s->lc.str, &s->src_ref, &s->src_dis);
     if (err != 0)
         return err;
 

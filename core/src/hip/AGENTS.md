@@ -18,6 +18,8 @@ hip/
   picture_hip.{c,h}     # device picture alloc/free, and vmaf_hip_picture_upload():
                         #   the one way a host VmafPicture plane reaches the
                         #   device (waits for the copy; see ../feature/hip/AGENTS.md)
+  shared_frame.{c,h}    # ADR-1408: frame planes a VmafContext uploads once,
+                        #   every twin reads; vmaf_hip_plane_source_acquire()
   hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
   dispatch_strategy.{c,h} # Feature/extractor-name → active-kernel routing
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
@@ -460,13 +462,14 @@ and takes whole process with it — no graceful error, no skip, so
 single extractor doing this makes `--backend hip` look completely
 dead.
 
-Correct shape is in `core/src/feature/hip/integer_psnr_hip.c`:
-allocate per-plane device buffers in init (`hipMalloc`), copy in
-extract (`hipMemcpy2DAsync`, host-to-device), free in close. Two
-things to get right:
+Correct shape is in `core/src/feature/hip/integer_psnr_hip.c`: ask
+for device planes in submit (`vmaf_hip_plane_source_acquire()`,
+`fex->hip_frame`; ADR-1408, `shared_frame.h`), close the plane source
+in close. Context uploads each plane once per frame for all twins;
+twin allocates no picture staging of its own. Two things to get right:
 
-- Staged buffer is tightly packed, so stride you pass to kernel is
-  plane **width**, not `pic->stride[i]`.
+- Device plane is tightly packed, so stride you pass to kernel is
+  plane **width** times bytes per sample, not `pic->stride[i]`.
 - Do not port CUDA twin's call shape verbatim. CUDA extractors
   receive device picture from pool, so their helpers take device
   pointer caller never had to produce. That mismatch is precisely

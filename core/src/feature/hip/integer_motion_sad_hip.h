@@ -21,16 +21,19 @@
  *  ADR-1371 fixed it the same way).
  *
  *  The one kernel lives in integer_motion_v2/motion_v2_score.hip; this helper
- *  is the only host code that loads and launches it. A frame is one staged
- *  upload of the reference luma into a raw ping-pong slot and, from the
- *  second frame on, the SAD against the other slot, all enqueued on the
- *  extractor's private stream. Nothing here waits on the device: the
- *  extractor's collect() is the one wait of the frame.
+ *  is the only host code that loads and launches it. A frame reads the
+ *  reference luma the extractor acquired on the device (the context's shared
+ *  frame, ADR-1408, or the extractor's own copy): from the second frame on,
+ *  the SAD against the luma kept from the previous frame, then a
+ *  device-to-device copy that keeps this frame's luma for the next one, all
+ *  enqueued on the extractor's private stream. Nothing here waits on the
+ *  device.
  */
 
 #ifndef FEATURE_HIP_INTEGER_MOTION_SAD_HIP_H_
 #define FEATURE_HIP_INTEGER_MOTION_SAD_HIP_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -53,18 +56,16 @@ typedef struct VmafHipMotionSad {
     hipFunction_t func_16bpc;
 } VmafHipMotionSad;
 
-/* One frame of a raw-luma ping-pong. `cur` and `prev` are packed device
- * planes of `width` x `height` samples, vmaf_hip_motion_sad_plane_bytes()
- * each; `staging` is pinned host memory (vmaf_hip_picture_staging_alloc())
- * of `staging_bytes`, the size the owner allocated, so the upload refuses a
- * plane that does not fit instead of trusting the frame geometry. */
+/* One frame. `cur` and `keep` are packed device planes of `width` x `height`
+ * samples, vmaf_hip_motion_sad_plane_bytes() each. `cur` is this frame's
+ * luma and is only read; `keep` is the extractor's own plane, holding the
+ * previous frame's luma when `have_prev` is set and receiving this frame's
+ * after the SAD. */
 typedef struct VmafHipMotionSadFrame {
-    const VmafPicture *pic; /* this frame's reference picture, in host memory */
-    void *staging;          /* host copy of pic's luma, the device copy's source */
-    size_t staging_bytes;   /* allocated size of `staging` */
-    void *cur;              /* receives pic's luma: the next frame's `prev` */
-    const void *prev;       /* the previous frame's luma; NULL on the first frame */
-    uint64_t *sad;          /* device accumulator, zeroed here; unused without prev */
+    const void *cur; /* this frame's reference luma on the device */
+    void *keep;      /* the previous frame's luma; becomes this frame's */
+    bool have_prev;  /* false on the first frame: no SAD, only the copy */
+    uint64_t *sad;   /* device accumulator, zeroed here; unused without prev */
     unsigned width;
     unsigned height;
     unsigned bpc;
@@ -78,13 +79,14 @@ int vmaf_hip_motion_sad_load(VmafHipMotionSad *k);
 void vmaf_hip_motion_sad_unload(VmafHipMotionSad *k);
 
 /* Enqueue one frame on `stream` (a hipStream_t carried as uintptr_t, the
- * kernel-template convention): stage pic's luma into `cur` through
- * `staging` without waiting (vmaf_hip_picture_upload_staged()) and, when
- * `prev` is set, zero `sad` and add sum |blur(prev - cur)| into it. The
- * picture is read before this returns. Returns 0 or a negative errno; when
- * the SAD fails to enqueue after the upload was, it waits for the stream
- * first, so no copy is still reading `staging` or writing `cur` once the
- * error is returned (the one host wait, error path only). */
+ * kernel-template convention): when `have_prev` is set, zero `sad` and add
+ * sum |blur(keep - cur)| into it; then copy `cur` into `keep`, device to
+ * device, behind the SAD on the same stream. `cur` must stay untouched until
+ * the stream has run both, which the extractor's collect() waits for.
+ * Returns 0 or a negative errno; when the copy fails to enqueue after the
+ * SAD was, it waits for the stream first, so no kernel is still reading
+ * `keep` or `cur` once the error is returned (the one host wait, error path
+ * only). */
 int vmaf_hip_motion_sad_submit(const VmafHipMotionSad *k, const VmafHipMotionSadFrame *frame,
                                uintptr_t stream);
 

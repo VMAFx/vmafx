@@ -9,10 +9,11 @@
  *
  *  This TU mirrors `core/src/feature/cuda/integer_motion_v2_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined the real HIP
- *  Module API path is active: raw-pixel ping-pong (`pix[2]`) via
- *  `hipMalloc`, a per-frame staged upload and the diff-first SAD pipeline it
- *  shares with motion_hip (integer_motion_sad_hip.h, ADR-1377; no host wait
- *  in submit()), and a host-side flush() computing both
+ *  Module API path is active: the reference luma of the frame from the
+ *  context's shared frame (ADR-1408), a kept copy of the previous frame's
+ *  (`prev_luma`, `hipMalloc`), the diff-first SAD pipeline it shares with
+ *  motion_hip (integer_motion_sad_hip.h, ADR-1377), and a host-side flush()
+ *  computing both
  *  `motion2_v2 = min(cur, next)` and `motion3_v2` (per-frame blend + clip +
  *  optional moving-average). Without `HAVE_HIPCC` the scaffold posture is
  *  preserved.
@@ -29,10 +30,11 @@
  *  A logical (unsigned) shift would diverge for negative signed values and
  *  was the root cause of the AVX2 srlv_epi64 divergence fixed in PR #587.
  *
- *  Unique vs other HIP consumers: TEMPORAL extractor with a raw-pixel
- *  ping-pong (`pix[2]`) stored as plain `void *` device pointers, mirroring
- *  the CUDA twin's `VmafCudaBuffer *pix[2]` allocation strategy. The template
- *  readback bundle holds only the single int64 SAD accumulator.
+ *  Unique vs other HIP consumers: TEMPORAL extractor. The previous frame's
+ *  raw luma is kept in a device plane of its own (`prev_luma`), filled by a
+ *  device-to-device copy behind each frame's SAD, because the shared frame
+ *  only keeps a frame's planes until the next but one. The template readback
+ *  bundle holds only the single int64 SAD accumulator.
  */
 
 #include <errno.h>
@@ -51,6 +53,7 @@
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "integer_motion_v2_hip.h"
 
 #ifdef HAVE_HIPCC
@@ -83,14 +86,14 @@ typedef struct MotionV2StateHip {
 #ifdef HAVE_HIPCC
     /* The diff-first SAD kernel motion_hip runs too (ADR-1377). */
     VmafHipMotionSad sad_kernel;
-    /* Ping-pong of raw ref Y planes on device. pix[index%2] is the current
-     * frame's slot; pix[(index+1)%2] is the previous frame's slot.
-     * Outside the template's readback bundle (template models one device+host
-     * pair, not a ping-pong of device-only buffers). */
-    void *pix[2];
-    /* Pinned host copy of the current frame's luma: the device copy's
-     * source, so submit() never waits for the copy to read the picture. */
-    void *staging;
+    /* The previous frame's raw ref Y plane on device, packed; each frame's
+     * SAD reads it and a device copy behind the SAD replaces it with the
+     * frame's own. Outside the template's readback bundle (the template
+     * models one device+host pair, not a device-only buffer). */
+    void *prev_luma;
+    /* The frame's ref Y plane: the context's shared frame, or `planes`' own
+     * buffer when there is none (ADR-1408). */
+    VmafHipPlaneSource planes;
 #endif /* HAVE_HIPCC */
 
     size_t plane_bytes;
@@ -178,51 +181,51 @@ static const VmafOption options[] = {
     {0}};
 
 #ifdef HAVE_HIPCC
-/* Allocate the ping-pong device buffers and the pinned staging plane. On
- * failure the buffers already allocated stay set; the caller's
- * mv2_hip_release() frees them. */
+/* Allocate the plane that keeps the previous frame's luma. On failure the
+ * caller's mv2_hip_release() frees whatever is set. */
 static int mv2_hip_bufs_alloc(MotionV2StateHip *s)
 {
-    hipError_t rc = hipMalloc(&s->pix[0], s->plane_bytes);
-    if (rc == hipSuccess)
-        rc = hipMalloc(&s->pix[1], s->plane_bytes);
-    if (rc != hipSuccess)
-        return -ENOMEM;
-    return vmaf_hip_picture_staging_alloc(&s->staging, s->plane_bytes);
+    return (hipMalloc(&s->prev_luma, s->plane_bytes) == hipSuccess) ? 0 : -ENOMEM;
 }
 
-/* Free the buffers and unload the module. Safe with NULL handles; the
- * caller has drained the stream, so no copy or kernel still uses them. */
+/* Free the buffer, let go of the frame's planes and unload the module. Safe
+ * with NULL handles; the caller has drained the stream, so no copy or kernel
+ * still uses them. */
 static void mv2_hip_bufs_free(MotionV2StateHip *s)
 {
-    vmaf_hip_picture_staging_free(s->staging);
-    s->staging = NULL;
-    for (unsigned i = 0; i < 2u; i++) {
-        if (s->pix[i] != NULL) {
-            /* Best-effort teardown. */
-            const hipError_t rc = hipFree(s->pix[i]);
-            (void)rc;
-            s->pix[i] = NULL;
-        }
+    vmaf_hip_plane_source_close(&s->planes);
+    if (s->prev_luma != NULL) {
+        /* Best-effort teardown. */
+        const hipError_t rc = hipFree(s->prev_luma);
+        (void)rc;
+        s->prev_luma = NULL;
     }
     vmaf_hip_motion_sad_unload(&s->sad_kernel);
 }
 
-/* Per-frame work, all enqueued on the private stream: stage the luma into
- * pix[index % 2]; from frame 1 on, the SAD against pix[(index + 1) % 2] and
- * its DtoH copy. collect() is the only wait. */
-static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned index)
+/* Per-frame work. The reference luma comes from the context's shared frame
+ * (ADR-1408): uploaded by whichever twin asks first, with the wait that
+ * keeps the picture from being recycled under the copy
+ * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18), and reused by the others. The
+ * SAD against the previous frame (from frame 1 on), the copy that keeps this
+ * frame's luma and the DtoH copy are enqueued on the private stream;
+ * collect() waits for them. */
+static int mv2_hip_launch(MotionV2StateHip *s, VmafHipSharedFrame *shared, VmafPicture *ref_pic,
+                          unsigned index)
 {
-    const VmafHipMotionSadFrame frame = {.pic = ref_pic,
-                                         .staging = s->staging,
-                                         .staging_bytes = s->plane_bytes,
-                                         .cur = s->pix[index % 2u],
-                                         .prev = (index > 0u) ? s->pix[(index + 1u) % 2u] : NULL,
+    void *cur = NULL;
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, shared, ref_pic, NULL, s->lc.str, &cur,
+                                                 NULL);
+    if (err != 0)
+        return err;
+    const VmafHipMotionSadFrame frame = {.cur = cur,
+                                         .keep = s->prev_luma,
+                                         .have_prev = (index > 0u),
                                          .sad = (uint64_t *)s->rb.device,
                                          .width = s->frame_w,
                                          .height = s->frame_h,
                                          .bpc = s->bpc};
-    const int err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);
+    err = vmaf_hip_motion_sad_submit(&s->sad_kernel, &frame, s->lc.str);
     if (err != 0)
         return err;
 
@@ -321,7 +324,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
 
 #ifdef HAVE_HIPCC
-    return mv2_hip_launch(s, ref_pic, index);
+    return mv2_hip_launch(s, fex->hip_frame, ref_pic, index);
 #else
     (void)ref_pic;
     return -ENOSYS;

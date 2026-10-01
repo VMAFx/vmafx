@@ -48,6 +48,7 @@
 #include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "float_moment_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -103,9 +104,12 @@ typedef struct MomentStateHip {
     hipModule_t module;
     hipFunction_t funcbpc8;
     hipFunction_t funcbpc16;
-    /* Device-side staging buffers (luma planes, ref + dis). */
+    /* This frame's luma planes on the device, ref + dis: the context's shared
+     * frame, or `planes`' own buffers when there is none (ADR-1408). */
     void *ref_in;
     void *dis_in;
+    VmafHipPlaneSource planes;
+    VmafHipSharedFrame *hip_frame;
     unsigned index;
     unsigned frame_w;
     unsigned frame_h;
@@ -140,20 +144,9 @@ static int moment_hip_module_load(MomentStateHip *s)
     return moment_hip_rc(hip_rc);
 }
 
-/* Allocate the two luma staging buffers. The caller releases them. */
-static int moment_hip_bufs_alloc(MomentStateHip *s)
-{
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)s->frame_w * s->frame_h * bpp;
-    hipError_t hip_rc = hipMalloc(&s->ref_in, plane_bytes);
-    if (hip_rc == hipSuccess)
-        hip_rc = hipMalloc(&s->dis_in, plane_bytes);
-    return moment_hip_rc(hip_rc);
-}
-
 /* Launch the per-bpc kernel on `str`. Both kernels take the same seven
  * arguments: the 16bpc one reads raw uint16_t samples whatever the bit
- * depth, and the host sized ref_in/dis_in at 2 bytes per sample. */
+ * depth, and ref_in/dis_in hold 2 bytes per sample. */
 static int moment_hip_launch_kernel(MomentStateHip *s, ptrdiff_t row_w, hipStream_t str)
 {
     const unsigned gx = (s->frame_w + MOMENT_HIP_BX - 1u) / MOMENT_HIP_BX;
@@ -186,21 +179,8 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
 
     /* Returns once both pictures are read: the caller recycles them when
      * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_in,
-         .dst_pitch = (size_t)row_w,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)row_w,
-         .rows = s->frame_h},
-        {.dst = s->dis_in,
-         .dst_pitch = (size_t)row_w,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = (size_t)row_w,
-         .rows = s->frame_h},
-    };
-    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    int err = vmaf_hip_plane_source_acquire_luma(&s->planes, s->hip_frame, ref_pic, dist_pic,
+                                                 s->lc.str, &s->ref_in, &s->dis_in);
     if (err == 0)
         err = moment_hip_launch_kernel(s, row_w, str);
     if (err != 0)
@@ -219,20 +199,14 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Free the staging buffers and unload the module. Safe with NULL handles.
+/* Let go of the planes and unload the module. Safe with NULL handles.
  * Returns the first error. */
 static int moment_hip_module_free(MomentStateHip *s)
 {
-    void **bufs[] = {&s->dis_in, &s->ref_in};
+    vmaf_hip_plane_source_close(&s->planes);
+    s->ref_in = NULL;
+    s->dis_in = NULL;
     int rc = 0;
-    for (unsigned i = 0u; i < 2u; i++) {
-        if (*bufs[i] == NULL)
-            continue;
-        const int e = moment_hip_rc(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
-        if (rc == 0)
-            rc = e;
-    }
     if (s->module != NULL) {
         const int e = moment_hip_rc(hipModuleUnload(s->module));
         s->module = NULL;
@@ -293,8 +267,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = moment_hip_module_load(s);
-    if (err == 0)
-        err = moment_hip_bufs_alloc(s);
 #else
     if (err == 0)
         err = -ENOSYS;
@@ -336,11 +308,10 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag is not yet set (T7-10b posture),
-     * so pictures arrive as CPU VmafPictures. moment_hip_launch()
-     * copies luma planes host->device, launches the kernel, copies
-     * four uint64 accumulators device->host, and records the finished
-     * event. */
+    s->hip_frame = fex->hip_frame;
+    /* Pictures arrive as host VmafPictures (ADR-0530). moment_hip_launch()
+     * gets the luma planes on the device, launches the kernel, copies four
+     * uint64 accumulators device->host, and records the finished event. */
     return moment_hip_launch(s, ref_pic, dist_pic);
 #endif /* HAVE_HIPCC */
 }

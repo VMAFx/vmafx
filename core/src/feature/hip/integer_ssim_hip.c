@@ -65,6 +65,7 @@
 #include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "../../hip/shared_frame.h"
 #include "integer_ssim_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -91,9 +92,12 @@ typedef struct IssimStateHip {
     /* Pass-1 planes, width * height int64_t each. */
     void *d_moment[ISSIM_HIP_MOMENTS];
 
-    /* Packed luma staging, width * bytes-per-sample per row. */
+    /* This frame's packed luma planes on the device, width *
+     * bytes-per-sample per row: the context's shared frame, or `planes`' own
+     * buffers when there is none (ADR-1408). */
     void *ref_in;
     void *cmp_in;
+    VmafHipPlaneSource planes;
 
     hipModule_t module;
     hipFunction_t func_horiz_8;
@@ -190,21 +194,20 @@ static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
 #endif
 }
 
-/* Release every device buffer. Safe on a partially allocated state. */
+/* Release every device buffer and let go of the planes. Safe on a partially
+ * allocated state. */
 static int issim_hip_bufs_free(IssimStateHip *s)
 {
-    void **bufs[ISSIM_HIP_MOMENTS + 2u];
-    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS; i++)
-        bufs[i] = &s->d_moment[i];
-    bufs[ISSIM_HIP_MOMENTS] = &s->ref_in;
-    bufs[ISSIM_HIP_MOMENTS + 1u] = &s->cmp_in;
+    vmaf_hip_plane_source_close(&s->planes);
+    s->ref_in = NULL;
+    s->cmp_in = NULL;
 
     int err = 0;
-    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS + 2u; i++) {
-        if (*bufs[i] == NULL)
+    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS; i++) {
+        if (s->d_moment[i] == NULL)
             continue;
-        const int e = vmaf_hip_rc_to_errno(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
+        const int e = vmaf_hip_rc_to_errno(hipFree(s->d_moment[i]));
+        s->d_moment[i] = NULL;
         if (err == 0)
             err = e;
     }
@@ -214,15 +217,10 @@ static int issim_hip_bufs_free(IssimStateHip *s)
 static int issim_hip_bufs_alloc(IssimStateHip *s)
 {
     const size_t plane_bytes = (size_t)s->width * s->height * sizeof(int64_t);
-    const size_t stage_bytes = (size_t)s->width * s->height * issim_hip_bytes_per_sample(s->bpc);
 
     hipError_t rc = hipSuccess;
     for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS && rc == hipSuccess; i++)
         rc = hipMalloc(&s->d_moment[i], plane_bytes);
-    if (rc == hipSuccess)
-        rc = hipMalloc(&s->ref_in, stage_bytes);
-    if (rc == hipSuccess)
-        rc = hipMalloc(&s->cmp_in, stage_bytes);
     if (rc != hipSuccess) {
         (void)issim_hip_bufs_free(s);
         return vmaf_hip_rc_to_errno(rc);
@@ -356,34 +354,22 @@ static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Stage both host luma planes into the packed device buffers.
+/* Get both luma planes on the device, packed.
  *
- * vmaf_hip_picture_upload() returns only once the copies have read the
- * pictures, and that is load-bearing: the caller may recycle them as soon as
- * submit() returns, and the CLI's picture pool refills a slot with the next
- * frame right away. Without the wait some frames were scored against a mix
- * of their own and the next frame's samples (off by up to 0.2 on the Netflix
- * 576x324 pair, a different set of frames on every run;
- * T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
-static int issim_hip_upload(const IssimStateHip *s, const VmafPicture *ref_pic,
+ * The call returns only once the pictures have been read, and that is
+ * load-bearing: the caller may recycle them as soon as submit() returns, and
+ * the CLI's picture pool refills a slot with the next frame right away.
+ * Without the wait some frames were scored against a mix of their own and
+ * the next frame's samples (off by up to 0.2 on the Netflix 576x324 pair, a
+ * different set of frames on every run;
+ * T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). When the context shares the frame
+ * (ADR-1408) another twin may already have uploaded the planes, and this
+ * waits for nothing. */
+static int issim_hip_upload(IssimStateHip *s, VmafHipSharedFrame *frame, const VmafPicture *ref_pic,
                             const VmafPicture *dist_pic)
 {
-    const size_t row_bytes = (size_t)s->width * issim_hip_bytes_per_sample(s->bpc);
-    const VmafHipPlaneUpload planes[] = {
-        {.dst = s->ref_in,
-         .dst_pitch = row_bytes,
-         .pic = ref_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = s->height},
-        {.dst = s->cmp_in,
-         .dst_pitch = row_bytes,
-         .pic = dist_pic,
-         .plane = 0u,
-         .row_bytes = row_bytes,
-         .rows = s->height},
-    };
-    return vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    return vmaf_hip_plane_source_acquire_luma(&s->planes, frame, ref_pic, dist_pic, s->lc.str,
+                                              &s->ref_in, &s->cmp_in);
 }
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -395,7 +381,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     IssimStateHip *s = fex->priv;
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    int err = issim_hip_upload(s, ref_pic, dist_pic);
+    int err = issim_hip_upload(s, fex->hip_frame, ref_pic, dist_pic);
     if (err == 0)
         err = issim_hip_launch_horiz(s, str);
     if (err == 0)

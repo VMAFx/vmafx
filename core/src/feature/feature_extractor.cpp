@@ -1265,6 +1265,9 @@ void refresh_fex_runtime_state(struct fex_list_entry *entry, const VmafFeatureEx
 #ifdef HAVE_SYCL
     entry->fex.sycl_state = fex->sycl_state;
 #endif
+#ifdef HAVE_HIP
+    entry->fex.hip_frame = fex->hip_frame;
+#endif
     entry->fex.framesync = fex->framesync;
 }
 
