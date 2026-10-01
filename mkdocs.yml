@@ -1498,6 +1498,7 @@ nav:
         - "ADR-1383: state-md-three-way-conflict-resolver": adr/1383-state-md-three-way-conflict-resolver.md
         - "ADR-1384: hip-speed-device-resident": adr/1384-hip-speed-device-resident.md
         - "ADR-1386: rc3-home-gpu-retest-kit": adr/1386-rc3-home-gpu-retest-kit.md
+        - "ADR-1387: mingw-ucrt64-migration": adr/1387-mingw-ucrt64-migration.md
         - "ADR-1391: cuda-ssimulacra2-device-resident": adr/1391-cuda-ssimulacra2-device-resident.md
         - "ADR-1392: cuda-integer-reductions-one-atomic-per-block": adr/1392-cuda-integer-reductions-one-atomic-per-block.md
         - "ADR-1393: cambi-clip-window-to-frame": adr/1393-cambi-clip-window-to-frame.md
@@ -2074,6 +2075,7 @@ nav:
         - "u2netp": adr/by-tag/u2netp.md
         - "ub": adr/by-tag/ub.md
         - "ubsan": adr/by-tag/ubsan.md
+        - "ucrt64": adr/by-tag/ucrt64.md
         - "ugc": adr/by-tag/ugc.md
         - "unix-socket": adr/by-tag/unix-socket.md
         - "upstream-blocked": adr/by-tag/upstream-blocked.md

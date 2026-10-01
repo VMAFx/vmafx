@@ -246,7 +246,7 @@
     },
     "0116": {
       "sites": {
-        ".github/workflows/libvmaf-build-matrix.yml": 2
+        ".github/workflows/libvmaf-build-matrix.yml": 1
       },
       "target": "0116-ci-workflow-naming-convention.md"
     },
@@ -8190,6 +8190,12 @@
         "scripts/dev/rc3-home-gpu-retest.sh": 1
       },
       "target": "1386-rc3-home-gpu-retest-kit.md"
+    },
+    "1387": {
+      "sites": {
+        ".github/workflows/libvmaf-build-matrix.yml": 1
+      },
+      "target": "1387-mingw-ucrt64-migration.md"
     },
     "1391": {
       "sites": {
