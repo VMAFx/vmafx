@@ -324,9 +324,10 @@ __device__ static inline float hvs_threshold(float energy, float ratio)
 
 /* The 64 values calc_psnrhvs() adds to its running sum for one block, in its
  * order (row-major). */
-__device__ static inline void hvs_store_terms(float *terms, const int *block, size_t ref_base,
-                                              size_t dist_base, float threshold, int plane)
+__device__ static inline uint64_t hvs_store_terms(float *terms, const int *block, size_t ref_base,
+                                                  size_t dist_base, float threshold, int plane)
 {
+    uint64_t mask = 0ULL;
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             const int index = (row * 8) + col;
@@ -337,8 +338,12 @@ __device__ static inline void hvs_store_terms(float *terms, const int *block, si
                 error = error < masking ? 0.f : error - masking;
             }
             terms[index] = (error * csf) * (error * csf);
+            if (terms[index] != 0.0f) {
+                mask |= (1ULL << index);
+            }
         }
     }
+    return mask;
 }
 
 __launch_bounds__(64) __global__ void psnr_hvs(PsnrHvsKernelArgs args)
@@ -368,8 +373,133 @@ __launch_bounds__(64) __global__ void psnr_hvs(PsnrHvsKernelArgs args)
         }
         // SAFETY: args.terms holds PSNR_HVS_TERMS floats per block and
         // lane.block < args.total_blocks on an active lane.
-        hvs_store_terms(args.terms + (size_t)lane.block * PSNR_HVS_TERMS, s_block, base,
-                        base + PSNR_HVS_LANE_STRIDE, threshold, lane.plane);
+        const uint64_t mask =
+            hvs_store_terms(args.terms + (size_t)lane.block * PSNR_HVS_TERMS, s_block, base,
+                            base + PSNR_HVS_LANE_STRIDE, threshold, lane.plane);
+        if (args.block_masks != nullptr) {
+            args.block_masks[lane.block] = mask;
+        }
+        if (args.block_counts != nullptr) {
+            args.block_counts[lane.block] = (uint32_t)__popcll((unsigned long long)mask);
+        }
+    }
+}
+
+__device__ static inline uint32_t warp_scan_inclusive(uint32_t val)
+{
+    const int lane = (int)(threadIdx.x & 31u);
+#pragma unroll
+    for (int offset = 1; offset < 32; offset <<= 1) {
+        const uint32_t n = __shfl_up_sync(0xffffffff, val, offset);
+        if (lane >= offset) {
+            val += n;
+        }
+    }
+    return val;
+}
+
+__launch_bounds__(256) __global__
+    void hvs_scan_reduce(const uint32_t *block_counts, uint32_t *chunk_totals,
+                         unsigned total_blocks)
+{
+    __shared__ uint32_t s_warp_totals[8];
+    const unsigned tid = threadIdx.x;
+    const unsigned b = (unsigned)blockIdx.x * 256u + tid;
+    const uint32_t val = (b < total_blocks) ? block_counts[b] : 0u;
+
+    const int lane = (int)(tid & 31u);
+    const int wid = (int)(tid >> 5u);
+
+    const uint32_t warp_sum = warp_scan_inclusive(val);
+    if (lane == 31) {
+        s_warp_totals[wid] = warp_sum;
+    }
+    __syncthreads();
+
+    if (wid == 0) {
+        uint32_t wval = (lane < 8) ? s_warp_totals[lane] : 0u;
+        wval = warp_scan_inclusive(wval);
+        if (lane < 8) {
+            s_warp_totals[lane] = wval;
+        }
+    }
+    __syncthreads();
+
+    if (tid == 0u) {
+        chunk_totals[blockIdx.x] = s_warp_totals[7];
+    }
+}
+
+__launch_bounds__(512) __global__
+    void hvs_scan_prefix(const uint32_t *chunk_totals, uint32_t *chunk_offsets,
+                         PsnrHvsHeader *header, unsigned num_chunks)
+{
+    if (threadIdx.x == 0u) {
+        uint32_t running = 0u;
+        for (unsigned c = 0; c < num_chunks; c++) {
+            chunk_offsets[c] = running;
+            running += chunk_totals[c];
+        }
+        header->plane_offsets[0] = 0u;
+        header->plane_offsets[1] = 0u;
+        header->plane_offsets[2] = 0u;
+        header->total_terms = running;
+    }
+}
+
+__launch_bounds__(256) __global__
+    void hvs_compact(PsnrHvsKernelArgs args, const float *raw_terms, const uint64_t *block_masks,
+                     const uint32_t *block_counts, const uint32_t *chunk_offsets,
+                     float *packed_terms, PsnrHvsHeader *header)
+{
+    __shared__ uint32_t s_warp_totals[8];
+    const unsigned tid = threadIdx.x;
+    const unsigned b = (unsigned)blockIdx.x * 256u + tid;
+    const uint32_t val = (b < args.total_blocks) ? block_counts[b] : 0u;
+
+    const int lane = (int)(tid & 31u);
+    const int wid = (int)(tid >> 5u);
+
+    const uint32_t warp_sum = warp_scan_inclusive(val);
+    if (lane == 31) {
+        s_warp_totals[wid] = warp_sum;
+    }
+    __syncthreads();
+
+    if (wid == 0) {
+        uint32_t wval = (lane < 8) ? s_warp_totals[lane] : 0u;
+        wval = warp_scan_inclusive(wval);
+        if (lane < 8) {
+            s_warp_totals[lane] = wval;
+        }
+    }
+    __syncthreads();
+
+    const uint32_t warp_prefix = (wid > 0) ? s_warp_totals[wid - 1] : 0u;
+    const uint32_t intra_offset = warp_prefix + warp_sum - val;
+
+    if (b < args.total_blocks) {
+        const uint32_t global_base = chunk_offsets[blockIdx.x] + intra_offset;
+
+#pragma unroll
+        for (unsigned p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+            if (p < args.n_planes && b == args.plane[p].first_block) {
+                header->plane_offsets[p] = global_base;
+            }
+        }
+
+        uint64_t mask = block_masks[b];
+        if (mask != 0ULL) {
+            // SAFETY: raw_terms has PSNR_HVS_TERMS floats per block, packed_terms capacity >= total_terms.
+            const float *src = raw_terms + (size_t)b * PSNR_HVS_TERMS;
+            float *dst = packed_terms + global_base;
+            uint32_t out_idx = 0u;
+            while (mask != 0ULL) {
+                const int idx = __ffsll((long long)mask) - 1;
+                dst[out_idx++] = src[idx];
+                mask &= mask - 1ULL;
+            }
+        }
     }
 }
 

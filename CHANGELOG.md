@@ -268,6 +268,10 @@
   [CUDA guide](docs/backends/cuda/overview.md#float_ssim-runs-on-the-device-at-every-scale-adr-1399-2026-10-01).
 
 
+- **Compact nonzero terms on device for `psnr_hvs_cuda`, reducing 4K frame time from 12.16 ms to 3.39 ms while preserving bit-exact CPU parity (ADR-1397).**
+  The kernel compacts nonzero terms before device-to-host readback via block bitmasks and parallel prefix scan, dropping 4K readback size from 64.8 MB to ~11.0 MB (83% reduction) and reducing the host addition chain from 16.2M terms to ~2.7M terms. Because all kernel terms are non-negative squares and `x + 0.0f == x` in IEEE-754 single-precision float addition, omitting zero terms preserves the CPU's exact sequence and numerical sum bit-for-bit at `--precision max`. Closes `T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01`.
+
+
 - **CUDA `psnr_hvs` reads the device pictures directly**
   (`T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, the CUDA port of ADR-1369).
   `psnr_hvs_cuda` no longer copies each frame to the host, converts it there and

@@ -23,6 +23,11 @@
  * checks. */
 #define PSNR_HVS_TERMS 64
 
+typedef struct PsnrHvsHeader {
+    uint32_t plane_offsets[PSNR_HVS_NUM_PLANES];
+    uint32_t total_terms;
+} PsnrHvsHeader;
+
 typedef struct PsnrHvsPlaneArgs {
     const void *ref;
     const void *dist;
@@ -37,6 +42,8 @@ typedef struct PsnrHvsPlaneArgs {
 typedef struct PsnrHvsKernelArgs {
     PsnrHvsPlaneArgs plane[PSNR_HVS_NUM_PLANES];
     float *terms; /* PSNR_HVS_TERMS per block, blocks in plane then raster order */
+    uint64_t *block_masks;
+    uint32_t *block_counts;
     unsigned n_planes;
     unsigned total_blocks;
     int wide;

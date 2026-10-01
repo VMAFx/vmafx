@@ -50,11 +50,29 @@
 _Static_assert(PSNR_HVS_TERMS == VMAF_PSNR_HVS_TERMS_PER_BLOCK,
                "the kernel stores what vmaf_psnr_hvs_plane_score() sums per block");
 
+typedef struct PsnrHvsScratchLayout {
+    size_t raw_terms_offset;
+    size_t block_masks_offset;
+    size_t block_counts_offset;
+    size_t chunk_totals_offset;
+    size_t chunk_offsets_offset;
+    size_t header_offset;
+    size_t total_bytes;
+    unsigned num_chunks;
+} PsnrHvsScratchLayout;
+
 typedef struct PsnrHvsStateCuda {
     VmafCudaKernelLifecycle lc;
     VmafCudaKernelReadback rb;
     CUfunction func_psnr_hvs;
+    CUfunction func_scan_reduce;
+    CUfunction func_scan_prefix;
+    CUfunction func_compact;
     CUmodule module;
+
+    PsnrHvsScratchLayout layout;
+    VmafCudaBuffer *scratch;
+    PsnrHvsHeader *host_header;
 
     unsigned width[PSNR_HVS_NUM_PLANES];
     unsigned height[PSNR_HVS_NUM_PLANES];
@@ -151,6 +169,40 @@ static int configure_hvs_blocks(PsnrHvsStateCuda *s)
     return 0;
 }
 
+static inline size_t hvs_align256(size_t sz)
+{
+    return (sz + 255u) & ~((size_t)255u);
+}
+
+static PsnrHvsScratchLayout hvs_compute_scratch_layout(unsigned total_blocks)
+{
+    PsnrHvsScratchLayout l;
+    memset(&l, 0, sizeof(l));
+    l.num_chunks = (total_blocks + 255u) / 256u;
+
+    size_t off = 0;
+    l.raw_terms_offset = off;
+    off += hvs_align256((size_t)total_blocks * (size_t)PSNR_HVS_TERMS * sizeof(float));
+
+    l.block_masks_offset = off;
+    off += hvs_align256((size_t)total_blocks * sizeof(uint64_t));
+
+    l.block_counts_offset = off;
+    off += hvs_align256((size_t)total_blocks * sizeof(uint32_t));
+
+    l.chunk_totals_offset = off;
+    off += hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.chunk_offsets_offset = off;
+    off += hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.header_offset = off;
+    off += hvs_align256(sizeof(PsnrHvsHeader));
+
+    l.total_bytes = off;
+    return l;
+}
+
 /* Bytes of the term buffer: PSNR_HVS_TERMS floats per block of every plane. */
 static size_t hvs_terms_bytes(const PsnrHvsStateCuda *s)
 {
@@ -167,6 +219,14 @@ static int psnr_hvs_init_unwind(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s, 
     const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     if (rb_rc && !rc)
         rc = rb_rc;
+
+    const int sc_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->scratch);
+    if (sc_rc && !rc)
+        rc = sc_rc;
+
+    const int hh_rc = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->host_header);
+    if (hh_rc && !rc)
+        rc = hh_rc;
 
     const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
     if (dict_rc && !rc)
@@ -208,9 +268,24 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_reduce, s->module, "hvs_scan_reduce"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_prefix, s->module, "hvs_scan_prefix"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_compact, s->module, "hvs_compact"), fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, hvs_terms_bytes(s));
+    if (err)
+        return psnr_hvs_init_unwind(fex, s, err);
+
+    s->layout = hvs_compute_scratch_layout(s->total_blocks);
+    err = vmaf_cuda_buffer_alloc(fex->cu_state, &s->scratch, s->layout.total_bytes);
+    if (err)
+        return psnr_hvs_init_unwind(fex, s, err);
+
+    err =
+        vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->host_header, sizeof(PsnrHvsHeader));
     if (err)
         return psnr_hvs_init_unwind(fex, s, err);
 
@@ -227,6 +302,28 @@ fail:
     return psnr_hvs_init_unwind(fex, s, _cuda_err);
 }
 
+static void fill_kernel_args(const PsnrHvsStateCuda *s, const VmafPicture *ref_pic,
+                             const VmafPicture *dist_pic, PsnrHvsKernelArgs *args, float *raw_terms,
+                             uint64_t *block_masks, uint32_t *block_counts)
+{
+    memset(args, 0, sizeof(*args));
+    for (unsigned p = 0; p < s->n_planes; p++) {
+        args->plane[p].ref = ref_pic->data[p];
+        args->plane[p].dist = dist_pic->data[p];
+        args->plane[p].ref_stride = (size_t)ref_pic->stride[p];
+        args->plane[p].dist_stride = (size_t)dist_pic->stride[p];
+        args->plane[p].width = s->width[p];
+        args->plane[p].blocks_x = s->num_blocks_x[p];
+        args->plane[p].first_block = s->first_block[p];
+    }
+    args->terms = raw_terms;
+    args->block_masks = block_masks;
+    args->block_counts = block_counts;
+    args->n_planes = s->n_planes;
+    args->total_blocks = s->total_blocks;
+    args->wide = (s->bpc > 8u) ? 1 : 0;
+}
+
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -239,22 +336,18 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
     CUevent dist_ready = vmaf_cuda_picture_get_ready_event(dist_pic);
 
-    PsnrHvsKernelArgs args;
-    memset(&args, 0, sizeof(args));
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        args.plane[p].ref = ref_pic->data[p];
-        args.plane[p].dist = dist_pic->data[p];
-        args.plane[p].ref_stride = (size_t)ref_pic->stride[p];
-        args.plane[p].dist_stride = (size_t)dist_pic->stride[p];
-        args.plane[p].width = s->width[p];
-        args.plane[p].blocks_x = s->num_blocks_x[p];
-        args.plane[p].first_block = s->first_block[p];
-    }
+    char *base = (char *)s->scratch->data;
+    float *raw_terms = (float *)(base + s->layout.raw_terms_offset);
+    uint64_t *block_masks = (uint64_t *)(base + s->layout.block_masks_offset);
+    uint32_t *block_counts = (uint32_t *)(base + s->layout.block_counts_offset);
+    uint32_t *chunk_totals = (uint32_t *)(base + s->layout.chunk_totals_offset);
+    uint32_t *chunk_offsets = (uint32_t *)(base + s->layout.chunk_offsets_offset);
+    PsnrHvsHeader *d_header = (PsnrHvsHeader *)(base + s->layout.header_offset);
     // NOLINTNEXTLINE(performance-no-int-to-ptr): Driver API device address the kernel dereferences (ADR-0747)
-    args.terms = (float *)s->rb.device->data;
-    args.n_planes = s->n_planes;
-    args.total_blocks = s->total_blocks;
-    args.wide = (s->bpc > 8u) ? 1 : 0;
+    float *packed_terms = (float *)s->rb.device->data;
+
+    PsnrHvsKernelArgs args;
+    fill_kernel_args(s, ref_pic, dist_pic, &args, raw_terms, block_masks, block_counts);
 
     int err =
         vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb, pic_stream, dist_ready);
@@ -263,27 +356,49 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     const size_t items = 2U * (size_t)s->total_blocks;
     const unsigned grid_x = (unsigned)((items + (size_t)PSNR_HVS_WG - 1U) / (size_t)PSNR_HVS_WG);
-    void *kernel_params[] = {&args};
+    void *hvs_p[] = {&args};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_psnr_hvs, grid_x, 1u, 1u, PSNR_HVS_WG, 1u, 1u, 0,
-                                           pic_stream, kernel_params, NULL));
+                                           pic_stream, hvs_p, NULL));
+
+    void *red_p[] = {&block_counts, &chunk_totals, &s->total_blocks};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_scan_reduce, s->layout.num_chunks, 1u, 1u, 256u,
+                                           1u, 1u, 0, pic_stream, red_p, NULL));
+
+    void *pre_p[] = {&chunk_totals, &chunk_offsets, &d_header, &s->layout.num_chunks};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_scan_prefix, 1u, 1u, 1u, 512u, 1u, 1u, 0,
+                                           pic_stream, pre_p, NULL));
+
+    void *cmp_p[] = {&args,          &raw_terms,    &block_masks, &block_counts,
+                     &chunk_offsets, &packed_terms, &d_header};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compact, s->layout.num_chunks, 1u, 1u, 256u, 1u,
+                                           1u, 0, pic_stream, cmp_p, NULL));
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                              hvs_terms_bytes(s), s->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->host_header, (CUdeviceptr)d_header,
+                                              sizeof(PsnrHvsHeader), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
 /* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void reduce_hvs_planes(const PsnrHvsStateCuda *s, double scores[PSNR_HVS_NUM_PLANES])
 {
-    // SAFETY: s->rb.host_pinned holds PSNR_HVS_TERMS floats for each of the
-    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
-    // s->total_blocks holds by construction (configure_hvs_blocks).
-    const float *terms = (const float *)s->rb.host_pinned;
+    if (!s->host_header) {
+        const float *terms = (const float *)s->rb.host_pinned;
+        for (unsigned p = 0; p < s->n_planes; p++) {
+            const float *plane_terms = terms + (size_t)s->first_block[p] * (size_t)PSNR_HVS_TERMS;
+            scores[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
+        }
+        return;
+    }
+    const float *compact_terms = (const float *)s->rb.host_pinned;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        const float *plane_terms = terms + (size_t)s->first_block[p] * (size_t)PSNR_HVS_TERMS;
-        scores[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
+        const uint32_t start = s->host_header->plane_offsets[p];
+        const uint32_t end = (p + 1u < s->n_planes) ? s->host_header->plane_offsets[p + 1u] :
+                                                      s->host_header->total_terms;
+        const size_t n_compact = (size_t)(end - start);
+        scores[p] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
+                                                        s->num_blocks[p], s->bpc);
     }
 }
 
@@ -307,10 +422,19 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     PsnrHvsStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
 
     int err = vmaf_cuda_kernel_collect_wait(&s->lc, fex->cu_state);
     if (err)
         return err;
+
+    const uint32_t total_terms = s->host_header->total_terms;
+    if (total_terms > 0u) {
+        CHECK_CUDA_RETURN(cu_f,
+                          cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
+                                            (size_t)total_terms * sizeof(float), s->lc.str));
+        CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->lc.str));
+    }
 
     double plane_scores[PSNR_HVS_NUM_PLANES] = {0.0, 0.0, 0.0};
     reduce_hvs_planes(s, plane_scores);
