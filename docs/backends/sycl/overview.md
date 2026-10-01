@@ -1026,6 +1026,25 @@ still equal the CPU and `psnr_hvs` keeps its distance from the CPU inside the
   submit directly, so every kernel has its own event. Research-1369 describes
   the event-timing build used for the numbers above.
 
+## RC3 SYCL parity follow-ups (2026-09-30)
+
+Three parity gaps between SYCL twins and the CPU reference were resolved:
+
+- **SSIM flat/identical frames (`integer_ssim_sycl`, `float_ssim_sycl`).**
+  Implemented CPU reference arithmetic matching the CUDA twin (#1637):
+  `float_ssim_sycl` evaluates the CPU's per-pixel `l*c*s` with exact fp32 pairs
+  (`Ff`) and fixed-point work-group sums, reduces in double on host, and
+  preserves ADR-1370 fp32 frame-mean rounding. `integer_ssim_sycl` groups terms
+  as `((weight * a) * b) / denominator` without identical-window shortcuts.
+  Both match CPU behavior on flat 64x64 identical frames (72.247199 dB).
+- **PSNR temporal subsampling (`integer_psnr_sycl`).** The twin carries
+  the `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag, ensuring `--subsample` scaling
+  operates consistently with temporal extractors.
+- **Motion v2 weighting and clipping (`integer_motion_v2_sycl`).** `collect()`
+  applies `motion_fps_weight` and caps at `motion_max_val`, matching CPU
+  `integer_motion_v2.c::extract`. `flush()` derives `motion2_v2` and
+  `motion3_v2` with CPU parity including one-frame inputs.
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

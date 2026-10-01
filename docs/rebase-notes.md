@@ -225,6 +225,17 @@
   `ssimulacra2_device`, which also gets a `cuda_cu_extra_flags` entry
   (`vmaf_cuda_host_strict_fp_args + ['--fmad=false']`);
   `core/test/test_strict_fp_compiler_args.py` asserts it.
+## fix/sycl-rc3-parity — RC3 SYCL parity follow-ups (2026-09-30)
+
+- `core/src/feature/sycl/integer_ssim_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL). Fixed flat/identical-frame handling to reproduce CPU scoring
+  without shortcuts, grouping `((w*a)*b)/den` and preserving ADR-1370 fp32
+  frame-mean rounding.
+- `core/src/feature/sycl/integer_psnr_sycl.cpp`: fork-only. Added
+  `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag for correct `--subsample` behavior.
+- `core/src/feature/sycl/integer_motion_v2_sycl.cpp`: fork-only. Aligned FPS
+  weighting in `collect()` and motion score clipping with CPU reference.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
