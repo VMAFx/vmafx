@@ -90,6 +90,16 @@ test('test_cuda_parity_gate_default_run',
     timeout : 120,
 )
 
+# The default run above is registered for every build: on a libvmaf without
+# CUDA it must skip, not report the CLI's refusal of `--backend cuda` as a
+# parity failure. Device-free.
+test('test_cuda_parity_gate_skip',
+    import('python').find_installation(),
+    args : files('test_cuda_parity_gate_skip.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1364: the Windows SYCL device-link anchor patcher, driven by synthetic
 # COFF objects so it runs on every host, Windows or not.
 test('test_sycl_coff_anchor',

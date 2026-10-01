@@ -3171,6 +3171,8 @@
     },
     "0498": {
       "sites": {
+        "core/test/test_cuda_parity_gate_default_run.py": 1,
+        "core/test/test_cuda_parity_gate_skip.py": 2,
         "core/tools/test/test_vmaf_option_dict_ownership.sh": 1,
         "core/tools/vmaf.cpp": 12,
         "dev/Containerfile": 1,

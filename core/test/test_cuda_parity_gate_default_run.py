@@ -4,7 +4,9 @@
 """Verify default cross-backend parity gate run completes for CPU vs CUDA.
 
 Checks that scripts/ci/cross_backend_parity_gate.py runs without error when
-comparing default features on CPU vs CUDA (e.g. on an RTX 4090).
+comparing default features on CPU vs CUDA (e.g. on an RTX 4090). A binary
+built without CUDA, or a host without a CUDA device, has nothing to compare:
+the test is skipped (exit 77), not failed.
 """
 
 from __future__ import annotations
@@ -18,6 +20,20 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
+
+
+# What the CLI prints when --backend cuda cannot run at all: no device, or a
+# libvmaf built without CUDA (ADR-0498 refuses the silent CPU fallback).
+NO_CUDA_MARKERS = (
+    "No CUDA device",
+    "cudaErrorNoDevice",
+    "built without cuda support",
+)
+
+
+def cuda_unavailable(output: str) -> bool:
+    """True when `output` says the run could not use CUDA at all."""
+    return any(marker in output for marker in NO_CUDA_MARKERS)
 
 
 def main() -> int:
@@ -56,9 +72,8 @@ def main() -> int:
 
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
     if proc.returncode != 0:
-        combined = proc.stdout + proc.stderr
-        if "No CUDA device" in combined or "cudaErrorNoDevice" in combined:
-            sys.stderr.write("No CUDA device available; skipping (77)\n")
+        if cuda_unavailable(proc.stdout + proc.stderr):
+            sys.stderr.write("CUDA is not available to this binary; skipping (77)\n")
             return 77
         sys.stderr.write(
             f"Default parity gate failed:\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}\n"
