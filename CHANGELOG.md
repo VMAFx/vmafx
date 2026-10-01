@@ -86,6 +86,8 @@
   `motion_add_uv`. On a gfx1036 every option is within 1e-5 of the CPU on the
   Netflix 576x324 pair and a 3840x2160 clip, and `motion` / `motion2` with the
   previous options are bit-identical to the previous build.
+
+
 - **Every HIP kernel is built with contraction off (ADR-1407).** hipcc fuses
   `a * b + c` into one multiply-add for device code by default, and all but
   three HIP kernels were built that way, so they rounded differently from the

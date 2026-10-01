@@ -3843,6 +3843,12 @@
       },
       "target": "0589-metal-ssim-lcs-db-parity.md"
     },
+    "0594": {
+      "sites": {
+        "core/src/meson.build": 1
+      },
+      "target": "0594-hip-ssimulacra2-blur-fp-contract-off.md"
+    },
     "0597": {
       "sites": {
         "core/src/feature/cuda/integer_vif_cuda.c": 5,
@@ -6224,6 +6230,7 @@
         "core/test/test_hip_float_motion_parity.c": 1,
         "core/test/test_hip_float_ssim_decimate.c": 1,
         "core/test/test_hip_float_ssim_parity.c": 1,
+        "core/test/test_hip_fp_arith_probe.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_hip_speed_device_math.c": 1,
         "core/test/test_hip_ssim_parity.c": 1,
@@ -8362,6 +8369,19 @@
         "core/tools/test/test_vmaf_feature_backend.sh": 1
       },
       "target": "1405-hip-float-ssim-device-decimation.md"
+    },
+    "1407": {
+      "sites": {
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_device_resident_contract.py": 1,
+        "core/test/test_hip_fp_arith_probe.c": 1,
+        "core/test/test_hip_fp_arith_probe.h": 1,
+        "core/test/test_hip_fp_arith_probe.hip": 1,
+        "core/test/test_hip_strict_fp_policy.py": 1,
+        "core/test/test_sycl_fp_arith_contract.c": 1
+      },
+      "target": "1407-hip-strict-fp-every-kernel.md"
     }
   },
   "retired": {
