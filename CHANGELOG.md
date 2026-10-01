@@ -606,6 +606,8 @@
   HISS-04 / NASA JPL Rule 4. C23 `nullptr` diagnostics are scoped under ADR-1138
   to maintain MSVC C portability, and `__HIP_PLATFORM_AMD__` is supplied by the
   build harness (ADR-1263). All tests pass on AMD gfx1036.
+
+
 - Added missing SPDX-License-Identifier declarations across 387 clean source
   and header files in accordance with ADR-1250 and repository provenance,
   skipping 131 files with baselined debt, 5 vendored Pelorus mirror paths,
