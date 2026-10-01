@@ -6343,6 +6343,7 @@
         "core/test/test_speed_singular_tally.c": 1,
         "core/test/test_ssim_coverage.c": 1,
         "core/test/test_ssim_neon.c": 1,
+        "core/test/test_ssim_x86_simd.c": 1,
         "core/test/test_ssimulacra2_coverage.c": 1,
         "core/test/test_ssimulacra2_nonfinite.c": 1,
         "core/test/test_ssimulacra2_simd.c": 1,
@@ -8522,6 +8523,13 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1411-sycl-float-motion-cpu-float-sum.md"
+    },
+    "1415": {
+      "sites": {
+        "core/src/meson.build": 2,
+        "core/test/test_ssim_x86_simd.c": 1
+      },
+      "target": "1415-x86-simd-libraries-strict-fp.md"
     }
   },
   "retired": {

@@ -1522,6 +1522,7 @@ nav:
         - "ADR-1409: float-motion-twins-cpu-float-sum": adr/1409-float-motion-twins-cpu-float-sum.md
         - "ADR-1410: sycl-cli-pinned-host-picture-pool": adr/1410-sycl-cli-pinned-host-picture-pool.md
         - "ADR-1411: sycl-float-motion-cpu-float-sum": adr/1411-sycl-float-motion-cpu-float-sum.md
+        - "ADR-1415: x86-simd-libraries-strict-fp": adr/1415-x86-simd-libraries-strict-fp.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
