@@ -233,8 +233,14 @@ inline uint32_t tap(int32_t centre, int32_t radius, uint32_t k, uint32_t size, b
 }
 
 struct RawPlanes {
-    const void *minuend[kMaxChannels];
-    const void *subtrahend[kMaxChannels];
+    const void *minuend_0;
+    const void *minuend_1;
+    const void *minuend_2;
+    const void *minuend_3;
+    const void *subtrahend_0;
+    const void *subtrahend_1;
+    const void *subtrahend_2;
+    const void *subtrahend_3;
     uint32_t width;
     float scale;
 };
@@ -252,6 +258,32 @@ template <typename T> inline float picture_value(const void *plane, size_t offse
     }
 }
 
+template <typename T> class RawBound
+{
+  public:
+    RawBound(const void *minuend, const void *subtrahend, uint32_t width, float scale)
+        : minuend_(minuend), subtrahend_(subtrahend), width_(width), scale_(scale)
+    {
+    }
+
+    float operator()(uint32_t /*channel*/, uint32_t row, uint32_t col) const
+    {
+        const size_t offset = static_cast<size_t>(row) * width_ + col;
+        const float value = picture_value<T>(minuend_, offset, scale_);
+        if (subtrahend_ == nullptr) {
+            return value;
+        }
+        const float other = picture_value<T>(subtrahend_, offset, scale_);
+        return value - other;
+    }
+
+  private:
+    const void *minuend_;
+    const void *subtrahend_;
+    uint32_t width_;
+    float scale_;
+};
+
 /* Converted picture, or the temporal difference `minuend - subtrahend` of two
  * converted pictures (speed.c extract(): subtract_image()). */
 template <typename T> class RawSource
@@ -261,15 +293,33 @@ template <typename T> class RawSource
     {
     }
 
+    static inline const void *pick_plane(const void *p0, const void *p1, const void *p2,
+                                         const void *p3, uint32_t channel)
+    {
+        if (channel == 0u) {
+            return p0;
+        }
+        if (channel == 1u) {
+            return p1;
+        }
+        if (channel == 2u) {
+            return p2;
+        }
+        return p3;
+    }
+
+    RawBound<T> bind(uint32_t channel) const
+    {
+        return {pick_plane(planes_.minuend_0, planes_.minuend_1, planes_.minuend_2,
+                           planes_.minuend_3, channel),
+                pick_plane(planes_.subtrahend_0, planes_.subtrahend_1, planes_.subtrahend_2,
+                           planes_.subtrahend_3, channel),
+                planes_.width, planes_.scale};
+    }
+
     float operator()(uint32_t channel, uint32_t row, uint32_t col) const
     {
-        const size_t offset = static_cast<size_t>(row) * planes_.width + col;
-        const float value = picture_value<T>(planes_.minuend[channel], offset, planes_.scale);
-        if (planes_.subtrahend[channel] == nullptr) {
-            return value;
-        }
-        const float other = picture_value<T>(planes_.subtrahend[channel], offset, planes_.scale);
-        return value - other;
+        return bind(channel)(channel, row, col);
     }
 
   private:
@@ -281,6 +331,23 @@ template <typename T> class RawSource
 namespace
 {
 
+class FloatBound
+{
+  public:
+    FloatBound(const float *plane, uint32_t width) : plane_(plane), width_(width)
+    {
+    }
+
+    float operator()(uint32_t /*channel*/, uint32_t row, uint32_t col) const
+    {
+        return plane_[static_cast<size_t>(row) * width_ + col];
+    }
+
+  private:
+    const float *plane_;
+    uint32_t width_;
+};
+
 /* A materialised float plane per channel, row stride `width`. */
 class FloatSource
 {
@@ -290,9 +357,14 @@ class FloatSource
     {
     }
 
+    FloatBound bind(uint32_t channel) const
+    {
+        return {plane_ + (static_cast<size_t>(channel) * height_) * width_, width_};
+    }
+
     float operator()(uint32_t channel, uint32_t row, uint32_t col) const
     {
-        return plane_[(static_cast<size_t>(channel) * height_ + row) * width_ + col];
+        return bind(channel)(channel, row, col);
     }
 
   private:
@@ -403,6 +475,7 @@ inline float scale_bicubic(const Source &src, uint32_t ch, const ScaleArgs &a, f
     const float dy = y - static_cast<float>(y0);
     float wx[4];
     float wy[4];
+#pragma unroll
     for (int32_t i = -1; i <= 2; i++) {
         wx[i + 1] = bicubic_weight(static_cast<float>(i) - dx);
         wy[i + 1] = bicubic_weight(static_cast<float>(i) - dy);
@@ -410,7 +483,9 @@ inline float scale_bicubic(const Source &src, uint32_t ch, const ScaleArgs &a, f
     const float right = static_cast<float>(a.src_w - 1u);
     const float bottom = static_cast<float>(a.src_h - 1u);
     float value = 0.0f;
+#pragma unroll
     for (int32_t j = -1; j <= 2; j++) {
+#pragma unroll
         for (int32_t i = -1; i <= 2; i++) {
             const auto xi =
                 static_cast<int32_t>(mirror_coordinate(static_cast<float>(x0 + i), right));
@@ -458,6 +533,7 @@ inline float scale_lanczos(const Source &src, uint32_t ch, const ScaleArgs &a, f
     const float dy = y - static_cast<float>(y0);
     float wx[9];
     float wy[9];
+#pragma unroll
     for (int32_t i = -4; i <= 4; i++) {
         wx[i + 4] = lanczos_weight(static_cast<float>(i) - dx);
         wy[i + 4] = lanczos_weight(static_cast<float>(i) - dy);
@@ -466,7 +542,9 @@ inline float scale_lanczos(const Source &src, uint32_t ch, const ScaleArgs &a, f
     const float bottom = static_cast<float>(a.src_h - 1u);
     float value = 0.0f;
     float weight_sum = 0.0f;
+#pragma unroll
     for (int32_t iy = -4; iy <= 4; iy++) {
+#pragma unroll
         for (int32_t ix = -4; ix <= 4; ix++) {
             const float weight = wx[ix + 4] * wy[iy + 4];
             weight_sum = weight_sum + weight;
@@ -521,7 +599,8 @@ void launch_scale(sycl::queue &q, const Source &src, const ScaleArgs &args, uint
         const auto y = static_cast<uint32_t>(it.get_id(1));
         const auto x = static_cast<uint32_t>(it.get_id(2));
         const size_t out = (static_cast<size_t>(ch) * args.dst_h + y) * args.dst_w + x;
-        args.dst[out] = scale_sample(src, args, ch, y, x);
+        const auto bound = src.bind(ch);
+        args.dst[out] = scale_sample(bound, args, ch, y, x);
     });
 }
 
@@ -578,7 +657,8 @@ void launch_decimate(sycl::queue &q, const Source &src, const DecimateArgs &args
         const auto i = static_cast<uint32_t>(it.get_id(1));
         const auto j = static_cast<uint32_t>(it.get_id(2));
         const size_t out = (static_cast<size_t>(ch) * args.down_h + i) * args.down_w + j;
-        args.dst[out] = antialias_at(src, args, ch, i, j);
+        const auto bound = src.bind(ch);
+        args.dst[out] = antialias_at(bound, args, ch, i, j);
     });
 }
 
@@ -1858,13 +1938,28 @@ void upload_taps(Pipeline &p)
 
 RawPlanes bind_planes(const Pipeline &p, const ChannelBinding *bindings)
 {
+    assert(bindings != nullptr);
+    assert(p.config.channels <= kMaxChannels);
     RawPlanes planes{};
     for (uint32_t ch = 0; ch < p.config.channels; ch++) {
-        planes.minuend[ch] = p.raw + static_cast<size_t>(bindings[ch].minuend) * p.plane_bytes;
-        planes.subtrahend[ch] =
+        const void *min_p = p.raw + static_cast<size_t>(bindings[ch].minuend) * p.plane_bytes;
+        const void *sub_p =
             bindings[ch].subtrahend < 0 ?
                 nullptr :
                 p.raw + static_cast<size_t>(bindings[ch].subtrahend) * p.plane_bytes;
+        if (ch == 0u) {
+            planes.minuend_0 = min_p;
+            planes.subtrahend_0 = sub_p;
+        } else if (ch == 1u) {
+            planes.minuend_1 = min_p;
+            planes.subtrahend_1 = sub_p;
+        } else if (ch == 2u) {
+            planes.minuend_2 = min_p;
+            planes.subtrahend_2 = sub_p;
+        } else if (ch == 3u) {
+            planes.minuend_3 = min_p;
+            planes.subtrahend_3 = sub_p;
+        }
     }
     planes.width = p.config.geometry.src_w;
     planes.scale = p.config.geometry.sample_scale;

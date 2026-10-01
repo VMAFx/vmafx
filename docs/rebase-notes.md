@@ -163,6 +163,12 @@ fork's tree already carries these fixes.
 - Invariant: both kernels eliminated their private memory (0 B private, 0 B spill in `.zeinfo`, `RoundedRangeKernel` wrapper dropped). Parity is bit-identical to `--backend cpu` on all tested fixtures (48/48 on Netflix 576x324, 50/50 on BBB 4K, max abs diff 0.0). Throughput at 4K on Arc A380 is 17.05 ms/frame.
 - When PR #1660 (ADR-1395) lands, the two `cambi_sycl` lines in `core/src/sycl/scratch_ratchet.txt` and `cambi_sycl` in `kScratchExtractors` in `core/src/sycl/scratch_check.cpp` must be deleted as no `cambi_sycl` kernel uses scratch memory.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## perf/sycl-speed-no-scratch — make SpEED kernels scratch-free on Intel Arc GPUs (ADR-1395) (2026-10-01)
+
+- `core/src/feature/sycl/speed_sycl_pipeline.cpp`: `RawPlanes` replaces array members `minuend[kMaxChannels]` and `subtrahend[kMaxChannels]` with scalar pointers `minuend_0..3` and `subtrahend_0..3`. A `pick_plane` select chain and `RawBound<T>` / `FloatBound` functor classes bind channel pointers once per work-item in `launch_scale` and `launch_decimate`. Loop unrolling (`#pragma unroll`) applied to bicubic and lanczos coordinate/weight loops in `scale_bicubic` and `scale_lanczos`.
+- Invariant: all 8 SpEED kernels (`launch_scale` and `launch_decimate` for `uint8_t` and `uint16_t` with and without `RoundedRangeKernel`) compile with zero private memory and zero register spill in IGC `zeinfo` (`private_size 0`, `spill_size 0`).
+- Parity: passes `test_sycl_speed_chroma_parity`, `test_sycl_speed_singular_parity`, `test_sycl_speed_chroma_parity_large`, `test_sycl_speed_temporal_parity`, and `test_sycl_speed_temporal_parity_large`. `speed_gpu_parity.py` yields bit-identical parity (`0.000e+00` max abs diff) against the CPU reference across all 48 frames of 576x324 and 50 frames of BBB 4K 3840x2160 for `speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`, and `speed_temporal`.
+- No Netflix golden-data, public API or FFmpeg patch impact: GPU kernel implementation only; numerical output is bit-identical to the CPU reference.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 
