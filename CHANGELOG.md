@@ -724,6 +724,12 @@
   accepts only 8, 10, 12 and 16 bits (`T-SYCL-PSNR-HVS-ODD-BPC-SCALE-2026-09-29`).
 
 
+### Fixed
+- **SYCL**: Fixed identical/flat-frame handling in `float_ssim_sycl` and `integer_ssim_sycl` by implementing the CPU's exact arithmetic without identical-window shortcuts, grouping integer terms as `((w*a)*b)/den`, and preserving ADR-1370 fp32 frame-mean rounding.
+- **SYCL**: Fixed a bug where `psnr_sycl` produced incorrectly scaled scores under `--subsample` by adding the missing `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag.
+- **SYCL**: Fixed a bug where `motion_v2_sycl` diverged from the CPU by applying `motion_fps_weight` and the `motion_max_val` cap in `collect()` and emitting scores for one-frame inputs in `flush()`.
+
+
 - **Every SYCL feature kernel now does fp32 arithmetic the way the CPU
   reference does (ADR-1367).** The SYCL guides said the kernels ran in IEEE-754
   strict mode under `-fp-model=precise`; in fact icpx still fused
@@ -754,10 +760,6 @@
   `vmaf_init()` no longer reads `*vmaf`: it sets it to NULL on entry and to
   the new context on success (ADR-1396). A handle that still holds an open
   context is now overwritten instead of rejected; close it first.
-### Fixed
-- **SYCL**: Fixed identical/flat-frame handling in `float_ssim_sycl` and `integer_ssim_sycl` by implementing the CPU's exact arithmetic without identical-window shortcuts, grouping integer terms as `((w*a)*b)/den`, and preserving ADR-1370 fp32 frame-mean rounding.
-- **SYCL**: Fixed a bug where `psnr_sycl` produced incorrectly scaled scores under `--subsample` by adding the missing `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag.
-- **SYCL**: Fixed a bug where `motion_v2_sycl` diverged from the CPU by applying `motion_fps_weight` and the `motion_max_val` cap in `collect()` and emitting scores for one-frame inputs in `flush()`.
 
 
 - **SYCL: the native Windows build runs its kernels.** A Windows MSVC build
