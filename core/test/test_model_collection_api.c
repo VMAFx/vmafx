@@ -22,6 +22,7 @@
  *  repo's model/ directory (same pattern as test_model.c).
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -416,6 +417,57 @@ static char *test_model_collection_partial_failure_no_leak(void)
     return NULL;
 }
 
+static char *build_truncation_json(char **out, size_t *out_len)
+{
+    const size_t cap = 260000;
+    char *buf = malloc(cap);
+    if (!buf)
+        return "malloc failed for collection buffer";
+
+    size_t pos = 0;
+    buf[pos++] = '{';
+    for (unsigned i = 0; i < 10000; i++) {
+        if (i > 0)
+            buf[pos++] = ',';
+        int written = snprintf(buf + pos, cap - pos, "\"%u\":{\"model_dict\":{}}", i);
+        if (written < 0 || (size_t)written >= cap - pos) {
+            free(buf);
+            return "snprintf failed building collection buffer";
+        }
+        pos += (size_t)written;
+    }
+    buf[pos++] = '}';
+    buf[pos] = '\0';
+    *out = buf;
+    *out_len = pos;
+    return NULL;
+}
+
+static char *test_model_collection_submodel_name_truncation(void)
+{
+    char *buf = NULL;
+    size_t len = 0;
+    char *msg = build_truncation_json(&buf, &len);
+    if (msg)
+        return msg;
+
+    VmafModel *model = (VmafModel *)0x1;
+    VmafModelCollection *mc = (VmafModelCollection *)0x1;
+    VmafModelConfig cfg = {.name = "vmaf"};
+    int err = vmaf_read_json_model_collection_from_buffer(&model, &mc, &cfg, buf, (int)len);
+    free(buf);
+
+    if (model != (VmafModel *)0x1 && model != NULL)
+        vmaf_model_destroy(model);
+    if (mc != (VmafModelCollection *)0x1 && mc != NULL)
+        vmaf_model_collection_destroy(mc);
+
+    mu_assert("submodel name truncation must return -EINVAL", err == -EINVAL);
+    mu_assert("model must be NULL after truncation failure", model == NULL);
+    mu_assert("collection must be NULL after truncation failure", mc == NULL);
+    return NULL;
+}
+
 /* ---------------------------------------------------------------------- */
 
 char *run_tests(void)
@@ -431,6 +483,7 @@ char *run_tests(void)
         MU_TEST(test_model_collection_load_from_path_bad_path),
         MU_TEST(test_model_collection_feature_overload_null_guard),
         MU_TEST(test_model_collection_partial_failure_no_leak),
+        MU_TEST(test_model_collection_submodel_name_truncation),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

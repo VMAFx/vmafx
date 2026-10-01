@@ -106,6 +106,24 @@ fork's tree already carries these fixes.
   `test_video_input.c`; the fork's test is `test_video_input_odd_dims`
   (PR #1664).
 - #1606: patches a VLA the fork replaced with `ModelArrays`.
+## port/upstream-15f1447c6-submodel-name-truncation — port sub-model name truncation check (2026-09-30)
+
+- Upstream Netflix/vmaf commit `15f1447c6` (`MSVC: Avoid the use of variable-length arrays (#1428)`):
+  the upstream commit avoided VLAs by replacing `sprintf` with `snprintf` in
+  `model_collection_parse` and returning `-EINVAL` if the generated sub-model name is truncated.
+- The fork had already eliminated VLAs for MSVC portability in earlier waves,
+  but still cast `snprintf` to `(void)` at `core/src/read_json_model.cpp:760`
+  and `core/src/read_json_model.c:771`.
+- Both `read_json_model.cpp` (C++23 parser) and `read_json_model.c` (C parser twin)
+  now check `n < 0 || (size_t)n >= cfg_name_sz` and return `-EINVAL` on truncation.
+- Both parser twins cleanly invoke `teardown_models(model, model_collection)`
+  on all error paths in `model_collection_parse_loop`, preventing partial model
+  collection leaks.
+- Regression tests `test_json_model_collection_submodel_name_truncation` in
+  `core/test/test_model.c` and `test_model_collection_submodel_name_truncation`
+  in `core/test/test_model_collection_api.c` exercise 10,000 minimal submodels
+  forcing `++i == 10000` to verify `-EINVAL` and zero leaks.
+- No Netflix golden-data, score arithmetic, or public API impact.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 

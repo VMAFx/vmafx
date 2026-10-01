@@ -714,6 +714,18 @@ int model_collection_read_one(json_stream *s, VmafModel **model,
     return 0;
 }
 
+static void teardown_models(VmafModel **model, VmafModelCollection **model_collection)
+{
+    if (*model) {
+        vmaf_model_destroy(*model);
+        *model = nullptr;
+    }
+    if (*model_collection) {
+        vmaf_model_collection_destroy(*model_collection);
+        *model_collection = nullptr;
+    }
+}
+
 int model_collection_parse_loop(json_stream *s, VmafModel **model,
                                 VmafModelCollection **model_collection, VmafModelConfig *c,
                                 const char *name, char *cfg_name, size_t cfg_name_sz)
@@ -727,8 +739,10 @@ int model_collection_parse_loop(json_stream *s, VmafModel **model,
     int err = -EINVAL;
 
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
-        if (json_next(s) != JSON_STRING)
+        if (json_next(s) != JSON_STRING) {
+            teardown_models(model, model_collection);
             return -EINVAL;
+        }
 
         const char *key = json_get_string(s, nullptr);
         (void)snprintf(generated_key, sizeof(generated_key), "%u", i);
@@ -740,24 +754,17 @@ int model_collection_parse_loop(json_stream *s, VmafModel **model,
 
         err = model_collection_read_one(s, model, model_collection, c, i);
         if (err) {
-            /* A later sub-model (i >= 1) failed after sub-model 0 was already
-             * stored in *model and sub-models 1..i-1 were appended to
-             * *model_collection. Tear both down so a partial collection is not
-             * leaked. When i == 0, read_one never assigned *model and
-             * *model_collection is still nullptr, so leave them untouched
-             * (*model is uninitialised on that path). */
-            if (i >= 1) {
-                vmaf_model_destroy(*model);
-                *model = nullptr;
-                vmaf_model_collection_destroy(*model_collection);
-                *model_collection = nullptr;
-            }
+            teardown_models(model, model_collection);
             return err;
         }
 
         if (i == 0)
             c->name = cfg_name;
-        (void)snprintf(cfg_name, cfg_name_sz, "%s_%04u", name, ++i);
+        const int n = snprintf(cfg_name, cfg_name_sz, "%s_%04u", name, ++i);
+        if (n < 0 || static_cast<size_t>(n) >= cfg_name_sz) {
+            teardown_models(model, model_collection);
+            return -EINVAL;
+        }
     }
 
     if (!(*model_collection))
@@ -768,6 +775,7 @@ int model_collection_parse_loop(json_stream *s, VmafModel **model,
 int model_collection_parse(json_stream *s, VmafModel **model,
                            VmafModelCollection **model_collection, VmafModelConfig *cfg)
 {
+    *model = nullptr;
     *model_collection = nullptr;
 
     if (json_next(s) != JSON_OBJECT)
