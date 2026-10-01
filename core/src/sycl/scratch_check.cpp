@@ -37,8 +37,7 @@ namespace
 {
 /* Extractors that still run a kernel listed in scratch_ratchet.txt. Keep in
  * step with that file; test_sycl_kernel_scratch compares the two. */
-constexpr const char *kScratchExtractors = "float_adm_sycl, speed_chroma_sycl, "
-                                           "speed_temporal_sycl";
+constexpr const char *kScratchExtractors = "float_adm_sycl";
 
 bool selftest_disabled()
 {

@@ -243,17 +243,26 @@ and 50 frames of BBB 3840x2160, every per-frame `speed_chroma_u`,
 `speed_chroma_v`, `speed_chroma_uv` and `speed_temporal` value is identical to
 `--backend cpu` at `--precision max`, on an Arc B580 and on a UHD 770. Before
 this change 1 to 9 frames per run matched and the largest difference was
-4.2e-5. Two option paths are not exact. Builds with AdaptiveCpp lack the
+4.2e-5. One option path is not exact: builds with AdaptiveCpp lack the
 correctly rounded division fallback and keep the ADR-0214 tolerance.
-`speed_prescale_method=lanczos4` evaluates its kernel weights in fp32 where the
-CPU uses fp64 `sin`, and SpEED amplifies the few-ulp weight differences: the
-CUDA twin, while it computed the weights the same way, was up to 2.1e-2
-(5.7e-4 relative) from the CPU on a smooth 1920x1080 gradient with
-`speed_prescale=0.5` on an RTX 4090, beyond the ADR-0214 tolerance, and at
-most 2.5e-5 on natural content. The CUDA twin now reads the weights from a
-table the host builds with the CPU scaler's own routine
-([below](#cuda-the-same-chain-on-the-device)); the SYCL twin still
-evaluates them on the device
+
+`speed_prescale_method=lanczos4` is exact as well. The CPU evaluates each
+kernel weight with fp64 `sin` and rounds it once; the twins used to evaluate
+the weights on the device in fp32, a few ulp off on some of them, and SpEED
+amplifies that on smooth content (on a smooth synthetic field the CUDA twin
+was up to 8.8e-3 relative from the CPU with `speed_prescale=0.5`, and the
+SYCL twin 5.8e-5 relative on an Arc A380 at 2.0, on scores near 20 where the
+ADR-0214 tolerance is 1e-4). The weights depend only on the output column and
+row, so the host
+now evaluates them once per run with the CPU scaler's own routine
+(`vif_scale_lanczos4_axis_weights()`) and the scale kernel reads the table
+from device memory. On an Arc A380 nearest, bilinear, bicubic and lanczos4
+at prescale 0.5 and 2.0 give the CPU's value on every frame of a 1920x1080
+gradient with noise, the Netflix pair, both 1080p checkerboard pairs, a
+10-bit 720p gradient and BBB 3840x2160 (the CPU run with the [correctly
+rounded `log2f`](#the-cpu-reference-and-log2f)); the scale kernels use no
+scratch memory there ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)).
+The HIP twin still evaluates the weights on the device
 (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in [`state.md`](../state.md)).
 
 Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
@@ -369,11 +378,11 @@ LD_PRELOAD=/tmp/crlog2f.so python3 scripts/dev/speed_gpu_parity.py --backend hip
   --bbb-dir testdata/bbb --no-timing
 ```
 
-`speed_prescale_method=lanczos4` is not exact, as on SYCL: the CPU evaluates
-its weights with fp64 `sin` and these two twins still evaluate them on the
-device in fp32, which on smooth content leaves the ADR-0214 tolerance
-(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`; the CUDA twin reads the
-host's table instead). The twins have not yet run
+`speed_prescale_method=lanczos4` is not exact on HIP: the CPU evaluates its
+weights with fp64 `sin` and the HIP twins still evaluate them on the device
+in fp32, which on smooth content leaves the ADR-0214 tolerance
+(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`; the CUDA and SYCL twins
+read the host's table instead). The twins have not yet run
 on an AMD device; the verify and timing commands are in
 [`state.md`](../state.md) under `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`, and a
 host test replays the kernels against the CPU extractor

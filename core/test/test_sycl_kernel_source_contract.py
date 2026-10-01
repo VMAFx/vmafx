@@ -150,6 +150,19 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
     # shared table in feature/speed_log2_hard_cases.h corrects them.
     if "return speed_log2_hard_case(" not in _function_body(sources[SPEED_PIPELINE], "speed_log2"):
         failures.append(f"{SPEED_PIPELINE}: speed_log2 no longer applies the log2 hard cases")
+    # lanczos4 prescale: the CPU scaler evaluates each weight in fp64 with sin()
+    # and rounds once; no fp32 device sine reproduces that, and SpEED amplifies
+    # the last-bit differences. The host builds the weight table with the
+    # scaler's own routine and the scale kernel reads it from device memory,
+    # which also keeps the kernel free of private arrays (ADR-1395;
+    # T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
+    pipeline = re.sub(r"/\*.*?\*/|//[^\n]*", " ", sources[SPEED_PIPELINE], flags=re.S)
+    if re.search(r"\bsycl::(?:sin|cos|sincos)(?:pi)?\s*\(", pipeline):
+        failures.append(f"{SPEED_PIPELINE}: a device sine evaluates a prescale weight")
+    if "speed_internal_gpu_lanczos_weights(" not in pipeline:
+        failures.append(f"{SPEED_PIPELINE}: the lanczos4 weight table is not built on the host")
+    if re.search(r"\bfloat\s+w[xy]\[9\]", pipeline):
+        failures.append(f"{SPEED_PIPELINE}: lanczos4 weights held in a private array")
     for name in SPEED_HOST_TUS:
         if re.search(r"\b(?:parallel_for|single_task)\b", sources[name]):
             failures.append(f"{name}: device kernel outside {SPEED_PIPELINE}")
@@ -242,6 +255,28 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("log2 hard cases" in item for item in failures))
+
+    def test_device_sine_for_lanczos_weights_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_PIPELINE] += (
+            "\ninline float lanczos_weight(float x)\n{\n    return sycl::sinpi(x);\n}\n"
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("device sine" in item for item in failures), failures)
+
+    def test_missing_lanczos_host_table_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            "speed_internal_gpu_lanczos_weights(", "local_lanczos_weights("
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("weight table" in item for item in failures), failures)
+
+    def test_private_lanczos_weight_array_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_PIPELINE] += "\ninline void weights()\n{\n    float wx[9];\n}\n"
+        failures = _contract_failures(sources)
+        self.assertTrue(any("private array" in item for item in failures), failures)
 
     def test_fp64_speed_regression_is_detected(self) -> None:
         sources = _sources()

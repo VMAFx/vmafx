@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sycl-speed-lanczos4-host-weights — the SYCL SpEED twins read the CPU's lanczos4 weights (2026-10-01)
+
+- `core/src/feature/sycl/speed_sycl_pipeline.cpp`: `Pipeline::lanczos` (device
+  USM, allocated only for a lanczos4 resample), `upload_lanczos()` at init,
+  `ScaleArgs::lanczos`, and `scale_lanczos()` reading the nine column and nine
+  row taps from it. `lanczos_weight()` and `sycl::sinpi` are gone. The table
+  comes from `speed_internal_gpu_lanczos_weights()` (`speed_internal.c`), the
+  routine the CUDA twins use; do not give the SYCL pipeline a routine of its
+  own. Fork-only file, no upstream counterpart.
+- `core/src/sycl/scratch_ratchet.txt` and `kScratchExtractors` in
+  `scratch_check.cpp`: the eight SpEED kernels (`launch_scale`,
+  `launch_decimate`, 8-bit and 16-bit, with and without `RoundedRangeKernel`)
+  are off the ADR-1395 ratchet, so a private array or a spill in them fails
+  `test_sycl_kernel_scratch` again. **On rebase**: a conflict in either file
+  with another scratch-free PR is a set difference; keep every removal.
+- `core/test/test_cuda_speed_lanczos4_parity.c` is renamed
+  `test_gpu_speed_lanczos4_parity.c`: one source, built as
+  `test_cuda_speed_lanczos4_parity` and, with `-DLZ_BACKEND_SYCL=1`, as
+  `test_sycl_speed_lanczos4_parity`. A HIP executable needs a third backend
+  block, not a copy of the file.
+- No CPU code changes. No Netflix golden-data, public API or FFmpeg patch
+  impact.
+
 ## fix/speed-lanczos4-host-weights — the CUDA SpEED twins read the CPU's lanczos4 weights (2026-10-01)
 
 - `core/src/feature/vif_tools.c` (upstream-mirror): the weight loop of

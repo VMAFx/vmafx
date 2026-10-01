@@ -3000,9 +3000,10 @@ test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
 # kernel reads the weights the host evaluates with the CPU scaler's own
 # routine instead of approximating the fp64 sines in fp32. A gradient fixture,
 # prescale 0.5, 2.0 and 1.0, both twins against the CPU extractors. The table
-# itself is checked without a device by test_speed_lanczos4_weights.
+# itself is checked without a device by test_speed_lanczos4_weights. One
+# source for every backend; the SYCL executable is built further down.
 test_cuda_speed_lanczos4_parity = executable('test_cuda_speed_lanczos4_parity',
-    ['test.c', 'test_cuda_speed_lanczos4_parity.c'],
+    ['test.c', 'test_gpu_speed_lanczos4_parity.c'],
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
@@ -4379,6 +4380,20 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+
+# lanczos4 prescale on SYCL (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30):
+# the source of test_cuda_speed_lanczos4_parity, built for the SYCL twins.
+test_sycl_speed_lanczos4_parity = executable('test_sycl_speed_lanczos4_parity',
+    ['test.c', 'test_gpu_speed_lanczos4_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1', '-DLZ_BACKEND_SYCL=1']
+)
+test('test_sycl_speed_lanczos4_parity', test_sycl_speed_lanczos4_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
 
 test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
     ['test.c', 'test_sycl_speed_singular_parity.c'],

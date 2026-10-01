@@ -6194,7 +6194,6 @@
         "core/test/test_cuda_psnr_hvs_parity.c": 1,
         "core/test/test_cuda_runtime_unwind.c": 1,
         "core/test/test_cuda_single_frame_flush.c": 3,
-        "core/test/test_cuda_speed_lanczos4_parity.c": 1,
         "core/test/test_cuda_ssimulacra2_parity.c": 1,
         "core/test/test_cuda_twin_option_parity.c": 1,
         "core/test/test_cuda_vif_min_dim.c": 1,
@@ -6226,6 +6225,7 @@
         "core/test/test_gpu_picture_pool_alloc_failure.c": 1,
         "core/test/test_gpu_picture_pool_partial_init.c": 1,
         "core/test/test_gpu_picture_pool_uaf.c": 1,
+        "core/test/test_gpu_speed_lanczos4_parity.c": 1,
         "core/test/test_hip_adm_dwt2_rows.c": 1,
         "core/test/test_hip_adm_init_unwind.c": 1,
         "core/test/test_hip_cambi_device_math.c": 1,
@@ -8157,7 +8157,7 @@
         "core/test/meson.build": 2,
         "core/test/test_cuda_device_resident_contract.py": 5,
         "core/test/test_cuda_module_lifecycle_contract.py": 1,
-        "core/test/test_cuda_speed_lanczos4_parity.c": 1,
+        "core/test/test_gpu_speed_lanczos4_parity.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 1
       },
       "target": "1380-cuda-speed-device-resident-pipeline.md"
@@ -8279,12 +8279,14 @@
     "1395": {
       "sites": {
         "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
+        "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/sycl_compat.h": 2,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/scratch_check.cpp": 2,
         "core/src/sycl/scratch_check.h": 1,
         "core/test/meson.build": 2,
-        "core/test/test_sycl_kernel_scratch.c": 2
+        "core/test/test_sycl_kernel_scratch.c": 2,
+        "core/test/test_sycl_kernel_source_contract.py": 1
       },
       "target": "1395-sycl-kernels-no-scratch.md"
     },

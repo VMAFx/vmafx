@@ -20,6 +20,7 @@
 
 #include "speed_sycl_pipeline.h"
 
+#include "feature/speed_internal.h"
 #include "feature/speed_log2_hard_cases.h"
 
 #include <sycl/sycl.hpp>
@@ -30,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <new>
 #include <numbers>
 #include <utility>
@@ -53,17 +55,18 @@ using speed_sycl::Scoring;
 namespace
 {
 
-constexpr uint32_t kN = kElements;                   /* 25 */
-constexpr uint32_t kMatrix = kN * kN;                /* 625 */
-constexpr uint32_t kTriangle = kN * (kN + 1u) / 2u;  /* 325 */
-constexpr uint32_t kGroup = 256u;                    /* work-group size */
-constexpr uint32_t kLinalgGroup = 64u;               /* 25x25 linear algebra */
-constexpr uint32_t kDecimation = 16u;                /* 2^NUM_SCALES */
-constexpr uint32_t kQrIterationCap = 500u;           /* EIGENVALUE_MAX_ITERS */
-constexpr float kPictureOffset = -128.0f;            /* picture_copy() offset */
-constexpr float kElementsF = static_cast<float>(kN); /* elements_in_block */
-constexpr float kEpsHi = 0x1.0c6f7ap-20f;            /* (float)EIGENVALUE_EPS */
-constexpr float kEpsLo = 0x1.6bdb1ap-49f;            /* EIGENVALUE_EPS - kEpsHi, exact */
+constexpr uint32_t kN = kElements;                        /* 25 */
+constexpr uint32_t kMatrix = kN * kN;                     /* 625 */
+constexpr uint32_t kTriangle = kN * (kN + 1u) / 2u;       /* 325 */
+constexpr uint32_t kGroup = 256u;                         /* work-group size */
+constexpr uint32_t kLinalgGroup = 64u;                    /* 25x25 linear algebra */
+constexpr uint32_t kDecimation = 16u;                     /* 2^NUM_SCALES */
+constexpr uint32_t kLanczosTaps = SPEED_GPU_LANCZOS_TAPS; /* lanczos4 weights per axis sample */
+constexpr uint32_t kQrIterationCap = 500u;                /* EIGENVALUE_MAX_ITERS */
+constexpr float kPictureOffset = -128.0f;                 /* picture_copy() offset */
+constexpr float kElementsF = static_cast<float>(kN);      /* elements_in_block */
+constexpr float kEpsHi = 0x1.0c6f7ap-20f;                 /* (float)EIGENVALUE_EPS */
+constexpr float kEpsLo = 0x1.6bdb1ap-49f;                 /* EIGENVALUE_EPS - kEpsHi, exact */
 
 /* Correctly rounded division / square root and exact fp32 pairs, shared with
  * the ssimulacra2 twin (sycl_exact_fp.h, ADR-1363). */
@@ -378,7 +381,8 @@ class FloatSource
 /* ------------------------------------------------------------------ */
 
 struct ScaleArgs {
-    float *dst; /* channels x dst_h x dst_w */
+    float *dst;           /* channels x dst_h x dst_w */
+    const float *lanczos; /* lanczos4 only: 9 weights per dst column, then per dst row */
     uint32_t src_w;
     uint32_t src_h;
     uint32_t dst_w;
@@ -505,39 +509,21 @@ inline float scale_bicubic(const Source &src, uint32_t ch, const ScaleArgs &a, f
 namespace
 {
 
-/* lanczos4_kernel(), vif_tools.c. The reference evaluates the weight in fp64
- * with sin(); fp32 sinpi() matches it to a few ulp, not bit for bit. */
-inline float lanczos_weight(float x)
-{
-    const float a = 4.0f;
-    if (x == 0.0f) {
-        return 1.0f;
-    }
-    if (x > -a && x < a) {
-        const float pi = std::numbers::pi_v<float>;
-        const float s1 = sycl::sinpi(x);
-        const float s2 = sycl::sinpi(div_rn(x, a));
-        const float num = (a * s1) * s2;
-        const float den = ((pi * pi) * x) * x;
-        return div_rn(num, den);
-    }
-    return 0.0f;
-}
-
+/* lanczos4_interpolation(), vif_tools.c. The reference evaluates
+ * lanczos4_kernel() in fp64 with sin() and rounds each weight once; no fp32
+ * device sine reproduces that rounding, and SpEED amplifies the last-bit
+ * differences on smooth content. The weights depend only on the output column
+ * and row, so the host evaluates them once per run with the CPU scaler's own
+ * routine (speed_internal_gpu_lanczos_weights()) and the kernel reads them
+ * from device memory: `wx` are the nine taps of this output column, `wy` of
+ * this output row. Reading them also keeps the kernel free of private arrays
+ * (ADR-1395). */
 template <class Source>
-inline float scale_lanczos(const Source &src, uint32_t ch, const ScaleArgs &a, float x, float y)
+inline float scale_lanczos(const Source &src, uint32_t ch, const ScaleArgs &a, const float *wx,
+                           const float *wy, float x, float y)
 {
     const int32_t x0 = static_cast<int32_t>(sycl::floor(x));
     const int32_t y0 = static_cast<int32_t>(sycl::floor(y));
-    const float dx = x - static_cast<float>(x0);
-    const float dy = y - static_cast<float>(y0);
-    float wx[9];
-    float wy[9];
-#pragma unroll
-    for (int32_t i = -4; i <= 4; i++) {
-        wx[i + 4] = lanczos_weight(static_cast<float>(i) - dx);
-        wy[i + 4] = lanczos_weight(static_cast<float>(i) - dy);
-    }
     const float right = static_cast<float>(a.src_w - 1u);
     const float bottom = static_cast<float>(a.src_h - 1u);
     float value = 0.0f;
@@ -585,7 +571,9 @@ inline float scale_sample(const Source &src, const ScaleArgs &a, uint32_t ch, ui
         return scale_bicubic(src, ch, a, xx, yy);
     }
     if (a.method == 2) { /* vif_scale_lanczos4 */
-        return scale_lanczos(src, ch, a, xx, yy);
+        const float *wx = a.lanczos + static_cast<size_t>(kLanczosTaps) * x;
+        const float *wy = a.lanczos + static_cast<size_t>(kLanczosTaps) * (a.dst_w + y);
+        return scale_lanczos(src, ch, a, wx, wy, xx, yy);
     }
     return scale_bilinear(src, ch, a, xx, yy); /* vif_scale_bilinear */
 }
@@ -1771,7 +1759,8 @@ struct speed_sycl::Pipeline {
     size_t plane_bytes;
     unsigned char *staging;
     unsigned char *raw;
-    float *taps; /* antialias[kMaxTaps] then lowpass[kMaxTaps] */
+    float *taps;    /* antialias[kMaxTaps] then lowpass[kMaxTaps] */
+    float *lanczos; /* lanczos4 prescale weights, nullptr for any other run */
     float *scaled;
     float *down;
     float *centered;
@@ -1813,6 +1802,7 @@ void allocate_planes(Pipeline &p)
     p.staging = sycl::malloc_host<unsigned char>(p.plane_bytes * p.config.staged, q);
     p.raw = device_alloc<unsigned char>(q, p.plane_bytes * p.config.raw_planes);
     p.taps = device_alloc<float>(q, size_t{2} * kMaxTaps);
+    p.lanczos = device_alloc<float>(q, speed_internal_gpu_lanczos_count(&g));
     if (g.prescale != 0) {
         p.scaled = device_alloc<float>(q, ch * g.scaled_w * g.scaled_h);
     }
@@ -1856,6 +1846,9 @@ bool allocations_complete(const Pipeline &p)
             return false;
         }
     }
+    if (speed_internal_gpu_lanczos_count(&p.config.geometry) != 0u && p.lanczos == nullptr) {
+        return false;
+    }
     return p.config.geometry.prescale == 0 || p.scaled != nullptr;
 }
 
@@ -1875,6 +1868,7 @@ void release_all(Pipeline &p)
     release(q, p.staging);
     release(q, p.raw);
     release(q, p.taps);
+    release(q, p.lanczos);
     release(q, p.scaled);
     release(q, p.down);
     release(q, p.centered);
@@ -1936,6 +1930,28 @@ void upload_taps(Pipeline &p)
     p.queue->memcpy(p.taps, host, sizeof(host)).wait(); /* init only */
 }
 
+/* The lanczos4 prescale weights, evaluated on the host by the CPU scaler's own
+ * routine so the scale kernel applies them bit for bit
+ * (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). Init only; nothing to do
+ * for any other prescale method. */
+int upload_lanczos(Pipeline &p)
+{
+    const size_t count = speed_internal_gpu_lanczos_count(&p.config.geometry);
+    if (count == 0u) {
+        return 0;
+    }
+    const std::unique_ptr<float[]> host(new (std::nothrow) float[count]);
+    if (!host) {
+        return -ENOMEM;
+    }
+    const int err = speed_internal_gpu_lanczos_weights(&p.config.geometry, host.get(), count);
+    if (err != 0) {
+        return err;
+    }
+    p.queue->memcpy(p.lanczos, host.get(), count * sizeof(float)).wait(); /* init only */
+    return 0;
+}
+
 RawPlanes bind_planes(const Pipeline &p, const ChannelBinding *bindings)
 {
     assert(bindings != nullptr);
@@ -1993,6 +2009,7 @@ template <typename T> void enqueue_filter(Pipeline &p, const RawPlanes &planes)
         return;
     }
     const ScaleArgs scale{.dst = p.scaled,
+                          .lanczos = p.lanczos,
                           .src_w = g.src_w,
                           .src_h = g.src_h,
                           .dst_w = g.scaled_w,
@@ -2217,6 +2234,12 @@ int speed_sycl::pipeline_create(Pipeline **out, const PipelineConfig &config)
             return -ENOMEM;
         }
         upload_taps(*p);
+        const int table_err = upload_lanczos(*p);
+        if (table_err != 0) {
+            release_all(*p);
+            delete p;
+            return table_err;
+        }
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_sycl: pipeline setup failed: %s\n", e.what());
         release_all(*p);

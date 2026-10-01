@@ -58,6 +58,15 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
   temporary, and the fp64 comparisons of `speed.c` go through
   `below_eps()` / `below_eps_scaled()`. The file must not mention the
   fp64 type at all (`core/test/test_sycl_kernel_source_contract.py`).
+  `lanczos4` prescale weights = host table, never a device sine: CPU
+  rounds each weight once from fp64 `sin()`, `sycl::sinpi()` is ulps off
+  and SpEED amplifies (5.8e-5 relative on an A380,
+  `T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). `upload_lanczos()`
+  fills `Pipeline::lanczos` (device USM) at init from
+  `speed_internal_gpu_lanczos_weights()`; `scale_lanczos()` reads `wx` /
+  `wy` from it, so no private `wx[9]` / `wy[9]` (scratch, ADR-1395).
+  Contract test plants a `sycl::sinpi`, a missing table, a private array;
+  `test_sycl_speed_lanczos4_parity` = device check.
   On rebase: a plain `/` or `sycl::sqrt` added to a pipeline kernel, or
   a reduction reordered, breaks the bit-exact parity
   `test_sycl_speed_*_parity` measures; keep the order of every sum
