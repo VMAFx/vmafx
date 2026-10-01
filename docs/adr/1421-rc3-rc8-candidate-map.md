@@ -107,15 +107,15 @@ to `RC7` and `RC8`.
   evidence is taken on a tree that is no longer being corrected or
   restructured. Capability tables and the all-target audit cover hardware nobody
   owns.
-- **Negative**: The final release is five candidates further away than under
+- **Negative**: The final release is four candidates further away than under
   ADR-1352. Historical records keep the older names and must be read with the
   map in force on their date: ADR-1341's body, ADR-1352's body, ADR-1342,
   ADR-1346, ADR-1348, earlier `docs/rebase-notes.md` entries, `CHANGELOG.md`,
   closed ledger rows, and `docs/state.md` update notes dated before 2026-10-01.
   The disposition labels in `docs/state.md` are renamed later, not in this change.
-- **Neutral / follow-ups**: The maintainer renames the GitHub milestones and
-  moves epics #1245 to RC7 and #1246 and #1242 to RC8; GitHub state is outside
-  this change. Until the ledger relabel sweep
+- **Neutral / follow-ups**: The GitHub milestone text and the epics follow this
+  map (#1245 is RC7, #1246 and #1242 are RC8, and #1721, #1723, #1724 and #1725
+  are new); GitHub state is outside this change. Until the ledger relabel sweep
   (`T-STATE-LEDGER-RC-RELABEL-2026-10-01`), the existing disposition label
   "RC3 performance and backend acceleration" reads as RC3 for rows about wrong or
   inexact scores, and as RC7 for rows about throughput or host residuals with
