@@ -1320,6 +1320,20 @@ if host_machine.system() != 'windows'
         dependencies: [pthread_dependency, sycl_dependency],
     )
 
+    # T-VIDINPUT-ODD-DIMENSION-READBACK-UNTESTED-2026-10-01: raw and y4m
+    # clips with an odd width or height read back sample for sample through
+    # both reader entry points (the defect of Netflix/vmaf PR #1604, which
+    # the fork's ceiling chroma geometry does not have). In-memory clips via
+    # fmemopen, so gated off Windows alongside test_y4m_411_oob.
+    test_video_input_odd_dims = executable('test_video_input_odd_dims',
+        ['test.c', 'test_video_input_odd_dims.c', '../tools/vidinput.c', '../tools/y4m_input.c',
+         '../tools/yuv_input.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        c_args : [compat_cflags],
+        dependencies: [pthread_dependency, sycl_dependency],
+    )
+
     # test_cli_parse_long_only_args forks a child to drive
     # cli_parse() with intentionally-bad argv and asserts the
     # child exits with status 1 + a "usage error" stderr line
@@ -5313,6 +5327,7 @@ test('test_cli_parse', test_cli_parse, suite : ['fast'])
 test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])
+    test('test_video_input_odd_dims', test_video_input_odd_dims, suite : ['fast'])
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
     test('test_y4m_alloc_failure', test_y4m_alloc_failure, suite : ['fast'])
 endif

@@ -15,6 +15,24 @@
 - The test links with `-Wl,--wrap=realloc`, so it is built only on Linux with
   the static archive and without LTO, like `test_registration_partial_copy`.
 - No library change. No Netflix golden-data, public API or FFmpeg patch impact.
+## port/upstream-1604-odd-dimension-readback-test — odd-sized frames read back whole (2026-10-01)
+
+- `core/test/test_video_input_odd_dims.c` (new, fork-only) is the fork's
+  counterpart of the `test_video_input.c` that Netflix/vmaf PR #1604 adds. It is
+  not a copy: upstream's test expects the picture to carry floor chroma and the
+  reader to skip the rest; the fork's `VmafPicture` carries ceiling chroma, so
+  the test requires the picture to hold every sample the file stores. **If
+  upstream merges #1604, do not take its `test_video_input.c`, and do not take
+  its skip logic in `yuv_input.c` / `y4m_input.c` either:** with ceiling chroma
+  there is nothing to skip, and `skip_bytes` would always be zero.
+- What the test depends on: `vmaf_chroma_extent()`
+  (`core/src/picture_geometry.h`) rounding up, and the readers sizing a frame
+  as `w * h + 2 * ceil(w / 2) * ceil(h / 2)`. A rebase that restores
+  `w >> ss_hor` in the picture geometry fails it with `the picture does not
+  carry the planes the file stores`.
+- The y4m 4:2:2 case is left out on purpose: the y4m reader resamples `C422`
+  chroma to the jpeg siting, so its output is not the file's samples.
+- No reader change. No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
 
@@ -54125,8 +54143,9 @@ Four pull requests and two issues were sent to Netflix/vmaf on 2026-09-19
 - **#1603** touches `libvmaf/test/checkasm/`, which this fork does not carry — nothing to port.
 - **#1604** changes the direct YUV/y4m readers and `fetch_picture()`. The fork needs **none** of
   it: chroma geometry is already ceiling-based, the direct-read path is compiled out, and
-  reader errors already map to `-1`. Take upstream's new `test_video_input.c` only if its
-  19x19 cases are adapted — the fork's CLI refuses odd 4:2:0 dimensions by design.
+  reader errors already map to `-1`. Do not take upstream's new `test_video_input.c`: the
+  fork's counterpart is `core/test/test_video_input_odd_dims.c`, written for ceiling chroma.
+  The CLI refuses odd 4:2:0 dimensions for raw input; odd-sized y4m input is read and scored.
 - **#1605** adds the early return the fork's `adm_avx2.c` has had since PR #792. A conflict
   there is two spellings of the same guard; keep the fork's.
 - **#1606** patches a VLA the fork replaced with `ModelArrays` (ADR-0809) — nothing to port.
