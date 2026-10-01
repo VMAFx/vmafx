@@ -376,6 +376,20 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
   [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
 
+- **`integer_ssim_cuda` returns the CPU's `ssim` bit for bit ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md))**:
+  `integer_ssim.c::calc_ssim()` adds every pixel's term into one double in
+  raster order, so `integer_ssim_vert_combine`
+  (`core/src/feature/cuda/integer_ssim/integer_ssim_score.cu`) stores the
+  terms unreduced and `ssim_cuda.c::issim_frame_sum()` adds the plane it reads
+  back in index order. Do not reduce the double terms on the device and do not
+  reorder the host loop; the int64 weights may stay a block reduction. A
+  change to `ssim_reduce_row_range()` or to the order `calc_ssim()` visits
+  pixels changes the kernel's `issim_term()` or the host sum in the same PR.
+  `core/test/test_cuda_ssim_exact_contract.py` guards it without a device,
+  `test_cuda_ssim_parity` on one; the parity gate compares the twin with
+  tolerance 0 (`EXACT_TWINS`, feature `ssim`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
   the host takes each scale's Gaussian from `vif_get_filter()`, as
   `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.

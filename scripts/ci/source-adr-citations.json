@@ -3745,7 +3745,8 @@
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 3,
         "core/src/meson.build": 3,
         "core/test/meson.build": 1,
-        "core/test/test_hip_ssim_parity.c": 1
+        "core/test/test_hip_ssim_parity.c": 1,
+        "scripts/ci/cross_backend_parity_gate.py": 1
       },
       "target": "0564-integer-ssim-gpu-real-kernels.md"
     },
@@ -6196,6 +6197,7 @@
         "core/test/test_cuda_psnr_hvs_parity.c": 1,
         "core/test/test_cuda_runtime_unwind.c": 1,
         "core/test/test_cuda_single_frame_flush.c": 3,
+        "core/test/test_cuda_ssim_parity.c": 1,
         "core/test/test_cuda_ssimulacra2_parity.c": 1,
         "core/test/test_cuda_twin_option_parity.c": 1,
         "core/test/test_cuda_vif_min_dim.c": 1,
@@ -8626,6 +8628,19 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1418-motion-parity-gate-metric-alignment.md"
+    },
+    "1424": {
+      "sites": {
+        "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu": 2,
+        "core/src/feature/cuda/ssim_cuda.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_cuda_ssim_exact_contract.py": 5,
+        "core/test/test_cuda_ssim_parity.c": 3,
+        "scripts/ci/cross_backend_calibration.py": 1,
+        "scripts/ci/cross_backend_parity_gate.py": 2,
+        "scripts/ci/test_cross_backend_parity_gate.py": 2
+      },
+      "target": "1424-cuda-ssim-cpu-frame-sum.md"
     }
   },
   "retired": {

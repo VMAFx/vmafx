@@ -108,6 +108,10 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # ---------------------------------------------------------------------------
 
 EXACT_TWINS: dict[str, frozenset[str]] = {
+    # ADR-1424: ``integer_ssim_cuda`` stores the CPU's double term of every
+    # pixel and the host adds them in ``calc_ssim()``'s raster order. The
+    # other ``ssim`` twins reduce per block and keep the places=4 tolerance.
+    "ssim": frozenset({"cuda"}),
     # ADR-1416: ``adm_cuda`` takes its CSF weights, rounding shifts and score
     # conclusion from the CPU's routines (``integer_adm_kernels.h``) and folds
     # the denominator once per row. The other ``adm`` twins keep places=4.

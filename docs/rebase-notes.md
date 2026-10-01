@@ -56885,3 +56885,27 @@ Netflix golden assertions are untouched.
 - Readback shrinks by 94-97% (from ~198.3 MB to ~11.0 MB at 4K).
 - Scratch memory on SYCL remains 0 private memory and 0 register spills (`test_sycl_kernel_scratch` passes).
 - Bit-identical parity maintained against `--backend cpu` of the same binary at `--precision max`.
+## ADR-1424 — integer_ssim_cuda adds its terms in the CPU's raster order (2026-10-01)
+
+`fix/cuda-ssim-cpu-arithmetic`, Research-1424, ADR-1424.
+
+- `core/src/feature/cuda/integer_ssim/integer_ssim_score.cu`:
+  `integer_ssim_vert_combine` takes `double *terms` (width x height, raster
+  order) where it took per-block `partials`, and stores each pixel's term
+  instead of reducing it. The int64 weight reduction is unchanged. If
+  upstream changes `ssim_reduce_row_range()` (the term) or the order in which
+  `calc_ssim()` adds the terms, change `issim_term()` or the host loop in the
+  same PR.
+- `core/src/feature/cuda/ssim_cuda.c`: `rb_ssim` is one double per pixel;
+  `issim_frame_sum()` adds it in index order. No other host arithmetic
+  changed.
+- `scripts/ci/cross_backend_parity_gate.py`: new gate feature `ssim`
+  (`FEATURE_METRICS`, `FEATURE_TOLERANCE`, three `BACKEND_EXTRACTOR_ALIASES`
+  entries). `scripts/ci/cross_backend_calibration.py`:
+  `EXACT_TWINS["ssim"] = {"cuda"}`. On a conflict with another twin's entry
+  keep both.
+- `core/test/test_cuda_ssim_parity.c` is rewritten around a case table and
+  asserts equality; `core/test/test_cuda_ssim_exact_contract.py` is new.
+- No Netflix golden-data, public C API or FFmpeg patch impact. The SYCL, HIP
+  and Metal `ssim` twins are untouched
+  (`T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01`).

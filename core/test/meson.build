@@ -3374,6 +3374,17 @@ test('test_cuda_ssim_parity', test_cuda_ssim_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# ADR-1424: integer_ssim_cuda returns the CPU's score bit for bit -- the kernel
+# stores one double term per pixel instead of reducing them, and the host adds
+# the plane in calc_ssim()'s raster order. Device-free; the device check is
+# test_cuda_ssim_parity.
+test('test_cuda_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # GPU-kernel coverage gap-fill — psnr CPU vs. CUDA parity (places=4).
 # Pre-existing CUDA tests covered motion3 + vif; psnr_cuda
 # (integer_psnr_cuda.c + integer_psnr/psnr_score.cu) was uncovered.

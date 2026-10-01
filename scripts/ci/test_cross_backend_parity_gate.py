@@ -265,6 +265,37 @@ def test_every_hip_cell_names_a_registered_hip_extractor() -> None:
         assert extractor in registered, f"{feature}: no HIP extractor named {extractor!r}"
 
 
+def test_ssim_twins_are_named_after_the_cpu_file() -> None:
+    """ADR-1424: `ssim` is integer_ssim.c; no backend registers `ssim_<backend>`."""
+    assert feature_extractor_name("ssim", "cpu") == "ssim"
+    assert feature_extractor_name("ssim", "cuda") == "integer_ssim_cuda"
+    assert feature_extractor_name("ssim", "sycl") == "integer_ssim_sycl"
+    assert feature_extractor_name("ssim", "hip") == "integer_ssim_hip"
+    assert FEATURE_METRICS["ssim"] == ("ssim",)
+
+
+def test_ssim_cuda_cell_is_exact_and_other_twins_are_not() -> None:
+    """ADR-1424: only the CUDA twin adds the terms in the CPU's order."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "ssim",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["ssim"]), pair
+        assert source == "default", pair
+
+
 def test_backend_extractor_aliases_are_consistent_with_backend_suffix() -> None:
     # Aliases should always resolve to something that does NOT simply use BACKEND_SUFFIX.
     for (feat, backend), alias in BACKEND_EXTRACTOR_ALIASES.items():
@@ -870,6 +901,7 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
+        "ssim": frozenset({"cuda"}),
         "adm": frozenset({"cuda"}),
         "float_ms_ssim": frozenset({"sycl"}),
         "float_ms_ssim_lcs": frozenset({"sycl"}),

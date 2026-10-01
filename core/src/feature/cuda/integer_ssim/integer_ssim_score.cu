@@ -9,9 +9,8 @@
  *  (ADR-0564). Port of `libvmaf/src/feature/integer_ssim.c`: the int64
  *  moments are the CPU's and every per-pixel SSIM term is the CPU's double
  *  expression, operand for operand (this TU builds with --fmad=false,
- *  ADR-1373). Only the order of the frame sum differs: the CPU adds the
- *  terms row by row, this kernel per warp, per block and then on the host,
- *  so the score can differ from the CPU's by a double rounding of the sum.
+ *  ADR-1373). The terms leave the device unreduced and the host adds them in
+ *  the CPU's order, so the score is the CPU's bit for bit (ADR-1424).
  *
  *  The CPU integer_ssim uses a 9-tap Gaussian kernel with INTEGER weights
  *  (sigma=1.5, KERNEL_WEIGHT=256, kernel=[2,9,28,55,68,55,28,9,2]).
@@ -28,9 +27,9 @@
  *    Pass 2 (integer_ssim_vert_combine): for each pixel (x,y), accumulate
  *      the 5 vertical moments (plus w) from the horizontal moment arrays
  *      using the same 9-tap integer kernel with boundary-truncation.
- *      Computes the SSIM formula in double and contributes to a per-block
- *      double partial sum. The host accumulates partials in double and
- *      divides by sum(w) to recover mean SSIM.
+ *      Computes the SSIM formula in double and stores the term at its
+ *      raster position. The host adds the terms in raster order and divides
+ *      by sum(w) to recover mean SSIM.
  *
  *  Boundary handling: mirrors the CPU ring-buffer approach — when the
  *  kernel window extends past the image boundary, the out-of-bounds taps
@@ -241,73 +240,64 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
  * Each thread handles one (x,y) pixel. The vertical window is
  * [y - ISSIM_HALF_K, y + ISSIM_HALF_K], clamped to [0, height-1].
  * Accumulates int64_t moments from the horizontal arrays, then
- * computes the SSIM contribution in double.
+ * computes the SSIM contribution in double and stores it at its raster
+ * position in `terms`. The terms are not reduced here: the CPU adds them
+ * into one double, left to right and top to bottom, and a sum in any other
+ * order rounds differently, so the host adds the plane it reads back
+ * (ADR-1424).
  *
- * The int64 weight reduce uses warp_reduce(int64_t) from cuda_helper.cuh.
- * CUDA has no int64 shuffle intrinsic, so each step shuffles the two 32-bit
- * halves, and they must be reassembled into an int64 before adding. An
- * earlier copy summed `lo` and `hi` as two int32 accumulators and recombined
- * only at the end, dropping the carry out of the low half and able to
- * overflow `lo` (undefined behaviour). Not reachable today (the per-pixel
- * weight sum over a 9-tap window stays far below 2^31), but wrong; keep the
- * shared helper rather than a second, subtly different copy. ADR-1224.
+ * The weights are integers, so their sum does not depend on the order and
+ * stays a block reduction. It uses warp_reduce(int64_t) from
+ * cuda_helper.cuh. CUDA has no int64 shuffle intrinsic, so each step
+ * shuffles the two 32-bit halves, and they must be reassembled into an int64
+ * before adding. An earlier copy summed `lo` and `hi` as two int32
+ * accumulators and recombined only at the end, dropping the carry out of the
+ * low half and able to overflow `lo` (undefined behaviour). Not reachable
+ * today (the per-pixel weight sum over a 9-tap window stays far below 2^31),
+ * but wrong; keep the shared helper rather than a second, subtly different
+ * copy. ADR-1224.
  *
- * Writes one double per block into `partials`.
+ * Writes one double per pixel into `terms` (width * height, raster order).
  * Writes one int64_t per block into `partial_weights`.
- * Host accumulates: ssim = sum(partials) / sum(partial_weights).
+ * Host: ssim = sum(terms in raster order) / sum(partial_weights).
  */
 __global__ void
 integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
                           const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
                           const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
-                          double *__restrict__ partials, int64_t *__restrict__ partial_weights,
+                          double *__restrict__ terms, int64_t *__restrict__ partial_weights,
                           unsigned width, unsigned height, int64_t samplemax)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    double my_ssim = 0.0;
     int64_t my_weight = 0LL;
 
     if (x < width && y < height) {
         const IssimMoments m = issim_vertical_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h,
                                                       d_w_h, x, y, width, height);
-        if (issim_term(m, samplemax, &my_ssim))
+        double term = 0.0;
+        if (issim_term(m, samplemax, &term))
             my_weight = m.w;
+        terms[(size_t)y * width + x] = term;
     }
 
-    /* Per-block reduction: double ssim partial + int64 weight partial.
-     * Uses shared memory for two separate tree-reduces. */
-    __shared__ double s_ssim[ISSIM_BLOCK_SZ / 32];
+    /* Per-block int64 weight reduction; see the function comment. */
     __shared__ int64_t s_wgt[ISSIM_BLOCK_SZ / 32];
-
-    /* Warp-level reduce for ssim (float → double). */
-    double warp_ssim = my_ssim;
-    for (int off = 16; off > 0; off >>= 1)
-        warp_ssim += __shfl_down_sync(0xffffffffu, warp_ssim, off);
-
-    /* Warp-level reduce for weight (int64): warp_reduce(int64_t), see the
-     * function comment. */
     const int64_t warp_wgt = warp_reduce(my_weight);
 
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;
     const int lane = tid % 32;
     const int warp_id = tid / 32;
-    if (lane == 0) {
-        s_ssim[warp_id] = warp_ssim;
+    if (lane == 0)
         s_wgt[warp_id] = warp_wgt;
-    }
     __syncthreads();
 
     if (tid == 0) {
-        double block_ssim = 0.0;
         int64_t block_wgt = 0LL;
-        for (int i = 0; i < ISSIM_BLOCK_SZ / 32; i++) {
-            block_ssim += s_ssim[i];
+        for (int i = 0; i < ISSIM_BLOCK_SZ / 32; i++)
             block_wgt += s_wgt[i];
-        }
         const unsigned blk = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[blk] = block_ssim;
         partial_weights[blk] = block_wgt;
     }
 }

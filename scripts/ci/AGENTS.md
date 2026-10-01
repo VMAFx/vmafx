@@ -556,6 +556,11 @@ every per-scale mean = CPU's). Exact cell = ONE binary on both sides ->
 needs that binary's CPU extractor to be the scalar arithmetic; icx build on
 AVX-512 host needs #1706 (else 4 of 104 frames 1 fp32 ulp off, CPU side
 wrong, not the twin).
+**`ssim` gate feature (ADR-1424).** `ssim` = fixed-point `integer_ssim.c`;
+twins registered `integer_ssim_<backend>`, mapped in
+`BACKEND_EXTRACTOR_ALIASES` (cuda, sycl, hip). `EXACT_TWINS["ssim"]` =
+`cuda` only: host adds the per-pixel double terms in the CPU's raster
+order. SYCL / HIP (> 4096 px) reduce per block -> places=4 default.
 
 **Missing metric = cell ERROR (ADR-1418).** Cell compares every metric
 in `FEATURE_METRICS[feature]`; never a common subset. Metric absent

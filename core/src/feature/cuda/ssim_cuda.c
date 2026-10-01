@@ -9,8 +9,8 @@
  *
  *  This extractor provides the `"ssim"` feature (same name as the CPU
  *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) with the CPU's
- *  fixed-point moments and the CPU's per-pixel arithmetic; only the order of
- *  the frame sum differs (see below).
+ *  fixed-point moments, the CPU's per-pixel arithmetic and the CPU's frame
+ *  sum: the score is the CPU's bit for bit (ADR-1424).
  *
  *  The CPU algorithm uses:
  *    - A 9-tap Gaussian kernel with INTEGER weights [2,9,28,55,68,55,28,9,2]
@@ -30,25 +30,21 @@
  *    Pass 1 (horiz): per-pixel 9-tap horizontal int64 moment accumulation.
  *      Writes 6 × (W×H) int64_t intermediate arrays.
  *    Pass 2 (vert+combine): per-pixel 9-tap vertical int64 accumulation
- *      from horizontal arrays, then SSIM formula in double, then per-block
- *      double partial sum + int64 weight sum.
- *  Host: ssim = sum(partials) / sum(partial_weights).
+ *      from horizontal arrays, then SSIM formula in double, stored per pixel,
+ *      plus a per-block int64 weight sum.
+ *  Host: ssim = sum(terms in raster order) / sum(partial_weights).
  *
- *  What matches the CPU, and what does not:
+ *  Why the score is the CPU's:
  *    - The int64 moments are the CPU's: the same 9 integer weights and the
  *      same boundary truncation (k_min / k_max).
  *    - Every per-pixel term is the CPU's double expression, operand for
  *      operand: the kernel builds with --fmad=false and groups the term as
  *      the CPU does, ((w * a) * b) / den.
- *    - The frame sum is not: the CPU adds the terms row by row, the kernel
- *      per warp, per block and then on the host, so the score can differ
- *      from the CPU's by a double rounding of the sum. On identical frames
- *      that rounding matters only where the CPU's own sum sits within a few
- *      ulps of the weight total: the Research-1372 replay found such frames
- *      only with a side below 12 pixels, where one side can report exactly
- *      1 (+inf with enable_db) and the other just below it. A single-pixel
- *      frame has no sum to reorder.
- *    Target: places=6 vs CPU on the Netflix golden fixture (576×324 8bpc).
+ *    - The frame sum is the CPU's: calc_ssim() adds every term into one
+ *      double, left to right and top to bottom, and no other order rounds
+ *      the same way. The kernel therefore does not reduce the terms; the
+ *      whole plane is read back and issim_frame_sum() adds it in that order.
+ *      The weights are integers, so their block reduction is exact.
  *
  *  Options: the CPU table, `enable_db` and `clip_db`, applied on the host to
  *  the device-reduced score through the nonfinite_score.h emitter the CPU
@@ -88,7 +84,8 @@
 
 typedef struct IssimStateCuda {
     VmafCudaKernelLifecycle lc;
-    /* Two readback slots: double partials + int64 partial weights. */
+    /* Two readback slots: one double term per pixel, in raster order, and
+     * one int64 weight sum per block. */
     VmafCudaKernelReadback rb_ssim;
     VmafCudaKernelReadback rb_wgt;
 
@@ -209,7 +206,7 @@ static int issim_alloc_buffers(VmafFeatureExtractor *fex, IssimStateCuda *s, uns
     s->block_count = s->grid_x * s->grid_y;
 
     const size_t int64_plane_bytes = (size_t)w * h * sizeof(int64_t);
-    const size_t double_partials_bytes = (size_t)s->block_count * sizeof(double);
+    const size_t term_plane_bytes = (size_t)w * h * sizeof(double);
     const size_t int64_partials_bytes = (size_t)s->block_count * sizeof(int64_t);
 
     int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mux, int64_plane_bytes);
@@ -231,7 +228,7 @@ static int issim_alloc_buffers(VmafFeatureExtractor *fex, IssimStateCuda *s, uns
     if (ret)
         return issim_init_unwind(fex, s, ret);
 
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, double_partials_bytes);
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, term_plane_bytes);
     if (ret)
         return issim_init_unwind(fex, s, ret);
     ret = vmaf_cuda_kernel_readback_alloc(&s->rb_wgt, fex->cu_state, int64_partials_bytes);
@@ -289,7 +286,7 @@ fail_lc:
     return issim_init_unwind(fex, s, _cuda_err);
 }
 
-/* issim_launch_vert - pass 2: vertical accumulation, SSIM, block reduction.
+/* issim_launch_vert - pass 2: vertical accumulation, SSIM terms, weight sums.
  *
  * HISS-04: the pass-2 launch of submit_fex_cuda, moved whole. samplemax is
  * still the same integer expression and params2 keeps its element order, so
@@ -298,7 +295,7 @@ fail_lc:
  */
 static int issim_launch_vert(IssimStateCuda *s, CudaFunctions *cu_f, CUstream stream)
 {
-    /* Pass 2 — vertical accumulation + SSIM formula + block reduction. */
+    /* Pass 2 — vertical accumulation + SSIM formula; one term per pixel. */
     int64_t samplemax = (int64_t)((1u << s->bpc) - 1u);
     void *params2[] = {
         &s->d_mux->data,
@@ -372,13 +369,27 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Async DtoH for both readback buffers. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb_ssim.host_pinned,
-                                              (CUdeviceptr)s->rb_ssim.device->data,
-                                              (size_t)s->block_count * sizeof(double), s->lc.str));
+    CHECK_CUDA_RETURN(
+        cu_f, cuMemcpyDtoHAsync(s->rb_ssim.host_pinned, (CUdeviceptr)s->rb_ssim.device->data,
+                                (size_t)s->width * s->height * sizeof(double), s->lc.str));
     CHECK_CUDA_RETURN(cu_f,
                       cuMemcpyDtoHAsync(s->rb_wgt.host_pinned, (CUdeviceptr)s->rb_wgt.device->data,
                                         (size_t)s->block_count * sizeof(int64_t), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+/* issim_frame_sum - calc_ssim()'s `ssim` accumulator.
+ *
+ * The CPU adds every pixel's term into one double, row after row, each row
+ * left to right. A double sum is its order: `terms` is in raster order, and
+ * this loop is the only place the terms are added.
+ */
+static double issim_frame_sum(const double *terms, size_t count)
+{
+    double ssim = 0.0;
+    for (size_t i = 0u; i < count; i++)
+        ssim += terms[i];
+    return ssim;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -390,15 +401,13 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (sync_err)
         return sync_err;
 
-    const double *ssim_partials = (const double *)s->rb_ssim.host_pinned;
+    const double *terms = (const double *)s->rb_ssim.host_pinned;
     const int64_t *wgt_partials = (const int64_t *)s->rb_wgt.host_pinned;
 
-    double total_ssim = 0.0;
+    const double total_ssim = issim_frame_sum(terms, (size_t)s->width * s->height);
     int64_t total_wgt = 0LL;
-    for (unsigned i = 0; i < s->block_count; i++) {
-        total_ssim += ssim_partials[i];
+    for (unsigned i = 0; i < s->block_count; i++)
         total_wgt += wgt_partials[i];
-    }
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
                                             "integer_ssim_cuda", "ssim", total_ssim,
                                             (double)total_wgt, s->enable_db, s->max_db, index);

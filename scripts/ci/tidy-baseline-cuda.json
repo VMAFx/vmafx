@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1110,
+  "total_warnings": 1094,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -488,7 +488,6 @@
     "core/test/test_cuda_speed_singular_parity.c": 13,
     "core/test/test_cuda_speed_temporal_parity.c": 13,
     "core/test/test_cuda_speed_temporal_smoke.c": 13,
-    "core/test/test_cuda_ssim_parity.c": 16,
     "core/test/test_dict.cpp": 33,
     "core/test/test_feature_collector.c": 12,
     "core/test/test_gpu_picture_pool.c": 5,
@@ -902,6 +901,21 @@
         }
       },
       "previous_baseline_sha256": "789b06af89c25c287baafad10d88bc80f0df1a8911a6aa7b0d475cb4ceb6fb06"
+    },
+    {
+      "sources": [
+        "core/test/test_cuda_ssim_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_cuda_ssim_parity.c": {
+          "warnings": [
+            16,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "99019a62da5da7df3d38e1e2870a9eb3d0373ab7997dc881de569b952c21f33f"
     }
   ]
 }

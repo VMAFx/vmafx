@@ -113,6 +113,9 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "float_moment_dis2nd",
     ),
     "ciede": ("ciede2000",),
+    # ADR-1424: the fixed-point `ssim` extractor (integer_ssim.c). Its twins
+    # are registered as `integer_ssim_<backend>`, see BACKEND_EXTRACTOR_ALIASES.
+    "ssim": ("ssim",),
     "float_ssim": ("float_ssim",),
     # ADR-1382: `float_ssim` with `enable_lcs=true` adds the frame means of
     # the per-pixel luminance / contrast / structure terms (`float_ssim_l`,
@@ -207,6 +210,10 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "motion_v2": 5e-5,
     "psnr": 5e-5,
     "float_moment": 5e-5,
+    # int64 moments, one double term per pixel; a twin that reduces per block
+    # is a few ulp of the double sum away. The CPU <-> CUDA cell is exact
+    # instead (EXACT_TWINS, ADR-1424) and never reads this value.
+    "ssim": 5e-5,
     # Float pipeline, well-conditioned. places=4.
     "float_ssim": 5e-5,
     # ADR-1382: L / C / S means are the score's own reductions — places=4.
@@ -324,6 +331,11 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
 # its upstream-mirror file name as its registered name (ADR-0549).
 BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     ("float_ms_ssim", "hip"): "integer_ms_ssim_hip",
+    # The CPU extractor is `ssim`; its twins carry the CPU file's name
+    # (integer_ssim.c), ADR-0564.
+    ("ssim", "cuda"): "integer_ssim_cuda",
+    ("ssim", "sycl"): "integer_ssim_sycl",
+    ("ssim", "hip"): "integer_ssim_hip",
 }
 
 

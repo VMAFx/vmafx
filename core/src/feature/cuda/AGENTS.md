@@ -529,6 +529,19 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
     are gone: that layout measured about 2x slower
     ([Research-1391](../../../../docs/research/1391-cuda-ssimulacra2-device-resident.md)).
 
+- **`integer_ssim_cuda` (`ssim_cuda.c`) = CPU bits** (ADR-1424,
+  `EXACT_TWINS["ssim"]`). CPU `calc_ssim()` = ONE double accumulator through
+  the whole frame, raster order. So: `integer_ssim_vert_combine` stores the
+  double term per pixel (`terms[y * width + x]`), NO warp / block reduction
+  of it; host `issim_frame_sum()` adds the read-back plane in index order.
+  int64 weights: order-free, block reduction stays (`warp_reduce(int64_t)`,
+  ADR-1224). Term grouping `((w * a) * b) / den`, fatbin without contraction
+  (ADR-1403). Cost: 66 MB read-back + 8.3M sequential adds per 4K frame
+  (9.7 ms vs 2.2 ms): `T-CUDA-SSIM-EXACT-THROUGHPUT-2026-10-01` holds the
+  parallel-exact candidate (integer sums per binade); tune only with
+  `test_cuda_ssim_parity` (`==`, 8 cases) green. Guard without device:
+  `test_cuda_ssim_exact_contract.py`.
+
 - **`ssim_cuda.c` and `integer_ssim_cuda.c` provide different features — do not
   conflate them** (ADR-0564). `ssim_cuda.c` registers `vmaf_fex_integer_ssim_cuda`,
   provides `"ssim"` (real 9-tap int64 integer SSIM, bit-exact with CPU).

@@ -27,6 +27,8 @@ explicitly accepts its skip.
   | Feature | Tolerance | Contract source |
   |---|---:|---|
   | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
+  | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
+  | `ssim` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1424 (the host adds the twin's per-pixel terms in the CPU's raster order); the `5e-5` row stays for the other twins |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1416 (the twin runs the CPU's host routines and folds the denominator per row); the `5e-5` row stays for the other twins |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
@@ -43,7 +45,8 @@ explicitly accepts its skip.
   cells; they are for a local run on an AMD host. Metal has backend-specific
   tests but is not wired into this matrix runner. Extractors whose twin is not
   named `<feature>_<backend>` are listed in `BACKEND_EXTRACTOR_ALIASES`
-  (`float_ms_ssim` is `integer_ms_ssim_hip` on HIP).
+  (`float_ms_ssim` is `integer_ms_ssim_hip` on HIP; `ssim` is
+  `integer_ssim_cuda`, `integer_ssim_sycl` and `integer_ssim_hip`).
 
 - **`float_ssim_lcs`.** Runs `float_ssim` with `enable_lcs=true` and compares
   `float_ssim_l`, `float_ssim_c` and `float_ssim_s` next to the score, at the
@@ -84,6 +87,9 @@ explicitly accepts its skip.
   ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md), measured on an
   Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
   frames of BBB 3840x2160).
+  `integer_ssim_cuda` stores the CPU's double term of every pixel and the host
+  adds them in the CPU's raster order
+  ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)).
   `float_vif_cuda` filters with the taps the CPU extractor computes, evaluates
   the CPU's per-pixel statistic in the CPU's types and adds the terms of each
   row on the device and the rows on the host, in the CPU's order

@@ -10,7 +10,7 @@ distorted frame.
 | Extractor name | Backend | Algorithm | Feature name | Precision vs CPU |
 |---|---|---|---|---|
 | `integer_ssim` | CPU | Integer fixed-point | `ssim` | Reference |
-| `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM | `ssim` | bit-exact (diff=0, places=6) |
+| `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM, summed in the CPU's order | `ssim` | bit-identical at every frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)) |
 | `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM | `ssim` | bit-exact up to 4096 pixels; ≤ 1.1e-11 measured above (summation order only) |
 | `vmaf_fex_integer_ssim_sycl` | SYCL | int64 moments + float32 SSIM | `ssim` | places=4–5 (fp64-free, ADR-0220) |
 | `vmaf_fex_integer_ssim_metal` | Metal | Fixed-point, two-pass separable Gaussian | `ssim` | places=4 (target, ADR-0214) |
@@ -25,8 +25,8 @@ can honour the options you set, and the CPU extractor otherwise
 
 The HIP twin was kept out of dispatch until 2026-09-18, because its kernel was an
 11-tap float Gaussian 4.5e-3 away from the CPU. It now runs the CPU's 9-tap int64
-kernel. Against the scalar CPU its worst measured per-frame delta is 1.06e-11, the
-same as the CUDA twin, over 8- to 16-bit inputs from 1x1 to 1920x1080; see the
+kernel. Against the scalar CPU its worst measured per-frame delta is 1.06e-11
+over 8- to 16-bit inputs from 1x1 to 1920x1080; see the
 [HIP backend page](../backends/hip/overview.md#integer_ssim_hip).
 
 > **Note**: There is also a `float_ssim` variant on CUDA (11-tap floating-point Gaussian,
@@ -50,6 +50,27 @@ implemented in `ssim_cuda.c` (CUDA), `integer_ssim_hip.c` (HIP),
 
 The extractor is luma-only; it has no chroma option.
 
+### `integer_ssim_cuda` returns the CPU's value
+
+`--backend cuda --feature ssim` gives the same number as `--backend cpu
+--feature ssim` for every frame, down to the last bit of the `--precision
+max` output, with and without `enable_db` / `clip_db`
+([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)). Measured on an RTX 4090
+on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both 1920x1080
+checkerboard pairs, 3840x2160, and frames down to 1x1.
+
+What this means when you use it:
+
+- You can mix CPU and CUDA `ssim` results in one data set. Before ADR-1424
+  the twin differed from the CPU in the last digits (up to 1.1e-11, and
+  3.6e-10 in dB); stored `integer_ssim_cuda` outputs differ from new ones by
+  that much.
+- It costs time at large frames. The CPU's sum is sequential, so the twin
+  reads the per-pixel terms back and adds them on the host: a 3840x2160 frame
+  takes 9.7 ms instead of 2.2 ms. At 576x324 the difference is not
+  measurable. The twin also needs 66 MB more device memory and as much pinned
+  host memory at 3840x2160.
+
 ## Options
 
 | Option | Type | Default | Effect |
@@ -66,13 +87,12 @@ report the CPU's `+inf` / ceiling for identical frames
 [ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin's
 gfx1036 run is in `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
 [`state.md`](../state.md)). The CUDA twin
-computes every per-pixel term as the CPU does, bit for bit, and sums them in
-a different order, so its score can differ from the CPU's by a double
-rounding; on identical frames with a side below 12 pixels that can separate
-`+inf` from a value near 156 dB when `clip_db` is off. The HIP twin adds the
-terms of frames up to 4096 pixels (64x64) in the CPU's order, so on those it
-reports the CPU's value exactly, finite or `+inf`
-([ADR-1400](../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)). A model that sets
+computes every per-pixel term as the CPU does and adds the terms in the CPU's
+order, so it reports the CPU's value exactly, finite or `+inf`, at every
+frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)). The HIP twin
+does the same for frames up to 4096 pixels (64x64)
+([ADR-1400](../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)); above
+that it adds per block and can differ from the CPU in the last digits. A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 
