@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: 5c9c6b6018522bb6549743fbe8ec87f4d88957d8ab4e864c180a5c56671892b4
+# vmafx-input-sha256: 608c9af8eb848fe4985fd31d0af90d6af7f6049ad1aab1e2c7ea0ce16a4e44fe
 # vmafx-inputs: requirements/locks/tox.in
 cachetools==7.2.0 \
     --hash=sha256:3045213f186b89fdd95d94441354c4bd87c570b7a38d8c3fd1d9dd37f6dc90d8 \
@@ -14,9 +14,9 @@ distlib==0.4.3 \
     --hash=sha256:4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b \
     --hash=sha256:f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed
     # via virtualenv
-filelock==4.0.6 \
-    --hash=sha256:323fab3b2fb22d889b29fa83774f60029addddb4b6a1bcfa1e73066eabffb5f2 \
-    --hash=sha256:9b139fb93b2ac5807f7feaf63aa4546fbd74074a2d3f554c040f40a4694d7b9f
+filelock==4.0.8 \
+    --hash=sha256:325ff22f358c18443b1fcdfa0a7aa3faec4b500c2807c554719da4567b533d31 \
+    --hash=sha256:733d9b6b153fc63672f86104324186818b6bbe9dd7db84e9bb9887b6a04a2775
     # via
     #   python-discovery
     #   tox
@@ -27,9 +27,10 @@ packaging==26.3 \
     # via
     #   pyproject-api
     #   tox
-platformdirs==4.12.1 \
-    --hash=sha256:38da801a4af303033cbffccb39030db22bf0473e6414309b02acebeee7ca8bf1 \
-    --hash=sha256:7f251621befae78b2cb74616f9fc99d3fa3db0afba5035987731f8dcd430337d
+    #   virtualenv
+platformdirs==4.12.2 \
+    --hash=sha256:29dbf06d96c500bc6bdbce75fb0a14d63279c93b1842f97e72a135b33e856983 \
+    --hash=sha256:eab5f70271a490ef74618bb314fbb86e3c7e82fa3b9c922c2ea0e0a1a155d329
     # via
     #   tox
     #   virtualenv
@@ -51,11 +52,11 @@ tomli-w==1.2.0 \
     --hash=sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90 \
     --hash=sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021
     # via tox
-tox==4.64.4 \
-    --hash=sha256:7158441d235d9e1b588f0e9f0547c07a45b3bd2f31530adb14ff5b3c1e84daeb \
-    --hash=sha256:99e2a36e75202bd468f68126be25f72b8d8483e4a27b65252d6f019e856e62fd
+tox==4.64.6 \
+    --hash=sha256:012085b423d10577fa9214542618b99e97fc65398b61ca4524ef86283881ed5f \
+    --hash=sha256:e232ae2f3af4968990c1809d789a71a8ac859f97ddb51a6ed1102522f65520ee
     # via -r requirements/locks/tox.in
-virtualenv==21.13.0 \
-    --hash=sha256:ca16ceba89e58d8e2f376769349c63f3ed66f79881ae68bc13e19a9d50e0e987 \
-    --hash=sha256:e8aa144aabba43ffd9058e1fd1a02012b1915f8cb915acc16ad50aba9c13bfdc
+virtualenv==21.14.2 \
+    --hash=sha256:571930928b11e43db690073ad8228162eca8a3f8fd3a87acdeae07df7dd57068 \
+    --hash=sha256:6a8b7fd4e4ee00ebcdc1c5ee8cffd035d1fe130e354e8c9a44f510aac8affdc1
     # via tox
