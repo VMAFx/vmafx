@@ -534,13 +534,14 @@ absolute. Both gates compare metrics through `metric_delta()`: JSON
 mismatch. Keep both helpers in `cross_backend_calibration.py`, the
 module both gates import; tests in `test_cross_backend_parity_gate.py`.
 
-**Exact twins (ADR-1397).** `EXACT_TWINS` in
-`cross_backend_calibration.py` (`psnr_hvs`: `cuda`) = twins returning
-the CPU extractor's bits. Cell with both sides `cpu` or a listed twin
+**Exact twins (ADR-1397, ADR-1409).** `EXACT_TWINS` in
+`cross_backend_calibration.py` (`psnr_hvs`: `cuda`; `float_motion`:
+`cuda`) = twins returning the CPU extractor's bits. Cell with both sides `cpu` or a listed twin
 (`is_exact_pair`) -> tolerance 0, source `exact:ADR-1397`, both runs
 get `--precision max` (default `%.6f` hides last-bit drift). Beats
 calibration rows and area scaling; explicit `--fp16-features` still
-wins. Unlisted twins (`psnr_hvs_sycl`) keep ADR-1361. Listing a twin
+wins. Unlisted twins keep their tolerance (`psnr_hvs_sycl` ADR-1361,
+`float_motion_sycl` / `_hip` places=4). Listing a twin
 needs measured bit-identity + ADR. Listed twin drifts -> fix twin,
 never give it a tolerance back.
 

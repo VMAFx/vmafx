@@ -19,6 +19,14 @@
  * host-side blend of motion2 (float_motion.c::motion_blend_clip), so all
  * three are compared.
  *
+ * The comparison is exact (ADR-1409): the twin's blur is the CPU's
+ * convolution without FMA contraction (ADR-1403), and its SAD is added in the
+ * CPU's order, one fp32 accumulator per row and one over the rows. Any other
+ * reduction shape differs in the low bits, which the noise fixture shows
+ * most: its row sums pass 2^11 and round at every step. Both sample depths
+ * run, because the 8-bit and the 16-bit blur kernels are separate entry
+ * points.
+ *
  * Without this test, a SIMD pivot on the CPU side or a kernel-grid
  * change on the CUDA side could silently shift the float-path motion
  * scores away from the CPU reference; the CHUG-extracted
@@ -31,6 +39,7 @@
  */
 
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,11 +62,7 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
-
-/* ADR-0214 cross-backend tolerance (places=4 → 1e-4). */
-#define PARITY_TOL 1e-4
 
 /* Features emitted by both CPU `float_motion` and CUDA
  * `float_motion_cuda`. */
@@ -68,25 +73,69 @@ static const char *const MOTION_FEATURES[NUM_MOTION_FEATURES] = {
     "VMAF_feature_motion3_score",
 };
 
-static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
+enum FixtureKind {
+    /* Diagonal ramp moving 13 codes per frame. */
+    FIXTURE_RAMP,
+    /* Uncorrelated samples, new ones every frame: the largest SAD a frame
+     * pair can have, so the fp32 running sums round the most. */
+    FIXTURE_NOISE,
+};
+
+typedef struct Fixture {
+    enum FixtureKind kind;
+    unsigned bpc;
+} Fixture;
+
+/* Numerical Recipes' 32-bit linear congruential step. */
+static uint32_t lcg_next(uint32_t state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    return state * 1664525u + 1013904223u;
+}
+
+/* Luma sample of the fixture at (`row`, `col`), in 0..255. `noise` is the
+ * running generator state of a noise fixture. */
+static unsigned fixture_code(const Fixture *fx, unsigned frame_idx, unsigned row, unsigned col,
+                             uint32_t *noise)
+{
+    if (fx->kind == FIXTURE_NOISE) {
+        *noise = lcg_next(*noise);
+        return *noise >> 24u;
+    }
+    return (row + col + frame_idx * 13u) & 0xFFu;
+}
+
+/* Write the luma plane: 8-bit codes, scaled to the sample depth above 8. */
+static void fill_luma(VmafPicture *pic, const Fixture *fx, unsigned frame_idx)
+{
+    uint32_t noise = 0x9E3779B9u ^ (frame_idx * 0x85EBCA6Bu);
+    const unsigned shift = fx->bpc - 8u;
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        uint8_t *line = (uint8_t *)pic->data[0] + row * pic->stride[0];
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            const unsigned code = fixture_code(fx, frame_idx, row, col, &noise);
+            if (fx->bpc > 8u) {
+                /* Low bits vary too, so the 1/scaler conversion is exercised. */
+                const uint16_t sample = (uint16_t)((code << shift) | (col & ((1u << shift) - 1u)));
+                memcpy(line + (size_t)col * sizeof(sample), &sample, sizeof(sample));
+            } else {
+                line[col] = (uint8_t)code;
+            }
+        }
+    }
+}
+
+static int fill_fixture(VmafPicture *pic, const Fixture *fx, unsigned frame_idx)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, fx->bpc, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
 
-    /* Frame-dependent ramp so successive frames differ and produce a
-     * non-zero motion score. Motion is luma-only — chroma planes
-     * stay constant. */
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 13u) & 0xFFu);
-        }
-    }
+    /* Motion is luma-only: the chroma planes stay zero. */
+    fill_luma(pic, fx, frame_idx);
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
+        const size_t line_bytes = (size_t)pic->w[p] * ((fx->bpc > 8u) ? 2u : 1u);
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            memset((uint8_t *)pic->data[p] + row * pic->stride[p], 0, line_bytes);
         }
     }
     return 0;
@@ -96,13 +145,13 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 typedef double MotionScores[NUM_FRAMES][NUM_MOTION_FEATURES];
 
 /* Feed NUM_FRAMES fixture pairs and flush. */
-static char *feed_frames(VmafContext *vmaf)
+static char *feed_frames(VmafContext *vmaf, const Fixture *fx)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        mu_assert("fill_fixture(ref) failed", !fill_fixture(&ref, i));
-        mu_assert("fill_fixture(dist) failed", !fill_fixture(&dist, i));
+        mu_assert("fill_fixture(ref) failed", !fill_fixture(&ref, fx, i));
+        mu_assert("fill_fixture(dist) failed", !fill_fixture(&dist, fx, i));
         mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, i));
     }
     mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
@@ -123,19 +172,20 @@ static char *read_scores(VmafContext *vmaf, MotionScores out)
 }
 
 /* Run `feature` over the fixture in `vmaf` and read every score back. */
-static char *run_feature(VmafContext *vmaf, const char *feature, MotionScores out)
+static char *run_feature(VmafContext *vmaf, const char *feature, const Fixture *fx,
+                         MotionScores out)
 {
     mu_assert("vmaf_use_feature failed", !vmaf_use_feature(vmaf, feature, NULL));
-    char *msg = feed_frames(vmaf);
+    char *msg = feed_frames(vmaf, fx);
     return msg ? msg : read_scores(vmaf, out);
 }
 
-static char *run_cpu(MotionScores out)
+static char *run_cpu(const Fixture *fx, MotionScores out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
-    char *msg = run_feature(vmaf, "float_motion", out);
+    char *msg = run_feature(vmaf, "float_motion", fx, out);
     const int close_err = vmaf_close(vmaf);
     if (msg)
         return msg;
@@ -143,7 +193,7 @@ static char *run_cpu(MotionScores out)
     return NULL;
 }
 
-static char *run_cuda(MotionScores out, int *skipped)
+static char *run_cuda(const Fixture *fx, MotionScores out, int *skipped)
 {
     *skipped = 0;
     VmafCudaState *cu_state = NULL;
@@ -162,7 +212,7 @@ static char *run_cuda(MotionScores out, int *skipped)
     } else if (vmaf_cuda_import_state(vmaf, cu_state)) {
         msg = "CUDA: vmaf_cuda_import_state failed";
     } else {
-        msg = run_feature(vmaf, "float_motion_cuda", out);
+        msg = run_feature(vmaf, "float_motion_cuda", fx, out);
     }
     /* The CUDA state is freed only after its context is closed (ADR-0157). */
     const int close_err = vmaf ? vmaf_close(vmaf) : 0;
@@ -174,41 +224,79 @@ static char *run_cuda(MotionScores out, int *skipped)
     return NULL;
 }
 
-static char *test_float_motion_cpu_cuda_parity(void)
+/* Bit patterns, so that -0.0 / 0.0 or two NaNs cannot pass as equal. */
+static int same_bits(double a, double b)
+{
+    uint64_t ua;
+    uint64_t ub;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
+}
+
+/* The twin's scores on `fx` are the CPU extractor's, bit for bit. */
+static char *check_fixture(const Fixture *fx, const char *label)
 {
     MotionScores cpu_scores = {{0}};
     MotionScores cuda_scores = {{0}};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores);
+    char *msg = run_cpu(fx, cpu_scores);
     if (msg)
         return msg;
-    msg = run_cuda(cuda_scores, &skipped);
+    msg = run_cuda(fx, cuda_scores, &skipped);
     if (msg || skipped)
         return msg;
 
+    int differing = 0;
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         for (unsigned m = 0; m < NUM_MOTION_FEATURES; m++) {
             mu_assert("CPU float_motion score is non-finite", isfinite(cpu_scores[i][m]));
-            mu_assert("CUDA float_motion score is non-finite", isfinite(cuda_scores[i][m]));
-            const double delta = fabs(cpu_scores[i][m] - cuda_scores[i][m]);
-            if (delta > PARITY_TOL) {
-                (void)fprintf(stderr,
-                              "\nfloat_motion parity FAIL %s[%u]: cpu=%.8f cuda=%.8f delta=%.2e "
-                              "tol=%.2e\n",
-                              MOTION_FEATURES[m], i, cpu_scores[i][m], cuda_scores[i][m], delta,
-                              PARITY_TOL);
-            }
-            mu_assert("float_motion CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
-                      delta <= PARITY_TOL);
+            if (same_bits(cpu_scores[i][m], cuda_scores[i][m]))
+                continue;
+            differing++;
+            (void)fprintf(stderr, "\nfloat_motion %s %s[%u]: cpu=%.17g cuda=%.17g delta=%.3e\n",
+                          label, MOTION_FEATURES[m], i, cpu_scores[i][m], cuda_scores[i][m],
+                          fabs(cpu_scores[i][m] - cuda_scores[i][m]));
         }
     }
+    /* A fixture that scored 0 everywhere would compare nothing. */
+    mu_assert("the fixture has no motion", cpu_scores[1][0] > 0.0);
+    mu_assert("float_motion_cuda does not return the CPU extractor's scores bit for bit",
+              differing == 0);
     return NULL;
+}
+
+static char *test_float_motion_ramp_8bit(void)
+{
+    const Fixture fx = {FIXTURE_RAMP, 8u};
+    return check_fixture(&fx, "ramp 8-bit");
+}
+
+static char *test_float_motion_noise_8bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 8u};
+    return check_fixture(&fx, "noise 8-bit");
+}
+
+static char *test_float_motion_noise_10bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 10u};
+    return check_fixture(&fx, "noise 10-bit");
+}
+
+static char *test_float_motion_noise_12bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 12u};
+    return check_fixture(&fx, "noise 12-bit");
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_motion_cpu_cuda_parity);
+    mu_run_test(test_float_motion_ramp_8bit);
+    mu_run_test(test_float_motion_noise_8bit);
+    mu_run_test(test_float_motion_noise_10bit);
+    mu_run_test(test_float_motion_noise_12bit);
     return NULL;
 }
 

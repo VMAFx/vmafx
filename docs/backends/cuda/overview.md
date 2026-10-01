@@ -249,19 +249,33 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 
 | Twin | Agreement with the CPU |
 |---|---|
-| `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
+| `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_motion`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
 | `speed_chroma` | bit-identical except the frames where glibc misrounds `log2f` (6 of 312 outputs, 1.4e-6) |
 | `ssimulacra2`, `ssim` | 7.3e-11 and 1.1e-11 at most |
 | `adm`, `float_adm` | 2.1e-7 and 1.3e-5 at most |
 | `ciede` | 1.1e-5 |
 | `float_vif` | 3.8e-5 |
-| `float_motion` | 3.1e-6 on the Netflix pair, 2.4e-5 at 3840x2160, 1.4e-4 on the checkerboards: the CPU's own fp32 running sum, not the twin |
 
 `float_ms_ssim_cuda` became bit-identical with ADR-1403: besides the build
 flag, its kernels now follow `ms_ssim_decimate.c`, `iqa_convolve()` and
 `ssim_accumulate_default_scalar()` operation for operation, and the host
 rounds each per-scale mean to fp32 as the CPU does. Its `enable_lcs`
 outputs, which were up to 1.3e-6 from the CPU, are identical too.
+
+`float_motion_cuda` is bit-identical since
+[ADR-1409](../../adr/1409-float-motion-twins-cpu-float-sum.md). The CPU
+extractor adds the absolute differences of a row into one `float`, the row
+sums into another, and divides in `float`; the result depends on that order.
+The twin used to sum each 16x16 block on the device and the blocks in
+`double` on the host, which left it 3.1e-6 from the CPU on the Netflix pair,
+2.4e-5 at 3840x2160 and 1.4e-4 on the 1080p checkerboards. It now adds each
+row on the device in the CPU's order, one thread per row, and the host adds
+the rows (`core/src/feature/float_motion_sad.h`). `motion`, `motion2` and
+`motion3` match on every frame, also at 10 and 12 bits and with the
+`motion_fps_weight`, `motion_max_val` and blend options set; the time per
+3840x2160 frame did not change measurably (3.00 and 2.98 ms). The parity gate
+compares this twin with tolerance 0
+([cross-backend gate](../../development/cross-backend-gate.md)).
 
 The `motion` / `motion2` / `motion3` CUDA outputs agreed with the CPU
 fixed-point path at `places = 4` under default settings on the Netflix

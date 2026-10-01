@@ -82,9 +82,19 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # away by the default ``%.6f``. A twin joins this table only with a
 # measurement that shows bit-identity and an ADR that records it; a twin that
 # still sums per block (``psnr_hvs_sycl``) keeps the ADR-1361 tolerance.
+#
+# ADR-1409: ``float_motion_cuda`` joins it. The CPU's SAD is a running fp32
+# sum per row and another over the rows; the twin adds each row on the device
+# in that order and the rows on the host (``float_motion_sad.h``), over a blur
+# built without FMA contraction (ADR-1403). The other ``float_motion`` twins
+# still reduce per block and keep the places=4 tolerance.
+#
+# ``EXACT_TWIN_SOURCE`` names ADR-1397 for every listed twin: it is the ADR
+# of the exact cell itself, not of a twin's arithmetic.
 # ---------------------------------------------------------------------------
 
 EXACT_TWINS: dict[str, frozenset[str]] = {
+    "float_motion": frozenset({"cuda"}),
     "psnr_hvs": frozenset({"cuda"}),
 }
 EXACT_TWIN_TOLERANCE = 0.0

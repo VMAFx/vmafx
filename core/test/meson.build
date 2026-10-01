@@ -1607,6 +1607,17 @@ test_psnr_hvs_score = executable('test_psnr_hvs_score',
     dependencies : [math_lib],
 )
 
+# ADR-1409: host tail of compute_motion_simd() for the GPU float_motion twins.
+# One running float over the row sums, top to bottom, and a float division;
+# device-free, built with the strict FP arguments of the scalar reference.
+test_float_motion_sad = executable('test_float_motion_sad',
+    ['test.c', 'test_float_motion_sad.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_float_motion_sad', test_float_motion_sad, suite : ['fast'])
+
 # Coverage round 3 — psnr_hvs.c: bpc>12 rejection, YUV400P chroma-disable,
 # enable_chroma=false option, and 10-bit HBD path.
 test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',

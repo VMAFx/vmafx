@@ -3,19 +3,27 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  CUDA compute kernel for the float_motion feature extractor
- *  (T7-23 / batch 3 part 4b — ADR-0192 / ADR-0196). CUDA twin of
- *  float_motion_vulkan. Float-domain blur + SAD.
+ *  CUDA compute kernels for the float_motion feature extractor
+ *  (T7-23 / batch 3 part 4b — ADR-0192 / ADR-0196). Float-domain blur + SAD.
  *
- *  Algorithm (must match CPU float_motion):
- *   1. Convert ref pixel: `val = (raw / scaler) - 128.0`.
- *   2. 5x5 separable Gaussian blur with FILTER_5_s (sums to ~1.0).
- *   3. Frame > 0: SAD += |b - prev_b|.
- *   Mirror padding: skip-boundary `2 * (sup - 1) - idx`.
+ *  Algorithm (float_motion.c, default options):
+ *   1. Convert the reference pixel: `val = (raw / scaler) - 128.0`.
+ *   2. 5x5 separable Gaussian blur with FILTER_5_s, vertical pass then
+ *      horizontal pass, mirror padding `2 * (sup - 1) - idx`.
+ *   3. Frame > 0: sum of absolute differences against the previous blur.
  *
- *  Layout: 16x16 WG with 2-pixel halo (5-tap), produces float
- *  per-pixel blurred output and float per-block SAD partial.
- *  Host accumulates partials in `double` and divides by (w*h).
+ *  Numerical contract (ADR-1403, ADR-1409). Both steps are the CPU's
+ *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
+ *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
+ *     and one rounded fp32 add, taps in order. The fatbin builds with
+ *     --fmad=false, so nothing is fused.
+ *   - the SAD is compute_motion_simd(): float_sad_line() adds the absolute
+ *     differences of one row, left to right, into one fp32 accumulator, and
+ *     the rows are added top to bottom into another. The result depends on
+ *     that order (at 1920x1080 it is up to 1.4e-4 from the exact sum), so
+ *     float_motion_row_sad runs one thread per row over the whole row, and
+ *     the host adds the rows (feature/float_motion_sad.h). A per-block
+ *     partial sum, which this file used to produce, cannot give that value.
  */
 
 #include "cuda_helper.cuh"
@@ -26,6 +34,7 @@
 #define FM_RADIUS 2
 #define FM_TILE_W (FM_BX + 2 * FM_RADIUS)
 #define FM_TILE_H (FM_BY + 2 * FM_RADIUS)
+#define FM_ROW_THREADS 128
 
 __device__ static const float FM_FILT[5] = {
     0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f,
@@ -40,96 +49,95 @@ __device__ __forceinline__ int fm_mirror(int idx, int sup)
     return idx;
 }
 
-__device__ __forceinline__ float fm_warp_reduce(float v)
+/* picture_copy() of an 8-bit sample. */
+struct FmSample8 {
+    const uint8_t *plane;
+    ptrdiff_t stride;
+
+    __device__ __forceinline__ float operator()(int gx, int gy) const
+    {
+        return (float)plane[gy * stride + gx] - 128.0f;
+    }
+};
+
+/* picture_copy() of a 10-, 12- or 16-bit sample. */
+struct FmSample16 {
+    const uint8_t *plane;
+    ptrdiff_t stride;
+    float inv_scaler;
+
+    __device__ __forceinline__ float operator()(int gx, int gy) const
+    {
+        const uint16_t r = reinterpret_cast<const uint16_t *>(plane + gy * stride)[gx];
+        return (float)r * inv_scaler - 128.0f;
+    }
+};
+
+/* Fill this block's (16 + 4) x (16 + 4) tile of converted samples, mirrored
+ * at the frame edges. Every thread of the block loads its share. */
+template <typename Sample>
+__device__ __forceinline__ void fm_load_tile(float (*tile)[FM_TILE_W], const Sample &sample,
+                                             unsigned width, unsigned height)
 {
-    for (int off = 16; off > 0; off >>= 1)
-        v += __shfl_down_sync(0xffffffff, v, off);
-    return v;
+    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int tile_ox = blockIdx.x * FM_BX - FM_RADIUS;
+    const int tile_oy = blockIdx.y * FM_BY - FM_RADIUS;
+    for (unsigned i = lid; i < FM_TILE_W * FM_TILE_H; i += FM_BX * FM_BY) {
+        const unsigned tr = i / FM_TILE_W;
+        const unsigned tc = i % FM_TILE_W;
+        const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
+        const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
+        tile[tr][tc] = sample(gx, gy);
+    }
+}
+
+/* This thread's blurred pixel: the vertical pass of each of the five columns,
+ * then the horizontal pass over them, as convolution_f32_c_s() does. */
+__device__ __forceinline__ float fm_blur_pixel(const float (*tile)[FM_TILE_W])
+{
+    const unsigned lx = threadIdx.x + FM_RADIUS;
+    const unsigned ly = threadIdx.y + FM_RADIUS;
+    float blurred = 0.0f;
+#pragma unroll
+    for (int xf = 0; xf < 5; xf++) {
+        float v = 0.0f;
+#pragma unroll
+        for (int yf = 0; yf < 5; yf++)
+            v += FM_FILT[yf] * tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
+        blurred += FM_FILT[xf] * v;
+    }
+    return blurred;
+}
+
+template <typename Sample>
+__device__ __forceinline__ void fm_blur_block(float (*tile)[FM_TILE_W], const Sample &sample,
+                                              float *__restrict__ cur_blur, unsigned width,
+                                              unsigned height)
+{
+    fm_load_tile(tile, sample, width, height);
+    __syncthreads();
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x < width && y < height)
+        cur_blur[(size_t)y * width + (size_t)x] = fm_blur_pixel(tile);
 }
 
 extern "C" {
 
 __global__ void float_motion_kernel_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                         float *__restrict__ cur_blur,
-                                         const float *__restrict__ prev_blur, VmafCudaBuffer sad,
-                                         unsigned width, unsigned height, unsigned compute_sad)
+                                         float *__restrict__ cur_blur, unsigned width,
+                                         unsigned height)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
-
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    const int tile_ox = blockIdx.x * FM_BX - FM_RADIUS;
-    const int tile_oy = blockIdx.y * FM_BY - FM_RADIUS;
-    const unsigned tile_elems = FM_TILE_W * FM_TILE_H;
-    const unsigned wg_size = FM_BX * FM_BY;
-
-    for (unsigned i = lid; i < tile_elems; i += wg_size) {
-        const unsigned tr = i / FM_TILE_W;
-        const unsigned tc = i % FM_TILE_W;
-        const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
-        const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
-        s_tile[tr][tc] = (float)ref[gy * ref_stride + gx] - 128.0f;
-    }
-    __syncthreads();
-
-    float abs_diff = 0.0f;
-    if (x < (int)width && y < (int)height) {
-        const unsigned lx = threadIdx.x + FM_RADIUS;
-        const unsigned ly = threadIdx.y + FM_RADIUS;
-
-        float blurred = 0.0f;
-#pragma unroll
-        for (int xf = 0; xf < 5; xf++) {
-            float v = 0.0f;
-#pragma unroll
-            for (int yf = 0; yf < 5; yf++)
-                v += FM_FILT[yf] * s_tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
-            blurred += FM_FILT[xf] * v;
-        }
-        const size_t off = (size_t)y * width + (size_t)x;
-        cur_blur[off] = blurred;
-
-        if (compute_sad != 0u) {
-            float prev = prev_blur[off];
-            float diff = blurred - prev;
-            abs_diff = diff < 0.0f ? -diff : diff;
-        }
-    }
-
-    if (compute_sad != 0u) {
-        __shared__ float s_warp[FM_BX * FM_BY / 32];
-        float w = fm_warp_reduce(abs_diff);
-        const int lane = lid % 32;
-        const int warp_id = lid / 32;
-        if (lane == 0)
-            s_warp[warp_id] = w;
-        __syncthreads();
-        if (lid == 0) {
-            float total = 0.0f;
-#pragma unroll
-            for (int i = 0; i < FM_BX * FM_BY / 32; i++)
-                total += s_warp[i];
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            reinterpret_cast<float *>(sad.data)[block_idx] = total;
-        }
-    } else {
-        if (lid == 0) {
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            reinterpret_cast<float *>(sad.data)[block_idx] = 0.0f;
-        }
-    }
+    const FmSample8 sample = {ref, ref_stride};
+    fm_blur_block(s_tile, sample, cur_blur, width, height);
 }
 
 __global__ void float_motion_kernel_16bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                          float *__restrict__ cur_blur,
-                                          const float *__restrict__ prev_blur, VmafCudaBuffer sad,
-                                          unsigned width, unsigned height, unsigned bpc,
-                                          unsigned compute_sad)
+                                          float *__restrict__ cur_blur, unsigned width,
+                                          unsigned height, unsigned bpc)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
-
     float scaler = 1.0f;
     if (bpc == 10)
         scaler = 4.0f;
@@ -137,73 +145,28 @@ __global__ void float_motion_kernel_16bpc(const uint8_t *__restrict__ ref, ptrdi
         scaler = 16.0f;
     else if (bpc == 16)
         scaler = 256.0f;
-    const float inv_scaler = 1.0f / scaler;
+    const FmSample16 sample = {ref, ref_stride, 1.0f / scaler};
+    fm_blur_block(s_tile, sample, cur_blur, width, height);
+}
 
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    const int tile_ox = blockIdx.x * FM_BX - FM_RADIUS;
-    const int tile_oy = blockIdx.y * FM_BY - FM_RADIUS;
-    const unsigned tile_elems = FM_TILE_W * FM_TILE_H;
-    const unsigned wg_size = FM_BX * FM_BY;
-
-    for (unsigned i = lid; i < tile_elems; i += wg_size) {
-        const unsigned tr = i / FM_TILE_W;
-        const unsigned tc = i % FM_TILE_W;
-        const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
-        const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
-        const uint16_t r = reinterpret_cast<const uint16_t *>(ref + gy * ref_stride)[gx];
-        s_tile[tr][tc] = (float)r * inv_scaler - 128.0f;
+/* float_sad_line() of every row: one thread adds the absolute differences of
+ * its row, left to right, into one fp32 accumulator. Launched with one thread
+ * per row; `row_sad` receives `height` sums. */
+__global__ void __launch_bounds__(FM_ROW_THREADS)
+    float_motion_row_sad(const float *__restrict__ cur_blur, const float *__restrict__ prev_blur,
+                         float *__restrict__ row_sad, unsigned width, unsigned height)
+{
+    const unsigned y = blockIdx.x * blockDim.x + threadIdx.x;
+    if (y >= height)
+        return;
+    const float *cur = cur_blur + (size_t)y * width;
+    const float *prev = prev_blur + (size_t)y * width;
+    float accum = 0.0f;
+    for (unsigned j = 0; j < width; j++) {
+        const float diff = cur[j] - prev[j];
+        accum += diff < 0.0f ? -diff : diff;
     }
-    __syncthreads();
-
-    float abs_diff = 0.0f;
-    if (x < (int)width && y < (int)height) {
-        const unsigned lx = threadIdx.x + FM_RADIUS;
-        const unsigned ly = threadIdx.y + FM_RADIUS;
-
-        float blurred = 0.0f;
-#pragma unroll
-        for (int xf = 0; xf < 5; xf++) {
-            float v = 0.0f;
-#pragma unroll
-            for (int yf = 0; yf < 5; yf++)
-                v += FM_FILT[yf] * s_tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
-            blurred += FM_FILT[xf] * v;
-        }
-        const size_t off = (size_t)y * width + (size_t)x;
-        cur_blur[off] = blurred;
-
-        if (compute_sad != 0u) {
-            float prev = prev_blur[off];
-            float diff = blurred - prev;
-            abs_diff = diff < 0.0f ? -diff : diff;
-        }
-    }
-
-    if (compute_sad != 0u) {
-        __shared__ float s_warp[FM_BX * FM_BY / 32];
-        float w = fm_warp_reduce(abs_diff);
-        const int lane = lid % 32;
-        const int warp_id = lid / 32;
-        if (lane == 0)
-            s_warp[warp_id] = w;
-        __syncthreads();
-        if (lid == 0) {
-            float total = 0.0f;
-#pragma unroll
-            for (int i = 0; i < FM_BX * FM_BY / 32; i++)
-                total += s_warp[i];
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            reinterpret_cast<float *>(sad.data)[block_idx] = total;
-        }
-    } else {
-        if (lid == 0) {
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            reinterpret_cast<float *>(sad.data)[block_idx] = 0.0f;
-        }
-    }
+    row_sad[y] = accum;
 }
 
 } /* extern "C" */

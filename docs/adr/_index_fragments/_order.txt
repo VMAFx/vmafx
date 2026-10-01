@@ -1109,3 +1109,4 @@
 1407-hip-strict-fp-every-kernel
 1410-sycl-cli-pinned-host-picture-pool
 1403-cuda-strict-fp-every-kernel
+1409-float-motion-twins-cpu-float-sum

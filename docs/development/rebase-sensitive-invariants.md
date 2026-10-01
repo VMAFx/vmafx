@@ -195,6 +195,17 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_cuda_float_ms_ssim_parity.c` guard it. See
   [core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) and
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **`float_motion_cuda` adds its SAD in the CPU's order ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md))**:
+  `float_motion.c::compute_motion_simd()` keeps one fp32 running sum per row
+  and one over the rows. The twin's `float_motion_row_sad` kernel runs one
+  thread per row with a plain left-to-right loop, and the host finishes
+  through `core/src/feature/float_motion_sad.h`; the scores are the CPU's bit
+  for bit and the parity gate compares them with tolerance 0 (`EXACT_TWINS`).
+  A change to the CPU's SAD order, or to `convolution_f32_c_s()`'s tap order,
+  changes the kernel and the helper in the same PR.
+  `core/test/test_cuda_float_motion_parity.c`,
+  `core/test/test_float_motion_sad.c` and
+  `core/test/test_cuda_kernel_source_contract.py` guard it.
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

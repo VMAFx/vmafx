@@ -122,6 +122,39 @@
   bounded register usage (`REG <= 208`, on `sm_89` `REG <= 176`).
 - Closes `T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07` in `docs/state.md`.
 - No Netflix golden-data, public C API or FFmpeg patch impact.
+## ADR-1409 — `float_motion_cuda` adds its SAD in the CPU's order (2026-10-01)
+
+`fix/cuda-float-motion-cpu-float-sum`, ADR-1409.
+
+- `core/src/feature/cuda/float_motion/float_motion_score.cu`: the blur
+  kernels (`float_motion_kernel_8bpc` / `_16bpc`) write the blurred plane
+  only; their SAD arguments (`prev_blur`, the partials buffer, `compute_sad`)
+  are gone. The new `float_motion_row_sad` kernel runs one thread per row and
+  adds `|cur[j] - prev[j]|` left to right into one fp32 accumulator. That
+  loop shape is load-bearing: a block, warp, strided or atomic reduction
+  gives a different rounding and the twin stops matching the CPU. **On
+  rebase**: if the other side still passes the eight (8-bit) or nine (16-bit)
+  kernel arguments, keep this side's five and six.
+- `core/src/feature/cuda/float_motion_cuda.c`: readback is `frame_h` floats;
+  `reduce_sad()` only calls `vmaf_float_motion_score_from_row_sads()`.
+  `core/src/feature/float_motion_sad.h` (new, backend neutral) is the tail of
+  `float_motion.c::compute_motion_simd()`: one `float` over the rows, then a
+  `float` division by the `int` pixel count.
+- If upstream Netflix changes `compute_motion_simd()`, `float_sad_line_c()`
+  or the order of `convolution_f32_c_s()`, mirror it in the kernel and the
+  helper in the same change. The SYCL, HIP and Metal twins still sum per
+  block (`T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01`); do not copy that
+  shape back.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS` gains
+  `float_motion`: `cuda`, so the gate compares that cell with tolerance 0.
+- Depends on ADR-1403 (`--fmad=false` on the fatbin): with contraction on,
+  the blur is no longer the CPU's and the equality tests fail.
+- Tests: `core/test/test_cuda_float_motion_parity.c` (`==`, 8 / 10 / 12
+  bits, device), `core/test/test_float_motion_sad.c` (new, device-free),
+  five planted regressions in
+  `core/test/test_cuda_kernel_source_contract.py`,
+  `scripts/ci/test_cross_backend_parity_gate.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 ## ADR-1403 — one FP flag list for every CUDA kernel; `float_ms_ssim_cuda` follows the CPU's arithmetic (2026-10-01)
 
 - `core/src/meson.build`: `cuda_cu_extra_flags` is empty and may not carry a

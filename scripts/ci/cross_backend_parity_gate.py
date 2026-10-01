@@ -208,6 +208,8 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # that feed the Wang combine — same conditioning, same places=4.
     "float_ms_ssim_lcs": 5e-5,
     "float_psnr": 5e-5,
+    # The CPU <-> CUDA cell is exact instead (EXACT_TWINS, ADR-1409) and
+    # never reads this value.
     "float_motion": 5e-5,
     "float_vif": 5e-5,
     "float_adm": 5e-5,

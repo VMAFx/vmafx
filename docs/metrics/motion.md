@@ -272,8 +272,20 @@ refused at init.
 | HIP            | Supported | `feature/hip/float_motion_hip.c` (ADR-0273)        |
 | Metal          | Supported | `feature/metal/float_motion_metal.mm`              |
 
-Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across CUDA,
-SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
+Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across the
+SYCL and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
+
+`float_motion_cuda` returns the CPU extractor's `motion`, `motion2` and
+`motion3` bit for bit at `--precision max`, at every frame size and sample
+depth ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)). The CPU
+adds the absolute differences of a row into one `float`, the row sums into a
+second one, and divides in `float`; those running sums round at every step,
+so the score depends on the order of the additions. The CUDA twin adds each
+row on the device in that order and the rows on the host. A twin that sums
+per block instead, as the SYCL, HIP and Metal twins do, is closer to the
+exact mean and differs from the CPU in the low digits: the CUDA twin did so
+by 3e-6 on the Netflix 576x324 pair, 2.4e-5 at 3840x2160 and 1.4e-4 on
+1920x1080 checkerboards before the change.
 
 `float_motion_cuda` emits all three scores, as the CPU does: its `motion3`
 is the CPU's blend of `motion2` (`motion_fps_weight`, then the

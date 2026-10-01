@@ -10,6 +10,13 @@
  *  ping-pong float buffer; SAD against previous frame's blur. motion2
  *  emitted at index-1 with min(prev_motion_score, motion_score).
  *
+ *  The SAD is the CPU's (ADR-1409): compute_motion_simd() adds the absolute
+ *  differences of a row into one fp32 accumulator, then the rows into
+ *  another, and that order decides the low bits of the score. The device
+ *  returns one fp32 sum per row (float_motion_row_sad); the host adds the
+ *  rows and divides (feature/float_motion_sad.h). With the blur built
+ *  without FMA contraction (ADR-1403) the twin's scores are the CPU's bits.
+ *
  *  Score options follow CPU float_motion.c on the host: every emitted
  *  `motion` / `motion2` value is motion_clip()ped, i.e. scaled by
  *  `motion_fps_weight` and capped at `motion_max_val` (ADR-1373, following
@@ -31,6 +38,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "float_motion_sad.h"
 #include "log.h"
 #include "motion_blend_tools.h"
 
@@ -53,12 +61,13 @@ typedef struct FloatMotionStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
     VmafCudaKernelLifecycle lc;
-    /* Per-WG SAD float partials: device + pinned host. Owned by the
-     * template's readback bundle. */
+    /* Per-row SAD sums, `frame_h` floats: device + pinned host. Owned by
+     * the template's readback bundle. */
     VmafCudaKernelReadback rb;
 
     CUfunction funcbpc8;
     CUfunction funcbpc16;
+    CUfunction func_row_sad;
     /* PTX module backing the motion kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -67,7 +76,6 @@ typedef struct FloatMotionStateCuda {
     VmafCudaBuffer *ref_in;
     VmafCudaBuffer *blur[2];
     int cur_blur;
-    unsigned wg_count;
 
     unsigned index;
     unsigned frame_w;
@@ -151,6 +159,9 @@ static const VmafOption options[] = {
 
 #define FM_BX 16
 #define FM_BY 16
+/* Threads per block of float_motion_row_sad, one thread per row; the
+ * kernel's __launch_bounds__ in float_motion_score.cu. */
+#define FM_ROW_THREADS 128u
 
 static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
@@ -221,10 +232,7 @@ static int float_motion_alloc_buffers(VmafFeatureExtractor *fex, FloatMotionStat
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t plane_bytes = (size_t)w * h * bpp;
     const size_t blur_bytes = (size_t)w * h * sizeof(float);
-    const unsigned gx = (w + FM_BX - 1u) / FM_BX;
-    const unsigned gy = (h + FM_BY - 1u) / FM_BY;
-    s->wg_count = gx * gy;
-    const size_t pbytes = (size_t)s->wg_count * sizeof(float);
+    const size_t pbytes = (size_t)h * sizeof(float);
 
     int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
     if (!ret)
@@ -261,12 +269,42 @@ static int float_motion_check_frame_size(unsigned w, unsigned h)
     return 0;
 }
 
+/* float_motion_load_kernels - load the module and resolve its three kernels
+ * with the owning context current.
+ *
+ * HISS-04: moved whole out of init_fex_cuda - the same push, loads and pop,
+ * and every failure still pops a pushed context and unwinds through
+ * float_motion_init_unwind() with the CUDA error.
+ */
+static int float_motion_load_kernels(VmafFeatureExtractor *fex, FloatMotionStateCuda *s,
+                                     CudaFunctions *cu_f)
+{
+    int _cuda_err = 0;
+    int ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
+    ctx_pushed = 1;
+
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, float_motion_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "float_motion_kernel_8bpc"),
+                    fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_motion_kernel_16bpc"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_row_sad, s->module, "float_motion_row_sad"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    return 0;
+
+fail:
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    return float_motion_init_unwind(fex, s, _cuda_err);
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     (void)pix_fmt;
     FloatMotionStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
 
     const int size_err = float_motion_check_frame_size(w, h);
     if (size_err)
@@ -302,55 +340,55 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return float_motion_init_unwind(fex, s, err);
 
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, float_motion_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "float_motion_kernel_8bpc"),
-                    fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_motion_kernel_16bpc"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
-
+    err = float_motion_load_kernels(fex, s, fex->cu_state->f);
+    if (err)
+        return err;
     return float_motion_alloc_buffers(fex, s, w, h, bpc);
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return float_motion_init_unwind(fex, s, _cuda_err);
 }
 
-/* float_motion_launch - dispatch the 8bpc or 16bpc motion kernel.
+/* float_motion_launch_blur - dispatch the 8bpc or 16bpc blur kernel.
  *
- * HISS-04: the launch branch of submit_fex_cuda, moved whole. Both argument
- * arrays keep their exact element order and the launch keeps the same grid and
- * block geometry and stream, so the kernel sees identical parameters.
  * cuLaunchKernel copies the parameter values before it returns, so pointing at
- * this frame's `plane_pitch` / `compute_sad` copies is safe.
+ * this frame's `plane_pitch` copy is safe.
  */
-static int float_motion_launch(FloatMotionStateCuda *s, CudaFunctions *cu_f, CUstream pic_stream,
-                               ptrdiff_t plane_pitch, unsigned cur_idx, unsigned prev_idx,
-                               unsigned compute_sad, unsigned grid_x, unsigned grid_y)
+static int float_motion_launch_blur(FloatMotionStateCuda *s, CudaFunctions *cu_f,
+                                    CUstream pic_stream, ptrdiff_t plane_pitch, unsigned cur_idx)
 {
+    const unsigned grid_x = (s->frame_w + FM_BX - 1u) / FM_BX;
+    const unsigned grid_y = (s->frame_h + FM_BY - 1u) / FM_BY;
     if (s->bpc == 8u) {
         void *args[] = {
-            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
-            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
-            (void *)&s->frame_h,      (void *)&compute_sad,
+            &s->ref_in->data,    (void *)&plane_pitch, &s->blur[cur_idx]->data,
+            (void *)&s->frame_w, (void *)&s->frame_h,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
                                                pic_stream, args, NULL));
     } else {
         void *args[] = {
-            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
-            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
-            (void *)&s->frame_h,      (void *)&s->bpc,      (void *)&compute_sad,
+            &s->ref_in->data,    (void *)&plane_pitch, &s->blur[cur_idx]->data,
+            (void *)&s->frame_w, (void *)&s->frame_h,  (void *)&s->bpc,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
                                                pic_stream, args, NULL));
     }
+    return 0;
+}
+
+/* float_motion_launch_row_sad - one fp32 SAD sum per row of this frame's blur
+ * against the previous one, into the readback buffer. One thread per row: the
+ * sum of a row is sequential by contract (ADR-1409).
+ */
+static int float_motion_launch_row_sad(FloatMotionStateCuda *s, CudaFunctions *cu_f,
+                                       CUstream pic_stream, unsigned cur_idx)
+{
+    const unsigned prev_idx = 1u - cur_idx;
+    const unsigned grid = (s->frame_h + FM_ROW_THREADS - 1u) / FM_ROW_THREADS;
+    void *args[] = {
+        &s->blur[cur_idx]->data, &s->blur[prev_idx]->data, &s->rb.device->data,
+        (void *)&s->frame_w,     (void *)&s->frame_h,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_sad, grid, 1, 1, FM_ROW_THREADS, 1, 1, 0,
+                                           pic_stream, args, NULL));
     return 0;
 }
 
@@ -389,13 +427,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
-    const unsigned prev_idx = 1u - cur_idx;
-    const unsigned compute_sad = (s->index > 0) ? 1u : 0u;
-    const unsigned grid_x = (s->frame_w + FM_BX - 1u) / FM_BX;
-    const unsigned grid_y = (s->frame_h + FM_BY - 1u) / FM_BY;
-
-    const int launch_err = float_motion_launch(s, cu_f, pic_stream, plane_pitch, cur_idx, prev_idx,
-                                               compute_sad, grid_x, grid_y);
+    int launch_err = float_motion_launch_blur(s, cu_f, pic_stream, plane_pitch, cur_idx);
+    if (!launch_err && s->index > 0)
+        launch_err = float_motion_launch_row_sad(s, cu_f, pic_stream, cur_idx);
     if (launch_err)
         return launch_err;
 
@@ -405,7 +439,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (s->index > 0) {
         CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(((float *)s->rb.host_pinned),
                                                   (CUdeviceptr)s->rb.device->data,
-                                                  (size_t)s->wg_count * sizeof(float), s->lc.str));
+                                                  (size_t)s->frame_h * sizeof(float), s->lc.str));
         return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
     }
     return 0;
@@ -413,10 +447,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
 static double reduce_sad(const FloatMotionStateCuda *s)
 {
-    double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++)
-        total += (double)((float *)s->rb.host_pinned)[i];
-    return total / ((double)s->frame_w * s->frame_h);
+    return vmaf_float_motion_score_from_row_sads((const float *)s->rb.host_pinned, s->frame_w,
+                                                 s->frame_h);
 }
 
 /* CPU float_motion.c::motion_clip: fps weight, then the motion_max_val cap. */

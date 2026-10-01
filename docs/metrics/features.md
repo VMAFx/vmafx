@@ -322,6 +322,10 @@ returns `-ENOTSUP` at `init()` on GPU. The
 `motion_add_uv=true` path is currently CPU-only — see
 [backends/cuda/overview.md §Known gaps](../backends/cuda/overview.md#known-gaps)
 and [backends/sycl/overview.md §Known gaps](../backends/sycl/overview.md#known-gaps).
+`float_motion_cuda` returns the CPU `float_motion` scores bit for bit at
+`--precision max`
+([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)); the SYCL, HIP
+and Metal `float_motion` twins agree with the CPU to four decimal places.
 
 **Limitations** — Temporal. The extractor carries state across frames (two
 previous blurred references) and has a flush callback that emits the final

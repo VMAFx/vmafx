@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin the CUDA RC3 parity design at source level (ADR-1372 to ADR-1374, ADR-1392, ADR-1399).
+"""Pin the CUDA RC3 parity design at source level.
+
+ADR-1372 to ADR-1374, ADR-1392, ADR-1399, ADR-1403, ADR-1409.
 
 Device-free, so it runs on every host. Each contract has a planted-regression
 case that edits the live source the way the old code read and must fail:
@@ -32,6 +34,10 @@ case that edits the live source the way the old code read and must fail:
   exact fp32 pair that stands for iqa_convolve()'s fp64 sum, l / c / s keep
   the CPU's fp32 denominators and quotient, and the host rounds each
   per-scale mean to fp32 and takes fp32 stabilisation constants;
+- float motion SAD (ADR-1409): the device adds the absolute differences of a
+  row in one thread, left to right, into one fp32 accumulator, and the host
+  adds the rows and divides in fp32 through float_motion_sad.h, as
+  compute_motion_simd() does; no block, warp or atomic reduction;
 - ADM: the DWT kernels read their rows and taps through adm_dwt2_rows.h;
 - VIF: vif_cuda declares its minimum size through the ADR-1324 gate;
 - engine: libvmaf.c initialises a submit / collect extractor before it picks
@@ -98,6 +104,26 @@ MS_SSIM_HOST_PIECES = (
     "const float C1 = (K1 * (float)L) * (K1 * (float)L);",
     "const float C3 = C2 / 2.0f;",
 )
+FLOAT_MOTION_KERNEL = "float_motion/float_motion_score.cu"
+FLOAT_MOTION_HOST = "float_motion_cuda.c"
+FLOAT_MOTION_SAD = "float_motion_sad.h"
+FLOAT_MOTION_SAD_PATH = ROOT / "core" / "src" / "feature" / FLOAT_MOTION_SAD
+# What makes float_motion_cuda's SAD the CPU's running fp32 sum (ADR-1409).
+FLOAT_MOTION_KERNEL_PIECES = (
+    "const unsigned y = blockIdx.x * blockDim.x + threadIdx.x;",
+    "for (unsigned j = 0; j < width; j++) {",
+    "const float diff = cur[j] - prev[j];",
+    "accum += diff < 0.0f ? -diff : diff;",
+    "row_sad[y] = accum;",
+)
+FLOAT_MOTION_SAD_PIECES = (
+    "float accum = 0.0f;",
+    "accum += row_sad[i];",
+    "return (double)(accum / (float)(int)(w * h));",
+)
+FLOAT_MOTION_REDUCE = "return vmaf_float_motion_score_from_row_sads("
+# Any of these in the kernel file is a reduction in another order.
+FLOAT_MOTION_OTHER_REDUCTION = re.compile(r"__shfl\w*|atomicAdd|__shared__\s+float\s+\w*sad")
 SOURCES = (
     MOTION_KERNEL,
     MOTION_SAD,
@@ -112,7 +138,8 @@ SOURCES = (
     "integer_ssim_cuda.c",
     MS_SSIM_KERNEL,
     MS_SSIM_HOST,
-    "float_motion_cuda.c",
+    FLOAT_MOTION_KERNEL,
+    FLOAT_MOTION_HOST,
     "integer_vif_cuda.c",
 )
 
@@ -142,6 +169,7 @@ def _sources() -> dict[str, str]:
     sources = {name: (CUDA_ROOT / name).read_text(encoding="utf-8") for name in SOURCES}
     sources[MESON] = MESON_PATH.read_text(encoding="utf-8")
     sources[LIBVMAF] = LIBVMAF_PATH.read_text(encoding="utf-8")
+    sources[FLOAT_MOTION_SAD] = FLOAT_MOTION_SAD_PATH.read_text(encoding="utf-8")
     return sources
 
 
@@ -207,7 +235,7 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
         )
     failures.extend(_psnr_stream_failures(psnr))
     failures.extend(_motion_v2_option_failures(sources["integer_motion_v2_cuda.c"]))
-    motion = sources["float_motion_cuda.c"]
+    motion = sources[FLOAT_MOTION_HOST]
     if motion.count("motion_clip(s, ") != 3:
         failures.append(
             "float_motion_cuda.c: motion2, debug motion and tail motion2 must all "
@@ -348,6 +376,31 @@ def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _float_motion_sum_failures(sources: dict[str, str]) -> list[str]:
+    """float_motion_cuda adds its SAD in compute_motion_simd()'s order (ADR-1409)."""
+    failures: list[str] = []
+    kernel = _code(sources[FLOAT_MOTION_KERNEL])
+    for piece in FLOAT_MOTION_KERNEL_PIECES:
+        if piece not in kernel:
+            failures.append(f"{FLOAT_MOTION_KERNEL}: not the CPU's row sum ({piece})")
+    if FLOAT_MOTION_OTHER_REDUCTION.search(kernel):
+        failures.append(
+            f"{FLOAT_MOTION_KERNEL}: a block, warp or atomic reduction adds the SAD in an "
+            "order the CPU does not use"
+        )
+    helper = _code(sources[FLOAT_MOTION_SAD])
+    for piece in FLOAT_MOTION_SAD_PIECES:
+        if piece not in helper:
+            failures.append(f"{FLOAT_MOTION_SAD}: not the CPU's sum over the rows ({piece})")
+    reduce_body = _function_body(_code(sources[FLOAT_MOTION_HOST]), "reduce_sad")
+    if FLOAT_MOTION_REDUCE not in reduce_body or "+=" in reduce_body:
+        failures.append(
+            f"{FLOAT_MOTION_HOST}: reduce_sad() must return the shared "
+            "vmaf_float_motion_score_from_row_sads() value and keep no sum of its own"
+        )
+    return failures
+
+
 def _guard_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     adm = sources[ADM_KERNEL]
@@ -427,6 +480,7 @@ def _all_failures(sources: dict[str, str]) -> list[str]:
         *_ssim_failures(sources),
         *_float_ssim_pipeline_failures(sources),
         *_ms_ssim_failures(sources),
+        *_float_motion_sum_failures(sources),
         *_guard_failures(sources),
         *_dispatch_failures(sources),
     ]
@@ -618,6 +672,50 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             "c_means[i] = total_c / n_pixels;",
         )
         self._assert_detected(sources, "combines as the CPU does")
+
+    def test_block_reduced_float_motion_sad_is_detected(self) -> None:
+        sources = _sources()
+        sources[FLOAT_MOTION_KERNEL] += (
+            "\n__device__ float fm_warp_reduce(float v)\n"
+            "{\n    return v + __shfl_down_sync(0xffffffffu, v, 16);\n}\n"
+        )
+        self._assert_detected(sources, "an order the CPU does not use")
+
+    def test_pairwise_float_motion_row_sum_is_detected(self) -> None:
+        sources = self._edit(
+            FLOAT_MOTION_KERNEL,
+            "for (unsigned j = 0; j < width; j++) {",
+            "for (unsigned j = threadIdx.y; j < width; j += blockDim.y) {",
+        )
+        self._assert_detected(sources, "not the CPU's row sum")
+
+    def test_fp64_float_motion_row_total_is_detected(self) -> None:
+        sources = self._edit(
+            FLOAT_MOTION_SAD,
+            "float accum = 0.0f;",
+            "double accum = 0.0;",
+        )
+        self._assert_detected(sources, "not the CPU's sum over the rows")
+
+    def test_fp64_float_motion_division_is_detected(self) -> None:
+        sources = self._edit(
+            FLOAT_MOTION_SAD,
+            "return (double)(accum / (float)(int)(w * h));",
+            "return (double)accum / ((double)w * h);",
+        )
+        self._assert_detected(sources, "not the CPU's sum over the rows")
+
+    def test_own_float_motion_host_sum_is_detected(self) -> None:
+        sources = self._edit(
+            FLOAT_MOTION_HOST,
+            "    return vmaf_float_motion_score_from_row_sads((const float *)s->rb.host_pinned, "
+            "s->frame_w,\n                                                 s->frame_h);",
+            "    double total = 0.0;\n"
+            "    for (unsigned i = 0; i < s->frame_h; i++)\n"
+            "        total += (double)((const float *)s->rb.host_pinned)[i];\n"
+            "    return total / ((double)s->frame_w * s->frame_h);",
+        )
+        self._assert_detected(sources, "keep no sum of its own")
 
     def test_regrouped_integer_ssim_term_is_detected(self) -> None:
         sources = self._edit(

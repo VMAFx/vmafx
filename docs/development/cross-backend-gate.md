@@ -31,6 +31,7 @@ explicitly accepts its skip.
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (CPU ↔ SYCL, CUDA ↔ SYCL) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `psnr_hvs` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1397 (the twin reproduces the CPU's running float sum) |
+  | `float_motion` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1409 (the twin adds its SAD in the CPU's order); the row above stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
@@ -63,17 +64,21 @@ explicitly accepts its skip.
   This is the contract of a twin that sums each block on the device
   (`psnr_hvs_sycl`).
 
-- **Exact `psnr_hvs` twins.** `psnr_hvs_cuda` stores every term the CPU sums
+- **Exact twins.** `psnr_hvs_cuda` stores every term the CPU sums
   and the host adds them in the CPU's order, so its scores are the CPU's bit
   for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)).
+  `float_motion_cuda` adds the absolute differences of each row on the device
+  in the CPU's order and the rows on the host, with the same result
+  ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)).
   `EXACT_TWINS` in `scripts/ci/cross_backend_calibration.py` lists such twins.
   A cell whose two sides are the CPU extractor or a listed twin is compared
   with tolerance `0`, at every frame size and ahead of any calibration row,
   and both sides run with `--precision max` so that a last-bit difference
   is not rounded away by the default `%.6f` output. The label in the output is
-  `exact:ADR-1397`. Measured on an RTX 4090: 0 on all 200 frames of the BBB
-  3840x2160 fixture and on the Netflix 576x324 pair. An explicit
-  `--fp16-features psnr_hvs` still selects the FP16 contract. Adding a twin to
+  `exact:ADR-1397` for every listed twin. Measured on an RTX 4090: 0 on all
+  200 frames of the BBB 3840x2160 fixture and on the Netflix 576x324 pair, for
+  both features. An explicit `--fp16-features psnr_hvs` still selects the FP16
+  contract. Adding a twin to
   the table needs a measurement that shows bit-identity and an ADR that
   records it.
 
