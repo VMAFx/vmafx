@@ -188,11 +188,11 @@ Skill scaffolds:
   backend parity gate at `places=4`
   ([`scripts/ci/cross_backend_parity_gate.py`](../../../../scripts/ci/cross_backend_parity_gate.py),
   ADR-0214) catches scalar↔SIMD drift but only after full run.
-- VIF kernelscale stays on precomputed `vif_filter1d_table_s`
-  flow ([Research-0024 Strategy E](../../../../docs/research/0024-vif-upstream-divergence.md)).
-  Never port Netflix `4ad6e0ea` / `8c645ce3` runtime helpers
-  verbatim — they lose bit-exact contract that ADR-0138 /
-  0139 / 0142 / 0143 froze.
+- `float_vif` filters = run-time `vif_get_filter()` since ADR-0416
+  (#758); `vif_filter1d_table_s` no longer exists. AVX2 convolution
+  (`../common/convolution_avx.c`) = scalar order, no contraction: each
+  tap one fp32 product + one fp32 add. `float_vif_cuda` mirrors exactly
+  that (ADR-1412); keep it so.
 
 - **No x86-64-only intrinsics.** `_mm_extract_epi64`,
   `_mm256_extract_epi64`, `_mm_cvtsi128_si64` and the like go through

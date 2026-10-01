@@ -1513,6 +1513,7 @@ if is_cuda_enabled
         'feature/cuda/float_psnr_cuda.h',
         'feature/cuda/float_motion_cuda.h',
         'feature/cuda/float_vif_cuda.h',
+        'feature/cuda/float_vif/float_vif_device.h',
         'feature/cuda/ssimulacra2_cuda.h',
         'feature/ssimulacra2_eotf_lut.h',
         'feature/ssimulacra2_math.h',

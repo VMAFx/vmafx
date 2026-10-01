@@ -254,7 +254,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | `ssimulacra2`, `ssim` | 7.3e-11 and 1.1e-11 at most |
 | `adm`, `float_adm` | 2.1e-7 and 1.3e-5 at most |
 | `ciede` | 1.1e-5 |
-| `float_vif` | 3.8e-5 |
+| `float_vif` | bit-identical on every frame since [ADR-1412](../../adr/1412-cuda-float-vif-cpu-arithmetic.md) (3.8e-5 before: the kernel's tap table was not the one the CPU computes) |
 
 `float_ms_ssim_cuda` became bit-identical with ADR-1403: besides the build
 flag, its kernels now follow `ms_ssim_decimate.c`, `iqa_convolve()` and

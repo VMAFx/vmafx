@@ -17,7 +17,7 @@ design.
 | Extractor name | Algorithm | Options |
 | --- | --- | --- |
 | `integer_vif` | Integer fixed-point multi-scale implementation | `vif_enhn_gain_limit`, `vif_skip_scale0`, `debug` |
-| `float_vif` | Floating-point 4-scale Gaussian-pyramid implementation (feature `float_vif` + `float_vif_scale0..3`) | `vif_enhn_gain_limit`, `vif_kernelscale`, `vif_sigma_nsq`, `vif_skip_scale0`, `debug` |
+| `float_vif` | Floating-point 4-scale Gaussian-pyramid implementation (feature `float_vif` + `float_vif_scale0..3`) | `vif_enhn_gain_limit`, `vif_kernelscale`, `vif_prescale`, `vif_prescale_method`, `vif_scale1_min_val`, `vif_scale2_min_val`, `vif_scale3_min_val`, `vif_sigma_nsq`, `vif_skip_scale0`, `debug` |
 
 `float_vif` is implemented on every GPU backend: CUDA (`float_vif_cuda`), SYCL
 (`float_vif_sycl`), HIP (`float_vif_hip`), and **Metal (`float_vif_metal`,
@@ -37,10 +37,45 @@ value, libvmaf automatically selects the CPU `float_vif` extractor for that
 feature before GPU initialization; unrelated model features remain on their
 selected backends. Explicitly naming a GPU extractor with a non-default kernel
 scale still returns `-EINVAL`, because that form requests the specific
-extractor rather than automatic model dispatch. CUDA `float_vif` does not
-declare `vif_skip_scale0`, so ADR-1183 likewise dispatches that configuration
-to CPU. See
+extractor rather than automatic model dispatch. See
 [ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md).
+
+### `float_vif` on CUDA returns the CPU's values
+
+`float_vif_cuda` gives the same number as `--backend cpu --feature float_vif`
+for every output of every frame, down to the last bit of the `--precision max`
+output ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md)). It filters
+with the Gaussian taps the CPU extractor computes at start-up, evaluates the
+CPU's per-pixel statistic in the CPU's types (including its polynomial
+`log2`), and adds the per-pixel terms in the CPU's order: one `float` sum per
+row, then the rows. Measured on an RTX 4090 on the Netflix 576x324 pair at 8,
+10, 12 and 16 bits, both 1920x1080 checkerboard pairs and 3840x2160, with
+`debug=true` as well.
+
+What this means when you use it:
+
+- You can mix CPU and CUDA `float_vif` results in one data set. Before
+  ADR-1412 the CUDA twin was up to 3.8e-5 from the CPU (the fourth decimal
+  place of `vif_scale3` could differ); `float_vif_cuda` outputs stored before
+  it differ from new ones by that much.
+- `float_vif_cuda` accepts the per-scale floors of the CPU extractor,
+  `vif_scale1_min_val`, `vif_scale2_min_val` and `vif_scale3_min_val`
+  (aliases `s1miv`, `s2miv`, `s3miv`; default 0, range 0 to 1): a scale's
+  score below its floor is reported as the floor.
+- `vif_prescale` and `vif_prescale_method` remain CPU-only. Passing either to
+  `float_vif_cuda` is an error; request `float_vif` for prescaled scoring.
+- The SYCL, HIP and Metal twins agree with the CPU to four decimal places,
+  not bit for bit.
+
+Check it on your own device:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend cuda \
+    --vmaf "$PWD/build/tools/vmaf" --feature float_vif
+```
+
+It prints, per output, how many frames are bit-identical and the largest
+difference, and exits 0 only when every frame is.
 
 ## `integer_vif` extractor
 

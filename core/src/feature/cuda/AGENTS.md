@@ -143,7 +143,7 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 - **Feature-local pinned host buffers must be freed in BOTH `close_fex_cuda`
   AND init `free_buffers` error path (2026-06-27 bug-hunt).** Buffers
   allocated directly via `vmaf_cuda_buffer_host_alloc` (i.e. NOT routed through
-  `vmaf_cuda_kernel_readback_free`) — e.g. `float_vif_cuda::num_host`/`den_host`,
+  `vmaf_cuda_kernel_readback_free`) — e.g. `float_vif_cuda::rows_host`,
   `float_adm_cuda::accum_host`, `integer_ms_ssim_cuda::h_ref`/`h_cmp`/`h_*_partials`
   — owned by feature, must be released with
   `vmaf_cuda_buffer_host_free` (no separate `free()`, unlike device-buffer
@@ -888,11 +888,37 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   `powf(nsq, 2.0f)` in `float`, divided by `255.0 * 255.0` in `double`,
   narrowed to `float` — so default path stays bit-identical; do not
   recompute it in device code. Twins in scope: `float_vif_cuda.c` (+
-  `float_vif/float_vif_score.cu`, TWO `func_compute` launch sites),
+  `float_vif/float_vif_score.cu`, one launch site `fvif_launch_scale()`,
+  `vif_sigma_nsq` passed as `double` since ADR-1412),
   `../sycl/float_vif_sycl.cpp`, `../hip/float_vif_hip.c` (+
   `../hip/float_vif/float_vif_score.hip`). Guarded by
   `test_float_vif_options_reach_kernel` variant in each backend's
-  float-VIF parity test.
+  float-VIF parity test (CUDA: `test_model_options_exact`).
+- **`float_vif_cuda` = CPU bits** (ADR-1412, `EXACT_TWINS`). Four things,
+  each alone breaks identity:
+  (1) taps from host `vif_get_filter()` (`float_vif_init_taps()`), passed
+  by value in `FloatVifCudaTaps`; NO tap literal in any kernel file;
+  (2) `fvif_log2()` = `vif_tools.c::log2f_approx()` (CPU never calls libm
+  `log2f`: `VIF_OPT_FAST_LOG2`); no `log2f()` in kernel;
+  (3) `fvif_pixel_statistic()` = `vif_pixel_statistic_s()`, `vif_sigma_nsq`
+  fp64, log arguments fp64 rounded once, `MAX` / `MIN` as CPU ternaries
+  (not `fmaxf` / `fminf`);
+  (4) sums = `vif_statistic_s()` order: `float_vif_compute` stores two
+  terms per pixel (column-major, `fvif_term_index()`),
+  `float_vif_row_sums` one thread per row left to right, host
+  `fvif_sum_rows()` top to bottom, fp32 both. NO warp / block / atomic
+  reduction, no fp64 host sum.
+  Arithmetic lives in `float_vif/float_vif_device.h` (plain C + CUDA C++);
+  every device rounding = explicit `__f*_rn` / `__d*_rn`. Mirror list,
+  same PR when CPU side changes: `vif_get_filter()`, `log2f_approx()` /
+  `VIF_OPT_FAST_LOG2`, `vif_pixel_statistic_s()`, `vif_statistic_s()`,
+  `vif_filter1d_*_s()` tap order, `picture_copy()`. Guards:
+  `test_float_vif_device_math` (device-free, bit compare vs
+  `vif_statistic_s()` + `compute_vif()`),
+  `test_cuda_float_vif_exact_contract.py`, `test_cuda_float_vif_parity`
+  (`==`, 7 cases). Option table carries CPU `vif_scale1..3_min_val`.
+  Throughput debt: `T-CUDA-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-01`; tune
+  only with both tests green.
 - **SpEED's singular-covariance path has TWO obligations** (ADR-1202 for
   chroma, ADR-1218 for both families). 25x25 SpEED covariance =
   regular only if EVERY eigenvalue >= 1e-6; CPU treats

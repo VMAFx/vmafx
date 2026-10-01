@@ -218,6 +218,18 @@ test('test_psnr_hvs_twin_exact_sum_contract',
     timeout : 30,
 )
 
+# ADR-1412: float_vif_cuda returns the CPU's scores bit for bit -- the taps
+# are vif_get_filter()'s, log2 is the reference's polynomial, vif_sigma_nsq
+# stays fp64 and the terms are added row by row in fp32. Device-free; the
+# arithmetic check is test_float_vif_device_math, the device check is
+# test_cuda_float_vif_parity.
+test('test_cuda_float_vif_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_vif_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
@@ -3802,6 +3814,33 @@ test_vif_lifecycle = executable('test_vif_lifecycle',
     ] + wave8_opt_only_objects
 )
 test('test_vif_lifecycle', test_vif_lifecycle, suite : ['fast'])
+
+# ADR-1412 — the arithmetic float_vif_cuda's kernels run
+# (src/feature/cuda/float_vif/float_vif_device.h), compiled for the host and
+# compared bit for bit with vif_statistic_s() and compute_vif(). Device-free,
+# so it runs in the fast suite of every build, with or without CUDA. The
+# reference it pins is the contraction-free one: the header's host operators
+# round like the device only without FMA contraction (hence the flag), and
+# vif_tools.c is contraction-free by construction on x86-64 only (its baseline
+# has no FMA), so the test is registered there.
+if host_machine.cpu_family() == 'x86_64'
+test_float_vif_device_math = executable('test_float_vif_device_math',
+    ['test.c', 'test_float_vif_device_math.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_vif_device_math', test_float_vif_device_math, suite : ['fast'])
+endif
 
 test_float_adm_coverage = executable('test_float_adm_coverage',
     ['test.c', 'test_float_adm_coverage.c'] + _float_fex_test_sources_common + dnn_sources,

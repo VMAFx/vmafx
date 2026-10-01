@@ -334,6 +334,22 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
   [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
 
+- **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
+  the host takes each scale's Gaussian from `vif_get_filter()`, as
+  `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.
+  `core/src/feature/cuda/float_vif/float_vif_device.h` is
+  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation
+  (`vif_sigma_nsq` in fp64), `float_vif_row_sums` adds the terms of a row in
+  one thread, and `fvif_sum_rows()` adds the rows on the host, both in fp32 as
+  `vif_statistic_s()` does. A change to `vif_get_filter()`, to
+  `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to `vif_pixel_statistic_s()` or to
+  `vif_statistic_s()` in `vif_tools.c` changes that header in the same PR.
+  `core/test/test_float_vif_device_math.c` and
+  `core/test/test_cuda_float_vif_exact_contract.py` guard it without a device,
+  `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
+  tolerance 0 (`EXACT_TWINS`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

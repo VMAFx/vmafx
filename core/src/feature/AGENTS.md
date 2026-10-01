@@ -964,24 +964,24 @@ feature/
     not the direct per-pixel histogram 0020 sketched); see
     [Research-2122](../../../docs/research/2122-sycl-cambi-device-resident.md).
 
-- **VIF kernelscale stays on precomputed
-  `vif_filter1d_table_s` flow — Strategy E in Research-0024.**
-  fork carries 11-entry `enum vif_kernelscale_enum`
-  plus `vif_filter1d_table_s[11][4][65]` of frozen `const float`
-  Gaussian taps in [`vif_tools.h`](vif_tools.h). Netflix
-  upstream chain (`4ad6e0ea` runtime helpers, `8c645ce3`
-  prescale options, `41d42c9e` edge-mirror bugfix) computes
-  Gaussians at runtime — that loses SIMD bit-exact
-  contract that ADR-0138 / 0139 / 0142 / 0143 froze. **Do not
-  port `4ad6e0ea` / `8c645ce3` verbatim.** future port that
-  adds runtime helpers as *opt-in second path* (Strategy C)
-  is allowed; it must not touch default
-  `vif_kernelscale=1.0` + `vif_prescale=1.0` code path.
-  Mirror bugfix `41d42c9e` is separate decision — must come
-  with paired `places=4 → places=3` golden loosening per
-  ADR-0142 Netflix-authority precedent. See
+- **`float_vif` Gaussians = run-time `vif_get_filter()`, no table**
+  (ADR-0416, #758: upstream on-the-fly filter synced;
+  `vif_filter1d_table_s` + `enum vif_kernelscale_enum` gone from
+  [`vif_tools.h`](vif_tools.h)). `float_vif.c::init()` caches
+  `vif_get_filter()` output per scale (ADR-0500). Taps = fp64 `exp`,
+  fp32 sum, fp32 divide: NOT the old table's decimals (26 of 34 taps
+  differ, centre tap of scale 0 by 14 ulp). GPU twin must take taps from
+  `vif_get_filter()` on host, never a literal table: stale table =
+  3.8e-5 on Netflix pair (ADR-1412; CUDA fixed, SYCL / HIP / Metal open,
+  `T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`). Also load-bearing for
+  twins: `VIF_OPT_FAST_LOG2` (`vif_options.h`) makes CPU `log2f` the
+  polynomial `log2f_approx()`, no libm; `vif_pixel_statistic_s()` keeps
+  `vif_sigma_nsq` in `double`; `vif_statistic_s()` sums row by row in
+  fp32. Change any of these -> change
+  `cuda/float_vif/float_vif_device.h` same PR
+  (`test_float_vif_device_math` fails until it follows).
   [Research-0024](../../../docs/research/0024-vif-upstream-divergence.md)
-  for full divergence analysis + decision matrix.
+  = history of the table era.
 
 - **`compute_adm` signature stays on fork's parameter
   list — Strategy E in Research-0024.** Netflix upstream

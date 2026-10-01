@@ -4,14 +4,22 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_vif feature kernel on the CUDA backend (T7-23 / batch 3
- *  part 5b — ADR-0192 / ADR-0197). CUDA twin of float_vif_vulkan.
+ *  part 5b — ADR-0192 / ADR-0197).
  *
- *  v1: kernelscale=1.0 only. CPU's VIF_OPT_HANDLE_BORDERS branch:
+ *  kernelscale=1.0 only. CPU's VIF_OPT_HANDLE_BORDERS branch:
  *  per-scale dims = prev/2 (no border crop); decimate samples at
  *  (2*gx, 2*gy) with mirror padding on the input filter taps.
  *
- *  Per-frame flow: 4 compute + 3 decimate launches. Submit/collect
- *  async stream pattern matches motion_cuda.
+ *  Per-frame flow: per scale one compute launch and one row-sum launch,
+ *  preceded from scale 1 on by a decimate launch. Submit/collect async
+ *  stream pattern matches motion_cuda.
+ *
+ *  The twin returns the CPU extractor's values bit for bit (ADR-1412): the
+ *  Gaussian taps are vif_get_filter()'s, computed here as float_vif.c
+ *  computes them and handed to the kernels; the kernels evaluate
+ *  vif_tools.c's arithmetic (float_vif/float_vif_device.h) and add the
+ *  per-pixel terms of each row in one thread; fvif_sum_rows() adds the rows
+ *  here, top to bottom, in the reference's fp32 accumulators.
  */
 
 #include <errno.h>
@@ -27,6 +35,7 @@
 #include "vif_tools.h"
 #include "log.h"
 
+#include "cuda/float_vif/float_vif_device.h"
 #include "cuda/float_vif_cuda.h"
 #include "cuda/kernel_template.h"
 #include "cuda_helper.cuh"
@@ -39,15 +48,15 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-#define FVIF_BX 16
-#define FVIF_BY 16
-
 typedef struct FloatVifStateCuda {
     bool debug;
     double vif_enhn_gain_limit;
     bool vif_skip_scale0;
     double vif_kernelscale;
     double vif_sigma_nsq;
+    double vif_scale1_min_val;
+    double vif_scale2_min_val;
+    double vif_scale3_min_val;
 
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). Multi-scale 4-pyramid state stays outside the
@@ -55,6 +64,7 @@ typedef struct FloatVifStateCuda {
     VmafCudaKernelLifecycle lc;
     CUfunction func_compute;
     CUfunction func_decimate;
+    CUfunction func_row_sums;
     /* PTX module backing the VIF kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -65,11 +75,15 @@ typedef struct FloatVifStateCuda {
     VmafCudaBuffer *ref_buf[2];
     VmafCudaBuffer *dis_buf[2];
 
-    VmafCudaBuffer *num_partials[4];
-    VmafCudaBuffer *den_partials[4];
-    float *num_host[4];
-    float *den_host[4];
-    unsigned wg_count[4];
+    /* The numerator and denominator term of every pixel of the scale being
+     * computed (sized for scale 0, reused by the others on the same stream),
+     * then per scale the sums of each row, on the device and read back. */
+    VmafCudaBuffer *terms;
+    VmafCudaBuffer *rows[FVIF_SCALES];
+    float *rows_host[FVIF_SCALES];
+
+    /* vif_get_filter() per scale, as float_vif.c caches it. */
+    FloatVifCudaTaps taps[FVIF_SCALES];
 
     unsigned width;
     unsigned height;
@@ -114,6 +128,33 @@ static const VmafOption options[] = {
      .min = 0.1,
      .max = 4.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "vif_scale1_min_val",
+     .alias = "s1miv",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .offset = offsetof(FloatVifStateCuda, vif_scale1_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 0.0,
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "vif_scale2_min_val",
+     .alias = "s2miv",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .offset = offsetof(FloatVifStateCuda, vif_scale2_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 0.0,
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "vif_scale3_min_val",
+     .alias = "s3miv",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .offset = offsetof(FloatVifStateCuda, vif_scale3_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 0.0,
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_sigma_nsq",
      .alias = "snsq",
      .help = "neural noise variance",
@@ -150,15 +191,11 @@ static int float_vif_release_buffers(VmafFeatureExtractor *fex, FloatVifStateCud
         float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_buf[i]));
         float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_buf[i]));
     }
-    for (int i = 0; i < 4; i++) {
-        float_vif_preserve_error(&rc,
-                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->num_partials[i]));
-        float_vif_preserve_error(&rc,
-                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->den_partials[i]));
+    float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->terms));
+    for (int i = 0; i < FVIF_SCALES; i++) {
+        float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->rows[i]));
         float_vif_preserve_error(
-            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->num_host[i]));
-        float_vif_preserve_error(
-            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->den_host[i]));
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->rows_host[i]));
     }
     return rc;
 }
@@ -180,7 +217,14 @@ static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s
     return rc;
 }
 
-/* float_vif_alloc_buffers - raw planes, per-scale partials and the name dict.
+/* float_vif_rows_bytes - the per-row sums of one scale: num and den per row. */
+static size_t float_vif_rows_bytes(const FloatVifStateCuda *s, int scale)
+{
+    return (size_t)s->scale_h[scale] * FVIF_TERM_FLOATS * sizeof(float);
+}
+
+/* float_vif_alloc_buffers - raw planes, the term plane, per-scale row sums and
+ * the name dict.
  *
  * The per-scale loop bounds and byte sizes match the scoring path. Each
  * allocation stops on its first failure and unwinds through the owned helpers.
@@ -202,21 +246,17 @@ static int float_vif_alloc_buffers(VmafFeatureExtractor *fex, FloatVifStateCuda 
         ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
     if (!ret)
         ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
+    const size_t term_bytes = (size_t)w * h * FVIF_TERM_FLOATS * sizeof(float);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->terms, term_bytes);
     if (ret)
         return float_vif_init_unwind(fex, s, ret);
 
-    for (int i = 0; i < 4; i++) {
-        const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
-        const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
-        s->wg_count[i] = gx * gy;
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
+    for (int i = 0; i < FVIF_SCALES; i++) {
+        const size_t row_bytes = float_vif_rows_bytes(s, i);
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->rows[i], row_bytes);
         if (!ret)
-            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
-        if (!ret)
-            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
-        if (!ret)
-            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->rows_host[i], row_bytes);
         if (ret)
             break;
     }
@@ -256,29 +296,35 @@ static int float_vif_check_frame_size(const FloatVifStateCuda *s, unsigned w, un
     return 0;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* float_vif_init_taps - each scale's Gaussian, from the CPU's own routine.
+ *
+ * float_vif.c::init() fills its filter cache with vif_get_filter_size() and
+ * vif_get_filter() for (float)vif_kernelscale; the same two calls here give
+ * the kernels the same fp32 taps. A filter wider than the kernels' tile halo
+ * is refused (it cannot occur at the only kernelscale init accepts).
+ */
+static int float_vif_init_taps(FloatVifStateCuda *s)
 {
-    (void)pix_fmt;
-    FloatVifStateCuda *s = fex->priv;
+    for (int scale = 0; scale < FVIF_SCALES; scale++) {
+        float filter[128] = {0};
+        const int width = vif_get_filter_size(scale, (float)s->vif_kernelscale);
+        if (width < 1 || width > FVIF_MAX_FW)
+            return -EINVAL;
+        vif_get_filter(filter, scale, (float)s->vif_kernelscale);
+        memset(&s->taps[scale], 0, sizeof(s->taps[scale]));
+        memcpy(s->taps[scale].coeff, filter, (size_t)width * sizeof(filter[0]));
+        s->taps[scale].width = width;
+    }
+    return 0;
+}
+
+/* float_vif_load_module - load the fatbin and resolve the three kernels.
+ *
+ * The context is popped again on every path; the caller unwinds.
+ */
+static int float_vif_load_module(VmafFeatureExtractor *fex, FloatVifStateCuda *s)
+{
     CudaFunctions *cu_f = fex->cu_state->f;
-
-    if (s->vif_kernelscale != 1.0)
-        return -EINVAL;
-
-    const int size_err = float_vif_check_frame_size(s, w, h);
-    if (size_err)
-        return size_err;
-
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    compute_per_scale_dims(s);
-
-    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return float_vif_init_unwind(fex, s, err);
-
     int _cuda_err = 0;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
@@ -288,227 +334,167 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate"),
                     fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_row_sums, s->module, "float_vif_row_sums"),
+                    fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
-
-    return float_vif_alloc_buffers(fex, s, w, h, bpc);
+    return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    return float_vif_init_unwind(fex, s, _cuda_err);
+    return _cuda_err;
 }
 
-/* FloatVifSubmit - the per-frame constants submit_fex_cuda's seven kernel
- * launches share.
- *
- * HISS-04: introduced only so the launch blocks could move into named
- * helpers. Every field holds the value the identically named local held
- * before, so the launch arguments are bit-identical.
- */
-typedef struct FloatVifSubmit {
-    CUstream stream;
-    ptrdiff_t raw_stride;
-    CUdeviceptr ref_raw;
-    CUdeviceptr dis_raw;
-    CUdeviceptr ref_buf0;
-    CUdeviceptr dis_buf0;
-    CUdeviceptr ref_buf1;
-    CUdeviceptr dis_buf1;
-    float nsq;
-    float egl;
-    float sigma_max_inv;
-} FloatVifSubmit;
-
-/* fvif_init_submit - the per-frame half of FloatVifSubmit. */
-static void fvif_init_submit(const FloatVifStateCuda *s, FloatVifSubmit *p, CUstream stream)
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
 {
-    p->stream = stream;
-    p->raw_stride = (ptrdiff_t)(s->width * (s->bpc <= 8u ? 1u : 2u));
-    /* Launch sequence: 4 compute + 3 decimate, one stream so launches
-     * serialise naturally. */
-    p->ref_raw = (CUdeviceptr)s->ref_raw->data;
-    p->dis_raw = (CUdeviceptr)s->dis_raw->data;
-    p->ref_buf0 = (CUdeviceptr)s->ref_buf[0]->data;
-    p->dis_buf0 = (CUdeviceptr)s->dis_buf[0]->data;
-    p->ref_buf1 = (CUdeviceptr)s->ref_buf[1]->data;
-    p->dis_buf1 = (CUdeviceptr)s->dis_buf[1]->data;
+    (void)pix_fmt;
+    FloatVifStateCuda *s = fex->priv;
 
-    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
-     * options; the compute kernel used to hardcode their defaults, which
-     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
-     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
-     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
-    p->nsq = (float)s->vif_sigma_nsq;
-    p->egl = (float)s->vif_enhn_gain_limit;
-    p->sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+    if (s->vif_kernelscale != 1.0)
+        return -EINVAL;
+
+    const int size_err = float_vif_check_frame_size(s, w, h);
+    if (size_err)
+        return size_err;
+    const int taps_err = float_vif_init_taps(s);
+    if (taps_err)
+        return taps_err;
+
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    compute_per_scale_dims(s);
+
+    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+    if (!err)
+        err = float_vif_load_module(fex, s);
+    if (err)
+        return float_vif_init_unwind(fex, s, err);
+    return float_vif_alloc_buffers(fex, s, w, h, bpc);
 }
 
-/* fvif_submit_upload - H2D staging plus the partial-buffer reset.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda; the copies and the
- * memsets are still issued on the picture stream in the same order.
- */
+/* fvif_copy_luma - one luma plane into its tightly packed raw buffer. */
+static int fvif_copy_luma(const FloatVifStateCuda *s, CudaFunctions *cu_f, const VmafPicture *pic,
+                          const VmafCudaBuffer *raw, CUstream stream)
+{
+    const size_t raw_stride = (size_t)s->width * (s->bpc <= 8u ? 1u : 2u);
+    const CUDA_MEMCPY2D copy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)pic->data[0],
+        .srcPitch = pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
+        .dstDevice = (CUdeviceptr)raw->data,
+        .dstPitch = raw_stride,
+        .WidthInBytes = raw_stride,
+        .Height = s->height,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, stream));
+    return 0;
+}
+
+/* fvif_submit_upload - copy both luma planes into the raw buffers the kernels
+ * read. */
 static int fvif_submit_upload(const FloatVifStateCuda *s, CudaFunctions *cu_f,
                               const VmafPicture *ref_pic, const VmafPicture *dist_pic,
-                              const FloatVifSubmit *p)
+                              CUstream stream)
 {
-    CUDA_MEMCPY2D cpy = {0};
-    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    cpy.srcPitch = ref_pic->stride[0];
-    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.dstDevice = (CUdeviceptr)s->ref_raw->data;
-    cpy.dstPitch = p->raw_stride;
-    cpy.WidthInBytes = p->raw_stride;
-    cpy.Height = s->height;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy, p->stream));
-
-    CUDA_MEMCPY2D cpy_d = cpy;
-    cpy_d.srcDevice = (CUdeviceptr)dist_pic->data[0];
-    cpy_d.srcPitch = dist_pic->stride[0];
-    cpy_d.dstDevice = (CUdeviceptr)s->dis_raw->data;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_d, p->stream));
-
-    /* Reset partials. */
-    for (int i = 0; i < 4; i++) {
-        CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->num_partials[i]->data, 0,
-                                                (size_t)s->wg_count[i] * sizeof(float), p->stream));
-        CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->den_partials[i]->data, 0,
-                                                (size_t)s->wg_count[i] * sizeof(float), p->stream));
-    }
-    return 0;
+    const int err = fvif_copy_luma(s, cu_f, ref_pic, s->ref_raw, stream);
+    return err ? err : fvif_copy_luma(s, cu_f, dist_pic, s->dis_raw, stream);
 }
 
-/* fvif_launch_scale0 - the scale-0 compute launch, which reads the raw
- * pictures directly (the kernel selects via `is_raw = (scale == 0)`). */
-static int fvif_launch_scale0(CudaFunctions *cu_f, FloatVifStateCuda *s, const FloatVifSubmit *p)
+/* fvif_scale_input - the planes scale `scale` is computed from: the raw luma
+ * planes at scale 0, otherwise the pair the decimate launch of that scale
+ * wrote (scale 1 and 3 into buffer 0, scale 2 into buffer 1). */
+static FloatVifCudaInput fvif_scale_input(const FloatVifStateCuda *s, int scale)
 {
-    int scale = 0;
-    CUdeviceptr num_d = (CUdeviceptr)s->num_partials[0]->data;
-    CUdeviceptr den_d = (CUdeviceptr)s->den_partials[0]->data;
-    ptrdiff_t f_stride = (ptrdiff_t)s->scale_w[0];
-    unsigned w = s->scale_w[0];
-    unsigned h = s->scale_h[0];
-    unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
-    unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
-    CUdeviceptr null_dptr = 0;
-    ptrdiff_t raw_stride = p->raw_stride;
-    CUdeviceptr ref_raw_d = p->ref_raw;
-    CUdeviceptr dis_raw_d = p->dis_raw;
-    float vif_nsq_f = p->nsq;
-    float vif_egl_f = p->egl;
-    float sigma_max_inv = p->sigma_max_inv;
-    void *args[] = {
-        &scale,          &ref_raw_d,         &dis_raw_d,         (void *)&raw_stride,
-        &null_dptr,      &null_dptr,         (void *)&f_stride,  &num_d,
-        &den_d,          (void *)&w,         (void *)&h,         (void *)&s->bpc,
-        (void *)&grid_x, (void *)&vif_nsq_f, (void *)&vif_egl_f, (void *)&sigma_max_inv};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY, 1,
-                                           0, p->stream, args, NULL));
-    return 0;
-}
-
-/* fvif_launch_decimate - decimate the previous scale into ref_buf/dis_buf.
- *
- * The two buffers written are handed back so the compute launch that
- * follows reads exactly the ones this launch produced.
- */
-static int fvif_launch_decimate(CudaFunctions *cu_f, FloatVifStateCuda *s, const FloatVifSubmit *p,
-                                int next_scale, CUdeviceptr *ref_out_p, CUdeviceptr *dis_out_p)
-{
-    /* Decimate prev → ref_buf[(next-1)%2], dis_buf[(next-1)%2]. */
-    const int dst_idx = (next_scale - 1) % 2;
-    const bool prev_is_raw = (next_scale == 1);
-    CUdeviceptr ref_in = prev_is_raw ? p->ref_raw : (dst_idx == 0 ? p->ref_buf1 : p->ref_buf0);
-    CUdeviceptr dis_in = prev_is_raw ? p->dis_raw : (dst_idx == 0 ? p->dis_buf1 : p->dis_buf0);
-    const ptrdiff_t in_f_stride = prev_is_raw ? 0 : (ptrdiff_t)s->scale_w[next_scale - 1];
-    CUdeviceptr ref_out = (dst_idx == 0) ? p->ref_buf0 : p->ref_buf1;
-    CUdeviceptr dis_out = (dst_idx == 0) ? p->dis_buf0 : p->dis_buf1;
-    const ptrdiff_t out_f_stride = (ptrdiff_t)s->scale_w[next_scale];
-    unsigned out_w = s->scale_w[next_scale];
-    unsigned out_h = s->scale_h[next_scale];
-    unsigned in_w = s->scale_w[next_scale - 1];
-    unsigned in_h = s->scale_h[next_scale - 1];
-    unsigned dec_grid_x = (out_w + FVIF_BX - 1u) / FVIF_BX;
-    unsigned dec_grid_y = (out_h + FVIF_BY - 1u) / FVIF_BY;
-    int scale_arg = next_scale;
-    ptrdiff_t raw_stride = p->raw_stride;
-    *ref_out_p = ref_out;
-    *dis_out_p = dis_out;
-    void *args[] = {
-        &scale_arg,
-        &ref_in,
-        &dis_in,
-        (void *)&raw_stride,
-        &ref_in,
-        &dis_in,
-        (void *)&in_f_stride,
-        &ref_out,
-        &dis_out,
-        (void *)&out_f_stride,
-        (void *)&out_w,
-        (void *)&out_h,
-        (void *)&in_w,
-        (void *)&in_h,
-        (void *)&s->bpc,
+    FloatVifCudaInput in = {
+        .width = s->scale_w[scale],
+        .height = s->scale_h[scale],
+        .bpc = s->bpc,
     };
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, dec_grid_x, dec_grid_y, 1, FVIF_BX,
-                                           FVIF_BY, 1, 0, p->stream, args, NULL));
-    return 0;
+    if (scale == 0) {
+        in.ref = (uint64_t)s->ref_raw->data;
+        in.dis = (uint64_t)s->dis_raw->data;
+        in.stride = (int64_t)s->width * (s->bpc <= 8u ? 1 : 2);
+        in.is_raw = 1u;
+        return in;
+    }
+    const int idx = (scale - 1) % 2;
+    in.ref = (uint64_t)s->ref_buf[idx]->data;
+    in.dis = (uint64_t)s->dis_buf[idx]->data;
+    in.stride = (int64_t)s->scale_w[scale];
+    return in;
 }
 
-/* fvif_launch_compute - compute at this scale on the just-written buffer. */
-static int fvif_launch_compute(CudaFunctions *cu_f, FloatVifStateCuda *s, const FloatVifSubmit *p,
-                               int next_scale, CUdeviceptr ref_out, CUdeviceptr dis_out)
+/* fvif_launch_decimate - filter scale `scale - 1` with this scale's taps and
+ * keep every second sample: the input of scale `scale`. */
+static int fvif_launch_decimate(CudaFunctions *cu_f, FloatVifStateCuda *s, int scale,
+                                CUstream stream)
 {
-    CUdeviceptr num_d = (CUdeviceptr)s->num_partials[next_scale]->data;
-    CUdeviceptr den_d = (CUdeviceptr)s->den_partials[next_scale]->data;
-    const ptrdiff_t comp_f_stride = (ptrdiff_t)s->scale_w[next_scale];
-    unsigned w = s->scale_w[next_scale];
-    unsigned h = s->scale_h[next_scale];
-    unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
-    unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
-    int scale_arg2 = next_scale;
-    ptrdiff_t raw_stride = p->raw_stride;
-    CUdeviceptr ref_raw_d = p->ref_raw;
-    CUdeviceptr dis_raw_d = p->dis_raw;
-    float vif_nsq_f = p->nsq;
-    float vif_egl_f = p->egl;
-    float sigma_max_inv = p->sigma_max_inv;
-    void *cargs[] = {&scale_arg2,
-                     &ref_raw_d,
-                     &dis_raw_d,
-                     (void *)&raw_stride,
-                     &ref_out,
-                     &dis_out,
-                     (void *)&comp_f_stride,
-                     &num_d,
-                     &den_d,
-                     (void *)&w,
-                     (void *)&h,
-                     (void *)&s->bpc,
-                     (void *)&grid_x,
-                     (void *)&vif_nsq_f,
-                     (void *)&vif_egl_f,
-                     (void *)&sigma_max_inv};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY, 1,
-                                           0, p->stream, cargs, NULL));
+    const FloatVifCudaInput out = fvif_scale_input(s, scale);
+    FloatVifCudaDecimateArgs args = {
+        .in = fvif_scale_input(s, scale - 1),
+        .taps = s->taps[scale],
+        .ref_out = out.ref,
+        .dis_out = out.dis,
+        .out_width = out.width,
+        .out_height = out.height,
+    };
+    const unsigned grid_x = (out.width + FVIF_BX - 1u) / FVIF_BX;
+    const unsigned grid_y = (out.height + FVIF_BY - 1u) / FVIF_BY;
+    void *params[] = {&args};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1, FVIF_BX, FVIF_BY, 1,
+                                           0, stream, params, NULL));
     return 0;
 }
 
-/* fvif_submit_download - sync to the event-driven stream and copy partials. */
+/* fvif_launch_scale - the per-pixel terms of one scale, then their row sums.
+ *
+ * vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM options
+ * and reach the kernel as arguments (ADR-1217). vif_sigma_nsq stays a double
+ * and sigma_max_inv is derived as vif_tools.c::vif_statistic_s derives it:
+ * powf(nsq, 2.0f) in float, divided in double, narrowed to float.
+ */
+static int fvif_launch_scale(CudaFunctions *cu_f, FloatVifStateCuda *s, int scale, CUstream stream)
+{
+    FloatVifCudaComputeArgs args = {
+        .in = fvif_scale_input(s, scale),
+        .taps = s->taps[scale],
+        .terms = (uint64_t)s->terms->data,
+        .vif_sigma_nsq = s->vif_sigma_nsq,
+        .vif_enhn_gain_limit = (float)s->vif_enhn_gain_limit,
+        .sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0)),
+    };
+    const unsigned grid_x = (args.in.width + FVIF_BX - 1u) / FVIF_BX;
+    const unsigned grid_y = (args.in.height + FVIF_BY - 1u) / FVIF_BY;
+    void *params[] = {&args};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY, 1,
+                                           0, stream, params, NULL));
+
+    FloatVifCudaRowArgs row_args = {
+        .terms = (uint64_t)s->terms->data,
+        .rows = (uint64_t)s->rows[scale]->data,
+        .width = args.in.width,
+        .height = args.in.height,
+    };
+    const unsigned row_grid = (args.in.height + FVIF_ROW_THREADS - 1u) / FVIF_ROW_THREADS;
+    void *row_params[] = {&row_args};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_sums, row_grid, 1, 1, FVIF_ROW_THREADS, 1, 1,
+                                           0, stream, row_params, NULL));
+    return 0;
+}
+
+/* fvif_submit_download - sync to the event-driven stream and copy the row
+ * sums of every scale. */
 static int fvif_submit_download(VmafFeatureExtractor *fex, FloatVifStateCuda *s,
                                 CudaFunctions *cu_f, CUstream pic_stream)
 {
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    for (int i = 0; i < 4; i++) {
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->num_host[i], (CUdeviceptr)s->num_partials[i]->data,
-                                            (size_t)s->wg_count[i] * sizeof(float), s->lc.str));
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->den_host[i], (CUdeviceptr)s->den_partials[i]->data,
-                                            (size_t)s->wg_count[i] * sizeof(float), s->lc.str));
+    for (int i = 0; i < FVIF_SCALES; i++) {
+        CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rows_host[i], (CUdeviceptr)s->rows[i]->data,
+                                                  float_vif_rows_bytes(s, i), s->lc.str));
     }
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
@@ -527,27 +513,17 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
                                         CU_EVENT_WAIT_DEFAULT));
 
-    FloatVifSubmit p;
-    fvif_init_submit(s, &p, pic_stream);
-    int err = fvif_submit_upload(s, cu_f, ref_pic, dist_pic, &p);
-    if (err)
-        return err;
-    err = fvif_launch_scale0(cu_f, s, &p);
-    if (err)
-        return err;
-
-    for (int next_scale = 1; next_scale < 4; next_scale++) {
-        CUdeviceptr ref_out = 0;
-        CUdeviceptr dis_out = 0;
-        err = fvif_launch_decimate(cu_f, s, &p, next_scale, &ref_out, &dis_out);
-        if (err)
-            return err;
-        err = fvif_launch_compute(cu_f, s, &p, next_scale, ref_out, dis_out);
-        if (err)
-            return err;
+    int err = fvif_submit_upload(s, cu_f, ref_pic, dist_pic, pic_stream);
+    for (int scale = 0; scale < FVIF_SCALES && !err; scale++) {
+        if (scale > 0)
+            err = fvif_launch_decimate(cu_f, s, scale, pic_stream);
+        if (!err)
+            err = fvif_launch_scale(cu_f, s, scale, pic_stream);
     }
+    if (err)
+        return err;
 
-    /* Sync over to our event-driven stream + D2H copy partials. */
+    /* Sync over to our event-driven stream + D2H copy of the row sums. */
     return fvif_submit_download(fex, s, cu_f, pic_stream);
 }
 
@@ -564,22 +540,16 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         return sync_err;
     }
 
-    double scores[8];
-    for (int i = 0; i < 4; i++) {
-        double n = 0.0;
-        double d = 0.0;
-        for (unsigned j = 0; j < s->wg_count[i]; j++) {
-            n += (double)s->num_host[i][j];
-            d += (double)s->den_host[i][j];
-        }
-        scores[2 * i + 0] = n;
-        scores[2 * i + 1] = d;
-    }
+    /* compute_vif(): each scale's num and den are the fp32 sums of
+     * vif_statistic_s(), widened to double. */
+    double scores[2 * FVIF_SCALES];
+    for (size_t i = 0u; i < FVIF_SCALES; i++)
+        fvif_sum_rows(s->rows_host[i], s->scale_h[i], &scores[2u * i], &scores[2u * i + 1u]);
 
-    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    const size_t scale_start = s->vif_skip_scale0 ? 1u : 0u;
     double score_num = 0.0;
     double score_den = 0.0;
-    for (unsigned scale = scale_start; scale < 4u; ++scale) {
+    for (size_t scale = scale_start; scale < FVIF_SCALES; ++scale) {
         score_num += scores[scale * 2u];
         score_den += scores[scale * 2u + 1u];
     }
@@ -587,6 +557,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     VmafVifScoreSet output = {
         .score_num = score_num,
         .score_den = score_den,
+        .minimum = {s->vif_scale1_min_val, s->vif_scale2_min_val, s->vif_scale3_min_val},
+        .use_minimums = true,
         .skip_scale0 = s->vif_skip_scale0,
         .debug = s->debug,
     };

@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1174,
+  "total_warnings": 1149,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -390,7 +390,6 @@
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/cuda/float_adm_cuda.c": 3,
     "core/src/feature/cuda/float_psnr_cuda.c": 5,
-    "core/src/feature/cuda/float_vif_cuda.c": 3,
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
@@ -478,7 +477,6 @@
     "core/test/test_cuda_float_moment_parity.c": 20,
     "core/test/test_cuda_float_ms_ssim_parity.c": 22,
     "core/test/test_cuda_float_psnr_parity.c": 20,
-    "core/test/test_cuda_float_vif_parity.c": 22,
     "core/test/test_cuda_motion3_parity.c": 24,
     "core/test/test_cuda_motion_v2_parity.c": 17,
     "core/test/test_cuda_pic_preallocation.c": 44,
@@ -865,6 +863,29 @@
         }
       },
       "previous_baseline_sha256": "239e111d2866f4a6293b680ec7597df4345942c09529a3ee96cce04c6f63806f"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/float_vif_cuda.c",
+        "core/test/test_cuda_float_vif_parity.c",
+        "core/test/test_float_vif_device_math.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/float_vif_cuda.c": {
+          "warnings": [
+            3,
+            0
+          ]
+        },
+        "core/test/test_cuda_float_vif_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "caf21f0a2ea690b4a9360daa0d6c26ec802e8d84e0a1ed646595d6ea7a28ef1f"
     }
   ]
 }

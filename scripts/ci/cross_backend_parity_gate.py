@@ -217,6 +217,8 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # The CPU, CUDA and SYCL cells are exact instead (EXACT_TWINS, ADR-1409,
     # ADR-1411) and never read this value.
     "float_motion": 5e-5,
+    # The CPU <-> CUDA cell is exact instead (EXACT_TWINS, ADR-1412) and
+    # never reads this value.
     "float_vif": 5e-5,
     "float_adm": 5e-5,
     # Transcendentals / DCT — relaxed contract per ADR-0187 / ADR-0188.

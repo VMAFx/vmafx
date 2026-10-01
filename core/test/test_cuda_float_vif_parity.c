@@ -6,32 +6,34 @@
  */
 
 /*
- * ADR-0947 — float_vif CPU vs. CUDA parity test (round 3).
+ * float_vif CPU vs. CUDA parity (ADR-0947; exact since ADR-1412).
  *
- * The float-path VIF extractor is implemented independently in
- * core/src/feature/float_vif.c (CPU) and
- * core/src/feature/cuda/float_vif_cuda.c (CUDA).  Both emit the four
- * VMAF_feature_vif_scale[0..3]_score features.  Before this test the
- * integer-VIF path had a parity gate (ADR-0597) but the float twin did
- * not — a SIMD pivot on either CPU or CUDA could silently drift any of
- * the four scales without surfacing in the integer gate.
+ * The float-path VIF extractor is implemented in core/src/feature/float_vif.c
+ * (CPU) and core/src/feature/cuda/float_vif_cuda.c (CUDA). Since ADR-1412 the
+ * twin computes the CPU's arithmetic and adds in the CPU's order, so this test
+ * asserts equality, not a tolerance: every output of every frame has the
+ * CPU's bits.
  *
- * This test allocates a 256x144 YUV420P 8-bpc synthetic fixture
- * (sufficient for the 17-tap Gaussian and 4-scale pyramid; smallest
- * scale is /8), feeds 3 frames through each backend, and asserts that
- * all four `VMAF_feature_vif_scale[0..3]_score` features at frame
- * index 1 agree to within 1e-4 (places=4, ADR-0214 cross-backend
- * gate).
+ * Cases: the default options on the build's fixture (256x144, or 960x540 in
+ * the `_large` variant); `debug=true`, which adds the frame ratio and the
+ * eleven numerator / denominator sums; the options a model sets
+ * (`vif_enhn_gain_limit`, `vif_sigma_nsq`, ADR-1217), `vif_skip_scale0`, and
+ * the per-scale floors (`vif_scale1..3_min_val`); 10-bit input; and a 50x38
+ * frame, whose planes are smaller than the kernels' 16x16 tiles and not a
+ * multiple of them at any scale.
  *
- * Skip behaviour: if vmaf_cuda_state_init() fails (no driver / no
- * device) the test emits "[skip: no CUDA device]" and passes.
+ * Before ADR-1412 the default case was up to 8.8e-6 from the CPU on this fixture
+ * (the kernel carried a table of Gaussian taps that is not the one
+ * vif_get_filter() computes), so every case here fails on the old twin.
+ *
+ * Skip behaviour: if vmaf_cuda_state_init() fails (no driver / no device) the
+ * test emits "[skip: no CUDA device]" and passes.
  */
 
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "test.h"
 
@@ -45,314 +47,303 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
+#define MAX_KEYS 15u
+#define MAX_OPTS 3u
 
-#define PARITY_TOL 1e-4
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
-static const char *const VIF_SCALE_FEATURES[] = {
-    "VMAF_feature_vif_scale0_score",
-    "VMAF_feature_vif_scale1_score",
-    "VMAF_feature_vif_scale2_score",
-    "VMAF_feature_vif_scale3_score",
-};
-#define NUM_VIF_SCALES 4u
+typedef struct VifOption {
+    const char *key;
+    const char *value;
+} VifOption;
 
-/* ADR-1217 — the values model/vmaf_float_v0.6.1neg.json actually ships
- * (`vif_enhn_gain_limit = 1.0` on all four VIF scales), plus a non-default
- * neural-noise variance.  Both are VMAF_OPT_FLAG_FEATURE_PARAM, so the score
- * is filed under a derived key: alias base + `_<alias>_<%g value>` per option,
- * sorted by option NAME (`vif_enhn_gain_limit` before `vif_sigma_nsq`). */
-#define NEG_EGL "1.0"
-#define NEG_SNSQ "1.5"
-static const char *const VIF_SCALE_FEATURES_SSCLZ[] = {
-    "vif_scale0_ssclz",
-    "vif_scale1_ssclz",
-    "vif_scale2_ssclz",
-    "vif_scale3_ssclz",
-};
+typedef struct ParityCase {
+    const char *name;
+    unsigned w;
+    unsigned h;
+    unsigned bpc;
+    VifOption opts[MAX_OPTS];
+    unsigned n_keys;
+    const char *keys[MAX_KEYS];
+} ParityCase;
 
-static const char *const VIF_SCALE_FEATURES_NEG[] = {
-    "vif_scale0_egl_1_snsq_1.5",
-    "vif_scale1_egl_1_snsq_1.5",
-    "vif_scale2_egl_1_snsq_1.5",
-    "vif_scale3_egl_1_snsq_1.5",
-};
+typedef struct Scores {
+    double v[NUM_FRAMES][MAX_KEYS];
+} Scores;
 
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    const unsigned peak = (1u << pic->bpc) - 1u;
+    uint8_t *line = (uint8_t *)pic->data[plane] + (size_t)row * (size_t)pic->stride[plane];
+    if (pic->bpc <= 8u) {
+        line[col] = (uint8_t)(v & peak);
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)(v & peak);
+    }
+}
+
+/* A gradient with a frame-dependent phase for the reference; the distorted
+ * frame adds a small periodic error. Chroma differs from luma so an
+ * accidental chroma read shows (VIF is luma only). */
+static int fill_picture(VmafPicture *pic, const ParityCase *c, unsigned frame_idx, bool distorted)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, c->bpc, c->w, c->h);
     if (err)
         return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
+    const unsigned gain = 1u << (c->bpc - 8u);
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 7u) & 0xFFu);
+            unsigned v = (row + col + frame_idx * 7u) * gain + (row * col) % gain;
+            if (distorted)
+                v += ((row * 2u + col + frame_idx * 3u) % 13u) * gain;
+            put_sample(pic, 0u, row, col, v);
         }
     }
-    /* Distinct chroma pattern to surface accidental chroma reads
-     * (VIF is luma-only by design — see ADR-0597). */
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] = (uint8_t)((row * 3u + col + p * 17u) & 0xFFu);
-            }
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                put_sample(pic, p, row, col, (row * 3u + col * 5u + p * 17u + frame_idx) * gain);
         }
     }
     return 0;
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static char *feed_and_read(VmafContext *vmaf, const ParityCase *c, Scores *out)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 7u) & 0xFFu;
-            const unsigned noise = ((row * 2u + col + frame_idx * 3u) % 13u);
-            y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row + col * 5u + p * 23u + frame_idx) & 0xFFu);
-            }
-        }
-    }
-    return 0;
-}
-
-static char *run_cpu(int opt_mode, const char *const *keys, double *out_scores)
-{
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    VmafFeatureDictionary *opts = NULL;
-    if (opt_mode == 1) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
-        mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
-        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
-        mu_assert("CPU: dictionary_set(vif_sigma_nsq) failed", !err);
-    } else if (opt_mode == 2) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
-        mu_assert("CPU: dictionary_set(vif_skip_scale0) failed", !err);
-    }
-
-    err = vmaf_use_feature(vmaf, "float_vif", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
-
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CPU: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CPU: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
+        VmafPicture ref;
+        VmafPicture dist;
+        mu_assert("fill reference failed", !fill_picture(&ref, c, i, false));
+        mu_assert("fill distorted failed", !fill_picture(&dist, c, i, true));
+        mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, i));
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[s], &out_scores[s], 1u);
-        mu_assert("CPU: vmaf_feature_score_at_index(vif_scale[i], idx=1) failed", !err);
+    mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        for (unsigned k = 0; k < c->n_keys; k++) {
+            if (vmaf_feature_score_at_index(vmaf, c->keys[k], &out->v[i][k], i)) {
+                (void)fprintf(stderr, "\n%s: no score for %s at frame %u\n", c->name, c->keys[k],
+                              i);
+                return "vmaf_feature_score_at_index failed";
+            }
+        }
     }
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_cuda(int opt_mode, const char *const *keys, double *out_scores, int *skipped)
+static char *use_feature(VmafContext *vmaf, const ParityCase *c, const char *extractor)
+{
+    VmafFeatureDictionary *opts = NULL;
+    for (unsigned i = 0; i < MAX_OPTS && c->opts[i].key; i++) {
+        mu_assert("vmaf_feature_dictionary_set failed",
+                  !vmaf_feature_dictionary_set(&opts, c->opts[i].key, c->opts[i].value));
+    }
+    const int err = vmaf_use_feature(vmaf, extractor, opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
+    mu_assert("vmaf_use_feature failed", !err);
+    return NULL;
+}
+
+static char *run_cpu(const ParityCase *c, Scores *out)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    mu_assert_msg(use_feature(vmaf, c, "float_vif"));
+    mu_assert_msg(feed_and_read(vmaf, c, out));
+    mu_assert("CPU: vmaf_close failed", !vmaf_close(vmaf));
+    return NULL;
+}
+
+static char *run_cuda(const ParityCase *c, Scores *out, int *skipped)
 {
     *skipped = 0;
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++)
-        out_scores[s] = NAN;
-
-    int err = 0;
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (vmaf_cuda_state_init(&cu_state, cuda_cfg) != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         *skipped = 1;
         return NULL;
     }
-
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    VmafFeatureDictionary *opts = NULL;
-    if (opt_mode == 1) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
-        mu_assert("CUDA: dictionary_set(vif_enhn_gain_limit) failed", !err);
-        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
-        mu_assert("CUDA: dictionary_set(vif_sigma_nsq) failed", !err);
-    } else if (opt_mode == 2) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
-        mu_assert("CUDA: dictionary_set(vif_skip_scale0) failed", !err);
-    }
-
-    err = vmaf_use_feature(vmaf, "float_vif_cuda", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CUDA: vmaf_use_feature(float_vif_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CUDA: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CUDA: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
-
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[s], &out_scores[s], 1u);
-        mu_assert("CUDA: vmaf_feature_score_at_index failed", !err);
-    }
-
+    mu_assert("CUDA: vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !vmaf_cuda_import_state(vmaf, cu_state));
+    mu_assert_msg(use_feature(vmaf, c, "float_vif_cuda"));
+    mu_assert_msg(feed_and_read(vmaf, c, out));
     mu_assert("CUDA: vmaf_close failed", !vmaf_close(vmaf));
     mu_assert("CUDA: vmaf_cuda_state_free failed", !vmaf_cuda_state_free(cu_state));
     return NULL;
 }
 
-static char *test_float_vif_cpu_cuda_parity(void)
+/* Every output of every frame equal, bit for bit. */
+static char *check_case(const ParityCase *c)
 {
-    double cpu_scores[NUM_VIF_SCALES] = {0};
-    double cuda_scores[NUM_VIF_SCALES] = {0};
+    static Scores cpu;
+    static Scores cuda;
     int skipped = 0;
-
-    char *msg = run_cpu(0, VIF_SCALE_FEATURES, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_cuda(0, VIF_SCALE_FEATURES, cuda_scores, &skipped);
-    if (msg)
-        return msg;
+    mu_assert_msg(run_cpu(c, &cpu));
+    mu_assert_msg(run_cuda(c, &cuda, &skipped));
     if (skipped)
         return NULL;
 
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        mu_assert("CPU float_vif scale score is non-finite", isfinite(cpu_scores[s]));
-        mu_assert("CUDA float_vif scale score is non-finite", isfinite(cuda_scores[s]));
-
-        const double delta = fabs(cpu_scores[s] - cuda_scores[s]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(
-                stderr,
-                "\nfloat_vif parity FAIL scale=%u: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n", s,
-                cpu_scores[s], cuda_scores[s], delta, PARITY_TOL);
+    unsigned mismatches = 0u;
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        for (unsigned k = 0; k < c->n_keys; k++) {
+            mu_assert("CPU float_vif output is non-finite", isfinite(cpu.v[i][k]));
+            if (cpu.v[i][k] == cuda.v[i][k])
+                continue;
+            mismatches++;
+            (void)fprintf(stderr, "\n%s frame %u %s: cpu=%.17g cuda=%.17g delta=%.3e\n", c->name, i,
+                          c->keys[k], cpu.v[i][k], cuda.v[i][k], fabs(cpu.v[i][k] - cuda.v[i][k]));
         }
-        mu_assert("float_vif CPU vs. CUDA scale delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
     }
+    mu_assert("float_vif_cuda differs from the CPU extractor", mismatches == 0u);
     return NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/* ADR-1217 — vif_enhn_gain_limit / vif_sigma_nsq must reach the kernel.*/
-/*                                                                     */
-/* The CUDA compute kernel hardcoded both to their defaults, so a       */
-/* non-default value was accepted, folded into the derived feature      */
-/* name, and then silently ignored — the NEG model's                    */
-/* vif_enhn_gain_limit = 1.0 published un-clamped scores under NEG      */
-/* feature keys. The default-options test above cannot see this.        */
-/* ------------------------------------------------------------------ */
-static char *test_float_vif_options_reach_kernel(void)
+#define SCALE_KEYS(suffix)                                                                         \
+    "vif_scale0" suffix, "vif_scale1" suffix, "vif_scale2" suffix, "vif_scale3" suffix
+
+static char *test_default_options_exact(void)
 {
-    double cpu_scores[NUM_VIF_SCALES] = {0};
-    double cuda_scores[NUM_VIF_SCALES] = {0};
-    int skipped = 0;
+    static const ParityCase c = {
+        .name = "default",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 8u,
+        .n_keys = 4u,
+        .keys = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
+                 "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
+    };
+    return check_case(&c);
+}
 
-    char *msg = run_cpu(1, VIF_SCALE_FEATURES_NEG, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_cuda(1, VIF_SCALE_FEATURES_NEG, cuda_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
+/* debug=true publishes the frame ratio and every per-scale sum the ratio is
+ * formed from; the sums are the reference's fp32 accumulators. */
+static char *test_debug_outputs_exact(void)
+{
+    static const ParityCase c = {
+        .name = "debug",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 8u,
+        .opts = {{"debug", "true"}},
+        .n_keys = 15u,
+        .keys = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
+                 "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score", "vif", "vif_num",
+                 "vif_den", "vif_num_scale0", "vif_den_scale0", "vif_num_scale1", "vif_den_scale1",
+                 "vif_num_scale2", "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"},
+    };
+    return check_case(&c);
+}
 
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        mu_assert("CPU float_vif NEG score is non-finite", isfinite(cpu_scores[s]));
-        mu_assert("CUDA float_vif NEG score is non-finite", isfinite(cuda_scores[s]));
+/* ADR-1217 — vif_enhn_gain_limit / vif_sigma_nsq must reach the kernel: the
+ * values model/vmaf_float_v0.6.1neg.json ships (`vif_enhn_gain_limit = 1.0`)
+ * plus a non-default neural-noise variance that is not a power of two, so the
+ * fp64 arithmetic around vif_sigma_nsq matters. Both are feature parameters,
+ * so the score is filed under a derived key: alias base + `_<alias>_<%g>` per
+ * option, sorted by option name. */
+static char *test_model_options_exact(void)
+{
+    static const ParityCase c = {
+        .name = "egl=1 snsq=1.5",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 8u,
+        .opts = {{"vif_enhn_gain_limit", "1.0"}, {"vif_sigma_nsq", "1.5"}},
+        .n_keys = 4u,
+        .keys = {SCALE_KEYS("_egl_1_snsq_1.5")},
+    };
+    return check_case(&c);
+}
 
-        const double delta = fabs(cpu_scores[s] - cuda_scores[s]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_vif egl=%s snsq=%s parity FAIL scale=%u: cpu=%.8f cuda=%.8f "
-                          "delta=%.2e tol=%.2e\n",
-                          NEG_EGL, NEG_SNSQ, s, cpu_scores[s], cuda_scores[s], delta, PARITY_TOL);
-        }
-        mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
-                  delta <= PARITY_TOL);
-    }
+static char *test_skip_scale0_exact(void)
+{
+    static const ParityCase c = {
+        .name = "vif_skip_scale0",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 8u,
+        .opts = {{"vif_skip_scale0", "true"}},
+        .n_keys = 4u,
+        .keys = {SCALE_KEYS("_ssclz")},
+    };
+    mu_assert_msg(check_case(&c));
+
+    static Scores cpu;
+    mu_assert_msg(run_cpu(&c, &cpu));
+    mu_assert("float_vif scale 0 must be exactly 0 with vif_skip_scale0=true", cpu.v[1][0] == 0.0);
     return NULL;
 }
 
-static char *test_float_vif_skip_scale0_parity(void)
+/* The per-scale floors of the CPU option table: a ratio below the floor is
+ * published as the floor. 1.0 lifts every frame of scale 1; 0.5 leaves
+ * scale 3 alone. */
+static char *test_scale_minimums_exact(void)
 {
-    double cpu_scores[NUM_VIF_SCALES] = {0};
-    double cuda_scores[NUM_VIF_SCALES] = {0};
-    int skipped = 0;
+    static const ParityCase c = {
+        .name = "min_val",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 8u,
+        .opts = {{"vif_scale1_min_val", "1.0"}, {"vif_scale3_min_val", "0.5"}},
+        .n_keys = 4u,
+        .keys = {SCALE_KEYS("_s1miv_1_s3miv_0.5")},
+    };
+    mu_assert_msg(check_case(&c));
 
-    char *msg = run_cpu(2, VIF_SCALE_FEATURES_SSCLZ, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_cuda(2, VIF_SCALE_FEATURES_SSCLZ, cuda_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        mu_assert("CPU float_vif ssclz score is non-finite", isfinite(cpu_scores[s]));
-        mu_assert("CUDA float_vif ssclz score is non-finite", isfinite(cuda_scores[s]));
-
-        if (s == 0) {
-            mu_assert("float_vif CPU scale0 score should be exactly 0.0 with vif_skip_scale0=true",
-                      cpu_scores[s] == 0.0);
-            mu_assert("float_vif CUDA scale0 score should be exactly 0.0 with vif_skip_scale0=true",
-                      cuda_scores[s] == 0.0);
-        }
-
-        const double delta = fabs(cpu_scores[s] - cuda_scores[s]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_vif ssclz parity FAIL scale=%u: cpu=%.8f cuda=%.8f "
-                          "delta=%.2e tol=%.2e\n",
-                          s, cpu_scores[s], cuda_scores[s], delta, PARITY_TOL);
-        }
-        mu_assert("float_vif with vif_skip_scale0 drifts from the CPU reference",
-                  delta <= PARITY_TOL);
-    }
+    static Scores cpu;
+    mu_assert_msg(run_cpu(&c, &cpu));
+    mu_assert("vif_scale1_min_val=1.0 must publish 1.0 for scale 1", cpu.v[1][1] == 1.0);
     return NULL;
+}
+
+static char *test_10bit_exact(void)
+{
+    static const ParityCase c = {
+        .name = "10-bit",
+        .w = FIXTURE_W,
+        .h = FIXTURE_H,
+        .bpc = 10u,
+        .n_keys = 4u,
+        .keys = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
+                 "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
+    };
+    return check_case(&c);
+}
+
+/* 50x38 halves to 25x19, 12x9 and 6x4: no scale is a multiple of the 16x16
+ * block, and from scale 2 on the plane is smaller than one tile, so the
+ * padding loads rely on the index clamp. */
+static char *test_small_odd_frame_exact(void)
+{
+    static const ParityCase c = {
+        .name = "50x38",
+        .w = 50u,
+        .h = 38u,
+        .bpc = 8u,
+        .opts = {{"debug", "true"}},
+        .n_keys = 15u,
+        .keys = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
+                 "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score", "vif", "vif_num",
+                 "vif_den", "vif_num_scale0", "vif_den_scale0", "vif_num_scale1", "vif_den_scale1",
+                 "vif_num_scale2", "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"},
+    };
+    return check_case(&c);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_vif_cpu_cuda_parity);
-    mu_run_test(test_float_vif_options_reach_kernel);
-    mu_run_test(test_float_vif_skip_scale0_parity);
+    mu_run_test(test_default_options_exact);
+    mu_run_test(test_debug_outputs_exact);
+    mu_run_test(test_model_options_exact);
+    mu_run_test(test_skip_scale0_exact);
+    mu_run_test(test_scale_minimums_exact);
+    mu_run_test(test_10bit_exact);
+    mu_run_test(test_small_odd_frame_exact);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

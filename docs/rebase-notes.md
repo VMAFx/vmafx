@@ -56680,3 +56680,36 @@ CUDA twin's.
 No public C API or CLI syntax change. One new extractor option
 (`psnr_hvs_hip`: `enable_chroma`), documented in `docs/metrics/psnr-hvs.md`.
 No FFmpeg patch impact. CPU scores are unchanged.
+## ADR-1412 — float_vif_cuda computes the CPU's arithmetic and is bit-identical to it (2026-10-01)
+
+`fix/cuda-float-vif-cpu-arithmetic`, Research-1412, ADR-1412.
+
+- `core/src/feature/cuda/float_vif/float_vif_device.h` (new): the kernel
+  argument blocks and the per-pixel arithmetic, in plain C and CUDA C++.
+  `fvif_log2()` = `vif_tools.c::log2f_approx()` with `horner_s()` and
+  `log2_poly_s[]`; `fvif_pixel_statistic()` = `vif_pixel_statistic_s()`
+  (`vif_sigma_nsq` in fp64); `fvif_row_sum()` / `fvif_sum_rows()` = the two
+  loops of `vif_statistic_s()`. If upstream Netflix changes any of those, or
+  `vif_get_filter()`, or drops `VIF_OPT_FAST_LOG2` from `vif_options.h`,
+  change this header in the same PR; `core/test/test_float_vif_device_math.c`
+  (device-free, bit compare against `vif_statistic_s()` and `compute_vif()`)
+  and `core/test/test_cuda_float_vif_exact_contract.py` fail until it follows.
+- `core/src/feature/cuda/float_vif/float_vif_score.cu`: no tap table
+  (`FVIF_COEFF_S0..S3` are gone; the taps arrive in `FloatVifCudaTaps`), no
+  warp or block reduction. Three kernels, each with one by-value argument
+  block: `float_vif_compute` (stores two terms per pixel, column by column),
+  `float_vif_row_sums` (one thread per row), `float_vif_decimate`. Tile loads
+  go through `cuda_tile_index.h`.
+- `core/src/feature/cuda/float_vif_cuda.c`: `float_vif_init_taps()` calls
+  `vif_get_filter_size()` / `vif_get_filter()` as `float_vif.c::init()` does;
+  the readback is two floats per row per scale (`rows_host`). New options
+  `vif_scale1_min_val` / `vif_scale2_min_val` / `vif_scale3_min_val`, same
+  table entries as the CPU's.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_vif"] =
+  {"cuda"}`. On a conflict with another twin's entry keep both.
+- `core/test/test_cuda_float_vif_parity.c` is rewritten around a case table
+  and asserts equality.
+- No Netflix golden-data, public C API or FFmpeg patch impact. The
+  `float_vif_sycl`, `float_vif_hip` and `float_vif_metal` twins are untouched
+  and still hold the old tap table
+  (`T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`).

@@ -102,6 +102,12 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 EXACT_TWINS: dict[str, frozenset[str]] = {
     "float_motion": frozenset({"cuda", "sycl"}),
     "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
+    # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,
+    # evaluates ``vif_tools.c``'s statistic in its types (the polynomial
+    # ``log2f_approx()``, ``vif_sigma_nsq`` in fp64) and adds the terms of a
+    # row, then the rows, in the CPU's two fp32 accumulators. The other
+    # ``float_vif`` twins keep the places=4 tolerance.
+    "float_vif": frozenset({"cuda"}),
 }
 EXACT_TWIN_TOLERANCE = 0.0
 EXACT_TWIN_PRECISION = "max"
