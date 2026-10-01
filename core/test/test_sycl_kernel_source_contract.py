@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Protect fp64-free SpEED kernels, device-resident twins and explicit SYCL output captures."""
+"""Protect fp64-free SpEED kernels, device-resident twins and explicit SYCL output captures.
+
+Also pins the float motion SAD (ADR-1409, ADR-1411): the device adds the
+absolute differences of a row in one work-item, left to right, into one fp32
+accumulator, and the host adds the rows and divides in fp32 through
+float_motion_sad.h, as compute_motion_simd() does.
+"""
 
 from __future__ import annotations
 
@@ -242,6 +248,74 @@ def _motion_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+# ADR-1409 / ADR-1411: float_motion_sycl returns the CPU extractor's bits. The
+# CPU adds the absolute differences of a row into one float and the rows into
+# another; the order is the result, so the row kernel is one plain loop per
+# work-item and the host tail is the shared helper.
+FLOAT_MOTION = "float_motion_sycl.cpp"
+FLOAT_MOTION_SAD = "float_motion_sad.h"
+FLOAT_MOTION_SAD_PATH = ROOT / "core" / "src" / "feature" / FLOAT_MOTION_SAD
+FLOAT_MOTION_ROW_PIECES = (
+    "const float *cur = args.cur_blur + y * args.width;",
+    "const float *prev = args.prev_blur + y * args.width;",
+    "float accum = 0.0f;",
+    "for (unsigned j = 0; j < args.width; j++) {",
+    "const float diff = cur[j] - prev[j];",
+    "accum += diff < 0.0f ? -diff : diff;",
+)
+FLOAT_MOTION_ROW_LAUNCH = "cgh.parallel_for(sycl::range<1>(args.height),"
+FLOAT_MOTION_HOST_TAIL = "vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height)"
+# Any of these in the TU adds the SAD in an order the CPU does not use.
+FLOAT_MOTION_OTHER_REDUCTION = re.compile(
+    r"reduce_over_group|sycl::reduction|atomic_ref|joint_reduce|get_sub_group"
+)
+
+
+def _float_motion_sources() -> dict[str, str]:
+    return {
+        FLOAT_MOTION: (SYCL_ROOT / FLOAT_MOTION).read_text(encoding="utf-8"),
+        FLOAT_MOTION_SAD: FLOAT_MOTION_SAD_PATH.read_text(encoding="utf-8"),
+    }
+
+
+def _code(source: str) -> str:
+    """`source` without comments, so prose cannot satisfy or trip a check."""
+    return re.sub(r"/\*.*?\*/|//[^\n]*", " ", source, flags=re.S)
+
+
+def _float_motion_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    twin = _code(sources[FLOAT_MOTION])
+    row = _function_body(twin, "fm_row_sad")
+    for piece in FLOAT_MOTION_ROW_PIECES:
+        if piece not in row:
+            failures.append(f"{FLOAT_MOTION}: fm_row_sad() is not the CPU's row sum ({piece})")
+    if FLOAT_MOTION_ROW_LAUNCH not in twin:
+        failures.append(f"{FLOAT_MOTION}: the row SAD is not launched as one work-item per row")
+    if FLOAT_MOTION_OTHER_REDUCTION.search(twin):
+        failures.append(
+            f"{FLOAT_MOTION}: a group, sub-group or atomic reduction adds the SAD in an "
+            "order the CPU does not use"
+        )
+    if re.search(r"\bdouble\b", row):
+        failures.append(f"{FLOAT_MOTION}: fp64 type in the row SAD kernel")
+    collect = _function_body(twin, "collect_fex_sycl")
+    if FLOAT_MOTION_HOST_TAIL not in collect or "+=" in collect:
+        failures.append(
+            f"{FLOAT_MOTION}: collect must take the shared "
+            "vmaf_float_motion_score_from_row_sads() value and keep no sum of its own"
+        )
+    helper = _code(sources[FLOAT_MOTION_SAD])
+    for piece in (
+        "float accum = 0.0f;",
+        "accum += row_sad[i];",
+        "return (double)(accum / (float)(int)(w * h));",
+    ):
+        if piece not in helper:
+            failures.append(f"{FLOAT_MOTION_SAD}: not the CPU's sum over the rows ({piece})")
+    return failures
+
+
 class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
@@ -391,6 +465,62 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         sources = _motion_sources()
         sources[MOTION_PIPELINE] += "\nstatic double motion_scale;\n"
         self.assertTrue(any("fp64 type" in item for item in _motion_failures(sources)))
+
+    def test_live_float_motion_adds_the_sad_in_cpu_order(self) -> None:
+        self.assertEqual(_float_motion_failures(_float_motion_sources()), [])
+
+    def _float_motion_edit(self, name: str, old: str, new: str) -> dict[str, str]:
+        sources = _float_motion_sources()
+        self.assertIn(old, sources[name])
+        sources[name] = sources[name].replace(old, new, 1)
+        return sources
+
+    def test_group_reduced_float_motion_sad_is_detected(self) -> None:
+        sources = _float_motion_sources()
+        sources[FLOAT_MOTION] += (
+            "\nstatic float fm_group_sum(sycl::nd_item<2> item, float v)\n"
+            "{\n    return sycl::reduce_over_group(item.get_group(), v, sycl::plus<float>{});\n}\n"
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("an order the CPU does not use" in item for item in failures))
+
+    def test_strided_float_motion_row_sum_is_detected(self) -> None:
+        sources = self._float_motion_edit(
+            FLOAT_MOTION,
+            "for (unsigned j = 0; j < args.width; j++) {",
+            "for (unsigned j = lane; j < args.width; j += lanes) {",
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("not the CPU's row sum" in item for item in failures))
+
+    def test_blocked_float_motion_row_launch_is_detected(self) -> None:
+        sources = self._float_motion_edit(
+            FLOAT_MOTION,
+            FLOAT_MOTION_ROW_LAUNCH,
+            "cgh.parallel_for(sycl::range<2>(args.height, 4), [=](sycl::id<2> row) {",
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("one work-item per row" in item for item in failures))
+
+    def test_float_motion_host_sum_of_its_own_is_detected(self) -> None:
+        sources = self._float_motion_edit(
+            FLOAT_MOTION,
+            "    const double motion_score =\n"
+            "        vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height);\n",
+            "    double motion_score = 0.0;\n"
+            "    for (unsigned i = 0; i < s->height; i++) {\n"
+            "        motion_score += (double)s->h_row_sad[i];\n"
+            "    }\n",
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("keep no sum of its own" in item for item in failures))
+
+    def test_fp64_float_motion_row_total_is_detected(self) -> None:
+        sources = self._float_motion_edit(
+            FLOAT_MOTION_SAD, "float accum = 0.0f;", "double accum = 0.0;"
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("not the CPU's sum over the rows" in item for item in failures))
 
 
 if __name__ == "__main__":

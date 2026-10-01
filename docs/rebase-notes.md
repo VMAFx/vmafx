@@ -122,6 +122,40 @@
   bounded register usage (`REG <= 208`, on `sm_89` `REG <= 176`).
 - Closes `T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07` in `docs/state.md`.
 - No Netflix golden-data, public C API or FFmpeg patch impact.
+## ADR-1411 — `float_motion_sycl` adds its SAD in the CPU's order (2026-10-01)
+
+`fix/sycl-float-motion-cpu-float-sum`, ADR-1411 (follows ADR-1409).
+
+- `core/src/feature/sycl/float_motion_sycl.cpp`: the blur kernel
+  (`launch_float_motion`) writes the blurred plane only; `fm_store_sad()`,
+  its local accessor and the `prev_blur` / `sad_partials` / `compute_sad` /
+  `wg_count_x` members of `FmKernelArgs` are gone. The new
+  `launch_float_motion_row_sad()` runs `fm_row_sad()` with one work-item per
+  row (`sycl::range<1>(height)`, sub-group size 8), which adds
+  `|cur[j] - prev[j]|` left to right into one fp32 accumulator. That loop
+  shape is load-bearing: a group, sub-group, strided or atomic reduction
+  gives a different rounding and the twin stops matching the CPU. **On
+  rebase**: if the other side still has `fm_store_sad()` or
+  `sycl::reduce_over_group` in this TU, keep this side.
+- `collect()` reads `height` floats (`h_row_sad`) and only calls
+  `vmaf_float_motion_score_from_row_sads()`
+  (`core/src/feature/float_motion_sad.h`, added by ADR-1409). `reduce_sad()`
+  and the `double` sum over work-groups are gone.
+- If upstream Netflix changes `compute_motion_simd()`, `float_sad_line_c()`
+  or the order of `convolution_f32_c_s()`, mirror it in `fm_row_sad()`, the
+  blur helpers and the shared header in the same change. The HIP and Metal
+  twins still sum per block (`T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01`).
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_motion"]`
+  is `{"cuda", "sycl"}`, so the gate compares the CPU, CUDA and SYCL cells
+  with tolerance 0.
+- Depends on ADR-1367 (the SYCL strict FP line): with contraction on, the
+  blur is no longer the CPU's and the equality tests fail. The row kernel
+  must stay free of scratch memory (ADR-1395).
+- Tests: `core/test/test_sycl_float_motion_parity.c` (`==`, every frame,
+  8 / 10 / 12 bits, device), five planted regressions in
+  `core/test/test_sycl_kernel_source_contract.py`,
+  `scripts/ci/test_cross_backend_parity_gate.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 ## ADR-1409 — `float_motion_cuda` adds its SAD in the CPU's order (2026-10-01)
 
 `fix/cuda-float-motion-cpu-float-sum`, ADR-1409.

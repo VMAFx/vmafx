@@ -206,6 +206,16 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_cuda_float_motion_parity.c`,
   `core/test/test_float_motion_sad.c` and
   `core/test/test_cuda_kernel_source_contract.py` guard it.
+- **`float_motion_sycl` adds its SAD in the CPU's order ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md))**:
+  the same contract as the CUDA twin above. `fm_row_sad()` in
+  `core/src/feature/sycl/float_motion_sycl.cpp` is one plain left-to-right
+  loop per work-item, launched over `sycl::range<1>(height)` at sub-group
+  size 8, and `collect()` finishes through
+  `core/src/feature/float_motion_sad.h`. No group, sub-group or atomic
+  reduction may return to the TU, and the blur needs the SYCL strict FP line
+  (ADR-1367). `core/test/test_sycl_float_motion_parity.c` (`==`) and
+  `core/test/test_sycl_kernel_source_contract.py` guard it; the row kernel
+  must stay free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

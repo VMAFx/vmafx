@@ -11,6 +11,19 @@
  *  `motion` / `motion2` value is motion_clip()ped, i.e. scaled by
  *  `motion_fps_weight` and capped at `motion_max_val`, and
  *  `motion_force_zero` publishes zeros without touching the device.
+ *
+ *  Numerical contract (ADR-1367, ADR-1409, ADR-1411). Both steps are the CPU's
+ *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
+ *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
+ *     and one rounded fp32 add, taps in order, vertical pass then
+ *     horizontal. The TU builds with contraction off, so nothing is fused.
+ *   - the SAD is compute_motion_simd(): float_sad_line() adds the absolute
+ *     differences of one row, left to right, into one fp32 accumulator, and
+ *     the rows are added top to bottom into another. The result depends on
+ *     that order (at 1920x1080 it is up to 1.4e-4 from the exact sum), so
+ *     the row kernel runs one work-item per row over the whole row and the
+ *     host adds the rows (feature/float_motion_sad.h). A per-group partial
+ *     sum, which this file used to produce, cannot give that value.
  */
 
 #include <sycl/sycl.hpp>
@@ -26,6 +39,7 @@
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "feature/float_motion_sad.h"
 #include "feature_name.h"
 #include "log.h"
 #include "picture.h"
@@ -54,12 +68,9 @@ struct FloatMotionStateSycl {
     float *d_blur[2];
     int cur_blur;
 
-    /* Per-WG float SAD partials. */
-    float *d_sad;
-    float *h_sad;
-    unsigned wg_count_x;
-    unsigned wg_count_y;
-    unsigned wg_count;
+    /* float_sad_line() of every row: `height` fp32 sums. */
+    float *d_row_sad;
+    float *h_row_sad;
 
     bool has_pending;
     unsigned pending_index;
@@ -90,13 +101,17 @@ static constexpr float FM_FILT[5] = {
 struct FmKernelArgs {
     const void *ref;
     float *cur_blur;
-    const float *prev_blur;
-    float *sad_partials;
     unsigned width;
     unsigned height;
     unsigned bpc;
-    unsigned compute_sad;
-    unsigned wg_count_x;
+};
+
+struct FmRowSadArgs {
+    const float *cur_blur;
+    const float *prev_blur;
+    float *row_sad;
+    unsigned width;
+    unsigned height;
 };
 
 } // namespace
@@ -201,14 +216,14 @@ static inline void fm_filter_vertical(sycl::nd_item<2> item,
 namespace
 {
 
-static inline float fm_filter_horizontal(sycl::nd_item<2> item,
-                                         const sycl::local_accessor<float, 2> &vertical,
-                                         const FmKernelArgs &args)
+static inline void fm_filter_horizontal(sycl::nd_item<2> item,
+                                        const sycl::local_accessor<float, 2> &vertical,
+                                        const FmKernelArgs &args)
 {
     const int x = (int)item.get_global_id(1);
     const int y = (int)item.get_global_id(0);
     if (!std::cmp_less(x, args.width) || !std::cmp_less(y, args.height)) {
-        return 0.0f;
+        return;
     }
     const unsigned local_x = item.get_local_id(1);
     const unsigned local_y = item.get_local_id(0);
@@ -216,13 +231,7 @@ static inline float fm_filter_horizontal(sycl::nd_item<2> item,
     for (int k = 0; k < 5; k++) {
         blurred += FM_FILT[k] * vertical[local_y][local_x + k];
     }
-    const size_t offset = (size_t)y * args.width + (size_t)x;
-    args.cur_blur[offset] = blurred;
-    if (args.compute_sad == 0u) {
-        return 0.0f;
-    }
-    const float diff = blurred - args.prev_blur[offset];
-    return diff < 0.0f ? -diff : diff;
+    args.cur_blur[(size_t)y * args.width + (size_t)x] = blurred;
 }
 
 } // namespace
@@ -230,34 +239,20 @@ static inline float fm_filter_horizontal(sycl::nd_item<2> item,
 namespace
 {
 
-static inline void fm_store_sad(sycl::nd_item<2> item,
-                                const sycl::local_accessor<float, 1> &scratch, float abs_diff,
-                                const FmKernelArgs &args)
+/* float_sad_line() of row `y`: the absolute differences added left to right
+ * into one fp32 accumulator. The order is the result (ADR-1409); do not
+ * split, stride or reduce this loop. One scalar accumulator and two USM
+ * pointers, so the kernel needs no scratch memory (ADR-1395). */
+static inline float fm_row_sad(const FmRowSadArgs &args, size_t y)
 {
-    const unsigned lid = item.get_local_linear_id();
-    const size_t group_index = item.get_group(0) * args.wg_count_x + item.get_group(1);
-    if (args.compute_sad == 0u) {
-        if (lid == 0) {
-            args.sad_partials[group_index] = 0.0f;
-        }
-        return;
+    const float *cur = args.cur_blur + y * args.width;
+    const float *prev = args.prev_blur + y * args.width;
+    float accum = 0.0f;
+    for (unsigned j = 0; j < args.width; j++) {
+        const float diff = cur[j] - prev[j];
+        accum += diff < 0.0f ? -diff : diff;
     }
-    sycl::sub_group const subgroup = item.get_sub_group();
-    const float subgroup_sum = sycl::reduce_over_group(subgroup, abs_diff, sycl::plus<float>{});
-    const uint32_t subgroup_id = subgroup.get_group_linear_id();
-    const uint32_t subgroup_lane = subgroup.get_local_linear_id();
-    const uint32_t subgroup_count = subgroup.get_group_linear_range();
-    if (subgroup_lane == 0) {
-        scratch[subgroup_id] = subgroup_sum;
-    }
-    item.barrier(sycl::access::fence_space::local_space);
-    if (lid == 0) {
-        float total = 0.0f;
-        for (uint32_t i = 0; i < subgroup_count; i++) {
-            total += scratch[i];
-        }
-        args.sad_partials[group_index] = total;
-    }
+    return accum;
 }
 
 } // namespace
@@ -272,8 +267,6 @@ static sycl::event launch_float_motion(sycl::queue &q, const FmKernelArgs &args)
     return q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<float, 2> const s_tile(sycl::range<2>(FM_TILE_H, FM_TILE_W), cgh);
         sycl::local_accessor<float, 2> const s_vert(sycl::range<2>(FM_WG_Y, FM_TILE_W), cgh);
-        constexpr int MAX_SUBGROUPS = FM_WG_X * FM_WG_Y;
-        sycl::local_accessor<float, 1> const s_sad(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
             sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FM_WG_Y, FM_WG_X)),
@@ -282,9 +275,28 @@ static sycl::event launch_float_motion(sycl::queue &q, const FmKernelArgs &args)
                 item.barrier(sycl::access::fence_space::local_space);
                 fm_filter_vertical(item, s_tile, s_vert);
                 item.barrier(sycl::access::fence_space::local_space);
-                const float abs_diff = fm_filter_horizontal(item, s_vert, args);
-                fm_store_sad(item, s_sad, abs_diff, args);
+                fm_filter_horizontal(item, s_vert, args);
             });
+    });
+}
+
+/* One work-item per row; `row_sad` receives `height` sums.
+ *
+ * Sub-group size 8: the lanes of a hardware thread are rows, so each loop
+ * step is two gathers, and the pass is bound by reading both blurred planes
+ * again. Narrow sub-groups put more threads on that. Measured on an Arc A380
+ * at 3840x2160 (ADR-1411), time of this kernel per frame: 0.70 ms at 8,
+ * 0.82 at 16, 1.12 at the compiler's choice (32). Two other exact shapes
+ * were no faster: a sub-group of 16 consecutive pixels per row summed lane
+ * by lane with select_from_group() (1.10 ms), and one work-group per row
+ * with 16-wide loads and a lane-uniform chain (0.80 ms). */
+static sycl::event launch_float_motion_row_sad(sycl::queue &q, const FmRowSadArgs &args)
+{
+    return q.submit([&](sycl::handler &cgh) {
+        cgh.parallel_for(sycl::range<1>(args.height),
+                         [=](sycl::id<1> row) VMAF_SYCL_REQD_SG_SIZE(8) {
+                             args.row_sad[row[0]] = fm_row_sad(args, row[0]);
+                         });
     });
 }
 
@@ -358,13 +370,11 @@ static int allocate_motion_buffers(FloatMotionStateSycl *s)
     const size_t blur_bytes = (size_t)s->width * s->height * sizeof(float);
     s->d_blur[0] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
     s->d_blur[1] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
-    s->wg_count_x = (unsigned)((s->width + FM_WG_X - 1) / FM_WG_X);
-    s->wg_count_y = (unsigned)((s->height + FM_WG_Y - 1) / FM_WG_Y);
-    s->wg_count = s->wg_count_x * s->wg_count_y;
-    const size_t sad_bytes = (size_t)s->wg_count * sizeof(float);
-    s->d_sad = static_cast<float *>(vmaf_sycl_malloc_device(state, sad_bytes));
-    s->h_sad = static_cast<float *>(vmaf_sycl_malloc_host(state, sad_bytes));
-    if (!s->h_ref || !s->d_ref || !s->d_blur[0] || !s->d_blur[1] || !s->d_sad || !s->h_sad) {
+    const size_t sad_bytes = (size_t)s->height * sizeof(float);
+    s->d_row_sad = static_cast<float *>(vmaf_sycl_malloc_device(state, sad_bytes));
+    s->h_row_sad = static_cast<float *>(vmaf_sycl_malloc_host(state, sad_bytes));
+    if (!s->h_ref || !s->d_ref || !s->d_blur[0] || !s->d_blur[1] || !s->d_row_sad ||
+        !s->h_row_sad) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -457,37 +467,24 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
     const unsigned prev_idx = 1u - cur_idx;
-    const unsigned compute_sad = (s->frame_index > 0) ? 1u : 0u;
     launch_float_motion(q, {.ref = s->d_ref,
                             .cur_blur = s->d_blur[cur_idx],
-                            .prev_blur = s->d_blur[prev_idx],
-                            .sad_partials = s->d_sad,
                             .width = s->width,
                             .height = s->height,
-                            .bpc = s->bpc,
-                            .compute_sad = compute_sad,
-                            .wg_count_x = s->wg_count_x});
-    if (compute_sad != 0u) {
-        q.memcpy(s->h_sad, s->d_sad, (size_t)s->wg_count * sizeof(float));
+                            .bpc = s->bpc});
+    if (s->frame_index > 0) {
+        /* The first frame has no previous blur: no SAD, nothing to read. */
+        launch_float_motion_row_sad(q, {.cur_blur = s->d_blur[cur_idx],
+                                        .prev_blur = s->d_blur[prev_idx],
+                                        .row_sad = s->d_row_sad,
+                                        .width = s->width,
+                                        .height = s->height});
+        q.memcpy(s->h_row_sad, s->d_row_sad, (size_t)s->height * sizeof(float));
     }
 
     s->pending_index = index;
     s->has_pending = true;
     return 0;
-}
-
-} // namespace
-
-namespace
-{
-
-static double reduce_sad(const FloatMotionStateSycl *s)
-{
-    double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++) {
-        total += (double)s->h_sad[i];
-    }
-    return total / ((double)s->width * s->height);
 }
 
 } // namespace
@@ -551,7 +548,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return err;
     }
 
-    const double motion_score = reduce_sad(s);
+    /* compute_motion_simd()'s tail: the rows top to bottom into one float and
+     * the float division (ADR-1409). */
+    const double motion_score =
+        vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height);
 
     if (s->frame_index > 1) {
         /* motion2 of the previous frame: the smaller of its two SADs, then
@@ -611,10 +611,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
             vmaf_sycl_free(s->sycl_state, s->d_blur[0]);
         if (s->d_blur[1])
             vmaf_sycl_free(s->sycl_state, s->d_blur[1]);
-        if (s->d_sad)
-            vmaf_sycl_free(s->sycl_state, s->d_sad);
-        if (s->h_sad)
-            vmaf_sycl_free(s->sycl_state, s->h_sad);
+        if (s->d_row_sad)
+            vmaf_sycl_free(s->sycl_state, s->d_row_sad);
+        if (s->h_row_sad)
+            vmaf_sycl_free(s->sycl_state, s->h_row_sad);
     }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);

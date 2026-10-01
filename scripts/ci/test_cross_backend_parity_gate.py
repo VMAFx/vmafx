@@ -857,7 +857,7 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
-        "float_motion": frozenset({"cuda"}),
+        "float_motion": frozenset({"cuda", "sycl"}),
         "psnr_hvs": frozenset({"cuda"}),
     } == EXACT_TWINS
     assert is_exact_pair("psnr_hvs", "cpu", "cuda")
@@ -877,8 +877,8 @@ def test_psnr_hvs_cuda_cell_is_exact_at_every_size() -> None:
         assert source == EXACT_TWIN_SOURCE
 
 
-def test_float_motion_cuda_cell_is_exact_and_other_twins_are_not() -> None:
-    """ADR-1409: only the CUDA twin adds its SAD in the CPU's order."""
+def test_float_motion_cuda_and_sycl_cells_are_exact_and_other_twins_are_not() -> None:
+    """ADR-1409, ADR-1411: the CUDA and SYCL twins add their SAD in the CPU's order."""
 
     def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
         return resolve_cell_tolerance(
@@ -891,9 +891,9 @@ def test_float_motion_cuda_cell_is_exact_and_other_twins_are_not() -> None:
             backends=(backend_a, backend_b),
         )
 
-    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+    for pair in (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "sycl"), ("cuda", "sycl")):
+        assert cell(*pair) == (0.0, EXACT_TWIN_SOURCE), pair
+    for pair in (("cpu", "hip"), ("sycl", "hip")):
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["float_motion"]), pair
         assert source == "default", pair

@@ -1520,6 +1520,7 @@ nav:
         - "ADR-1408: hip-shared-frame-planes": adr/1408-hip-shared-frame-planes.md
         - "ADR-1409: float-motion-twins-cpu-float-sum": adr/1409-float-motion-twins-cpu-float-sum.md
         - "ADR-1410: sycl-cli-pinned-host-picture-pool": adr/1410-sycl-cli-pinned-host-picture-pool.md
+        - "ADR-1411: sycl-float-motion-cpu-float-sum": adr/1411-sycl-float-motion-cpu-float-sum.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

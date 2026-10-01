@@ -272,8 +272,8 @@ refused at init.
 | HIP            | Supported | `feature/hip/float_motion_hip.c` (ADR-0273)        |
 | Metal          | Supported | `feature/metal/float_motion_metal.mm`              |
 
-Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across the
-SYCL and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
+Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) on the HIP
+backend (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
 `float_motion_cuda` returns the CPU extractor's `motion`, `motion2` and
 `motion3` bit for bit at `--precision max`, at every frame size and sample
@@ -282,10 +282,20 @@ adds the absolute differences of a row into one `float`, the row sums into a
 second one, and divides in `float`; those running sums round at every step,
 so the score depends on the order of the additions. The CUDA twin adds each
 row on the device in that order and the rows on the host. A twin that sums
-per block instead, as the SYCL, HIP and Metal twins do, is closer to the
+per block instead, as the HIP and Metal twins do, is closer to the
 exact mean and differs from the CPU in the low digits: the CUDA twin did so
 by 3e-6 on the Netflix 576x324 pair, 2.4e-5 at 3840x2160 and 1.4e-4 on
 1920x1080 checkerboards before the change.
+
+`float_motion_sycl` does the same since
+[ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md): one work-item per
+row adds the row on the device, the host adds the rows, and `motion` and
+`motion2` equal the CPU's on every frame (measured on an Arc A380: the
+Netflix pair, both 1080p checkerboard pairs, 200 frames of BBB 3840x2160, and
+the Netflix pair at 10, 12 and 16 bits). It had the same differences as the
+CUDA twin before. The second pass over the blurred planes costs 0.38 ms per
+3840x2160 frame on that GPU (3.85 to 4.23 ms). The SYCL twin provides no
+`motion3`; that score still comes from the CPU extractor.
 
 `float_motion_cuda` emits all three scores, as the CPU does: its `motion3`
 is the CPU's blend of `motion2` (`motion_fps_weight`, then the

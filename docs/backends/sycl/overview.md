@@ -1107,6 +1107,56 @@ Three parity gaps between SYCL twins and the CPU reference were resolved:
   `integer_motion_v2.c::extract`. `flush()` derives `motion2_v2` and
   `motion3_v2` with CPU parity including one-frame inputs.
 
+## `float_motion_sycl` matches the CPU `float_motion` exactly (2026-10-01)
+
+`float_motion_sycl` returns the CPU extractor's `motion` and `motion2` bit for
+bit ([ADR-1411](../../adr/1411-sycl-float-motion-cpu-float-sum.md)). It used
+to sum the absolute differences of each 32x4 work-group on the device and the
+groups in `double` on the host. The CPU extractor adds a row into one `float`,
+the row sums into another, and divides in `float`; the result depends on that
+order. The twin now adds each row on the device in the CPU's order, one
+work-item per row, and the host adds the rows
+(`core/src/feature/float_motion_sad.h`, shared with the CUDA twin).
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, frames identical and largest
+difference before and after:
+
+| Fixture | Before | After |
+|---|---|---|
+| Netflix 576x324, 48 frames | 1 of 48, 3.1e-6 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 1 of 3, 1.36e-4 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 1 of 3, 1.36e-4 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 1 of 50, 2.4e-5 (first 50) | 200 of 200 |
+
+The one frame that matched before is frame 0, whose scores are 0. Also
+identical after the change: the Netflix pair at 10, 12 and 16 bits and as
+4:2:2 10-bit, and with `motion_fps_weight=0.5:motion_max_val=3`. The
+reference was a GCC build of the CPU extractor; the CPU extractor of the icx
+build gives the same values.
+
+The row pass reads both blurred planes a second time. Through the `vmaf`
+tool on the A380 that costs 0.38 ms per 3840x2160 frame (3.85 to 4.23 ms,
+medians of 25 paired 200-frame runs; the untouched `float_psnr_sycl` read
+3.37 and 3.38) and 0.07 ms per 576x324 frame (0.15 to 0.22). The kernel
+requests a sub-group size of 8, the fastest of the exact shapes measured
+(the ADR lists them).
+
+The parity gate compares this twin with tolerance 0
+([cross-backend gate](../../development/cross-backend-gate.md)). The twin
+still provides no `motion3`; that score comes from the CPU extractor.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary build/tools/vmaf --features float_motion --backends cpu sycl \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324
+```
+
+The cell reports `exact:ADR-1397` and a largest difference of 0; it does so
+on all four fixtures above.
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

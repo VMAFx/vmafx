@@ -31,7 +31,7 @@ explicitly accepts its skip.
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (CPU ↔ SYCL, CUDA ↔ SYCL) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `psnr_hvs` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1397 (the twin reproduces the CPU's running float sum) |
-  | `float_motion` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1409 (the twin adds its SAD in the CPU's order); the row above stays for the other twins |
+  | `float_motion` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411 (the twins add their SAD in the CPU's order); the row above stays for HIP and Metal |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
@@ -69,7 +69,11 @@ explicitly accepts its skip.
   for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md)).
   `float_motion_cuda` adds the absolute differences of each row on the device
   in the CPU's order and the rows on the host, with the same result
-  ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)).
+  ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)), and
+  `float_motion_sycl` does so too
+  ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md), measured on an
+  Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
+  frames of BBB 3840x2160).
   `EXACT_TWINS` in `scripts/ci/cross_backend_calibration.py` lists such twins.
   A cell whose two sides are the CPU extractor or a listed twin is compared
   with tolerance `0`, at every frame size and ahead of any calibration row,
