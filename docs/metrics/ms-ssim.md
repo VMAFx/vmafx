@@ -134,6 +134,48 @@ core/build/tools/vmaf \
     --no_prediction --feature 'float_ms_ssim:enable_chroma=true' --output /dev/stdout
 ```
 
+## Precision of the GPU twins
+
+`float_ms_ssim_cuda` and `float_ms_ssim_sycl` compute the CPU extractor's
+arithmetic: the decimate fuses each tap as `ms_ssim_decimate.c` does, the
+Gaussian window sums are fp32 products added as the CPU's `double` sum is,
+and the luminance, contrast and structure terms use the CPU's operand types.
+The CUDA twin does so in `double`
+([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)); the SYCL twin, which
+may not use `double` on the device, carries those values as exact pairs of
+floats and adds the frame sums in 64-bit fixed point
+([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)).
+
+Measured on an Arc A380 at `--precision max` against `--backend cpu`,
+`float_ms_ssim_sycl`, frames identical and largest difference:
+
+| Fixture | Before | After |
+|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 6.9e-8 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 of 3, 1.06e-6 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 0 of 3, 2.98e-6 | 3 of 3 |
+| BBB 3840x2160 | 0 of 50, 1.23e-6 | 199 of 200, 1.1e-16 |
+
+With `enable_lcs` all 15 per-scale means are the CPU's on every frame (50
+BBB frames), and so are `float_ms_ssim_cb` / `float_ms_ssim_cr` with
+`enable_chroma`, and the score at 10, 12 and 16 bits. The reference in this
+table is a GCC build. The one BBB frame that differs does so in the last bit
+of the `double`: the twin's host combine calls the `pow()` of its own
+Intel-compiler build. Against the CPU extractor of its own binary the twin is
+identical on every frame. With `enable_db` the same holds for `log10()`
+(3.6e-15 on 3 of 48 Netflix frames against a GCC build).
+
+The match is exact in practice, not by construction: the CPU adds each
+frame's terms into a running `double`, the twins add them in another order,
+and the rounding of each per-scale mean to `float` absorbs the difference
+unless the mean sits within about one part in four million of a rounding
+boundary.
+
+The SYCL twin pays for this in time: 42.6 ms per 3840x2160 frame on the A380
+against 31.4 before (0.84 to 1.20 ms at 576x324); the CPU extractor takes 117
+ms on the same host. The HIP and Metal twins still use the old arithmetic and
+agree with the CPU to within 5e-5.
+
 ## See also
 
 - [SSIM](ssim.md) - single-scale structural similarity

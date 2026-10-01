@@ -871,6 +871,8 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
         "adm": frozenset({"cuda"}),
+        "float_ms_ssim": frozenset({"sycl"}),
+        "float_ms_ssim_lcs": frozenset({"sycl"}),
         "float_motion": frozenset({"cuda", "sycl"}),
         "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
         "float_vif": frozenset({"cuda"}),
@@ -963,6 +965,29 @@ def test_float_vif_cuda_cell_is_exact_and_other_twins_are_not() -> None:
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["float_vif"]), pair
         assert source == "default", pair
+
+
+def test_float_ms_ssim_sycl_cells_are_exact_and_other_twins_are_not() -> None:
+    """ADR-1414: the SYCL twin computes the CPU's arithmetic, per-scale means included."""
+
+    def cell(feature: str, backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            feature,
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    for feature in ("float_ms_ssim", "float_ms_ssim_lcs"):
+        assert cell(feature, "cpu", "sycl") == (0.0, EXACT_TWIN_SOURCE), feature
+        assert cell(feature, "sycl", "cpu") == (0.0, EXACT_TWIN_SOURCE), feature
+        for pair in (("cpu", "cuda"), ("cpu", "hip"), ("cuda", "sycl")):
+            tolerance, source = cell(feature, *pair)
+            assert _close(tolerance, FEATURE_TOLERANCE[feature]), (feature, pair)
+            assert source == "default", (feature, pair)
 
 
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:

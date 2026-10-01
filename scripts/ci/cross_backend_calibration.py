@@ -97,6 +97,14 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 #
 # ``EXACT_TWIN_SOURCE`` names ADR-1397 for every listed twin: it is the ADR
 # of the exact cell itself, not of a twin's arithmetic.
+#
+# ADR-1414: ``float_ms_ssim_sycl`` joins it, with and without ``enable_lcs``.
+# Its kernels follow ``ms_ssim_decimate.c``, ``iqa_convolve()`` and
+# ``ssim_accumulate_default_scalar()`` type for type (fp64 values as exact
+# fp32 pairs, frame sums in int64 fixed point) and the host rounds each
+# per-scale mean to fp32 as ``iqa_ssim()`` does. Measured on an Arc A380. The
+# cell runs one binary, so the CPU side must be the scalar arithmetic too
+# (#1706 for icx builds on AVX-512 hosts).
 # ---------------------------------------------------------------------------
 
 EXACT_TWINS: dict[str, frozenset[str]] = {
@@ -104,6 +112,8 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     # conclusion from the CPU's routines (``integer_adm_kernels.h``) and folds
     # the denominator once per row. The other ``adm`` twins keep places=4.
     "adm": frozenset({"cuda"}),
+    "float_ms_ssim": frozenset({"sycl"}),
+    "float_ms_ssim_lcs": frozenset({"sycl"}),
     "float_motion": frozenset({"cuda", "sycl"}),
     "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
     # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,

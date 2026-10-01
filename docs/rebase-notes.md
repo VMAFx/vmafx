@@ -42,6 +42,38 @@
   functions, update the transcriptions with the kernels (ADR-0139 twin
   group).
 - No source file of a library changes. GCC builds produce the same objects.
+
+## ADR-1414 — `float_ms_ssim_sycl` computes the CPU's arithmetic (2026-10-01)
+
+`fix/sycl-float-ms-ssim-cpu-arithmetic`, ADR-1414.
+
+- `core/src/feature/sycl/sycl_ssim_terms.h` (new): the per-pixel SSIM
+  arithmetic moved out of `integer_ssim_sycl.cpp` unchanged
+  (`add_horizontal_tap`, `add_vertical_tap`, `round_moments`, `ssim_terms`,
+  `ssim_term`, `term_fixed`, `FixedSum`, `float_ssim_constants`, the three
+  structs). Both SSIM twins include it. **On rebase**: if the other side
+  edits one of these helpers inside `integer_ssim_sycl.cpp`, apply the edit
+  to the header; do not restore a second copy in either TU.
+- `core/src/feature/sycl/integer_ms_ssim_sycl.cpp`: `decimate_pixel()` uses
+  `sycl::fma()` per tap; `launch_horiz()` became `launch_ms_ssim_horiz()`
+  with an `MsHorizArgs` struct and pair sums; `vertical_lcs_pixel()` returns
+  `LcsFixed` (int64) through `ssim_terms()`; `d_partials` / `h_partials` are
+  `std::int64_t`; `sum_scale_lcs()` adds with `FixedSum` and rounds each
+  mean to fp32; `combine_ms_ssim()` takes `fabs()` of l, c and s; the state
+  lost `c3`. Each of these is what makes the twin match the CPU: keep this
+  side if the other still has the fp32 forms.
+- If upstream Netflix changes `ms_ssim_decimate.c`, `iqa/convolve.c`,
+  `iqa/ssim_tools.c` (`ssim_variance_scalar`,
+  `ssim_accumulate_default_scalar`) or `ms_ssim.c::ms_ssim_score_scales()`,
+  mirror it in the header or the twin in the same change. The HIP and Metal
+  twins still use the old arithmetic
+  (`T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`).
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS` gains
+  `float_ms_ssim` and `float_ms_ssim_lcs`: `sycl`.
+- Tests: `core/test/test_sycl_ms_ssim_parity.c` (new bit-for-bit test, run
+  first in the binary), seven planted regressions in
+  `core/test/test_sycl_kernel_source_contract.py`,
+  `scripts/ci/test_cross_backend_parity_gate.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## fix/adm-decouple-fractional-gain-truncation — the integer ADM gain limit truncates on every path (ADR-1413, 2026-10-01)
 

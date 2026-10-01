@@ -232,6 +232,17 @@ linked AGENTS.md before resolving conflicts.
   (ADR-1367). `core/test/test_sycl_float_motion_parity.c` (`==`) and
   `core/test/test_sycl_kernel_source_contract.py` guard it; the row kernel
   must stay free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395).
+- **`float_ms_ssim_sycl` is the CPU's arithmetic ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md))**:
+  the decimate spells each tap `sycl::fma()` as `ms_ssim_decimate.c` fuses
+  it; the window sums and the `l` / `c` / `s` terms come from
+  `core/src/feature/sycl/sycl_ssim_terms.h`, shared with `float_ssim_sycl`
+  (the CPU's fp64 values as exact fp32 pairs); the frame sums are int64 fixed
+  point; the host rounds each per-scale mean to fp32 and combines as
+  `ms_ssim.c` does. A change to `ms_ssim_decimate.c`, `iqa/convolve.c`,
+  `iqa/ssim_tools.c` or `ms_ssim.c` changes the header or the twin in the
+  same PR. `core/test/test_sycl_ms_ssim_parity.c` (`==` on 18 outputs of 3
+  frames) and `core/test/test_sycl_kernel_source_contract.py` guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

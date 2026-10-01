@@ -946,8 +946,11 @@ included, on the Netflix pair, the 1080p checkerboard pairs and BBB
 ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). The HIP twin
 (`integer_ms_ssim_hip`) carries the same arithmetic and is bit-identical on
 the same fixtures and the 10-bit Netflix pair on a gfx1036
-([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)). The SYCL and
-Metal twins stay within the cross-backend tolerance of 5e-5.
+([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)).
+`float_ms_ssim_sycl` does the same without fp64 on the device, measured on an
+Arc A380 ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)); see
+[MS-SSIM](ms-ssim.md#precision-of-the-gpu-twins). The Metal twin
+stays within the cross-backend tolerance of 5e-5.
 
 For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:
 `integer_ssim_sycl` takes `enable_db` / `clip_db`, and `float_ssim_sycl`

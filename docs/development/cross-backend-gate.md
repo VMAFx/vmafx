@@ -35,6 +35,7 @@ explicitly accepts its skip.
   | `float_motion` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411 (the twins add their SAD in the CPU's order); the row above stays for HIP and Metal |
   | `float_vif` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1412 (the twin computes the CPU's arithmetic and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
+  | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
   command line default is `cpu cuda`. `--hip-device` picks the HIP device by
@@ -106,6 +107,14 @@ explicitly accepts its skip.
   two round differently by one unit in the last place on a few frames (3 of
   the 48 Netflix frames), for the CPU extractor and the twins alike. Do not
   compare a twin from one build with the CPU extractor of another.
+
+  `float_ms_ssim_sycl` is listed for `float_ms_ssim` and `float_ms_ssim_lcs`
+  ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)): its kernels
+  follow the CPU reference type for type and its per-scale means are the
+  CPU's on every frame measured on an Arc A380. An exact cell runs one
+  binary on both sides, so it also needs the CPU extractor of that binary to
+  be the reference arithmetic; for an icx build on an AVX-512 host that
+  needs the x86 SIMD libraries built without FP contraction (#1706).
 
 - **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
   FP16 absolute-tolerance contract.

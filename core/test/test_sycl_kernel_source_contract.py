@@ -7,6 +7,12 @@ Also pins the float motion SAD (ADR-1409, ADR-1411): the device adds the
 absolute differences of a row in one work-item, left to right, into one fp32
 accumulator, and the host adds the rows and divides in fp32 through
 float_motion_sad.h, as compute_motion_simd() does.
+
+Also pins float_ms_ssim_sycl's arithmetic (ADR-1414): every decimate tap is
+one fused multiply-add as in ms_ssim_decimate.c, the window sums and the
+l / c / s terms come from the shared sycl_ssim_terms.h (the CPU's operand
+types as exact fp32 pairs), the frame sums are int64 fixed point, and the
+host rounds each per-scale mean to fp32 and combines as ms_ssim.c does.
 """
 
 from __future__ import annotations
@@ -360,6 +366,84 @@ def _scratch_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+# ADR-1414: float_ms_ssim_sycl follows the CPU reference operation for
+# operation. The per-pixel arithmetic lives in sycl_ssim_terms.h, shared with
+# float_ssim_sycl, so the two twins cannot drift apart.
+SSIM_TERMS_HEADER = "sycl_ssim_terms.h"
+FLOAT_SSIM = "integer_ssim_sycl.cpp"
+MS_SSIM_DECIMATE_PIECES = (
+    "row_sum = sycl::fma(args.source[y * (int)args.width + x], LPF[horizontal], row_sum);",
+    "sum = sycl::fma(row_sum, LPF[vertical], sum);",
+)
+MS_SSIM_KERNEL_PIECES = (
+    "add_horizontal_tap(sums, args.ref[index], args.cmp[index], G[tap]);",
+    "add_vertical_tap(sums, row, G[tap]);",
+    "const SsimTerms terms = ssim_terms(round_moments(sums), args.c1, args.c2);",
+    ".luminance = term_fixed(terms.luminance),",
+    ".contrast = term_fixed(terms.contrast),",
+    ".structure = term_fixed(Ff{.hi = terms.structure, .lo = 0.0f})",
+    "sycl::reduce_over_group(item.get_group(), values.luminance, sycl::plus<std::int64_t>{});",
+)
+MS_SSIM_HOST_PIECES = (
+    "luminance = (double)(float)(total_l.value() / pixels);",
+    "contrast = (double)(float)(total_c.value() / pixels);",
+    "structure = (double)(float)(total_s.value() / pixels);",
+    "std::pow(std::fabs(luminance[scale]), (double)ALPHAS[scale])",
+    "std::pow(std::fabs(contrast[scale]), (double)BETAS[scale])",
+    "std::pow(std::fabs(structure[scale]), (double)GAMMAS[scale])",
+)
+# The CPU's operand types in the shared header: fp32 denominators, the l and c
+# numerators as pairs, s as one correctly rounded fp32 quotient.
+SSIM_TERMS_PIECES = (
+    "const float product = sample * weight;",
+    "return ff_add(sum, Ff{.hi = product, .lo = 0.0f});",
+    "const float l_den = l_den_sum + c1;",
+    "const float c_den = c_den_sum + c2;",
+    "const Ff product = two_prod(m.reference_mean, m.comparison_mean);",
+    "const Ff c_num = two_sum(2.0f * srsc, c2);",
+    ".luminance = ff_div(l_num, Ff{.hi = l_den, .lo = 0.0f}),",
+    ".contrast = ff_div(c_num, Ff{.hi = c_den, .lo = 0.0f}),",
+    ".structure = div_rn(s_num, s_den)",
+)
+SSIM_TERMS_SHARED = ("ssim_terms(", "add_horizontal_tap(", "add_vertical_tap(", "term_fixed(")
+
+
+def _ms_ssim_sources() -> dict[str, str]:
+    return {
+        name: (SYCL_ROOT / name).read_text(encoding="utf-8")
+        for name in (MS_SSIM, FLOAT_SSIM, SSIM_TERMS_HEADER)
+    }
+
+
+def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    twin = _code(sources[MS_SSIM])
+    decimate = _function_body(twin, "decimate_pixel")
+    for piece in MS_SSIM_DECIMATE_PIECES:
+        if piece not in decimate:
+            failures.append(f"{MS_SSIM}: the decimate tap is not one fused multiply-add ({piece})")
+    for piece in MS_SSIM_KERNEL_PIECES:
+        if piece not in twin:
+            failures.append(f"{MS_SSIM}: not the CPU's window or l / c / s arithmetic ({piece})")
+    if re.search(r"\bfloat\s*\*\s*[dh]_partials\b", twin):
+        failures.append(f"{MS_SSIM}: the l / c / s partials are fp32 sums again")
+    for piece in MS_SSIM_HOST_PIECES:
+        if piece not in twin:
+            failures.append(f"{MS_SSIM}: the host no longer combines as the CPU does ({piece})")
+    header = _code(sources[SSIM_TERMS_HEADER])
+    for piece in SSIM_TERMS_PIECES:
+        if piece not in header:
+            failures.append(f"{SSIM_TERMS_HEADER}: not the CPU's operand types ({piece})")
+    for name in (MS_SSIM, FLOAT_SSIM):
+        source = _code(sources[name])
+        if f'#include "{SSIM_TERMS_HEADER}"' not in sources[name]:
+            failures.append(f"{name}: does not take the SSIM arithmetic from {SSIM_TERMS_HEADER}")
+        for helper in SSIM_TERMS_SHARED:
+            if re.search(rf"\binline\b[^;{{]*\b{re.escape(helper)}", source):
+                failures.append(f"{name}: a private copy of {helper[:-1]}() beside the shared one")
+    return failures
+
+
 class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
@@ -566,6 +650,72 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         failures = _float_motion_failures(sources)
         self.assertTrue(any("not the CPU's sum over the rows" in item for item in failures))
 
+    def test_live_ms_ssim_follows_the_cpu_arithmetic(self) -> None:
+        self.assertEqual(_ms_ssim_failures(_ms_ssim_sources()), [])
+
+    def _ms_ssim_edit(self, name: str, old: str, new: str) -> dict[str, str]:
+        sources = _ms_ssim_sources()
+        self.assertIn(old, sources[name])
+        sources[name] = sources[name].replace(old, new, 1)
+        return sources
+
+    def _assert_ms_ssim_detected(self, sources: dict[str, str], needle: str) -> None:
+        failures = _ms_ssim_failures(sources)
+        self.assertTrue(any(needle in item for item in failures), failures)
+
+    def test_unfused_ms_ssim_decimate_tap_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "sum = sycl::fma(row_sum, LPF[vertical], sum);",
+            "sum += row_sum * LPF[vertical];",
+        )
+        self._assert_ms_ssim_detected(sources, "one fused multiply-add")
+
+    def test_fp32_ms_ssim_window_sum_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "add_horizontal_tap(sums, args.ref[index], args.cmp[index], G[tap]);",
+            "ref_mu += G[tap] * args.ref[index];",
+        )
+        self._assert_ms_ssim_detected(sources, "window or l / c / s arithmetic")
+
+    def test_fp32_ms_ssim_partials_are_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM, "std::int64_t *d_partials;", "float *d_partials;"
+        )
+        self._assert_ms_ssim_detected(sources, "fp32 sums again")
+
+    def test_unrounded_ms_ssim_mean_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "luminance = (double)(float)(total_l.value() / pixels);",
+            "luminance = total_l.value() / pixels;",
+        )
+        self._assert_ms_ssim_detected(sources, "combines as the CPU does")
+
+    def test_ms_ssim_combine_without_fabs_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "std::pow(std::fabs(contrast[scale]), (double)BETAS[scale])",
+            "std::pow(contrast[scale], (double)BETAS[scale])",
+        )
+        self._assert_ms_ssim_detected(sources, "combines as the CPU does")
+
+    def test_fp32_ssim_luminance_quotient_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            SSIM_TERMS_HEADER,
+            ".luminance = ff_div(l_num, Ff{.hi = l_den, .lo = 0.0f}),",
+            ".luminance = Ff{.hi = div_rn(l_num.hi, l_den), .lo = 0.0f},",
+        )
+        self._assert_ms_ssim_detected(sources, "not the CPU's operand types")
+
+    def test_private_ssim_terms_copy_is_detected(self) -> None:
+        sources = _ms_ssim_sources()
+        sources[MS_SSIM] += (
+            "\ninline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)\n"
+            "{\n    return {};\n}\n"
+        )
+        self._assert_ms_ssim_detected(sources, "a private copy of ssim_terms()")
 
     def test_live_sources_use_no_scratch_ratchet(self) -> None:
         self.assertEqual(_scratch_failures(_scratch_sources()), [])

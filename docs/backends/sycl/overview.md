@@ -682,7 +682,9 @@ the deviation:
 - **MS-SSIM waits once per frame (ADR-1363).** `float_ms_ssim_sycl`
   enqueues the pyramid and every scale's passes in `submit()`, each scale
   writing its partials to its own span, and `collect()` waits once and sums
-  them. The output is identical to the earlier per-scale readback.
+  them. Since ADR-1414 the twin computes the CPU's arithmetic and its
+  per-scale means equal the CPU's
+  ([below](#float_ms_ssim_sycl-computes-the-cpus-arithmetic-2026-10-01)).
 - **dmabuf import is Linux-only.** The VA-API → dmabuf fast path is
   gated on `#ifndef _WIN32` in `sycl/dmabuf_import.cpp`; on Windows,
   `vmaf_sycl_dmabuf_import` and `vmaf_sycl_import_va_surface` return
@@ -1178,6 +1180,54 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
 
 The cell reports `exact:ADR-1397` and a largest difference of 0; it does so
 on all four fixtures above.
+
+## `float_ms_ssim_sycl` computes the CPU's arithmetic (2026-10-01)
+
+`float_ms_ssim_sycl` returns the CPU extractor's per-scale means bit for bit
+([ADR-1414](../../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)). Four things
+differed from the CPU, the same four the CUDA twin had
+([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md)):
+
+- the decimate added `sample * tap` in two roundings where
+  `ms_ssim_decimate.c` fuses each tap; it now calls `sycl::fma()`;
+- the Gaussian window sums were fp32 running sums where `iqa_convolve()` adds
+  fp32 products in `double`; they are exact pairs of floats now;
+- `l`, `c` and `s` were fp32 quotients where the CPU divides `double`
+  numerators by fp32 denominators for `l` and `c`; `l` and `c` are pairs now;
+- the host combined unrounded means and took no `fabs()` of `l` and `c`; it
+  now rounds each mean to fp32 and combines as `ms_ssim.c` does.
+
+The pair arithmetic is the one `float_ssim_sycl` already used; both twins
+take it from `core/src/feature/sycl/sycl_ssim_terms.h`. The per-pixel terms
+are summed in 64-bit fixed point, which is exact in any order. No kernel uses
+the fp64 type or scratch memory.
+
+Measured on an Arc A380 at `--precision max` against a GCC build of the CPU
+extractor: the score is identical on the Netflix 576x324 pair (48 frames;
+before 6.9e-8), both 1080p checkerboard pairs (before 1.06e-6 and 2.98e-6)
+and 199 of 200 frames of BBB 3840x2160 (before 1.23e-6), and every
+`enable_lcs` and `enable_chroma` output is identical. The one remaining
+frame differs by 1.1e-16 through the host's `pow()`: an icx build links
+Intel's math library. The numbers per fixture are in
+[MS-SSIM](../../metrics/ms-ssim.md#precision-of-the-gpu-twins).
+
+The parity gate compares this twin with tolerance 0, with and without
+`enable_lcs`. That cell runs the CPU extractor of the same binary, which on
+an AVX-512 host must be built without FP contraction (#1706; before it, the
+CPU `float_ms_ssim` of an icx build was one fp32 unit off in a per-scale mean
+on 4 of 104 frames).
+
+It costs time: 42.6 ms per 3840x2160 frame against 31.4 before, 1.20 ms per
+576x324 frame against 0.84 (the CPU extractor: 117 ms at 3840x2160).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary build/tools/vmaf --features float_ms_ssim float_ms_ssim_lcs \
+    --backends cpu sycl \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324
+```
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

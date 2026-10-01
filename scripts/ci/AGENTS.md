@@ -536,9 +536,10 @@ module both gates import; tests in `test_cross_backend_parity_gate.py`.
 
 `adm`: `cuda` is in `EXACT_TWINS` too (ADR-1416; `adm_hip` places=4).
 
-**Exact twins (ADR-1397, ADR-1401, ADR-1409, ADR-1411, ADR-1412, ADR-1416).** `EXACT_TWINS` in
+**Exact twins (ADR-1397, ADR-1401, ADR-1409, ADR-1411, ADR-1412, ADR-1414, ADR-1416).** `EXACT_TWINS` in
 `cross_backend_calibration.py` (`adm`: `cuda`; `psnr_hvs`: `cuda`, `sycl`, `hip`;
-`float_motion`: `cuda`, `sycl`; `float_vif`: `cuda`) = twins returning the CPU extractor's bits. Cell
+`float_motion`: `cuda`, `sycl`; `float_vif`: `cuda`; `float_ms_ssim` /
+`float_ms_ssim_lcs`: `sycl`) = twins returning the CPU extractor's bits. Cell
 with both sides `cpu` or a listed twin (`is_exact_pair`) -> tolerance 0,
 source `exact:ADR-1397`, both runs get `--precision max` (default `%.6f`
 hides last-bit drift). Beats calibration rows and area scaling;
@@ -549,6 +550,12 @@ Listing a twin needs measured bit-identity + ADR. Listed twin
 drifts -> fix twin, never give it a tolerance back. Both sides of a cell
 must come from one binary: the dB value goes through the host `log10`,
 and glibc and Intel's libimf differ by one ulp on some frames.
+
+`float_ms_ssim` + `float_ms_ssim_lcs`: `sycl` listed (ADR-1414, Arc A380:
+every per-scale mean = CPU's). Exact cell = ONE binary on both sides ->
+needs that binary's CPU extractor to be the scalar arithmetic; icx build on
+AVX-512 host needs #1706 (else 4 of 104 frames 1 fp32 ulp off, CPU side
+wrong, not the twin).
 
 **Missing metric = cell ERROR (ADR-1418).** Cell compares every metric
 in `FEATURE_METRICS[feature]`; never a common subset. Metric absent
