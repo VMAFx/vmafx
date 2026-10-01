@@ -1373,6 +1373,7 @@
     },
     "0220": {
       "sites": {
+        "core/src/feature/adm_gain_limit.h": 1,
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/hip/speed/speed_hip_device.h": 1,
         "core/src/feature/psnr_score.h": 1,
@@ -6163,6 +6164,7 @@
         "core/test/test_adm_csf_tools_coverage.c": 1,
         "core/test/test_adm_dwt2_neon.c": 1,
         "core/test/test_adm_dwt2_x86.c": 1,
+        "core/test/test_adm_gain_limit.c": 1,
         "core/test/test_adm_nonfinite_score.c": 1,
         "core/test/test_adm_small_border.c": 1,
         "core/test/test_adm_wide_rounding.c": 1,
@@ -8550,6 +8552,16 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1412-cuda-float-vif-cpu-arithmetic.md"
+    },
+    "1413": {
+      "sites": {
+        "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
+        "core/src/sycl/common.cpp": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_adm_gain_limit.c": 1,
+        "core/test/test_gpu_adm_tiny_frames.c": 1
+      },
+      "target": "1413-adm-gain-limit-truncated-double-product.md"
     },
     "1415": {
       "sites": {
