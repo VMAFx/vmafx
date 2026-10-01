@@ -1514,6 +1514,7 @@ nav:
         - "ADR-1403: cuda-strict-fp-every-kernel": adr/1403-cuda-strict-fp-every-kernel.md
         - "ADR-1404: hip-float-motion-motion3-and-options": adr/1404-hip-float-motion-motion3-and-options.md
         - "ADR-1405: hip-float-ssim-device-decimation": adr/1405-hip-float-ssim-device-decimation.md
+        - "ADR-1406: cuda-cli-pinned-host-picture-pool": adr/1406-cuda-cli-pinned-host-picture-pool.md
         - "ADR-1407: hip-strict-fp-every-kernel": adr/1407-hip-strict-fp-every-kernel.md
         - "ADR-1409: float-motion-twins-cpu-float-sum": adr/1409-float-motion-twins-cpu-float-sum.md
         - "ADR-1410: sycl-cli-pinned-host-picture-pool": adr/1410-sycl-cli-pinned-host-picture-pool.md

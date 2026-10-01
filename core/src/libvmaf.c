@@ -125,6 +125,14 @@ typedef struct VmafContext {
         VmafCudaState state;
         VmafCudaCookie cookie;
         VmafGpuPicturePool *ring_buffer;
+        struct {
+            VmafCudaState *state;
+            unsigned w, h;
+            enum VmafPixelFormat pix_fmt;
+            unsigned bpc;
+            CUevent *events;
+            unsigned pic_cnt;
+        } pinned_pool;
     } cuda;
     /* Cached result of rfe_hw_flags() (F2-B, perf-audit-pipeline-2026-05-16).
      * Recomputed lazily whenever vmaf_use_feature() registers a new extractor.
@@ -511,6 +519,117 @@ static void set_fex_cuda_state(VmafFeatureExtractorContext *fex_ctx, VmafContext
         fex_ctx->fex->cu_state = &(vmaf->cuda.state);
 }
 
+static int cuda_pinned_pic_alloc(VmafPicture *pic, void *cookie)
+{
+    VmafContext *vmaf = (VmafContext *)cookie;
+    return vmaf_cuda_picture_alloc_pinned(pic, vmaf->cuda.pinned_pool.pix_fmt,
+                                          vmaf->cuda.pinned_pool.bpc, vmaf->cuda.pinned_pool.w,
+                                          vmaf->cuda.pinned_pool.h, vmaf->cuda.pinned_pool.state);
+}
+
+static int cuda_pinned_pic_free(VmafPicture *pic, void *cookie)
+{
+    VmafContext *vmaf = (VmafContext *)cookie;
+    CudaFunctions *cu_f = vmaf->cuda.pinned_pool.state->f;
+    int _cuda_err = 0;
+    int ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(vmaf->cuda.pinned_pool.state->ctx), fail);
+    ctx_pushed = 1;
+    CHECK_CUDA_GOTO(cu_f, cuMemFreeHost(pic->data[0]), fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    return 0;
+fail:
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+fail_after_pop:
+    return _cuda_err;
+}
+
+static int cuda_pinned_pic_sync(VmafPicture *pic, void *cookie)
+{
+    VmafContext *vmaf = (VmafContext *)cookie;
+    VmafPicturePrivate *priv = pic->priv;
+    if (priv && priv->cuda.ready) {
+        CudaFunctions *cu_f = vmaf->cuda.pinned_pool.state->f;
+        CHECK_CUDA_RETURN(cu_f, cuEventSynchronize(priv->cuda.ready));
+    }
+    return 0;
+}
+
+static int cuda_pinned_pic_attach(VmafPicture *pic, unsigned idx, void *cookie)
+{
+    VmafContext *vmaf = (VmafContext *)cookie;
+    VmafPicturePrivate *priv = pic->priv;
+    if (idx < vmaf->cuda.pinned_pool.pic_cnt && vmaf->cuda.pinned_pool.events) {
+        priv->cuda.ready = vmaf->cuda.pinned_pool.events[idx];
+        priv->cuda.state = vmaf->cuda.pinned_pool.state;
+        priv->cuda.ctx = vmaf->cuda.pinned_pool.state->ctx;
+    }
+    return 0;
+}
+
+static void cuda_pinned_pool_destroy_events(VmafContext *vmaf)
+{
+    if (!vmaf->cuda.pinned_pool.events)
+        return;
+    CudaFunctions *cu_f = vmaf->cuda.state.f;
+    int push_err = cu_f->cuCtxPushCurrent(vmaf->cuda.state.ctx);
+    for (unsigned i = 0; i < vmaf->cuda.pinned_pool.pic_cnt; i++) {
+        if (vmaf->cuda.pinned_pool.events[i])
+            (void)cu_f->cuEventDestroy(vmaf->cuda.pinned_pool.events[i]);
+    }
+    if (!push_err)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    free(vmaf->cuda.pinned_pool.events);
+    vmaf->cuda.pinned_pool.events = NULL;
+}
+
+static int prepare_cuda_pinned_pool(VmafContext *vmaf, unsigned pic_cnt, unsigned w, unsigned h,
+                                    enum VmafPixelFormat pix_fmt, unsigned bpc)
+{
+    if (!vmaf->cuda.state.ctx)
+        return -EINVAL;
+
+    vmaf->cuda.pinned_pool.state = &vmaf->cuda.state;
+    vmaf->cuda.pinned_pool.w = w;
+    vmaf->cuda.pinned_pool.h = h;
+    vmaf->cuda.pinned_pool.pix_fmt = pix_fmt;
+    vmaf->cuda.pinned_pool.bpc = bpc;
+    vmaf->cuda.pinned_pool.pic_cnt = pic_cnt;
+    vmaf->cuda.pinned_pool.events = calloc(pic_cnt, sizeof(CUevent));
+    if (!vmaf->cuda.pinned_pool.events)
+        return -ENOMEM;
+
+    CudaFunctions *cu_f = vmaf->cuda.state.f;
+    int push_err = cu_f->cuCtxPushCurrent(vmaf->cuda.state.ctx);
+    if (!push_err) {
+        for (unsigned i = 0; i < pic_cnt; i++) {
+            (void)cu_f->cuEventCreate(&vmaf->cuda.pinned_pool.events[i], CU_EVENT_DISABLE_TIMING);
+            (void)cu_f->cuEventRecord(vmaf->cuda.pinned_pool.events[i], 0);
+        }
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    }
+    VmafPicturePoolConfig cfg = {
+        .pic_cnt = pic_cnt,
+        .w = w,
+        .h = h,
+        .pix_fmt = pix_fmt,
+        .bpc = bpc,
+        .buf_type = VMAF_PICTURE_BUFFER_TYPE_CUDA_HOST_PINNED,
+        .alloc_picture_callback = cuda_pinned_pic_alloc,
+        .free_picture_callback = cuda_pinned_pic_free,
+        .sync_picture_callback = cuda_pinned_pic_sync,
+        .attach_picture_callback = cuda_pinned_pic_attach,
+        .cookie = vmaf,
+    };
+    int err = vmaf_picture_pool_init(&vmaf->picture_pool, cfg);
+    if (!err)
+        return 0;
+
+    cuda_pinned_pool_destroy_events(vmaf);
+    return err;
+}
+
 #endif
 
 #ifdef HAVE_SYCL
@@ -540,6 +659,44 @@ static int sycl_pinned_pic_attach(VmafPicture *pic, unsigned idx, void *cookie)
     return vmaf_sycl_pinned_pool_attach_event(pic, vmaf->sycl.pinned_pool.events, idx,
                                               vmaf->sycl.pinned_pool.state);
 }
+
+static int prepare_sycl_pinned_pool(VmafContext *vmaf, unsigned pic_cnt, unsigned w, unsigned h,
+                                    enum VmafPixelFormat pix_fmt, unsigned bpc)
+{
+    if (!vmaf->sycl.state)
+        return -EINVAL;
+
+    vmaf->sycl.pinned_pool.state = vmaf->sycl.state;
+    vmaf->sycl.pinned_pool.w = w;
+    vmaf->sycl.pinned_pool.h = h;
+    vmaf->sycl.pinned_pool.pix_fmt = pix_fmt;
+    vmaf->sycl.pinned_pool.bpc = bpc;
+    vmaf->sycl.pinned_pool.pic_cnt = pic_cnt;
+    vmaf->sycl.pinned_pool.events = vmaf_sycl_pinned_pool_init_events(vmaf->sycl.state, pic_cnt);
+    if (!vmaf->sycl.pinned_pool.events)
+        return -ENOMEM;
+
+    VmafPicturePoolConfig cfg = {
+        .pic_cnt = pic_cnt,
+        .w = w,
+        .h = h,
+        .pix_fmt = pix_fmt,
+        .bpc = bpc,
+        .buf_type = VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED,
+        .alloc_picture_callback = sycl_pinned_pic_alloc,
+        .free_picture_callback = sycl_pinned_pic_free,
+        .sync_picture_callback = sycl_pinned_pic_sync,
+        .attach_picture_callback = sycl_pinned_pic_attach,
+        .cookie = vmaf,
+    };
+    int err = vmaf_picture_pool_init(&vmaf->picture_pool, cfg);
+    if (!err)
+        return 0;
+
+    vmaf_sycl_pinned_pool_destroy_events(vmaf->sycl.pinned_pool.events);
+    vmaf->sycl.pinned_pool.events = NULL;
+    return err;
+}
 #endif
 
 static int prepare_picture_pool(VmafContext *vmaf, unsigned pic_cnt, unsigned w, unsigned h,
@@ -552,38 +709,14 @@ static int prepare_picture_pool(VmafContext *vmaf, unsigned pic_cnt, unsigned w,
     if (!pic_cnt)
         return -EINVAL;
 
-#ifdef HAVE_SYCL
-    if (vmaf->sycl.state) {
-        vmaf->sycl.pinned_pool.state = vmaf->sycl.state;
-        vmaf->sycl.pinned_pool.w = w;
-        vmaf->sycl.pinned_pool.h = h;
-        vmaf->sycl.pinned_pool.pix_fmt = pix_fmt;
-        vmaf->sycl.pinned_pool.bpc = bpc;
-        vmaf->sycl.pinned_pool.pic_cnt = pic_cnt;
-        vmaf->sycl.pinned_pool.events =
-            vmaf_sycl_pinned_pool_init_events(vmaf->sycl.state, pic_cnt);
-        if (vmaf->sycl.pinned_pool.events) {
-            VmafPicturePoolConfig cfg = {
-                .pic_cnt = pic_cnt,
-                .w = w,
-                .h = h,
-                .pix_fmt = pix_fmt,
-                .bpc = bpc,
-                .buf_type = VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED,
-                .alloc_picture_callback = sycl_pinned_pic_alloc,
-                .free_picture_callback = sycl_pinned_pic_free,
-                .sync_picture_callback = sycl_pinned_pic_sync,
-                .attach_picture_callback = sycl_pinned_pic_attach,
-                .cookie = vmaf,
-            };
-            int err = vmaf_picture_pool_init(&vmaf->picture_pool, cfg);
-            if (!err)
-                return 0;
+#ifdef HAVE_CUDA
+    if (vmaf->cuda.state.ctx && !prepare_cuda_pinned_pool(vmaf, pic_cnt, w, h, pix_fmt, bpc))
+        return 0;
+#endif
 
-            vmaf_sycl_pinned_pool_destroy_events(vmaf->sycl.pinned_pool.events);
-            vmaf->sycl.pinned_pool.events = NULL;
-        }
-    }
+#ifdef HAVE_SYCL
+    if (vmaf->sycl.state && !prepare_sycl_pinned_pool(vmaf, pic_cnt, w, h, pix_fmt, bpc))
+        return 0;
 #endif
 
     VmafPicturePoolConfig cfg = {
@@ -1608,6 +1741,7 @@ static int vmaf_close_backends(VmafContext *vmaf)
     int err = 0;
 #endif
 #ifdef HAVE_CUDA
+    cuda_pinned_pool_destroy_events(vmaf);
     if (vmaf->cuda.ring_buffer) {
         err = vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
         if (err)

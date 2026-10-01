@@ -209,6 +209,54 @@ static char *test_cuda_picture_preallocation_method_device()
     return run_preallocation_method(VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE);
 }
 
+static char *test_cuda_cli_preallocate_pinned_pool(void)
+{
+    VmafConfiguration vmaf_cfg = {0};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, vmaf_cfg);
+    mu_assert("problem during vmaf_init", !err && vmaf);
+
+    VmafCudaState *cu_state = NULL;
+    VmafCudaConfiguration cuda_cfg = {0};
+    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    if (err || !cu_state) {
+        (void)vmaf_close(vmaf);
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
+    err = vmaf_cuda_import_state(vmaf, cu_state);
+    mu_assert("problem during vmaf_cuda_import_state", !err);
+
+    VmafPictureConfiguration pic_cfg = {
+        .pic_params =
+            {
+                .w = 1920,
+                .h = 1080,
+                .bpc = 8,
+                .pix_fmt = VMAF_PIX_FMT_YUV420P,
+            },
+        .pic_cnt = 6,
+    };
+    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
+    mu_assert("problem during vmaf_preallocate_pictures", !err);
+
+    VmafPicture pic;
+    err = vmaf_fetch_preallocated_picture(vmaf, &pic);
+    mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
+    mu_assert("pic.data[0] should not be null", pic.data[0]);
+
+    err = vmaf_picture_unref(&pic);
+    mu_assert("problem during vmaf_picture_unref", !err);
+
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+
+    err = vmaf_cuda_state_free(cu_state);
+    mu_assert("problem during vmaf_cuda_state_free", !err);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_cuda_no_init);
@@ -216,5 +264,6 @@ char *run_tests()
     mu_run_test(test_cuda_picture_preallocation_method_host);
     mu_run_test(test_cuda_picture_preallocation_method_host_pinned);
     mu_run_test(test_cuda_picture_preallocation_method_device);
+    mu_run_test(test_cuda_cli_preallocate_pinned_pool);
     return NULL;
 }

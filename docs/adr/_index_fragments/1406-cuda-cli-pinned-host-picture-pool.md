@@ -1,0 +1,1 @@
+| [ADR-1406](1406-cuda-cli-pinned-host-picture-pool.md) | Preallocate pinned host pictures for zero-copy 4K CLI CUDA upload, reducing 4K frame times across CUDA twins. | Accepted | `cuda`, `perf`, `cli`, `picture-pool` |

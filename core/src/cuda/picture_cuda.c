@@ -86,6 +86,11 @@ int vmaf_cuda_picture_upload_async(VmafPicture *cuda_pic, VmafPicture *pic, uint
             CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&m, cuda_priv->cuda.str));
     }
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(cuda_priv->cuda.ready, cuda_priv->cuda.str));
+    VmafPicturePrivate *pic_priv = pic->priv;
+    if (pic_priv && pic_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_CUDA_HOST_PINNED &&
+        pic_priv->cuda.ready) {
+        CHECK_CUDA_RETURN(cu_f, cuEventRecord(pic_priv->cuda.ready, cuda_priv->cuda.str));
+    }
 
     return 0;
 }
