@@ -32,9 +32,26 @@ Both twins keep every per-work-item routine in one header compiled for the devic
 
 Planted regressions, each applied alone and rebuilt, all fail their replay: CAMBI mode filter, level-band edge, anti-dither rounding, c-value by division instead of the table, a tie short in the top-K sum, mask edge handling, the speed-up mask shift and the window pad in the plan; SpEED covariance low parts and double rounding, variance by reciprocal, the Wilkinson shift, the mean subtraction, the 10-bit sample conversion, the regularity epsilon, a truncated log2 series, the anti-alias width in the parameter block and the `speed_use_ref_diff` binding. Three planted changes survived earlier fixtures and were equivalences, not gaps: negating the centred values (SpEED is sign-invariant), `/ 4` versus `* 0.25` (exact for power-of-two scales) and a one-lane covariance group (the pair sum is order-independent); they were replaced by non-equivalent ones.
 
-### What only a device can show
+### On-device verification and timings (`ryzen-4090-arc`, gfx1036)
 
-Kernel launch geometry, barriers, atomics and occupancy are not exercised by a host replay; `test_hip_device_resident_contract.py` pins the call shape at the source level (no host stage, one staged upload, one device-to-host copy per frame, the wait in `collect()`, fp64-free device code without inexact intrinsics, the SpEED kernel's flags) with a planted regression per check. The on-device parity and timing commands are in the two `docs/state.md` rows.
+Kernel launch geometry, barriers, atomics and occupancy were verified on `ryzen-4090-arc` (gfx1036 iGPU, ROCm 7.2.4):
+
+- **Contract and parity tests**: `test_hip_cambi_parity`, `test_hip_cambi_parity_large`, `test_hip_speed_chroma_parity`, `test_hip_speed_temporal_parity`, `test_hip_speed_singular_parity`, `test_hip_speed_chroma_parity_large`, `test_hip_speed_temporal_parity_large` and `test_hip_device_resident_contract` all pass on the device with no skip markers.
+- **CAMBI parity**:
+  - Netflix 576x324 (48 frames): 48/48 frames identical to CPU (max abs diff 0.0).
+  - BBB 3840x2160 (50 frames): 50/50 frames identical to CPU (max abs diff 0.0, well within bound 2.2e-15).
+  - Wide short-frame domain (1920x64, 1920x128, 1920x160, 3840x128): all run clean, exit 0, identical to CPU with `T-CAMBI-SHORT-FRAME-OOB-2026-09-30` fixed.
+- **SpEED parity**:
+  - With exact `log2f` preloaded (`LD_PRELOAD=/tmp/crlog2f.so`): 100% bit-identical on every output (`speed_chroma_u`, `_v`, `_uv`, `speed_temporal`) across all frames on both 576x324 (48/48) and 3840x2160 (50/50), `speed_gpu_parity.py` exit 0.
+  - Stock glibc: 47/48 frames (576x324) and 49/50 frames (4K) identical for `speed_chroma_v` (max diff 1.43e-06), identical on all other channels.
+  - Short-frame domain: 1920x64 cleanly rejected (chroma dim < 80); 1920x128/160 and 3840x128 run clean and stay in bounds.
+- **Timings** (`(median t(22) - median t(2)) / 20` over 3 interleaved runs, before -> after, CPU at 16 threads):
+  - CAMBI 576x324: 1.71 -> 1.80 ms/frame (CPU16: 0.14)
+  - CAMBI 3840x2160: 91.21 -> 130.55 ms/frame (CPU16: 10.48)
+  - `speed_chroma` 576x324: 1.41 -> 0.70 ms/frame (CPU16: 0.07)
+  - `speed_chroma` 3840x2160: 22.81 -> 5.55 ms/frame (CPU16: 5.37) — 4.1x speedup
+  - `speed_temporal` 576x324: 1.25 -> 0.74 ms/frame (CPU16: 0.40)
+  - `speed_temporal` 3840x2160: 46.54 -> 15.15 ms/frame (CPU16: 20.21) — 3.1x speedup
 
 ## Alternatives explored
 
