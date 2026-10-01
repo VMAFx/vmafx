@@ -937,6 +937,14 @@
 - **SYCL**: Fixed a bug where `motion_v2_sycl` diverged from the CPU by applying `motion_fps_weight` and the `motion_max_val` cap in `collect()` and emitting scores for one-frame inputs in `flush()`.
 
 
+- **Shared SYCL frame buffers re-allocate when geometry changes.** When a single
+  `VmafSyclState` was shared across consecutive `VmafContext` instances of different
+  frame dimensions or bit depths, `vmaf_sycl_shared_frame_init()` kept the old
+  buffer allocations and pitch, resulting in out-of-bounds reads and incorrect
+  metric scores. Re-initialization now drains queues and reallocates the shared
+  frame and chroma buffers to match the new geometry.
+
+
 - **SpEED SYCL kernels are now scratch-free on Intel Arc GPUs (ADR-1395).**
   On the Intel Arc A380 under the Linux `xe` driver, kernel execution that used
   scratch memory (private memory arrays or register spills) caused silent data
@@ -949,12 +957,6 @@
   All SpEED parity tests pass, and `speed_gpu_parity.py` achieves bit-identical
   scores (`0.000e+00` max absolute difference) against the CPU reference on
   both 576x324 and 3840x2160 fixtures.
-- **Shared SYCL frame buffers re-allocate when geometry changes.** When a single
-  `VmafSyclState` was shared across consecutive `VmafContext` instances of different
-  frame dimensions or bit depths, `vmaf_sycl_shared_frame_init()` kept the old
-  buffer allocations and pitch, resulting in out-of-bounds reads and incorrect
-  metric scores. Re-initialization now drains queues and reallocates the shared
-  frame and chroma buffers to match the new geometry.
 
 
 - **Every SYCL feature kernel now does fp32 arithmetic the way the CPU
