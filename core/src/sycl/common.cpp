@@ -613,17 +613,55 @@ static void sycl_shared_chroma_release(VmafSyclState *state)
     chroma.frame = UINT64_MAX;
 }
 
+static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
+{
+    try {
+        state->queue.wait_and_throw();
+        state->copy_queue.wait_and_throw();
+        if (state->combined_queue)
+            state->combined_queue->wait_and_throw();
+    } catch (...) {
+        return -EIO;
+    }
+
+    sycl_shared_frame_release(state);
+    sycl_shared_chroma_release(state);
+    state->shared_buf_size = 0;
+    state->frame_w = 0;
+    state->frame_h = 0;
+    state->frame_bpc = 0;
+    state->cur_upload = 0;
+    state->cur_compute = 0;
+    state->has_uploaded = false;
+    state->frame_counter = 0;
+    state->submit_frame = UINT64_MAX;
+    state->submit_count = 0;
+    state->graph_waited_frame = UINT64_MAX;
+
+    for (int i = 0; i < 2; i++) {
+        if (state->combined_exec_graph[i]) {
+            delete state->combined_exec_graph[i];
+            state->combined_exec_graph[i] = nullptr;
+        }
+    }
+    state->combined_graphs_recorded = false;
+    return 0;
+}
+
 extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, unsigned h,
                                            unsigned bpc)
 {
-    if (!state)
-        return -EINVAL;
-    if (!w || !h)
+    if (!state || !w || !h)
         return -EINVAL;
 
-    // Already initialized (idempotent)
-    if (state->shared_ref_buf[0])
-        return 0;
+    // Already initialized (idempotent for identical geometry)
+    if (state->shared_ref_buf[0]) {
+        if (state->frame_w == w && state->frame_h == h && state->frame_bpc == bpc)
+            return 0;
+        int const err = sycl_shared_frame_reinit_unwind(state);
+        if (err)
+            return err;
+    }
 
     unsigned const bytes_per_pixel = (bpc + 7) / 8;
     size_t const buf_size = static_cast<size_t>(w) * h * bytes_per_pixel;

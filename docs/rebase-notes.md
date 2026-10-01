@@ -26,6 +26,12 @@
   weights and `lanczos_weight()` / `sinpif()` are gone.
   `test_cuda_device_resident_contract.py` rejects a sine in `speed_score.cu`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/sycl-shared-frame-sticky-geometry — re-allocate shared frame buffers on geometry change (2026-10-01)
+
+- `core/src/sycl/common.cpp`: `vmaf_sycl_shared_frame_init()` previously returned 0 immediately when `shared_ref_buf[0]` was already allocated, even if the new context requested a different `w`, `h`, or `bpc`. This retained the old buffer allocations and pitch when reusing a `VmafSyclState` across contexts of varying dimensions.
+- `vmaf_sycl_shared_frame_init()` now checks if existing buffers match the requested geometry; if not, it invokes `sycl_shared_frame_reinit_unwind()` to wait for queue completion, free existing command graphs, release shared frame and chroma buffers, and allocate new buffers with the updated geometry.
+- `core/src/libvmaf.c`: removed the `!vmaf_sycl_get_shared_ref(...)` check in `read_pictures_sycl_prep()`, calling `vmaf_sycl_shared_frame_init()` unconditionally so any geometry change is propagated cleanly.
+- `core/test/test_sycl_shared_frame_sticky_geometry.c`: added unit test running multiple consecutive `VmafContext` instances of different sizes (64x48, 128x96, 32x24) sharing a single `VmafSyclState`, asserting identical scores to CPU.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 

@@ -4067,6 +4067,18 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# Sticky geometry regression test (T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29)
+test_sycl_shared_frame_sticky_geometry = executable('test_sycl_shared_frame_sticky_geometry',
+    ['test.c', 'test_sycl_shared_frame_sticky_geometry.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_shared_frame_sticky_geometry', test_sycl_shared_frame_sticky_geometry,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
 # round 3 (#446: float family + PSNR-HVS): float_moment_sycl,

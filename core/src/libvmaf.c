@@ -2845,15 +2845,14 @@ static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPict
     // previous upload to finish (in-order copy_queue guarantees this
     // implicitly) before overwriting the upload slot.
     // On the very first frame, skip the wait since nothing is pending.
-    if (!vmaf_sycl_get_shared_ref(vmaf->sycl.state)) {
-        int err = vmaf_sycl_shared_frame_init(vmaf->sycl.state, ref->w[0], ref->h[0], ref->bpc);
-        if (err)
-            return err;
-    }
+    int err = vmaf_sycl_shared_frame_init(vmaf->sycl.state, ref->w[0], ref->h[0], ref->bpc);
+    if (err)
+        return err;
+
     // DMA runs asynchronously on copy_queue while the CPU collects
     // previous-frame results below.  vmaf_sycl_graph_submit() will
     // wait for copy_queue just before replaying the command graph.
-    int err = vmaf_sycl_shared_frame_upload(vmaf->sycl.state, ref, dist);
+    err = vmaf_sycl_shared_frame_upload(vmaf->sycl.state, ref, dist);
 
     /* Diagnostic oracle: checksum what the host-upload path just wrote.
      * pic_cnt is NOT yet incremented here (that happens in vmaf_read_pictures
