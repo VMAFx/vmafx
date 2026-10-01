@@ -6221,6 +6221,7 @@
         "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_hip_speed_device_math.c": 1,
         "core/test/test_hip_ssim_parity.c": 1,
+        "core/test/test_hip_ssim_tiny_frames.c": 1,
         "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_hip_upload_race.c": 1,
         "core/test/test_hip_vif_min_dim.c": 1,
@@ -8163,6 +8164,7 @@
         "core/test/meson.build": 2,
         "core/test/test_hip_float_motion_parity.c": 1,
         "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_ssim_tiny_frames.c": 1,
         "core/test/test_hip_twin_option_parity.c": 3,
         "core/test/test_nonfinite_collector_wiring.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 3,
@@ -8295,6 +8297,17 @@
         "python/test/vmafx_cli_test.py": 3
       },
       "target": "1398-cli-accept-odd-dimensions-chroma-subsampled.md"
+    },
+    "1400": {
+      "sites": {
+        "core/src/feature/hip/integer_ssim/integer_ssim_score.hip": 2,
+        "core/src/feature/hip/integer_ssim_hip.c": 2,
+        "core/src/feature/hip/integer_ssim_hip.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_ssim_tiny_frames.c": 1
+      },
+      "target": "1400-hip-integer-ssim-raster-sum-small-frames.md"
     }
   },
   "retired": {

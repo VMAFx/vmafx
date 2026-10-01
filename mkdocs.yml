@@ -1508,6 +1508,8 @@ nav:
         - "ADR-1396: vmaf-init-output-only-handle": adr/1396-vmaf-init-output-only-handle.md
         - "ADR-1397: psnr-hvs-twins-cpu-float-sum": adr/1397-psnr-hvs-twins-cpu-float-sum.md
         - "ADR-1398: cli-accept-odd-dimensions-chroma-subsampled": adr/1398-cli-accept-odd-dimensions-chroma-subsampled.md
+      - "1400-1499 — Misc":
+        - "ADR-1400: hip-integer-ssim-raster-sum-small-frames": adr/1400-hip-integer-ssim-raster-sum-small-frames.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
