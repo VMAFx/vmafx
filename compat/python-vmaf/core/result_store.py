@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import ast
 import hashlib
 import os

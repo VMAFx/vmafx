@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # ADR-1262 — a failed input read must not exit 0.
 #
 # Before ADR-1262 `run_frame_loop()` reported only a frame count, so every way

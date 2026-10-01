@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import os
 import unittest
 from test.testutil import set_default_576_324_videos_for_testing

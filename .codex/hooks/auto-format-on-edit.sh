@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: EUPL-1.2
 # PostToolUse hook (matcher: Edit|Write): auto-format files after the agent edits them.
 # Uses repo-local tool versions when available; silently skips if a formatter is not installed.
 set -euo pipefail

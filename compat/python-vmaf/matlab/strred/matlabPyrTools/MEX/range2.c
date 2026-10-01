@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 [MIN, MAX] = range2(MTX)
   >>> See range2.m for documentation <<<

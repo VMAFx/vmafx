@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from vmaf.tools.misc import unroll_dict_of_lists
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."

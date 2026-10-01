@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package p
 
 // A cycle through methods is still a gap. Resolving a method call needs the receiver's type,

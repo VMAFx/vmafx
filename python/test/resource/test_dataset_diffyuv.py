@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 dataset_name = "example"
 
 from vmaf.config import VmafConfig

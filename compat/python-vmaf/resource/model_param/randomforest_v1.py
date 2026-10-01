@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 model_type = "RANDOMFOREST"
 model_param_dict = {
 

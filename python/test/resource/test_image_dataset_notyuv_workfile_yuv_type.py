@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 dataset_name = "example_image"
 
 yuv_fmt = "notyuv"

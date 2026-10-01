@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: EUPL-1.2
 # PostToolUse hook: keep the repo-root compile_commands.json symlink fresh for clangd
 # (D14 — clangd is the chosen C/C++ LSP). Fires when meson.build or meson_options.txt
 # changes; no-op otherwise.

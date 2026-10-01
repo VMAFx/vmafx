@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 dataset_name = 'BSDS500_noisy'
 yuv_fmt = 'yuv444p'
 

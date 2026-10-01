@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 // Cyclomatic complexity 16 in 48 lines: over the HISS-04 cap of 10 and under the length
 // cap, which is the only thing the scanner measures for Rust. No clippy configuration or
 // Rust lint step exists in the Makefile, lefthook or CI.

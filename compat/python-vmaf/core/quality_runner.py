@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import os
 import re
 from abc import ABC, ABCMeta, abstractmethod

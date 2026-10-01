@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 model_type = "LIBSVMNUSVR"
 model_param_dict = {
 

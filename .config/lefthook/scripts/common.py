@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 """Bounded process execution and isolated Git snapshots for local checks."""
 
 import contextlib

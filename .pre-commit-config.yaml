@@ -469,7 +469,7 @@ repos:
         files: '^(\.config/hiss/|\.github/workflows/(required-aggregator|standards-gate)\.yml|\.pre-commit-config\.yaml|AGENTS\.md|Makefile|README\.md|lefthook\.yml|scripts/ci/tests/test_hiss_replay_contract\.py)$'
         pass_filenames: false
       - id: check-copyright
-        name: ADR-0105 copyright header present (C/C++/CUDA)
+        name: ADR-0105 / ADR-1250 copyright and SPDX header present (C/C++/CUDA/Go/Python)
         entry: scripts/ci/check-copyright.sh
         language: script
         # Exclusions: (a) upstream vendored subprojects, (b) test fixtures,
@@ -479,7 +479,14 @@ repos:
         # (e) compat/python-vmaf/matlab/ — upstream Netflix training-harness MATLAB
         # MEX C sources, already excluded from other hygiene hooks.
         exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
-        types_or: [c, c++, cuda]
+        types_or: [c, c++, cuda, go, python]
+
+      - id: test-check-copyright
+        name: Copyright and SPDX header check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_copyright.py
+        language: system
+        files: '^(scripts/ci/(check-copyright\.sh|tests/test_check_copyright\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
 
       - id: check-adr-links
         name: ADR links resolve (slug drift, T-DOCS-ADR-LINK-SLUG-DRIFT-2026-09-23)

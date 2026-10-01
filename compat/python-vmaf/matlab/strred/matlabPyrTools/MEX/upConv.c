@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 RES = upConv(IM, FILT, EDGES, STEP, START, STOP, RES);
   >>> See upConv.m for documentation <<<

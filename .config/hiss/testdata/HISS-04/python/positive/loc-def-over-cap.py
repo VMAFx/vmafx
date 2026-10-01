@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 def long_plain(count):
     count += 1
     count += 1

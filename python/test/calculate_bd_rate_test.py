@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import unittest
 
 __copyright__ = "Copyright 2024, Netflix, Inc."

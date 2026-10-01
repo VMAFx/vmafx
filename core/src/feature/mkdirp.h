@@ -3,6 +3,7 @@
 // mkdirp.h
 //
 // Copyright (c) 2013 Stephen Mathieson
+// SPDX-License-Identifier: BSD-2-Clause-Patent
 // MIT licensed
 //
 

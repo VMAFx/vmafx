@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: EUPL-1.2
 """Read-only periodic checkpoint and draft-publication planner."""
 
 import argparse

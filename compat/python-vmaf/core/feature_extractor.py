@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from abc import ABCMeta, abstractmethod
 
 import defusedxml.ElementTree as ElementTree

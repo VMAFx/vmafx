@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 feature_dict = {
     "VMAF_feature": [
         "vif_scale0",

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from vmaf import ExternalProgramCaller
 from vmaf.core.feature_extractor import FeatureExtractor, VmafexecFeatureExtractorMixin
 

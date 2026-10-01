@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package p
 
 // Factorial calls itself, which HISS-01 forbids.

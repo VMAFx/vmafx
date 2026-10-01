@@ -1,5 +1,6 @@
 /*Daala video codec
 Copyright (c) 2002-2013 Daala project contributors.  All rights reserved.
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:

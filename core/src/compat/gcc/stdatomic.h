@@ -1,5 +1,6 @@
 /*
 * Copyright © 2018, VideoLAN and dav1d authors
+* SPDX-License-Identifier: BSD-2-Clause-Patent
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package p
 
 // Sixty spans exactly 60 lines, the scanner's configured bound.

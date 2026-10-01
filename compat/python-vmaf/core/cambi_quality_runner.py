@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from abc import ABC
 
 from vmaf.core.cambi_feature_extractor import (

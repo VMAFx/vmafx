@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 class CalibrationError(Exception):
     """Raised when stats-calculation fails and the caller has not opted in to
     the uncalibrated-normalisation fallback via ``allow_uncalibrated=True``."""

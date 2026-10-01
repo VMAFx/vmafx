@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: EUPL-1.2
 # Stop hook: brief session exit summary. Only prints if something is actionable.
 set -euo pipefail
 

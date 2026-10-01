@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 // Declaring an unsafe trait places an obligation on every implementor, which is the
 // invariant a SAFETY proof exists to state. Neither `unsafe {` nor the `unsafe fn`
 // prefix test matches this line.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 dataset_name = 'NFLX_public'
 yuv_fmt = 'yuv420p'
 width = 1920

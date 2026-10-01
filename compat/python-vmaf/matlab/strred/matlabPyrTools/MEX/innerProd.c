@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 RES = innerProd(MAT);
   Computes mat'*mat  

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 fn exactly_sixty(mut count: i32) -> i32 {
     count += 1;
     count += 1;

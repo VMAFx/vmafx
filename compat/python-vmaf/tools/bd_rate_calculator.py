@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import numpy as np
 
 from vmaf.tools.interpolation_utils import InterpolationUtils

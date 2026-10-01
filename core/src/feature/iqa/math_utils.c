@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011, Tom Distler (http://tdistler.com)
+ * SPDX-License-Identifier: BSD-3-Clause
  * All rights reserved.
  *
  * The BSD License

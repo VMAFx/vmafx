@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from vmaf.core.local_explainer import LocalExplainer
 from vmaf.core.quality_runner import VmafQualityRunner
 from vmaf.core.result import Result

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from vmaf.config import VmafConfig
 from vmaf.core.executor import Executor
 from vmaf.core.feature_assembler import FeatureAssembler

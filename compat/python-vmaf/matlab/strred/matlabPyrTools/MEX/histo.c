@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 [N, X] = histo(MTX, NBINS_OR_BINSIZE, BIN_CENTER)
   >>> See histo.m for documentation <<<

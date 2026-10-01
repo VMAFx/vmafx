@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 RES = pointOp(IM, LUT, ORIGIN, INCREMENT, WARNINGS)
   >>> See pointOp.m for documentation <<<

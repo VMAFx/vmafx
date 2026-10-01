@@ -143,7 +143,8 @@
       "sites": {
         ".github/workflows/rule-enforcement.yml": 1,
         ".pre-commit-config.yaml": 1,
-        "scripts/ci/check-copyright.sh": 2
+        "scripts/ci/check-copyright.sh": 4,
+        "scripts/ci/tests/test_check_copyright.py": 1
       },
       "target": "0105-copyright-handling-dual-notice.md"
     },
@@ -5808,6 +5809,7 @@
         "core/test/meson.build": 1,
         "core/test/test_pelorus_interop.c": 1,
         "scripts/ci/assertion-density.sh": 1,
+        "scripts/ci/check-copyright.sh": 1,
         "scripts/ci/pelorus_mirror.py": 1,
         "scripts/ci/tidy-ratchet.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
@@ -7214,8 +7216,11 @@
     },
     "1250": {
       "sites": {
+        ".pre-commit-config.yaml": 1,
         "REUSE.toml": 3,
         "core/src/mcp/meson.build": 1,
+        "scripts/ci/check-copyright.sh": 7,
+        "scripts/ci/tests/test_check_copyright.py": 4,
         "scripts/dev/relicense_fork_files.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
         "scripts/dev/tests/test_relicense_fork_files.py": 1
@@ -7334,6 +7339,12 @@
         "scripts/ci/tests/test_hiss_replay_contract.py": 2
       },
       "target": "1274-hiss-21-replay-gate.md"
+    },
+    "1276": {
+      "sites": {
+        "scripts/ci/check-copyright.sh": 1
+      },
+      "target": "1276-pelorus-v022-parser-safety-repin.md"
     },
     "1277": {
       "sites": {

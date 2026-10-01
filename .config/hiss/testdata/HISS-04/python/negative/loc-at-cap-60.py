@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 def exactly_sixty(count):
     count += 1
     count += 1

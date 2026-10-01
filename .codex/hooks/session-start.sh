@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: EUPL-1.2
 # SessionStart hook: print a brief orientation line when a Claude session starts.
 # Quiet on happy path; warns only when something actionable is off.
 set -euo pipefail

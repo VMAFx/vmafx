@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package p
 
 // Cyclomatic12 has McCabe cyclomatic complexity 12, over the HISS-04 cap of 10.

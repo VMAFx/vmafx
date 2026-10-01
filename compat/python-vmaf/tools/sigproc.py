@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import numpy as np
 import scipy.io
 import scipy.ndimage

@@ -8,6 +8,7 @@ from vmaf.tools.misc import get_file_name_without_extension
 from vmaf.tools.reader import YuvReader
 
 # Copyright (c) 2016, Marco Tulio Correia Ribeiro
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without

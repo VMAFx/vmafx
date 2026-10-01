@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 """Config loader for vmaf-dev-llm."""
 
 from __future__ import annotations

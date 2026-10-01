@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package p
 
 // LongDecl spans 82 lines: over the HISS-04 function-length bound of 75 and over the

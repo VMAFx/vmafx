@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # kimchi.py
 # For converting Python 2 pickles to Python 3
 # taken from https://rebeccabilbro.github.io/convert-py2-pickles-to-py3/

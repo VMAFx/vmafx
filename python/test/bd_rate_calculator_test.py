@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import unittest
 
 from vmaf.tools.bd_rate_calculator import BDrateCalculator

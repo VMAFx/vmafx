@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 """
 BD-rate calculator. Implementation validated against JCTVC-E137.
 """

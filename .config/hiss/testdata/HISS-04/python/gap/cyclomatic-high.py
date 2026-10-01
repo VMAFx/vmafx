@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 # Cyclomatic complexity 21 in 43 lines. The ruff template selects E,F,I,N,UP,B,A,C4,T20,SIM
 # -- neither C90 (mccabe) nor PLR0912/PLR0915 -- and no Python linter runs in this repo's
 # gate at all.

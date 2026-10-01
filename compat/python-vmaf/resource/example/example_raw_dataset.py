@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 dataset_name = 'example'
 
 yuv_fmt = 'yuv420p'

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from collections.abc import Iterable
 
 from .typing_utils import RdPoint

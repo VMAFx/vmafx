@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 from vmaf.config import VmafConfig
 
 dataset_name = "test_image"

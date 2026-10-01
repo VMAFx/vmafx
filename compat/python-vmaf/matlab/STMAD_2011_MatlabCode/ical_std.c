@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /*You can include any C libraries that you normally use*/
 #include "math.h"
 #include "mex.h" /*--This one is required*/

@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
 /* 
 RES = corrDn(IM, FILT, EDGES, STEP, START, STOP);
   >>> See corrDn.m for documentation <<<

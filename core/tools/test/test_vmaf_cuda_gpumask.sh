@@ -1,4 +1,5 @@
 #!/bin/sh -x
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 set -e
 
 # Graceful skip when no CUDA driver is available (CI / no-GPU machines).

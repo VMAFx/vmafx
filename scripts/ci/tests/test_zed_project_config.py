@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 """Contract tests for the repository's Zed 1.18 project configuration.
 
 Zed parses ``.zed/settings.json`` as ``ProjectSettingsContent``, not as the
