@@ -78,6 +78,19 @@ int vif_get_scaling_method(char *scaling_method_str, enum vif_scaling_method *sc
 void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, float *dst,
                        int src_w, int src_h, int src_stride, int dst_w, int dst_h, int dst_stride);
 
+/* Taps of the lanczos4 prescale kernel along one axis: offsets -4 .. 4. */
+#define VIF_LANCZOS4_TAPS 9
+
+/* The lanczos4 weights vif_scale_frame_s() applies along one axis when it
+ * resamples `src_len` samples to `dst_len`: for output sample `i`,
+ * weights[VIF_LANCZOS4_TAPS * i + k] multiplies source sample
+ * floor(position(i)) + k - 4. They are evaluated by the routine the CPU scaler
+ * itself calls, so a device that reads this table applies the CPU's weights
+ * bit for bit instead of approximating the fp64 sines in fp32
+ * (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). `weights` holds
+ * VIF_LANCZOS4_TAPS * dst_len floats. */
+void vif_scale_lanczos4_axis_weights(int src_len, int dst_len, float *weights);
+
 int vif_get_filter_size(int scale, float kernelscale);
 
 /* Smallest frame dimension the four-scale VIF ladder can process without

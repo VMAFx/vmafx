@@ -1268,6 +1268,31 @@ test_speed_frame_buffers = executable('test_speed_frame_buffers',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
+
+# The lanczos4 prescale weight table the device-resident SpEED twins read
+# (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30): resampling with the table
+# in the scale kernel's operation order must equal vif_scale_frame_s() bit for
+# bit. Device-free, so it runs on every lane; same link recipe and float gate
+# as test_speed. vmaf_fp_model_args keeps Intel LLVM's default fast model from
+# reordering the replayed sums, as it does for the library.
+test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
+    ['test.c', 'test_speed_lanczos4_weights.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + vmaf_fp_model_args + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_speed_lanczos4_weights', test_speed_lanczos4_weights, suite : ['fast'])
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
@@ -2925,6 +2950,23 @@ test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 90)
+
+# lanczos4 prescale (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30): the scale
+# kernel reads the weights the host evaluates with the CPU scaler's own
+# routine instead of approximating the fp64 sines in fp32. A gradient fixture,
+# prescale 0.5, 2.0 and 1.0, both twins against the CPU extractors. The table
+# itself is checked without a device by test_speed_lanczos4_weights.
+test_cuda_speed_lanczos4_parity = executable('test_cuda_speed_lanczos4_parity',
+    ['test.c', 'test_cuda_speed_lanczos4_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_lanczos4_parity', test_cuda_speed_lanczos4_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
 
 # ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
 # twin gap (float_psnr, float_vif, float_ms_ssim, float_moment) plus the

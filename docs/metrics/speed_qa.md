@@ -247,10 +247,13 @@ this change 1 to 9 frames per run matched and the largest difference was
 correctly rounded division fallback and keep the ADR-0214 tolerance.
 `speed_prescale_method=lanczos4` evaluates its kernel weights in fp32 where the
 CPU uses fp64 `sin`, and SpEED amplifies the few-ulp weight differences: the
-CUDA twin, which computes the weights the same way, is up to 2.1e-2 (5.7e-4
-relative) from the CPU on a smooth 1920x1080 gradient with
+CUDA twin, while it computed the weights the same way, was up to 2.1e-2
+(5.7e-4 relative) from the CPU on a smooth 1920x1080 gradient with
 `speed_prescale=0.5` on an RTX 4090, beyond the ADR-0214 tolerance, and at
-most 2.5e-5 on natural content
+most 2.5e-5 on natural content. The CUDA twin now reads the weights from a
+table the host builds with the CPU scaler's own routine
+([below](#cuda-the-same-chain-on-the-device)); the SYCL twin still
+evaluates them on the device
 (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in [`state.md`](../state.md)).
 
 Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
@@ -304,7 +307,14 @@ On an RTX 4090, against an icx build of the CPU extractor at `--precision
 max`, every per-frame `speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`
 and `speed_temporal` value is identical to `--backend cpu` on the Netflix
 576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and so are nearest,
-bilinear and bicubic prescale; `lanczos4` is not exact
+bilinear, bicubic and `lanczos4` prescale (at 0.5 and 2.0; `lanczos4` was
+checked against a gcc build with the [correctly rounded
+`log2f`](#the-cpu-reference-and-log2f) preloaded). The `lanczos4` weights
+depend only on the output column and row, so the host evaluates them once per
+run with the CPU scaler's own routine (`vif_scale_lanczos4_axis_weights()` in
+`vif_tools.c`, fp64 `sin`) and the scale kernel reads the table; a device
+sine in fp32 is a few ulp off on some weights, which SpEED amplified to as
+much as 8.8e-3 relative on a smooth synthetic field
 (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Before ADR-1380, 1 to 10
 frames per output matched, and `speed_temporal_cuda` failed at 1920x1080 and
 above with `CUDA_ERROR_INVALID_VALUE`. Milliseconds per frame,
@@ -359,8 +369,11 @@ LD_PRELOAD=/tmp/crlog2f.so python3 scripts/dev/speed_gpu_parity.py --backend hip
   --bbb-dir testdata/bbb --no-timing
 ```
 
-`speed_prescale_method=lanczos4` stays within the ADR-0214 tolerance, as on
-SYCL: the CPU evaluates its weights with fp64 `sin`. The twins have not yet run
+`speed_prescale_method=lanczos4` is not exact, as on SYCL: the CPU evaluates
+its weights with fp64 `sin` and these two twins still evaluate them on the
+device in fp32, which on smooth content leaves the ADR-0214 tolerance
+(`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`; the CUDA twin reads the
+host's table instead). The twins have not yet run
 on an AMD device; the verify and timing commands are in
 [`state.md`](../state.md) under `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`, and a
 host test replays the kernels against the CPU extractor

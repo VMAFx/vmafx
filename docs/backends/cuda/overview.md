@@ -660,8 +660,9 @@ Scores:
 - `speed_chroma_cuda` and `speed_temporal_cuda` equal the CPU extractor to the
   last bit when that extractor rounds `log2f` correctly and does not fuse
   multiply-adds, as an icx build without `-march=native` does; a gcc build on
-  glibc differs in the last bits on a few frames. The `lanczos4` prescale does
-  not match (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Details:
+  glibc differs in the last bits on a few frames. That holds for every
+  `speed_prescale_method`: the `lanczos4` weights are read from a table the
+  host builds with the CPU scaler's own routine. Details:
   [SpEED](../../metrics/speed_qa.md#the-cpu-reference-and-log2f).
 
 Measured on an RTX 4090 against an icx build of the CPU extractors: every

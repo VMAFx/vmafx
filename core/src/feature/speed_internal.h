@@ -396,6 +396,34 @@ int speed_internal_gpu_configure(const SpeedInternalDimensions *dim,
                                  const SpeedInternalOptions *opt, unsigned bpc,
                                  SpeedGpuConfig *config);
 
+/**
+ * Size of the lanczos4 prescale weight table of a device-resident pipeline.
+ *
+ * @param g  Geometry from speed_internal_gpu_configure().
+ * @return The number of floats: SPEED_GPU_LANCZOS_TAPS per scaled column plus
+ *         SPEED_GPU_LANCZOS_TAPS per scaled row. 0 when the pipeline does not
+ *         resample with lanczos4, or `g` is NULL: no table is needed.
+ */
+size_t speed_internal_gpu_lanczos_count(const SpeedGpuGeometry *g);
+
+/**
+ * Fill the lanczos4 prescale weight table with the weights the CPU scaler
+ * applies (vif_scale_lanczos4_axis_weights(), vif_tools.c): entry
+ * `SPEED_GPU_LANCZOS_TAPS * x + k` is tap `k` of scaled column `x`, entry
+ * `SPEED_GPU_LANCZOS_TAPS * (scaled_w + y) + k` tap `k` of scaled row `y`.
+ * The reference evaluates these weights in fp64 with sin(); a device that
+ * evaluated them itself in fp32 drifted from the CPU by more than the ADR-0214
+ * tolerance on smooth content (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
+ * Init only.
+ *
+ * @param g        Geometry from speed_internal_gpu_configure().
+ * @param weights  Output, `count` floats.
+ * @param count    Must equal speed_internal_gpu_lanczos_count(g).
+ * @return 0, or -EINVAL for a NULL argument, a pipeline without a table, or a
+ *         `count` that is not the table's size.
+ */
+int speed_internal_gpu_lanczos_weights(const SpeedGpuGeometry *g, float *weights, size_t count);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

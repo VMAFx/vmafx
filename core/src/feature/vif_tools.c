@@ -644,6 +644,27 @@ static float lanczos4_kernel(float x, float a)
     return 0.0;
 }
 
+/* The nine weights of one axis for a sample `d` past its left neighbour. The
+ * CPU scaler and the table the GPU twins read (below) both come from here. */
+static void lanczos4_weights(float d, float *weights)
+{
+    const int a = (VIF_LANCZOS4_TAPS - 1) / 2;
+    for (int i = -a; i <= a; i++)
+        weights[i + a] = lanczos4_kernel((float)i - d, (float)a);
+}
+
+void vif_scale_lanczos4_axis_weights(int src_len, int dst_len, float *weights)
+{
+    /* vif_scale_frame_lanczos4_s(): the ratio in fp32, the sample position in
+     * fp64 rounded once to fp32, then lanczos4_interpolation()'s fraction. */
+    const float ratio = (float)src_len / (float)dst_len;
+    for (int i = 0; i < dst_len; i++) {
+        const float position = (float)(((double)i + 0.5) * (double)ratio - 0.5);
+        const float fraction = position - floorf(position);
+        lanczos4_weights(fraction, weights + (ptrdiff_t)i * VIF_LANCZOS4_TAPS);
+    }
+}
+
 static float lanczos4_interpolation(const float *src, int width, int height, int src_stride,
                                     float x, float y)
 {
@@ -657,12 +678,10 @@ static float lanczos4_interpolation(const float *src, int width, int height, int
     float value = 0.0;
     float weight_sum = 0.0;
 
-    float weights_x[9];
-    float weights_y[9];
-    for (int i = -a; i <= a; i++) {
-        weights_x[i + a] = lanczos4_kernel(i - dx, (float)a);
-        weights_y[i + a] = lanczos4_kernel(i - dy, (float)a);
-    }
+    float weights_x[VIF_LANCZOS4_TAPS];
+    float weights_y[VIF_LANCZOS4_TAPS];
+    lanczos4_weights(dx, weights_x);
+    lanczos4_weights(dy, weights_y);
 
     for (int iy = -a; iy <= a; iy++) {
         for (int ix = -a; ix <= a; ix++) {

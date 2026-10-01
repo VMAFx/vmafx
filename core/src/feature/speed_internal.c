@@ -902,3 +902,23 @@ int speed_internal_gpu_configure(const SpeedInternalDimensions *dim,
     si_gpu_fill_scoring(opt, &config->scoring);
     return 0;
 }
+
+_Static_assert(SPEED_GPU_LANCZOS_TAPS == VIF_LANCZOS4_TAPS,
+               "the device table and vif_tools.c disagree on the lanczos4 tap count");
+
+size_t speed_internal_gpu_lanczos_count(const SpeedGpuGeometry *g)
+{
+    if (!g || !g->prescale || g->scale_method != (int32_t)vif_scale_lanczos4)
+        return 0u;
+    return (size_t)SPEED_GPU_LANCZOS_TAPS * ((size_t)g->scaled_w + (size_t)g->scaled_h);
+}
+
+int speed_internal_gpu_lanczos_weights(const SpeedGpuGeometry *g, float *weights, size_t count)
+{
+    if (!g || !weights || count == 0u || count != speed_internal_gpu_lanczos_count(g))
+        return -EINVAL;
+    vif_scale_lanczos4_axis_weights((int)g->src_w, (int)g->scaled_w, weights);
+    vif_scale_lanczos4_axis_weights((int)g->src_h, (int)g->scaled_h,
+                                    weights + (size_t)SPEED_GPU_LANCZOS_TAPS * g->scaled_w);
+    return 0;
+}

@@ -44,6 +44,7 @@ typedef struct SpeedCudaFrameArgs {
     uint64_t raw;         /* uint8 raw planes, raw_planes x plane_bytes */
     uint64_t plane_bytes; /* src_w * src_h * bytes_per_sample */
     uint64_t taps;        /* float antialias[128], then lowpass[128] */
+    uint64_t lanczos;     /* float 9 x (scaled_w + scaled_h): columns, then rows (lanczos4 only) */
     uint64_t scaled;      /* float channels x scaled_h x scaled_w (prescale only) */
     uint64_t down;        /* float channels x down_h x down_w */
     uint64_t centered;    /* float channels x trunc_h x trunc_w */

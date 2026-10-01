@@ -65,6 +65,7 @@ static const char *const speed_kernel_names[SPEED_FN_COUNT] = {
 typedef enum {
     SPEED_BUF_RAW,
     SPEED_BUF_TAPS,
+    SPEED_BUF_LANCZOS,
     SPEED_BUF_SCALED,
     SPEED_BUF_DOWN,
     SPEED_BUF_CENTERED,
@@ -142,6 +143,8 @@ static size_t speed_buffer_bytes(const SpeedCudaPipeline *p, SpeedCudaBufferId i
         return p->plane_bytes * p->raw_planes;
     case SPEED_BUF_TAPS:
         return (size_t)2u * SPEED_GPU_MAX_TAPS * f;
+    case SPEED_BUF_LANCZOS:
+        return speed_internal_gpu_lanczos_count(g) * f;
     case SPEED_BUF_SCALED:
         return g->prescale ? ch * g->scaled_w * g->scaled_h * f : 0u;
     case SPEED_BUF_DOWN:
@@ -233,12 +236,35 @@ static int speed_upload_taps(SpeedCudaPipeline *p)
     return 0;
 }
 
+/* The lanczos4 prescale weights, evaluated here by the CPU scaler's own
+ * routine so the scale kernel applies them bit for bit
+ * (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). Init only: the host table
+ * is transient and the copy may be synchronous. Nothing to do for any other
+ * prescale method. */
+static int speed_upload_lanczos(SpeedCudaPipeline *p)
+{
+    const size_t count = speed_internal_gpu_lanczos_count(&p->config.geometry);
+    if (count == 0u)
+        return 0;
+    float *host = malloc(count * sizeof(*host));
+    if (!host)
+        return -ENOMEM;
+    int err = speed_internal_gpu_lanczos_weights(&p->config.geometry, host, count);
+    if (!err) {
+        const CUresult copied = p->cu_state->f->cuMemcpyHtoD(p->buf[SPEED_BUF_LANCZOS]->data, host,
+                                                             count * sizeof(*host));
+        err = vmaf_cuda_result_to_errno((int)copied);
+    }
+    free(host);
+    return err;
+}
+
 static int speed_allocate(SpeedCudaPipeline *p)
 {
     for (int id = 0; id < SPEED_BUF_COUNT; id++) {
         const size_t bytes = speed_buffer_bytes(p, (SpeedCudaBufferId)id);
         if (bytes == 0u)
-            continue; /* SCALED without prescale */
+            continue; /* SCALED without prescale, LANCZOS without lanczos4 */
         const int err = vmaf_cuda_buffer_alloc(p->cu_state, &p->buf[id], bytes);
         if (err)
             return err;
@@ -290,6 +316,8 @@ int speed_cuda_pipeline_open(SpeedCudaPipeline **out, VmafCudaState *cu_state,
         err = speed_allocate(p);
     if (!err)
         err = speed_in_context(p, speed_upload_taps);
+    if (!err)
+        err = speed_in_context(p, speed_upload_lanczos);
     return err;
 }
 
@@ -332,6 +360,7 @@ static void speed_frame_args(const SpeedCudaPipeline *p, const SpeedGpuChannelBi
     a->raw = speed_dptr(p, SPEED_BUF_RAW);
     a->plane_bytes = p->plane_bytes;
     a->taps = speed_dptr(p, SPEED_BUF_TAPS);
+    a->lanczos = speed_dptr(p, SPEED_BUF_LANCZOS);
     a->scaled = speed_dptr(p, SPEED_BUF_SCALED);
     a->down = speed_dptr(p, SPEED_BUF_DOWN);
     a->centered = speed_dptr(p, SPEED_BUF_CENTERED);

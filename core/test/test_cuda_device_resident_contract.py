@@ -193,6 +193,15 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
     for intrinsic in ("__fdiv_rn", "__fsqrt_rn", "__fadd_rn", "__fmul_rn"):
         if intrinsic not in kernels:
             failures.append(f"{SPEED_KERNELS}: {intrinsic} no longer spells the CPU rounding")
+    # lanczos4 prescale: the CPU scaler evaluates each weight in fp64 with sin()
+    # and rounds once. No fp32 device sine reproduces that, and SpEED amplifies
+    # the last-bit differences, so the host builds the weight table with the
+    # scaler's own routine and the scale kernel only reads it
+    # (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
+    if re.search(r"\b(?:__)?(?:sin|cos|sincos)(?:pi)?f?\s*\(", _code(kernels)):
+        failures.append(f"{SPEED_KERNELS}: a device sine evaluates a prescale weight")
+    if "speed_internal_gpu_lanczos_weights(" not in _code(sources["speed_cuda_pipeline.c"]):
+        failures.append("speed_cuda_pipeline.c: the lanczos4 weight table is not built on the host")
     if "return speed_log2_hard_case(" not in kernels:
         failures.append(f"{SPEED_KERNELS}: speed_log2 no longer applies the log2 hard cases")
     if "0x1.0c6f7ap-20f" not in kernels or "0x1.6bdb1ap-49f" not in kernels:
@@ -411,6 +420,23 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             "return __fsqrt_rn(x);", "return sqrtf(x);", 1
         )
         self.assertTrue(any("approximate math" in item for item in _contract_failures(sources)))
+
+    def test_speed_device_sine_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
+            "template <class Source>\nstatic __device__ float scale_lanczos(",
+            "static __device__ float lanczos_weight(float x)\n{\n    return sinpif(x);\n}\n\n"
+            "template <class Source>\nstatic __device__ float scale_lanczos(",
+            1,
+        )
+        self.assertTrue(any("device sine" in item for item in _contract_failures(sources)))
+
+    def test_speed_missing_lanczos_table_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_cuda_pipeline.c"] = sources["speed_cuda_pipeline.c"].replace(
+            "speed_internal_gpu_lanczos_weights(", "speed_local_lanczos_weights(", 1
+        )
+        self.assertTrue(any("weight table" in item for item in _contract_failures(sources)))
 
     def test_speed_contracting_build_is_detected(self) -> None:
         sources = _sources()

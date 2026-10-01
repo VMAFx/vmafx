@@ -1124,6 +1124,20 @@ parity gate fires.  `feature_extractor_list_audit()` function
 in `feature_extractor.c` catches duplicate registrations, not
 *missing* ones.
 
+### `lanczos4` prescale weights have one implementation, shared with the GPU twins
+
+`lanczos4_weights()` in `vif_tools.c` feeds both `lanczos4_interpolation()`
+(CPU scaler) and `vif_scale_lanczos4_axis_weights()` (per-axis table, exported).
+`speed_internal_gpu_lanczos_weights()` lays that table out for a device
+pipeline: 9 taps per scaled column, then per scaled row. `speed_score.cu`
+reads it; no device sine (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
+
+On rebase: upstream change to `lanczos4_kernel()`, `lanczos4_interpolation()`
+or the `(i + 0.5) * ratio - 0.5` position of `vif_scale_frame_lanczos4_s()`
+-> same change in `vif_scale_lanczos4_axis_weights()`. Do not re-inline the
+weight loop into `lanczos4_interpolation()`. `test_speed_lanczos4_weights`
+fails when the two drift (table replay vs `vif_scale_frame_s()`, bit for bit).
+
 ### `matrix_mul` dispatches; `si_mat_mul` deliberately does not (ADR-1196)
 
 `speed.c`'s `matrix_mul()` no longer contains multiply loop. It

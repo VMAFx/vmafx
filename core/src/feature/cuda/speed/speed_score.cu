@@ -53,6 +53,7 @@ static constexpr uint32_t kMatrix = SPEED_KMATRIX;
 static constexpr uint32_t kTriangle = SPEED_KTRIANGLE;
 static constexpr uint32_t kBlock = SPEED_GPU_BLOCK;
 static constexpr uint32_t kMaxTaps = SPEED_GPU_MAX_TAPS;
+static constexpr uint32_t kLanczosTaps = SPEED_GPU_LANCZOS_TAPS;
 static constexpr uint32_t kDecimation = 16u;      /* 2^NUM_SCALES */
 static constexpr uint32_t kQrIterationCap = 500u; /* EIGENVALUE_MAX_ITERS */
 static constexpr uint32_t kMeanChunk = 16u;
@@ -61,7 +62,6 @@ static constexpr float kElementsF = 25.0f;       /* elements_in_block */
 static constexpr float kEpsHi = 0x1.0c6f7ap-20f; /* (float)EIGENVALUE_EPS */
 static constexpr float kEpsLo = 0x1.6bdb1ap-49f; /* EIGENVALUE_EPS - kEpsHi, exact */
 static constexpr float kSqrt2 = 0x1.6a09e6p+0f;  /* (float)sqrt(2) */
-static constexpr float kPi = 3.14159265358979323846f;
 
 /* ------------------------------------------------------------------ */
 /* Round-to-nearest fp32 arithmetic (never contracted)                 */
@@ -460,38 +460,20 @@ static __device__ float scale_bicubic(const Source &src, uint32_t ch, const Spee
     return value;
 }
 
-/* lanczos4_kernel(), vif_tools.c. The reference evaluates the weight in fp64
- * with sin(); fp32 sinpif() matches it to a few ulp, not bit for bit
- * (ADR-1358 names the same limit for the SYCL port). */
-static __device__ __forceinline__ float lanczos_weight(float x)
-{
-    const float a = 4.0f;
-    if (x == 0.0f)
-        return 1.0f;
-    if (x > -a && x < a) {
-        const float s1 = sinpif(x);
-        const float s2 = sinpif(rn_div(x, a));
-        const float num = rn_mul(rn_mul(a, s1), s2);
-        const float den = rn_mul(rn_mul(rn_mul(kPi, kPi), x), x);
-        return rn_div(num, den);
-    }
-    return 0.0f;
-}
-
+/* lanczos4_interpolation(), vif_tools.c. The reference evaluates
+ * lanczos4_kernel() in fp64 with sin() and rounds each weight once; no fp32
+ * device sine reproduces that rounding, and SpEED amplifies the last-bit
+ * differences on smooth content. The weights depend only on the output column
+ * and row, so the host evaluates them once per run with the CPU scaler's own
+ * routine (speed_internal_gpu_lanczos_weights()) and this kernel reads them:
+ * `wx` are the nine taps of this output column, `wy` of this output row. */
 template <class Source>
 static __device__ float scale_lanczos(const Source &src, uint32_t ch, const SpeedGpuGeometry &g,
+                                      const float *__restrict__ wx, const float *__restrict__ wy,
                                       float x, float y)
 {
     const auto x0 = static_cast<int32_t>(floorf(x));
     const auto y0 = static_cast<int32_t>(floorf(y));
-    const float dx = rn_sub(x, static_cast<float>(x0));
-    const float dy = rn_sub(y, static_cast<float>(y0));
-    float wx[9];
-    float wy[9];
-    for (int32_t i = -4; i <= 4; i++) {
-        wx[i + 4] = lanczos_weight(rn_sub(static_cast<float>(i), dx));
-        wy[i + 4] = lanczos_weight(rn_sub(static_cast<float>(i), dy));
-    }
     const float right = static_cast<float>(g.src_w - 1u);
     const float bottom = static_cast<float>(g.src_h - 1u);
     float value = 0.0f;
@@ -511,9 +493,12 @@ static __device__ float scale_lanczos(const Source &src, uint32_t ch, const Spee
     return rn_div(value, weight_sum);
 }
 
+/* `lanczos`: the host's weight table, SPEED_GPU_LANCZOS_TAPS per scaled
+ * column and then per scaled row; read by the lanczos4 method only. */
 template <class Source>
-static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &g, uint32_t ch,
-                                     uint32_t y, uint32_t x)
+static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &g,
+                                     const float *__restrict__ lanczos, uint32_t ch, uint32_t y,
+                                     uint32_t x)
 {
     if (g.src_w == g.scaled_w && g.src_h == g.scaled_h)
         return src(ch, y, x);
@@ -528,8 +513,11 @@ static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &
     const float yy = centre_coordinate(y, ratio_y);
     if (g.scale_method == 1) /* vif_scale_bicubic */
         return scale_bicubic(src, ch, g, xx, yy);
-    if (g.scale_method == 2) /* vif_scale_lanczos4 */
-        return scale_lanczos(src, ch, g, xx, yy);
+    if (g.scale_method == 2) { /* vif_scale_lanczos4 */
+        const float *wx = lanczos + static_cast<size_t>(kLanczosTaps) * x;
+        const float *wy = lanczos + static_cast<size_t>(kLanczosTaps) * (g.scaled_w + y);
+        return scale_lanczos(src, ch, g, wx, wy, xx, yy);
+    }
     return scale_bilinear(src, ch, g, xx, yy); /* vif_scale_bilinear */
 }
 
@@ -1220,10 +1208,11 @@ __global__ void __launch_bounds__(SPEED_CUDA_PIXEL_THREADS)
     const auto y = static_cast<uint32_t>(rest / g.scaled_w);
     const auto x = static_cast<uint32_t>(rest % g.scaled_w);
     float *dst = reinterpret_cast<float *>(a.scaled);
+    const float *lanczos = reinterpret_cast<const float *>(a.lanczos);
     if (g.bytes_per_sample == 2u)
-        dst[idx] = scale_sample(RawSource<uint16_t>(a), g, ch, y, x);
+        dst[idx] = scale_sample(RawSource<uint16_t>(a), g, lanczos, ch, y, x);
     else
-        dst[idx] = scale_sample(RawSource<uint8_t>(a), g, ch, y, x);
+        dst[idx] = scale_sample(RawSource<uint8_t>(a), g, lanczos, ch, y, x);
 }
 
 /* Anti-alias filter at the decimated points of the raw planes (no prescale):

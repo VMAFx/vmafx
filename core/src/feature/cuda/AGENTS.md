@@ -1043,9 +1043,19 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   SpEED bit-exact vs CPU built without FMA contraction and with correctly
   rounded `log2f` (icx build; gcc/glibc differs few frames: glibc 2.43
   <= 4.8e-7, glibc 2.44 <= 1.4e-6; icx `-march=native` up to 7.9e-4,
-  Research-1379). `lanczos4` prescale not exact
-  (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Verified on RTX 4090
-  (Research-1379 finding 8); re-run its commands after touching these TUs.
+  Research-1379). Verified on RTX 4090 (Research-1379 finding 8); re-run
+  its commands after touching these TUs.
+- **`lanczos4` prescale weights = host table, never a device sine.** CPU
+  rounds each weight once from fp64 `sin()`; fp32 `sinpif()` is ulps off and
+  SpEED amplifies (8.8e-3 relative on a smooth field,
+  `T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
+  `speed_upload_lanczos()` fills `SPEED_BUF_LANCZOS` at init from
+  `speed_internal_gpu_lanczos_weights()` (`vif_scale_lanczos4_axis_weights()`,
+  the CPU scaler's own routine): 9 taps per scaled column, then per scaled
+  row; `scale_lanczos()` reads `wx` / `wy` from it. Buffer exists only for
+  `lanczos4` with a resample. Guards: contract test (planted `sinpif`,
+  planted missing table), `test_speed_lanczos4_weights` (no device),
+  `test_cuda_speed_lanczos4_parity`.
 - **Init failure:** `speed_cuda_pipeline_open()` publishes pipeline before
   first allocation; extractor close (owed after failed init, ADR-1336)
   releases partial state. Do not self-close inside init.

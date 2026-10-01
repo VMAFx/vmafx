@@ -45,6 +45,7 @@ extern "C" {
 #define SPEED_GPU_MAX_PAIRS 2u      /* scores per frame */
 #define SPEED_GPU_MAX_RAW_PLANES 4u /* raw input planes a pipeline keeps */
 #define SPEED_GPU_MAX_TAPS 128u     /* filter taps per filter */
+#define SPEED_GPU_LANCZOS_TAPS 9u   /* VIF_LANCZOS4_TAPS: lanczos4 weights per axis sample */
 
 /* Plane geometry, identical for every channel of one pipeline. Mirrors
  * SpeedInternalDimensions (speed_internal.h) plus the raw sample format. */
@@ -66,6 +67,12 @@ typedef struct SpeedGpuGeometry {
     int32_t prescale;          /* non-zero: resample the frame before filtering */
     int32_t scale_method;      /* enum vif_scaling_method */
 } SpeedGpuGeometry;
+
+/* The lanczos4 prescale weights are a per-run table too, sized by the scaled
+ * plane: speed_internal_gpu_lanczos_weights() (speed_internal.h) fills
+ * SPEED_GPU_LANCZOS_TAPS floats per scaled column, then per scaled row, with
+ * the weights the CPU scaler computes. Each backend keeps the table in a
+ * device buffer of its own; no kernel evaluates a sine. */
 
 /* Filter taps, computed once on the host by vif_tools.c. */
 typedef struct SpeedGpuFilters {

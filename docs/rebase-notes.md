@@ -1,6 +1,32 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/speed-lanczos4-host-weights — the CUDA SpEED twins read the CPU's lanczos4 weights (2026-10-01)
+
+- `core/src/feature/vif_tools.c` (upstream-mirror): the weight loop of
+  `lanczos4_interpolation()` moved into a static `lanczos4_weights()`, and a
+  new exported `vif_scale_lanczos4_axis_weights()` fills the per-axis table of
+  those weights for every output sample (`VIF_LANCZOS4_TAPS` in `vif_tools.h`).
+  The CPU scaler's results are unchanged: same expressions, same order.
+  **Upstream-sync note:** a conflict in `lanczos4_interpolation()` will offer
+  the inlined loop as "theirs". Keep the call to `lanczos4_weights()`, and
+  apply any upstream change to `lanczos4_kernel()` or to the
+  `(i + 0.5) * ratio - 0.5` position of `vif_scale_frame_lanczos4_s()` to
+  `vif_scale_lanczos4_axis_weights()` as well.
+  `core/test/test_speed_lanczos4_weights.c` (new, no device) replays the table
+  against `vif_scale_frame_s()` bit for bit and fails when they drift.
+- `core/src/feature/speed_internal.{h,c}`, `speed_gpu_common.h`:
+  `speed_internal_gpu_lanczos_count()` / `speed_internal_gpu_lanczos_weights()`
+  and `SPEED_GPU_LANCZOS_TAPS`, the table layout for a device pipeline (taps of
+  every scaled column, then of every scaled row). Backend-neutral: the SYCL and
+  HIP twins can read the same table.
+- `core/src/feature/cuda/speed_cuda_pipeline.c`, `speed/speed_cuda_params.h`,
+  `speed/speed_score.cu`: a `SPEED_BUF_LANCZOS` device buffer uploaded at init
+  and a `lanczos` pointer in `SpeedCudaFrameArgs`; `scale_lanczos()` reads the
+  weights and `lanczos_weight()` / `sinpif()` are gone.
+  `test_cuda_device_resident_contract.py` rejects a sine in `speed_score.cu`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 
 - `core/src/model.c`, `vmaf_model_collection_append()`: when the `realloc()`
