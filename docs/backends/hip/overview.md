@@ -231,6 +231,12 @@ explicit opt-in:
 ./build/tools/vmaf --feature integer_adm_hip:adm_skip_scale0=true --reference ref.yuv ...
 ```
 
+A twin named this way runs on the thread that calls `vmaf_read_pictures()`,
+with or without `--threads`. Until 2026-10-01 `adm_hip` and `float_vif_hip`,
+the two twins `--backend hip` does not select for their CPU names, failed
+with `problem flushing context` whenever `--threads` was given, because the
+worker pool tried to run them.
+
 FFmpeg backend selector: `hip_device=N` (patch `0011-libvmaf-wire-hip-backend-selector.patch`
 in `ffmpeg-patches/`; see [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-selector.md)).
 

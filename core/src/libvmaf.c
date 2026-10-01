@@ -2422,21 +2422,32 @@ static int batch_thread_data_ensure(void **thread_data, unsigned cnt, BatchThrea
     return 0;
 }
 
-/* Extractors the CPU worker pool must not run for this frame. CUDA and SYCL
- * extractors are dispatched by their backend paths in
- * read_pictures_dispatch_one() — running them here as well would double-write
- * the feature collector — and TEMPORAL extractors run on the serial path.
- * Everything else honours n_subsample. Keep in sync with
- * read_pictures_should_skip(). */
-static bool batch_extractor_skip(const VmafFeatureExtractor *shared_fex, unsigned index,
-                                 unsigned n_subsample)
+/* Whether the extractor of `fex_ctx` runs on the thread that calls
+ * vmaf_read_pictures() even when a worker pool exists: GPU extractors,
+ * dispatched by their backend paths in read_pictures_dispatch_one(), TEMPORAL
+ * extractors, and every extractor that registered with submit() and
+ * collect(). The last clause is what keeps a twin without a backend flag
+ * (adm_hip, float_vif_hip: reachable by name only) out of the pool, whose
+ * workers call extract() and would fail every frame of an extractor that has
+ * none. The one rule for read_pictures_should_skip() and
+ * batch_extractor_skip(), so the two cannot disagree. */
+static bool fex_ctx_runs_on_caller_thread(const VmafFeatureExtractorContext *fex_ctx)
 {
     const uint64_t not_pooled = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
                                 VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL |
                                 VMAF_FEATURE_EXTRACTOR_TEMPORAL;
-    if (shared_fex->flags & not_pooled)
+    return (fex_ctx->fex->flags & not_pooled) != 0 || fex_ctx->caller_thread_dispatch;
+}
+
+/* Extractors the CPU worker pool must not run for this frame: the ones the
+ * calling thread runs (running them here as well would double-write the
+ * feature collector), and the ones n_subsample skips. */
+static bool batch_extractor_skip(const VmafFeatureExtractorContext *shared_ctx, unsigned index,
+                                 unsigned n_subsample)
+{
+    if (fex_ctx_runs_on_caller_thread(shared_ctx))
         return true;
-    return fex_subsample_skip(shared_fex->flags, index, n_subsample);
+    return fex_subsample_skip(shared_ctx->fex->flags, index, n_subsample);
 }
 
 /* Create (once) this worker's private context for extractor i.
@@ -2506,8 +2517,7 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
     BatchThreadData *td = NULL;
     int err = batch_thread_data_ensure(thread_data, f->registered_fex->cnt, &td);
     for (unsigned i = 0; !err && i < f->registered_fex->cnt; i++) {
-        const VmafFeatureExtractor *shared_fex = f->registered_fex->fex_ctx[i]->fex;
-        if (batch_extractor_skip(shared_fex, f->index, f->n_subsample))
+        if (batch_extractor_skip(f->registered_fex->fex_ctx[i], f->index, f->n_subsample))
             continue;
         err = batch_ensure_fex_ctx(td, f, i);
         if (!err)
@@ -3109,14 +3119,10 @@ static bool read_pictures_should_skip(const VmafContext *vmaf,
     if (fex_subsample_skip(flags, index, vmaf->cfg.n_subsample))
         return true;
 
-    /* CPU extractors with a thread pool go to the threaded batch path.
-     * CUDA + SYCL extractors run serially via their respective dispatch loops.
-     * Skipping them in the threaded batch and skipping them ALSO from the serial
-     * loop here would leak — be careful to keep these in sync with
-     * batch_extractor_skip(). */
-    const bool gpu = (flags & (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
-                               VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL)) != 0;
-    return !gpu && vmaf->thread_pool && !(flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL);
+    /* With a thread pool, the extractors the pool runs are skipped here and
+     * the others run on this thread; batch_extractor_skip() decides the
+     * other half with the same predicate. */
+    return vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
 }
 
 /* GPU double-buffer dispatch for extractors that implement submit/collect:

@@ -290,6 +290,16 @@ typedef struct VmafFeatureExtractorContext {
     bool allow_context_fallback; ///< Model dispatch may replace an unsupported GPU twin (ADR-1324)
     bool gpu_pending;            ///< Has pending GPU submit awaiting collect
     unsigned gpu_pending_index;  ///< Frame index of pending GPU work
+    /**
+     * The extractor registered with submit() and collect(): libvmaf drives it
+     * through the double-buffer path on the thread that calls
+     * vmaf_read_pictures(), and the worker pool must never run it, whatever
+     * backend flag it carries (a twin that is reachable by name only, such as
+     * adm_hip, carries none). Decided once, when the context is created, so
+     * the caller's dispatch loop and the workers agree for the context's
+     * whole life even if init() swaps the callbacks.
+     */
+    bool caller_thread_dispatch;
 } VmafFeatureExtractorContext;
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,

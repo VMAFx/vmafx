@@ -839,9 +839,18 @@ signal, never as fixed constants.
   `const VmafContext *` — keep declaration and definition in step.
 - **PREV_REF references are released only through `fex_release_prev_ref()`**
   and every CPU-pool skip decision goes through `batch_extractor_skip()` /
-  `read_pictures_should_skip()`, which share `fex_subsample_skip()`. Two
-  skip predicates must agree on which extractors worker pool runs, or
-  extractor is dispatched twice (collector double-write) or never.
+  `read_pictures_should_skip()`, which share `fex_subsample_skip()` and
+  `fex_ctx_runs_on_caller_thread()`. Two skip predicates must agree on which
+  extractors worker pool runs, or extractor is dispatched twice (collector
+  double-write) or never.
+- **Pool or caller = capability, not backend flag.** Extractor with
+  `submit()` + `collect()` runs on caller thread (double-buffer path), flag or
+  no flag: `VmafFeatureExtractorContext::caller_thread_dispatch`, set once in
+  `vmaf_feature_extractor_context_create()`. Pool workers call `extract()`;
+  unflagged twin without one (`adm_hip`, `float_vif_hip`) failed every frame
+  with `-EINVAL` under `--threads N`
+  (T-ASYNC-EXTRACTOR-THREAD-POOL-EINVAL-2026-10-01). Guard:
+  `test/test_async_extractor_thread_pool.c`.
 - **Dispatch choice reads callbacks AFTER init** (`init_before_dispatch()`,
   `src/libvmaf.c`). `read_pictures_cuda_submit_current()` and
   `read_pictures_dispatch_one()` init extractor with `submit()` +

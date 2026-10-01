@@ -56499,3 +56499,21 @@ Verification:
 
 - **Files changed**: `ai/scripts/extract_k150k_features.py`, `ai/tests/test_extract_k150k_perf.py`, `ai/AGENTS.md`
 - **Rebase impact**: no rebase impact — fork-local Python script and tests only; no upstream-shared C, headers, or public API touched.
+## Unflagged submit/collect extractors run on the caller thread (2026-10-01)
+
+`fix/async-extractor-thread-pool`, `T-ASYNC-EXTRACTOR-THREAD-POOL-EINVAL-2026-10-01`.
+
+- `core/src/libvmaf.c`: `read_pictures_should_skip()` and
+  `batch_extractor_skip()` share one predicate,
+  `fex_ctx_runs_on_caller_thread()` (backend flags, TEMPORAL, or
+  `VmafFeatureExtractorContext::caller_thread_dispatch`).
+  `batch_extractor_skip()` takes the registered context, not the extractor.
+  An upstream change to either skip function has to keep both on the
+  predicate; a flag-only test hands a flagless GPU twin (`adm_hip`,
+  `float_vif_hip`) to the worker pool again, where every frame fails with
+  `-EINVAL`.
+- `core/src/feature/feature_extractor.{h,cpp}`: the new context field is set
+  in `vmaf_feature_extractor_context_create()` from the descriptor's
+  `submit` / `collect`, before `init()` can swap callbacks.
+- Guard: `core/test/test_async_extractor_thread_pool.c` (mock extractors, no
+  device).

@@ -797,6 +797,7 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     memcpy(x, fex, sizeof(*x));
 
     f->fex = x;
+    f->caller_thread_dispatch = (fex->submit != nullptr && fex->collect != nullptr);
     if (f->fex->priv_size) {
         void *priv = malloc(f->fex->priv_size);
         if (!priv)

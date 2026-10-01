@@ -6171,6 +6171,7 @@
         "core/test/test_adm_nonfinite_score.c": 1,
         "core/test/test_adm_small_border.c": 1,
         "core/test/test_adm_wide_rounding.c": 1,
+        "core/test/test_async_extractor_thread_pool.c": 1,
         "core/test/test_barten_csf.c": 1,
         "core/test/test_barten_csf_coverage.c": 1,
         "core/test/test_brisque.c": 1,

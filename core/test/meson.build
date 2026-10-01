@@ -548,6 +548,18 @@ test_flush_context_ordering = executable('test_flush_context_ordering',
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
 )
 
+# T-ASYNC-EXTRACTOR-THREAD-POOL-EINVAL-2026-10-01: an extractor with submit()
+# and collect() and no backend flag (a GPU twin reachable by name only, such
+# as adm_hip) runs on the calling thread when a worker pool exists; the pool's
+# workers call extract(), which such an extractor does not have. Mock
+# extractors, no device.
+test_async_extractor_thread_pool = executable('test_async_extractor_thread_pool',
+    ['test.c', 'test_async_extractor_thread_pool.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, gpu_all_deps],
+)
+
 # Coverage follow-up to PR #313 (R3 from
 # docs/development/coverage-gap-analysis-2026-05-02.md): exercise
 # core/src/output.cpp writers (XML / JSON / CSV / SUB) end-to-end.
@@ -5561,6 +5573,7 @@ test('test_feature_collector_source_authority',
     suite : ['fast'],
 )
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
+test('test_async_extractor_thread_pool', test_async_extractor_thread_pool, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
