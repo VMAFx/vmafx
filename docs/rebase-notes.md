@@ -55512,8 +55512,10 @@ that touches these files with the commands of Research-1379 finding 8.
   `init()` installs `submit_force_zero()` / `collect_force_zero()` instead of
   clearing `submit` / `collect`; `motion_hip` releases its device objects there
   (`msh_release_device()`) and keeps `close()`. An upstream or CUDA-mirror
-  hunk that restores `fex->submit = NULL` in either `init()` brings back the
-  frame-0 SIGSEGV (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30).
+  hunk that restores `fex->submit = NULL` in either `init()` takes the twin
+  off the asynchronous path; only the engine's `init_before_dispatch()`
+  (`core/src/libvmaf.c`, #1637) then stands between it and the frame-0
+  SIGSEGV of T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30.
 - `scripts/dev/hip_dispatch_drop_probe.hip` (new, not built by Meson):
   standalone probe for T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01. No
   libvmaf dependency, so no rebase interaction; keep it standalone.

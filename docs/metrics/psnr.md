@@ -134,10 +134,11 @@ with the same helpers the CPU extractor uses
 2026-09-30 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)), and like
 the CPU `psnr` it sees every frame under `--subsample`, so `apsnr_*` covers
 the whole clip (`psnr_sycl` does not yet). `psnr_hip` implements the whole
-table since 2026-09-30 as well
-([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); not yet measured on
-an AMD device). The Metal twin implements `enable_chroma` and `uncapped`
-only. On that backend a model that sets `enable_mse`, `enable_apsnr`,
+table since 2026-09-30 as well, also over every frame under `--subsample`
+([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)); on a gfx1036 its
+`psnr_*`, `mse_*` and `apsnr_*` equal the CPU's on the Netflix 576x324 pair
+with every option set. The Metal twin implements `enable_chroma` and
+`uncapped` only. On that backend a model that sets `enable_mse`, `enable_apsnr`,
 `reduced_hbd_peak` or `min_sse` computes `psnr` on the CPU instead
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)), and naming
 the twin with one of these options fails with `unknown option`.

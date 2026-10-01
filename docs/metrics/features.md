@@ -659,8 +659,9 @@ extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 mirrored on every GPU twin under the same name and default. `psnr_sycl` and
 `psnr_cuda` also implement `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and
 `min_sse`, bit-exact with the CPU. `psnr_hip` implements them through the
-CPU's own helpers as well (ADR-1382; not yet measured on an AMD device). On
-Metal these four keep `psnr` on the CPU (see [PSNR](psnr.md#options)).
+CPU's own helpers as well and matched the CPU bit for bit on a gfx1036
+(ADR-1382). On Metal these four keep `psnr` on the CPU (see
+[PSNR](psnr.md#options)).
 `float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
 accepts `uncapped` on all of them. (The Vulkan backend was removed in
 ADR-0726.)

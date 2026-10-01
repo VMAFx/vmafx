@@ -995,11 +995,15 @@ Rebase-sensitive invariants:
   before chasing a single-frame mismatch on that device; compare repeated
   runs.
 - `motion_force_zero` (`motion_hip`, `float_motion_hip`): never set
-  `submit` / `collect` to NULL in `init()`. libvmaf picks submit/collect from
-  the descriptor before `init()` runs, then calls `fex->submit` after it: a
-  NULL there is a SIGSEGV on frame 0
-  (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). Keep a no-op `submit()`
-  and a `collect()` that writes `extract_force_zero()`'s zeros. Guard:
+  `submit` / `collect` to NULL in `init()`. Before #1637 libvmaf picked
+  submit/collect from the descriptor before `init()` ran, then called
+  `fex->submit` after it: a NULL there was a SIGSEGV on frame 0
+  (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). The engine now runs
+  `init()` first (`init_before_dispatch()`, `core/src/libvmaf.c`,
+  T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30), so a cleared pair
+  would move the twin to the synchronous path instead; the twins do not rely
+  on that. Keep a no-op `submit()` and a `collect()` that writes
+  `extract_force_zero()`'s zeros. Guard:
   `test_integer_motion_force_zero` in `test_hip_twin_option_parity`.
 - `psnr_hip` TEMPORAL like CPU `psnr`: `--subsample` must not drop frames
   from `apsnr_*`. Twin's subsample flags (TEMPORAL / PREV_REF) follow CPU;

@@ -78,10 +78,11 @@ its `motion2_score` and `motion3_score` equal the CPU's bit for bit on the
 Netflix 576x324 pair and on 50 frames of a 3840x2160 clip, where the previous
 order was 1.26e-5 and 6.9e-5 off (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29` in
 [`state.md`](../state.md)). The HIP twin runs the same arithmetic since
-2026-09-30 ([ADR-1377](../adr/1377-hip-motion-diff-first.md)) and is expected
-to match bit for bit, which has not yet been measured on an AMD device
-(`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29` in [`state.md`](../state.md) has
-the commands). The Metal twin still blurs each frame and compares the blurred
+2026-09-30 ([ADR-1377](../adr/1377-hip-motion-diff-first.md)): on a gfx1036
+its `motion2_score` and `motion3_score` equal the CPU's on every frame of the
+Netflix 576x324 pair, where the previous order was 1.26e-5 off
+(`T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29` in [`state.md`](../state.md)). The
+Metal twin still blurs each frame and compares the blurred
 frames, which rounds differently. The SYCL twin did the same until 2026-09-29
 and its `motion2_score` was up to 2.0e-4 off on 17x17 frames and 1.3e-5 on the
 Netflix 576x324 pair; expect the same from the Metal twin, which has not been
@@ -281,7 +282,9 @@ run on one of them (`--backend sycl --feature float_motion`, say) writes no
 [`state.md`](../state.md)). The twins take `debug`, `motion_force_zero` and
 `motion_fps_weight`. With `motion_force_zero`, `float_motion_cuda` and
 `motion_cuda` publish zeros from the first frame; before 2026-09-30 both
-crashed on it (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
+crashed on it (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`), and so
+did `motion_hip` and `float_motion_hip`
+(`T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30`).
 `float_motion_sycl`, `float_motion_cuda` and `float_motion_hip` also take
 `motion_max_val` (alias `mmxv`) and, like the CPU, scale every score they
 emit (the debug `motion` too) by `motion_fps_weight` before capping it at

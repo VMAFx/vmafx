@@ -63,8 +63,9 @@ CUDA and HIP twins apply them on the host to the device-reduced score and
 report the CPU's `+inf` / ceiling for identical frames
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
 [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
-[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin is not yet
-measured on an AMD device). The CUDA twin
+[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin's
+gfx1036 run is in `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
+[`state.md`](../state.md)). The CUDA twin
 computes every per-pixel term as the CPU does, bit for bit, and sums them in
 a different order, so its score can differ from the CPU's by a double
 rounding; on identical frames with a side below 12 pixels that can separate
