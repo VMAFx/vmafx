@@ -82,6 +82,14 @@ test('test_parity_gate_metric_names',
     timeout : 30,
 )
 
+test('test_cuda_parity_gate_default_run',
+    import('python').find_installation(),
+    args : files('test_cuda_parity_gate_default_run.py'),
+    suite : ['slow', 'gpu'],
+    is_parallel : false,
+    timeout : 120,
+)
+
 # ADR-1364: the Windows SYCL device-link anchor patcher, driven by synthetic
 # COFF objects so it runs on every host, Windows or not.
 test('test_sycl_coff_anchor',

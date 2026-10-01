@@ -947,3 +947,7 @@ def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
         assert cmd[cmd.index("--precision") + 1] == "max"
         # A tolerance cell keeps the CLI's default output precision.
         assert "--precision" not in command(backend, None)
+
+
+def test_feature_metrics_motion_reads_default_emitted_keys() -> None:
+    assert FEATURE_METRICS["motion"] == ("integer_motion2", "integer_motion3")

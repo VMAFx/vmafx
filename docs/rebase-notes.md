@@ -56148,3 +56148,6 @@ Verification:
   < 8e-6 on BBB 4K (was up to 0.3540 on master).
 - 4K runtime improved from 25.61 ms/frame to 19.98 ms/frame (22% speedup, median of 3).
 - Removes `float_vif_sycl` from `core/src/sycl/scratch_ratchet.txt` and `core/src/sycl/scratch_check.cpp` following PR #1660 merge.
+- `scripts/ci/cross_backend_parity_gate.py` and `scripts/ci/cross_backend_vif_diff.py`:
+  `FEATURE_METRICS["motion"]` reads default emitted keys `integer_motion2` and
+  `integer_motion3` (excluding debug-only `integer_motion`).

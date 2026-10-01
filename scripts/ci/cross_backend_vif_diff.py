@@ -65,7 +65,6 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # (motion_five_frame_window=true) remains deferred — the GPU
     # extractors reject it with -ENOTSUP at init().
     "motion": (
-        "integer_motion",
         "integer_motion2",
         "integer_motion3",
     ),
