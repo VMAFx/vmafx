@@ -165,6 +165,22 @@ static constexpr size_t HVS_WG = 64;
  * coefficient. */
 static constexpr size_t HVS_LANE_STRIDE = BLOCK_AREA + 1;
 
+struct PsnrHvsHeader {
+    uint32_t plane_offsets[PSNR_HVS_NUM_PLANES];
+    uint32_t total_terms;
+};
+
+struct PsnrHvsScratchLayout {
+    size_t raw_terms_offset;
+    size_t block_masks_offset;
+    size_t block_counts_offset;
+    size_t chunk_totals_offset;
+    size_t chunk_offsets_offset;
+    size_t header_offset;
+    size_t total_bytes;
+    unsigned num_chunks;
+};
+
 struct PsnrHvsStateSycl {
     unsigned width[PSNR_HVS_NUM_PLANES];
     unsigned height[PSNR_HVS_NUM_PLANES];
@@ -187,6 +203,9 @@ struct PsnrHvsStateSycl {
      * and their host copy. */
     float *d_terms;
     float *h_terms;
+    void *d_scratch;
+    PsnrHvsHeader *h_header;
+    PsnrHvsScratchLayout layout;
 
     bool has_pending;
     unsigned pending_index;
@@ -205,6 +224,8 @@ struct PsnrHvsPlaneArgs {
 struct PsnrHvsKernelArgs {
     PsnrHvsPlaneArgs plane[PSNR_HVS_NUM_PLANES];
     float *terms; /* HVS_TERMS per block, blocks in plane then raster order */
+    uint64_t *block_masks;
+    uint32_t *block_counts;
     unsigned n_planes;
     unsigned total_blocks;
     bool wide; /* 16-bit samples (bpc > 8) */
@@ -567,9 +588,10 @@ static inline float hvs_threshold(float energy, float ratio)
 /* The 64 values calc_psnrhvs() adds to its running sum for one block, in its
  * order (row-major), written straight to the term buffer: no per-block sum
  * and no private array. */
-static inline void hvs_store_terms(float *terms, const HvsLocal &block, size_t ref_base,
-                                   size_t dist_base, float threshold, int plane)
+static inline uint64_t hvs_store_terms(float *terms, const HvsLocal &block, size_t ref_base,
+                                       size_t dist_base, float threshold, int plane)
 {
+    uint64_t mask = 0ULL;
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             const int index = (row * 8) + col;
@@ -580,8 +602,12 @@ static inline void hvs_store_terms(float *terms, const HvsLocal &block, size_t r
                 error = error < masking ? 0.f : error - masking;
             }
             terms[index] = (error * csf) * (error * csf);
+            if (terms[index] != 0.0f) {
+                mask |= (1ULL << index);
+            }
         }
     }
+    return mask;
 }
 
 } // namespace
@@ -613,8 +639,14 @@ static void psnr_hvs_item(sycl::nd_item<1> item, const HvsLocal &block,
         const float threshold = partner > mine ? partner : mine;
         // SAFETY: args.terms holds HVS_TERMS floats per block and
         // lane.block < args.total_blocks on an active work-item.
-        hvs_store_terms(args.terms + ((size_t)lane.block * HVS_TERMS), block, base,
-                        base + HVS_LANE_STRIDE, threshold, lane.plane);
+        const uint64_t mask = hvs_store_terms(args.terms + ((size_t)lane.block * HVS_TERMS), block,
+                                              base, base + HVS_LANE_STRIDE, threshold, lane.plane);
+        if (args.block_masks != nullptr) {
+            args.block_masks[lane.block] = mask;
+        }
+        if (args.block_counts != nullptr) {
+            args.block_counts[lane.block] = (uint32_t)__builtin_popcountll(mask);
+        }
     }
 }
 
@@ -633,6 +665,153 @@ static void launch_psnr_hvs(sycl::queue &q, const PsnrHvsKernelArgs &args)
         const PsnrHvsKernelArgs kernel_args = args;
         h.parallel_for(ndr,
                        [=](sycl::nd_item<1> item) { psnr_hvs_item(item, s_block, kernel_args); });
+    });
+}
+
+static inline size_t hvs_align256(size_t sz)
+{
+    return (sz + 255u) & ~((size_t)255u);
+}
+
+static PsnrHvsScratchLayout hvs_compute_scratch_layout(unsigned total_blocks)
+{
+    PsnrHvsScratchLayout l = {};
+    l.num_chunks = (total_blocks + 255u) / 256u;
+
+    size_t off = 0;
+    l.raw_terms_offset = off;
+    off += hvs_align256((size_t)total_blocks * HVS_TERMS * sizeof(float));
+
+    l.block_masks_offset = off;
+    off += hvs_align256((size_t)total_blocks * sizeof(uint64_t));
+
+    l.block_counts_offset = off;
+    off += hvs_align256((size_t)total_blocks * sizeof(uint32_t));
+
+    l.chunk_totals_offset = off;
+    off += hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.chunk_offsets_offset = off;
+    off += hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.header_offset = off;
+    off += hvs_align256(sizeof(PsnrHvsHeader));
+
+    l.total_bytes = off;
+    return l;
+}
+
+class PsnrHvsScanReduceKernel;
+
+static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uint32_t *chunk_totals,
+                               unsigned total_blocks, unsigned num_chunks)
+{
+    const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
+    q.submit([&](sycl::handler &h) {
+        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        h.parallel_for<PsnrHvsScanReduceKernel>(ndr, [=](sycl::nd_item<1> item) {
+            const unsigned tid = (unsigned)item.get_local_id(0);
+            const unsigned chunk = (unsigned)item.get_group(0);
+            const unsigned b = chunk * 256u + tid;
+            const uint32_t val = (b < total_blocks) ? block_counts[b] : 0u;
+            s_data[tid] = val;
+            item.barrier(sycl::access::fence_space::local_space);
+
+            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+                uint32_t n = 0u;
+                if (tid >= offset) {
+                    n = s_data[tid - offset];
+                }
+                item.barrier(sycl::access::fence_space::local_space);
+                s_data[tid] += n;
+                item.barrier(sycl::access::fence_space::local_space);
+            }
+
+            if (tid == 255u) {
+                chunk_totals[chunk] = s_data[255u];
+            }
+        });
+    });
+}
+
+class PsnrHvsScanPrefixKernel;
+
+static void launch_scan_prefix(sycl::queue &q, const uint32_t *chunk_totals,
+                               uint32_t *chunk_offsets, PsnrHvsHeader *header, unsigned num_chunks)
+{
+    q.submit([&](sycl::handler &h) {
+        h.single_task<PsnrHvsScanPrefixKernel>([=]() {
+            uint32_t running = 0u;
+            const unsigned limit = num_chunks < 32768u ? num_chunks : 32768u;
+            for (unsigned c = 0u; c < limit; c++) {
+                chunk_offsets[c] = running;
+                running += chunk_totals[c];
+            }
+            header->plane_offsets[0] = 0u;
+            header->plane_offsets[1] = 0u;
+            header->plane_offsets[2] = 0u;
+            header->total_terms = running;
+        });
+    });
+}
+
+class PsnrHvsCompactKernel;
+
+static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const float *raw_terms,
+                           const uint64_t *block_masks, const uint32_t *block_counts,
+                           const uint32_t *chunk_offsets, float *packed_terms,
+                           PsnrHvsHeader *header, unsigned num_chunks)
+{
+    const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
+    q.submit([&](sycl::handler &h) {
+        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        const PsnrHvsKernelArgs k_args = args;
+        h.parallel_for<PsnrHvsCompactKernel>(ndr, [=](sycl::nd_item<1> item) {
+            const unsigned tid = (unsigned)item.get_local_id(0);
+            const unsigned chunk = (unsigned)item.get_group(0);
+            const unsigned b = chunk * 256u + tid;
+            const uint32_t count = (b < k_args.total_blocks) ? block_counts[b] : 0u;
+            s_data[tid] = count;
+            item.barrier(sycl::access::fence_space::local_space);
+
+            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+                uint32_t n = 0u;
+                if (tid >= offset) {
+                    n = s_data[tid - offset];
+                }
+                item.barrier(sycl::access::fence_space::local_space);
+                s_data[tid] += n;
+                item.barrier(sycl::access::fence_space::local_space);
+            }
+
+            const uint32_t intra_offset = s_data[tid] - count;
+            const uint32_t global_base = chunk_offsets[chunk] + intra_offset;
+
+            if (b < k_args.total_blocks) {
+                if (0u < k_args.n_planes && b == k_args.plane[0].first_block) {
+                    header->plane_offsets[0] = global_base;
+                }
+                if (1u < k_args.n_planes && b == k_args.plane[1].first_block) {
+                    header->plane_offsets[1] = global_base;
+                }
+                if (2u < k_args.n_planes && b == k_args.plane[2].first_block) {
+                    header->plane_offsets[2] = global_base;
+                }
+
+                uint64_t mask = block_masks[b];
+                if (mask != 0ULL) {
+                    // SAFETY: raw_terms holds HVS_TERMS floats per block; packed_terms capacity >= total_terms.
+                    const float *src = raw_terms + ((size_t)b * HVS_TERMS);
+                    float *dst = packed_terms + global_base;
+                    uint32_t out_idx = 0u;
+                    for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
+                        const int idx = __builtin_ctzll(mask);
+                        dst[out_idx++] = src[idx];
+                        mask &= mask - 1ULL;
+                    }
+                }
+            }
+        });
     });
 }
 
@@ -754,7 +933,11 @@ static int allocate_hvs_buffers(PsnrHvsStateSycl *s)
     const size_t terms_bytes = hvs_terms_bytes(s);
     s->d_terms = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, terms_bytes));
     s->h_terms = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, terms_bytes));
-    if (!s->d_terms || !s->h_terms) {
+    s->layout = hvs_compute_scratch_layout(s->total_blocks);
+    s->d_scratch = vmaf_sycl_malloc_device(s->sycl_state, s->layout.total_bytes);
+    s->h_header =
+        static_cast<PsnrHvsHeader *>(vmaf_sycl_malloc_host(s->sycl_state, sizeof(PsnrHvsHeader)));
+    if (!s->d_terms || !s->h_terms || !s->d_scratch || !s->h_header) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -842,6 +1025,8 @@ static PsnrHvsKernelArgs hvs_kernel_args(const PsnrHvsStateSycl *s)
                          .first_block = s->first_block[p]};
     }
     args.terms = s->d_terms;
+    args.block_masks = nullptr;
+    args.block_counts = nullptr;
     args.n_planes = s->n_active_planes;
     args.total_blocks = s->total_blocks;
     args.wide = s->bpc > 8U;
@@ -883,8 +1068,28 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return err;
     }
     try {
-        launch_psnr_hvs(*qptr, hvs_kernel_args(s));
-        qptr->memcpy(s->h_terms, s->d_terms, hvs_terms_bytes(s));
+        char *base = static_cast<char *>(s->d_scratch);
+        float *raw_terms = reinterpret_cast<float *>(base + s->layout.raw_terms_offset);
+        uint64_t *block_masks = reinterpret_cast<uint64_t *>(base + s->layout.block_masks_offset);
+        uint32_t *block_counts = reinterpret_cast<uint32_t *>(base + s->layout.block_counts_offset);
+        uint32_t *chunk_totals = reinterpret_cast<uint32_t *>(base + s->layout.chunk_totals_offset);
+        uint32_t *chunk_offsets =
+            reinterpret_cast<uint32_t *>(base + s->layout.chunk_offsets_offset);
+        auto *d_header = reinterpret_cast<PsnrHvsHeader *>(base + s->layout.header_offset);
+        float *packed_terms = s->d_terms;
+
+        PsnrHvsKernelArgs args = hvs_kernel_args(s);
+        args.terms = raw_terms;
+        args.block_masks = block_masks;
+        args.block_counts = block_counts;
+
+        launch_psnr_hvs(*qptr, args);
+        launch_scan_reduce(*qptr, block_counts, chunk_totals, s->total_blocks,
+                           s->layout.num_chunks);
+        launch_scan_prefix(*qptr, chunk_totals, chunk_offsets, d_header, s->layout.num_chunks);
+        launch_compact(*qptr, args, raw_terms, block_masks, block_counts, chunk_offsets,
+                       packed_terms, d_header, s->layout.num_chunks);
+        qptr->memcpy(s->h_header, d_header, sizeof(PsnrHvsHeader));
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: submitting frame %u: %s\n", index, e.what());
         return -EIO;
@@ -918,12 +1123,25 @@ static int wait_hvs_terms(sycl::queue &queue)
 /* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_NUM_PLANES])
 {
-    // SAFETY: s->h_terms holds HVS_TERMS floats for each of the
-    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
-    // s->total_blocks holds by construction (configure_hvs_blocks).
+    if (!s->h_header) {
+        // SAFETY: s->h_terms holds HVS_TERMS floats for each of the
+        // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
+        // s->total_blocks holds by construction (configure_hvs_blocks).
+        for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+            const float *plane_terms = s->h_terms + ((size_t)s->first_block[plane] * HVS_TERMS);
+            scores[plane] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[plane], s->bpc);
+        }
+        return;
+    }
+    const float *compact_terms = s->h_terms;
     for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
-        const float *plane_terms = s->h_terms + ((size_t)s->first_block[plane] * HVS_TERMS);
-        scores[plane] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[plane], s->bpc);
+        const uint32_t start = s->h_header->plane_offsets[plane];
+        const uint32_t end = (plane + 1u < s->n_active_planes) ?
+                                 s->h_header->plane_offsets[plane + 1u] :
+                                 s->h_header->total_terms;
+        const size_t n_compact = (size_t)(end - start);
+        scores[plane] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
+                                                            s->num_blocks[plane], s->bpc);
     }
 }
 
@@ -964,6 +1182,16 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (wait_err) {
         return wait_err;
     }
+    if (s->h_header && s->h_header->total_terms > 0u) {
+        try {
+            qptr->memcpy(s->h_terms, s->d_terms, (size_t)s->h_header->total_terms * sizeof(float));
+            qptr->wait_and_throw();
+        } catch (const sycl::exception &e) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: reading compacted terms: %s\n",
+                     e.what());
+            return -EIO;
+        }
+    }
     double plane_score[PSNR_HVS_NUM_PLANES] = {};
     reduce_hvs_planes(s, plane_score);
     return append_hvs_scores(feature_collector, s, plane_score, index);
@@ -983,6 +1211,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
         }
         if (s->h_terms) {
             vmaf_sycl_free(s->sycl_state, s->h_terms);
+        }
+        if (s->d_scratch) {
+            vmaf_sycl_free(s->sycl_state, s->d_scratch);
+        }
+        if (s->h_header) {
+            vmaf_sycl_free(s->sycl_state, s->h_header);
         }
     }
     if (s->feature_name_dict) {

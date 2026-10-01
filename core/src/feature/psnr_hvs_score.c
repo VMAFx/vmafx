@@ -55,6 +55,33 @@ double vmaf_psnr_hvs_plane_score(const float *terms, size_t n_blocks, unsigned b
     return (double)ret;
 }
 
+double vmaf_psnr_hvs_plane_score_compacted(const float *compact_terms, size_t n_compact_terms,
+                                           size_t n_blocks, unsigned bpc)
+{
+    if ((compact_terms == NULL && n_compact_terms > 0u) || n_blocks == 0u || bpc == 0u ||
+        bpc > VMAF_PSNR_HVS_MAX_BPC)
+        return (double)NAN;
+    if (n_blocks > (size_t)INT_MAX / VMAF_PSNR_HVS_TERMS_PER_BLOCK)
+        return (double)NAN;
+
+    const size_t n_terms = n_blocks * VMAF_PSNR_HVS_TERMS_PER_BLOCK;
+    if (n_compact_terms > n_terms)
+        return (double)NAN;
+
+    assert(n_terms / VMAF_PSNR_HVS_TERMS_PER_BLOCK == n_blocks);
+    assert(n_terms <= (size_t)INT_MAX);
+
+    float val = 0.0f;
+    for (size_t i = 0; i < n_compact_terms; i++)
+        val += compact_terms[i];
+
+    const int pixels = (int)n_terms;
+    val /= (float)pixels;
+    const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
+    val /= (float)(samplemax * samplemax);
+    return (double)val;
+}
+
 double vmaf_psnr_hvs_combined_score(const double *plane_scores, unsigned n_planes)
 {
     if (plane_scores == NULL)

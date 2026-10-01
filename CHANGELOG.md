@@ -472,6 +472,19 @@
   On the Arc A380 (`dg2-g11`, PCI `56a5`) under the Linux `xe` driver, SYCL kernels that use scratch memory or register spills return corrupted values. `launch_compute<0>` (previously spilled 14080 B private memory) and `launch_decimate<1>` (previously 2432 B private memory) are completely scratch-free (`private_mem_size == 0`, `spill_memory_size == 0` for both JIT and `dg2-g11` AOT). Filter coefficients are now evaluated via compile-time template constants with `#pragma unroll`, and `launch_compute<0>` utilizes the 256-register file (`VmafSyclKernelShape<32, 256>`), while scales 1-3 maintain default 128 GRF occupancy. Parity is restored: `test_sycl_float_vif_parity` and `test_sycl_float_vif_parity_large` pass; max absolute diff vs CPU is < 4e-5 on Netflix 576x324 and < 8e-6 on BBB 4K (was up to 0.3540 on master). 4K runtime improved from 25.61 ms/frame to 19.98 ms/frame (22% speedup).
 
 
+- **`psnr_hvs_sycl` and `psnr_hvs_hip` compact nonzero terms on the device before readback (ADR-1397).**
+  Because $x + 0.0\text{f} == x$ for every float value in the running sum, zero error terms
+  contribute nothing to the plane score. Both twins now compute a 64-bit mask of nonzero terms per 8×8 block,
+  perform work-group parallel prefix scans, and compact nonzero terms directly on the device into contiguous
+  buffers prior to host readback. Readback size drops from ~198.3 MB to ~11.0 MB at 3840×2160 (94.4% reduction),
+  from ~49.4 MB to ~1.39 MB at 1920×1080 (97% reduction), and from ~4.35 MB to ~0.21 MB at 576×324 (95% reduction).
+  Host summation overhead in `vmaf_psnr_hvs_plane_score_compacted()` shrinks accordingly.
+  Throughput at 3840×2160 improves from 39.23 ms to 29.30 ms/frame on Intel Arc A380 (SYCL) and from
+  41.18 ms to 35.53 ms/frame on AMD gfx1036 (HIP). Every score on every frame remains bit-identical to
+  `--backend cpu` of the same binary at `--precision max`, and the SYCL kernels remain completely scratch-free
+  (0 private memory, 0 spills).
+
+
 - **SYCL `psnr_hvs`, `psnr` and `motion_v2` read the frame the device already
   holds (ADR-1369).** A SYCL run uploads each plane of a frame once, and these
   twins now read it there: `psnr_hvs_sycl` no longer converts all three planes

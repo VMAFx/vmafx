@@ -56841,3 +56841,15 @@ Netflix golden assertions are untouched.
   (textured, sparse, 962x13542, 10-bit, options).
 - `adm_cm.cu`, the HIP, SYCL and Metal twins and every Netflix golden
   assertion are untouched. No public C API or FFmpeg patch impact.
+
+## `psnr_hvs_sycl` and `psnr_hvs_hip` compact nonzero terms on the device before readback (2026-10-01)
+
+`perf/sycl-hip-psnr-hvs-tune`, `T-SYCL-HIP-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01`, ADR-1397 / ADR-1401.
+
+- Reused `vmaf_psnr_hvs_plane_score_compacted()` in `core/src/feature/psnr_hvs_score.c` / `.h` across
+  the twins (HISS-19), summing only nonzero terms in CPU block order ($x + 0.0\\text{f} == x$).
+- Device prefix scan and compaction kernels added in `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`
+  and `core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip` (`hvs_scan_reduce_hip`, `hvs_scan_prefix_hip`, `hvs_compact_hip`).
+- Readback shrinks by 94-97% (from ~198.3 MB to ~11.0 MB at 4K).
+- Scratch memory on SYCL remains 0 private memory and 0 register spills (`test_sycl_kernel_scratch` passes).
+- Bit-identical parity maintained against `--backend cpu` of the same binary at `--precision max`.

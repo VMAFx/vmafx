@@ -96,6 +96,13 @@ typedef struct PsnrHvsStateHip {
 #ifdef HAVE_HIPCC
     hipModule_t module;
     hipFunction_t func_psnr_hvs;
+    hipFunction_t func_scan_reduce;
+    hipFunction_t func_scan_prefix;
+    hipFunction_t func_compact;
+
+    struct PsnrHvsHipScratchLayout layout;
+    void *d_scratch;
+    struct PsnrHvsHipHeader *host_header;
 
     /* Raw samples of both pictures: device copies and their pinned
      * staging, [plane]. */
@@ -154,6 +161,40 @@ static int psnr_hvs_hip_rc(hipError_t rc)
     }
 }
 
+static inline size_t psnr_hvs_align256(size_t sz)
+{
+    return (sz + 255u) & ~((size_t)255u);
+}
+
+static struct PsnrHvsHipScratchLayout psnr_hvs_compute_scratch_layout(unsigned total_blocks)
+{
+    struct PsnrHvsHipScratchLayout l;
+    (void)memset(&l, 0, sizeof(l));
+    l.num_chunks = (total_blocks + 255u) / 256u;
+
+    size_t off = 0;
+    l.raw_terms_offset = off;
+    off += psnr_hvs_align256((size_t)total_blocks * (size_t)PSNR_HVS_HIP_TERMS * sizeof(float));
+
+    l.block_masks_offset = off;
+    off += psnr_hvs_align256((size_t)total_blocks * sizeof(uint64_t));
+
+    l.block_counts_offset = off;
+    off += psnr_hvs_align256((size_t)total_blocks * sizeof(uint32_t));
+
+    l.chunk_totals_offset = off;
+    off += psnr_hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.chunk_offsets_offset = off;
+    off += psnr_hvs_align256((size_t)l.num_chunks * sizeof(uint32_t));
+
+    l.header_offset = off;
+    off += psnr_hvs_align256(sizeof(struct PsnrHvsHipHeader));
+
+    l.total_bytes = off;
+    return l;
+}
+
 static int psnr_hvs_hip_module_load(PsnrHvsStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, psnr_hvs_score_hsaco);
@@ -161,6 +202,12 @@ static int psnr_hvs_hip_module_load(PsnrHvsStateHip *s)
         return psnr_hvs_hip_rc(rc);
 
     rc = hipModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs_hip");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_scan_reduce, s->module, "hvs_scan_reduce_hip");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_scan_prefix, s->module, "hvs_scan_prefix_hip");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_compact, s->module, "hvs_compact_hip");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -198,6 +245,8 @@ static void psnr_hvs_free_buffers(PsnrHvsStateHip *s)
     }
     psnr_hvs_free_device((void **)&s->d_terms);
     psnr_hvs_free_pinned((void **)&s->h_terms);
+    psnr_hvs_free_device(&s->d_scratch);
+    psnr_hvs_free_pinned((void **)&s->host_header);
 }
 
 /* Bytes of the term buffer: PSNR_HVS_HIP_TERMS floats per block of every
@@ -234,6 +283,20 @@ static int psnr_hvs_alloc_buffers(PsnrHvsStateHip *s)
     if (!err) {
         err = psnr_hvs_alloc_pair((void **)&s->d_terms, (void **)&s->h_terms,
                                   psnr_hvs_terms_bytes(s));
+    }
+    if (!err) {
+        s->layout = psnr_hvs_compute_scratch_layout(s->total_blocks);
+        if (hipMalloc(&s->d_scratch, s->layout.total_bytes) != hipSuccess) {
+            s->d_scratch = NULL;
+            err = -ENOMEM;
+        }
+    }
+    if (!err) {
+        if (hipHostMalloc((void **)&s->host_header, sizeof(struct PsnrHvsHipHeader),
+                          hipHostMallocDefault) != hipSuccess) {
+            s->host_header = NULL;
+            err = -ENOMEM;
+        }
     }
     return err;
 }
@@ -436,15 +499,51 @@ static int psnr_hvs_enqueue_uploads(const PsnrHvsStateHip *s, hipStream_t str)
     return 0;
 }
 
+static int psnr_hvs_enqueue_scan_compact(PsnrHvsStateHip *s, hipStream_t str,
+                                         const struct PsnrHvsHipKernelArgs *args,
+                                         struct PsnrHvsHipHeader *d_header)
+{
+    char *base = (char *)s->d_scratch;
+    float *raw_terms = (float *)(base + s->layout.raw_terms_offset);
+    uint64_t *block_masks = (uint64_t *)(base + s->layout.block_masks_offset);
+    uint32_t *block_counts = (uint32_t *)(base + s->layout.block_counts_offset);
+    uint32_t *chunk_totals = (uint32_t *)(base + s->layout.chunk_totals_offset);
+    uint32_t *chunk_offsets = (uint32_t *)(base + s->layout.chunk_offsets_offset);
+    float *packed_terms = s->d_terms;
+
+    void *red_params[] = {&block_counts, &chunk_totals, &s->total_blocks};
+    hipError_t rc = hipModuleLaunchKernel(s->func_scan_reduce, s->layout.num_chunks, 1, 1, 256, 1,
+                                          1, 0, str, red_params, NULL);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    void *pre_params[] = {&chunk_totals, &chunk_offsets, &d_header, &s->layout.num_chunks};
+    rc = hipModuleLaunchKernel(s->func_scan_prefix, 1, 1, 1, 1, 1, 1, 0, str, pre_params, NULL);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    void *cmp_params[] = {(void *)args,   &raw_terms,    &block_masks, &block_counts,
+                          &chunk_offsets, &packed_terms, &d_header};
+    rc = hipModuleLaunchKernel(s->func_compact, s->layout.num_chunks, 1, 1, 256, 1, 1, 0, str,
+                               cmp_params, NULL);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    rc = hipMemcpyAsync(s->host_header, d_header, sizeof(struct PsnrHvsHipHeader),
+                        hipMemcpyDeviceToHost, str);
+    return psnr_hvs_hip_rc(rc);
+}
+
 /* The frame's device work: raw planes up, one dispatch over every block of
  * every plane, the terms back. */
-static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
+static int psnr_hvs_enqueue_frame(PsnrHvsStateHip *s)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     int err = psnr_hvs_enqueue_uploads(s, str);
     if (err != 0)
         return err;
 
+    char *base = (char *)s->d_scratch;
     struct PsnrHvsHipKernelArgs args;
     (void)memset(&args, 0, sizeof(args));
     for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
@@ -454,20 +553,23 @@ static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
         args.plane[p].blocks_x = s->num_blocks_x[p];
         args.plane[p].first_block = s->first_block[p];
     }
-    args.terms = s->d_terms;
+    args.terms = (float *)(base + s->layout.raw_terms_offset);
+    args.block_masks = (uint64_t *)(base + s->layout.block_masks_offset);
+    args.block_counts = (uint32_t *)(base + s->layout.block_counts_offset);
     args.n_planes = psnr_hvs_plane_count(s);
     args.total_blocks = s->total_blocks;
     args.wide = (s->bpc > 8u) ? 1u : 0u;
-    void *params[] = {&args};
+
+    void *hvs_params[] = {&args};
     const size_t items = 2u * (size_t)s->total_blocks;
     const unsigned groups = (unsigned)((items + PSNR_HVS_HIP_WG - 1u) / PSNR_HVS_HIP_WG);
     hipError_t rc = hipModuleLaunchKernel(s->func_psnr_hvs, groups, 1, 1, PSNR_HVS_HIP_WG, 1, 1, 0,
-                                          str, params, NULL);
-    if (rc == hipSuccess) {
-        rc = hipMemcpyAsync(s->h_terms, s->d_terms, psnr_hvs_terms_bytes(s), hipMemcpyDeviceToHost,
-                            str);
-    }
-    return psnr_hvs_hip_rc(rc);
+                                          str, hvs_params, NULL);
+    if (rc != hipSuccess)
+        return psnr_hvs_hip_rc(rc);
+
+    struct PsnrHvsHipHeader *d_header = (struct PsnrHvsHipHeader *)(base + s->layout.header_offset);
+    return psnr_hvs_enqueue_scan_compact(s, str, &args, d_header);
 }
 #endif /* HAVE_HIPCC */
 
@@ -523,13 +625,26 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 /* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void psnr_hvs_plane_scores(const PsnrHvsStateHip *s, double plane_score[])
 {
-    // SAFETY: s->h_terms holds PSNR_HVS_HIP_TERMS floats for each of the
-    // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
-    // s->total_blocks holds by construction (psnr_hvs_set_plane_geometry).
+    if (s->host_header == NULL) {
+        // SAFETY: s->h_terms holds PSNR_HVS_HIP_TERMS floats for each of the
+        // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
+        // s->total_blocks holds by construction (psnr_hvs_set_plane_geometry).
+        for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
+            const float *plane_terms =
+                s->h_terms + ((size_t)s->first_block[p] * (size_t)PSNR_HVS_HIP_TERMS);
+            plane_score[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
+        }
+        return;
+    }
+    const float *compact_terms = s->h_terms;
     for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
-        const float *plane_terms =
-            s->h_terms + ((size_t)s->first_block[p] * (size_t)PSNR_HVS_HIP_TERMS);
-        plane_score[p] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[p], s->bpc);
+        const uint32_t start = s->host_header->plane_offsets[p];
+        const uint32_t end = (p + 1u < psnr_hvs_plane_count(s)) ?
+                                 s->host_header->plane_offsets[p + 1u] :
+                                 s->host_header->total_terms;
+        const size_t n_compact = (size_t)(end - start);
+        plane_score[p] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
+                                                             s->num_blocks[p], s->bpc);
     }
 }
 
@@ -561,6 +676,17 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return wait_err;
 
 #ifdef HAVE_HIPCC
+    if (s->host_header != NULL && s->host_header->total_terms > 0u) {
+        hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+        const hipError_t rc = hipMemcpyAsync(s->h_terms, s->d_terms,
+                                             (size_t)s->host_header->total_terms * sizeof(float),
+                                             hipMemcpyDeviceToHost, str);
+        if (rc != hipSuccess)
+            return psnr_hvs_hip_rc(rc);
+        const hipError_t sync_rc = hipStreamSynchronize(str);
+        if (sync_rc != hipSuccess)
+            return psnr_hvs_hip_rc(sync_rc);
+    }
     double plane_score[PSNR_HVS_NUM_PLANES] = {0.0, 0.0, 0.0};
     psnr_hvs_plane_scores(s, plane_score);
     return psnr_hvs_append_scores(feature_collector, s, plane_score, index);

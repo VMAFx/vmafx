@@ -149,6 +149,97 @@ static char *test_score_db(void)
     return NULL;
 }
 
+static char *test_compacted_plane_all_zeros(void)
+{
+    float terms[TERMS];
+    fill(terms, TERMS, 0.0f);
+    const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 1u, 8u);
+    const double compacted = vmaf_psnr_hvs_plane_score_compacted(NULL, 0u, 1u, 8u);
+    mu_assert("uncompacted all-zeros is 0.0", uncompacted == 0.0);
+    mu_assert("compacted all-zeros is 0.0", compacted == 0.0);
+    mu_assert("signbit is positive zero for uncompacted", !signbit(uncompacted));
+    mu_assert("signbit is positive zero for compacted", !signbit(compacted));
+    mu_assert("bit-identical all-zeros score", uncompacted == compacted);
+    mu_assert("identical planes score +inf dB", isinf(vmaf_psnr_hvs_score_db(compacted)));
+    return NULL;
+}
+
+static char *test_compacted_plane_starts_with_zeros(void)
+{
+    float terms[TERMS];
+    fill(terms, TERMS, 0.0f);
+    terms[50] = BIG;
+    fill(terms + 51, TERMS - 51u, 1.0f);
+
+    float compact[TERMS];
+    compact[0] = BIG;
+    fill(compact + 1, TERMS - 51u, 1.0f);
+    const size_t n_compact = 1u + (TERMS - 51u);
+
+    const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 1u, 8u);
+    const double compacted = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 1u, 8u);
+    mu_assert("plane starting with 50 zeros yields bit-identical score when compacted",
+              compacted == uncompacted);
+    return NULL;
+}
+
+static char *test_compacted_block_all_zeros(void)
+{
+    float terms[3 * TERMS];
+    fill(terms, TERMS, 1.0f);
+    fill(terms + TERMS, TERMS, 0.0f);
+    terms[2 * TERMS] = BIG;
+    fill(terms + 2 * TERMS + 1, TERMS - 1u, 1.0f);
+
+    float compact[2 * TERMS];
+    fill(compact, TERMS, 1.0f);
+    compact[TERMS] = BIG;
+    fill(compact + TERMS + 1, TERMS - 1u, 1.0f);
+    const size_t n_compact = (size_t)2 * TERMS;
+
+    const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 3u, 8u);
+    const double compacted = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 3u, 8u);
+    mu_assert("block with all zeros dropped yields bit-identical score", compacted == uncompacted);
+
+    const double bad_norm = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 2u, 8u);
+    mu_assert("dropping zero block from block count would change normalization",
+              bad_norm != uncompacted);
+    return NULL;
+}
+
+static char *test_compacted_sign_of_zero_behavior(void)
+{
+    const float zero_pos = 0.0f;
+    const float zero_neg = -0.0f;
+    const float csf = 1.5f;
+
+    const float term_from_pos = (zero_pos * csf) * (zero_pos * csf);
+    const float term_from_neg = (zero_neg * csf) * (zero_neg * csf);
+    mu_assert("square of +0.0f is +0.0f with signbit 0", !signbit(term_from_pos));
+    mu_assert("square of -0.0f is +0.0f with signbit 0", !signbit(term_from_neg));
+
+    const float running = 0.0f + 0.0f;
+    mu_assert("running sum of zeros has signbit 0", !signbit(running));
+    return NULL;
+}
+
+static char *test_compacted_rejects_bad_input(void)
+{
+    float terms[TERMS];
+    fill(terms, TERMS, 1.0f);
+    mu_assert("NULL compact terms with nonzero count",
+              isnan(vmaf_psnr_hvs_plane_score_compacted(NULL, 1u, 1u, 8u)));
+    mu_assert("no blocks", isnan(vmaf_psnr_hvs_plane_score_compacted(terms, 1u, 0u, 8u)));
+    mu_assert("0-bit input", isnan(vmaf_psnr_hvs_plane_score_compacted(terms, 1u, 1u, 0u)));
+    mu_assert("13-bit input", isnan(vmaf_psnr_hvs_plane_score_compacted(terms, 1u, 1u, 13u)));
+    mu_assert("n_compact_terms > max_terms",
+              isnan(vmaf_psnr_hvs_plane_score_compacted(terms, TERMS + 1u, 1u, 8u)));
+    const size_t too_many = (size_t)INT_MAX / TERMS + 1u;
+    mu_assert("block count beyond int",
+              isnan(vmaf_psnr_hvs_plane_score_compacted(terms, 1u, too_many, 8u)));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_sum_is_one_running_float);
@@ -158,6 +249,11 @@ char *run_tests(void)
     mu_run_test(test_plane_score_rejects_bad_input);
     mu_run_test(test_combined_score);
     mu_run_test(test_score_db);
+    mu_run_test(test_compacted_plane_all_zeros);
+    mu_run_test(test_compacted_plane_starts_with_zeros);
+    mu_run_test(test_compacted_block_all_zeros);
+    mu_run_test(test_compacted_sign_of_zero_behavior);
+    mu_run_test(test_compacted_rejects_bad_input);
     return NULL;
 }
 

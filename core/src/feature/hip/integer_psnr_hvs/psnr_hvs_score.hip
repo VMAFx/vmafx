@@ -357,9 +357,10 @@ __device__ float hvs_threshold(float energy, float ratio)
 
 /* The 64 values calc_psnrhvs() adds to its running sum for one block, in its
  * order (row-major). */
-__device__ void hvs_store_terms(float *terms, const int *ref, const int *dist, float threshold,
-                                int plane)
+__device__ uint64_t hvs_store_terms(float *terms, const int *ref, const int *dist, float threshold,
+                                    int plane)
 {
+    uint64_t mask = 0ULL;
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
             const int index = (i * 8) + j;
@@ -370,8 +371,12 @@ __device__ void hvs_store_terms(float *terms, const int *ref, const int *dist, f
                 error = error < masking ? 0.f : error - masking;
             }
             terms[index] = (error * csf) * (error * csf);
+            if (terms[index] != 0.0f) {
+                mask |= (1ULL << index);
+            }
         }
     }
+    return mask;
 }
 
 } // namespace
@@ -408,8 +413,114 @@ __global__ __launch_bounds__(PSNR_HVS_HIP_WG) void psnr_hvs_hip(PsnrHvsHipKernel
     }
     // SAFETY: args.terms holds PSNR_HVS_HIP_TERMS floats per block and
     // lane.block < args.total_blocks on an active work-item.
-    hvs_store_terms(args.terms + ((size_t)lane.block * PSNR_HVS_HIP_TERMS), blk, blk + kLaneStride,
-                    threshold, lane.plane);
+    const uint64_t mask =
+        hvs_store_terms(args.terms + ((size_t)lane.block * PSNR_HVS_HIP_TERMS), blk,
+                        blk + kLaneStride, threshold, lane.plane);
+    if (args.block_masks != nullptr) {
+        args.block_masks[lane.block] = mask;
+    }
+    if (args.block_counts != nullptr) {
+        args.block_counts[lane.block] = (uint32_t)__builtin_popcountll(mask);
+    }
+}
+
+__global__ __launch_bounds__(256) void hvs_scan_reduce_hip(const uint32_t *block_counts,
+                                                           uint32_t *chunk_totals,
+                                                           unsigned total_blocks)
+{
+    __shared__ uint32_t s_data[256];
+    const unsigned tid = threadIdx.x;
+    const unsigned chunk = blockIdx.x;
+    const unsigned b = chunk * 256u + tid;
+    const uint32_t val = (b < total_blocks) ? block_counts[b] : 0u;
+    s_data[tid] = val;
+    __syncthreads();
+
+    for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+        uint32_t n = 0u;
+        if (tid >= offset) {
+            n = s_data[tid - offset];
+        }
+        __syncthreads();
+        s_data[tid] += n;
+        __syncthreads();
+    }
+
+    if (tid == 255u) {
+        chunk_totals[chunk] = s_data[255u];
+    }
+}
+
+__global__ __launch_bounds__(1) void hvs_scan_prefix_hip(const uint32_t *chunk_totals,
+                                                         uint32_t *chunk_offsets,
+                                                         struct PsnrHvsHipHeader *header,
+                                                         unsigned num_chunks)
+{
+    uint32_t running = 0u;
+    const unsigned limit = num_chunks < 32768u ? num_chunks : 32768u;
+    for (unsigned c = 0u; c < limit; c++) {
+        chunk_offsets[c] = running;
+        running += chunk_totals[c];
+    }
+    header->plane_offsets[0] = 0u;
+    header->plane_offsets[1] = 0u;
+    header->plane_offsets[2] = 0u;
+    header->total_terms = running;
+}
+
+__global__ __launch_bounds__(256) void hvs_compact_hip(struct PsnrHvsHipKernelArgs args,
+                                                       const float *raw_terms,
+                                                       const uint64_t *block_masks,
+                                                       const uint32_t *block_counts,
+                                                       const uint32_t *chunk_offsets,
+                                                       float *packed_terms,
+                                                       struct PsnrHvsHipHeader *header)
+{
+    __shared__ uint32_t s_data[256];
+    const unsigned tid = threadIdx.x;
+    const unsigned chunk = blockIdx.x;
+    const unsigned b = chunk * 256u + tid;
+    const uint32_t count = (b < args.total_blocks) ? block_counts[b] : 0u;
+    s_data[tid] = count;
+    __syncthreads();
+
+    for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+        uint32_t n = 0u;
+        if (tid >= offset) {
+            n = s_data[tid - offset];
+        }
+        __syncthreads();
+        s_data[tid] += n;
+        __syncthreads();
+    }
+
+    const uint32_t intra_offset = s_data[tid] - count;
+    const uint32_t global_base = chunk_offsets[chunk] + intra_offset;
+
+    if (b < args.total_blocks) {
+        if (0u < args.n_planes && b == args.plane[0].first_block) {
+            header->plane_offsets[0] = global_base;
+        }
+        if (1u < args.n_planes && b == args.plane[1].first_block) {
+            header->plane_offsets[1] = global_base;
+        }
+        if (2u < args.n_planes && b == args.plane[2].first_block) {
+            header->plane_offsets[2] = global_base;
+        }
+
+        uint64_t mask = block_masks[b];
+        if (mask != 0ULL) {
+            // SAFETY: raw_terms holds PSNR_HVS_HIP_TERMS floats per block; packed_terms capacity >= total_terms.
+            const float *src = raw_terms + ((size_t)b * PSNR_HVS_HIP_TERMS);
+            float *dst = packed_terms + global_base;
+            uint32_t out_idx = 0u;
+            for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
+                const int idx = __builtin_ctzll(mask);
+                dst[out_idx++] = src[idx];
+                mask &= mask - 1ULL;
+            }
+        }
+    }
 }
 
 } /* extern "C" */

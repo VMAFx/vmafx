@@ -25,6 +25,22 @@
  * checks. */
 #define PSNR_HVS_HIP_TERMS 64
 
+struct PsnrHvsHipHeader {
+    uint32_t plane_offsets[PSNR_HVS_HIP_NUM_PLANES];
+    uint32_t total_terms;
+};
+
+struct PsnrHvsHipScratchLayout {
+    size_t raw_terms_offset;
+    size_t block_masks_offset;
+    size_t block_counts_offset;
+    size_t chunk_totals_offset;
+    size_t chunk_offsets_offset;
+    size_t header_offset;
+    size_t total_bytes;
+    unsigned num_chunks;
+};
+
 /* One plane as the kernel sees it: packed raw samples of both images. */
 struct PsnrHvsHipPlaneArgs {
     const void *ref;
@@ -37,6 +53,8 @@ struct PsnrHvsHipPlaneArgs {
 struct PsnrHvsHipKernelArgs {
     struct PsnrHvsHipPlaneArgs plane[PSNR_HVS_HIP_NUM_PLANES];
     float *terms; /* PSNR_HVS_HIP_TERMS per block, blocks in plane then raster order */
+    uint64_t *block_masks;
+    uint32_t *block_counts;
     unsigned n_planes;
     unsigned total_blocks;
     unsigned wide; /* 16-bit samples (bpc > 8) */
