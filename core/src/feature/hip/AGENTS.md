@@ -1097,15 +1097,35 @@ Rebase-sensitive invariants:
   - `motion_filter_size`: kernel arg, `fm_filter()` picks `FM_FILT` /
     `FM_FILT_3` / `FM_FILT_NO_OP`; 3-tap and no-op = 5 taps with zero outer
     weights (same tile, same halo). Min frame: 2x2 for mfs 3, else 3x3.
-  - `motion_add_scale1`: `float_motion_hip_scale1_sad` after the blur kernel
-    of the same plane, same stream. `fm_bilinear()` = `motion.c`
+  - `motion_add_scale1`: `float_motion_hip_scale1_diff` after the blur kernel
+    of the same plane, same stream, then the row kernel.
+    `vmaf_hip_float_motion_bilinear()` = `motion.c`
     `motion_bilinear_interp()` operand for operand, contraction off. Frame 0
-    launches no scale-1 kernel; partials zeroed at init.
-  - `motion_add_uv`: `plane[3]`, each own `ref_in` + `blur[2]`; chroma dims
-    via `vmaf_chroma_extent()` (ceil). One `vmaf_hip_picture_upload()` call
-    for all planes, one read-back of every plane's partials, one wait.
+    launches no SAD kernel; row sums zeroed at init.
+  - `motion_add_uv`: `plane[3]`, each own `ref_in` + `blur[2]` + `diff[2]`;
+    chroma dims via `vmaf_chroma_extent()` (ceil). One upload call for all
+    planes, one read-back of every plane's row sums, one wait.
   - Upstream change to `motion_blur_plane()`, `vmaf_image_sad_c()`,
     `motion_scale_bilinear()` or `motion_blend_clip()` -> mirror here.
+- `float_motion_hip` SAD = CPU's order, scores = CPU's bits with every option
+  (ADR-1419, ADR-1409; gfx1036: 1617 of 1617 values). Rebase-sensitive:
+  - All SAD arithmetic in `float_motion/float_motion_rows.h` (plain C + HIP
+    C++): `abs_diff`, transposed index, `row_sum`, bilinear,
+    `plane_score`. Kernels + extractor call it; no `__shfl_down`, no
+    per-block partial, no host `double` sum.
+  - Blur kernel stores `|cur - prev|` per sample in `diff[0]`, TRANSPOSED:
+    index = `((y / 64) * width + x) * 64 + y % 64`. Row kernel
+    `float_motion_hip_row_sum`: one thread per row, 64 per block
+    (`FMH_ROW_THREADS` == `VMAF_HIP_FLOAT_MOTION_ROW_GROUP`), fp32 accumulator,
+    left to right. Lanes of a block read 64 consecutive floats per step.
+  - Never read the blurred planes in the row kernel: one cache line per lane
+    and step, 145 ms per 4K frame on gfx1036 (20 ms transposed, 18 before).
+  - Host: `vmaf_hip_float_motion_plane_score()` = fp32 scale-0 mean (+ fp32
+    scale-1 mean), planes added in double (`motion_score_pair()`).
+  - `EXACT_TWINS["float_motion"]` lists `hip`: gate cell = equality.
+  - Guards: `test_hip_float_motion_rows` (device-free vs `compute_motion()`),
+    `test_hip_float_motion_parity` + `_large` (`==`, default and scale1 + uv),
+    `test_hip_kernel_source_contract.py` (6 planted regressions).
 - `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2`
   folds stored value, never re-weights; one-frame run emits motion2_v2 /
   motion3_v2 = 0 (only `n_frames == 0` returns early).

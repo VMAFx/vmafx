@@ -5360,6 +5360,22 @@ test('test_hip_cambi_device_math', test_hip_cambi_device_math,
     suite : ['fast'],
     timeout : 120)
 
+# ADR-1409 — float_motion_hip's row sums (float_motion/float_motion_rows.h,
+# the lines the row kernels and the extractor compile) against
+# motion.c::compute_motion(), bit for bit, with and without
+# motion_add_scale1 and at odd sizes. No AMD device is needed.
+test_hip_float_motion_rows = executable('test_hip_float_motion_rows',
+    ['test.c', 'test_hip_float_motion_rows.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: hip_device_math_args
+)
+test('test_hip_float_motion_rows', test_hip_float_motion_rows,
+    suite : ['fast'],
+    timeout : 120)
+
 # ADR-1405 — float_ssim_hip's device decimation (float_ssim/ssim_decimate.h,
 # the lines the kernel compiles) against the CPU's iqa_decimate(), byte for
 # byte: scales 1 to 10 and 128, 8 to 16 bits, odd sizes, windows wider than

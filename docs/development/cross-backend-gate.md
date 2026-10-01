@@ -34,7 +34,7 @@ explicitly accepts its skip.
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
-  | `float_motion` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411 (the twins add their SAD in the CPU's order); the row above stays for HIP and Metal |
+  | `float_motion` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411, ADR-1419 (the twins add their SAD in the CPU's order); the row above stays for Metal |
   | `float_vif` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1412 (the twin computes the CPU's arithmetic and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
   | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
@@ -86,7 +86,12 @@ explicitly accepts its skip.
   `float_motion_sycl` does so too
   ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md), measured on an
   Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
-  frames of BBB 3840x2160).
+  frames of BBB 3840x2160). `float_motion_hip` stores every absolute
+  difference and adds each row in the same order, with every option of the
+  extractor
+  ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md), measured on a
+  gfx1036: 0 on the Netflix pair at 8 and 10 bits, both 1080p checkerboard
+  pairs and BBB 3840x2160).
   `integer_ssim_cuda` stores the CPU's double term of every pixel and the host
   adds them in the CPU's raster order
   ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)).

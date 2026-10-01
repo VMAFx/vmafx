@@ -1530,6 +1530,7 @@ nav:
         - "ADR-1416: cuda-adm-cpu-row-rounding": adr/1416-cuda-adm-cpu-row-rounding.md
         - "ADR-1417: integer-aim-unclipped-upstream-parity": adr/1417-integer-aim-unclipped-upstream-parity.md
         - "ADR-1418: motion-parity-gate-metric-alignment": adr/1418-motion-parity-gate-metric-alignment.md
+        - "ADR-1419: hip-float-motion-cpu-float-sum": adr/1419-hip-float-motion-cpu-float-sum.md
         - "ADR-1421: rc3-rc8-candidate-map": adr/1421-rc3-rc8-candidate-map.md
         - "ADR-1424: cuda-ssim-cpu-frame-sum": adr/1424-cuda-ssim-cpu-frame-sum.md
       - "By tag":

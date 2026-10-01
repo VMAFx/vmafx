@@ -91,9 +91,11 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # in that order and the rows on the host (``float_motion_sad.h``), over a blur
 # built without FMA contraction (ADR-1403). ADR-1411: ``float_motion_sycl``
 # does the same, one work-item per row over a blur built with the SYCL strict
-# FP line (ADR-1367), measured on an Arc A380. The HIP and Metal
-# ``float_motion`` twins still reduce per block and keep the places=4
-# tolerance.
+# FP line (ADR-1367), measured on an Arc A380. ADR-1419: ``float_motion_hip``
+# stores every absolute difference and adds each row in the CPU's order, over
+# a blur built with the HIP strict FP list (ADR-1407), measured on a gfx1036.
+# The Metal ``float_motion`` twin still reduces per block and keeps the
+# places=4 tolerance.
 #
 # ``EXACT_TWIN_SOURCE`` names ADR-1397 for every listed twin: it is the ADR
 # of the exact cell itself, not of a twin's arithmetic.
@@ -118,7 +120,7 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     "adm": frozenset({"cuda"}),
     "float_ms_ssim": frozenset({"sycl"}),
     "float_ms_ssim_lcs": frozenset({"sycl"}),
-    "float_motion": frozenset({"cuda", "sycl"}),
+    "float_motion": frozenset({"cuda", "sycl", "hip"}),
     "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
     # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,
     # evaluates ``vif_tools.c``'s statistic in its types (the polynomial

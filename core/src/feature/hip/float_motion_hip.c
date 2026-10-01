@@ -15,12 +15,20 @@
  *
  *  Temporal design: per plane, a `blur[2]` ping-pong of device float arrays
  *  holds the blurred current and previous frames and `ref_in` the raw plane.
- *  On each submit the blur kernel runs with `compute_sad` 0 for the first
- *  frame and 1 afterwards; its per-block float SAD partials land in
- *  `rb.device`. The host accumulates them in double, divides by `w * h`, and
- *  emits `VMAF_feature_motion_score` at `index` and
+ *  On each submit the blur kernel writes the current slot and, from the
+ *  second frame on, |cur - prev| of every sample; a row kernel then adds the
+ *  differences of every row into one fp32 sum, and the row sums land in
+ *  `rb.device`. The host adds the rows and divides,
+ *  and emits `VMAF_feature_motion_score` at `index` and
  *  `VMAF_feature_motion2_score = min(prev, cur)` at `index - 1`. The tail
  *  motion2 is emitted in `flush()`.
+ *
+ *  The sum is the CPU's (ADR-1409): float_motion.c adds the absolute
+ *  differences of a row into one fp32 accumulator, the rows into another, and
+ *  divides in fp32, and that order decides the low bits of the score. The row
+ *  kernels and the host tail go through float_motion/float_motion_rows.h and
+ *  feature/float_motion_sad.h; with the blur built without FMA contraction
+ *  (ADR-1407) the twin's scores are the CPU's bits, with every option.
  *
  *  Options and outputs are the CPU float_motion.c's (ADR-1382, ADR-1404):
  *  - Every emitted `motion` / `motion2` value goes through motion_clip(): it
@@ -40,8 +48,9 @@
  *  posture is preserved: every lifecycle helper returns -ENOSYS.
  *
  *  HIP adaptation notes vs CUDA twin:
- *  - Warp size 64 on GCN/RDNA; the kernel already accounts for this
- *    (FM_WARP_SIZE=64, FM_WARPS_PER_BLOCK=4 for a 16x16 WG).
+ *  - The kernels reduce nothing across a wave: the blur writes one sample per
+ *    thread and the row kernels run one thread per row, so the wave size
+ *    (64 on GCN / RDNA1, 32 on RDNA2+) does not enter.
  *  - Kernel args are raw pointers (no VmafCudaBuffer indirection).
  *  - HtoD copy uses hipMemcpy2DAsync with hipMemcpyHostToDevice because
  *    pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
@@ -69,6 +78,7 @@
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
 #include "../../hip/shared_frame.h"
+#include "float_motion/float_motion_rows.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
@@ -86,6 +96,9 @@
 /* Block dimensions mirror the HIP kernel's FM_BX / FM_BY. */
 #define FMH_BX 16u
 #define FMH_BY 16u
+/* Threads per block of the row kernel, one thread per row: one group of the
+ * transposed difference planes (float_motion/float_motion_rows.h). */
+#define FMH_ROW_THREADS VMAF_HIP_FLOAT_MOTION_ROW_GROUP
 
 /* CPU float_motion.c DEFAULT_MOTION_MAX_VAL. */
 #define FMH_DEFAULT_MAX_VAL (10000.0)
@@ -93,19 +106,19 @@
 /* Y, and U and V with motion_add_uv. */
 #define FMH_MAX_PLANES 3u
 
-/* One picture plane: its geometry, where its SAD partials sit in the
- * readback, and its device buffers. */
+/* One picture plane: its geometry, where its row sums sit in the readback,
+ * and its device buffers. */
 typedef struct FmPlaneHip {
     unsigned w;
     unsigned h;
-    /* Half-size plane of the scale-1 SAD (motion_add_scale1); wg1 == 0
-     * without the option. */
+    /* Half-size plane of the scale-1 SAD (motion_add_scale1). */
     unsigned sw;
     unsigned sh;
-    /* Block counts of the blur + SAD kernel and of the scale-1 kernel, and
-     * the index of their first partial in the readback. */
-    unsigned wg0;
-    unsigned wg1;
+    /* Rows of the scale-1 SAD in the readback: `sh` with motion_add_scale1,
+     * 0 without. The scale-0 SAD has `h` rows. */
+    unsigned rows1;
+    /* Index of the first scale-0 and of the first scale-1 row sum in the
+     * readback. */
     unsigned off0;
     unsigned off1;
 #ifdef HAVE_HIPCC
@@ -114,12 +127,15 @@ typedef struct FmPlaneHip {
     void *ref_in;
     /* Blurred frame ping-pong (float, w*h pixels each). */
     void *blur[2];
+    /* |cur - prev| of the frame, transposed for the row kernel: scale 0, and
+     * scale 1 with motion_add_scale1 (NULL without). */
+    void *diff[2];
 #endif /* HAVE_HIPCC */
 } FmPlaneHip;
 
 typedef struct FloatMotionStateHip {
     /* Lifecycle (private stream + submit/finished event pair) and
-     * the (device per-WG SAD float partials, pinned host readback
+     * the (device per-row fp32 SAD sums, pinned host readback
      * slot) pair are managed by `hip/kernel_template.h`. */
     VmafHipKernelLifecycle lc;
     VmafHipKernelReadback rb;
@@ -131,14 +147,15 @@ typedef struct FloatMotionStateHip {
     hipFunction_t funcbpc8;
     hipFunction_t funcbpc16;
     hipFunction_t func_scale1;
+    hipFunction_t func_row_sum;
 #endif /* HAVE_HIPCC */
 
     FmPlaneHip plane[FMH_MAX_PLANES];
     unsigned n_planes;
     /* Where every plane's `ref_in` comes from (ADR-1408). */
     VmafHipPlaneSource source;
-    /* Floats in the readback: the partials of every plane and scale. */
-    unsigned partial_count;
+    /* Floats in the readback: the row sums of every plane and scale. */
+    unsigned row_count;
 
     int cur_blur;
     unsigned index;
@@ -340,8 +357,8 @@ static int fm_hip_check_min_dim(const FloatMotionStateHip *s, const FmPlaneHip *
     return -EINVAL;
 }
 
-/* Block counts and readback offsets of one plane; returns the index after
- * its last partial. */
+/* Geometry and readback offsets of one plane; returns the index after its
+ * last row sum. */
 static unsigned fm_hip_plane_layout(const FloatMotionStateHip *s, FmPlaneHip *p, unsigned w,
                                     unsigned h, unsigned offset)
 {
@@ -350,13 +367,10 @@ static unsigned fm_hip_plane_layout(const FloatMotionStateHip *s, FmPlaneHip *p,
     /* motion.c::vmaf_image_sad_c(): (int)(width * 0.5 + 0.5). */
     p->sw = (unsigned)((double)w * 0.5 + 0.5);
     p->sh = (unsigned)((double)h * 0.5 + 0.5);
-    p->wg0 = ((w + FMH_BX - 1u) / FMH_BX) * ((h + FMH_BY - 1u) / FMH_BY);
-    p->wg1 = 0u;
-    if (s->motion_add_scale1)
-        p->wg1 = ((p->sw + FMH_BX - 1u) / FMH_BX) * ((p->sh + FMH_BY - 1u) / FMH_BY);
+    p->rows1 = s->motion_add_scale1 ? p->sh : 0u;
     p->off0 = offset;
-    p->off1 = offset + p->wg0;
-    return p->off1 + p->wg1;
+    p->off1 = offset + h;
+    return p->off1 + p->rows1;
 }
 
 /* Geometry of every plane the options ask for, checked as the CPU checks it
@@ -365,7 +379,7 @@ static int fm_hip_init_geometry(FloatMotionStateHip *s, enum VmafPixelFormat pix
                                 unsigned h)
 {
     s->n_planes = 1u;
-    s->partial_count = fm_hip_plane_layout(s, &s->plane[0], w, h, 0u);
+    s->row_count = fm_hip_plane_layout(s, &s->plane[0], w, h, 0u);
     int err = fm_hip_check_min_dim(s, &s->plane[0], "luma");
     if (err != 0 || !s->motion_add_uv)
         return err;
@@ -379,7 +393,7 @@ static int fm_hip_init_geometry(FloatMotionStateHip *s, enum VmafPixelFormat pix
     const unsigned cw = vmaf_chroma_extent(w, pix_fmt != VMAF_PIX_FMT_YUV444P);
     const unsigned ch = vmaf_chroma_extent(h, pix_fmt == VMAF_PIX_FMT_YUV420P);
     for (unsigned c = 1u; c < FMH_MAX_PLANES; c++)
-        s->partial_count = fm_hip_plane_layout(s, &s->plane[c], cw, ch, s->partial_count);
+        s->row_count = fm_hip_plane_layout(s, &s->plane[c], cw, ch, s->row_count);
     s->n_planes = FMH_MAX_PLANES;
     return fm_hip_check_min_dim(s, &s->plane[1], "chroma");
 }
@@ -412,7 +426,9 @@ static int fm_hip_module_load(FloatMotionStateHip *s)
     if (rc == hipSuccess)
         rc = hipModuleGetFunction(&s->funcbpc16, s->module, "float_motion_hip_kernel_16bpc");
     if (rc == hipSuccess)
-        rc = hipModuleGetFunction(&s->func_scale1, s->module, "float_motion_hip_scale1_sad");
+        rc = hipModuleGetFunction(&s->func_scale1, s->module, "float_motion_hip_scale1_diff");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_row_sum, s->module, "float_motion_hip_row_sum");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -425,9 +441,9 @@ static size_t fm_hip_bytes_per_sample(const FloatMotionStateHip *s)
     return (s->bpc <= 8u) ? 1u : 2u;
 }
 
-/* Blur + SAD kernel of plane `p` on `pstr`: blurs the staged plane into the
- * current ping-pong slot and, when `compute_sad` is set, writes the per-block
- * SAD against the previous slot at the plane's scale-0 partials. */
+/* Blur kernel of plane `p` on `pstr`: blurs the staged plane into the current
+ * ping-pong slot and, when `compute_sad` is set, stores |cur - prev| of every
+ * sample in the plane's scale-0 differences. */
 static int fm_hip_launch_blur(FloatMotionStateHip *s, const FmPlaneHip *p, unsigned compute_sad,
                               hipStream_t pstr)
 {
@@ -437,7 +453,7 @@ static int fm_hip_launch_blur(FloatMotionStateHip *s, const FmPlaneHip *p, unsig
     ptrdiff_t plane_pitch = (ptrdiff_t)((size_t)p->w * fm_hip_bytes_per_sample(s));
     float *cur_blur = (float *)p->blur[s->cur_blur];
     const float *prev_blur = (const float *)p->blur[1 - s->cur_blur];
-    float *partials_dev = (float *)s->rb.device + p->off0;
+    float *diff = (float *)p->diff[0];
     unsigned w = p->w;
     unsigned h = p->h;
     unsigned bpc = s->bpc;
@@ -445,14 +461,14 @@ static int fm_hip_launch_blur(FloatMotionStateHip *s, const FmPlaneHip *p, unsig
 
     /* The 16bpc kernel takes `bpc` ahead of `filter_size`. */
     void *args8[] = {
-        (void *)&ref_dev,   (void *)&plane_pitch,  (void *)&cur_blur,
-        (void *)&prev_blur, (void *)&partials_dev, (void *)&w,
-        (void *)&h,         (void *)&filter_size,  (void *)&compute_sad,
+        (void *)&ref_dev,   (void *)&plane_pitch, (void *)&cur_blur,
+        (void *)&prev_blur, (void *)&diff,        (void *)&w,
+        (void *)&h,         (void *)&filter_size, (void *)&compute_sad,
     };
     void *args16[] = {
-        (void *)&ref_dev,      (void *)&plane_pitch, (void *)&cur_blur, (void *)&prev_blur,
-        (void *)&partials_dev, (void *)&w,           (void *)&h,        (void *)&bpc,
-        (void *)&filter_size,  (void *)&compute_sad,
+        (void *)&ref_dev,     (void *)&plane_pitch, (void *)&cur_blur, (void *)&prev_blur,
+        (void *)&diff,        (void *)&w,           (void *)&h,        (void *)&bpc,
+        (void *)&filter_size, (void *)&compute_sad,
     };
     const bool is8 = (s->bpc == 8u);
     return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1,
@@ -460,37 +476,65 @@ static int fm_hip_launch_blur(FloatMotionStateHip *s, const FmPlaneHip *p, unsig
                                                       is8 ? args8 : args16, NULL));
 }
 
-/* Scale-1 SAD kernel of plane `p` on `pstr`, after its blur kernel: reads
- * both ping-pong slots and writes the plane's scale-1 partials. */
+/* Scale-1 difference kernel of plane `p` on `pstr`, after its blur kernel:
+ * scales both ping-pong slots to half size and stores |cur - prev| of every
+ * scaled sample in the plane's scale-1 differences. */
 static int fm_hip_launch_scale1(FloatMotionStateHip *s, const FmPlaneHip *p, hipStream_t pstr)
 {
     const unsigned gx = (p->sw + FMH_BX - 1u) / FMH_BX;
     const unsigned gy = (p->sh + FMH_BY - 1u) / FMH_BY;
     const float *cur_blur = (const float *)p->blur[s->cur_blur];
     const float *prev_blur = (const float *)p->blur[1 - s->cur_blur];
-    float *partials_dev = (float *)s->rb.device + p->off1;
+    float *diff = (float *)p->diff[1];
     unsigned w = p->w;
     unsigned h = p->h;
     unsigned sw = p->sw;
     unsigned sh = p->sh;
     void *args[] = {
-        (void *)&cur_blur, (void *)&prev_blur, (void *)&partials_dev, (void *)&w,
+        (void *)&cur_blur, (void *)&prev_blur, (void *)&diff, (void *)&w,
         (void *)&h,        (void *)&sw,        (void *)&sh,
     };
     return vmaf_hip_rc_to_errno(
         hipModuleLaunchKernel(s->func_scale1, gx, gy, 1, FMH_BX, FMH_BY, 1, 0, pstr, args, NULL));
 }
 
-/* Every kernel of the frame, plane by plane, on `pstr`. The scale-1 SAD
- * needs a previous frame, so frame 0 runs the blur only. */
+/* Row kernel on `pstr`: one thread per row adds the `width` differences of
+ * its row in the CPU's order and writes `height` row sums at `first_row` of
+ * the readback. `diff` is the transposed plane a kernel of this frame wrote. */
+static int fm_hip_launch_row_sum(FloatMotionStateHip *s, const float *diff, unsigned first_row,
+                                 unsigned width, unsigned height, hipStream_t pstr)
+{
+    const unsigned gx = (height + FMH_ROW_THREADS - 1u) / FMH_ROW_THREADS;
+    float *rows_dev = (float *)s->rb.device + first_row;
+    void *args[] = {(void *)&diff, (void *)&rows_dev, (void *)&width, (void *)&height};
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_row_sum, gx, 1, 1, FMH_ROW_THREADS, 1,
+                                                      1, 0, pstr, args, NULL));
+}
+
+/* The SAD kernels of plane `p` on `pstr`, after its blur kernel: the scale-0
+ * row sums and, with motion_add_scale1, the scale-1 differences and their row
+ * sums. */
+static int fm_hip_launch_sads(FloatMotionStateHip *s, const FmPlaneHip *p, hipStream_t pstr)
+{
+    int err = fm_hip_launch_row_sum(s, (const float *)p->diff[0], p->off0, p->w, p->h, pstr);
+    if (err != 0 || p->rows1 == 0u)
+        return err;
+    err = fm_hip_launch_scale1(s, p, pstr);
+    if (err == 0)
+        err = fm_hip_launch_row_sum(s, (const float *)p->diff[1], p->off1, p->sw, p->sh, pstr);
+    return err;
+}
+
+/* Every kernel of the frame, plane by plane, on `pstr`. The SADs need a
+ * previous frame, so frame 0 runs the blur only. */
 static int fm_hip_launch_kernels(FloatMotionStateHip *s, unsigned compute_sad, hipStream_t pstr)
 {
     int err = 0;
     for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {
         const FmPlaneHip *p = &s->plane[c];
         err = fm_hip_launch_blur(s, p, compute_sad, pstr);
-        if (err == 0 && p->wg1 != 0u && compute_sad != 0u)
-            err = fm_hip_launch_scale1(s, p, pstr);
+        if (err == 0 && compute_sad != 0u)
+            err = fm_hip_launch_sads(s, p, pstr);
     }
     return err;
 }
@@ -525,10 +569,10 @@ static int fm_hip_upload(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
 }
 
 /* Get the reference planes on the device, launch the motion kernels, record
- * events, enqueue DtoH copy of per-block SAD partials.
+ * events, enqueue DtoH copy of the row sums.
  *
- * `compute_sad`: 0 for the first frame (no previous blur — partials will
- * all be 0.0 by kernel contract), 1 for subsequent frames. */
+ * `compute_sad`: 0 for the first frame (no previous blur: no SAD kernel runs
+ * and the row sums keep the zeros of init), 1 for subsequent frames. */
 static int fm_hip_launch(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
                          const VmafPicture *ref_pic, unsigned compute_sad)
 {
@@ -543,13 +587,13 @@ static int fm_hip_launch(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
         return err;
 
     /* Record submit event on picture stream, wait on private stream,
-     * DtoH copy of SAD partials, then record finished event. */
+     * DtoH copy of the row sums, then record finished event. */
     hipError_t rc = hipEventRecord(submit_ev, pstr);
     if (rc == hipSuccess)
         rc = hipStreamWaitEvent(str, submit_ev, 0);
     if (rc == hipSuccess) {
-        rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device,
-                            (size_t)s->partial_count * sizeof(float), hipMemcpyDeviceToHost, str);
+        rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, (size_t)s->row_count * sizeof(float),
+                            hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
         return vmaf_hip_rc_to_errno(rc);
@@ -557,20 +601,32 @@ static int fm_hip_launch(FloatMotionStateHip *s, VmafHipSharedFrame *frame,
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Allocate the blur ping-pong of every plane, and
- * zero the partials: frame 0 runs no scale-1 kernel, and its read-back must
+/* The blur ping-pong and the difference planes of one plane. */
+static hipError_t fm_hip_plane_alloc(FmPlaneHip *p)
+{
+    const size_t pixels = (size_t)p->w * p->h;
+    hipError_t rc = hipMalloc(&p->blur[0], pixels * sizeof(float));
+    if (rc == hipSuccess)
+        rc = hipMalloc(&p->blur[1], pixels * sizeof(float));
+    if (rc == hipSuccess) {
+        rc = hipMalloc(&p->diff[0], vmaf_hip_float_motion_diff_count(p->w, p->h) * sizeof(float));
+    }
+    if (rc == hipSuccess && p->rows1 != 0u) {
+        rc = hipMalloc(&p->diff[1], vmaf_hip_float_motion_diff_count(p->sw, p->sh) * sizeof(float));
+    }
+    return rc;
+}
+
+/* Allocate the device buffers of every plane, and
+ * zero the row sums: frame 0 runs no SAD kernel, and its read-back must
  * not carry uninitialised device memory. On failure the buffers already
  * allocated stay set; the caller's fm_hip_release() frees them. */
 static int fm_hip_bufs_alloc(FloatMotionStateHip *s)
 {
-    hipError_t rc = hipMemset(s->rb.device, 0, (size_t)s->partial_count * sizeof(float));
-    for (unsigned c = 0u; c < s->n_planes && rc == hipSuccess; c++) {
-        FmPlaneHip *p = &s->plane[c];
-        const size_t pixels = (size_t)p->w * p->h;
-        rc = hipMalloc(&p->blur[0], pixels * sizeof(float));
-        if (rc == hipSuccess)
-            rc = hipMalloc(&p->blur[1], pixels * sizeof(float));
-    }
+    hipError_t rc = hipMemset(s->rb.device, 0, (size_t)s->row_count * sizeof(float));
+    const unsigned n_planes = MIN(s->n_planes, FMH_MAX_PLANES);
+    for (unsigned c = 0u; c < n_planes && rc == hipSuccess; c++)
+        rc = fm_hip_plane_alloc(&s->plane[c]);
     return vmaf_hip_rc_to_errno(rc);
 }
 
@@ -581,7 +637,8 @@ static void fm_hip_bufs_free(FloatMotionStateHip *s)
     vmaf_hip_plane_source_close(&s->source);
     for (unsigned c = 0u; c < FMH_MAX_PLANES; c++) {
         s->plane[c].ref_in = NULL;
-        void **bufs[] = {&s->plane[c].blur[1], &s->plane[c].blur[0]};
+        void **bufs[] = {&s->plane[c].diff[1], &s->plane[c].diff[0], &s->plane[c].blur[1],
+                         &s->plane[c].blur[0]};
         for (unsigned i = 0u; i < sizeof(bufs) / sizeof(bufs[0]); i++) {
             if (*bufs[i] != NULL)
                 (void)hipFree(*bufs[i]);
@@ -628,9 +685,8 @@ static int fm_hip_release(FloatMotionStateHip *s)
 /* Device-side half of init(): readback pair, module, buffers, name dict. */
 static int fm_hip_init_device(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
 {
-    /* Readback pair: device per-WG float SAD partials + pinned host slot. */
-    int err =
-        vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, (size_t)s->partial_count * sizeof(float));
+    /* Readback pair: device per-row fp32 SAD sums + pinned host slot. */
+    int err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, (size_t)s->row_count * sizeof(float));
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = fm_hip_module_load(s);
@@ -692,8 +748,8 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
 
 #ifdef HAVE_HIPCC
-    /* First frame has no previous blurred frame — kernel writes cur_blur
-     * but computes no SAD (compute_sad=0, partials all 0.0 by contract). */
+    /* First frame has no previous blurred frame: the blur kernel writes
+     * cur_blur and no SAD kernel runs (compute_sad=0). */
     const unsigned compute_sad = (index > 0u) ? 1u : 0u;
     return fm_hip_launch(s, fex->hip_frame, ref_pic, compute_sad);
 #else
@@ -710,29 +766,19 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 }
 
 #ifdef HAVE_HIPCC
-/* Sum of `count` float partials starting at `first`, in double. */
-static double fm_hip_sum_partials(const float *partials, unsigned first, unsigned count)
-{
-    double total = 0.0;
-    for (unsigned i = 0u; i < count; i++)
-        total += (double)partials[first + i];
-    return total;
-}
-
-/* The frame's SAD score from the read-back partials: per plane the mean
- * absolute difference, plus the scale-1 mean with motion_add_scale1; the
- * planes add up (CPU float_motion.c::motion_score_pair()). */
+/* The frame's SAD score from the read-back row sums: per plane
+ * motion.c::vmaf_image_sad_c() (the fp32 mean absolute difference, plus the
+ * fp32 scale-1 mean with motion_add_scale1), and the planes added in double
+ * (CPU float_motion.c::motion_score_pair()). */
 static double fm_hip_frame_score(const FloatMotionStateHip *s)
 {
-    const float *partials = (const float *)s->rb.host_pinned;
+    const float *rows = (const float *)s->rb.host_pinned;
     double score = 0.0;
     for (unsigned c = 0u; c < s->n_planes; c++) {
         const FmPlaneHip *p = &s->plane[c];
-        score += fm_hip_sum_partials(partials, p->off0, p->wg0) / ((double)p->w * (double)p->h);
-        if (p->wg1 != 0u) {
-            score +=
-                fm_hip_sum_partials(partials, p->off1, p->wg1) / ((double)p->sw * (double)p->sh);
-        }
+        const float *scale1_rows = (p->rows1 != 0u) ? rows + p->off1 : NULL;
+        score += vmaf_hip_float_motion_plane_score(rows + p->off0, p->w, p->h, scale1_rows, p->sw,
+                                                   p->sh);
     }
     return score;
 }
@@ -786,9 +832,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return err;
 
 #ifdef HAVE_HIPCC
-    /* Accumulate per-block float SAD partials in double and compute the
-     * per-frame motion score. Mirrors the CUDA twin's cross-block
-     * reduction precision posture. */
+    /* The per-frame motion score from the row sums, added and divided as
+     * the CPU does (ADR-1409). */
     const double motion_score = fm_hip_frame_score(s);
 
     /* Advance blur ping-pong. */

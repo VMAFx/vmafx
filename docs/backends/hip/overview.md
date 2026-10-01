@@ -870,26 +870,55 @@ option table
 |---|---|
 | `motion_blend_factor` (`mbf`), `motion_blend_offset` (`mbo`) | Host: `motion3` is the CPU's blend of the fps-weighted score, then the `motion_max_val` cap |
 | `motion_filter_size` (`mfs`) | Kernel argument: `3` selects the 3-tap filter, `1` no blur, anything else the 5-tap filter |
-| `motion_add_scale1` (`mdc`) | A second kernel scales both blurred frames to half size with the CPU's bilinear scaler and adds that SAD |
+| `motion_add_scale1` (`mdc`) | A second kernel scales both blurred frames to half size with the CPU's bilinear scaler and stores their differences; the row kernel adds them |
 | `motion_add_uv` (`mau`) | The same kernels run on the U and V planes and the three scores add up; 4:0:0 input is refused |
 
 A frame is still one upload call, one read-back and one wait, whatever the
-options. Measured on a gfx1036 against `--backend cpu` at `--precision max`
-(max abs diff over the Netflix 576x324 pair / 50 frames of a 3840x2160 clip):
+options.
 
-| Options | `motion2` | `motion3` |
-|---|---|---|
-| none | 2.78e-6 / 5.71e-6 | 2.78e-6 / 5.71e-6 |
-| `motion_blend_factor=0.5:motion_blend_offset=2` | 2.78e-6 | 1.39e-6 |
-| `motion_filter_size=3` | 2.67e-6 | 3.08e-6 |
-| `motion_add_scale1=true` | 3.17e-6 | 3.17e-6 |
-| `motion_add_uv=true` | 2.56e-6 | 2.56e-6 |
-| `motion_add_uv`, `motion_add_scale1`, `motion_filter_size=3`, `motion_fps_weight=2`, `motion_blend_factor=0.25:motion_blend_offset=3` | 8.07e-6 / 8.45e-6 | 2.02e-6 / 2.11e-6 |
+`float_motion_hip` returns the CPU extractor's scores bit for bit, with every
+option ([ADR-1419](../../adr/1419-hip-float-motion-cpu-float-sum.md)). The CPU
+adds the absolute differences of a row into one `float`, the row sums into a
+second one, and divides in `float`, and those running sums round at every
+step, so the score depends on the order of the additions. The twin used to add
+16x16 blocks and was 3e-6 (576x324) to 1.4e-4 (1080p checkerboards) from the
+CPU. It now stores every absolute difference and adds each row left to right
+on the device, one thread per row, and the rows on the host. The differences
+are stored transposed, 64 rows to a group with a column's samples adjacent,
+because the threads of a wave walk different rows: read from the blurred
+planes, the row sums took 145 ms per 3840x2160 frame on the gfx1036.
 
-At 3840x2160 a frame takes 11.4 ms with the default options (11.5 ms before
-the change), 14.6 ms with `motion_add_scale1`, 17.3 ms with `motion_add_uv`
-and 25.8 ms with both; the CPU extractor on 16 threads takes 19.1, 61.9, 33.7
-and 75.4 ms.
+Measured on a gfx1036 against `--backend cpu` at `--precision max`, `motion`,
+`motion2` and `motion3` on the Netflix 576x324 pair at 8 bits (48 frames) and
+10 bits (3), both 1080p checkerboard pairs (3 each) and BBB 3840x2160 (20
+frames), 231 values per option set:
+
+| Options | Identical before | Max abs diff before | Identical after |
+|---|---|---|---|
+| none | 10 | 1.36e-4 | 231 |
+| `motion_add_scale1=true` | 10 | 2.21e-4 | 231 |
+| `motion_add_uv=true` | 10 | 1.36e-4 | 231 |
+| `motion_add_scale1=true:motion_add_uv=true` | 10 | 2.21e-4 | 231 |
+| `motion_filter_size=3` | 10 | 1.58e-4 | 231 |
+| `motion_filter_size=1` | 10 | 2.46e-5 | 231 |
+| `motion_fps_weight=1.5:motion_blend_factor=0.5:motion_blend_offset=2:motion_max_val=4` | 177 | 2.62e-6 | 231 |
+
+The 10 values that matched before are the zero scores of first frames, and
+the 177 of the last row are mostly scores at the `motion_max_val` cap.
+
+Time per frame on the gfx1036, medians of seven interleaved runs of both
+builds with other jobs loading the host:
+
+| Run | 1920x1080 before | 1920x1080 after | 3840x2160 before | 3840x2160 after |
+|---|---|---|---|---|
+| default options | 2.50 | 2.78 | 18.09 | 19.76 |
+| `motion_add_scale1` | 3.03 | 3.74 | 21.02 | 24.68 |
+| `motion_add_uv` | | | 19.05 | 20.52 |
+
+`--model version=vmaf_float_v0.6.1`, of which `float_motion_hip` is one
+extractor, reads 49.98 and 50.11 ms per 1920x1080 frame and 192.66 and 199.17
+per 3840x2160 frame before and after (medians of five interleaved runs), which
+is inside the spread of the runs.
 
 To confirm on an AMD host, build with HIP in the `vmaf-dev-mcp` container and
 run the device tests, which skip (exit 77) without a device:
@@ -900,11 +929,12 @@ meson setup build-hip core -Denable_hip=true -Denable_hipcc=true \
 ninja -C build-hip
 python3 scripts/ci/run_meson_test.py -- -C build-hip \
     test_hip_motion_tiny_frames test_hip_twin_option_parity \
-    test_hip_vif_min_dim test_hip_adm_tiny_frames test_hip_upload_race
+    test_hip_vif_min_dim test_hip_adm_tiny_frames test_hip_upload_race \
+    test_hip_float_motion_parity test_hip_float_motion_rows
 python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --backends cpu hip \
-    --features float_ssim float_ssim_lcs psnr motion_v2 vif
+    --features float_ssim float_ssim_lcs psnr motion_v2 vif float_motion
 ```
 
 Replace `gfx1036` with your device's target (`rocm_agent_enumerator` prints

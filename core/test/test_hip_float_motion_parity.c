@@ -15,6 +15,12 @@
  * at index 0 is forced to zero by spec — the t-1 reference doesn't
  * exist for the first frame), so we assert against index 1.
  *
+ * Since ADR-1409 the twin adds its SAD in the CPU's order, and
+ * test_float_motion_matches_cpu_bit_for_bit holds motion, motion2 and motion3
+ * of every frame to the CPU's value bit for bit, with the default options and
+ * with motion_add_scale1 + motion_add_uv. The tolerance test stays as the
+ * coarse gate.
+ *
  * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime / no
  * device) OR the HIP path returns -ENOSYS (scaffold posture under
  * enable_hipcc=false) the test emits a skip-tag and passes.
@@ -22,6 +28,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -411,10 +418,197 @@ static char *test_float_motion_cpu_hip_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1409 — float_motion_hip returns the CPU extractor's bits.          */
+/*                                                                     */
+/* float_motion.c adds the absolute differences of a row into one fp32  */
+/* accumulator, the rows into another, and divides in fp32. The twin    */
+/* used to add 16x16 blocks on the device and the blocks in double on   */
+/* the host, and was 3e-6 (576x324) to 1.4e-4 (1080p checkerboards)     */
+/* from the CPU on a gfx1036. It now stores every absolute difference   */
+/* and adds each row in the CPU's order (float_motion/                  */
+/* float_motion_rows.h), also for the half-size term of                 */
+/* motion_add_scale1 and for the chroma planes of motion_add_uv.        */
+/* ------------------------------------------------------------------ */
+#define FM_EXACT_FRAMES 4u
+#define FM_EXACT_KEYS 3u
+
+typedef struct FmExactScores {
+    double v[FM_EXACT_FRAMES][FM_EXACT_KEYS];
+} FmExactScores;
+
+static const char *const fm_exact_keys[FM_EXACT_KEYS] = {
+    "VMAF_feature_motion_score",
+    "VMAF_feature_motion2_score",
+    "VMAF_feature_motion3_score",
+};
+
+/* Texture and noise that move from frame to frame on all three planes, so the
+ * absolute differences have full mantissas and the running sums round. */
+static int fm_exact_fill(VmafPicture *pic, unsigned frame)
+{
+    const int err =
+        vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    if (err)
+        return err;
+    uint32_t state = 0x9E3779B9u ^ (frame * 2654435761u);
+    for (unsigned p = 0; p < 3u; p++) {
+        uint8_t *plane = (uint8_t *)pic->data[p];
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                state = (state * 1664525u) + 1013904223u;
+                const unsigned value =
+                    (((col * 5u) + (row * 3u) + (frame * 17u)) & 127u) + 48u + ((state >> 8) & 63u);
+                plane[(row * pic->stride[p]) + col] = (uint8_t)value;
+            }
+        }
+    }
+    return 0;
+}
+
+/* An initialised context of extractor `name`, with motion_add_scale1 and
+ * motion_add_uv when `options` is set. */
+static int fm_exact_context(VmafFeatureExtractorContext **ctx, const char *name, bool options)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(name);
+    if (fex == NULL)
+        return -ENOENT;
+    VmafDictionary *opts = NULL;
+    int err = 0;
+    if (options)
+        err = vmaf_dictionary_set(&opts, "motion_add_scale1", "true", 0);
+    if (!err && options)
+        err = vmaf_dictionary_set(&opts, "motion_add_uv", "true", 0);
+    if (!err)
+        err = vmaf_feature_extractor_context_create(ctx, fex, opts);
+    if (err) {
+        (void)vmaf_dictionary_free(&opts);
+        return err;
+    }
+    return vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W,
+                                               FIXTURE_H);
+}
+
+/* One frame through the extractor: extract() on the CPU, submit() and
+ * collect() on the twin. */
+static int fm_exact_frame(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                          unsigned frame)
+{
+    VmafPicture pic;
+    int err = fm_exact_fill(&pic, frame);
+    if (err)
+        return err;
+    if (ctx->fex->extract != NULL) {
+        err = vmaf_feature_extractor_context_extract(ctx, &pic, NULL, &pic, NULL, frame, fc);
+    } else {
+        err = submit_and_collect(ctx, fc, &pic, frame);
+    }
+    return merge_cleanup_error(err, vmaf_picture_unref(&pic));
+}
+
+static int fm_exact_collect(const VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                            FmExactScores *out)
+{
+    for (unsigned i = 0; i < FM_EXACT_FRAMES; i++) {
+        for (unsigned k = 0; k < FM_EXACT_KEYS; k++) {
+            const int err = get_option_resolved_score(ctx, fc, fm_exact_keys[k], i, &out->v[i][k]);
+            if (err)
+                return err;
+        }
+    }
+    return 0;
+}
+
+/* Every frame's motion, motion2 and motion3 from extractor `name`. */
+static int fm_exact_scores(const char *name, bool options, FmExactScores *out)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    int err = fm_exact_context(&ctx, name, options);
+    if (!err)
+        err = vmaf_feature_collector_init(&fc);
+    for (unsigned i = 0; i < FM_EXACT_FRAMES && !err; i++)
+        err = fm_exact_frame(ctx, fc, i);
+    if (!err) {
+        const int flushed = vmaf_feature_extractor_context_flush(ctx, fc);
+        err = (flushed < 0) ? flushed : 0;
+    }
+    if (!err)
+        err = fm_exact_collect(ctx, fc, out);
+    err = cleanup_float_motion_context(ctx, err);
+    if (fc != NULL)
+        vmaf_feature_collector_destroy(fc);
+    vmaf_picture_pool_flush();
+    return err;
+}
+
+static uint64_t fm_exact_bits(double v)
+{
+    uint64_t bits = 0u;
+    memcpy(&bits, &v, sizeof(bits));
+    return bits;
+}
+
+/* The scores that are not the CPU's bit for bit, each one reported. */
+static unsigned fm_exact_mismatches(const FmExactScores *cpu, const FmExactScores *gpu)
+{
+    unsigned differing = 0u;
+    for (unsigned i = 0; i < FM_EXACT_FRAMES; i++) {
+        for (unsigned k = 0; k < FM_EXACT_KEYS; k++) {
+            if (fm_exact_bits(cpu->v[i][k]) == fm_exact_bits(gpu->v[i][k]))
+                continue;
+            differing++;
+            (void)fprintf(stderr, "\n%s frame %u: cpu=%.17g hip=%.17g delta=%.3e", fm_exact_keys[k],
+                          i, cpu->v[i][k], gpu->v[i][k], fabs(cpu->v[i][k] - gpu->v[i][k]));
+        }
+    }
+    return differing;
+}
+
+/* 0 when the twin's scores are the CPU's, the number of differing scores
+ * otherwise; `*status` is the first error, -ENOSYS for a scaffold build. */
+static unsigned fm_exact_compare(bool options, int *status)
+{
+    FmExactScores cpu;
+    FmExactScores gpu;
+    memset(&cpu, 0, sizeof(cpu));
+    memset(&gpu, 0, sizeof(gpu));
+    *status = fm_exact_scores("float_motion_hip", options, &gpu);
+    if (*status == 0)
+        *status = fm_exact_scores("float_motion", options, &cpu);
+    if (*status != 0)
+        return 0u;
+    if (!(cpu.v[1][0] > 0.0))
+        *status = -ERANGE;
+    return fm_exact_mismatches(&cpu, &gpu);
+}
+
+static char *test_float_motion_matches_cpu_bit_for_bit(void)
+{
+    if (!hip_device_available()) {
+        (void)fprintf(stderr, "[skip: no HIP device] ");
+        return NULL;
+    }
+    int status = 0;
+    const unsigned plain = fm_exact_compare(false, &status);
+    if (status == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
+        return NULL;
+    }
+    mu_assert("float_motion: the CPU or the HIP run failed", status == 0);
+    mu_assert("float_motion_hip is not the CPU extractor's value bit for bit", plain == 0u);
+    const unsigned with_options = fm_exact_compare(true, &status);
+    mu_assert("float_motion with scale1 and uv: the CPU or the HIP run failed", status == 0);
+    mu_assert("float_motion_hip with motion_add_scale1 and motion_add_uv is not the CPU's value",
+              with_options == 0u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_motion_hip_registered);
     mu_run_test(test_float_motion_cpu_hip_parity);
+    mu_run_test(test_float_motion_matches_cpu_bit_for_bit);
     mu_run_test(test_float_motion_hip_flush_is_idempotent);
     mu_run_test(test_float_motion_hip_force_zero_keeps_close);
     return NULL;

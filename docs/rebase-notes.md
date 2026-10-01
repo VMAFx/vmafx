@@ -56909,3 +56909,28 @@ Netflix golden assertions are untouched.
 - No Netflix golden-data, public C API or FFmpeg patch impact. The SYCL, HIP
   and Metal `ssim` twins are untouched
   (`T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01`).
+## ADR-1419 — `float_motion_hip` adds its SAD in the CPU's order (2026-10-01)
+
+`fix/hip-float-motion-cpu-float-sum`, `T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01`
+(HIP part).
+
+- New `core/src/feature/hip/float_motion/float_motion_rows.h` (plain C and HIP
+  C++, listed in `hip_kernel_shared_headers`): the absolute difference, the
+  transposed layout index, the per-row fp32 sum, `motion.c`'s bilinear sample
+  (moved here from the kernel) and, on the host, the plane score.
+- `float_motion_score.hip`: the blur kernels take `diff` instead of
+  `partials` and store `|cur - prev|`; `float_motion_hip_scale1_sad` became
+  `float_motion_hip_scale1_diff`; `float_motion_hip_row_sum` is new. The wave
+  and block reductions (`fm_warp_reduce`, `fm_block_reduce`) are gone.
+- `float_motion_hip.c`: each plane has `diff[2]` (scale 0, scale 1); the
+  readback holds `h` (+ `sh`) row sums per plane instead of block partials
+  (`row_count`, `rows1`, `off0`, `off1`); `fm_hip_frame_score()` calls
+  `vmaf_hip_float_motion_plane_score()`.
+- It mirrors `float_motion.c::float_sad_line_c()` /
+  `compute_motion_simd()` and `motion.c::vmaf_image_sad_c()` /
+  `motion_scale_bilinear()`. An upstream change to the order or the types of
+  those sums has to be made in the header in the same PR;
+  `test_hip_float_motion_rows` fails otherwise, with or without an AMD device.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_motion"]`
+  gains `hip`; `scripts/ci/test_cross_backend_parity_gate.py` expects it. When
+  another backend joins, keep every listed twin.

@@ -113,6 +113,25 @@ TILE_AXES = 2
 FM_TILE_LOADS = 2
 # float_motion: motion3 from collect() and from the flush() tail.
 FM_MOTION3_BLEND_EMITS = 2
+# float_motion (ADR-1409): the SAD in the CPU's order. The kernels and the
+# extractor compute through this header.
+FMOTION_ROWS = "float_motion/float_motion_rows.h"
+FMOTION_ROWS_PIECES = (
+    "return (diff < 0.0f) ? -diff : diff;",
+    "return ((group * width) + x) * VMAF_HIP_FLOAT_MOTION_ROW_GROUP + lane;",
+    "float accum = 0.0f;",
+    "accum += row[(size_t)j * VMAF_HIP_FLOAT_MOTION_ROW_GROUP];",
+    "float score = (float)vmaf_float_motion_score_from_row_sads(rows, width, height);",
+    "score += (float)vmaf_float_motion_score_from_row_sads(",
+    "return (double)score;",
+)
+FMOTION_KERNEL_CALLS = (
+    "vmaf_hip_float_motion_abs_diff(blurred, prev_blur[off]);",
+    "diff[vmaf_hip_float_motion_diff_index(x, y, width)] =",
+    "vmaf_hip_float_motion_scale1_abs_diff(&scale1, x, y);",
+    "diff[vmaf_hip_float_motion_diff_index(x, y, scaled_width)] =",
+    "row_sad[y] = vmaf_hip_float_motion_row_sum(diff, width, y);",
+)
 
 
 def _sources() -> dict[str, str]:
@@ -138,6 +157,7 @@ def _sources() -> dict[str, str]:
     )
     sources = {name: (HIP_FEATURE / name).read_text(encoding="utf-8") for name in names}
     sources[PICTURE] = (HIP_RUNTIME / PICTURE).read_text(encoding="utf-8")
+    sources[FMOTION_ROWS] = (HIP_FEATURE / FMOTION_ROWS).read_text(encoding="utf-8")
     return sources
 
 
@@ -376,7 +396,37 @@ def _option_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{PSNR_HOST}: psnr_hip is not temporal like the CPU psnr")
     if not re.search(r"\"VMAF_feature_motion_score\",\s*fm_hip_motion_clip\(", src[FMOTION_HOST]):
         failures.append(f"{FMOTION_HOST}: the debug motion score skips motion_clip")
+    failures += _float_motion_sum_failures(src)
     failures += _float_motion_option_failures(src)
+    return failures
+
+
+def _squeeze(source: str) -> str:
+    """`source` with every run of whitespace as one space, so a check does not depend on wrapping."""
+    return " ".join(source.split())
+
+
+def _float_motion_sum_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1409: float_motion_hip adds its SAD in the CPU's order."""
+    failures: list[str] = []
+    rows = _squeeze(src[FMOTION_ROWS])
+    for piece in FMOTION_ROWS_PIECES:
+        if piece not in rows:
+            failures.append(f"{FMOTION_ROWS}: no longer the CPU's sum ({piece})")
+    kernel = _squeeze(src[FMOTION_KERNEL])
+    for call in FMOTION_KERNEL_CALLS:
+        if call not in kernel:
+            failures.append(f"{FMOTION_KERNEL}: a kernel no longer goes through {FMOTION_ROWS} ({call})")
+    if "__shfl_down" in kernel or "partials" in kernel:
+        failures.append(f"{FMOTION_KERNEL}: a kernel reduces the SAD per wave or per block")
+    host = src[FMOTION_HOST]
+    score = _squeeze(_function_body(host, "fm_hip_frame_score"))
+    if "score += vmaf_hip_float_motion_plane_score(rows + p->off0, p->w, p->h," not in score:
+        failures.append(f"{FMOTION_HOST}: the frame score is not built from the CPU's row sums")
+    if re.search(r"\+= \(double\)|double total", score):
+        failures.append(f"{FMOTION_HOST}: the row sums are added in double")
+    if "#define FMH_ROW_THREADS VMAF_HIP_FLOAT_MOTION_ROW_GROUP" not in host:
+        failures.append(f"{FMOTION_HOST}: the row kernel's block is not one group of rows")
     return failures
 
 
@@ -396,11 +446,14 @@ def _float_motion_option_failures(src: dict[str, str]) -> list[str]:
     if "fm_blur_pixel(s_tile, fm_filter(filter_size))" not in kernel:
         failures.append(f"{FMOTION_KERNEL}: motion_filter_size does not select the blur filter")
     launch = _function_body(host, "fm_hip_launch_kernels")
-    if "p->wg1 != 0u && compute_sad != 0u" not in launch or "fm_hip_launch_scale1(" not in launch:
+    sads = _function_body(host, "fm_hip_launch_sads")
+    if "fm_hip_launch_sads(" not in launch or "fm_hip_launch_scale1(" not in sads:
         failures.append(f"{FMOTION_HOST}: motion_add_scale1 does not run the scale-1 SAD kernel")
+    if "p->diff[1], p->off1, p->sw, p->sh" not in sads:
+        failures.append(f"{FMOTION_HOST}: the scale-1 differences are not added row by row")
     if "c < s->n_planes" not in launch or "s->n_planes = FMH_MAX_PLANES;" not in host:
         failures.append(f"{FMOTION_HOST}: motion_add_uv does not run the chroma planes")
-    if HOST_WAIT.search(launch):
+    if HOST_WAIT.search(launch) or HOST_WAIT.search(sads):
         failures.append(f"{FMOTION_HOST}: the frame's kernels wait on the host")
     return failures
 
@@ -828,11 +881,67 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             FMOTION_HOST,
-            "        if (err == 0 && p->wg1 != 0u && compute_sad != 0u)\n"
-            "            err = fm_hip_launch_scale1(s, p, pstr);\n",
+            "    err = fm_hip_launch_scale1(s, p, pstr);\n",
             "",
         )
         self.assert_detected(src, "motion_add_scale1 does not run the scale-1 SAD kernel")
+
+    def test_unsummed_float_motion_scale1_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            "(const float *)p->diff[1], p->off1, p->sw, p->sh, pstr);",
+            "(const float *)p->diff[0], p->off1, p->sw, p->sh, pstr);",
+        )
+        self.assert_detected(src, "scale-1 differences are not added row by row")
+
+    def test_block_reduced_float_motion_sad_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_KERNEL,
+            "    row_sad[y] = vmaf_hip_float_motion_row_sum(diff, width, y);",
+            "    float v = diff[y];\n"
+            "    for (int off = (int)warpSize / 2; off > 0; off >>= 1)\n"
+            "        v += __shfl_down(v, off);\n"
+            "    row_sad[y] = v;",
+        )
+        self.assert_detected(src, "vmaf_hip_float_motion_row_sum(diff, width, y)")
+        self.assert_detected(src, "per wave or per block")
+
+    def test_double_float_motion_row_sum_is_detected(self) -> None:
+        src = _replace(_sources(), FMOTION_ROWS, "    float accum = 0.0f;", "    double accum = 0.0;")
+        self.assert_detected(src, "float accum = 0.0f;")
+
+    def test_untransposed_float_motion_row_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_ROWS,
+            "accum += row[(size_t)j * VMAF_HIP_FLOAT_MOTION_ROW_GROUP];",
+            "accum += row[j];",
+        )
+        self.assert_detected(src, "accum += row[(size_t)j")
+
+    def test_double_float_motion_scale_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_ROWS,
+            "    float score = (float)vmaf_float_motion_score_from_row_sads(rows, width, height);",
+            "    double score = vmaf_float_motion_score_from_row_sads(rows, width, height);",
+        )
+        self.assert_detected(src, "float score = (float)vmaf_float_motion_score_from_row_sads")
+
+    def test_host_double_float_motion_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_HOST,
+            "        score += vmaf_hip_float_motion_plane_score(rows + p->off0, p->w, p->h,",
+            "        double total = 0.0;\n"
+            "        for (unsigned i = 0u; i < p->h; i++)\n"
+            "            total += (double)rows[p->off0 + i];\n"
+            "        score += total / ((double)p->w * (double)p->h) + 0.0 * (double)(scale1_rows != NULL) *",
+        )
+        self.assert_detected(src, "not built from the CPU's row sums")
+        self.assert_detected(src, "added in double")
 
     def test_luma_only_float_motion_add_uv_is_detected(self) -> None:
         src = _replace(

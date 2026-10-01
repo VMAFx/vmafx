@@ -357,6 +357,11 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/integer_psnr_hvs_hip.h',
         'feature/hip/float_psnr_hip.h',
         'feature/hip/float_motion_hip.h',
+        # ADR-1409: float_motion's row sums in the CPU's order, shared by the
+        # kernels and the device-free test.
+        'feature/hip/float_motion/float_motion_rows.h',
+        # Its host half includes the backend-neutral row-sum tail.
+        'feature/float_motion_sad.h',
         'feature/hip/float_vif_hip.h',
         'feature/hip/ssimulacra2_hip.h',
         'feature/ssimulacra2_math.h',
