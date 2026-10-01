@@ -37,7 +37,7 @@
  *      identical to the CPU's.
  *    - `issim_cpu_term` evaluates the expression of
  *      `ssim_reduce_row_range()` operand for operand, and meson builds this
- *      file with `-ffp-contract=off` (`hip_cu_extra_flags`), so no product
+ *      file with `-ffp-contract=off` (`hip_strict_fp_args`), so no product
  *      is fused into an FMA and each per-pixel term rounds exactly as the
  *      CPU's does.
  *    - The per-pixel form leaves the sum to the host, which adds the terms

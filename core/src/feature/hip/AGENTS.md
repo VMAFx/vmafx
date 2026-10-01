@@ -211,21 +211,23 @@ Pattern (ADR-0539 example for `float_vif_score`):
 3. Rebuild with `enable_hipcc=true`, grep ninja output for warnings
    referencing symbol — none should remain.
 
-## IEEE-strict kernels go in `hip_cu_extra_flags` (ADR-0539)
-
-HIP kernel relying on IEEE-754 add/mul ordering — e.g. any recursive
-IIR (SSIMULACRA2 FastGaussian cascade), angle-flag reductions, or
-numerically-sensitive variance / covariance combines. Add entry to
-`hip_cu_extra_flags` dict in `core/src/meson.build` with
-`['-ffp-contract=off']` (or richer flag list as needed).
+## Every kernel is IEEE-strict: `hip_strict_fp_args` (ADR-1407)
 
 hipcc / amdclang++ default to `-ffp-contract=fast` on device side,
-silently fusing `n2 * sum - d1 * prev` patterns into FMAs, shifting
-recursion past places=2 vs CPU / Vulkan `precise` twin. Mirrors CUDA
-`cuda_cu_extra_flags` dict in same file. Current entries:
-`ssimulacra2_blur`. Rebase invariant: porting new CUDA kernel listing
-`--fmad=false` / `-ffp-contract=off` in `cuda_cu_extra_flags` -> add
-matching HIP entry in same PR.
+silently fusing `a * b + c` into FMAs, across statements too. CPU
+reference build does not contract. One list for every kernel in
+`core/src/meson.build`, between `VMAF HIP strict FP policy` markers:
+`hip_strict_fp_args = ['-ffp-contract=off',
+'-fhip-fp32-correctly-rounded-divide-sqrt']` (second flag = hipcc default,
+pinned). No per-kernel table (`hip_cu_extra_flags` of ADR-0594 is gone):
+new kernel in `hip_kernel_sources` gets the policy automatically. Never add a per-kernel exemption or a
+`#pragma clang fp contract(on|fast)`; need a fused op -> write `fmaf()` /
+`fma()` explicitly. Guards: `test_hip_strict_fp_policy.py` (device-free,
+planted regressions), `test_hip_fp_arith_contract` (device: 1 M random
+`a * b + c`, `/`, `sqrtf` vs correctly rounded host; probe built with the
+same list). gfx1036: hipcc default fails it with 126577 fused multiply-adds;
+`-fno-hip-fp32-correctly-rounded-divide-sqrt` with 303181 divisions and
+158765 square roots off.
 
 ## Per-thread atomicAdd replaces CUDA per-warp `__shfl_down_sync` reduce (ADR-0539)
 
@@ -494,7 +496,7 @@ Invariants:
 - **Same per-pixel expression.** `issim_pixel_term()` =
   `ssim_reduce_row_range()` operand for operand. `SSIM_K1` / `SSIM_K2`
   spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`; literals `0.0001` / `0.0009` are
-  different doubles. `hip_cu_extra_flags` builds kernel with
+  different doubles. `hip_strict_fp_args` builds kernel with
   `-ffp-contract=off` -> nothing fuses into FMA. With both, 1x1 frame matches
   CPU exactly. Only remaining difference: summation order, 2e-14 on Netflix
   pair, 1.06e-11 worst case (1080p checkerboard), same as CUDA twin.
@@ -1088,10 +1090,9 @@ Rebase-sensitive invariants:
   (`speed_internal.c`), shared with SYCL; types = `speed_gpu_common.h`.
   Parameter block = `speed_hip_params_fill()` / `speed_hip_taps_fill()` /
   `speed_hip_bindings_*()`; replay test calls same.
-- Exact arithmetic = TU flags in `core/src/meson.build`
-  (`'speed_pipeline' : ['-ffp-contract=off',
-  '-fhip-fp32-correctly-rounded-divide-sqrt']`) + plain `*` `+` `/`
-  `sqrtf()`. Never `__fmul_rn` / `__fadd_rn` / `__fdiv_rn` / `__fsqrt_rn`:
+- Exact arithmetic = `hip_strict_fp_args` in `core/src/meson.build`
+  (`-ffp-contract=off`, `-fhip-fp32-correctly-rounded-divide-sqrt`; every
+  kernel, ADR-1407) + plain `*` `+` `/` `sqrtf()`. Never `__fmul_rn` / `__fadd_rn` / `__fdiv_rn` / `__fsqrt_rn`:
   without `OCML_BASIC_ROUNDED_OPERATIONS` = plain (contracting) operators /
   native approximate sqrt. Explicit `fmaf()` only for exact two-product.
 - log2 = `speed_hd_log2_rn()` (fp32 pairs, one rounding). Host libm `log2f`

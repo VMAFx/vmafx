@@ -1,0 +1,1 @@
+| [ADR-1407](1407-hip-strict-fp-every-kernel.md) | Every HIP kernel compiles with one list, `hip_strict_fp_args` (contraction off, correctly rounded fp32 division and square root), instead of a per-kernel table; a device test and a build-file test pin it. | Accepted | hip, gpu, numerics, build, rc3, fork-local |

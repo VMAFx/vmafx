@@ -472,21 +472,35 @@ After this PR no weak HSACO stubs back any of the three integer-domain
 PSNR / PSNR-HVS / moment extractors — only the four ADM kernels remain
 on the ADR-0536 stub path pending their own CUDA-helper-macro port.
 
-## Per-kernel hipcc flag dispatch (ADR-0539)
+## Floating-point arithmetic of the kernels (ADR-1407)
 
-`core/src/meson.build` defines a `hip_cu_extra_flags` dict alongside
-`hip_kernel_sources` so individual HSACO compilations can opt into
-non-default flags without changing the global hipcc command line. The
-fall-through (`hip_cu_extra_flags.get(name, [])`) is byte-identical to
-the prior command line for any kernel not listed.
+Every HIP kernel is compiled with one flag list, `hip_strict_fp_args` in
+`core/src/meson.build`:
 
-| Kernel              | Extra hipcc flags        | Reason |
-|---------------------|--------------------------|--------|
-| `ssimulacra2_blur`  | `-ffp-contract=off`      | Recursive Gaussian IIR pole-tracking depends on IEEE-754 add/mul ordering; allowing FMA fusion of `n2 * sum - d1 * prev` drifts the cascade past the places=2 parity gate within a handful of pyramid levels. Mirrors the CUDA twin's `--fmad=false`. |
+| Flag | What it does |
+|---|---|
+| `-ffp-contract=off` | hipcc contracts `a * b + c` into one fused multiply-add for device code by default. The CPU reference build does not, so a contracted kernel rounds differently from the extractor it mirrors. |
+| `-fhip-fp32-correctly-rounded-divide-sqrt` | Correctly rounded fp32 `/` and `sqrtf()`. This is hipcc's default; it is passed explicitly so that a toolchain default cannot move a score. |
 
-Mirrors the established `cuda_cu_extra_flags` dict in the same meson
-file (used by `float_adm_score` and `ssimulacra2_blur` on the CUDA side).
-When porting `float_adm` device code to HIP, add a matching entry.
+With the list, fp32 and fp64 `+ - * /` and `sqrt` in a kernel round as on the
+CPU. Scores are still not bit-identical where a twin uses a transcendental
+function, sums in another order, or computes in fp32 what the CPU computes in
+fp64; the per-twin numbers are in
+[ADR-1407](../../adr/1407-hip-strict-fp-every-kernel.md).
+
+There is no per-kernel flag table: a kernel listed in `hip_kernel_sources`
+gets the policy. Until ADR-1407 only `ssimulacra2_blur`, `integer_ssim_score`
+and `speed_pipeline` turned contraction off, through `hip_cu_extra_flags`
+([ADR-0594](../../adr/0594-hip-ssimulacra2-blur-fp-contract-off.md)).
+
+Two tests guard it. `test_hip_strict_fp_policy.py` checks the build files and
+needs no device. `test_hip_fp_arith_contract` compiles a probe kernel with the
+same list and compares a million random `a * b + c`, `a / b` and `sqrtf(a)`
+results from the device with correctly rounded host values:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_fp_arith_contract test_hip_strict_fp_policy
+```
 
 ## ADR-0539: integer ADM HIP kernels — real implementation (2026-05-18)
 

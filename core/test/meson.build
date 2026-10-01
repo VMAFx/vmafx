@@ -142,6 +142,17 @@ test('test_hip_device_resident_contract',
     timeout : 30,
 )
 
+# ADR-1407: device-free guard for the HIP strict FP policy (one hipcc flag
+# list for every kernel: contraction off, correctly rounded fp32 division and
+# square root; no per-kernel table; the device probe built with the same
+# list), with a planted regression per check.
+test('test_hip_strict_fp_policy',
+    import('python').find_installation(),
+    args : files('test_hip_strict_fp_policy.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1183 / T-GPU-TWIN-OPTION-ALIAS-DRIFT: a non-default feature option
 # becomes part of the published collector key. Keep GPU spellings equal to the
 # CPU reference without requiring any GPU runtime on the test host.
@@ -4639,6 +4650,40 @@ test_hip_adm_init_unwind = executable('test_hip_adm_init_unwind',
     c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
 )
 test('test_hip_adm_init_unwind', test_hip_adm_init_unwind, suite : ['fast'])
+
+# ADR-1407: `hip_strict_fp_args` gives every HIP kernel the CPU reference's
+# fp32 arithmetic. The probe kernel is compiled by hipcc with that list, as
+# the feature kernels in src/meson.build are, and run over a million random
+# operand triples and the boundary combinations; a contracted `a * b + c` or
+# an approximate `/` or sqrtf() on the device fails the test. The host side
+# is test_sycl_fp_arith_contract.c built for the HIP probe (one set of
+# operands and references for both backends). Skips (77) without a device.
+hip_fp_arith_probe_hsaco = custom_target('hip_fp_arith_probe_hsaco',
+    input : 'test_hip_fp_arith_probe.hip',
+    output : 'test_hip_fp_arith_probe.hsaco',
+    command : [hipcc_exe, '--genco'] + hip_offload_arch_flags + hip_include_flags
+              + hip_strict_fp_args + ['@INPUT@', '-o', '@OUTPUT@'],
+)
+hip_fp_arith_probe_hsaco_c = custom_target('hip_fp_arith_probe_hsaco_c',
+    input : hip_fp_arith_probe_hsaco,
+    output : 'test_hip_fp_arith_probe_hsaco.c',
+    capture : true,
+    command : [xxd_hip, '-i', '-n', 'test_hip_fp_arith_probe_hsaco', '@INPUT@'],
+)
+test_hip_fp_arith_contract = executable('test_hip_fp_arith_contract',
+    ['test.c', 'test_sycl_fp_arith_contract.c', 'test_hip_fp_arith_probe.c',
+     hip_fp_arith_probe_hsaco_c],
+    include_directories : [test_inc],
+    dependencies : [math_lib, hip_deps],
+    # The host references are single fp64 operations rounded once; they only
+    # need icx's fast model (reciprocal division) turned off.
+    c_args : vmaf_fp_model_args + ['-DFP_ARITH_PROBE=vmaf_test_hip_fp_arith',
+                                   '-DFP_ARITH_DEVICE="HIP"'],
+)
+test('test_hip_fp_arith_contract', test_hip_fp_arith_contract,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
 
 # T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, second site -- the two SSIMULACRA2 HIP allocator failure branches.
 # Same device-free interposition as the ADM gate above; here the injection is

@@ -302,29 +302,30 @@ if is_hipcc_enabled and is_hip_enabled
         # and speed_temporal_hip (host side: feature/hip/speed_hip_pipeline.c).
         'speed_pipeline'  : feature_src_dir + 'hip/speed/speed_pipeline.hip',
     }
-    # Per-kernel extra hipcc flags. Mirrors `cuda_cu_extra_flags` below for
-    # the nvcc path. `ssimulacra2_blur` needs `-ffp-contract=off` so the
-    # recursive Gaussian IIR pole-tracking pre/prev sequence keeps IEEE-754
-    # add/mul ordering (hipcc / amdclang++ default to `-ffp-contract=fast`
-    # on the device side, which auto-fuses the n*sum - d*prev pair into an
-    # FMA and shifts the recursion past places=2 vs the CPU / Vulkan
-    # `precise` twin). The CUDA twin passes `--fmad=false` for the same
-    # reason; HIP's amdclang++-driven hipcc honours `-ffp-contract=off`.
-    # `integer_ssim_score` evaluates the CPU's per-pixel SSIM expression
-    # (integer_ssim.c::ssim_reduce_row_range) operand for operand; without
-    # the flag the variance / covariance products fuse into FMAs and each
-    # per-pixel term rounds differently from the CPU's (ADR-0564).
-    # `speed_pipeline` (ADR-1384) reproduces speed.c in fp32 operation for
-    # operation: contraction off, and correctly rounded `/` and sqrtf() --
-    # hipcc's default, passed explicitly so a toolchain default cannot move
-    # the eigenvalues or the regular / singular decision. HIP's __fsqrt_rn()
-    # is the native approximation without OCML_BASIC_ROUNDED_OPERATIONS, and
-    # __fmul_rn() / __fadd_rn() are plain operators that contract.
-    hip_cu_extra_flags = {
-        'ssimulacra2_blur' : ['-ffp-contract=off'],
-        'integer_ssim_score' : ['-ffp-contract=off'],
-        'speed_pipeline' : ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt'],
-    }
+    # BEGIN VMAF HIP strict FP policy
+    # ADR-1407: every HIP kernel compiles with the CPU reference's arithmetic.
+    # The reference (gcc/clang, x86-64 baseline) neither contracts `a * b + c`
+    # into an FMA nor approximates `/` and sqrt. hipcc (amdclang++) does the
+    # first on the device unless told otherwise:
+    #   -ffp-contract=off   hipcc defaults to -ffp-contract=fast for device
+    #                       code, which fuses a product into a following add
+    #                       or subtract, across statements too.
+    #   -fhip-fp32-correctly-rounded-divide-sqrt
+    #                       correctly rounded fp32 `/` and sqrtf(): hipcc's
+    #                       default, passed explicitly so that a toolchain
+    #                       default cannot move a score.
+    # One list for every kernel: there is no per-kernel flag table, and a new
+    # kernel gets the policy by being listed in hip_kernel_sources. The first
+    # kernels that needed it had private entries (`ssimulacra2_blur`,
+    # ADR-0594: the recursive Gaussian's n * sum - d * prev;
+    # `integer_ssim_score`, ADR-0564: the CPU's per-pixel SSIM expression;
+    # `speed_pipeline`, ADR-1384: speed.c in fp32 operation for operation).
+    # HIP's __fmul_rn() / __fadd_rn() are plain operators and __fsqrt_rn() is
+    # the native approximation without OCML_BASIC_ROUNDED_OPERATIONS, so the
+    # flags, not intrinsics, carry the policy. core/test/meson.build compiles
+    # the device probe of test_hip_fp_arith_contract with this list.
+    hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']
+    # END VMAF HIP strict FP policy
     # ADR-1320: Explicit shared header dependencies for HIP device kernels.
     # While hipcc passes -Xclang -dependency-file on Linux, depend_files
     # provides declarative dependency tracking across all platforms.
@@ -365,7 +366,6 @@ if is_hipcc_enabled and is_hip_enabled
         'mem.h',
     )
     foreach name, src : hip_kernel_sources
-        per_kernel_flags = hip_cu_extra_flags.get(name, [])
         # hipcc ignores -MD/-MF under --genco; the device frontend writes the
         # depfile when asked directly, so header edits rebuild the HSACO.
         hsaco_target = custom_target('hip_hsaco_' + name,
@@ -375,7 +375,7 @@ if is_hipcc_enabled and is_hip_enabled
             depfile: name + '.hsaco.d',
             depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
-                     hip_include_flags + per_kernel_flags +
+                     hip_include_flags + hip_strict_fp_args +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
                       '-I', meson.current_source_dir() + '/feature/hip',
@@ -1925,7 +1925,7 @@ if is_sycl_enabled
     # every target that declares this dependency — libvmaf.so and all SYCL
     # test executables — so no per-target duplication is needed.
     # Root-cause investigation: docs/research/sycl-fsycl-link-flag.md
-    # (companion to ADR-NNNN-sycl-fsycl-link-propagation).
+    # (companion to ADR-1407-sycl-fsycl-link-propagation).
     # link.exe does not know -fsycl (LNK4044 on every link); the MSVC build
     # registers its images through the explicit device link instead (ADR-1364).
     # Its image sections and the fat objects' bundle sections share the

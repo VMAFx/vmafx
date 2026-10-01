@@ -56145,6 +56145,27 @@ reproducer of Research-1397.
 - Tests: `core/test/test_hip_ssim_tiny_frames.c` (new, device, `==` with
   `enable_db`), four planted regressions in
   `core/test/test_hip_kernel_source_contract.py`.
+
+## ADR-1407 — every HIP kernel compiles with hip_strict_fp_args (2026-10-01)
+
+`fix/hip-fp-contract-off`, Research-1407, ADR-1407.
+
+- `core/src/meson.build`: `hip_cu_extra_flags` and the `per_kernel_flags`
+  lookup in the HSACO loop are gone. `hip_strict_fp_args`, defined once
+  between the `VMAF HIP strict FP policy` markers, is on every hipcc kernel
+  command. Do not reintroduce a per-kernel table or a second definition on a
+  rebase: `core/test/test_hip_strict_fp_policy.py` fails. A new HIP kernel
+  needs no flag entry.
+- `core/test/test_sycl_fp_arith_contract.c` is now built twice: as
+  `test_sycl_fp_arith_contract` (default macros) and as
+  `test_hip_fp_arith_contract` (`-DFP_ARITH_PROBE=vmaf_test_hip_fp_arith
+  -DFP_ARITH_DEVICE="HIP"`) with `core/test/test_hip_fp_arith_probe.{hip,c}`.
+  A change to the operands or the host references changes both tests.
+- `core/test/test_hip_device_resident_contract.py` reads the SpEED kernel's
+  two flags from `hip_strict_fp_args` instead of the removed table entry.
+- Seven HIP twins' outputs change inside their tolerances (`float_adm`,
+  `float_vif`, `float_motion`, `float_ssim`, `float_ms_ssim`, `ciede`,
+  `psnr_hvs`); no fork snapshot under `testdata/` is a HIP output.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## perf/sycl-float-vif-no-scratch — scratch-free float_vif SYCL kernels (2026-10-01)
 

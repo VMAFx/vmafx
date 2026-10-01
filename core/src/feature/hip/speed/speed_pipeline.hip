@@ -19,7 +19,7 @@
  *  host unit test that replays these kernels; the kernels add only the work
  *  decomposition, shared memory and barriers. This TU is compiled with
  *  -ffp-contract=off and -fhip-fp32-correctly-rounded-divide-sqrt
- *  (hip_cu_extra_flags in core/src/meson.build) and uses no fp64. Every
+ *  (hip_strict_fp_args in core/src/meson.build) and uses no fp64. Every
  *  kernel takes (const SpeedHipParams *, uint32_t binding_set).
  */
 

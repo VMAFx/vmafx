@@ -8,6 +8,12 @@
  *  test_sycl_fp_arith_probe.cpp, compiled like an extractor TU; this side builds
  *  the operands and the correctly rounded host references. fp32 operations
  *  evaluated in fp64 and rounded once are correctly rounded (53 >= 2 * 24 + 2).
+ *
+ *  ADR-1407: the HIP kernels make the same promise through hip_strict_fp_args.
+ *  test_hip_fp_arith_contract is this file built with
+ *  -DFP_ARITH_PROBE=vmaf_test_hip_fp_arith -DFP_ARITH_DEVICE="HIP", against
+ *  the probe in test_hip_fp_arith_probe.{hip,c}: one set of operands and one
+ *  set of host references for both backends.
  */
 
 #include <errno.h>
@@ -26,8 +32,14 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-int vmaf_test_sycl_fp_arith(const float *a, const float *b, const float *c, size_t n, float *mad,
-                            float *quot, float *root);
+/* The device probe under test and the device it names when it skips. */
+#ifndef FP_ARITH_PROBE
+#define FP_ARITH_PROBE vmaf_test_sycl_fp_arith
+#define FP_ARITH_DEVICE "SYCL GPU"
+#endif
+
+int FP_ARITH_PROBE(const float *a, const float *b, const float *c, size_t n, float *mad,
+                   float *quot, float *root);
 
 enum {
     RANDOM_COUNT = 1 << 20,
@@ -112,10 +124,9 @@ static int operands_alloc(Operands *op, size_t n)
 /* Runs the device probe; NULL when the check passed or was skipped. */
 static char *run_and_check(Operands *op, const char *label)
 {
-    const int err =
-        vmaf_test_sycl_fp_arith(op->a, op->b, op->c, op->n, op->mad, op->quot, op->root);
+    const int err = FP_ARITH_PROBE(op->a, op->b, op->c, op->n, op->mad, op->quot, op->root);
     if (err == -ENODEV) {
-        (void)fprintf(stderr, "  [SKIP] %s: no SYCL GPU device\n", label);
+        (void)fprintf(stderr, "  [SKIP] %s: no " FP_ARITH_DEVICE " device\n", label);
         mu_skipped = 1;
         return NULL;
     }
@@ -133,10 +144,10 @@ static char *test_invalid_arguments(void)
 {
     float x = 1.0f;
     mu_assert("NULL operand must be rejected",
-              vmaf_test_sycl_fp_arith(NULL, &x, &x, 1, &x, &x, &x) == -EINVAL);
+              FP_ARITH_PROBE(NULL, &x, &x, 1, &x, &x, &x) == -EINVAL);
     mu_assert("NULL result must be rejected",
-              vmaf_test_sycl_fp_arith(&x, &x, &x, 1, &x, &x, NULL) == -EINVAL);
-    mu_assert("an empty probe is a no-op", vmaf_test_sycl_fp_arith(&x, &x, &x, 0, &x, &x, &x) == 0);
+              FP_ARITH_PROBE(&x, &x, &x, 1, &x, &x, NULL) == -EINVAL);
+    mu_assert("an empty probe is a no-op", FP_ARITH_PROBE(&x, &x, &x, 0, &x, &x, &x) == 0);
     mu_assert("an empty probe leaves results alone", x == 1.0f);
     return NULL;
 }

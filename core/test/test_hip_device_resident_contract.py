@@ -181,7 +181,9 @@ def _speed_failures(src: dict[str, str]) -> list[str]:
     )
     if "vmaf_hip_kernel_collect_wait(" not in _body(pipeline, "speed_hip_pipeline_wait"):
         failures.append(f"{SPEED_PIPELINE}: the frame's one wait moved out of collect")
-    flags = re.search(r"'speed_pipeline'\s*:\s*\[([^\]]*)\]", src["meson.build"])
+    # Every HIP kernel gets one list (ADR-1407); test_hip_strict_fp_policy.py
+    # pins the list itself, this pins that the SpEED kernel's two flags are in it.
+    flags = re.search(r"^    hip_strict_fp_args = \[([^\]]*)\]$", src["meson.build"], re.M)
     wanted = ("'-ffp-contract=off'", "'-fhip-fp32-correctly-rounded-divide-sqrt'")
     if not flags or any(flag not in flags.group(1) for flag in wanted):
         failures.append("meson.build: the speed_pipeline kernel lost its exact-arithmetic flags")
@@ -408,8 +410,8 @@ class HipDeviceResidentContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             "meson.build",
-            "'speed_pipeline' : ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']",
-            "'speed_pipeline' : ['-fhip-fp32-correctly-rounded-divide-sqrt']",
+            "hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']",
+            "hip_strict_fp_args = ['-fhip-fp32-correctly-rounded-divide-sqrt']",
         )
         self.assert_detected(src, "exact-arithmetic flags")
 

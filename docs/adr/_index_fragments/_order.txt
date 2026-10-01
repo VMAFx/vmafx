@@ -1106,3 +1106,4 @@
 1399-cuda-float-ssim-device-decimation
 1404-hip-float-motion-motion3-and-options
 1405-hip-float-ssim-device-decimation
+1407-hip-strict-fp-every-kernel
