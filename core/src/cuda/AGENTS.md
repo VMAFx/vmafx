@@ -255,23 +255,31 @@ cuda/
   [ADR-0246](../../../docs/adr/0246-gpu-kernel-template.md) and
   [docs/backends/kernel-scaffolding.md](../../../docs/backends/kernel-scaffolding.md).
 
-## Per-kernel nvcc flag invariants
+## Kernel nvcc flag invariants
 
-- `cuda_cu_extra_flags` map in `core/src/meson.build` routes
-  per-kernel nvcc flags. Currently inhabited by `float_adm_score`
-  (added in PR #157,
-  [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)),
-  `ssimulacra2_blur` (added in
-  [ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)) and
-  `ssimulacra2_device` (added in
-  [ADR-1391](../../../docs/adr/1391-cuda-ssimulacra2-device-resident.md)).
-  All three pass `vmaf_cuda_host_strict_fp_args` plus `--fmad=false` so
-  recursive / cross-band float reductions keep their CPU-port FMUL/FSUB
-  ordering. **On rebase**: never drop these per-kernel entries —
-  without them, `float_adm` drifts past `places=4` at scale 3, and
-  `ssimulacra2_cuda` loses its bit-exact YUV / XYB / blur / downsample
-  stages and its 1e-9 contract with the CPU (ADR-1391).
-  `core/test/test_strict_fp_compiler_args.py` asserts the three entries.
+- **One FP flag list for every fatbin
+  ([ADR-1403](../../../docs/adr/1403-cuda-strict-fp-every-kernel.md)).**
+  `cuda_device_strict_fp_args` (`core/src/meson.build`, between
+  `VMAF CUDA device strict FP policy` markers) = `vmaf_cuda_host_strict_fp_args`
+  plus `--fmad=false` under nvcc, `-ffp-contract=off` under clang CUDA. Fatbin
+  `custom_target` appends it to every kernel's command. No kernel contracts
+  `a * b + c`; fused operation a reference performs = explicit `__fmaf_rn()`
+  in kernel source. Until ADR-1403 only `float_adm_score`
+  ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)),
+  `ssimulacra2_blur`
+  ([ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)),
+  `ssimulacra2_device`
+  ([ADR-1391](../../../docs/adr/1391-cuda-ssimulacra2-device-resident.md)),
+  `integer_ssim_score`, `speed_score` and `psnr_hvs_score` (ADR-1397) had
+  it, through `cuda_cu_extra_flags`.
+  **On rebase**: never restore per-kernel FP entries and never drop shared
+  list from fatbin command. Without it `float_adm` drifts past `places=4` at
+  scale 3, `ssimulacra2_cuda` loses 1e-9 contract (ADR-1391),
+  `float_ms_ssim_cuda` loses bit-exactness (ADR-1403).
+- `cuda_cu_extra_flags` map = per-kernel flags that are not floating-point
+  (empty today). `core/test/test_strict_fp_compiler_args.py` executes policy
+  for nvcc and clang and fails on per-kernel FP flag, `--fmad=true`, fatbin
+  command without shared list, second definition.
 
 ## Lifecycle invariants
 
@@ -338,11 +346,11 @@ cuda/
   `vmaf_cuda_picture_free` synchronous free.
 - [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md) —
   `float_adm_cuda` requires `--fmad=false` on its fatbin to
-  match GLSL `precise` qualifier in `float_adm.comp`. See
-  per-kernel `cuda_cu_extra_flags` dict in
-  `core/src/meson.build`. **On rebase**: do not consolidate
-  `float_adm_score` into global `cuda_flags` block; FMA-off
-  scope intentionally one fatbin only.
+  match GLSL `precise` qualifier in `float_adm.comp`. Since
+  [ADR-1403](../../../docs/adr/1403-cuda-strict-fp-every-kernel.md) every
+  fatbin has it through `cuda_device_strict_fp_args`
+  (`core/src/meson.build`); ADR-0202's "one fatbin only" scope is
+  superseded. **On rebase**: keep shared list on fatbin command.
 - [ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
   CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 

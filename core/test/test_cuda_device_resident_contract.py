@@ -25,6 +25,10 @@ CAMBI_HOST = "integer_cambi_cuda.c"
 CAMBI_KERNELS = "integer_cambi/cambi_score.cu"
 SPEED_HOSTS = ("speed_chroma_cuda.c", "speed_temporal_cuda.c", "speed_cuda_pipeline.c")
 SPEED_KERNELS = "speed/speed_score.cu"
+CUDA_DEVICE_FMAD = (
+    "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+)
+CUDA_FATBIN_FP_ARGS = "cuda_flags + cuda_device_strict_fp_args"
 
 # Calls, not mentions: the sources cite the retired helpers in comments.
 CAMBI_HOST_RESIDUAL = tuple(
@@ -207,10 +211,10 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
     if "0x1.0c6f7ap-20f" not in kernels or "0x1.6bdb1ap-49f" not in kernels:
         failures.append(f"{SPEED_KERNELS}: EIGENVALUE_EPS no longer compared exactly")
     failures += _single_struct_kernels(kernels, SPEED_KERNELS, "SpeedCudaFrameArgs")
-    if (
-        "'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
-        not in sources["meson.build"]
-    ):
+    # ADR-1403: every fatbin takes the one device FP list; the policy itself is
+    # pinned by core/test/test_strict_fp_compiler_args.py.
+    meson = sources["meson.build"]
+    if CUDA_DEVICE_FMAD not in meson or CUDA_FATBIN_FP_ARGS not in meson:
         failures.append("core/src/meson.build: speed_score fatbin is not built with --fmad=false")
     return failures
 
@@ -441,7 +445,7 @@ class CudaKernelSourceContractTest(unittest.TestCase):
     def test_speed_contracting_build_is_detected(self) -> None:
         sources = _sources()
         sources["meson.build"] = sources["meson.build"].replace(
-            "'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],", "", 1
+            CUDA_FATBIN_FP_ARGS, "cuda_flags", 1
         )
         self.assertTrue(any("--fmad=false" in item for item in _contract_failures(sources)))
 

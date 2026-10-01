@@ -113,8 +113,9 @@ typedef struct MsSsimStateCuda {
     unsigned scale_grid_y[MS_SSIM_SCALES];
     unsigned scale_block_count[MS_SSIM_SCALES];
 
-    /* ADR-0990: c1/c2/c3 promoted to double so the kernel receives
-     * double arguments matching the scalar reference precision. */
+    /* The reference's fp32 stabilisation constants (iqa_ssim()), carried as
+     * doubles: the kernel's argument list takes doubles (ADR-0990) and
+     * narrows them back without loss (ADR-1403). */
     double c1;
     double c2;
     double c3;
@@ -247,12 +248,16 @@ static void ms_ssim_configure_scales(MsSsimStateCuda *s, unsigned w, unsigned h)
         s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
     }
 
-    const double L = 255.0;
-    const double K1 = 0.01;
-    const double K2 = 0.03;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
-    s->c3 = s->c2 * 0.5;
+    /* iqa_ssim(): the stabilisation constants are fp32. */
+    const int L = 255;
+    const float K1 = 0.01f;
+    const float K2 = 0.03f;
+    const float C1 = (K1 * (float)L) * (K1 * (float)L);
+    const float C2 = (K2 * (float)L) * (K2 * (float)L);
+    const float C3 = C2 / 2.0f;
+    s->c1 = (double)C1;
+    s->c2 = (double)C2;
+    s->c3 = (double)C3;
 }
 
 static int ms_ssim_load_kernels(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
@@ -585,14 +590,19 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
             total_s += s->h_s_partials[i][j];
         }
         const double n_pixels = (double)w_final * (double)h_final;
-        l_means[i] = total_l / n_pixels;
-        c_means[i] = total_c / n_pixels;
-        s_means[i] = total_s / n_pixels;
+        /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
+         * floats. Rounding here as it does also absorbs the last-bit
+         * difference between the device's block-wise fp64 sums and the
+         * reference's raster-order sum (ADR-1403). */
+        l_means[i] = (double)(float)(total_l / n_pixels);
+        c_means[i] = (double)(float)(total_c / n_pixels);
+        s_means[i] = (double)(float)(total_s / n_pixels);
     }
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
+        msssim *= pow(fabs(l_means[i]), (double)g_alphas[i]) *
+                  pow(fabs(c_means[i]), (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
     return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_cuda",

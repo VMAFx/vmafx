@@ -45,14 +45,18 @@ because ADM splits across DWT2 + decouple + CSF + CM passes.
   `feature_collector.h` / `feature_extractor.h` first, then
   `cuda/integer_<feature>_cuda.h`, then `cuda_helper.cuh` /
   `kernel_template.h`. Don't shuffle.
-- **fmaf contraction OFF for precision-critical kernels.** Parent
-  build line passes `--fmad=false` to `nvcc` for two kernels only,
-  `ssimulacra2_blur` and `float_adm_score` (`cuda_cu_extra_flags`).
-  Removing it drifts `float_adm_cuda` / `ssimulacra2_cuda` past
-  gate. Every other kernel keeps nvcc's default `--fmad=true`
-  (contracts `a * b + c`), unlike SYCL, where every TU compiles with
-  contraction off (ADR-1367); tracked as
-  `T-CUDA-FP-CONTRACT-DEFAULT-2026-09-29`. Division and sqrt are
+- **FMA contraction OFF for every kernel (ADR-1403).** Every fatbin takes
+  `cuda_device_strict_fp_args` (`core/src/meson.build`, policy markers):
+  nvcc `-Xcompiler=<host strict FP>` + `--fmad=false`; clang CUDA
+  (`-Denable_nvcc=false`) `-ffp-contract=off`. Same model as CPU and SYCL
+  (ADR-1367). `cuda_cu_extra_flags` = other private flags only, never an FP
+  flag; `test_strict_fp_compiler_args.py` rejects per-kernel copies,
+  opt-outs, a fatbin command without the list, a second definition.
+  Reference fuses on purpose (`vmaf_fmaf_exact()` / `fmadd`:
+  `ms_ssim_decimate.c`, `ssimulacra2.c`, SpEED) -> kernel spells
+  `__fmaf_rn()`; never rely on the compiler to fuse. New kernel: write
+  reference's operations in reference's types; plain `a * b + c` rounds
+  twice, as on the host. Division and sqrt are
   IEEE (`-prec-div` / `-prec-sqrt` default true, no `--use_fast_math`).
   On rebase: keep flag.
 
@@ -155,6 +159,23 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   SpEED extractors' old manual `-EIO` checks gone with host residual
   (ADR-1380). See branch fix/bughunt-cuda.
 
+- **`float_ms_ssim_cuda` = CPU arithmetic, bit for bit (ADR-1403).** On
+  RTX 4090: 104 / 104 frames identical (Netflix pair, 1080p checkerboards,
+  BBB 4K), `enable_lcs` atoms included. Keep all five:
+  (1) decimate taps = `__fmaf_rn(sample, tap, acc)` (`ms_ssim_decimate.c`
+  uses `vmaf_fmaf_exact()`); (2) window sums = fp32 products into `MsPair`
+  (exact fp32 two-sum pair standing for `iqa_convolve()`'s fp64 sum; plain
+  fp64 gives same scores, +3.4 ms per 4K frame); (3) `l` / `c` / `s` =
+  `ssim_accumulate_default_scalar()` types: fp64 numerators for `l`, `c`,
+  fp32 denominators, fp32 quotient for `s`, root = `__fsqrt_rn()` (clang
+  CUDA turns `sqrtf()` into `sqrt.approx`); (4) host constants fp32
+  (`C1`, `C2`, `C3 = C2 / 2.0f`); (5) host rounds each per-scale mean to
+  fp32 before `pow()`, with `fabs()` on all three as `ms_ssim.c`. Sum order
+  of fp64 `l` / `c` / `s` partials differs from CPU raster order; fp32 mean
+  rounding absorbs it. Guards: `test_cuda_kernel_source_contract.py` (six
+  planted regressions), `test_cuda_float_ms_ssim_parity` (`==` on 16 outputs
+  x 3 frames; fails on pre-ADR-1403 code). SYCL / HIP / Metal twins still
+  old arithmetic: `T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`.
 - **`integer_ms_ssim_cuda.c` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra
   metrics (`float_ms_ssim_{l,c,s}_scale{0..4}`) when `enable_lcs=true`,
@@ -235,8 +256,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
     `float` (`hvs_mask_value`, constexpr -> static data);
   - threshold = `sqrt((double)energy * ratio) / 32`, one rounding to
     `float` (`hvs_threshold`);
-  - `--fmad=false` on the fatbin (`cuda_cu_extra_flags` in
-    `core/src/meson.build`);
+  - `--fmad=false` on the fatbin (every fatbin has it, ADR-1403:
+    `cuda_device_strict_fp_args` in `core/src/meson.build`);
   - coefficient error = integer `abs()` cast to `float`;
   - no sum of terms in kernel or host TU (per-block partials round
     differently: 1e-2 dB at 3840x2160).
@@ -332,8 +353,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   incorrect AIM/ADM3 scores without any crash.
   If `.cu` file replaced by rebase with pre-ADR-0574
   version (`FADM_ACCUM_SLOTS = 6`), update `float_adm_cuda.c`
-  accordingly in same commit. `--fmad=false` nvcc flag on
-  `float_adm_score.cu` covers all six kernels including two new
+  accordingly in same commit. `--fmad=false` (every fatbin, ADR-1403)
+  covers all six kernels of `float_adm_score.cu` including two new
   AIM stages (`float_adm_csf_r`, `float_adm_aim_cm`); do not remove
   it. AIM/ADM3 options: `adm_bypass_cm`, `adm_adm3_apply_hm`,
   `adm_p_norm`, `adm_dlm_weight`, `adm_min_val`, `adm_skip_aim_scale`
@@ -459,7 +480,7 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
     no DtoH / HtoD of planes. `core/test/test_cuda_ssimulacra2_parity.c` holds
     the twin to 1e-9 of the CPU on every frame.
   - `ssimulacra2_blur` and `ssimulacra2_device` build with `--fmad=false`
-    (`cuda_cu_extra_flags` in `core/src/meson.build`); products that feed an
+    (every fatbin does, ADR-1403); products that feed an
     add stay in their own expressions; the cube root divides through
     `VMAF_SS2_FDIV` = `__fdiv_rn`; the YUV matrix uses `__fmaf_rn` in the
     ADR-0891 order. That keeps YUV, XYB, blurs and downsample bit-identical
@@ -583,8 +604,8 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   ONE `__ll2float_rn`); `iqa/convolve.c` -> `add_tap` (fp32 product,
   `__dadd_rn` double sum, ONE `__double2float_rn` per pass, both passes);
   plane size = `iqa/decimate_dim.h::iqa_decimate_dim` (host
-  `decimated_extent`). NVCC fuses `a * b + c` in this TU (`--fmad` default):
-  NEVER write a rounding there as plain `*` / `+`. Gate: `check_context_cuda`
+  `decimated_extent`). Every rounding there is an explicit `_rn` intrinsic; keep it so
+  (fatbin has `--fmad=false`, ADR-1403, but the intrinsics are the contract). Gate: `check_context_cuda`
   and `init` share `float_ssim_geometry_supported` (plane >= 11x11, scale <=
   128). Scale 1 reads picture direct (`horiz_{8,16}bpc`), above reads
   `d_ref` / `d_cmp` (`horiz_planes`); one templated `horizontal_pass` body.
@@ -594,8 +615,8 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   for byte), `test_cuda_float_ssim_parity` (+ `_large`, equality),
   `test_cuda_kernel_source_contract.py`,
   `test_gpu_float_ssim_auto_scale_contract.py`.
-- **`integer_ssim_score` builds with `--fmad=false`** (`cuda_cu_extra_flags`,
-  as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:
+- **`integer_ssim_score` builds with `--fmad=false`** (every fatbin,
+  ADR-1403; as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:
   `w_d * a * b / den` = `((w * a) * b) / den`. Per-pixel terms = CPU bit for
   bit; frame sum order differs (warp / block / host vs CPU row-major) -> no
   bit-exact claim. `test_cuda_kernel_source_contract.py` pins flag + grouping.
@@ -1039,7 +1060,7 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
 - **CPU-exact fp32 in `speed_score.cu`.** Every rounding-relevant op =
   `__fadd_rn` / `__fsub_rn` / `__fmul_rn` / `__fdiv_rn` / `__fsqrt_rn`
   (never contracted, correctly rounded) + TU built `--fmad=false`
-  (`cuda_cu_extra_flags`). No fp64 type in file, no `sqrtf` / `log2f` /
+  (every fatbin, ADR-1403). No fp64 type in file, no `sqrtf` / `log2f` /
   `__fdividef` (libdevice `log2f` not correctly rounded -> `speed_log2()`
   fp32 pairs). `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
   `0x1.6bdb1ap-49f`. Only `exact_fma()` = error-free transforms.

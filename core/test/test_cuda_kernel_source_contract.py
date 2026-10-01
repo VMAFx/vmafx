@@ -24,8 +24,14 @@ case that edits the live source the way the old code read and must fail:
   int64 and rounded once, every convolution tap is an fp32 product added to
   a double sum (iqa/convolve.c), the plane size is the CPU's
   iqa_decimate_dim(), and submit never waits on the host;
-- integer SSIM: the combine compiles with --fmad=false and groups the term
-  as the CPU does, ((w * a) * b) / den;
+- integer SSIM: the combine compiles with --fmad=false, like every CUDA
+  fatbin since ADR-1403, and groups the term as the CPU does,
+  ((w * a) * b) / den;
+- float MS-SSIM (ADR-1403): the decimate fuses each tap explicitly as
+  ms_ssim_decimate.c does, the window sums are fp32 products summed in an
+  exact fp32 pair that stands for iqa_convolve()'s fp64 sum, l / c / s keep
+  the CPU's fp32 denominators and quotient, and the host rounds each
+  per-scale mean to fp32 and takes fp32 stabilisation constants;
 - ADM: the DWT kernels read their rows and taps through adm_dwt2_rows.h;
 - VIF: vif_cuda declares its minimum size through the ADR-1324 gate;
 - engine: libvmaf.c initialises a submit / collect extractor before it picks
@@ -57,12 +63,41 @@ MESON = "meson.build"
 MESON_PATH = ROOT / "core" / "src" / MESON
 LIBVMAF = "libvmaf.c"
 LIBVMAF_PATH = ROOT / "core" / "src" / LIBVMAF
-INTEGER_SSIM_FMAD = "'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+# ADR-1403: one FP flag list for every fatbin, and the fatbin command takes it.
+# core/test/test_strict_fp_compiler_args.py pins the policy itself.
+CUDA_DEVICE_FMAD = (
+    "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+)
+CUDA_FATBIN_FP_ARGS = "cuda_flags + cuda_device_strict_fp_args"
 INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
 PSNR_KERNEL = "integer_psnr/psnr_score.cu"
 MOMENT_KERNEL = "integer_moment/moment_score.cu"
 MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
 FLOAT_SSIM_MEAN = "*mean = (double)(float)*mean;"
+MS_SSIM_KERNEL = "integer_ms_ssim/ms_ssim_score.cu"
+MS_SSIM_HOST = "integer_ms_ssim_cuda.c"
+# What makes float_ms_ssim_cuda the CPU's arithmetic (ADR-1403).
+MS_SSIM_KERNEL_PIECES = (
+    "row_acc = __fmaf_rn(src_buf[yi * (int)w + xi], LPF[ku], row_acc);",
+    "acc = __fmaf_rn(row_acc, LPF[kv], acc);",
+    "ms_pair_add(ref_mu_h, __fmul_rn(r, w));",
+    "ms_pair_add(ref_sq_h, __fmul_rn(__fmul_rn(r, r), w));",
+    "ms_pair_add(refcmp_h, __fmul_rn(__fmul_rn(r, c), w));",
+    "ms_pair_add(ref_mu_v, __fmul_rn(h.ref_mu[src_idx], w));",
+    "sum.lo = __fadd_rn(sum.lo, error);",
+    "return __fadd_rn(sum.hi, sum.lo);",
+    "const float sigma_xy_geom = __fsqrt_rn(ref_var * cmp_var);",
+    "(double)(ref_mu * ref_mu + cmp_mu * cmp_mu + C1);",
+    "(double)(ref_var + cmp_var + C2);",
+    "out.s = (double)((clamped_covar + C3) / (sigma_xy_geom + C3));",
+)
+MS_SSIM_HOST_PIECES = (
+    "l_means[i] = (double)(float)(total_l / n_pixels);",
+    "c_means[i] = (double)(float)(total_c / n_pixels);",
+    "s_means[i] = (double)(float)(total_s / n_pixels);",
+    "const float C1 = (K1 * (float)L) * (K1 * (float)L);",
+    "const float C3 = C2 / 2.0f;",
+)
 SOURCES = (
     MOTION_KERNEL,
     MOTION_SAD,
@@ -75,6 +110,8 @@ SOURCES = (
     "integer_psnr_cuda.c",
     "ssim_cuda.c",
     "integer_ssim_cuda.c",
+    MS_SSIM_KERNEL,
+    MS_SSIM_HOST,
     "float_motion_cuda.c",
     "integer_vif_cuda.c",
 )
@@ -241,7 +278,8 @@ def _ssim_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{SSIM_KERNEL}: both pass-2 kernels must share ssim_terms()")
     if FLOAT_SSIM_MEAN not in sources["integer_ssim_cuda.c"]:
         failures.append("integer_ssim_cuda.c: the frame mean is not rounded to fp32 like the CPU's")
-    if INTEGER_SSIM_FMAD not in _code_meson(sources[MESON]):
+    meson = _code_meson(sources[MESON])
+    if CUDA_DEVICE_FMAD not in meson or CUDA_FATBIN_FP_ARGS not in meson:
         failures.append("core/src/meson.build: integer_ssim_score is compiled with FMA contraction")
     if "*term = w_d * a * b / den;" not in sources[INTEGER_SSIM_KERNEL]:
         failures.append(f"{INTEGER_SSIM_KERNEL}: the SSIM term is not grouped as the CPU groups it")
@@ -290,6 +328,23 @@ def _float_ssim_pipeline_failures(sources: dict[str, str]) -> list[str]:
             failures.append(f"integer_ssim_cuda.c: {fn}() not found")
         elif HOST_WAIT.search(body):
             failures.append(f"integer_ssim_cuda.c: {fn}() waits on the host mid-frame")
+    return failures
+
+
+def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    kernel = _code(sources[MS_SSIM_KERNEL])
+    for piece in MS_SSIM_KERNEL_PIECES:
+        if piece not in kernel:
+            failures.append(f"{MS_SSIM_KERNEL}: no longer the CPU's arithmetic ({piece})")
+    # A plain `acc += a * b` is neither the reference's fused decimate tap nor
+    # its fp64 window sum (carried as an exact fp32 pair).
+    if re.search(r"\b\w+ \+= [^;]*\*[^;]*;", kernel):
+        failures.append(f"{MS_SSIM_KERNEL}: an fp32 multiply-accumulate replaces the CPU's sum")
+    host = _code(sources[MS_SSIM_HOST])
+    for piece in MS_SSIM_HOST_PIECES:
+        if piece not in host:
+            failures.append(f"{MS_SSIM_HOST}: no longer combines as the CPU does ({piece})")
     return failures
 
 
@@ -371,6 +426,7 @@ def _all_failures(sources: dict[str, str]) -> list[str]:
         *_option_failures(sources),
         *_ssim_failures(sources),
         *_float_ssim_pipeline_failures(sources),
+        *_ms_ssim_failures(sources),
         *_guard_failures(sources),
         *_dispatch_failures(sources),
     ]
@@ -513,8 +569,55 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         self._assert_detected(sources, "float_ssim_launch_passes() waits on the host")
 
     def test_contracted_integer_ssim_is_detected(self) -> None:
-        sources = self._edit(MESON, INTEGER_SSIM_FMAD, "'integer_ssim_score' : []")
+        sources = self._edit(MESON, CUDA_FATBIN_FP_ARGS, "cuda_flags")
         self._assert_detected(sources, "FMA contraction")
+        sources = self._edit(MESON, CUDA_DEVICE_FMAD, "cuda_device_strict_fp_args = []")
+        self._assert_detected(sources, "FMA contraction")
+
+    def test_unfused_ms_ssim_decimate_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_KERNEL,
+            "acc = __fmaf_rn(row_acc, LPF[kv], acc);",
+            "acc += row_acc * LPF[kv];",
+        )
+        self._assert_detected(sources, "__fmaf_rn(row_acc")
+        self._assert_detected(sources, "fp32 multiply-accumulate")
+
+    def test_fp32_ms_ssim_window_sum_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_KERNEL,
+            "ms_pair_add(ref_sq_h, __fmul_rn(__fmul_rn(r, r), w));",
+            "ref_sq_h.hi += (r * r) * w;",
+        )
+        self._assert_detected(sources, "fp32 multiply-accumulate")
+
+    def test_ms_ssim_pair_sum_without_its_error_term_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_KERNEL, "sum.lo = __fadd_rn(sum.lo, error);", "(void)error;"
+        )
+        self._assert_detected(sources, "sum.lo = __fadd_rn")
+
+    def test_approximate_ms_ssim_square_root_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_KERNEL, "__fsqrt_rn(ref_var * cmp_var)", "sqrtf(ref_var * cmp_var)"
+        )
+        self._assert_detected(sources, "__fsqrt_rn(ref_var * cmp_var)")
+
+    def test_fp64_ms_ssim_denominator_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_KERNEL,
+            "(double)(ref_var + cmp_var + C2);",
+            "((double)ref_var + (double)cmp_var + c2);",
+        )
+        self._assert_detected(sources, "ref_var + cmp_var + C2")
+
+    def test_unrounded_ms_ssim_scale_mean_is_detected(self) -> None:
+        sources = self._edit(
+            MS_SSIM_HOST,
+            "c_means[i] = (double)(float)(total_c / n_pixels);",
+            "c_means[i] = total_c / n_pixels;",
+        )
+        self._assert_detected(sources, "combines as the CPU does")
 
     def test_regrouped_integer_ssim_term_is_detected(self) -> None:
         sources = self._edit(

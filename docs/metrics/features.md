@@ -755,6 +755,13 @@ MS-SSIM backends — CPU, CUDA, SYCL, HIP and Metal emit the same 15
 score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)). (The Vulkan
 backend was removed in ADR-0726.)
 
+`float_ms_ssim_cuda` reproduces the CPU extractor's arithmetic and is
+bit-identical to it at `--precision max`, per-scale `enable_lcs` outputs
+included, on the Netflix pair, the 1080p checkerboard pairs and BBB
+3840x2160 on an RTX 4090
+([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). The SYCL, HIP and
+Metal twins stay within the cross-backend tolerance of 5e-5.
+
 For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:
 `integer_ssim_sycl` takes `enable_db` / `clip_db`, and `float_ssim_sycl`
 takes `enable_lcs` / `enable_db` / `clip_db` and `scale`. Identical frames

@@ -143,7 +143,7 @@ core/src/feature/cuda/        # per-feature kernels
   integer_adm_cuda.{c,h}         # ADM extractor dispatch
   integer_adm/                   # ADM .cu kernels
   float_adm_cuda.{c,h}           # float ADM extractor dispatch (ADR-0202)
-  float_adm/                     # float ADM .cu kernels (single fatbin compiled with --fmad=false)
+  float_adm/                     # float ADM .cu kernels (single fatbin)
   integer_motion_cuda.{c,h}      # motion extractor dispatch
   integer_motion_v2_cuda.{c,h}   # motion_v2 extractor dispatch
   integer_motion_sad_cuda.{c,h}  # motion SAD pipeline shared by both (ADR-1372)
@@ -215,7 +215,7 @@ rely on the backend's NVTX annotations.
 ## Numerical tolerance vs the CPU scalar path
 
 CUDA kernels target **close agreement** with the CPU fixed-point path,
-not bit-exact equality. Different reduction orders, FMA contractions,
+not bit-exact equality. Different reduction orders
 and parallel-prefix sums can perturb the final integer accumulator by a
 fraction of a ULP — this has always been the case for VMAF on GPU,
 not a fork regression. In practice the per-frame pooled VMAF agrees
@@ -223,6 +223,45 @@ to ~6 decimal places (the default `%.6f` truncation hides the delta
 entirely; `--precision=max` exposes it). See
 [ADR-0119](../../adr/0119-cli-precision-default-revert.md) for the
 precision-default rationale.
+
+### Floating-point model: no FMA contraction (ADR-1403)
+
+Every CUDA kernel is compiled without contraction: `a * b + c` is a rounded
+multiply followed by a rounded add, as in the CPU build and in the SYCL
+twins ([ADR-1367](../../adr/1367-sycl-strict-fp-every-feature-tu.md)).
+nvcc's default would fuse it into one FMA, which rounds once. The build
+passes one flag list to every kernel
+(`cuda_device_strict_fp_args` in `core/src/meson.build`: `--fmad=false`
+under nvcc, `-ffp-contract=off` under clang's CUDA driver), and
+`core/test/test_strict_fp_compiler_args.py` fails if a kernel gets its own.
+Division and square root are IEEE as well (nvcc's `-prec-div` and
+`-prec-sqrt` defaults; the build never passes `--use_fast_math`). Where the
+CPU reference itself fuses (the MS-SSIM decimation, ssimulacra2's colour
+matrix, SpEED's exact products), the kernel writes the fused operation
+explicitly.
+
+What this guarantees is the rounding of fp32 `+ - * /` and `sqrt`. A twin
+still differs from the CPU where it calls a device math function
+(`log2f`, `pow`, `atan2`), sums in another order, or uses another formula.
+Measured against `--backend cpu` at `--precision max` on an RTX 4090
+([Research-1403](../../research/1403-cuda-strict-fp-every-kernel.md)), on the
+Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
+
+| Twin | Agreement with the CPU |
+|---|---|
+| `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
+| `speed_chroma` | bit-identical except the frames where glibc misrounds `log2f` (6 of 312 outputs, 1.4e-6) |
+| `ssimulacra2`, `ssim` | 7.3e-11 and 1.1e-11 at most |
+| `adm`, `float_adm` | 2.1e-7 and 1.3e-5 at most |
+| `ciede` | 1.1e-5 |
+| `float_vif` | 3.8e-5 |
+| `float_motion` | 3.1e-6 on the Netflix pair, 2.4e-5 at 3840x2160, 1.4e-4 on the checkerboards: the CPU's own fp32 running sum, not the twin |
+
+`float_ms_ssim_cuda` became bit-identical with ADR-1403: besides the build
+flag, its kernels now follow `ms_ssim_decimate.c`, `iqa_convolve()` and
+`ssim_accumulate_default_scalar()` operation for operation, and the host
+rounds each per-scale mean to fp32 as the CPU does. Its `enable_lcs`
+outputs, which were up to 1.3e-6 from the CPU, are identical too.
 
 The `motion` / `motion2` / `motion3` CUDA outputs agreed with the CPU
 fixed-point path at `places = 4` under default settings on the Netflix
@@ -409,7 +448,8 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   edge-difference terms in fp64 over a fixed tree, downsamples, and
   copies one 864-byte block of per-scale sums to the host, where
   `collect()` waits once and pools the score. The device kernels
-  build with `--fmad=false`, so everything up to the sums matches the
+  build with `--fmad=false`, like every CUDA kernel
+  ([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md)), so everything up to the sums matches the
   CPU bit for bit, and each per-frame score is within 1e-9 of
   `--backend cpu` (1.5e-12 at worst on the tested content). On an
   RTX 4090 a 3840x2160 frame takes about 7 ms instead of about

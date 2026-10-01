@@ -31,7 +31,10 @@ COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 # The scaling constant of the CPU's masking table. With an `f` suffix the
 # product is taken in float; the CPU takes it in double.
 MASK_SCALE = "0.3885746225901003"
-FMAD_OFF = "'psnr_hvs_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+# ADR-1403: every CUDA fatbin takes the one device FP list, psnr_hvs_score
+# (ADR-1397) included; core/test/test_strict_fp_compiler_args.py pins the policy.
+FMAD_OFF = "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
+FATBIN_FP_ARGS = "cuda_flags + cuda_device_strict_fp_args"
 # A float accumulated over `+=` of an indexed load: a host or kernel sum of
 # its own, next to the one in the shared helper.
 OWN_FLOAT_SUM = re.compile(r"\b(?:sum|error_sum|partial|acc)\s*\+=")
@@ -87,7 +90,7 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{CUDA_KERNEL}: the kernel no longer stores every term")
     if OWN_FLOAT_SUM.search(code):
         failures.append(f"{CUDA_KERNEL}: the kernel sums terms itself (a per-block partial)")
-    if FMAD_OFF not in sources["meson.build"]:
+    if FMAD_OFF not in sources["meson.build"] or FATBIN_FP_ARGS not in sources["meson.build"]:
         failures.append(
             "core/src/meson.build: psnr_hvs_score fatbin is not built with --fmad=false"
         )
@@ -120,7 +123,7 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
 
     def test_contracting_build_is_detected(self) -> None:
         sources = _sources()
-        sources["meson.build"] = sources["meson.build"].replace(FMAD_OFF + ",", "", 1)
+        sources["meson.build"] = sources["meson.build"].replace(FATBIN_FP_ARGS, "cuda_flags", 1)
         self.assertTrue(any("--fmad=false" in item for item in _contract_failures(sources)))
 
     def test_float_masking_table_is_detected(self) -> None:

@@ -20,7 +20,9 @@
  * gives 16x9 at scale 4 — well above the 11x11 Gaussian window.
  *
  * Asserts agreement to within 1e-4 (places=4, ADR-0214) at frame
- * index 1 across 3 frames.  Skips cleanly when no CUDA device is
+ * index 1 across 3 frames, and since ADR-1403 that every output of
+ * every frame, the 15 per-scale l / c / s means included, is the
+ * CPU's value bit for bit.  Skips cleanly when no CUDA device is
  * visible.
  */
 
@@ -270,9 +272,151 @@ static char *test_float_ms_ssim_clip_db_ceiling(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1403 — float_ms_ssim_cuda is the CPU's arithmetic, bit for bit.   */
+/*                                                                     */
+/* The kernels reproduce ms_ssim_decimate.c (one fused multiply-add per */
+/* tap), iqa_convolve() (fp32 products summed in fp64) and              */
+/* ssim_accumulate_default_scalar() (fp32 denominators and quotient)    */
+/* operation for operation, the fatbin builds without FMA contraction,  */
+/* and the host rounds each per-scale mean to fp32 and combines as      */
+/* ms_ssim.c does. Before that the twin ran fp32 window sums, fp64      */
+/* denominators and unrounded means, and was 2.4e-8 to 3.8e-6 from the  */
+/* CPU on the Netflix pair, the checkerboards and BBB 4K; turning       */
+/* contraction off alone made it worse at 4K.                           */
+/*                                                                     */
+/* With enable_lcs the 15 per-scale l / c / s means are compared too:   */
+/* every one of the 16 outputs of every frame must equal the CPU's.     */
+/* ------------------------------------------------------------------ */
+/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
+ * support and upstream-compatible C test conventions. */
+#define MS_EXACT_KEYS 16u
+
+typedef struct MsExactScores {
+    double v[NUM_FRAMES][MS_EXACT_KEYS];
+} MsExactScores;
+
+static const char *const ms_exact_keys[MS_EXACT_KEYS] = {
+    "float_ms_ssim",          "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1",
+    "float_ms_ssim_l_scale2", "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
+    "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
+    "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4", "float_ms_ssim_s_scale0",
+    "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2", "float_ms_ssim_s_scale3",
+    "float_ms_ssim_s_scale4",
+};
+
+static int ms_exact_feed(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_ref(&ref, i);
+        if (err)
+            return err;
+        err = fill_dist(&dist, i);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+            return err;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err)
+            return err;
+    }
+    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+static int ms_exact_collect(VmafContext *vmaf, MsExactScores *out)
+{
+    for (unsigned k = 0; k < MS_EXACT_KEYS; k++) {
+        for (unsigned i = 0; i < NUM_FRAMES; i++) {
+            const int err = vmaf_feature_score_at_index(vmaf, ms_exact_keys[k], &out->v[i][k], i);
+            if (err)
+                return err;
+        }
+    }
+    return 0;
+}
+
+/* Every frame's 16 outputs from one extractor; `cu_state` NULL runs the CPU. */
+static int ms_exact_score(VmafCudaState *cu_state, MsExactScores *out)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return err;
+    if (cu_state)
+        err = vmaf_cuda_import_state(vmaf, cu_state);
+    VmafFeatureDictionary *opts = NULL;
+    if (!err)
+        err = vmaf_feature_dictionary_set(&opts, "enable_lcs", "true");
+    if (!err) {
+        err = vmaf_use_feature(vmaf, cu_state ? "float_ms_ssim_cuda" : "float_ms_ssim", opts);
+        opts = err ? opts : NULL; /* taken on success */
+    }
+    if (opts)
+        (void)vmaf_feature_dictionary_free(&opts);
+    if (!err)
+        err = ms_exact_feed(vmaf);
+    if (!err)
+        err = ms_exact_collect(vmaf, out);
+    const int closed = vmaf_close(vmaf);
+    return err ? err : closed;
+}
+
+static uint64_t ms_exact_bits(double v)
+{
+    uint64_t bits = 0u;
+    memcpy(&bits, &v, sizeof(bits));
+    return bits;
+}
+
+/* The outputs that are not the CPU's bit for bit, each one reported. */
+static unsigned ms_exact_mismatches(const MsExactScores *cpu, const MsExactScores *gpu)
+{
+    unsigned differing = 0u;
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        for (unsigned k = 0; k < MS_EXACT_KEYS; k++) {
+            if (ms_exact_bits(cpu->v[i][k]) == ms_exact_bits(gpu->v[i][k]))
+                continue;
+            differing++;
+            (void)fprintf(stderr, "\n%s frame %u: cpu=%.17g cuda=%.17g delta=%.3e",
+                          ms_exact_keys[k], i, cpu->v[i][k], gpu->v[i][k],
+                          fabs(cpu->v[i][k] - gpu->v[i][k]));
+        }
+    }
+    return differing;
+}
+
+static char *test_float_ms_ssim_matches_cpu_bit_for_bit(void)
+{
+    VmafCudaState *cu_state = NULL;
+    VmafCudaConfiguration cuda_cfg = {0};
+    if (vmaf_cuda_state_init(&cu_state, cuda_cfg) != 0 || !cu_state) {
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
+    MsExactScores cpu;
+    MsExactScores gpu;
+    memset(&cpu, 0, sizeof(cpu));
+    memset(&gpu, 0, sizeof(gpu));
+    const int gpu_err = ms_exact_score(cu_state, &gpu);
+    const int freed = vmaf_cuda_state_free(cu_state);
+    mu_assert("CUDA: float_ms_ssim_cuda with enable_lcs failed", gpu_err == 0 && freed == 0);
+    mu_assert("CPU: float_ms_ssim with enable_lcs failed", ms_exact_score(NULL, &cpu) == 0);
+    mu_assert("CPU float_ms_ssim is not a usable reference",
+              isfinite(cpu.v[1][0]) && cpu.v[1][0] > 0.0 && cpu.v[1][0] < 1.0);
+    mu_assert("float_ms_ssim_cuda is not the CPU extractor's value bit for bit",
+              ms_exact_mismatches(&cpu, &gpu) == 0u);
+    return NULL;
+}
+
+/* NOLINTEND(modernize-use-nullptr) */
+
 char *run_tests(void)
 {
     mu_run_test(test_float_ms_ssim_cpu_cuda_parity);
     mu_run_test(test_float_ms_ssim_clip_db_ceiling);
+    mu_run_test(test_float_ms_ssim_matches_cpu_bit_for_bit);
     return NULL;
 }

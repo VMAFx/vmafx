@@ -110,6 +110,41 @@
   bounded register usage (`REG <= 208`, on `sm_89` `REG <= 176`).
 - Closes `T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07` in `docs/state.md`.
 - No Netflix golden-data, public C API or FFmpeg patch impact.
+## ADR-1403 — one FP flag list for every CUDA kernel; `float_ms_ssim_cuda` follows the CPU's arithmetic (2026-10-01)
+
+- `core/src/meson.build`: `cuda_cu_extra_flags` is empty and may not carry a
+  floating-point flag again. Every fatbin's command takes
+  `cuda_device_strict_fp_args`, defined once between the
+  `# BEGIN / # END VMAF CUDA device strict FP policy` markers (`--fmad=false`
+  with the host strict args under nvcc, `-ffp-contract=off` under clang CUDA).
+  **On rebase**: a conflict in the fatbin `custom_target` or in
+  `cuda_cu_extra_flags` will offer the per-kernel `--fmad=false` entries as
+  "theirs". Keep the shared list and the empty map; a kernel added by the
+  other side needs no entry (ADR-1397's `psnr_hvs_score` entry was folded
+  in this way, and `test_psnr_hvs_twin_exact_sum_contract.py` now checks the
+  shared list). The clang branch assigns `nvcc_ccbin_flags` and
+  `nvcc_host_includes` empty; without them `-Denable_nvcc=false` does not
+  configure.
+- `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu` and
+  `integer_ms_ssim_cuda.c`: the kernels reproduce `ms_ssim_decimate.c`
+  (`__fmaf_rn()` per tap), `iqa_convolve()` (fp32 products summed in the
+  `MsPair` fp32 pair, which stands for the reference's fp64 sum) and
+  `ssim_accumulate_default_scalar()` (fp32 denominators, fp32 quotient for
+  `s`, `__fsqrt_rn()`); the host passes fp32 constants and rounds each
+  per-scale mean to fp32 before the Wang combine. An upstream change to any
+  of those three CPU routines, or to `iqa_ssim()` / `ms_ssim.c`'s combine,
+  must be mirrored here. The HIP, SYCL and Metal twins still have the older
+  arithmetic (`T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`); do not copy
+  it back.
+- Tests that fail when either comes undone:
+  `core/test/test_strict_fp_compiler_args.py` (policy executed for nvcc and
+  clang, planted per-kernel flags), `test_cuda_kernel_source_contract.py`
+  (six planted `float_ms_ssim` regressions),
+  `test_cuda_device_resident_contract.py`, and
+  `test_cuda_float_ms_ssim_parity` (bit-exact on a CUDA device).
+- Output changes for `float_ms_ssim_cuda`, `ciede_cuda`, `float_vif_cuda`
+  and `float_motion_cuda`; no snapshot under `testdata/` is a CUDA output. No Netflix golden-data, public API or FFmpeg
+  patch impact.
 
 ## port/upstream-1590-model-collection-growth-test — a failed model-collection growth keeps the collection (2026-10-01)
 

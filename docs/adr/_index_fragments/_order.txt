@@ -1108,3 +1108,4 @@
 1405-hip-float-ssim-device-decimation
 1407-hip-strict-fp-every-kernel
 1410-sycl-cli-pinned-host-picture-pool
+1403-cuda-strict-fp-every-kernel

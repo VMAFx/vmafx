@@ -1218,53 +1218,10 @@ if is_cuda_enabled
         # array is generated here via the standard bin2c pipeline.
         'speed_score' : [feature_src_dir + 'cuda/speed/speed_score.cu'],
     }
-    # Per-kernel extra nvcc flags.
-    #
-    # `ssimulacra2_blur` needs `--fmad=false` so the IIR pole-tracking
-    # expression (n2*sum - d1*prev1 - prev2) keeps its CPU-port
-    # FMUL/FSUB ordering — without it, NVCC fuses the multiply + subtract
-    # pair into FMAs and the recursive Gaussian's per-step rounding
-    # compounds across radius * 6-scale pyramid into a places=2 drift
-    # versus CPU. Since ADR-1391 the horizontal pass also forms the products
-    # ref^2, dis^2 and ref*dis as it loads them; each stays one rounded FMUL.
-    #
-    # `ssimulacra2_device` (ADR-1391) needs `--fmad=false` for the same
-    # reason as the blur: its YUV conversion, XYB, per-pixel SSIM / edge
-    # terms and downsample reproduce ssimulacra2.c bit for bit only with every
-    # product rounded before the add that follows it.
-    #
-    # `float_adm_score` needs `--fmad=false` so the angle-flag and cube
-    # reductions in stage 2/3 keep IEEE-754 add/mul ordering — matches
-    # the GLSL `precise` qualifier in float_adm.comp. Without this,
-    # scale-3 and adm2 drift past places=4 vs CPU adm_decouple_s /
-    # adm_cm_s. The integer ADM kernels use int64 accumulators so FMA
-    # is irrelevant; default FMA-on flags stay for them.
-    #
-    # `integer_ssim_score` needs `--fmad=false` so its per-pixel SSIM combine
-    # evaluates the CPU expression (integer_ssim.c::ssim_reduce_row_range)
-    # operand for operand, as the HIP twin does with `-ffp-contract=off`
-    # (ADR-0564). Without it NVCC fuses the last multiply of the stability
-    # constant c1 into the denominator's sum while the numerator adds the
-    # rounded c1, so the two sides of an identical window are not computed
-    # alike and `enable_db` loses its guaranteed exact 1 (+inf / `clip_db`
-    # ceiling, ADR-1373).
-    cuda_cu_extra_flags = {
-        # `speed_score` (ADR-1380) reproduces speed.c operation for operation;
-        # every fp32 operation whose rounding matters is already spelled with
-        # a round-to-nearest intrinsic nvcc never contracts, and
-        # `--fmad=false` keeps any plain `*` / `+` in the TU unfused as well.
-        'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-        'ssimulacra2_blur' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-        'ssimulacra2_device' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-        'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-        'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-        # `psnr_hvs_score` (ADR-1397) stores the terms calc_psnrhvs() sums, in
-        # the CPU's arithmetic. The CPU reference is built without
-        # contraction, so one fused multiply-add here (the masking energy,
-        # the variances or the squared error) changes a term's last bit and
-        # with it the score.
-        'psnr_hvs_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
-    }
+    # Per-kernel extra nvcc flags. Empty: the floating-point model is not a
+    # per-kernel choice (`cuda_device_strict_fp_args` below, ADR-1403), so a
+    # kernel that needs something else of its own adds only that here.
+    cuda_cu_extra_flags = {}
     message(cuda_cu_sources)
     # gpu_picture_pool.cpp moved to libvmaf_sources (always-compiled) per
     # ADR-0239 — SYCL + Vulkan also link against it.
@@ -1405,6 +1362,11 @@ if is_cuda_enabled
         # clang's CUDA driver has no --threads equivalent; the flag list stays
         # empty so the shared custom_target below works on both paths.
         nvcc_thread_flags = []
+        # nvcc-only lists the shared fatbin command concatenates. They were
+        # assigned in the nvcc branch alone, so `-Denable_nvcc=false` stopped
+        # at "Unknown variable" before it compiled anything.
+        nvcc_ccbin_flags = []
+        nvcc_host_includes = []
         gencode = [
             # ADR-1223: matches the nvcc path's compute-capability 8.0 floor.
             '--cuda-gpu-arch=sm_80',
@@ -1434,6 +1396,31 @@ if is_cuda_enabled
     # redeclaration conflict even if a future CUDA patch re-introduces the
     # mismatch. ADR-0603.
     cuda_flags = ['-D_USE_MATH_DEFINES', '-D__MATH_NO_INLINES', '--std', 'c++20']
+
+    # BEGIN VMAF CUDA device strict FP policy
+    # ADR-1403: no CUDA feature kernel contracts `a * b + c` into an FMA.
+    # nvcc defaults to `--fmad=true` and clang's CUDA driver to
+    # `-ffp-contract=fast`; the CPU reference (gcc/clang, x86-64 baseline, no
+    # `-mfma` in scalar TUs) and, since ADR-1367, every SYCL feature TU do not
+    # contract, so a fused kernel rounds once where its reference rounds
+    # twice. Every fatbin takes this one list. Where a fused multiply-add is
+    # itself part of the arithmetic a twin reproduces, the kernel spells it as
+    # an explicit `fmaf()` / `__fmaf_rn()`, which neither flag removes.
+    #
+    # Division and square root need no flag under nvcc: it defaults to
+    # `-prec-div=true -prec-sqrt=true`, and nothing passes `--use_fast_math`
+    # or `-ftz=true`. clang's CUDA driver compiles `sqrtf()` to the
+    # approximate device square root whatever the flags, so a kernel that must
+    # round like the host on both compilers spells `__fsqrt_rn()`.
+    #
+    # The host half keeps nvcc's host pass (constant folding in `constexpr`
+    # tables) on the same model as the C library build.
+    if get_option('enable_nvcc')
+        cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']
+    else
+        cuda_device_strict_fp_args = ['-ffp-contract=off']
+    endif
+    # END VMAF CUDA device strict FP policy
     if get_option('buildtype') == 'debug'
         cuda_flags += ['-DCUDA_DEBUG', '-G']
     else
@@ -1549,8 +1536,8 @@ if is_cuda_enabled
                 cuda_inc_flags,
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
-            ] + nvcc_thread_flags + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
-              + nvcc_dep_flags
+            ] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
+              + nvcc_host_includes + per_kernel_flags + nvcc_dep_flags
         )
         ptx_files += {name : [t]}
     endforeach

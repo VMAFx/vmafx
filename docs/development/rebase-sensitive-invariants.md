@@ -131,7 +131,8 @@ linked AGENTS.md before resolving conflicts.
   mid-frame `cuStreamSynchronize`. The host constants come from `cambi.c`
   (`vmaf_cambi_*` helpers in `cambi_internal.h`) and
   `speed_internal_gpu_configure()`, shared with the SYCL twins;
-  `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`.
+  `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`
+  (every CUDA fatbin's, ADR-1403).
   `core/test/test_cuda_device_resident_contract.py` guards the design. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
@@ -161,7 +162,8 @@ linked AGENTS.md before resolving conflicts.
   `ssimulacra2_cuda.c` enqueues the whole frame in `submit()` on the picture
   stream and reads one block of per-scale sums in `collect()`; no host compute
   or host wait mid-frame. The device TUs `ssimulacra2_device` and
-  `ssimulacra2_blur` build with `--fmad=false` (`cuda_cu_extra_flags`), and
+  `ssimulacra2_blur` build with `--fmad=false` (as every CUDA fatbin does,
+  ADR-1403), and
   `ssimulacra2_device.cu` compiles the shared `feature/ssimulacra2_math.h`,
   `ssimulacra2_score.h` and `ssimulacra2_eotf_lut.h` into device code through
   the `VMAF_SS2_FUNC` / `VMAF_SS2_EOTF_LUT_STORAGE` hooks, so an upstream change
@@ -180,6 +182,19 @@ linked AGENTS.md before resolving conflicts.
   SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **CUDA device FP policy ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md))**:
+  every CUDA fatbin takes `cuda_device_strict_fp_args` (`--fmad=false` under
+  nvcc, `-ffp-contract=off` under clang CUDA), defined once between the
+  `VMAF CUDA device strict FP policy` markers in `core/src/meson.build`;
+  `cuda_cu_extra_flags` carries no floating-point flag. A kernel whose
+  reference fuses writes `__fmaf_rn()`. `float_ms_ssim_cuda` reproduces
+  `ms_ssim_decimate.c`, `iqa_convolve()` and
+  `ssim_accumulate_default_scalar()` operation for operation and is
+  bit-identical to the CPU. `core/test/test_strict_fp_compiler_args.py`,
+  `core/test/test_cuda_kernel_source_contract.py` and
+  `core/test/test_cuda_float_ms_ssim_parity.c` guard it. See
+  [core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) and
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction
@@ -242,7 +257,8 @@ linked AGENTS.md before resolving conflicts.
   carry the CPU option tables and call the CPU's helpers (`psnr_score.h`,
   `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu::ssim_terms()` mirrors
   the CPU's `l * c * s` rounding point for rounding point, and
-  `integer_ssim_score` builds with `--fmad=false` and the CPU's grouping.
+  `integer_ssim_score` builds with `--fmad=false` (every CUDA fatbin's,
+  ADR-1403) and the CPU's grouping.
   The integer ADM DWT row and tap arithmetic lives in
   `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
   pixels. `float_motion_cuda` emits the CPU's `motion3` (`motion_blend_clip()`).
