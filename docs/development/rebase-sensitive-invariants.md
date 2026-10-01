@@ -288,6 +288,17 @@ linked AGENTS.md before resolving conflicts.
   `windows-latest` (redirect to `windows-2025-vs2026` takes effect
   2026-06-15).
 
+- **CPU extractors declare the features they write ([ADR-1359](../adr/1359-cli-feature-backend-twin.md))**:
+  the twin lookup pairs a CPU extractor with a device twin through
+  `provided_features`. `core/src/feature/float_moment.c` is an upstream-mirror
+  file whose list the fork changed from upstream's pseudo-name
+  `"float_moment"` to the four emitted `float_moment_*` names; an upstream
+  sync must keep the fork's list, or `--backend <gpu> --feature float_moment`
+  falls back to the CPU again. `vmaf_feature_extractor_twin_audit()` and
+  `test_every_device_twin_is_reachable` (`core/test/test_feature_extractor.c`)
+  fail when any registered device twin is unreachable. See
+  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
+
 - **dev-MCP Docker container**
   ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
   `dev/Containerfile` installs CUDA through the shared installer's exact

@@ -191,6 +191,54 @@ static char *test_feature_extractor_list_no_duplicates(void)
     return NULL;
 }
 
+/* ADR-1359: `--backend <gpu> --feature <cpu name>` and model dispatch find a
+ * device twin through the features its CPU extractor declares. A twin whose
+ * feature names no CPU extractor declares is registered but never selected:
+ * the CPU extractor runs with a "no twin" warning. float_moment_{cuda,sycl,
+ * hip,metal} were such twins, because the CPU float_moment declared the
+ * pseudo-name "float_moment" instead of the four features it emits
+ * (T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01). The audit walks the whole
+ * registry, so it covers every backend this build compiles in. */
+static char *test_every_device_twin_is_reachable(void)
+{
+    mu_assert("a registered device twin is unreachable from every CPU extractor "
+              "(the audit log above names it)",
+              vmaf_feature_extractor_twin_audit() == 0);
+    return NULL;
+}
+
+/* The CPU float_moment declares the four features it emits, so a lookup by
+ * any of them finds it, and its twin on each compiled backend is the
+ * float_moment_<backend> extractor. */
+static char *test_float_moment_declares_its_features(void)
+{
+    static const char *const emitted[] = {"float_moment_ref1st", "float_moment_dis1st",
+                                          "float_moment_ref2nd", "float_moment_dis2nd"};
+    static const struct {
+        unsigned flag;
+        const char *twin;
+    } backends[] = {
+        {VMAF_FEATURE_EXTRACTOR_CUDA, "float_moment_cuda"},
+        {VMAF_FEATURE_EXTRACTOR_SYCL, "float_moment_sycl"},
+        {VMAF_FEATURE_EXTRACTOR_HIP, "float_moment_hip"},
+        {VMAF_FEATURE_EXTRACTOR_METAL, "float_moment_metal"},
+    };
+    const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("float_moment");
+    mu_assert("float_moment must be registered", cpu != NULL);
+    for (size_t i = 0; i < sizeof(emitted) / sizeof(emitted[0]); i++) {
+        mu_assert("a float_moment feature must resolve to the CPU extractor without a device",
+                  vmaf_get_feature_extractor_by_feature_name(emitted[i], 0) == cpu);
+    }
+    for (size_t i = 0; i < sizeof(backends) / sizeof(backends[0]); i++) {
+        const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_by_name(backends[i].twin);
+        if (!twin)
+            continue; /* backend not compiled in */
+        mu_assert("float_moment must map to its device twin",
+                  vmaf_get_feature_extractor_twin(cpu, backends[i].flag) == twin);
+    }
+    return NULL;
+}
+
 /* Coverage push: NULL-input and unknown-name guards on the public lookup
  * symbols.  Pre-fix the gcovr report showed these single-line guards as
  * silently dead (lines 403-404 and the full-list walkthrough returning
@@ -1043,6 +1091,13 @@ static char *run_context_tests(void)
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
+static char *run_twin_lookup_tests(void)
+{
+    mu_run_test(test_every_device_twin_is_reachable);
+    mu_run_test(test_float_moment_declares_its_features);
+    return NULL;
+}
+
 static char *run_option_tests(void)
 {
     mu_run_test(test_fex_vector_dedup_by_provided_feature_name);
@@ -1071,6 +1126,9 @@ char *run_tests(void)
     if (result)
         return result;
     result = run_context_tests();
+    if (result)
+        return result;
+    result = run_twin_lookup_tests();
     if (result)
         return result;
     result = run_option_tests();

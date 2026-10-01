@@ -952,12 +952,26 @@ Y plane only.
 
 **Options** — none.
 
-**Backends** — scalar (CPU) plus CUDA (`float_moment_cuda`, T7-23),
-SYCL (`float_moment_sycl`), and HIP (`float_moment_hip`). (The Vulkan
-backend was removed in ADR-0726.) All the GPU kernels accumulate four
-`int64` partial sums per frame in a single dispatch and are bit-exact vs
-the CPU integer input (the CPU path also operates on integer pixels
-before dividing by `w*h`).
+**Backends** — CPU (scalar, AVX2, AVX-512, NEON, SVE2) plus CUDA
+(`float_moment_cuda`, T7-23), SYCL (`float_moment_sycl`), HIP
+(`float_moment_hip`) and Metal (`float_moment_metal`). (The Vulkan
+backend was removed in ADR-0726.) With `--backend cuda`, `sycl`, `hip` or
+`metal`, `--feature float_moment` runs that backend's twin, and the
+`feature_backends` list of the JSON output names it:
+
+```shell
+vmaf ... --backend cuda --feature float_moment   # runs float_moment_cuda
+```
+
+Before 2026-10-01 that command computed the feature on the CPU and warned
+that the backend had no twin; the twin ran only when named
+(`--feature float_moment_cuda`).
+
+The GPU kernels accumulate four integer sums per frame in a single dispatch.
+On an RTX 4090 `float_moment_cuda` equals the CPU extractor on every frame at
+8, 10 and 12 bits (576x324, 1920x1080 and 3840x2160). At 16 bits the two
+second moments differ by up to about 7e-6: the CPU squares each sample in
+fp32, which rounds above 12 bits, and the kernel squares the integer.
 
 **Limitations** — Stateless per-frame. Float pipeline (the picture
 plane is copied to float32 before the moments are computed); the

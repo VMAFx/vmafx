@@ -306,6 +306,27 @@ fork's tree already carries these fixes.
 - Invariant: the per-block arithmetic is the previous CUDA kernel's, and `reduce_hvs_planes()` adds each plane's partials in block order in `float` (the sum ADR-1361 calibrated). Changing either changes the output: `vmaf --feature psnr_hvs_cuda --precision max` before and after a rebase must stay bit-identical at 576x324 and 3840x2160.
 - 4:0:0 input is luma only (as on master and on the CPU); `test_psnr_hvs_yuv400_parity` pins it, and `test_psnr_hvs_odd_depth_parity` pins 9- and 11-bit parity with the CPU.
 - `core/test/test_cuda_module_lifecycle_contract.py`: `integer_psnr_hvs_cuda.c` left `EXPECTED_BUFFER_OWNERS`; it owns no `VmafCudaBuffer` of its own any more.
+## fix/float-moment-gpu-twin-reachable — the CPU `float_moment` declares the features it writes (2026-10-01)
+
+- `core/src/feature/float_moment.c` is an upstream-mirror file. Upstream
+  Netflix/vmaf has `provided_features[] = {"float_moment", NULL}`; the fork
+  has the four names `extract()` writes (`float_moment_ref1st`,
+  `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`).
+  **Upstream-sync note:** a conflict here offers the pseudo-name as "theirs".
+  Keep the fork's list: the ADR-1359 twin lookup and model dispatch find
+  `float_moment_{cuda,sycl,hip,metal}` through these names, and with the
+  pseudo-name `--backend <gpu> --feature float_moment` runs the CPU extractor
+  with a "has no twin" warning. No other line of the file changed.
+- `core/src/feature/feature_extractor.{cpp,h}`: new internal
+  `vmaf_feature_extractor_twin_audit()` next to
+  `vmaf_feature_extractor_list_audit()`. Fork-only file; it is called by
+  `core/test/test_feature_extractor.c` and not from `vmaf_init()`.
+- Scores do not change on the CPU. No Netflix golden-data, public C API or
+  FFmpeg patch impact. Naming the twin and the CPU extractor together
+  (`--backend cuda --feature float_moment_cuda --feature float_moment`) now
+  registers the twin once, like every other CPU and twin pair; it used to
+  run both and fail with `feature "float_moment_ref1st" cannot be
+  overwritten`.
 ## chore/rc3-home-gpu-retest — RC3 home GPU retest kit (ADR-1386) (2026-09-30)
 
 - `scripts/dev/rc3-home-gpu-retest.sh` and `scripts/dev/rc3_retest_helpers.py`: fork-only

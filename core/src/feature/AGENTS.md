@@ -52,6 +52,16 @@ feature/
     block in `.cpp` AND assert resolution in
     `test/test_feature_extractor.c`. registered-but-unresolvable twin is
     silent correctness bug, not build error.
+  - **CPU extractor `provided_features` = names it WRITES, never pseudo-name.**
+    ADR-1359 twin lookup (`vmaf_get_feature_extractor_twin`) + model dispatch
+    pair CPU extractor with device twin through those names. Mismatch =
+    twin registered, never selected: `--backend <gpu> --feature X` runs CPU
+    with "has no twin" warning. Upstream `float_moment.c` declares
+    pseudo-name `"float_moment"`; fork declares four emitted
+    `float_moment_{ref,dis}{1st,2nd}` (twins declare same). KEEP fork list
+    on upstream sync. `vmaf_feature_extractor_twin_audit()` counts device
+    twins no CPU extractor reaches; `test_every_device_twin_is_reachable`
+    asserts 0 in every build, so new twin with drifting names fails there.
 - **Options tables** must have non-NULL `help` for every entry; see
   [../../test/test_lpips.c](../../test/test_lpips.c) for unit-test
   pattern that enforces this.

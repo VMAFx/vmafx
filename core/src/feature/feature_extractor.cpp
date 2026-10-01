@@ -565,6 +565,45 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor
     return nullptr;
 }
 
+namespace
+{
+
+/* The bits that mark an extractor as a device twin. */
+constexpr unsigned device_twin_flags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                       VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+
+/* Whether some CPU extractor's twin lookup returns `twin` for its backend. */
+bool device_twin_is_reachable(const VmafFeatureExtractor *twin)
+{
+    const unsigned backend = twin->flags & device_twin_flags;
+    const VmafFeatureExtractor *cpu_fex = nullptr;
+    for (unsigned i = 0; (cpu_fex = feature_extractor_list[i]); i++) {
+        if (cpu_fex->flags & device_twin_flags)
+            continue;
+        if (vmaf_get_feature_extractor_twin(cpu_fex, backend) == twin)
+            return true;
+    }
+    return false;
+}
+
+} /* anonymous namespace */
+
+int vmaf_feature_extractor_twin_audit(void)
+{
+    int unreachable = 0;
+    const VmafFeatureExtractor *fex = nullptr;
+    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
+        if (!(fex->flags & device_twin_flags) || device_twin_is_reachable(fex))
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature_extractor_list: no CPU extractor reaches the device twin \"%s\" "
+                 "through its provided features\n",
+                 fex->name);
+        unreachable++;
+    }
+    return unreachable;
+}
+
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key)

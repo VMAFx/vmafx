@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1187,
+  "total_warnings": 1185,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -377,7 +377,6 @@
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_adm.c": 5,
-    "core/src/feature/float_moment.c": 2,
     "core/src/feature/float_ms_ssim.c": 3,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
@@ -619,6 +618,21 @@
         }
       },
       "previous_baseline_sha256": "55f5175fdccb2221df7c6f0087bbec7fab4ab7d5cc63e13612f43acf327f15fe"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_moment.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_moment.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8506b3c2a76ca752d34db05a6915f448e08d2b0839b28eafbd8eed8d4af62138"
     }
   ]
 }

@@ -209,6 +209,22 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
 VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor *cpu_fex,
                                                       unsigned flags);
 
+/**
+ * @brief Count the device twins no CPU extractor reaches (ADR-1359).
+ *
+ * `--backend <gpu> --feature <cpu name>` and model dispatch find a device
+ * twin through the features its CPU extractor declares in
+ * `provided_features`. A twin whose feature names no CPU extractor declares
+ * is registered but only runs when named, and the CPU extractor runs in its
+ * place with a "no twin" warning. Each such twin is logged at
+ * VMAF_LOG_LEVEL_ERROR.
+ *
+ * @return the number of extractors carrying a CUDA, SYCL, HIP or Metal flag
+ *         for which vmaf_get_feature_extractor_twin() returns them for no
+ *         CPU extractor; 0 when every twin is reachable.
+ */
+int vmaf_feature_extractor_twin_audit(void);
+
 /* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
  * registrations (same `name` string registered more than once).
  * Returns 0 if every entry is unique, -EINVAL otherwise.  Each

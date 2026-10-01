@@ -126,6 +126,21 @@ if [f["metrics"] for f in a] != [f["metrics"] for f in b]:
     sys.exit(1)
 PY
 
+# 2b. float_moment has a twin on every backend. Its CPU extractor used to
+#     declare a pseudo-name instead of the four features it emits, so the
+#     lookup found no twin and this printed "has no twin"
+#     (T-GPU-FLOAT-MOMENT-TWIN-UNREACHABLE-2026-10-01).
+run moment 0 --no_prediction --feature float_moment --backend "$BACKEND"
+no_warning moment
+receipt moment "$BACKEND" "float_moment_$BACKEND=$BACKEND"
+#     Naming the twin and the CPU extractor together registers the twin once.
+#     Before, both ran and the second failed the run with "cannot be
+#     overwritten".
+run moment_both 0 --no_prediction --feature "float_moment_$BACKEND" --feature float_moment \
+  --backend "$BACKEND"
+no_warning moment_both
+receipt moment_both "$BACKEND" "float_moment_$BACKEND=$BACKEND"
+
 # 3. No twin: CPU extractor, one warning, and a CPU receipt.
 run no_twin 0 --no_prediction --feature brisque --backend "$BACKEND"
 has_warning no_twin brisque "has no twin"
