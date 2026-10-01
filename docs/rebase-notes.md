@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `float_adm_sycl` uses no scratch memory; the scratch ratchet list is empty (2026-10-01)
+
+`fix/sycl-float-adm-cpu-arithmetic`, closes `T-SYCL-XE-SCRATCH-WRONG-RESULTS-2026-10-01`.
+
+- `core/src/feature/sycl/float_adm_sycl.cpp`: `fadm_load_cm_pixel()` takes
+  the band and returns one `FadmCmPixel` (`original`, `transformed`,
+  `angle_flag`) instead of a `FadmDecouplePixel` whose arrays the callers
+  indexed with the run-time band. **On rebase**: do not reintroduce
+  `pixel.original[band]` / `pixel.transformed[band]` in `fadm_aim_cm_term()`
+  or `fadm_csf_cm_terms()`; that array lives in private memory and the kernel
+  returns NaN on Arc A-series GPUs under xe. The decouple kernel
+  (`fadm_decouple_item`) keeps `FadmDecouplePixel`: its band loop has a
+  constant trip count and stays in registers.
+- `core/src/sycl/scratch_ratchet.txt` has no entry and
+  `kScratchExtractors` in `core/src/sycl/scratch_check.cpp` is `""`. Keep both
+  empty on a conflict; `core/test/test_sycl_kernel_source_contract.py`
+  rejects an entry or a name.
+- The self-test warning has a second wording for the empty list.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## ADR-1415 — every x86 SIMD library is built without FP contraction (2026-10-01)
 
 `fix/icx-ssim-avx512-fp-contract`, ADR-1415.

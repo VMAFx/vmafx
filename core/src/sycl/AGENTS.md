@@ -71,9 +71,12 @@ sycl/
   Arc A-series under Linux xe driver returns wrong values from kernels with
   scratch memory (private array in memory, register spill). No new kernel may
   use scratch. `test_sycl_kernel_scratch` (`--suite sycl`, needs Intel GPU)
-  fails on scratch kernel missing from `scratch_ratchet.txt`; list only
-  shrinks. Cleared kernel -> delete its line and drop its extractor from
-  `kScratchExtractors` in `scratch_check.cpp` in same PR (test compares both).
+  fails on any scratch kernel: `scratch_ratchet.txt` is EMPTY since
+  2026-10-01 (`float_adm_sycl` CM kernels cleared, A380: 110 kernels, 0 with
+  scratch) and `kScratchExtractors` in `scratch_check.cpp` = `""`. Never add
+  a line or a name again; `test_sycl_kernel_source_contract.py` rejects both
+  without a device. Self-test warning then says no libvmaf extractor is
+  affected.
   Kernel ids are mangled launcher names: renamed or re-typed launcher shows up
   as unlisted + unregistered, fix the line. `vmaf_sycl_state_init` calls
   `vmaf_sycl_scratch_selftest()`: warning only, never refuses device, keep it

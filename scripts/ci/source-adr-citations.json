@@ -8306,6 +8306,7 @@
     },
     "1395": {
       "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
@@ -8316,7 +8317,7 @@
         "core/src/sycl/scratch_check.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_kernel_scratch.c": 2,
-        "core/test/test_sycl_kernel_source_contract.py": 1
+        "core/test/test_sycl_kernel_source_contract.py": 2
       },
       "target": "1395-sycl-kernels-no-scratch.md"
     },

@@ -205,9 +205,12 @@ under the Linux **xe** kernel driver, kernels that do return wrong values:
 measured on an Arc A380 with compute runtime 26.35.39758.10 and IGC 2.41.5,
 where the same kernels were correct under i915. Scores from those kernels are
 simply wrong, with no error. The fork's rule is that SYCL kernels use no
-scratch memory ([ADR-1395](../../adr/1395-sycl-kernels-no-scratch.md)); the
-kernels that still do are listed in
-[`core/src/sycl/scratch_ratchet.txt`](../../../core/src/sycl/scratch_ratchet.txt).
+scratch memory ([ADR-1395](../../adr/1395-sycl-kernels-no-scratch.md)).
+Since 2026-10-01 none does: the list of kernels that still did,
+[`core/src/sycl/scratch_ratchet.txt`](../../../core/src/sycl/scratch_ratchet.txt),
+is empty. `float_adm_sycl` was the last extractor on it; until then it
+returned NaN on an Arc A380 under xe and the run stopped with `problem
+reading pictures`.
 
 **What you see.** At the first SYCL initialisation on each device, libvmaf runs
 two small probe kernels, one with a private array and one that spills. When
@@ -216,18 +219,18 @@ either returns wrong values it logs a warning like:
 ```text
 libvmaf WARNING SYCL: Intel(R) Arc(TM) A380 Graphics returns wrong values from kernels that use
 scratch memory (private-array probe: 256 of 256 work-items wrong; register-spill probe: 256 of 256).
-Seen on Arc A-series GPUs under the Linux xe kernel driver, not under i915. SYCL extractors that
-still use scratch memory may report wrong scores on this device: adm_sycl, cambi_sycl,
-float_adm_sycl, float_vif_sycl, motion_sycl, motion_v2_sycl, psnr_hvs_sycl, speed_chroma_sycl,
-speed_temporal_sycl. See docs/backends/sycl/overview.md (ADR-1395).
+Seen on Arc A-series GPUs under the Linux xe kernel driver, not under i915. No libvmaf SYCL
+extractor uses scratch memory, so its scores are not affected. See
+docs/backends/sycl/overview.md (ADR-1395).
 ```
 
-The device is still used. On such a device, compute the listed features with
-their CPU extractors (`--feature adm` rather than `adm_sycl`, or
-`--no_sycl`), or run the GPU under i915. The other SYCL extractors, `vif_sycl`
-included, use no scratch memory on the A380 and are not affected.
-`motion_sycl` and `motion_v2_sycl` are affected only for inputs above 15 bits
-per component. The probes cost 3 to 5 ms with a
+The device is still used, and every libvmaf extractor gives correct scores on
+it. The warning stays because it describes the device: a kernel from outside
+libvmaf, or one added without the audit below, would be affected. A build
+older than 2026-10-01 names the extractors that still used scratch memory in
+this message; on such a build compute those features with their CPU
+extractors (`--feature adm` rather than `adm_sycl`, or `--no_sycl`), or run
+the GPU under i915. The probes cost 3 to 5 ms with a
 warm compute-runtime kernel cache and about 0.4 s on the first run;
 `VMAF_SYCL_SCRATCH_SELFTEST=0` skips them.
 
@@ -240,9 +243,11 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 \
   python3 scripts/ci/run_meson_test.py -- -C build -v test_sycl_kernel_scratch
 ```
 
-It fails when a kernel that is not in the ratchet list uses scratch memory,
-and prints a note for a listed kernel that no longer does. It skips without a
-GPU, so CI, which has none, does not run it.
+It fails when a kernel uses scratch memory: the ratchet list that used to
+exempt the known ones is empty and stays empty
+(`test_sycl_kernel_source_contract.py` rejects a new entry without a device).
+It skips without a GPU, so CI, which has none, does not run it. On an Arc A380
+it audits 110 kernels and finds none.
 
 **SIMD-32 VIF kernels.** Every Intel GPU supports SIMD-16 sub-groups, so
 `vif_sycl` never picks its SIMD-32 kernels there by itself. They take the
@@ -254,7 +259,10 @@ ms/frame against 23.2, and 67 ms/frame with `vif_fused=true` against 24.6.
 
 **Writing a kernel.** Keep arrays that are indexed at run time in local memory
 or registers, and keep the live values within 128 registers per hardware thread
-at the kernel's SIMD width. When a kernel cannot, give it the 256-entry file
+at the kernel's SIMD width. A small private array indexed by a value known only
+at run time (`pixel.original[band]`) is enough to need scratch memory: select
+by value instead, as `fadm_load_cm_pixel()` in `float_adm_sycl.cpp` does.
+When a kernel cannot stay within 128 registers, give it the 256-entry file
 with `VmafSyclKernelShape<SG, 256>` from `core/src/feature/sycl/sycl_compat.h`,
 as `integer_vif_sycl.cpp` does. Then run `test_sycl_kernel_scratch` on an
 Intel GPU.

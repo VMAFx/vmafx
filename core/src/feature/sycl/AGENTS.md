@@ -96,8 +96,12 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
   8832 B/thread without); do not turn them back into plain lambdas or drop the
   shape. `VMAF_SYCL_VIF_SUBGROUP_SIZE=32` reaches them on Intel GPUs;
   `test_sycl_vif_parity_sg32` runs parity through them. Run
-  `test_sycl_kernel_scratch` on Intel GPU after any kernel change; remaining
-  scratch kernels live in `core/src/sycl/scratch_ratchet.txt`.
+  `test_sycl_kernel_scratch` on Intel GPU after any kernel change;
+  `core/src/sycl/scratch_ratchet.txt` is empty and stays empty (no kernel
+  left with scratch since 2026-10-01). Smallest trap: private array indexed
+  by a run-time value, e.g. `pixel.original[band]` in the `float_adm_sycl` CM
+  kernels (896 B private, NaN on A380 under xe) -> select by value
+  (`fadm_load_cm_pixel(p, band, y, x)` returns the one band).
 - **Kernel identities and output captures have an explicit boundary**
   ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
   Anonymous kernel lambdas in two translation units can receive identical

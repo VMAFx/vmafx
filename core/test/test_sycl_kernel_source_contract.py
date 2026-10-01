@@ -316,6 +316,50 @@ def _float_motion_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+# ADR-1395: no SYCL kernel uses scratch memory. The ratchet list of kernels
+# that still did reached zero when float_adm_sycl's contrast-masking kernels
+# stopped indexing a private array with their run-time band; it stays empty,
+# and those kernels keep choosing the band by value.
+FLOAT_ADM = "float_adm_sycl.cpp"
+SCRATCH_RATCHET_PATH = ROOT / "core" / "src" / "sycl" / "scratch_ratchet.txt"
+SCRATCH_CHECK_PATH = ROOT / "core" / "src" / "sycl" / "scratch_check.cpp"
+FLOAT_ADM_CM_HELPERS = ("fadm_load_cm_pixel", "fadm_aim_cm_term", "fadm_csf_cm_terms")
+RUN_TIME_BAND_INDEX = re.compile(r"\[\s*(?:\(int\)\s*)?band\s*\]")
+
+
+def _scratch_sources() -> dict[str, str]:
+    return {
+        FLOAT_ADM: (SYCL_ROOT / FLOAT_ADM).read_text(encoding="utf-8"),
+        "scratch_ratchet.txt": SCRATCH_RATCHET_PATH.read_text(encoding="utf-8"),
+        "scratch_check.cpp": SCRATCH_CHECK_PATH.read_text(encoding="utf-8"),
+    }
+
+
+def _scratch_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    listed = [
+        line
+        for line in sources["scratch_ratchet.txt"].splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if listed:
+        failures.append(
+            f"scratch_ratchet.txt: the list was empty and names {len(listed)} kernel(s) again"
+        )
+    if 'kScratchExtractors = "";' not in sources["scratch_check.cpp"]:
+        failures.append("scratch_check.cpp: kScratchExtractors names an extractor again")
+    twin = _code(sources[FLOAT_ADM])
+    for helper in FLOAT_ADM_CM_HELPERS:
+        body = _function_body(twin, helper)
+        if not body:
+            failures.append(f"{FLOAT_ADM}: {helper}() not found")
+        elif RUN_TIME_BAND_INDEX.search(body):
+            failures.append(
+                f"{FLOAT_ADM}: {helper}() indexes a private array with the run-time band"
+            )
+    return failures
+
+
 class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
@@ -522,6 +566,35 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         failures = _float_motion_failures(sources)
         self.assertTrue(any("not the CPU's sum over the rows" in item for item in failures))
 
+
+    def test_live_sources_use_no_scratch_ratchet(self) -> None:
+        self.assertEqual(_scratch_failures(_scratch_sources()), [])
+
+    def test_ratchet_entry_is_detected(self) -> None:
+        sources = _scratch_sources()
+        sources["scratch_ratchet.txt"] += "some_sycl\t64\t0\t_ZTSsome_kernel\n"
+        failures = _scratch_failures(sources)
+        self.assertTrue(any("names 1 kernel(s) again" in item for item in failures), failures)
+
+    def test_named_scratch_extractor_is_detected(self) -> None:
+        sources = _scratch_sources()
+        sources["scratch_check.cpp"] = sources["scratch_check.cpp"].replace(
+            'kScratchExtractors = "";', 'kScratchExtractors = "float_adm_sycl";', 1
+        )
+        failures = _scratch_failures(sources)
+        self.assertTrue(any("names an extractor again" in item for item in failures), failures)
+
+    def test_band_indexed_private_array_is_detected(self) -> None:
+        sources = _scratch_sources()
+        old = "fadm_restore(pixel.original, pixel.transformed, pixel.angle_flag, p.gain_limit);"
+        self.assertIn(old, sources[FLOAT_ADM])
+        sources[FLOAT_ADM] = sources[FLOAT_ADM].replace(
+            old,
+            "fadm_restore(pixel.original[band], pixel.transformed[band], pixel.angle_flag, "
+            "p.gain_limit);",
+        )
+        failures = _scratch_failures(sources)
+        self.assertTrue(any("run-time band" in item for item in failures), failures)
 
 if __name__ == "__main__":
     unittest.main()

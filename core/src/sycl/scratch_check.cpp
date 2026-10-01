@@ -35,9 +35,10 @@
 
 namespace
 {
-/* Extractors that still run a kernel listed in scratch_ratchet.txt. Keep in
- * step with that file; test_sycl_kernel_scratch compares the two. */
-constexpr const char *kScratchExtractors = "float_adm_sycl";
+/* Extractors that still run a kernel listed in scratch_ratchet.txt, separated
+ * by ", "; empty since float_adm_sycl was cleared. Keep in step with that
+ * file; test_sycl_kernel_scratch compares the two. */
+constexpr const char *kScratchExtractors = "";
 
 bool selftest_disabled()
 {
@@ -249,6 +250,16 @@ bool first_visit(const sycl::device &dev)
     return true;
 }
 
+/* What the warning says about libvmaf's own extractors: the ones on the
+ * ratchet list, or that there is none. */
+const char *scratch_extractors_clause()
+{
+    return kScratchExtractors[0] == '\0' ?
+               "No libvmaf SYCL extractor uses scratch memory, so its scores are not affected" :
+               "SYCL extractors that still use scratch memory may report wrong scores on this "
+               "device: ";
+}
+
 void log_selftest_result(const sycl::device &dev, const VmafSyclScratchProbe &r)
 {
     const std::string name = dev.get_info<sycl::info::device::name>();
@@ -262,11 +273,10 @@ void log_selftest_result(const sycl::device &dev, const VmafSyclScratchProbe &r)
     vmaf_log(VMAF_LOG_LEVEL_WARNING,
              "SYCL: %s returns wrong values from kernels that use scratch memory "
              "(private-array probe: %u of %u work-items wrong; register-spill probe: %u of %u). "
-             "Seen on Arc A-series GPUs under the Linux xe kernel driver, not under i915. SYCL "
-             "extractors that still use scratch memory may report wrong scores on this device: "
-             "%s. See docs/backends/sycl/overview.md (ADR-1395).\n",
+             "Seen on Arc A-series GPUs under the Linux xe kernel driver, not under i915. %s%s. "
+             "See docs/backends/sycl/overview.md (ADR-1395).\n",
              name.c_str(), r.private_wrong, r.work_items, r.spill_wrong,
-             r.spill_ran ? r.work_items : 0U, kScratchExtractors);
+             r.spill_ran ? r.work_items : 0U, scratch_extractors_clause(), kScratchExtractors);
 }
 } // namespace
 

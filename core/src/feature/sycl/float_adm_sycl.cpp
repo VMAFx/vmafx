@@ -520,23 +520,41 @@ static inline float fadm_cm_rfactor(const FadmCmParams &p, unsigned band)
     return (band == 0u) ? p.rfactor_h : (band == 1u) ? p.rfactor_v : p.rfactor_d;
 }
 
-static inline FadmDecouplePixel fadm_load_cm_pixel(const FadmCmParams &p, int y, int x)
+/* One band of a decoupled sample, for the contrast-masking kernels. */
+struct FadmCmPixel {
+    float original;
+    float transformed;
+    bool angle_flag;
+};
+
+/* The sample of `band` (0 = h, 1 = v, 2 = d) and the angle flag of its
+ * position. The band is chosen by the value read, never by indexing a
+ * private array with it: a run-time index puts the array in private memory,
+ * which is scratch memory and returns wrong values on Arc A-series GPUs under
+ * the xe driver (ADR-1395). The h and v samples feed the angle test whatever
+ * the band. */
+static inline FadmCmPixel fadm_load_cm_pixel(const FadmCmParams &p, unsigned band, int y, int x)
 {
     const int slice = (int)p.buf_stride * (int)p.half_h;
     const float oh = fadm_band_value(p.ref_band, 1, y, x, slice, p.buf_stride);
     const float ov = fadm_band_value(p.ref_band, 2, y, x, slice, p.buf_stride);
-    const float od = fadm_band_value(p.ref_band, 3, y, x, slice, p.buf_stride);
     const float th = fadm_band_value(p.dis_band, 1, y, x, slice, p.buf_stride);
     const float tv = fadm_band_value(p.dis_band, 2, y, x, slice, p.buf_stride);
-    const float td = fadm_band_value(p.dis_band, 3, y, x, slice, p.buf_stride);
     const float ot_dp = (oh * th) + (ov * tv);
     const float o_mag = (oh * oh) + (ov * ov);
     const float t_mag = (th * th) + (tv * tv);
     const float lhs = ot_dp * ot_dp;
     const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-    return {.original = {oh, ov, od},
-            .transformed = {th, tv, td},
-            .angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs)};
+    const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
+    if (band == 0u) {
+        return {.original = oh, .transformed = th, .angle_flag = angle_flag};
+    }
+    if (band == 1u) {
+        return {.original = ov, .transformed = tv, .angle_flag = angle_flag};
+    }
+    return {.original = fadm_band_value(p.ref_band, 3, y, x, slice, p.buf_stride),
+            .transformed = fadm_band_value(p.dis_band, 3, y, x, slice, p.buf_stride),
+            .angle_flag = angle_flag};
 }
 
 /* Edge policy: near edge mirrors to index 1 and far edge clamps to the
@@ -605,10 +623,10 @@ static inline float fadm_cm_threshold(const FadmCmParams &p, int row, int col)
 static inline float fadm_aim_cm_term(const FadmCmParams &p, unsigned band, int row, int col,
                                      float rfactor)
 {
-    const FadmDecouplePixel pixel = fadm_load_cm_pixel(p, row, col);
+    const FadmCmPixel pixel = fadm_load_cm_pixel(p, band, row, col);
     const float restored =
-        fadm_restore(pixel.original[band], pixel.transformed[band], pixel.angle_flag, p.gain_limit);
-    const float anomaly = pixel.transformed[band] - restored;
+        fadm_restore(pixel.original, pixel.transformed, pixel.angle_flag, p.gain_limit);
+    const float anomaly = pixel.transformed - restored;
     const float threshold = fadm_cm_threshold(p, row, col);
     const float x_val = rfactor * anomaly;
     float xa = sycl::fabs(x_val) - threshold;
@@ -624,9 +642,9 @@ static inline FadmCsfCmTerms fadm_csf_cm_terms(const FadmCmParams &p, unsigned b
     const float src_ref = fadm_band_value(p.ref_band, (int)band + 1, row, col, slice, p.buf_stride);
     const float csf_o = sycl::fabs(rfactor * src_ref);
     const float csf = fadm_pnorm_term(csf_o, p.p_norm);
-    const FadmDecouplePixel pixel = fadm_load_cm_pixel(p, row, col);
+    const FadmCmPixel pixel = fadm_load_cm_pixel(p, band, row, col);
     const float restored =
-        fadm_restore(pixel.original[band], pixel.transformed[band], pixel.angle_flag, p.gain_limit);
+        fadm_restore(pixel.original, pixel.transformed, pixel.angle_flag, p.gain_limit);
     const float threshold = fadm_cm_threshold(p, row, col);
     const float x_val = rfactor * restored;
     float xa = sycl::fabs(x_val) - threshold;
