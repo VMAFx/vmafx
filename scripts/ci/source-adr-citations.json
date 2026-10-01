@@ -1255,6 +1255,7 @@
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 3,
+        "core/src/feature/hip/speed/speed_hip_device.h": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/metal/float_vif.metal": 1,
@@ -1389,6 +1390,7 @@
     "0220": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
+        "core/src/feature/hip/speed/speed_hip_device.h": 1,
         "core/src/feature/psnr_score.h": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
@@ -2590,9 +2592,6 @@
         "core/src/feature/cuda/integer_cambi_cuda.c": 2,
         "core/src/feature/cuda/integer_cambi_cuda.h": 1,
         "core/src/feature/feature_extractor.cpp": 4,
-        "core/src/feature/hip/integer_cambi/cambi_score.hip": 1,
-        "core/src/feature/hip/integer_cambi_hip.c": 1,
-        "core/src/feature/hip/integer_cambi_hip.h": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_cambi_metal.mm": 2,
         "core/src/meson.build": 2,
@@ -3777,16 +3776,14 @@
         "core/src/feature/cuda/speed_chroma_cuda.h": 1,
         "core/src/feature/cuda/speed_temporal_cuda.c": 1,
         "core/src/feature/cuda/speed_temporal_cuda.h": 1,
-        "core/src/feature/hip/speed/speed_score.hip": 1,
-        "core/src/feature/hip/speed_chroma_hip.c": 3,
+        "core/src/feature/hip/speed_chroma_hip.c": 1,
         "core/src/feature/hip/speed_chroma_hip.h": 1,
-        "core/src/feature/hip/speed_temporal_hip.c": 3,
+        "core/src/feature/hip/speed_temporal_hip.c": 1,
         "core/src/feature/hip/speed_temporal_hip.h": 1,
         "core/src/feature/speed_gpu_common.h": 1,
         "core/src/feature/speed_internal.h": 2,
         "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
         "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
-        "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_speed_chroma_smoke.c": 2,
         "core/test/test_cuda_speed_temporal_smoke.c": 2,
@@ -4554,6 +4551,7 @@
         "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
         "core/src/feature/hip/integer_adm/adm_csf.hip": 1,
         "core/src/feature/hip/integer_adm_hip.c": 2,
+        "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_hip_adm_buffer_pointer_contract.py": 1,
         "scripts/ci/tests/test_check_silent_revert.py": 1
@@ -4824,8 +4822,7 @@
     "0852": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
-        "core/src/hip/meson.build": 1,
-        "core/src/meson.build": 1
+        "core/src/hip/meson.build": 1
       },
       "target": "0852-hip-speed-extractor-wiring.md"
     },
@@ -6097,6 +6094,7 @@
         "core/src/feature/hip/float_ssim_hip.c": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
         "core/src/feature/hip/integer_adm_hip.c": 1,
+        "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 1,
         "core/src/feature/hip/integer_cambi_hip.c": 1,
         "core/src/feature/hip/integer_motion_hip.c": 1,
         "core/src/feature/hip/integer_motion_sad_hip.c": 1,
@@ -6106,7 +6104,9 @@
         "core/src/feature/hip/integer_psnr_hvs_hip.c": 1,
         "core/src/feature/hip/integer_ssim_hip.c": 1,
         "core/src/feature/hip/integer_vif_hip.c": 1,
+        "core/src/feature/hip/speed/speed_hip_device.h": 1,
         "core/src/feature/hip/speed_chroma_hip.c": 1,
+        "core/src/feature/hip/speed_hip_pipeline.c": 1,
         "core/src/feature/hip/speed_temporal_hip.c": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/integer_adm.c": 1,
@@ -6223,8 +6223,10 @@
         "core/test/test_gpu_picture_pool_uaf.c": 1,
         "core/test/test_hip_adm_dwt2_rows.c": 1,
         "core/test/test_hip_adm_init_unwind.c": 1,
+        "core/test/test_hip_cambi_device_math.c": 1,
         "core/test/test_hip_float_motion_parity.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
+        "core/test/test_hip_speed_device_math.c": 1,
         "core/test/test_hip_ssim_parity.c": 1,
         "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_hip_upload_race.c": 1,
@@ -6798,13 +6800,6 @@
       },
       "target": "1201-release-candidates-before-1-0-0.md"
     },
-    "1202": {
-      "sites": {
-        "core/src/feature/hip/speed_chroma_hip.c": 2,
-        "core/src/feature/hip/speed_temporal_hip.c": 1
-      },
-      "target": "1202-cuda-speed-chroma-4k-launch-bounds.md"
-    },
     "1204": {
       "sites": {
         "core/src/feature/cuda/float_adm/float_adm_score.cu": 1,
@@ -6952,8 +6947,6 @@
     },
     "1218": {
       "sites": {
-        "core/src/feature/hip/speed_chroma_hip.c": 1,
-        "core/src/feature/hip/speed_temporal_hip.c": 4,
         "core/test/test_cuda_speed_singular_parity.c": 3,
         "core/test/test_hip_speed_singular_parity.c": 3,
         "core/test/test_sycl_speed_singular_parity.c": 3
@@ -6962,7 +6955,6 @@
     },
     "1219": {
       "sites": {
-        "core/src/feature/hip/integer_cambi/cambi_score.hip": 2,
         "core/src/feature/hip/integer_cambi_hip.c": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_cambi_metal.mm": 1,
@@ -7789,9 +7781,14 @@
         "core/src/feature/cuda/integer_cambi/cambi_score.cu": 1,
         "core/src/feature/cuda/integer_cambi_cuda.c": 2,
         "core/src/feature/cuda/integer_cambi_cuda.h": 1,
+        "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 2,
+        "core/src/feature/hip/integer_cambi/cambi_score.hip": 1,
+        "core/src/feature/hip/integer_cambi_hip.c": 4,
+        "core/src/feature/hip/integer_cambi_hip.h": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 5,
         "core/test/test_cambi.c": 2,
         "core/test/test_cuda_cambi_parity.c": 3,
+        "core/test/test_hip_cambi_device_math.c": 1,
         "core/test/test_sycl_cambi_parity.c": 4
       },
       "target": "1357-sycl-cambi-device-resident.md"
@@ -7802,6 +7799,11 @@
         "core/src/feature/cuda/speed_chroma_cuda.c": 1,
         "core/src/feature/cuda/speed_cuda_pipeline.h": 1,
         "core/src/feature/cuda/speed_temporal_cuda.c": 1,
+        "core/src/feature/hip/speed/speed_hip_device.h": 3,
+        "core/src/feature/hip/speed/speed_pipeline.hip": 1,
+        "core/src/feature/hip/speed_chroma_hip.c": 1,
+        "core/src/feature/hip/speed_hip_pipeline.h": 1,
+        "core/src/feature/hip/speed_temporal_hip.c": 1,
         "core/src/feature/speed_constants.h": 1,
         "core/src/feature/speed_gpu_common.h": 1,
         "core/src/feature/speed_internal.c": 1,
@@ -7814,6 +7816,7 @@
         "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_exact_fp.h": 1,
         "core/src/meson.build": 2,
+        "core/test/test_hip_speed_device_math.c": 2,
         "core/test/test_strict_fp_compiler_args.py": 1,
         "core/test/test_sycl_kernel_source_contract.py": 2,
         "scripts/dev/speed_gpu_parity.py": 2
@@ -8070,12 +8073,28 @@
         "core/src/hip/picture_hip.h": 1,
         "core/src/meson.build": 2,
         "core/test/meson.build": 2,
+        "core/test/test_hip_device_resident_contract.py": 1,
         "core/test/test_hip_kernel_source_contract.py": 1,
         "core/test/test_hip_motion_parity.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_hip_twin_option_parity.c": 1
       },
       "target": "1377-hip-motion-diff-first.md"
+    },
+    "1378": {
+      "sites": {
+        "core/src/feature/cambi.c": 7,
+        "core/src/feature/cambi_internal.h": 6,
+        "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 1,
+        "core/src/feature/hip/integer_cambi/cambi_score.hip": 1,
+        "core/src/feature/hip/integer_cambi_hip.c": 2,
+        "core/src/feature/hip/integer_cambi_hip.h": 1,
+        "core/src/feature/sycl/integer_cambi_sycl.cpp": 4,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_cambi_device_math.c": 1,
+        "core/test/test_hip_device_resident_contract.py": 1
+      },
+      "target": "1378-hip-cambi-device-resident.md"
     },
     "1379": {
       "sites": {
@@ -8151,6 +8170,26 @@
         ".github/workflows/rule-enforcement.yml": 1
       },
       "target": "1383-state-md-three-way-conflict-resolver.md"
+    },
+    "1384": {
+      "sites": {
+        "core/src/feature/hip/speed/speed_hip_device.h": 1,
+        "core/src/feature/hip/speed/speed_pipeline.hip": 1,
+        "core/src/feature/hip/speed_chroma_hip.c": 2,
+        "core/src/feature/hip/speed_hip_pipeline.c": 1,
+        "core/src/feature/hip/speed_hip_pipeline.h": 1,
+        "core/src/feature/hip/speed_temporal_hip.c": 2,
+        "core/src/feature/speed_gpu_common.h": 2,
+        "core/src/feature/speed_internal.c": 1,
+        "core/src/feature/speed_internal.h": 1,
+        "core/src/feature/sycl/speed_sycl_host.cpp": 1,
+        "core/src/hip/meson.build": 2,
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_device_resident_contract.py": 1,
+        "core/test/test_hip_speed_device_math.c": 1
+      },
+      "target": "1384-hip-speed-device-resident.md"
     },
     "1386": {
       "sites": {
