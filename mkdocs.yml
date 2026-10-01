@@ -1506,6 +1506,7 @@ nav:
         - "ADR-1393: cambi-clip-window-to-frame": adr/1393-cambi-clip-window-to-frame.md
         - "ADR-1395: sycl-kernels-no-scratch": adr/1395-sycl-kernels-no-scratch.md
         - "ADR-1396: vmaf-init-output-only-handle": adr/1396-vmaf-init-output-only-handle.md
+        - "ADR-1397: psnr-hvs-twins-cpu-float-sum": adr/1397-psnr-hvs-twins-cpu-float-sum.md
         - "ADR-1398: cli-accept-odd-dimensions-chroma-subsampled": adr/1398-cli-accept-odd-dimensions-chroma-subsampled.md
       - "By tag":
         - Overview: adr/by-tag/index.md
