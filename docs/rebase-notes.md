@@ -56495,3 +56495,7 @@ Verification:
   `shared_frame.c` needs a stub there.
 - No output changes: every metric of every adopted twin is bit-identical
   before and after.
+## `perf/ai-k150k-tmpfs-scratch` — YUV scratch auto-selected to /dev/shm (Win 3)
+
+- **Files changed**: `ai/scripts/extract_k150k_features.py`, `ai/tests/test_extract_k150k_perf.py`, `ai/AGENTS.md`
+- **Rebase impact**: no rebase impact — fork-local Python script and tests only; no upstream-shared C, headers, or public API touched.

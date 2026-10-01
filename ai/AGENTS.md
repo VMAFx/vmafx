@@ -818,6 +818,12 @@ scripts:
   field absent (K150K-A clips, incomplete rows) -> function returns `None`
   and `_probe_geometry(mp4)` called as fallback. Do not remove fallback —
   K150K-A clips have no sidecar.
+- **Scratch directory is auto-selected to `/dev/shm` when available (Research-0135 Win 3):**
+  `_choose_scratch_dir(requested)` returns `/dev/shm/k150k_yuv_scratch` when `/dev/shm`
+  is writable and `statvfs` reports >=20 GiB free; otherwise falls back to the OS temp
+  directory. The threshold (20 GiB) covers 8 concurrent workers each holding a
+  ~1.5 GiB 1080p 10-bit 240-frame YUV clip. Pass `--scratch-dir` to override.
+  Do not lower the 20 GiB threshold without updating the headroom analysis in Research-0135.
 - **Binary requirement:** script requires `core/build-cpu/tools/vmaf`
   (fork build); system `/usr/local/bin/vmaf` v3.0.0 lacks `ssimulacra2`
   and `motion_v2`. `--vmaf-bin` default (in `main()`) now points to

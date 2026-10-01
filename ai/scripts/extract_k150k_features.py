@@ -51,12 +51,13 @@ ffprobe geometry override (Win 2 — Research-0135):
   regardless of actual bit depth.  ffprobe remains necessary for clips not
   covered by the sidecar.
 
-Scratch directory:
+Scratch directory (Win 3 — Research-0135 tmpfs path):
   Temporary per-clip YUV files (~1.5 GiB per 1080p 30 fps 240-frame clip) go to
-  ``--scratch-dir``, which defaults to ``k150k_yuv_scratch`` under the OS temp
-  directory.  To avoid NVMe I/O, point it at tmpfs explicitly, for example
-  ``--scratch-dir /dev/shm/k150k_yuv_scratch``.  Automatic ``/dev/shm``
-  selection (Research-0135, Win 3) is not implemented.
+  ``--scratch-dir``. When unspecified, the script automatically selects
+  ``/dev/shm/k150k_yuv_scratch`` if ``/dev/shm`` is writable and has at least
+  20 GiB free, eliminating NVMe I/O on NVMe-bound hosts. Otherwise it falls back
+  to ``k150k_yuv_scratch`` under the OS temp directory. Pass an explicit path to
+  override auto-selection.
 
 Parallelism (ADR-0382): clips are dispatched to a
 ``concurrent.futures.ProcessPoolExecutor`` with ``--threads-cuda`` workers
@@ -482,6 +483,38 @@ def _feature_arg(extractor: str, is_hdr: bool, motion_fps_weight: float) -> str:
     if not opts:
         return base
     return f"{base}=" + ":".join(opts)
+
+
+_DEV_SHM = Path("/dev/shm")
+_TMPFS_HEADROOM_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB minimum free
+
+
+def _choose_scratch_dir(requested: Path | None = None) -> Path:
+    """Return an appropriate scratch directory for temporary YUV files.
+
+    Priority (Win 3 — Research-0135):
+    1. ``requested`` — explicit caller override; always honoured.
+    2. ``/dev/shm`` — Linux tmpfs RAM-disk.  Used automatically when the
+       mount exists, is a directory, is writable by the current user, and
+       ``statvfs`` reports at least 20 GiB of free space (headroom for 8
+       concurrent workers each holding a 1080p 10-bit 240-frame clip,
+       ~1.5 GiB each).
+    3. ``tempfile.gettempdir()`` — portable fallback (NVMe or OS temp).
+
+    On non-Linux hosts ``/dev/shm`` is absent and the function always falls
+    back to (3) without raising.
+    """
+    if requested is not None:
+        return requested
+    try:
+        if _DEV_SHM.is_dir() and os.access(_DEV_SHM, os.W_OK):
+            st = os.statvfs(_DEV_SHM)
+            free = st.f_bavail * st.f_frsize
+            if free >= _TMPFS_HEADROOM_BYTES:
+                return _DEV_SHM / "k150k_yuv_scratch"
+    except OSError:
+        pass
+    return Path(tempfile.gettempdir()) / "k150k_yuv_scratch"
 
 
 def _decode_to_yuv(mp4: Path, yuv_path: Path, pix_fmt: str) -> None:
@@ -1280,8 +1313,14 @@ def _add_k150k_output_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--scratch-dir",
         type=Path,
-        default=Path(tempfile.gettempdir()) / "k150k_yuv_scratch",
-        help="Scratch directory for temporary YUV files.  Cleaned per-clip.",
+        default=None,
+        help=(
+            "Scratch directory for temporary YUV files.  Cleaned per-clip.  "
+            "Defaults to /dev/shm/k150k_yuv_scratch when /dev/shm is writable "
+            "and has >=20 GiB free (Win 3 — Research-0135 tmpfs path), "
+            "otherwise falls back to the OS temp directory.  "
+            "Pass an explicit path to override auto-selection."
+        ),
     )
 
 
@@ -1739,6 +1778,7 @@ def _finish_batch(
 def main(argv: list[str] | None = None) -> int:
     """Extract the requested corpus slice and maintain restart evidence."""
     args = _build_k150k_parser().parse_args(argv)
+    args.scratch_dir = _choose_scratch_dir(args.scratch_dir)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
     teacher = resolve_teacher_model(args.vmaf_model)
