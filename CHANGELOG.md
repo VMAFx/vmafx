@@ -393,13 +393,6 @@
   releases every dictionary the settings still own, and each hand-off to
   libvmaf clears the settings' copy first. Exit codes and output are
   unchanged.
-- **CUDA: `test_cuda_runtime_unwind` pins allocating state on host-pinned pictures.**
-  Host-pinned pictures (`vmaf_cuda_picture_alloc_pinned`) record the allocating
-  state on `priv->cuda.state`, preventing a NULL dereference of `state->f` during
-  unref (upstream Netflix/vmaf#1573 hunk a). A device-free test
-  `test_pinned_picture_release_uses_the_allocating_state` exercises the allocation
-  and unref through the fake driver table, ensuring the allocating state is pinned
-  across platforms.
 
 
 - **`float_motion_cuda` emits `motion3`, like the CPU `float_motion`.** The
@@ -438,6 +431,15 @@
   `--backend cuda --feature vif` compute smaller frames with the CPU `vif`, and
   `--feature vif_cuda` on such a frame fails `init()` instead of returning
   scores from clamped taps (ADR-1374).
+
+
+- **CUDA: `test_cuda_runtime_unwind` pins allocating state on host-pinned pictures.**
+  Host-pinned pictures (`vmaf_cuda_picture_alloc_pinned`) record the allocating
+  state on `priv->cuda.state`, preventing a NULL dereference of `state->f` during
+  unref (upstream Netflix/vmaf#1573 hunk a). A device-free test
+  `test_pinned_picture_release_uses_the_allocating_state` exercises the allocation
+  and unref through the fake driver table, ensuring the allocating state is pinned
+  across platforms.
 
 
 - **The Gitleaks check scans only the commit it checked out.** It ran
