@@ -959,11 +959,22 @@ if is_asm_enabled
           feature_src_dir + 'x86/integer_ssim_avx2.c',
       ]
 
+      # ADR-1415: every x86 SIMD library is built with vmaf_strict_fp_args,
+      # the general ones included. These files end their vector loops in
+      # plain C, and their scalar references live in baseline libraries where
+      # no fused multiply-add exists; under `-mfma` / `-mavx512f` a compiler
+      # that contracts `a * b + c` rounds the tail once where the reference
+      # rounds twice. icx does (`-fp-model=precise` alone implies
+      # `-ffp-contract=on`); GCC does not in these files, and the flag makes
+      # that a property of the build: GCC's objects are byte-for-byte the same
+      # with and without it. A kernel that wants a fused multiply-add writes
+      # the intrinsic (`_mm256_fmadd_ps`) or `vmaf_fmaf_exact()`. The named
+      # carve-out libraries below predate this and carry the same flags.
       x86_avx2_static_lib = static_library(
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_fp_model_args + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
@@ -1077,9 +1088,11 @@ if is_asm_enabled
             'x86_avx512',
             x86_avx512_sources,
             include_directories : vmaf_base_include,
+            # ADR-1415: strict FP like every x86 SIMD library; see
+            # x86_avx2_static_lib above.
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vl'] +
-                     vmaf_fp_model_args +
+                     vmaf_strict_fp_args +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
             # this lib drops the convolution_f32_avx512_{s,sq_s,xy_s}

@@ -2056,7 +2056,7 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines,
+    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     predict_test_dependencies, dnn_deps],
     objects : [
@@ -2115,6 +2115,36 @@ test_integer_ssim_simd = executable('test_integer_ssim_simd',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+endif
+
+# T-ICX-SSIM-AVX512-FP-CONTRACT-2026-10-01: the AVX2 and AVX-512 float SSIM
+# kernels (precompute, variance, accumulate) against transcriptions of the
+# scalar reference in iqa/ssim_tools.c, bit for bit, at element counts with
+# and without a scalar tail. The x86 sibling of test_ssim_neon. The
+# transcriptions need the same no-contraction policy as the kernels' carve-out
+# libraries, hence _simd_strict_fp_args.
+ssim_x86_simd_test_archs = ['x86_64', 'x86']
+if ssim_x86_simd_test_archs.contains(host_machine.cpu_family())
+test_ssim_x86_simd = executable('test_ssim_x86_simd',
+    ['test.c', 'test_ssim_x86_simd.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
+test('test_ssim_x86_simd', test_ssim_x86_simd, suite : ['fast', 'simd'])
 endif
 
 ciede_simd_parity_test_archs = ['x86_64', 'x86']

@@ -65,6 +65,22 @@ contains only kernel TUs.
   `ssim_int` rename; never reintroduce old spellings on
   rebase.
 
+## Strict FP for every x86 SIMD library (ADR-1415)
+
+Every library of this directory in `core/src/meson.build` takes
+`vmaf_strict_fp_args`: the general `x86_avx2` / `x86_avx512` ones and the
+named carve-outs alike. Reason: scalar references sit in baseline libraries
+(no FMA exists there), kernels here end in plain-C tails under `-mfma` /
+`-mavx512f`; icx contracts those under `-fp-model=precise` alone, GCC does
+not. Fused multiply-add wanted -> write `_mm256_fmadd_ps` /
+`_mm512_fmadd_ps` / `vmaf_fmaf_exact()`, never rely on contraction. New
+library -> strict args + entry in `STRICT_TARGETS`
+(`core/test/test_strict_fp_compiler_args.py`). Test TU that compiles a
+scalar reference itself -> `_simd_strict_fp_args` (icx default = fast
+model; `test_integer_adm_simd` failed on icx without it). Check after a
+flag change: `objdump -d <object> | grep -c vfmadd` for a GCC and an icx
+build; GCC objects must not change.
+
 ## Twin-update rules
 
 These TUs come in twin-bundles. Change to one half **must** ship
@@ -72,7 +88,7 @@ with matching change to other halves in **same PR**:
 
 | Group | TUs that move in lockstep |
 | --- | --- |
-| **SSIM accumulate** (ADR-0139) | `ssim_avx2.c` + `ssim_avx512.c` + `../arm64/ssim_neon.c` + scalar `../iqa/ssim_tools.c` (`ssim_accumulate_default_scalar`) + shared helper `../iqa/ssim_accumulate_lane.h` |
+| **SSIM accumulate** (ADR-0139) | `ssim_avx2.c` + `ssim_avx512.c` + `../arm64/ssim_neon.c` + scalar `../iqa/ssim_tools.c` (`ssim_accumulate_default_scalar`) + shared helper `../iqa/ssim_accumulate_lane.h`. Scalar tails (`sigma -= mu * mu`, `rm * rm + cm * cm + C1`) are plain C: need contraction off (ADR-1415; icx fused 13 of them in `ssim_avx512.c`, `float_ms_ssim` 1 fp32 ulp off on ~1 frame in 30). Guard: `test_ssim_x86_simd` (bit-exact vs transcribed scalar, counts with and without tail). |
 | **IQA convolve** (ADR-0138 + ADR-0143) | `convolve_avx2.c` + `convolve_avx512.c` + `../arm64/convolve_neon.c` + scalar `../iqa/convolve.c` + shared scanline helpers `../common/convolution_avx.c` |
 | **MS-SSIM decimate LPF** (ADR-0125) | `ms_ssim_decimate_avx2.c` + `ms_ssim_decimate_avx512.c` + `../arm64/ms_ssim_decimate_neon.c` + scalar `../ms_ssim_decimate.c`. The 9-tap filter table appears verbatim in all four — diff all four when any one moves. |
 | **PSNR-HVS DCT** (ADR-0159 + ADR-0350) | `psnr_hvs_avx2.c` + `../arm64/psnr_hvs_neon.c` + scalar `../third_party/xiph/psnr_hvs.c`. Butterfly block is byte-identical across the three. **No `psnr_hvs_avx512.c` — AVX-512 closed as ceiling under T3-9 (a) per [ADR-0350](../../../../docs/adr/0350-psnr-hvs-avx512-ceiling.md): `perf record` cycle share is 78.42 % scalar tail (locked by ADR-0138/0139 bit-exactness) vs 14.82 % DCT, capping a 16-lane widening at 1.07–1.08× over AVX2 (Amdahl ceiling 1.17×) — well below T3-9's 1.3× ship gate.** Re-bench gate: any future upstream change to the Xiph/Daala scalar that shifts the per-block summation tree requires re-running [Research-0091 §7](../../../../docs/research/0091-psnr-hvs-avx512-bench-2026-05-09.md) before claiming the ceiling still holds. |

@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## ADR-1415 — every x86 SIMD library is built without FP contraction (2026-10-01)
+
+`fix/icx-ssim-avx512-fp-contract`, ADR-1415.
+
+- `core/src/meson.build`: `x86_avx2_static_lib` and `x86_avx512_static_lib`
+  take `vmaf_strict_fp_args` instead of `vmaf_fp_model_args`. **On rebase**:
+  if the other side still spells `vmaf_fp_model_args` for either library,
+  keep this side; a new x86 SIMD library takes the strict list too. The nine
+  carve-out libraries are unchanged and carry the same flags.
+- `core/test/test_strict_fp_compiler_args.py`: `STRICT_TARGETS` names both
+  general libraries.
+- `core/test/meson.build`: `test_integer_adm_simd` takes
+  `_simd_strict_fp_args` (it compiles the scalar ADM kernels into its own
+  translation unit; without the flag it fails on icx builds). New
+  `test_ssim_x86_simd` block (`executable()` + `test()`).
+- `core/test/test_ssim_x86_simd.c` (new): AVX2 and AVX-512 `ssim_precompute`,
+  `ssim_variance` and `ssim_accumulate` against transcriptions of the scalar
+  functions in `iqa/ssim_tools.c`. If upstream changes those scalar
+  functions, update the transcriptions with the kernels (ADR-0139 twin
+  group).
+- No source file of a library changes. GCC builds produce the same objects.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/sycl-speed-lanczos4-host-weights — the SYCL SpEED twins read the CPU's lanczos4 weights (2026-10-01)
 
 - `core/src/feature/sycl/speed_sycl_pipeline.cpp`: `Pipeline::lanczos` (device
