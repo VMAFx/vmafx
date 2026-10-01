@@ -148,11 +148,11 @@ else
   receipt option cpu float_motion=cpu
 fi
 
-# 5. scale=2: the SYCL and CUDA twins decimate on the device (ADR-1370,
-#    ADR-1399) and run it; the HIP and Metal twins implement scale=1 only
-#    (ADR-1324) and keep the CPU extractor.
+# 5. scale=2: the SYCL, CUDA and HIP twins decimate on the device (ADR-1370,
+#    ADR-1399, ADR-1405) and run it; the Metal twin implements scale=1 only
+#    (ADR-1324) and keeps the CPU extractor.
 run geometry 0 --no_prediction --feature float_ssim=scale=2 --backend "$BACKEND"
-if [ "$BACKEND" = sycl ] || [ "$BACKEND" = cuda ]; then
+if [ "$BACKEND" = sycl ] || [ "$BACKEND" = cuda ] || [ "$BACKEND" = hip ]; then
   no_warning geometry
   receipt geometry "$BACKEND" "float_ssim_$BACKEND=$BACKEND"
 else

@@ -56198,4 +56198,28 @@ Verification:
 - Tests: `test_hip_twin_option_parity` (`test_float_motion_motion3`,
   `_one_frame`, `_filter_size`, `_scale1_and_uv`, `_refusals`), six planted
   regressions in `test_hip_kernel_source_contract.py`.
+## ADR-1405 — float_ssim_hip decimates on the device (2026-10-01)
+
+`feat/hip-float-ssim-scale`, Research-1405, ADR-1405.
+
+- `core/src/feature/hip/float_ssim/ssim_decimate.h` (new): one output of
+  `iqa/decimate.c::iqa_decimate()` with `ssim.c`'s low-pass kernel, in plain C
+  and HIP C++ (`vmaf_hip_ssim_decimate_sample()`: fp32 `sample * tap`, int64
+  sum in units of 2^-52, one rounding; `vmaf_hip_ssim_symmetric_index()` =
+  `KBND_SYMMETRIC`). If upstream Netflix changes `iqa_filter_pixel()`,
+  `KBND_SYMMETRIC`, `iqa_decimate()`, `iqa_decimate_dim()` or
+  `ssim_low_pass_alloc()`, change this header in the same PR;
+  `core/test/test_hip_float_ssim_decimate.c` (device-free, byte compare
+  against `iqa_decimate()`) fails until it follows.
+- `core/src/feature/hip/float_ssim/ssim_score.hip`: new kernels
+  `calculate_ssim_hip_decimate_{8,16}bpc` and `calculate_ssim_hip_horiz_f32`;
+  the three pass-1 entry points share `ssim_horiz<Sample>()`.
+- `core/src/feature/hip/float_ssim_hip.c`: `in_width` / `in_height` are the
+  picture, `width` / `height` the planes the SSIM passes read
+  (`iqa_decimate_dim()` above scale 1). `check_context_hip()` refuses only a
+  decimated plane below 11x11 or a scale above 128.
+- `core/test/test_hip_float_ssim_parity.c` is rewritten around the SYCL case
+  table (tolerance 5e-5); `core/test/test_gpu_float_ssim_auto_scale_contract.py`
+  treats HIP like SYCL; `core/tools/test/test_vmaf_feature_backend.sh` expects
+  the HIP twin for `float_ssim=scale=2`.
 - No Netflix golden-data, public API or FFmpeg patch impact.

@@ -1,0 +1,1 @@
+| [ADR-1405](1405-hip-float-ssim-device-decimation.md) | `float_ssim_hip` decimates on the device with the CPU's arithmetic (an exact int64 window sum in a header the kernel and a device-free test share), so it serves 1080p and 4K instead of falling back to the CPU; scale 1 keeps its direct path. | Accepted | hip, gpu, ssim, performance, numerics, gpu-parity, rc3, fork-local |

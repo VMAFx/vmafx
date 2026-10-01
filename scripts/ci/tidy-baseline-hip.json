@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1209,
+  "total_warnings": 1187,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -468,7 +468,6 @@
     "core/test/test_hip_float_adm_parity.c": 30,
     "core/test/test_hip_float_moment_parity.c": 22,
     "core/test/test_hip_float_psnr_parity.c": 21,
-    "core/test/test_hip_float_ssim_parity.c": 22,
     "core/test/test_hip_float_vif_parity.c": 22,
     "core/test/test_hip_motion3_parity.c": 26,
     "core/test/test_hip_motion_parity.c": 18,
@@ -605,6 +604,21 @@
         }
       },
       "previous_baseline_sha256": "8e5e5b107401d6ecd60122d1ba9cddf73ea7a2345864d32d0dfe673ce8b53ac1"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_float_ssim_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_float_ssim_parity.c": {
+          "warnings": [
+            22,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "55f5175fdccb2221df7c6f0087bbec7fab4ab7d5cc63e13612f43acf327f15fe"
     }
   ]
 }

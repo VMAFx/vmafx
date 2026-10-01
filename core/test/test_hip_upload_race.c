@@ -69,8 +69,8 @@ typedef struct RaceCase {
     const char *keys[MAX_KEYS]; /* features compared, NULL-terminated */
 } RaceCase;
 
-/* float_ssim_hip supports scale=1 only and rejects the auto-selected scale
- * on larger fixtures, so both twins are pinned to it. */
+/* float_ssim is pinned to scale 1 on both sides, so that the twin's SSIM
+ * passes read the uploaded planes directly, whatever the fixture size. */
 static const RaceCase race_cases[] = {
     {"ciede_hip", "ciede", NULL, NULL, 1e-4, {"ciede2000"}},
     {"float_adm_hip", "float_adm", NULL, NULL, 1e-4, {"VMAF_feature_adm2_score"}},

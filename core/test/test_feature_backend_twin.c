@@ -197,8 +197,10 @@ static char *check_registry_twins(VmafContext *vmaf, unsigned flag)
     const VmafPictureConfiguration qhd = geometry(960, 540);
     mu_assert("float_ssim twin runs 320x240",
               vmaf_feature_backend_twin(vmaf, "float_ssim", NULL, &small, &twin, NULL) == 0);
-    /* ADR-1370, ADR-1399: the SYCL and CUDA twins decimate on the device. */
-    const unsigned decimating = VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_CUDA;
+    /* ADR-1370, ADR-1399, ADR-1405: the SYCL, CUDA and HIP twins decimate on
+     * the device. */
+    const unsigned decimating =
+        VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_HIP;
     const int qhd_verdict = (flag & decimating) ? 0 : -ENOTSUP;
     mu_assert("float_ssim twin auto-scales 960x540 only where it decimates",
               vmaf_feature_backend_twin(vmaf, "float_ssim", NULL, &qhd, &twin, &option) ==

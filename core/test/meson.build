@@ -5082,6 +5082,22 @@ test('test_hip_cambi_device_math', test_hip_cambi_device_math,
     suite : ['fast'],
     timeout : 120)
 
+# ADR-1405 — float_ssim_hip's device decimation (float_ssim/ssim_decimate.h,
+# the lines the kernel compiles) against the CPU's iqa_decimate(), byte for
+# byte: scales 1 to 10 and 128, 8 to 16 bits, odd sizes, windows wider than
+# the plane. No AMD device is needed.
+test_hip_float_ssim_decimate = executable('test_hip_float_ssim_decimate',
+    ['test.c', 'test_hip_float_ssim_decimate.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: hip_device_math_args
+)
+test('test_hip_float_ssim_decimate', test_hip_float_ssim_decimate,
+    suite : ['fast'],
+    timeout : 120)
+
 test_hip_speed_device_math = executable('test_hip_speed_device_math',
     ['test.c', 'test_hip_speed_device_math.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'),

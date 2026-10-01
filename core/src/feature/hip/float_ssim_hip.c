@@ -10,7 +10,11 @@
  *
  *  Mirrors `core/src/feature/cuda/integer_ssim_cuda.c` call-graph-for-
  *  call-graph. Two-pass design mirrors the GLSL Vulkan shader and the
- *  CUDA twin:
+ *  CUDA twin, with the CPU's decimation ahead of it (ADR-1405):
+ *    Decimate — only when the resolved scale is above 1: both raw luma
+ *             planes to the fp32 planes ssim.c's iqa_decimate() produces,
+ *             bit for bit (float_ssim/ssim_decimate.h). W and H below are
+ *             the size of the planes the SSIM passes read.
  *    Pass 1 — horizontal 11-tap separable Gaussian over ref / cmp /
  *             ref^2 / cmp^2 / ref*cmp into five intermediate float
  *             device buffers, grid sized over (W-10) x H.
@@ -52,9 +56,11 @@
  *  report what the CPU reports, 1 - 2^-24 (72.247 dB) where its fp32
  *  luminance denominator leaves that residue, instead of a forced 1.
  *
- *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
- *  back to CPU before init when auto resolves above 1; direct requests keep
- *  the -EINVAL capability error.
+ *  Scale: the CPU's rule, `max(1, round(min(w, h) / 256))` or the `scale`
+ *  option. The context check (ADR-1324) refuses only what the device cannot
+ *  compute exactly, a decimated plane below the 11x11 Gaussian or a scale
+ *  above VMAF_HIP_SSIM_MAX_EXACT_SCALE; model dispatch then runs the CPU
+ *  extractor, and a direct request fails at init with -EINVAL.
  */
 
 #include <errno.h>
@@ -68,6 +74,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/iqa/decimate_dim.h"
 #include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
 #include "log.h"
@@ -76,6 +83,7 @@
 #include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
+#include "float_ssim/ssim_decimate.h"
 #include "float_ssim_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -129,21 +137,34 @@ typedef struct SsimStateHip {
     void *d_refcmp;
 
     /* Staging buffers: CPU luma planes → device (HtoD). One each for
-     * ref and cmp (luma-only, no chroma). Sized frame_w * frame_h * bpp.
+     * ref and cmp (luma-only, no chroma). Sized in_width * in_height * bpp.
      * Also allocated via hipMalloc. */
     void *ref_in;
     void *cmp_in;
 
-    /* HIP module + per-bpc horiz kernel + vert-combine kernel handles. */
+    /* Decimated fp32 planes, width * height floats; scale > 1 only. */
+    void *d_ref_dec;
+    void *d_cmp_dec;
+
+    /* HIP module + decimation, per-input horiz and vert-combine kernels. */
     hipModule_t module;
+    hipFunction_t func_decimate_8;
+    hipFunction_t func_decimate_16;
     hipFunction_t func_horiz_8;
     hipFunction_t func_horiz_16;
+    hipFunction_t func_horiz_f32;
     hipFunction_t func_vert;
     hipFunction_t func_vert_lcs;
 
     unsigned partials_capacity;
     unsigned partials_count;
 
+    /* The picture's luma size, and the resolved decimation scale. */
+    unsigned in_width;
+    unsigned in_height;
+    int scale;
+    /* The planes the SSIM passes read: the picture at scale 1, the
+     * iqa_decimate() output above it. */
     unsigned width;
     unsigned height;
     unsigned w_horiz;
@@ -183,9 +204,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "scale",
-        .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
-                "when auto resolves above 1.",
+        .help = "decimation scale factor (0=auto, 1=no downscaling, 2-10=explicit)",
         .offset = offsetof(SsimStateHip, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
@@ -217,6 +236,21 @@ static int ssim_hip_compute_scale(unsigned w, unsigned h, int override_val)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ssim.c decimates only above scale 1, to iqa_decimate_dim() samples. */
+static unsigned ssim_hip_decimated_extent(unsigned extent, int scale)
+{
+    return scale > 1 ? (unsigned)iqa_decimate_dim((int)extent, scale) : extent;
+}
+
+/* ADR-1405: what the device computes exactly — a decimated plane that holds
+ * the 11x11 Gaussian and a scale whose window sum is exact in int64. */
+static bool ssim_hip_geometry_supported(unsigned w, unsigned h, int scale)
+{
+    return scale <= VMAF_HIP_SSIM_MAX_EXACT_SCALE &&
+           ssim_hip_decimated_extent(w, scale) >= SSIM_HIP_K &&
+           ssim_hip_decimated_extent(h, scale) >= SSIM_HIP_K;
+}
+
 /* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
 static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                              unsigned w, unsigned h)
@@ -224,25 +258,21 @@ static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     (void)pix_fmt;
     (void)bpc;
     const SsimStateHip *s = fex->priv;
-    return ssim_hip_compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+    const int scale = ssim_hip_compute_scale(w, h, s->scale_override);
+    return ssim_hip_geometry_supported(w, h, scale) ? 0 : -ENOTSUP;
 }
 
 /* Extracted to keep init_fex_hip under the 60-line readability-function-size
  * limit. Mirrors validate logic from the CUDA twin. */
 static int ssim_hip_validate_dims(const SsimStateHip *s, unsigned w, unsigned h)
 {
-    int scale = ssim_hip_compute_scale(w, h, s->scale_override);
-    if (scale != 1) {
+    const int scale = ssim_hip_compute_scale(w, h, s->scale_override);
+    if (!ssim_hip_geometry_supported(w, h, scale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_hip: v1 supports scale=1 only "
-                 "(auto-detected scale=%d at %ux%u). "
-                 "Pin --feature float_ssim_hip:scale=1 if intended.\n",
-                 scale, w, h);
-        return -EINVAL;
-    }
-    if (w < SSIM_HIP_K || h < SSIM_HIP_K) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_hip: input %ux%u smaller than 11x11 Gaussian footprint.\n", w, h);
+                 "ssim_hip: %ux%u at scale=%d decimates to %ux%u; needs at least the 11x11 "
+                 "Gaussian footprint and scale <= %d.\n",
+                 w, h, scale, ssim_hip_decimated_extent(w, scale),
+                 ssim_hip_decimated_extent(h, scale), VMAF_HIP_SSIM_MAX_EXACT_SCALE);
         return -EINVAL;
     }
     return 0;
@@ -252,13 +282,16 @@ static int ssim_hip_validate_dims(const SsimStateHip *s, unsigned w, unsigned h)
  * under the 60-line readability-function-size limit. */
 static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned bpc)
 {
-    s->width = w;
-    s->height = h;
+    s->in_width = w;
+    s->in_height = h;
+    s->scale = ssim_hip_compute_scale(w, h, s->scale_override);
+    s->width = ssim_hip_decimated_extent(w, s->scale);
+    s->height = ssim_hip_decimated_extent(h, s->scale);
     s->bpc = bpc;
-    s->w_horiz = w - (SSIM_HIP_K - 1u);
-    s->h_horiz = h;
-    s->w_final = w - (SSIM_HIP_K - 1u);
-    s->h_final = h - (SSIM_HIP_K - 1u);
+    s->w_horiz = s->width - (SSIM_HIP_K - 1u);
+    s->h_horiz = s->height;
+    s->w_final = s->width - (SSIM_HIP_K - 1u);
+    s->h_final = s->height - (SSIM_HIP_K - 1u);
 
     /* SSIM stability constants: L = 255.0, K1 = 0.01, K2 = 0.03.
      * The CUDA twin pins L = 255 (float), independent of bpc, so the
@@ -272,6 +305,8 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
     const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
     s->partials_capacity = grid_x * grid_y;
+    /* The clip_db ceiling is the CPU's: from the picture size, not the
+     * decimated one (float_ssim.c::init()). */
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 }
 
@@ -280,25 +315,28 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
 /* ------------------------------------------------------------------ */
 
 #ifdef HAVE_HIPCC
-/* Load the HSACO fat binary and resolve the three kernel function handles.
+/* Load the HSACO fat binary and resolve the kernel function handles.
  * On failure the module is unloaded again and `s->module` is NULL. */
 static int ssim_hip_module_load(SsimStateHip *s)
 {
+    const struct {
+        hipFunction_t *fn;
+        const char *name;
+    } kernels[] = {
+        {&s->func_decimate_8, "calculate_ssim_hip_decimate_8bpc"},
+        {&s->func_decimate_16, "calculate_ssim_hip_decimate_16bpc"},
+        {&s->func_horiz_8, "calculate_ssim_hip_horiz_8bpc"},
+        {&s->func_horiz_16, "calculate_ssim_hip_horiz_16bpc"},
+        {&s->func_horiz_f32, "calculate_ssim_hip_horiz_f32"},
+        {&s->func_vert, "calculate_ssim_hip_vert_combine"},
+        {&s->func_vert_lcs, "calculate_ssim_hip_vert_combine_lcs"},
+    };
     hipError_t hip_rc = hipModuleLoadData(&s->module, ssim_score_hsaco);
     if (hip_rc != hipSuccess)
         return vmaf_hip_rc_to_errno(hip_rc);
 
-    hip_rc = hipModuleGetFunction(&s->func_horiz_8, s->module, "calculate_ssim_hip_horiz_8bpc");
-    if (hip_rc == hipSuccess) {
-        hip_rc =
-            hipModuleGetFunction(&s->func_horiz_16, s->module, "calculate_ssim_hip_horiz_16bpc");
-    }
-    if (hip_rc == hipSuccess)
-        hip_rc = hipModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_hip_vert_combine");
-    if (hip_rc == hipSuccess) {
-        hip_rc = hipModuleGetFunction(&s->func_vert_lcs, s->module,
-                                      "calculate_ssim_hip_vert_combine_lcs");
-    }
+    for (unsigned i = 0u; i < sizeof(kernels) / sizeof(kernels[0]) && hip_rc == hipSuccess; i++)
+        hip_rc = hipModuleGetFunction(kernels[i].fn, s->module, kernels[i].name);
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -306,11 +344,13 @@ static int ssim_hip_module_load(SsimStateHip *s)
     return vmaf_hip_rc_to_errno(hip_rc);
 }
 
-/* Number of device buffers: five horiz-pass planes + two luma staging. */
-#define SSIM_HIP_N_BUFS 7u
+/* Number of device buffers: five horiz-pass planes, two luma staging and
+ * two decimated planes. */
+#define SSIM_HIP_N_BUFS 9u
 #define SSIM_HIP_N_HORIZ 5u
+#define SSIM_HIP_N_STAGE 2u
 
-/* The seven device buffers, horiz-pass planes first. */
+/* The nine device buffers: horiz-pass planes, staging, decimated planes. */
 static void ssim_hip_buf_slots(SsimStateHip *s, void **slots[SSIM_HIP_N_BUFS])
 {
     slots[0] = &s->d_ref_mu;
@@ -320,26 +360,41 @@ static void ssim_hip_buf_slots(SsimStateHip *s, void **slots[SSIM_HIP_N_BUFS])
     slots[4] = &s->d_refcmp;
     slots[5] = &s->ref_in;
     slots[6] = &s->cmp_in;
+    slots[7] = &s->d_ref_dec;
+    slots[8] = &s->d_cmp_dec;
 }
 
-/* Allocate five intermediate float device buffers + two luma staging
- * buffers. On failure the buffers already allocated stay set; the caller's
- * ssim_hip_release() frees them. */
+static size_t ssim_hip_bytes_per_sample(const SsimStateHip *s)
+{
+    return (s->bpc <= 8u) ? 1u : 2u;
+}
+
+/* Allocate five intermediate float device buffers, two luma staging buffers
+ * and, above scale 1, the two decimated planes. On failure the buffers
+ * already allocated stay set; the caller's ssim_hip_release() frees them. */
 static int ssim_hip_bufs_alloc(SsimStateHip *s)
 {
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t stage_bytes = (size_t)s->width * s->height * bpp;
+    const size_t stage_bytes = (size_t)s->in_width * s->in_height * ssim_hip_bytes_per_sample(s);
+    const size_t dec_bytes = (size_t)s->width * s->height * sizeof(float);
+    const unsigned count = (s->scale > 1) ? SSIM_HIP_N_BUFS : SSIM_HIP_N_HORIZ + SSIM_HIP_N_STAGE;
 
     void **slots[SSIM_HIP_N_BUFS];
     ssim_hip_buf_slots(s, slots);
     hipError_t hip_rc = hipSuccess;
-    for (unsigned i = 0u; i < SSIM_HIP_N_BUFS && hip_rc == hipSuccess; i++)
-        hip_rc = hipMalloc(slots[i], (i < SSIM_HIP_N_HORIZ) ? horiz_bytes : stage_bytes);
+    for (unsigned i = 0u; i < count && hip_rc == hipSuccess; i++) {
+        size_t bytes = dec_bytes;
+        if (i < SSIM_HIP_N_HORIZ) {
+            bytes = horiz_bytes;
+        } else if (i < SSIM_HIP_N_HORIZ + SSIM_HIP_N_STAGE) {
+            bytes = stage_bytes;
+        }
+        hip_rc = hipMalloc(slots[i], bytes);
+    }
     return vmaf_hip_rc_to_errno(hip_rc);
 }
 
-/* Free all seven device buffers, last allocated first. Safe to call with
+/* Free every device buffer, last allocated first. Safe to call with
  * NULL pointers. */
 static void ssim_hip_bufs_free(SsimStateHip *s)
 {
@@ -353,33 +408,71 @@ static void ssim_hip_bufs_free(SsimStateHip *s)
     }
 }
 
+/* picture_copy()'s divisor (4 / 16 / 256 at 10 / 12 / 16 bits) as its exact
+ * reciprocal. */
+static float ssim_hip_sample_scale(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 1.0f / 4.0f;
+    if (bpc == 12u)
+        return 1.0f / 16.0f;
+    return (bpc == 16u) ? 1.0f / 256.0f : 1.0f;
+}
+
+/*
+ * Decimation, scale > 1 only: both staged raw planes to the fp32 planes
+ * iqa_decimate() produces, on `str` ahead of pass 1. The tap weight is
+ * ssim.c's `1.0f / (float)(scale * scale)`, formed here so that the host
+ * compiler rounds it as it does for the CPU extractor.
+ */
+static int ssim_hip_launch_decimate(SsimStateHip *s, hipStream_t str)
+{
+    const unsigned grid_x = (s->width + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
+    const unsigned grid_y = (s->height + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
+    float tap_weight = 1.0f / (float)(s->scale * s->scale);
+    float sample_scale = ssim_hip_sample_scale(s->bpc);
+    /* The 16bpc kernel takes one more argument, `sample_scale`; the runtime
+     * reads as many arguments as the launched kernel declares. */
+    void *args[] = {
+        (void *)&s->ref_in,   (void *)&s->cmp_in,    (void *)&s->d_ref_dec, (void *)&s->d_cmp_dec,
+        (void *)&s->in_width, (void *)&s->in_height, (void *)&s->width,     (void *)&s->height,
+        (void *)&s->scale,    (void *)&tap_weight,   (void *)&sample_scale,
+    };
+    const bool is8 = (s->bpc == 8u);
+    return vmaf_hip_rc_to_errno(
+        hipModuleLaunchKernel(is8 ? s->func_decimate_8 : s->func_decimate_16, grid_x, grid_y, 1u,
+                              SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0, str, args, NULL));
+}
+
 /*
  * Pass 1 — horizontal 11-tap Gaussian kernel launch.
  * Grid sized over w_horiz x h_horiz. Block 16x8.
- * Writes five intermediate float buffers on `str`.
+ * Writes five intermediate float buffers on `str`. Reads the staged raw
+ * planes at scale 1 and the decimated fp32 planes above it.
  */
 static int ssim_hip_launch_horiz(SsimStateHip *s, hipStream_t str)
 {
     const unsigned grid_horiz_x = (s->w_horiz + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
     const unsigned grid_horiz_y = (s->h_horiz + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
 
-    const ptrdiff_t ref_stride = (ptrdiff_t)s->width * ((s->bpc <= 8u) ? 1 : 2);
-    /* Horiz kernel takes raw uint8* for both bpc variants; the 16bpc one
-     * takes one more argument, `bpc`. */
-    void *args8[] = {
-        (void *)&s->ref_in,   (void *)&ref_stride,  (void *)&s->cmp_in,   (void *)&ref_stride,
-        (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu, (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
-        (void *)&s->d_refcmp, (void *)&s->w_horiz,  (void *)&s->h_horiz,
-    };
-    void *args16[] = {
-        (void *)&s->ref_in,   (void *)&ref_stride,  (void *)&s->cmp_in,   (void *)&ref_stride,
+    const bool decimated = (s->scale > 1);
+    void **ref = decimated ? &s->d_ref_dec : &s->ref_in;
+    void **cmp = decimated ? &s->d_cmp_dec : &s->cmp_in;
+    const ptrdiff_t stride =
+        (ptrdiff_t)s->width * (ptrdiff_t)(decimated ? sizeof(float) : ssim_hip_bytes_per_sample(s));
+    /* Every horiz kernel takes byte pointers and byte strides; the 16bpc
+     * one takes one more argument, `bpc`, which the others do not read. */
+    void *args[] = {
+        (void *)ref,          (void *)&stride,      (void *)cmp,          (void *)&stride,
         (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu, (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
         (void *)&s->d_refcmp, (void *)&s->w_horiz,  (void *)&s->h_horiz,  (void *)&s->bpc,
     };
-    const bool is8 = (s->bpc == 8u);
-    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(
-        is8 ? s->func_horiz_8 : s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1u, SSIM_HIP_BLOCK_X,
-        SSIM_HIP_BLOCK_Y, 1u, 0, str, is8 ? args8 : args16, NULL));
+    hipFunction_t fn = s->func_horiz_f32;
+    if (!decimated)
+        fn = (s->bpc == 8u) ? s->func_horiz_8 : s->func_horiz_16;
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(fn, grid_horiz_x, grid_horiz_y, 1u,
+                                                      SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0,
+                                                      str, args, NULL));
 }
 
 /* Pass 2 (vertical 11-tap + SSIM combine + per-block partial sum) on `str`,
@@ -566,35 +659,34 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
     s->partials_count = grid_x * grid_y;
 
-    /* Copy both luma planes HtoD on the private stream, then dispatch
-     * Pass 1 (horiz Gaussian) and Pass 2 (vert + SSIM combine) on the
-     * same stream. VMAF_FEATURE_EXTRACTOR_HIP is not set (T7-10b
-     * posture), so pictures arrive as CPU VmafPictures. */
+    /* Copy both luma planes HtoD on the private stream, then dispatch the
+     * decimation (scale > 1), Pass 1 (horiz Gaussian) and Pass 2 (vert +
+     * SSIM combine) on the same stream. VMAF_FEATURE_EXTRACTOR_HIP is not
+     * set (T7-10b posture), so pictures arrive as CPU VmafPictures. */
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t row_w = (ptrdiff_t)(s->width * bpp);
+    const size_t row_bytes = (size_t)s->in_width * ssim_hip_bytes_per_sample(s);
 
     /* Returns once both pictures are read: the caller recycles them when
      * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
     const VmafHipPlaneUpload planes[] = {
         {.dst = s->ref_in,
-         .dst_pitch = (size_t)row_w,
+         .dst_pitch = row_bytes,
          .pic = ref_pic,
          .plane = 0u,
-         .row_bytes = (size_t)row_w,
-         .rows = s->height},
+         .row_bytes = row_bytes,
+         .rows = s->in_height},
         {.dst = s->cmp_in,
-         .dst_pitch = (size_t)row_w,
+         .dst_pitch = row_bytes,
          .pic = dist_pic,
          .plane = 0u,
-         .row_bytes = (size_t)row_w,
-         .rows = s->height},
+         .row_bytes = row_bytes,
+         .rows = s->in_height},
     };
     int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
-    if (err != 0)
-        return err;
-
-    err = ssim_hip_launch_horiz(s, str);
+    if (err == 0 && s->scale > 1)
+        err = ssim_hip_launch_decimate(s, str);
+    if (err == 0)
+        err = ssim_hip_launch_horiz(s, str);
     if (err != 0)
         return err;
 

@@ -1105,3 +1105,4 @@
 1400-hip-integer-ssim-raster-sum-small-frames
 1399-cuda-float-ssim-device-decimation
 1404-hip-float-motion-motion3-and-options
+1405-hip-float-ssim-device-decimation

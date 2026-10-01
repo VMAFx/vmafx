@@ -974,6 +974,17 @@ Rebase-sensitive invariants:
   load-bearing: hipcc default contraction fuses across statements), one
   double partial per block; host `fssim_hip_cpu_mean()` rounds mean to fp32.
   Do not bring back the combined Wang formula or `num == den ? 1`.
+- `float_ssim_hip` scale > 1 (ADR-1405): `calculate_ssim_hip_decimate_{8,16}bpc`
+  before pass 1 -> fp32 planes == CPU `iqa_decimate()` bit for bit. Window sum
+  = `float_ssim/ssim_decimate.h` (`vmaf_hip_ssim_decimate_sample`): fp32
+  `sample * tap`, int64 sum in 2^-52 units, one `(float)` round; symmetric
+  period-2n mirror, not the tile clamp. Plain C + HIP C++:
+  `test_hip_float_ssim_decimate` compiles the same lines vs `iqa_decimate()`.
+  Keep one copy; no fp32 running sum, no double round. Tap
+  `1.0f / (float)(scale * scale)` formed on host. Plane size
+  `iqa_decimate_dim()`. Pass 1 reads raw samples at scale 1
+  (`horiz_{8,16}bpc`), decimated planes above (`horiz_f32`); one template
+  body. `check_context_hip()` refuses only decimated < 11x11 or scale > 128.
 - `float_ssim_hip` `enable_lcs`: separate kernel
   `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
   (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),

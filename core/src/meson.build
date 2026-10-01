@@ -344,6 +344,9 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/float_moment_hip.h',
         'feature/hip/ciede_hip.h',
         'feature/hip/float_ssim_hip.h',
+        # ADR-1405: the float_ssim decimation, shared by the kernel and the
+        # device-free test.
+        'feature/hip/float_ssim/ssim_decimate.h',
         'feature/hip/integer_ssim_hip.h',
         'feature/hip/integer_ms_ssim_hip.h',
         'feature/hip/integer_psnr_hvs_hip.h',

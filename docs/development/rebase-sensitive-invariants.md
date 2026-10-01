@@ -223,6 +223,15 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
   [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
 
+- **HIP `float_ssim` decimation mirrors the CPU's ([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md))**:
+  `core/src/feature/hip/float_ssim/ssim_decimate.h` is the window sum of
+  `iqa/decimate.c::iqa_decimate()` with `ssim.c`'s box low-pass (int64
+  fixed-point sum, `KBND_SYMMETRIC`, `picture_copy()` scaling), compiled by
+  the kernel and by `core/test/test_hip_float_ssim_decimate.c`, which holds
+  it against `iqa_decimate()` byte for byte. A change on the CPU side of that
+  pipeline changes the header in the same PR. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
 - **CUDA RC3 CPU parity ([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md),
   [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
   [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md))**: both CUDA

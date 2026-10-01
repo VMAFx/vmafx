@@ -282,7 +282,9 @@ core/src/feature/hip/          # per-feature kernels
 - **`float_ssim_hip`** — two-pass separable 11-tap Gaussian kernel. Pass 1
   (horiz): five intermediate float buffers over (W-10)×H. Pass 2 (vert + SSIM
   combine): per-block float partial sum over (W-10)×(H-10). Host accumulates in
-  double. Emits `float_ssim`.
+  double. Emits `float_ssim`. Above scale 1 a decimation kernel runs first and
+  W×H is the decimated size; see
+  [float_ssim_hip at 1080p and 4K](#float_ssim_hip-at-1080p-and-4k).
 - **`integer_ciede_hip`** — HtoD copies of all 6 YUV planes (ref + dis Y/U/V),
   per-pixel YUV→Lab conversion, CIEDE2000 ΔE accumulation per block, host log10
   transform. Emits `ciede2000`. Warp-64 `__shfl_down` without mask.
@@ -798,11 +800,44 @@ it). The per-row commands, with the expected numbers and a timing run, are in
 `T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29` and
 `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26`.
 
+### float_ssim_hip at 1080p and 4K
+
+The CPU `float_ssim` decimates both planes before SSIM by
+`max(1, round(min(w, h) / 256))`: 1 below 384 px, 4 at 1920x1080, 8 at
+3840x2160; the `scale` option forces the factor. `float_ssim_hip` used to
+implement scale 1 only, so at 1080p and 4K `--backend hip --feature float_ssim`
+and models computed the feature on the CPU and printed
+`float_ssim_hip cannot run 3840x2160 8-bit pictures with these options`.
+Since [ADR-1405](../../adr/1405-hip-float-ssim-device-decimation.md) the twin
+decimates on the device, with the CPU's reduced planes bit for bit, and runs
+every size:
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv \
+     --width 3840 --height 2160 --pixel_format 420 --bitdepth 8 \
+     --backend hip --feature float_ssim \
+     --no_prediction --json --output ssim.json
+# ssim.json: "feature_backends": [{"extractor": "float_ssim_hip", "backend": "hip"}]
+```
+
+The twin falls back to the CPU extractor only when the decimated plane is
+smaller than the 11x11 SSIM window (for example 100x100 at `scale=10`) or the
+scale is above 128; `--feature float_ssim_hip` fails at init in those cases.
+
+Measured on a gfx1036 against `--backend cpu` at `--precision max`:
+
+| Clip | Scale | Max abs diff | Twin | CPU, 16 threads | Before (CPU fallback) |
+|---|---|---|---|---|---|
+| 3840x2160, 50 frames | 8 (auto) | 1.79e-6 | 5.5 ms/frame | 11.9 ms/frame | 19.7 ms/frame |
+| 1920x1080, 24 frames | 4 (auto) | 4.23e-6 | 2.0 ms/frame | 2.7 ms/frame | 6.6 ms/frame |
+| Netflix 576x324, 48 frames | 1 (auto) | 1.79e-7 | unchanged | — | — |
+| Netflix 576x324 | 2, 3, 5, 10 | at most 1.79e-7 | — | — | — |
+
 ### Measured on a gfx1036 (2026-10-01)
 
 | Check | Result |
 |---|---|
-| HIP device tests (`--suite gpu`, 52 tests) | all OK; the only skip marker is `test_hip_float_ssim_parity_large`, because `float_ssim_hip` does not decimate yet |
+| HIP device tests (`--suite gpu`, 52 tests) | all OK; the only skip marker was `test_hip_float_ssim_parity_large`, because `float_ssim_hip` did not decimate yet (it does since ADR-1405, and the test runs) |
 | `motion_hip` against `--backend cpu`, Netflix 576x324 pair | `motion2` / `motion3` identical (1.26e-5 apart before) |
 | Parity gate, `float_ssim float_ssim_lcs psnr motion_v2 vif` | every cell OK: 1.0e-5, 1.0e-5, 0, 0, 1.0e-6 |
 | `psnr_hip` with all four CPU options | every per-frame value and every `apsnr_*` identical to the CPU |

@@ -40,6 +40,7 @@ ISSIM_HOST = "integer_ssim_hip.c"
 ISSIM_KERNEL = "integer_ssim/integer_ssim_score.hip"
 FSSIM_HOST = "float_ssim_hip.c"
 FSSIM_KERNEL = "float_ssim/ssim_score.hip"
+FSSIM_DECIMATE = "float_ssim/ssim_decimate.h"
 FMOTION_HOST = "float_motion_hip.c"
 FMOTION_KERNEL = "float_motion/float_motion_score.hip"
 PICTURE = "picture_hip.c"
@@ -50,6 +51,10 @@ HOST_WAIT = re.compile(
     r"\b(?:hipStreamSynchronize|hipEventSynchronize|hipDeviceSynchronize|hipMemcpy|"
     r"hipMemcpy2D|vmaf_hip_picture_upload|vmaf_hip_kernel_collect_wait)\s*\("
 )
+# float_ssim decimation: the window index on both axes, and one window sum
+# per plane (reference, comparison) in the kernel.
+SSIM_DECIMATE_AXES = 2
+SSIM_PLANES = 2
 MOTION_DIFF_FIRST = re.compile(r"mv2_sample<T>\(prev[^;]*?\)\s*-\s*mv2_sample<T>\(cur", re.S)
 TILE_CLAMP = re.compile(r"vmaf_hip_tile_index\(\s*vmaf_hip_reflect_101\(")
 VERTICAL_ROUND = re.compile(r"\(\s*sum\s*\+\s*round_y\s*\)\s*>>\s*shift_y")
@@ -76,6 +81,7 @@ def _sources() -> dict[str, str]:
         ISSIM_KERNEL,
         FSSIM_HOST,
         FSSIM_KERNEL,
+        FSSIM_DECIMATE,
         FMOTION_HOST,
         FMOTION_KERNEL,
     )
@@ -175,6 +181,37 @@ def _motion_v2_failures(motion_v2: str) -> list[str]:
         failures.append("integer_motion_v2_hip.c: motion2_v2 weights the stored SAD again")
     if "if (n_frames == 0u)" not in _function_body(motion_v2, "flush_fex_hip"):
         failures.append("integer_motion_v2_hip.c: a one-frame run skips motion2_v2 / motion3_v2")
+    return failures
+
+
+def _float_ssim_decimation_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1405: float_ssim_hip decimates on the device with the CPU's arithmetic."""
+    failures: list[str] = []
+    header = src[FSSIM_DECIMATE]
+    sample = _function_body(
+        header.replace("VMAF_HIP_HOST_DEVICE float", "static float"),
+        "vmaf_hip_ssim_decimate_sample",
+    )
+    if "int64_t sum = 0;" not in sample or "sum += vmaf_hip_ssim_fixed(product);" not in sample:
+        failures.append(f"{FSSIM_DECIMATE}: the window is not summed exactly in int64")
+    if "return (float)sum * VMAF_HIP_SSIM_FIXED_INV;" not in sample:
+        failures.append(f"{FSSIM_DECIMATE}: the window sum is not rounded to fp32 once")
+    if sample.count("vmaf_hip_ssim_symmetric_index(") != SSIM_DECIMATE_AXES:
+        failures.append(f"{FSSIM_DECIMATE}: a window index skips the CPU's symmetric mirror")
+    kernel = src[FSSIM_KERNEL]
+    if kernel.count("vmaf_hip_ssim_decimate_sample(&d, centre_x, centre_y);") != SSIM_PLANES:
+        failures.append(f"{FSSIM_KERNEL}: the decimation kernel has its own copy of the window sum")
+    host = src[FSSIM_HOST]
+    submit = _function_body(host, "submit_fex_hip")
+    if not re.search(
+        r"if \(err == 0 && s->scale > 1\)\s*err = ssim_hip_launch_decimate\(s, str\);", submit
+    ):
+        failures.append(f"{FSSIM_HOST}: a scale above 1 does not run the device decimation")
+    launch = _function_body(host, "ssim_hip_launch_decimate")
+    if "1.0f / (float)(s->scale * s->scale)" not in launch or HOST_WAIT.search(launch):
+        failures.append(f"{FSSIM_HOST}: the decimation launch is not the CPU's tap, or it waits")
+    if "(unsigned)iqa_decimate_dim((int)extent, scale)" not in host:
+        failures.append(f"{FSSIM_HOST}: the decimated plane is not sized by iqa_decimate_dim()")
     return failures
 
 
@@ -312,6 +349,7 @@ def _failures(src: dict[str, str]) -> list[str]:
         + _guard_failures(src)
         + _option_failures(src)
         + _staging_failures(src)
+        + _float_ssim_decimation_failures(src)
     )
 
 
@@ -509,6 +547,46 @@ class HipKernelSourceContractTest(unittest.TestCase):
     def test_double_float_ssim_mean_is_detected(self) -> None:
         src = _replace(_sources(), FSSIM_HOST, "*mean = (double)(float)ratio;", "*mean = ratio;")
         self.assert_detected(src, "rounded to fp32")
+
+    def test_fp32_float_ssim_decimation_sum_is_detected(self) -> None:
+        src = _replace(_sources(), FSSIM_DECIMATE, "    int64_t sum = 0;\n", "    float sum = 0;\n")
+        self.assert_detected(src, "not summed exactly in int64")
+
+    def test_double_rounded_float_ssim_decimation_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_DECIMATE,
+            "return (float)sum * VMAF_HIP_SSIM_FIXED_INV;",
+            "return (float)((double)sum * VMAF_HIP_SSIM_FIXED_INV);",
+        )
+        self.assert_detected(src, "not rounded to fp32 once")
+
+    def test_clamped_float_ssim_decimation_edge_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_DECIMATE,
+            "vmaf_hip_ssim_symmetric_index(centre_x + c - half, (int)d->width)",
+            "vmaf_hip_tile_index(centre_x + c - half, (int)d->width)",
+        )
+        self.assert_detected(src, "skips the CPU's symmetric mirror")
+
+    def test_skipped_float_ssim_decimation_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_HOST,
+            "    if (err == 0 && s->scale > 1)\n        err = ssim_hip_launch_decimate(s, str);\n",
+            "",
+        )
+        self.assert_detected(src, "does not run the device decimation")
+
+    def test_floor_sized_float_ssim_plane_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_HOST,
+            "(unsigned)iqa_decimate_dim((int)extent, scale)",
+            "extent / (unsigned)scale",
+        )
+        self.assert_detected(src, "not sized by iqa_decimate_dim()")
 
     def test_unclamped_float_motion_tile_is_detected(self) -> None:
         src = _replace(

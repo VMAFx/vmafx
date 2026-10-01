@@ -762,8 +762,10 @@ report the CPU's `+inf` or `clip_db` ceiling on the device too
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). `float_ssim_sycl`
 decimates on the device at the automatic scale and every explicit one, with
 the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
-SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the
-HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
+SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)).
+`float_ssim_hip` does the same on AMD devices
+([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md)). The Metal
+`float_ssim` twin computes scale 1 only and leaves larger
 scales to the CPU extractor. The CUDA twins
 `integer_ssim_cuda` and `float_ssim_cuda` implement the same options
 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)); `float_ssim_cuda`

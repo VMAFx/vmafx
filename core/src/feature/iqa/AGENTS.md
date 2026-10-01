@@ -10,7 +10,7 @@ shared 11-tap Gaussian convolve. Parent: [../AGENTS.md](../AGENTS.md).
 feature/iqa/
   convolve.{c,h}              # iqa_convolve / iqa_convolve_2d / 1D-separable scalar
   decimate.{c,h}              # iqa_decimate (used by MS-SSIM scalar)
-  decimate_dim.h              # iqa_decimate_dim: decimated size, shared with SYCL + CUDA float_ssim
+  decimate_dim.h              # iqa_decimate_dim: decimated size, shared with SYCL, CUDA + HIP float_ssim
   iqa.h                       # Public-facing iqa_* declarations
   iqa_options.h               # IQA_CONVOLVE_2D / IQA_CONVOLVE_1D / IQA_BND_* enums
   iqa_os.h                    # OS-portability shims (alignment, restrict)
@@ -60,6 +60,15 @@ accumulated several load-bearing modifications on top.
   product type, sum type or `(float)(sum * scale)` rounding here -> change
   that kernel in same PR; `test_cuda_float_ssim_parity` asserts equality
   with CPU and fails otherwise.
+
+- **The HIP `float_ssim` decimation mirrors the same reference**
+  (ADR-1405). `../hip/float_ssim/ssim_decimate.h`
+  (`vmaf_hip_ssim_decimate_sample`) is that window sum in plain C and HIP
+  C++; `../hip/float_ssim_hip.c` sizes its planes with `iqa_decimate_dim()`.
+  `core/test/test_hip_float_ssim_decimate.c` compares it with
+  `iqa_decimate()` byte for byte on every build with HIP enabled, so a change
+  to `iqa_filter_pixel()`, `KBND_SYMMETRIC`, `iqa_decimate()` or the tap of
+  `ssim_low_pass_alloc()` fails that test until the header follows.
 
 - **`ssim_tools.c::ssim_accumulate_default_scalar` defines
   ADR-0139 reduction shape.** Two `2.0 *` literals
