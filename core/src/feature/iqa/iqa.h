@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011, Tom Distler (http://tdistler.com)
+ * SPDX-License-Identifier: BSD-3-Clause
  * All rights reserved.
  *
  * The BSD License
@@ -31,8 +32,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _IQA_H_
-#define _IQA_H_
+#ifndef IQA_H
+#define IQA_H
 
 #include "iqa_os.h"
 
@@ -64,4 +65,4 @@ struct iqa_ms_ssim_args {
         gammas; /**< Pointer to array of gamma values for each scale. Required if 'scales' isn't 5. */
 };
 
-#endif /*_IQA_H_*/
+#endif /* IQA_H */
