@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -15,8 +16,6 @@
  *     limitations under the License.
  *
  */
-
-#pragma once
 
 #ifndef MOMENT_OPTIONS_H_
 #define MOMENT_OPTIONS_H_
