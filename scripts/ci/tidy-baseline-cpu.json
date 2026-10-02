@@ -314,7 +314,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 404,
+  "total_warnings": 403,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -330,7 +330,6 @@
     "core/src/feature/adm_csf_tools.h": 2,
     "core/src/feature/adm_options.h": 1,
     "core/src/feature/adm_tools.h": 142,
-    "core/src/feature/alias.c": 1,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_ms_ssim.c": 2,

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -15,6 +16,8 @@
  *     limitations under the License.
  *
  */
+
+#include "alias.h"
 
 #include <stdbool.h>
 #include <string.h>
