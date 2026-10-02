@@ -2088,7 +2088,6 @@ libvmaf_feature_sources = [
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',
     feature_src_dir + 'integer_vif.c',
-    feature_src_dir + 'ciede.c',
     feature_src_dir + 'delta_e_itp.c',
     # NIQE (no-reference, ADR-1112) — scalar CPU extractor; pristine MVG model
     # embedded as niqe_model.h, numeric kernels in niqe_math.h.
@@ -2358,6 +2357,44 @@ libvmaf_psnr_hvs_scalar_static_lib = static_library(
     c_args: vmaf_cflags_common + vmaf_strict_fp_args,
 )
 
+# ciede.c carve-out (ADR-1467): its powf() calls are calls of the C library.
+# get_r_sub_t() writes `powf(degrees, 2)`. GCC emits the call; clang replaces
+# it by `degrees * degrees`, the correctly rounded square. glibc's powf is not
+# correctly rounded: on 0.12 % of the arguments, all of them exact ties, it
+# returns the other neighbouring float. A clang build and a GCC build of this
+# one file therefore returned different `ciede2000` scores, by up to 2.0e-11,
+# on x86-64 and aarch64 alike. The GCC build is the reference of the Netflix
+# golden values, so clang is told to keep the call. GCC takes no argument and
+# its object is unchanged.
+# The file is Netflix's, so the policy is here rather than in the source,
+# which keeps the next upstream sync a clean diff.
+# The library names vmaf_strict_fp_args like the carve-outs around it: with the
+# call kept, contraction is what would still separate two builds of this file
+# (aarch64 clang fuses its `a * b + c`).
+# core/test/test_ciede_libm_call_args.py pins the policy, test_ciede_powf_call
+# and test_ciede_device_math compare the built code with a library call.
+# BEGIN VMAF libm call policy
+# clang and Apple's clang replace `powf(x, 2)` by a product and share their C
+# library with a GCC build of the same platform, so they take
+# -fno-builtin-powf. GCC emits the call and takes nothing. icx folds the call
+# too but is left alone: it links Intel's math library, so its build differs
+# from a GCC build in ciede whatever this call does, and the product is the
+# value the GPU twins compute (ADR-1426, ADR-1436, ADR-1448). cl.exe and the
+# clang-cl drivers take nothing: a Windows build calls the UCRT's powf().
+_libm_call_compiler_id = cc.get_id()
+vmaf_libm_call_args = []
+if ['clang', 'apple-clang'].contains(_libm_call_compiler_id)
+    vmaf_libm_call_args = ['-fno-builtin-powf']
+endif
+# END VMAF libm call policy
+libvmaf_ciede_static_lib = static_library(
+    'libvmaf_ciede',
+    feature_src_dir + 'ciede.c',
+    include_directories : [libvmaf_include, vmaf_include, cuda_dir],
+    dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
+    c_args: vmaf_cflags_common + vmaf_strict_fp_args + vmaf_libm_call_args,
+)
+
 libvmaf_ssimulacra2_static_lib = static_library(
     'libvmaf_ssimulacra2',
     feature_src_dir + 'ssimulacra2.c',
@@ -2408,7 +2445,8 @@ libvmaf_feature_static_lib = static_library(
               libvmaf_psnr_hvs_scalar_static_lib.extract_all_objects(recursive: false),
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false),
               libvmaf_y_funque_plus_static_lib.extract_all_objects(recursive: false),
-              gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)]
+              gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
+              libvmaf_ciede_static_lib.extract_all_objects(recursive: false)]
 )
 
 libsvm_cpp_args = vmaf_cflags_common

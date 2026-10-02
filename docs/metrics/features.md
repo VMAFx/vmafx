@@ -939,6 +939,31 @@ chroma — **does not accept 4:0:0**.
 
 **Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
+**Compilers and the CPU score.** A GCC build and a clang build return the
+same `ciede2000` on x86-64 and on aarch64
+([ADR-1467](../adr/1467-ciede-powf-library-call.md)). The formula's rotation
+term squares a `float` with `powf(x, 2)`. GCC calls the C library; clang
+replaces the call by a product, which is the correctly rounded square, and
+glibc's `powf` returns the other neighbouring `float` on about 0.12 % of the
+arguments. A clang build therefore used to differ from a GCC build on 65 of
+180 measured frames, by at most 2.0e-11. The build now keeps the call under
+clang (`-fno-builtin-powf` for `ciede.c` alone), so both compilers compute
+what the GCC build always computed; a GCC build is unchanged. The price is
+three more `powf` calls per pixel in a clang build: 3 % to 9 % of the
+extractor's time in two runs on a busy host (482 to 518 ms per 1920x1080 frame
+against 444 to 502 on one core of a Ryzen 9 9950X3D; a GCC build takes about
+670 ms). An icx
+build links Intel's math library and differs from a GCC build by up to 1.4e-11
+on the same frames, before and after. Check two builds with:
+
+```bash
+for cc in gcc clang; do
+  build-$cc/tools/vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+      --no_prediction --feature ciede --precision max --json -o ciede-$cc.json
+done
+diff <(grep -v '"fps"' ciede-gcc.json) <(grep -v '"fps"' ciede-clang.json)
+```
+
 **`ciede_cuda` and the CPU.** The CUDA twin evaluates the CPU's formula in
 the CPU's precision (double, with `float` stores where the CPU has them) and
 adds the per-pixel values in the CPU's order
