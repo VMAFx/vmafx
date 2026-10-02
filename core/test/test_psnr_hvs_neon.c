@@ -17,9 +17,10 @@
  *   - Single 8x8 integer DCT: random 12-bit input across several
  *     seeds; byte-equal coefficient output verified via `memcmp`.
  *
- * Full calc_psnrhvs end-to-end bit-exactness is validated through
- * CLI round-trip against the Netflix golden pair under scalar vs
- * NEON. See the deep-dive digest accompanying this PR.
+ * This test stops at the DCT. The whole calc_psnrhvs_neon() path
+ * (means, variances, masking threshold, error sum) is compared with
+ * the shipped scalar function, bits for bits, by
+ * test_psnr_hvs_dispatch_invariance.
  *
  * Boilerplate (xorshift PRNG, bit-exact memcmp assertion) is
  * provided by `simd_bitexact_test.h` (ADR-0245).

@@ -95,44 +95,37 @@ static inline __m256i od_mulrshift_avx2(__m256i x, int32_t k, int32_t round, int
 }
 
 /*
- * Apply the scalar `od_bin_fdct8` butterfly network to 8 columns
- * in parallel. `in0..in7` are the 8 input rows (each an __m256i
- * with one column-element per lane after the pre-butterfly
- * transpose); the outputs are written back via `out0..out7` in
- * natural (row-major within the 8-point butterfly) order.
- *
- * The scalar reference applies a fixed 8-element input permutation
- * before the first butterfly (see `od_bin_fdct8`):
- *   t0=x[0], t4=x[1], t2=x[2], t6=x[3], t7=x[4], t3=x[5], t5=x[6], t1=x[7]
- * and writes `y[0..7] = t0..t7` unchanged. Mirroring that here
- * keeps the line-by-line diff against the scalar source trivially
- * auditable. The byte-for-byte mapping to the scalar ops is
- * one-to-one; line comments mirror the scalar source so that a
- * reviewer can diff them side-by-side.
- *
- * ADR-0141 §2 / ADR-0159 / ADR-0278: the 30-butterfly network must be kept
- * together — splitting it would break the one-to-one scalar diff that the
- * bit-exactness audit depends on. The scalar `od_bin_fdct8` has the same
- * structure. The full citation lives in this comment, not on the directive
- * line below: that directive applies to the single line following it, so
- * wrapping the justification onto a second `//` line would point the
- * suppression at the comment and let the diagnostic through.
+ * The working values of the scalar `od_bin_fdct8`, under the names it gives
+ * them. `t1h` is the half difference the odd stage takes from the even stage.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
-static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m256i in3,
-                                     __m256i in4, __m256i in5, __m256i in6, __m256i in7,
-                                     __m256i *out0, __m256i *out1, __m256i *out2, __m256i *out3,
-                                     __m256i *out4, __m256i *out5, __m256i *out6, __m256i *out7)
+typedef struct {
+    __m256i t0;
+    __m256i t1;
+    __m256i t2;
+    __m256i t3;
+    __m256i t4;
+    __m256i t5;
+    __m256i t6;
+    __m256i t7;
+    __m256i t1h;
+} od_fdct8_state;
+
+/*
+ * The first 21 statements of the scalar `od_bin_fdct8`, in its order: the
+ * +1/-1 butterflies and the even half (the embedded 4-point and 2-point
+ * type-II DCT and the 2-point type-IV DST). t0, t2, t4 and t6 are final after
+ * it; t1, t3, t5, t7 and `t1h` go on to the odd stage.
+ */
+static inline void od_bin_fdct8_even_simd(od_fdct8_state *s)
 {
-    /* Initial permutation: mirror scalar `od_bin_fdct8` reads. */
-    __m256i t0 = in0;
-    __m256i t4 = in1;
-    __m256i t2 = in2;
-    __m256i t6 = in3;
-    __m256i t7 = in4;
-    __m256i t3 = in5;
-    __m256i t5 = in6;
-    __m256i t1 = in7;
+    __m256i t0 = s->t0;
+    __m256i t1 = s->t1;
+    __m256i t2 = s->t2;
+    __m256i t3 = s->t3;
+    __m256i t4 = s->t4;
+    __m256i t5 = s->t5;
+    __m256i t6 = s->t6;
+    __m256i t7 = s->t7;
     __m256i t1h;
     __m256i t4h;
     __m256i t6h;
@@ -172,6 +165,29 @@ static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m2
     /* 21895/32768 */
     t6 = _mm256_sub_epi32(t6, od_mulrshift_avx2(t2, 21895, 16384, 15));
 
+    s->t0 = t0;
+    s->t1 = t1;
+    s->t2 = t2;
+    s->t3 = t3;
+    s->t4 = t4;
+    s->t5 = t5;
+    s->t6 = t6;
+    s->t7 = t7;
+    s->t1h = t1h;
+}
+
+/*
+ * The remaining 13 statements of the scalar `od_bin_fdct8`: the embedded
+ * 4-point type-IV DST on the odd half.
+ */
+static inline void od_bin_fdct8_odd_simd(od_fdct8_state *s)
+{
+    __m256i t1 = s->t1;
+    __m256i t3 = s->t3;
+    __m256i t5 = s->t5;
+    __m256i t7 = s->t7;
+    const __m256i t1h = s->t1h;
+
     /* Embedded 4-point type-IV DST. */
     /* 19195/32768 ~= 2 - sqrt(2) */
     t3 = _mm256_add_epi32(t3, od_mulrshift_avx2(t5, 19195, 16384, 15));
@@ -196,14 +212,59 @@ static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m2
     /* 2485/8192 */
     t5 = _mm256_add_epi32(t5, od_mulrshift_avx2(t3, 2485, 4096, 13));
 
-    *out0 = t0;
-    *out1 = t1;
-    *out2 = t2;
-    *out3 = t3;
-    *out4 = t4;
-    *out5 = t5;
-    *out6 = t6;
-    *out7 = t7;
+    s->t1 = t1;
+    s->t3 = t3;
+    s->t5 = t5;
+    s->t7 = t7;
+}
+
+/*
+ * Apply the scalar `od_bin_fdct8` butterfly network to 8 columns
+ * in parallel. `in0..in7` are the 8 input rows (each an __m256i
+ * with one column-element per lane after the pre-butterfly
+ * transpose); the outputs are written back via `out0..out7` in
+ * natural (row-major within the 8-point butterfly) order.
+ *
+ * The scalar reference applies a fixed 8-element input permutation
+ * before the first butterfly (see `od_bin_fdct8`):
+ *   t0=x[0], t4=x[1], t2=x[2], t6=x[3], t7=x[4], t3=x[5], t5=x[6], t1=x[7]
+ * and writes `y[0..7] = t0..t7` unchanged. Mirroring that here
+ * keeps the line-by-line diff against the scalar source trivially
+ * auditable. The byte-for-byte mapping to the scalar ops is
+ * one-to-one; line comments mirror the scalar source so that a
+ * reviewer can diff them side-by-side.
+ *
+ * The network is the two functions above (ADR-1469): the 34 statements of
+ * the scalar, in its order and under its names, cut once where the even
+ * outputs are final. The NEON twin is cut at the same statement, so the three
+ * sources still read side by side.
+ */
+static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m256i in3,
+                                     __m256i in4, __m256i in5, __m256i in6, __m256i in7,
+                                     __m256i *out0, __m256i *out1, __m256i *out2, __m256i *out3,
+                                     __m256i *out4, __m256i *out5, __m256i *out6, __m256i *out7)
+{
+    /* Initial permutation: mirror scalar `od_bin_fdct8` reads. */
+    od_fdct8_state s = {
+        .t0 = in0,
+        .t4 = in1,
+        .t2 = in2,
+        .t6 = in3,
+        .t7 = in4,
+        .t3 = in5,
+        .t5 = in6,
+        .t1 = in7,
+    };
+    od_bin_fdct8_even_simd(&s);
+    od_bin_fdct8_odd_simd(&s);
+    *out0 = s.t0;
+    *out1 = s.t1;
+    *out2 = s.t2;
+    *out3 = s.t3;
+    *out4 = s.t4;
+    *out5 = s.t5;
+    *out6 = s.t6;
+    *out7 = s.t7;
 }
 
 /*

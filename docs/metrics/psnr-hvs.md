@@ -59,6 +59,42 @@ CPU / CUDA / HIP / SYCL on odd-dimension frames. (The SYCL path previously
 floored the chroma dimensions, dropping the last chroma column/row on odd
 inputs and diverging from the other backends.)
 
+## CPU instruction sets
+
+The CPU extractor binds one of three functions per plane: the scalar
+`calc_psnrhvs()` (`third_party/xiph/psnr_hvs.c`), `calc_psnrhvs_avx2()` on x86
+hosts with AVX2, and `calc_psnrhvs_neon()` on aarch64. All three return the
+same bits. The SIMD functions vectorise the integer DCT, which has no rounding,
+and keep every float operation in the scalar's order: the means and variances,
+the masking threshold `sqrt((double)mask * variance_ratio) / 32`, and the
+running `float` sum of the masked errors.
+
+`test_psnr_hvs_dispatch_invariance` holds the extractor to that through the
+public API: 165 picture pairs (blocks recorded from the Netflix pair, generated
+texture, random samples, the fixtures of the GPU twin comparison and edge
+inputs, at 8 to 12 bits and in every chroma layout), each scored with the
+host's instruction set and with every flag masked, all four outputs compared
+bit for bit. Check a build on your own content with:
+
+```bash
+# x86: --cpumask 63 masks every flag; aarch64: --cpumask 3
+for m in 0 63; do
+  vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --cpumask $m \
+       --no_prediction --feature psnr_hvs --precision max --json -o mask$m.json
+done
+diff <(grep -v '"fps"' mask0.json) <(grep -v '"fps"' mask63.json)
+```
+
+Until 2026-10-02 the NEON function multiplied the two `float` factors of the
+threshold as `float`, which rounds the product before the square root; the
+threshold was one `float` step off on about one block in twenty of real
+content. Most of those differences vanish in the running sum, so a frame
+differed only now and then: 29 of 708 scores on 14 of 177 frames of the
+measured content (the Netflix 576x324 pair at 8, 10 and 12 bits and as 10-bit
+4:2:2, Sparks, both 1920x1080 checkerboard pairs, Big Buck Bunny at 1920x1080
+and 3840x2160), by at most 5.7e-7 dB. An aarch64 build now returns the scalar
+and the x86-64 scores on all of them.
+
 ## GPU twins
 
 ### Sample conversion

@@ -58353,3 +58353,30 @@ ADR-1403 unchanged.
   `core/src/meson.build` spells them changes (`-fsycl`, the `-device` list,
   `-MD -MF`, `-o`), its `for_targets()` changes with it.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+
+## `psnr_hvs` NEON masking threshold takes the scalar's double product; ADR-1469 — the SIMD butterfly is two functions (2026-10-02)
+
+`fix/psnr-hvs-neon-scalar-bits`, `T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02`.
+
+- `core/src/feature/arm64/psnr_hvs_neon.c` `compute_masks()` now reads
+  `(float)(sqrt((double)b->s_mask * b->s_gvar) / 32.0)`, the expression of
+  `third_party/xiph/psnr_hvs.c` (`sqrt((double)s_mask * s_gvar) / 32.f`) and of
+  `x86/psnr_hvs_avx2.c`. Keep the cast in all three: without it the product
+  is a `float` product and the threshold is one `float` step off on about one
+  block in twenty.
+- An upstream change to `calc_psnrhvs()` (Netflix or xiph) is mirrored in
+  `x86/psnr_hvs_avx2.c` and `arm64/psnr_hvs_neon.c` in the same PR;
+  `core/test/test_psnr_hvs_dispatch_invariance.c` (new) fails on x86-64 or
+  under `qemu-aarch64` when one of the three leaves the others.
+- The test includes `core/test/psnr_hvs_twin_parity.h` for its fixtures; a
+  change to `HvsFixture` or `hvs_fill_pic()` there reaches it.
+- ADR-1469: `od_bin_fdct8_simd()` in `x86/psnr_hvs_avx2.c` and
+  `arm64/psnr_hvs_neon.c` calls two stages, `od_bin_fdct8_even_simd()` (the
+  first 21 statements of the scalar `od_bin_fdct8()`) and
+  `od_bin_fdct8_odd_simd()` (the other 13), over an `od_fdct8_state`. The
+  statements are unchanged. An upstream change to the scalar butterfly goes
+  into the matching stage of both files; a conflict in the old single
+  function is resolved by taking this side and re-applying the statement.
+- No Netflix golden-data, public API or FFmpeg patch impact. x86-64 scores and
+  the scalar path are unchanged; aarch64 NEON scores move by at most 5.7e-7 dB
+  onto the scalar's.
