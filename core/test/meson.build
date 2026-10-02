@@ -65,6 +65,18 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# ADR-1467: ciede.c's powf() calls are calls of the C library. Executes the
+# compiler-id policy of src/meson.build, checks that one library holds ciede.c
+# with that list and that the ciede tests are built with it, and reads the
+# command this build compiles ciede.c with.
+test('test_ciede_libm_call_args',
+    import('python').find_installation(),
+    args : files('test_ciede_libm_call_args.py'),
+    env : ['VMAF_LIBM_CALL_BUILD_ROOT=' + meson.project_build_root()],
+    suite : ['fast'],
+    timeout : 90,
+)
+
 # ADR-1360: the build-time SYCL AOT image check, driven by synthetic ELF
 # fixtures so it runs on every host, oneAPI or not.
 test('test_sycl_aot_image_check',
@@ -1351,24 +1363,46 @@ test_ciede = executable('test_ciede',
     dependencies: [pthread_dependency, gpu_all_deps],
 )
 
+# ADR-1467: ciede.c's powf() calls are calls of the C library. The test
+# includes ciede.c and is built with the argument list of the library's own
+# ciede.c (libvmaf_ciede_static_lib in ../src/meson.build), then compares
+# get_r_sub_t() with the same expression called through a volatile function
+# pointer. Registered for the compilers the policy holds to the library call
+# (GCC, clang, Apple's clang) and not on Windows: icx folds the call and links
+# Intel's math library, and a Windows build calls the UCRT's powf(); the
+# reference values of a glibc build describe neither.
+if ['gcc', 'clang', 'apple-clang'].contains(cc.get_id()) and host_machine.system() != 'windows'
+test_ciede_powf_call = executable('test_ciede_powf_call',
+    ['test.c', 'test_ciede_powf_call.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps, math_lib],
+    c_args : vmaf_strict_fp_args + vmaf_libm_call_args,
+)
+test('test_ciede_powf_call', test_ciede_powf_call, suite : ['fast'])
+endif
+
 # ADR-1426 — the arithmetic ciede_cuda's kernel runs
 # (src/feature/cuda/integer_ciede/ciede_device.h), compiled for the host and
 # replayed over whole frames against the CPU extractor, bit for bit. No CUDA
 # build is needed: the header is plain C on the host and the reference is
 # reached through the public API. The header's fp64 expressions round like
-# the device's only without FMA contraction (hence the flag), and ciede.c is
-# contraction-free by construction on x86-64 only (its baseline has no FMA),
-# so the test is registered there.
-if host_machine.cpu_family() == 'x86_64'
+# the device's only without FMA contraction (hence the flag). ciede.c is built
+# without contraction too since ADR-1467 (libvmaf_ciede_static_lib), so the
+# test runs on every architecture; it was x86-64 only while ciede.c was
+# contraction-free only where the baseline has no FMA.
 test_ciede_device_math = executable('test_ciede_device_math',
     ['test.c', 'test_ciede_device_math.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, gpu_all_deps, math_lib],
-    c_args : vmaf_strict_fp_args,
+    # vmaf_libm_call_args (ADR-1467): the header's host powf() is the C
+    # library's, as ciede.c's is. With the list on both sides the replay also
+    # guards the library's object: a ciede.c built with a folded call fails
+    # the 16-bit case.
+    c_args : vmaf_strict_fp_args + vmaf_libm_call_args,
 )
 test('test_ciede_device_math', test_ciede_device_math, suite : ['fast'])
-endif
 
 test_delta_e_itp = executable('test_delta_e_itp',
     ['test.c', 'test_delta_e_itp.c'],

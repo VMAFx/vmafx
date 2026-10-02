@@ -1165,3 +1165,4 @@
 1462-cuda-vif-reads-host-log2-table
 1459-speed-cov-kernel-exact
 1468-sycl-sub-group-sizes-every-aot-target
+1467-ciede-powf-library-call

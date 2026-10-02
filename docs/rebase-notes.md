@@ -58353,3 +58353,34 @@ ADR-1403 unchanged.
   `core/src/meson.build` spells them changes (`-fsycl`, the `-device` list,
   `-MD -MF`, `-o`), its `for_targets()` changes with it.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+
+## ADR-1467 — `ciede.c` is built in its own library and keeps its `powf()` calls under clang (2026-10-02)
+
+`fix/ciede-powf-explicit`, `T-CIEDE-CLANG-POWF-BUILTIN-2026-10-02`.
+
+- `core/src/meson.build`: `feature/ciede.c` left `libvmaf_feature_sources` for
+  `libvmaf_ciede_static_lib` (`c_args : vmaf_cflags_common +
+  vmaf_strict_fp_args + vmaf_libm_call_args`), whose objects
+  `libvmaf_feature_static_lib` takes back. A rebase that re-adds `ciede.c` to
+  the feature list compiles it twice (duplicate symbols) and loses the flag:
+  keep it in the carve-out only. `core/test/test_ciede_libm_call_args.py`
+  fails on either.
+- `vmaf_libm_call_args` is defined between `# BEGIN VMAF libm call policy` and
+  `# END VMAF libm call policy`: `-fno-builtin-powf` for `clang` and
+  `apple-clang`, empty otherwise. GCC must keep an empty list (its object is
+  the reference) and icx too (Intel's math library).
+- `ciede.c` itself is unchanged. Do not replace `powf(degrees, 2)` by
+  `degrees * degrees` there when porting an upstream change: it moves the GCC
+  build. A change to `get_r_sub_t()` upstream is mirrored in
+  `core/test/test_ciede_powf_call.c` (`r_sub_t_library_calls()`), in
+  `feature/ciede_ff_math.h` (`r_sub_t()`) and in
+  `feature/cuda/integer_ciede/ciede_device.h` (`ciede_r_sub_t()`).
+- `core/test/meson.build`: `test_ciede_powf_call` (new; GCC, clang and Apple's
+  clang, not on Windows) and `test_ciede_device_math` take
+  `vmaf_strict_fp_args + vmaf_libm_call_args`; the latter is no longer
+  x86-64 only.
+- Once ADR-1461 (#1829, the strict FP policy as a project argument) is on
+  master, `vmaf_strict_fp_args` in the carve-out repeats the project argument,
+  like the carve-outs around it; nothing to resolve.
+- No Netflix golden-data, public API or FFmpeg patch impact. GCC builds are
+  unchanged; clang builds move by at most 2.0e-11 in `ciede2000`.
