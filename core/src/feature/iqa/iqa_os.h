@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011, Tom Distler (http://tdistler.com)
+ * SPDX-License-Identifier: BSD-3-Clause
  * All rights reserved.
  *
  * The BSD License
@@ -31,8 +32,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _OS_H_
-#define _OS_H_
+#ifndef IQA_OS_H
+#define IQA_OS_H
 
 /* Microsoft tends to implement features early, but they have a high legacy
  * cost because they won't break existing implementations. As such, certain
@@ -63,4 +64,4 @@ static const unsigned long __nan[2] = {0xffffffff, 0x7fffffff};
 
 #endif
 
-#endif /* _OS_H_ */
+#endif /* IQA_OS_H */
