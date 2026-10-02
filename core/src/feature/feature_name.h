@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_FEATURE_NAME_H__
-#define __VMAF_FEATURE_NAME_H__
+#ifndef VMAF_FEATURE_NAME_H
+#define VMAF_FEATURE_NAME_H
 
 #include "dict.h"
 #include "opt.h"
@@ -36,4 +37,4 @@ VmafDictionary *vmaf_feature_name_dict_from_provided_features(const char **provi
 }
 #endif
 
-#endif /* __VMAF_FEATURE_NAME_H__ */
+#endif /* VMAF_FEATURE_NAME_H */
