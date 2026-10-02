@@ -66,7 +66,7 @@ matches the `Backends` column in
 | `float_psnr`   | yes         | no          | per-plane float PSNR                                          |
 | `ciede`        | yes         | no          | YUV → CIELAB ΔE                                               |
 | `psnr`         | yes         | no          | fixed-point per-plane                                         |
-| `psnr_hvs`     | yes         | no          | bit-identical to scalar — see [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md) |
+| `psnr_hvs`     | yes         | no          | the scalar function's bits, on every plane and frame — see [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md) and [`psnr_hvs`](../../metrics/psnr-hvs.md#cpu-instruction-sets) |
 | `ssim` / `float_ssim` | yes  | no          | shared decimate kernel                                        |
 | `float_ms_ssim`| yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`        |
 | `ssimulacra2`  | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
@@ -78,8 +78,13 @@ matches the `Backends` column in
 NEON outputs are byte-identical to the scalar C reference for the
 features that ship a determinism contract:
 
-- `psnr_hvs` — pinned by ADR-0160; verified across all three Netflix
-  golden pairs.
+- `psnr_hvs` — pinned by ADR-0160. `test_psnr_hvs_dispatch_invariance`
+  scores the extractor with NEON and with every flag masked and compares
+  the four outputs bit for bit; `test_psnr_hvs_neon` compares the integer
+  DCT alone. The NEON function returned other bits than the scalar one on
+  about one 8x8 block in twenty until the masking threshold took the
+  scalar's `double` product (see
+  [`psnr_hvs`](../../metrics/psnr-hvs.md#cpu-instruction-sets)).
 - `ssimulacra2` — pinned by ADR-0161 / ADR-0162 / ADR-0163 / ADR-0213;
   cross-host determinism via `vmaf_ss2_cbrtf` and the sRGB-EOTF LUT.
   The SVE2 sister TU is locked to a fixed 4-lane predicate

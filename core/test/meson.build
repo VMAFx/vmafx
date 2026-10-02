@@ -2612,6 +2612,22 @@ test_cambi_dispatch_invariance = executable('test_cambi_dispatch_invariance',
 )
 test('test_cambi_dispatch_invariance', test_cambi_dispatch_invariance,
     suite : ['fast', 'simd'])
+
+# psnr_hvs whole-path dispatch invariance (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-
+# 2026-10-02): the extractor, driven through the public API with the host's
+# instruction set and with every flag masked, returns the same score bits on
+# blocks recorded from the Netflix pair, generated texture, random samples, the
+# CPU-vs-GPU twin fixtures and edge inputs at 8 to 12 bits. The kernel tests
+# (test_psnr_hvs_neon, test_psnr_hvs_avx2, test_psnr_hvs_simd) do not reach the
+# shipped scalar calc_psnrhvs(); this one does, on x86 and on aarch64.
+test_psnr_hvs_dispatch_invariance = executable('test_psnr_hvs_dispatch_invariance',
+    ['test.c', 'test_psnr_hvs_dispatch_invariance.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_psnr_hvs_dispatch_invariance', test_psnr_hvs_dispatch_invariance,
+    suite : ['fast', 'simd'])
 test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
     ['test.c', 'test_integer_adm_tiny_frames.c'],
     include_directories : [libvmaf_inc, test_inc],

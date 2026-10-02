@@ -112,32 +112,37 @@ static inline int32x4_t od_mulrshift_neon(int32x4_t x, int32_t k, int32_t round,
 }
 
 /*
- * Apply the scalar `od_bin_fdct8` butterfly network to 4 columns
- * in parallel. Signature mirrors the AVX2 variant (ADR-0159) with
- * `int32x4_t` substituted for `__m256i`. Per ADR-0141 §2 / ADR-0159 /
- * ADR-0278 the 30-butterfly network is kept together — splitting it would
- * break the one-to-one scalar diff that the bit-exactness audit depends on.
- * The full citation lives in this comment, not on the directive line below:
- * that directive applies to the single line following it, so a wrapped
- * justification would point the suppression at the comment instead of the
- * function.
+ * The working values of the scalar `od_bin_fdct8`, under the names it gives
+ * them. `t1h` is the half difference the odd stage takes from the even stage.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
-static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2, int32x4_t in3,
-                                     int32x4_t in4, int32x4_t in5, int32x4_t in6, int32x4_t in7,
-                                     int32x4_t *out0, int32x4_t *out1, int32x4_t *out2,
-                                     int32x4_t *out3, int32x4_t *out4, int32x4_t *out5,
-                                     int32x4_t *out6, int32x4_t *out7)
+typedef struct {
+    int32x4_t t0;
+    int32x4_t t1;
+    int32x4_t t2;
+    int32x4_t t3;
+    int32x4_t t4;
+    int32x4_t t5;
+    int32x4_t t6;
+    int32x4_t t7;
+    int32x4_t t1h;
+} od_fdct8_state;
+
+/*
+ * The first 21 statements of the scalar `od_bin_fdct8`, in its order: the
+ * +1/-1 butterflies and the even half (the embedded 4-point and 2-point
+ * type-II DCT and the 2-point type-IV DST). t0, t2, t4 and t6 are final after
+ * it; t1, t3, t5, t7 and `t1h` go on to the odd stage.
+ */
+static inline void od_bin_fdct8_even_simd(od_fdct8_state *s)
 {
-    /* Initial permutation: mirror scalar `od_bin_fdct8` reads. */
-    int32x4_t t0 = in0;
-    int32x4_t t4 = in1;
-    int32x4_t t2 = in2;
-    int32x4_t t6 = in3;
-    int32x4_t t7 = in4;
-    int32x4_t t3 = in5;
-    int32x4_t t5 = in6;
-    int32x4_t t1 = in7;
+    int32x4_t t0 = s->t0;
+    int32x4_t t1 = s->t1;
+    int32x4_t t2 = s->t2;
+    int32x4_t t3 = s->t3;
+    int32x4_t t4 = s->t4;
+    int32x4_t t5 = s->t5;
+    int32x4_t t6 = s->t6;
+    int32x4_t t7 = s->t7;
     int32x4_t t1h;
     int32x4_t t4h;
     int32x4_t t6h;
@@ -177,6 +182,29 @@ static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2
     /* 21895/32768 */
     t6 = vsubq_s32(t6, od_mulrshift_neon(t2, 21895, 16384, 15));
 
+    s->t0 = t0;
+    s->t1 = t1;
+    s->t2 = t2;
+    s->t3 = t3;
+    s->t4 = t4;
+    s->t5 = t5;
+    s->t6 = t6;
+    s->t7 = t7;
+    s->t1h = t1h;
+}
+
+/*
+ * The remaining 13 statements of the scalar `od_bin_fdct8`: the embedded
+ * 4-point type-IV DST on the odd half.
+ */
+static inline void od_bin_fdct8_odd_simd(od_fdct8_state *s)
+{
+    int32x4_t t1 = s->t1;
+    int32x4_t t3 = s->t3;
+    int32x4_t t5 = s->t5;
+    int32x4_t t7 = s->t7;
+    const int32x4_t t1h = s->t1h;
+
     /* Embedded 4-point type-IV DST. */
     /* 19195/32768 ~= 2 - sqrt(2) */
     t3 = vaddq_s32(t3, od_mulrshift_neon(t5, 19195, 16384, 15));
@@ -201,14 +229,49 @@ static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2
     /* 2485/8192 */
     t5 = vaddq_s32(t5, od_mulrshift_neon(t3, 2485, 4096, 13));
 
-    *out0 = t0;
-    *out1 = t1;
-    *out2 = t2;
-    *out3 = t3;
-    *out4 = t4;
-    *out5 = t5;
-    *out6 = t6;
-    *out7 = t7;
+    s->t1 = t1;
+    s->t3 = t3;
+    s->t5 = t5;
+    s->t7 = t7;
+}
+
+/*
+ * Apply the scalar `od_bin_fdct8` butterfly network to 4 columns
+ * in parallel. Signature mirrors the AVX2 variant (ADR-0159) with
+ * `int32x4_t` substituted for `__m256i`.
+ *
+ * The network is the two functions above (ADR-1469): the 34 statements of
+ * the scalar, in its order and under its names, cut once where the even
+ * outputs are final. The AVX2 twin is cut at the same statement, so the three
+ * sources still read side by side.
+ */
+static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2, int32x4_t in3,
+                                     int32x4_t in4, int32x4_t in5, int32x4_t in6, int32x4_t in7,
+                                     int32x4_t *out0, int32x4_t *out1, int32x4_t *out2,
+                                     int32x4_t *out3, int32x4_t *out4, int32x4_t *out5,
+                                     int32x4_t *out6, int32x4_t *out7)
+{
+    /* Initial permutation: mirror scalar `od_bin_fdct8` reads. */
+    od_fdct8_state s = {
+        .t0 = in0,
+        .t4 = in1,
+        .t2 = in2,
+        .t6 = in3,
+        .t7 = in4,
+        .t3 = in5,
+        .t5 = in6,
+        .t1 = in7,
+    };
+    od_bin_fdct8_even_simd(&s);
+    od_bin_fdct8_odd_simd(&s);
+    *out0 = s.t0;
+    *out1 = s.t1;
+    *out2 = s.t2;
+    *out3 = s.t3;
+    *out4 = s.t4;
+    *out5 = s.t5;
+    *out6 = s.t6;
+    *out7 = s.t7;
 }
 
 /* 4x4 int32 transpose using aarch64 NEON trn1/trn2 idiom.
@@ -442,13 +505,14 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
             b->d_mask += b->dct_d[i * 8 + j] * b->dct_d[i * 8 + j] * mask[i][j];
         }
     }
-    /* ADR-0141: `sqrt` (double) matches the scalar reference's float->double
-     * promotion before sqrt; switching to `sqrtf` would diverge from the
-     * bit-exact contract. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0141 / ADR-0159 / ADR-0278
-    b->s_mask = sqrt(b->s_mask * b->s_gvar) / 32.f;
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0141 as above.
-    b->d_mask = sqrt(b->d_mask * b->d_gvar) / 32.f;
+    /* The scalar reference (third_party/xiph/psnr_hvs.c) writes
+     * `sqrt((double)s_mask * s_gvar) / 32.f`: the cast makes the product a
+     * double product. Without it `s_mask * s_gvar` is rounded to float before
+     * sqrt widens it, and the mask comes out one float ulp off on about one
+     * block in twenty (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02). The AVX2
+     * twin carries the same cast. `sqrt`, not `sqrtf`: ADR-0141 / ADR-0159. */
+    b->s_mask = (float)(sqrt((double)b->s_mask * b->s_gvar) / 32.0);
+    b->d_mask = (float)(sqrt((double)b->d_mask * b->d_gvar) / 32.0);
     if (b->d_mask > b->s_mask) {
         b->s_mask = b->d_mask;
     }
