@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -17,8 +18,6 @@
  */
 
 #include "common/macros.h"
-
-#pragma once
 
 #ifndef MOTION_BLEND_TOOLS_H_
 #define MOTION_BLEND_TOOLS_H_
