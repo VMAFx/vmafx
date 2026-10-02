@@ -314,7 +314,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 396,
+  "total_warnings": 395,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -334,7 +334,6 @@
     "core/src/feature/float_ms_ssim.c": 2,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/motion.c": 2,
-    "core/src/feature/motion_tools.h": 1,
     "core/src/feature/niqe_model.h": 1,
     "core/src/feature/null.c": 1,
     "core/src/feature/picture_copy.cpp": 1,
