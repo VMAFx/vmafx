@@ -45,11 +45,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-#include <process.h>
-#define METAL_PSNR_PID() ((long)_getpid())
+#include <windows.h>
 #else
 #include <unistd.h>
-#define METAL_PSNR_PID() ((long)getpid())
 #endif
 
 #include "feature/feature_extractor.h"
@@ -326,23 +324,32 @@ static int read_aggregate(VmafContext *vmaf, const char *path, const char *name,
     return end == at + strlen(key) ? -ENOENT : 0;
 }
 
-/* A file name in the temporary directory (TMPDIR, TMP or TEMP; /tmp or the
- * current directory when none is set), unique per process and side, so the
- * tester's working directory may be read-only. */
-static void temp_path(char *path, size_t size, const char *side)
+/* A new file in the temporary directory, so the tester's working directory
+ * may be read-only (core/test/AGENTS.d/temp-files-and-output.md: mkstemp in
+ * /tmp, GetTempPathA on Windows, as test_public_api_score.c does). Returns 0
+ * or -1. */
+static int temp_path(char *path, size_t size, const char *side)
 {
-    const char *dir = getenv("TMPDIR");
-    dir = dir ? dir : getenv("TMP");
-    dir = dir ? dir : getenv("TEMP");
 #ifdef _WIN32
-    dir = dir ? dir : ".";
-    const char sep = '\\';
+    char dir[MAX_PATH];
+    const DWORD len = GetTempPathA((DWORD)sizeof(dir), dir);
+    if (len == 0 || len >= sizeof(dir)) {
+        return -1;
+    }
+    const int n = snprintf(path, size, "%smetal_psnr_parity_%lu_%s.json", dir,
+                           (unsigned long)GetCurrentProcessId(), side);
+    return (n > 0 && (size_t)n < size) ? 0 : -1;
 #else
-    dir = dir ? dir : "/tmp";
-    const char sep = '/';
+    const int n = snprintf(path, size, "/tmp/metal_psnr_parity_%s_XXXXXX", side);
+    if (n <= 0 || (size_t)n >= size) {
+        return -1;
+    }
+    const int fd = mkstemp(path);
+    if (fd < 0) {
+        return -1;
+    }
+    return close(fd) == 0 ? 0 : -1;
 #endif
-    (void)snprintf(path, size, "%s%cmetal_psnr_parity_%ld_%s.json", dir, sep, METAL_PSNR_PID(),
-                   side);
 }
 
 static mu_message_t expect_aggregate(const Pair *pair, const char *name)
@@ -351,8 +358,10 @@ static mu_message_t expect_aggregate(const Pair *pair, const char *name)
     double gpu = NAN;
     char cpu_path[PATH_LEN];
     char gpu_path[PATH_LEN];
-    temp_path(cpu_path, sizeof(cpu_path), "cpu");
-    temp_path(gpu_path, sizeof(gpu_path), "metal");
+    mu_assert("no temporary file for the CPU aggregate",
+              temp_path(cpu_path, sizeof(cpu_path), "cpu") == 0);
+    mu_assert("no temporary file for the Metal aggregate",
+              temp_path(gpu_path, sizeof(gpu_path), "metal") == 0);
     mu_assert("the CPU aggregate is missing", !read_aggregate(pair->cpu, cpu_path, name, &cpu));
     mu_assert("the Metal aggregate is missing", !read_aggregate(pair->gpu, gpu_path, name, &gpu));
     if (cpu != gpu) {
