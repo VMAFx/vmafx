@@ -1027,8 +1027,6 @@
         "core/src/feature/cuda/float_vif/float_vif_score.cu": 1,
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
-        "core/src/feature/metal/float_adm.metal": 1,
-        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/metal/integer_motion_v2.metal": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
@@ -1107,8 +1105,6 @@
       "sites": {
         "core/src/feature/cuda/float_adm/float_adm_score.cu": 1,
         "core/src/feature/cuda/float_adm_cuda.c": 1,
-        "core/src/feature/metal/float_adm.metal": 1,
-        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/meson.build": 1
       },
@@ -1226,7 +1222,6 @@
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
-        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/metal/float_vif.metal": 1,
         "core/src/feature/metal/float_vif_metal.mm": 2,
         "core/src/feature/metal/integer_adm_metal.mm": 1,
@@ -3777,8 +3772,6 @@
         "core/src/feature/cuda/float_adm_cuda.c": 4,
         "core/src/feature/hip/float_adm/float_adm_score.hip": 1,
         "core/src/feature/hip/float_adm_hip.c": 3,
-        "core/src/feature/metal/float_adm.metal": 1,
-        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 2
       },
       "target": "0574-hdr-features-cuda-twins-phase-1.md"
@@ -6339,6 +6332,7 @@
         "core/test/test_locale_handling.c": 1,
         "core/test/test_log.c": 1,
         "core/test/test_lpips.c": 1,
+        "core/test/test_metal_float_adm_math.c": 1,
         "core/test/test_metal_float_adm_parity.c": 1,
         "core/test/test_metal_float_moment_parity.c": 1,
         "core/test/test_metal_float_motion_parity.c": 1,
@@ -6921,7 +6915,6 @@
     },
     "1204": {
       "sites": {
-        "core/src/feature/metal/float_adm.metal": 1,
         "core/test/meson.build": 1
       },
       "target": "1204-adm-cm-edge-clamp-gpu-twins.md"
@@ -7086,8 +7079,7 @@
     },
     "1220": {
       "sites": {
-        "core/src/feature/metal/float_adm.metal": 4,
-        "core/src/feature/metal/float_adm_metal.mm": 4,
+        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/metal/integer_adm_metal.mm": 1,
         "core/test/float_adm_twin_parity.h": 1,
         "core/test/test_cuda_float_adm_parity.c": 1
@@ -8832,6 +8824,8 @@
         "core/src/feature/float_adm_gpu_common.h": 1,
         "core/src/feature/hip/float_adm/float_adm_score.hip": 1,
         "core/src/feature/hip/float_adm_hip.c": 2,
+        "core/src/feature/metal/float_adm.metal": 1,
+        "core/src/feature/metal/float_adm_metal.mm": 2,
         "core/src/feature/sycl/float_adm_sycl.cpp": 2,
         "core/src/feature/sycl/sycl_float_adm_math.h": 1,
         "core/test/float_adm_twin_parity.h": 1,
@@ -8997,12 +8991,16 @@
     "1434": {
       "sites": {
         "core/src/feature/float_adm_gpu_common.h": 1,
+        "core/src/feature/metal/float_adm.metal": 1,
+        "core/src/feature/metal/float_adm_metal.mm": 2,
+        "core/src/feature/metal/metal_float_adm_math.h": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 2,
         "core/src/feature/sycl/sycl_float_adm_math.h": 1,
         "core/test/float_adm_twin_parity.h": 1,
         "core/test/meson.build": 2,
         "core/test/sycl_float_adm_math_probe.h": 1,
         "core/test/test_metal_float_adm_exact_contract.py": 1,
+        "core/test/test_metal_float_adm_math.c": 1,
         "core/test/test_metal_float_adm_parity.c": 1,
         "core/test/test_sycl_float_adm_exact_contract.py": 1,
         "core/test/test_sycl_float_adm_math.c": 2,
@@ -9123,6 +9121,8 @@
         "core/src/feature/hip/float_adm/float_adm_hip_math.h": 1,
         "core/src/feature/hip/float_adm/float_adm_score.hip": 1,
         "core/src/feature/hip/float_adm_hip.c": 1,
+        "core/src/feature/metal/float_adm.metal": 1,
+        "core/src/feature/metal/metal_float_adm_math.h": 2,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_float_adm_math.h": 2,
         "core/test/meson.build": 3,
@@ -9130,6 +9130,7 @@
         "core/test/test_float_adm_device_math.c": 2,
         "core/test/test_float_adm_divides_contract.py": 3,
         "core/test/test_hip_float_adm_parity.c": 1,
+        "core/test/test_metal_float_adm_exact_contract.py": 2,
         "core/test/test_sycl_float_adm_exact_contract.py": 3,
         "core/test/test_sycl_float_adm_math.c": 1,
         "scripts/ci/exact_twins.d/float_adm.hip": 2
@@ -9636,7 +9637,6 @@
       "sites": {
         "core/src/feature/adm_tools.h": 1,
         "core/src/feature/barten_csf_tools.h": 4,
-        "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/test/barten_csf_cxx.cpp": 1,
         "core/test/barten_csf_cxx.h": 1,
         "core/test/meson.build": 1,
@@ -9729,12 +9729,16 @@
     },
     "1498": {
       "sites": {
+        "core/src/feature/metal/float_adm.metal": 1,
+        "core/src/feature/metal/float_adm_metal.mm": 1,
+        "core/src/feature/metal/metal_float_adm_math.h": 1,
         "core/src/feature/metal/metal_portable.h": 1,
         "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/metal/metal_soft_signed.h": 1,
         "core/src/metal/meson.build": 2,
-        "core/test/meson.build": 6,
+        "core/test/meson.build": 7,
         "core/test/test_metal_float_adm_exact_contract.py": 1,
+        "core/test/test_metal_float_adm_math.c": 1,
         "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_shader_build_contract.py": 3,
         "core/test/test_metal_soft_double.cpp": 1,

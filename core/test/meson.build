@@ -2251,6 +2251,37 @@ test('test_metal_float_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1498: what float_adm_metal's kernels run per work-item
+# (src/feature/metal/metal_float_adm_math.h, the Metal spelling of the SYCL
+# twin's sycl_float_adm_math.h) compiled as C on the host and compared bit for
+# bit with adm_tools.c's own routines: the three fp64 expressions of the
+# reference, then one scale composed as the three kernels compose it. The
+# header's host operators round like the device only without FMA contraction
+# (hence the flag), and adm_tools.c is contraction-free by construction on
+# x86-64 only (its baseline has no FMA), so the test is registered there.
+if host_machine.cpu_family() == 'x86_64'
+test_metal_float_adm_math = executable('test_metal_float_adm_math',
+    ['test.c', 'test_metal_float_adm_math.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+     '../src/gpu_picture_pool.cpp'] + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_metal_float_adm_math', test_metal_float_adm_math, suite : ['fast'], timeout : 300)
+endif
+
 # (end of ciede / float_adm group)
 
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
