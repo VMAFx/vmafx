@@ -4,29 +4,31 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
- *  ciede2000 feature extractor on the Metal backend (Metal parity
- *  sweep — ciede twin). Dispatches `integer_ciede_kernel_{8,16}bpc`
+ *  ciede2000 feature extractor on the Metal backend (ADR-0421; the CPU's
+ *  arithmetic since ADR-1498). Dispatches `integer_ciede_kernel_{8,16}bpc`
  *  from integer_ciede.metal.
  *
  *  CPU reference: core/src/feature/ciede.c (.name="ciede", feature
- *  "ciede2000"). Bit-exact GPU reference for the float per-pixel
- *  math: core/src/feature/cuda/integer_ciede/ciede_score.cu and its
- *  SYCL twin core/src/feature/sycl/integer_ciede_sycl.cpp (both
- *  measured places=4 on real hardware).
+ *  "ciede2000"). The kernel runs ciede.c's statements in fp32 pairs
+ *  (feature/ciede_ff_math.h, the arithmetic of the SYCL and HIP twins,
+ *  ADR-1436 and ADR-1448, on the Metal primitives of metal_ciede_math.h).
  *
  *  Pipeline per frame:
- *    1. Host nearest-neighbour upscale of U/V to luma resolution
- *       (mirrors ciede.c::scale_chroma_planes / the SYCL twin's
- *       upscale_plane) into six MTLBuffers (Y/U/V × ref/dis), all at
- *       luma resolution.
- *    2. One kernel dispatch: per-pixel YUV→Lab→ΔE2000, reduced to one
- *       float partial per threadgroup (no 64-bit MSL atomics).
- *    3. Host accumulates partials in double, divides by W·H, applies
- *       the CPU's `45 - 20·log10(mean_dE)` transform.
+ *    1. Host nearest-neighbour upscale of U/V to luma resolution, as
+ *       ciede.c::scale_chroma_planes() defines the pixel inputs, into six
+ *       MTLBuffers (Y/U/V x ref/dis) at luma resolution.
+ *    2. One kernel dispatch: per pixel YUV -> L*a*b* -> CIEDE2000, one float
+ *       per pixel at its raster position, nothing reduced on the device.
+ *    3. Host adds the plane with ciede_frame_sum(), one double in raster
+ *       order as extract() does, and applies extract()'s score expression.
  *
- *  Score is reported under the feature key "ciede2000" — identical to
- *  the CPU / CUDA / SYCL extractors, so the cross-backend gate
- *  (ADR-0214) compares like keys.
+ *  ciede.c's constants are fp64 expressions of the bit depth, and Metal has
+ *  no fp64 type: init() evaluates make_constants() here, and every dispatch
+ *  hands the kernel the result.
+ *
+ *  Score is reported under the feature key "ciede2000" -- identical to the
+ *  CPU / CUDA / SYCL / HIP extractors, so the cross-backend gate (ADR-0214)
+ *  compares like keys.
  */
 
 #include <errno.h>
@@ -44,6 +46,7 @@
 #include "feature_extractor.h"
 
 extern "C" {
+#include "ciede_frame_sum.h"
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
@@ -53,6 +56,9 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+/* feature/ciede_ff_math.h on the host, for make_constants() (C++20). */
+#include "metal_ciede_math.h"
+
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
@@ -60,13 +66,12 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 
 typedef struct CiedeStateMetal {
     VmafMetalKernelLifecycle lc;
-    VmafMetalKernelBuffer rb;        /* float partials, grid_w × grid_h */
+    VmafMetalKernelBuffer rb;        /* one float per pixel, raster order */
     VmafMetalContext *ctx;
     void *pso_8bpc;
     void *pso_16bpc;
 
-    size_t plane_bytes;              /* one luma-res plane, in bytes */
-    size_t partials_count;
+    vmaf_metal_ciede::Constants constants; /* ciede.c's, for the frame's bit depth */
     unsigned frame_w;
     unsigned frame_h;
     unsigned bpc;
@@ -75,6 +80,7 @@ typedef struct CiedeStateMetal {
     VmafDictionary *feature_name_dict;
 } CiedeStateMetal;
 
+/* The CPU extractor has no options. */
 static const VmafOption options[] = {{0}};
 
 static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
@@ -112,13 +118,15 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                           unsigned bpc, unsigned w, unsigned h)
 {
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) { return -EINVAL; }
+    /* make_constants() takes the depths a picture can have. */
+    if (bpc < 8u || bpc > 16u) { return -EINVAL; }
     CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
 
     s->frame_w     = w;
     s->frame_h     = h;
     s->bpc         = bpc;
     s->pix_fmt     = pix_fmt;
-    s->plane_bytes = (size_t)w * h * (bpc <= 8u ? 1u : 2u);
+    s->constants   = vmaf_metal_ciede::make_constants(bpc);
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -126,13 +134,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0) { goto fail_ctx; }
 
-    {
-        const size_t grid_w = (w + 15) / 16;
-        const size_t grid_h = (h + 15) / 16;
-        s->partials_count   = grid_w * grid_h;
-        err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
-                                             s->partials_count * sizeof(float));
-    }
+    /* One float per pixel: the kernel's values, read back whole. */
+    err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx, (size_t)w * h * sizeof(float));
     if (err != 0) { goto fail_lc; }
 
     {
@@ -162,9 +165,9 @@ fail_ctx:
 }
 
 /* Nearest-neighbour upscale of plane `p` of `pic` to luma resolution
- * (out_w × out_h), into `dst`. Mirrors ciede.c::scale_chroma_planes
- * and the SYCL twin's upscale_plane<T>(): chroma rows are repeated
- * vertically when ss_ver, columns when ss_hor. */
+ * (out_w × out_h), into `dst`, as ciede.c::scale_chroma_planes() does:
+ * column j reads chroma column j / 2 when ss_hor, and the chroma row advances
+ * after every odd output row when ss_ver. */
 template <typename T>
 static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigned out_w,
                           unsigned out_h, enum VmafPixelFormat pix_fmt)
@@ -185,81 +188,83 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
     }
 }
 
+/* The three planes of `pic` at luma resolution, packed, into `dst`. */
+static void upscale_picture(const CiedeStateMetal *s, const VmafPicture *pic, void *const dst[3])
+{
+    for (unsigned p = 0; p < 3u; p++) {
+        if (s->bpc <= 8u) {
+            upscale_plane<uint8_t>(p, pic, dst[p], s->frame_w, s->frame_h, s->pix_fmt);
+        } else {
+            upscale_plane<uint16_t>(p, pic, dst[p], s->frame_w, s->frame_h, s->pix_fmt);
+        }
+    }
+}
+
+/* A grid of threadgroups the pipeline accepts that covers the frame; the
+ * kernel has no threadgroup memory, so any shape works. */
+static void ciede_dispatch_shape(id<MTLComputePipelineState> pso, unsigned w, unsigned h,
+                                 MTLSize *tg, MTLSize *grid)
+{
+    const NSUInteger tw = pso.threadExecutionWidth > 0 ? pso.threadExecutionWidth : 1;
+    const NSUInteger max_th = pso.maxTotalThreadsPerThreadgroup / tw;
+    const NSUInteger th = max_th > 0 ? max_th : 1;
+    *tg   = MTLSizeMake(tw, th, 1);
+    *grid = MTLSizeMake((w + tw - 1) / tw, (h + th - 1) / th, 1);
+}
+
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
-
-    s->frame_w = ref_pic->w[0];
-    s->frame_h = ref_pic->h[0];
-    const unsigned w = s->frame_w;
-    const unsigned h = s->frame_h;
-    const size_t bpp = (s->bpc <= 8u ? 1u : 2u);
-    const size_t plane_bytes = (size_t)w * h * bpp;
-    const size_t row_bytes   = (size_t)w * bpp;
+    /* The readback holds init()'s frame size. */
+    if (ref_pic->w[0] != s->frame_w || ref_pic->h[0] != s->frame_h) { return -EINVAL; }
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == NULL || qh == NULL) { return -ENODEV; }
-
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>      par_buf = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
+    id<MTLBuffer>    terms_buf = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
     id<MTLComputePipelineState> pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
     /* Six luma-res planes: Y/U/V for ref and dis. */
+    const size_t plane_bytes = (size_t)s->frame_w * s->frame_h * (s->bpc <= 8u ? 1u : 2u);
     id<MTLBuffer> bufs[6];
+    void *planes[6];
     for (int i = 0; i < 6; ++i) {
         bufs[i] = [device newBufferWithLength:plane_bytes options:MTLResourceStorageModeShared];
         if (bufs[i] == nil) { return -ENOMEM; }
+        planes[i] = [bufs[i] contents];
     }
-
-    if (s->bpc <= 8u) {
-        upscale_plane<uint8_t>(0, ref_pic,  [bufs[0] contents], w, h, s->pix_fmt);
-        upscale_plane<uint8_t>(1, ref_pic,  [bufs[1] contents], w, h, s->pix_fmt);
-        upscale_plane<uint8_t>(2, ref_pic,  [bufs[2] contents], w, h, s->pix_fmt);
-        upscale_plane<uint8_t>(0, dist_pic, [bufs[3] contents], w, h, s->pix_fmt);
-        upscale_plane<uint8_t>(1, dist_pic, [bufs[4] contents], w, h, s->pix_fmt);
-        upscale_plane<uint8_t>(2, dist_pic, [bufs[5] contents], w, h, s->pix_fmt);
-    } else {
-        upscale_plane<uint16_t>(0, ref_pic,  [bufs[0] contents], w, h, s->pix_fmt);
-        upscale_plane<uint16_t>(1, ref_pic,  [bufs[1] contents], w, h, s->pix_fmt);
-        upscale_plane<uint16_t>(2, ref_pic,  [bufs[2] contents], w, h, s->pix_fmt);
-        upscale_plane<uint16_t>(0, dist_pic, [bufs[3] contents], w, h, s->pix_fmt);
-        upscale_plane<uint16_t>(1, dist_pic, [bufs[4] contents], w, h, s->pix_fmt);
-        upscale_plane<uint16_t>(2, dist_pic, [bufs[5] contents], w, h, s->pix_fmt);
-    }
+    upscale_picture(s, ref_pic, planes);
+    upscale_picture(s, dist_pic, planes + 3);
 
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-
-    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-    [blit fillBuffer:par_buf range:NSMakeRange(0, s->partials_count * sizeof(float)) value:0];
-    [blit endEncoding];
-
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    if (enc == nil) { return -ENOMEM; }
     [enc setComputePipelineState:pso];
     for (int i = 0; i < 6; ++i) {
         [enc setBuffer:bufs[i] offset:0 atIndex:i];
     }
-    [enc setBuffer:par_buf offset:0 atIndex:6];
-    uint32_t st[2] = {(uint32_t)row_bytes, (uint32_t)s->bpc};
-    [enc setBytes:st length:sizeof(st) atIndex:7];
-    uint32_t dim[2] = {(uint32_t)w, (uint32_t)h};
-    [enc setBytes:dim length:sizeof(dim) atIndex:8];
+    [enc setBuffer:terms_buf offset:0 atIndex:6];
+    const uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
+    [enc setBytes:dim length:sizeof(dim) atIndex:7];
+    [enc setBytes:&s->constants length:sizeof(s->constants) atIndex:8];
 
-    MTLSize tg   = MTLSizeMake(16, 16, 1);
-    MTLSize grid = MTLSizeMake((w + 15) / 16, (h + 15) / 16, 1);
+    MTLSize tg;
+    MTLSize grid;
+    ciede_dispatch_shape(pso, s->frame_w, s->frame_h, &tg, &grid);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 
     [cmd commit];
     [cmd waitUntilCompleted];
-    return 0;
+    return [cmd status] == MTLCommandBufferStatusCompleted ? 0 : -EIO;
 }
 
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
@@ -267,16 +272,11 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 {
     CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
 
-    const float *parts = (const float *)s->rb.host_view;
-    double total = 0.0;
-    if (parts != NULL) {
-        for (size_t i = 0; i < s->partials_count; ++i) {
-            total += (double)parts[i];
-        }
-    }
-    const double n_pix   = (double)s->frame_w * (double)s->frame_h;
-    const double mean_de = (n_pix > 0.0) ? (total / n_pix) : 0.0;
-    const double score   = 45.0 - 20.0 * log10(mean_de);
+    const float *terms = (const float *)s->rb.host_view;
+    if (terms == NULL) { return -EINVAL; }
+    /* extract()'s sum and score, over the whole plane in raster order. */
+    const double de00_sum = ciede_frame_sum(terms, (size_t)s->frame_w * s->frame_h);
+    const double score = 45. - 20. * log10(de00_sum / (s->frame_w * s->frame_h));
 
     return vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "ciede2000", score, index);
