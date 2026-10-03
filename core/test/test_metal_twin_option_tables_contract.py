@@ -77,6 +77,7 @@ KNOWN_GAPS = {
     ],
 }
 
+FROZENSET = re.compile(r"frozenset\(\{([^}]*)\}\)")
 REGISTRATION = re.compile(r"VmafFeatureExtractor\s+vmaf_fex_\w+\s*=\s*\{")
 TEMPORAL = "VMAF_FEATURE_EXTRACTOR_TEMPORAL"
 PREV_REF = "VMAF_FEATURE_EXTRACTOR_PREV_REF"
@@ -160,14 +161,25 @@ def _flags(fields: dict[str, str]) -> set[str]:
     return set(re.findall(r"VMAF_FEATURE_EXTRACTOR_\w+", fields.get("flags", "")))
 
 
+def _normal(difference: str) -> str:
+    """A difference with each frozenset's items sorted: set order follows the
+    interpreter's string hash, which differs between runs."""
+    return FROZENSET.sub(
+        lambda m: "frozenset({" + ", ".join(sorted(m.group(1).split(", "))) + "})", difference
+    )
+
+
 def _pair_failures(key: str, sources: dict[str, str]) -> list[str]:
     cpu_name, twin_name = PAIRS[key]
     cpu_code = tables.strip_comments(sources[cpu_name])
     twin_code = tables.strip_comments(sources[twin_name])
-    found = tables.differences(
-        tables.table_of_text(sources[cpu_name], FEATURE / cpu_name),
-        tables.table_of_text(sources[twin_name], FEATURE / twin_name),
-    )
+    found = [
+        _normal(item)
+        for item in tables.differences(
+            tables.table_of_text(sources[cpu_name], FEATURE / cpu_name),
+            tables.table_of_text(sources[twin_name], FEATURE / twin_name),
+        )
+    ]
     failures = []
     if found != KNOWN_GAPS.get(key, []):
         failures.append(
