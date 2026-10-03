@@ -84,6 +84,13 @@ static uint64_t flags_compared(const char *cpu, const char *key)
     if (!strcmp(cpu, "float_ssim") && !strcmp(key, "scale")) {
         return ~(uint64_t)VMAF_OPT_FLAG_DEFAULT_ONLY;
     }
+    /* float_adm's adm_csf_mode: every float_adm twin (CUDA, SYCL, HIP,
+     * Metal) runs the default CSF mode only and declares the option
+     * default-only, so a model asking for another mode keeps the CPU
+     * extractor (ADR-1316). */
+    if (!strcmp(cpu, "float_adm") && !strcmp(key, "adm_csf_mode")) {
+        return ~(uint64_t)VMAF_OPT_FLAG_DEFAULT_ONLY;
+    }
     return ~(uint64_t)0;
 }
 

@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FEATURE = ROOT / "core" / "src" / "feature"
 INCLUDE_DIRS = (FEATURE, ROOT / "core" / "src", ROOT / "core" / "include")
 
-TABLE_START = re.compile(r"static\s+const\s+VmafOption\s+\w+\s*\[\s*\]\s*=\s*\{")
+TABLE_START = re.compile(r"static\s+const\s+VmafOption\s+\w+\s*\[\s*\d*\s*\]\s*=\s*\{")
 OBJECT_MACRO = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+(.+)$", re.M)
 FUNCTION_MACRO = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)\(([^)]*)\)[ \t]*(.*)$", re.M)
 LOCAL_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', re.M)
@@ -300,6 +300,8 @@ def _option(fields: dict[str, str], macros: dict[str, str]) -> Option:
 def table_of_text(text: str, path: Path) -> list[Option]:
     """The options of the table in `text`, which is the source at `path`."""
     code = strip_comments(text)
+    if not re.search(r"\bVmafOption\b", code):
+        return []  # an extractor without options
     macros = collect_macros(code, path)
     function_macros = _function_macros(code)
     options: list[Option] = []

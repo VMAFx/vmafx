@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin the option tables, flags and features of four Metal twins to their CPU extractors'.
+"""Pin the option tables, flags and features of every Metal twin to its CPU extractor's.
 
 T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26 (option tables of
 integer_psnr_hvs_metal, integer_cambi_metal, ssimulacra2_metal and
@@ -48,8 +48,34 @@ PAIRS = {
     "cambi": ("cambi.c", "metal/integer_cambi_metal.mm"),
     "ssimulacra2": ("ssimulacra2.c", "metal/ssimulacra2_metal.mm"),
     "vif": ("integer_vif.c", "metal/integer_vif_metal.mm"),
+    # Every other Metal twin (ADR-1498): the pairs of
+    # test_metal_twin_option_parity.c, compared from the sources.
+    "psnr": ("integer_psnr.c", "metal/integer_psnr_metal.mm"),
+    "ssim": ("integer_ssim.c", "metal/integer_ssim_metal.mm"),
+    "float_ssim": ("float_ssim.c", "metal/float_ssim_metal.mm"),
+    "float_ms_ssim": ("float_ms_ssim.c", "metal/float_ms_ssim_metal.mm"),
+    "float_motion": ("float_motion.c", "metal/float_motion_metal.mm"),
+    "motion": ("integer_motion.c", "metal/integer_motion_metal.mm"),
+    "motion_v2": ("integer_motion_v2.c", "metal/integer_motion_v2_metal.mm"),
+    "float_psnr": ("float_psnr.c", "metal/float_psnr_metal.mm"),
+    "float_moment": ("float_moment.c", "metal/float_moment_metal.mm"),
+    "float_vif": ("float_vif.c", "metal/float_vif_metal.mm"),
+    "float_adm": ("float_adm.c", "metal/float_adm_metal.mm"),
+    "adm": ("integer_adm.c", "metal/integer_adm_metal.mm"),
+    "ciede": ("ciede.c", "metal/integer_ciede_metal.mm"),
 }
-KNOWN_GAPS = {"cambi": ["the twin lacks heatmaps_path"]}
+KNOWN_GAPS = {
+    "cambi": ["the twin lacks heatmaps_path"],
+    # Every float_adm twin runs the default CSF mode only and marks the
+    # option default-only, so another mode keeps the CPU (ADR-1316).
+    "float_adm": [
+        "adm_csf_mode: cpu Option(name='adm_csf_mode', alias='csf', type='VMAF_OPT_TYPE_INT', "
+        "default=0, min=0.0, max=9.0, flags=frozenset({'VMAF_OPT_FLAG_FEATURE_PARAM'})) "
+        "twin Option(name='adm_csf_mode', alias='csf', type='VMAF_OPT_TYPE_INT', default=0, "
+        "min=0.0, max=9.0, flags=frozenset({'VMAF_OPT_FLAG_DEFAULT_ONLY', "
+        "'VMAF_OPT_FLAG_FEATURE_PARAM'}))"
+    ],
+}
 
 REGISTRATION = re.compile(r"VmafFeatureExtractor\s+vmaf_fex_\w+\s*=\s*\{")
 TEMPORAL = "VMAF_FEATURE_EXTRACTOR_TEMPORAL"
@@ -247,6 +273,12 @@ class MetalTwinOptionTablesContract(unittest.TestCase):
             "static int cambi_metal_resolve_windows(",
         )
         self._assert_detected(failures, "local copy of a CPU cambi helper")
+
+    def test_missing_float_adm_override_is_detected(self) -> None:
+        failures = self._edited(
+            "metal/float_adm_metal.mm", '{.name = "adm_f2s3",', '{.name = "adm_f2s3_gone",'
+        )
+        self._assert_detected(failures, "float_adm_metal.mm: option table differences")
 
     def test_cpu_reference_drift_is_detected(self) -> None:
         failures = self._edited(
