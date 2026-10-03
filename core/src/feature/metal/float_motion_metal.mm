@@ -26,12 +26,14 @@
  *  `motion_add_scale1` adds the SAD of both blurred frames scaled to half
  *  size (a second kernel).
  *
- *  Scores, at the CPU float_motion.c's indices (ADR-1404):
+ *  Scores, at the CPU float_motion.c's indices (ADR-1404); every motion and
+ *  motion2 value goes through motion_clip() (the fps weight, then the
+ *  `motion_max_val` cap), the debug score included:
  *  VMAF_feature_motion_score at `index` (debug);
  *  VMAF_feature_motion2_score = min(prev, cur) at `index - 1`; and
  *  VMAF_feature_motion3_score, motion_blend_clip() of the same value (fps
  *  weight, the `motion_blend_factor` / `motion_blend_offset` blend of
- *  motion_blend_tools.h): frame 0 from the first SAD, then the blended
+ *  motion_blend_tools.h, the cap): frame 0 from the first SAD, then the blended
  *  motion2. flush() emits the tail motion2 / motion3 of the last SAD, and
  *  motion3 = 0 for a one-frame run.
  */
@@ -79,6 +81,9 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 /* Y, and U and V with motion_add_uv. */
 #define FMM_MAX_PLANES 3u
 
+/* CPU float_motion.c DEFAULT_MOTION_MAX_VAL. */
+#define FMM_DEFAULT_MAX_VAL (10000.0)
+
 /* One picture plane: its geometry, where its row sums sit in the read-back,
  * and its buffers. */
 typedef struct FmPlaneMetal {
@@ -120,6 +125,7 @@ typedef struct FloatMotionStateMetal {
     double motion_fps_weight;
     double motion_blend_factor;
     double motion_blend_offset;
+    double motion_max_val;
     int motion_filter_size;
     unsigned frame_index;
     unsigned bpc;
@@ -212,6 +218,17 @@ static const VmafOption options[] = {
         .default_val = {.b = false},
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
+    {
+        .name        = "motion_max_val",
+        .help        = "maximum value allowed; larger values will be clipped to this value",
+        .alias       = "mmxv",
+        .offset      = offsetof(FloatMotionStateMetal, motion_max_val),
+        .type        = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = FMM_DEFAULT_MAX_VAL},
+        .min         = 0.0,
+        .max         = 10000.0,
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
     {0},
 };
 
@@ -222,18 +239,20 @@ static int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector 
                                                    score, index);
 }
 
-/* The fps weight of the CPU's motion2. */
+/* CPU float_motion.c::motion_clip (motion and motion2): the fps weight, then
+ * the motion_max_val cap. */
 static double fm_metal_motion_clip(const FloatMotionStateMetal *s, double score)
 {
-    return score * s->motion_fps_weight;
+    return MIN(score * s->motion_fps_weight, s->motion_max_val);
 }
 
-/* CPU float_motion.c::motion_blend_clip (motion3): the fps weight, then the
- * blend of motion_blend_tools.h. */
+/* CPU float_motion.c::motion_blend_clip (motion3): the fps weight, the blend
+ * of motion_blend_tools.h, then the motion_max_val cap. */
 static double fm_metal_motion_blend_clip(const FloatMotionStateMetal *s, double score)
 {
-    return motion_blend(score * s->motion_fps_weight, s->motion_blend_factor,
-                        s->motion_blend_offset);
+    return MIN(motion_blend(score * s->motion_fps_weight, s->motion_blend_factor,
+                            s->motion_blend_offset),
+               s->motion_max_val);
 }
 
 static size_t fm_metal_bytes_per_sample(const FloatMotionStateMetal *s)
@@ -773,7 +792,10 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
     int err = 0;
     if (s->debug) {
-        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion_score", motion_score,
+        /* The CPU emits the debug score motion_clip()ped, fps weight and cap
+         * included; frame 0's is 0. */
+        const double debug_score = (index > 0u) ? fm_metal_motion_clip(s, motion_score) : 0.0;
+        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion_score", debug_score,
                               index);
     }
     if (err == 0) {
