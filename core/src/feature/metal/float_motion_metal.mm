@@ -26,15 +26,27 @@
  *  `motion_add_scale1` adds the SAD of both blurred frames scaled to half
  *  size (a second kernel).
  *
- *  Scores: VMAF_feature_motion_score at `index` (debug), and
- *  VMAF_feature_motion2_score = min(prev, cur) at `index - 1`; the tail
- *  motion2 is emitted in flush().
+ *  Scores, at the CPU float_motion.c's indices (ADR-1404):
+ *  VMAF_feature_motion_score at `index` (debug);
+ *  VMAF_feature_motion2_score = min(prev, cur) at `index - 1`; and
+ *  VMAF_feature_motion3_score, motion_blend_clip() of the same value (fps
+ *  weight, the `motion_blend_factor` / `motion_blend_offset` blend of
+ *  motion_blend_tools.h): frame 0 from the first SAD, then the blended
+ *  motion2. flush() emits the tail motion2 / motion3 of the last SAD, and
+ *  motion3 = 0 for a one-frame run.
  */
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+/* The CPU's blend (motion_blend()). Ahead of Foundation: its header defines
+ * MIN as well, and only when MIN is not defined yet, so this order keeps one
+ * definition and no redefinition warning. */
+extern "C" {
+#include "motion_blend_tools.h"
+}
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -106,6 +118,8 @@ typedef struct FloatMotionStateMetal {
     int cur_blur;
     double prev_motion_score;
     double motion_fps_weight;
+    double motion_blend_factor;
+    double motion_blend_offset;
     int motion_filter_size;
     unsigned frame_index;
     unsigned bpc;
@@ -145,6 +159,28 @@ static const VmafOption options[] = {
         .default_val = {.d = 1.0},
         .min         = 0.0,
         .max         = 5.0,
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name        = "motion_blend_factor",
+        .help        = "blend motion score given an offset",
+        .alias       = "mbf",
+        .offset      = offsetof(FloatMotionStateMetal, motion_blend_factor),
+        .type        = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = 1.0},
+        .min         = 0.0,
+        .max         = 1.0,
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name        = "motion_blend_offset",
+        .help        = "blend motion score starting from this offset",
+        .alias       = "mbo",
+        .offset      = offsetof(FloatMotionStateMetal, motion_blend_offset),
+        .type        = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = 40.0},
+        .min         = 0.0,
+        .max         = 1000.0,
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
@@ -190,6 +226,14 @@ static int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector 
 static double fm_metal_motion_clip(const FloatMotionStateMetal *s, double score)
 {
     return score * s->motion_fps_weight;
+}
+
+/* CPU float_motion.c::motion_blend_clip (motion3): the fps weight, then the
+ * blend of motion_blend_tools.h. */
+static double fm_metal_motion_blend_clip(const FloatMotionStateMetal *s, double score)
+{
+    return motion_blend(score * s->motion_fps_weight, s->motion_blend_factor,
+                        s->motion_blend_offset);
 }
 
 static size_t fm_metal_bytes_per_sample(const FloatMotionStateMetal *s)
@@ -421,7 +465,11 @@ static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_
     (void)dist_pic_90;
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
 
+    /* CPU float_motion.c::motion_append_forced_zero: every output 0. */
     int err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
+    if (err == 0) {
+        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion3_score", 0.0, index);
+    }
     if (s->debug && err == 0) {
         err = fm_metal_append(s, feature_collector, "VMAF_feature_motion_score", 0.0, index);
     }
@@ -687,23 +735,31 @@ static double fm_metal_frame_score(const FloatMotionStateMetal *s)
     return score;
 }
 
-/* The motion2 that frame `index`'s SAD completes: 0 at index 0, nothing at
- * index 1 (the index-0 value is already written), then min(prev, cur) at
- * `index - 1`. */
-static int fm_metal_emit_motion2(const FloatMotionStateMetal *s,
-                                 VmafFeatureCollector *feature_collector, unsigned index,
-                                 double motion_score)
+/* The motion2 and motion3 that frame `index`'s SAD completes, in the CPU
+ * float_motion.c::extract() order: motion2 = 0 at index 0 (motion3 at 0
+ * waits for the first SAD or for flush), motion3 at 0 from the first SAD
+ * alone, then motion2 / motion3 = min(prev, cur) at `index - 1`. */
+static int fm_metal_emit_motion23(const FloatMotionStateMetal *s,
+                                  VmafFeatureCollector *feature_collector, unsigned index,
+                                  double motion_score)
 {
     if (index == 0u) {
         return fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, 0u);
     }
-    if (index == 1u) {
-        return 0;
+    /* The smaller of the previous frame's two SADs; at index 1 there is one. */
+    const double motion2 = (index > 1u && s->prev_motion_score < motion_score) ?
+                               s->prev_motion_score :
+                               motion_score;
+    int err = 0;
+    if (index > 1u) {
+        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score",
+                              fm_metal_motion_clip(s, motion2), index - 1u);
     }
-    const double motion2 =
-        (s->prev_motion_score < motion_score) ? s->prev_motion_score : motion_score;
-    return fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score",
-                           fm_metal_motion_clip(s, motion2), index - 1u);
+    if (err == 0) {
+        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion3_score",
+                              fm_metal_motion_blend_clip(s, motion2), index - 1u);
+    }
+    return err;
 }
 
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
@@ -721,20 +777,35 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                               index);
     }
     if (err == 0) {
-        err = fm_metal_emit_motion2(s, feature_collector, index, motion_score);
+        err = fm_metal_emit_motion23(s, feature_collector, index, motion_score);
     }
     s->prev_motion_score = motion_score;
+    return err;
+}
+
+/* The tail of CPU float_motion.c::flush: motion2 / motion3 of the last SAD
+ * at the last frame index, motion_clip()ped and motion_blend_clip()ped. */
+static int fm_metal_emit_tail(const FloatMotionStateMetal *s,
+                              VmafFeatureCollector *feature_collector)
+{
+    int err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score",
+                              fm_metal_motion_clip(s, s->prev_motion_score), s->frame_index);
+    if (err == 0) {
+        err = fm_metal_append(s, feature_collector, "VMAF_feature_motion3_score",
+                              fm_metal_motion_blend_clip(s, s->prev_motion_score),
+                              s->frame_index);
+    }
     return err;
 }
 
 static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
-    if (s->frame_index == 0u) {
-        return 1;
-    }
 
-    static const char feature_name[] = "VMAF_feature_motion2_score";
+    /* No collect writes motion3 at the last frame index (it writes index - 1),
+     * so a motion3 there means this flush already ran: the probe makes a
+     * repeated flush idempotent. */
+    static const char feature_name[] = "VMAF_feature_motion3_score";
     const VmafDictionaryEntry *entry = vmaf_dictionary_get(&s->feature_name_dict, feature_name, 0);
     const char *resolved_name = entry ? entry->val : feature_name;
     double existing = 0.0;
@@ -743,16 +814,16 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
         return 1;
     }
 
-    /* Tail motion2: the last SAD alone, fps-weighted like the others. The
-     * probe above makes a repeated flush idempotent. */
-    const int err = fm_metal_append(s, feature_collector, feature_name,
-                                    fm_metal_motion_clip(s, s->prev_motion_score),
-                                    s->frame_index);
+    /* CPU float_motion.c::flush: a one-frame run has no SAD, and its motion3
+     * is 0; otherwise the tail of the last SAD. */
+    const int err = (s->frame_index == 0u) ?
+                        fm_metal_append(s, feature_collector, feature_name, 0.0, 0u) :
+                        fm_metal_emit_tail(s, feature_collector);
     return (err != 0) ? err : 1;
 }
 
 static const char *provided_features[] = {
-    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", NULL
+    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL
 };
 
 extern "C" {
