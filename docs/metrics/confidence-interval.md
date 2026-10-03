@@ -1,17 +1,75 @@
 <!-- markdownlint-disable MD013 -->
 # VMAF Confidence Interval
 
-Since v1.3.7 (June 2018), we have introduced a way to quantify the level of confidence that a VMAF prediction entails. With this method, each VMAF prediction score can be accompanied by a 95% confidence interval (CI), which quantifies the level of confidence that the prediction lies within the interval.
+Since v1.3.7 (June 2018), we have introduced a way to quantify the level of
+confidence that a VMAF prediction entails. With this method, each VMAF
+prediction score can be accompanied by a 95% confidence interval (CI), which
+quantifies the level of confidence that the prediction lies within the interval.
 
-The CI is a consequence of the fact that the VMAF model is trained on a sample of subjective scores, while the population is unknown. The CI is established through [bootstrapping](https://www.jstor.org/stable/2241979) using the full training data. Essentially, the bootstrapping approach trains multiple models. Each of the models will introduce a slightly different prediction. The variability of these predictions quantifies the level of confidence -- the more close these predictions, the more confident the prediction using the full data. More details can be found in [this slide deck](../reference/presentations/VQEG_SAM_2018_023_VMAF_Variability.pdf).
+The CI is a consequence of the fact that the VMAF model is trained on a sample
+of subjective scores, while the population is unknown. The CI is established
+through [bootstrapping](https://www.jstor.org/stable/2241979) using the full
+training data. Essentially, the bootstrapping approach trains multiple models.
+Each of the models will introduce a slightly different prediction. The
+variability of these predictions quantifies the level of confidence -- the more
+close these predictions, the more confident the prediction using the full data.
+More details can be found in [this slide
+deck](../reference/presentations/VQEG_SAM_2018_023_VMAF_Variability.pdf).
 
 ## Implementation Details of Bootstrapping
 
-There are two ways to perform bootstrapping on VMAF. The first one is called plain/vanilla bootstrapping (b) and the latter one is called residue bootstrapping (rb). In the first case, the training data is resampled with replacement to create multiple models and, in the second case, the bootstrapping is performed on the prediction residue. For example, `vmaf_float_b_v0.6.3.json` and `vmaf_rb_v0.6.3.json` are the VMAF models using plain and residue bootstrapping respectively. We recommend using plain bootstrapping, e.g., `vmaf_float_b_v0.6.3.json`. While plain bootstrapping tends to produce larger measurement uncertainty compared to its residue counterpart, it is unbiased with respect to the full VMAF model (which uses the full training data).
+There are two ways to perform bootstrapping on VMAF:
+
+- **Plain (vanilla) bootstrapping, `b`.** The training data is resampled with
+  replacement to create multiple models.
+- **Residue bootstrapping, `rb`.** The bootstrapping is performed on the
+  prediction residue.
+
+Plain bootstrapping is recommended. It tends to produce larger measurement
+uncertainty than its residue counterpart, but it is unbiased with respect to
+the full VMAF model, which uses the full training data.
+
+| Method | Model file | Built-in version string | Recommended |
+| --- | --- | --- | --- |
+| Plain, `b` (float features) | `model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.json` | `vmaf_float_b_v0.6.3` | yes |
+| Plain, `b` (integer features) | `model/vmaf_b_v0.6.3.json` | `vmaf_b_v0.6.3` | yes |
+| Residue, `rb` | `model/vmaf_rb_v0.6.3/vmaf_rb_v0.6.3.json` | none (load by path) | no |
 
 ## Run in Command Line
 
-To enable CI, use the option `--ci` in the command line tools with a bootstrapping model such as `model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.json`. The `--ci` option is available for `run_vmaf`. In [libvmaf](../../core/README.md), CI can be enabled by setting the argument `enable_conf_interval` to 1. For the `vmaf` executable, it can automatically detect if a model is a bootstrap model, so just pass in the model path and no `--ci` option is needed.
+Use the `vmaf` executable or the Python harness. Both read a bootstrap model;
+only the Python harness needs a flag.
+
+### The `vmaf` executable
+
+The `vmaf` executable detects a bootstrap model by itself, so no `--ci` option
+is needed. Pass a built-in version string or a model path:
+
+```bash
+vmaf --reference ref.yuv --distorted dis.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --model version=vmaf_b_v0.6.3 --json --output out.json
+```
+
+The JSON output then carries one score per bootstrap model plus the aggregate
+keys `vmaf_bagging`, `vmaf_stddev`, `vmaf_ci_p95_lo` and `vmaf_ci_p95_hi` next
+to `vmaf` (pooled and per frame).
+
+### The C API
+
+1. Load the model with `vmaf_model_collection_load()`.
+2. Score with `vmaf_score_pooled_model_collection()` (or
+   `vmaf_score_at_index_model_collection()` for one frame).
+3. Read `score`, `bootstrap.stddev`, `bootstrap.ci.p95.lo` and
+   `bootstrap.ci.p95.hi` from the returned `VmafModelCollectionScore`.
+
+The types are declared in
+[`core/include/libvmaf/model.h`](https://github.com/VMAFx/vmafx/blob/master/core/include/libvmaf/model.h).
+
+### The Python harness
+
+The `--ci` option is available for `run_vmaf`, together with a bootstrapping
+model such as `model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.json`.
 
 For example, running
 
@@ -45,19 +103,35 @@ yields:
 }
 ```
 
-Here, `BOOTSTRAP_VMAF_score` is the final prediction result and is identical to `VMAF_score` when the `--ci` option is not used. `BOOTSTRAP_VMAF_stddev_score` is the standard deviation of bootstrapping predictions. If assuming a normal distribution, the 95% CI is `BOOTSTRAP_VMAF_score +/- 1.96 * BOOTSTRAP_VMAF_stddev_score`. For a more detailed explanation, please refer to the following section.
+Here, `BOOTSTRAP_VMAF_score` is the final prediction result and is identical to
+`VMAF_score` when the `--ci` option is not used. `BOOTSTRAP_VMAF_stddev_score`
+is the standard deviation of bootstrapping predictions. If assuming a normal
+distribution, the 95% CI is
+`BOOTSTRAP_VMAF_score +/- 1.96 * BOOTSTRAP_VMAF_stddev_score`. For a more
+detailed explanation, please refer to the following section.
 
 ## Further Analysis of Bootstrapped Predictions
 
-We assumed, for the sake of simplicity, that the distribution of VMAF predictions is a normal distribution. However, this assumption is not necessarily true. If we do not assume a normal distribution, the 95% CI is defined as `[BOOTSTRAP_VMAF_ci95_low_score, BOOTSTRAP_VMAF_ci95_high_score]`, where `BOOTSTRAP_VMAF_ci95_low_score` and `BOOTSTRAP_VMAF_ci95_high_score` are the 2.5 and 97.5 percentiles respectively. Furthermore, `BOOTSTRAP_VMAF_bagging_score` is the mean of the individual bootstrap models. While `BOOTSTRAP_VMAF_bagging_score` is different from `BOOTSTRAP_VMAF_score`, it is expected that they are relatively similar to each other if the distribution is not very skewed.
+We assumed, for the sake of simplicity, that the distribution of VMAF
+predictions is a normal distribution. However, this assumption is not
+necessarily true. If we do not assume a normal distribution, the 95% CI is
+defined as `[BOOTSTRAP_VMAF_ci95_low_score, BOOTSTRAP_VMAF_ci95_high_score]`,
+where `BOOTSTRAP_VMAF_ci95_low_score` and `BOOTSTRAP_VMAF_ci95_high_score` are
+the 2.5 and 97.5 percentiles respectively. Furthermore,
+`BOOTSTRAP_VMAF_bagging_score` is the mean of the individual bootstrap models.
+While `BOOTSTRAP_VMAF_bagging_score` is different from `BOOTSTRAP_VMAF_score`,
+it is expected that they are relatively similar to each other if the
+distribution is not very skewed.
 
 ## Dataset Validation
 
-CI can also be enabled in [`run_testing`](../usage/python.md#validate-a-dataset) on a dataset. In this case, the `quality_type` must be `BOOTSTRAP_VMAF`, and the `--vmaf-model` must point to the right bootstrapping model. For example:
+CI can also be enabled in [`run_testing`](../usage/python.md#validate-a-dataset)
+on a dataset. In this case, the `quality_type` must be `BOOTSTRAP_VMAF`, and the
+`--vmaf-model` must point to the right bootstrapping model. For example:
 
 ```bash
 python -m vmaf.script.run_testing \
-    BOOTSTRAP_VMAF python/vmaf/resource/dataset/NFLX_dataset_public.py \
+    BOOTSTRAP_VMAF compat/python-vmaf/resource/dataset/NFLX_dataset_public.py \
     --vmaf-model model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.json \
     --cache-result \
     --parallelize
@@ -67,18 +141,29 @@ Running the command line above will generate scatter plot:
 
 ![confidence interval plot](../../resource/images/CI.png)
 
-Here each data point (color representing different content) is associated with a 95% CI. It is interesting to note that points on the higher-score end tend to have a tighter CI than points on the lower-score end. This can be explained by the fact that in the dataset to train the VMAF model, there are more dense data points on the higher end than the lower.
+Here each data point (color representing different content) is associated with a
+95% CI. It is interesting to note that points on the higher-score end tend to
+have a tighter CI than points on the lower-score end. This can be explained by
+the fact that in the dataset to train the VMAF model, there are more dense data
+points on the higher end than the lower.
 
 ## Training Bootstrap Models
 
-To train a bootstrap model, one can use [`run_vmaf_training`](../usage/python.md#train-a-new-model) command line. In the parameter file, the `model_type` must be `BOOTSTRAP_LIBSVMNUSVR`. In `model_param_dict`, one can optionally specify the number of models to be used via `num_models`. See [`vmaf_v6_bootstrap.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py) for an example parameter file.
+To train a bootstrap model, one can use
+[`run_vmaf_training`](../usage/python.md#train-a-new-model) command line. In the
+parameter file, the `model_type` must be `BOOTSTRAP_LIBSVMNUSVR`. In
+`model_param_dict`, one can optionally specify the number of models to be used
+via `num_models`. See
+[`vmaf_v6_bootstrap.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py)
+for an example parameter file.
 
-Running the command line below will generate a bootstrap model `test_b_model.json`.
+Running the command line below will generate a bootstrap model
+`test_b_model.json`.
 
 ```bash
-python -m vmaf.script.run_vmaf_training python/vmaf/resource/dataset/NFLX_dataset_public.py \
-    python/vmaf/resource/param/vmaf_v6_bootstrap.py \
-    python/vmaf/resource/param/vmaf_v6_bootstrap.py \
+python -m vmaf.script.run_vmaf_training compat/python-vmaf/resource/dataset/NFLX_dataset_public.py \
+    compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py \
+    compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py \
     ~/Desktop/test/test_b_model.json \
     --cache-result \
     --parallelize

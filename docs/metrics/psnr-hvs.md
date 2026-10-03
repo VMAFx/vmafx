@@ -1,24 +1,37 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # PSNR-HVS
 
-PSNR-HVS (Peak Signal-to-Noise Ratio - Human Visual System) extends traditional
-PSNR with contrast sensitivity function (CSF) weighting applied in the DCT
-domain, making it more sensitive to perceptually significant distortions.
+PSNR-HVS (Peak Signal-to-Noise Ratio - Human Visual System) extends
+traditional PSNR with contrast sensitivity function (CSF) weighting applied in
+the DCT domain, making it more sensitive to perceptually significant
+distortions. The score is in dB and higher is better.
 
-## Variants
+The `psnr_hvs` extractor computes PSNR in the 8x8 DCT domain with
+per-coefficient weighting derived from a human visual system contrast
+sensitivity model (Ponomarenko et al.). It is the extractor invoked when VMAF
+model JSON files reference `"psnr_hvs"`. The scalar source is
+`core/src/feature/third_party/xiph/psnr_hvs.c`.
 
-| Extractor name | Algorithm | Options |
-|---|---|---|
-| `psnr_hvs` | CSF-weighted DCT-domain PSNR | `enable_chroma` |
+## How to run
 
-## `psnr_hvs` extractor
+```bash
+# Per-plane scores and the combined psnr_hvs (default)
+build/tools/vmaf \
+    --reference ref.yuv --distorted dist.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --no_prediction --feature psnr_hvs --output /dev/stdout
 
-The extractor computes PSNR in the 8x8 DCT domain with per-coefficient
-weighting derived from a human visual system contrast sensitivity model
-(Ponomarenko et al.). It is the extractor invoked when VMAF model JSON files
-reference `"psnr_hvs"`.
+# Luma only
+build/tools/vmaf \
+    --reference ref.yuv --distorted dist.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --no_prediction --feature 'psnr_hvs=enable_chroma=false' --output /dev/stdout
+```
 
-### Output features
+Input is limited to 12 bits per component; deeper input is rejected on every
+backend.
+
+## Output features
 
 | Feature name | Description | Condition |
 |---|---|---|
@@ -29,50 +42,44 @@ reference `"psnr_hvs"`.
 
 ## Options
 
-- `enable_chroma` (bool, default `true`): score the Cb and Cr planes and weight them into `psnr_hvs`. With `false`, or for YUV400P sources, only luma is scored and `psnr_hvs` equals `psnr_hvs_y`.
+| Option | Type | Default | Effect |
+|---|---|---|---|
+| `enable_chroma` | bool | `true` | Score the Cb and Cr planes and weight them into `psnr_hvs`. With `false`, or for YUV400P sources, only luma is scored and `psnr_hvs` equals `psnr_hvs_y`. |
 
-### How to run
+## Chroma plane dimensions
 
-```bash
-# Per-plane scores and the combined psnr_hvs (default)
-core/build/tools/vmaf \
-    --reference ref.yuv --distorted dist.yuv \
-    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature psnr_hvs --output /dev/stdout
-
-# Luma only
-core/build/tools/vmaf \
-    --reference ref.yuv --distorted dist.yuv \
-    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature 'psnr_hvs=enable_chroma=false' --output /dev/stdout
-```
-
-## Backend parity (chroma plane dimensions)
-
-`psnr_hvs` runs on CPU, CUDA, HIP, and SYCL with runtime backend selection.
 For chroma planes (`enable_chroma=true`) on subsampled formats (YUV420 /
 YUV422) whose luma width or height is **odd**, each chroma plane dimension is
-the **ceiling** of the half-resolution, not the floor — e.g. a 1921-wide 4:2:0
-frame has a 961-sample-wide chroma plane (`(1921 + 1) / 2`), not 960. All
-backends compute the ceiling so that `psnr_hvs_cb` / `psnr_hvs_cr` agree across
-CPU / CUDA / HIP / SYCL on odd-dimension frames. (The SYCL path previously
-floored the chroma dimensions, dropping the last chroma column/row on odd
-inputs and diverging from the other backends.)
+the **ceiling** of the half-resolution, not the floor.
+
+- **Example.** A 1921-wide 4:2:0 frame has a 961-sample-wide chroma plane
+  (`(1921 + 1) / 2`), not 960.
+- **Why.** All backends (CPU, CUDA, HIP, SYCL) compute the ceiling so that
+  `psnr_hvs_cb` / `psnr_hvs_cr` agree across them on odd-dimension frames.
+- **Earlier behaviour.** The SYCL path previously floored the chroma
+  dimensions, dropping the last chroma column or row on odd inputs and
+  diverging from the other backends.
 
 ## CPU instruction sets
 
-The CPU extractor binds one of three functions per plane: the scalar
-`calc_psnrhvs()` (`third_party/xiph/psnr_hvs.c`), `calc_psnrhvs_avx2()` on x86
-hosts with AVX2, and `calc_psnrhvs_neon()` on aarch64. All three return the
-same bits. The SIMD functions vectorise the integer DCT, which has no rounding,
-and keep every float operation in the scalar's order: the means and variances,
-the masking threshold `sqrt(mask * variance_ratio) / 32` with its `float`
-product, and the running `float` sum of the masked errors.
+The CPU extractor binds one of three functions per plane. All three return the
+same bits.
+
+| Function | Where |
+|---|---|
+| `calc_psnrhvs()` | Scalar, every host |
+| `calc_psnrhvs_avx2()` | x86 hosts with AVX2 |
+| `calc_psnrhvs_neon()` | aarch64 |
+
+The SIMD functions vectorise the integer DCT, which has no rounding, and keep
+every float operation in the scalar's order: the means and variances, the
+masking threshold `sqrt(mask * variance_ratio) / 32` with its `float` product,
+and the running `float` sum of the masked errors.
 
 `test_psnr_hvs_dispatch_invariance` holds the extractor to that through the
-public API: 165 picture pairs (blocks recorded from the Netflix pair, generated
-texture, random samples, the fixtures of the GPU twin comparison and edge
-inputs, at 8 to 12 bits and in every chroma layout), each scored with the
+public API: 165 picture pairs (blocks recorded from the Netflix pair,
+generated texture, random samples, the fixtures of the GPU twin comparison and
+edge inputs, at 8 to 12 bits and in every chroma layout), each scored with the
 host's instruction set and with every flag masked, all four outputs compared
 bit for bit. Check a build on your own content with:
 
@@ -85,81 +92,81 @@ done
 diff <(grep -v '"fps"' mask0.json) <(grep -v '"fps"' mask63.json)
 ```
 
-The product of the two `float` factors of the threshold is a `float` product:
-it is rounded to `float` before the square root widens it. That is Netflix's
-statement, and all three functions write it
-([ADR-1488](../adr/1488-psnr-hvs-upstream-mask-product.md)). Between May and
-October 2026 the scalar and the AVX2 function of this fork widened the first
-factor to `double`, which keeps the product exact and puts the threshold one
-`float` step off on about one block in twenty of real content. Most of those
-differences vanish in the running sum, so a frame differed only now and then;
-the next section has the figures. (Until 2026-10-02 the NEON function still
-had the `float` product, so an aarch64 build differed from an x86-64 build by
-the same amount.)
-
 ## Agreement with Netflix's `psnr_hvs`
 
-Measured against Netflix master (`9e48141b`, GCC 16.2.1, glibc 2.44) through
-the C API at `%.17g`, with every instruction-set flag masked and with the
-host's dispatch, on 319 frames from 8x8 to 3840x2160 at 8 to 12 bits in every
-chroma layout: `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr` are
-identical on every frame. With the `double` product, 27 of the 319 frames
-differed in `psnr_hvs` (9, 9 and 10 in the three plane scores), by at most
-9.4e-7 dB. Scores of this fork move by that much on those frames; a value
-printed with the default `%.6f` changes in its last digit on some of them.
+The score of this fork is Netflix's, bit for bit. Measured against Netflix
+master (`9e48141b`, GCC 16.2.1, glibc 2.44) through the C API at `%.17g`, with
+every instruction-set flag masked and with the host's dispatch, on 319 frames
+from 8x8 to 3840x2160 at 8 to 12 bits in every chroma layout: `psnr_hvs`,
+`psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr` are identical on every frame.
 
-What still differs from Netflix's extractor is behaviour, not arithmetic: this
-fork refuses input above 12 bits (Netflix's returns no score and no error),
-and it scores the luma plane of 4:0:0 input (Netflix's refuses the format).
+What still differs from Netflix's extractor is behaviour, not arithmetic:
+
+- This fork refuses input above 12 bits (Netflix's returns no score and no
+  error).
+- This fork scores the luma plane of 4:0:0 input (Netflix's refuses the
+  format).
+
+### The mask product
+
+The product of the two `float` factors of the masking threshold is a `float`
+product: it is rounded to `float` before the square root widens it. That is
+Netflix's statement, and all three functions write it
+([ADR-1488](../adr/1488-psnr-hvs-upstream-mask-product.md)).
 
 ## GPU twins
 
+The CUDA (`psnr_hvs_cuda`), HIP (`psnr_hvs_hip`) and SYCL (`psnr_hvs_sycl`,
+[ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md)) twins return the
+CPU's scores bit for bit, on every output, at every frame size and depth. The
+Metal twin still sums each block on the device and is held to a tolerance
+([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)).
+
+| Twin | Exact vs CPU | ADR | Evidence (fragment) | Masking threshold (CPU: `double` root of a `float` product) | Measured on |
+|---|---|---|---|---|---|
+| `psnr_hvs_cuda` | Yes | [ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) | `scripts/ci/exact_twins.d/psnr_hvs.cuda` | `float` product, `double` root | RTX 4090 |
+| `psnr_hvs_hip` | Yes | [ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) | `scripts/ci/exact_twins.d/psnr_hvs.hip` | `float` product, `double` root | gfx1036 (integrated) |
+| `psnr_hvs_sycl` | Yes | ADR-1401 | `scripts/ci/exact_twins.d/psnr_hvs.sycl` | No fp64 in the kernel: `float` product and a correctly rounded `float` root, which is the `double` root rounded to `float` | Arc A380 |
+| Metal | Tolerance | ADR-1361 | none | not applicable | not recorded |
+
+Each exact twin was measured against the CPU at `--precision max` on the
+Netflix 576x324 pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080
+checkerboard pairs and Big Buck Bunny at 1920x1080 and 3840x2160 (8 and 10
+bits): every frame of `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and
+`psnr_hvs_cr` has the same bits.
+
 ### Sample conversion
 
-The CUDA (`psnr_hvs_cuda`), HIP (`psnr_hvs_hip`), and SYCL (`psnr_hvs_sycl`,
-[ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md)) twins read the raw
-integer samples of the device pictures at every supported depth, 8 to 12 bits
-(every backend rejects deeper input, like the CPU extractor), eliminating host
-float conversions and redundant pinned host staging allocations. Two threads share
-each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
-launch covers every plane. Samples at 9 and 11 bits are scored as they are, like
-every other depth (the twins that converted on the host scored them wrongly).
+The twins read the raw integer samples of the device pictures at every
+supported depth, 8 to 12 bits, eliminating host float conversions and
+redundant pinned host staging allocations.
 
-All three twins take the `enable_chroma` option. With `enable_chroma=false`, or
-for 4:0:0 input, they stage, dispatch and score the luma plane only and emit
-`psnr_hvs_y` and `psnr_hvs`, as the CPU does.
+- Two threads share each 8x8 block, one per image.
+- The DCT runs in shared (local) memory, and one launch covers every plane.
+- Samples at 9 and 11 bits are scored as they are, like every other depth. The
+  twins that converted on the host scored them wrongly.
+- All three twins take `enable_chroma`. With `enable_chroma=false`, or for
+  4:0:0 input, they stage, dispatch and score the luma plane only and emit
+  `psnr_hvs_y` and `psnr_hvs`, as the CPU does.
 
-### Agreement with the CPU extractor
+### How the sum stays exact
 
-The CPU extractor (`third_party/xiph/psnr_hvs.c`, `calc_psnrhvs()`) adds every
-masked coefficient error of a plane to one running `float`: 64 terms per block,
-about 10.8 million for a 3840x2160 luma plane. The rounding of each addition
-depends on the sum so far, so the score depends on the order of the additions.
-The CPU's value is the reference; it is not the most accurate one (it is up to
-1.1e-2 dB above the same sum taken in `double` on 3840x2160 content), and it
-stays as it is because the Netflix golden values of
+The CPU extractor adds every masked coefficient error of a plane to one running
+`float`: 64 terms per block, about 10.8 million for a 3840x2160 luma plane. The
+rounding of each addition depends on the sum so far, so the score depends on
+the order of the additions.
+
+The CPU's value is the reference, not the most accurate one: it is up to
+1.1e-2 dB above the same sum taken in `double` on 3840x2160 content. It stays
+as it is because the Netflix golden values of
 `python/test/third_party/xiph/vmafexec_feature_extractor_test.py` pin it.
 
-The three GPU twins of the parity gate return the CPU's scores bit for bit, on
-every output, at every frame size and depth
-([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) for CUDA,
-[ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) for SYCL and HIP).
-The kernel stores the 64 terms of every block, computed in the CPU's
+The kernel therefore stores the 64 terms of every block, computed in the CPU's
 arithmetic, and the host adds them in the CPU's order.
 
-| Twin | Masking threshold (`double` root of a `float` product on the CPU) | Measured on |
-|---|---|---|
-| `psnr_hvs_cuda` | `float` product, `double` root | RTX 4090 |
-| `psnr_hvs_hip` | `float` product, `double` root | gfx1036 (integrated) |
-| `psnr_hvs_sycl` | No fp64 in the kernel: `float` product and a correctly rounded `float` root, which is the `double` root rounded to `float` | Arc A380 |
+### Check a twin on your device
 
-Each was measured against the CPU at `--precision max` on the Netflix 576x324
-pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080 checkerboard pairs
-and Big Buck Bunny at 1920x1080 and 3840x2160 (8 and 10 bits): every frame of
-`psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr` has the same bits.
-The Metal twin still sums each block on the device and is held to a tolerance
-([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)). Check a
-twin on your device with (replace `cuda` by `sycl` or `hip`):
+Replace `cuda` by `sycl` or `hip`:
 
 ```bash
 for b in cpu cuda; do
@@ -180,10 +187,12 @@ differed from a gcc build (glibc) by one unit in the last place on a few
 frames, on the CPU extractor and on the twins alike; an icx build now calls
 glibc's `log10` too.
 
-The exact sum has a cost. A twin reads 256 bytes per block back to the host
-(65 MB for a 3840x2160 4:2:0 frame, 259 MB at 7680x4320, held on the device
-and in host memory) and adds the terms on one host thread. Milliseconds per
-frame, with `--backend cpu --threads 16` for comparison:
+### Cost of the exact sum
+
+A twin reads 256 bytes per block back to the host (65 MB for a 3840x2160 4:2:0
+frame, 259 MB at 7680x4320, held on the device and in host memory) and adds the
+terms on one host thread. Milliseconds per frame, with
+`--backend cpu --threads 16` for comparison:
 
 | Frame size | `psnr_hvs_cuda`, RTX 4090 | `psnr_hvs_sycl`, Arc A380 | `psnr_hvs_hip`, gfx1036 | CPU, 16 threads |
 |---|---|---|---|---|
@@ -195,12 +204,32 @@ The CUDA column is from
 [Research-1397](../research/1397-psnr-hvs-twins-cpu-float-sum.md), the others
 from [Research-1401](../research/1401-psnr-hvs-sycl-hip-exact-twins.md), on a
 Ryzen 9 9950X3D that other work shared (the integrated gfx1036 varied between
-31 and 45 ms at 3840x2160). Every twin is slower than the CPU threads here:
-use `--backend cpu` when throughput matters more than keeping the frame on the
-device.
-`T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` and
-`T-SYCL-HIP-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` in
-[docs/state.md](../state.md) track the tuning.
+31 and 45 ms at 3840x2160).
+
+!!! note "Every twin is slower than the CPU threads here"
+    Use `--backend cpu` when throughput matters more than keeping the frame on
+    the device. `T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` and
+    `T-SYCL-HIP-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01` in
+    [docs/state.md](../state.md) track the tuning.
+
+## History
+
+- **ADR-1488, the mask product.** Between May and October 2026 the scalar and
+  the AVX2 function of this fork widened the first factor of the mask product
+  to `double`, which keeps the product exact and puts the threshold one `float`
+  step off on about one block in twenty of real content. Most of those
+  differences vanish in the running sum, so a frame differed only now and then.
+- **ADR-1488, effect on scores.** With the `double` product, 27 of the 319
+  frames differed in `psnr_hvs` (9, 9 and 10 in the three plane scores) from
+  Netflix's, by at most 9.4e-7 dB; a value printed with the default `%.6f`
+  changed in its last digit on some of them.
+- **ADR-1488, NEON.** Until 2026-10-02 the NEON function still had the `float`
+  product, so an aarch64 build differed from an x86-64 build by the same
+  amount.
+- **ADR-1397 and ADR-1401.** The GPU twins gained the CPU's sum order and
+  returned the CPU's scores bit for bit.
+- **ADR-1495.** An icx build calls glibc's `log10` instead of Intel's
+  `libimf`.
 
 ## See also
 

@@ -22,7 +22,7 @@ the natural-scene model).
 | Direction | **Lower is better** (0 = closest to the pristine model) |
 | Range | `[0, ∞)`; typical natural content scores roughly `2–30` |
 | Reference frame | Ignored (no-reference metric) |
-| Pristine model | `model/other_models/niqe_v0.1.pkl` (embedded at build time) |
+| Pristine model | `model/other_models/niqe_v0.1.pkl` (source), compiled in as `core/src/feature/niqe_model.h` (committed, generated; see [Regenerating the model header](#regenerating-the-model-header-and-score-snapshot)) |
 | Snapshot | `testdata/scores_cpu_niqe.json` (fork-added, not Netflix golden) |
 
 ## Usage
@@ -149,6 +149,7 @@ python3 scripts/ci/run_meson_test.py -- -C core/build-cpu test_niqe
 
 ## See also
 
-- [ADR-1112: NIQE no-reference CPU feature extractor](../adr/1112-niqe-nr-metric.md)
+- [ADR-1112: NIQE no-reference CPU feature
+  extractor](../adr/1112-niqe-nr-metric.md)
 - [CAMBI](cambi.md) — the other fork no-reference metric
 - [Features overview](features.md)

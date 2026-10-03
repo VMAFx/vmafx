@@ -68,13 +68,15 @@ Per frame, on the luma plane only (chroma ignored), all in double precision:
    energy; the per-pixel SSIM map is pooled as `std(map) / mean(map)`; scales
    combine with exponents `[0.0448, 0.2856]` (sign-preserving power). `C1 =
    1e-4`, `C2 = 9e-4`.
-7. **DLM atom (scale 2)** — on the last detail level: decouple the distortion
-   into restored + additive parts (psi-angle mask `< 1°`, `k =
-   clip(dis/(ref+eps), 0, 1)`), apply a 3×3 contrast mask (`/30`), then pool
-   each subband's masked energy with cube-root pooling after a `0.2`-border
-   crop. `dlm = (num + 1e-4) / (den + 1e-4)`. The numerator pools `rest^3`
-   **without** abs while the denominator pools the reference detail **with**
-   abs — an upstream asymmetry that is reproduced exactly.
+7. **DLM atom (scale 2)** — on the last detail level, in four stages:
+    - *Decouple:* split the distortion into restored and additive parts
+      (psi-angle mask `< 1°`, `k = clip(dis/(ref+eps), 0, 1)`).
+    - *Mask:* apply a 3×3 contrast mask (`/30`).
+    - *Pool:* pool each subband's masked energy with cube-root pooling after a
+      `0.2`-border crop. `dlm = (num + 1e-4) / (den + 1e-4)`.
+    - *Asymmetry:* the numerator pools `rest^3` **without** abs while the
+      denominator pools the reference detail **with** abs. This is an upstream
+      asymmetry and is reproduced exactly.
 8. **MAD-Ref atom (scale 2)** — `mean(|A2_ref[t] - A2_ref[t-1]|)`; `0` on the
    first frame. This makes the extractor temporal.
 
@@ -111,11 +113,6 @@ Per frame, on the luma plane only (chroma ignored), all in double precision:
 
 `core/test/test_y_funque_plus.c` asserts:
 
-```bash
-python3 scripts/ci/run_meson_test.py -- \
-  -C core/build-cpu test_y_funque_plus
-```
-
 - identical-input analytic oracles (`ms_ssim = 0`, `dlm = 1`, `mad = 0`) at
   8×8, odd 65×33, and the 100×100 crop path;
 - a 64×64 non-trivial oracle (`ms_ssim ≈ 0.0733072`, `dlm ≈ 0.9972564`) and a
@@ -123,9 +120,18 @@ python3 scripts/ci/run_meson_test.py -- \
   independently re-derived against a faithful `pywt` + OpenCV reference;
 - a too-small-frame `init()` rejection.
 
+Run it with:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- \
+  -C core/build-cpu test_y_funque_plus
+```
+
 ## See also
 
-- [ADR-1114: Y-FUNQUE+ wavelet-domain atom features](../adr/1114-y-funque-plus-atoms.md)
-- [Research-0108: feasibility + constants digest](../research/0108-y-funque-plus-atoms.md)
+- [ADR-1114: Y-FUNQUE+ wavelet-domain atom
+  features](../adr/1114-y-funque-plus-atoms.md)
+- [Research-0108: feasibility + constants
+  digest](../research/0108-y-funque-plus-atoms.md)
 - [SSIMULACRA 2](ssimulacra2.md) — the other fork wavelet/perceptual metric
 - [Features overview](features.md)

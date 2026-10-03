@@ -1,26 +1,47 @@
-<!-- markdownlint-disable MD013 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # CAMBI
 
-CAMBI (Contrast Aware Multiscale Banding Index) is Netflix's detector for banding (aka contouring) artifacts.
-
-## Background
-
-For an introduction to CAMBI, please refer to the [tech blog](https://netflixtechblog.medium.com/cambi-a-banding-artifact-detector-96777ae12fe2). For a detailed technical description, please refer to the [technical paper](../reference/papers/CAMBI_PCS2021.pdf) published at PCS 2021. Note that the paper describes an initial version of CAMBI that no longer matches the code exactly, but it is still a good introduction.
-
-By default, the current version of CAMBI is a [no-reference metric](https://en.wikipedia.org/wiki/Video_quality#Classification_of_objective_video_quality_models), and operates on a frame-by-frame basis (no temporal information is leveraged). To integrate it as part of the VMAF framework, which employs a [full-reference metric](https://en.wikipedia.org/wiki/Video_quality#Classification_of_objective_video_quality_models) API, CAMBI takes both a reference and a distorted video as its input. For simplicity, one can point the input arguments `--reference` and `--distorted` to the same video path.
-
-CAMBI also offers a full-reference mode which computes its score as `MAX(0, distorted_score - reference_score)`. This mode can be activated with the `--full_ref` command line option. In this case, both the `--reference` and `--distorted` inputs will be used.
+CAMBI (Contrast Aware Multiscale Banding Index) is Netflix's detector for
+banding (aka contouring) artifacts. The score starts at 0, meaning no banding
+is detected, and a higher score means more visible banding. Run it with
+`--feature cambi`.
 
 ## Scores
 
-The CAMBI score starts at 0, meaning no banding is detected. A higher CAMBI score means more visible banding artifacts are identified. The maximum CAMBI observed in a sequence is 24 (unwatchable). As a rule of thumb, a CAMBI score around 5 is where banding starts to become slightly annoying (also note that banding is highly dependent on the viewing environment - the brighter the display, and the dimmer the ambient light, the more visible banding is).
+- **Range.** The score starts at 0. The maximum CAMBI observed in a sequence
+  is 24 (unwatchable).
+- **Rule of thumb.** A CAMBI score around 5 is where banding starts to become
+  slightly annoying. Banding is highly dependent on the viewing environment:
+  the brighter the display and the dimmer the ambient light, the more visible
+  it is.
+- **No reference needed.** By default, the current version of CAMBI is a
+  [no-reference metric](https://en.wikipedia.org/wiki/Video_quality#Classification_of_objective_video_quality_models)
+  and operates on a frame-by-frame basis (no temporal information is
+  leveraged).
+- **Full-reference mode.** With `full_ref=true` CAMBI computes its score as
+  `MAX(0, distorted_score - reference_score)`, using both inputs (see
+  [Options](#options)).
+
+For an introduction to CAMBI, see the
+[tech blog](https://netflixtechblog.medium.com/cambi-a-banding-artifact-detector-96777ae12fe2).
+For a detailed technical description, see the
+[technical paper](../reference/papers/CAMBI_PCS2021.pdf) published at PCS 2021.
+The paper describes an initial version of CAMBI that no longer matches the code
+exactly, but it is still a good introduction.
 
 ## How to run CAMBI
 
-To invoke CAMBI using the VMAF command line, follow the [instruction](../../core/tools/README.md) and use `cambi` as the feature name. For example, after downloading the input video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv), invoke CAMBI via:
+To invoke CAMBI using the VMAF command line, follow the
+[instructions](../../core/tools/README.md) and use `cambi` as the feature name.
+Because the VMAF framework's API takes a reference and a distorted video, CAMBI
+takes both; for the no-reference mode one can point `--reference` and
+`--distorted` to the same video path. For example, after downloading the input
+video
+[`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv),
+invoke CAMBI via:
 
 ```bash
-core/build/tools/vmaf \
+build/tools/vmaf \
     --reference src01_hrc01_576x324.yuv \
     --distorted src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -47,80 +68,39 @@ This will yield the output:
 </VMAF>
 ```
 
-## Bit depths
-
-CAMBI supports the same input bit depths as VMAF: 8, 10, 12 and 16. However, the computations in CAMBI will always be performed at the 10-bit level, and the other formats will be converted to 10-bit as a preprocessing step.
-
-## Frame sizes
-
-CAMBI needs a width or a height of at least 216 pixels; `init()` refuses a
-frame when both are smaller (`CAMBI_MIN_WIDTH_HEIGHT`,
-`core/src/feature/cambi_internal.h`).
-
-The window scales with the encode resolution: `window_size * (width + height) /
-6000`, rounded up to an odd number (`adjust_window_size()` in
-`core/src/feature/cambi.c`); half of it, rounded down, is `pad_size`. CAMBI then
-halves the frame four times, so the coarsest of its five scales has 1/16 of the
-rows and columns, and it builds each pixel's histogram over the window clipped
-to the frame, as it does at every frame edge.
-
-On a wide, short input the coarsest scale can have no more rows than
-`pad_size`. With the default `window_size` of 65 that is every height up to 176
-at 1920 wide, 240 at 2560 wide and 352 at 3840 wide. Up to 2026-09-30 the
-c-values pass read and wrote rows past both ends of such frames and could
-crash ([Netflix/vmaf#1628](https://github.com/Netflix/vmaf/issues/1628); the
-upstream fix is [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629)).
-It now stops at the frame. Frames with fewer than `pad_size` rows at the
-coarsest scale (up to 160, 224 and 336 rows at those widths) score differently
-where they completed before: on 3-frame 8-bit ramps with `--cpumask 63`,
-3840x128 moves from 19.544347 to 19.512269, 1920x160 from 22.270340 to
-22.267602 and 3840x256 from 21.778393 to 21.769946. At exactly `pad_size`
-rows only a row outside the frame was written, so those frames (1920x176,
-2560x240, 3840x352) score as before, as does every frame with more rows.
-
-On a tall, narrow input the coarsest scale can have fewer columns than
-`pad_size`: with the default window, widths up to 80 at 1080 high, 160 at 1920
-high and 176 at 2160 high. Up to 2026-09-30 the scalar c-values walk read the
-columns past such a frame, pixels a finer scale left in the picture stride, while
-the SIMD paths did not. `--cpumask 63` builds and the GPU twins that ran the
-scalar walk on the host (CUDA, HIP and Metal at the time) could therefore
-score such frames
-differently from the default dispatch: scores change for frames narrower than
-`pad_size` at some scale (measured: 64x1920 vertical ramp master
-14.975700714938673 vs branch 14.964394451743877 on the C path; the SIMD paths
-already agreed; another vertical ramp variant gave 16.141046 on the C path and
-16.131541 with SIMD). Every path now gives the SIMD result, which is the score
-of the window clipped to the frame, so the C path's and those twins' scores of
-such frames change (the 64x1920 ramp to 14.964394451743877 and 16.131541, a
-128x1920 one from 16.204770 to 16.201631). This column bound goes beyond the
-upstream fix, which bounds only the rows; upstream's C path still reads those
-columns. [Research-2132](../research/2132-cambi-short-and-narrow-frames.md)
-defines the inputs behind these numbers and lists the measurements.
-
-A very wide frame can need a window larger than 65 x 65, the size of the
-reciprocal table. `init()` then fails with
-`cambi: window_size 85 too large for reciprocal LUT` (7680x216 at the default
-`window_size` of 65); a lower `window_size` fits (`cambi=window_size=50` runs
-at 7680x216).
+Options follow the feature name after the first `=`, separated by `:`, for
+example `--feature cambi=window_size=50:topk=0.5`.
 
 ## Options
 
-The CAMBI feature extractor also supports additional optional parameters as listed below:
+| Option | Alias | Type | Default | Range | Effect |
+| --- | --- | --- | --- | --- | --- |
+| `window_size` | `ws` | int | 65 | 15 to 127 | Window size to compute CAMBI. 65 corresponds to about 1 degree at 4K resolution and 1.5H. |
+| `topk` | none | double | 0.6 | 0.0001 to 1.0 | Ratio of pixels for the spatial pooling computation. |
+| `cambi_topk` | `ctpk` | double | 0.6 | 0.0001 to 1.0 | Same as `topk`. |
+| `tvi_threshold` | `tvit` | double | 0.019 | 0.0001 to 1.0 | Visibility threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886. |
+| `cambi_vis_lum_threshold` | `vlt` | double | 0 | 0 to 300 | Luminance value below which banding is assumed not to be visible. |
+| `max_log_contrast` | `mlc` | int | 2 | 0 to 5 | Maximum contrast in log luma level (2^max_log_contrast) at 10 bits. The default 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit, and is recommended for banding artifacts coming from video compression. |
+| `cambi_max_val` | `cmxv` | double | 1000 | 0 to 1000 | Maximum value allowed; larger values are clipped to it. |
+| `eotf` | none | string | `bt1886` | `bt1886`, `pq` | EOTF used to compute the visibility thresholds. |
+| `cambi_eotf` | `ceot` | string | `bt1886` | `bt1886`, `pq` | Same as `eotf`; takes precedence when both are set. |
+| `full_ref` | none | bool | `false` | n/a | Run CAMBI as a full-reference metric: output the per-frame difference between the encoded and source images as well as the existing no-reference score. Not a command-line flag; pass it as `--feature cambi=full_ref=true`. |
+| `enc_width`, `enc_height` | `encw`, `ench` | int | 0 | 180 to 7680, 150 to 7680 | Encoding/processing resolution to compute the banding score, useful when scaling was applied to the input prior to the computation of metrics. |
+| `enc_bitdepth` | `encbd` | int | 0 | 6 to 16 | Encoding bit depth. |
+| `src_width`, `src_height` | `srcw`, `srch` | int | 0 | 320 to 7680, 200 to 4320 | Encoding/processing resolution of the reference image; only used if `full_ref=true`. |
+| `cambi_high_res_speedup` | `hrs` | int | 0 | 1080, 1440, 2160 or 0 | Speed up by downsampling post spatial mask for resolutions at or above the given height. Some loss of accuracy is expected. 0 means not applied. |
+| `heatmaps_path` | none | string | unset | n/a | Folder where the heatmaps for different scales are stored as `.gray` files. The path is UTF-8 on every platform, including Windows; non-ASCII parent and leaf directory names are supported. |
 
-- `window_size` (min: 15, max: 127, default: 65): Window size to compute CAMBI (default: 65 corresponds to ~1 degree at 4K resolution and 1.5H)
-- `topk` (min: 0, max: 1.0, default: 0.6): Ratio of pixels for the spatial pooling computation
-- `tvi_threshold` (min: 0.0001, max: 1.0, default: 0.019): Visibility threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886
-- `max_log_contrast` (min: 0, max: 5, default: 2): Maximum contrast in log luma level (2^max_log_contrast) at 10-bits. Default 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. The default is recommended for banding artifacts coming from video compression.
-- `full_ref`: optional flag (default: false) to run CAMBI as a full-reference metric, outputting the per-frame difference between the encoded and source images as well as the existing no-reference score.
-- `enc_width` and `enc_height`: Encoding/processing resolution to compute the banding score, useful in cases where scaling was applied to the input prior to the computation of metrics
-- `src_width` and `src_height`: Encoding/processing resolution to compute the banding score on the reference image, only used if `full_ref=true`.
-- `cambi_high_res_speedup` to speed up by downsampling post spatial mask for resolutions >= 1080p. However, some loss of accuracy is expected in metric. Possible min resolutions for the speed-up = [1080, 1440, 3840, 0]. Default: 0 (not applied).
-- `heatmaps_path`: Set to a folder where the heatmaps for different scales will be stored as `.gray` files. The path is UTF-8 on every platform, including Windows; non-ASCII parent and leaf directory names are supported.
+### Example: `enc_width` and `enc_height`
 
-An example using the `enc_width` and `enc_height` options on the input video [`KristenAndSara_1280x720_8bit_processed.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/KristenAndSara_1280x720_8bit_processed.yuv) which has been encoded at 540p and later upscaled to 1280p (specifying the accurate encoding width and height as input allows CAMBI to more accurately assess the banding artifact):
+The input video
+[`KristenAndSara_1280x720_8bit_processed.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/KristenAndSara_1280x720_8bit_processed.yuv)
+has been encoded at 540p and later upscaled to 720p. Specifying the accurate
+encoding width and height lets CAMBI assess the banding artifact more
+accurately:
 
 ```bash
-core/build/tools/vmaf \
+build/tools/vmaf \
     --reference KristenAndSara_1280x720_8bit_processed.yuv \
     --distorted KristenAndSara_1280x720_8bit_processed.yuv \
     --width 1280 --height 720 --pixel_format 420 --bitdepth 8 \
@@ -143,17 +123,8 @@ This will yield the output:
 </VMAF>
 ```
 
-If no encoding width and height parameters are specified:
-
-```bash
-core/build/tools/vmaf \
-    --reference KristenAndSara_1280x720_8bit_processed.yuv \
-    --distorted KristenAndSara_1280x720_8bit_processed.yuv \
-    --width 1280 --height 720 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature cambi --output /dev/stdout
-```
-
-The output will be:
+If no encoding width and height parameters are specified (`--feature cambi`),
+the output is:
 
 ```text
 <VMAF version="4b42f672">
@@ -169,9 +140,56 @@ The output will be:
 </VMAF>
 ```
 
+### Full-reference mode
+
+```bash
+build/tools/vmaf \
+    --reference reference.yuv --distorted distorted.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 10 \
+    --no_prediction --feature cambi=full_ref=true --output /dev/stdout
+```
+
+Both the `--reference` and `--distorted` inputs are used. There is no
+`--full_ref` command-line option (the CLI rejects it as unrecognized).
+
+The run emits three scores: `cambi` (the distorted score), `cambi_source` (the
+reference score) and `cambi_full_reference`
+(`MAX(0, distorted_score - reference_score)`).
+
+## Inputs
+
+### Bit depths
+
+CAMBI supports the same input bit depths as VMAF: 8, 10, 12 and 16. The
+computations in CAMBI are always performed at the 10-bit level, and the other
+formats are converted to 10-bit as a preprocessing step.
+
+### Frame sizes
+
+CAMBI needs a width or a height of at least 216 pixels; `init()` refuses a
+frame when both are smaller (`CAMBI_MIN_WIDTH_HEIGHT`,
+`core/src/feature/cambi_internal.h`).
+
+The window scales with the encode resolution:
+`window_size * (width + height) / 6000`, rounded up to an odd number
+(`adjust_window_size()` in `core/src/feature/cambi.c`); half of it, rounded
+down, is `pad_size`. CAMBI then halves the frame four times, so the coarsest of
+its five scales has 1/16 of the rows and columns, and it builds each pixel's
+histogram over the window clipped to the frame, as it does at every frame edge.
+
+| Input shape | When it applies (default `window_size` 65) | Effect |
+| --- | --- | --- |
+| Wide and short | The coarsest scale has no more rows than `pad_size`: every height up to 176 at 1920 wide, 240 at 2560 wide, 352 at 3840 wide. | Scored on the window clipped to the frame. Frames with fewer than `pad_size` rows (up to 160, 224 and 336 rows at those widths) scored differently before 2026-09-30; see [History](#history). |
+| Tall and narrow | The coarsest scale has fewer columns than `pad_size`: widths up to 80 at 1080 high, 160 at 1920 high, 176 at 2160 high. | Scored on the window clipped to the frame, on every code path (scalar, SIMD, GPU twins). |
+| Very wide | The adjusted window exceeds 65 x 65, the size of the reciprocal table (for example 7680x216). | `init()` fails with `cambi: window_size 85 too large for reciprocal LUT`. A lower `window_size` fits (`cambi=window_size=50` runs at 7680x216). |
+
+[Research-2132](../research/2132-cambi-short-and-narrow-frames.md) defines the
+inputs behind the numbers in the history and lists the measurements.
+
 ## Generating and Decoding Heatmaps
 
-To generate the heatmaps, run CAMBI with the `heatmaps_path` option set to a local folder. It will write files such as:
+To generate the heatmaps, run CAMBI with the `heatmaps_path` option set to a
+local folder. It will write files such as:
 
 ```text
 cambi_heatmap_scale_0_1280x720_16b.gray
@@ -181,9 +199,8 @@ cambi_heatmap_scale_3_160x90_16b.gray
 cambi_heatmap_scale_4_80x45_16b.gray
 ```
 
-containing the raw grayscale heatmap data.
-
-You can use `ffmpeg` to convert them:
+containing the raw grayscale heatmap data. You can use `ffmpeg` to convert
+them:
 
 ```text
 ffmpeg -f rawvideo -pix_fmt gray16le -s 1280x720 -i heatmaps/cambi_heatmap_scale_0_1280x720_16b.gray -frames:v 1 heatmaps/cambi_heatmap_scale_0_1280x720_16b.png
@@ -191,9 +208,16 @@ ffmpeg -f rawvideo -pix_fmt gray16le -s 1280x720 -i heatmaps/cambi_heatmap_scale
 
 ## Python Library
 
-CAMBI can also be invoked in the [Python library](../usage/python.md). Use `CambiFeatureExtractor` as the feature extractor, and `CambiQualityRunner` as the quality runner. Use `CambiFullReferenceFeatureExtractor` and `CambiFullReferenceQualityRunner` to run the full-reference version of CAMBI.
+CAMBI can also be invoked in the [Python library](../usage/python.md). Use
+`CambiFeatureExtractor` as the feature extractor and `CambiQualityRunner` as
+the quality runner. Use `CambiFullReferenceFeatureExtractor` and
+`CambiFullReferenceQualityRunner` to run the full-reference version of CAMBI.
 
-```text
+```python
+from vmaf.config import VmafConfig
+from vmaf.core.asset import Asset
+from vmaf.core.cambi_quality_runner import CambiQualityRunner
+
 dis_path = VmafConfig.test_resource_path("yuv", "KristenAndSara_1280x720_8bit_processed.yuv")
 asset = Asset(dataset="test", content_id=0, asset_id=0,
               workdir_root=VmafConfig.workdir_path(),
@@ -202,25 +226,19 @@ asset = Asset(dataset="test", content_id=0, asset_id=0,
               asset_dict={'width': 1280, 'height': 720,
                           'dis_enc_width': 960, 'dis_enc_height': 540})
 
-self.qrunner = CambiQualityRunner(
-    [asset, asset_original],
-    None, fifo_mode=False,
-    result_store=None,
-    optional_dict={}
-)
-self.qrunner.run(parallelize=True)
-results = self.qrunner.results
+qrunner = CambiQualityRunner([asset], None, fifo_mode=False,
+                             result_store=None, optional_dict={})
+qrunner.run(parallelize=True)
 
-# score: arithmetic mean score over all frames
-self.assertAlmostEqual(results[0]['Cambi_score'],
-                        1.218365, places=4)
+# score: arithmetic mean score over all frames (about 1.218365)
+print(qrunner.results[0]['Cambi_score'])
 ```
 
 ## CPU SIMD paths
 
 The CPU extractor picks its kernels once, in `init()`, from the host's CPU
-flags. Nothing needs to be configured: the scalar C code is the default and
-the reference, and a SIMD kernel replaces it only on a CPU that supports its
+flags. Nothing needs to be configured: the scalar C code is the default and the
+reference, and a SIMD kernel replaces it only on a CPU that supports its
 instruction set. Every dispatched kernel is bit-exact against the scalar code,
 so the CAMBI score is identical whichever path runs.
 
@@ -241,16 +259,59 @@ instructions a hand-written kernel uses, so a NEON kernel would remove no work
 filter). Both NEON kernels are still built and covered by the parity tests, so
 they are ready if a compiler stops vectorising those loops.
 
-The c-values stage is the expensive one, and all three SIMD drivers (AVX2,
-AVX-512, NEON) are fast because they skip work, not because their vectors are
-wider. On flat, banding-prone content almost every pixel leaves the sliding
-histogram unchanged: it is masked out, outside the luma band CAMBI scores, or
-equal to the pixel it replaces. The scalar driver visits every pixel; the SIMD
-drivers test a block of up to 256 pixels with vector compares and update the
-histogram only for the ones that change it. The histogram each row sees is the
-same, so the scores are too. (Upstream's AVX2 driver, which visits every pixel,
-is still built and tested but no longer used: in icx builds it was slower than
-the scalar code.)
+### Why the c-values stage is fast
+
+The c-values stage is the expensive one. All three SIMD drivers (AVX2, AVX-512,
+NEON) are fast because they skip work, not because their vectors are wider. On
+flat, banding-prone content almost every pixel leaves the sliding histogram
+unchanged, because it is:
+
+- masked out,
+- outside the luma band CAMBI scores, or
+- equal to the pixel it replaces.
+
+The scalar driver visits every pixel. The SIMD drivers test a block of up to
+256 pixels with vector compares and update the histogram only for the ones that
+change it. The histogram each row sees is the same, so the scores are too.
+Upstream's AVX2 driver, which visits every pixel, is still built and tested but
+no longer used: in icx builds it was slower than the scalar code.
+
+### Compare paths on your machine
+
+Mask CPU flags with `--cpumask`, which takes the flags to *disable*. The score
+must not change:
+
+```bash
+# default dispatch (AVX-512 or NEON where available)
+vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+    --no_prediction --feature cambi --precision max --json -o simd.json
+# x86: AVX2 only (disable the AVX-512 and AVX-512 ICL flags, bits 16 and 32)
+vmaf ... --cpumask 48 -o avx2.json
+# x86: scalar only
+vmaf ... --cpumask 65535 -o scalar.json
+# aarch64: scalar only (disable NEON, bit 0)
+vmaf ... --cpumask 1 -o scalar.json
+```
+
+The JSON files differ only in `fps`. CAMBI's dispatch tests the AVX-512 flag
+only, so `--cpumask 16` gives the same AVX2-only dispatch for CAMBI;
+`--cpumask 48` is the form that also disables AVX-512 for every other
+extractor.
+
+The tests behind this are in the `simd` suite:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build --suite simd
+```
+
+- `test_cambi_stage_simd` compares every per-stage kernel with the scalar
+  stage.
+- `test_cambi_spatial_mask_simd` covers the spatial-mask rows.
+- `test_cambi_simd` covers the c-values row.
+- `test_cambi_dispatch_invariance` runs the whole extractor at each dispatch
+  level and requires identical scores.
+
+### Measured speed
 
 Measured on one AMD Zen 5 core (Ryzen 9 9950X3D), single thread, release
 builds, over seven 576x324 to 3840x2176 8- and 10-bit inputs
@@ -272,10 +333,9 @@ AVX-512 against AVX2, per stage:
 | Mode filter | 1.37–1.42x | 1.30–1.37x | 1.08–1.18x |
 | c-values | 1.04–1.16x | 1.14–1.28x | 1.06–1.27x |
 
-A whole CAMBI frame on that host, single thread, frames per second. "Before"
-is the build without these kernels, at its default dispatch; "default" is
-AVX-512 on this host; "AVX2 only" is `--cpumask 48`, what a CPU without
-AVX-512 runs:
+A whole CAMBI frame on that host, single thread, frames per second. "Before" is
+the build without these kernels, at its default dispatch; "default" is AVX-512
+on this host; "AVX2 only" is `--cpumask 48`, what a CPU without AVX-512 runs:
 
 | Input | GCC, before | GCC, default | GCC, AVX2 only | Clang, AVX2 only | icx, AVX2 only (before) |
 | --- | --- | --- | --- | --- | --- |
@@ -284,9 +344,9 @@ AVX-512 runs:
 | 1920x1080 10-bit | 267 | 339 | 313 | 338 | 318 (180) |
 | 3840x2176 8-bit | 46.8 | 60.5 | 56.4 | 57.4 | 56.7 (33.1) |
 
-On aarch64 there was no hardware to time; under `qemu-aarch64` the NEON
-kernels execute 9–24 % of the scalar instructions for the anti-dithering
-filter, derivative row and decimate, and 21–44 % for the c-values stage.
+On aarch64 there was no hardware to time; under `qemu-aarch64` the NEON kernels
+execute 9–24 % of the scalar instructions for the anti-dithering filter,
+derivative row and decimate, and 21–44 % for the c-values stage.
 
 The spatial-mask row kernels, measured on their own (1920x1080 frame, 7x7 mask
 filter, [Research-2062](../research/2062-cambi-spatial-mask-simd.md)):
@@ -298,58 +358,73 @@ filter, [Research-2062](../research/2062-cambi-spatial-mask-simd.md)):
 | mask row, GCC build | 275 µs | 164 µs (1.68x) | 122 µs (2.26x) |
 | mask row, Clang build | 251 µs | 167 µs (1.51x) | 121 µs (2.08x) |
 
-To compare paths on your own machine, mask CPU flags with `--cpumask`, which
-takes the flags to *disable*. The score must not change:
+## GPU twins
 
-```bash
-# default dispatch (AVX-512 or NEON where available)
-vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-    --no_prediction --feature cambi --precision max --json -o simd.json
-# x86: AVX2 only (disable the AVX-512 flag, bit 4)
-vmaf ... --cpumask 16 -o avx2.json
-# x86: scalar only
-vmaf ... --cpumask 65535 -o scalar.json
-# aarch64: scalar only (disable NEON, bit 0)
-vmaf ... --cpumask 1 -o scalar.json
-```
+CAMBI has CUDA, SYCL and HIP twins that compute every stage on the device, and
+a Metal twin that is a hybrid. Every twin reproduces the CPU's score; the exact
+ones are declared in `scripts/ci/exact_twins.d/`. The Vulkan backend (formerly
+T7-36 / [ADR-0210](../adr/0210-cambi-vulkan-integration.md)) was removed in
+[ADR-0726](../adr/0726-drop-vulkan-backend.md); CAMBI has no Vulkan path.
 
-The JSON files differ only in `fps`. The tests behind this are in the `simd`
-suite (`python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build --suite simd`): `test_cambi_stage_simd` compares
-every per-stage kernel with the scalar stage, `test_cambi_spatial_mask_simd`
-the spatial-mask rows, `test_cambi_simd` the c-values row, and
-`test_cambi_dispatch_invariance` runs the whole extractor at each dispatch
-level and requires identical scores.
+| Twin | Invocation | What runs on the device | Exact vs CPU | ADR | Evidence (fragment) |
+| --- | --- | --- | --- | --- | --- |
+| `cambi_cuda` | `--backend cuda` | Whole frame; one 88-byte readback per frame | Yes, while `cambi.c`'s own top-K `double` sum is exact | [ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md), [ADR-0360](../adr/0360-cambi-cuda.md) | `cambi.cuda`: 178 of 178 frames and 200 BBB 4K frames on an RTX 4090 |
+| `cambi_sycl` | `--backend sycl` | Whole frame; one 88-byte readback per frame | Yes, while the CPU's top-K `double` sum is exact | [ADR-1357](../adr/1357-sycl-cambi-device-resident.md) | `cambi.sycl`: 333 of 333 frames on an Arc A380 |
+| `cambi_hip` | `--backend hip` | Whole frame; one 88-byte readback per frame | Yes, while the CPU's top-K `double` sum is exact | [ADR-1378](../adr/1378-hip-cambi-device-resident.md) | `cambi.hip`: 178 of 178 frames on a gfx1036 |
+| `integer_cambi_metal` | `--backend metal` | Spatial mask, 2x decimate, 3-tap separable mode filter; the sliding-histogram `calculate_c_values` and the top-K spatial pool run on the host after a device-to-host copy at every scale | No (gate `places=4`) | none | none |
 
-## GPU support
+!!! warning "Re-measure any CAMBI score taken on the HIP backend before ADR-1219"
+    Up to and including v3.2.1 the HIP twin returned exactly `0.0` on banding
+    content that the CPU scores at `5.85`. It is fixed and now bit-exact with
+    the CPU ([ADR-1219](../adr/1219-gpu-cambi-tvi-shared-bisection.md); details
+    under [History](#history)). The Metal twin carried part of the defect and
+    gets the same fixes; CUDA and SYCL were unaffected.
 
-CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
+With `--backend cuda|sycl|hip`, `--feature cambi` runs the twin too
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)): the JSON
+`feature_backends` array names the extractor that ran, and a model that lists
+`cambi` (the default model does) picks the twin on its own. Naming the twin
+(`--feature cambi_cuda`) always registers it. For HIP, `cambi_hip` declares the
+CPU extractor's provided feature, so the pairing is the same; it was not
+checked on a device for this page.
 
-> **HIP scores before this release were wrong.** Up to and including v3.2.1 the
-> HIP CAMBI twin returned **exactly `0.0`** on banding content that the CPU
-> scores at `5.85`. It hand-rolled the TVI-threshold bisection over an inverted
-> predicate seeded from luma 0 instead of `luma_range.foot`, producing
-> `tvi_for_diff = [1026, 1025, 1024, 4]` where the CPU produces
-> `[182, 309, 436, 563]`; that collapses the scored luma band from 564 entries
-> to a handful, and `calculate_c_values()` then discards almost every pixel as
-> out-of-band. Two smaller divergences compounded it: `filter_mode` filtered
-> output rows 0 and `height-1`, which `cambi.c` leaves unfiltered, and the 7x7
-> mask box sum clamped out-of-frame taps to the border pixel where the CPU's
-> summed-area table zero-pads them. All three are fixed per
-> [ADR-1219](../adr/1219-gpu-cambi-tvi-shared-bisection.md) and HIP is now
-> bit-exact with the CPU. **Re-measure any CAMBI score taken on the HIP
-> backend.** The Metal twin carried the first two and gets the same fixes;
-> CUDA and SYCL were unaffected.
+Every device twin shares the CPU's window guard: when the adjusted window
+exceeds 65 x 65 (the size of the reciprocal table), `init()` fails with
+"cambi: window_size N too large for reciprocal LUT". At 3840x2160 that is any
+`window_size` above 65 without `cambi_high_res_speedup`. Before ADR-1379 the
+CUDA twin had no such check.
 
-The Metal twin uses the Strategy II hybrid architecture: the integer
-phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on the GPU;
-the sliding-histogram `calculate_c_values` and the top-K spatial pool run on the
-host after a device-to-host copy at every scale. The SYCL, CUDA and HIP twins run
-every stage on the device ([SYCL](#sycl), [CUDA](#cuda), [HIP](#hip)).
-Cross-backend gate runs at `places=4`.
+### Speed
 
-> **Note**: The Vulkan backend (formerly T7-36 / ADR-0210) was removed in
-> [ADR-0726](../adr/0726-drop-vulkan-backend.md). CAMBI no longer has a Vulkan
-> path. Use the SYCL, CUDA, HIP or Metal twin for GPU CAMBI scoring.
+Milliseconds per frame, `(t(N) - t(2)) / (N - 2)`, median of 3 (CUDA, before
+and after ADR-1379 in alternation on the same host;
+[Research-1379](../research/1379-cuda-cambi-speed-device-resident.md) has the
+method and the raw numbers):
+
+| Twin and device | Size | Before | After | CPU, 16 threads |
+| --- | --- | ---: | ---: | ---: |
+| `cambi_cuda`, RTX 4090 | 3840x2160 | 64.71 | 6.01 | 19.65 |
+| `cambi_cuda`, RTX 4090 | 576x324 | 1.59 | 0.38 | 0.09 |
+
+For SYCL, measured on Big Buck Bunny, 3840x2160 8-bit 4:2:0, `--precision max`,
+from `t(22 frames) - t(2 frames)`, median of five to nine runs
+(ADR-1357, "before" is the host-residual implementation):
+
+| Device | Before | After |
+| --- | ---: | ---: |
+| CPU, `--backend cpu --threads 16 --feature cambi` (unchanged code) | 10.6 | 11.6 |
+| Intel Arc B580, `--feature cambi_sycl` | 140 | 9.3 |
+| Intel UHD 770, `--feature cambi_sycl` | 944 | 42 |
+| Intel UHD 770, default model | 976 | 103 |
+| Intel Arc B580, default model | 123 | 71 |
+
+The HIP twin has not been timed on AMD hardware; the parity and timing
+commands are in [`docs/state.md`](../state.md) under
+`T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`. Re-check parity and timing on your own
+device with
+`python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature cambi --vmaf $PWD/build-cuda/tools/vmaf`
+(the SYCL commands are in
+[Research-2122](../research/2122-sycl-cambi-device-resident.md)).
 
 ### CUDA
 
@@ -363,65 +438,36 @@ ninja -C build-cuda
     -p 420 -b 8 --backend cuda --feature cambi_cuda
 ```
 
-`cambi_cuda` computes the whole frame on the GPU and reads back one 88-byte
-block of per-scale sums
-([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md)), the design
-of the SYCL twin below on CUDA. It reads the distorted plane the CUDA engine
-already uploaded, so it adds no transfer of its own, and it waits once per
-frame, in `collect()`, so frames overlap with the other CUDA extractors.
+`cambi_cuda` ([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md))
+is the design of the SYCL twin on CUDA. It reads the distorted plane the CUDA
+engine already uploaded, so it adds no transfer of its own, and it waits once
+per frame, in `collect()`, so frames overlap with the other CUDA extractors.
 
-With `--backend cuda`, `--feature cambi` also runs `cambi_cuda`
-([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); the JSON
-`feature_backends` array names the extractor that ran. A model that lists
-`cambi` (the default model does) picks `cambi_cuda` on its own.
+The arithmetic is the SYCL twin's:
 
-The arithmetic is the SYCL twin's: the c-values keep `cambi.c`'s column
-histograms and reciprocal table, and top-K pooling sums the largest `topk`
-fraction exactly as an integer in units of 2^-24. The score therefore equals
-`--backend cpu` to the last bit whenever the CPU's own `double` sum of those
-values is exact, and otherwise differs by that sum's rounding. On a synthetic,
-heavily banded 3840x2160 clip that was at most 3.0e-13, and a CPU build that
-sums in `long double` matched the CUDA twin exactly
-([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)).
-
-Like the CPU extractor, `cambi_cuda` refuses to initialise when the adjusted
-window exceeds 65 x 65 (the size of the reciprocal table), with "cambi:
-window_size N too large for reciprocal LUT". Before ADR-1379 it had no such
-check.
+- The c-values keep `cambi.c`'s column histograms and reciprocal table.
+- Top-K pooling sums the largest `topk` fraction exactly as an integer in units
+  of 2^-24.
+- The score therefore equals `--backend cpu` to the last bit whenever the CPU's
+  own `double` sum of those values is exact, and otherwise differs by that
+  sum's rounding. On a synthetic, heavily banded 3840x2160 clip that was at
+  most 3.0e-13, and a CPU build that sums in `long double` matched the CUDA
+  twin exactly
+  ([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)).
 
 Measured on an RTX 4090 against an icx build of the CPU extractor, at
 `--precision max`: every per-frame `cambi` is identical to `--backend cpu` on
-the Netflix 576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and on the
-wide, short frames (1920x64 to 3840x128) where the CPU extractor needs the
+the Netflix 576x324 pair (48 frames) and BBB 3840x2160 (50 frames). On the
+wide, short frames (1920x64 to 3840x128), where the CPU extractor needs the
 `T-CAMBI-SHORT-FRAME-OOB-2026-09-30` fix, the twin equals the fixed CPU with
-`compute-sanitizer` clean. Milliseconds per frame, `(t(N) - t(2)) / (N - 2)`,
-median of 3, before and after ADR-1379 in alternation on the same host
-([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md) has the
-method and the raw numbers):
-
-| Size | `cambi_cuda` before | `cambi_cuda` after | CPU, 16 threads |
-| --- | ---: | ---: | ---: |
-| 3840x2160 | 64.71 | 6.01 | 19.65 |
-| 576x324 | 1.59 | 0.38 | 0.09 |
-
-Re-check parity and timing with
-`python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature cambi --vmaf $PWD/build-cuda/tools/vmaf`.
-
-**Implementation note (before ADR-1379):** the twin downloaded the distorted
-picture to a host copy and preprocessed it there, because the host
-preprocessing path reads `pic->data[0]` as a host pointer and a CUDA picture
-holds a device address in that field (lusoris/vmaf#870); it then read the
-image and mask back at every scale for the host c-values and pooling
-([ADR-0360](../adr/0360-cambi-cuda.md)).
+`compute-sanitizer` clean.
 
 Companion research digest:
 [Research-0091](../research/0091-cambi-cuda-integration.md) (CUDA).
 
 ### SYCL
 
-`cambi_sycl` computes the whole frame on the GPU and reads back one 88-byte
-block of per-scale sums
-([ADR-1357](../adr/1357-sycl-cambi-device-resident.md)). It takes the
+`cambi_sycl` ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md)) takes the
 distorted plane from the SYCL frame upload every SYCL extractor shares, so it
 adds no transfer of its own, and it joins the combined command graph with the
 other SYCL extractors.
@@ -443,47 +489,29 @@ How the device matches `cambi.c`:
   histogram cells always hold the true count of their level in the window, so
   the counts equal the CPU's, and each c-value is `c_value_pixel()`'s formula
   with the same reciprocal table (`vmaf_cambi_reciprocal_lut()`).
-- **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of
-  c-values after a quick-select, summing in `double`. The device finds the same
-  set with a radix select and sums it exactly, as an integer in units of
-  2^-24 (every non-zero c-value is at least 0.5 and below 2^14). The two agree
-  to the last bit whenever the CPU's own sum is exact. On frames with a very
-  large banded area the CPU's sum rounds and the scores differ in the last few
-  digits: at most 2.2e-15 over 50 frames of Big Buck Bunny at 3840x2160
-  (47 identical), against a `places=4` gate.
-
-Measured on Big Buck Bunny, 3840x2160 8-bit 4:2:0, `--precision max`,
-milliseconds per frame from `t(22 frames) - t(2 frames)`, median of five to
-nine runs:
-
-| Device | Before (host residual) | After (device) |
-| --- | --- | --- |
-| CPU, `--backend cpu --threads 16 --feature cambi` (unchanged code) | 10.6 | 11.6 |
-| Intel Arc B580, `--feature cambi_sycl` | 140 | 9.3 |
-| Intel UHD 770, `--feature cambi_sycl` | 944 | 42 |
-| Intel UHD 770, default model | 976 | 103 |
-| Intel Arc B580, default model | 123 | 71 |
-
-Like the CPU extractor, `cambi_sycl` refuses to initialise when the adjusted
-window exceeds 65 x 65 (the size of the reciprocal table): at 3840x2160 that is
-any `window_size` above 65 without `cambi_high_res_speedup`. Both fail with
-"cambi: window_size N too large for reciprocal LUT".
-
-Parity and timing reproduce with the commands in
-[Research-2122](../research/2122-sycl-cambi-device-resident.md).
+- **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of c-values
+  after a quick-select, summing in `double`. The device finds the same set with
+  a radix select and sums it exactly, as an integer in units of 2^-24 (every
+  non-zero c-value is at least 0.5 and below 2^14).
+- **Agreement.** The two agree to the last bit whenever the CPU's own sum is
+  exact. On frames with a very large banded area the CPU's sum rounds and the
+  scores differ in the last few digits: at most 2.2e-15 over 50 frames of Big
+  Buck Bunny at 3840x2160 (47 identical), against a `places=4` gate.
 
 ### HIP
 
-`cambi_hip` runs the same pipeline as `cambi_sycl`
-([ADR-1378](../adr/1378-hip-cambi-device-resident.md)): per frame it copies the
-distorted luma into pinned memory, uploads it without waiting, runs every stage
-on the extractor's stream and reads back one 88-byte block of exact per-scale
-sums; `collect()` is the only wait. The window, mask index, resize tables,
-contrast weights, reciprocal table, top-K mean and the window guard are
-`cambi.c`'s own helpers, so the twin accepts and rejects the same
-configurations as the CPU (a window above 65 x 65 fails init with the same
-message) and is expected to score bit-identically wherever the CPU's top-K sum
-is exact.
+`cambi_hip` ([ADR-1378](../adr/1378-hip-cambi-device-resident.md)) runs the
+same pipeline as `cambi_sycl`:
+
+- Per frame it copies the distorted luma into pinned memory and uploads it
+  without waiting.
+- It runs every stage on the extractor's stream and reads back one 88-byte
+  block of exact per-scale sums; `collect()` is the only wait.
+- The window, mask index, resize tables, contrast weights, reciprocal table,
+  top-K mean and the window guard are `cambi.c`'s own helpers, so the twin
+  accepts and rejects the same configurations as the CPU (a window above
+  65 x 65 fails init with the same message) and is expected to score
+  bit-identically wherever the CPU's top-K sum is exact.
 
 ```bash
 # -Dhip_gfx_targets: your device's target, as rocm_agent_enumerator prints it
@@ -491,12 +519,85 @@ meson setup build-hip core -Denable_hip=true -Denable_hipcc=true \
     -Dhip_gfx_targets=gfx1036
 ninja -C build-hip
 
-# Name the twin: --feature cambi alone runs the CPU extractor.
 ./build-hip/tools/vmaf -r ref.yuv -d dis.yuv -w W -h H \
     -p 420 -b 8 --backend hip --feature cambi_hip
 ```
 
 The kernels' arithmetic lives in one header that a host test replays kernel by
 kernel against `cambi.c` (`test_hip_cambi_device_math`, no AMD device needed).
-It has not yet been timed on AMD hardware; the parity and timing commands are
-in [`docs/state.md`](../state.md) under `T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`.
+
+### Metal
+
+The Metal twin uses the Strategy II hybrid architecture: the integer phases
+(spatial mask, 2x decimate, 3-tap separable mode filter) run on the GPU; the
+sliding-histogram `calculate_c_values` and the top-K spatial pool run on the
+host after a device-to-host copy at every scale. The cross-backend gate runs at
+`places=4`.
+
+## History
+
+### 2026-09-30: short and narrow frames
+
+[ADR-1393](../adr/1393-cambi-clip-window-to-frame.md).
+
+**Wide, short input.** Up to 2026-09-30 the c-values pass read and wrote rows
+past both ends of such frames and could crash
+([Netflix/vmaf#1628](https://github.com/Netflix/vmaf/issues/1628); the upstream
+fix is [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629)). It now
+stops at the frame.
+
+Frames with fewer than `pad_size` rows at the coarsest scale score differently
+where they completed before: on 3-frame 8-bit ramps with `--cpumask 63`,
+3840x128 moves from 19.544347 to 19.512269, 1920x160 from 22.270340 to
+22.267602 and 3840x256 from 21.778393 to 21.769946. At exactly `pad_size` rows
+only a row outside the frame was written, so those frames (1920x176, 2560x240,
+3840x352) score as before, as does every frame with more rows.
+
+**Tall, narrow input.** Up to 2026-09-30 the scalar c-values walk read the
+columns past such a frame, pixels a finer scale left in the picture stride,
+while the SIMD paths did not. `--cpumask 63` builds and the GPU twins that ran
+the scalar walk on the host (CUDA, HIP and Metal at the time) could therefore
+score such frames differently from the default dispatch.
+
+Measured: a 64x1920 vertical ramp scored 14.975700714938673 on master against
+14.964394451743877 on the branch on the C path (the SIMD paths already agreed);
+another vertical ramp variant gave 16.141046 on the C path and 16.131541 with
+SIMD.
+
+Every path now gives the SIMD result, which is the score of the window clipped
+to the frame, so the C path's and those twins' scores of such frames change (the
+64x1920 ramp to 14.964394451743877 and 16.131541, a 128x1920 one from
+16.204770 to 16.201631).
+
+**Scope.** The column bound goes beyond the upstream fix, which bounds only the
+rows; upstream's C path still reads those columns.
+
+### The HIP twin before ADR-1219
+
+Up to and including v3.2.1 the HIP CAMBI twin returned exactly `0.0` on banding
+content that the CPU scores at `5.85`.
+
+- It hand-rolled the TVI-threshold bisection over an inverted predicate seeded
+  from luma 0 instead of `luma_range.foot`, producing
+  `tvi_for_diff = [1026, 1025, 1024, 4]` where the CPU produces
+  `[182, 309, 436, 563]`. That collapses the scored luma band from 564 entries
+  to a handful, and `calculate_c_values()` then discards almost every pixel as
+  out-of-band.
+- `filter_mode` filtered output rows 0 and `height-1`, which `cambi.c` leaves
+  unfiltered.
+- The 7x7 mask box sum clamped out-of-frame taps to the border pixel where the
+  CPU's summed-area table zero-pads them.
+
+All three are fixed per
+[ADR-1219](../adr/1219-gpu-cambi-tvi-shared-bisection.md) and HIP is now
+bit-exact with the CPU. The Metal twin carried the first two and gets the same
+fixes; CUDA and SYCL were unaffected.
+
+### The CUDA twin before ADR-1379
+
+**Implementation note.** The twin downloaded the distorted picture to a host
+copy and preprocessed it there, because the host preprocessing path reads
+`pic->data[0]` as a host
+pointer and a CUDA picture holds a device address in that field
+(lusoris/vmaf#870); it then read the image and mask back at every scale for the
+host c-values and pooling ([ADR-0360](../adr/0360-cambi-cuda.md)).

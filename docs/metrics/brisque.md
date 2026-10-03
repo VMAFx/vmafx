@@ -84,7 +84,8 @@ big array exists solely in the build directory.
 ## Algorithm
 
 Per frame, on the distorted luma plane only (all double precision), replicating
-the gregfreeman MATLAB pipeline that **trained the model** (`brisque_feature.m`):
+the gregfreeman MATLAB pipeline that **trained the model**
+(`brisque_feature.m`):
 
 1. Read the luma into a `[0, 255]` double working buffer (8-bit copied directly;
    higher bit depths scaled `value * 255 / (2^bpc - 1)`).
@@ -150,26 +151,33 @@ score-destroying, not a 1e-4 nudge). See ADR-1115.
   heavily-compressed near-flat content a large fraction of paired products sit
   within ~1e-11 of zero, so the bucket assignment — and hence `eta` and the
   score — is sensitive to floating-point summation order (~0.1 score units).
-  This is inherent to BRISQUE. Correctness is validated on stable natural
-  content (cameraman: C extractor `-13.70844` vs an independent MATLAB-faithful
-  oracle `-13.70840`, ~5e-5); the in-tree fixture snapshot
-  (`testdata/scores_cpu_brisque.json`) is the extractor's own deterministic
-  output rather than a places=4 cross-assert.
+  This is inherent to BRISQUE.
+- **How correctness is validated.** On stable natural content (cameraman: C
+  extractor `-13.70844` vs an independent MATLAB-faithful oracle `-13.70840`,
+  ~5e-5). The in-tree fixture snapshot (`testdata/scores_cpu_brisque.json`) is
+  the extractor's own deterministic output rather than a places=4
+  cross-assert.
 - Minimum frame size: width and height each ≥ 7 (the 7×7 window must fit).
 
 ## Licence of the bundled model
 
-The LIVE model is part of the BRISQUE release of The University of Texas at Austin
-and is used and redistributed under that release's notice, reproduced verbatim in
+The LIVE model is part of the BRISQUE release of The University of Texas at
+Austin and is used and redistributed under that release's notice, reproduced
+verbatim in
 [`LICENSES/LicenseRef-LIVE-BRISQUE.txt`](../../LICENSES/LicenseRef-LIVE-BRISQUE.txt)
-([ADR-1507](../adr/1507-brisque-live-notice-terms.md)). It permits use, copying,
-modification and distribution "for any purpose, provided that the copyright notice
-in its entirety appear in all copies of this code", and asks that the original
-source (LIVE and CPS at UT Austin) be "acknowledged in any publication that reports
-research using this code", with the two citations the
-[model card](../../model/brisque_live_card.md#acknowledgement-and-citation) lists.
-A binary of libvmaf built with the model embedded is such a copy: keep the notice
-with it, as the VMAFx tester packages do.
+([ADR-1507](../adr/1507-brisque-live-notice-terms.md)). The notice sets three
+obligations:
+
+- **Permitted use.** Use, copying, modification and distribution are allowed
+  "for any purpose".
+- **Notice travels with copies.** The copyright notice must "appear in all
+  copies of this code". A libvmaf binary built with the model embedded is such
+  a copy: keep the notice with it, as the VMAFx tester packages do.
+- **Acknowledge in publications.** The original source (LIVE and CPS at UT
+  Austin) must be "acknowledged in any publication that reports research using
+  this code", with the two citations the
+  [model card](../../model/brisque_live_card.md#acknowledgement-and-citation)
+  lists.
 
 ## Updating the model and regenerating the score snapshot
 
@@ -177,7 +185,8 @@ There is no header to regenerate: the model is embedded straight from the
 vendored binary at build time. To swap in a different/retrained model, replace
 `model/other_models/brisque_live.model` (keep the libsvm text format) and
 rebuild — Meson re-runs `xxd` automatically. Update the model card
-(`model/brisque_live_card.md`), the NOTICE (`model/other_models/NOTICE-brisque`),
+(`model/brisque_live_card.md`), the NOTICE
+(`model/other_models/NOTICE-brisque`),
 and the score snapshot below to match.
 
 To refresh the end-to-end snapshot after an intentional kernel change, run the

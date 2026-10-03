@@ -3,178 +3,249 @@
 
 A **feature extractor** is a per-frame computation that libvmaf runs as part of
 scoring. Each extractor publishes one or more named metrics into the result
-report; VMAF models then fuse these metrics into the final VMAF score. An
-extractor can also be requested individually (no model, no fusion) — useful
-when all you want is PSNR / SSIM / CIEDE2000 / etc.
+report, and VMAF models fuse some of them into the final VMAF score. You can
+also request an extractor on its own, with no model and no fusion, when all you
+want is PSNR, SSIM, CIEDE2000 or another single metric. Pass its registered
+name to `--feature`.
 
-This page is the per-extractor reference. For each extractor it lists:
-
-- **Invocation** — the string identifier you pass to `--feature <name>` on the
-  CLI, to `av_opt_set` in the ffmpeg `libvmaf` filter, or to
-  `vmaf_use_features_from_model()` / `vmaf_use_feature()` in the C API.
-- **Output metrics** — the keys that appear in the JSON / XML / CSV report.
-- **Output range** — numeric bounds and saturation behaviour.
-- **Input formats** — which pixel formats and bit depths the extractor accepts.
-- **Options** — per-extractor tuning keys (name, type, default, range).
-- **Backends** — which SIMD and GPU backends have a specialised path.
-- **Limitations** — known gaps, temporal state, etc.
+This page is the index of every extractor. Use it to find the registered name,
+the backends that accelerate it, whether a device twin is bit-identical to the
+CPU, and the page that documents it. The option reference of the extractors
+without a page of their own follows the table.
 
 Per [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) every
 user-discoverable extractor ships what / range / invocation / input formats /
 limitations in the same PR as the code.
 
-## Extractor overview
+## Select an extractor
 
-> The **Vulkan** column was removed per [ADR-0726](../adr/0726-drop-vulkan-backend.md)
-> (2026-05-28). Footnotes below referencing "Vulkan" / "Vulkan stub" describe
-> historical state and are retained for traceability against earlier ADRs.
-> `float_ansnr` was removed per [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
+Name the extractor after `--feature`. Options go after the name: the first `=`
+ends the name, `:` separates options, and each option is `key=value`.
 
-| Feature name       | Invocation name | Core feature? | Output metrics                                                                                 | SIMD                      | GPU                |
-|--------------------|-----------------|---------------|------------------------------------------------------------------------------------------------|---------------------------|--------------------|
-| VIF (fixed-point)  | `vif`           | Yes           | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| VIF (float)        | `float_vif`     | Yes           | `float_vif_scale0..3`                                                                          | —                         | CUDA, SYCL, HIP, Metal |
-| Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`, `aim_score`⁷, `adm3_score`⁷    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP⁷, Metal  |
-| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, HIP, Metal |
-| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal⁴ |
-| CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal¹ |
-| PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL, HIP, Metal |
-| SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | AVX2, NEON²               | CUDA, SYCL, HIP, Metal |
-| SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| ANSNR              | `float_ansnr`   | No            | removed — `float_ansnr` / `float_anpsnr` no longer emitted                                     | —                         | — (extractor removed PR #38 / ADR-0865) |
-| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, HIP, Metal |
-| [NIQE](niqe.md)    | `niqe`          | No            | `niqe` (no-reference; scores the distorted frame only)                                         | —                         | —                  |
-| [Y-FUNQUE+ atoms](y-funque-plus.md) | `y_funque_plus` | No | `y_funque_plus_ms_ssim`, `y_funque_plus_dlm`, `y_funque_plus_mad` (atoms only; fused SVR deferred) | —                         | —                  |
-| Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, HIP, Metal |
-| LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
-| DISTS-Sq (tiny-AI) | `dists_sq`      | No            | `dists_sq`                                                                                     | —                         | via ORT EP³        |
-| FastDVDnet pre     | `fastdvdnet_pre`| No            | `fastdvdnet_pre_l1_residual`                                                                   | —                         | via ORT EP³        |
-| TransNet V2        | `transnet_v2`   | No            | `shot_boundary_probability`, `shot_boundary`                                                   | —                         | via ORT EP³        |
-| MobileSal          | `mobilesal`     | No            | `saliency_mean`                                                                                | —                         | via ORT EP³        |
-| Speed (chroma)     | `speed_chroma`  | No            | `speed_chroma_y/u/v_score`, `speed_chroma_uv_score` (only when `VMAF_FLOAT_FEATURES` enabled)  | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP (Metal missing — deferred) |
-| Speed (temporal)   | `speed_temporal`| No            | `speed_temporal_score` family (only when `VMAF_FLOAT_FEATURES` enabled)                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP (Metal missing — deferred) |
-| BRISQUE            | `brisque`       | No            | `brisque_score` (no-reference)                                                                 | —                         | —                  |
-| Delta E ITP        | `delta_e_itp`   | No            | `delta_e_itp`                                                                                  | —                         | —                  |
-| PU21               | `pu21`          | No            | `pu21_psnr`, `pu21_ssim`                                                                       | —                         | —                  |
-| TAD (Rust pilot)   | `tad`           | No            | `tad` (requires `-Denable_rust_features=true`)                                                 | —                         | —                  |
+```bash
+# Single extractor, no model
+vmaf --reference ref.yuv --distorted dis.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --no_prediction --feature psnr \
+     --output score.json --json
 
-**Core** extractors are required inputs for the shipped VMAF models (see
-[models/overview.md](../models/overview.md)); non-core extractors are
-standalone.
+# Several extractors
+vmaf ... --feature psnr --feature ssim --feature ciede --feature cambi ...
 
-¹ The GPU PSNR extractors (`psnr_cuda`, `psnr_sycl`, `psnr_hip`,
-`integer_psnr_metal`) honour `enable_chroma` (default `true`) and emit
-`psnr_cb` / `psnr_cr` alongside `psnr_y` when the option is set. When
-`enable_chroma=false`, only `psnr_y` is emitted — matching the CPU
-extractor's luma-only path. YUV400 sources always produce luma-only output
-regardless of the option. GPU chroma parity was added for CUDA + SYCL by
-ADR-0453. (The Vulkan backend was removed in ADR-0726.)
+# Per-extractor options
+vmaf ... --feature "psnr=enable_mse=true:enable_apsnr=true" ...
+vmaf ... --feature "adm=adm_enhn_gain_limit=1.0" ...
+```
 
-² SSIM (fixed-point): `integer_ssim` has AVX2 and NEON SIMD acceleration, and
-CUDA, SYCL, HIP, and Metal GPU twins (`integer_ssim_{cuda,sycl,hip,metal}`).
-The `ssim_accumulate_avx512` reduction is vectorised (per
-[ADR-0139](../adr/0139-ssim-simd-bitexact-double.md), PR #342) —
-bit-exact vs scalar, ~7-11% wall-clock reduction on the SSIM/MS-SSIM
-hot path.
+- **CLI aliases** — `integer_motion` selects `motion`, `integer_motion2`
+  selects `motion_v2`, `integer_ssim` selects `ssim`, `integer_ms_ssim` selects
+  `float_ms_ssim` and `integer_psnr` selects `psnr`. No other `integer_*` name
+  is an alias: the fixed-point VIF and ADM are `vif` and `adm`.
+- **ffmpeg** — `libvmaf=feature=name=vif` (set through `av_opt_set`); options
+  follow the name with `:`, for example `libvmaf=feature=name=float_vif` or
+  `libvmaf=feature=name=motion_v2`.
+- **C API** — `vmaf_use_feature(ctx, "psnr", opts)` or
+  `vmaf_use_features_from_model()`:
 
-³ Tiny-AI extractors dispatch their underlying ONNX graphs through the ORT
-execution provider selected via `--tiny-device` (CPU / CUDA /
-OpenVINO / ROCm); libvmaf itself does not own a SIMD or GPU
-specialisation of the pre-/post-processing today. See
-[`docs/ai/inference.md`](../ai/inference.md).
+```c
+VmafFeatureDictionary *opts = NULL;
+vmaf_feature_dictionary_set(&opts, "enable_mse", "true");
+vmaf_use_feature(ctx, "psnr", opts);
+```
 
-⁴ CAMBI ships AVX2, AVX-512, and NEON SIMD implementations, and CUDA,
-SYCL, HIP, and Metal GPU kernels. (The original Vulkan
-kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
+See [usage/cli.md](../usage/cli.md) for the full CLI grammar and
+[api/index.md](../api/index.md#vmaffeaturedictionary) for the dictionary
+ownership rules.
 
-Depending on your build configuration not every backend is available — see
-[`backends/`](../backends/index.md) for the runtime dispatch rules.
+With `--backend cuda|sycl|hip|metal`, `--feature <name>` runs that backend's
+twin of the extractor when one exists. You can also name a twin directly, for
+example `--feature float_adm_cuda`. A backend that was not compiled in fails
+instead of falling back to the CPU
+([ADR-0498](../adr/0498-vmaf-tune-bbb-e2e-v2-bug-cluster.md)); see
+[Backends](../backends/index.md) for the runtime dispatch rules.
 
-⁵ HIP backend (T7-10b) — 19 feature extractors are registered in
-`feature_extractor_list[]` and resolve via `vmaf_get_feature_extractor_by_name`.
-See [`backends/hip/overview.md`](../backends/hip/overview.md).
+## Extractor coverage
 
-⁶ `aim_score` and `adm3_score` on the **float** path are emitted by
-`float_adm` (CPU), `float_adm_cuda` (ADR-0574, 2026-05-18) and
-`float_adm_sycl`, which returns the CPU's values for both
-([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md)). (The Vulkan
-backend was removed in ADR-0726.)
+Names in the first column are the registered names in
+`core/src/feature/feature_extractor.cpp`. Twin columns show the registered
+twin name, or `—` when none is registered. Exactness comes from the
+declaration files `scripts/ci/exact_twins.d/<feature>.<backend>`: `exact` means
+the parity gate compares the twin with tolerance 0, `bound <value>` is a
+documented tolerance from `scripts/ci/cross_backend_calibration.py`. The
+generated list of declarations is
+[cross-backend-exact-twins.md](../development/cross-backend-exact-twins.md).
 
-⁷ On the **fixed-point** path, `aim_score` and `adm3_score` are
-emitted by the CPU `adm` extractor, by `integer_adm_cuda`
-(ADR-0746), by `integer_adm_sycl` (ADR-1362, bit-identical to the CPU
-extractor) and by `integer_adm_metal` — each has a dedicated AIM
-contrast-measure device pass. The HIP `integer_adm` twin does
-**not**, so it leaves both features out of `provided_features[]`; a
-request for either resolves to the CPU twin through the ADR-0530
-name-based fallback, which returns the correct value under the correct
-feature-name key. Tracked as
-`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
-[`docs/state.md`](../state.md).
+| Registered name | Measures | CPU SIMD | CUDA twin | SYCL twin | HIP twin | Metal twin | Exactness of the CUDA / SYCL / HIP twins | Page |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `vif` | Visual information fidelity, four scales (core) | AVX2, AVX-512, NEON | `vif_cuda` | `vif_sycl` | `vif_hip` | `integer_vif_metal` | cuda `exact`, sycl `exact`, hip `exact` | [vif](vif.md) |
+| `float_vif` | VIF in float (core) | AVX2 (convolution only) | `float_vif_cuda` | `float_vif_sycl` | `float_vif_hip` | `float_vif_metal` | cuda `exact`, sycl `exact`, hip `exact` | [vif](vif.md) |
+| `motion` | Motion2, fixed-point (core) | AVX2, AVX-512, NEON | `motion_cuda` | `motion_sycl` | `motion_hip` | `integer_motion_metal` | cuda `exact`, sycl `exact`, hip `exact` | [motion](motion.md) |
+| `motion_v2` | Pipelined Motion2 | AVX2, AVX-512, NEON | `motion_v2_cuda` | `motion_v2_sycl` | `motion_v2_hip` | `motion_v2_metal` | cuda `exact`, sycl `exact`, hip `exact` | [motion](motion.md) |
+| `float_motion` | Motion2 in float (core) | AVX2, AVX-512, NEON | `float_motion_cuda` | `float_motion_sycl` | `float_motion_hip` | `float_motion_metal` | cuda `exact`, sycl `exact`, hip `exact` | [motion](motion.md) |
+| `adm` | Additive detail metric, fixed-point (core) | AVX2, AVX-512, NEON | `adm_cuda` | `adm_sycl` | `adm_hip` | `integer_adm_metal` | cuda `exact`, sycl `exact`, hip `exact` | [adm](adm.md) |
+| `float_adm` | ADM in float (core) | AVX2, AVX-512, NEON | `float_adm_cuda` | `float_adm_sycl` | `float_adm_hip` | `float_adm_metal` | cuda `exact`, sycl `exact`, hip `exact` | [adm](adm.md) |
+| `cambi` | Banding index | AVX2, AVX-512, NEON | `cambi_cuda` | `cambi_sycl` | `cambi_hip` | `integer_cambi_metal` | cuda `exact`, sycl `exact`, hip `exact` | [cambi](cambi.md) |
+| `ciede` | CIEDE2000 colour difference | AVX2, AVX-512, NEON | `ciede_cuda` | `ciede_sycl` | `ciede_hip` | `integer_ciede_metal` | cuda `bound 1e-9`, sycl `bound 1e-9`, hip `bound 1e-9` | [ciede](ciede.md) |
+| `psnr` | PSNR, fixed-point (Y, Cb, Cr) | AVX2, AVX-512, NEON | `psnr_cuda` | `psnr_sycl` | `psnr_hip` | `integer_psnr_metal` | cuda `exact`, sycl `exact`, hip `exact` | [psnr](psnr.md) |
+| `float_psnr` | PSNR in float (luma) | AVX2, AVX-512, NEON | `float_psnr_cuda` | `float_psnr_sycl` | `float_psnr_hip` | `float_psnr_metal` | cuda `exact`, sycl `exact`, hip `exact` | [psnr](psnr.md) |
+| `psnr_hvs` | PSNR weighted by a contrast-sensitivity function | AVX2, NEON | `psnr_hvs_cuda` | `psnr_hvs_sycl` | `psnr_hvs_hip` | `integer_psnr_hvs_metal` | cuda `exact`, sycl `exact`, hip `exact` | [psnr-hvs](psnr-hvs.md) |
+| `ssim` | SSIM, fixed-point | AVX2 | `integer_ssim_cuda` | `integer_ssim_sycl` | `integer_ssim_hip` | `integer_ssim_metal` | cuda `exact`, sycl `exact`, hip `exact` | [ssim](ssim.md) |
+| `float_ssim` | SSIM in float | AVX2, AVX-512, NEON | `float_ssim_cuda` | `float_ssim_sycl` | `float_ssim_hip` | `float_ssim_metal` | cuda `exact`, sycl `exact`, hip `exact` | [ssim](ssim.md) |
+| `float_ms_ssim` | Multi-scale SSIM | AVX2, AVX-512, NEON | `float_ms_ssim_cuda` | `float_ms_ssim_sycl` | `integer_ms_ssim_hip` | `float_ms_ssim_metal` | cuda `exact`, sycl `exact`, hip `exact` | [ms-ssim](ms-ssim.md) |
+| `ssimulacra2` | SSIMULACRA 2 in XYB space | AVX2, AVX-512, NEON, SVE2 | `ssimulacra2_cuda` | `ssimulacra2_sycl` | `ssimulacra2_hip` | `ssimulacra2_metal` | cuda `exact`, sycl `exact`, hip `exact` | [ssimulacra2](ssimulacra2.md) |
+| `float_moment` | First and second moments | AVX2, AVX-512, NEON, SVE2 | `float_moment_cuda` | `float_moment_sycl` | `float_moment_hip` | `float_moment_metal` | cuda `exact`, sycl `exact`, hip `exact` | [float-moment](float-moment.md) |
+| `speed_chroma` | SpEED chroma (research) | AVX2, AVX-512, NEON | `speed_chroma_cuda` | `speed_chroma_sycl` | `speed_chroma_hip` | — | cuda `exact`, sycl `exact`, hip `exact` | [speed_qa](speed_qa.md) |
+| `speed_temporal` | SpEED temporal (research) | AVX2, AVX-512, NEON | `speed_temporal_cuda` | `speed_temporal_sycl` | `speed_temporal_hip` | — | cuda `exact`, sycl `exact`, hip `exact` | [speed_qa](speed_qa.md) |
+| `speed_qa` | SpEED-QA | — | — | — | — | — | — | [speed_qa](speed_qa.md) |
+| `niqe` | No-reference naturalness (distorted frame only) | — | — | — | — | — | — | [niqe](niqe.md) |
+| `y_funque_plus` | Y-FUNQUE+ atoms (fused SVR deferred) | — | — | — | — | — | — | [y-funque-plus](y-funque-plus.md) |
+| `brisque` | No-reference BRISQUE | — | — | — | — | — | — | [brisque](brisque.md) |
+| `delta_e_itp` | Delta E ITP colour difference | — | — | — | — | — | — | [delta_e_itp](delta_e_itp.md) |
+| `pu21` | PU21 perceptually uniform PSNR / SSIM | — | — | — | — | — | — | [pu21](pu21.md) |
+| `tad` | Temporal absolute difference (Rust pilot, `-Denable_rust_features=true`) | — | — | — | — | — | — | [tad](tad.md) |
+| `lpips` | Learned perceptual image patch similarity (ONNX) | — | — | — | — | — | — | [tiny-ai-extractors](tiny-ai-extractors.md#lpips-learned-perceptual-image-patch-similarity) |
+| `dists_sq` | DISTS-shaped perceptual distance (ONNX, placeholder weights) | — | — | — | — | — | — | [dists](dists.md) |
+| `fastdvdnet_pre` | Temporal denoising pre-filter, residual only (ONNX) | — | — | — | — | — | — | [tiny-ai-extractors](tiny-ai-extractors.md#fastdvdnet-pre-temporal-denoising-pre-filter) |
+| `transnet_v2` | Shot-boundary detector (ONNX) | — | — | — | — | — | — | [tiny-ai-extractors](tiny-ai-extractors.md#transnet_v2-transnet-v2-shot-boundary-detector) |
+| `mobilesal` | Saliency mean (ONNX) | — | — | — | — | — | — | [tiny-ai-extractors](tiny-ai-extractors.md#mobilesal-mobilesal-saliency-map) |
+
+### Published metrics
+
+| Extractor | Metrics it publishes |
+| --- | --- |
+| `vif` | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3` |
+| `float_vif` | `float_vif_scale0` … `float_vif_scale3` |
+| `motion` | `motion2` (+ `motion` with `debug=true`) |
+| `motion_v2` | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`, `VMAF_integer_feature_motion3_v2_score` |
+| `float_motion` | `float_motion2` (+ `float_motion` with `debug=true`, the default) |
+| `adm` | `adm2`, `adm_scale0` … `adm_scale3`, `aim_score`, `adm3_score` |
+| `float_adm` | `float_adm2`, `adm_scale0` … `adm_scale3`, `aim_score`, `adm3_score` |
+| `cambi` | `cambi` |
+| `ciede` | `ciede2000` |
+| `psnr` | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE and APSNR when enabled) |
+| `float_psnr` | `float_psnr` (luma only; the CPU extractor emits a single luma score) |
+| `psnr_hvs` | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr` |
+| `ssim` | `ssim` |
+| `float_ssim` | `float_ssim` (+ L/C/S when enabled) |
+| `float_ms_ssim` | `float_ms_ssim` (+ per-scale L/C/S when enabled) |
+| `ssimulacra2` | `ssimulacra2` |
+| `niqe` | `niqe` (no-reference; scores the distorted frame only) |
+| `y_funque_plus` | `y_funque_plus_ms_ssim`, `y_funque_plus_dlm`, `y_funque_plus_mad` (atoms only) |
+| `float_moment` | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd` |
+| `speed_chroma` (`--feature speed_chroma`) | `Speed_chroma_feature_speed_chroma_u_score`, `..._v_score`, `..._uv_score` |
+| `speed_temporal` (`--feature speed_temporal`) | `Speed_temporal_feature_speed_temporal_score` |
+| `speed_qa` | `speed_qa` |
+| `brisque` | `brisque` (no-reference) |
+| `delta_e_itp` | `delta_e_itp` |
+| `pu21` | `pu21_psnr`, `pu21_ssim` |
+| `tad` | `tad`, `tad_sad` |
+| `lpips` | `lpips` |
+| `dists_sq` | `dists_sq` |
+| `fastdvdnet_pre` | `fastdvdnet_pre_l1_residual` |
+| `transnet_v2` | `shot_boundary_probability`, `shot_boundary` |
+| `mobilesal` | `saliency_mean` |
+| `float_ansnr` | removed: `float_ansnr` and `float_anpsnr` are no longer emitted |
+
+### Notes on the table
+
+- **Core** extractors (`vif`, `float_vif`, `motion`, `float_motion`, `adm`,
+  `float_adm`) are inputs of the shipped VMAF models (see
+  [models/overview.md](../models/overview.md)); the others are standalone.
+- **Metal** twins are registered when libvmaf is built with Metal. None is
+  declared exact; Metal has no `speed_chroma`, `speed_temporal` or `speed_qa`
+  twin (`GAP-METAL-MISSING-SPEED-TWINS`). `ssimulacra2_metal` runs a hybrid
+  host/GPU pipeline. Metal parity runs on an Apple device from the macOS tester
+  bundle, not on a hosted runner (ADR-1496).
+- **`float_psnr`, `float_adm`, `float_vif`, `float_motion`, `float_moment`,
+  `speed_chroma` and `speed_temporal`** (and their twins) are registered only
+  when libvmaf is built with `-Denable_float=true` (`VMAF_FLOAT_FEATURES=1`),
+  which is the default
+  (`core/meson_options.txt`).
+- **`psnr` GPU chroma** — the twins honour `enable_chroma` (default `true`) and
+  emit `psnr_cb` / `psnr_cr` next to `psnr_y`. With `enable_chroma=false`, only
+  `psnr_y` is emitted, as on the CPU. YUV 4:0:0 sources always produce luma
+  only. GPU chroma parity for CUDA and SYCL came with ADR-0453.
+- **`float_ssim` and `float_ms_ssim`** — the `ssim_accumulate_avx512` reduction
+  is vectorised, bit-exact against scalar
+  ([ADR-0139](../adr/0139-ssim-simd-bitexact-double.md), PR #342, about 7 to 11
+  percent
+  less wall-clock time on the SSIM and MS-SSIM hot path). The fixed-point `ssim`
+  has an AVX2 path only.
+- **Tiny-AI extractors** run their ONNX graph on the ORT execution provider
+  selected with `--tiny-device` (CPU, CUDA, OpenVINO, ROCm); libvmaf has no
+  SIMD or GPU path for their pre- and post-processing. See
+  [`docs/ai/inference.md`](../ai/inference.md).
+- **HIP** — 19 extractors are registered in `feature_extractor_list[]` and
+  resolve through `vmaf_get_feature_extractor_by_name` (T7-10b). See
+  [`backends/hip/overview.md`](../backends/hip/overview.md).
+- **`float_vif_hip`** takes part in model-driven dispatch only with the build
+  option `enable_float_vif_hip_autodispatch`, which is off by default
+  ([vif](vif.md)).
+- **`null`** is a registered no-op extractor used by tests.
+- **`float_ansnr`** was removed (PR #38, ADR-0865): `--feature float_ansnr`
+  fails with feature-not-found on a current build. See
+  [ANSNR](ansnr.md).
+
+Depending on your build configuration not every backend is available; see
+[`backends/`](../backends/index.md).
 
 ## Non-finite result handling
 
-A failed extractor computation is never converted into a plausible metric. If
-VIF, ADM, SSIM, MS-SSIM, SSIMULACRA2, TransNet V2, or the final VMAF piecewise
-mapping produces `NaN` or an unexpected infinity, libvmaf fails that frame with
-`-EINVAL` instead of substituting a configured minimum, maximum, threshold
-result, or zero. CPU, CUDA, HIP, SYCL and Metal host paths validate the complete
-enabled score set before their first collector write. The log callback names
-the extractor, frame, and offending value where those are available.
+A failed extractor computation never becomes a plausible metric. If VIF, ADM,
+SSIM, MS-SSIM, SSIMULACRA2, TransNet V2 or the final VMAF piecewise mapping
+produces `NaN` or an unexpected infinity, libvmaf fails that frame with
+`-EINVAL`. It does not substitute a minimum, a maximum, a threshold result or
+zero.
 
-Validation covers values that are not normally printed too: VIF debug
-numerators/denominators, ADM reductions before their precision floor, and every
-MS-SSIM L/C/S atom even when `enable_lcs=false`. This prevents a hidden failed
-atom from being erased by a comparison or a zero exponent before publication.
+What this means for you:
 
-This matters because those substitutions can look legitimate: an invalid
-SSIMULACRA2 result used to appear as the perfect `100.0`, an invalid SSIM as
-`max_db`, and an undefined ADM AIM ratio as the perfect `1.0`. A failed frame
-now produces no score for that extractor. The CLI treats the negative return as
-a runtime error and does not present the fabricated value in its report; C API
-callers should handle the existing negative-errno contract described in
-[API error semantics](../api/index.md#error-semantics).
+1. **The frame has no score.** The CLI treats the negative return as a runtime
+   error and prints no fabricated value; C API callers handle the existing
+   negative-errno contract ([API error
+   semantics](../api/index.md#error-semantics)).
+   The log callback names the extractor, the frame and the offending value
+   where known.
+2. **Hidden values are checked too.** CPU, CUDA, HIP, SYCL and Metal host paths
+   validate the complete enabled score set before their first collector write.
+   That covers VIF debug numerators and denominators, ADM reductions before
+   their precision floor, and every MS-SSIM L/C/S atom even when
+   `enable_lcs=false`.
+   - All four VIF ratios must be finite before any scale is published (scale 0
+     stays unclamped, scales 1 to 3 then apply their minimum).
+   - The same complete-set rule holds for float and integer VIF and for
+     SSIMULACRA2 on scalar, SIMD, CUDA, HIP, SYCL and Metal.
+3. **Finite results are unchanged**, including ADM's defined perfect aggregate
+   flat-frame result, a finite ADM per-scale `0/0` (now an explicit `1.0`) and
+   scores that legitimately reach a configured clamp.
 
-Finite results, including ADM's defined perfect aggregate flat-frame result and
-scores that legitimately reach a configured clamp, are unchanged. A finite
-ADM per-scale `0/0` now has that same explicit `1.0` definition instead of
-publishing NaN. All four VIF ratios must be finite before any scale is
-published; scale 0 remains unclamped, while scales 1-3 then apply their
-configured minimum. The same complete-set rule applies to float and integer
-VIF collectors. SSIMULACRA2 applies the same rule on scalar, SIMD, CUDA, HIP,
-SYCL and Metal backends.
+One output is non-finite on purpose: with dB output enabled and
+`clip_db=false`, a finite perfect SSIM or MS-SSIM raw score reports positive
+infinity (ADR-1221). Set `clip_db=true` to cap it at `max_db`. NaN raw scores
+and invalid dB ceilings still fail the frame.
 
-One existing output representation is intentionally non-finite: with dB output
-enabled and `clip_db=false`, a finite perfect SSIM or MS-SSIM raw score reports
-positive infinity. This is the documented ADR-1221 contract, not a failed raw
-computation. Set `clip_db=true` to cap it at `max_db`; NaN raw scores and invalid
-dB ceilings still fail the frame.
+!!! note
+    Those substitutions used to look legitimate: an invalid SSIMULACRA2 result
+    appeared as the perfect `100.0`, an invalid SSIM as `max_db`, and an
+    undefined ADM AIM ratio as the perfect `1.0`.
 
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 
-Each feature carries a small `VmafFeatureCharacteristics` descriptor
-that drives the per-backend dispatch decision (graph-replay vs
-direct submit on SYCL; graph-capture vs streams on CUDA). The
-descriptor lives on the extractor and is consumed by the per-backend
-`dispatch_strategy` modules under
-[`core/src/{cuda,sycl}/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.cpp).
+Each feature carries a small `VmafFeatureCharacteristics` descriptor that
+drives the per-backend dispatch decision: graph replay or direct submit on
+SYCL, graph capture or streams on CUDA. The per-backend `dispatch_strategy`
+modules consume it
+([`core/src/{cuda,sycl}/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.cpp)).
+The defaults match the behaviour before T7-26 byte for byte: graph replay above
+720p area, direct submit below.
 
-Defaults are calibrated to match pre-T7-26 SYCL behaviour
-byte-for-byte (graph replay above 720p area, direct submit below).
-For tuning, three env-var override surfaces are available — each
-takes a comma-separated list of `feature:strategy` pairs and wins
-over the registry default for the named features:
+Two environment variables override the default. Each takes a comma-separated
+list of `feature:strategy` pairs and wins over the registry default for the
+named features:
 
 | Env var | Strategy values | Effect |
 | --- | --- | --- |
 | `VMAF_SYCL_DISPATCH` | `graph` / `direct` | Per-feature SYCL graph-replay override. |
-| `VMAF_CUDA_DISPATCH` | `graph` / `direct` | Per-feature CUDA graph-capture override (today CUDA stub returns DIRECT for every input; the override surface ships now so future graph-capture work doesn't change the user contract). |
+| `VMAF_CUDA_DISPATCH` | `graph` / `direct` | Per-feature CUDA graph-capture override. Today the CUDA stub returns DIRECT for every input; the override ships now so future graph-capture work does not change the user contract. |
 
 Examples:
 
@@ -186,50 +257,47 @@ VMAF_SYCL_DISPATCH=adm:direct vmaf [...] --feature adm_sycl --backend sycl
 VMAF_SYCL_DISPATCH=vif:graph,motion:direct,adm:graph vmaf [...]
 ```
 
-Legacy global knobs `VMAF_SYCL_USE_GRAPH=1` / `VMAF_SYCL_NO_GRAPH=1`
-are kept as aliases (force every feature to graph / direct
-respectively); per-feature `VMAF_SYCL_DISPATCH` takes precedence.
+The legacy global knobs `VMAF_SYCL_USE_GRAPH=1` and `VMAF_SYCL_NO_GRAPH=1`
+remain as aliases that force every feature to graph or to direct; the
+per-feature `VMAF_SYCL_DISPATCH` takes precedence.
 
-## Core features
+## Option reference
+
+Extractors with their own page link to it. The sections below give the options
+of the rest. Each option is a feature parameter, so a non-default value
+appends its alias to the published feature name.
 
 ### VIF — Visual Information Fidelity
 
 VIF measures information-fidelity loss between reference and distorted at four
 Gaussian-pyramid scales. In the original Sheikh/Bovik formulation the scales
 are combined into a single score; in VMAF each scale is kept as a separate
-feature so the model can learn per-scale weights.
+feature so the model can learn per-scale weights. See [vif](vif.md) for the
+twin measurements and the minimum frame size.
 
-#### Invocation
+- **Run** — `--feature vif` (fixed-point, default) or `--feature float_vif`;
+  ffmpeg `libvmaf=feature=name=vif`; C API `vmaf_use_feature(ctx, "vif", opts)`.
+- **Output metrics** — `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`:
+  per-scale fidelity ratios in `[0, 1]`. Higher is better (1 =
+  reference-identical). With `debug=true` also `vif`, `vif_num`, `vif_den`, and
+  per-scale `*_num` / `*_den`.
+- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
+  Y plane only.
+- **Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
+  `float_vif`: AVX2 convolution, CUDA, SYCL, HIP, Metal.
 
-- CLI: `--feature vif` (fixed-point, default) or `--feature float_vif`.
-- ffmpeg: `libvmaf=feature=name=vif` / `feature=name=float_vif`.
-- C API: `vmaf_use_feature(ctx, "vif", opts)`.
+| Option | Alias | Declared by | Type | Default | Range | Effect |
+| --- | --- | --- | --- | --- | --- | --- |
+| `debug` | — | both | bool | `false` | — | Emit `vif`, `vif_num`, `vif_den` and the per-scale numerator and denominator. |
+| `vif_enhn_gain_limit` | `egl` | both | double | `100.0` | `1.0–100.0` | Cap on the enhancement-gain ratio, so over-sharpened output cannot saturate. `1.0` disables the enhancement-gain path (matches pre-v1.3 behaviour). |
+| `vif_skip_scale0` | `ssclz` | both | bool | `false` | — | Skip the finest scale: exclude it from the aggregate and report it as zero ([below](#vif_skip_scale0-and-what-it-publishes)). |
+| `vif_kernelscale` | `ks` | `float_vif` | double | `1.0` | `0.1–4.0` | Scale the Gaussian kernel standard deviation. |
+| `vif_prescale` | `ps` | `float_vif` | double | `1.0` | `0.1–4.0` | Resize factor applied to the frame before VIF. |
+| `vif_prescale_method` | `pm` | `float_vif` | string | `nearest` | — | Resize method for the prescale. |
+| `vif_scale1_min_val` … `vif_scale3_min_val` | `s1miv` … `s3miv` | `float_vif` | double | `0.0` | `0.0–1.0` | Minimum value of scale 1 … 3; smaller values are set to it. |
+| `vif_sigma_nsq` | `snsq` | `float_vif` | double | `2.0` | `0.0–5.0` | Neural-noise variance. |
 
-#### Output metrics
-
-- `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3` — per-scale fidelity
-  ratios in `[0, 1]`. Higher is better (1 = reference-identical).
-- With `debug=true`: also `vif`, `vif_num`, `vif_den`, and per-scale
-  `*_num` / `*_den`.
-
-**Output range** — each scale `[0, 1]`.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
-Operates on the Y plane only.
-
-#### Options
-
-| Option                 | Alias | Type   | Default | Range      | Effect                                                                 |
-|------------------------|-------|--------|---------|------------|------------------------------------------------------------------------|
-| `debug`                | —     | bool   | `false` | —          | Emit `vif`, `vif_num`, `vif_den`, plus per-scale numerator/denominator |
-| `vif_enhn_gain_limit`  | `egl` | double | `1.4`   | `1.0–1.4`  | Cap enhancement-gain ratio so over-sharpened output cannot saturate    |
-| `vif_kernelscale`      | `ks`  | double | `1.0`   | `0.1–4.0`  | Scale the Gaussian kernel std-dev — only `float_vif`                   |
-| `vif_skip_scale0`      | `ssclz` | bool | `false` | —          | Skip the finest scale: exclude it from the aggregate and report it as zero |
-
-`egl=1.0` disables the enhancement-gain path entirely (matches pre-v1.3
-behaviour).
-
-### `vif_skip_scale0` and what it publishes
+#### `vif_skip_scale0` and what it publishes
 
 With `vif_skip_scale0=true` the finest VIF scale is dropped from the aggregate
 `integer_vif` score **and** its own score is reported as exactly `0.0` rather
@@ -254,1716 +322,615 @@ four scales and apply the skip when they publish, so the zeroing lives at the
 emission site rather than in the kernel. `integer_vif` honours this on CPU,
 CUDA, SYCL, HIP and Metal.
 
-**Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP.
-`float_vif`: scalar only.
-
 **Reference** — Sheikh H. R., Bovik A. C., "Image information and visual
 quality," IEEE TIP 15(2):430–444, 2006.
 
-### Motion2
+### Motion
 
-See the [dedicated Motion page](motion.md) for the full options table, output
-ranges, and per-variant backend coverage matrix.
+Motion measures temporal activity: both frames are blurred with a fixed
+low-pass filter and the mean absolute pixel difference between the current and
+the previous reference luma is taken. `motion2` is the improved version with
+proper padding and boundary handling; the unfixed `motion` is kept behind
+`debug=true` for back-compat. See the [Motion page](motion.md) for output
+ranges, the five-frame window and the per-variant backend matrix.
 
-A simple temporal-difference feature: blur both frames with a fixed
-low-pass filter and take the mean absolute pixel difference between the
-current reference and the previous reference luma. Published as `motion2`
-(the improved version with proper padding / boundary handling); the
-unfixed `motion` is kept behind `debug=true` for back-compat.
-
-#### Invocation
-
-- CLI: `--feature motion` (fixed) or `--feature float_motion`.
-- ffmpeg: `libvmaf=feature=name=motion`.
-- C API: `vmaf_use_feature(ctx, "motion", opts)`.
-
-#### Output metrics
-
-- `motion2` — the shipped feature.
-- `motion` — the legacy unfixed variant, only when `debug=true`.
-
-**Output range** — `[0, ∞)`. Zero for a frozen reference, grows with motion
-content. No upper bound.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
-only.
-
-#### Options
-
-| Option                | Alias     | Type  | Default     | Effect                                                                                                            |
-|-----------------------|-----------|-------|-------------|-------------------------------------------------------------------------------------------------------------------|
-| `debug`               | —         | bool  | `true`      | Emit legacy `motion` alongside `motion2`                                                                          |
-| `motion_force_zero`   | `force_0` | bool  | `false`     | Override all scores to `0.0` — for deterministic test fixtures                                                    |
-| `motion_add_scale1`   | —         | bool  | `false`     | (`float_motion` only) Add a half-resolution bilinear-downsampled SAD term on top of the full-resolution SAD       |
-| `motion_add_uv`       | —         | bool  | `false`     | (`float_motion` only) Sum the U and V plane SADs into the score in addition to the Y plane                        |
-| `motion_filter_size`  | —         | int   | `5`         | (`float_motion` only) Blur kernel size, `3` or `5`. `5` is the original Motion2 filter; `3` is a cheaper variant  |
-| `motion_max_val`      | —         | float | `+∞`        | (`float_motion` only) Upper clamp applied to the emitted `motion2_score` and `motion3_score`                      |
-
-`force_0` is the collector-key suffix on the CPU, CUDA, SYCL, and HIP
-motion twins; backend selection does not change the published key.
-
-The `motion_add_scale1`, `motion_add_uv`, `motion_filter_size`, and
-`motion_max_val` options were ported from upstream Netflix/vmaf
-[`b949cebf`](https://github.com/Netflix/vmaf/commit/b949cebf) (2026-04-29).
-With the defaults left untouched, output is bit-identical to the pre-port
-baseline on the Y-plane SIMD fast path; non-default options route through
-the scalar `compute_motion()` path. The same port also enables
-`float_motion` to emit a `motion3_score` (a perceptual blend of `motion2`
-described by `motion_blend_factor` / `motion_blend_offset`) on the second
-frame; the trained VMAF models do not consume `motion3_score` and remain
-unchanged.
-
-**Backends** — AVX2, AVX-512, NEON; CUDA, SYCL, HIP, and Metal for
-`motion` (fixed-point). All GPU backends emit `motion`,
-`motion2`, **and** `motion3` (the latter as of T3-15(c) /
-[ADR-0219](../adr/0219-motion3-gpu-coverage.md)) in 3-frame window
-mode; the 5-frame window mode (`motion_five_frame_window=true`,
-[motion.md](motion.md#five-frame-window)) runs on the CPU and on the
-CUDA, SYCL and HIP twins of `motion` and `motion_v2`, bit-identical to the
-CPU ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md)); on Metal the
-CPU extractor computes it. The
-`motion_add_uv=true` path is currently CPU-only — see
-[backends/cuda/overview.md §Known gaps](../backends/cuda/overview.md#known-gaps)
-and [backends/sycl/overview.md §Known gaps](../backends/sycl/overview.md#known-gaps).
-`float_motion_cuda` and `float_motion_sycl` return the CPU `float_motion`
-scores bit for bit at `--precision max`
-([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md),
-[ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)), and so does
-`float_motion_hip` ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md)).
-The Metal `float_motion` twin has not been measured on a device.
-
-**Limitations** — Temporal. The extractor carries state across frames (two
-previous blurred references) and has a flush callback that emits the final
-frame's score after the input stream ends. Single-frame scoring is not
-supported; Motion2 on frame 0 is defined as `0.0`.
-
-### Motion v2 — pipelined Motion2
-
-A pipelined re-implementation of Motion2 that exploits the linearity of
-the blur kernel: instead of storing the blurred previous reference across
-frames, it folds the frame difference, blur, and absolute-sum into a
-single row-at-a-time pipeline that needs only one scratch row. The
-score is identical to Motion2 (modulo the SAD vs sum semantics described
-below); the variant is offered as a separate extractor so callers can
-opt into the pipelined arithmetic without touching the legacy
-`motion` registry entry.
-
-#### Invocation
-
-- CLI: `--feature motion_v2`.
-- ffmpeg: `libvmaf=feature=name=motion_v2`.
-- C API: `vmaf_use_feature(ctx, "motion_v2", NULL)`.
+- **Run** — `--feature motion` (fixed-point), `--feature float_motion` or
+  `--feature motion_v2`; ffmpeg `libvmaf=feature=name=motion` (or
+  `name=motion_v2`); C API `vmaf_use_feature(ctx, "motion", opts)` (for
+  `motion_v2`, `vmaf_use_feature(ctx, "motion_v2", NULL)`).
+- **Output range** — `[0, ∞)` before the `motion_max_val` clamp (default
+  10 000). Zero for a frozen reference; grows with motion content.
+- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
+  only.
+- **Limitations** — temporal. The extractor carries state across frames (two
+  previous blurred references) and has a flush callback that emits the final
+  frame's score after the input stream ends. Single-frame scoring is not
+  supported; Motion2 on frame 0 is defined as `0.0`.
 
 #### Output metrics
 
-- `VMAF_integer_feature_motion_v2_sad_score` — per-frame sum of
-  absolute blurred differences. Frame 0 always emits `0.0`.
-- `VMAF_integer_feature_motion2_v2_score` — Motion2-equivalent
-  score (current frame plus the next frame's score, divided by 2,
-  matching the legacy temporal smoothing).
+| Extractor | Metrics |
+| --- | --- |
+| `motion` | `motion2` (the shipped feature), `motion3`, the SAD score (CPU, CUDA, SYCL and HIP; see [Motion](motion.md)), and the legacy `motion` with `debug=true` |
+| `float_motion` | `float_motion2`, `float_motion3`, and `float_motion` (the legacy variant, emitted by default because `debug` defaults to `true`) |
+| `motion_v2` | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`, `VMAF_integer_feature_motion3_v2_score` |
+
+#### Options of `motion` and `float_motion`
+
+| Option | Alias | `motion` | `float_motion` | Type | Default | Range | Effect |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `debug` | — | yes (default `false`) | yes (default `true`) | bool | see column | — | Emit the legacy `motion` alongside `motion2`. |
+| `motion_force_zero` | `force_0` | yes | yes | bool | `false` | — | Override all scores to `0.0`, for deterministic test fixtures. |
+| `motion_fps_weight` | `mfw` | yes | yes | double | `1.0` | `0.0–5.0` | Multiplicative FPS-aware correction applied before clamping. |
+| `motion_blend_factor` | `mbf` | yes | yes | double | `1.0` | `0.0–1.0` | Blend factor of `motion3`. |
+| `motion_blend_offset` | `mbo` | yes | yes | double | `40.0` | `0.0–1000.0` | Score offset at which blending of `motion3` begins. |
+| `motion_max_val` | `mmxv` | yes | yes | double | `10000.0` | `0.0–10000.0` | Upper clamp of the emitted scores. |
+| `motion_five_frame_window` | `mffw` | yes | — | bool | `false` | — | Take each SAD against the frame two back instead of the previous one. |
+| `motion_moving_average` | `mma` | yes | — | bool | `false` | — | Two-frame moving average of `motion3`. |
+| `motion_add_scale1` | `mdc` | — | yes | bool | `false` | — | Add a half-resolution bilinear-downsampled SAD term on top of the full-resolution SAD. |
+| `motion_add_uv` | `mau` | — | yes | bool | `false` | — | Add the U and V plane SADs to the Y SAD. |
+| `motion_filter_size` | `mfs` | — | yes | int | `5` | `0–9` | Blur kernel size; `5` is the original Motion2 filter, `3` a cheaper variant. |
+
+`force_0` is the collector-key suffix on the CPU, CUDA, SYCL and HIP motion
+twins; backend selection does not change the published key.
+
+#### Options of `motion_v2`
+
+`motion_v2` declares seven options with the same aliases, defaults and ranges
+as the `motion` rows above: `motion_force_zero`, `motion_blend_factor`,
+`motion_blend_offset`, `motion_fps_weight`, `motion_max_val`,
+`motion_five_frame_window` and `motion_moving_average`. It has no `debug`
+option.
+
+#### Motion v2 — pipelined Motion2
+
+`motion_v2` exploits the linearity of the blur kernel. Instead of storing the
+blurred previous reference across frames, it folds the frame difference, blur
+and absolute sum into one row-at-a-time pipeline that needs a single scratch
+row. The score equals Motion2 apart from the SAD-against-sum semantics
+described below. It is a separate extractor so callers can opt into the
+pipelined arithmetic without touching the legacy `motion` registry entry.
+
+- **Output metrics** — `VMAF_integer_feature_motion_v2_sad_score` is the
+  per-frame sum of absolute blurred differences (frame 0 emits `0.0`).
+  `VMAF_integer_feature_motion2_v2_score` is the Motion2-equivalent score
+  (current frame plus the next frame's score, divided by 2, matching the legacy
+  temporal smoothing). `VMAF_integer_feature_motion3_v2_score` is the
+  perceptually blended and clipped score, optionally moving-averaged
+  ([Motion](motion.md)).
+- **Output range** — `[0, ∞)`, in the units of Motion2.
+- **Limitations** — temporal. The extractor caches its own previous reference
+  in a GPU-side ping-pong (the framework's `prev_ref` slot is unused on the GPU
+  paths). Frame 0 is `0.0`, and the final frame's smoothed score is emitted by
+  the flush callback, as for `motion`.
+
+#### Motion backends
+
+- **CPU** — AVX2, AVX-512 and NEON for `motion`, `float_motion` and
+  `motion_v2`.
+- **GPU, three-frame window** — all GPU backends emit `motion`, `motion2` and
+  `motion3` (the latter since T3-15(c) /
+  [ADR-0219](../adr/0219-motion3-gpu-coverage.md)).
+- **GPU, five-frame window** (`motion_five_frame_window=true`,
+  [motion.md](motion.md#five-frame-window)) — runs on the CPU and on the CUDA,
+  SYCL and HIP twins of `motion` and `motion_v2`, bit-identical to the CPU
+  ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md)). On Metal the CPU
+  extractor computes it.
+- **`motion_add_uv`, `motion_add_scale1`, `motion_filter_size`** — implemented
+  on the CPU and by `float_motion_hip`
+  ([ADR-1404](../adr/1404-hip-float-motion-motion3-and-options.md), see
+  [motion.md](motion.md)); the CUDA, SYCL and Metal `float_motion` twins do not
+  declare them. See [backends/cuda/overview.md §Known
+  gaps](../backends/cuda/overview.md#known-gaps)
+  and [backends/sycl/overview.md §Known
+  gaps](../backends/sycl/overview.md#known-gaps).
+- **`float_motion` twins** — `float_motion_cuda` and `float_motion_sycl` return
+  the CPU scores bit for bit at `--precision max`
+  ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md),
+  [ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)), and so does
+  `float_motion_hip`
+  ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md)). The Metal
+  `float_motion` twin has not been measured on a device.
+- **`motion_v2` twins** — bit-exact against the CPU scalar reference on 8-bit
+  and 10-bit inputs (`max_abs_diff = 0.0` across the cross-backend gate
+  fixture), for
+  [`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
+  [`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp)
+  and
+  [`integer_motion_v2_hip.c`](../../core/src/feature/hip/integer_motion_v2_hip.c).
+  They share a design:
+  - one dispatch over `(prev_ref - cur_ref)` exploits convolution linearity and
+    skips the per-frame blurred-state buffer;
+  - a raw-pixel ping-pong of two private device buffers caches the previous
+    frame's Y plane;
+  - per-workgroup `int64` SAD partials reduce on the host;
+  - `motion2_v2_score = min(score[i], score[i+1])` is emitted in `flush()`.
+- **`motion_v2` padding** — mirror padding **diverges** from the corresponding
+  `motion_*` kernels by one pixel at the boundary. CPU `integer_motion_v2.c`
+  uses reflect-101 mirror `2*size - idx - 2` (ADR-0662 corrected stale GPU-side
+  prose that had documented `-1`).
+
+### ADM — Additive Detail Metric
 
-**Output range** — `[0, ∞)`. Same units as Motion2.
+ADM measures detail loss and additive impairment at four wavelet sub-band
+scales. Its options, outputs, backend measurements and edge-case behaviour are
+on the [ADM page](adm.md): run it with `--feature adm` (fixed-point) or
+`--feature float_adm`.
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-Y plane only.
+#### AIM above 1
 
-**Options** — none.
-
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP
-([`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
-[`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp),
-[`integer_motion_v2_hip.c`](../../core/src/feature/hip/integer_motion_v2_hip.c)).
-(The Vulkan backend was removed in ADR-0726.)
-
-All the GPU kernels are **bit-exact** vs the CPU scalar reference on 8-bit and 10-bit
-inputs (max_abs_diff = 0.0 across the cross-backend gate fixture).
-They share the design: single dispatch / launch over
-`(prev_ref - cur_ref)` exploiting convolution linearity to skip
-the per-frame blurred-state buffer the CPU pipeline uses; a raw-
-pixel ping-pong of two private device buffers caches the previous
-frame's Y plane; per-WG `int64` SAD partials reduce on the host;
-`motion2_v2_score = min(score[i], score[i+1])` is emitted in
-`flush()`. Mirror padding **diverges** from the corresponding
-`motion_*` kernels by one pixel at the boundary (CPU
-`integer_motion_v2.c` uses reflect-101 mirror `2*size - idx - 2`;
-ADR-0662 corrected stale GPU-side prose that had documented `-1`).
-
-**Limitations** — Temporal: the extractor caches its own previous
-ref in a GPU-side ping-pong (the framework's `prev_ref` slot is
-not used for the GPU paths), but Motion v2 on frame 0 is still
-defined as `0.0` and the final frame's smoothed score is emitted
-via the flush callback (same behaviour as `motion`).
-
-### ADM — Additive Detail Metric (née DLM)
-
-ADM separately measures **detail loss** (the component that affects
-content visibility) and **additive impairment** (which distracts attention)
-at four wavelet sub-band scales. VMAF uses only the detail-loss branch.
-Numerical edge cases (black frames, flat areas) are handled specifically
-to avoid divide-by-zero.
-
-#### Invocation
-
-- CLI: `--feature adm` (fixed-point) or `--feature float_adm`.
-- ffmpeg: `libvmaf=feature=name=adm`.
-- C API: `vmaf_use_feature(ctx, "adm", opts)`.
-
-#### Output metrics
-
-- `adm2` — the fused final value (range `[0, 1]`), published as the
-  VMAF-model input.
-- `adm_scale0..3` — per-wavelet-scale fidelity.
-- `aim_score` — Additive Impairment Measure (AIM): the contrast-masked
-  additive impairment (CM of `decouple_a` relative to the CSF of
-  `decouple_r`, with `noise_weight = 0`) divided by the DLM denominator.
-  0 means no additive impairment; **higher is worse**. The fixed-point
-  `adm` extractor reports the ratio as it is, so its range is `[0, ∞)`;
-  `float_adm` clips it, range `[0, 1]`. See
-  [AIM above 1](#aim-above-1). Required by the Netflix HDR VMAF model and
-  by the default model `vmaf_v1.0.16_3d0h`. Backend coverage: footnotes ⁶
-  and ⁷ above.
-- `adm3_score` — ADM version 3: `max(w * adm2 + (1 - w) * (1 - aim),
-  adm_min_val)` with `w = adm_dlm_weight`, or the harmonic mean of adm2
-  and AIM (`adm_adm3_apply_hm=true`, float path), floored at
-  `adm_min_val` in both cases. This is the ADM feature the default model
-  consumes. Same backend coverage as `aim_score` above.
-- With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
-  numerator / denominator.
-
-**Output range** — `adm2` and the scale scores lie in `[0, 1]` unless the
-distorted picture has more of the reference's detail than the reference, which
-a contrast enhancement produces under an `adm_enhn_gain_limit` above 1. Higher
-is better. `aim_score` is the exception on both counts: higher is worse, and
-the fixed-point one has no upper bound.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
-only.
-
-#### Options
-
-| Option                   | Alias  | Type   | Default   | Range       | Effect                                                                                                                                                    |
-| ------------------------ | ------ | ------ | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debug`                  | —      | bool   | `false`   | —           | Emit debug metrics                                                                                                                                        |
-| `adm_enhn_gain_limit`    | `egl`  | double | `100.0`   | `1.0–100.0` | Enhancement gain limit: how many times its reference value a restored coefficient may count for. `1.0` counts no enhancement as restored detail (what the NEG models and `vmaf_v1.0.16_*` set); the default `100.0` is upstream's. Non-integer values such as `1.2` are valid; see [Non-integer enhancement gain limits](#non-integer-enhancement-gain-limits) |
-| `adm_norm_view_dist`     | `nvd`  | double | `3.0`     | `0.75–24.0` | Normalised viewing distance (distance ÷ display height)                                                                                                   |
-| `adm_ref_display_height` | `rdh`  | int    | `1080`    | `1–4320`    | Reference display height in pixels (for viewing-distance scaling)                                                                                         |
-| `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model: `0` Watson97 (upstream-canonical), `1` Barten, `2` Barten/Watson blend, `3` Barten/Watson blend (MAE-fitted). The default model `vmaf_v1.0.16_3d0h` requests `2`. Fixed-point `adm` normalizes finite over-range weights without changing the three bands' ratios; unsupported blend-table viewing geometry still returns `-EINVAL` — see [Fixed-point CSF limits](#fixed-point-csf-limits). |
-| `adm_csf_scale`          | `scf`  | double | `1.0`     | `0–50`      | H/V-axis CSF sensitivity scale. **Only `adm_csf_mode=1` (Barten) reads it** — it is the `adm_csf_scale` argument of `barten_csf()`. Ignored by modes 0, 2 and 3, on every backend including the CPU. `1.0` = upstream-canonical |
-| `adm_csf_diag_scale`     | `scfd` | double | `1.0`     | `0–50`      | Diagonal-axis CSF sensitivity scale; same `adm_csf_mode=1`-only applicability as `adm_csf_scale`                                                          |
-| `adm_noise_weight`       | `nw`   | double | `0.03125` | `0–1500`    | Weight in `(area × noise_weight)^(1/3)` noise-floor term in `adm_cm` / `adm_csf_den`; default `1/32 ≈ 0.03125` = upstream-canonical noise-floor divisor   |
-| `adm_dlm_weight`         | `dlmw` | double | `0.5`     | `0.0–1.0`   | Linear blend between DLM and AIM scores; `1.0` = DLM-only (no AIM contribution), `0.0` = AIM-only                                                         |
-| `adm_skip_aim`           | —      | bool   | `false`   | —           | Skip the AIM (Additive Impairment Metric) sub-band calculation entirely; forces AIM contribution to zero                                                  |
-| `adm_bypass_cm`          | `bcm`  | int    | `0`       | `0–1`       | Bypass contrast masking: drops the 3x3 masking threshold from the ADM numerator, so `adm2` rises sharply. Declared and honoured by CPU `adm` / `float_adm`, and by the CUDA, Metal, SYCL, and HIP `float_adm` twins per [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md). |
-| `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Up to v3.2.1 the Metal `float_adm` twin zeroed only the reported `adm_scale0` sub-score while still folding scale 0 into the fused score; fixed per [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md). The SYCL `float_adm` twin takes the option since [ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md); before, `--feature float_adm_sycl=adm_skip_scale0=true` was rejected as an unknown option. |
-| `adm_skip_aim_scale`     | `sasc` | int    | `-1`      | `0–3`       | Leave one scale out of the AIM score: that scale's numerator and denominator are not added to the AIM sums. `-1` (the default) leaves none out. `adm2` and the scale scores are not affected. CPU `float_adm`, `float_adm_cuda` and `float_adm_sycl`. |
-| `adm_f1s0` … `adm_f1s3`  | `f1s0` … `f1s3` | double | `-1.0` | `-1.0–10.0` | Replace the CSF weight of the horizontal and vertical bands of scale 0 … 3 with this value. A negative value (the default) keeps the weight the CSF model computes. CPU `float_adm` and `float_adm_sycl`. |
-| `adm_f2s0` … `adm_f2s3`  | `f2s0` … `f2s3` | double | `-1.0` | `-1.0–10.0` | The same for the diagonal band of scale 0 … 3. CPU `float_adm` and `float_adm_sycl`. |
-| `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
-| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured on every backend: CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, the CUDA / SYCL / HIP / Metal `integer_adm` twins, and — since [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md) — the CUDA / SYCL / HIP / Metal `float_adm` twins, which previously hardcoded `p = 3` in their kernels and applied the option to the AIM exponent alone. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that. |
-
-Every GPU `float_adm` twin currently implements `adm_csf_mode=0` only. For
-model-driven scoring, libvmaf detects a valid nonzero mode before device
-initialization and routes that feature to the CPU reference; unrelated
-features remain on the GPU. Explicitly naming one of those restricted float
-extractors retains its direct `-EINVAL` contract. Fixed-point `adm` implements
-modes 0–3 on CPU, CUDA, SYCL, HIP, and Metal. See
-[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) and
-[ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md).
-
-##### `float_adm` does not depend on the processor
-
-`float_adm` gives the same scores on every processor and with every compiler
-([ADR-1442](../adr/1442-float-adm-reference-divides.md)). One step of the
-metric, the decouple, divides the distorted wavelet coefficient by the
-reference one. Upstream Netflix forms that quotient on x86 from the
-processor's reciprocal-estimate instruction (`RCPSS`) and one correction
-step. The instruction is specified by an error bound, not bit for bit: its
-low bits differ between processor models, so the same pair of frames could
-score differently on two x86 machines, and differently again on ARM and
-under MSVC, which never used it. This fork divides.
-
-What this means when you use it:
-
-- `float_adm` scores from different machines can be compared and mixed
-  without a last-digit caveat.
-- Against earlier releases of this fork, and against upstream Netflix on
-  x86, `float_adm` scores move in the seventh decimal place. Measured on a
-  Ryzen 9 9950X3D: 147 of 791 scores changed, by at most 1.3e-7 (Netflix
-  576x324 at 8, 10, 12 and 16 bits, both 1920x1080 checkerboard pairs, 50
-  frames of 3840x2160). The `vmaf_float_v0.6.1`, `vmaf_float_v0.6.1neg` and
-  `vmaf_float_4k_v0.6.1` models, which take `float_adm` as an input, move by
-  up to 1.2e-5 on a frame and 2.7e-6 on a clip's mean. Builds for ARM and
-  MSVC builds are unchanged: they divided already.
-- The default models (`vmaf_v0.6.1` and the other fixed-point ones) do not
-  use `float_adm` and do not change.
-- It is not slower. The extractor takes the same time or a little less at
-  576x324, 1920x1080 and 3840x2160 with the scalar, AVX2 and AVX-512 paths.
-
-##### `float_adm` uses Netflix's contrast-sensitivity weights
-
-The weights `float_adm` applies to the wavelet bands (the Watson model by
-default, the Barten model with `adm_csf_mode=1`) are computed with Netflix's
-arithmetic
-([ADR-1489](../adr/1489-float-adm-barten-upstream-float.md)). Earlier
-releases of this fork kept a few intermediates of those formulas in `double`
-where Netflix keeps them in `float`, which changed every weight in its last
-digits.
-
-What this means when you use it:
-
-- The division described above is the only arithmetic difference between this
-  fork's `float_adm` and upstream Netflix's on x86. Measured against a
-  Netflix build that divides: every `float_adm` output with `debug=true` under
-  36 option sets, and the score of every model that reads `float_adm`, is
-  identical on 658 frames (Netflix 576x324 at 8, 10, 12 and 16 bits,
-  1920x1080 and 3840x2160 clips, 4:2:2, 4:4:4 and 4:0:0 input, small frames
-  down to 17x17), with the scalar, AVX2 and AVX-512 paths.
-- Against earlier releases of this fork, `float_adm` scores move in the
-  seventh decimal place: `adm2` by at most 1.1e-7, a per-scale score by at
-  most 2.7e-7. The `vmaf_float_v0.6.1`, `vmaf_float_v0.6.1neg`,
-  `vmaf_float_4k_v0.6.1` and `vmaf_v0.6.0` models move by up to 2.7e-5 on a
-  frame and 1.5e-5 on a clip's mean.
-- Fixed-point `adm` with `adm_csf_mode=1` reads the same Barten weights and
-  moves by at most 1.6e-7 (`integer_adm2`). In its default mode it does not
-  change, and neither do the default models (`vmaf_v0.6.1` and the other
-  fixed-point ones).
-- The GPU twins of `float_adm` and `adm` take the weights from the same
-  routines and return the CPU's scores as before.
-
-##### `float_adm` uses AVX2 and AVX-512, with the same scores
-
-On x86 `float_adm` runs its wavelet and its contrast-sensitivity stage through
-AVX2 or AVX-512 kernels when the processor has them
-([ADR-1473](../adr/1473-float-adm-x86-simd-exact-and-dispatched.md)); on
-64-bit ARM the wavelet runs through NEON. Every kernel returns the bits of the
-scalar code, so the instruction set does not change a score.
-
-What this means when you use it:
-
-- You do not select anything. `--cpumask` restricts the instruction sets as
-  for every other extractor: `--cpumask 63` forces the scalar code, `48`
-  allows up to AVX2, `0` (the default) allows everything.
-- Scores are the same on all three settings and the same as before the kernels
-  were enabled: every `float_adm` output with `debug=true` under 13 option
-  sets, and the `vmaf_float_v0.6.1` score, on the Netflix 576x324 pair at 8,
-  10, 12 and 16 bits, both 1920x1080 checkerboard pairs, 3840x2160 and 14
-  small frame sizes down to 17x17.
-- It is faster. One thread, whole run of `vmaf --feature float_adm`, on a
-  Ryzen 9 9950X3D:
-
-  | Frame | scalar | AVX2 | AVX-512 |
-  | --- | --- | --- | --- |
-  | 576x324 | 1.45 ms | 1.17 ms | 1.11 ms |
-  | 1920x1080 | 17.9 ms | 15.2 ms | 15.1 ms |
-  | 3840x2160 | 76.2 ms | 62.4 ms | 62.9 ms |
-
-- The rest of the extractor (the decouple, the denominator and the contrast
-  masking) is scalar on every processor. Those stages add `float` values in a
-  fixed order that the scores depend on.
-- A frame that contains NaN is refused on every setting, as before.
-
-##### `float_adm` on CUDA returns the CPU's values
-
-`float_adm_cuda` gives the same number as `--backend cpu --feature float_adm`
-for every output of every frame, down to the last bit of the `--precision max`
-output ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md)). Measured on
-an RTX 4090 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both
-1920x1080 checkerboard pairs and 3840x2160, with `debug=true` as well.
-
-What this means when you use it:
-
-- You can mix CPU and CUDA `float_adm` results in one data set. Before
-  ADR-1420 the CUDA twin was up to 1.3e-5 from the CPU (the fifth decimal
-  place of `adm_scale0` could differ); `float_adm_cuda` outputs stored before
-  it differ from new ones by that much.
-- For content with almost no reference detail, scored with
-  `adm_noise_weight=0`, the twin used to report `adm2 = 1` where the CPU
-  reports 0. It now reports the CPU's value.
-- "The CPU" is any CPU. See
-  [`float_adm` does not depend on the processor](#float_adm-does-not-depend-on-the-processor)
-  below: the twin divides as the CPU extractor does, and no longer measures
-  anything of the host when it starts.
-- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
-  is within 1.1e-7 of the CPU, because the two sides raise each term with
-  different `powf` implementations.
-- Frames smaller than 17x17 are refused by both; see the next section.
-
-##### `float_adm` on SYCL returns the CPU's values
-
-`float_adm_sycl` gives the same number as `--backend cpu --feature float_adm`
-for every output of every frame, down to the last bit of the `--precision max`
-output ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md)). Measured on
-an Arc A380 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both
-1920x1080 checkerboard pairs and 200 frames of 3840x2160, with `debug=true`
-as well. A 3840x2160 frame takes 12.3 ms, 15.1 ms before.
-
-What this means when you use it:
-
-- You can mix CPU and SYCL `float_adm` results in one data set. Before
-  ADR-1434 the SYCL twin was up to 1.7e-5 from the CPU (the fifth decimal
-  place of a scale score could differ); `float_adm_sycl` outputs stored
-  before it differ from new ones by that much.
-- For content with almost no reference detail, scored with
-  `adm_noise_weight=0`, the twin used to report `adm2 = 1` where the CPU
-  reports 0. It now reports the CPU's value.
-- The twin takes four options it rejected before: `adm_skip_scale0`,
-  `adm_skip_aim_scale`, `adm_f1s0` … `adm_f1s3` and `adm_f2s0` … `adm_f2s3`
-  (see the table above). With each of them it returns the CPU's values.
-- "The CPU" is the CPU extractor of the same build. The final roots are the
-  math library's `powf`: a libvmaf built with GCC and one built with the
-  Intel compiler used to differ in the last digit of `aim` and `adm3` on a
-  few frames (1.6e-9 on 2 of 200 frames measured, 7.5e-8 with a CSF weight
-  override), CPU extractor against CPU extractor. Since
-  [ADR-1495](../adr/1495-icx-system-libm.md) an Intel compiler build calls
-  glibc's `powf` and the two builds agree. The processor does not matter; see
-  [`float_adm` does not depend on the processor](#float_adm-does-not-depend-on-the-processor).
-- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
-  is within 1.8e-7 of the CPU, because the two sides raise each term with
-  different `powf` implementations.
-- With `debug=true` and another option set, the CPU files the ratio under
-  `adm` and the twin under `adm` plus the option suffix (for example
-  `adm_egl_1.2`). The value is the same; every other output has the same
-  name on both.
-- Frames smaller than 17x17 are refused by both; see the next section.
-- The twin uses 48 MB more device memory at 3840x2160.
-
-##### `float_adm` on HIP returns the CPU's values
-
-`float_adm_hip` returns the CPU extractor's scores bit for bit since
-[ADR-1458](../adr/1458-hip-float-adm-cpu-arithmetic.md). It runs the CUDA
-twin's arithmetic from the same source file. Measured on a gfx1036
-(ROCm 7.2.4) at `--precision max` against `--backend cpu`: 1246 of 1246
-scores identical on 178 frames (576x324 at 8, 10, 12 and 16 bits and as
-10-bit 4:2:2, 1920x1080, 3840x2160, full-range noise), 3204 of 3204 outputs
-with `debug=true`, and every score again with `adm_enhn_gain_limit=1.2`,
-`adm_bypass_cm=1`, `adm_skip_aim_scale=1`, `adm_norm_view_dist=1.5` and
-`adm_p_norm=1`.
-
-What this means for you:
-
-- You can mix CPU and HIP `float_adm` results in one data set. Before
-  ADR-1458 the HIP twin was up to 1.3e-5 from the CPU; `float_adm_hip`
-  outputs stored before it differ from new ones by that much.
-- The twin takes `adm_skip_aim_scale`, which it rejected before. It does not
-  take `adm_skip_scale0` or the per-scale weight overrides `adm_f1s0` …
-  `adm_f2s3`; with one of those set, use the CPU extractor.
-- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
-  is within 1.5e-7 of the CPU, because the two sides raise each term with
-  different `powf` implementations.
-- Frames smaller than 17x17 are refused by both; see the next section.
-- The twin uses 48 MB more device memory at 3840x2160. A frame takes no
-  longer than before: 13 ms at 1920x1080 and 68 ms at 3840x2160 on a
-  gfx1036.
-
-The Metal `float_adm` twin agrees with the CPU to four decimal places.
-
-##### Small frames
-
-The fixed-point `adm` extractor needs at least 17x17 pixels, on every
-backend. Each of its four DWT levels halves the band, and below 17 pixels the
-coarsest level has a single sample. Smaller input fails with `-EINVAL` when
-the extractor starts. The CPU, CUDA, HIP and SYCL extractors also log an error
-that names them:
-
-```text
-libvmaf ERROR integer_adm requires width >= 17 and height >= 17 (got 16x16)
-libvmaf ERROR adm_cuda requires width >= 17 and height >= 17 (got 16x16)
-```
-
-The CUDA, HIP and SYCL twins (`adm_cuda`, `adm_hip`, `adm_sycl`) used to
-accept such frames; they now refuse them like the CPU and Metal extractors.
-
-`float_adm`, `float_adm_cuda` and `float_adm_sycl` refuse the same frames,
-with the same kind of message:
-
-```text
-libvmaf ERROR float_adm requires width >= 17 and height >= 17 (got 16x16)
-libvmaf ERROR float_adm_cuda requires width >= 17 and height >= 17 (got 16x16)
-libvmaf ERROR float_adm_sycl requires width >= 17 and height >= 17 (got 16x16)
-```
-
-They used to accept them. Below 17x17 the coarsest level has a single sample
-and the CPU extractor read outside it: before the start of a buffer at 8
-pixels or fewer, the wrong sample from 9 to 16 (a random 8x8 pair scored
-`adm_scale3 = 1.05`). Scores of such frames from an older build are not
-meaningful. The HIP and Metal `float_adm` twins still accept these
-frames; use at least 17x17 with them.
-
-Frames from 17 to 32 pixels wide or high are the smallest it accepts. These
-were wrong at those sizes and are fixed:
-
-- Scale 3 read outside its band, so `integer_adm_scale3` could change between
-  two runs on the same input.
-- For frames 17 to 32 pixels wide, the AVX-512 path scored scale 0 up to 0.01
-  away from the scalar path.
-- For the same widths, the CUDA and HIP twins scored scale 0 up to 0.2 away
-  from the CPU, and 32x32 frames came out as NaN.
-
-The scalar, AVX2, AVX-512 and NEON paths now give identical scores at every
-width in that range. The CUDA, HIP and SYCL twins agree with them within the
-1e-4 cross-backend tolerance, as they do on larger frames.
-
-The SYCL twin also used to drift on content with very large band
-coefficients, such as independent random noise, where the CPU's 16-bit
-intermediates wrap: `integer_adm_scale0` came out up to 2.1e-4 away from the
-CPU. It now wraps at the same points and rounds its scale 1-3 terms the way
-the CPU, CUDA and HIP do, which moves SYCL's ordinary-video scores by less
-than 1e-6, toward the CPU. One of those intermediates, the centre term of the
-masking threshold, no longer wraps on any backend; see the next section.
-
-##### AIM above 1
-
-`adm` (fixed point) and `float_adm` report different AIM values on content
-whose additive impairment is larger than the reference's own detail: the
-fixed-point value goes above 1 and the float value stops at 1.
-
-Both are what upstream Netflix/vmaf defines. AIM is the additive impairment
-that survives contrast masking divided by the DLM denominator, which measures
-the detail of the reference. Upstream's float extractor then clips the ratio
-at 1 (`MIN(aim_num / aim_den, 1.0f)` in `adm.c`); its fixed-point extractor
-does not (`aim_num / den` in `integer_adm.c`). The fork keeps both as they
-are ([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md)).
-
-A reference without detail shows it most clearly, because its denominator is
-the noise-floor term alone:
-
-| Picture, flat grey reference | `integer_aim` | upstream master prints | `float_adm` `aim` |
-|---|---|---|---|
-| 64x64, 4x2 patches `255 0 0 0` every 16 pixels | 3.1755853876204676 | 3.175585 | 1 |
-| 576x324, the same patches | 2.602848185401339 | 2.602848 | 1 |
-| 576x324, uniform noise of ±24 | 1.2616298263467636 | 1.261630 | 1 |
-
-Stage by stage the two extractors agree before the clip: on the 64x64 picture
-the summed AIM numerators are 64.66445 (fixed point) and 64.66458 (float) over
-the same denominator of 20.363002.
-
-What this means in practice:
-
-- `adm3_score` follows. With the default model's `adm_dlm_weight=0.7` and
-  `adm_min_val=0.5`, the 64x64 picture gives a fixed-point `adm3` of 0.5 (the
-  floor) and a float `adm3` of 0.7.
-- The shipped `vmaf_v1.0.16` models read the fixed-point feature, and the fork
-  returns what upstream libvmaf returns for it: on the 576x324 patch picture
-  both report `integer_adm3` 0.5 and a VMAF of 0 with `vmaf_v1.0.16_3d0h`.
-- When you threshold or plot `integer_aim` yourself, do not assume it stays
-  within `[0, 1]`. Clip it at 1 if you want the float extractor's convention.
-- Ordinary encodes stay far below 1: the Netflix 576x324 pair has a mean
-  `integer_aim` of 0.0266.
-
-##### Isolated impairments and very large coefficients
-
-Since ADR-1402 the fixed-point `adm` extractor cannot score above 1 because
-of its masking threshold, and it differs from upstream Netflix/vmaf master on
-one kind of content.
-
-Scale 0 masks every coefficient with a threshold built from its eight
-neighbours and from 1/15 of the coefficient itself. Upstream stores that last
-term in 16 bits, so it wraps negative once the coefficient reaches 15360
-(8-bit content gets there with a one-pixel-wide full-contrast edge next to
-flat picture). A negative threshold adds contrast instead of masking it. On a
-flat grey reference against the same picture with a few isolated patches, the
-extractor used to report more detail in the distorted picture than in the
-reference:
-
-| Picture (flat grey reference, patches `255 0 0 0`, two rows high) | Before | Now | `float_adm` |
-|---|---|---|---|
-| 64x64, a patch every 16 pixels: `integer_adm_scale0` | 1.0829225419556654 | 1 | 1 |
-| the same: `integer_adm2` | 1.035481944668303 | 1 | 1 |
-| 24x24, one patch at (3, 3): `integer_adm_scale0` | 1.0701309766616138 | 1 | 1 |
-| the same: `integer_adm2` | 1.0301034698295983 | 1 | 1 |
-
-The term is 32 bits wide now, on every backend: the scalar path, AVX2,
-AVX-512, and the `adm_cuda`, `adm_hip`, `adm_sycl` and `integer_adm_metal`
-twins. (The Metal twin was changed in source only; it has not been run on a
-device.) The change is the second revision of Netflix/vmaf pull request 1602,
-which upstream has not merged.
-
-What this means for scores:
-
-- Ordinary video is unaffected. The three Netflix reference pairs and the
-  other ten fixture pairs under `python/test/resource/yuv/` give identical output
-  at `--precision max`, on the CPU and on the CUDA, HIP and SYCL twins.
-- Content with scale-0 coefficients of 15360 or more moves. Independent
-  full-range noise at 576x324 (reference and distorted unrelated):
-  `integer_adm2` 0.38954843646923215 to 0.38950305912838107,
-  `integer_adm_scale0` 0.4549724278265123 to 0.45480076976959144. Noise
-  against the same noise plus a small perturbation: `integer_aim`
-  7.166752298663627e-05 to 0, `integer_adm3` 0.9771812019019719 to
-  0.9772170356634652. The default model's own ADM features and its VMAF score
-  did not change on either.
-- On such content the fork's `adm` no longer equals upstream master's, until
-  upstream merges the pull request. Results from the fork's own earlier
-  releases differ by the same amounts.
-
-To see the old behaviour, compare with a build of the fork before ADR-1402:
-
-```bash
-vmaf -r flat_64x64.yuv -d patches_64x64.yuv -w 64 -h 64 -p 420 -b 8 \
-     --feature adm --feature float_adm --no_prediction --precision max --json
-```
-
-`core/test/test_integer_adm_cm_threshold.c` draws both pictures.
-
-##### Non-integer enhancement gain limits
-
-`adm_enhn_gain_limit` accepts any value from 1 to 100. Since ADR-1413 the
-fixed-point `adm` score for a non-integer limit such as `1.2` no longer depends
-on which code path computes it: the scalar path, AVX2, AVX-512 and the SYCL
-twin give the same output bit for bit.
-
-Nothing changes at the limits the shipped models use (1 and 100), on any path.
-
-The limited sample is the product of an integer coefficient and the limit,
-formed in double precision and truncated toward zero. The AVX2 and AVX-512
-kernels used to round that product to nearest, and the SYCL twin formed it in
-fixed point; each was one off in a share of the limited samples. Worst frame
-of `integer_adm_scale0` against the scalar path, before the change:
-
-| Input | AVX2, limit 1.2 | AVX-512, limit 1.2 | SYCL (Arc A380), limit 1.2 |
-|---|---|---|---|
-| Netflix pair `src01` 576x324 | 1.23e-6 | 1.15e-6 | 1.23e-6 |
-| `akiyo` 352x288 | 6.23e-6 | 6.23e-6 | 7.28e-6 |
-| Blurred blocks 576x324 | 3.56e-5 | 3.44e-5 | 3.60e-5 |
-| Big Buck Bunny 3840x2160 | 1.99e-6 | 1.99e-6 | 2.31e-6 |
-
-On x86 the result of a run with a non-integer limit therefore moves by up to
-these amounts against earlier builds of the fork and against upstream master,
-whose vector kernels round in the same way.
-
-The other device twins:
-
-- `adm_cuda` and `adm_hip` always truncated and are unchanged.
-- `integer_adm_metal` multiplies in single precision and can still differ from
-  the CPU under a non-integer limit
-  (`T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01` in [state](../state.md)).
-
-To compare two paths yourself:
-
-```bash
-vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
-     --feature 'adm=adm_enhn_gain_limit=1.2' --precision max --json -o simd.json
-vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --no_prediction \
-     --feature 'adm=adm_enhn_gain_limit=1.2' --precision max --json -o scalar.json \
-     --cpumask 4294967295
-```
-
-##### `adm` on CUDA returns the CPU's values
-
-`adm_cuda` gives the same number as `--backend cpu --feature adm` for every
-output of every frame, down to the last bit of the `--precision max` output
-([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)). Its CSF weights, its
-rounding shifts and the conversion of the integer sums into scores are the
-CPU extractor's own routines, and its denominator is rounded once per row as
-on the CPU. Measured on an RTX 4090 on the Netflix 576x324 pair at 8, 10, 12
-and 16 bits, both 1920x1080 checkerboard pairs and 3840x2160, with
-`debug=true` and with every option the extractor has.
-
-What this means when you use it:
-
-- You can mix CPU and CUDA `adm` results in one data set. Before ADR-1416
-  the CUDA twin was up to 2.1e-7 from the CPU; `adm_cuda` outputs stored
-  before it differ from new ones by that much.
-- On a few unusual frame sizes the old twin was wrong, not merely imprecise:
-  where the scale-0 region inside the ADM border has an area just above a
-  power of two (81 areas up to 2^26, for example 962x13542), it reported
-  `integer_adm_scale0` up to 0.12 too low (0.860 instead of 0.979) and
-  `adm2` 0.014 too low. Re-score such material.
-- With `adm_skip_scale0=true` the debug output `integer_adm_den_scale0` is
-  now the CPU's `1.00000001335e-10` and it is part of `integer_adm_den`.
-- The SYCL twin is bit-identical as well (ADR-1362), and so is the HIP twin
-  (ADR-1423). The Metal twin has not been measured on a device.
-
-Check it on your own device:
-
-```shell
-python3 scripts/dev/speed_gpu_parity.py --backend cuda \
-     --vmaf "$PWD/build/tools/vmaf" --feature adm
-```
-
-It prints, per output, how many frames are bit-identical and the largest
-difference, and exits 0 only when every frame is.
-
-##### Fixed-point CSF limits
-
-The fixed-point `adm` extractor stores each scale's CSF weight as an integer:
-`uint16_t` at scale 0 (horizontal/vertical bands scaled by 2^21, the diagonal
-band by 2^23) and `uint32_t` at scales 1-3 (scaled by 2^32). Those budgets
-were sized for Watson97 weights near `1e-2`. Full-scale Barten weights are
-about 1.21 at scale 0 and 26.98 at scale 3, so direct narrowing used to wrap
-and publish NaN or near-zero scores. ADR-1191 first made that failure explicit;
-[ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md) makes
-finite weights computable instead.
-
-For each scale, `adm` chooses the smallest non-negative power-of-two exponent
-`k` that puts all three fixed-point bands inside their arithmetic budget:
-
-- scale 0: the horizontal and vertical weights stay below 46603.4, the
-  diagonal weight below 2^16;
-- scales 1, 2 and 3: every weight stays below 279958309, 539893111 and
-  546406567.
-
-The limits are not storage limits. Contrast masking squares the weighted
-wavelet coefficient and keeps the square in 32 bits, so a weight is admitted
-only when the largest coefficient the wavelet can produce at that scale still
-has a square that fits. The largest coefficient follows from the filter taps
-and holds for every picture and bit depth
-([ADR-1472](../adr/1472-integer-adm-cm-weight-budget.md)). With the earlier
-limit of 2^30 a high-contrast picture could wrap that square in Barten mode:
-`adm=adm_csf_mode=1` failed every frame of the 10 px checkerboard with a NaN
-numerator and returned `integer_adm2` 0.587 instead of 0.784 on the 1 px
-checkerboard. Barten-mode scores that were already right move in the seventh
-decimal place (the weights lose one or two bits); Watson97 and both blend
-modes are unchanged.
-
-All three bands use the same `k`, so their horizontal, vertical, and diagonal
-CSF ratios do not change. Contrast masking cubes the normalized values; its
-host finalizer restores `3k`, while the denominator continues to use the
-original floating-point factors. Configurations with `k=0` retain their old
-fixed-point values and SIMD path. A normalized CPU configuration keeps SIMD
-DWT, decoupling, and denominator work but uses scalar weighted-CSF and
-contrast-masking stages until the later performance phase.
-
-Negative or non-finite factors remain errors. In particular, modes 2 and 3
-use lookup tables for specific viewing geometries; an unsupported pair such
-as `adm_ref_display_height=1200` at the default viewing distance returns a
-negative sentinel and is rejected with `-EINVAL` rather than converted to an
-unsigned weight.
-
-Independently of the selected CSF mode, the fixed-point pipeline requires
-`adm_norm_view_dist × adm_ref_display_height >= 3240` (the default 1080p
-display viewed at 3H). Lower angular-frequency geometry is rejected with
-`-EINVAL` before score computation; GPU backends reject it before normalization
-or device allocation. For example, mode 1 rejects 1080p at 0.75H, and mode 2
-rejects its otherwise-tabulated 720p-at-3H geometry. CPU, CUDA, SYCL, HIP, and
-Metal enforce the same floor.
-
-The CPU, CUDA, SYCL, HIP, and Metal integer extractors share this conversion
-contract. The float extractor has no fixed-point storage and remains the
-numerical reference. On the canonical 576x324 pair, full-scale mode 1 emits
-finite `adm2`, `aim`, `adm3`, and all four scale scores; the largest pooled
-absolute difference from `float_adm` is `2.7e-5`.
-
-The CPU `adm` / `float_adm` extractors expose the full option table above,
-and the CUDA / SYCL / HIP `integer_adm` twins now mirror it entry-for-entry —
-same names, aliases, defaults, bounds and feature-param flags — so the
-feature-name key a twin emits is identical to the CPU twin's for any given
-options dict. Every option above changes the value the twin computes, with
-two documented exceptions that match the CPU reference: `adm_dlm_weight` and
-`adm_min_val` affect `adm3_score` only, so on the SYCL and HIP twins (which do
-not emit `adm3_score`) they are carried for feature-name-key parity alone.
-Setting `adm_csf_scale`, `adm_csf_diag_scale`, and `adm_noise_weight` to their
-defaults (`1.0`, `1.0`, `0.03125`) produces output bit-identical to upstream
-Netflix ADM.
-
-**Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
-`float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
-
-The `adm` SIMD paths (AVX2, AVX-512, NEON) produce the same scores as the
-scalar path bit for bit, on any content. Until this release the AVX2 and
-AVX-512 paths differed from scalar by up to 7e-4 on content with very large
-band coefficients, such as full-range noise; ordinary video, including the
-Netflix reference clips, was already identical.
-
-On aarch64 the NEON path covers the 8-bit DWT (frame widths divisible by 8)
-and the scale-zero decouple; the other stages run the scalar kernels. The
-decouple uses vectors for integral `adm_enhn_gain_limit` values and the scalar
-kernel for fractional ones, and returns the scalar's bits for both.
-
-**32-bit x86** — the fork is 64-bit only (ADR-1258). The ADM x86
-sources still extract 64-bit lanes through 32-bit-safe helpers
-(`extract_epi64()`, `extract_epi64_128()`), ported from upstream Netflix
-commits [`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
-[`1b6c3886`](https://github.com/Netflix/vmaf/commit/1b6c3886) and completed
-in ADR-1258, so they compile for 32-bit x86. Nothing builds or tests 32-bit in
-CI, so that is portability hygiene, not a supported configuration.
-
-**Reference** — Li S., Zhang F., Ma L., Ngan K., "Image Quality Assessment by
-Separately Evaluating Detail Losses and Additive Impairments," IEEE
-Transactions on Multimedia 13(5):935–949, 2011.
-
-## Additional features
+`integer_aim` of the fixed-point `adm` can exceed 1, while `float_adm`'s `aim`
+is clipped at 1; both match upstream Netflix/vmaf
+([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md)). The full
+explanation and the numbers are in
+[AIM above 1](adm.md#aim-above-1).
 
 ### CAMBI — Contrast-Aware Multiscale Banding Index
 
-See the [dedicated CAMBI page](cambi.md) — it is parameter-heavy enough to
-warrant its own reference.
+CAMBI has parameters enough for its own reference: see [cambi](cambi.md).
 
-Quick facts:
-
-- **Invocation** — `--feature cambi`.
+- **Run** — `--feature cambi`; options such as `full_ref` go after the name
+  (`--feature cambi=full_ref=true`).
 - **Output** — `cambi` in `[0, ∞)`; 0 = no banding, larger = more visible
   banding. Typical "bad" content sits in `1–10`.
-- **Input formats** — YUV 4:2:0, 8 / 10 bpc.
-- **Backends** — scalar (CPU), CUDA (`cambi_cuda`), SYCL (`cambi_sycl`),
-  HIP (`cambi_hip`) and Metal. The SYCL, CUDA and HIP twins run every stage on
-  the device ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md),
+- **Backends** — CPU (AVX2, AVX-512, NEON) and CUDA, SYCL, HIP and Metal twins.
+  The SYCL, CUDA and HIP twins run every stage on the device
+  ([ADR-1357](../adr/1357-sycl-cambi-device-resident.md),
   [ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
-  [ADR-1378](../adr/1378-hip-cambi-device-resident.md)). (The original Vulkan
-  kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
+  [ADR-1378](../adr/1378-hip-cambi-device-resident.md)).
 
 ### CIEDE2000 — colour-difference metric
 
-Converts both YCbCr frames to CIELAB and computes the CIEDE2000 ΔE per pixel,
-averaged. Captures chroma distortion that luma-only metrics miss (chroma
-subsampling, colour-space conversion errors, 4:2:0 vs 4:4:4 differences).
-
-#### Invocation
-
-- CLI: `--feature ciede`.
-- C API: `vmaf_use_feature(ctx, "ciede", NULL)`.
-
-**Output metrics** — `ciede2000`.
-
-**Output range** — `[0, ~100]`. Smaller is better.
-
-- `< 1` — imperceptible difference.
-- `1–5` — perceptible on close inspection.
-- `> 15` — obviously different colour.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Requires
-chroma — **does not accept 4:0:0**.
-
-**Options** — none.
-
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
-
-**Compilers and the CPU score.** A GCC build and a clang build return the
-same `ciede2000` on x86-64 and on aarch64
-([ADR-1467](../adr/1467-ciede-squares-as-products.md)). The formula squares
-a `float` in its rotation term and 13 values in `double`. Upstream writes
-those as `powf(x, 2)` and `pow(x, 2)`; GCC calls the C library for them and
-clang multiplies. For the `double` squares that makes no difference, but
-glibc's `powf(x, 2)` returns the other neighbouring `float` on about 0.12 % of
-the arguments, so the two builds used to differ on 65 of 180 measured frames,
-by at most 2.0e-11. This fork writes the products in the source, so the value
-no longer depends on the compiler or on the C library. Scores from a GCC
-build moved by up to 2.0e-11 with that change (on the Netflix 576x324 pair:
-frame 35, by 6.9e-13); scores from a clang or icx build did not. A GCC build
-also takes about a third less time in this extractor, since 14 library calls
-per pixel are gone (563 against 837 ms per 1920x1080 frame on one busy core
-of a Ryzen 9 9950X3D). An icx build then still linked Intel's math library
-and differed from a GCC build through the other functions of the formula, by
-at most 9.7e-12 on the same frames; since
-[ADR-1495](../adr/1495-icx-system-libm.md) it links glibc's and returns the
-GCC build's values. Check two builds with:
-
-```bash
-for cc in gcc clang; do
-  build-$cc/tools/vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-      --no_prediction --feature ciede --precision max --json -o ciede-$cc.json
-done
-diff <(grep -v '"fps"' ciede-gcc.json) <(grep -v '"fps"' ciede-clang.json)
-```
-
-**Agreement with Netflix's `ciede`.** `ciede2000()` forms two products of
-`float` values, `c_prime_1 * c_prime_2` under a square root and
-`r_sub_t * chroma * hue` in the final sum, in `float`, as Netflix's source
-does ([ADR-1476](../adr/1476-ciede-upstream-expression.md)). Between May and
-October 2026 this fork widened their first operand to `double`, which kept
-the products exact and moved the score away from Netflix's by up to 1.3e-9
-(1.0e-8 on frames of 24x24 and smaller). Measured against Netflix master
-(`9e48141b`, GCC 16.2.1, glibc 2.44) at `--precision max` on 327 frames from
-8x8 to 3840x2160: 153 are identical now (7 before). The others differ for
-three recorded reasons: the `float` square above, which upstream writes as
-`powf(x, 2)` (119 frames, at most 2.2e-11, with glibc 2.44; with glibc 2.43
-a GCC 15 and a clang 22 build of upstream return this fork's values on all
-96 frames of the Netflix pair and Big Buck Bunny at 1920x1080);
-4:2:2 input, where upstream reads the chroma planes with the two subsampling
-flags swapped (48 frames, up to 0.153); and odd frame sizes with subsampled
-chroma, where upstream rounds the chroma size down (7 frames, up to 0.198).
-The CUDA, SYCL and HIP twins form the same two `float` products: against a
-GCC build's `--backend cpu` on 153 frames (the Netflix 576x324 pair at 8 and
-10 bits and as 10-bit 4:2:2, both 1920x1080 checkerboard pairs, 48 frames of
-Big Buck Bunny at 3840x2160) `ciede_cuda` (RTX 4090) is identical on 109
-frames, `ciede_sycl` (Arc A380) on 107 and `ciede_hip` (gfx1036) on 108, and
-none differs by more than 2.1e-12. The twin figures in the paragraphs below
-were measured before this change.
-
-**The twins since ADR-1467.** The three twins below compute the squares as
-products, as the CPU now does. Measured at `--precision max` against a GCC
-build's `--backend cpu` on 180 frames (the Netflix 576x324 pair at 8, 10, 12
-and 16 bits and as 10-bit 4:2:2, Sparks, both 1920x1080 checkerboard pairs,
-BBB 1920x1080 and 3840x2160): `ciede_cuda` (RTX 4090) 127 frames identical
-and at most 5.2e-12, `ciede_sycl` (Arc A380) 124 and 5.2e-12, `ciede_hip`
-(gfx1036) 127 and 5.2e-12; before, 113, 111 and 113 frames and 2.0e-11. The
-Netflix pair at 8 bits is identical on all 48 frames for all three. What is
-left is the C library's `powf(x, 7)`, which the twins round correctly and
-glibc does not always, and on SYCL and HIP the precision of a pair. The
-figures in the three paragraphs below were measured before that change.
-
-**`ciede_cuda` and the CPU.** The CUDA twin evaluates the CPU's formula in
-the CPU's precision (double, with `float` stores where the CPU has them) and
-adds the per-pixel values in the CPU's order
-([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md)). Measured on an RTX
-4090 at `--precision max`: 62 of 113 frames identical to `--backend cpu`, the
-rest within 1.4e-11 (576x324 at 8 to 16 bits, 1920x1080, 3840x2160). Before
-ADR-1426 it was up to 1.1e-5 away, and stored `ciede_cuda` outputs differ
-from new ones by that much. It is not bit-identical because the CPU calls the
-C library's math functions and the device calls CUDA's: a few pixels per
-million round to the neighbouring `float`. The double-precision math costs
-time: 32.7 ms per 3840x2160 frame on an RTX 4090 (2.8 ms before), against
-222 ms for the CPU extractor on sixteen threads.
-
-**`ciede_sycl` and the CPU.** The SYCL twin runs the same statements. A SYCL
-kernel has no `double`, so every `double` of the CPU's formula is a pair of
-`float` values and every math function (`pow`, `cbrt`, `atan2`, `sin`, `cos`,
-`exp`) a routine on such pairs
-([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md)). Measured on an Arc
-A380 at `--precision max` against `--backend cpu`: the Netflix 576x324 pair
-identical on 47 of 48 frames (6.9e-13 on the other), its 10-, 12- and 16-bit
-and 4:2:2 versions and both 1920x1080 checkerboard pairs identical on every
-frame, 3840x2160 within 1.4e-11 on 200 frames. Those are the CUDA twin's
-figures. Before ADR-1436 the twin was up to 1.1e-5 away, and stored
-`ciede_sycl` outputs differ from new ones by that much. It is not
-bit-identical for the reason the CUDA twin is not: the C library's `powf` is
-not correctly rounded, and on a 3840x2160 frame 18 to 64 of 8.3 million
-pixels round to the neighbouring `float`. The pair arithmetic costs time: 50.3 ms
-per 3840x2160 frame on an Arc A380 (16.2 ms before) and 1.2 ms at 576x324
-(0.45 before); the CPU extractor takes 2.5 s per 3840x2160 frame on one
-thread. It also keeps one `float` per pixel on the device and on the
-host, 33 MB each at 3840x2160.
-
-**`ciede_hip` and the CPU.** The HIP twin runs the SYCL twin's statements,
-from the same source file, on an AMD device
-([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md)). An AMD device has
-`double`, but its double-precision math functions took 17 times the frame
-time on an integrated GPU, so the twin uses the pairs of `float` values
-instead. Measured on a gfx1036 (ROCm 7.2.4) at `--precision max` against
-`--backend cpu`: 115 of 178 frames identical and the rest within 1.4e-11
-(the Netflix 576x324 pair identical on 47 of 48 frames, its 10-, 12- and
-16-bit versions and both 1920x1080 checkerboard pairs on every frame,
-3840x2160 within 1.4e-11). Before ADR-1448 the twin was up to 1.1e-5 away,
-and stored `ciede_hip` outputs differ from new ones by that much. It is not
-bit-identical for the reasons the SYCL twin is not: the C library's `powf` is
-not correctly rounded, which moves at most 74 of the 8.3 million pixels of a
-3840x2160 frame to the neighbouring `float`, and a pair holds 48 bits where a
-`double` holds 53, which moved 8 of 437 million pixels. The pair arithmetic
-costs time: 49.6 ms per 1920x1080 frame on a gfx1036 (18.6 ms before) and
-210 ms per 3840x2160 frame (75.6 ms before), where the CPU extractor takes
-136 ms on sixteen threads (`T-HIP-CIEDE-EXACT-THROUGHPUT-2026-10-02`). Check
-it with:
-
-```shell
-python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
-    --max-abs-diff 1e-9 --vmaf "$PWD/build-hip/tools/vmaf"
-```
-
-The HIP and Metal twins compute in `float` and agree with the CPU to about
-two decimal places of the gate (`5e-3`).
-
-**Limitations** — Assumes BT.709 YCbCr → RGB → CIELAB. No override for
-BT.2020 or BT.601 input yet. Ported from the `av-metrics` Rust crate.
+`--feature ciede` converts both frames to CIELAB and averages the CIEDE2000 ΔE
+per pixel. Output `ciede2000` in `[0, ~100]` (smaller is better), no options,
+no 4:0:0 input. See [ciede](ciede.md) for the twin measurements and the
+agreement with Netflix's source.
 
 ### PSNR
 
-Peak Signal-to-Noise Ratio on each colour plane. The fixed-point `psnr`
-path is the default; the `float_psnr` path is kept for parity with upstream
-consumers of the float pipeline.
+Peak Signal-to-Noise Ratio on each colour plane. The fixed-point `psnr` path
+is the default; the `float_psnr` path is kept for parity with upstream
+consumers of the float pipeline. See [PSNR](psnr.md) for the full comparison.
 
-#### Invocation
+- **Run** — `--feature psnr` or `--feature float_psnr`; ffmpeg
+  `libvmaf=feature=name=psnr`.
+- **Output metrics** (fixed) — `psnr_y`, `psnr_cb`, `psnr_cr`. With
+  `enable_mse=true` also `mse_y/cb/cr`. With `enable_apsnr=true` also
+  `apsnr_y/cb/cr` (aggregate across the whole clip, emitted at flush).
+  `float_psnr` emits `float_psnr`, luma only.
+- **Output range** — dB, saturated at `6 × bpc + 12`: 60 dB for 8 bpc, 72 dB
+  for 10 bpc, 84 dB for 12 bpc, 108 dB for 16 bpc. That value is reported both
+  when the two planes are identical (MSE=0, where the true PSNR is `+inf`) and,
+  by default, when a computed score exceeds it. Set `uncapped=true` to report
+  the true value while keeping the MSE=0 sentinel
+  ([ADR-1193](../adr/1193-psnr-uncapped-option.md)), or `min_sse` to raise both
+  at once.
+- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
+- **Limitations** — temporal flag set only because of `apsnr` accumulation;
+  per-frame PSNR itself is stateless.
 
-- CLI: `--feature psnr` or `--feature float_psnr`.
-- ffmpeg: `libvmaf=feature=name=psnr`.
+| Option | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `enable_chroma` | bool | `true` | Include `psnr_cb` / `psnr_cr`; set `false` for luma-only. |
+| `enable_mse` | bool | `false` | Emit `mse_y/cb/cr` alongside PSNR. |
+| `enable_apsnr` | bool | `false` | Emit clip-aggregate `apsnr_y/cb/cr` at flush. |
+| `reduced_hbd_peak` | bool | `false` | Scale the high-bit-depth peak to match 8-bit content. |
+| `min_sse` | double | `0.0` | Clamp the minimum MSE, so both the PSNR ceiling and the identical-frame sentinel. |
+| `uncapped` | bool | `false` | Report the true PSNR instead of truncating at the ceiling; the MSE=0 sentinel is unaffected. |
 
-**Output metrics** (fixed) — `psnr_y`, `psnr_cb`, `psnr_cr`. With
-`enable_mse=true` also `mse_y/cb/cr`. With `enable_apsnr=true` also
-`apsnr_y/cb/cr` (aggregate across the whole clip, emitted at flush).
+`float_psnr` declares `uncapped` only.
 
-**Output range** — dB, saturated at `6 × bpc + 12`: 60 dB for 8 bpc, 72 dB
-for 10 bpc, 84 dB for 12 bpc, 108 dB for 16 bpc. That value is reported both
-when the two planes are identical (MSE=0, where the true PSNR is `+inf`) and
-— by default — when a genuinely computed score exceeds it. Set
-`uncapped=true` to report the true value while keeping the MSE=0 sentinel
-([ADR-1193](../adr/1193-psnr-uncapped-option.md)), or `min_sse` to raise both
-at once. See [PSNR](psnr.md) for the full comparison.
+How the twins treat the options:
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
-
-#### Options
-
-| Option             | Type   | Default | Effect                                                                             |
-|--------------------|--------|---------|------------------------------------------------------------------------------------|
-| `enable_chroma`    | bool   | `true`  | Include `psnr_cb` / `psnr_cr`; set `false` for luma-only                           |
-| `enable_mse`       | bool   | `false` | Emit `mse_y/cb/cr` alongside PSNR                                                  |
-| `enable_apsnr`     | bool   | `false` | Emit clip-aggregate `apsnr_y/cb/cr` at flush                                       |
-| `reduced_hbd_peak` | bool   | `false` | Scale HBD peak to match 8-bit content                                              |
-| `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling *and* the identical-frame sentinel) |
-| `uncapped`         | bool   | `false` | Report the true PSNR instead of truncating at the ceiling; the MSE=0 sentinel is unaffected |
-
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal. The GPU
-extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
-`psnr_cr` identically to the CPU path when enabled. Pass
-`enable_chroma=false` for luma-only operation on any backend. `uncapped` is
-mirrored on every GPU twin under the same name and default. `psnr_sycl` and
-`psnr_cuda` also implement `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and
-`min_sse`, bit-exact with the CPU. `psnr_hip` implements them through the
-CPU's own helpers as well and matched the CPU bit for bit on a gfx1036
-(ADR-1382). On Metal these four keep `psnr` on the CPU (see
-[PSNR](psnr.md#options)).
-`float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
-accepts `uncapped` on all of them. (The Vulkan backend was removed in
-ADR-0726.)
-
-**Limitations** — Temporal flag set only because of `apsnr` accumulation;
-per-frame PSNR itself is stateless.
+- The GPU twins honour `enable_chroma` and emit `psnr_cb` / `psnr_cr`
+  identically to the CPU path; pass `enable_chroma=false` for luma-only
+  operation on any backend.
+- `uncapped` is mirrored on every GPU twin under the same name and default.
+- `psnr_sycl` and `psnr_cuda` also implement `enable_mse`, `enable_apsnr`,
+  `reduced_hbd_peak` and `min_sse`, bit-exact with the CPU. `psnr_hip` does so
+  through the CPU's own helpers and matched the CPU bit for bit on a gfx1036
+  (ADR-1382).
+- On Metal those four options keep `psnr` on the CPU (see
+  [PSNR](psnr.md#options)).
+- `float_psnr` adds CUDA, SYCL, HIP and Metal twins on the float pipeline and
+  accepts `uncapped` on all of them.
 
 ### PSNR-HVS
 
-PSNR weighted by a human-visual-system contrast-sensitivity function
-applied in the DCT domain. Empirically correlates better with subjective
-quality than plain PSNR on blocking-style distortions.
+PSNR weighted by a human-visual-system contrast-sensitivity function applied in
+the DCT domain. It correlates better with subjective quality than plain PSNR on
+blocking-style distortions. See [psnr-hvs](psnr-hvs.md).
 
-**Invocation** — `--feature psnr_hvs`.
-
-**Output metrics** — `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`.
-
-**Output range** — dB, typically `20–60`.
-
-**Input formats** — 8 to 12 bpc, YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4. Deeper
-input is rejected at init.
-
-**Options** — `enable_chroma` (default `true`); see
-[the psnr_hvs page](psnr-hvs.md).
-
-**Backends** — scalar (Xiph reference), AVX2
-([ADR-0159](../adr/0159-psnr-hvs-avx2-bitexact.md)), NEON aarch64
-([ADR-0160](../adr/0160-psnr-hvs-neon-bitexact.md)). The 8×8 integer
-DCT block is vectorized 8-rows-in-parallel via butterfly→transpose→
-butterfly→transpose; float accumulators stay scalar by construction
-to preserve byte-identity with the reference. Verified bit-identical
-to scalar on all three Netflix golden pairs; ~3.58× DCT microbench
-speedup on AVX2. GPU twins: `psnr_hvs_cuda`, `psnr_hvs_sycl` and
-`psnr_hvs_hip`, all three bit-identical to the CPU
-([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md),
-[ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md)); see
-[agreement with the CPU extractor](psnr-hvs.md#agreement-with-the-cpu-extractor).
+- **Run** — `--feature psnr_hvs`.
+- **Output metrics** — `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`.
+- **Output range** — dB, typically `20–60`.
+- **Input formats** — 8 to 12 bpc, YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4. Deeper
+  input is rejected at init.
+- **Options** — `enable_chroma` (default `true`).
+- **Backends** — scalar (Xiph reference), AVX2
+  ([ADR-0159](../adr/0159-psnr-hvs-avx2-bitexact.md)) and NEON on aarch64
+  ([ADR-0160](../adr/0160-psnr-hvs-neon-bitexact.md)). The 8×8 integer DCT block
+  is vectorised eight rows in parallel (butterfly, transpose, butterfly,
+  transpose); the float accumulators stay scalar to keep byte-identity with the
+  reference. Verified bit-identical to scalar on the three Netflix golden
+  pairs, with about 3.58x DCT microbenchmark speedup on AVX2. The GPU twins
+  `psnr_hvs_cuda`, `psnr_hvs_sycl` and `psnr_hvs_hip` are bit-identical to the
+  CPU ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md),
+  [ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md); see
+  [agreement with the CPU extractor](psnr-hvs.md#agreement-with-the-cpu-extractor)).
 
 ### SSIM / MS-SSIM
 
-Structural Similarity Index on luma. MS-SSIM extends SSIM to five Gaussian-
-pyramid scales and fuses them with the Wang 2003 weights.
+Structural Similarity Index on luma. MS-SSIM extends SSIM to five
+Gaussian-pyramid scales and fuses them with the Wang 2003 weights. See
+[ssim](ssim.md) and [ms-ssim](ms-ssim.md) for the precision of each twin.
 
-#### Invocation
+- **Run** — `--feature ssim` (fixed-point), `--feature float_ssim` or
+  `--feature float_ms_ssim`; ffmpeg `libvmaf=feature=name=ssim`.
+- **Output metrics** — `ssim` (one scalar in `[0, 1]`); `float_ssim` (scalar in
+  `[0, 1]`, with `enable_lcs=true` also `float_ssim_l`, `float_ssim_c`,
+  `float_ssim_s`); `float_ms_ssim` (scalar in `[0, 1]`, with `enable_lcs=true`
+  the per-scale triples `float_ms_ssim_{l,c,s}_scale{0..4}`, with
+  `enable_chroma=true` also `float_ms_ssim_cb` and `float_ms_ssim_cr`).
+- **Output range** — `[0, 1]`, higher is better. With `enable_db=true` the
+  score is `-10 × log10(1 − score)`; `clip_db=true` caps the infinite value of
+  identical frames.
+- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
 
-- CLI: `--feature ssim` (fixed), `--feature float_ssim`, or
-  `--feature float_ms_ssim`.
-- ffmpeg: `libvmaf=feature=name=ssim` etc.
+#### Options
 
-#### Output metrics
+| Option | `ssim` | `float_ssim` | `float_ms_ssim` | Type | Default | Range | Effect |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `enable_lcs` | — | yes | yes | bool | `false` | — | Emit the L / C / S components (per scale for MS-SSIM). |
+| `enable_db` | yes | yes | yes | bool | `false` | — | Report `-10·log10(1-score)` instead of the raw ratio. |
+| `clip_db` | yes | yes | yes | bool | `false` | — | Cap dB values based on the minimum representable MSE. |
+| `scale` | — | yes | — | int | `0` | `0–10` | Decimation factor of `float_ssim`: `0` = auto per Wang 2003, `1` = none, `2–10` explicit. |
+| `enable_chroma` | — | — | yes | bool | `false` | — | Score the chroma planes too. |
 
-- `ssim` (`ssim` invocation) — one scalar in `[0, 1]`.
-- `float_ssim` — scalar in `[0, 1]`. With `enable_lcs=true` also
-  `float_ssim_l`, `float_ssim_c`, `float_ssim_s` (luminance / contrast /
-  structure components).
-- `float_ms_ssim` — scalar in `[0, 1]`. With `enable_lcs=true` also the
-  per-scale L/C/S triples `float_ms_ssim_{l,c,s}_scale{0..4}`.
+#### Minimum dimensions
 
-**Output range** — `[0, 1]`, higher is better. With `enable_db=true` the
-score is reported on a dB scale via `-10 × log10(1 − score)`; use
-`clip_db=true` to cap infinite values when reference ≡ distorted.
+- `float_ms_ssim` needs at least **176×176** luma. The five Gaussian-pyramid
+  scales force a `2⁴ = 16`× downsample on the smallest level; smaller inputs
+  (for example QCIF) make the decimate kernel produce undefined output, so
+  init rejects them with `-EINVAL` and a log message
+  ([ADR-0153](../adr/0153-float-ms-ssim-min-dim-netflix-1414.md)).
+- `ssim` and `float_ssim` have no such constraint, but `float_ssim` scores
+  windows of 11×11 samples. A luma plane with fewer than 11 samples in a
+  direction (after the `scale` decimation) has no window, and the score is `0`
+  (the sum of no terms over `(w − 10) · (h − 10)`, as in Netflix's libvmaf) on
+  the scalar and every SIMD path.
+- With exactly 10 samples in a direction the divisor is 0, the mean is `0 / 0`
+  and the frame fails with a non-finite-score error
+  ([ADR-1302](../adr/1302-nonfinite-scores-fail-the-frame.md)).
+- The GPU twins do not run such a plane: `--backend <gpu> --feature float_ssim`
+  computes it on the CPU and says so, and `--feature float_ssim_cuda` (or
+  `_sycl`, `_hip`) fails at init
+  ([ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md)).
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
+#### Twins and options
 
-**Minimum dimensions** — `float_ms_ssim` requires at least **176×176**
-luma. The five Gaussian-pyramid scales force a `2⁴ = 16`× downsample
-on the smallest level; sub-176×176 inputs (e.g. QCIF) cause the
-decimate kernel to produce undefined output. The init path rejects
-smaller inputs with `-EINVAL` and a clear log message — see
-[ADR-0153](../adr/0153-float-ms-ssim-min-dim-netflix-1414.md). `ssim` /
-`float_ssim` have no such constraint.
+| Twin | Options it implements | Arithmetic against the CPU |
+| --- | --- | --- |
+| `integer_ssim_cuda` | `enable_db`, `clip_db` ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)) | Bit for bit ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)). |
+| `integer_ssim_sycl` | `enable_db`, `clip_db` ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)) | Bit for bit ([ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)). |
+| `integer_ssim_hip` | `enable_db`, `clip_db` ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)) | Declared exact (`exact_twins.d/ssim.hip`). |
+| `integer_ssim_metal` | see [ssim](ssim.md) | Precision stated on the SSIM page. |
+| `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db`, `scale`; accepts and ignores the `enable_chroma` the CPU `float_ssim` never had | Equal to the CPU on every measured frame ([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md), [ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md)). |
+| `float_ssim_sycl` | `enable_lcs`, `enable_db`, `clip_db`, `scale` | Bit for bit: decimation on the device ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)), terms added in the CPU's order ([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md)). |
+| `float_ssim_hip` | `enable_db`, `clip_db`, `enable_lcs` | CPU's own `l * c * s` arithmetic ([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md), ADR-1382). |
+| `float_ssim_metal` | scale 1 only; larger scales run on the CPU extractor | — |
+| `float_ms_ssim_cuda` | all MS-SSIM options | Bit-identical at `--precision max`, per-scale `enable_lcs` outputs included ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md), [ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md)). |
+| `integer_ms_ssim_hip` (registered for `float_ms_ssim`) | all MS-SSIM options | Same arithmetic as the CUDA twin, bit-identical on a gfx1036 ([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)). |
+| `float_ms_ssim_sycl` | all MS-SSIM options | Bit-identical without fp64 on the device ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)); see [MS-SSIM](ms-ssim.md#precision-of-the-gpu-twins). |
+| `float_ms_ssim_metal` | all MS-SSIM options | Within the cross-backend tolerance of `5e-5`. |
 
-`float_ssim` scores windows of 11×11 samples, so a luma plane with fewer than
-11 samples in a direction (after the `scale` decimation) has no window. The
-score is then `0`, the sum of no terms over `(w − 10) · (h − 10)`, as in
-Netflix's libvmaf, on the scalar and on every SIMD path. When a direction has
-exactly 10 samples that divisor is 0, the mean is `0 / 0`, and the frame
-fails with a non-finite-score error
-([ADR-1302](../adr/1302-nonfinite-scores-fail-the-frame.md)). The GPU twins
-do not run such a plane: `--backend <gpu> --feature float_ssim` computes it
-on the CPU and says so, and `--feature float_ssim_cuda` (or `_sycl`, `_hip`)
-fails at init ([ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md)).
+Notes on the twins:
 
-**Options** (apply to `float_ssim` / `float_ms_ssim` only)
+- The `enable_lcs` option ships across all MS-SSIM backends: CPU, CUDA, SYCL,
+  HIP and Metal emit the same 15 `float_ms_ssim_{l,c,s}_scale{0..4}` metrics on
+  top of the combined score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)).
+- On SYCL and CUDA, identical frames report the CPU's `+inf` or `clip_db`
+  ceiling on the device too. `float_ssim_cuda` computes the CPU's per-pixel
+  `l * c * s` and fp32 frame mean, so identical frames report the CPU's value
+  (`+inf`, or 72.247 dB for flat frames). `float_ssim_hip` reports the same
+  finite 72.247 dB the CPU gives some identical frames.
+- `float_ssim_sycl`, `float_ssim_cuda` and `float_ssim_hip` decimate on the
+  device at the automatic scale and at every explicit one, so 1080p and 4K
+  `float_ssim` run on those backends.
+- The `float_ssim_cuda` host sum costs about 1 ns per scored window and the
+  `float_ms_ssim_cuda` one about 2.1 ns per scored window. The SYCL host sum
+  costs time only where the scale is 1 ([SYCL
+  backend](../backends/sycl/overview.md#float_ssim_sycl-adds-its-frame-sums-in-the-cpus-order-2026-10-02)).
 
-| Option       | Type | Default | Range  | Effect                                                                |
-|--------------|------|---------|--------|-----------------------------------------------------------------------|
-| `enable_lcs` | bool | `false` | —      | Emit the L / C / S components (per-scale for MS-SSIM)                 |
-| `enable_db`  | bool | `false` | —      | Report `-10·log10(1-score)` instead of the raw ratio                  |
-| `clip_db`    | bool | `false` | —      | Cap dB values based on the minimum representable MSE                  |
-| `scale`      | int  | `0`     | `0–10` | Downsampling factor for `float_ssim`; `0` = auto per Wang 2003        |
+#### MS-SSIM decimate (fork-local)
 
-**Backends** — `ssim` (fixed): CPU with AVX2 / NEON, plus the GPU twins
-`integer_ssim_cuda`, `integer_ssim_sycl`, `integer_ssim_hip` and
-`integer_ssim_metal` (see [SSIM](ssim.md) for their precision against the CPU;
-the CUDA and SYCL twins return the CPU's `ssim` bit for bit,
-[ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md) and
-[ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)).
-`float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
-twins `float_ms_ssim_cuda`, `float_ms_ssim_sycl` and
-`integer_ms_ssim_hip`. The `enable_lcs` option ships across **all**
-MS-SSIM backends — CPU, CUDA, SYCL, HIP and Metal emit the same 15
-`float_ms_ssim_{l,c,s}_scale{0..4}` metrics on top of the combined
-score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)). (The Vulkan
-backend was removed in ADR-0726.)
-
-`float_ms_ssim_cuda` reproduces the CPU extractor's arithmetic and is
-bit-identical to it at `--precision max`, per-scale `enable_lcs` outputs
-included, on the Netflix pair, the 1080p checkerboard pairs and BBB
-3840x2160 on an RTX 4090
-([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). It adds the
-per-window terms of every scale in the CPU's order on the host, so the
-per-scale means are the CPU's on every measured input, at about 2.1 ns per
-scored window
-([ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md)). The HIP twin
-(`integer_ms_ssim_hip`) carries the same arithmetic and is bit-identical on
-the same fixtures and the 10-bit Netflix pair on a gfx1036
-([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)).
-`float_ms_ssim_sycl` does the same without fp64 on the device, measured on an
-Arc A380 ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)); see
-[MS-SSIM](ms-ssim.md#precision-of-the-gpu-twins). The Metal twin
-stays within the cross-backend tolerance of 5e-5.
-
-For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:
-`integer_ssim_sycl` takes `enable_db` / `clip_db`, and `float_ssim_sycl`
-takes `enable_lcs` / `enable_db` / `clip_db` and `scale`. Identical frames
-report the CPU's `+inf` or `clip_db` ceiling on the device too
-([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). `float_ssim_sycl`
-decimates on the device at the automatic scale and every explicit one, with
-the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
-SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)). Its
-score is the CPU's bit for bit: the per-window terms are the CPU's doubles
-and the host adds them in the CPU's order
-([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md)), which costs time
-only where the scale is 1
-([SYCL backend](../backends/sycl/overview.md#float_ssim_sycl-adds-its-frame-sums-in-the-cpus-order-2026-10-02)).
-`float_ssim_hip` does the same on AMD devices
-([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md)). The Metal
-`float_ssim` twin computes scale 1 only and leaves larger
-scales to the CPU extractor. The CUDA twins
-`integer_ssim_cuda` and `float_ssim_cuda` implement the same options
-([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)); `float_ssim_cuda`
-computes the CPU's per-pixel `l * c * s` and fp32 frame mean, so identical
-frames report the CPU's value (`+inf`, or 72.247 dB for flat frames), and
-still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
-had. `float_ssim_cuda` also decimates on the device at the automatic scale
-and every explicit one and convolves with the CPU's double sums, so 1080p and
-4K `float_ssim` run on CUDA and every measured frame equals the CPU's score
-([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md)). It adds the
-per-window values in the CPU's order on the host, so the frame mean is the
-CPU's on every input, at about 1 ns per scored window
-([ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md)). The HIP
-twins `integer_ssim_hip` and `float_ssim_hip` implement
-`enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`); `float_ssim_hip`
-scores each pixel with the CPU's own `l * c * s` arithmetic too, so its
-identical frames report what the CPU reports, including the finite 72.247 dB
-the CPU gives some identical frames
-([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)).
-
-**MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
-LPF that produces scales 1–4 runs through `ms_ssim_decimate` in
+The 9-tap 9/7 biorthogonal wavelet low-pass filter that produces scales 1–4
+runs through `ms_ssim_decimate` in
 [`core/src/feature/ms_ssim_decimate.c`](../../core/src/feature/ms_ssim_decimate.c).
 SIMD variants live in
 [`core/src/feature/x86/ms_ssim_decimate_avx2.c`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
 (8-wide),
 [`core/src/feature/x86/ms_ssim_decimate_avx512.c`](../../core/src/feature/x86/ms_ssim_decimate_avx512.c)
-(16-wide), and
+(16-wide) and
 [`core/src/feature/arm64/ms_ssim_decimate_neon.c`](../../core/src/feature/arm64/ms_ssim_decimate_neon.c)
-(4-wide). Dispatch prefers AVX-512 > AVX2 > scalar on x86 and
-NEON > scalar on aarch64 at runtime via `vmaf_get_cpu_flags()`; all
-four paths are strictly **byte-identical** (per-lane `fmaf` /
-`_mm{256,512}_fmadd_ps` / `vfmaq_n_f32` with broadcast coefficients
-and scalar-fallback borders). The contract is verified by
-`core/test/test_ms_ssim_decimate.c` across
-1x1 / 8x8 / 9x9 / border-edge / 1920x1080 cases. See
-[ADR-0125](../adr/0125-ms-ssim-decimate-simd.md).
+(4-wide). Dispatch prefers AVX-512 over AVX2 over scalar on x86 and NEON over
+scalar on aarch64 at runtime through `vmaf_get_cpu_flags()`. All four paths are
+strictly **byte-identical** (per-lane `fmaf` / `_mm{256,512}_fmadd_ps` /
+`vfmaq_n_f32` with broadcast coefficients and scalar-fallback borders);
+`core/test/test_ms_ssim_decimate.c` verifies it across 1x1, 8x8, 9x9,
+border-edge and 1920x1080 cases
+([ADR-0125](../adr/0125-ms-ssim-decimate-simd.md)).
 
 ### ANSNR — Adjusted Noise SNR
 
-> **Removed.** The CPU implementation and all GPU twins (CUDA, SYCL, HIP,
-> Metal) were removed in commit 70ed8b3ce3 (PR #38); the Vulkan backend and
-> its kernel source were removed in ADR-0726. No `float_ansnr` source remains
-> in tree. Requesting `--feature float_ansnr` will produce a
-> feature-not-found error on any current build. The historical GPU kernel
-> design ([ADR-0194](../adr/0194-float-ansnr-gpu.md)) is preserved for
-> reference only.
+!!! note
+    **Removed.** The CPU implementation and all GPU twins (CUDA, SYCL, HIP,
+    Metal) were removed in commit 70ed8b3ce3 (PR #38); the Vulkan backend and
+    its kernel source were removed in ADR-0726. No `float_ansnr` source remains
+    in the tree, and `--feature float_ansnr` returns a feature-not-found error
+    on any current build. The historical GPU kernel design
+    ([ADR-0194](../adr/0194-float-ansnr-gpu.md)) is kept for reference only.
 
-SNR after a noise-shaping Wiener filter. Historical VMAF input that no
-shipped model consumed; the CPU implementation was removed in commit
-70ed8b3ce3 (PR #38) — not kept for back-compat.
+ANSNR was SNR after a noise-shaping Wiener filter: historical VMAF input that
+no shipped model consumed. See [ansnr](ansnr.md).
 
 ### SSIMULACRA 2 — perceptual similarity in XYB space
 
-Fork-added scalar port of the libjxl reference metric, including a
-bit-close C port of libjxl's `FastGaussian` 3-pole recursive IIR as
-the pyramid blur. See
-[ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md) for the
-scope and algorithm choice, and
-[Research-0007](../research/0007-ssimulacra2-scalar-port.md) for the
-engineering rationale.
-
-**Invocation** — `--feature ssimulacra2`.
-
-**Output metrics** — `ssimulacra2` (one scalar per frame).
-
-**Output range** — `[0, 100]`, higher is better. Identical reference and
-distorted frames return exactly `100`. A reference table from the
-upstream algorithm author:
-
-| Score band | Perceptual meaning                          |
-|------------|---------------------------------------------|
-| 90–100     | Visually lossless                           |
-| 70–90      | High quality, only noticeable on close look |
-| 50–70      | Medium quality, clearly lossy               |
-| 30–50      | Low quality, obvious artifacts              |
-| 0–30       | Very low quality                            |
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 bpc. Chroma is
-nearest-neighbor upsampled to luma resolution; BT.709 limited-range is
-the default YUV→RGB matrix.
-
-**Options** (one, controlling the YUV→RGB matrix)
-
-| Option       | Type | Default | Range | Effect                                                               |
-|--------------|------|---------|-------|----------------------------------------------------------------------|
-| `yuv_matrix` | int  | `0`     | `0–3` | 0: BT.709 limited, 1: BT.601 limited, 2: BT.709 full, 3: BT.601 full |
-
-**Backends** — AVX2, AVX-512, NEON, SVE2. Three SIMD ports landed
-2026-04-25: pointwise + reduction kernels
-([ADR-0161](../adr/0161-ssimulacra2-simd-bitexact.md)),
-IIR blur ([ADR-0162](../adr/0162-ssimulacra2-iir-blur-simd.md)),
-and `picture_to_linear_rgb` ([ADR-0163](../adr/0163-ssimulacra2-ptlr-simd.md)).
-ARM64 SVE2 ports for IIR-blur and PTLR followed 2026-04-29
-([ADR-0213](../adr/0213-ssimulacra2-sve2.md)), flipping the SVE2
-deferral notes in [Research-0016](../research/0016-ssimulacra2-iir-blur-simd.md)
-and [Research-0017](../research/0017-ssimulacra2-ptlr-simd.md) from
-"deferred" to "shipped"; the SVE2 path runs alongside NEON on hosts
-that advertise the `sve2` HWCAP and falls back to NEON otherwise.
-All SIMD paths build with `-ffp-contract=off` in dedicated split
-static libraries to pin cross-host bit-exactness. CUDA / SYCL
-backends remain optional follow-up work (BACKLOG T3-8).
-The source-level `FP_CONTRACT OFF` pragmas are wrapped for GCC so
-warning-clean builds still keep the same no-FMA contract; compilers
-that ignore the pragma rely on the split-library `-ffp-contract=off`
-flag.
-
-**Bit-exactness** — scalar and SIMD outputs are byte-identical on the
-fork's host matrix (verified by `core/test/test_ssimulacra2_simd.c`,
-11 unit tests). Cross-host determinism is pinned by replacing libm
-`cbrtf` and `powf(x, 2.4)` with deterministic polynomials —
-`vmaf_ss2_cbrtf` (bit-trick init + 2 Newton-Raphson iterations,
-~7e-7 accuracy) and a 1024-entry sRGB-EOTF LUT (~5e-7 accuracy). See
-[ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md). The CI snapshot
-gate (`python/test/ssimulacra2_test.py`) pins 48-frame
-mean/min/max/hmean/frame-0/frame-47 values at `places=4` tolerance.
-The CPU, SIMD, and tiny-AI extractor registration structs are
-kept warning-clean across the hosted CI build matrix. That maintenance
-does not change feature names, option names, score formulas, or backend
-selection; it exists so real score-path diagnostics are not buried by
-compiler noise.
-
-**Limitations** —
-
-- Coefficient derivation in `create_recursive_gaussian` uses Cramer's
-  rule in doubles, which produces identical `n2`/`d1` floats to
-  libjxl's `Inv3x3Matrix` for σ=1.5 at 10-decimal precision but is
-  not guaranteed bit-exact at every σ. The fork pins σ=1.5, matching
-  libjxl's `kSigma`.
-- CUDA + SYCL twins shipped per
-  [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md) (T3-8 closed).
-
-**GPU twins** — `ssimulacra2_cuda`, `ssimulacra2_sycl`
-([ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)), and
-`ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.) The
-CUDA and SYCL twins run the whole frame on the device
-([ADR-1391](../adr/1391-cuda-ssimulacra2-device-resident.md),
-[ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md)):
-YUV → linear RGB, XYB, the 5 separable IIR blurs, the per-pixel SSIM +
-EdgeDiff terms with their per-channel sums, and the 2×2 downsample, with
-one small readback of the per-scale sums per frame. Their YUV, XYB, blur
-and downsample stages match the CPU bit for bit (contraction off, the
-shared cube root with a correctly rounded division). The CUDA twin's
-score is the CPU's bit for bit: it evaluates the per-pixel terms in fp64
-and returns the sums of the CPU's loops
-([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)). So is the
-SYCL twin's, on a device without fp64: it forms each term's double in
-64-bit integers and returns the same sums
-([ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md)). The HIP (and Metal)
-twins still run a hybrid host/GPU pipeline: the host does YUV →
-linear-RGB, XYB, the downsample and the fp64 combine, the GPU does the
-3-plane multiplies (`ssimulacra2_mul3`) and the blurs. GPU `cbrtf`
-differs from libm by up to 42 ULP; that drift cascaded to a 1.59e-2
-pooled-score drift on a first GPU iteration, which is why every path
-uses the shared `vmaf_ss2_cbrtf`. Min input dimension: 8×8 (the loop
-stops at the first scale that drops below). The IIR kernels are built
-without contraction (`--fmad=false` on CUDA, `-fp-model=precise` or
-contraction off on SYCL) so the recursive expression
-`n2*sum - d1*prev1 - prev2` keeps its CPU FMUL/FSUB ordering.
-
-Invocation: `--feature ssimulacra2_cuda` /
-`--feature ssimulacra2_sycl` / `--feature ssimulacra2_hip`
-(pair with the matching `--backend` flag for exclusive GPU
-dispatch).
-
-### Float moment — first / second statistical moments
-
-Computes the per-plane mean (first moment) and mean-of-squares (second
-moment) of the reference and distorted luma planes. Used as a building
-block for higher-level statistical metrics and as a sanity-check
-extractor when validating decoder output.
-
-#### Invocation
-
-- CLI: `--feature float_moment`.
-- ffmpeg: `libvmaf=feature=name=float_moment`.
-- C API: `vmaf_use_feature(ctx, "float_moment", NULL)`.
-
-#### Output metrics
-
-- `float_moment_ref1st`, `float_moment_dis1st` — first moment (mean).
-- `float_moment_ref2nd`, `float_moment_dis2nd` — second moment
-  (mean of squares).
-
-**Output range** — for 8-bit luma, `[0, 255]` for first moment and
-`[0, 65 025]` for second moment; scales with `2^bpc - 1`.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-Y plane only.
-
-**Options** — none.
-
-**Backends** — CPU (scalar, AVX2, AVX-512, NEON, SVE2) plus CUDA
-(`float_moment_cuda`, T7-23), SYCL (`float_moment_sycl`), HIP
-(`float_moment_hip`) and Metal (`float_moment_metal`). (The Vulkan
-backend was removed in ADR-0726.) With `--backend cuda`, `sycl`, `hip` or
-`metal`, `--feature float_moment` runs that backend's twin, and the
-`feature_backends` list of the JSON output names it:
-
-```shell
-vmaf ... --backend cuda --feature float_moment   # runs float_moment_cuda
-```
-
-Before 2026-10-01 that command computed the feature on the CPU and warned
-that the backend had no twin; the twin ran only when named
-(`--feature float_moment_cuda`).
-
-The GPU kernels accumulate four integer sums per frame in a single dispatch.
-The CPU squares each sample in fp32, which rounds above 12 bits.
-`float_moment_cuda`
-([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md)),
-`float_moment_hip` (ADR-1447) and `float_moment_sycl`
-([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md)) add that
-fp32 square as an integer. On a 16-bit frame of more than 2 097 152 pixels
-the sum of squares can pass 2^53 units, and from there the CPU's own `double`
-rounds as it adds; since
-[ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md) the twins form
-that rounded sum on the device and equal the CPU extractor at 8, 10, 12 and
-16 bits on every frame.
-
-The CPU kernels return the same bits whichever instruction set runs: the
-AVX2, AVX-512, NEON and SVE2 kernels square in vectors and add the values
-into one `double` one after the other, in the scalar loop's order, so the
-second moment of a 16-bit 4K frame is the same on x86 and aarch64 and on
-every SVE vector length. Before
-[ADR-1500](../adr/1500-arm-float-moment-scalar-order.md) (2026-10-03) the
-NEON and SVE2 kernels added in lanes and could return a different last digit
-on such frames (`test_moment_simd` has the cases).
-
-**Limitations** — Stateless per-frame. Float pipeline (the picture
-plane is copied to float32 before the moments are computed); the
-fixed-point twin is not currently shipped.
-
-### LPIPS — learned perceptual image patch similarity (tiny-AI)
-
-A perceptual-distance metric backed by an ONNX model with two image
-inputs (`ref`, `dist`). Distinct from the classic VMAF feature
-extractors in that the heavy lifting is delegated to ONNX Runtime via
-the tiny-AI surface. The model is loaded once at extractor init and
-runs per frame.
-
-#### Invocation
-
-- CLI: `--feature lpips=model_path=/path/to/lpips.onnx`.
-- ffmpeg: `libvmaf=feature=name=lpips:model_path=...`.
-- C API: `vmaf_use_feature(ctx, "lpips", opts)` with
-  `model_path` set on the dictionary.
-
-**Output metrics** — `lpips` (one scalar per frame). Lower is more
-similar.
-
-**Output range** — model-defined; the reference LPIPS network produces
-values in roughly `[0, 1]` for natural content but is not bounded by
-construction.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-4:0:0 is rejected (chroma is required for the RGB conversion).
-High-bit-depth inputs are rounded into the same 8-bit RGB tensor contract
-used by the shipped LPIPS checkpoint.
-
-#### Options
-
-| Option       | Type   | Default | Effect                                                                                                                         |
-|--------------|--------|---------|--------------------------------------------------------------------------------------------------------------------------------|
-| `model_path` | string | unset   | Filesystem path to the LPIPS ONNX model (two-input). If unset, falls back to the `VMAF_LPIPS_MODEL_PATH` environment variable. |
-
-**Backends** — scalar only on the libvmaf side (the ONNX model itself
-is dispatched to whichever ORT execution provider is selected via
-`--tiny-device`; see [`docs/ai/inference.md`](../ai/inference.md)).
-
-**Limitations** — depends on the
-[tiny-AI runtime](../ai/overview.md). On builds compiled without DNN
-support, init returns `-ENOSYS` before model-path probing. On DNN-enabled
-builds, the extractor errors out with `-EINVAL` if no model path is
-provided (neither the option nor the environment variable); the registry under
-[`model/tiny/registry.json`](../../model/tiny/registry.json) tracks
-the canonical LPIPS ONNX checkpoint.
-
-### DISTS-Sq — deep image structure and texture similarity (tiny-AI)
-
-A DISTS-shaped full-reference perceptual-distance extractor backed by a
-two-input ONNX model. It shares the LPIPS host pipeline: YUV frame pairs are
-converted to ImageNet-normalised RGB tensors, passed to ONNX Runtime via the
-tiny-AI DNN surface, and collected as one scalar per frame.
-
-The shipped `model/tiny/dists_sq.onnx` checkpoint is a smoke placeholder. It
-computes mean squared distance between the two normalised RGB tensors so the
-extractor ABI and runtime path are testable before the real DISTS weights land.
-
-#### Invocation
-
-- CLI: `--feature dists_sq=model_path=/path/to/dists_sq.onnx`.
-- ffmpeg: `libvmaf=feature=name=dists_sq:model_path=...`.
-- C API: `vmaf_use_feature(ctx, "dists_sq", opts)` with
-  `model_path` set on the dictionary.
-
-**Output metrics** — `dists_sq` (one scalar per frame). Lower is more
-similar.
-
-**Output range** — placeholder-defined non-negative distance. It is not
-calibrated to published DISTS values.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-4:0:0 is rejected because chroma is required for RGB conversion.
-High-bit-depth inputs are rounded into the same RGB8 tensor contract as
-LPIPS before ONNX inference.
-
-#### Options
-
-| Option       | Type   | Default | Effect                                                                                                                             |
-|--------------|--------|---------|------------------------------------------------------------------------------------------------------------------------------------|
-| `model_path` | string | unset   | Filesystem path to the DISTS-Sq ONNX model (two-input). If unset, falls back to `VMAF_DISTS_SQ_MODEL_PATH` environment variable.   |
-
-**Backends** — scalar only on the libvmaf side. ONNX execution follows the
-configured tiny-AI provider selected via `--tiny-device`.
-
-**Limitations** — depends on the [tiny-AI runtime](../ai/overview.md).
-On builds compiled without DNN support, init returns `-ENOSYS` before
-model-path probing; on DNN-enabled builds, missing `model_path` returns
-`-EINVAL`. The committed checkpoint is marked
-`smoke: true` in the model registry and should be used only for smoke tests
-until the real DISTS weights replace it.
-
-### FastDVDnet pre — temporal denoising pre-filter (tiny-AI)
-
-A *temporal* denoising pre-filter backed by an ONNX model with a
-single input tensor stacking five luma planes
-``[t-2, t-1, t, t+1, t+2]`` along the channel axis; the network emits
-a denoised version of frame ``t``. Structurally a feature extractor
-(registered in `feature_extractor_list[]` and discoverable by name)
-but logically a *pre-filter*, not a quality metric — denoise-before-
-encode is a bitrate lever, not a score. Runs through ORT once at
-init; per-frame inference uses a 5-slot ring buffer of float32 luma
-planes with reflection-pad-light end behaviour.
-
-See also [`docs/ai/models/fastdvdnet_pre.md`](../ai/models/fastdvdnet_pre.md),
-[ADR-0215](../adr/0215-fastdvdnet-pre-filter.md), and
-[ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) for the full
-surface contract, placeholder history, and real-weight export.
-
-#### Invocation
-
-- CLI: `--feature fastdvdnet_pre=model_path=/path/to/fastdvdnet_pre.onnx`.
-- ffmpeg: `libvmaf=feature=name=fastdvdnet_pre:model_path=...`.
-- C API: `vmaf_use_feature(ctx, "fastdvdnet_pre", opts)` with
-  `model_path` set on the dictionary.
-
-**Output metrics** — `fastdvdnet_pre_l1_residual` (one scalar per
-frame): mean-absolute difference between the centre frame ``t``
-(normalised to `[0, 1]`) and the denoised output. Exists so libvmaf's
-per-frame plumbing has a scalar to record; **not** a quality metric.
-Downstream pipelines that want the actual denoised pixel data should
-consume the FFmpeg `vmaf_pre_temporal` filter once that follow-up
-lands; the current extractor records the diagnostic residual only.
-
-**Output range** — `[0.0, 1.0]` by construction (mean-absolute on
-normalised luma). Typical values: `~0.0` for quiet / flat content,
-`~0.05` for lightly noisy content, and `~0.20+` on heavy denoising or
-saturated inputs.
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-Y plane only (chroma is ignored).
-
-#### Options
-
-| Option       | Type   | Default | Effect                                                                                                                                                                      |
-|--------------|--------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `model_path` | string | unset   | Filesystem path to the FastDVDnet ONNX model (5-frame `frames` input, single-frame `denoised` output). Overrides the `VMAF_FASTDVDNET_PRE_MODEL_PATH` environment variable. |
-
-**Backends** — scalar only on the libvmaf side (the ONNX model
-itself is dispatched to whichever ORT execution provider is selected
-via `--tiny-device`; see [`docs/ai/inference.md`](../ai/inference.md)).
-
-**Limitations** — Stateful (5-frame sliding window); not a metric
-(`fastdvdnet_pre_l1_residual` is a diagnostic residual, not a
-perceptual score). Depends on the [tiny-AI runtime](../ai/overview.md);
-extractor init returns `-ENOSYS` before model-path probing if libvmaf
-was built without ORT. On DNN-enabled builds it fails with `-EINVAL` if
-no model path is provided (neither the `model_path` option nor the
-`VMAF_FASTDVDNET_PRE_MODEL_PATH` env var). The shipped checkpoint at
-`model/tiny/fastdvdnet_pre.onnx` now carries real upstream
-m-tassano/FastDVDnet weights (`smoke: false` in
-`model/tiny/registry.json`) wrapped by the ADR-0255 luma adapter.
-The wrapper tiles Y into RGB, supplies the fixed `sigma = 25/255`
-noise map, and collapses the RGB output back to BT.601 luma while
-preserving the C extractor's `[1, 5, H, W] -> [1, 1, H, W]` ONNX
-contract. Remaining follow-ups are the FFmpeg `vmaf_pre_temporal`
-consumer filter and a luma-native retrain; the model shipped here is
-not the old smoke-only placeholder.
-
-### `mobilesal` — MobileSal saliency map (tiny-AI, NR / single-input)
-
-Runs the MobileSal RGB saliency network on each distorted frame and
-emits a per-frame saliency mean. Companion ADR
-[`docs/adr/0218-mobilesal-saliency-extractor.md`](../adr/0218-mobilesal-saliency-extractor.md)
-records the extractor design + the historical synthetic-placeholder
-ONNX. Production use should select the fork-trained
-`model/tiny/saliency_student_v1.onnx` checkpoint; the placeholder
-remains in `model/tiny/registry.json` with `smoke: true` for legacy
-and pipeline smoke coverage. The encoder-side `tools/vmaf-roi` sidecar
-is shipped and consumes the same saliency-map contract for per-CTU QP
-offsets.
-
-#### Invocation
-
-- CLI: `--feature mobilesal=model_path=/path/to/mobilesal.onnx`.
-- ffmpeg: `libvmaf=feature=name=mobilesal:model_path=...`.
-- C API: `vmaf_use_feature(ctx, "mobilesal", opts)` with
-  `model_path` set on the dictionary.
-
-**Output metrics** — `mobilesal` (one scalar per frame: mean saliency
-across the H×W output map).
-
-**Backends** — scalar only on the libvmaf side; ORT-dispatched to the
-selected execution provider.
-
-**Limitations** — init returns `-ENOSYS` before model-path probing if
-libvmaf was built without ORT; on DNN-enabled builds, missing
-`model_path` returns `-EINVAL`. The default historical `mobilesal.onnx`
-placeholder is smoke-only; use `saliency_student_v1.onnx` for
-content-dependent saliency. The C extractor still accepts 8-bit YUV only;
-high-bit-depth input support is available on the encoder-side `vmaf-roi`
-tool, not on the scoring-side `mobilesal` feature yet. Depends on the
-[tiny-AI runtime](../ai/overview.md).
-
-### `transnet_v2` — TransNet V2 shot-boundary detector (tiny-AI, NR / single-input)
-
-Runs the TransNet V2 shot-boundary detector on a sliding 100-frame
-window of 27x48 RGB thumbnails (downsampled from the distorted
-stream's luma + reconstructed chroma) and emits a per-frame shot-
-boundary probability plus a thresholded binary flag. Companion ADRs
-[`docs/adr/0223-transnet-v2-shot-detector.md`](../adr/0223-transnet-v2-shot-detector.md)
-and
-[`docs/adr/0261-transnet-v2-real-weights.md`](../adr/0261-transnet-v2-real-weights.md)
-record the extractor contract and the real upstream Soucek & Lokoc
-2020 weights drop. The per-shot CRF predictor that consumes these
-features is T6-3b.
-
-#### Invocation
-
-- CLI: `--feature transnet_v2=model_path=/path/to/transnet_v2.onnx`.
-- ffmpeg: `libvmaf=feature=name=transnet_v2:model_path=...`.
-- C API: `vmaf_use_feature(ctx, "transnet_v2", opts)` with
-  `model_path` set on the dictionary.
-
-**Output metrics** — `shot_boundary_probability` (sigmoid of the most
-recent frame's boundary logit, range `[0.0, 1.0]`) and `shot_boundary`
-(binary flag `0.0` / `1.0`, thresholded at `0.5` against
-`shot_boundary_probability`). Downstream consumers (per-shot CRF
-predictor T6-3b, FFmpeg shot-cut filter) bind to these two names.
-
-**Backends** — scalar only on the libvmaf side; ORT-dispatched to
-the selected execution provider.
-
-**Limitations** — Stateful (100-frame sliding window; the first
-99 frames emit boundary probabilities computed against a partially-
-filled window). Depends on the [tiny-AI runtime](../ai/overview.md);
-extractor init returns `-ENOSYS` before model-path probing if libvmaf
-was built without ORT. On DNN-enabled builds it fails with `-EINVAL` if
-no model path is provided (neither the `model_path` option nor the
-`VMAF_TRANSNET_V2_MODEL_PATH` env var). The shipped checkpoint at
-`model/tiny/transnet_v2.onnx` now carries real upstream
-soCzech/TransNetV2 weights (`smoke: false` in
-`model/tiny/registry.json`) wrapped by the ADR-0261 NTCHW adapter.
-The wrapper preserves the C extractor's `[1, 100, 3, 27, 48] ->
-[1, 100]` ONNX contract while invoking the upstream NTHWC graph and
-selecting the boundary-logits output. Remaining follow-ups are
-per-shot CRF aggregation and true RGB / bilinear thumbnail input;
-the model shipped here is not the old smoke-only placeholder.
+`--feature ssimulacra2` scores one scalar per frame in `[0, 100]` (higher is
+better; identical frames return exactly `100`). It is a port of the libjxl
+reference metric. See [ssimulacra2](ssimulacra2.md) for the score bands, the
+options and the twin measurements.
+
+- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 bpc. Chroma is
+  nearest-neighbour upsampled to luma resolution. Minimum input 8×8.
+- **Options** — `yuv_matrix` (int, default `0`, range `0–3`): `0` BT.709
+  limited, `1` BT.601 limited, `2` BT.709 full, `3` BT.601 full.
+- **CPU backends** — AVX2, AVX-512, NEON and SVE2, bit-identical to scalar.
+- **Twins** — `ssimulacra2_cuda`, `ssimulacra2_sycl` and `ssimulacra2_hip` are
+  device-resident and return the CPU's score bit for bit
+  (`exact_twins.d/ssimulacra2.{cuda,sycl,hip}`;
+  [ADR-1391](../adr/1391-cuda-ssimulacra2-device-resident.md),
+  [ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md),
+  [ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md),
+  [ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md),
+  [ADR-1445](../adr/1445-hip-ssimulacra2-cpu-sum-order.md)).
+  `ssimulacra2_metal` runs a hybrid host/GPU pipeline. Name a twin with
+  `--feature ssimulacra2_cuda` (or `_sycl`, `_hip`) and pair it with the
+  matching `--backend` flag for exclusive GPU dispatch.
+- **Limitations** — `create_recursive_gaussian` derives its coefficients with
+  Cramer's rule in doubles, which yields the same `n2` / `d1` floats as libjxl's
+  `Inv3x3Matrix` for σ=1.5 at 10-decimal precision but is not guaranteed
+  bit-exact at every σ; the fork pins σ=1.5, libjxl's `kSigma`.
+
+The SIMD and determinism history is under [History](#history).
+
+### Float moment — first and second statistical moments
+
+`--feature float_moment` emits `float_moment_ref1st`, `float_moment_dis1st`,
+`float_moment_ref2nd` and `float_moment_dis2nd`, has no options and runs on all
+four backends. See [float-moment](float-moment.md).
+
+### Tiny-AI extractors
+
+`lpips`, `dists_sq`, `fastdvdnet_pre`, `mobilesal` and `transnet_v2` run an
+ONNX model through ONNX Runtime and take one option, `model_path`. All five are
+on [tiny-ai-extractors](tiny-ai-extractors.md); the summaries below keep the
+headings that other pages link to.
+
+#### LPIPS — learned perceptual image patch similarity
+
+`--feature lpips=model_path=/path/to/lpips.onnx` emits `lpips` (lower is more
+similar). See
+[tiny-ai-extractors](tiny-ai-extractors.md#lpips-learned-perceptual-image-patch-similarity).
+
+#### DISTS-Sq — deep image structure and texture similarity
+
+`--feature dists_sq=model_path=/path/to/dists_sq.onnx` emits `dists_sq`; the
+shipped checkpoint is a smoke placeholder. See [dists](dists.md) and
+[tiny-ai-extractors](tiny-ai-extractors.md#dists-sq-deep-image-structure-and-texture-similarity).
+
+#### FastDVDnet pre — temporal denoising pre-filter
+
+`--feature fastdvdnet_pre=model_path=...` emits the diagnostic
+`fastdvdnet_pre_l1_residual`, not a quality score. See
+[tiny-ai-extractors](tiny-ai-extractors.md#fastdvdnet-pre-temporal-denoising-pre-filter).
+
+#### `mobilesal` — MobileSal saliency map (tiny-AI, NR / single-input)
+
+`--feature mobilesal=model_path=...` emits `saliency_mean` for the distorted
+frame, 8-bit input only. See
+[tiny-ai-extractors](tiny-ai-extractors.md#mobilesal-mobilesal-saliency-map).
+
+#### `transnet_v2` — TransNet V2 shot-boundary detector (tiny-AI, NR / single-input)
+
+`--feature transnet_v2=model_path=...` emits `shot_boundary_probability` and
+`shot_boundary` over a 100-frame window. See
+[tiny-ai-extractors](tiny-ai-extractors.md#transnet_v2-transnet-v2-shot-boundary-detector).
 
 ### Speed (chroma + temporal) — Netflix research extractors
 
-`speed_chroma` and `speed_temporal` are research-stage feature
-extractors ported from Netflix upstream commit
-[`d3647c73`](https://github.com/Netflix/vmaf/commit/d3647c73) (with
-its dependency `4ad6e0ea` for the `vif_tools` helpers). They share a
-common Speed-Of-Light–style spatial-pooling backbone and a per-frame
-neural-network–shaped weighting (see the inline `speed_*` options).
-
-Both extractors only register when `libvmaf` is built with
-`-Denable_float=true` (i.e. `VMAF_FLOAT_FEATURES=1`); the standard
-fixed-point build does not include them.
+`speed_chroma` and `speed_temporal` are research-stage extractors ported from
+Netflix upstream commit
+[`d3647c73`](https://github.com/Netflix/vmaf/commit/d3647c73), with its
+dependency `4ad6e0ea` for the `vif_tools` helpers. They share a spatial-pooling
+backbone in the style of SpEED-QA and a per-frame neural-network-shaped
+weighting. They register when libvmaf is built with `-Denable_float=true`, the
+default. See also [speed_qa](speed_qa.md).
 
 Their scores are Netflix's: every value compared with a build of Netflix
-master is identical, and the CUDA, HIP and SYCL twins return the CPU's
-scores bit for bit
+master is identical, and the CUDA, HIP and SYCL twins return the CPU's scores
+bit for bit
 ([ADR-1477](../adr/1477-speed-upstream-double-math.md); the comparison, the
-options where the fork differs on purpose and what changed on 2026-10-02 are
-on the [SpEED page](speed_qa.md#the-scores-are-netflixs)).
+options where the fork differs on purpose and what changed on 2026-10-02 are on
+the [SpEED page](speed_qa.md#the-scores-are-netflixs)).
 
-#### `speed_chroma`
+| Extractor | Output metrics | Input formats | Backends |
+| --- | --- | --- | --- |
+| `speed_chroma` | `Speed_chroma_feature_speed_chroma_u_score`, `..._v_score`, `..._uv_score` (no `y` score) | YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc | CPU (scalar, AVX2, AVX-512, NEON); CUDA, SYCL, HIP; Metal missing (`GAP-METAL-MISSING-SPEED-TWINS`) |
+| `speed_temporal` | `Speed_temporal_feature_speed_temporal_score` | same | same |
 
-Per-channel chroma fidelity scores. Lifts each of Y / U / V from the
-input pictures (the new `picture_copy(..., channel)` parameter — see
-the same upstream commit) and runs the Speed pooling on each plane,
-plus a combined U+V score.
+`speed_chroma` scores the U and V planes of the input pictures, lifted with
+`picture_copy(..., channel)` from the same upstream commit, plus a combined
+U+V score. `speed_temporal` scores a small cyclic frame buffer and captures
+distortions that appear only across consecutive frames, such as flicker and
+judder.
 
-- **Invocation** — `--feature speed_chroma` (build with
-  `-Denable_float=true`).
-- **Output metrics** — `Speed_chroma_feature_speed_chroma_y_score`,
-  `..._u_score`, `..._v_score`, `..._uv_score`.
-- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-- **Backends** — CPU (scalar, AVX2, AVX-512, NEON), GPU (CUDA, SYCL, HIP;
-  Metal missing — deferred under `GAP-METAL-MISSING-SPEED-TWINS`).
+#### Speed options
 
-#### `speed_temporal`
+| Option | Alias | Declared by | Type | Default | Range | Effect |
+| --- | --- | --- | --- | --- | --- | --- |
+| `speed_kernelscale` | `ks` | both | double | `1.0` | `0.1–4.0` | Scale of the Gaussian kernel (2.0 doubles the standard deviation and enlarges the kernel). |
+| `speed_prescale` | `ps` | both | double | `1.0` | `0.1–4.0` | Resize factor of each plane before the SpEED filters; values above 1 upsample. |
+| `speed_prescale_method` | `psm` | both | string | `nearest` | `nearest`, `bilinear`, `bicubic`, `lanczos4` | Resize method. |
+| `speed_sigma_nn` | `snn` | both | double | `0.29` | `0.1–2.0` | Standard deviation of the neural noise. |
+| `speed_nn_floor` | `nnf` | both | double | `0.0` | `0.0–1.0` | Neural-noise floor, as a share of sigma_nn. |
+| `speed_max_val` | `mxv` | both | double | `1000.0` | `0.0–1000.0` | Upper clamp of the scores. |
+| `speed_weight_var_mode` | `wvm` | `speed_chroma` | int | `0` | `0–6` | Approach to variance-based weighting. |
+| `speed_use_ref_diff` | `urd` | `speed_temporal` | bool | `false` | — | Debug mode: additional output. |
 
-Temporal Speed score over a small cyclic frame buffer. Captures
-distortions that only become visible once consecutive frames are
-considered (flicker, judder).
+Defaults match Netflix upstream; `core/src/feature/speed.c` carries the help
+strings.
 
-- **Invocation** — `--feature speed_temporal` (build with
-  `-Denable_float=true`).
-- **Output metrics** — `Speed_temporal_*_score` family (see the
-  registered `provided_features[]` in `core/src/feature/speed.c`).
-- **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-- **Backends** — CPU (scalar, AVX2, AVX-512, NEON), GPU (CUDA, SYCL, HIP;
-  Metal missing — deferred under `GAP-METAL-MISSING-SPEED-TWINS`).
+#### Speed performance and exactness notes
 
-#### Options (shared)
+- The SIMD paths vectorise the 25x25 covariance matrix each plane needs. They
+  return the scalar path's bits on every input: a kernel keeps one lane per
+  covariance sum instead of splitting one sum over lanes, and multiplies and
+  adds separately ([ADR-1459](../adr/1459-speed-cov-kernel-exact.md)).
+  Scalar, AVX2, AVX-512 and NEON dispatch give the same scores
+  (`core/test/test_speed_simd.c` compares the sums bit for bit).
+- The kernels upstream Netflix ships for AVX2 and AVX-512 are faster on large
+  planes and differ from scalar in the last bits of a sum. This fork does not
+  use them, and `speed_chroma` + `speed_temporal` take up to 12 % more CPU time
+  per frame for it (3840x2160, AVX-512).
+- Each plane goes through a Gaussian anti-alias filter and is then decimated by
+  16 in both directions. On x86 the whole plane is filtered (AVX2) and one
+  sample in 256 is kept. On every other target the filter is evaluated only at
+  the kept samples (`vif_filter1d_dec16_s()` in
+  `core/src/feature/vif_tools.c`, Netflix/vmaf
+  [`76ea5f03`](https://github.com/Netflix/vmaf/commit/76ea5f03)), which returns
+  the same bits as filtering the plane with the scalar filter and decimating
+  it; `core/test/test_speed_filter.c` compares the two with `memcmp`. Scores do
+  not change on any target.
+- In subsampled formats (4:2:0, 4:2:2) an odd luma width or height produces an
+  extra chroma row or column to cover the last luma sample
+  (`vmaf_chroma_extent()`); `speed_chroma` sizes its buffers from
+  `speed_chroma_dimensions()`, matching `picture.c`.
 
-The `speed_*` extractors expose a research-grade option surface
-including `speed_kernelscale`, `speed_prescale`,
-`speed_prescale_method` (`nearest` / `bicubic` / `lanczos4` /
-`bilinear`), `speed_sigma_nn`, `speed_nn_floor`, `speed_max_val`,
-`speed_weight_var_mode` (`speed_chroma` only), and
-`speed_use_ref_diff` (`speed_temporal` only). See
-`core/src/feature/speed.c` for the per-option `help` strings and
-ranges; defaults match Netflix upstream.
-
-The SIMD paths vectorise the 25x25 covariance matrix each plane needs. They
-return the scalar path's bits on every input: a kernel keeps one lane per
-covariance sum instead of splitting one sum over lanes, and multiplies and
-adds separately ([ADR-1459](../adr/1459-speed-cov-kernel-exact.md)). Scalar,
-AVX2, AVX-512 and NEON dispatch therefore give the same scores
-(`core/test/test_speed_simd.c` compares the sums bit for bit). The kernels
-upstream Netflix ships for AVX2 and AVX-512 are faster on large planes and
-differ from scalar in the last bits of a sum; this fork does not use them, and
-`speed_chroma` + `speed_temporal` take up to 12 % more CPU time per frame for
-it (3840x2160, AVX-512).
-
-Each plane goes through a Gaussian anti-alias filter and is then decimated
-by 16 in both directions. On x86 the whole plane is filtered (AVX2) and one
-sample in 256 is kept. On every other target the filter is evaluated only at
-the kept samples (`vif_filter1d_dec16_s()` in `core/src/feature/vif_tools.c`,
-Netflix/vmaf [`76ea5f03`](https://github.com/Netflix/vmaf/commit/76ea5f03)),
-which returns the same bits as filtering the plane with the scalar filter and
-decimating it; `core/test/test_speed_filter.c` compares the two with `memcmp`.
-Scores do not change on any target.
-
-`speed_prescale` takes 0.1 to 4.0 (default 1.0) and resizes each plane by
-that factor before the SpEED filters run; values above 1 upsample. Before
-2026-09-30 the CPU `speed_temporal` overran its frame buffers for any
-`speed_prescale` above 1, so the run crashed or corrupted memory; it now
-sizes them for the upscaled plane
-([Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)). Output at
-`speed_prescale` 1 and below is unchanged, and so is `speed_chroma`, which
-was never affected by prescale. `core/test/test_speed_frame_buffers.c` extracts
-three frames at 1.0, 1.5, 2.0 and 4.0.
-
-In subsampled formats (4:2:0, 4:2:2) an odd luma width or height produces an
-extra chroma row or column to cover the last luma sample (`vmaf_chroma_extent()`).
-Before 2026-09-30, `speed_chroma` (CPU, CUDA, and HIP) sized its buffers using
-floor division, causing `picture_copy()` to write past the allocation; it now
-sizes from `speed_chroma_dimensions()`, matching `picture.c`.
-
-**Stability** — research; the option grammar and score scale may
-shift in future Netflix upstream commits. Track upstream releases
-before pinning these features into a downstream pipeline.
-
-## Invoking features from the CLI
-
-```bash
-# Single extractor, no model
-vmaf --reference ref.yuv --distorted dis.yuv \
-     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-     --no_prediction --feature psnr \
-     --output score.json --json
-```
-
-Multiple `--feature` flags can stack:
-
-```bash
-vmaf ... --feature psnr --feature ssim --feature ciede --feature cambi ...
-```
-
-Per-feature options go into the name string:
-
-```bash
-vmaf ... --feature "psnr=enable_mse=true|enable_apsnr=true" ...
-vmaf ... --feature "adm=adm_enhn_gain_limit=1.0" ...
-```
-
-See [usage/cli.md](../usage/cli.md) for the full CLI grammar.
-
-## Invoking features from the C API
-
-```c
-VmafFeatureDictionary *opts = NULL;
-vmaf_feature_dictionary_set(&opts, "enable_mse", "true");
-vmaf_use_feature(ctx, "psnr", opts);
-```
-
-See [api/index.md](../api/index.md#vmaffeaturedictionary)
-for the dictionary ownership rules.
+**Stability** — research. The option grammar and score scale may shift in
+future Netflix upstream commits; track upstream releases before pinning these
+features into a downstream pipeline.
 
 ## Related
 
 - [CAMBI](cambi.md) — banding-specific extractor.
-- [Confidence Interval](confidence-interval.md) — bootstrapped uncertainty
-  on the final VMAF score.
-- [Bad cases](bad-cases.md) — how to report content where extractors
-  disagree with subjective ratings.
+- [Confidence Interval](confidence-interval.md) — bootstrapped uncertainty on
+  the final VMAF score.
+- [Bad cases](bad-cases.md) — how to report content where extractors disagree
+  with subjective ratings.
 - [Backends](../backends/index.md) — which SIMD / GPU paths get picked at
   runtime.
-- [Models](../models/overview.md) — how the fixed-point core extractors
-  feed into the shipped VMAF models.
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the
-  per-surface doc bar this page satisfies.
+- [Models](../models/overview.md) — how the fixed-point core extractors feed
+  into the shipped VMAF models.
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the per-surface
+  doc bar this page satisfies.
 
 ## Licensing of the extractors (ADR-1250)
 
 Extractor sources carry their terms per file as an `SPDX-License-Identifier`.
 An extractor the fork wrote is EUPL-1.2. One that carries Netflix's, libjxl's,
-Xiph's or IQA's code — every SIMD and GPU kernel of an upstream metric, and the
-scalar ports of third-party references — keeps that code's terms and its
-copyright notice. `scripts/dev/relicense_fork_files.py --list` prints the verdict
-and the reason for every file. See [ADR-1250](../adr/1250-eupl-fork-relicense.md).
+Xiph's or IQA's code (every SIMD and GPU kernel of an upstream metric, and the
+scalar ports of third-party references) keeps that code's terms and its
+copyright notice. `scripts/dev/relicense_fork_files.py --list` prints the
+verdict and the reason for every file. See
+[ADR-1250](../adr/1250-eupl-fork-relicense.md).
+
+## History
+
+Newest first.
+
+### Dated changes, September and October 2026
+
+- **2026-10-03** — [ADR-1500](../adr/1500-arm-float-moment-scalar-order.md)
+  aligned the NEON and SVE2 `float_moment` sums with the scalar order
+  ([float-moment](float-moment.md)).
+- **2026-10-02** — SpEED scores follow Netflix's upstream double math
+  ([ADR-1477](../adr/1477-speed-upstream-double-math.md); see the
+  [SpEED page](speed_qa.md#the-scores-are-netflixs)).
+- **2026-10-01** — `--backend <gpu> --feature float_moment` stopped computing
+  on the CPU with a no-twin warning and runs the twin.
+- **2026-09-30** — The CPU `speed_temporal` overran its frame buffers for any
+  `speed_prescale` above 1, so the run crashed or corrupted memory; it now
+  sizes them for the upscaled plane
+  ([Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)). Output at
+  `speed_prescale` 1 and below is unchanged, and so is `speed_chroma`, which
+  prescale never affected. `core/test/test_speed_frame_buffers.c` extracts three
+  frames at 1.0, 1.5, 2.0 and 4.0. Also on this date `speed_chroma` (CPU, CUDA
+  and HIP) sized its buffers by floor division for odd subsampled frame sizes,
+  so `picture_copy()` wrote past the allocation; it now sizes from
+  `speed_chroma_dimensions()`.
+
+### Dated changes, April and May 2026
+
+- **2026-05-28** — The Vulkan backend and its column were removed
+  ([ADR-0726](../adr/0726-drop-vulkan-backend.md)). Earlier ADRs that mention
+  Vulkan or a Vulkan stub describe historical state.
+- **2026-04-29** — Port of upstream Netflix/vmaf
+  [`b949cebf`](https://github.com/Netflix/vmaf/commit/b949cebf): the
+  `motion_add_scale1`, `motion_add_uv`, `motion_filter_size` and
+  `motion_max_val` options. With the defaults, output is bit-identical to the
+  pre-port baseline on the Y-plane SIMD fast path; non-default options route
+  through the scalar `compute_motion()` path. The same port lets `float_motion`
+  emit `motion3_score` (a perceptual blend of `motion2`, controlled by
+  `motion_blend_factor` / `motion_blend_offset`) on the second frame. The
+  trained VMAF models do not consume `motion3_score` and are unchanged.
+- **2026-04-29** — SSIMULACRA 2: ARM64 SVE2 ports of the IIR blur and
+  `picture_to_linear_rgb` ([ADR-0213](../adr/0213-ssimulacra2-sve2.md)), moving
+  the SVE2 deferral notes in
+  [Research-0016](../research/0016-ssimulacra2-iir-blur-simd.md) and
+  [Research-0017](../research/0017-ssimulacra2-ptlr-simd.md) from "deferred" to
+  "shipped". The SVE2 path runs alongside NEON on hosts that advertise the
+  `sve2` HWCAP and falls back to NEON otherwise.
+- **2026-04-25** — SSIMULACRA 2: three SIMD ports landed, the pointwise and
+  reduction kernels ([ADR-0161](../adr/0161-ssimulacra2-simd-bitexact.md)), the
+  IIR blur ([ADR-0162](../adr/0162-ssimulacra2-iir-blur-simd.md)) and
+  `picture_to_linear_rgb` ([ADR-0163](../adr/0163-ssimulacra2-ptlr-simd.md)).
+  All SIMD paths build with `-ffp-contract=off` in dedicated split static
+  libraries to pin cross-host bit-exactness. The source-level `FP_CONTRACT OFF`
+  pragmas are wrapped for GCC so warning-clean builds keep the same no-FMA
+  contract; compilers that ignore the pragma rely on the split-library flag.
+
+### SSIMULACRA 2 background
+
+- **Origin** — a fork-added scalar port of the libjxl reference metric, with a
+  bit-close C port of libjxl's `FastGaussian` 3-pole recursive IIR as the
+  pyramid blur
+  ([ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md),
+  [Research-0007](../research/0007-ssimulacra2-scalar-port.md)).
+- **SIMD parity** — scalar and SIMD outputs are byte-identical on the fork's
+  host matrix (`core/test/test_ssimulacra2_simd.c`, 11 unit tests).
+- **Cross-host determinism** — libm `cbrtf` and `powf(x, 2.4)` are replaced
+  with deterministic polynomials: `vmaf_ss2_cbrtf` (bit-trick init plus two
+  Newton-Raphson iterations, about 7e-7 accuracy) and a 1024-entry sRGB-EOTF
+  LUT (about 5e-7 accuracy)
+  ([ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md)).
+- **CI snapshot gate** — `python/test/ssimulacra2_test.py` pins 48-frame mean,
+  min, max, hmean, frame-0 and frame-47 values at `places=4`.
+- **Warning hygiene** — the registration structs of the CPU, SIMD and tiny-AI
+  extractors are kept warning-clean across the hosted CI matrix; that does not
+  change feature names, option names, score formulas or backend selection.
+- **GPU twins** — first reported as optional follow-up work (BACKLOG T3-8) and
+  shipped in [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md). On a first GPU
+  iteration GPU `cbrtf` differed from libm by up to 42 ULP and cascaded to a
+  1.59e-2 pooled-score drift, which is why every path uses the shared
+  `vmaf_ss2_cbrtf`.
+- **Contraction** — the CUDA and SYCL IIR kernels are built without contraction
+  (`--fmad=false` on CUDA, `-fp-model=precise` or contraction off on SYCL) so
+  `n2*sum - d1*prev1 - prev2` keeps its CPU ordering.
+
+### Overview table notes
+
+- `float_ansnr` was removed per
+  [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
+- The CAMBI Vulkan kernel (T7-36 / ADR-0210) was removed with the backend in
+  ADR-0726.

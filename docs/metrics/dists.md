@@ -42,8 +42,7 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 10 \
-    --feature dists_sq \
-    --feature_params dists_sq:model_path=model/tiny/dists_sq.onnx \
+    --feature dists_sq=model_path=model/tiny/dists_sq.onnx \
     --output score.json
 ```
 
