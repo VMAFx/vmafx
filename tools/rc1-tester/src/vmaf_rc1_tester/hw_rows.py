@@ -91,6 +91,8 @@ def gate_evidence(spec: Mapping[str, str], gate: Mapping[str, Any]) -> list[dict
         if any(item["feature"] == spec["feature"] for item in entry.get("left_out", [])):
             continue
         cells = [c for c in entry.get("cells", []) if c["feature"] == spec["feature"]]
+        if cells and cells[0]["status"] == "SKIP":  # the gate's own skip, reason in the note
+            continue
         item = {"kind": "gate", "fixture": entry["fixture"], "feature": spec["feature"]}
         item["result"] = cells[0]["status"] if cells else "not_run"
         if cells:

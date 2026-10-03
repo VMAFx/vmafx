@@ -104,10 +104,12 @@ def run_gate_fixture(
 
 
 def status_of_gate(entries: Sequence[Mapping[str, Any]]) -> str:
-    """`pass` when every cell is OK, `fail` on a FAIL or ERROR cell, `error` without cells."""
+    """`pass` when every cell is OK or SKIP (a cell the gate itself does not run on
+    the fixture, with the reason in its note), `fail` on a FAIL or ERROR cell,
+    `error` without cells."""
     if not entries or any("error" in entry or not entry.get("cells") for entry in entries):
         return "error"
-    bad = any(cell["status"] != "OK" for entry in entries for cell in entry["cells"])
+    bad = any(cell["status"] not in ("OK", "SKIP") for entry in entries for cell in entry["cells"])
     return "fail" if bad else "pass"
 
 
