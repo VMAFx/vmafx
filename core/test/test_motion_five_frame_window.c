@@ -587,27 +587,20 @@ static int ffw_twin_verdict(const char *name, const char *value)
     return verdict;
 }
 
-/* The CUDA, SYCL and HIP twins of `motion` and `motion_v2` compute the
- * window (ADR-1491): model dispatch keeps the twin, verdict 0. The Metal
- * twins do not declare the option, so a model or `--feature motion` that
- * sets it is computed by the CPU extractor: verdict -ENOTSUP. A build
- * without the backend has no such extractor and nothing to check. */
+/* The CUDA, SYCL, HIP and Metal twins of `motion` and `motion_v2` compute
+ * the window (ADR-1491; Metal since ADR-1498): model dispatch keeps the twin,
+ * verdict 0. A build without the backend has no such extractor and nothing to
+ * check. */
 static char *test_twins_honour_the_option_or_leave_it_to_the_cpu(void)
 {
     static const char *const with_window[] = {
-        "motion_cuda",    "motion_sycl",    "motion_hip",
-        "motion_v2_cuda", "motion_v2_sycl", "motion_v2_hip",
+        "motion_cuda",    "motion_sycl",    "motion_hip",    "integer_motion_metal",
+        "motion_v2_cuda", "motion_v2_sycl", "motion_v2_hip", "motion_v2_metal",
     };
     for (size_t i = 0; i < sizeof(with_window) / sizeof(with_window[0]); i++) {
         const int verdict = ffw_twin_verdict(with_window[i], "true");
         mu_assert("a twin with the five-frame window handed the option to the CPU",
                   verdict == -ENOENT || verdict == 0);
-    }
-    static const char *const without_window[] = {"integer_motion_metal", "motion_v2_metal"};
-    for (size_t i = 0; i < sizeof(without_window) / sizeof(without_window[0]); i++) {
-        const int verdict = ffw_twin_verdict(without_window[i], "true");
-        mu_assert("a twin without the five-frame window kept the option",
-                  verdict == -ENOENT || verdict == -ENOTSUP);
     }
     /* The CPU extractors honour both values. */
     mu_assert("motion refuses the option", ffw_twin_verdict("motion", "true") == 0);
