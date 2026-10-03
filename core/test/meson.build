@@ -2416,7 +2416,10 @@ test_metal_float_moment_sum = executable('test_metal_float_moment_sum',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
 )
-test('test_metal_float_moment_sum', test_metal_float_moment_sum, suite : ['fast'], timeout : 120)
+# Same frames as test_float_moment_sum, and the same timeout: 35 s on a
+# workstation under the sanitizer job's debug ASan + UBSan build, past 120 s on
+# its hosted runner.
+test('test_metal_float_moment_sum', test_metal_float_moment_sum, suite : ['fast'], timeout : 600)
 test('test_metal_float_moment_exact_contract',
     import('python').find_installation(),
     args : files('test_metal_float_moment_exact_contract.py'),
