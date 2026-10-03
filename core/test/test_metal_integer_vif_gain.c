@@ -454,7 +454,15 @@ static char *test_fp32_gain_would_differ(void)
     for (unsigned i = 0u; i < SAMPLES; i++) {
         const uint32_t *s = &sigmas[(size_t)i * 3u];
         const float g = (float)(int32_t)s[2] / ((float)(int32_t)s[0] + 65536.0f * 1.0e-10f);
-        int sv = (int)s[1] - (int)(g * (float)(int32_t)s[2]);
+        /* The product passes the int range on some samples, where C's
+         * conversion is undefined; there the old fp32 form is counted wrong
+         * without converting. */
+        const float prod = g * (float)(int32_t)s[2];
+        if (prod >= 2147483648.0f || prod < -2147483648.0f) {
+            wrong++;
+            continue;
+        }
+        int sv = (int)s[1] - (int)prod;
         sv = MAX(sv, 0);
         const float gl = MIN(g, 100.0f);
         const int64_t gg = (int64_t)(gl * gl * (float)(int32_t)s[0]);

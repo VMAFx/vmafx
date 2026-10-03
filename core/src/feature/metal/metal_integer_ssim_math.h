@@ -292,9 +292,14 @@ VMAF_MTL_FUNC vmaf_mtl_u64 vmaf_mtl_issim_term_bits(VmafMtlIssimMoments m,
     const VmafMtlSoftSigned c2 =
         vmaf_mtl_issim_times_weight(vmaf_mtl_issim_times_weight(k.k2, m.w), m.w);
     const VmafMtlIssimProducts p = vmaf_mtl_issim_products(m);
-    VmafMtlIssimProductSums sums = vmaf_mtl_issim_product_sums_exact(p);
+    /* The integer path only on its own domain: vmaf_mtl_signed_from_exact()
+     * shifts by a negative count above 2^53, which C leaves undefined (the
+     * SYCL header computes it first and discards it). */
+    VmafMtlIssimProductSums sums;
     if (!vmaf_mtl_issim_products_are_exact(p)) {
         sums = vmaf_mtl_issim_product_sums_rounded(p);
+    } else {
+        sums = vmaf_mtl_issim_product_sums_exact(p);
     }
     /* m.w * (2 * mxy + c1) * (c2 + 2 * (m.xy * w_d - mxy)) */
     const VmafMtlSoftSigned means =

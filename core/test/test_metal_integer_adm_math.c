@@ -165,7 +165,12 @@ static int32_t old_decouple_s123(int32_t o, int32_t t, int af, double gain)
 {
     const int64_t k = vmaf_mtl_iadm_k_s123(o, t);
     const float egl = af ? (float)gain : 1.0f;
-    int32_t rst = (int32_t)((float)(((k * o) + 16384) >> 15) * egl);
+    /* The device's float-to-int conversion; C's is undefined outside the
+     * int32 range, so the model saturates there. */
+    const float rst_x = (float)(((k * o) + 16384) >> 15) * egl;
+    int32_t rst = rst_x >= 2147483648.0f ? INT32_MAX :
+                  rst_x < -2147483648.0f ? INT32_MIN :
+                                           (int32_t)rst_x;
     const float rst_f = ((float)k / 32768.0f) * ((float)o / 64.0f);
     if (af && rst_f > 0.0f) {
         rst = rst < t ? rst : t;
