@@ -7,8 +7,9 @@
  *  Dispatches `float_moment_kernel_{8,16}bpc` from float_moment.metal.
  *
  *  The kernel emits four exact uint64 workgroup sums as eight uint32 lo/hi
- *  buffers. The host reconstructs and accumulates them in double, then applies
- *  the high-bit-depth power-of-two scaler used by the CPU picture-copy path.
+ *  buffers. The host reconstructs and adds them in uint64, converts each total
+ *  once, then applies the high-bit-depth power-of-two scaler used by the CPU
+ *  picture-copy path (ADR-1498; the CUDA host's operations, ADR-1453).
  *  Feature names: float_moment_ref1st, float_moment_dis1st,
  *                 float_moment_ref2nd, float_moment_dis2nd.
  */
@@ -251,7 +252,13 @@ static uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size
     return ((uint64_t)hi[i] << 32u) | (uint64_t)lo[i];
 }
 
-static void accumulate_partials(const FloatMomentStateMetal *s, double sum[4])
+/* The four frame sums, exact: the workgroup sums are integers of the CPU's
+ * own terms (the samples, and the float squares moment.c forms) in units of
+ * 1 / scaler and 1 / scaler^2, so their uint64 total is the exact sum of the
+ * terms, which is what the CPU's running double holds while it is below 2^53
+ * units (every frame of up to 2^21 pixels; past it the CPU rounds as it adds
+ * and the conversion in collect() rounds once, ADR-1453). */
+static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
 {
     const uint32_t *parts[FM_PARTIAL_BUFFER_COUNT];
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
@@ -259,10 +266,10 @@ static void accumulate_partials(const FloatMomentStateMetal *s, double sum[4])
         if (parts[b] == NULL) { return; }
     }
     for (size_t i = 0; i < s->partials_count; ++i) {
-        sum[0] += (double)reconstruct_partial(parts[0], parts[1], i);
-        sum[1] += (double)reconstruct_partial(parts[2], parts[3], i);
-        sum[2] += (double)reconstruct_partial(parts[4], parts[5], i);
-        sum[3] += (double)reconstruct_partial(parts[6], parts[7], i);
+        sum[0] += reconstruct_partial(parts[0], parts[1], i);
+        sum[1] += reconstruct_partial(parts[2], parts[3], i);
+        sum[2] += reconstruct_partial(parts[4], parts[5], i);
+        sum[3] += reconstruct_partial(parts[6], parts[7], i);
     }
 }
 
@@ -270,17 +277,21 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatMomentStateMetal *s = (FloatMomentStateMetal *)fex->priv;
-    double sum[4] = {0.0, 0.0, 0.0, 0.0};
+    uint64_t sum[4] = {0u, 0u, 0u, 0u};
     accumulate_partials(s, sum);
 
+    /* moment.c divides its sum of terms in units of 1 / scaler (or
+     * 1 / scaler^2), an exact double, by w * h. The products below are
+     * exact (a power of two times the pixel count), so each quotient is that
+     * one correctly rounded division of the same exact value. */
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
     const double scaler = s->bpc > 8u ? (double)(1u << (s->bpc - 8u)) : 1.0;
     const double denom1 = n_pix * scaler;
     const double denom2 = denom1 * scaler;
-    const double ref1 = denom1 > 0.0 ? sum[0] / denom1 : 0.0;
-    const double dis1 = denom1 > 0.0 ? sum[1] / denom1 : 0.0;
-    const double ref2 = denom2 > 0.0 ? sum[2] / denom2 : 0.0;
-    const double dis2 = denom2 > 0.0 ? sum[3] / denom2 : 0.0;
+    const double ref1 = denom1 > 0.0 ? (double)sum[0] / denom1 : 0.0;
+    const double dis1 = denom1 > 0.0 ? (double)sum[1] / denom1 : 0.0;
+    const double ref2 = denom2 > 0.0 ? (double)sum[2] / denom2 : 0.0;
+    const double dis2 = denom2 > 0.0 ? (double)sum[3] / denom2 : 0.0;
 
     int err = vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "float_moment_ref1st", ref1, index);
