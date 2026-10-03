@@ -2568,6 +2568,29 @@ test('test_metal_float_ssim_exact_contract',
     timeout : 30,
 )
 
+# T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01: float_ms_ssim_metal's
+# arithmetic (core/src/feature/metal/metal_ms_ssim_math.h and
+# metal_ssim_terms.h) compiled on the host: the decimation against
+# ms_ssim_decimate.c bit for bit, and the whole twin (pyramid, both window
+# passes of every scale, the raster-order sums of the stored terms, the fp32
+# scale means, the combine) against compute_ms_ssim() at `==`. The source
+# contract pins the kernel and host layout.
+test_metal_float_ms_ssim_math = executable('test_metal_float_ms_ssim_math',
+    ['test.c', 'test_metal_float_ms_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_ms_ssim_math', test_metal_float_ms_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_float_ms_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_ms_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of ssim group)
 
 # [metal-ports: ciede and float_adm]
