@@ -2241,8 +2241,9 @@ test('test_metal_soft_double_contract',
 
 # ADR-1498: float_adm_metal holds the CPU float_adm's behaviour in source:
 # init() refuses frames below 17x17 with adm_frame_size_check() before any
-# device resource. Device-free, with planted regressions; the device check is
-# test_metal_float_adm_parity.
+# device resource, and the frame sums are floored at compute_adm()'s
+# 1e-10 * area / 1080p. Device-free, with planted regressions; the device
+# check is test_metal_float_adm_parity.
 test('test_metal_float_adm_exact_contract',
     import('python').find_installation(),
     args : files('test_metal_float_adm_exact_contract.py'),
