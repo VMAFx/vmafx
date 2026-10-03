@@ -2546,6 +2546,28 @@ test('test_metal_integer_ssim_exact_contract',
     timeout : 30,
 )
 
+# T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 items (1) and (4):
+# float_ssim_metal's arithmetic (core/src/feature/metal/metal_ssim_terms.h)
+# compiled on the host: the window terms against iqa/ssim_tools.c bit for bit,
+# and the whole twin (both passes, the raster-order sum of the stored terms,
+# the fp32 frame means) against compute_ssim() at `==`, flat identical frames
+# included. The source contract pins the kernel and host layout.
+test_metal_float_ssim_math = executable('test_metal_float_ssim_math',
+    ['test.c', 'test_metal_float_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_ssim_math', test_metal_float_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_float_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of ssim group)
 
 # [metal-ports: ciede and float_adm]
