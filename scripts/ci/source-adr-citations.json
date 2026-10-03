@@ -1232,7 +1232,7 @@
         "core/src/feature/metal/integer_adm_metal.mm": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_ciede_metal.mm": 1,
-        "core/src/feature/metal/integer_motion_v2.metal": 2,
+        "core/src/feature/metal/integer_motion_v2.metal": 1,
         "core/src/feature/metal/integer_ssim.metal": 1,
         "core/src/feature/metal/integer_vif.metal": 1,
         "core/src/feature/metal/integer_vif_metal.mm": 1,
@@ -2456,7 +2456,6 @@
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/integer_motion_v2_hip.c": 1,
-        "core/src/feature/metal/integer_motion_v2_metal.mm": 3,
         "core/test/test_integer_motion_v2_coverage.c": 2
       },
       "target": "0337-motion-v2-public-api-options.md"
@@ -5750,7 +5749,6 @@
       "sites": {
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 3,
         "core/src/feature/hip/integer_motion_v2_hip.c": 3,
-        "core/src/feature/metal/integer_motion_v2_metal.mm": 4,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 3,
         "core/test/test_cuda_motion_v2_parity.c": 3,
         "core/test/test_hip_motion_v2_parity.c": 3,
@@ -6782,6 +6780,7 @@
     "1183": {
       "sites": {
         "core/src/feature/metal/integer_adm_metal.mm": 1,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 1,
         "core/src/libvmaf.c": 2,
         "core/test/meson.build": 1,
         "core/test/test_cuda_twin_option_parity.c": 3,
@@ -8218,6 +8217,7 @@
         "core/src/feature/cuda/integer_ssim/ssim_score.cu": 2,
         "core/src/feature/cuda/integer_ssim_cuda.c": 2,
         "core/src/feature/cuda/ssim_cuda.c": 2,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 1,
         "core/src/feature/metal/integer_psnr_metal.mm": 1,
         "core/test/meson.build": 2,
         "core/test/test_cuda_exact_twins.c": 1,
@@ -8343,6 +8343,7 @@
         "core/src/feature/hip/float_ssim_hip.c": 2,
         "core/src/feature/hip/integer_psnr_hip.c": 2,
         "core/src/feature/hip/integer_ssim_hip.c": 1,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 1,
         "core/src/feature/metal/integer_psnr_metal.mm": 1,
         "core/test/meson.build": 2,
         "core/test/test_hip_float_motion_parity.c": 1,
@@ -9579,6 +9580,7 @@
         "core/src/feature/hip/integer_motion_v2_hip.c": 2,
         "core/src/feature/integer_motion.c": 2,
         "core/src/feature/integer_motion_v2.c": 2,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 2,
         "core/src/feature/motion_window.h": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 2,
@@ -9590,6 +9592,7 @@
         "core/test/test_hip_kernel_source_contract.py": 2,
         "core/test/test_integer_motion_coverage.c": 1,
         "core/test/test_integer_motion_v2_coverage.c": 2,
+        "core/test/test_metal_motion_v2_exact_contract.py": 1,
         "core/test/test_motion_five_frame_window.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 1,
         "core/tools/vmaf.cpp": 1
@@ -9653,6 +9656,7 @@
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
         "core/src/feature/hip/integer_motion_hip.c": 2,
         "core/src/feature/hip/integer_motion_v2_hip.c": 2,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 3,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/test/meson.build": 3,
@@ -9664,6 +9668,7 @@
         "core/test/test_hip_kernel_source_contract.py": 3,
         "core/test/test_hip_motion_five_frame_window.c": 2,
         "core/test/test_hip_twin_option_parity.c": 1,
+        "core/test/test_metal_motion_v2_exact_contract.py": 1,
         "core/test/test_motion_five_frame_window.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 1,
         "core/test/test_sycl_motion_five_frame_window.c": 2,
@@ -9730,13 +9735,16 @@
     },
     "1498": {
       "sites": {
+        "core/src/feature/metal/integer_motion_v2.metal": 1,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 1,
         "core/src/feature/metal/integer_psnr_metal.mm": 1,
         "core/src/feature/metal/metal_portable.h": 1,
         "core/src/metal/meson.build": 2,
-        "core/test/meson.build": 3,
+        "core/test/meson.build": 4,
         "core/test/metal_option_tables.py": 1,
         "core/test/test_metal_integer_psnr_exact_contract.py": 1,
         "core/test/test_metal_kernel_registration.c": 1,
+        "core/test/test_metal_motion_v2_exact_contract.py": 1,
         "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_shader_build_contract.py": 3
       },

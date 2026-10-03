@@ -2205,6 +2205,17 @@ test('test_metal_integer_psnr_exact_contract',
     timeout : 30,
 )
 
+# Item (3) of T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 (ADR-1498):
+# motion_v2_metal stores the CPU's weighted, capped SAD score from a uint64 SAD,
+# derives motion2_v2 / motion3_v2 with vmaf_motion_window_flush(), takes the
+# five-frame window and motion_force_zero, and has the CPU option table.
+test('test_metal_motion_v2_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_motion_v2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of host-step group)
 
 # [metal-ports: integer kernels]
