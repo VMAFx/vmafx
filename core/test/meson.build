@@ -2513,6 +2513,19 @@ test('test_metal_ciede_exact_contract',
     timeout : 30,
 )
 
+# float_adm (ADR-1498)
+
+# ADR-1498: float_adm_metal holds the CPU float_adm's behaviour in source:
+# init() refuses frames below 17x17 with adm_frame_size_check() before any
+# device resource. Device-free, with planted regressions; the device check is
+# test_metal_float_adm_parity.
+test('test_metal_float_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of ciede / float_adm group)
 
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the

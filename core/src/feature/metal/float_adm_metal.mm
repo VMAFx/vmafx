@@ -59,6 +59,7 @@ extern "C" {
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
+#include "../adm_csf_fixed_point.h"
 #include "../adm_options.h"
 #include "../adm_score.h"
 #include "../nonfinite_score.h"
@@ -449,6 +450,13 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
+
+    /* Below 17x17 the scale-3 bands have one sample; the CPU float_adm
+     * refuses such frames (adm_frame_size_check()), and so does the twin,
+     * before it reads its state or claims any device resource. */
+    const int size_err = adm_frame_size_check("float_adm_metal", w, h);
+    if (size_err != 0) { return size_err; }
+
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
 
     /* Watson-97 (mode 0) only — matches the CUDA twin (other CSF modes
