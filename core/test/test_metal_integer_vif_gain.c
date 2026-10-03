@@ -115,8 +115,24 @@ static uint32_t random_variance(int near_power)
     return clamp_variance(value);
 }
 
+/* Whether integer_vif.c's `int32_t sv_sq = sigma2_sq - g * sigma12` converts
+ * a value an int32_t holds. Outside that range the conversion is undefined:
+ * x86 returns INT32_MIN (0 after the MAX()), clang on aarch64 keeps the low
+ * 32 bits of a 64-bit conversion, so no twin can be held to the CPU there.
+ * Random variances leave that range when |sigma12| is far above
+ * sqrt(sigma1_sq * sigma2_sq); the windows below reach it too, through the
+ * CPU's own fixed-point moments (T-INTEGER-VIF-SV-SQ-CONVERSION-UB-2026-10-03),
+ * so both kinds of sample are drawn inside it. */
+static int sv_sq_in_range(const uint32_t *s)
+{
+    const double eps = 65536 * 1.0e-10;
+    const double g = (double)(int32_t)s[2] / ((int32_t)s[0] + eps);
+    const double sv = (double)(int32_t)s[1] - g * (int32_t)s[2];
+    return sv > -2147483649.0 && sv < 2147483648.0;
+}
+
 /* One sample; `kind` cycles through the boundary cases. */
-static void fill_sample(unsigned kind, double limit, uint32_t *s)
+static void fill_sample_once(unsigned kind, double limit, uint32_t *s)
 {
     uint32_t s1 = random_variance((int)(rng_next() & 1u));
     if (s1 < 131072u)
@@ -152,6 +168,20 @@ static void fill_sample(unsigned kind, double limit, uint32_t *s)
     s[0] = s1;
     s[1] = s2;
     s[2] = s12;
+}
+
+/* One sample in the domain where the CPU's conversion is defined; a draw
+ * outside it is drawn again, and after 64 draws the planes are made
+ * identical, which is always inside. */
+static void fill_sample(unsigned kind, double limit, uint32_t *s)
+{
+    for (unsigned attempt = 0u; attempt < 64u; attempt++) {
+        fill_sample_once(kind, limit, s);
+        if (sv_sq_in_range(s))
+            return;
+    }
+    s[1] = s[0];
+    s[2] = s[0];
 }
 
 /* ------------------------------------------------------------------ */
@@ -275,7 +305,11 @@ static unsigned fill_window_samples(unsigned mode_index, unsigned first)
     unsigned taken = 0u;
     for (unsigned tries = 0u; taken < WINDOW_SAMPLES && tries < 40u * WINDOW_SAMPLES; tries++) {
         random_window(mode, ref, dis);
-        if (sigmas_of(window_moments(mode, ref, dis), &sigmas[(size_t)(first + taken) * 3u]))
+        uint32_t *s = &sigmas[(size_t)(first + taken) * 3u];
+        /* A window can drive sigma2_sq - g * sigma12 below INT32_MIN (a
+         * clipped, nearly flat distorted plane against a textured reference):
+         * the CPU's conversion is undefined there, see sv_sq_in_range(). */
+        if (sigmas_of(window_moments(mode, ref, dis), s) && sv_sq_in_range(s))
             taken++;
     }
     return taken;
