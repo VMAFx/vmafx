@@ -1625,6 +1625,7 @@ nav:
         - "ADR-1508: docs-site-toolchain-and-charts": adr/1508-docs-site-toolchain-and-charts.md
         - "ADR-1509: nvidia-gpu-tester-image": adr/1509-nvidia-gpu-tester-image.md
         - "ADR-1510: adr-nav-collapse-behind-index": adr/1510-adr-nav-collapse-behind-index.md
+        - "ADR-1511: amd-gpu-tester-image": adr/1511-amd-gpu-tester-image.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

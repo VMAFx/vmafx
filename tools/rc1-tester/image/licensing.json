@@ -40,6 +40,18 @@
    "why": "bin2c of the nvcc fatbin of a CUDA kernel (core/src/meson.build cuda_cu_sources); its device code also holds NVIDIA's CUDA header code and libdevice functions (component nvidia-cuda-device-code of the CUDA image)"
   },
   {
+   "pattern": "src/*_hsaco.c",
+   "suffix": "_hsaco.c",
+   "compiled_from": "core/src/feature/hip/**/{name}.hip",
+   "why": "xxd -i of the hipcc code object of a HIP kernel (core/src/meson.build hip_kernel_sources)"
+  },
+  {
+   "pattern": "test/*_hsaco.c",
+   "suffix": "_hsaco.c",
+   "compiled_from": "core/test/{name}.hip",
+   "why": "xxd -i of the hipcc code object of a HIP device test's probe kernel (core/test/meson.build)"
+  },
+  {
    "pattern": "src/config.h",
    "licence": "NONE",
    "why": "configuration defines written by the Meson configure step"
@@ -184,6 +196,24 @@
    "url": "https://vault.centos.org/7.9.2009/os/Source/SPackages/gcc-libraries-8.3.1-2.1.1.el7.src.rpm",
    "sha256": "cf2a1d2c2e5a56eb2e495c2638e64769b73db07555e1f7ce34cbd9feff6891f5",
    "why": "libgfortran grafted into scipy's OpenBLAS (build IDs match CentOS 7 libgfortran5-8.3.1-2.1.1.el7, x86_64 and aarch64)"
+  },
+  "elfutils-0.195": {
+   "file": "elfutils-0.195.tar.bz2",
+   "url": "https://sourceware.org/elfutils/ftp/0.195/elfutils-0.195.tar.bz2",
+   "sha256": "37629fdf7f1f3dc2818e138fca2b8094177d6c2d0f701d3bb650a561218dc026",
+   "why": "libelf in librocm_sysdeps_elf.so.1 of ROCm 10.0.0 (TheRock pins the same archive by SHA-512)"
+  },
+  "numactl-2.0.19": {
+   "file": "numactl-2.0.19.tar.gz",
+   "url": "https://github.com/numactl/numactl/releases/download/v2.0.19/numactl-2.0.19.tar.gz",
+   "sha256": "f2672a0381cb59196e9c246bf8bcc43d5568bc457700a697f1a1df762b9af884",
+   "why": "libnuma in librocm_sysdeps_numa.so.1 of ROCm 10.0.0 (the archive TheRock pins)"
+  },
+  "therock-16adc4d8": {
+   "file": "TheRock-16adc4d875fd4f65ea23c7c84e1c66706fde3047.tar.gz",
+   "url": "https://github.com/ROCm/TheRock/archive/16adc4d875fd4f65ea23c7c84e1c66706fde3047.tar.gz",
+   "sha256": "16b3c486d4f73a3a15991472bb93bd93b2ded094da50b9c1bd5869818c627947",
+   "why": "the scripts and patches with which TheRock built ROCm 10.0.0's bundled libelf and libnuma (third-party/sysdeps, patches/third-party)"
   }
  },
  "artifacts": {
@@ -1252,6 +1282,490 @@
      ]
     }
    ]
+  },
+  "hip-image": {
+   "title": "the VMAFx AMD GPU tester image",
+   "licence_root": "opt/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image: the Debian source packages of every installed Debian package at the installed version, and the upstream archives of elfutils 0.195 and numactl 2.0.19 with the TheRock tree that built the LGPL libraries of the ROCm runtime ([component rocm-sysdeps]); SOURCES.txt inside it is the index.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmaf, libvmaf (HIP build) and the unit and HIP device test executables",
+     "paths": [
+      "opt/vmafx/build/**",
+      "opt/vmafx/tests/**"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "The HIP kernels are code objects inside libvmaf and the test executables, one per gfx target of image/hip-targets.json, compiled by ROCm 10.0.0's hipcc from the repository's .hip files."
+     ]
+    },
+    {
+     "id": "netflix-test-videos",
+     "kind": "fixed",
+     "name": "Netflix test videos (Netflix/vmaf_resource)",
+     "manifest": {
+      "file": "tools/rc1-tester/image/fixtures.sha256",
+      "prefix": "opt/vmafx/python/test/resource/"
+     },
+     "licence": "BSD-2-Clause-Patent",
+     "copyright": [
+      "Copyright (c) 2020 Netflix, Inc."
+     ],
+     "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
+     "texts": [
+      {
+       "repo": "LICENSE",
+       "name": "netflix-vmaf_resource-LICENSE.txt",
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+      }
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "opt/vmafx/model/other_models/brisque_live.model",
+      "opt/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-files",
+     "kind": "repo",
+     "name": "VMAFx report program, parity gate, models and row map (source files from the repository)",
+     "map": [
+      {
+       "artifact": "opt/vmafx/model/",
+       "repo": "model/"
+      },
+      {
+       "artifact": "opt/vmafx/tester/src/",
+       "repo": "tools/rc1-tester/src/"
+      },
+      {
+       "artifact": "opt/vmafx/tester/vmaf-tester-report",
+       "repo": "tools/rc1-tester/vmaf-tester-report"
+      },
+      {
+       "artifact": "opt/vmafx/tester/gate/",
+       "repo": ""
+      },
+      {
+       "artifact": "opt/vmafx/image/fixtures.json",
+       "repo": "tools/rc1-tester/image/fixtures.json"
+      },
+      {
+       "artifact": "opt/vmafx/image/hip-rows.json",
+       "repo": "tools/rc1-tester/image/hip-rows.json"
+      }
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "Scores, build information, test manifests and the licence check receipt written by this image's build",
+     "paths": [
+      "opt/vmafx/reference/**",
+      "opt/vmafx/image/build-info.json",
+      "opt/vmafx/image/unit-tests.json",
+      "opt/vmafx/image/gpu-tests.json",
+      "opt/vmafx/image/gpu-twins.json",
+      "opt/vmafx/image/hip-targets.json",
+      "opt/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "rocm-clr",
+     "kind": "fixed",
+     "name": "HIP runtime (CLR) of ROCm 10.0.0: libamdhip64",
+     "paths": [
+      "opt/vmafx/lib/rocm/libamdhip64.so*"
+     ],
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (c) Advanced Micro Devices, Inc."
+     ],
+     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/clr; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/rocm/rocm-clr/LICENSE.md",
+       "label": "share/doc/hip/LICENSE.md of ROCm 10.0.0"
+      }
+     ]
+    },
+    {
+     "id": "rocm-rocr",
+     "kind": "fixed",
+     "name": "ROCm runtime (ROCR, HSA) of ROCm 10.0.0: libhsa-runtime64",
+     "paths": [
+      "opt/vmafx/lib/rocm/libhsa-runtime64.so*"
+     ],
+     "licence": "NCSA",
+     "copyright": [
+      "Copyright (c) Advanced Micro Devices, Inc."
+     ],
+     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/rocr-runtime; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/rocm/rocm-rocr/LICENSE.md",
+       "label": "share/doc/rocr/LICENSE.md of ROCm 10.0.0"
+      }
+     ]
+    },
+    {
+     "id": "rocm-comgr",
+     "kind": "fixed",
+     "name": "Code Object Manager (comgr) of ROCm 10.0.0: libamd_comgr, which libamdhip64 links",
+     "paths": [
+      "opt/vmafx/lib/rocm/libamd_comgr.so*"
+     ],
+     "licence": "Apache-2.0 WITH LLVM-exception",
+     "copyright": [
+      "Copyright (c) Advanced Micro Devices, Inc."
+     ],
+     "source": "https://github.com/ROCm/llvm-project/tree/8f497e0992fb7513f7f78a6f6b6f1056c375e961/amd/comgr; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/rocm/rocm-comgr/LICENSE.txt",
+       "label": "share/doc/amd_comgr/LICENSE.txt of ROCm 10.0.0"
+      }
+     ]
+    },
+    {
+     "id": "rocm-rocprofiler-register",
+     "kind": "fixed",
+     "name": "rocprofiler-register of ROCm 10.0.0, which libamdhip64 and libhsa-runtime64 link",
+     "paths": [
+      "opt/vmafx/lib/rocm/librocprofiler-register.so*"
+     ],
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (c) Advanced Micro Devices, Inc."
+     ],
+     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/rocprofiler-register; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/rocm/rocm-rocprofiler-register/LICENSE.md",
+       "label": "share/doc/rocprofiler-register/LICENSE.md of ROCm 10.0.0"
+      }
+     ]
+    },
+    {
+     "id": "rocm-kpack",
+     "kind": "fixed",
+     "name": "kpack of ROCm 10.0.0: librocm_kpack, which libamdhip64 links",
+     "paths": [
+      "opt/vmafx/lib/rocm/librocm_kpack.so*"
+     ],
+     "licence": "MIT",
+     "copyright": [
+      "Copyright Advanced Micro Devices, Inc."
+     ],
+     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/shared/kpack; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "fetched": "rocm-kpack-LICENSE.txt",
+       "name": "rocm-kpack-LICENSE.txt",
+       "label": "LICENSE of rocm-systems shared/kpack at the pin"
+      }
+     ]
+    },
+    {
+     "id": "rocm-llvm",
+     "kind": "fixed",
+     "name": "LLVM and Clang libraries of ROCm 10.0.0 (libLLVM, libclang-cpp), which libamd_comgr links",
+     "paths": [
+      "opt/vmafx/lib/rocm/llvm/lib/libLLVM.so*",
+      "opt/vmafx/lib/rocm/llvm/lib/libclang-cpp.so*"
+     ],
+     "licence": "Apache-2.0 WITH LLVM-exception",
+     "copyright": [
+      "Copyright (c) LLVM Project contributors"
+     ],
+     "source": "https://github.com/ROCm/llvm-project/tree/8f497e0992fb7513f7f78a6f6b6f1056c375e961; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "texts": [
+      {
+       "fetched": "llvm-LICENSE.TXT",
+       "name": "llvm-LICENSE.TXT",
+       "label": "llvm/LICENSE.TXT at the pin"
+      },
+      {
+       "fetched": "clang-LICENSE.TXT",
+       "name": "clang-LICENSE.TXT",
+       "label": "clang/LICENSE.TXT at the pin"
+      }
+     ]
+    },
+    {
+     "id": "rocm-sysdeps",
+     "kind": "fixed",
+     "name": "System libraries ROCm 10.0.0 bundles for its runtime (rocm_sysdeps): libelf, libnuma, libdrm, libdrm_amdgpu, zlib, zstd, liblzma, libbz2, built by TheRock with renamed sonames",
+     "paths": [
+      "opt/vmafx/lib/rocm/rocm_sysdeps/lib/**"
+     ],
+     "licence": "LGPL-3.0-or-later OR GPL-2.0-or-later (libelf); LGPL-2.1-only (libnuma); MIT (libdrm, libdrm_amdgpu); Zlib; BSD-3-Clause (zstd, elected of BSD-3-Clause OR GPL-2.0-only); 0BSD (liblzma); bzip2-1.0.6 (libbz2)",
+     "copyright": [
+      "Copyright (C) Red Hat, Inc. and others (elfutils)",
+      "Copyright (C) Andi Kleen, SuSE Labs and others (numactl)",
+      "Copyright Precision Insight, Inc., VA Linux Systems, Inc., Advanced Micro Devices, Inc. and others (libdrm)",
+      "Copyright (C) Jean-loup Gailly and Mark Adler (zlib)",
+      "Copyright (c) Meta Platforms, Inc. and affiliates (zstd)",
+      "Copyright (C) The XZ Utils authors and contributors (liblzma)",
+      "Copyright (C) Julian R Seward (bzip2)",
+      "Copyright (c) Advanced Micro Devices, Inc. (TheRock build scripts and patches)"
+     ],
+     "source": "built by TheRock at commit 16adc4d875fd4f65ea23c7c84e1c66706fde3047 (third-party/sysdeps) from elfutils 0.195, numactl 2.0.19, libdrm 2.4.134, zlib 1.3.2, zstd 1.5.7, XZ Utils 5.8.1 and bzip2 1.0.8; copied unmodified from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "vendored_libraries": [
+      {
+       "pattern": "librocm_sysdeps_elf.so*",
+       "licence": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+       "copyleft": true,
+       "archives": [
+        "elfutils-0.195",
+        "therock-16adc4d8"
+       ],
+       "sources": {
+        "11dee761756ec5b1608540b5962d4e2e2a175c65": [
+         "elfutils-0.195",
+         "therock-16adc4d8"
+        ]
+       }
+      },
+      {
+       "pattern": "librocm_sysdeps_numa.so*",
+       "licence": "LGPL-2.1-only",
+       "copyleft": true,
+       "archives": [
+        "numactl-2.0.19",
+        "therock-16adc4d8"
+       ],
+       "sources": {
+        "ec55f204edfe5332e94336ff95aa1da475a668b0": [
+         "numactl-2.0.19",
+         "therock-16adc4d8"
+        ]
+       }
+      },
+      {
+       "pattern": "librocm_sysdeps_drm.so*",
+       "licence": "MIT",
+       "copyleft": false
+      },
+      {
+       "pattern": "librocm_sysdeps_drm_amdgpu.so*",
+       "licence": "MIT",
+       "copyleft": false
+      },
+      {
+       "pattern": "librocm_sysdeps_z.so*",
+       "licence": "Zlib",
+       "copyleft": false
+      },
+      {
+       "pattern": "librocm_sysdeps_zstd.so*",
+       "licence": "BSD-3-Clause",
+       "copyleft": false
+      },
+      {
+       "pattern": "librocm_sysdeps_liblzma.so*",
+       "licence": "0BSD",
+       "copyleft": false
+      },
+      {
+       "pattern": "librocm_sysdeps_bz2.so*",
+       "licence": "bzip2-1.0.6",
+       "copyleft": false
+      }
+     ],
+     "texts": [
+      {
+       "fetched": "elfutils-0.195-COPYING-LGPLV3",
+       "name": "elfutils-0.195-COPYING-LGPLV3",
+       "label": "elfutils 0.195 COPYING-LGPLV3"
+      },
+      {
+       "fetched": "elfutils-0.195-COPYING",
+       "name": "elfutils-0.195-COPYING",
+       "label": "elfutils 0.195 COPYING (GPL-3.0, which LGPL-3.0 builds on)"
+      },
+      {
+       "fetched": "elfutils-0.195-COPYING-GPLV2",
+       "name": "elfutils-0.195-COPYING-GPLV2",
+       "label": "elfutils 0.195 COPYING-GPLV2"
+      },
+      {
+       "fetched": "numactl-2.0.19-LICENSE.LGPL2.1",
+       "name": "numactl-2.0.19-LICENSE.LGPL2.1",
+       "label": "numactl 2.0.19 LICENSE.LGPL2.1"
+      },
+      {
+       "fetched": "libdrm-2.4.134-xf86drm.h",
+       "name": "libdrm-2.4.134-xf86drm.h",
+       "label": "libdrm 2.4.134 xf86drm.h (its MIT notice)"
+      },
+      {
+       "fetched": "libdrm-2.4.134-amdgpu.h",
+       "name": "libdrm-2.4.134-amdgpu.h",
+       "label": "libdrm 2.4.134 amdgpu/amdgpu.h (its MIT notice)"
+      },
+      {
+       "fetched": "zlib-1.3.2-LICENSE",
+       "name": "zlib-1.3.2-LICENSE",
+       "label": "zlib 1.3.2 LICENSE"
+      },
+      {
+       "fetched": "zstd-1.5.7-LICENSE",
+       "name": "zstd-1.5.7-LICENSE",
+       "label": "zstd 1.5.7 LICENSE (BSD-3-Clause)"
+      },
+      {
+       "fetched": "xz-5.8.1-COPYING",
+       "name": "xz-5.8.1-COPYING",
+       "label": "XZ Utils 5.8.1 COPYING"
+      },
+      {
+       "fetched": "xz-5.8.1-COPYING.0BSD",
+       "name": "xz-5.8.1-COPYING.0BSD",
+       "label": "XZ Utils 5.8.1 COPYING.0BSD"
+      },
+      {
+       "fetched": "bzip2-1.0.8-LICENSE",
+       "name": "bzip2-1.0.8-LICENSE",
+       "label": "bzip2 1.0.8 LICENSE"
+      },
+      {
+       "fetched": "therock-LICENSE.txt",
+       "name": "therock-LICENSE.txt",
+       "label": "TheRock LICENSE (its build scripts and patches)"
+      }
+     ],
+     "notes": [
+      "libelf and libnuma are LGPL libraries the ROCm runtime links dynamically; you may replace them with modified versions of the same soname. Their corresponding source (the upstream archives and the TheRock tree with its patches and build scripts) is in the source image named above.",
+      "zstd is offered under BSD-3-Clause or GPL-2.0-only; this image uses it under BSD-3-Clause."
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the base image and the Python 3.13 interpreter"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and state written by the Debian base image's build and its package scripts (no licensable content of its own; the scripts are covered by their packages' copyright files)",
+     "paths": [
+      "var/lib/dpkg/**",
+      "var/lib/apt/**",
+      "var/lib/pam/**",
+      "var/lib/systemd/**",
+      "var/lib/shells.state",
+      "var/cache/**",
+      "var/log/**",
+      "var/spool/**",
+      "etc/ld.so.cache",
+      "etc/alternatives/*",
+      "etc/apt/apt.conf.d/docker-*",
+      "etc/apt/sources.list.d/debian.sources",
+      "etc/dpkg/dpkg.cfg.d/docker*",
+      "etc/dpkg/origins/default",
+      "etc/systemd/system/**",
+      "etc/pam.d/common-*",
+      "etc/security/opasswd",
+      "etc/passwd",
+      "etc/passwd-",
+      "etc/group",
+      "etc/group-",
+      "etc/shadow",
+      "etc/shadow-",
+      "etc/gshadow",
+      "etc/gshadow-",
+      "etc/subuid",
+      "etc/subgid",
+      "etc/shells",
+      "etc/profile",
+      "etc/inputrc",
+      "etc/environment",
+      "etc/fstab",
+      "etc/localtime",
+      "etc/motd",
+      "etc/networks",
+      "etc/nsswitch.conf",
+      "etc/ca-certificates.conf",
+      "etc/ssl/certs/**",
+      "etc/hostname",
+      "etc/hosts",
+      "etc/resolv.conf",
+      "etc/mtab",
+      "etc/machine-id",
+      "etc/.pwd.lock",
+      "usr/share/info/dir",
+      "usr/bin/awk",
+      "usr/bin/nawk",
+      "usr/bin/pager",
+      "usr/bin/which",
+      "usr/sbin/rmt",
+      "usr/sbin/policy-rc.d",
+      "usr/local/man",
+      "root/.bashrc",
+      "root/.profile",
+      "root/.python_history",
+      "root/.wget-hsts",
+      "dev/**",
+      ".dockerenv",
+      "etc/python3/debian_config",
+      "var/lib/python/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "opt/vmafx/licenses/**"
+     ]
+    }
+   ]
   }
  },
  "fetched_texts": {
@@ -1264,6 +1778,81 @@
    "url": "https://raw.githubusercontent.com/intel/intel-graphics-compiler/v2.41.5/LICENSE.md",
    "sha256": "8b2cd951f44d1fbe6adcf112e1f3a0cc989c89c8889a1c48dea5f7ece10ba9c9",
    "why": "intel-igc-core-2 2.41.5 (the IGC of INTEL_NEO_VERSION) installs no copyright file"
+  },
+  "rocm-kpack-LICENSE.txt": {
+   "url": "https://raw.githubusercontent.com/ROCm/rocm-systems/6b0e43f341195e203754e08f850e437ff2fc09f9/shared/kpack/LICENSE",
+   "sha256": "e071e8c7d920817b6415f4b87c115c6aefafe137e36843b3723f28dde5f484c3",
+   "why": "librocm_kpack (rocm-systems at the pin of ROCm 10.0.0's TheRock manifest) installs no licence text"
+  },
+  "llvm-LICENSE.TXT": {
+   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/8f497e0992fb7513f7f78a6f6b6f1056c375e961/llvm/LICENSE.TXT",
+   "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee",
+   "why": "ROCm 10.0.0's libLLVM installs no licence text (llvm-project at the pin of its TheRock manifest)"
+  },
+  "clang-LICENSE.TXT": {
+   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/8f497e0992fb7513f7f78a6f6b6f1056c375e961/clang/LICENSE.TXT",
+   "sha256": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
+   "why": "ROCm 10.0.0's libclang-cpp installs no licence text"
+  },
+  "therock-LICENSE.txt": {
+   "url": "https://raw.githubusercontent.com/ROCm/TheRock/16adc4d875fd4f65ea23c7c84e1c66706fde3047/LICENSE",
+   "sha256": "7728762ecd3256782c89e28b1887727a484deda6356887ef2f2898598e950cb8",
+   "why": "TheRock, which built ROCm 10.0.0 and its bundled system libraries"
+  },
+  "elfutils-0.195-COPYING-LGPLV3": {
+   "url": "https://sourceware.org/git/?p=elfutils.git;a=blob_plain;f=COPYING-LGPLV3;hb=refs/tags/elfutils-0.195",
+   "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+   "why": "libelf of elfutils 0.195 (librocm_sysdeps_elf), LGPL-3.0-or-later option"
+  },
+  "elfutils-0.195-COPYING": {
+   "url": "https://sourceware.org/git/?p=elfutils.git;a=blob_plain;f=COPYING;hb=refs/tags/elfutils-0.195",
+   "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+   "why": "the GPL-3.0 text LGPL-3.0 adds its permissions to"
+  },
+  "elfutils-0.195-COPYING-GPLV2": {
+   "url": "https://sourceware.org/git/?p=elfutils.git;a=blob_plain;f=COPYING-GPLV2;hb=refs/tags/elfutils-0.195",
+   "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+   "why": "libelf of elfutils 0.195, GPL-2.0-or-later option"
+  },
+  "numactl-2.0.19-LICENSE.LGPL2.1": {
+   "url": "https://raw.githubusercontent.com/numactl/numactl/v2.0.19/LICENSE.LGPL2.1",
+   "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+   "why": "libnuma of numactl 2.0.19 (librocm_sysdeps_numa)"
+  },
+  "libdrm-2.4.134-xf86drm.h": {
+   "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/libdrm-2.4.134/xf86drm.h",
+   "sha256": "5fad86acbddcc3b6a685690da0c7de59412d354d1375644734672f5c6bdf4202",
+   "why": "libdrm 2.4.134 (librocm_sysdeps_drm) has no licence file; its MIT notice is in its sources"
+  },
+  "libdrm-2.4.134-amdgpu.h": {
+   "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/libdrm-2.4.134/amdgpu/amdgpu.h",
+   "sha256": "83f5e436813f0a886f20943cde8535195c6b79ebc58ba2391bdae27e3d1d35ef",
+   "why": "libdrm_amdgpu 2.4.134 (librocm_sysdeps_drm_amdgpu): its MIT notice"
+  },
+  "zlib-1.3.2-LICENSE": {
+   "url": "https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE",
+   "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
+   "why": "zlib 1.3.2 (librocm_sysdeps_z)"
+  },
+  "zstd-1.5.7-LICENSE": {
+   "url": "https://raw.githubusercontent.com/facebook/zstd/v1.5.7/LICENSE",
+   "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+   "why": "zstd 1.5.7 (librocm_sysdeps_zstd), BSD-3-Clause option of its BSD-3-Clause OR GPL-2.0-only licence"
+  },
+  "xz-5.8.1-COPYING": {
+   "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.1/COPYING",
+   "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8",
+   "why": "XZ Utils 5.8.1 (librocm_sysdeps_liblzma): which parts are under which licence"
+  },
+  "xz-5.8.1-COPYING.0BSD": {
+   "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.1/COPYING.0BSD",
+   "sha256": "0b01625d853911cd0e2e088dcfb743261034a091bb379246cb25a14cc4c74bf1",
+   "why": "liblzma of XZ Utils 5.8.1: 0BSD"
+  },
+  "bzip2-1.0.8-LICENSE": {
+   "url": "https://sourceware.org/git/?p=bzip2.git;a=blob_plain;f=LICENSE;hb=refs/tags/bzip2-1.0.8",
+   "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3",
+   "why": "libbz2 of bzip2 1.0.8 (librocm_sysdeps_bz2)"
   }
  }
 }

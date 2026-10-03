@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The report's GPU section: one GPU backend measured on the tester's devices.
 
-Backend-neutral. A backend (hw_sycl.py for Intel GPUs, hw_cuda.py for NVIDIA GPUs)
-supplies a `GpuBackend`: how to find its devices and how the image reaches them,
-the environment that pins a run to one device, and parsers for test outputs it
-audits. Per device the section then holds:
+Backend-neutral. A backend (hw_sycl.py for Intel GPUs, hw_cuda.py for NVIDIA GPUs,
+hw_hip.py for AMD GPUs) supplies a `GpuBackend`: how to find its devices and how
+the image reaches them, the environment that pins a run to one device, and parsers
+for test outputs it audits. Per device the section then holds:
 
 - `twins`: every CPU extractor of the dispatch check run with `--backend <name>` at
   `--precision max` against the CPU scores of the same image, per fixture (counts,

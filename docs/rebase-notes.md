@@ -25,6 +25,27 @@
   install in a linked worktree rewrites the worktree's index.
 - `scripts/githooks/tests/test_install_hooks_env.py` reads the block from
   `lefthook.yml`, so it fails when the line goes.
+## The AMD GPU tester image (ADR-1511, 2026-10-03)
+
+`feat/tester-kit-hip`, stacked on `feat/tester-kit-cuda`. Fork-only tester tooling; no
+libvmaf source changes.
+
+- `docker/Dockerfile.tester` gains the `hip-*` stages and target `final-hip` after the
+  CUDA stages, and `ARG ROCM_BUILDER` (mirrored from `build-config.env` by
+  `scripts/ci/check-base-image-single-source.sh`). `HIP_GFX_TARGETS` there is the image's
+  offload-target list; the build reads the targets back from the `HIP HSACO targets:`
+  message of `core/src/meson.build` (`prepare_build.py hip-targets`), so renaming that
+  message fails the image build.
+- `scripts/ci/install-rocm-from-image.sh` gains `--keep-docs` (keeps `share/doc`); without
+  the flag it behaves as before.
+- `prepare_build.py`: `stage_intel_runtime()` became `stage_vendor_runtime()` (per
+  component `dest`, per spec `licence_dir`, `credist` optional); the commands
+  `intel-runtime` and `rocm-runtime` both call it.
+- `licensing.py`: components may carry `vendored_libraries` (bundled libraries; copyleft
+  ones keyed by ELF build ID to source archives), and `generated_build_files` gains the
+  rule for `src/*_hsaco.c`. A HIP kernel added upstream needs a unique file name under
+  `core/src/feature/hip/`.
+- The workflow's GPU matrix gains the leg `hip`.
 
 ## The NVIDIA GPU tester image (ADR-1509, 2026-10-03)
 

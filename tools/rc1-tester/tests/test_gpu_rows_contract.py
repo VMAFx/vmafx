@@ -25,8 +25,9 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.ci.cross_backend_parity_gate import FEATURE_METRICS
 
-from vmaf_rc1_tester import hw_cudaprobe, hw_l0probe
+from vmaf_rc1_tester import hw_cudaprobe, hw_hipprobe, hw_l0probe
 from vmaf_rc1_tester.hw_cuda import CUDA
+from vmaf_rc1_tester.hw_hip import HIP
 from vmaf_rc1_tester.hw_sycl import SYCL
 
 STATE = (ROOT / "docs" / "state.md").read_text(encoding="utf-8")
@@ -35,6 +36,7 @@ IMAGE = ROOT / "tools" / "rc1-tester" / "image"
 BACKENDS = {
     "sycl": (SYCL, {family for *_, family in hw_l0probe.FAMILIES}),
     "cuda": (CUDA, set(hw_cudaprobe.FAMILY_NAMES)),
+    "hip": (HIP, set(hw_hipprobe.FAMILY_NAMES)),
 }
 
 
@@ -89,4 +91,16 @@ def test_every_cuda_family_has_a_row_holding_every_gate_feature() -> None:
     rows = rows_of("cuda")
     assert {family for row in rows for family in row["families"]} == set(hw_cudaprobe.FAMILY_NAMES)
     for row in rows:  # a new gate feature changes the row map, not only the gate
+        assert {spec["feature"] for spec in row["gate"]} == set(FEATURE_METRICS)
+
+
+def test_every_family_the_hip_build_targets_has_a_row_holding_every_gate_feature() -> None:
+    rows = rows_of("hip")
+    covered = {family for row in rows for family in row["families"]}
+    dockerfile = (ROOT / "docker" / "Dockerfile.tester").read_text(encoding="utf-8")
+    targets = (
+        re.search(r"^ARG HIP_GFX_TARGETS=(\S+)$", dockerfile, re.MULTILINE).group(1).split(",")
+    )
+    assert {hw_hipprobe.family_of(target) for target in targets} <= covered
+    for row in rows:
         assert {spec["feature"] for spec in row["gate"]} == set(FEATURE_METRICS)

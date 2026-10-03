@@ -12,10 +12,10 @@
 #   (linux/amd64 + linux/arm64; `v1.0.0-rc.2-tester` for the tagged commit itself)
 #   ghcr.io/vmafx/vmafx:<...>-tester-source: the corresponding source of the
 #   image's copyleft parts (Dockerfile target source-export, ADR-1503)
-#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester-sycl and
-#   -tester-cuda (linux/amd64: the Intel and NVIDIA GPU kits, targets final-sycl
-#   and final-cuda of the same Dockerfile, jobs build-gpu and publish-gpu, each
-#   with its source image <...>-tester-<kit>-source)
+#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester-sycl,
+#   -tester-cuda and -tester-hip (linux/amd64: the Intel, NVIDIA and AMD GPU kits,
+#   targets final-sycl, final-cuda and final-hip of the same Dockerfile, jobs
+#   build-gpu and publish-gpu, each with its source image <...>-tester-<kit>-source)
 # tags of the existing, public package: a new package would start private.
 # All are signed and carry build provenance; each platform image of the tester
 # carries an attested SPDX SBOM (Syft). The image build itself fails when a file
@@ -39,6 +39,7 @@ on:
       - tools/rc1-tester/**
       - scripts/ci/install-intel-ocloc.sh
       - scripts/ci/install-cuda-toolkit.sh
+      - scripts/ci/install-rocm-from-image.sh
       - build-config.env
       - dev/scripts/fetch-intel-neo.py
       - python/requirements-test-lock.txt
@@ -542,6 +543,9 @@ jobs:
           - kit: cuda
             vendor: NVIDIA
             reason: "--gpus all"
+          - kit: hip
+            vendor: AMD
+            reason: "--device /dev/kfd"
     permissions:
       contents: read
       packages: write
@@ -649,7 +653,7 @@ jobs:
             VMAFX_BUILT_BY_WORKFLOW=true
             VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-${{ matrix.kit }}
       # ADR-1503 rule 5: the corresponding source of the copyleft parts
-      # (Dockerfile targets sycl-source-export and cuda-source-export).
+      # (Dockerfile targets sycl-, cuda- and hip-source-export).
       - name: Push the source image by digest
         id: push-source
         if: needs.validate.outputs.publish == 'true'
@@ -704,6 +708,8 @@ jobs:
             vendor: Intel
           - kit: cuda
             vendor: NVIDIA
+          - kit: hip
+            vendor: AMD
     permissions:
       contents: read
       packages: write
@@ -754,7 +760,7 @@ jobs:
           subject-digest: ${{ steps.digests.outputs.image }}
           push-to-registry: true
       # The tester licensing rules: an SPDX SBOM of the published image, attested
-      # on its digest (sbom-tester-sycl.spdx.json, sbom-tester-cuda.spdx.json).
+      # on its digest (sbom-tester-<kit>.spdx.json).
       - name: SBOM (SPDX JSON)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
         with:

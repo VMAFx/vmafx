@@ -1,0 +1,8 @@
+# Meson tests the HIP tester image runs on the tester's AMD GPU (hw_gpu.py,
+# section gpu.device_tests). One test name or `suite:<name>` per line.
+# Every test of suite `gpu` of a HIP build: the HIP device tests (twin parity,
+# exact-twin contracts, device-math replays, tiny-frame guards, the picture and
+# runtime tests). Python tests of the suite read the source tree; they are
+# listed in the manifest as left out and run in CI. The image build fails when
+# fewer than ten tests are found.
+suite:gpu

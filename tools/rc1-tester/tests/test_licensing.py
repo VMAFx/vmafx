@@ -390,6 +390,58 @@ def test_a_kernel_object_without_exactly_one_source_is_refused(tmp_path: Path) -
         lic.compiled_source(FATBIN_RULE, "src/psnr_score.fatbin.c", repo)
 
 
+VENDOR_ID = "cd" * 20
+
+
+def vendored_manifest() -> dict:
+    """A record whose vendor runtime bundles one copyleft and one permissive library."""
+    data = manifest()
+    data["source_archives"]["elfutils"] = {"file": "elfutils.tar.bz2", "url": "https://example.invalid/e",
+                                           "sha256": "1" * 64, "why": "test"}  # fmt: skip
+    data["artifacts"]["kit"]["components"].insert(2, {
+        "id": "rocm", "kind": "fixed", "name": "vendor runtime", "licence": "MIT",
+        "paths": ["opt/rocm/lib/**"],
+        "vendored_libraries": [
+            {"pattern": "libsys_elf.so*", "licence": "LGPL-3.0-or-later", "copyleft": True,
+             "archives": ["elfutils"], "sources": {VENDOR_ID: ["elfutils"]}},
+            {"pattern": "libsys_z.so*", "licence": "Zlib", "copyleft": False},
+        ],
+    })  # fmt: skip
+    return data
+
+
+def add_vendored(root: Path, build_id: str = VENDOR_ID) -> None:
+    lib = root / "opt/rocm/lib/sysdeps"
+    write(lib / "libsys_elf.so.1", make_elf(build_id))
+    write(lib / "libsys_z.so.1", make_elf("ef" * 20))
+    (lib / "libsys_elf.so").symlink_to("libsys_elf.so.1")
+
+
+def test_a_recorded_vendored_copyleft_library_passes_and_names_its_source(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root))
+    data = vendored_manifest()
+    assert notices_then_check(args, data) == []
+    notices = (Path(args.root) / "licenses" / lic.NOTICES_NAME).read_text()
+    assert "Vendored libsys_elf.so*: LGPL-3.0-or-later; source elfutils" in notices
+    assert "archive elfutils" in lic.source_list(args, data)
+
+
+def test_a_vendored_copyleft_library_of_another_build_fails(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root), build_id="99" * 20)
+    problems = notices_then_check(args, vendored_manifest())
+    assert f"copyleft libsys_elf.so.1 (build ID {'99' * 20}) has no recorded source" in problems
+
+
+def test_a_recorded_vendored_library_that_is_gone_fails(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root))
+    (Path(args.root) / "opt/rocm/lib/sysdeps/libsys_z.so.1").unlink()
+    problems = notices_then_check(args, vendored_manifest())
+    assert "vendored library libsys_z.so* of component rocm matches no file" in problems
+
+
 # ----------------------------------------------------------------- sources
 
 
@@ -455,6 +507,14 @@ def test_the_record_names_texts_and_archives_that_exist() -> None:
     assert missing == []
     used = {s for rule in data["grafted_libraries"] for s in rule.get("sources", {}).values()}
     assert used <= set(data["source_archives"])
+    vendored = [rule for r in data["artifacts"].values() for c in r["components"]
+                for rule in c.get("vendored_libraries", [])]  # fmt: skip
+    assert {a for rule in vendored for a in rule.get("archives", [])} <= set(
+        data["source_archives"]
+    )
+    assert all(
+        rule.get("archives") and rule.get("sources") for rule in vendored if rule["copyleft"]
+    )
     entries = [
         e for r in data["artifacts"].values() for c in r["components"] for e in c.get("texts", [])
     ]
@@ -523,6 +583,30 @@ def test_the_cuda_image_cannot_be_built_without_its_licence_check() -> None:
     runtime = text.split("AS cuda-runtime", 1)[1].split("\nFROM ", 1)[0]
     assert "NVIDIA files in the image" in runtime  # the image ships no NVIDIA library
     assert_gpu_kit_published("cuda")
+
+
+def test_the_hip_image_cannot_be_built_without_its_licence_check() -> None:
+    text = (REPO / "docker/Dockerfile.tester").read_text()
+    final = text.split("FROM hip-assembled AS final-hip", 1)[1].split("\nFROM ", 1)[0]
+    assert "COPY --from=hip-licence-check /out/licence-check.json" in final
+    assert "licensing.py check --artifact hip-image" in text
+    assert "licensing.py notices --artifact hip-image" in text
+    assert "FROM scratch AS hip-source-export" in text
+    assert_gpu_kit_published("hip")
+
+
+def test_the_hip_record_carries_the_source_of_its_lgpl_libraries() -> None:
+    data = lic.load_manifest()
+    sysdeps = next(c for c in data["artifacts"]["hip-image"]["components"]
+                   if c["id"] == "rocm-sysdeps")  # fmt: skip
+    copyleft = [rule for rule in sysdeps["vendored_libraries"] if rule["copyleft"]]
+    assert {rule["pattern"] for rule in copyleft} == {"librocm_sysdeps_elf.so*",
+                                                      "librocm_sysdeps_numa.so*"}  # fmt: skip
+    spec = json.loads((REPO / "tools/rc1-tester/image/hip-runtime.json").read_text())
+    shipped = [n for c in spec["components"] if c["id"] == "rocm-sysdeps" for n in c["names"]]
+    for name in shipped:  # every bundled library the image ships has a vendored rule
+        assert any(lic.fnmatch.fnmatchcase(name.rstrip("*") or name, r["pattern"])
+                   for r in sysdeps["vendored_libraries"]), name  # fmt: skip
 
 
 def test_the_cuda_record_carries_the_nvidia_terms() -> None:

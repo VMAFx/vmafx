@@ -141,7 +141,7 @@
             "string",
             "null"
           ],
-          "description": "The GPU backend the package's build carries (sycl or cuda), null for a CPU build."
+          "description": "The GPU backend the package's build carries (sycl, cuda or hip), null for a CPU build."
         }
       }
     },
@@ -361,7 +361,7 @@
         },
         "access": {
           "type": "object",
-          "description": "How the container reaches the GPU; path names the route a run took (sycl: drm, wsl or none; cuda: nvidia, wsl or none).",
+          "description": "How the container reaches the GPU; path names the route a run took (sycl: drm, wsl or none; cuda: nvidia, wsl or none; hip: kfd or none).",
           "required": [
             "path"
           ],
