@@ -6343,6 +6343,7 @@
         "core/test/test_metal_float_motion_parity.c": 1,
         "core/test/test_metal_float_ms_ssim_parity.c": 1,
         "core/test/test_metal_float_psnr_parity.c": 1,
+        "core/test/test_metal_float_ssim_math.c": 1,
         "core/test/test_metal_float_ssim_parity.c": 1,
         "core/test/test_metal_float_vif_parity.c": 1,
         "core/test/test_metal_install_header.c": 1,
@@ -8768,6 +8769,7 @@
     },
     "1414": {
       "sites": {
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 2,
         "core/test/test_metal_float_ms_ssim_parity.c": 1,
         "core/test/test_sycl_exact_twins.c": 1,
@@ -9362,6 +9364,7 @@
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
         "core/src/feature/metal/metal_portable.h": 1,
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/src/feature/speed_givens.h": 1,
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
@@ -9389,10 +9392,14 @@
     },
     "1463": {
       "sites": {
+        "core/src/feature/metal/float_ssim.metal": 1,
+        "core/src/feature/metal/float_ssim_metal.mm": 1,
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
         "core/src/feature/sycl/sycl_ssim_terms.h": 1,
         "core/test/meson.build": 2,
         "core/test/ssim_order_noise.h": 1,
+        "core/test/test_metal_float_ssim_exact_contract.py": 1,
         "core/test/test_metal_float_ssim_parity.c": 1,
         "core/test/test_sycl_float_ssim_exact_contract.py": 3,
         "core/test/test_sycl_float_ssim_parity.c": 6,
@@ -9402,7 +9409,11 @@
     },
     "1464": {
       "sites": {
+        "core/src/feature/metal/float_ssim.metal": 1,
+        "core/src/feature/metal/float_ssim_metal.mm": 1,
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/test/test_cuda_float_ssim_parity.c": 1,
+        "core/test/test_metal_float_ssim_exact_contract.py": 1,
         "core/test/test_metal_float_ssim_parity.c": 1
       },
       "target": "1464-cuda-float-ssim-raster-order-sum.md"
@@ -9411,6 +9422,7 @@
       "sites": {
         "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 2,
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_float_ms_ssim_exact_contract.py": 1,
         "core/test/test_metal_float_ms_ssim_parity.c": 1
@@ -9419,6 +9431,7 @@
     },
     "1466": {
       "sites": {
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 5,
         "core/src/feature/sycl/sycl_ssim_terms.h": 1,
         "core/test/ssim_order_noise.h": 1,
@@ -9734,14 +9747,19 @@
     },
     "1498": {
       "sites": {
+        "core/src/feature/metal/float_ssim.metal": 1,
+        "core/src/feature/metal/float_ssim_metal.mm": 1,
         "core/src/feature/metal/integer_ssim.metal": 1,
         "core/src/feature/metal/integer_ssim_metal.mm": 1,
         "core/src/feature/metal/metal_integer_ssim_math.h": 1,
         "core/src/feature/metal/metal_portable.h": 1,
         "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/metal/metal_soft_signed.h": 1,
+        "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/src/metal/meson.build": 2,
         "core/test/meson.build": 4,
+        "core/test/test_metal_float_ssim_exact_contract.py": 1,
+        "core/test/test_metal_float_ssim_math.c": 1,
         "core/test/test_metal_integer_ssim_exact_contract.py": 1,
         "core/test/test_metal_integer_ssim_math.c": 1,
         "core/test/test_metal_portable.c": 1,
