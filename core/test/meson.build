@@ -2440,6 +2440,35 @@ test('test_metal_integer_motion_exact_contract',
 
 # [metal-ports: float_motion and float_vif]
 
+# ADR-1498 / ADR-1409 — float_motion_metal's arithmetic
+# (feature/metal/metal_float_motion_math.h, the lines float_motion.metal and
+# float_motion_metal.mm compile) against the CPU's own functions, bit for bit:
+# the reflect-101 fold, the taps, picture_copy() and convolution_f32_c_s() at
+# 8 to 16 bits and every motion_filter_size, the row sums against
+# compute_motion() with and without motion_add_scale1, and the frame score
+# against the float_motion extractor. No Apple device is needed.
+test_metal_float_motion_math = executable('test_metal_float_motion_math',
+    ['test.c', 'test_metal_float_motion_math.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_motion_math', test_metal_float_motion_math,
+    suite : ['fast'],
+    timeout : 120)
+
+# ADR-1498 — the source contract of the float_motion_metal port: the kernels
+# and the host compute through metal_float_motion_math.h in the CPU's order.
+# Device-free; fails on a planted return of each construct the port removed.
+test('test_metal_float_motion_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_motion_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of float_motion / float_vif group)
 
 # [metal-ports: ssim family]
