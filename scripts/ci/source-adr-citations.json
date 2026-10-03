@@ -8889,6 +8889,7 @@
         "core/test/test_float_adm_device_math.c": 1,
         "core/test/test_float_adm_divides_contract.py": 1,
         "core/test/test_hip_float_adm_exact_contract.py": 1,
+        "core/test/test_metal_float_adm_exact_contract.py": 1,
         "core/test/test_metal_float_adm_parity.c": 1
       },
       "target": "1420-cuda-float-adm-cpu-arithmetic.md"
@@ -9049,6 +9050,7 @@
         "core/test/float_adm_twin_parity.h": 1,
         "core/test/meson.build": 2,
         "core/test/sycl_float_adm_math_probe.h": 1,
+        "core/test/test_metal_float_adm_exact_contract.py": 1,
         "core/test/test_metal_float_adm_parity.c": 1,
         "core/test/test_sycl_float_adm_exact_contract.py": 1,
         "core/test/test_sycl_float_adm_math.c": 2,
@@ -9396,6 +9398,7 @@
         "core/test/test_hip_float_adm_math.c": 1,
         "core/test/test_hip_float_adm_math_probe.hip": 1,
         "core/test/test_hip_float_adm_parity.c": 2,
+        "core/test/test_metal_float_adm_exact_contract.py": 1,
         "core/test/test_metal_float_adm_parity.c": 1,
         "scripts/ci/exact_twins.d/float_adm.hip": 1
       },
@@ -9853,10 +9856,11 @@
         "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/metal/metal_soft_signed.h": 1,
         "core/src/metal/meson.build": 2,
-        "core/test/meson.build": 12,
+        "core/test/meson.build": 14,
         "core/test/metal_option_tables.py": 1,
         "core/test/test_metal_ciede_exact_contract.py": 6,
         "core/test/test_metal_ciede_math_probe.cpp": 1,
+        "core/test/test_metal_float_adm_exact_contract.py": 1,
         "core/test/test_metal_float_moment_exact_contract.py": 1,
         "core/test/test_metal_float_moment_math.c": 1,
         "core/test/test_metal_float_motion_exact_contract.py": 1,
