@@ -670,6 +670,57 @@
    ]
   },
   {
+   "id": "T-METAL-INTEGER-VIF-FP32-GAIN-2026-10-03",
+   "closes_when": "integer_vif_metal forms the gain terms as the CPU's truncated double products: every vif output equals the CPU's",
+   "cases": [
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_default_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_debug_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_12bit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_gain_limit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_skip_scale0_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_metal_model_boundary"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_vif_metal",
+     "metrics": [
+      "integer_vif_scale0",
+      "integer_vif_scale1",
+      "integer_vif_scale2",
+      "integer_vif_scale3"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29",
    "closes_when": "motion_metal differences first: every motion output equals the CPU's, on tiny frames and with every CPU option",
    "cases": [
