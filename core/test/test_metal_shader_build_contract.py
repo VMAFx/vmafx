@@ -12,6 +12,11 @@ kernels take one argument list with the language revision and the deployment
 target, and the target is the one the macOS tester bundle builds its C code
 for (`MACOSX_DEPLOYMENT_TARGET` in `scripts/ci/build-macos-tester-bundle.sh`).
 
+Since ADR-1498 the kernels also take one strict floating-point list, defined
+once: `-fno-fast-math -ffp-contract=off` (the Metal compiler's default is fast
+math, and its safe mode still contracts within a statement), and no other
+floating-point flag; and the include directories of the shared arithmetic.
+
 Device-free: reads the build files only.
 """
 
@@ -52,6 +57,30 @@ def kernel_names(code: str) -> list[str]:
     return re.findall(r"'(\w+)'", match.group(1))
 
 
+POLICY_BEGIN = "# BEGIN VMAF Metal shader strict FP policy"
+POLICY_END = "# END VMAF Metal shader strict FP policy"
+STRICT_FP = "metal_shader_strict_fp_args = ['-fno-fast-math', '-ffp-contract=off']"
+LOOSE_FP = re.compile(
+    r"-ffast-math|-fmetal-math-mode=(fast|relaxed)|-ffp-contract=(fast|on)|fp32-functions=fast"
+)
+
+
+def strict_fp_failures(text: str) -> list[str]:
+    """ADR-1498: one strict list between the markers, no loosening flag."""
+    if POLICY_BEGIN not in text or POLICY_END not in text:
+        return ["the Metal shader strict FP policy markers are missing"]
+    block = text[text.index(POLICY_BEGIN) : text.index(POLICY_END)]
+    failures = []
+    if STRICT_FP not in block:
+        failures.append("the policy block does not define the strict list")
+    code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+    if code.count("metal_shader_strict_fp_args =") != 1:
+        failures.append("the strict list is defined more than once")
+    if LOOSE_FP.search(code):
+        failures.append("a flag that turns fast math or contraction back on")
+    return failures
+
+
 def target_failures(args: list[str], bundle_major: str) -> list[str]:
     """Why the target arguments do not match the bundle's macOS floor."""
     failures = []
@@ -73,11 +102,21 @@ class MetalShaderBuildContract(unittest.TestCase):
         code = meson_code()
         loop = code[code.index("foreach _k : metal_kernel_names") :]
         loop = loop[: loop.index("endforeach")]
-        self.assertIn(
-            "'metal'] + metal_shader_target_args", loop.replace("\n", " ").replace("  ", " ")
-        )
+        flat = " ".join(loop.split())
+        self.assertIn("'metal'] + metal_shader_target_args", flat)
+        # ADR-1498: the strict FP list and the include directories.
+        self.assertIn("+ metal_shader_strict_fp_args + metal_shader_include_args", flat)
         # No kernel is compiled outside the loop, with arguments of its own.
-        self.assertEqual(code.count("'metal',"), 0)
+        self.assertEqual(code.count("'macosx', 'metal'"), 1)
+
+    def test_strict_fp_policy_is_defined_once(self) -> None:
+        self.assertEqual(strict_fp_failures(METAL_MESON.read_text()), [])
+
+    def test_a_loosened_or_second_fp_list_is_detected(self) -> None:
+        text = METAL_MESON.read_text()
+        self.assertTrue(strict_fp_failures(text.replace("'-ffp-contract=off'", "'-ffp-contract=fast'")))
+        self.assertTrue(strict_fp_failures(text + "\nx = ['-ffast-math']\n"))
+        self.assertTrue(strict_fp_failures(text.replace(POLICY_BEGIN, "# moved")))
 
     def test_target_is_the_bundle_floor(self) -> None:
         match = DEPLOYMENT.search(BUNDLE_SCRIPT.read_text())
