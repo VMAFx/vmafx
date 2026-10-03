@@ -98,29 +98,21 @@ def production_wiring_problems(metal_source: str) -> list[str]:
 def option_ownership_problems(parity_source: str) -> list[str]:
     """Validate independent option construction and consumption ownership."""
     problems: list[str] = []
-    for signature in (
-        "static char *setup_cpu_float_ms_ssim",
-        "static char *setup_metal_float_ms_ssim",
-    ):
-        setup = function_body(parity_source, signature)
-        if "make_options(options, opts)" not in setup:
-            problems.append(f"{signature} does not construct fresh options")
-        if "vmaf_use_feature" not in setup:
-            problems.append(f"{signature} does not pass options to its consumer")
-        elif "*opts = NULL;" not in setup:
-            problems.append(f"{signature} does not relinquish consumed options")
-        elif setup.index("*opts = NULL;") < setup.index("vmaf_use_feature"):
-            problems.append(f"{signature} relinquishes options before consumption")
-        if "vmaf_feature_dictionary_free" in setup:
-            problems.append(f"{signature} frees options after consumption")
-
-    for signature in (
-        "static char *run_cpu_float_ms_ssim_opts",
-        "static char *run_metal_float_ms_ssim_opts",
-    ):
-        runner_header = function_body(parity_source, signature).split("{", 1)[0]
-        if "VmafFeatureDictionary" in runner_header:
-            problems.append(f"{signature} accepts a caller-owned dictionary")
+    signature = "static char *run_scores"
+    if signature not in parity_source:
+        problems.append(f"{signature} missing from parity source")
+        return problems
+    runner = function_body(parity_source, signature)
+    runner_header = runner.split("{", 1)[0]
+    if "VmafFeatureDictionary" in runner_header:
+        problems.append(f"{signature} accepts a caller-owned dictionary")
+    if "case_options(c, &opts)" not in runner:
+        problems.append(f"{signature} does not construct fresh options")
+    if "vmaf_use_feature" not in runner:
+        problems.append(f"{signature} does not pass options to its consumer")
+    use_idx = runner.find("vmaf_use_feature")
+    if use_idx >= 0 and "vmaf_feature_dictionary_free" in runner[use_idx:]:
+        problems.append(f"{signature} frees options after consumption")
     return problems
 
 
@@ -304,19 +296,19 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
 
     def test_mutation_reused_option_dictionary_is_rejected(self) -> None:
-        cpu_setup = function_body(self.parity_test_src, "static char *setup_cpu_float_ms_ssim")
-        mutated_setup = cpu_setup.replace("make_options(options, opts)", "0", 1)
-        mutated = self.parity_test_src.replace(cpu_setup, mutated_setup, 1)
+        runner = function_body(self.parity_test_src, "static char *run_scores")
+        mutated_runner = runner.replace("case_options(c, &opts)", "0", 1)
+        mutated = self.parity_test_src.replace(runner, mutated_runner, 1)
         self.assertTrue(metal_wiring_problems(self.metal_src, mutated))
 
     def test_mutation_post_consumption_double_free_is_rejected(self) -> None:
-        cpu_setup = function_body(self.parity_test_src, "static char *setup_cpu_float_ms_ssim")
-        mutated_setup = cpu_setup.replace(
-            "*opts = NULL;",
-            "(void)vmaf_feature_dictionary_free(opts);\n    *opts = NULL;",
+        runner = function_body(self.parity_test_src, "static char *run_scores")
+        mutated_runner = runner.replace(
+            "err = feed_frames(vmaf, c);",
+            "(void)vmaf_feature_dictionary_free(&opts);\n        err = feed_frames(vmaf, c);",
             1,
         )
-        mutated = self.parity_test_src.replace(cpu_setup, mutated_setup, 1)
+        mutated = self.parity_test_src.replace(runner, mutated_runner, 1)
         self.assertTrue(metal_wiring_problems(self.metal_src, mutated))
 
     def test_mutation_yuv400_uses_raw_chroma_option_is_rejected(self) -> None:
