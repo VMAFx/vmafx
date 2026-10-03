@@ -38,10 +38,11 @@
  *  partials are separate Shared buffers sized to that scale's WG count. All
  *  buffers are allocated once in init() (zero per-frame heap traffic).
  *
- *  Param contract: vif_enhn_gain_limit is forwarded to the kernel as a float
- *  (the CPU uses it as a double inside the statistic; the only float-touched
- *  values are small relative to the 1e-4 gate). debug and vif_skip_scale0 are
- *  host-side only.
+ *  Param contract: vif_enhn_gain_limit reaches the kernels as a
+ *  VmafMtlGainLimit (metal_integer_vif_gain.h), its fp64 parts formed once per
+ *  frame on the host: the CPU truncates two integers from an fp64 gain, and
+ *  the kernels return those integers (ADR-1432, ported by ADR-1498). debug
+ *  and vif_skip_scale0 are host-side only.
  *
  *  Minimum frame size (T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29, the HIP
  *  guard of ADR-1381 on ADR-1324, ported by ADR-1498): every scale reflects
@@ -80,6 +81,9 @@ extern "C" {
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
 }
+
+/* The gain terms' arithmetic and the VmafMtlGainLimit layout the kernels read. */
+#include "metal_integer_vif_gain.h"
 
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
@@ -420,10 +424,9 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
 static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                              id<MTLBuffer> raw_ref, id<MTLBuffer> raw_dis, id<MTLBuffer> log2_buf,
                              id<MTLBuffer> wg, unsigned width, unsigned height, unsigned raw_stride,
-                             unsigned grid_x, float egl)
+                             unsigned grid_x, VmafMtlGainLimit egl)
 {
     const uint32_t params[4] = {width, height, raw_stride, grid_x};
-    const float cfgf[4]      = {egl, 0.0f, 0.0f, 0.0f};
 
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
@@ -432,7 +435,7 @@ static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineStat
     [enc setBuffer:log2_buf offset:0 atIndex:2];
     [enc setBuffer:wg       offset:0 atIndex:3];
     [enc setBytes:params length:sizeof(params) atIndex:4];
-    [enc setBytes:cfgf   length:sizeof(cfgf)   atIndex:5];
+    [enc setBytes:&egl   length:sizeof(egl)    atIndex:5];
     MTLSize tg   = MTLSizeMake(IVIF_BX, IVIF_BY, 1);
     MTLSize grid = MTLSizeMake((width + IVIF_BX - 1u) / IVIF_BX,
                                (height + IVIF_BY - 1u) / IVIF_BY, 1);
@@ -443,11 +446,10 @@ static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineStat
 static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                               id<MTLBuffer> ref_f, id<MTLBuffer> dis_f, id<MTLBuffer> log2_buf,
                               id<MTLBuffer> wg, int scale, unsigned width, unsigned height,
-                              unsigned f_stride, unsigned grid_x, unsigned bpc, float egl)
+                              unsigned f_stride, unsigned grid_x, unsigned bpc, VmafMtlGainLimit egl)
 {
     const uint32_t params[4] = {width, height, f_stride, grid_x};
     const uint32_t cfg2[4]   = {(uint32_t)scale, bpc, 0u, 0u};
-    const float cfgf[4]      = {egl, 0.0f, 0.0f, 0.0f};
 
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
@@ -457,7 +459,7 @@ static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSta
     [enc setBuffer:wg       offset:0 atIndex:3];
     [enc setBytes:params length:sizeof(params) atIndex:4];
     [enc setBytes:cfg2   length:sizeof(cfg2)   atIndex:5];
-    [enc setBytes:cfgf   length:sizeof(cfgf)   atIndex:6];
+    [enc setBytes:&egl   length:sizeof(egl)    atIndex:6];
     MTLSize tg   = MTLSizeMake(IVIF_BX, IVIF_BY, 1);
     MTLSize grid = MTLSizeMake((width + IVIF_BX - 1u) / IVIF_BX,
                                (height + IVIF_BY - 1u) / IVIF_BY, 1);
@@ -515,7 +517,7 @@ static void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSt
 /* Scale 0: compute directly from raw (skipped at host level if
  * vif_skip_scale0, but cheap to always run; collect suppresses it). */
 static void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd,
-                                    float egl)
+                                    VmafMtlGainLimit egl)
 {
     id<MTLBuffer> raw_ref  = (__bridge id<MTLBuffer>)s->raw_ref;
     id<MTLBuffer> raw_dis  = (__bridge id<MTLBuffer>)s->raw_dis;
@@ -539,7 +541,7 @@ static void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommand
 /* Scale n of 1..3: decimate (previous scale's dims) into ping-pong slot
  * (n - 1) % 2, then compute this scale's statistic from it. */
 static void vif_metal_encode_scale(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd, int n,
-                                   float egl)
+                                   VmafMtlGainLimit egl)
 {
     id<MTLComputePipelineState> pso_d16 = (__bridge id<MTLComputePipelineState>)s->pso_decimate_16;
     id<MTLBuffer> raw_ref = (__bridge id<MTLBuffer>)s->raw_ref;
@@ -590,7 +592,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     fill_raw_plane(ref_pic,  (__bridge id<MTLBuffer>)s->raw_ref, s->width, s->height, s->bpc);
     fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->raw_dis, s->width, s->height, s->bpc);
 
-    const float egl = (float)s->vif_enhn_gain_limit;
+    const VmafMtlGainLimit egl = vmaf_mtl_ivif_make_gain_limit(s->vif_enhn_gain_limit);
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
