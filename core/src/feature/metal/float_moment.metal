@@ -7,8 +7,17 @@
  *  Emits float_moment_{ref,dis}{1st,2nd} from exact integer workgroup sums.
  *
  *  The CPU normalises high-bit-depth samples by a power-of-two scaler before
- *  accumulation. This kernel accumulates the raw integer values and squares;
- *  the host divides the first moments by scaler and second moments by scaler².
+ *  accumulation. This kernel accumulates the raw integer values and the CPU's
+ *  squares in units of 1 / scaler^2; the host divides the first moments by
+ *  scaler and the second moments by scaler².
+ *
+ *  moment.c forms each square in float. At 8 bits that is the integer square.
+ *  The 10/12/16-bit kernel adds vmaf_mtl_moment_float_square()
+ *  (metal_float_moment_math.h): one fp32 product of the sample with itself,
+ *  an integer below 2^32, which at 16 bits is the integer square rounded to
+ *  24 bits as the CPU's float is (ADR-1498; the design of ADR-1453, ADR-1449,
+ *  ADR-1447). An exact integer square, which this kernel added, is another
+ *  number at 16 bits.
  *  MSL has no 64-bit SIMD reduction or atomic, so all 256 lanes publish ulong
  *  values to threadgroup memory and lane 0 sums them without losing carries.
  *  Each uint64 result is then exported as a uint32 lo/hi pair.
@@ -30,6 +39,8 @@
 
 #include <metal_stdlib>
 using namespace metal;
+
+#include "metal_float_moment_math.h"
 
 #define FM_THREADS_PER_GROUP 256u
 
@@ -123,12 +134,12 @@ kernel void float_moment_kernel_16bpc(
     if ((int)gid.x < width && (int)gid.y < height) {
         const device ushort *ref_row = (const device ushort *)(ref + (int)gid.y * (int)strides.x);
         const device ushort *dis_row = (const device ushort *)(dis + (int)gid.y * (int)strides.y);
-        const ulong rv = (ulong)ref_row[(int)gid.x];
-        const ulong dv = (ulong)dis_row[(int)gid.x];
-        my_r1 = rv;
-        my_d1 = dv;
-        my_r2 = rv * rv;
-        my_d2 = dv * dv;
+        const uint rv = (uint)ref_row[(int)gid.x];
+        const uint dv = (uint)dis_row[(int)gid.x];
+        my_r1 = (ulong)rv;
+        my_d1 = (ulong)dv;
+        my_r2 = (ulong)vmaf_mtl_moment_float_square(rv);
+        my_d2 = (ulong)vmaf_mtl_moment_float_square(dv);
     }
 
     threadgroup ulong tg_r1[FM_THREADS_PER_GROUP];
