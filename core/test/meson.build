@@ -167,6 +167,26 @@ test('test_parity_gate_covers_registered_twins',
     timeout : 30,
 )
 
+# ADR-1496: the macOS tester bundle measures every open Metal row with exact
+# tests: tools/rc1-tester/image/metal-rows.json against docs/state.md, the
+# Metal parity tests, the bundle's unit list and the gate. Device-free.
+test('test_metal_report_rows_contract',
+    import('python').find_installation(),
+    args : files('test_metal_report_rows_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1496: every Metal kernel takes one language revision and the macOS
+# tester bundle's deployment target, so the metallib loads on the tester's Mac.
+# Device-free.
+test('test_metal_shader_build_contract',
+    import('python').find_installation(),
+    args : files('test_metal_shader_build_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_cuda_parity_gate_default_run',
     import('python').find_installation(),
     args : files('test_cuda_parity_gate_default_run.py'),
@@ -6827,6 +6847,13 @@ endif
 # contract for every public C-API entry point until the runtime PR
 # (T8-1b) lands. Built whenever the parent meson resolved
 # is_metal_enabled to true (auto on macOS, or `enabled` explicitly).
+# The Metal parity tests: test_metal_<name>_parity.c each (ADR-1496).
+metal_parity_tests = [
+  'float_adm', 'float_moment', 'float_motion', 'float_ms_ssim', 'float_psnr',
+  'float_ssim', 'float_vif', 'integer_adm', 'integer_cambi', 'integer_ciede',
+  'integer_motion', 'integer_psnr', 'integer_psnr_hvs', 'integer_ssim',
+  'integer_vif', 'motion_v2', 'ssimulacra2', 'twin_option',
+]
 metal_test_opt = get_option('enable_metal')
 if metal_test_opt.enabled() or (metal_test_opt.auto() and host_machine.system() == 'darwin')
 test_metal_smoke = executable('test_metal_smoke',
@@ -6858,161 +6885,14 @@ test('test_metal_install_header', test_metal_install_header,
     is_parallel : false)
 endif
 
-# Metal kernel coverage round 3 — per-extractor parity tests for the four
-# extractors not covered by round 2 (PR #379): integer_motion, float_motion,
-# float_moment, float_ms_ssim. Same pattern as round 2 — synthetic YUV420P
-# fixture fed through both the CPU twin and the Metal extractor, places=4
-# (1e-4) parity per ADR-0214; float_ms_ssim uses the 1e-3 SSIM-family bound
-# from ADR-0589. Each test skips cleanly when `vmaf_metal_state_init`
-# returns -ENODEV (Linux / Windows / Intel Mac); on Apple-Family-7+ macOS
-# CI lanes they exercise the live kernel.
-test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity',
-    ['test.c', 'test_metal_integer_motion_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_integer_motion_parity', test_metal_integer_motion_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
-    ['test.c', 'test_metal_float_motion_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_motion_parity', test_metal_float_motion_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
-    ['test.c', 'test_metal_float_moment_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_moment_parity', test_metal_float_moment_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# ADR-1212 / BUG-048 A6: 8 bpc cannot expose either high-bit-depth scaling or
-# float-partial precision loss, so compile and execute the same live Metal
-# parity gate at 10 bpc on Apple Silicon.
-test_metal_float_moment_parity_10bit = executable('test_metal_float_moment_parity_10bit',
-    ['test.c', 'test_metal_float_moment_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1', '-DFIXTURE_BPC=10u']
-)
-test('test_metal_float_moment_parity_10bit', test_metal_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
-    ['test.c', 'test_metal_float_ms_ssim_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# Metal kernel coverage round 2 — per-extractor parity tests (ADR-0421 /
-# ADR-0589 / ADR-0214). Extend PR #351's registration audit with real CPU
-# vs. Metal score comparisons on synthetic YUV420P fixtures. Each test
-# skips cleanly when `vmaf_metal_state_init` returns -ENODEV (Linux,
-# Windows, Intel Mac); on Apple-Family-7+ macOS CI lanes they exercise
-# the live kernel and assert places=4 (1e-4) parity per ADR-0214 — except
-# float_ssim which uses the 1e-3 SSIM-specific bound from ADR-0589.
-test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
-    ['test.c', 'test_metal_motion_v2_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_motion_v2_parity', test_metal_motion_v2_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false,
-    should_fail : false,
-    protocol : 'exitcode',
-    verbose : true,
-)
-
-# integer_ssim_metal — fixed-point SSIM (feature "ssim") on Metal; CPU vs.
-# Metal parity at places=4 (1e-4), skips cleanly when no Metal device.
-test_metal_integer_ssim_parity = executable('test_metal_integer_ssim_parity',
-    ['test.c', 'test_metal_integer_ssim_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# float_vif_metal — 4-scale VIF pyramid (feature "float_vif"); CPU vs. Metal
-# parity, skips cleanly when no Metal device.
-test_metal_float_vif_parity = executable('test_metal_float_vif_parity',
-    ['test.c', 'test_metal_float_vif_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_vif_parity', test_metal_float_vif_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# float_adm_metal — 4-scale DWT+CSF+CM (feature "float_adm"); CPU vs. Metal
-# parity, skips cleanly when no Metal device.
-test_metal_float_adm_parity = executable('test_metal_float_adm_parity',
-    ['test.c', 'test_metal_float_adm_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_adm_parity', test_metal_float_adm_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# integer_vif_metal — 4-scale fixed-point VIF pyramid (feature "vif"); CPU vs.
-# Metal parity, skips cleanly when no Metal device.
-test_metal_integer_vif_parity = executable('test_metal_integer_vif_parity',
-    ['test.c', 'test_metal_integer_vif_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_integer_vif_parity', test_metal_integer_vif_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# integer_adm_metal — fixed-point 4-scale DWT+CSF+CM (feature "adm"); CPU vs.
-# Metal parity, skips cleanly when no Metal device.
-test_metal_integer_adm_parity = executable('test_metal_integer_adm_parity',
-    ['test.c', 'test_metal_integer_adm_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_integer_adm_parity', test_metal_integer_adm_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# Standalone-metric Metal parity tests (ciede2000, psnr_hvs, cambi, ssimulacra2).
-foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2']
+# Metal twin parity tests (ADR-0421 rounds 2 to 4, ADR-1496). Each compares
+# a Metal twin with its CPU extractor on synthetic fixtures with `==` (the
+# ciede twin at the LIBM_TWINS bound), runs every case after a failure too and
+# prints one `@case <name> pass|fail|skip` line per case
+# (core/test/metal_twin.h), which the macOS tester bundle reports per state
+# row. Without a Metal device every case skips and the run exits 77. The same
+# sources build as device-free self-tests below the Metal block.
+foreach _m : metal_parity_tests
   _exe = executable('test_metal_' + _m + '_parity',
       ['test.c', 'test_metal_' + _m + '_parity.c'],
       include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -7021,41 +6901,9 @@ foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2
       c_args: ['-DHAVE_METAL=1'])
   test('test_metal_' + _m + '_parity', _exe,
       suite : ['fast', 'gpu'],
-      is_parallel : false)
+      is_parallel : false,
+      timeout : 900)
 endforeach
-
-test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
-    ['test.c', 'test_metal_integer_psnr_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
-    ['test.c', 'test_metal_float_psnr_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_psnr_parity', test_metal_float_psnr_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
-    ['test.c', 'test_metal_float_ssim_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, math_lib],
-    c_args: ['-DHAVE_METAL=1']
-)
-test('test_metal_float_ssim_parity', test_metal_float_ssim_parity,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
 
 # Metal kernel coverage round 4 (closeout) — meta-audit regression guard
 # (ADR-0959). Enumerates the 8 .mm kernel basenames under
@@ -7093,6 +6941,23 @@ test('test_metal_kernel_registration', test_metal_kernel_registration,
     is_parallel : false)
 
 endif
+
+# ADR-1496: the Metal parity tests as self-tests on every host. The CPU
+# extractor stands in for the twin (VMAF_METAL_TWIN_SELFTEST,
+# core/test/metal_twin.h), so every `==` case compares the CPU with itself and
+# a failure is a wrong fixture, key or option string in the test, which the
+# tester's device run should not be the first to find.
+foreach _m : metal_parity_tests
+  _exe = executable('test_metal_selftest_' + _m,
+      ['test.c', 'test_metal_' + _m + '_parity.c'],
+      include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+      link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+      dependencies: [pthread_dependency, math_lib],
+      c_args: ['-DVMAF_METAL_TWIN_SELFTEST'])
+  test('test_metal_selftest_' + _m, _exe,
+      suite : ['fast', 'metal-selftest'],
+      timeout : 900)
+endforeach
 
 test('test_context', test_context, suite : ['fast'])
 test('test_pool_percentile', test_pool_percentile, suite : ['fast'])

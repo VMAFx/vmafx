@@ -6,30 +6,36 @@
  */
 
 /*
- * Metal kernel coverage round 2 — integer_psnr CPU vs. Metal parity.
+ * psnr CPU vs. Metal: `integer_psnr_metal` must return the CPU's scores bit
+ * for bit and honour the CPU's options
+ * (T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26: integer_psnr_metal lacks
+ * min_sse, enable_mse, reduced_hbd_peak and enable_apsnr;
+ * T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 item (2): no enable_apsnr
+ * and no VMAF_FEATURE_EXTRACTOR_TEMPORAL flag). First added as a 1e-4 dB
+ * parity test on one 8-bit frame (ADR-0214), which cannot see either gap.
  *
- * Beyond the registration audit in PR #351, this test exercises the real
- * integer_psnr Metal kernel on a synthetic 8-bpc YUV420P fixture and
- * compares its psnr_y / psnr_cb / psnr_cr scores against the CPU `psnr`
- * extractor. PSNR is a single-frame metric so a one-frame fixture is
- * enough.
+ * psnr.c sums the squared differences of a plane as integers and derives the
+ * score through psnr_score.h, so the twin has no reason to differ by a bit:
+ * every comparison is `==`. The cases are the psnr cases of the CUDA test
+ * test_cuda_twin_option_parity.c, on a Metal state:
+ *   - psnr_y / psnr_cb / psnr_cr at 8, 10, 12 and 16 bits, an odd 4:2:0
+ *     frame and an odd 10-bit 4:2:2 frame (test_psnr_*_exact);
+ *   - test_psnr_options_bit_exact: min_sse, enable_mse, reduced_hbd_peak and
+ *     enable_apsnr together: psnr_*, mse_* per frame and apsnr_* aggregates;
+ *   - test_psnr_min_sse_identical_frames: SSE 0 reports the min_sse ceiling;
+ *   - test_psnr_apsnr_with_subsample: `--subsample 2` still sums every frame
+ *     into apsnr_*, which needs VMAF_FEATURE_EXTRACTOR_TEMPORAL on the twin;
+ *   - test_psnr_defaults_add_no_outputs: without the options no mse_* is
+ *     emitted and psnr_* is unchanged.
+ * The aggregates have no public getter and are read back from the JSON output
+ * at round-trip precision (%.17g), as the CUDA test does.
  *
- * Tolerance: places=4 (1e-4 dB) per ADR-0214 cross-backend gate. The Metal
- * kernel computes SSE in 64-bit lane-summed integer arithmetic and converts
- * to dB via `10 * log10(peak^2 / mse)` (see `integer_psnr_metal.mm` extract
- * block); the CPU twin uses the same formula, so the residual drift is
- * limited to the order in which workgroup partials accumulate. 1e-4 dB
- * is the same gate the SYCL motion3 parity twin uses.
- *
- * Skip behaviour: when `vmaf_metal_state_init` returns -ENODEV (Linux,
- * Windows, Intel Mac), the test emits "[skip: no Metal device]" and passes
- * cleanly.
- *
- * Cross-references:
- *   - core/src/feature/metal/integer_psnr_metal.mm
- *   - core/src/feature/integer_psnr.c
- *   - docs/adr/0214-gpu-parity-ci-gate.md
+ * Skip behaviour: a case reports the skip without a Metal device; the run
+ * exits 77 there. Under VMAF_METAL_TWIN_SELFTEST the CPU extractor stands in
+ * for the twin and every case compares it with itself (metal_twin.h).
  */
+
+#include "metal_twin.h"
 
 #include <errno.h>
 #include <math.h>
@@ -38,278 +44,479 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test.h"
+#ifdef _WIN32
+#include <process.h>
+#define METAL_PSNR_PID() ((long)_getpid())
+#else
+#include <unistd.h>
+#define METAL_PSNR_PID() ((long)getpid())
+#endif
 
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
+#include "feature/feature_extractor.h"
+#include "libvmaf/feature.h"
 #include "libvmaf/picture.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
-#define FIXTURE_BPC 8u
+#define NAME_LEN 64u
+#define PATH_LEN 512u
+#define N_PLANE_KEYS 3u
 
-/* PSNR is reported in dB; places=4 (1e-4 dB) per ADR-0214. */
-#define PARITY_TOL 1e-4
+typedef struct Fixture {
+    enum VmafPixelFormat pix_fmt;
+    unsigned bpc;
+    unsigned w;
+    unsigned h;
+    unsigned frames;
+    bool identical;
+} Fixture;
 
-static int fill_fixture_ref(VmafPicture *pic)
+static const Fixture FX_8 = {VMAF_PIX_FMT_YUV420P, 8u, 320u, 180u, 3u, false};
+static const Fixture FX_10 = {VMAF_PIX_FMT_YUV420P, 10u, 320u, 180u, 3u, false};
+static const Fixture FX_12 = {VMAF_PIX_FMT_YUV420P, 12u, 320u, 180u, 3u, false};
+static const Fixture FX_16 = {VMAF_PIX_FMT_YUV420P, 16u, 320u, 180u, 3u, false};
+/* Odd 4:2:0 (ceil chroma), odd-width 10-bit 4:2:2, and an identical pair. */
+static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false};
+static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false};
+static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true};
+
+typedef struct Pair {
+    VmafContext *cpu;
+    VmafContext *gpu;
+    void *state;
+} Pair;
+
+static unsigned sample_at(unsigned x, unsigned y, unsigned frame, unsigned plane, unsigned bpc)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    /* Deterministic luma ramp, mid-grey chroma. */
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col) & 0xFFu);
-        }
+    const unsigned xs = x + frame * frame * 2u;
+    const unsigned base = ((xs * 7u + y * 13u + plane * 31u) ^ ((xs * y) >> 3)) & 0xFFu;
+    if (bpc == 8u) {
+        return base;
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
+    return (base << (bpc - 8u)) | (xs & ((1u << (bpc - 8u)) - 1u));
 }
 
-static int fill_fixture_dist(VmafPicture *pic)
+static int noise_at(unsigned x, unsigned y, unsigned frame)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    /* Distorted = ref + small per-pixel perturbation; keeps PSNR finite
-     * (well below psnr_max) so the log10 path is exercised. */
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const int v = (int)((row + col) & 0xFFu);
-            const int d = ((row * 3u + col) & 0x7) - 4; /* signed delta in [-4..3] */
-            int clamped = v + d;
-            if (clamped < 0)
-                clamped = 0;
-            if (clamped > 255)
-                clamped = 255;
-            y[row * pic->stride[0] + col] = (uint8_t)clamped;
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                /* Chroma drift so psnr_cb/psnr_cr are also finite. */
-                plane[row * pic->stride[p] + col] = (uint8_t)(128 + (int)((row + col) & 0x3) - 2);
+    const uint32_t h = (x * 73856093u) ^ (y * 19349663u) ^ (frame * 83492791u);
+    return (int)(((h * 1103515245u + 12345u) >> 16) & 7u) - 3;
+}
+
+static unsigned distort(unsigned value, unsigned x, unsigned y, unsigned frame, unsigned bpc)
+{
+    const int max = (1 << bpc) - 1;
+    const int shifted = (int)value + noise_at(x, y, frame) * (1 << (bpc - 8u));
+    return (unsigned)(shifted < 0 ? 0 : (shifted > max ? max : shifted));
+}
+
+static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, bool distorted)
+{
+    for (unsigned y = 0; y < pic->h[plane]; y++) {
+        uint8_t *line = (uint8_t *)pic->data[plane] + (size_t)y * pic->stride[plane];
+        for (unsigned x = 0; x < pic->w[plane]; x++) {
+            unsigned v = sample_at(x, y, frame, plane, pic->bpc);
+            if (distorted) {
+                v = distort(v, x, y, frame, pic->bpc);
+            }
+            if (pic->bpc == 8u) {
+                line[x] = (uint8_t)v;
+            } else {
+                ((uint16_t *)line)[x] = (uint16_t)v;
             }
         }
     }
+}
+
+static int make_picture(const Fixture *fx, unsigned frame, bool distorted, VmafPicture *pic)
+{
+    const int err = vmaf_picture_alloc(pic, fx->pix_fmt, fx->bpc, fx->w, fx->h);
+    if (err) {
+        return err;
+    }
+    for (unsigned p = 0; p < 3u; p++) {
+        fill_plane(pic, p, frame, distorted);
+    }
     return 0;
 }
 
-typedef struct {
-    double psnr_y;
-    double psnr_cb;
-    double psnr_cr;
-} PsnrTriple;
-
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-/* Opening a Metal-backed context is the same two calls every time; folding
- * them into one keeps run_metal inside the branch budget (ADR-0141). */
-static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
+static int feed(VmafContext *vmaf, const Fixture *fx)
 {
-    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    int err = vmaf_init(vmaf, cfg);
-    if (err)
-        return "Metal: vmaf_init failed";
-    err = vmaf_metal_import_state(*vmaf, mstate);
-    if (err)
-        return "Metal: vmaf_metal_import_state failed";
+    for (unsigned i = 0; i < fx->frames; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = make_picture(fx, i, false, &ref);
+        if (err) {
+            return err;
+        }
+        err = make_picture(fx, i, !fx->identical, &dist);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+            return err;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err) {
+            return err;
+        }
+    }
+    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+static int use_feature(VmafContext *vmaf, const char *name, const char *const *opts)
+{
+    VmafFeatureDictionary *dict = NULL;
+    for (unsigned i = 0; opts && opts[i]; i += 2u) {
+        const int err = vmaf_feature_dictionary_set(&dict, opts[i], opts[i + 1u]);
+        if (err) {
+            (void)vmaf_feature_dictionary_free(&dict);
+            return err;
+        }
+    }
+    return vmaf_use_feature(vmaf, name, dict);
+}
+
+/* The Metal state is freed only after its context is closed. */
+static void pair_close(Pair *pair)
+{
+    if (pair->cpu) {
+        (void)vmaf_close(pair->cpu);
+    }
+    if (pair->gpu) {
+        (void)vmaf_close(pair->gpu);
+    }
+    if (pair->state) {
+        (void)metal_twin_close(pair->state);
+    }
+    pair->cpu = NULL;
+    pair->gpu = NULL;
+    pair->state = NULL;
+}
+
+/* 0 when the Metal state and the twin context are ready, 1 when there is no
+ * Metal device (the only reason to skip), a negative value for any other
+ * setup failure. */
+static int open_gpu(Pair *pair, unsigned n_subsample)
+{
+    if (metal_twin_open(&pair->state) != 0 || !pair->state) {
+        return 1;
+    }
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
+    if (vmaf_init(&pair->gpu, cfg)) {
+        return -1;
+    }
+    return metal_twin_import(pair->gpu, pair->state) == 0 ? 0 : -1;
+}
+
+/* Both extractors over `fx`; the message of the first step that failed. */
+static mu_message_t pair_setup(Pair *pair, const Fixture *fx, const char *const *opts,
+                               unsigned n_subsample)
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
+    mu_assert("CPU vmaf_init failed", !vmaf_init(&pair->cpu, cfg));
+    mu_assert("CPU extractor rejected the options", !use_feature(pair->cpu, "psnr", opts));
+    mu_assert("Metal twin rejected the options",
+              !use_feature(pair->gpu, METAL_TWIN("integer_psnr_metal", "psnr"), opts));
+    mu_assert("CPU run failed", !feed(pair->cpu, fx));
+    mu_assert("Metal run failed", !feed(pair->gpu, fx));
     return NULL;
 }
 
-static char *feed_fixture_pair(VmafContext *vmaf)
+/* Runs `psnr` and its twin with the same options over `fx`, both contexts
+ * with `n_subsample`. Reports the skip and returns NULL with *ran == false
+ * when there is no device; on a failure everything is closed and the message
+ * returned. On *ran the caller closes the pair. */
+static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *const *opts,
+                             unsigned n_subsample, bool *ran)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_fixture_ref(&ref);
-    if (err)
-        return "fill_fixture_ref failed";
-    err = fill_fixture_dist(&dist);
-    if (err)
-        return "fill_fixture_dist failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    if (err)
-        return "vmaf_read_pictures failed";
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err)
-        return "vmaf_read_pictures(EOS) failed";
-    return NULL;
-}
-
-static char *run_cpu_psnr(PsnrTriple *out)
-{
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "psnr", NULL);
-    mu_assert("CPU: vmaf_use_feature(psnr) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", &out->psnr_y, 0u);
-    mu_assert("CPU: psnr_y read failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", &out->psnr_cb, 0u);
-    mu_assert("CPU: psnr_cb read failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", &out->psnr_cr, 0u);
-    mu_assert("CPU: psnr_cr read failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *run_metal_psnr(PsnrTriple *out)
-{
-    out->psnr_y = out->psnr_cb = out->psnr_cr = NAN;
-    int err = 0;
-
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    *ran = false;
+    memset(pair, 0, sizeof(*pair));
+    const int opened = open_gpu(pair, n_subsample);
+    if (opened > 0) {
+        pair_close(pair);
         (void)fprintf(stderr, "[skip: no Metal device] ");
+        mu_skipped = 1;
         return NULL;
     }
-
-    VmafContext *vmaf = NULL;
-    char *open_err = open_metal_context(&vmaf, mstate);
-    if (open_err)
-        return open_err;
-    err = vmaf_use_feature(vmaf, "integer_psnr_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(integer_psnr_metal) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", &out->psnr_y, 0u);
-    mu_assert("Metal: psnr_y read failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", &out->psnr_cb, 0u);
-    mu_assert("Metal: psnr_cb read failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", &out->psnr_cr, 0u);
-    mu_assert("Metal: psnr_cr read failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
-    return NULL;
-}
-
-static char *test_integer_psnr_cpu_metal_parity(void)
-{
-    PsnrTriple cpu = {0};
-    PsnrTriple metal = {NAN, NAN, NAN};
-    char *msg = run_cpu_psnr(&cpu);
-    if (msg)
+    mu_message_t msg = opened < 0 ? "Metal context setup failed" : NULL;
+    if (!msg) {
+        msg = pair_setup(pair, fx, opts, n_subsample);
+    }
+    if (msg) {
+        pair_close(pair);
         return msg;
-    msg = run_metal_psnr(&metal);
-    if (msg)
-        return msg;
-    if (isnan(metal.psnr_y))
-        return NULL;
-
-    const double d_y = fabs(cpu.psnr_y - metal.psnr_y);
-    const double d_cb = fabs(cpu.psnr_cb - metal.psnr_cb);
-    const double d_cr = fabs(cpu.psnr_cr - metal.psnr_cr);
-    if (d_y > PARITY_TOL || d_cb > PARITY_TOL || d_cr > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\npsnr parity FAIL: y(cpu=%.6f metal=%.6f d=%.2e) cb(d=%.2e) cr(d=%.2e) "
-                      "tol=%.2e\n",
-                      cpu.psnr_y, metal.psnr_y, d_y, d_cb, d_cr, PARITY_TOL);
     }
-    mu_assert("psnr_y CPU vs. Metal exceeds 1e-4 dB", d_y <= PARITY_TOL);
-    mu_assert("psnr_cb CPU vs. Metal exceeds 1e-4 dB", d_cb <= PARITY_TOL);
-    mu_assert("psnr_cr CPU vs. Metal exceeds 1e-4 dB", d_cr <= PARITY_TOL);
+    *ran = true;
     return NULL;
 }
 
-/* Register integer_psnr_metal with enable_chroma=false. `vmaf` is an open
- * context and the feature name is a registered literal, so none of the
- * argument guards in vmaf_use_feature() can fire: it owns `opts` on every
- * path it can take here, and the caller must not free it afterwards. */
-static int use_psnr_metal_without_chroma(VmafContext *vmaf)
+/* Every frame of `name` equal on both sides and finite. */
+static mu_message_t expect_exact(const Pair *pair, const char *name, unsigned frames)
 {
-    VmafFeatureDictionary *opts = NULL;
-    int err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "false");
-    if (err) {
-        (void)vmaf_feature_dictionary_free(&opts);
-        return err;
+    for (unsigned i = 0; i < frames; i++) {
+        double cpu = NAN;
+        double gpu = NAN;
+        mu_assert("feature missing on the CPU",
+                  !vmaf_feature_score_at_index(pair->cpu, name, &cpu, i));
+        mu_assert("feature missing on the Metal twin",
+                  !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
+        if (!isfinite(cpu) || cpu != gpu) {
+            (void)fprintf(stderr, "\n%s[%u]: cpu=%.17g %s=%.17g\n", name, i, cpu,
+                          METAL_TWIN_BACKEND, gpu);
+            return "the Metal twin differs from the CPU extractor";
+        }
     }
-    return vmaf_use_feature(vmaf, "integer_psnr_metal", opts);
+    return NULL;
 }
 
-static char *test_integer_psnr_metal_enable_chroma_false(void)
+static mu_message_t expect_all(const Pair *pair, const char *name, unsigned frames, double value)
 {
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    int err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        return NULL;
+    for (unsigned i = 0; i < frames; i++) {
+        double cpu = NAN;
+        double gpu = NAN;
+        mu_assert("feature missing on the CPU",
+                  !vmaf_feature_score_at_index(pair->cpu, name, &cpu, i));
+        mu_assert("feature missing on the Metal twin",
+                  !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
+        mu_assert("the CPU value differs from the expected boundary value", cpu == value);
+        mu_assert("the Metal value differs from the CPU's boundary value", gpu == value);
     }
-
-    VmafContext *vmaf = NULL;
-    char *open_err = open_metal_context(&vmaf, mstate);
-    if (open_err) {
-        vmaf_metal_state_free(&mstate);
-        return open_err;
-    }
-
-    err = use_psnr_metal_without_chroma(vmaf);
-    mu_assert("Metal: vmaf_use_feature(integer_psnr_metal, enable_chroma=false) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err) {
-        (void)vmaf_close(vmaf);
-        vmaf_metal_state_free(&mstate);
-        return feed_err;
-    }
-
-    double psnr_y = NAN;
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr_y, 0u);
-    mu_assert("Metal: psnr_y read failed", !err);
-    mu_assert("Metal: psnr_y must be finite", !isnan(psnr_y));
-
-    double dummy = NAN;
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", &dummy, 0u);
-    mu_assert("Metal: psnr_cb must not be emitted when enable_chroma=false", err != 0);
-
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", &dummy, 0u);
-    mu_assert("Metal: psnr_cr must not be emitted when enable_chroma=false", err != 0);
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
     return NULL;
+}
+
+static bool feature_present(VmafContext *vmaf, const char *name)
+{
+    double score = 0.0;
+    return vmaf_feature_score_at_index(vmaf, name, &score, 0u) == 0;
+}
+
+static mu_message_t expect_absent(const Pair *pair, const char *name)
+{
+    mu_assert("the CPU emitted a feature its option leaves off", !feature_present(pair->cpu, name));
+    mu_assert("the Metal twin emitted a feature its option leaves off",
+              !feature_present(pair->gpu, name));
+    return NULL;
+}
+
+/* Aggregates have no public getter: read them back from the JSON output at
+ * round-trip precision. Returns 0 and sets *value, or an errno value. */
+static int read_aggregate(VmafContext *vmaf, const char *path, const char *name, double *value)
+{
+    if (vmaf_write_output_with_format(vmaf, path, VMAF_OUTPUT_FORMAT_JSON, "%.17g")) {
+        return -EIO;
+    }
+    FILE *fh = fopen(path, "rb");
+    if (!fh) {
+        return -EIO;
+    }
+    static char buf[1u << 16];
+    const size_t n = fread(buf, 1u, sizeof(buf) - 1u, fh);
+    (void)fclose(fh);
+    (void)remove(path);
+    buf[n] = '\0';
+    char key[NAME_LEN + 8u];
+    (void)snprintf(key, sizeof(key), "\"%s\": ", name);
+    const char *section = strstr(buf, "\"aggregate_metrics\"");
+    const char *at = section ? strstr(section, key) : NULL;
+    if (!at) {
+        return -ENOENT;
+    }
+    char *end = NULL;
+    *value = strtod(at + strlen(key), &end);
+    return end == at + strlen(key) ? -ENOENT : 0;
+}
+
+/* A file name in the temporary directory (TMPDIR, TMP or TEMP; /tmp or the
+ * current directory when none is set), unique per process and side, so the
+ * tester's working directory may be read-only. */
+static void temp_path(char *path, size_t size, const char *side)
+{
+    const char *dir = getenv("TMPDIR");
+    dir = dir ? dir : getenv("TMP");
+    dir = dir ? dir : getenv("TEMP");
+#ifdef _WIN32
+    dir = dir ? dir : ".";
+    const char sep = '\\';
+#else
+    dir = dir ? dir : "/tmp";
+    const char sep = '/';
+#endif
+    (void)snprintf(path, size, "%s%cmetal_psnr_parity_%ld_%s.json", dir, sep, METAL_PSNR_PID(),
+                   side);
+}
+
+static mu_message_t expect_aggregate(const Pair *pair, const char *name)
+{
+    double cpu = NAN;
+    double gpu = NAN;
+    char cpu_path[PATH_LEN];
+    char gpu_path[PATH_LEN];
+    temp_path(cpu_path, sizeof(cpu_path), "cpu");
+    temp_path(gpu_path, sizeof(gpu_path), "metal");
+    mu_assert("the CPU aggregate is missing", !read_aggregate(pair->cpu, cpu_path, name, &cpu));
+    mu_assert("the Metal aggregate is missing", !read_aggregate(pair->gpu, gpu_path, name, &gpu));
+    if (cpu != gpu) {
+        (void)fprintf(stderr, "\n%s: cpu=%.17g %s=%.17g\n", name, cpu, METAL_TWIN_BACKEND, gpu);
+        return "the Metal aggregate differs from the CPU's";
+    }
+    return NULL;
+}
+
+/* The default outputs of the case at `==`, with `opts` on both sides. */
+static mu_message_t psnr_exact(const Fixture *fx, const char *const *opts)
+{
+    static const char *const names[N_PLANE_KEYS] = {"psnr_y", "psnr_cb", "psnr_cr"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, opts, 1u, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < N_PLANE_KEYS; i++) {
+        msg = expect_exact(&pair, names[i], fx->frames);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+static char *test_integer_psnr_metal_registered(void)
+{
+    VmafFeatureExtractor *fex =
+        vmaf_get_feature_extractor_by_name(METAL_TWIN("integer_psnr_metal", "psnr"));
+    mu_assert("the psnr twin must be registered", fex != NULL);
+    return NULL;
+}
+
+static char *test_psnr_8bit_exact(void)
+{
+    return psnr_exact(&FX_8, NULL);
+}
+
+static char *test_psnr_10bit_exact(void)
+{
+    return psnr_exact(&FX_10, NULL);
+}
+
+static char *test_psnr_12bit_exact(void)
+{
+    return psnr_exact(&FX_12, NULL);
+}
+
+static char *test_psnr_16bit_exact(void)
+{
+    return psnr_exact(&FX_16, NULL);
+}
+
+static char *test_psnr_odd_frame_exact(void)
+{
+    mu_assert_msg(psnr_exact(&FX_ODD8, NULL));
+    return psnr_exact(&FX_ODD10, NULL);
+}
+
+static char *test_psnr_identical_frames_exact(void)
+{
+    return psnr_exact(&FX_SAME8, NULL);
+}
+
+static mu_message_t psnr_all_options(const Fixture *fx)
+{
+    static const char *const opts[] = {
+        "enable_mse", "true",    "enable_apsnr", "true", "reduced_hbd_peak",
+        "true",       "min_sse", "0.5",          NULL};
+    static const char *const names[] = {"psnr_y", "psnr_cb", "psnr_cr",
+                                        "mse_y",  "mse_cb",  "mse_cr"};
+    static const char *const aggregates[] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, opts, 1u, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++) {
+        msg = expect_exact(&pair, names[i], fx->frames);
+    }
+    for (size_t i = 0; ran && !msg && i < sizeof(aggregates) / sizeof(aggregates[0]); i++) {
+        msg = expect_aggregate(&pair, aggregates[i]);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+static char *test_psnr_options_bit_exact(void)
+{
+    mu_assert_msg(psnr_all_options(&FX_ODD8));
+    mu_assert_msg(psnr_all_options(&FX_ODD10));
+    return NULL;
+}
+
+/* Identical frames: SSE == 0 on every plane, so psnr_y and apsnr_y both
+ * report the min_sse ceiling ceil(10 * log10(255^2 / (0.5 / (w * h)))). */
+static char *test_psnr_min_sse_identical_frames(void)
+{
+    static const char *const opts[] = {"min_sse", "0.5", "enable_apsnr", "true", NULL};
+    const double ceiling = ceil(10.0 * log10(255.0 * 255.0 / (0.5 / (161.0 * 91.0))));
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_SAME8, opts, 1u, &ran));
+    mu_message_t msg = ran ? expect_all(&pair, "psnr_y", FX_SAME8.frames, ceiling) : NULL;
+    if (ran && !msg) {
+        msg = expect_aggregate(&pair, "apsnr_y");
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+/* `--subsample 2` on a TEMPORAL extractor still feeds every frame: the CPU
+ * psnr sums all four frames into apsnr_*, and the twin must too (without
+ * VMAF_FEATURE_EXTRACTOR_TEMPORAL it sums every second frame). */
+static char *test_psnr_apsnr_with_subsample(void)
+{
+    static const char *const opts[] = {"enable_apsnr", "true", NULL};
+    static const char *const aggregates[] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_ODD8, opts, 2u, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(aggregates) / sizeof(aggregates[0]); i++) {
+        msg = expect_aggregate(&pair, aggregates[i]);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+static char *test_psnr_defaults_add_no_outputs(void)
+{
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_ODD8, NULL, 1u, &ran));
+    mu_message_t msg = ran ? expect_absent(&pair, "mse_y") : NULL;
+    if (ran && !msg) {
+        msg = expect_exact(&pair, "psnr_y", FX_ODD8.frames);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+static void run_depth_cases(void)
+{
+    metal_run_case(test_integer_psnr_metal_registered);
+    metal_run_case(test_psnr_8bit_exact);
+    metal_run_case(test_psnr_10bit_exact);
+    metal_run_case(test_psnr_12bit_exact);
+    metal_run_case(test_psnr_16bit_exact);
+    metal_run_case(test_psnr_odd_frame_exact);
+    metal_run_case(test_psnr_identical_frames_exact);
+}
+
+static void run_option_cases(void)
+{
+    metal_run_case(test_psnr_options_bit_exact);
+    metal_run_case(test_psnr_min_sse_identical_frames);
+    metal_run_case(test_psnr_apsnr_with_subsample);
+    metal_run_case(test_psnr_defaults_add_no_outputs);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_integer_psnr_cpu_metal_parity);
-    mu_run_test(test_integer_psnr_metal_enable_chroma_false);
-    return NULL;
+    run_depth_cases();
+    run_option_cases();
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

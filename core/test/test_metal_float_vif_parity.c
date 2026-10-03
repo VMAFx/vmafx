@@ -6,267 +6,89 @@
  */
 
 /*
- * Metal kernel coverage — float_vif CPU vs. Metal parity.
+ * float_vif CPU vs. Metal: the twin must return the CPU's scores bit for bit
+ * (T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01; the CUDA, SYCL and HIP twins are
+ * exact, ADR-1412, ADR-1422, ADR-1444). First added as a places=4 test on one
+ * 8-bit frame (ADR-0421).
  *
- * The float VIF extractor is implemented by float_vif.c (CPU scalar / SIMD
- * via vif_tools.c) and by float_vif_metal.mm::vmaf_fex_float_vif_metal
- * (Metal 4-scale separable Gaussian pyramid + per-scale (num, den)
- * reduction). This test runs the CPU `float_vif` extractor against
- * `float_vif_metal` on a 2-frame YUV420P fixture and asserts that all four
- * per-scale scores at frame index 1 agree.
+ * float_vif.c filters with the taps vif_get_filter() computes, evaluates the
+ * statistic with log2f_approx() and vif_sigma_nsq in double, and adds each row
+ * and then the rows in fp32. A twin with the removed decimal tap table, the
+ * device log2 or per-block sums is off by up to 3.8e-5 on video. The fixtures,
+ * the comparison and the cases are float_vif_twin_parity.h's, every output at
+ * `==`. The macOS tester bundle runs this test and reports each case
+ * (ADR-1496).
  *
- * Tolerance: 1e-4 (places=4, ADR-0214 cross-backend gate) — the same bound
- * the CUDA and SYCL float_vif parity tests assert
- * (test_cuda_float_vif_parity.c, test_sycl_float_vif_parity.c). The Metal
- * kernel sums per-workgroup float partials in double precision and divides
- * num/den per scale; the per-scale ratio normalises away the order-of-
- * summation drift, so float_vif holds the tighter 1e-4 bound rather than
- * the SSIM-family 1e-3 from ADR-0589.
- *
- * Fixture dims: 256x144 (>= the 4-scale Gaussian footprint; scale 3 is
- * 32x18, comfortably > one 16x16 workgroup tile). Matches the
- * round-1/2/3 Metal fixture sizing.
- *
- * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip
- * (exit 0, "[skip: no Metal device]") on Linux / Windows / Intel Mac.
- *
- * Cross-references:
- *   - core/src/feature/metal/float_vif_metal.mm
- *   - core/src/feature/metal/float_vif.metal
- *   - core/src/feature/float_vif.c
- *   - core/test/test_cuda_float_vif_parity.c  (sibling, CUDA twin)
- *   - core/test/test_sycl_float_vif_parity.c  (sibling, SYCL twin)
+ * Skip behaviour: exits 77 when there is no Metal device.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "metal_twin.h"
 
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
-#include "libvmaf/picture.h"
+#include "float_vif_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
-#define FIXTURE_BPC 8u
-#define NUM_FRAMES 2u
-
-/* float_vif holds the places=4 (1e-4) cross-backend bound from ADR-0214,
- * matching the CUDA/SYCL float_vif parity tests. */
-#define PARITY_TOL 1e-4
-
-static const char *const VIF_SCALE_FEATURES[] = {
-    "VMAF_feature_vif_scale0_score",
-    "VMAF_feature_vif_scale1_score",
-    "VMAF_feature_vif_scale2_score",
-    "VMAF_feature_vif_scale3_score",
+static const VifTwin twin = {
+    .extractor = METAL_TWIN("float_vif_metal", "float_vif"),
+    .backend = METAL_TWIN_BACKEND,
+    .open = metal_twin_open,
+    .import = metal_twin_import,
+    .close = metal_twin_close,
 };
-#define NUM_VIF_SCALES 4u
 
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+static char *test_float_vif_metal_registered(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 7u) & 0xFFu);
-        }
-    }
-    /* Distinct chroma to surface accidental chroma reads (VIF is luma-only). */
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] = (uint8_t)((row * 3u + col + p * 17u) & 0xFFu);
-            }
-        }
-    }
-    return 0;
+    return vif_twin_registered(&twin);
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static char *test_float_vif_default_identical(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 7u) & 0xFFu;
-            const unsigned noise = ((row * 2u + col + frame_idx * 3u) % 13u);
-            y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row + col * 5u + p * 23u + frame_idx) & 0xFFu);
-            }
-        }
-    }
-    return 0;
+    return vif_twin_default_identical(&twin);
 }
 
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-/* Reading every feature is the same loop on both sides; extracting it keeps
- * each run_* function inside the lint profile's branch budget (ADR-0141 asks
- * for the refactor rather than a suppression). */
-static char *read_feature_scores(VmafContext *vmaf, const char *const *names, unsigned count,
-                                 double *out_scores, unsigned index)
+static char *test_float_vif_debug_identical(void)
 {
-    for (unsigned i = 0; i < count; i++) {
-        const int err = vmaf_feature_score_at_index(vmaf, names[i], &out_scores[i], index);
-        if (err)
-            return "vmaf_feature_score_at_index failed";
-    }
-    return NULL;
+    return vif_twin_debug_identical(&twin);
 }
 
-static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
+static char *test_float_vif_model_options_identical(void)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_ref(&ref, frame);
-    if (err)
-        return "fill_ref failed";
-    err = fill_dist(&dist, frame);
-    if (err)
-        return "fill_dist failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, frame);
-    if (err)
-        return "vmaf_read_pictures failed";
-    return NULL;
+    return vif_twin_model_options_identical(&twin);
 }
 
-static char *run_cpu(double *out_scores)
+static char *test_float_vif_skip_scale0_identical(void)
 {
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_vif", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        char *feed_err = feed_fixture_pair(vmaf, i);
-        if (feed_err)
-            return feed_err;
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-
-    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES, out_scores, 1u);
-    if (score_err)
-        return score_err;
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return vif_twin_skip_scale0_identical(&twin);
 }
 
-static char *run_metal(double *out_scores, int *skipped)
+static char *test_float_vif_scale_minimums_identical(void)
 {
-    *skipped = 0;
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++)
-        out_scores[s] = NAN;
-
-    int err = 0;
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        *skipped = 1;
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_vif_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(float_vif_metal) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        char *feed_err = feed_fixture_pair(vmaf, i);
-        if (feed_err)
-            return feed_err;
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
-
-    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES, out_scores, 1u);
-    if (score_err)
-        return score_err;
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
-    return NULL;
+    return vif_twin_scale_minimums_identical(&twin);
 }
 
-static char *test_float_vif_cpu_metal_parity(void)
+static char *test_float_vif_10bit_identical(void)
 {
-    double cpu_scores[NUM_VIF_SCALES] = {0};
-    double metal_scores[NUM_VIF_SCALES] = {0};
-    int skipped = 0;
+    return vif_twin_10bit_identical(&twin);
+}
 
-    char *msg = run_cpu(cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_metal(metal_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        mu_assert("CPU float_vif scale score is non-finite", isfinite(cpu_scores[s]));
-        mu_assert("Metal float_vif scale score is non-finite", isfinite(metal_scores[s]));
-
-        const double delta = fabs(cpu_scores[s] - metal_scores[s]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(
-                stderr,
-                "\nfloat_vif parity FAIL scale=%u: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n", s,
-                cpu_scores[s], metal_scores[s], delta, PARITY_TOL);
-        }
-        mu_assert("float_vif CPU vs. Metal scale delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+static char *test_float_vif_small_odd_frame_identical(void)
+{
+    return vif_twin_small_odd_frame_identical(&twin);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_vif_cpu_metal_parity);
-    return NULL;
+    metal_run_case(test_float_vif_metal_registered);
+    metal_run_case(test_float_vif_default_identical);
+    metal_run_case(test_float_vif_debug_identical);
+    metal_run_case(test_float_vif_model_options_identical);
+    metal_run_case(test_float_vif_skip_scale0_identical);
+    metal_run_case(test_float_vif_scale_minimums_identical);
+    metal_run_case(test_float_vif_10bit_identical);
+    metal_run_case(test_float_vif_small_odd_frame_identical);
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

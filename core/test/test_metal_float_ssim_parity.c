@@ -6,192 +6,528 @@
  */
 
 /*
- * Metal kernel coverage round 2 — float_ssim CPU vs. Metal parity
- * (ADR-0589 metal-ssim-lcs-db-parity; ADR-0214 cross-backend gate).
+ * float_ssim CPU vs. Metal: the twin must return the CPU's scores bit for bit
+ * (T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 item (1); the CUDA, HIP and
+ * SYCL twins are exact, ADR-1399, ADR-1464, ADR-1463). First added as a 1e-3
+ * parity test on one 8-bit frame (ADR-0589), which any reduction passes.
  *
- * PR #351 only asserted registration. This test exercises the real
- * float_ssim Metal kernel and compares its `float_ssim` score against the
- * CPU `float_ssim` extractor on a 256x144 8-bpc YUV420P synthetic fixture.
+ * The Metal twin implements scale 1 only (a separate row), so every frame here
+ * resolves to scale 1: either its short side is below 384 (the automatic
+ * scale is round(min(w, h) / 256), at least 1) or `scale=1` is set on BOTH
+ * sides. Every output of every frame is compared with `==`; a float_ssim
+ * output that is not finite on the CPU fails the case too.
  *
- * Tolerance: 1e-3 (looser than the 1e-4 ADR-0214 gate). SSIM is a
- * normalised similarity index in [0, 1], so absolute residuals are
- * intrinsically small. The looser bound accommodates the documented
- * workgroup-partial-sum order-of-summation differences between the CPU
- * separable convolution and the Metal vertical+horizontal MTLCompute
- * passes (see `float_ssim_metal.mm` :: extract block — the partial-sum
- * reduction is order-dependent in float). ADR-0589 §"Test plan" cites
- * 1e-3 as the working SSIM parity target before bit-exact L/C/S split
- * lands.
+ *   order    iqa_ssim() adds the window terms into one double per output in
+ *            raster order. The 64x64 pair of float_ssim_order_frame.h (the CPU
+ *            scores 0xb4e2b622; a per-group sum scores a neighbouring float)
+ *            and the seeded noise pairs of ssim_order_noise.h are scored with
+ *            and without enable_lcs (float_ssim, float_ssim_l / _c / _s).
+ *   texture  textured frames with noise at 8, 10 and 12 bits, an odd frame,
+ *            scale=1 on a 960x540 frame, enable_lcs, enable_db and clip_db.
+ *   flat     identical flat 64x64 frames (value 128 at 8 bits, 512 at 10 bits)
+ *            with enable_db: the CPU divides double numerators by fp32
+ *            denominators and scores 72.247198959355487 dB, not +inf. The
+ *            Metal kernel computes l, c and s in fp32 and forces 1 on a zero
+ *            denominator. The CPU's value is asserted as well as `==`, with
+ *            clip_db too (its ceiling lies above that value).
  *
- * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip.
- *
- * Cross-references:
- *   - core/src/feature/metal/float_ssim_metal.mm
- *   - core/src/feature/float_ssim.c
- *   - docs/adr/0589-metal-ssim-lcs-db-parity.md
+ * Skip behaviour: a case reports the skip without a Metal device; the run
+ * exits 77 there. Under VMAF_METAL_TWIN_SELFTEST the CPU extractor stands in
+ * for the twin and every case compares it with itself (metal_twin.h).
  */
 
-#include <errno.h>
+#include "metal_twin.h"
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
+#include "feature/feature_extractor.h"
+#include "libvmaf/feature.h"
 #include "libvmaf/picture.h"
 
+#include "float_ssim_order_frame.h"
+#include "ssim_order_noise.h"
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
-#define FIXTURE_BPC 8u
+#define MAX_FRAMES 3u
+#define N_KEYS 4u
 
-/* SSIM is dimensionless [0, 1]; 1e-3 absolute matches ADR-0589 test plan. */
-#define PARITY_TOL 1e-3
+/* float_ssim of identical flat frames with enable_db on the CPU. */
+#define FLAT_DB_CPU 72.247198959355487
 
-static int fill_fixture(VmafPicture *pic, unsigned variant)
+typedef enum SsimSource { SRC_TEXTURE, SRC_FLAT, SRC_HEADER, SRC_NOISE } SsimSource;
+
+typedef struct SsimCase {
+    const char *label;
+    const char *scale; /* NULL = automatic */
+    uint64_t seed;     /* SRC_NOISE pair */
+    double expect_cpu; /* float_ssim of frame 0 on the CPU, or 0 = not asserted */
+    SsimSource src;
+    unsigned w;
+    unsigned h;
+    unsigned bpc;
+    unsigned frames;
+    unsigned flat;        /* SRC_FLAT sample value */
+    uint32_t expect_bits; /* float bits of float_ssim of frame 0 on the CPU, or 0 */
+    bool lcs;
+    bool db;
+    bool clip;
+} SsimCase;
+
+static const char *const key_names[N_KEYS] = {"float_ssim", "float_ssim_l", "float_ssim_c",
+                                              "float_ssim_s"};
+
+static unsigned texture_at(unsigned row, unsigned col, unsigned bpc, unsigned salt)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* Variant 0 = clean ramp; variant 1 = ramp + small perturbation. */
-            const int v = (int)((row + col) & 0xFFu);
-            const int d = (variant != 0u) ? (((row * 5u + col) & 0x7) - 3) : 0;
-            int clamped = v + d;
-            if (clamped < 0)
-                clamped = 0;
-            if (clamped > 255)
-                clamped = 255;
-            y[row * pic->stride[0] + col] = (uint8_t)clamped;
-        }
+    const unsigned max = (1u << bpc) - 1u;
+    const unsigned base = (((row ^ col) * 3u + row / 3u) << (bpc - 8u)) & max;
+    if (!salt) {
+        return base;
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
+    const unsigned hash = (row * 2654435761u) ^ (col * 40503u) ^ (salt * 97u);
+    const int noise = (int)((hash >> 7) % 33u) - 16;
+    const int value = (int)base + noise * (int)(1u << (bpc - 8u));
+    return value < 0 ? 0u : ((unsigned)value > max ? max : (unsigned)value);
+}
+
+static unsigned luma_at(const SsimCase *c, unsigned side, unsigned frame, unsigned row,
+                        unsigned col)
+{
+    const size_t i = (size_t)row * c->w + col;
+    switch (c->src) {
+    case SRC_FLAT:
+        return c->flat;
+    case SRC_HEADER:
+        return side ? float_ssim_order_frame_dis[i] : float_ssim_order_frame_ref[i];
+    case SRC_NOISE:
+        return ssim_order_noise_luma(c->seed, side, i);
+    default:
+        return texture_at(row, col, c->bpc, side ? frame + 1u : 0u);
+    }
+}
+
+static void put_sample(VmafPicture *pic, unsigned p, unsigned row, unsigned col, unsigned v)
+{
+    uint8_t *line = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
+    if (pic->bpc > 8u) {
+        ((uint16_t *)line)[col] = (uint16_t)v;
+    } else {
+        line[col] = (uint8_t)v;
+    }
+}
+
+static int fill_pic(VmafPicture *pic, const SsimCase *c, unsigned side, unsigned frame)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, c->bpc, c->w, c->h);
+    if (err) {
+        return err;
+    }
+    for (unsigned p = 0; p < 3u; p++) {
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                const unsigned v = p ? (128u << (c->bpc - 8u)) : luma_at(c, side, frame, row, col);
+                put_sample(pic, p, row, col, v);
+            }
         }
     }
     return 0;
 }
 
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-static char *feed_fixture_pair(VmafContext *vmaf)
+static int feed_frames(VmafContext *vmaf, const SsimCase *c)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_fixture(&ref, 0u);
-    if (err)
-        return "fill_fixture(ref) failed";
-    err = fill_fixture(&dist, 1u);
-    if (err)
-        return "fill_fixture(dist) failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    if (err)
-        return "vmaf_read_pictures failed";
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err)
-        return "vmaf_read_pictures(EOS) failed";
-    return NULL;
+    for (unsigned i = 0; i < c->frames; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_pic(&ref, c, 0u, i);
+        if (err) {
+            return err;
+        }
+        err = fill_pic(&dist, c, 1u, i);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+            return err;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err) {
+            return err;
+        }
+    }
+    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
 }
 
-static char *run_cpu_float_ssim(double *out_score)
+static int case_options(const SsimCase *c, VmafFeatureDictionary **opts)
 {
     int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    if (c->scale) {
+        err = vmaf_feature_dictionary_set(opts, "scale", c->scale);
+    }
+    if (!err && c->lcs) {
+        err = vmaf_feature_dictionary_set(opts, "enable_lcs", "true");
+    }
+    if (!err && c->db) {
+        err = vmaf_feature_dictionary_set(opts, "enable_db", "true");
+    }
+    if (!err && c->clip) {
+        err = vmaf_feature_dictionary_set(opts, "clip_db", "true");
+    }
+    return err;
+}
+
+/* Runs the CPU extractor, or the twin on a fresh Metal state, over the case;
+ * out[frame][key] follow key_names. */
+static char *run_scores(bool twin, const SsimCase *c, double out[MAX_FRAMES][N_KEYS])
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
+    VmafFeatureDictionary *opts = NULL;
+    void *state = NULL;
+    int err = twin ? metal_twin_open(&state) : 0;
+    mu_assert("Metal state init failed", !err && (state || !twin));
     err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ssim", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_ssim) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "float_ssim", out_score, 0u);
-    mu_assert("CPU: float_ssim read failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
+    if (!err && twin) {
+        err = metal_twin_import(vmaf, state);
+    }
+    if (!err) {
+        err = case_options(c, &opts);
+    }
+    if (!err) {
+        err = vmaf_use_feature(
+            vmaf, twin ? METAL_TWIN("float_ssim_metal", "float_ssim") : "float_ssim", opts);
+    }
+    if (!err) {
+        err = feed_frames(vmaf, c);
+    }
+    for (unsigned i = 0; i < c->frames * N_KEYS && !err; i++) {
+        const unsigned k = i % N_KEYS;
+        if (k == 0u || c->lcs) {
+            err = vmaf_feature_score_at_index(vmaf, key_names[k], &out[i / N_KEYS][k], i / N_KEYS);
+        }
+    }
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    if (twin) {
+        (void)metal_twin_close(state);
+    }
+    mu_assert("a float_ssim run failed", !err && !closed);
     return NULL;
 }
 
-static char *run_metal_float_ssim(double *out_score)
+static uint32_t float_bits(double score)
 {
-    *out_score = NAN;
-    int err = 0;
+    const float value = (float)score;
+    uint32_t bits = 0u;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
 
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        return NULL;
+/* The outputs of the twin that are not the CPU's, each reported. */
+static unsigned count_differences(const SsimCase *c, double cpu[MAX_FRAMES][N_KEYS],
+                                  double gpu[MAX_FRAMES][N_KEYS])
+{
+    unsigned differing = 0u;
+    for (unsigned i = 0; i < c->frames; i++) {
+        for (unsigned k = 0; k < (c->lcs ? N_KEYS : 1u); k++) {
+            if (isfinite(cpu[i][k]) && cpu[i][k] == gpu[i][k]) {
+                continue;
+            }
+            differing++;
+            (void)fprintf(stderr,
+                          "\n%s: %s frame %u: cpu=%.17g (0x%08x) %s=%.17g (0x%08x) delta=%.3e\n",
+                          c->label, key_names[k], i, cpu[i][k], (unsigned)float_bits(cpu[i][k]),
+                          METAL_TWIN_BACKEND, gpu[i][k], (unsigned)float_bits(gpu[i][k]),
+                          fabs(cpu[i][k] - gpu[i][k]));
+        }
     }
+    return differing;
+}
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ssim_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(float_ssim_metal) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "float_ssim", out_score, 0u);
-    mu_assert("Metal: float_ssim read failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
+static char *check_expectation(const SsimCase *c, double cpu[MAX_FRAMES][N_KEYS])
+{
+    if (c->expect_cpu != 0.0 && cpu[0][0] != c->expect_cpu) {
+        (void)fprintf(stderr, "\n%s: the CPU scores %.17g, expected %.17g\n", c->label, cpu[0][0],
+                      c->expect_cpu);
+    }
+    mu_assert("the CPU's float_ssim is no longer the value the fixture was recorded with",
+              c->expect_cpu == 0.0 || cpu[0][0] == c->expect_cpu);
+    if (c->expect_bits != 0u && float_bits(cpu[0][0]) != c->expect_bits) {
+        (void)fprintf(stderr, "\n%s: the CPU scores 0x%08x, expected 0x%08x\n", c->label,
+                      (unsigned)float_bits(cpu[0][0]), (unsigned)c->expect_bits);
+    }
+    mu_assert("the CPU's float_ssim is no longer the bits the fixture was recorded with",
+              c->expect_bits == 0u || float_bits(cpu[0][0]) == c->expect_bits);
     return NULL;
 }
 
-static char *test_float_ssim_cpu_metal_parity(void)
+static char *compare_case(const SsimCase *c)
 {
-    double cpu_score = 0.0;
-    double metal_score = NAN;
-
-    char *msg = run_cpu_float_ssim(&cpu_score);
-    if (msg)
-        return msg;
-    msg = run_metal_float_ssim(&metal_score);
-    if (msg)
-        return msg;
-    if (isnan(metal_score))
-        return NULL;
-
-    const double delta = fabs(cpu_score - metal_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nfloat_ssim parity FAIL: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, metal_score, delta, PARITY_TOL);
-    }
-    mu_assert("float_ssim CPU vs. Metal exceeds 1e-3 tolerance (ADR-0589)", delta <= PARITY_TOL);
+    double cpu[MAX_FRAMES][N_KEYS] = {{0.0}};
+    double gpu[MAX_FRAMES][N_KEYS] = {{0.0}};
+    mu_assert_msg(run_scores(false, c, cpu));
+    mu_assert_msg(check_expectation(c, cpu));
+    mu_assert_msg(run_scores(true, c, gpu));
+    mu_assert("float_ssim_metal is not bit-identical to the CPU extractor",
+              count_differences(c, cpu, gpu) == 0u);
     return NULL;
+}
+
+static char *compare_all(const SsimCase *cases, size_t n)
+{
+    if (!metal_twin_have_device()) {
+        return NULL;
+    }
+    unsigned failed = 0u;
+    for (size_t i = 0; i < n; i++) {
+        const char *msg = compare_case(&cases[i]);
+        if (msg) {
+            failed++;
+            (void)fprintf(stderr, "\n%s: %s\n", cases[i].label, msg);
+        }
+    }
+    mu_assert("float_ssim_metal differs from the CPU extractor", failed == 0u);
+    return NULL;
+}
+
+#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
+
+static char *test_float_ssim_metal_registered(void)
+{
+    VmafFeatureExtractor *fex =
+        vmaf_get_feature_extractor_by_name(METAL_TWIN("float_ssim_metal", "float_ssim"));
+    mu_assert("the float_ssim twin must be registered", fex != NULL);
+    return NULL;
+}
+
+static char *test_float_ssim_order_frame_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "order frame",
+         .src = SRC_HEADER,
+         .w = FLOAT_SSIM_ORDER_FRAME_W,
+         .h = FLOAT_SSIM_ORDER_FRAME_H,
+         .bpc = 8u,
+         .frames = 1u,
+         .expect_bits = FLOAT_SSIM_ORDER_FRAME_CPU_BITS},
+        {.label = "order frame lcs",
+         .src = SRC_HEADER,
+         .w = FLOAT_SSIM_ORDER_FRAME_W,
+         .h = FLOAT_SSIM_ORDER_FRAME_H,
+         .bpc = 8u,
+         .frames = 1u,
+         .lcs = true,
+         .expect_bits = FLOAT_SSIM_ORDER_FRAME_CPU_BITS},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+static char *test_float_ssim_order_noise_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "noise 64x64 a",
+         .src = SRC_NOISE,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 8u,
+         .frames = 1u,
+         .seed = 17217594u,
+         .lcs = true},
+        {.label = "noise 64x64 b",
+         .src = SRC_NOISE,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 8u,
+         .frames = 1u,
+         .seed = 19119610u,
+         .lcs = true},
+        {.label = "noise 176x176",
+         .src = SRC_NOISE,
+         .w = 176u,
+         .h = 176u,
+         .bpc = 8u,
+         .frames = 1u,
+         .seed = 138433u,
+         .lcs = true},
+        {.label = "noise 176x176 plain",
+         .src = SRC_NOISE,
+         .w = 176u,
+         .h = 176u,
+         .bpc = 8u,
+         .frames = 1u,
+         .seed = 138433u},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+static char *test_float_ssim_texture_8bit_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "320x180 8-bit",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES},
+        {.label = "320x180 8-bit lcs",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES,
+         .lcs = true},
+        {.label = "321x181 odd 8-bit",
+         .src = SRC_TEXTURE,
+         .w = 321u,
+         .h = 181u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES,
+         .lcs = true},
+        {.label = "960x540 scale=1",
+         .src = SRC_TEXTURE,
+         .w = 960u,
+         .h = 540u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES,
+         .scale = "1",
+         .lcs = true},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+static char *test_float_ssim_texture_hbd_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "320x180 10-bit",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 10u,
+         .frames = MAX_FRAMES,
+         .lcs = true},
+        {.label = "320x180 12-bit",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 12u,
+         .frames = MAX_FRAMES,
+         .lcs = true},
+        {.label = "321x181 odd 10-bit",
+         .src = SRC_TEXTURE,
+         .w = 321u,
+         .h = 181u,
+         .bpc = 10u,
+         .frames = MAX_FRAMES},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+static char *test_float_ssim_db_options_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "320x180 enable_db",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES,
+         .db = true},
+        {.label = "320x180 enable_db clip_db",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 8u,
+         .frames = MAX_FRAMES,
+         .db = true,
+         .clip = true},
+        {.label = "320x180 enable_db lcs",
+         .src = SRC_TEXTURE,
+         .w = 320u,
+         .h = 180u,
+         .bpc = 10u,
+         .frames = MAX_FRAMES,
+         .lcs = true,
+         .db = true},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+/* Flat identical frames: the CPU's dB value is 72.247198959355487 (the score
+ * is 1 - 2^-24, not exactly 1), and the twin must reach it. */
+static char *test_float_ssim_flat_db_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "flat 8-bit enable_db",
+         .src = SRC_FLAT,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 8u,
+         .frames = 1u,
+         .flat = 128u,
+         .db = true,
+         .expect_cpu = FLAT_DB_CPU},
+        {.label = "flat 10-bit enable_db",
+         .src = SRC_FLAT,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 10u,
+         .frames = 1u,
+         .flat = 512u,
+         .db = true,
+         .expect_cpu = FLAT_DB_CPU},
+        {.label = "flat 8-bit lcs enable_db",
+         .src = SRC_FLAT,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 8u,
+         .frames = 1u,
+         .flat = 128u,
+         .lcs = true,
+         .db = true,
+         .expect_cpu = FLAT_DB_CPU},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
+}
+
+static char *test_float_ssim_flat_clip_db_exact(void)
+{
+    const SsimCase cases[] = {
+        {.label = "flat 8-bit enable_db clip_db",
+         .src = SRC_FLAT,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 8u,
+         .frames = 1u,
+         .flat = 128u,
+         .db = true,
+         .clip = true,
+         .expect_cpu = FLAT_DB_CPU},
+        {.label = "flat 10-bit enable_db clip_db",
+         .src = SRC_FLAT,
+         .w = 64u,
+         .h = 64u,
+         .bpc = 10u,
+         .frames = 1u,
+         .flat = 512u,
+         .db = true,
+         .clip = true,
+         .expect_cpu = FLAT_DB_CPU},
+    };
+    return compare_all(cases, ARRAY_LEN(cases));
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_ssim_cpu_metal_parity);
-    return NULL;
+    metal_run_case(test_float_ssim_metal_registered);
+    metal_run_case(test_float_ssim_order_frame_exact);
+    metal_run_case(test_float_ssim_order_noise_exact);
+    metal_run_case(test_float_ssim_texture_8bit_exact);
+    metal_run_case(test_float_ssim_texture_hbd_exact);
+    metal_run_case(test_float_ssim_db_options_exact);
+    metal_run_case(test_float_ssim_flat_db_exact);
+    metal_run_case(test_float_ssim_flat_clip_db_exact);
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

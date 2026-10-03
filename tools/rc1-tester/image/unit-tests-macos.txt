@@ -1,5 +1,7 @@
 # Meson tests of the macOS tester bundle: the Linux list plus the Metal executables.
-# Metal parity tests exit 77 (skipped) on a host without a Metal device.
+# Metal parity tests exit 77 (skipped) on a host without a Metal device. Every
+# test_metal_<name>_parity of core/test/meson.build is listed (ADR-1496): the
+# report reads their `@case` lines for the state rows of image/metal-rows.json.
 test_ssim_x86_simd
 test_cambi_dispatch_invariance
 test_psnr_hvs_dispatch_invariance
@@ -39,7 +41,6 @@ test_psnr_hvs_score
 test_speed
 test_metal_float_adm_parity
 test_metal_float_moment_parity
-test_metal_float_moment_parity_10bit
 test_metal_float_motion_parity
 test_metal_float_ms_ssim_parity
 test_metal_float_psnr_parity
@@ -47,11 +48,17 @@ test_metal_float_ssim_parity
 test_metal_float_vif_parity
 test_metal_install_header
 test_metal_integer_adm_parity
+test_metal_integer_cambi_parity
+test_metal_integer_ciede_parity
 test_metal_integer_motion_parity
+test_metal_integer_psnr_hvs_parity
 test_metal_integer_psnr_parity
 test_metal_integer_ssim_parity
 test_metal_integer_vif_parity
+test_metal_kernel_coverage_audit
 test_metal_kernel_registration
 test_metal_motion_v2_parity
 test_metal_ms_ssim_option_semantics
 test_metal_smoke
+test_metal_ssimulacra2_parity
+test_metal_twin_option_parity

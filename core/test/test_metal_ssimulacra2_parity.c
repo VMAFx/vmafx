@@ -6,243 +6,368 @@
  */
 
 /*
- * Metal kernel parity — ssimulacra2 CPU vs. Metal (ADR-0214 cross-backend
- * gate).
+ * ssimulacra2 CPU vs. Metal: the twin returns the CPU's score bit for bit.
  *
- * The ssimulacra2 extractor is registered under the name `ssimulacra2` on
- * the CPU (core/src/feature/ssimulacra2.c) and emits the feature key
- * `ssimulacra2`. The Metal twin `ssimulacra2_metal`
- * (core/src/feature/metal/ssimulacra2_metal.mm +
- *  core/src/feature/metal/ssimulacra2.metal) mirrors the CUDA twin's
- * host/GPU split: the host runs YUV->linear-RGB, linear-RGB->XYB,
- * the per-pixel SSIM + EdgeDiff combine (double precision), the 2x2
- * downsample and the 108-weight polynomial pool, while the GPU runs only
- * the elementwise 3-plane multiply and the separable FastGaussian IIR
- * blur. Keeping the float-cbrt-sensitive XYB transform and the
- * double-precision combine on the host is what makes places=4 reachable
- * (cf. ssimulacra2_cuda.c / ADR-0201).
+ * The extractor is registered as `ssimulacra2` on the CPU
+ * (core/src/feature/ssimulacra2.c) and as `ssimulacra2_metal` on Metal; both
+ * emit the scalar `ssimulacra2`. The CUDA twin returns the CPU's score bit for
+ * bit (ADR-1391 for the device pipeline, ADR-1433 for the sums of the
+ * per-pixel SSIM and edge terms, which the CPU adds pixel after pixel into one
+ * double), and test_cuda_ssimulacra2_parity.c asserts `==`; this test asserts
+ * the same of the Metal twin: no tolerance, every frame, in every case.
  *
- * This test runs the CPU `ssimulacra2` extractor against
- * `ssimulacra2_metal` over a 3-frame 256x144 YUV420P 8-bpc fixture and
- * asserts the `ssimulacra2` score at frame index 1 matches within
- * places=4 (1e-4). The 256x144 surface is large enough for the 6-scale
- * downsampling pyramid (smallest scale ~8x4). The residual cross-backend
- * divergence is the float32 IIR blur (the no-contract MSL barrier in
- * ssimulacra2.metal bounds the FMA drift) vs the CPU's -ffp-contract=off
- * scalar IIR; the 1e-4 ADR-0214 gate bounds it.
+ * No state row records a Metal ssimulacra2 exactness defect: the test measures
+ * whether the twin is exact. The cases follow the CUDA test: a distorted
+ * 256x144 frame (five pyramid scales; the sixth, 8x5, is below the 8x8
+ * floor), identical pictures (every sum is zero, the score is 100), and a
+ * picture distorted in its lower third only (each sum starts with a run of
+ * zeros). Added for Metal: 960x540 (all six scales), an odd frame size, 10-bit
+ * input, and the refusal of 4:0:0 input, which has no chroma planes for the
+ * colour conversion and which the CPU refuses with -EINVAL.
  *
- * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip on
- * Linux / Windows / Intel Mac.
+ * The lifecycle case checks that the twin is submit/collect based; the CPU
+ * extractor is not, so it means something only on a device.
  *
- * Cross-references:
- *   - core/test/test_cuda_ssimulacra2_parity.c (CUDA twin)
- *   - core/test/test_metal_integer_ssim_parity.c (Metal sibling / model)
- *   - core/src/feature/metal/ssimulacra2_metal.mm
- *   - core/src/feature/ssimulacra2.c
+ * Skip behaviour: without a Metal device every comparison reports the skip
+ * and the run exits 77. The registration case needs no device.
  */
+
+#include "metal_twin.h"
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
+#include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
-#define FIXTURE_BPC 8u
+static const char *const TWIN_NAME = METAL_TWIN("ssimulacra2_metal", "ssimulacra2");
+
 #define NUM_FRAMES 3u
-#define PARITY_TOL 1e-4
 
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+/* How the distorted picture differs from the reference. */
+enum distortion {
+    DISTORT_ALL = 0,     /* every pixel */
+    DISTORT_NONE,        /* identical pictures */
+    DISTORT_LOWER_THIRD, /* rows from two thirds down */
+};
+
+/* One comparison: a frame geometry, a bit depth and a distortion. */
+typedef struct SsCase {
+    const char *name;
+    unsigned w;
+    unsigned h;
+    unsigned bpc;
+    enum distortion mode;
+} SsCase;
+
+static bool row_is_distorted(enum distortion mode, unsigned row, unsigned rows)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
+    if (mode == DISTORT_NONE) {
+        return false;
+    }
+    return mode == DISTORT_ALL || row >= rows - rows / 3u;
+}
 
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 5u) & 0xFFu);
+static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
+{
+    uint8_t *line = (uint8_t *)pic->data[plane] + ((size_t)row * (size_t)pic->stride[plane]);
+    if (pic->bpc <= 8u) {
+        line[col] = (uint8_t)(v & 0xFFu);
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)((v & 0xFFu) << (pic->bpc - 8u));
+    }
+}
+
+/* Plane `p` of the reference (distorted == false) or of the distorted picture
+ * of frame `frame`. Chroma gets deterministic non-128 values, so the colour
+ * conversion and the score are non-trivial. */
+static void fill_plane(VmafPicture *pic, const SsCase *c, unsigned p, unsigned frame,
+                       bool distorted)
+{
+    for (unsigned row = 0; row < pic->h[p]; row++) {
+        const bool noisy = distorted && row_is_distorted(c->mode, row, pic->h[p]);
+        for (unsigned col = 0; col < pic->w[p]; col++) {
+            unsigned v = (row + col + frame * 5u) & 0xFFu;
+            if (p > 0u) {
+                v = (row * 2u + col + p * 19u + frame) & 0xFFu;
+            }
+            if (noisy) {
+                v += (p == 0u) ? ((row * 2u + col + frame * 3u) % 13u) :
+                                 ((row + col * 3u + frame) % 7u);
+            }
+            put_sample(pic, p, row, col, v);
         }
     }
-    /* ssimulacra2 reads chroma planes through the YUV->XYB conversion;
-     * give them deterministic non-128 values so the score is non-trivial. */
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row * 2u + col + p * 19u + frame_idx) & 0xFFu);
-            }
-        }
+}
+
+static int fill_picture(VmafPicture *pic, const SsCase *c, unsigned frame, bool distorted)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, c->bpc, c->w, c->h);
+    if (err) {
+        return err;
+    }
+    for (unsigned p = 0; p < 3u; p++) {
+        fill_plane(pic, c, p, frame, distorted);
     }
     return 0;
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static int feed_frames(VmafContext *vmaf, const SsCase *c)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 5u) & 0xFFu;
-            const unsigned noise = ((row * 2u + col + frame_idx * 3u) % 13u);
-            y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_picture(&ref, c, i, false);
+        if (err) {
+            return err;
+        }
+        err = fill_picture(&dist, c, i, true);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+            return err;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err) {
+            return err;
         }
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                const unsigned base = (row * 2u + col + p * 19u + frame_idx) & 0xFFu;
-                const unsigned noise = ((row + col * 3u + frame_idx) % 7u);
-                plane[row * pic->stride[p] + col] = (uint8_t)((base + noise) & 0xFFu);
-            }
-        }
-    }
-    return 0;
+    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
 }
 
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
+/* A context with the CPU `ssimulacra2`, or with the twin on `state`. */
+static int ss_context(VmafContext **vmaf, void *state)
 {
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    if (!err && state) {
+        err = metal_twin_import(*vmaf, state);
+    }
+    if (!err) {
+        err = vmaf_use_feature(*vmaf, state ? TWIN_NAME : "ssimulacra2", NULL);
+    }
+    return err;
+}
+
+/* The score of every frame through one extractor; returns the first error. */
+static int ss_scores(void *state, const SsCase *c, double out[NUM_FRAMES])
+{
+    VmafContext *vmaf = NULL;
+    int err = ss_context(&vmaf, state);
+    if (!err) {
+        err = feed_frames(vmaf, c);
+    }
+    for (unsigned i = 0; i < NUM_FRAMES && !err; i++) {
+        err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", &out[i], i);
+    }
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
+}
+
+/* The Metal state, or NULL with the reason printed when there is none. */
+static void *metal_device(void)
+{
+    void *state = NULL;
+    if (metal_twin_open(&state) != 0 || state == NULL) {
+        (void)fprintf(stderr, "[skip: no Metal device] ");
+        mu_skipped = 1;
+        return NULL;
+    }
+    return state;
+}
+
+/* The frames of the case whose twin score is not the CPU's, each one
+ * reported; UINT32_MAX when a run failed. A skipped twin leg counts as 0.
+ * `cpu` returns the CPU's scores. */
+static unsigned exact_mismatches(const SsCase *c, double cpu[NUM_FRAMES])
+{
+    double gpu[NUM_FRAMES] = {0.0};
+    void *state = metal_device();
+    if (!state) {
+        return 0u;
+    }
+    const int gpu_err = ss_scores(state, c, gpu);
+    (void)metal_twin_close(state);
+    const int cpu_err = gpu_err ? 0 : ss_scores(NULL, c, cpu);
+    if (gpu_err || cpu_err) {
+        (void)fprintf(stderr, "\n%s: run failed (%s %d, cpu %d)\n", c->name, METAL_TWIN_BACKEND,
+                      gpu_err, cpu_err);
+        return UINT32_MAX;
+    }
+    unsigned mismatches = 0u;
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+            continue;
+        }
+        mismatches++;
+        (void)fprintf(stderr, "\nssimulacra2 %s %ux%u %u-bit frame %u: cpu=%.17g metal=%.17g\n",
+                      c->name, c->w, c->h, c->bpc, i, cpu[i], gpu[i]);
+    }
+    return mismatches;
+}
+
+static char *check_case(const SsCase *c, char *message)
+{
+    double cpu[NUM_FRAMES] = {0.0};
+    mu_assert(message, exact_mismatches(c, cpu) == 0u);
+    return NULL;
+}
+
+static char *test_ssimulacra2_metal_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(TWIN_NAME);
+    mu_assert("ssimulacra2_metal extractor must be registered", fex != NULL);
+    mu_assert("ssimulacra2_metal name matches", !strcmp(fex->name, TWIN_NAME));
+    return NULL;
+}
+
+/* Registration check of any design: the twin is a Metal extractor with an
+ * init and a close, and provides the `ssimulacra2` feature the CPU does. */
+static char *test_ssimulacra2_metal_lifecycle(void)
+{
+    if (metal_twin_device_only()) {
+        return NULL;
+    }
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(TWIN_NAME);
+    mu_assert("ssimulacra2_metal extractor must be registered", fex != NULL);
+    mu_assert("ssimulacra2_metal must provide init and close", fex->init && fex->close);
+    mu_assert("ssimulacra2_metal must score through submit/collect or extract",
+              fex->extract != NULL || (fex->submit != NULL && fex->collect != NULL));
+    mu_assert("ssimulacra2_metal must be a Metal extractor",
+              (fex->flags & VMAF_FEATURE_EXTRACTOR_METAL) != 0);
+    return NULL;
+}
+
+/* The distorted pictures must score differently from frame to frame, or the
+ * comparison cannot tell a stale score from a fresh one. */
+static char *test_ssimulacra2_exact(void)
+{
+    static const SsCase c = {"distorted", 256u, 144u, 8u, DISTORT_ALL};
+    double cpu[NUM_FRAMES] = {0.0};
+    mu_assert("ssimulacra2_metal differs from the CPU extractor", exact_mismatches(&c, cpu) == 0u);
+    mu_assert("ssimulacra2 fixture frames must score differently",
+              mu_skipped || (cpu[0] != cpu[1] && cpu[1] != cpu[2]));
+    return NULL;
+}
+
+/* Every term of every sum is zero. */
+static char *test_ssimulacra2_identical_frames_exact(void)
+{
+    static const SsCase c = {"identical", 256u, 144u, 8u, DISTORT_NONE};
+    double cpu[NUM_FRAMES] = {0.0};
+    mu_assert("ssimulacra2_metal differs from the CPU extractor on identical frames",
+              exact_mismatches(&c, cpu) == 0u);
+    mu_assert("identical pictures must score 100", mu_skipped || cpu[0] == 100.0);
+    return NULL;
+}
+
+/* The sums start with a run of zero terms and pick up in the last third. */
+static char *test_ssimulacra2_lower_third_exact(void)
+{
+    static const SsCase c = {"lower third", 256u, 144u, 8u, DISTORT_LOWER_THIRD};
+    return check_case(&c, "ssimulacra2_metal differs from the CPU with a distorted lower third");
+}
+
+/* 960x540 runs all six pyramid scales. */
+static char *test_ssimulacra2_large_exact(void)
+{
+    static const SsCase c = {"large", 960u, 540u, 8u, DISTORT_ALL};
+    return check_case(&c, "ssimulacra2_metal differs from the CPU extractor at 960x540");
+}
+
+/* Odd at every scale: 255x141 halves to 128x71, 64x36, 32x18 and 16x9. */
+static char *test_ssimulacra2_odd_frame_exact(void)
+{
+    static const SsCase c = {"odd frame", 255u, 141u, 8u, DISTORT_ALL};
+    return check_case(&c, "ssimulacra2_metal differs from the CPU extractor on an odd frame");
+}
+
+static char *test_ssimulacra2_10bit_exact(void)
+{
+    static const SsCase c = {"10-bit", 256u, 144u, 10u, DISTORT_ALL};
+    return check_case(&c, "ssimulacra2_metal differs from the CPU extractor at 10 bits");
+}
+
+/* 4:0:0 has no chroma planes for the colour conversion; the CPU refuses it
+ * with -EINVAL at init and the twin must too. */
+static int alloc_monochrome(VmafPicture *pic)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV400P, 8u, 64u, 64u);
+    if (!err) {
+        /* Fill the luma plane: a twin that wrongly accepts must not read
+         * uninitialised memory. */
+        memset(pic->data[0], 100, (size_t)pic->stride[0] * (size_t)pic->h[0]);
+    }
+    return err;
+}
+
+static int monochrome_status(void *state, bool *setup_failed)
+{
+    VmafContext *vmaf = NULL;
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_ref(&ref, frame);
-    if (err)
-        return "fill_ref failed";
-    err = fill_dist(&dist, frame);
-    if (err)
-        return "fill_dist failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, frame);
-    if (err)
-        return "vmaf_read_pictures failed";
-    return NULL;
-}
-
-static char *run_cpu(double *out_score)
-{
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "ssimulacra2", NULL);
-    mu_assert("CPU: vmaf_use_feature(ssimulacra2) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        char *feed_err = feed_fixture_pair(vmaf, i);
-        if (feed_err)
-            return feed_err;
+    int err = ss_context(&vmaf, state);
+    if (!err) {
+        err = alloc_monochrome(&ref);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-
-    err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", out_score, 1u);
-    mu_assert("CPU: vmaf_feature_score_at_index(ssimulacra2, idx=1) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    if (!err) {
+        err = alloc_monochrome(&dist);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+        }
+    }
+    *setup_failed = err != 0;
+    if (!err) {
+        /* Only this call runs init(): its status is the twin's answer. */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    }
+    if (vmaf) {
+        (void)vmaf_close(vmaf);
+    }
+    return err;
 }
 
-static char *run_metal(double *out_score, int *skipped)
+static char *test_ssimulacra2_rejects_monochrome(void)
 {
-    *skipped = 0;
-    *out_score = NAN;
-    int err = 0;
-
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        *skipped = 1;
+    void *state = metal_device();
+    if (!state) {
         return NULL;
     }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "ssimulacra2_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(ssimulacra2_metal) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        char *feed_err = feed_fixture_pair(vmaf, i);
-        if (feed_err)
-            return feed_err;
+    bool setup_failed = false;
+    const int rc = monochrome_status(state, &setup_failed);
+    (void)metal_twin_close(state);
+    mu_assert("4:0:0 request: context setup failed (not init's refusal)", !setup_failed);
+    if (rc != -EINVAL) {
+        (void)fprintf(stderr, "\n4:0:0 request returned %d\n", rc);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
-
-    err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", out_score, 1u);
-    mu_assert("Metal: vmaf_feature_score_at_index(ssimulacra2, idx=1) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-
-    vmaf_metal_state_free(&mstate);
+    mu_assert("ssimulacra2_metal must reject 4:0:0 input with -EINVAL", rc == -EINVAL);
     return NULL;
 }
 
-static char *test_ssimulacra2_cpu_metal_parity(void)
+static void run_exact_cases(void)
 {
-    double cpu_score = 0.0;
-    double metal_score = NAN;
-    int skipped = 0;
-
-    char *msg = run_cpu(&cpu_score);
-    if (msg)
-        return msg;
-    msg = run_metal(&metal_score, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    mu_assert("CPU ssimulacra2 score is non-finite", isfinite(cpu_score));
-    mu_assert("Metal ssimulacra2 score is non-finite", isfinite(metal_score));
-
-    const double delta = fabs(cpu_score - metal_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nssimulacra2 parity FAIL: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, metal_score, delta, PARITY_TOL);
-    }
-    mu_assert("ssimulacra2 CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
-    return NULL;
+    metal_run_case(test_ssimulacra2_exact);
+    metal_run_case(test_ssimulacra2_identical_frames_exact);
+    metal_run_case(test_ssimulacra2_lower_third_exact);
+    metal_run_case(test_ssimulacra2_large_exact);
+    metal_run_case(test_ssimulacra2_odd_frame_exact);
+    metal_run_case(test_ssimulacra2_10bit_exact);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_ssimulacra2_cpu_metal_parity);
-    return NULL;
+    metal_run_case(test_ssimulacra2_metal_registered);
+    metal_run_case(test_ssimulacra2_metal_lifecycle);
+    run_exact_cases();
+    metal_run_case(test_ssimulacra2_rejects_monochrome);
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

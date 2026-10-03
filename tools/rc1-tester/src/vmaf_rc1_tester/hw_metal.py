@@ -18,6 +18,9 @@ from .hw_equiv import FixtureRunError, Runner, Scores, compare_scores, run_fixtu
 from .safe_process import run_bounded
 
 BACKEND_INIT_FAILED = 100
+# Per fixture id: the Metal run's scores and the extractors that ran on Metal,
+# which the state-row evaluation reads (hw_rows.py, ADR-1496).
+MetalRuns = dict[str, dict[str, Any]]
 
 
 def split_backends(meta: Mapping[str, Any]) -> tuple[list[str], list[str]]:
@@ -58,7 +61,37 @@ def metal_cell(
     cell.update(compare_scores(cpu, scores))
     cell["extractors_on_metal"] = on_metal
     cell["extractors_on_cpu"] = elsewhere
+    cell["scores"] = scores
     return cell
+
+
+def run_metal_equivalence_raw(
+    vmaf: str,
+    fixtures: Sequence[Mapping[str, Any]],
+    cpu_scores: Mapping[str, Scores],
+    *,
+    timeout_seconds: float,
+    runner: Runner = run_bounded,
+) -> tuple[dict[str, Any], MetalRuns]:
+    """Metal against CPU on every fixture, and the Metal runs themselves."""
+    cells = [
+        metal_cell(
+            vmaf, fixture, cpu_scores[str(fixture["id"])],
+            timeout_seconds=timeout_seconds, runner=runner,
+        )
+        for fixture in fixtures
+        if str(fixture["id"]) in cpu_scores
+    ]  # fmt: skip
+    runs = {
+        str(cell["fixture"]): {
+            "scores": cell["scores"],
+            "on_metal": cell["extractors_on_metal"],
+        }
+        for cell in cells
+        if "scores" in cell
+    }
+    section = {"status": status_of_cells(cells), "fixtures": [_public(c) for c in cells]}
+    return section, runs
 
 
 def run_metal_equivalence(
@@ -70,19 +103,13 @@ def run_metal_equivalence(
     runner: Runner = run_bounded,
 ) -> dict[str, Any]:
     """Metal against CPU on every fixture; `no_device` when no run could start Metal."""
-    cells = [
-        metal_cell(
-            vmaf, fixture, cpu_scores[str(fixture["id"])],
-            timeout_seconds=timeout_seconds, runner=runner,
-        )
-        for fixture in fixtures
-        if str(fixture["id"]) in cpu_scores
-    ]  # fmt: skip
-    return {"status": status_of_cells(cells), "fixtures": [_public(c) for c in cells]}
+    return run_metal_equivalence_raw(
+        vmaf, fixtures, cpu_scores, timeout_seconds=timeout_seconds, runner=runner
+    )[0]
 
 
 def _public(cell: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in cell.items() if key != "no_device"}
+    return {key: value for key, value in cell.items() if key not in ("no_device", "scores")}
 
 
 def status_of_cells(cells: Sequence[Mapping[str, Any]]) -> str:

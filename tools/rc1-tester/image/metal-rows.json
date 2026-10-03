@@ -1,0 +1,919 @@
+{
+ "comment": "The open Metal rows of docs/state.md and the measurements of the macOS tester bundle that close each on an Apple device (ADR-1496). cases: @case lines of the bundled Metal parity tests; metrics: the Metal equivalence on every fixture (bound 0 is ==); gate: cells of the parity gate's Metal run. core/test/test_metal_report_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
+ "gate": {
+  "features": [
+   "adm",
+   "cambi",
+   "ciede",
+   "float_adm",
+   "float_moment",
+   "float_motion",
+   "float_ms_ssim",
+   "float_ms_ssim_lcs",
+   "float_psnr",
+   "float_ssim",
+   "float_ssim_lcs",
+   "float_vif",
+   "motion",
+   "motion_debug",
+   "motion_mffw",
+   "motion_v2",
+   "motion_v2_mffw",
+   "psnr",
+   "psnr_hvs",
+   "ssim",
+   "ssimulacra2",
+   "vif"
+  ],
+  "skip": [
+   {
+    "fixture": "netflix_checkerboard_1px_1080p",
+    "features": [
+     "float_ssim",
+     "float_ssim_lcs"
+    ],
+    "reason": "float_ssim_metal runs scale 1 only; 1080p needs scale 4 (T-METAL-FLOAT-SSIM-SCALE-GT1-2026-09-29, RC8)"
+   },
+   {
+    "fixture": "netflix_checkerboard_10px_1080p",
+    "features": [
+     "float_ssim",
+     "float_ssim_lcs"
+    ],
+    "reason": "float_ssim_metal runs scale 1 only; 1080p needs scale 4 (T-METAL-FLOAT-SSIM-SCALE-GT1-2026-09-29, RC8)"
+   }
+  ]
+ },
+ "rows": [
+  {
+   "id": "T-GATE-NO-METAL-BACKEND-2026-10-02",
+   "closes_when": "every Metal cell of the parity gate is OK on an Apple device (CPU against Metal, held exact, --precision max)",
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02",
+   "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences",
+   "cases": [
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_8bit_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_10bit_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_12bit_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_16bit_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_10bit_uncapped_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_16bit_bright_exact"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_identical_8bit"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_identical_16bit"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_psnr_metal",
+     "metrics": [
+      "float_psnr"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_psnr"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02",
+   "closes_when": "motion_metal emits VMAF_integer_feature_motion_sad_score at the first-frame, force-zero and regular sites",
+   "cases": [
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_default_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_force_zero_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_debug_exact"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_motion_provides"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_motion_metal",
+     "metrics": [
+      "VMAF_integer_feature_motion_sad_score"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02",
+   "closes_when": "float_moment_metal returns the CPU's second moments on full-range 16-bit content",
+   "cases": [
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_8bit_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_10bit_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_12bit_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_16bit_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_16bit_bright_exact"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_moment_metal",
+     "metrics": [
+      "float_moment_ref1st",
+      "float_moment_dis1st",
+      "float_moment_ref2nd",
+      "float_moment_dis2nd"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_moment"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01",
+   "closes_when": "integer_ssim_metal returns the CPU's ssim on every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_8bit"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_10bit"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_12bit"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_16bit"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_odd_frame"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_tiny_frame"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_tiny_frame_16bit"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_one_pixel"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_1080p"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_enable_db"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_inverted"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_inverted_16bit"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_ssim_metal",
+     "metrics": [
+      "ssim"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "ssim"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-CIEDE-CPU-ARITHMETIC-2026-10-01",
+   "closes_when": "ciede_metal is within the LIBM_TWINS bound (1e-9) of the CPU on every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_8bit"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_10bit"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_12bit"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_16bit"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_odd_frame"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_odd_ceil_chroma"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_422"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_422_10bit_odd"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_444"
+    },
+    {
+     "test": "test_metal_integer_ciede_parity",
+     "case": "test_ciede_1080p"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_ciede_metal",
+     "metrics": [
+      "ciede2000"
+     ],
+     "bound": 1e-09
+    }
+   ],
+   "gate": [
+    {
+     "feature": "ciede"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01",
+   "closes_when": "float_adm_metal returns the CPU's float_adm outputs on every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_default_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_noise_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_10bit_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_12bit_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_16bit_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_smallest_frame_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_narrow_frame_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_1080p_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_gain_limit_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_bypass_cm_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_skip_aim_scale_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_view_dist_exact"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_csf_scale_is_a_watson_mode_noop"
+    },
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_p_norm_one_exact"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_adm_metal",
+     "metrics": [
+      "adm2",
+      "adm3",
+      "aim",
+      "adm_scale0",
+      "adm_scale1",
+      "adm_scale2",
+      "adm_scale3"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_adm"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-ADM-FRAME-SUM-FLOOR-2026-10-01",
+   "closes_when": "with adm_noise_weight=0 on a flat 16-bit frame float_adm_metal reports the CPU's adm2 = 0",
+   "cases": [
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_small_sums_are_not_floored"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01",
+   "closes_when": "float_adm_metal's init() refuses frames below 17x17 with -EINVAL",
+   "cases": [
+    {
+     "test": "test_metal_float_adm_parity",
+     "case": "test_float_adm_metal_rejects_frames_below_17"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01",
+   "closes_when": "float_motion_metal returns the CPU's motion and motion2 on every frame of every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_ramp_8bit_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_noise_8bit_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_noise_10bit_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_noise_12bit_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_960x540_noise_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_1080p_checkerboard_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_add_scale1_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_add_uv_exact"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_add_scale1_and_uv_exact"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_motion_metal",
+     "metrics": [
+      "motion",
+      "motion2"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_motion"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01",
+   "closes_when": "float_vif_metal returns the CPU's float_vif outputs on every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_default_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_debug_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_model_options_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_skip_scale0_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_scale_minimums_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_10bit_identical"
+    },
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_small_odd_frame_identical"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_vif_metal",
+     "metrics": [
+      "vif_scale0",
+      "vif_scale1",
+      "vif_scale2",
+      "vif_scale3"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_vif"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01",
+   "closes_when": "float_ms_ssim_metal returns the CPU's float_ms_ssim (and the enable_lcs per-scale outputs) on every fixture and case",
+   "cases": [
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_order_frame_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_order_formula_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_640x480_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_minimum_and_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_db_options_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_clip_db_ceiling_exact"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_chroma_exact"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_ms_ssim_metal",
+     "metrics": [
+      "float_ms_ssim"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29",
+   "closes_when": "integer_vif_metal refuses a direct request below 16 px, model dispatch sends such frames to the CPU vif, and 16 px and up are the CPU's",
+   "cases": [
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_metal_declares_min_dim"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_metal_direct_init_rejects_below_min"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_metal_model_boundary"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29",
+   "closes_when": "motion_metal differences first: every motion output equals the CPU's, on tiny frames and with every CPU option",
+   "cases": [
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_default_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_debug_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_weight_and_cap_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_blend_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_exact_twin_default"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_exact_twin_debug"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_tiny_frames_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_odd_and_large_frames_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_tiny_frames_debug_weight_exact"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_five_frame_window_8bit"
+    },
+    {
+     "test": "test_metal_integer_motion_parity",
+     "case": "test_integer_motion_five_frame_window_10bit"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_motion_metal",
+     "metrics": [
+      "integer_motion2",
+      "integer_motion3"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01",
+   "closes_when": "integer_adm_metal matches the scalar CPU at adm_enhn_gain_limit 1.2 and 1.5",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_2_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_5_exact"
+    }
+   ]
+  },
+  {
+   "id": "T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26",
+   "closes_when": "every Metal option table equals its CPU extractor's and the psnr and float_motion options give the CPU's values",
+   "cases": [
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_psnr"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_ssim"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_ssim"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_ms_ssim"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_motion"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_motion"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_motion_v2"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_psnr"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_moment"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_vif"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_adm"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_vif"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_adm"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_ciede"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_psnr_hvs"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_cambi"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_ssimulacra2"
+    },
+    {
+     "test": "test_metal_integer_psnr_parity",
+     "case": "test_psnr_options_bit_exact"
+    },
+    {
+     "test": "test_metal_integer_psnr_parity",
+     "case": "test_psnr_min_sse_identical_frames"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_max_val"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_fps_weight_debug_score"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_force_zero"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_max_val_out_of_range"
+    }
+   ]
+  },
+  {
+   "id": "T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30",
+   "closes_when": "the Metal twins pass the flat-frame, --subsample 2, motion_v2 option and one-frame cases (items 1 to 3); item 4 is device-free",
+   "cases": [
+    {
+     "test": "test_metal_float_ssim_parity",
+     "case": "test_float_ssim_flat_db_exact"
+    },
+    {
+     "test": "test_metal_float_ssim_parity",
+     "case": "test_float_ssim_flat_clip_db_exact"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_identical"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_identical_clipped"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_identical_tiny"
+    },
+    {
+     "test": "test_metal_integer_psnr_parity",
+     "case": "test_psnr_apsnr_with_subsample"
+    },
+    {
+     "test": "test_metal_motion_v2_parity",
+     "case": "test_motion_v2_weight_and_cap_exact"
+    },
+    {
+     "test": "test_metal_motion_v2_parity",
+     "case": "test_motion_v2_one_frame_exact"
+    },
+    {
+     "test": "test_metal_motion_v2_parity",
+     "case": "test_motion_v2_default_exact"
+    }
+   ],
+   "device_free": "item (4), the float_ssim_metal scale message, is a source contract that needs no device"
+  },
+  {
+   "id": "T-GPU-FLOAT-MOTION3-MISSING-2026-09-30",
+   "closes_when": "float_motion_metal emits the CPU's motion3 (default and blend options, one frame) on every fixture",
+   "cases": [
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_motion3"
+    },
+    {
+     "test": "test_metal_float_motion_parity",
+     "case": "test_float_motion_one_frame"
+    },
+    {
+     "test": "test_metal_twin_option_parity",
+     "case": "test_twin_float_motion_provides"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "float_motion_metal",
+     "metrics": [
+      "motion3"
+     ],
+     "bound": 0
+    }
+   ]
+  }
+ ]
+}

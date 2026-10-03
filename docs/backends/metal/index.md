@@ -94,6 +94,13 @@ because the Metal subdirectory is not entered there unless
 / `dependency('IOSurface')` probes resolve to the system frameworks;
 `MetalKit` is optional.
 
+Every kernel (`core/src/feature/metal/*.metal`) is compiled offline with
+`-std=metal3.1 -mmacosx-version-min=14.0` (`metal_shader_target_args` in
+`core/src/metal/meson.build`, [ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)):
+the embedded metallib loads on macOS 14 and later. Without the target the
+compiler stamps the kernels with the build machine's SDK version, and such a
+library refuses to load on an older macOS.
+
 ## Runtime layer
 
 The runtime layer uses Objective-C++ `.mm` TUs under ARC and keeps
@@ -242,6 +249,46 @@ ninja -C build
 python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
   -C build test_metal_smoke
 ```
+
+### Measuring the twins against the CPU
+
+The hosted runner has no usable Metal device, so on CI every Metal parity
+test skips (exit 77) and no Metal score is ever computed there. A Metal twin
+is measured on an Apple device, by the macOS tester bundle
+([tester page](../../usage/tester-image.md),
+[ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)):
+
+- **Parity tests.** `core/test/test_metal_<name>_parity.c`, one per twin
+  (the list is `metal_parity_tests` in `core/test/meson.build`), compare the
+  twin with its CPU extractor with `==` on every output, ciede at the parity
+  gate's `1e-9` math-library bound. They are the CUDA, HIP and SYCL twins'
+  cases, through the same shared fixture headers (`float_psnr_twin_parity.h`,
+  `ssim_twin_parity.h`, ...): full-range noise at 8 to 16 bits, tiny and odd
+  frames, option sets, identical pairs. Each case prints
+  `@case <name> pass|fail|skip` and the test goes on after a failure.
+- **Option tables.** `test_metal_twin_option_parity` compares every Metal
+  twin's option table, provided features and TEMPORAL flag with its CPU
+  extractor's, one case per twin.
+- **Parity gate.** `scripts/ci/cross_backend_parity_gate.py --backends cpu
+  metal --hold-exact metal` compares every gate feature exactly; the bundle
+  runs it on its four fixtures. On a Mac with a build:
+
+  ```bash
+  python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu metal --hold-exact metal
+  ```
+
+- **State rows.** `tools/rc1-tester/image/metal-rows.json` names, per open
+  Metal row of [`docs/state.md`](../../state.md), the cases, fixture scores
+  and gate cells that close it; the report's `metal_rows` section gives each
+  row's verdict.
+
+The same parity tests build on every host as self-tests
+(`test_metal_selftest_<name>`, suite `metal-selftest`), with the CPU extractor
+standing in for the twin: every `==` case must pass there, so a wrong fixture,
+key or option string fails CI before it reaches a tester.
 
 ## References
 

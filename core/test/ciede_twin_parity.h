@@ -55,7 +55,11 @@
 #define FIXTURE_H 144u
 #endif
 
+/* A test may tighten it before including this header (the Metal test holds
+ * its twin to the parity gate's LIBM_TWINS bound, ADR-1496). */
+#ifndef CIEDE_TWIN_TOL
 #define CIEDE_TWIN_TOL 1e-8
+#endif
 
 /* One GPU backend's twin, as the shared cases drive it. */
 typedef struct CiedeTwin {

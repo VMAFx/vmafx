@@ -154,3 +154,49 @@ def test_index_lists_reports_and_is_empty_without(tmp_path: Path) -> None:
     text = index.render(tmp_path)
     assert "| 2026-10-03 | implementer 0x61, part 0x32 | aarch64 | neon | pass |" in text
     assert f"[{GOOD_NAME}]({GOOD_NAME})" in text
+
+
+def v2_report(**sections) -> dict:
+    """A schema 2 report (ADR-1496): the Metal gate and the state-row map."""
+    report = good_report()
+    report["schema_version"] = "2"
+    report["metal_gate"] = {"status": "not_applicable"}
+    report["metal_rows"] = {"status": "not_applicable", "rows": []}
+    report["unit_tests"] = {**SUITE, "cases": {"test_metal_x_parity": {"test_x": "skip"}}}
+    report.update(sections)
+    report["report_sha256"] = report_digest(report)
+    return report
+
+
+def test_schema_2_report_with_gate_and_rows_is_accepted(tmp_path: Path) -> None:
+    rows = {
+        "status": "fail",
+        "counts": {"pass": 0, "fail": 1, "not_measured": 0},
+        "rows": [{"id": "T-X-2026-10-03", "verdict": "fail", "evidence": [
+            {"kind": "case", "test": "test_metal_x_parity", "case": "test_x", "result": "fail"},
+            {"kind": "metric", "fixture": "f", "extractor": "x_metal", "metric": "x",
+             "result": "differing", "max_abs_diff": "1e-07"},
+        ]}],
+    }  # fmt: skip
+    gate_cells = {"status": "fail", "fixtures": [{"fixture": "f", "left_out": [], "exit_code": 1,
+        "cells": [{"feature": "x", "status": "FAIL", "tolerance": "0", "frames": 2,
+                   "tolerance_source": "held-exact:ADR-1496", "max_abs_diff": "1e-07",
+                   "mismatches": 1, "note": ""}]}]}  # fmt: skip
+    report = v2_report(metal_rows=rows, metal_gate=gate_cells, verdict="fail",
+                       failed_checks=["metal_gate"])  # fmt: skip
+    write(tmp_path, GOOD_NAME, report)
+    assert run(tmp_path) == 0
+
+
+def test_schema_2_report_needs_its_sections(tmp_path: Path) -> None:
+    report = v2_report()
+    del report["metal_rows"]
+    report["report_sha256"] = report_digest(report)
+    write(tmp_path, GOOD_NAME, report)
+    assert run(tmp_path) == 1
+
+
+def test_failing_metal_gate_cannot_pass(tmp_path: Path) -> None:
+    report = v2_report(metal_gate={"status": "fail", "fixtures": []})
+    write(tmp_path, GOOD_NAME, report)
+    assert run(tmp_path) == 1

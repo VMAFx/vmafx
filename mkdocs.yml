@@ -1610,6 +1610,7 @@ nav:
         - "ADR-1493: macos-tester-bundle": adr/1493-macos-tester-bundle.md
         - "ADR-1494: adm-refuses-frames-below-17": adr/1494-adm-refuses-frames-below-17.md
         - "ADR-1495: icx-system-libm": adr/1495-icx-system-libm.md
+        - "ADR-1496: metal-gate-in-tester-bundle": adr/1496-metal-gate-in-tester-bundle.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

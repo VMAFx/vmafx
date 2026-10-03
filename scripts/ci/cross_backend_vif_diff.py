@@ -290,6 +290,16 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     ("ssim", "cuda"): "integer_ssim_cuda",
     ("ssim", "sycl"): "integer_ssim_sycl",
     ("ssim", "hip"): "integer_ssim_hip",
+    # The Metal twins of the fixed-point extractors carry the CPU file's name
+    # (integer_<file>.c, ADR-0421); ADR-1496.
+    ("adm", "metal"): "integer_adm_metal",
+    ("cambi", "metal"): "integer_cambi_metal",
+    ("ciede", "metal"): "integer_ciede_metal",
+    ("motion", "metal"): "integer_motion_metal",
+    ("psnr", "metal"): "integer_psnr_metal",
+    ("psnr_hvs", "metal"): "integer_psnr_hvs_metal",
+    ("ssim", "metal"): "integer_ssim_metal",
+    ("vif", "metal"): "integer_vif_metal",
 }
 
 # Per-backend extractor-name suffix and the device-selection flag the
@@ -300,11 +310,13 @@ BACKEND_SUFFIX: dict[str, str] = {
     "cuda": "_cuda",
     "sycl": "_sycl",
     "hip": "_hip",
+    "metal": "_metal",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
     "hip": "--hip_device",
+    "metal": "--metal_device",
 }
 
 
