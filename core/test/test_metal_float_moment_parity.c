@@ -69,14 +69,9 @@ static char *test_float_moment_16bit_bright_exact(void)
     return float_moment_twin_bright_1080p_exact(&twin);
 }
 
-/* The case checks that the CPU's double sum rounded where the twin's integer
- * sum is exact; the CPU in the twin's place has no exact sum to compare. */
-static char *test_float_moment_16bit_past_2_53_within_bound(void)
+static char *test_float_moment_16bit_past_2_53_exact(void)
 {
-    if (metal_twin_device_only()) {
-        return NULL;
-    }
-    return float_moment_twin_past_2_53_within_bound(&twin);
+    return float_moment_twin_past_2_53_exact(&twin);
 }
 
 char *run_tests(void)
@@ -87,7 +82,7 @@ char *run_tests(void)
     metal_run_case(test_float_moment_12bit_exact);
     metal_run_case(test_float_moment_16bit_exact);
     metal_run_case(test_float_moment_16bit_bright_exact);
-    metal_run_case(test_float_moment_16bit_past_2_53_within_bound);
+    metal_run_case(test_float_moment_16bit_past_2_53_exact);
     return metal_first_failure;
 }
 
