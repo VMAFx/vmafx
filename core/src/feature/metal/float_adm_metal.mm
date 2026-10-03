@@ -890,9 +890,13 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
         }
     }
 
+    /* compute_adm()'s floor of the frame sums, in its expression: 1e-10 of
+     * the area relative to 1080p. The 1e-2 the twin used belonged to an
+     * ADM_OPT_SINGLE_PRECISION branch no build defined, and floored sums
+     * the CPU keeps (adm_noise_weight = 0 on a flat frame). */
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
-    const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
+    const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
     double score = 0.0;
     double score_aim = 0.0;
     int err = vmaf_adm_floor_pair_named("float_adm_metal", index, score_num, score_den,

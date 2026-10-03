@@ -9,7 +9,10 @@ them:
 
 * ``init()`` refuses frames below 17x17 with the CPU's
   ``adm_frame_size_check()``, before it reads its state or claims a device
-  resource (T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01).
+  resource (T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01);
+* the frame numerator and denominator are floored at ``compute_adm()``'s
+  ``1e-10 * (w * h) / (1920.0 * 1080.0)``, not at the ``1e-2`` of a branch no
+  build defines (T-GPU-FLOAT-ADM-FRAME-SUM-FLOOR-2026-10-01).
 
 No Apple device runs anything here: the contract reads the sources, and each
 check has a planted regression below. ``test_metal_float_adm_parity`` measures
@@ -26,11 +29,13 @@ ROOT = Path(__file__).resolve().parents[2]
 FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 
 HOST = "metal/float_adm_metal.mm"
+CPU_FRAME = "adm.c"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 SPACE = re.compile(r"\s+")
 
 SIZE_CHECK = 'adm_frame_size_check("float_adm_metal", w, h)'
+FRAME_FLOOR = "1e-10 * (w * h) / (1920.0 * 1080.0)"
 
 
 def _code(source: str) -> str:
@@ -39,7 +44,9 @@ def _code(source: str) -> str:
 
 
 def _sources() -> dict[str, str]:
-    return {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in (HOST,)}
+    return {
+        name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in (HOST, CPU_FRAME)
+    }
 
 
 def _function_body(source: str, name: str) -> str:
@@ -72,9 +79,22 @@ def _size_check_failures(host: str) -> list[str]:
     return failures
 
 
+def _floor_failures(sources: dict[str, str], host: str) -> list[str]:
+    """The frame sums are floored where and as compute_adm() floors them."""
+    failures: list[str] = []
+    if FRAME_FLOOR not in _code(sources[CPU_FRAME]):
+        failures.append(f"{CPU_FRAME}: compute_adm() no longer floors at `{FRAME_FLOOR}`")
+    collect = _function_body(host, "collect_fex_metal")
+    if f"const double numden_limit = {FRAME_FLOOR};" not in collect:
+        failures.append(f"{HOST}: the frame floor must be compute_adm()'s `{FRAME_FLOOR}`")
+    if re.search(r"\b1e-2\b", host):
+        failures.append(f"{HOST}: the 1e-2 floor of ADM_OPT_SINGLE_PRECISION is back")
+    return failures
+
+
 def _failures(sources: dict[str, str]) -> list[str]:
     host = _code(sources[HOST])
-    return _size_check_failures(host)
+    return _size_check_failures(host) + _floor_failures(sources, host)
 
 
 class MetalFloatAdmExactContractTest(unittest.TestCase):
@@ -106,6 +126,23 @@ class MetalFloatAdmExactContractTest(unittest.TestCase):
         self.assertIn(context, sources[HOST])
         sources[HOST] = sources[HOST].replace(check, "", 1).replace(context, context + check, 1)
         self._detects(_failures(sources), "before `vmaf_metal_context_new(`")
+
+    def test_old_floor_is_detected(self) -> None:
+        failures = self._edited(
+            HOST,
+            f"    const double numden_limit = {FRAME_FLOOR};",
+            "    const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);",
+        )
+        self._detects(failures, "the frame floor must be")
+        self._detects(failures, "1e-2 floor")
+
+    def test_changed_reference_floor_is_detected(self) -> None:
+        failures = self._edited(
+            CPU_FRAME,
+            f"double numden_limit = {FRAME_FLOOR};",
+            "double numden_limit = 1e-12 * (w * h) / (1920.0 * 1080.0);",
+        )
+        self._detects(failures, CPU_FRAME)
 
 
 if __name__ == "__main__":
