@@ -100,7 +100,7 @@ def strip_comments(text: str) -> str:
     return "".join(out)
 
 
-def _balanced_end(text: str, start: int) -> int:
+def balanced_end(text: str, start: int) -> int:
     """Index of the bracket closing the one at text[start]."""
     depth = 0
     i = start
@@ -141,7 +141,7 @@ def options_block(text: str) -> str:
     match = TABLE_START.search(text)
     if not match:
         raise ValueError("no static const VmafOption table")
-    end = _balanced_end(text, match.end() - 1)
+    end = balanced_end(text, match.end() - 1)
     return text[match.end() : end]
 
 
@@ -203,7 +203,7 @@ def _expand_call(item: str, macros: dict[str, tuple[list[str], str]]) -> str:
     """A function-like macro entry `NAME(args)` expanded to its braced body."""
     name = item[: item.index("(")].strip()
     params, body = macros[name]
-    args = split_top(item[item.index("(") + 1 : _balanced_end(item, item.index("("))])
+    args = split_top(item[item.index("(") + 1 : balanced_end(item, item.index("("))])
     table = dict(zip(params, args, strict=True))
     return IDENTIFIER.sub(lambda m: table.get(m.group(0), m.group(0)), body)
 
@@ -251,7 +251,7 @@ def _arith(root: ast.AST) -> object:
 def _value(expr: str, macros: dict[str, str]) -> object:
     """A scalar initializer: a string, None, a bool or a number."""
     expr = _substitute(expr.strip(), macros).strip()
-    while expr.startswith("(") and _balanced_end(expr, 0) == len(expr) - 1:
+    while expr.startswith("(") and balanced_end(expr, 0) == len(expr) - 1:
         expr = expr[1:-1].strip()
     if expr.startswith('"'):
         return "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', expr))
