@@ -304,7 +304,41 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   SYCL + HIP TUs; keep `#endif` directly above `#include "ff_math.h"`.
 - **cambi table**: CPU's except `heatmaps_path` (CPU writers static in
   `cambi.c`); helpers from `cambi_internal.h` only.
-- **float_adm**: `adm_frame_size_check()` first in `init()`.
+- **float_adm**: `adm_frame_size_check()` first in `init()`. Per-sample math
+  only in `metal_float_adm_math.h` (= `sycl_float_adm_math.h` method,
+  ADR-1434): decouple quotient plain fp32 `/`, never reciprocal; three fp64
+  expressions = exact fp32 pairs + integer replay. One fp32 row sum per thread,
+  host folds rows in fp32; no simd / threadgroup / atomic sum of terms. Host
+  takes rfactor (every `adm_fNsM`), border, pool, cos from
+  `adm_float_reference.h`; no copies. Frame-sum floor = `adm.c` expression.
+  `adm_csf_mode` default-only (ADR-1316). Change to `adm_decouple_s()`,
+  `adm_csf_s()`, `adm_cm_thresh3x3_s()`, `adm_csf_den_scale_s()`, `adm_cm_s()`
+  -> this header + SYCL + CUDA headers, same PR. Guards:
+  `test_metal_float_adm_math` (x86_64), `test_metal_float_adm_exact_contract.py`.
+- **float_vif**: `metal_float_vif_math.h` = `sycl_float_vif_math.h` statement
+  for statement (ADR-1422). Taps = kernel argument from `vif_get_filter()`
+  (every kernelscale, full range), log2 polynomial as bit patterns,
+  `vif_sigma_nsq` as pair + replay, one thread per row, host fp32 row fold,
+  prescale on host via CPU scaler. Banned: tap literal, device log2, fp32
+  sigma_nsq, simd / threadgroup / atomic term sum, any `DEFAULT_ONLY`. Guards:
+  `test_metal_float_vif_math`, `test_metal_float_vif_exact_contract.py`.
+- **integer vif gain**: `metal_integer_vif_gain.h` = `sycl_integer_vif_math.h`
+  (ADR-1432): integer division + soft-double replay; no fp32 gain or clamp, no
+  64-bit mulhi. Limit reaches kernels as `VmafMtlGainLimit` (32 bytes,
+  `vmaf_mtl_ivif_make_gain_limit()`). Change to `vif_accumulate_pixel()` lines
+  of `integer_vif.c` / `x86/vif_avx2.c` / `x86/vif_avx512.c` -> header, same
+  PR. Guards: `test_metal_integer_vif_gain`, `..._gain_contract.py`.
+- **integer ssim**: `metal_integer_ssim_math.h` = `sycl_integer_ssim_math.h`
+  (ADR-1443); terms stored unreduced, host adds in `calc_ssim()` raster order.
+- **float_ssim / float_ms_ssim**: window terms = `metal_ssim_terms.h` (CPU fp32
+  window values, fp64 quotients on soft-signed integers, no forced 1); every
+  term stored at raster position, host adds per plane / scale in
+  `iqa_ssim()` order, rounds mean to fp32. ms_ssim decimation =
+  `metal_ms_ssim_math.h`, one explicit fma per tap in CPU order. Guards:
+  `test_metal_{integer,float,float_ms}_ssim_math` + exact contracts.
+- **MSL names**: no identifier `half`, `device`, `thread`, `constant`,
+  `kernel`, ... in any Metal source or included header (C accepts, MSL does
+  not; `test_metal_shader_build_contract`).
 
 ## motion3_v2 cross-twin invariant (ADR-1108)
 

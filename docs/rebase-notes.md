@@ -1,6 +1,34 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The Metal twins run the exact designs of the other GPU backends (ADR-1498, 2026-10-03)
+
+`fix/metal-twins-exact`. Fork-only Metal files plus four shared headers; no
+upstream-mirror file changes and no CPU score moves.
+
+- Every `.metal` file builds with `metal_shader_strict_fp_args`
+  (`-fno-fast-math -ffp-contract=off`), defined once between the
+  `BEGIN / END VMAF Metal shader strict FP policy` markers in
+  `core/src/metal/meson.build`; `test_metal_shader_build_contract.py` guards
+  it and rejects identifiers named after MSL types (`half`, `device`, ...).
+- Each twin's arithmetic is a header under `core/src/feature/metal/` on
+  `metal_portable.h`. `metal_soft_double.h`, `metal_soft_signed.h`,
+  `metal_float_vif_math.h`, `metal_float_adm_math.h`,
+  `metal_integer_vif_gain.h` and `metal_integer_ssim_math.h` follow their
+  SYCL headers statement for statement: a change to one copy changes the
+  other in the same PR (RC5 row
+  `T-METAL-SYCL-FP64-FREE-ARITHMETIC-COPIES-2026-10-03`).
+- Shared headers: `ff_pair.h`, `ff_math.h` and `ciede_ff_math.h` gain a
+  `VMAF_FF_MSL_SUBSET` branch and `adm_gain_limit.h` a Metal guard; the
+  preprocessed SYCL, HIP and CUDA translation units are byte-identical, and a
+  rebase that edits these headers keeps them so.
+- The Metal twins call the CPU's own routines on the host
+  (`vmaf_motion_window_flush()`, `adm_float_reference.h`, `psnr_score.h`,
+  `ciede_frame_sum()`, `cambi_internal.h`, `vif_get_filter()`); an upstream
+  change to one of them reaches Metal without a Metal edit, and no local copy
+  may come back (`test_float_adm_csf_upstream_contract.py`,
+  `test_metal_twin_option_tables_contract.py`).
+
 ## icx and icpx builds link glibc's libm, not Intel's libimf (ADR-1495, 2026-10-03)
 
 `fix/icx-system-libm`. Fork-only build policy; no upstream file is touched and
