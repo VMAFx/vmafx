@@ -2338,7 +2338,8 @@ test('test_metal_twin_option_tables_contract',
     import('python').find_installation(),
     args : files('test_metal_twin_option_tables_contract.py'),
     suite : ['fast'],
-    timeout : 30,
+    # 5 s here, past 30 s on the hosted sanitizer runners (17 pairs parsed).
+    timeout : 120,
 )
 
 # integer vif gain (ADR-1498)

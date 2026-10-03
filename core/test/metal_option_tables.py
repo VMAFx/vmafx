@@ -19,6 +19,7 @@ macros or enum constants of the file and of the local headers it includes.
 from __future__ import annotations
 
 import ast
+import functools
 import operator
 import re
 import sys
@@ -299,9 +300,17 @@ def _option(fields: dict[str, str], macros: dict[str, str]) -> Option:
 
 def table_of_text(text: str, path: Path) -> list[Option]:
     """The options of the table in `text`, which is the source at `path`."""
+    return list(_table_of_text_cached(text, str(path)))
+
+
+# A contract parses the same unchanged sources once per planted case; parsing
+# each (text, path) once keeps the test inside its timeout on a loaded runner.
+@functools.lru_cache(maxsize=512)
+def _table_of_text_cached(text: str, path_name: str) -> tuple[Option, ...]:
+    path = Path(path_name)
     code = strip_comments(text)
     if not re.search(r"\bVmafOption\b", code):
-        return []  # an extractor without options
+        return ()  # an extractor without options
     macros = collect_macros(code, path)
     function_macros = _function_macros(code)
     options: list[Option] = []
@@ -311,7 +320,7 @@ def table_of_text(text: str, path: Path) -> list[Option]:
         if "name" not in fields or _value(fields["name"], macros) is None:
             break
         options.append(_option(fields, macros))
-    return options
+    return tuple(options)
 
 
 def table(path: Path) -> list[Option]:
