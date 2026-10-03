@@ -101,6 +101,19 @@ the embedded metallib loads on macOS 14 and later. Without the target the
 compiler stamps the kernels with the build machine's SDK version, and such a
 library refuses to load on an older macOS.
 
+Every kernel also compiles with `-fno-fast-math -ffp-contract=off`
+(`metal_shader_strict_fp_args`,
+[ADR-1498](../../adr/1498-metal-twins-exact-designs.md)). The Metal
+compiler's default is fast math, which may divide through a reciprocal,
+reassociate sums and contract `a * b + c` into a fused multiply-add; with fast
+math off fp32 `+ - * /`, `sqrt` and `fma` are correctly rounded, and
+`-ffp-contract=off` turns off the contraction the safe mode still allows
+([Research-1498](../../research/1498-metal-shading-language-fp-semantics.md)).
+That is what lets a twin return the CPU's bits: the arithmetic of a ported
+twin lives in a header on `core/src/feature/metal/metal_portable.h`, which
+compiles both as a kernel include and on the host, where a test holds it
+against the CPU extractor value by value.
+
 ## Runtime layer
 
 The runtime layer uses Objective-C++ `.mm` TUs under ARC and keeps
