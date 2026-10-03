@@ -32,6 +32,7 @@ MATH = "metal/metal_float_motion_math.h"
 KERNEL = "metal/float_motion.metal"
 HOST = "metal/float_motion_metal.mm"
 CPU_TAPS = "motion_tools.h"
+CPU = "float_motion.c"
 HOST_ONLY = "#if !defined(__METAL_VERSION__)"
 
 # The arithmetic the header must spell, each the CPU's operation.
@@ -80,9 +81,13 @@ HOST_PIECES = (
     "threadsPerThreadgroup:MTLSizeMake(VMAF_MTL_FM_ROW_GROUP, 1, 1)",
     "s->n_planes = FMM_MAX_PLANES;",
     "for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {",
-    '.name = "motion_add_scale1",',
-    '.name = "motion_filter_size",',
-    '.name = "motion_add_uv",',
+)
+# CPU options the twin does not take yet; empty once its table is the CPU's.
+OPTIONS_NOT_YET = ("motion_max_val",)
+# motion3 from collect (frame 0 and index - 1) and from the flush tail.
+MOTION3_BLEND_EMITS = 2
+MOTION3_BLEND = (
+    "motion_blend(score * s->motion_fps_weight, s->motion_blend_factor, s->motion_blend_offset)"
 )
 FRAME_SCORE = (
     "score += vmaf_mtl_fm_plane_score(rows + p->off0, p->w, p->h, scale1_rows, p->sw, p->sh);"
@@ -92,7 +97,7 @@ FRAME_SCORE = (
 def sources() -> dict[str, str]:
     return {
         name: (FEATURE / name).read_text(encoding="utf-8")
-        for name in (MATH, KERNEL, HOST, CPU_TAPS)
+        for name in (MATH, KERNEL, HOST, CPU_TAPS, CPU)
     }
 
 
@@ -176,8 +181,58 @@ def host_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+def option_names(source: str) -> list[str]:
+    """The names of an extractor's option table, in its order."""
+    block = re.search(r"static const VmafOption options\[\] = \{(.*?)\{\s*0\s*\}", source, re.S)
+    return re.findall(r'\.name\s*=\s*"(\w+)"', block.group(1)) if block else []
+
+
+def option_failures(src: dict[str, str]) -> list[str]:
+    """The twin's table: the CPU's names in the CPU's order (it spells the feature names)."""
+    want = [name for name in option_names(src[CPU]) if name not in OPTIONS_NOT_YET]
+    if option_names(src[HOST]) != want:
+        return [f"{HOST}: the option table is not the CPU's names in the CPU's order"]
+    return []
+
+
+def motion3_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1404: motion3 at the CPU's indices, blended through motion_blend_tools.h."""
+    host = src[HOST]
+    provided = re.search(r"provided_features\[\] = \{([^}]*)\}", host)
+    checks = (
+        (provided and '"VMAF_feature_motion3_score"' in provided.group(1), "provides no motion3"),
+        (
+            MOTION3_BLEND in code(function_body(host, "fm_metal_motion_blend_clip")),
+            "motion3 does not blend through motion_blend_tools.h",
+        ),
+        (
+            len(re.findall(r'"VMAF_feature_motion3_score",\s*fm_metal_motion_blend_clip\(', host))
+            == MOTION3_BLEND_EMITS,
+            "a motion3 score skips motion_blend_clip",
+        ),
+        (
+            "fm_metal_append(s, feature_collector, feature_name, 0.0, 0u)"
+            in code(function_body(host, "flush_fex_metal"))
+            and 'feature_name[] = "VMAF_feature_motion3_score";' in host,
+            "a one-frame run emits no motion3",
+        ),
+        (
+            '"VMAF_feature_motion3_score", 0.0, index'
+            in code(function_body(host, "extract_force_zero_metal")),
+            "motion_force_zero emits no motion3",
+        ),
+        (
+            "(index > 1u && s->prev_motion_score < motion_score)"
+            in code(function_body(host, "fm_metal_emit_motion23")),
+            "motion3 at frame 0 does not come from the first SAD",
+        ),
+    )
+    return [f"{HOST}: {message}" for ok, message in checks if not ok]
+
+
 def contract_failures(src: dict[str, str]) -> list[str]:
-    return math_failures(src) + kernel_failures(src) + host_failures(src)
+    host = host_failures(src) + option_failures(src) + motion3_failures(src)
+    return math_failures(src) + kernel_failures(src) + host
 
 
 def planted(name: str, old: str, new: str) -> dict[str, str]:
@@ -282,6 +337,56 @@ class MetalFloatMotionExactContract(unittest.TestCase):
             "using namespace metal;\nconstant float FILT[1] = {0.054488685f};",
         )
         self.assert_detected(src, "leaves the CPU's arithmetic")
+
+    def test_unblended_motion3_is_detected(self) -> None:
+        src = planted(
+            HOST,
+            "fm_metal_motion_blend_clip(s, motion2), index - 1u);",
+            "fm_metal_motion_clip(s, motion2), index - 1u);",
+        )
+        self.assert_detected(src, "a motion3 score skips motion_blend_clip")
+
+    def test_local_blend_is_detected(self) -> None:
+        src = planted(HOST, "return motion_blend(score * s->motion_fps_weight,", "return (score *")
+        self.assert_detected(src, "does not blend through motion_blend_tools.h")
+
+    def test_missing_one_frame_motion3_is_detected(self) -> None:
+        src = planted(
+            HOST,
+            "fm_metal_append(s, feature_collector, feature_name, 0.0, 0u)",
+            "fm_metal_append(s, feature_collector, \"VMAF_feature_motion2_score\", 0.0, 0u)",
+        )
+        self.assert_detected(src, "a one-frame run emits no motion3")
+
+    def test_force_zero_without_motion3_is_detected(self) -> None:
+        src = planted(
+            HOST,
+            '"VMAF_feature_motion3_score", 0.0, index);',
+            '"VMAF_feature_motion2_score", 0.0, index);',
+        )
+        self.assert_detected(src, "motion_force_zero emits no motion3")
+
+    def test_unprovided_motion3_is_detected(self) -> None:
+        src = planted(
+            HOST,
+            '"VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL',
+            '"VMAF_feature_motion2_score", NULL',
+        )
+        self.assert_detected(src, "provides no motion3")
+
+    def test_reordered_option_table_is_detected(self) -> None:
+        src = planted(
+            HOST, '.name        = "motion_blend_offset",', '.name        = "motion_blend_offsets",'
+        )
+        self.assert_detected(src, "the option table is not the CPU's names")
+
+    def test_motion3_at_frame_zero_from_min_is_detected(self) -> None:
+        src = planted(
+            HOST,
+            "(index > 1u && s->prev_motion_score < motion_score)",
+            "(s->prev_motion_score < motion_score)",
+        )
+        self.assert_detected(src, "motion3 at frame 0 does not come from the first SAD")
 
 
 if __name__ == "__main__":
