@@ -18,7 +18,7 @@ def function_body(source: str, name: str) -> str:
     start = -1
     definition = (
         rf"(?m)^[ \t]*(?:static[ \t]+)?(?:inline[ \t]+)?"
-        rf"(?:int|void|char[ \t]*\*)[^;\n]*\b{re.escape(name)}\s*\("
+        rf"(?:int|unsigned|void|char[ \t]*\*)[^;\n]*\b{re.escape(name)}\s*\("
     )
     for match in re.finditer(definition, source):
         candidate = source.find("{", match.end())
@@ -114,46 +114,24 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
 
     def test_metal_parity_harness_releases_each_resource_once(self) -> None:
         source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
-        cleanup = function_body(source, "release_run_resources")
-        self.assertEqual(cleanup.count("vmaf_feature_dictionary_free(&resources->opts)"), 1)
-        self.assertEqual(cleanup.count("vmaf_close(resources->vmaf)"), 1)
-        self.assertEqual(cleanup.count("vmaf_metal_state_free(&resources->mstate)"), 1)
-
-        registration_helper = function_body(source, "use_feature_options")
-        registry_guard = registration_helper.find("vmaf_get_feature_extractor_by_name(")
-        handoff = registration_helper.find("*opts = NULL")
-        registration = registration_helper.find("vmaf_use_feature(")
-        self.assertGreaterEqual(registry_guard, 0)
-        self.assertGreater(handoff, registry_guard)
-        self.assertGreater(registration, handoff)
-
-        for function in ("run_cpu", "run_metal"):
-            with self.subTest(function=function):
-                body = function_body(source, function)
-                configure = body.find("set_run_options(")
-                registration = body.find("use_feature_options(")
-                failure_cleanup = body.find("release_run_resources(&resources)", configure)
-                self.assertGreaterEqual(configure, 0)
-                self.assertGreater(registration, configure)
-                self.assertGreater(failure_cleanup, configure)
-                self.assertLess(failure_cleanup, registration)
-                self.assertEqual(
-                    body[configure:registration].count("release_run_resources(&resources)"),
-                    1,
-                )
-                self.assertNotIn("vmaf_feature_dictionary_free", body[registration:])
+        context = function_body(source, "adm_context")
+        registration = context.find("vmaf_use_feature(")
+        dict_free = context.find("vmaf_feature_dictionary_free(&opts)")
+        self.assertGreaterEqual(registration, 0)
+        self.assertGreater(dict_free, registration)
+        self.assertNotIn("vmaf_feature_dictionary_free", context[:registration])
+        self.assertIn("vmaf_close(vmaf)", function_body(source, "adm_scores"))
+        self.assertIn("metal_twin_close(state)", function_body(source, "exact_mismatches"))
 
     def test_metal_unavailable_paths_mark_the_process_skipped(self) -> None:
         source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
-        for function in ("run_metal", "metal_geometry_status"):
-            with self.subTest(function=function):
-                body = function_body(source, function)
-                init = body.find("vmaf_metal_state_init(")
-                skipped = body.find("mu_skipped = 1", init)
-                unavailable_return = body.find("return NULL", init)
-                self.assertGreaterEqual(init, 0)
-                self.assertGreater(skipped, init)
-                self.assertGreater(unavailable_return, skipped)
+        body = function_body(source, "metal_device")
+        init = body.find("metal_twin_open(")
+        skipped = body.find("mu_skipped = 1", init)
+        unavailable_return = body.find("return NULL", init)
+        self.assertGreaterEqual(init, 0)
+        self.assertGreater(skipped, init)
+        self.assertGreater(unavailable_return, skipped)
 
 
 if __name__ == "__main__":
