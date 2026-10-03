@@ -63,6 +63,7 @@ extern "C" {
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
 #include "../adm_csf_fixed_point.h"
+#include "../adm_gain_limit.h"
 #include "../adm_options.h"
 #include "../adm_score.h"
 #include "../barten_csf_tools.h"
@@ -110,7 +111,12 @@ typedef struct IadmCsfHost {
     uint32_t i_rfactor_h;
     uint32_t i_rfactor_v;
     uint32_t i_rfactor_d;
-    float gain_limit;
+    /* adm_enhn_gain_limit as adm_gain_limit_split() returns it: the kernels
+     * form the CPU's truncated double product with adm_gain_limit_product()
+     * (ADR-1413, ADR-1498). */
+    uint32_t gain_m_hi;
+    uint32_t gain_m_lo;
+    int32_t gain_frac_bits;
     int32_t v_shift;
     int32_t v_add_shift;
     int32_t h_shift;
@@ -700,7 +706,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
         [blit endEncoding];
     }
 
-    const float gain_limit = (float)s->adm_enhn_gain_limit;
+    const struct AdmGainLimit gain = adm_gain_limit_split(s->adm_enhn_gain_limit);
     const int inp_bits = (s->bpc <= 8u) ? 8 : (int)s->bpc;
 
     for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
@@ -749,7 +755,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
         c.i_rfactor_h = s->i_rfactor[scale * 3 + 0];
         c.i_rfactor_v = s->i_rfactor[scale * 3 + 1];
         c.i_rfactor_d = s->i_rfactor[scale * 3 + 2];
-        c.gain_limit = gain_limit;
+        c.gain_m_hi = gain.m_hi;
+        c.gain_m_lo = gain.m_lo;
+        c.gain_frac_bits = gain.frac_bits;
         c.v_shift = inp_bits;
         c.v_add_shift = 1 << (inp_bits - 1);
         c.h_shift = 16;
