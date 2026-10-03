@@ -10,6 +10,14 @@
  *  buffers. The host reconstructs and adds them in uint64, converts each total
  *  once, then applies the high-bit-depth power-of-two scaler used by the CPU
  *  picture-copy path (ADR-1498; the CUDA host's operations, ADR-1453).
+ *
+ *  A frame whose second-moment sum can pass 2^53 units of 1 / scaler^2
+ *  (vmaf_mtl_msum_may_round(): 16-bit frames of more than 2^21 pixels) needs
+ *  the CPU's rounded double sum rather than the exact one (ADR-1497). The
+ *  frame's encoder then also runs the five kernels of float_moment.metal that
+ *  form it (metal_float_moment_sum.h), and collect() takes the two
+ *  second-moment sums from the walk's result. Other frames run the frame
+ *  kernel alone.
  *  Feature names: float_moment_ref1st, float_moment_dis1st,
  *                 float_moment_ref2nd, float_moment_dis2nd.
  */
@@ -37,6 +45,8 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "metal_float_moment_sum.h"
+
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
 extern const unsigned char libvmaf_metallib_end[] __asm("section$end$__TEXT$__metallib");
@@ -44,12 +54,29 @@ extern const unsigned char libvmaf_metallib_end[] __asm("section$end$__TEXT$__me
 
 #define FM_PARTIAL_BUFFER_COUNT 8u
 
+/* The rounded-sum pass (ADR-1497): five kernels, four buffers. */
+#define FM_SUM_KERNEL_COUNT 5u
+#define FM_SUM_BUFFER_COUNT 4u
+#define FM_SUM_ROW_TOTALS 0u /* uint64 [plane][row] */
+#define FM_SUM_ROW_PLANS 1u  /* int32 [plane][row] */
+#define FM_SUM_ROW_UNITS 2u  /* int64 [plane][row][2] */
+#define FM_SUM_FRAME 3u      /* uint64 [4]: ref1, dis1, ref2, dis2 */
+
+static const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
+    "float_moment_plane_sums",  "float_moment_row_totals", "float_moment_row_plans",
+    "float_moment_row_units",   "float_moment_ordered_totals",
+};
+
 typedef struct FloatMomentStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb[FM_PARTIAL_BUFFER_COUNT]; /* 4 uint64 lo/hi pairs */
     VmafMetalContext *ctx;
     void *pso_8bpc;
     void *pso_16bpc;
+
+    bool rounds; /* vmaf_mtl_msum_may_round(): the rounded-sum pass runs */
+    VmafMetalKernelBuffer sum_buf[FM_SUM_BUFFER_COUNT];
+    void *pso_sum[FM_SUM_KERNEL_COUNT];
 
     size_t plane_bytes;
     size_t partials_count; /* grid_w × grid_h */
@@ -61,6 +88,40 @@ typedef struct FloatMomentStateMetal {
 } FloatMomentStateMetal;
 
 static const VmafOption options[] = {{0}};
+
+static void release_sum_pipelines(FloatMomentStateMetal *s)
+{
+    for (unsigned k = 0u; k < FM_SUM_KERNEL_COUNT; ++k) {
+        if (s->pso_sum[k]) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_sum[k];
+            s->pso_sum[k] = NULL;
+        }
+    }
+}
+
+/* The five kernels of the rounded-sum pass. Each runs one threadgroup of
+ * VMAF_MTL_MSUM_LANES lanes, so a pipeline that cannot is refused (fail
+ * closed, never a smaller group). */
+static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, id<MTLLibrary> lib)
+{
+    NSError *err = nil;
+    for (unsigned k = 0u; k < FM_SUM_KERNEL_COUNT; ++k) {
+        NSString *name = [NSString stringWithUTF8String:fm_sum_kernel_names[k]];
+        id<MTLFunction> fn = [lib newFunctionWithName:name];
+        if (fn == nil) {
+            release_sum_pipelines(s);
+            return -ENODEV;
+        }
+        id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn
+                                                                                error:&err];
+        if (pso == nil || [pso maxTotalThreadsPerThreadgroup] < VMAF_MTL_MSUM_LANES) {
+            release_sum_pipelines(s);
+            return -ENODEV;
+        }
+        s->pso_sum[k] = (__bridge_retained void *)pso;
+    }
+    return 0;
+}
 
 static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 {
@@ -87,8 +148,44 @@ static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
+    if (s->rounds) {
+        const int sum_err = build_sum_pipelines(s, device, lib);
+        if (sum_err != 0) { return sum_err; }
+    }
+
     s->pso_8bpc = (__bridge_retained void *)pso8;
     s->pso_16bpc = (__bridge_retained void *)pso16;
+    return 0;
+}
+
+/* Row arrays and the frame sums of the rounded-sum pass, for a frame that
+ * can pass 2^53 units; none otherwise. */
+static void free_sum_buffers(FloatMomentStateMetal *s)
+{
+    for (unsigned b = 0u; b < FM_SUM_BUFFER_COUNT; ++b) {
+        (void)vmaf_metal_kernel_buffer_free(&s->sum_buf[b], s->ctx);
+    }
+}
+
+static int alloc_sum_buffers(FloatMomentStateMetal *s)
+{
+    if (!s->rounds) { return 0; }
+    const size_t rows = (size_t)VMAF_MTL_MSUM_PLANES * s->frame_h;
+    const size_t bytes[FM_SUM_BUFFER_COUNT] = {
+        rows * sizeof(uint64_t),
+        rows * sizeof(int32_t),
+        rows * 2u * sizeof(int64_t),
+        4u * sizeof(uint64_t),
+    };
+    for (unsigned b = 0u; b < FM_SUM_BUFFER_COUNT; ++b) {
+        const int err = vmaf_metal_kernel_buffer_alloc(&s->sum_buf[b], s->ctx, bytes[b]);
+        if (err != 0) {
+            for (unsigned q = 0u; q < b; ++q) {
+                (void)vmaf_metal_kernel_buffer_free(&s->sum_buf[q], s->ctx);
+            }
+            return err;
+        }
+    }
     return 0;
 }
 
@@ -102,6 +199,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->frame_h = h;
     s->bpc = bpc;
     s->plane_bytes = (size_t)w * h * (bpc <= 8u ? 1u : 2u);
+    s->rounds = vmaf_mtl_msum_may_round(w, h, bpc) != 0;
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -125,15 +223,18 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         }
     }
 
+    err = alloc_sum_buffers(s);
+    if (err != 0) { goto fail_rb; }
+
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == NULL) {
             err = -ENODEV;
-            goto fail_rb;
+            goto fail_sum;
         }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
-    if (err != 0) { goto fail_rb; }
+    if (err != 0) { goto fail_sum; }
 
     s->feature_name_dict = vmaf_feature_name_dict_from_provided_features(
         fex->provided_features, fex->options, s);
@@ -152,6 +253,9 @@ fail_pso:
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
         s->pso_16bpc = NULL;
     }
+    release_sum_pipelines(s);
+fail_sum:
+    if (s->rounds) { free_sum_buffers(s); }
 fail_rb:
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
         (void)vmaf_metal_kernel_buffer_free(&s->rb[b], s->ctx);
@@ -162,6 +266,84 @@ fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
     s->ctx = NULL;
     return err;
+}
+
+static void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                            unsigned which, NSUInteger index)
+{
+    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->sum_buf[which].buffer;
+    [enc setBuffer:buf offset:0 atIndex:index];
+}
+
+/* Selects the pipeline of pass `kernel`; the caller then sets the pass's
+ * bindings, in the order the kernel declares them, and dispatches it. */
+static void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                            unsigned kernel)
+{
+    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)s->pso_sum[kernel];
+    [enc setComputePipelineState:pso];
+}
+
+/* The rounded-sum pass of ADR-1497, on the frame kernel's encoder, after it
+ * (serial dispatch: each kernel sees the writes of the one before). The
+ * kernels of float_moment.metal return at once on a plane whose exact sum is
+ * at most 2^53 units. */
+static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                              id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf, size_t row_bytes)
+{
+    const uint32_t dim[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h, (uint32_t)row_bytes, 0u};
+    const MTLSize lanes = MTLSizeMake(VMAF_MTL_MSUM_LANES, 1, 1);
+    const MTLSize by_row = MTLSizeMake(s->frame_h, VMAF_MTL_MSUM_PLANES, 1);
+    const MTLSize by_plane = MTLSizeMake(VMAF_MTL_MSUM_PLANES, 1, 1);
+
+    /* 0: the four exact frame sums from the workgroup partials. */
+    select_sum_pass(s, enc, 0u);
+    for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
+        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+        [enc setBuffer:buf offset:0 atIndex:(NSUInteger)b];
+    }
+    bind_sum_buffer(s, enc, FM_SUM_FRAME, 8);
+    const uint32_t count = (uint32_t)s->partials_count;
+    [enc setBytes:&count length:sizeof(count) atIndex:9];
+    [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:lanes];
+
+    /* 1: each row's exact sum. */
+    select_sum_pass(s, enc, 1u);
+    [enc setBuffer:ref_buf offset:0 atIndex:0];
+    [enc setBuffer:dis_buf offset:0 atIndex:1];
+    bind_sum_buffer(s, enc, FM_SUM_FRAME, 2);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_TOTALS, 3);
+    [enc setBytes:dim length:sizeof(dim) atIndex:4];
+    [enc dispatchThreadgroups:by_row threadsPerThreadgroup:lanes];
+
+    /* 2: a plan per row. */
+    select_sum_pass(s, enc, 2u);
+    bind_sum_buffer(s, enc, FM_SUM_FRAME, 0);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_TOTALS, 1);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_PLANS, 2);
+    [enc setBytes:dim length:sizeof(dim) atIndex:3];
+    [enc dispatchThreadgroups:by_plane threadsPerThreadgroup:lanes];
+
+    /* 3: each planned row's increments. */
+    select_sum_pass(s, enc, 3u);
+    [enc setBuffer:ref_buf offset:0 atIndex:0];
+    [enc setBuffer:dis_buf offset:0 atIndex:1];
+    bind_sum_buffer(s, enc, FM_SUM_FRAME, 2);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_PLANS, 3);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_UNITS, 4);
+    [enc setBytes:dim length:sizeof(dim) atIndex:5];
+    [enc dispatchThreadgroups:by_row threadsPerThreadgroup:lanes];
+
+    /* 4: one walk per plane; stores the CPU's sums in sums[2 + plane]. */
+    select_sum_pass(s, enc, 4u);
+    [enc setBuffer:ref_buf offset:0 atIndex:0];
+    [enc setBuffer:dis_buf offset:0 atIndex:1];
+    bind_sum_buffer(s, enc, FM_SUM_FRAME, 2);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_TOTALS, 3);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_PLANS, 4);
+    bind_sum_buffer(s, enc, FM_SUM_ROW_UNITS, 5);
+    [enc setBytes:dim length:sizeof(dim) atIndex:6];
+    [enc dispatchThreadgroups:by_plane threadsPerThreadgroup:lanes];
 }
 
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
@@ -240,6 +422,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     MTLSize tg = MTLSizeMake(16, 16, 1);
     MTLSize grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+    if (s->rounds) { encode_sum_passes(s, enc, ref_buf, dis_buf, row_bytes); }
     [enc endEncoding];
 
     [cmd commit];
@@ -255,9 +438,9 @@ static uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size
 /* The four frame sums, exact: the workgroup sums are integers of the CPU's
  * own terms (the samples, and the float squares moment.c forms) in units of
  * 1 / scaler and 1 / scaler^2, so their uint64 total is the exact sum of the
- * terms, which is what the CPU's running double holds while it is below 2^53
- * units (every frame of up to 2^21 pixels; past it the CPU rounds as it adds
- * and the conversion in collect() rounds once, ADR-1453). */
+ * terms, which is what the CPU's running double holds while it is at most 2^53
+ * units (every frame of up to 2^21 pixels). Past it the CPU rounds as it adds:
+ * apply_rounded_sums() replaces the two second-moment totals (ADR-1497). */
 static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
 {
     const uint32_t *parts[FM_PARTIAL_BUFFER_COUNT];
@@ -273,12 +456,28 @@ static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
     }
 }
 
+/* On a frame that can pass 2^53 units the walk has stored the CPU's rounded
+ * second-moment sums, each a double the conversion below holds exactly, in
+ * entries 2 and 3 of the frame sums (ADR-1497). Fails closed: no sums, no
+ * score. */
+static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
+{
+    if (!s->rounds) { return 0; }
+    const uint64_t *frame = (const uint64_t *)s->sum_buf[FM_SUM_FRAME].host_view;
+    if (frame == NULL) { return -ENODEV; }
+    sum[2] = frame[2];
+    sum[3] = frame[3];
+    return 0;
+}
+
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatMomentStateMetal *s = (FloatMomentStateMetal *)fex->priv;
     uint64_t sum[4] = {0u, 0u, 0u, 0u};
     accumulate_partials(s, sum);
+    const int sum_err = apply_rounded_sums(s, sum);
+    if (sum_err != 0) { return sum_err; }
 
     /* moment.c divides its sum of terms in units of 1 / scaler (or
      * 1 / scaler^2), an exact double, by w * h. The products below are
@@ -320,10 +519,12 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
         s->pso_8bpc = NULL;
     }
 
+    release_sum_pipelines(s);
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
         int err = vmaf_metal_kernel_buffer_free(&s->rb[b], s->ctx);
         if (err != 0 && rc == 0) { rc = err; }
     }
+    if (s->rounds) { free_sum_buffers(s); }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
