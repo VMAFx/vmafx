@@ -365,9 +365,9 @@ VMAF_MTL_FUNC bool vmaf_mtl_fvif_near_rounding_boundary(VmafMtlFvifFf sum)
     const float unit = VMAF_MTL_U2F(exponent - (23u << 23));
     /* Below a power of two the spacing halves. */
     const bool lower_binade = (bits & 0x007FFFFFu) == 0u && sum.lo < 0.0f;
-    const float half = lower_binade ? 0.25f * unit : 0.5f * unit;
+    const float half_unit = lower_binade ? 0.25f * unit : 0.5f * unit;
     const float margin = unit * VMAF_MTL_U2F(VMAF_MTL_FVIF_TWO_POW_M12);
-    return VMAF_MTL_FABS(sum.lo) >= half - margin;
+    return VMAF_MTL_FABS(sum.lo) >= half_unit - margin;
 }
 
 /* A positive fp64 denominator in the two forms the quotient needs: as a
