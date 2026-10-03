@@ -6352,6 +6352,7 @@
         "core/test/test_metal_float_ssim_parity.c": 1,
         "core/test/test_metal_float_vif_parity.c": 1,
         "core/test/test_metal_install_header.c": 1,
+        "core/test/test_metal_integer_adm_math.c": 1,
         "core/test/test_metal_integer_adm_parity.c": 1,
         "core/test/test_metal_integer_cambi_parity.c": 1,
         "core/test/test_metal_integer_ciede_parity.c": 1,
@@ -8763,11 +8764,15 @@
     "1413": {
       "sites": {
         "core/src/feature/arm64/adm_neon.c": 1,
+        "core/src/feature/metal/integer_adm.metal": 1,
+        "core/src/feature/metal/integer_adm_metal.mm": 1,
+        "core/src/feature/metal/metal_integer_adm_math.h": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,
         "core/test/test_adm_gain_limit.c": 1,
         "core/test/test_gpu_adm_tiny_frames.c": 1,
+        "core/test/test_metal_integer_adm_exact_contract.py": 1,
         "core/test/test_metal_integer_adm_parity.c": 3
       },
       "target": "1413-adm-gain-limit-truncated-double-product.md"
@@ -9763,12 +9768,16 @@
     },
     "1498": {
       "sites": {
+        "core/src/feature/adm_gain_limit.h": 1,
         "core/src/feature/metal/float_moment.metal": 1,
         "core/src/feature/metal/float_moment_metal.mm": 1,
         "core/src/feature/metal/float_psnr.metal": 1,
         "core/src/feature/metal/float_psnr_metal.mm": 1,
+        "core/src/feature/metal/integer_adm.metal": 1,
+        "core/src/feature/metal/integer_adm_metal.mm": 1,
         "core/src/feature/metal/metal_float_moment_math.h": 1,
         "core/src/feature/metal/metal_float_psnr_math.h": 1,
+        "core/src/feature/metal/metal_integer_adm_math.h": 1,
         "core/src/feature/metal/metal_portable.h": 1,
         "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/metal/metal_soft_signed.h": 1,
@@ -9778,6 +9787,8 @@
         "core/test/test_metal_float_moment_math.c": 1,
         "core/test/test_metal_float_psnr_exact_contract.py": 1,
         "core/test/test_metal_float_psnr_math.c": 1,
+        "core/test/test_metal_integer_adm_exact_contract.py": 1,
+        "core/test/test_metal_integer_adm_math.c": 2,
         "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_shader_build_contract.py": 3,
         "core/test/test_metal_soft_double.cpp": 1,
