@@ -6,7 +6,7 @@
  *  Metal compute kernel for integer_motion_v2 (T8-1c / ADR-0421).
  *  Translation of `core/src/feature/cuda/integer_motion_v2/
  *  motion_v2_score.cu` (ADR-0192 / ADR-0193) — same algorithm,
- *  threadgroup-shared tile, separable filter, atomic SAD reduction.
+ *  threadgroup-shared tile, separable filter, per-threadgroup SAD.
  *
  *  Algorithm parity (must match scalar `integer_motion_v2.c`):
  *    1. Per pixel: diff = prev[i,j] - cur[i,j]   (signed)
@@ -16,7 +16,8 @@
  *    3. Horizontal filter on v:
  *         h[i,j] = (sum_k filter[k] * v[i, mirror(j-2+k)]
  *                    + 32768) >> 16
- *    4. SAD: atomic-add |h[i,j]| into a single ulong accumulator.
+ *    4. SAD: |h[i,j]| summed per threadgroup into one exact uint (at most
+      256 x 65536 < 2^32); the host adds the groups in uint64.
  *
  *  Mirror padding: reflect-101 (`2 * (sup - 1) - idx`, iterated),
  *  identical to CPU integer_motion_v2.c::mirror, CUDA mv2_mirror,
@@ -39,8 +40,9 @@
  *  threadgroup, no contention, deterministic order under
  *  unified-memory host reduction).
  *
- *  Bit-exactness gate: `places=4` cross-backend-diff against scalar
- *  (per ADR-0214). Validation pending Apple Silicon hardware run.
+ *  Bit-exactness: the SAD is the CPU's integer; integer_motion_v2_metal.mm
+ *  stores the CPU's score from it and test_metal_motion_v2_parity compares
+ *  every output at == (ADR-1498). Validation pending an Apple device run.
  */
 
 #include <metal_stdlib>
@@ -85,7 +87,7 @@ inline int mv2_mirror(int idx, int sup)
  * Buffer bindings (host side must match `integer_motion_v2_metal.mm`):
  *   [[buffer(0)]] prev       — const uchar * (planar Y, row pitch via `strides.x`)
  *   [[buffer(1)]] cur        — const uchar * (planar Y, row pitch via `strides.y`)
- *   [[buffer(2)]] sad        — atomic_ulong, single accumulator
+ *   [[buffer(2)]] partials   — uint per threadgroup (exact group SAD)
  *   [[buffer(3)]] strides    — packed (prev_stride, cur_stride) in bytes (uint2)
  *   [[buffer(4)]] dim        — packed (width, height) (uint2)
  *   [[threadgroup(0)]] tile  — int32[20 * 21]
