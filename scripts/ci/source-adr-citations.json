@@ -2567,7 +2567,7 @@
         "core/src/feature/cuda/integer_cambi_cuda.h": 1,
         "core/src/feature/feature_extractor.cpp": 4,
         "core/src/feature/metal/integer_cambi.metal": 1,
-        "core/src/feature/metal/integer_cambi_metal.mm": 2,
+        "core/src/feature/metal/integer_cambi_metal.mm": 1,
         "core/src/meson.build": 2,
         "core/test/test_cuda_cambi_parity.c": 1,
         "scripts/ci/cross_backend_parity_gate.py": 1
@@ -6794,6 +6794,7 @@
         "core/test/test_gpu_option_alias_contract.py": 1,
         "core/test/test_hip_twin_option_parity.c": 2,
         "core/test/test_metal_twin_option_parity.c": 2,
+        "core/test/test_metal_twin_option_tables_contract.py": 1,
         "core/test/test_sycl_twin_option_parity.c": 2
       },
       "target": "1183-model-options-gate-gpu-twin-selection.md"
@@ -7084,7 +7085,8 @@
         "core/src/feature/hip/integer_cambi_hip.c": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_cambi_metal.mm": 1,
-        "core/test/test_hip_cambi_parity.c": 3
+        "core/test/test_hip_cambi_parity.c": 3,
+        "core/test/test_metal_twin_option_tables_contract.py": 1
       },
       "target": "1219-gpu-cambi-tvi-shared-bisection.md"
     },
@@ -9802,6 +9804,7 @@
         "core/src/feature/metal/float_psnr_metal.mm": 1,
         "core/src/feature/metal/integer_adm.metal": 1,
         "core/src/feature/metal/integer_adm_metal.mm": 1,
+        "core/src/feature/metal/integer_cambi_metal.mm": 1,
         "core/src/feature/metal/integer_motion.metal": 1,
         "core/src/feature/metal/integer_motion_metal.mm": 1,
         "core/src/feature/metal/integer_motion_v2.metal": 1,
@@ -9817,7 +9820,7 @@
         "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/metal/metal_soft_signed.h": 1,
         "core/src/metal/meson.build": 2,
-        "core/test/meson.build": 7,
+        "core/test/meson.build": 8,
         "core/test/metal_option_tables.py": 1,
         "core/test/test_metal_float_moment_exact_contract.py": 1,
         "core/test/test_metal_float_moment_math.c": 1,
@@ -9835,7 +9838,8 @@
         "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_shader_build_contract.py": 3,
         "core/test/test_metal_soft_double.cpp": 1,
-        "core/test/test_metal_soft_double_contract.py": 1
+        "core/test/test_metal_soft_double_contract.py": 1,
+        "core/test/test_metal_twin_option_tables_contract.py": 1
       },
       "target": "1498-metal-twins-exact-designs.md"
     }
