@@ -4,265 +4,158 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for integer_motion (v1) (T8-1i / ADR-0421).
- *  Mirrors `core/src/feature/vulkan/shaders/motion.comp`.
  *
- *  Algorithm (must match CPU core/src/feature/integer_motion.c,
- *  separable Gaussian blur V→H + SAD):
- *    1. Vertical filter:
- *         v[i,j] = (sum_k FILTER[k] * src[mirror(i-2+k), j] + (1<<(bpc-1))) >> bpc
- *    2. Horizontal filter:
- *         b[i,j] = (sum_k FILTER[k] * v[i, mirror(j-2+k)] + 32768) >> 16
- *    3. SAD += |b[i,j] - prev_b[i,j]|  (per-pixel)
- *    4. Host: score = sad / 256.0 / (W * H)
- *       motion2 = min(prev, cur); motion3 from host-side post-processing.
+ *  Differences first (ADR-1498; the design of the SYCL and CUDA motion
+ *  twins, ADR-1371, ADR-1372), as core/src/feature/integer_motion.c does since
+ *  Netflix a4a1492d:
+ *    1. d[i,j] = prev[i,j] - cur[i,j]
+ *    2. v[i,j] = (sum_k FILTER[k] * d[mirror(i-2+k), j] + (1<<(bpc-1))) >> bpc
+ *    3. h[i,j] = (sum_k FILTER[k] * v[i, mirror(j-2+k)] + 32768) >> 16
+ *    4. SAD = sum |h[i,j]|
+ *  The arithmetic of steps 2 and 3 and the mirror are metal_integer_motion_math.h,
+ *  which test_metal_integer_motion_math runs on the host against the CPU. The
+ *  kernel blurred each frame and differenced the blurred frames, which rounds
+ *  each frame on its own: another sum (T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29).
  *
- *  Filter (sum = 65536):  {3571, 16004, 26386, 16004, 3571}
+ *  One thread per output pixel in a 16x16 threadgroup. The threadgroup stages
+ *  prev - cur of its pixels plus the two-sample halo (20x20, mirrored rows and
+ *  columns), filters it vertically at the 16 rows and 20 columns the
+ *  horizontal pass needs, and each thread filters its pixel horizontally. The
+ *  256 |h| values are below 2^16 each, so their sum fits a uint exactly; thread
+ *  0 adds them and stores one uint per threadgroup, and the host adds those in
+ *  uint64 (integer_motion_metal.mm). Integer arithmetic throughout.
  *
- *  Mirror padding: skip-boundary (2*(sup-1)-idx for idx >= sup).
- *
- *  Reduction: per-WG uint SAD partial (host accumulates in double).
- *  Note: max per-pixel SAD = 255 (8bpc) or 65535 (16bpc). For a
- *  16×16 = 256-thread WG: max WG sum = 256 × 65535 ≈ 16.7M — fits
- *  comfortably in uint32. Host double-precision accumulation.
- *
- *  Buffer bindings:
- *   [[buffer(0)]] ref          — const uchar * (current frame)
- *   [[buffer(1)]] prev_blurred — uint16 *  (prev blurred, uint16 per pixel)
- *   [[buffer(2)]] cur_blurred  — uint16 *  (output current blurred)
- *   [[buffer(3)]] sad_parts    — uint *    (grid_w × grid_h)
- *   [[buffer(4)]] strides      — uint4 (.x=ref_stride_bytes,
- *                                        .y=blur_stride_ushorts,
- *                                        .z=bpc, .w=compute_sad 0/1)
- *   [[buffer(5)]] dim          — uint2 (width, height)
+ *  Buffer bindings (both kernels, host must match integer_motion_metal.mm):
+ *   [[buffer(0)]] prev      — const uchar * (packed luma plane, the frame the
+ *                             SAD is taken against: n-1, or n-2 with
+ *                             motion_five_frame_window)
+ *   [[buffer(1)]] cur       — const uchar * (packed luma plane, frame n)
+ *   [[buffer(2)]] sad_parts — uint *        (grid_w × grid_h group sums)
+ *   [[buffer(3)]] params    — uint2         (.x = bpc, .y = unused)
+ *   [[buffer(4)]] dim       — uint2         (width, height)
  */
 
 #include <metal_stdlib>
 using namespace metal;
 
-constant uint FILTER[5] = {3571u, 16004u, 26386u, 16004u, 3571u};
+#include "metal_integer_motion_math.h"
 
-#define HALF_FW 2
-#define TILE_W  20   /* 16 + 2*HALF_FW */
-#define TILE_H  20   /* same for vertical pass */
-#define TILE_PITCH 20
+#define IM_GROUP 16
+#define IM_HALF 2
+#define IM_TILE 20 /* IM_GROUP + 2 * IM_HALF */
+#define IM_THREADS 256u
 
-/* Reflect-101 index fold, iterated.
- *
- * The kernels below load a TILE_W x TILE_H = 20x20 source tile at origin
- * `bid * 16 - HALF_FW`, so this helper is handed indices spanning
- * [-2, 16*bid + 17] -- far wider than the 5-tap neighbourhood it looks like
- * it serves. A SINGLE bounce only lands back in range when the overshoot is
- * at most `sup - 1`, i.e. `idx <= 2 * (sup - 1)`. Enumerated over the real
- * tile span, the single-bounce form read OUT OF BOUNDS for every dimension
- * in 1..9 and for exactly 17 -- at 17 the last workgroup's tile reaches
- * idx = 33 while 2 * (17 - 1) = 32, folding to -1. The `w < 3 || h < 3`
- * guard in the host wrapper covers neither case, which is why the fix
- * belongs here and not in the guard.
- *
- * Folding until the index is in range is bit-identical to the single bounce
- * for every index one bounce already handled (verified by exhaustive
- * enumeration over dims 1..299 across the full tile span), so no
- * in-contract score moves. `sup <= 1` has no interior to reflect into and
- * would not terminate, so it short-circuits.
- *
- * Same defect and same fix as the CPU scalar path in
- * core/src/feature/common/convolution_internal.h (Netflix/vmaf#1582 and
- * Netflix/vmaf#1581).
- */
-static inline int skip_mirror(int idx, int sup) {
-    if (sup <= 1) { return 0; }
-    while (idx < 0 || idx >= sup) {
-        idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx;
+/* Sample `offset` of a packed plane of uchar or ushort samples. */
+inline int im_sample(const device uchar *plane, uint offset, bool hbd)
+{
+    if (hbd) {
+        return (int)((const device ushort *)plane)[offset];
     }
-    return idx;
+    return (int)plane[offset];
+}
+
+/* prev - cur over the threadgroup's 20x20 tile, rows and columns mirrored. */
+inline void im_load_diff(const device uchar *prev, const device uchar *cur, bool hbd, uint2 bid,
+                         uint lid, int width, int height, threadgroup int *diff)
+{
+    const int oy = (int)bid.y * IM_GROUP - IM_HALF;
+    const int ox = (int)bid.x * IM_GROUP - IM_HALF;
+    for (uint i = lid; i < (uint)(IM_TILE * IM_TILE); i += IM_THREADS) {
+        const int y = vmaf_mtl_motion_mirror(oy + (int)(i / IM_TILE), height);
+        const int x = vmaf_mtl_motion_mirror(ox + (int)(i % IM_TILE), width);
+        const uint offset = (uint)(y * width + x);
+        diff[i] = im_sample(prev, offset, hbd) - im_sample(cur, offset, hbd);
+    }
+}
+
+/* The vertical pass at the 16 output rows and all 20 tile columns. */
+inline void im_vertical(const threadgroup int *diff, uint lid, uint bpc, threadgroup int *vert)
+{
+    for (uint i = lid; i < (uint)(IM_GROUP * IM_TILE); i += IM_THREADS) {
+        const uint c = i % IM_TILE;
+        const uint top = (i / IM_TILE) * IM_TILE + c;
+        vert[i] = vmaf_mtl_motion_vertical(diff[top], diff[top + IM_TILE],
+                                           diff[top + 2 * IM_TILE], diff[top + 3 * IM_TILE],
+                                           diff[top + 4 * IM_TILE], bpc);
+    }
+}
+
+/* The threadgroup's sum of `mine` at sad_parts[group]: at most 256 values
+ * below 2^16, exact in a uint. */
+inline void im_store_group_sum(uint mine, uint lid, uint group, threadgroup uint *scratch,
+                               device uint *sad_parts)
+{
+    scratch[lid] = mine;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (lid == 0u) {
+        uint total = 0u;
+        for (uint i = 0u; i < IM_THREADS; ++i) {
+            total += scratch[i];
+        }
+        sad_parts[group] = total;
+    }
+}
+
+/* |h| of this thread's pixel; 0 outside the frame. */
+inline uint im_pixel(const threadgroup int *vert, uint2 gid, uint2 lid2, uint2 dim)
+{
+    if (gid.x >= dim.x || gid.y >= dim.y) {
+        return 0u;
+    }
+    const uint b = lid2.y * IM_TILE + lid2.x;
+    return vmaf_mtl_motion_abs_h(vert[b], vert[b + 1u], vert[b + 2u], vert[b + 3u], vert[b + 4u]);
 }
 
 /* ------------------------------------------------------------------ */
 /*  8 bpc kernel                                                        */
 /* ------------------------------------------------------------------ */
 kernel void integer_motion_kernel_8bpc(
-    const device uchar   *ref          [[buffer(0)]],
-    const device ushort  *prev_blurred [[buffer(1)]],
-    device       ushort  *cur_blurred  [[buffer(2)]],
-    device       uint    *sad_parts    [[buffer(3)]],
-    constant     uint4   &strides      [[buffer(4)]],
-    constant     uint2   &dim          [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint2  lid2        [[thread_position_in_threadgroup]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+    const device uchar *prev      [[buffer(0)]],
+    const device uchar *cur       [[buffer(1)]],
+    device       uint  *sad_parts [[buffer(2)]],
+    constant     uint2 &params    [[buffer(3)]],
+    constant     uint2 &dim       [[buffer(4)]],
+    uint2 gid         [[thread_position_in_grid]],
+    uint2 bid         [[threadgroup_position_in_grid]],
+    uint2 grid_groups [[threadgroups_per_grid]],
+    uint2 lid2        [[thread_position_in_threadgroup]],
+    uint  lid         [[thread_index_in_threadgroup]])
 {
-    const int width       = (int)dim.x;
-    const int height      = (int)dim.y;
-    const uint bpc        = strides.z;
-    const int compute_sad = (int)strides.w;
+    threadgroup int diff[IM_TILE * IM_TILE];
+    threadgroup int vert[IM_GROUP * IM_TILE];
+    threadgroup uint scratch[IM_THREADS];
 
-    /* --- Phase 1: load 20×20 src tile. */
-    threadgroup uint s_tile[TILE_H * TILE_PITCH];
-    {
-        const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;
-        const int n_elems = TILE_W * TILE_H;
-        const int wg_size = 16 * 16;
-        for (int i = (int)lid; i < n_elems; i += wg_size) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            const int sy = skip_mirror(wg_oy + ty, height);
-            const int sx = skip_mirror(wg_ox + tx, width);
-            s_tile[ty * TILE_PITCH + tx] = (uint)ref[sy * (int)strides.x + sx];
-        }
-    }
+    im_load_diff(prev, cur, false, bid, lid, (int)dim.x, (int)dim.y, diff);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    /* --- Phase 2: vertical filter on inner rows (with halo). */
-    threadgroup uint s_vert[TILE_H * TILE_PITCH];
-    {
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;
-        for (int i = (int)lid; i < TILE_W * TILE_H; i += 16 * 16) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            uint acc = 0u;
-            for (int k = 0; k < 5; ++k) {
-                /* tile row for filter tap k: ty+k-HALF_FW relative to halo origin */
-                const int src_ty = ty + k - HALF_FW;
-                /* src_ty is relative to tile; if out-of-halo clamp with mirror */
-                const int abs_row = wg_oy + ty + (k - HALF_FW);
-                const int mir_row = skip_mirror(abs_row, height);
-                /* Map back to tile — use mir_row - wg_oy clamped to tile */
-                int tr = mir_row - wg_oy;
-                tr = max(0, min(tr, TILE_H - 1));
-                (void)src_ty;
-                acc += FILTER[k] * s_tile[tr * TILE_PITCH + tx];
-            }
-            /* Round and shift: +round >> bpc */
-            const uint rounding = 1u << (bpc - 1u);
-            s_vert[ty * TILE_PITCH + tx] = (acc + rounding) >> bpc;
-        }
-    }
+    im_vertical(diff, lid, params.x, vert);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    /* --- Phase 3: horizontal filter + write blurred + SAD. */
-    uint my_sad = 0u;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y + HALF_FW;
-        const int tx = (int)lid2.x + HALF_FW;
-        uint acc = 0u;
-        for (int k = 0; k < 5; ++k) {
-            acc += FILTER[k] * s_vert[ty * TILE_PITCH + (tx + k - HALF_FW)];
-        }
-        /* Round and shift: +32768 >> 16 */
-        const ushort blurred = (ushort)((acc + 32768u) >> 16u);
-        const int flat = (int)gid.y * (int)strides.y + (int)gid.x;
-        cur_blurred[flat] = blurred;
-        if (compute_sad != 0) {
-            const uint pb = (uint)prev_blurred[flat];
-            const uint cb = (uint)blurred;
-            my_sad = (pb > cb) ? (pb - cb) : (cb - pb);
-        }
-    }
-
-    threadgroup uint sg_sad[8];
-    const uint lane_sum = simd_sum(my_sad);
-    if (simd_lane == 0) { sg_sad[simd_id] = lane_sum; }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        uint gs = 0u;
-        for (uint i = 0; i < simd_count; ++i) { gs += sg_sad[i]; }
-        sad_parts[bid.y * grid_groups.x + bid.x] = gs;
-    }
+    const uint mine = im_pixel(vert, gid, lid2, dim);
+    im_store_group_sum(mine, lid, bid.y * grid_groups.x + bid.x, scratch, sad_parts);
 }
 
 /* ------------------------------------------------------------------ */
-/*  16 bpc kernel                                                       */
+/*  10 / 12 / 16 bpc kernel: native ushort samples                      */
 /* ------------------------------------------------------------------ */
 kernel void integer_motion_kernel_16bpc(
-    const device uchar   *ref          [[buffer(0)]],
-    const device ushort  *prev_blurred [[buffer(1)]],
-    device       ushort  *cur_blurred  [[buffer(2)]],
-    device       uint    *sad_parts    [[buffer(3)]],
-    constant     uint4   &strides      [[buffer(4)]],
-    constant     uint2   &dim          [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint2  lid2        [[thread_position_in_threadgroup]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+    const device uchar *prev      [[buffer(0)]],
+    const device uchar *cur       [[buffer(1)]],
+    device       uint  *sad_parts [[buffer(2)]],
+    constant     uint2 &params    [[buffer(3)]],
+    constant     uint2 &dim       [[buffer(4)]],
+    uint2 gid         [[thread_position_in_grid]],
+    uint2 bid         [[threadgroup_position_in_grid]],
+    uint2 grid_groups [[threadgroups_per_grid]],
+    uint2 lid2        [[thread_position_in_threadgroup]],
+    uint  lid         [[thread_index_in_threadgroup]])
 {
-    const int width       = (int)dim.x;
-    const int height      = (int)dim.y;
-    const uint bpc        = strides.z;
-    const int compute_sad = (int)strides.w;
+    threadgroup int diff[IM_TILE * IM_TILE];
+    threadgroup int vert[IM_GROUP * IM_TILE];
+    threadgroup uint scratch[IM_THREADS];
 
-    threadgroup uint s_tile[TILE_H * TILE_PITCH];
-    {
-        const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;
-        const int n_elems = TILE_W * TILE_H;
-        const int wg_size = 16 * 16;
-        for (int i = (int)lid; i < n_elems; i += wg_size) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            const int sy = skip_mirror(wg_oy + ty, height);
-            const int sx = skip_mirror(wg_ox + tx, width);
-            const device ushort *row_ptr =
-                (const device ushort *)(ref + sy * (int)strides.x);
-            s_tile[ty * TILE_PITCH + tx] = (uint)row_ptr[sx];
-        }
-    }
+    im_load_diff(prev, cur, true, bid, lid, (int)dim.x, (int)dim.y, diff);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    threadgroup uint s_vert[TILE_H * TILE_PITCH];
-    {
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;
-        for (int i = (int)lid; i < TILE_W * TILE_H; i += 16 * 16) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            uint acc = 0u;
-            for (int k = 0; k < 5; ++k) {
-                const int abs_row = wg_oy + ty + (k - HALF_FW);
-                const int mir_row = skip_mirror(abs_row, height);
-                int tr = mir_row - wg_oy;
-                tr = max(0, min(tr, TILE_H - 1));
-                acc += FILTER[k] * s_tile[tr * TILE_PITCH + tx];
-            }
-            const uint rounding = 1u << (bpc - 1u);
-            s_vert[ty * TILE_PITCH + tx] = (acc + rounding) >> bpc;
-        }
-    }
+    im_vertical(diff, lid, params.x, vert);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    uint my_sad = 0u;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y + HALF_FW;
-        const int tx = (int)lid2.x + HALF_FW;
-        uint acc = 0u;
-        for (int k = 0; k < 5; ++k) {
-            acc += FILTER[k] * s_vert[ty * TILE_PITCH + (tx + k - HALF_FW)];
-        }
-        const ushort blurred = (ushort)((acc + 32768u) >> 16u);
-        const int flat = (int)gid.y * (int)strides.y + (int)gid.x;
-        cur_blurred[flat] = blurred;
-        if (compute_sad != 0) {
-            const uint pb = (uint)prev_blurred[flat];
-            const uint cb = (uint)blurred;
-            my_sad = (pb > cb) ? (pb - cb) : (cb - pb);
-        }
-    }
-
-    threadgroup uint sg_sad[8];
-    const uint lane_sum = simd_sum(my_sad);
-    if (simd_lane == 0) { sg_sad[simd_id] = lane_sum; }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        uint gs = 0u;
-        for (uint i = 0; i < simd_count; ++i) { gs += sg_sad[i]; }
-        sad_parts[bid.y * grid_groups.x + bid.x] = gs;
-    }
+    const uint mine = im_pixel(vert, gid, lid2, dim);
+    im_store_group_sum(mine, lid, bid.y * grid_groups.x + bid.x, scratch, sad_parts);
 }
