@@ -9881,6 +9881,7 @@
         "core/test/test_metal_soft_double.cpp": 1,
         "core/test/test_metal_soft_double_contract.py": 1,
         "core/test/test_metal_twin_option_tables_contract.py": 1,
+        "core/test/test_motion_five_frame_window.c": 1,
         "scripts/dev/gen_sycl_ff_math.py": 1
       },
       "target": "1498-metal-twins-exact-designs.md"
