@@ -2439,6 +2439,40 @@ test('test_metal_float_motion_exact_contract',
 
 # [metal-ports: ciede and float_adm]
 
+# ADR-1498: the arithmetic ciede_metal's kernel runs, on the host:
+# src/feature/ciede_ff_math.h in its Metal subset (VMAF_FF_MSL_SUBSET) on the
+# primitives of src/feature/metal/metal_ciede_math.h, with the C++ library's
+# float functions standing in for Metal's. It is test_sycl_ciede_math.c with
+# a host probe for Metal, as test_hip_ciede_math is for HIP: the pair
+# functions against the host's extended-precision math library, the pixel
+# against the reference's fp64 statements, at 8, 10, 12 and 16 bits. The
+# _coarse build makes the cube and fifth root estimates 2^-18 worse, more
+# than Metal's exp() and log() may be off, under the same bounds. Both TUs are
+# compiled without contraction, like the kernels.
+foreach _ciede : [['test_metal_ciede_math', []],
+                  ['test_metal_ciede_math_coarse', ['-DVMAF_TEST_METAL_CIEDE_COARSE_ROOTS=1']]]
+  _exe = executable(_ciede[0],
+      ['test.c', 'test_sycl_ciede_math.c', 'test_metal_ciede_math_probe.cpp'],
+      include_directories : [test_inc, include_directories('../src/')],
+      dependencies : [math_lib],
+      c_args : vmaf_strict_fp_args + ['-DVMAF_TEST_CIEDE_MATH_HOST_ONLY=1'],
+      cpp_args : vmaf_strict_fp_args + _ciede[1],
+  )
+  test(_ciede[0], _exe, suite : ['fast'], timeout : 120)
+endforeach
+
+# ADR-1498: ciede_metal compiles ciede_ff_math.h on Metal primitives, stores
+# one float per pixel and the host adds them with ciede_frame_sum(); the shared
+# headers keep a Metal subset the SYCL and HIP twins never preprocess.
+# Device-free; the arithmetic check is test_metal_ciede_math, the device check
+# is test_metal_integer_ciede_parity.
+test('test_metal_ciede_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_ciede_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of ciede / float_adm group)
 
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
