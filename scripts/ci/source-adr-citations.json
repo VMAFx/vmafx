@@ -8346,6 +8346,7 @@
         "core/test/test_hip_float_ssim_parity.c": 1,
         "core/test/test_hip_kernel_source_contract.py": 1,
         "core/test/test_hip_twin_option_parity.c": 3,
+        "core/test/test_metal_float_motion_exact_contract.py": 1,
         "core/test/test_nonfinite_collector_wiring.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 3,
         "scripts/ci/cross_backend_vif_diff.py": 1,
