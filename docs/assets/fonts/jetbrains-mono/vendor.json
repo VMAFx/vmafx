@@ -1,0 +1,38 @@
+{
+  "name": "JetBrains Mono",
+  "version": "2.304",
+  "source": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+  "source_sha256": "6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf",
+  "license": "OFL-1.1",
+  "license_file": "OFL.txt",
+  "fetched": "2026-10-03",
+  "subset": {
+    "tool": "fonttools 4.60.1 with brotli 1.1.0 (scripts/docs/vendor_fonts.py)",
+    "unicodes": "U+0000-017F,U+0192,U+02C6-02DD,U+0391-03C9,U+2000-206F,U+2070-209F,U+20AC,U+2122,U+2190-21FF,U+2200-22FF,U+2308-230B,U+25A0-25FF,U+2713-2717,U+FEFF,U+FFFD,U+2500-259F",
+    "layout_features": [
+      "*"
+    ]
+  },
+  "files": {
+    "JetBrainsMono-Regular.woff2": {
+      "from": "fonts/webfonts/JetBrainsMono-Regular.woff2",
+      "from_sha256": "a9cb1cd82332b23a47e3a1239d25d13c86d16c4220695e34b243effa999f45f2",
+      "sha256": "c7fe1c1120601315a676e9309b501354182f07767d1853ea430f5ed64e988f02"
+    },
+    "JetBrainsMono-Italic.woff2": {
+      "from": "fonts/webfonts/JetBrainsMono-Italic.woff2",
+      "from_sha256": "cb6a1b246318ed3885d7dffa14a2609297fe80e9b8e500bea33b52fa312a36a4",
+      "sha256": "56950e93a98ddf7175b55056f30ce1a8b61ce15dcd249b979bbc4b076460ef74"
+    },
+    "JetBrainsMono-Bold.woff2": {
+      "from": "fonts/webfonts/JetBrainsMono-Bold.woff2",
+      "from_sha256": "c503cc5ec5f8b2c7666b7ecda1adf44bd45f2e6579b2eba0fc292150416588a2",
+      "sha256": "679d9a47a3cef95a0f4345b9888d8478285b051e730f30440b1548d654da2e87"
+    },
+    "OFL.txt": {
+      "from": "OFL.txt",
+      "from_sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad",
+      "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad"
+    }
+  }
+}

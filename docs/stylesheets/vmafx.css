@@ -1,0 +1,1042 @@
+/*
+ * VMAFx documentation site design (ADR-1508).
+ *
+ * One stylesheet on top of Material for MkDocs: it sets Material's colour and
+ * font custom properties and overrides its size selectors. It uses no template
+ * override, so Zensical's `classic` variant, which renders the same HTML,
+ * takes it unchanged.
+ *
+ * Sections: fonts, tokens, light scheme, dark scheme, page frame (header, tabs,
+ * sidebars, footer), typography, prose measure, links, code, tables,
+ * admonitions, content tabs, buttons, cards, landing page, accessibility.
+ *
+ * Sizes: Material sets the root to 20 px (22 px from 1600 px, 24 px from
+ * 2000 px), so `.8rem` is 16 px at the default width. Prose widths are in
+ * `em` of the text they hold, not `ch` (ADR-1508, Typography targets).
+ */
+
+/* ---------------------------------------------------------------- fonts */
+
+/* Inter 4.1 and JetBrains Mono 2.304, SIL OFL 1.1, served from this site and
+ * subset to the ranges in each vendor.json (docs/assets/fonts/, licences
+ * beside the files; scripts/docs/vendor_fonts.py). No font CDN. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/inter/InterVariable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/inter/InterVariable-Italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMono-Italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMono-Bold.woff2") format("woff2");
+}
+
+/* --------------------------------------------------------------- tokens */
+
+:root {
+  --md-text-font: "Inter";
+  --md-code-font: "JetBrains Mono";
+
+  /* Prose measure: 33 em of Inter holds a median of about 65 characters. */
+  --vx-measure: 33em;
+
+  /* Spacing scale (rem; 1 rem is 20 px at the default width). */
+  --vx-space-1: 0.2rem;
+  --vx-space-2: 0.4rem;
+  --vx-space-3: 0.6rem;
+  --vx-space-4: 0.8rem;
+  --vx-space-5: 1.2rem;
+  --vx-space-6: 1.6rem;
+  --vx-space-7: 2.4rem;
+
+  --vx-radius-s: 0.2rem;
+  --vx-radius-m: 0.4rem;
+  --vx-radius-l: 0.6rem;
+
+  /* Type sizes. */
+  --vx-text-small: 0.725rem; /* 14.5 px: tables, admonitions */
+  --vx-text-nav: 0.7rem; /* 14 px: sidebars */
+
+  /* Brand ink of the header, tabs and footer, from the README banner. */
+  --vx-ink: #0b1020;
+  --vx-ink-2: #121a33;
+  --vx-ink-line: #26304d;
+  --vx-ink-fg: #f8fafc;
+  --vx-ink-fg-2: #c3cad8;
+
+  --md-primary-fg-color: var(--vx-ink);
+  --md-primary-fg-color--light: var(--vx-ink-2);
+  --md-primary-fg-color--dark: var(--vx-ink);
+  --md-primary-bg-color: var(--vx-ink-fg);
+  --md-primary-bg-color--light: var(--vx-ink-fg-2);
+}
+
+/* Material sets the footer colours per scheme, on the element that carries
+ * the scheme, so both schemes take these. */
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-footer-fg-color: var(--vx-ink-fg);
+  --md-footer-fg-color--light: var(--vx-ink-fg-2);
+  --md-footer-fg-color--lighter: #a3acbf;
+}
+
+/* --------------------------------------------------------- light scheme */
+
+[data-md-color-scheme="default"] {
+  --vx-bg: #ffffff;
+  --vx-fg: #0f172a;
+  --vx-fg-2: #475569;
+  --vx-fg-3: #5b6678;
+  --vx-line: #e2e8f0;
+  --vx-border: #cbd5e1;
+  --vx-surface: #f5f7fb;
+  --vx-surface-2: #eef2f8;
+  --vx-link: #1d4ed8;
+  --vx-link-hover: #6d28d9;
+  --vx-focus: #2563eb;
+  --vx-on-link: #ffffff;
+  --vx-hero-bg: linear-gradient(135deg, #0b1020 0%, #111a35 60%, #0a1a2f 100%);
+  --vx-hero-fg: #f8fafc;
+  --vx-hero-fg-2: #c3cad8;
+  --vx-hero-accent: #67e8f9;
+
+  --vx-blue: #2563eb;
+  --vx-green: #15803d;
+  --vx-amber: #b45309;
+  --vx-red: #b91c1c;
+  --vx-violet: #7c3aed;
+  --vx-slate: #64748b;
+
+  --md-default-fg-color: var(--vx-fg);
+  --md-default-fg-color--light: var(--vx-fg-2);
+  --md-default-fg-color--lighter: #94a3b8;
+  --md-default-fg-color--lightest: #e2e8f0;
+  --md-default-bg-color: var(--vx-bg);
+  --md-default-bg-color--light: #ffffffb3;
+  --md-default-bg-color--lighter: #ffffff4d;
+  --md-default-bg-color--lightest: #ffffff1f;
+
+  --md-accent-fg-color: var(--vx-link-hover);
+  --md-accent-fg-color--transparent: #6d28d91a;
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: #ffffffb3;
+
+  --md-typeset-color: var(--vx-fg);
+  --md-typeset-a-color: var(--vx-link);
+  --md-typeset-table-color: var(--vx-line);
+  --md-typeset-table-color--light: #f8fafc;
+  --md-typeset-mark-color: #fde68a;
+
+  --md-code-fg-color: #1e293b;
+  --md-code-bg-color: #f3f5f9;
+  --md-code-bg-color--light: #f3f5f9b3;
+  --md-code-bg-color--lighter: #f3f5f94d;
+  --md-code-hl-color: #2563eb;
+  --md-code-hl-color--light: #2563eb1a;
+  --md-code-hl-number-color: #b42318;
+  --md-code-hl-special-color: #be185d;
+  --md-code-hl-function-color: #7e22ce;
+  --md-code-hl-constant-color: #5b21b6;
+  --md-code-hl-keyword-color: #1d4ed8;
+  --md-code-hl-string-color: #047857;
+  --md-code-hl-name-color: var(--md-code-fg-color);
+  --md-code-hl-operator-color: #475569;
+  --md-code-hl-punctuation-color: #475569;
+  --md-code-hl-comment-color: #57606f;
+  --md-code-hl-generic-color: #475569;
+  --md-code-hl-variable-color: #9a3412;
+
+  --md-footer-bg-color: var(--vx-ink);
+  --md-footer-bg-color--dark: #070b16;
+
+  --md-shadow-z1: 0 0.1rem 0.3rem #0f172a0f;
+  --md-shadow-z2: 0 0.2rem 0.6rem #0f172a1a;
+  --md-shadow-z3: 0 0.3rem 1rem #0f172a26;
+}
+
+/* ---------------------------------------------------------- dark scheme */
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 225deg;
+
+  --vx-bg: #0e1424;
+  --vx-fg: #e2e8f0;
+  --vx-fg-2: #a9b4c7;
+  --vx-fg-3: #93a0b6;
+  --vx-line: #1f2a44;
+  --vx-border: #2d3a5a;
+  --vx-surface: #141c31;
+  --vx-surface-2: #19223b;
+  --vx-link: #67e8f9;
+  --vx-link-hover: #c4b5fd;
+  --vx-focus: #67e8f9;
+  --vx-on-link: #0b1020;
+  --vx-hero-bg: linear-gradient(135deg, #111a35 0%, #141f3d 60%, #0f2236 100%);
+  --vx-hero-fg: #f8fafc;
+  --vx-hero-fg-2: #c3cad8;
+  --vx-hero-accent: #67e8f9;
+
+  --vx-blue: #60a5fa;
+  --vx-green: #4ade80;
+  --vx-amber: #fbbf24;
+  --vx-red: #f87171;
+  --vx-violet: #a78bfa;
+  --vx-slate: #94a3b8;
+
+  --vx-ink: #080c18;
+  --vx-ink-2: #0e1424;
+
+  --md-default-fg-color: var(--vx-fg);
+  --md-default-fg-color--light: var(--vx-fg-2);
+  --md-default-fg-color--lighter: #6b7891;
+  --md-default-fg-color--lightest: #1f2a44;
+  --md-default-bg-color: var(--vx-bg);
+  --md-default-bg-color--light: #0e1424b3;
+  --md-default-bg-color--lighter: #0e14244d;
+  --md-default-bg-color--lightest: #0e14241f;
+
+  --md-accent-fg-color: var(--vx-link-hover);
+  --md-accent-fg-color--transparent: #c4b5fd1a;
+  --md-accent-bg-color: #0b1020;
+  --md-accent-bg-color--light: #0b1020b3;
+
+  --md-typeset-color: var(--vx-fg);
+  --md-typeset-a-color: var(--vx-link);
+  --md-typeset-table-color: var(--vx-line);
+  --md-typeset-table-color--light: #131b2f;
+  --md-typeset-mark-color: #a16207;
+  --md-typeset-kbd-color: #1b2540;
+  --md-typeset-kbd-accent-color: #222d4b;
+  --md-typeset-kbd-border-color: #0b1020;
+
+  --md-code-fg-color: #e2e8f0;
+  --md-code-bg-color: #121a2e;
+  --md-code-bg-color--light: #121a2eb3;
+  --md-code-bg-color--lighter: #121a2e4d;
+  --md-code-hl-color: #67e8f9;
+  --md-code-hl-color--light: #67e8f91f;
+  --md-code-hl-number-color: #fca5a5;
+  --md-code-hl-special-color: #f9a8d4;
+  --md-code-hl-function-color: #d8b4fe;
+  --md-code-hl-constant-color: #c4b5fd;
+  --md-code-hl-keyword-color: #93c5fd;
+  --md-code-hl-string-color: #6ee7b7;
+  --md-code-hl-name-color: var(--md-code-fg-color);
+  --md-code-hl-operator-color: #a9b4c7;
+  --md-code-hl-punctuation-color: #a9b4c7;
+  --md-code-hl-comment-color: #8f9cb4;
+  --md-code-hl-generic-color: #a9b4c7;
+  --md-code-hl-variable-color: #fdba74;
+
+  --md-footer-bg-color: #080c18;
+  --md-footer-bg-color--dark: #05080f;
+
+  --md-shadow-z1: 0 0.1rem 0.3rem #0000004d;
+  --md-shadow-z2: 0 0.2rem 0.6rem #00000066;
+  --md-shadow-z3: 0 0.3rem 1rem #00000080;
+}
+
+/* ----------------------------------------------------------- page frame */
+
+body {
+  font-feature-settings: "cv11";
+}
+
+.md-header {
+  background-color: var(--vx-ink);
+  color: var(--vx-ink-fg);
+  box-shadow: none;
+  border-bottom: 0.05rem solid var(--vx-ink-line);
+}
+
+.md-header--shadow {
+  box-shadow: 0 0.1rem 0.6rem #0000002e;
+}
+
+.md-header__topic:first-child {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-search__form {
+  background-color: #ffffff14;
+  border-radius: var(--vx-radius-m);
+}
+
+.md-search__form:hover {
+  background-color: #ffffff24;
+}
+
+.md-search__input::placeholder {
+  color: var(--vx-ink-fg-2);
+}
+
+.md-tabs {
+  background-color: var(--vx-ink);
+  color: var(--vx-ink-fg);
+  border-bottom: 0.05rem solid var(--vx-ink-line);
+}
+
+.md-tabs__link {
+  font-size: var(--vx-text-nav);
+  font-weight: 500;
+  color: var(--vx-ink-fg-2);
+  opacity: 1;
+}
+
+.md-tabs__item--active .md-tabs__link,
+.md-tabs__link:focus,
+.md-tabs__link:hover {
+  color: var(--vx-ink-fg);
+}
+
+.md-tabs__item--active .md-tabs__link {
+  text-decoration: underline;
+  text-decoration-color: var(--vx-hero-accent);
+  text-decoration-thickness: 0.1rem;
+  text-underline-offset: 0.45em;
+}
+
+.md-nav {
+  font-size: var(--vx-text-nav);
+  line-height: 1.45;
+}
+
+.md-nav__link {
+  margin-top: 0.4em;
+}
+
+.md-nav__item--section > .md-nav__link[for],
+.md-nav__item--section > .md-nav__link:not([for]) {
+  color: var(--vx-fg);
+  font-weight: 650;
+}
+
+.md-nav__link--active,
+.md-nav__item .md-nav__link--active {
+  font-weight: 600;
+}
+
+.md-nav__title {
+  color: var(--vx-fg-2);
+  font-weight: 650;
+}
+
+.md-sidebar--secondary .md-nav__link {
+  color: var(--vx-fg-2);
+}
+
+.md-sidebar--secondary .md-nav__link--active,
+.md-sidebar--secondary .md-nav__link:hover {
+  color: var(--vx-link);
+}
+
+.md-footer {
+  background-color: var(--md-footer-bg-color);
+}
+
+.md-footer-meta {
+  background-color: var(--md-footer-bg-color--dark);
+}
+
+.md-footer__link {
+  padding-bottom: var(--vx-space-4);
+  padding-top: var(--vx-space-5);
+}
+
+.md-copyright {
+  color: var(--md-footer-fg-color--light);
+}
+
+/* ----------------------------------------------------------- typography */
+
+.md-typeset {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--vx-fg);
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
+  color: var(--vx-fg);
+  text-wrap: balance;
+}
+
+.md-typeset h1 {
+  font-size: 1.953em;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  margin: 0 0 0.8em;
+}
+
+.md-typeset h2 {
+  font-size: 1.5625em;
+  font-weight: 650;
+  letter-spacing: -0.016em;
+  line-height: 1.3;
+  margin: 2em 0 0.6em;
+  padding-top: 0.6em;
+  border-top: 0.05rem solid var(--vx-line);
+}
+
+.md-typeset h1 + h2,
+.md-typeset h1 + p + h2 {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.md-typeset h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  margin: 1.8em 0 0.5em;
+}
+
+.md-typeset h4 {
+  font-size: 1em;
+  font-weight: 650;
+  letter-spacing: 0;
+  margin: 1.6em 0 0.4em;
+}
+
+.md-typeset h5,
+.md-typeset h6 {
+  color: var(--vx-fg-2);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.md-typeset .headerlink {
+  color: var(--vx-fg-3);
+}
+
+.md-typeset strong {
+  font-weight: 650;
+}
+
+.md-typeset hr {
+  border-bottom: 0.05rem solid var(--vx-line);
+}
+
+.md-typeset blockquote {
+  background-color: var(--vx-surface);
+  border-left: 0.2rem solid var(--vx-border);
+  border-radius: 0 var(--vx-radius-m) var(--vx-radius-m) 0;
+  color: var(--vx-fg);
+  padding: var(--vx-space-1) var(--vx-space-4);
+}
+
+.md-typeset .footnote {
+  color: var(--vx-fg-2);
+}
+
+/* ------------------------------------------------------- prose measure */
+
+/* Text blocks keep to the measure; tables, code blocks and figures use the
+ * whole column. A list item that holds a code block or a table gives up the
+ * measure so the block keeps the column width; its paragraphs keep theirs. */
+.md-typeset p,
+.md-typeset li,
+.md-typeset dd,
+.md-typeset dt,
+.md-typeset blockquote,
+.md-typeset figcaption {
+  max-width: var(--vx-measure);
+}
+
+.md-typeset li:has(> .highlight, > pre, > .md-typeset__scrollwrap, > table, > .tabbed-set, > .admonition, > details) {
+  max-width: none;
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  max-width: calc(var(--vx-measure) + 2.4em);
+}
+
+/* ---------------------------------------------------------------- links */
+
+.md-typeset a {
+  color: var(--vx-link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--vx-link) 45%, transparent);
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.18em;
+  transition: color 125ms, text-decoration-color 125ms;
+}
+
+.md-typeset a:focus,
+.md-typeset a:hover {
+  color: var(--vx-link-hover);
+  text-decoration-color: currentcolor;
+}
+
+.md-typeset a.headerlink,
+.md-typeset a.md-button,
+.md-typeset .grid.cards a.vx-card__link,
+.md-typeset a.footnote-ref,
+.md-typeset a.footnote-backref {
+  text-decoration: none;
+}
+
+/* ----------------------------------------------------------------- code */
+
+.md-typeset code {
+  font-size: 0.875em;
+  border-radius: var(--vx-radius-s);
+  padding: 0.05em 0.3em;
+}
+
+.md-typeset pre {
+  line-height: 1.5;
+}
+
+.md-typeset pre > code {
+  box-shadow: none;
+  padding: 0.85em 1.1em;
+}
+
+.md-typeset .highlight,
+.md-typeset pre {
+  border-radius: var(--vx-radius-m);
+}
+
+.md-typeset .highlight pre > code,
+.md-typeset pre > code {
+  border-radius: var(--vx-radius-m);
+  border: 0.05rem solid var(--vx-line);
+}
+
+.md-typeset .highlight span.filename {
+  border-radius: var(--vx-radius-m) var(--vx-radius-m) 0 0;
+  font-size: var(--vx-text-small);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- tables */
+
+.md-typeset table:not([class]) {
+  font-size: var(--vx-text-small);
+  line-height: 1.5;
+  border: 0.05rem solid var(--vx-border);
+  border-radius: var(--vx-radius-m);
+  box-shadow: none;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--vx-surface);
+  color: var(--vx-fg);
+  font-weight: 650;
+  min-width: 4rem;
+  padding: 0.6em 0.9em;
+  text-align: left;
+  border-bottom: 0.05rem solid var(--vx-border);
+}
+
+.md-typeset table:not([class]) td {
+  border-top: 0.05rem solid var(--vx-line);
+  padding: 0.55em 0.9em;
+}
+
+.md-typeset table:not([class]) tbody tr:first-child td {
+  border-top: 0;
+}
+
+.md-typeset table:not([class]) tbody tr:hover {
+  background-color: var(--vx-surface);
+  box-shadow: none;
+}
+
+.md-typeset table:not([class]) td:first-child code {
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- admonitions */
+
+.md-typeset .admonition,
+.md-typeset details {
+  --vx-adm: var(--vx-blue);
+
+  font-size: var(--vx-text-small);
+  line-height: 1.55;
+  color: var(--vx-fg);
+  background-color: color-mix(in srgb, var(--vx-adm) 7%, var(--vx-bg));
+  border: 0.05rem solid color-mix(in srgb, var(--vx-adm) 30%, var(--vx-bg));
+  border-left: 0.2rem solid var(--vx-adm);
+  border-radius: var(--vx-radius-m);
+  box-shadow: none;
+  padding: 0 var(--vx-space-4);
+  margin: 1.6em 0;
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background-color: transparent;
+  border: 0;
+  color: var(--vx-fg);
+  font-weight: 650;
+  margin: 0 calc(-1 * var(--vx-space-4));
+  padding: var(--vx-space-3) var(--vx-space-4) 0 2.1rem;
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before {
+  background-color: var(--vx-adm);
+  left: var(--vx-space-4);
+  top: calc(var(--vx-space-3) + 0.15em);
+}
+
+.md-typeset .admonition > :last-child,
+.md-typeset details > :last-child {
+  margin-bottom: var(--vx-space-3);
+}
+
+.md-typeset .admonition.note,
+.md-typeset details.note,
+.md-typeset .admonition.info,
+.md-typeset details.info,
+.md-typeset .admonition.abstract,
+.md-typeset details.abstract {
+  --vx-adm: var(--vx-blue);
+}
+
+.md-typeset .admonition.tip,
+.md-typeset details.tip,
+.md-typeset .admonition.success,
+.md-typeset details.success {
+  --vx-adm: var(--vx-green);
+}
+
+.md-typeset .admonition.warning,
+.md-typeset details.warning {
+  --vx-adm: var(--vx-amber);
+}
+
+.md-typeset .admonition.failure,
+.md-typeset details.failure,
+.md-typeset .admonition.danger,
+.md-typeset details.danger,
+.md-typeset .admonition.bug,
+.md-typeset details.bug {
+  --vx-adm: var(--vx-red);
+}
+
+.md-typeset .admonition.question,
+.md-typeset details.question,
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  --vx-adm: var(--vx-violet);
+}
+
+.md-typeset .admonition.quote,
+.md-typeset details.quote {
+  --vx-adm: var(--vx-slate);
+}
+
+.md-typeset .admonition > .admonition-title,
+.md-typeset details > summary,
+.md-typeset .admonition.note > .admonition-title,
+.md-typeset .admonition.warning > .admonition-title,
+.md-typeset .admonition.tip > .admonition-title,
+.md-typeset .admonition.danger > .admonition-title {
+  background-color: transparent;
+}
+
+/* --------------------------------------------------------- content tabs */
+
+.md-typeset .tabbed-set {
+  border: 0.05rem solid var(--vx-line);
+  border-radius: var(--vx-radius-m);
+}
+
+.md-typeset .tabbed-labels {
+  box-shadow: inset 0 -0.05rem 0 var(--vx-line);
+  padding: 0 var(--vx-space-3);
+}
+
+.md-typeset .tabbed-labels > label {
+  color: var(--vx-fg-2);
+  font-size: var(--vx-text-small);
+  font-weight: 600;
+  padding: 0.9em 0.9em 0.75em;
+}
+
+.md-typeset .tabbed-set > input:checked + label,
+.md-typeset .tabbed-labels > label:hover {
+  color: var(--vx-link);
+}
+
+.md-typeset .tabbed-labels::before {
+  background-color: var(--vx-link);
+  height: 0.1rem;
+}
+
+.md-typeset .tabbed-content {
+  padding: 0 var(--vx-space-4);
+}
+
+/* -------------------------------------------------------------- buttons */
+
+.md-typeset .md-button {
+  /* Explicit: Zensical's classic variant gives buttons a background. */
+  background-color: transparent;
+  border: 0.1rem solid var(--vx-link);
+  border-radius: var(--vx-radius-m);
+  color: var(--vx-link);
+  font-weight: 600;
+  padding: 0.55em 1.25em;
+  transition: background-color 125ms, color 125ms, border-color 125ms;
+}
+
+.md-typeset .md-button--primary {
+  background-color: var(--vx-link);
+  border-color: var(--vx-link);
+  color: var(--vx-on-link);
+}
+
+.md-typeset .md-button:focus,
+.md-typeset .md-button:hover {
+  background-color: var(--vx-link-hover);
+  border-color: var(--vx-link-hover);
+  color: var(--vx-on-link);
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.md-typeset .grid {
+  grid-gap: var(--vx-space-4);
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  background-color: var(--vx-bg);
+  border: 0.05rem solid var(--vx-border);
+  border-radius: var(--vx-radius-l);
+  padding: var(--vx-space-4) var(--vx-space-5);
+  transition: border-color 125ms, box-shadow 125ms;
+}
+
+.md-typeset .grid.cards > ul > li:focus-within,
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid > .card:focus-within,
+.md-typeset .grid > .card:hover {
+  border-color: var(--vx-link);
+  box-shadow: var(--md-shadow-z2);
+}
+
+.md-typeset .grid.cards > ul > li > hr,
+.md-typeset .grid > .card > hr {
+  margin: var(--vx-space-3) 0;
+}
+
+.md-typeset .grid.cards > ul > li > p,
+.md-typeset .grid > .card > p {
+  max-width: none;
+}
+
+/* --------------------------------------------------------- landing page */
+
+.md-typeset .vx-hero {
+  background: var(--vx-hero-bg);
+  border-radius: var(--vx-radius-l);
+  color: var(--vx-hero-fg);
+  display: grid;
+  gap: var(--vx-space-5) var(--vx-space-7);
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 0 var(--vx-space-6);
+  padding: var(--vx-space-6) var(--vx-space-5);
+}
+
+@media screen and (min-width: 60em) {
+  .md-typeset .vx-hero {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    padding: var(--vx-space-7) var(--vx-space-7);
+  }
+}
+
+.md-typeset .vx-hero h1 {
+  color: var(--vx-hero-fg);
+  font-size: 2.25em;
+  margin: 0 0 0.4em;
+}
+
+.md-typeset .vx-hero p {
+  color: var(--vx-hero-fg-2);
+}
+
+.md-typeset .vx-hero a:not(.md-button) {
+  color: var(--vx-hero-accent);
+}
+
+.md-typeset .vx-hero a:not(.md-button):focus,
+.md-typeset .vx-hero a:not(.md-button):hover {
+  color: #ffffff;
+}
+
+.md-typeset .vx-hero .md-button {
+  border-color: var(--vx-hero-accent);
+  color: var(--vx-hero-accent);
+  margin: var(--vx-space-2) var(--vx-space-2) 0 0;
+}
+
+.md-typeset .vx-hero .md-button--primary {
+  background-color: var(--vx-hero-accent);
+  color: #0b1020;
+}
+
+.md-typeset .vx-hero .md-button:focus,
+.md-typeset .vx-hero .md-button:hover {
+  background-color: #ffffff;
+  border-color: #ffffff;
+  color: #0b1020;
+}
+
+.md-typeset .vx-hero__command {
+  align-self: center;
+  min-width: 0;
+}
+
+.md-typeset .vx-hero__command > p {
+  color: var(--vx-hero-fg-2);
+  font-size: var(--vx-text-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--vx-space-2);
+  text-transform: uppercase;
+}
+
+.md-typeset .vx-hero .highlight pre {
+  font-size: 0.92em;
+}
+
+.md-typeset .vx-hero .highlight pre > code {
+  background-color: #070b16;
+  border-color: var(--vx-ink-line);
+  color: #e2e8f0;
+}
+
+.md-typeset .vx-hero .highlight {
+  --md-code-hl-name-color: #e2e8f0;
+  --md-code-hl-operator-color: #a9b4c7;
+  --md-code-hl-punctuation-color: #a9b4c7;
+  --md-code-hl-string-color: #6ee7b7;
+  --md-code-hl-number-color: #fca5a5;
+  --md-code-hl-keyword-color: #93c5fd;
+  --md-code-hl-variable-color: #fdba74;
+  --md-code-hl-comment-color: #8f9cb4;
+  --md-code-hl-function-color: #d8b4fe;
+  --md-code-hl-constant-color: #c4b5fd;
+  --md-code-hl-special-color: #f9a8d4;
+  --md-code-hl-generic-color: #a9b4c7;
+}
+
+.md-typeset .vx-hero .md-code__button,
+.md-typeset .vx-hero .md-clipboard {
+  color: #a9b4c7;
+}
+
+.md-typeset .vx-section-label {
+  color: var(--vx-fg-2);
+  font-size: var(--vx-text-small);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  margin: var(--vx-space-6) 0 var(--vx-space-3);
+  text-transform: uppercase;
+}
+
+/* "Start here": the ordered list as a row of numbered steps. */
+.md-typeset .vx-steps > ol {
+  counter-reset: vx-step;
+  display: grid;
+  gap: var(--vx-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.md-typeset .vx-steps > ol > li {
+  background-color: var(--vx-surface);
+  border: 0.05rem solid var(--vx-line);
+  border-radius: var(--vx-radius-l);
+  counter-increment: vx-step;
+  margin: 0;
+  max-width: none;
+  padding: var(--vx-space-4) var(--vx-space-4) var(--vx-space-4);
+}
+
+.md-typeset .vx-steps > ol > li::before {
+  background-color: var(--vx-link);
+  border-radius: 50%;
+  color: var(--vx-on-link);
+  content: counter(vx-step);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--vx-text-small);
+  font-weight: 700;
+  height: 1.6rem;
+  margin-bottom: var(--vx-space-3);
+  width: 1.6rem;
+}
+
+[dir="ltr"] .md-typeset .vx-steps > ol > li {
+  margin-left: 0;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .vx-steps > ol {
+    gap: var(--vx-space-3);
+  }
+
+  .md-typeset .vx-steps > ol > li {
+    align-items: start;
+    column-gap: var(--vx-space-3);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: var(--vx-space-3) var(--vx-space-4);
+  }
+
+  .md-typeset .vx-steps > ol > li::before {
+    margin-bottom: 0;
+  }
+}
+
+/* No edit button beside the hero. */
+.md-content__inner:has(.vx-hero) > .md-content__button {
+  display: none;
+}
+
+/* The landing page's topic tables take the full width. */
+.md-typeset .vx-topics .md-typeset__table,
+.md-typeset .vx-topics table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+/* Backend cards: the whole card is its link; a short note under the label. */
+/* Material makes the list `display: contents`, so the wrapper is the grid. */
+.md-typeset .vx-backends.grid.cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li {
+  padding: var(--vx-space-3) var(--vx-space-4);
+  position: relative;
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li > p {
+  margin: 0;
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li > p:first-child a {
+  color: var(--vx-fg);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li > p:first-child a::after {
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li > p:first-child a::before {
+  color: var(--vx-link);
+  content: "\2192";
+  float: right;
+  margin-left: var(--vx-space-2);
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li:hover > p:first-child a,
+.md-typeset .vx-backends.grid.cards > ul > li > p:first-child a:focus {
+  color: var(--vx-link);
+}
+
+.md-typeset .vx-backends.grid.cards > ul > li > p + p {
+  color: var(--vx-fg-2);
+  font-size: var(--vx-text-small);
+}
+
+/* -------------------------------------------------------- accessibility */
+
+:focus-visible {
+  outline: 0.1rem solid var(--vx-focus);
+  outline-offset: 0.1rem;
+}
+
+.md-typeset a:focus-visible,
+.md-typeset .md-button:focus-visible {
+  outline: 0.1rem solid var(--vx-focus);
+  outline-offset: 0.15rem;
+  border-radius: var(--vx-radius-s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-typeset a,
+  .md-typeset .md-button,
+  .md-typeset .grid.cards > ul > li,
+  .md-typeset .grid > .card {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .md-typeset .admonition,
+  .md-typeset details,
+  .md-typeset .grid.cards > ul > li,
+  .md-typeset .vx-steps > ol > li {
+    border: 0.05rem solid CanvasText;
+  }
+
+  .md-typeset .vx-hero {
+    background: Canvas;
+    border: 0.05rem solid CanvasText;
+  }
+}
+
+@media print {
+  .md-typeset .vx-hero {
+    background: none;
+    color: #000000;
+  }
+
+  .md-typeset .vx-hero h1,
+  .md-typeset .vx-hero p {
+    color: #000000;
+  }
+}

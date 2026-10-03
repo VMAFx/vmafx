@@ -9841,6 +9841,14 @@
         "core/src/feature/brisque_model.h": 1
       },
       "target": "1507-brisque-live-notice-terms.md"
+    },
+    "1508": {
+      "sites": {
+        "Makefile": 1,
+        "REUSE.toml": 1,
+        "scripts/docs/vendor_fonts.py": 1
+      },
+      "target": "1508-docs-site-toolchain-and-charts.md"
     }
   },
   "retired": {

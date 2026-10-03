@@ -49,6 +49,25 @@
 - `tools/rc1-tester/tests/test_sycl_rows_contract.py` is now
   `test_gpu_rows_contract.py` and covers `cuda-rows.json` too: every CUDA row holds
   every parity-gate feature, so a feature added upstream changes the row map.
+## The documentation site's design layer (ADR-1508, 2026-10-03)
+
+`docs/site-design`. Documentation and site configuration only; no source,
+score or build change.
+
+- `docs/stylesheets/vmafx.css` is the only design layer. `mkdocs.yml` lists it
+  under `extra_css`, sets `primary: custom` and `accent: custom` in both
+  palettes and `font: false`. A sync or a content edit must not bring back a
+  Material colour name, a `font:` block (it makes the browser load Google
+  Fonts) or a `custom_dir` template override: Zensical's `classic` variant
+  renders the same HTML only while the design stays in CSS.
+- `docs/assets/fonts/{inter,jetbrains-mono}/` hold the upstream fonts subset
+  to the ranges in each `vendor.json`, the licence and the manifest;
+  `scripts/docs/vendor_fonts.py` writes them from the release archive and
+  `scripts/docs/check_vendored_assets.py` (in `make docs-fragments-check`)
+  fails on a changed, missing or unlisted file. Update a font with the writer,
+  never by hand.
+- `docs/index.md` keeps the `vx-hero`, `vx-steps`, `vx-backends` and
+  `vx-topics` wrappers and its `hide:` front matter when its wording changes.
 
 ## Open CodeQL alerts fixed in code: header guards, SpEED products, bit-identity tests (ADR-1502, 2026-10-03)
 

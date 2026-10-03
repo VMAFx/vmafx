@@ -22,6 +22,15 @@ linked AGENTS.md before resolving conflicts.
   repository-root build instructions in `docs/getting-started/index.md` and
   include Meson's `core/` source directory when showing a configure command.
 
+- **Documentation site design layer ([ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md))**:
+  the design is `docs/stylesheets/vmafx.css` and nothing else: no template
+  override, no Material colour name and no `font:` block in `mkdocs.yml`, so
+  Zensical's `classic` variant can render it later. The fonts in
+  `docs/assets/fonts/` match their `vendor.json`
+  (`scripts/docs/check_vendored_assets.py`, run by
+  `make docs-fragments-check`). The landing page keeps its `vx-*` wrappers when
+  its text changes. See [Documentation site design](docs-site-design.md).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

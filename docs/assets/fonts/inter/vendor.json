@@ -1,0 +1,33 @@
+{
+  "name": "Inter",
+  "version": "4.1",
+  "source": "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+  "source_sha256": "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e",
+  "license": "OFL-1.1",
+  "license_file": "LICENSE.txt",
+  "fetched": "2026-10-03",
+  "subset": {
+    "tool": "fonttools 4.60.1 with brotli 1.1.0 (scripts/docs/vendor_fonts.py)",
+    "unicodes": "U+0000-017F,U+0192,U+02C6-02DD,U+0391-03C9,U+2000-206F,U+2070-209F,U+20AC,U+2122,U+2190-21FF,U+2200-22FF,U+2308-230B,U+25A0-25FF,U+2713-2717,U+FEFF,U+FFFD",
+    "layout_features": [
+      "*"
+    ]
+  },
+  "files": {
+    "InterVariable.woff2": {
+      "from": "web/InterVariable.woff2",
+      "from_sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+      "sha256": "f50b4fcc8fd6fc60bf3b92f81cf6f118ac3f4a8fd985425c3a1f1dd1e76cfa28"
+    },
+    "InterVariable-Italic.woff2": {
+      "from": "web/InterVariable-Italic.woff2",
+      "from_sha256": "e564f652916db6c139570fefb9524a77c4d48f30c92928de9db19b6b5c7a262a",
+      "sha256": "4f6b5011fbb2a15d519803e2ec5e7ba29f47828a47e4159f7d6252daf8562a06"
+    },
+    "LICENSE.txt": {
+      "from": "LICENSE.txt",
+      "from_sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+    }
+  }
+}

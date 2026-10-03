@@ -22,24 +22,26 @@ exclude_docs: |
 
 theme:
   name: material
+  # Colours and fonts come from docs/stylesheets/vmafx.css (ADR-1508):
+  # `custom` hands the primary and accent colours to the stylesheet, and
+  # `font: false` stops the runtime font download from Google Fonts; the
+  # stylesheet serves Inter and JetBrains Mono from docs/assets/fonts/.
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
-  font:
-    text: Inter
-    code: JetBrains Mono
+  font: false
   features:
     - navigation.instant
     - navigation.tracking
@@ -133,6 +135,9 @@ validation:
     not_found: info
     anchors: warn
     unrecognized_links: info
+
+extra_css:
+  - stylesheets/vmafx.css
 
 extra:
   social:
@@ -362,6 +367,7 @@ nav:
       - Automated rule enforcement: development/automated-rule-enforcement.md
       - PR body validator: development/pr-body-validator.md
       - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
+      - Documentation site design: development/docs-site-design.md
       - Dev MCP container: development/dev-mcp.md
       - Kubernetes deployment: development/k8s-deployment.md
       - Operator: development/operator.md

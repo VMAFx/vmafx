@@ -1,4 +1,15 @@
-<!-- markdownlint-disable MD013 -->
+---
+hide:
+  - navigation
+  - toc
+---
+
+<!-- markdownlint-disable MD013 MD033 MD041 -->
+
+<div class="vx-hero" markdown>
+
+<div class="vx-hero__intro" markdown>
+
 # VMAFx documentation
 
 VMAFx measures perceptual video quality: it scores how a distorted video
@@ -7,7 +18,30 @@ compares with its reference, the way a viewer would judge it. It is a fork of
 scores, adds CUDA, SYCL, HIP and Metal GPU backends and SIMD paths, and holds
 every GPU result to the CPU's.
 
+[Get VMAFx](getting-started/index.md){ .md-button .md-button--primary }
+[Score your first pair](getting-started/first-score.md){ .md-button }
+
+</div>
+
+<div class="vx-hero__command" markdown>
+
+First score
+
+```bash
+build/tools/vmaf \
+  --reference testdata/ref_576x324_48f.yuv \
+  --distorted testdata/dis_576x324_48f.yuv \
+  --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+  --json --output scores.json
+```
+
+</div>
+
+</div>
+
 ## Start here
+
+<div class="vx-steps" markdown>
 
 1. [Get VMAFx](getting-started/index.md): a container image, a release
    download or a source build.
@@ -18,9 +52,51 @@ every GPU result to the CPU's.
    [FFmpeg filter](usage/ffmpeg.md).
 5. Look things up in the reference below, or [contribute](https://github.com/VMAFx/vmafx/blob/master/CONTRIBUTING.md).
 
+</div>
+
 Found a problem? [Open an issue](https://github.com/VMAFx/vmafx/issues).
 Have hardware the project does not own? Run the
 [tester image](usage/tester-image.md) and send the report.
+
+## Backends
+
+<div class="grid cards vx-backends" markdown>
+
+- [Backend guide](backends/index.md)
+
+    Choose and build
+
+- [x86 SIMD](backends/x86/avx512.md)
+
+    AVX2 · AVX-512
+
+- [ARM SIMD](backends/arm/overview.md)
+
+    NEON · SVE2
+
+- [CUDA](backends/cuda/overview.md)
+
+    NVIDIA GPUs
+
+- [SYCL / oneAPI](backends/sycl/overview.md)
+
+    Intel GPUs
+
+- [HIP / ROCm](backends/hip/overview.md)
+
+    AMD GPUs
+
+- [Metal](backends/metal/index.md)
+
+    Apple Silicon
+
+- [Exact GPU twins](development/cross-backend-exact-twins.md)
+
+    Scores equal to the CPU's
+
+</div>
+
+<div class="vx-topics" markdown>
 
 ## Use VMAFx
 
@@ -54,3 +130,5 @@ Have hardware the project does not own? Run the
 | Upstream | [Upstream watchers](development/upstream-watchers.md), [FFmpeg patch refresh](development/ffmpeg-patches-refresh.md) |
 | Architecture | [Repository layout](architecture/index.md), [Python-harness workspace](architecture/workspace.md), [ADR log](adr/README.md) |
 | Security | [Repository security](development/repository-security.md), [OpenSSF Scorecard](development/ossf-scorecard.md), [Scorecard and CodeQL audit, 2026-09-04](security/scorecard-alerts-2026-09-04.md) |
+
+</div>
