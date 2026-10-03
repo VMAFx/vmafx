@@ -4,42 +4,60 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for float_psnr (T8-1d / ADR-0421).
- *  Translation of `core/src/feature/vulkan/shaders/float_psnr.comp`
- *  (same algorithm, MSL idioms).
  *
- *  Algorithm (must match CPU core/src/feature/float_psnr.c):
- *    1. Convert pixel to float:
- *         8bpc:       val = (float)raw          (peak = 255.0)
- *         10bpc:      val = (float)raw / 4.0    (peak = 255.75)
- *         12bpc:      val = (float)raw / 16.0   (peak = 255.9375)
- *         16bpc:      val = (float)raw / 256.0  (peak = 255.99609375)
- *    2. noise += (ref_val - dis_val)^2   (per-pixel float)
- *    3. Host (collect): mse = sum(partials) / (W * H)
- *                       score = (mse == 0)
- *                                 ? psnr_max
- *                                 : min(10*log10(peak^2 / mse), psnr_max)
- *                       (the host-side `uncapped` option — ADR-1193 —
- *                        drops the min(); the kernel is unaffected)
+ *  The sums are integers so that they are exact (ADR-1498; the design of the
+ *  CUDA twin, ADR-1455, and of the SYCL and HIP twins, ADR-1450, ADR-1440).
+ *  float_psnr.c adds `(double)(diff * diff)` per row and the rows in double:
+ *  every term is a float and a multiple of 1 / scaler^2 (scaler =
+ *  2^(bpc - 8)), so its running sum is exact and is the exact sum of its
+ *  terms. Each thread forms the CPU's term as an integer in that unit
+ *  (vmaf_mtl_fpsnr_term(), metal_float_psnr_math.h: one fp32 product of the
+ *  raw sample difference, below 2^32); a threadgroup covers 256 pixels of
+ *  one row, adds its terms in 64 bits and stores one ulong; the host adds
+ *  each row's segments exactly and the rows into a double in order, as
+ *  float_psnr.c adds its rows, which keeps the CPU's rounding past 2^53
+ *  units (vmaf_float_psnr_row_noise(), ADR-1499), and divides by scaler^2
+ *  and the pixel count (float_psnr_metal.mm::float_psnr_noise()).
  *
- *  Reduction: per-thread float → simd_sum into 8-slot threadgroup
- *  array → single float partial per threadgroup written to
- *  `partials[bid.y * grid_w + bid.x]`. No atomics (matches the
- *  integer_motion_v2 partial-sum pattern, ADR-0421).
+ *  A fp32 threadgroup sum, which this kernel had, is exact only at 8 bits: at
+ *  10, 12 and 16 bits it rounds once a group's differences are large. MSL has
+ *  no 64-bit SIMD reduction (simd_sum excludes long and ulong, Metal Shading
+ *  Language Specification 4.1, section 6.10.2) and no 64-bit atomic the
+ *  backend may use, so every thread publishes its term to threadgroup memory
+ *  and thread 0 adds the 256 values. Threads outside the frame publish 0 and
+ *  still reach the barrier.
  *
- *  Buffer bindings (8bpc kernel, host must match float_psnr_metal.mm):
- *   [[buffer(0)]] ref      — const uchar *  (planar Y, stride via strides.x)
- *   [[buffer(1)]] dis      — const uchar *  (planar Y, stride via strides.y)
- *   [[buffer(2)]] partials — float *        (grid_w × grid_h floats)
+ *  Buffer bindings (both kernels, host must match float_psnr_metal.mm):
+ *   [[buffer(0)]] ref      — const uchar *  (packed rows of the luma plane)
+ *   [[buffer(1)]] dis      — const uchar *
+ *   [[buffer(2)]] partials — ulong *        (grid_w × grid_h group sums)
  *   [[buffer(3)]] strides  — uint2          (ref_stride_bytes, dis_stride_bytes)
  *   [[buffer(4)]] dim      — uint2          (width, height)
- *
- *  Buffer bindings (16bpc kernel, same as 8bpc except strides is uint4):
- *   [[buffer(3)]] strides  — uint4          (.x=ref_stride_bytes, .y=dis_stride_bytes,
- *                                            .z=bpc, .w=unused)
  */
 
 #include <metal_stdlib>
 using namespace metal;
+
+#include "metal_float_psnr_math.h"
+
+/* The threadgroup the host dispatches: 256 pixels of one row (ADR-1499). */
+#define FPSNR_THREADS_PER_GROUP 256u
+
+/* The threadgroup's sum of `mine` over its threads, at partials[group]. The
+ * sum is of integers, so its order cannot change it. */
+inline void fpsnr_store_group_sum(ulong mine, uint lid, uint group, threadgroup ulong *scratch,
+                                  device ulong *partials)
+{
+    scratch[lid] = mine;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (lid == 0u) {
+        ulong total = 0ul;
+        for (uint i = 0u; i < FPSNR_THREADS_PER_GROUP; ++i) {
+            total += scratch[i];
+        }
+        partials[group] = total;
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /*  8 bpc kernel                                                        */
@@ -47,88 +65,49 @@ using namespace metal;
 kernel void float_psnr_kernel_8bpc(
     const device uchar  *ref      [[buffer(0)]],
     const device uchar  *dis      [[buffer(1)]],
-    device       float  *partials [[buffer(2)]],
+    device       ulong  *partials [[buffer(2)]],
     constant     uint2  &strides  [[buffer(3)]],
     constant     uint2  &dim      [[buffer(4)]],
     uint2  gid         [[thread_position_in_grid]],
     uint2  bid         [[threadgroup_position_in_grid]],
     uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+    uint   lid         [[thread_index_in_threadgroup]])
 {
-    const int width  = (int)dim.x;
-    const int height = (int)dim.y;
-
-    float my_noise = 0.0f;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const float r = (float)ref[(int)gid.y * (int)strides.x + (int)gid.x];
-        const float d = (float)dis[(int)gid.y * (int)strides.y + (int)gid.x];
-        const float diff = r - d;
-        my_noise = diff * diff;
+    ulong my_noise = 0ul;
+    if (gid.x < dim.x && gid.y < dim.y) {
+        const int r = (int)ref[gid.y * strides.x + gid.x];
+        const int d = (int)dis[gid.y * strides.y + gid.x];
+        my_noise = (ulong)vmaf_mtl_fpsnr_term(r, d);
     }
 
-    threadgroup float simd_partials[8];
-    const float lane_sum = simd_sum(my_noise);
-    if (simd_lane == 0) {
-        simd_partials[simd_id] = lane_sum;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        float group_sum = 0.0f;
-        for (uint i = 0; i < simd_count; ++i) {
-            group_sum += simd_partials[i];
-        }
-        partials[bid.y * grid_groups.x + bid.x] = group_sum;
-    }
+    threadgroup ulong scratch[FPSNR_THREADS_PER_GROUP];
+    fpsnr_store_group_sum(my_noise, lid, bid.y * grid_groups.x + bid.x, scratch, partials);
 }
 
 /* ------------------------------------------------------------------ */
-/*  16 bpc kernel                                                       */
+/*  10 / 12 / 16 bpc kernel: native ushort samples, terms in units of  */
+/*  1 / scaler^2 (the host divides).                                    */
 /* ------------------------------------------------------------------ */
 kernel void float_psnr_kernel_16bpc(
     const device uchar  *ref      [[buffer(0)]],
     const device uchar  *dis      [[buffer(1)]],
-    device       float  *partials [[buffer(2)]],
-    constant     uint4  &strides  [[buffer(3)]],
+    device       ulong  *partials [[buffer(2)]],
+    constant     uint2  &strides  [[buffer(3)]],
     constant     uint2  &dim      [[buffer(4)]],
     uint2  gid         [[thread_position_in_grid]],
     uint2  bid         [[threadgroup_position_in_grid]],
     uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+    uint   lid         [[thread_index_in_threadgroup]])
 {
-    const int width  = (int)dim.x;
-    const int height = (int)dim.y;
-    /* scaler = 1 << (bpc - 8): 4 for 10bpc, 16 for 12bpc, 256 for 16bpc */
-    const float scaler = (float)(1u << ((uint)strides.z - 8u));
-
-    float my_noise = 0.0f;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const device ushort *ref_row =
-            (const device ushort *)(ref + (int)gid.y * (int)strides.x);
-        const device ushort *dis_row =
-            (const device ushort *)(dis + (int)gid.y * (int)strides.y);
-        const float r = (float)ref_row[(int)gid.x] / scaler;
-        const float d = (float)dis_row[(int)gid.x] / scaler;
-        const float diff = r - d;
-        my_noise = diff * diff;
+    ulong my_noise = 0ul;
+    if (gid.x < dim.x && gid.y < dim.y) {
+        const device ushort *ref_row = (const device ushort *)(ref + gid.y * strides.x);
+        const device ushort *dis_row = (const device ushort *)(dis + gid.y * strides.y);
+        const int r = (int)ref_row[gid.x];
+        const int d = (int)dis_row[gid.x];
+        my_noise = (ulong)vmaf_mtl_fpsnr_term(r, d);
     }
 
-    threadgroup float simd_partials[8];
-    const float lane_sum = simd_sum(my_noise);
-    if (simd_lane == 0) {
-        simd_partials[simd_id] = lane_sum;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        float group_sum = 0.0f;
-        for (uint i = 0; i < simd_count; ++i) {
-            group_sum += simd_partials[i];
-        }
-        partials[bid.y * grid_groups.x + bid.x] = group_sum;
-    }
+    threadgroup ulong scratch[FPSNR_THREADS_PER_GROUP];
+    fpsnr_store_group_sum(my_noise, lid, bid.y * grid_groups.x + bid.x, scratch, partials);
 }

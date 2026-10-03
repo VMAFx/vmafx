@@ -51,14 +51,18 @@
  *  Both are the AVX2/scalar reflect-101 mirror, reproduced here by
  *  vif_mirror(idx, sup) = reflect about [0, sup-1].
  *
- *  Numeric contract: hardcoded default vif_enhn_gain_limit handling matches
- *  the CPU (the .mm forwards the option value as a float via cfg). Parity
- *  target places=4 (1e-4, ADR-0214) — the integer kernel is bit-exact to the
- *  CPU integer reference up to the int64->float final cast, well inside 1e-4.
+ *  Numeric contract: the kernels return the CPU's per-pixel integers,
+ *  including the two the CPU truncates from an fp64 gain (sv_sq and
+ *  g * g * sigma1_sq, metal_integer_vif_gain.h, ADR-1432 / ADR-1498); the
+ *  host forms vif_enhn_gain_limit's fp64 parts once (vmaf_mtl_ivif_make_gain_limit)
+ *  and binds them as a VmafMtlGainLimit. The scores equal the CPU's.
  */
 
 #include <metal_stdlib>
 using namespace metal;
+
+#include "metal_integer_vif_gain.h"
+#include "metal_integer_vif_math.h"
 
 #define IVIF_BX 16
 #define IVIF_BY 16
@@ -102,16 +106,14 @@ inline int ivif_fw(int scale)
 /* reflect-101 mirror about [0, sup-1], matching the CPU border handling
  * (pad_top_and_bottom and PADDING_SQ_DATA both reflect about the edge
  * sample, excluding the edge sample itself: idx<0 -> -idx; idx>=sup ->
- * 2*(sup-1)-idx). */
+ * 2*(sup-1)-idx). vmaf_mtl_vif_mirror() (metal_integer_vif_math.h) is that
+ * reflection for every tap an output reads from the 16-pixel minimum on
+ * (the host's vif_metal_min_dim()), and keeps the tile loads no output reads
+ * (a 16-wide group with its halo over a scale of 8 or 2 samples) inside the
+ * buffers, where a single reflection sent them out. */
 inline int vif_mirror(int idx, int sup)
 {
-    if (idx < 0) {
-        return -idx;
-    }
-    if (idx >= sup) {
-        return 2 * (sup - 1) - idx;
-    }
-    return idx;
+    return vmaf_mtl_vif_mirror(idx, sup);
 }
 
 /* 64-bit count-leading-zeros, matching __builtin_clzll semantics exactly
@@ -179,7 +181,7 @@ struct VifWgAccum {
  * mu1_val/mu2_val are the un-shifted horizontal mu accumulators (uint32);
  * xx/yy/xy are the (accum + add_shift_round_HP) >> shift_HP results. */
 inline void ivif_pixel_stat(uint mu1_val, uint mu2_val, uint xx_filt_val, uint yy_filt_val,
-                            uint xy_filt_val, float vif_enhn_gain_limit,
+                            uint xy_filt_val, VmafMtlGainLimit limit,
                             const device ushort *log2_table, thread VifWgAccum &acc)
 {
     const int sigma_nsq = 65536 << 1;
@@ -197,22 +199,17 @@ inline void ivif_pixel_stat(uint mu1_val, uint mu2_val, uint xx_filt_val, uint y
         acc.den_log += vif_log2_32(log2_table, (uint)(sigma_nsq + sigma1_sq)) - 2048L * 17L;
 
         if (sigma12 > 0 && sigma2_sq > 0) {
-            /* CPU uses double for g; MSL has no double, but float carries
-             * enough precision here: g = sigma12/(sigma1_sq+eps), then
-             * sv_sq = sigma2_sq - g*sigma12 truncated to int32, then the
-             * int64 numer1_tmp = (int64)(g*g*sigma1_sq) + numer1. The float
-             * g*g*sigma1_sq -> int64 cast and the int sv_sq truncation are
-             * the only float-touched values, both small relative to 1e-4. */
-            const float eps = 65536.0f * 1.0e-10f;
-            float g = (float)sigma12 / ((float)sigma1_sq + eps);
-            int sv_sq = sigma2_sq - (int)(g * (float)sigma12);
+            /* The two integers the CPU truncates from its fp64 gain, from
+             * integer arithmetic and, for a sample the integers do not
+             * decide, the reference's fp64 operations replayed in 64-bit
+             * integers (ADR-1432, ADR-1498): sv_sq =
+             * (uint32_t)MAX((int32_t)(sigma2_sq - g * sigma12), 0) and
+             * gg_sigma = (int64_t)(g * g * sigma1_sq) with g limited. */
+            const VmafMtlGainTerms gain =
+                vmaf_mtl_ivif_gain_terms((uint)sigma1_sq, (uint)sigma2_sq, (uint)sigma12, limit);
 
-            sv_sq = max(sv_sq, 0);
-
-            g = min(g, vif_enhn_gain_limit);
-
-            uint numer1 = (uint)((uint)sv_sq + (uint)sigma_nsq);
-            long numer1_tmp = (long)(g * g * (float)sigma1_sq) + (long)numer1;
+            uint numer1 = (uint)(gain.sv_sq + (uint)sigma_nsq);
+            long numer1_tmp = gain.gg_sigma + (long)numer1;
             acc.num_log +=
                 vif_log2_64(log2_table, (ulong)numer1_tmp) - vif_log2_64(log2_table, (ulong)numer1);
         }
@@ -269,13 +266,13 @@ inline void ivif_reduce_and_store(thread VifWgAccum &acc, device VifWgAccum *wg_
 /*   [[buffer(3)]] wg_accum  — VifWgAccum * per-WG int64 partials       */
 /*   [[buffer(4)]] params    — uint4 (.x=width, .y=height,             */
 /*                                     .z=raw_stride_bytes, .w=grid_x)  */
-/*   [[buffer(5)]] cfgf      — float4 (.x=vif_enhn_gain_limit)         */
+/*   [[buffer(5)]] gain_limit — VmafMtlGainLimit (vif_enhn_gain_limit)  */
 /*  Grid: ceil(width/16) x ceil(height/16),  threads 16x16.            */
 /* ================================================================== */
 kernel void integer_vif_compute_8(
     const device uchar *ref_raw [[buffer(0)]], const device uchar *dis_raw [[buffer(1)]],
     const device ushort *log2_tab [[buffer(2)]], device VifWgAccum *wg_accum [[buffer(3)]],
-    constant uint4 &params [[buffer(4)]], constant float4 &cfgf [[buffer(5)]],
+    constant uint4 &params [[buffer(4)]], constant VmafMtlGainLimit &gain_limit [[buffer(5)]],
     uint2 gid [[thread_position_in_grid]], uint2 bid [[threadgroup_position_in_grid]],
     uint2 lpos [[thread_position_in_threadgroup]], uint lid [[thread_index_in_threadgroup]])
 {
@@ -283,7 +280,7 @@ kernel void integer_vif_compute_8(
     const int height = (int)params.y;
     const uint raw_stride = params.z;
     const uint grid_x = params.w;
-    const float egl = cfgf.x;
+    const VmafMtlGainLimit egl = gain_limit;
 
     const int fw = 17;
     const int hfw = 8;
@@ -396,14 +393,14 @@ kernel void integer_vif_compute_8(
 /*   [[buffer(4)]] params    — uint4 (.x=width, .y=height,             */
 /*                                     .z=f_stride_ushorts, .w=grid_x)  */
 /*   [[buffer(5)]] cfg2      — uint4 (.x=scale, .y=bpc)                 */
-/*   [[buffer(6)]] cfgf      — float4 (.x=vif_enhn_gain_limit)         */
+/*   [[buffer(6)]] gain_limit — VmafMtlGainLimit (vif_enhn_gain_limit)  */
 /*  Grid: ceil(width/16) x ceil(height/16),  threads 16x16.            */
 /* ================================================================== */
 kernel void integer_vif_compute_16(
     const device ushort *ref_f [[buffer(0)]], const device ushort *dis_f [[buffer(1)]],
     const device ushort *log2_tab [[buffer(2)]], device VifWgAccum *wg_accum [[buffer(3)]],
     constant uint4 &params [[buffer(4)]], constant uint4 &cfg2 [[buffer(5)]],
-    constant float4 &cfgf [[buffer(6)]], uint2 gid [[thread_position_in_grid]],
+    constant VmafMtlGainLimit &gain_limit [[buffer(6)]], uint2 gid [[thread_position_in_grid]],
     uint2 bid [[threadgroup_position_in_grid]], uint2 lpos [[thread_position_in_threadgroup]],
     uint lid [[thread_index_in_threadgroup]])
 {
@@ -413,7 +410,7 @@ kernel void integer_vif_compute_16(
     const uint grid_x = params.w;
     const int scale = (int)cfg2.x;
     const uint bpc = cfg2.y;
-    const float egl = cfgf.x;
+    const VmafMtlGainLimit egl = gain_limit;
 
     /* V-pass shift constants (vif_statistic_16). */
     uint shift_vp, round_vp, shift_vp_sq, round_vp_sq;

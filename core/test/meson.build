@@ -2237,6 +2237,480 @@ test('test_float_moment_sum_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# ADR-1498: the host side of core/src/feature/metal/metal_portable.h, the
+# prelude the Metal twins' arithmetic headers compile on in a kernel and in
+# the host tests that hold them against the CPU. Every host.
+test_metal_portable = executable('test_metal_portable',
+    ['test.c', 'test_metal_portable.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_portable', test_metal_portable, suite : ['fast'])
+
+# Host tests and source contracts of the Metal ports (ADR-1498). Each group
+# of ports adds its blocks directly below its own marker line.
+
+# [metal-ports: soft double]
+
+# ADR-1498: the fp64 operations in 64-bit integers that the exact Metal twins
+# run without an fp64 type (src/feature/metal/metal_soft_double.h and
+# metal_soft_signed.h, the Metal spelling of the SYCL twins'
+# sycl_soft_double.h / sycl_soft_signed.h), compiled on the host and held
+# bit for bit against the host's binary64 arithmetic: at least 10^6 operands
+# per operation plus edge tables. The reference is the host's own double
+# arithmetic, so the TU needs the strict FP flags. Every host.
+test_metal_soft_double = executable('test_metal_soft_double',
+    ['test.c', 'test_metal_soft_double.cpp'],
+    include_directories : [test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_soft_double', test_metal_soft_double, suite : ['fast'], timeout : 120)
+
+# ADR-1498: the Metal soft-double headers stay in the subset Metal Shading
+# Language, C and C++ share (no double, no long long, no 64-bit literal
+# suffix, no std::, no pointer or reference parameter, no static local, no
+# 128-bit type) and define every operation the SYCL headers define, under the
+# documented name mapping. Device-free, with planted regressions.
+test('test_metal_soft_double_contract',
+    import('python').find_installation(),
+    args : files('test_metal_soft_double_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# (end of soft-double group)
+
+# [metal-ports: host steps and option tables]
+
+# T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26 (psnr part) and item (2) of
+# T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 (ADR-1498): integer_psnr_metal
+# keeps an exact uint64 SSE per threadgroup, the CPU option table, the
+# psnr_score.h helpers, a flush for apsnr_* and the TEMPORAL flag. Device-free;
+# metal_option_tables.py reads both option tables from the sources.
+test('test_metal_integer_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# Item (3) of T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 (ADR-1498):
+# motion_v2_metal stores the CPU's weighted, capped SAD score from a uint64 SAD,
+# derives motion2_v2 / motion3_v2 with vmaf_motion_window_flush(), takes the
+# five-frame window and motion_force_zero, and has the CPU option table.
+test('test_metal_motion_v2_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_motion_v2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 (ADR-1498, the HIP guard of
+# ADR-1381): the border fold of the integer VIF Metal kernels
+# (feature/metal/metal_integer_vif_math.h) against integer_vif.c's single
+# reflection, every tile load inside the plane, and the 16-pixel minimum from
+# the CPU's filter widths. Every host. The contract pins the twin's ADR-1324
+# context check, CPU fallback and init() refusal.
+test_metal_integer_vif_math = executable('test_metal_integer_vif_math',
+    ['test.c', 'test_metal_integer_vif_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_integer_vif_math', test_metal_integer_vif_math, suite : ['fast'])
+
+test('test_metal_integer_vif_min_dim_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_vif_min_dim_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26, option tables (ADR-1498):
+# integer_psnr_hvs_metal, integer_cambi_metal, ssimulacra2_metal and
+# integer_vif_metal declare the CPU's options (one recorded gap: cambi's
+# heatmaps_path), flags and provided features, and execute the options they
+# declare (cambi's src_width / src_height / full_ref included). Device-free.
+test('test_metal_twin_option_tables_contract',
+    import('python').find_installation(),
+    args : files('test_metal_twin_option_tables_contract.py'),
+    suite : ['fast'],
+    # 5 s here, past 30 s on the hosted sanitizer runners (17 pairs parsed).
+    timeout : 120,
+)
+
+# integer vif gain (ADR-1498)
+# T-METAL-INTEGER-VIF-FP32-GAIN-2026-10-03: the two integers integer_vif_metal's
+# kernels take from the gain (feature/metal/metal_integer_vif_gain.h, the Metal
+# spelling of the SYCL twin's sycl_integer_vif_math.h, ADR-1432) against the
+# CPU's fp64 expressions of integer_vif.c::vif_accumulate_pixel(), value by
+# value, on the host: random and boundary variances, variances from random
+# pixel windows at 8, 10, 12 and 16 bits, six gain limits. The reference is the
+# host's own double arithmetic, so the TU needs the strict FP flags. Every
+# host. The contract pins the construct and fails on planted regressions.
+test_metal_integer_vif_gain = executable('test_metal_integer_vif_gain',
+    ['test.c', 'test_metal_integer_vif_gain.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_integer_vif_gain', test_metal_integer_vif_gain, suite : ['fast'], timeout : 300)
+
+test('test_metal_integer_vif_gain_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_vif_gain_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# (end of host-step group)
+
+# [metal-ports: integer kernels]
+
+# T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02: float_psnr_metal's per-sample
+# term (core/src/feature/metal/metal_float_psnr_math.h) against float_psnr.c's
+# float square through the CPU's picture_copy(), for every sample difference
+# at 8, 10, 12 and 16 bits, and the twin's integer group sums against the
+# CPU's noise on full-range noise frames. The source contract pins the integer
+# reduction of float_psnr.metal and the host's exact total.
+test_metal_float_psnr_math = executable('test_metal_float_psnr_math',
+    ['test.c', 'test_metal_float_psnr_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_psnr_math', test_metal_float_psnr_math, suite : ['fast'])
+test('test_metal_float_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02: float_moment_metal's 16-bit
+# second-moment term (core/src/feature/metal/metal_float_moment_math.h)
+# against moment.c's float square (picture_copy() and compute_2nd_moment())
+# for every sample value at 8 to 16 bits, and the twin's moments against
+# compute_1st_moment() / compute_2nd_moment() on full-range noise and a bright
+# 16-bit 1920x1080 frame. The source contract pins the kernel's float squares
+# and the host's uint64 totals.
+test_metal_float_moment_math = executable('test_metal_float_moment_math',
+    ['test.c', 'test_metal_float_moment_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_moment_math', test_metal_float_moment_math, suite : ['fast'])
+# ADR-1497 / ADR-1498: metal_float_moment_sum.h, the Metal copy of the rounded
+# second-moment sum past 2^53 units, run on the host the way float_moment.metal
+# lays it out and compared bit for bit with picture_copy() +
+# compute_2nd_moment() on frames up to 7680x4320, with wrong plans too.
+test_metal_float_moment_sum = executable('test_metal_float_moment_sum',
+    ['test.c', 'test_metal_float_moment_sum.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+# Same frames as test_float_moment_sum, and the same timeout: 35 s on a
+# workstation under the sanitizer job's debug ASan + UBSan build, past 120 s on
+# its hosted runner.
+test('test_metal_float_moment_sum', test_metal_float_moment_sum, suite : ['fast'], timeout : 600)
+test('test_metal_float_moment_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_moment_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01: integer_adm_metal's decouple
+# (core/src/feature/metal/metal_integer_adm_math.h: div_lookup's integer
+# reciprocal, the Q15 ratio and adm_gain_limit_product() of the shared
+# adm_gain_limit.h) against the CPU's adm_decouple_band() and
+# adm_decouple_band_s123() at gain limits 1, 1.2, 1.5 and 100: every scale-0
+# operand, every distorted value at the operands whose fp32 reciprocal is
+# wrong, and two million scales-1-3 pairs. The source contract pins the
+# kernel's use of the header and the host's split of the limit.
+test_metal_integer_adm_math = executable('test_metal_integer_adm_math',
+    ['test.c', 'test_metal_integer_adm_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_adm_math', test_metal_integer_adm_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29 and
+# T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02: integer_motion_metal's
+# diff-first arithmetic (core/src/feature/metal/metal_integer_motion_math.h)
+# run in the kernel's threadgroup layout against the CPU `motion` extractor's
+# VMAF_integer_feature_motion_sad_score on tiny, odd and 16x16-straddling
+# frames at 8 to 16 bits, and the mirror's range at every tile index. The
+# source contract pins the kernel's order, the host's ring and score, the
+# CPU's option table and provided features, and the CPU's window flush.
+test_metal_integer_motion_math = executable('test_metal_integer_motion_math',
+    ['test.c', 'test_metal_integer_motion_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_motion_math', test_metal_integer_motion_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_motion_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_motion_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# (end of integer-kernel group)
+
+# [metal-ports: float_motion and float_vif]
+
+# ADR-1498 / ADR-1409 — float_motion_metal's arithmetic
+# (feature/metal/metal_float_motion_math.h, the lines float_motion.metal and
+# float_motion_metal.mm compile) against the CPU's own functions, bit for bit:
+# the reflect-101 fold, the taps, picture_copy() and convolution_f32_c_s() at
+# 8 to 16 bits and every motion_filter_size, the row sums against
+# compute_motion() with and without motion_add_scale1, and the frame score
+# against the float_motion extractor. No Apple device is needed.
+test_metal_float_motion_math = executable('test_metal_float_motion_math',
+    ['test.c', 'test_metal_float_motion_math.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_motion_math', test_metal_float_motion_math,
+    suite : ['fast'],
+    timeout : 120)
+
+# ADR-1498 — the source contract of the float_motion_metal port: the kernels
+# and the host compute through metal_float_motion_math.h in the CPU's order;
+# motion3 at the CPU's indices through motion_blend_tools.h (ADR-1404); the
+# option table is the CPU's. Device-free; fails on a planted return of each
+# construct the port removed.
+test('test_metal_float_motion_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_motion_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# float_vif (ADR-1498)
+# The arithmetic float_vif_metal's kernels run (src/feature/metal/
+# metal_float_vif_math.h, the Metal spelling of the SYCL twin's
+# sycl_float_vif_math.h, ADR-1422), compiled on the host and held value by
+# value against vif_statistic_s(), picture_copy() and compute_vif(), with the
+# kernels' passes composed from the header's helpers. The reference is the
+# CPU extractor's own code, linked from libvmaf, so the TU needs the strict FP
+# flags (ADR-1461). Device-free, every host.
+test_metal_float_vif_math = executable('test_metal_float_vif_math',
+    ['test.c', 'test_metal_float_vif_math.cpp',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+     '../src/gpu_picture_pool.cpp'] + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+    link_language : 'cpp',
+)
+test('test_metal_float_vif_math', test_metal_float_vif_math, suite : ['fast'], timeout : 300)
+
+# ADR-1498: float_vif_metal runs the SYCL twin's design -- the taps come from
+# vif_get_filter() as kernel arguments, log2 is the reference's polynomial as
+# bit patterns, vif_sigma_nsq reaches the statistic as a significand and
+# exponent, a row is added in one thread and the rows on the host, and the
+# option table is the CPU's. Device-free, with planted regressions; the
+# arithmetic check is test_metal_float_vif_math, the device check is
+# test_metal_float_vif_parity.
+test('test_metal_float_vif_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_vif_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# (end of float_motion / float_vif group)
+
+# [metal-ports: ssim family]
+
+# T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01: integer_ssim_metal's arithmetic
+# (core/src/feature/metal/metal_integer_ssim_math.h) compiled on the host: the
+# per-pixel term against integer_ssim.c's fp64 expression bit for bit at 8, 10,
+# 12 and 16 bits, and the whole twin (both passes, the raster-order sum of the
+# term plane, the line weights) against the CPU `ssim` extractor at `==` on the
+# frames of ssim_twin_parity.h. The source contract pins the kernel's stored
+# terms, the host's raster-order sum and the reference lines.
+test_metal_integer_ssim_math = executable('test_metal_integer_ssim_math',
+    ['test.c', 'test_metal_integer_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_ssim_math', test_metal_integer_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 items (1) and (4):
+# float_ssim_metal's arithmetic (core/src/feature/metal/metal_ssim_terms.h)
+# compiled on the host: the window terms against iqa/ssim_tools.c bit for bit,
+# and the whole twin (both passes, the raster-order sum of the stored terms,
+# the fp32 frame means) against compute_ssim() at `==`, flat identical frames
+# included. The source contract pins the kernel and host layout.
+test_metal_float_ssim_math = executable('test_metal_float_ssim_math',
+    ['test.c', 'test_metal_float_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_ssim_math', test_metal_float_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_float_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01: float_ms_ssim_metal's
+# arithmetic (core/src/feature/metal/metal_ms_ssim_math.h and
+# metal_ssim_terms.h) compiled on the host: the decimation against
+# ms_ssim_decimate.c bit for bit, and the whole twin (pyramid, both window
+# passes of every scale, the raster-order sums of the stored terms, the fp32
+# scale means, the combine) against compute_ms_ssim() at `==`. The source
+# contract pins the kernel and host layout.
+test_metal_float_ms_ssim_math = executable('test_metal_float_ms_ssim_math',
+    ['test.c', 'test_metal_float_ms_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_ms_ssim_math', test_metal_float_ms_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_float_ms_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_ms_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# (end of ssim group)
+
+# [metal-ports: ciede and float_adm]
+
+# ADR-1498: the arithmetic ciede_metal's kernel runs, on the host:
+# src/feature/ciede_ff_math.h in its Metal subset (VMAF_FF_MSL_SUBSET) on the
+# primitives of src/feature/metal/metal_ciede_math.h, with the C++ library's
+# float functions standing in for Metal's. It is test_sycl_ciede_math.c with
+# a host probe for Metal, as test_hip_ciede_math is for HIP: the pair
+# functions against the host's extended-precision math library, the pixel
+# against the reference's fp64 statements, at 8, 10, 12 and 16 bits. The
+# _coarse build makes the cube and fifth root estimates 2^-18 worse, more
+# than Metal's exp() and log() may be off, under the same bounds. Both TUs are
+# compiled without contraction, like the kernels.
+foreach _ciede : [['test_metal_ciede_math', []],
+                  ['test_metal_ciede_math_coarse', ['-DVMAF_TEST_METAL_CIEDE_COARSE_ROOTS=1']]]
+  _exe = executable(_ciede[0],
+      ['test.c', 'test_sycl_ciede_math.c', 'test_metal_ciede_math_probe.cpp'],
+      include_directories : [test_inc, include_directories('../src/')],
+      dependencies : [math_lib],
+      c_args : vmaf_strict_fp_args + ['-DVMAF_TEST_CIEDE_MATH_HOST_ONLY=1'],
+      cpp_args : vmaf_strict_fp_args + _ciede[1],
+  )
+  test(_ciede[0], _exe, suite : ['fast'], timeout : 120)
+endforeach
+
+# ADR-1498: ciede_metal compiles ciede_ff_math.h on Metal primitives, stores
+# one float per pixel and the host adds them with ciede_frame_sum(); the shared
+# headers keep a Metal subset the SYCL and HIP twins never preprocess.
+# Device-free; the arithmetic check is test_metal_ciede_math, the device check
+# is test_metal_integer_ciede_parity.
+test('test_metal_ciede_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_ciede_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# float_adm (ADR-1498)
+
+# ADR-1498: float_adm_metal holds the CPU float_adm's behaviour in source:
+# init() refuses frames below 17x17 with adm_frame_size_check() before any
+# device resource, and the frame sums are floored at compute_adm()'s
+# 1e-10 * area / 1080p. Device-free, with planted regressions; the device
+# check is test_metal_float_adm_parity.
+test('test_metal_float_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1498: what float_adm_metal's kernels run per work-item
+# (src/feature/metal/metal_float_adm_math.h, the Metal spelling of the SYCL
+# twin's sycl_float_adm_math.h) compiled as C on the host and compared bit for
+# bit with adm_tools.c's own routines: the three fp64 expressions of the
+# reference, then one scale composed as the three kernels compose it. The
+# header's host operators round like the device only without FMA contraction
+# (hence the flag), and adm_tools.c is contraction-free by construction on
+# x86-64 only (its baseline has no FMA), so the test is registered there.
+if host_machine.cpu_family() == 'x86_64'
+test_metal_float_adm_math = executable('test_metal_float_adm_math',
+    ['test.c', 'test_metal_float_adm_math.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+     '../src/gpu_picture_pool.cpp'] + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_metal_float_adm_math', test_metal_float_adm_math, suite : ['fast'], timeout : 300)
+endif
+
+# (end of ciede / float_adm group)
 
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and

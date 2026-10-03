@@ -123,7 +123,7 @@
   },
   {
    "id": "T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02",
-   "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences",
+   "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences, past 2^53 units included",
    "cases": [
     {
      "test": "test_metal_float_psnr_parity",
@@ -156,6 +156,10 @@
     {
      "test": "test_metal_float_psnr_parity",
      "case": "test_float_psnr_identical_16bit"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_16bit_past_2_53_exact"
     }
    ],
    "metrics": [
@@ -214,7 +218,7 @@
   },
   {
    "id": "T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02",
-   "closes_when": "float_moment_metal returns the CPU's second moments on full-range 16-bit content",
+   "closes_when": "float_moment_metal returns the CPU's second moments on full-range 16-bit content, past 2^53 units included",
    "cases": [
     {
      "test": "test_metal_float_moment_parity",
@@ -235,6 +239,10 @@
     {
      "test": "test_metal_float_moment_parity",
      "case": "test_float_moment_16bit_bright_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_16bit_past_2_53_exact"
     }
    ],
    "metrics": [
@@ -666,6 +674,57 @@
     {
      "test": "test_metal_integer_vif_parity",
      "case": "test_vif_metal_model_boundary"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-INTEGER-VIF-FP32-GAIN-2026-10-03",
+   "closes_when": "integer_vif_metal forms the gain terms as the CPU's truncated double products: every vif output equals the CPU's",
+   "cases": [
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_default_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_debug_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_12bit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_gain_limit_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_skip_scale0_exact"
+    },
+    {
+     "test": "test_metal_integer_vif_parity",
+     "case": "test_vif_metal_model_boundary"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_vif_metal",
+     "metrics": [
+      "integer_vif_scale0",
+      "integer_vif_scale1",
+      "integer_vif_scale2",
+      "integer_vif_scale3"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "vif"
     }
    ]
   },

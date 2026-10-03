@@ -368,6 +368,7 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 "core/src/feature/hip/float_adm/float_adm_hip_math.h" = "five macros and an include of float_adm_gpu_common.h, which carries the notice; no ADM arithmetic"
 "core/src/feature/hip/integer_ciede/ciede_hip_math.h" = "names the HIP primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
 "core/src/feature/sycl/sycl_ciede_math.h" = "names the SYCL primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
+"core/src/feature/metal/metal_ciede_math.h" = "names the Metal primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
 "core/src/feature/compat_builtin.h" = "'upstream-verbatim' describes the call sites, not this shim"
 "core/src/feature/pu21.c" = "mirrors float_ssim.c's allocate-once discipline, not its code"
 "core/src/feature/pu21_ssim.h" = "mirrors float_ssim.c's buffer-ownership discipline, not its code"

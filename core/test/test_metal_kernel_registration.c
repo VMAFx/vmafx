@@ -118,19 +118,31 @@ static char *test_metal_integer_psnr_options(void)
     return NULL;
 }
 
-static char *test_metal_integer_psnr_rejects_cpu_only_options(void)
+/* T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26: integer_psnr_metal takes
+ * every CPU `psnr` option (ADR-1498) and still refuses a key the CPU has not. */
+static char *test_metal_integer_psnr_takes_cpu_options(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_psnr_metal");
     mu_assert("integer_psnr_metal extractor must be registered", fex != NULL);
 
     VmafDictionary *opts = NULL;
     int err = vmaf_dictionary_set(&opts, "min_sse", "0.5", 0);
+    err |= vmaf_dictionary_set(&opts, "enable_mse", "true", 0);
+    err |= vmaf_dictionary_set(&opts, "enable_apsnr", "true", 0);
+    err |= vmaf_dictionary_set(&opts, "reduced_hbd_peak", "true", 0);
     mu_assert("vmaf_dictionary_set failed", err == 0);
 
     const char *missing = NULL;
     bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
     (void)vmaf_dictionary_free(&opts);
-    mu_assert("integer_psnr_metal must reject min_sse", !ok && missing != NULL);
+    mu_assert("integer_psnr_metal must take the CPU psnr options", ok && missing == NULL);
+
+    err = vmaf_dictionary_set(&opts, "enable_frobnication", "true", 0);
+    mu_assert("vmaf_dictionary_set failed", err == 0);
+    missing = NULL;
+    ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    (void)vmaf_dictionary_free(&opts);
+    mu_assert("integer_psnr_metal must reject an unknown option", !ok && missing != NULL);
     return NULL;
 }
 
@@ -140,7 +152,7 @@ char *run_tests(void)
     mu_run_test(test_metal_temporal_flag_present);
     mu_run_test(test_metal_unknown_extractor_returns_null);
     mu_run_test(test_metal_integer_psnr_options);
-    mu_run_test(test_metal_integer_psnr_rejects_cpu_only_options);
+    mu_run_test(test_metal_integer_psnr_takes_cpu_options);
     return NULL;
 }
 

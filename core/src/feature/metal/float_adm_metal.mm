@@ -4,25 +4,25 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_adm feature extractor on the Metal backend.
- *  Port of `core/src/feature/cuda/float_adm_cuda.c` (CUDA twin,
- *  ADR-0192 / ADR-0202 / ADR-0574) — same six-stage DWT → CSF →
- *  decouple → CM pipeline, same Watson-97 (csf_mode 0) CSF model, same
- *  cross-band CM threshold, same AIM (Anchored Impairment Metric) pass,
- *  same host-side double-precision reduction and cube-root / p-norm
- *  pooling.
+ *  Port of `core/src/feature/cuda/float_adm_cuda.c` and
+ *  `sycl/float_adm_sycl.cpp` (ADR-1420, ADR-1434) to the exact design of
+ *  those twins (ADR-1498): the CPU's float ADM arithmetic operation for
+ *  operation (metal_float_adm_math.h), the CPU's own routines for everything
+ *  that is not per-sample (adm_float_reference.h), and the CPU's order of
+ *  addition, so the scores equal the CPU's.
  *
  *  Algorithm summary (per frame, 4 scales):
- *    Stage 0  float_adm_dwt_vert_{8,16}bpc — DWT vertical, raw at scale 0
- *    Stage 1  float_adm_dwt_hori          — DWT horizontal → 4 sub-bands
- *    Stage 2  float_adm_decouple_csf      — decouple_a → csf_a / csf_f
- *    Stage 3  float_adm_csf_cm            — CSF denom + CM (slots 0..5)
- *    Stage 2b float_adm_csf_r             — decouple_r → csf_a_aim / _f_aim
- *    Stage 3b float_adm_aim_cm            — AIM CM numerator (slots 6..8)
- *  Host collect() reduces accum slots across threadgroups in double and
- *  applies the cube-root pooling (matches float_adm_cuda.c::collect).
+ *    Stage 0  float_adm_dwt_vert_{8,16}bpc -- DWT vertical, raw at scale 0
+ *    Stage 1  float_adm_dwt_hori           -- DWT horizontal -> 4 sub-bands
+ *    Stage 2  float_adm_decouple           -- decouple + CSF of both signals
+ *    Stage 3  float_adm_terms              -- the per-sample terms of the
+ *                                             reduced region (9 slots)
+ *    Stage 4  float_adm_rows               -- one fp32 sum per (slot, row)
+ *  Host collect() adds the rows of a slot top to bottom in fp32 and pools
+ *  each scale with adm_pool_bands_s(), as compute_adm() does.
  *
  *  Multi-scale buffer strategy: every device buffer (raw src, dwt scratch,
- *  per-scale band buffers, csf scratch, per-scale accumulators) is
+ *  per-scale band buffers, csf buffers, terms, row sums) is
  *  allocated once in init() and reused for every frame — the same
  *  posture as float_ms_ssim_metal.mm. Band buffers are per-scale because
  *  the scale-(s+1) DWT-vert reads the scale-s LL band; everything else is
@@ -31,10 +31,9 @@
  *  Metallib resolution: embedded __TEXT,__metallib blob, same pattern as
  *  every other Metal feature extractor.
  *
- *  Parity: places=4 (1e-4) vs the CPU `float_adm` at default options
- *  (ADR-0214 cross-backend gate; same bound the CUDA twin holds — see
- *  core/test/test_cuda_float_adm_parity.c). Only csf_mode 0 (Watson-97,
- *  the CPU default) is supported; other modes return -EINVAL at init.
+ *  Parity: equal to the CPU `float_adm` (test_metal_float_adm_parity, `==`).
+ *  Only csf_mode 0 (Watson-97, the CPU default) is supported; other modes
+ *  return -EINVAL at init.
  */
 
 #include <errno.h>
@@ -59,26 +58,25 @@ extern "C" {
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
+#include "../adm_csf_fixed_point.h"
+#include "../adm_float_reference.h"
 #include "../adm_options.h"
 #include "../adm_score.h"
 #include "../nonfinite_score.h"
 }
+
+#include "metal_float_adm_math.h"
 
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 #define FADM_NUM_SCALES 4
 #define FADM_NUM_BANDS  3
 #define FADM_BX         16
 #define FADM_BY         16
-#define FADM_BORDER_FACTOR 0.1
-#define FADM_ACCUM_SLOTS   9
+#define FADM_ROW_TG 64u
 
 /* Geometry uniform mirroring `FadmDims` in float_adm.metal. */
 typedef struct FadmDimsHost {
@@ -96,22 +94,10 @@ typedef struct FadmDimsHost {
     uint32_t _pad0;
 } FadmDimsHost;
 
-/* CSF / CM uniform mirroring `FadmCsf` in float_adm.metal. */
+/* DWT stage uniform mirroring `FadmCsf` in float_adm.metal. */
 typedef struct FadmCsfHost {
-    int32_t active_left;
-    int32_t active_top;
-    int32_t active_right;
-    int32_t active_bottom;
-    float rfactor_h;
-    float rfactor_v;
-    float rfactor_d;
-    float gain_limit;
     float scaler;
     float pixel_offset;
-    /* ADR-1220: the two former padding slots now carry adm_p_norm and
-     * adm_bypass_cm, so the struct size and alignment are unchanged. */
-    float p_norm;
-    uint32_t bypass_cm;
 } FadmCsfHost;
 
 typedef struct FloatAdmStateMetal {
@@ -122,10 +108,9 @@ typedef struct FloatAdmStateMetal {
     void *pso_dwt_vert_8;
     void *pso_dwt_vert_16;
     void *pso_dwt_hori;
-    void *pso_decouple_csf;
-    void *pso_csf_cm;
-    void *pso_csf_r;
-    void *pso_aim_cm;
+    void *pso_decouple;
+    void *pso_terms;
+    void *pso_rows;
 
     /* Reused device buffers. */
     void *src_ref;
@@ -135,10 +120,11 @@ typedef struct FloatAdmStateMetal {
     void *ref_band[FADM_NUM_SCALES];
     void *dis_band[FADM_NUM_SCALES];
     void *csf_a;
-    void *csf_f;
-    void *csf_a_aim;
-    void *csf_f_aim;
-    void *accum[FADM_NUM_SCALES];
+    void *csf_fa;
+    void *csf_r;
+    void *csf_fr;
+    void *terms;
+    void *rows;
 
     unsigned width;
     unsigned height;
@@ -150,9 +136,14 @@ typedef struct FloatAdmStateMetal {
     unsigned scale_h[FADM_NUM_SCALES];
     unsigned scale_half_w[FADM_NUM_SCALES];
     unsigned scale_half_h[FADM_NUM_SCALES];
-    unsigned wg_count[FADM_NUM_SCALES];
+    AdmBorderS region[FADM_NUM_SCALES]; /* adm_border_s() */
+    size_t row_offset[FADM_NUM_SCALES]; /* floats into `rows` */
+    size_t row_floats;
+    size_t term_floats;
 
-    float rfactor[FADM_NUM_SCALES * 3];
+    float rfactor[FADM_NUM_SCALES][FADM_NUM_BANDS]; /* adm_csf_rfactor_s() */
+    float cos_1deg_sq;                              /* adm_decouple_cos_1deg_sq_s() */
+    VmafMtlFadmGainLimit gain_limit;
 
     /* Options — same defaults as float_adm.c. */
     bool debug;
@@ -168,6 +159,14 @@ typedef struct FloatAdmStateMetal {
     double adm_p_norm;
     double adm_dlm_weight;
     double adm_min_val;
+    double adm_f1s0;
+    double adm_f1s1;
+    double adm_f1s2;
+    double adm_f1s3;
+    double adm_f2s0;
+    double adm_f2s1;
+    double adm_f2s2;
+    double adm_f2s3;
     int adm_skip_aim_scale;
     bool adm_skip_scale0;
 
@@ -287,13 +286,85 @@ static const VmafOption options[] = {
      .min = 0.0,
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s0",
+     .alias = "f1s0",
+     .help = "factor1 scale0",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s0),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s1",
+     .alias = "f1s1",
+     .help = "factor1 scale1",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s1),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s2",
+     .alias = "f1s2",
+     .help = "factor1 scale2",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s2),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s3",
+     .alias = "f1s3",
+     .help = "factor1 scale3",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s3),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s0",
+     .alias = "f2s0",
+     .help = "factor2 scale0",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s0),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s1",
+     .alias = "f2s1",
+     .help = "factor2 scale1",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s1),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s2",
+     .alias = "f2s2",
+     .help = "factor2 scale2",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s2),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s3",
+     .alias = "f2s3",
+     .help = "factor2 scale3",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s3),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_skip_aim_scale",
      .alias = "sasc",
      .help = "when set, skip AIM calculations for that scale",
      .offset = offsetof(FloatAdmStateMetal, adm_skip_aim_scale),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = -1},
-     .min = -1,
+     .min = 0,
      .max = 3,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_skip_scale0",
@@ -305,31 +376,6 @@ static const VmafOption options[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0},
 };
-
-/* ---- DWT quant-step (CSF rfactor) — bit-for-bit replica of the CUDA
- * twin's fadm_dwt_quant_step (= dwt_quant_step in adm_tools.h). ---- */
-static const float fadm_dwt_basis_amp[6][4] = {
-    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
-    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
-    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f},
-};
-static const float fadm_dwt_a_Y = 0.495f;
-static const float fadm_dwt_k_Y = 0.466f;
-static const float fadm_dwt_f0_Y = 0.401f;
-static const float fadm_dwt_g_Y[4] = {1.501f, 1.0f, 0.534f, 1.0f};
-
-static float fadm_dwt_quant_step(int lambda, int theta, double view_dist, int display_h)
-{
-    const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
-    const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)fadm_dwt_f0_Y *
-                                    (double)fadm_dwt_g_Y[theta] / (double)r);
-    /* The exponent is a float product, as in adm_tools.h::dwt_quant_step():
-     * only its result is promoted for pow() (ADR-1489). */
-    const float exponent = fadm_dwt_k_Y * temp * temp;
-    const float Q = (float)(2.0 * (double)fadm_dwt_a_Y * pow(10.0, (double)exponent) /
-                            (double)fadm_dwt_basis_amp[lambda][theta]);
-    return Q;
-}
 
 static void compute_per_scale_dims(FloatAdmStateMetal *s)
 {
@@ -345,7 +391,30 @@ static void compute_per_scale_dims(FloatAdmStateMetal *s)
         cw = hw;
         ch = hh;
     }
+    s->row_floats = 0u;
+    s->term_floats = 0u;
+    for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
+        s->region[scale] = adm_border_s((int)s->scale_half_w[scale], (int)s->scale_half_h[scale],
+                                        ADM_BORDER_FACTOR);
+        const size_t region_w = (size_t)(s->region[scale].right - s->region[scale].left);
+        const size_t region_h = (size_t)(s->region[scale].bottom - s->region[scale].top);
+        s->row_offset[scale] = s->row_floats;
+        s->row_floats += (size_t)VMAF_MTL_FADM_TERM_SLOTS * region_h;
+        if ((size_t)VMAF_MTL_FADM_TERM_SLOTS * region_w * region_h > s->term_floats) {
+            s->term_floats = (size_t)VMAF_MTL_FADM_TERM_SLOTS * region_w * region_h;
+        }
+    }
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
+}
+
+static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
+{
+    id<MTLFunction> fn = [lib newFunctionWithName:name];
+    if (fn == nil) { return NULL; }
+    NSError *err = nil;
+    id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
+    if (pso == nil) { return NULL; }
+    return (__bridge_retained void *)pso;
 }
 
 static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
@@ -363,53 +432,24 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
     if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn_dv8 = [lib newFunctionWithName:@"float_adm_dwt_vert_8bpc"];
-    id<MTLFunction> fn_dv16 = [lib newFunctionWithName:@"float_adm_dwt_vert_16bpc"];
-    id<MTLFunction> fn_dh = [lib newFunctionWithName:@"float_adm_dwt_hori"];
-    id<MTLFunction> fn_dc = [lib newFunctionWithName:@"float_adm_decouple_csf"];
-    id<MTLFunction> fn_cc = [lib newFunctionWithName:@"float_adm_csf_cm"];
-    id<MTLFunction> fn_cr = [lib newFunctionWithName:@"float_adm_csf_r"];
-    id<MTLFunction> fn_ac = [lib newFunctionWithName:@"float_adm_aim_cm"];
-    if (fn_dv8 == nil || fn_dv16 == nil || fn_dh == nil || fn_dc == nil || fn_cc == nil ||
-        fn_cr == nil || fn_ac == nil) {
+    s->pso_dwt_vert_8 = make_pipeline(device, lib, @"float_adm_dwt_vert_8bpc");
+    s->pso_dwt_vert_16 = make_pipeline(device, lib, @"float_adm_dwt_vert_16bpc");
+    s->pso_dwt_hori = make_pipeline(device, lib, @"float_adm_dwt_hori");
+    s->pso_decouple = make_pipeline(device, lib, @"float_adm_decouple");
+    s->pso_terms = make_pipeline(device, lib, @"float_adm_terms");
+    s->pso_rows = make_pipeline(device, lib, @"float_adm_rows");
+    if (s->pso_dwt_vert_8 == NULL || s->pso_dwt_vert_16 == NULL || s->pso_dwt_hori == NULL ||
+        s->pso_decouple == NULL || s->pso_terms == NULL || s->pso_rows == NULL) {
         return -ENODEV;
     }
-
-    id<MTLComputePipelineState> p_dv8 = [device newComputePipelineStateWithFunction:fn_dv8
-                                                                             error:&err];
-    id<MTLComputePipelineState> p_dv16 = [device newComputePipelineStateWithFunction:fn_dv16
-                                                                              error:&err];
-    id<MTLComputePipelineState> p_dh = [device newComputePipelineStateWithFunction:fn_dh
-                                                                            error:&err];
-    id<MTLComputePipelineState> p_dc = [device newComputePipelineStateWithFunction:fn_dc
-                                                                            error:&err];
-    id<MTLComputePipelineState> p_cc = [device newComputePipelineStateWithFunction:fn_cc
-                                                                            error:&err];
-    id<MTLComputePipelineState> p_cr = [device newComputePipelineStateWithFunction:fn_cr
-                                                                            error:&err];
-    id<MTLComputePipelineState> p_ac = [device newComputePipelineStateWithFunction:fn_ac
-                                                                            error:&err];
-    if (p_dv8 == nil || p_dv16 == nil || p_dh == nil || p_dc == nil || p_cc == nil ||
-        p_cr == nil || p_ac == nil) {
-        return -ENODEV;
-    }
-
-    s->pso_dwt_vert_8 = (__bridge_retained void *)p_dv8;
-    s->pso_dwt_vert_16 = (__bridge_retained void *)p_dv16;
-    s->pso_dwt_hori = (__bridge_retained void *)p_dh;
-    s->pso_decouple_csf = (__bridge_retained void *)p_dc;
-    s->pso_csf_cm = (__bridge_retained void *)p_cc;
-    s->pso_csf_r = (__bridge_retained void *)p_cr;
-    s->pso_aim_cm = (__bridge_retained void *)p_ac;
     return 0;
 }
 
 /* Release every retained PSO. Safe on a partially-built state. */
 static void release_psos(FloatAdmStateMetal *s)
 {
-    void **psos[] = {&s->pso_aim_cm,       &s->pso_csf_r,   &s->pso_csf_cm,
-                     &s->pso_decouple_csf, &s->pso_dwt_hori, &s->pso_dwt_vert_16,
-                     &s->pso_dwt_vert_8};
+    void **psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
+                     &s->pso_dwt_hori,    &s->pso_dwt_vert_16, &s->pso_dwt_vert_8};
     for (size_t i = 0; i < sizeof(psos) / sizeof(psos[0]); ++i) {
         if (*psos[i]) {
             (void)(__bridge_transfer id<MTLComputePipelineState>)(*psos[i]);
@@ -430,13 +470,9 @@ static void release_buffers(FloatAdmStateMetal *s)
             (void)(__bridge_transfer id<MTLBuffer>)s->dis_band[i];
             s->dis_band[i] = NULL;
         }
-        if (s->accum[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)s->accum[i];
-            s->accum[i] = NULL;
-        }
     }
-    void **single[] = {&s->src_ref, &s->src_dis,    &s->dwt_tmp_ref, &s->dwt_tmp_dis,
-                       &s->csf_a,   &s->csf_f,       &s->csf_a_aim,   &s->csf_f_aim};
+    void **single[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
+                       &s->csf_fa,  &s->csf_r,   &s->csf_fr,      &s->terms,       &s->rows};
     for (size_t i = 0; i < sizeof(single) / sizeof(single[0]); ++i) {
         if (*single[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)(*single[i]);
@@ -449,6 +485,13 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
+
+    /* Below 17x17 the scale-3 bands have one sample; the CPU float_adm
+     * refuses such frames (adm_frame_size_check()), and so does the twin,
+     * before it reads its state or claims any device resource. */
+    const int size_err = adm_frame_size_check("float_adm_metal", w, h);
+    if (size_err != 0) { return size_err; }
+
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
 
     /* Watson-97 (mode 0) only — matches the CUDA twin (other CSF modes
@@ -465,22 +508,21 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     else if (bpc == 12u) { s->scaler = 16.0f; }
     else { s->scaler = 256.0f; }
 
+    /* The constants the reference derives per frame, taken from its own
+     * routines so they cannot drift from it (ADR-1420, ADR-1434). The CSF
+     * weights come from adm_csf_rfactor_s() with the options float_adm.c
+     * passes, the per-scale overrides adm_f1sN / adm_f2sN included; in the
+     * Watson-97 mode this twin supports they ignore adm_csf_scale /
+     * adm_csf_diag_scale, as on the CPU (ADR-1214). */
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-        const float f1 =
-            fadm_dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
-        const float f2 =
-            fadm_dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        /* ADR-1214: match the CPU reference exactly. In the Watson-97 mode this
-         * twin supports (adm_csf_mode == 0) `adm_tools.c::adm_csf_rfactor_s`
-         * sets rfactor = 1 / dwt_quant_step(...) and does NOT consult
-         * adm_csf_scale / adm_csf_diag_scale — those two options only enter the
-         * Barten branch (mode 1). Multiplying them in here made a non-default
-         * scale change the GPU score while the CPU ignored it, and the comment
-         * that used to sit here claimed the opposite of what adm_tools.c does. */
-        s->rfactor[scale * 3 + 0] = 1.0f / f1;
-        s->rfactor[scale * 3 + 1] = 1.0f / f1;
-        s->rfactor[scale * 3 + 2] = 1.0f / f2;
+        adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                          s->adm_csf_mode, DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale,
+                          s->adm_csf_diag_scale, s->adm_f1s0, s->adm_f1s1, s->adm_f1s2,
+                          s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2, s->adm_f2s3,
+                          s->rfactor[scale]);
     }
+    s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
+    s->gain_limit = vmaf_mtl_fadm_make_gain_limit(s->adm_enhn_gain_limit);
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -527,34 +569,23 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
         const size_t csf_bytes =
             (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-        id<MTLBuffer> ca = [device newBufferWithLength:csf_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> cf = [device newBufferWithLength:csf_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> caa = [device newBufferWithLength:csf_bytes
-                                                options:MTLResourceStorageModeShared];
-        id<MTLBuffer> cfa = [device newBufferWithLength:csf_bytes
-                                                options:MTLResourceStorageModeShared];
-        if (ca == nil || cf == nil || caa == nil || cfa == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->csf_a = (__bridge_retained void *)ca;
-        s->csf_f = (__bridge_retained void *)cf;
-        s->csf_a_aim = (__bridge_retained void *)caa;
-        s->csf_f_aim = (__bridge_retained void *)cfa;
-
-        for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-            const int hh = (int)s->scale_half_h[scale];
-            int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
-            if (top < 0) { top = 0; }
-            const int bottom = hh - top;
-            const unsigned num_rows = (bottom > top) ? (unsigned)(bottom - top) : 1u;
-            s->wg_count[scale] = 3u * num_rows;
-            const size_t accum_bytes =
-                (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float);
-            id<MTLBuffer> ac = [device newBufferWithLength:accum_bytes
+        void **csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
+        for (size_t i = 0; i < sizeof(csf_slots) / sizeof(csf_slots[0]); ++i) {
+            id<MTLBuffer> cb = [device newBufferWithLength:csf_bytes
                                                    options:MTLResourceStorageModeShared];
-            if (ac == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->accum[scale] = (__bridge_retained void *)ac;
+            if (cb == nil) { err = -ENOMEM; goto fail_bufs; }
+            *csf_slots[i] = (__bridge_retained void *)cb;
         }
+
+        const size_t term_bytes = (s->term_floats > 0u ? s->term_floats : 1u) * sizeof(float);
+        id<MTLBuffer> tb = [device newBufferWithLength:term_bytes
+                                               options:MTLResourceStorageModeShared];
+        const size_t row_bytes = (s->row_floats > 0u ? s->row_floats : 1u) * sizeof(float);
+        id<MTLBuffer> rb = [device newBufferWithLength:row_bytes
+                                               options:MTLResourceStorageModeShared];
+        if (tb == nil || rb == nil) { err = -ENOMEM; goto fail_bufs; }
+        s->terms = (__bridge_retained void *)tb;
+        s->rows = (__bridge_retained void *)rb;
 
         err = build_pipelines(s, device);
     }
@@ -590,6 +621,165 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
     }
 }
 
+/* Dispatch `grid` threadgroups of `tg` threads of `pso` with the buffers and
+ * bytes of one stage: buffers[i] at index i, then `bytes` at the next index. */
+static void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
+                           NSArray<id<MTLBuffer>> *buffers, const void *bytes,
+                           size_t bytes_length, MTLSize grid, MTLSize tg)
+{
+    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)pso_handle;
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:pso];
+    for (NSUInteger i = 0; i < [buffers count]; ++i) {
+        [enc setBuffer:buffers[i] offset:0 atIndex:i];
+    }
+    [enc setBytes:bytes length:bytes_length atIndex:[buffers count]];
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+    [enc endEncoding];
+}
+
+static MTLSize grid_2d(unsigned w, unsigned h, unsigned z)
+{
+    return MTLSizeMake((w + FADM_BX - 1u) / FADM_BX, (h + FADM_BY - 1u) / FADM_BY, z);
+}
+
+/* Stages 0 and 1: the DWT of one scale, reference and distorted (z = 2). */
+static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+{
+    const int cur_w = (int)s->scale_w[scale];
+    const int cur_h = (int)s->scale_h[scale];
+    const int half_w = (int)s->scale_half_w[scale];
+    const int half_h = (int)s->scale_half_h[scale];
+
+    FadmDimsHost d;
+    memset(&d, 0, sizeof(d));
+    d.scale = scale;
+    d.cur_w = cur_w;
+    d.cur_h = cur_h;
+    d.half_w = half_w;
+    d.half_h = half_h;
+    d.buf_stride = (int)s->buf_stride;
+    d.parent_w = (scale > 0) ? (int)s->scale_w[scale] : 0;
+    d.parent_h = (scale > 0) ? (int)s->scale_h[scale] : 0;
+    d.parent_half_h = (scale > 0) ? (int)s->scale_half_h[scale - 1] : 0;
+    d.parent_buf_stride = (int)s->buf_stride;
+    d.bpc = s->bpc;
+
+    FadmCsfHost c;
+    c.scaler = s->scaler;
+    c.pixel_offset = -128.0f;
+
+    id<MTLBuffer> ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
+    id<MTLBuffer> dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
+    id<MTLBuffer> parent_ref =
+        (scale > 0) ? (__bridge id<MTLBuffer>)s->ref_band[scale - 1] : ref_band;
+    id<MTLBuffer> parent_dis =
+        (scale > 0) ? (__bridge id<MTLBuffer>)s->dis_band[scale - 1] : dis_band;
+    id<MTLBuffer> src_ref = (__bridge id<MTLBuffer>)s->src_ref;
+    id<MTLBuffer> src_dis = (__bridge id<MTLBuffer>)s->src_dis;
+    id<MTLBuffer> dwt_ref = (__bridge id<MTLBuffer>)s->dwt_tmp_ref;
+    id<MTLBuffer> dwt_dis = (__bridge id<MTLBuffer>)s->dwt_tmp_dis;
+    const MTLSize tg = MTLSizeMake(FADM_BX, FADM_BY, 1);
+
+    /* Stage 0 -- DWT vertical (z=2 ref/dis). */
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)(
+                                     (s->bpc <= 8u) ? s->pso_dwt_vert_8 : s->pso_dwt_vert_16)];
+    [enc setBuffer:(scale == 0 ? src_ref : parent_ref) offset:0 atIndex:0];
+    [enc setBuffer:(scale == 0 ? src_dis : parent_dis) offset:0 atIndex:1];
+    [enc setBuffer:dwt_ref offset:0 atIndex:2];
+    [enc setBuffer:dwt_dis offset:0 atIndex:3];
+    [enc setBytes:&d length:sizeof(d) atIndex:4];
+    [enc setBytes:&c length:sizeof(c) atIndex:5];
+    [enc setBuffer:parent_ref offset:0 atIndex:6];
+    [enc setBuffer:parent_dis offset:0 atIndex:7];
+    [enc dispatchThreadgroups:grid_2d((unsigned)cur_w, (unsigned)half_h, 2)
+        threadsPerThreadgroup:tg];
+    [enc endEncoding];
+
+    /* Stage 1 -- DWT horizontal (z=2 ref/dis). */
+    dispatch_stage(cmd, s->pso_dwt_hori, @[dwt_ref, dwt_dis, ref_band, dis_band], &d, sizeof(d),
+                   grid_2d((unsigned)half_w, (unsigned)half_h, 2), tg);
+}
+
+/* Stage 2: decouple + CSF of both signals. */
+static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+{
+    VmafMtlFadmDecoupleArgs a;
+    memset(&a, 0, sizeof(a));
+    a.limit = s->gain_limit;
+    a.half_w = (int32_t)s->scale_half_w[scale];
+    a.half_h = (int32_t)s->scale_half_h[scale];
+    a.buf_stride = (int32_t)s->buf_stride;
+    a.cos_1deg_sq = s->cos_1deg_sq;
+    a.rfactor_h = s->rfactor[scale][0];
+    a.rfactor_v = s->rfactor[scale][1];
+    a.rfactor_d = s->rfactor[scale][2];
+
+    NSArray<id<MTLBuffer>> *buffers = @[
+        (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->dis_band[scale],
+        (__bridge id<MTLBuffer>)s->csf_a, (__bridge id<MTLBuffer>)s->csf_fa,
+        (__bridge id<MTLBuffer>)s->csf_r, (__bridge id<MTLBuffer>)s->csf_fr
+    ];
+    dispatch_stage(cmd, s->pso_decouple, buffers, &a, sizeof(a),
+                   grid_2d((unsigned)a.half_w, (unsigned)a.half_h, 1),
+                   MTLSizeMake(FADM_BX, FADM_BY, 1));
+}
+
+/* Stages 3 and 4: the terms of the reduced region and their row sums. A
+ * scale whose region is empty has no terms and no rows. */
+static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+{
+    const AdmBorderS *r = &s->region[scale];
+    const int region_w = r->right - r->left;
+    const int region_h = r->bottom - r->top;
+    if (region_w <= 0 || region_h <= 0) { return; }
+
+    VmafMtlFadmTermArgs t;
+    memset(&t, 0, sizeof(t));
+    t.half_w = (int32_t)s->scale_half_w[scale];
+    t.half_h = (int32_t)s->scale_half_h[scale];
+    t.buf_stride = (int32_t)s->buf_stride;
+    t.left = r->left;
+    t.top = r->top;
+    t.region_w = (uint32_t)region_w;
+    t.region_h = (uint32_t)region_h;
+    /* adm_p_norm and adm_bypass_cm reach the kernel as the CPU reads them
+     * (ADR-1220): `is_cube` is the `adm_p_norm == 3.0` of adm_tools.c. */
+    t.p_norm = (float)s->adm_p_norm;
+    t.is_cube = (s->adm_p_norm == 3.0) ? 1u : 0u;
+    t.bypass_cm = (s->adm_bypass_cm != 0) ? 1u : 0u;
+    t.rfactor_h = s->rfactor[scale][0];
+    t.rfactor_v = s->rfactor[scale][1];
+    t.rfactor_d = s->rfactor[scale][2];
+
+    id<MTLBuffer> terms = (__bridge id<MTLBuffer>)s->terms;
+    NSArray<id<MTLBuffer>> *term_buffers = @[
+        (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->csf_a,
+        (__bridge id<MTLBuffer>)s->csf_fa, (__bridge id<MTLBuffer>)s->csf_r,
+        (__bridge id<MTLBuffer>)s->csf_fr, terms
+    ];
+    dispatch_stage(cmd, s->pso_terms, term_buffers, &t, sizeof(t),
+                   grid_2d((unsigned)region_w, (unsigned)region_h, 1),
+                   MTLSizeMake(FADM_BX, FADM_BY, 1));
+
+    VmafMtlFadmRowArgs row_args;
+    row_args.region_w = (uint32_t)region_w;
+    row_args.region_h = (uint32_t)region_h;
+    /* One work-item per (slot, row); each adds its row left to right. */
+    id<MTLBuffer> rows = (__bridge id<MTLBuffer>)s->rows;
+    const NSUInteger rows_offset = (NSUInteger)(s->row_offset[scale] * sizeof(float));
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_rows];
+    [enc setBuffer:terms offset:0 atIndex:0];
+    [enc setBuffer:rows offset:rows_offset atIndex:1];
+    [enc setBytes:&row_args length:sizeof(row_args) atIndex:2];
+    const NSUInteger items = (NSUInteger)VMAF_MTL_FADM_TERM_SLOTS * (NSUInteger)region_h;
+    [enc dispatchThreadgroups:MTLSizeMake((items + FADM_ROW_TG - 1u) / FADM_ROW_TG, 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(FADM_ROW_TG, 1, 1)];
+    [enc endEncoding];
+}
+
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
@@ -604,201 +794,16 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (dh == NULL || qh == NULL) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
-    id<MTLBuffer> src_ref = (__bridge id<MTLBuffer>)s->src_ref;
-    id<MTLBuffer> src_dis = (__bridge id<MTLBuffer>)s->src_dis;
-    fill_raw_plane(ref_pic, src_ref, s->width, s->height, s->bpc);
-    fill_raw_plane(dist_pic, src_dis, s->width, s->height, s->bpc);
-
-    id<MTLBuffer> dwt_ref = (__bridge id<MTLBuffer>)s->dwt_tmp_ref;
-    id<MTLBuffer> dwt_dis = (__bridge id<MTLBuffer>)s->dwt_tmp_dis;
-    id<MTLBuffer> csf_a = (__bridge id<MTLBuffer>)s->csf_a;
-    id<MTLBuffer> csf_f = (__bridge id<MTLBuffer>)s->csf_f;
-    id<MTLBuffer> csf_a_aim = (__bridge id<MTLBuffer>)s->csf_a_aim;
-    id<MTLBuffer> csf_f_aim = (__bridge id<MTLBuffer>)s->csf_f_aim;
-
-    id<MTLComputePipelineState> pso_dv =
-        (s->bpc <= 8u) ? (__bridge id<MTLComputePipelineState>)s->pso_dwt_vert_8
-                       : (__bridge id<MTLComputePipelineState>)s->pso_dwt_vert_16;
-    id<MTLComputePipelineState> pso_dh = (__bridge id<MTLComputePipelineState>)s->pso_dwt_hori;
-    id<MTLComputePipelineState> pso_dc = (__bridge id<MTLComputePipelineState>)s->pso_decouple_csf;
-    id<MTLComputePipelineState> pso_cc = (__bridge id<MTLComputePipelineState>)s->pso_csf_cm;
-    id<MTLComputePipelineState> pso_cr = (__bridge id<MTLComputePipelineState>)s->pso_csf_r;
-    id<MTLComputePipelineState> pso_ac = (__bridge id<MTLComputePipelineState>)s->pso_aim_cm;
+    fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->width, s->height, s->bpc);
+    fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->src_dis, s->width, s->height, s->bpc);
 
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
-    /* Zero the accumulators (skipped-scale AIM slots must contribute 0). */
-    {
-        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-        for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-            id<MTLBuffer> ac = (__bridge id<MTLBuffer>)s->accum[scale];
-            [blit fillBuffer:ac
-                       range:NSMakeRange(0, (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS *
-                                                sizeof(float))
-                       value:0];
-        }
-        [blit endEncoding];
-    }
-
-    const float gain_limit = (float)s->adm_enhn_gain_limit;
-
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-        const int cur_w = (int)s->scale_w[scale];
-        const int cur_h = (int)s->scale_h[scale];
-        const int half_w = (int)s->scale_half_w[scale];
-        const int half_h = (int)s->scale_half_h[scale];
-
-        FadmDimsHost d;
-        memset(&d, 0, sizeof(d));
-        d.scale = scale;
-        d.cur_w = cur_w;
-        d.cur_h = cur_h;
-        d.half_w = half_w;
-        d.half_h = half_h;
-        d.buf_stride = (int)s->buf_stride;
-        d.parent_w = (scale > 0) ? (int)s->scale_w[scale] : 0;
-        d.parent_h = (scale > 0) ? (int)s->scale_h[scale] : 0;
-        d.parent_half_h = (scale > 0) ? (int)s->scale_half_h[scale - 1] : 0;
-        d.parent_buf_stride = (int)s->buf_stride;
-        d.bpc = s->bpc;
-
-        int top = (int)((double)half_h * FADM_BORDER_FACTOR - 0.5);
-        int left = (int)((double)half_w * FADM_BORDER_FACTOR - 0.5);
-        if (top < 0) { top = 0; }
-        if (left < 0) { left = 0; }
-        const int bottom = half_h - top;
-        const int right = half_w - left;
-        const int active_h = bottom - top;
-
-        FadmCsfHost c;
-        memset(&c, 0, sizeof(c));
-        c.active_left = left;
-        c.active_top = top;
-        c.active_right = right;
-        c.active_bottom = bottom;
-        c.rfactor_h = s->rfactor[scale * 3 + 0];
-        c.rfactor_v = s->rfactor[scale * 3 + 1];
-        c.rfactor_d = s->rfactor[scale * 3 + 2];
-        c.gain_limit = gain_limit;
-        c.scaler = s->scaler;
-        c.pixel_offset = -128.0f;
-        /* ADR-1220: both are VMAF_OPT_FLAG_FEATURE_PARAM options the twin
-         * advertises; the kernels hardcoded p = 3 and always subtracted the
-         * masking threshold until they were carried through here. */
-        c.p_norm = (float)s->adm_p_norm;
-        c.bypass_cm = (uint32_t)s->adm_bypass_cm;
-
-        id<MTLBuffer> ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
-        id<MTLBuffer> dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
-        id<MTLBuffer> parent_ref = (scale > 0) ? (__bridge id<MTLBuffer>)s->ref_band[scale - 1]
-                                               : ref_band;
-        id<MTLBuffer> parent_dis = (scale > 0) ? (__bridge id<MTLBuffer>)s->dis_band[scale - 1]
-                                               : dis_band;
-        id<MTLBuffer> accum = (__bridge id<MTLBuffer>)s->accum[scale];
-
-        const MTLSize tg = MTLSizeMake(FADM_BX, FADM_BY, 1);
-
-        /* Stage 0 — DWT vertical (z=2 ref/dis). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_dv];
-            [enc setBuffer:(scale == 0 ? src_ref : parent_ref) offset:0 atIndex:0];
-            [enc setBuffer:(scale == 0 ? src_dis : parent_dis) offset:0 atIndex:1];
-            [enc setBuffer:dwt_ref offset:0 atIndex:2];
-            [enc setBuffer:dwt_dis offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            [enc setBuffer:parent_ref offset:0 atIndex:6];
-            [enc setBuffer:parent_dis offset:0 atIndex:7];
-            MTLSize grid = MTLSizeMake(((unsigned)cur_w + FADM_BX - 1u) / FADM_BX,
-                                       ((unsigned)half_h + FADM_BY - 1u) / FADM_BY, 2);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 1 — DWT horizontal (z=2 ref/dis). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_dh];
-            [enc setBuffer:dwt_ref offset:0 atIndex:0];
-            [enc setBuffer:dwt_dis offset:0 atIndex:1];
-            [enc setBuffer:ref_band offset:0 atIndex:2];
-            [enc setBuffer:dis_band offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            MTLSize grid = MTLSizeMake(((unsigned)half_w + FADM_BX - 1u) / FADM_BX,
-                                       ((unsigned)half_h + FADM_BY - 1u) / FADM_BY, 2);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 2 — Decouple + CSF (decouple_a → csf_a, csf_f). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_dc];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_a offset:0 atIndex:2];
-            [enc setBuffer:csf_f offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            MTLSize grid = MTLSizeMake(((unsigned)half_w + FADM_BX - 1u) / FADM_BX,
-                                       ((unsigned)half_h + FADM_BY - 1u) / FADM_BY, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 3 — CSF denom + CM fused. 1D dispatch of 3*num_rows TGs. */
-        {
-            const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_cc];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_a offset:0 atIndex:2];
-            [enc setBuffer:csf_f offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            [enc setBuffer:accum offset:0 atIndex:8];
-            MTLSize grid = MTLSizeMake(3u * num_rows, 1, 1);
-            MTLSize tg1d = MTLSizeMake(FADM_BX * FADM_BY, 1, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg1d];
-            [enc endEncoding];
-        }
-
-        /* Stage 2b — CSF on decouple_r (AIM pass). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_cr];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_a_aim offset:0 atIndex:2];
-            [enc setBuffer:csf_f_aim offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            MTLSize grid = MTLSizeMake(((unsigned)half_w + FADM_BX - 1u) / FADM_BX,
-                                       ((unsigned)half_h + FADM_BY - 1u) / FADM_BY, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 3b — AIM CM numerator. Skipped if adm_skip_aim_scale==scale. */
-        if (s->adm_skip_aim_scale != scale) {
-            const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pso_ac];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_a_aim offset:0 atIndex:2];
-            [enc setBuffer:csf_f_aim offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            [enc setBuffer:accum offset:0 atIndex:8];
-            MTLSize grid = MTLSizeMake(3u * num_rows, 1, 1);
-            MTLSize tg1d = MTLSizeMake(FADM_BX * FADM_BY, 1, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg1d];
-            [enc endEncoding];
-        }
+        encode_dwt(s, cmd, scale);
+        encode_decouple(s, cmd, scale);
+        encode_terms_and_rows(s, cmd, scale);
     }
 
     [cmd commit];
@@ -806,26 +811,49 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
+/* One scale of compute_adm() past the kernels. The frame accumulators are the
+ * reference's: one fp32 value per band that the row sums are added to top to
+ * bottom. The scale is then concluded by the reference's own
+ * adm_pool_bands_s(), with the noise weight for the denominator and the adm2
+ * numerator and with none for the AIM numerator. */
+typedef struct FadmScaleSums {
+    float numerator;
+    float denominator;
+    float aim_numerator;
+} FadmScaleSums;
+
+static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
+{
+    FadmScaleSums sums = {0.0f, 0.0f, 0.0f};
+    if (scale == 0 && s->adm_skip_scale0) {
+        /* compute_adm(): `den_scale = 1e-10; // avoid divide by zero`. */
+        sums.denominator = (float)1e-10;
+        return sums;
+    }
+    const AdmBorderS *r = &s->region[scale];
+    const int region_w = r->right - r->left;
+    const int region_h = r->bottom - r->top;
+    const float *rows =
+        (const float *)[(__bridge id<MTLBuffer>)s->rows contents] + s->row_offset[scale];
+    float accum[VMAF_MTL_FADM_TERM_SLOTS] = {0.0f};
+    if (region_w > 0 && region_h > 0) {
+        for (unsigned slot = 0u; slot < VMAF_MTL_FADM_TERM_SLOTS; ++slot) {
+            accum[slot] = vmaf_mtl_fadm_fold_rows(rows + (size_t)slot * (size_t)region_h,
+                                                  (vmaf_mtl_u32)region_h);
+        }
+    }
+    sums.numerator = adm_pool_bands_s(accum + VMAF_MTL_FADM_SLOT_CM, region_w, region_h,
+                                      s->adm_noise_weight, s->adm_p_norm);
+    sums.denominator = adm_pool_bands_s(accum + VMAF_MTL_FADM_SLOT_DEN, region_w, region_h,
+                                        s->adm_noise_weight, s->adm_p_norm);
+    sums.aim_numerator = adm_pool_bands_s(accum + VMAF_MTL_FADM_SLOT_AIM, region_w, region_h, 0.0,
+                                          s->adm_p_norm);
+    return sums;
+}
+
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
-
-    double cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
-    double csf_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
-    double aim_cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
-
-    for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-        const float *slots = (const float *)[(__bridge id<MTLBuffer>)s->accum[scale] contents];
-        const unsigned wg_count = s->wg_count[scale];
-        for (unsigned wg = 0u; wg < wg_count; ++wg) {
-            const float *p = slots + (size_t)wg * FADM_ACCUM_SLOTS;
-            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-                csf_totals[scale][b] += (double)p[b];
-                cm_totals[scale][b] += (double)p[3 + b];
-                aim_cm_totals[scale][b] += (double)p[6 + b];
-            }
-        }
-    }
 
     double score_num = 0.0;
     double score_den = 0.0;
@@ -833,58 +861,24 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
     double aim_den = 0.0;
     double scores[8];
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-        const int hw = (int)s->scale_half_w[scale];
-        const int hh = (int)s->scale_half_h[scale];
-        int left = (int)((double)hw * FADM_BORDER_FACTOR - 0.5);
-        int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
-        if (left < 0) { left = 0; }
-        if (top < 0) { top = 0; }
-        const int right = hw - left;
-        const int bottom = hh - top;
-        /* The pooling root and the noise constant are 1/adm_p_norm, not a
-         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
-         * get_noise_constant(..., adm_p_norm). ADR-1220. */
-        const float inv_p = 1.0f / (float)s->adm_p_norm;
-        const float area_cbrt =
-            powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
-        float num_scale = 0.0f;
-        float den_scale = 0.0f;
-        if (scale == 0 && s->adm_skip_scale0) {
-            /* adm.c:235-245 replaces the scale-0 DWT with the lo-pass-only
-             * variant and leaves num_scale at 0 with den_scale = 1e-10, so
-             * scale 0 contributes nothing to the pooled adm2 / aim. The twin
-             * used to zero only the REPORTED adm_scale0 sub-score while still
-             * folding the full scale-0 num/den into the pooled score, which is
-             * a first-order change on every frame. `adm_dwt2_lo_s` writes only
-             * `band_a`, which `adm_dwt2` computes identically, so scales 1..3
-             * are unaffected and no kernel change is needed. ADR-1220. */
-            den_scale = 1e-10f;
-        } else {
-            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-                num_scale += powf((float)cm_totals[scale][b], inv_p) + area_cbrt;
-                den_scale += powf((float)csf_totals[scale][b], inv_p) + area_cbrt;
-            }
-        }
-        scores[2 * scale + 0] = num_scale;
-        scores[2 * scale + 1] = den_scale;
-        score_num += num_scale;
-        score_den += den_scale;
-
-        float aim_num_scale = 0.0f;
-        if (!(scale == 0 && s->adm_skip_scale0)) {
-            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-                aim_num_scale += powf((float)aim_cm_totals[scale][b], inv_p);
-            }
-        }
+        const FadmScaleSums sums = pool_scale(s, scale);
+        scores[2 * scale + 0] = sums.numerator;
+        scores[2 * scale + 1] = sums.denominator;
+        score_num += sums.numerator;
+        score_den += sums.denominator;
         if (s->adm_skip_aim_scale != scale) {
-            aim_den += den_scale;
-            aim_num += aim_num_scale;
+            aim_den += sums.denominator;
+            aim_num += sums.aim_numerator;
         }
     }
 
+    /* compute_adm()'s floor of the frame sums, in its expression: 1e-10 of
+     * the area relative to 1080p. The 1e-2 the twin used belonged to an
+     * ADM_OPT_SINGLE_PRECISION branch no build defined, and floored sums
+     * the CPU keeps (adm_noise_weight = 0 on a flat frame). */
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
-    const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
+    const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
     double score = 0.0;
     double score_aim = 0.0;
     int err = vmaf_adm_floor_pair_named("float_adm_metal", index, score_num, score_den,
@@ -990,7 +984,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_metal = {
     .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
     .chars = {
-        .n_dispatches_per_frame = 6 * FADM_NUM_SCALES,
+        .n_dispatches_per_frame = 5 * FADM_NUM_SCALES,
         .is_reduction_only      = false,
         .min_useful_frame_area  = 1920U * 1080U,
         .dispatch_hint          = VMAF_FEATURE_DISPATCH_AUTO,

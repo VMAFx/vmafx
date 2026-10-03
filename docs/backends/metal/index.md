@@ -101,6 +101,19 @@ the embedded metallib loads on macOS 14 and later. Without the target the
 compiler stamps the kernels with the build machine's SDK version, and such a
 library refuses to load on an older macOS.
 
+Every kernel also compiles with `-fno-fast-math -ffp-contract=off`
+(`metal_shader_strict_fp_args`,
+[ADR-1498](../../adr/1498-metal-twins-exact-designs.md)). The Metal
+compiler's default is fast math, which may divide through a reciprocal,
+reassociate sums and contract `a * b + c` into a fused multiply-add; with fast
+math off fp32 `+ - * /`, `sqrt` and `fma` are correctly rounded, and
+`-ffp-contract=off` turns off the contraction the safe mode still allows
+([Research-1498](../../research/1498-metal-shading-language-fp-semantics.md)).
+That is what lets a twin return the CPU's bits: the arithmetic of a ported
+twin lives in a header on `core/src/feature/metal/metal_portable.h`, which
+compiles both as a kernel include and on the host, where a test holds it
+against the CPU extractor value by value.
+
 ## Runtime layer
 
 The runtime layer uses Objective-C++ `.mm` TUs under ARC and keeps
@@ -289,6 +302,45 @@ The same parity tests build on every host as self-tests
 (`test_metal_selftest_<name>`, suite `metal-selftest`), with the CPU extractor
 standing in for the twin: every `==` case must pass there, so a wrong fixture,
 key or option string fails CI before it reaches a tester.
+
+### What a ported twin computes
+
+[ADR-1498](../../adr/1498-metal-twins-exact-designs.md) ports the Metal
+twins to the designs that make the CUDA, HIP and SYCL twins return the CPU's
+scores bit for bit. Every `.metal` file builds with
+`-fno-fast-math -ffp-contract=off`, the arithmetic of each twin lives in a
+header that compiles both as Metal Shading Language and as host C, and a host
+test holds that header against the CPU extractor value by value. Until a
+tester's report shows a twin's parity test passing on an Apple GPU, its state
+row stays open.
+
+| Twin | What changed for a user | Host proof |
+| --- | --- | --- |
+| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences: integer sums of the CPU's `float` terms per row segment, rows added in the CPU's order, so frames past 2^53 units match too. | `test_metal_float_psnr_math` |
+| `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares), and past 2^53 units of the sum (16-bit frames above about 2 megapixels) it forms the CPU's rounded sum with five more kernels; a device whose pipelines cannot run 256 threads per threadgroup fails at init. | `test_metal_float_moment_math`, `test_metal_float_moment_sum` |
+| `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. | `test_metal_integer_adm_math` |
+| `integer_motion_metal` | Differences frames before the blur, as the CPU; emits `motion_sad_score` and `motion3`; CPU option table (`motion_add_uv` is gone); `motion2` / `motion3` from the CPU's window code. | `test_metal_integer_motion_math` |
+| `integer_motion_v2_metal` | Same window code; `motion_fps_weight` and `motion_max_val` applied per frame, as the CPU. | `test_metal_motion_v2_exact_contract.py` |
+| `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above 2^32); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
+| `integer_vif_metal` | The CPU's gain integers (one integer division, the CPU's double operations replayed in 64-bit integers when needed). In a model run, frames below 16 pixels go to the CPU `vif`; a direct request on them fails at init. Borders fold as the CPU's mirror. | `test_metal_integer_vif_gain`, `test_metal_integer_vif_math` |
+| `integer_cambi_metal` | CPU option table except `heatmaps_path`. | `test_metal_twin_option_tables_contract.py` |
+| `float_motion_metal` | Row sums in the CPU's order, `motion3` and the CPU's nine options. | `test_metal_float_motion_math` |
+| `integer_ciede_metal` | `ciede.c`'s arithmetic on fp32 pairs, one float per pixel summed in raster order. | `test_metal_ciede_math` |
+| `float_adm_metal` | The CPU's arithmetic: CSF weights from the CPU's routine (`adm_f1s0`..`adm_f2s3` are now options), exact fp32 quotient, fp64 expressions as exact pairs, rows added in the CPU's order, the CPU's frame-sum floor. Frames below 17x17 are refused at init. `adm_csf_mode` stays default-only, as on the other GPU backends. | `test_metal_float_adm_math` |
+| `float_vif_metal` | The CPU's arithmetic; every `vif_kernelscale` runs (the taps come from the CPU's filter routine), `vif_prescale` uses the CPU's scaler, and the per-scale floors are applied. | `test_metal_float_vif_math` |
+| `integer_ssim_metal` | Each pixel's term as the CPU's double term, added in the CPU's raster order. | `test_metal_integer_ssim_math` |
+| `float_ssim_metal` | The CPU's window terms with no forced 1 (an identical flat frame gives a finite `enable_db` score, as the CPU), added in raster order. | `test_metal_float_ssim_math` |
+| `float_ms_ssim_metal` | The CPU's decimation and window terms, added in raster order per plane and scale, combined as the CPU combines them. | `test_metal_float_ms_ssim_math` |
+
+Options that a twin accepts are now its CPU extractor's, with the same names,
+defaults and ranges, so a feature string that works with `--backend cpu` works
+with `--backend metal`. Three options are the exceptions.
+`integer_cambi_metal` does not declare `heatmaps_path`, because the CPU's
+heatmap writer is internal to `cambi.c`. `float_adm_metal` runs
+`adm_csf_mode=0` only and marks the option default-only, so a model that asks
+for another mode keeps the CPU extractor. `float_ssim_metal` runs at
+decimation scale 1 only: a model run whose automatic scale is larger keeps the
+CPU extractor, and a direct request for another scale fails at init.
 
 ## References
 

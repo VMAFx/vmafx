@@ -38,13 +38,19 @@
  *  partials are separate Shared buffers sized to that scale's WG count. All
  *  buffers are allocated once in init() (zero per-frame heap traffic).
  *
- *  Param contract: vif_enhn_gain_limit is forwarded to the kernel as a float
- *  (the CPU uses it as a double inside the statistic; the only float-touched
- *  values are small relative to the 1e-4 gate). debug and vif_skip_scale0 are
- *  host-side only.
+ *  Param contract: vif_enhn_gain_limit reaches the kernels as a
+ *  VmafMtlGainLimit (metal_integer_vif_gain.h), its fp64 parts formed once per
+ *  frame on the host: the CPU truncates two integers from an fp64 gain, and
+ *  the kernels return those integers (ADR-1432, ported by ADR-1498). debug
+ *  and vif_skip_scale0 are host-side only.
  *
- *  Parity: places=4 (1e-4, ADR-0214) — the same gate the CUDA/SYCL
- *  integer_vif parity tests assert.
+ *  Minimum frame size (T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29, the HIP
+ *  guard of ADR-1381 on ADR-1324, ported by ADR-1498): every scale reflects
+ *  its filter taps once, which stays inside the plane only while
+ *  floor(dim / 2^s) exceeds the tap half-width, so frames below
+ *  vif_metal_min_dim() = 16 go to the CPU `vif` under model dispatch
+ *  (check_context_metal()) and a direct request for the twin fails init()
+ *  with -EINVAL before any device work.
  */
 
 #include <errno.h>
@@ -68,11 +74,16 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
+#include "integer_vif.h"
 #include "libvmaf/picture.h"
+#include "log.h"
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
 }
+
+/* The gain terms' arithmetic and the VmafMtlGainLimit layout the kernels read. */
+#include "metal_integer_vif_gain.h"
 
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
@@ -239,115 +250,160 @@ static void release_buffers(IntegerVifStateMetal *s)
     }
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
-                          unsigned bpc, unsigned w, unsigned h)
+/*
+ * Smallest frame dimension every scale can filter, from the CPU's filter
+ * widths (integer_vif.h::vif_filter1d_width), as vif_hip_min_dim() derives it
+ * (ADR-1381). Scale s works on floor(dim / 2^s) samples and the CPU reflects
+ * each filter tap once; a tap half-width of k stays inside the plane only
+ * while floor(dim / 2^s) >= k + 1, i.e. dim >= (k + 1) << s. The scale
+ * filters {17, 9, 5, 3} need {9, 10, 12, 16} and the decimation filters (the
+ * next scale's, {9, 5, 3}) need {5, 6, 8}, so the bound is 16, as for
+ * vif_sycl, vif_cuda and vif_hip. Below it the kernels would read other
+ * samples than the CPU does.
+ */
+static unsigned vif_metal_min_dim(void)
 {
-    (void)pix_fmt;
-    IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
+    unsigned min_dim = 1u;
+    for (unsigned scale = 0u; scale < (unsigned)IVIF_SCALES; scale++) {
+        const unsigned need = (((unsigned)vif_filter1d_width[scale] / 2u) + 1u) << scale;
+        const unsigned rd_need =
+            (scale + 1u < (unsigned)IVIF_SCALES)
+                ? (((unsigned)vif_filter1d_width[scale + 1u] / 2u) + 1u) << scale
+                : 1u;
+        min_dim = (need > min_dim) ? need : min_dim;
+        min_dim = (rd_need > min_dim) ? rd_need : min_dim;
+    }
+    return min_dim;
+}
 
+/* ADR-1324 first-picture gate: model dispatch computes frames below
+ * vif_metal_min_dim() with the CPU `vif` extractor instead of this twin. */
+static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                               unsigned bpc, unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    const unsigned min_dim = vif_metal_min_dim();
+    return (w < min_dim || h < min_dim) ? -ENOTSUP : 0;
+}
+
+/* Per-scale geometry: halve each dimension (no border crop); every scale is
+ * at least two samples wide and high from the minimum on. */
+static void vif_metal_init_geometry(IntegerVifStateMetal *s, unsigned bpc, unsigned w, unsigned h)
+{
     s->width  = w;
     s->height = h;
     s->bpc    = bpc;
-
-    /* Per-scale geometry: halve each dimension (no border crop). */
     s->scale_w[0] = w;
     s->scale_h[0] = h;
     for (int i = 1; i < IVIF_SCALES; ++i) {
         s->scale_w[i] = s->scale_w[i - 1] / 2u;
         s->scale_h[i] = s->scale_h[i - 1] / 2u;
     }
-    if (s->scale_w[IVIF_SCALES - 1] == 0u || s->scale_h[IVIF_SCALES - 1] == 0u) {
-        return -EINVAL;
-    }
-
     for (int i = 0; i < IVIF_SCALES; ++i) {
         const unsigned gx = (s->scale_w[i] + (unsigned)IVIF_BX - 1u) / (unsigned)IVIF_BX;
         const unsigned gy = (s->scale_h[i] + (unsigned)IVIF_BY - 1u) / (unsigned)IVIF_BY;
         s->wg_count[i] = gx * gy;
     }
+}
 
-    int err = vmaf_metal_context_new(&s->ctx, 0);
-    if (err != 0) { return err; }
+static void *vif_metal_new_buffer(id<MTLDevice> device, size_t bytes)
+{
+    id<MTLBuffer> buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+    return (buf == nil) ? NULL : (__bridge_retained void *)buf;
+}
 
-    err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
+/* Raw uploads, the CPU's log2 table, the ping-pong pyramid and the per-scale
+ * partials, all Shared, once (zero per-frame heap traffic). */
+static int vif_metal_alloc_buffers(IntegerVifStateMetal *s, id<MTLDevice> device)
+{
+    const size_t raw_bytes = (size_t)s->width * s->height * ((s->bpc <= 8u) ? 1u : 2u);
+    s->raw_ref = vif_metal_new_buffer(device, raw_bytes);
+    s->raw_dis = vif_metal_new_buffer(device, raw_bytes);
+    s->log2_buf = vif_metal_new_buffer(device, VIF_LOG2_TABLE_SIZE * sizeof(uint16_t));
+    if (s->raw_ref == NULL || s->raw_dis == NULL || s->log2_buf == NULL) { return -ENOMEM; }
+    /* The CPU's table: integer_vif.c fills its state with the same call. */
+    vif_log2_table_generate((uint16_t *)[(__bridge id<MTLBuffer>)s->log2_buf contents]);
 
-    {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-        const size_t raw_bytes = (size_t)w * h * bpp;
-        id<MTLBuffer> rr = [device newBufferWithLength:raw_bytes
-                                              options:MTLResourceStorageModeShared];
-        id<MTLBuffer> rd = [device newBufferWithLength:raw_bytes
-                                              options:MTLResourceStorageModeShared];
-        if (rr == nil || rd == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->raw_ref = (__bridge_retained void *)rr;
-        s->raw_dis = (__bridge_retained void *)rd;
-
-        /* log2 LUT upload. */
-        id<MTLBuffer> lb = [device newBufferWithLength:VIF_LOG2_TABLE_SIZE * sizeof(uint16_t)
-                                              options:MTLResourceStorageModeShared];
-        if (lb == nil) { err = -ENOMEM; goto fail_bufs; }
-        /* The CPU's table: integer_vif.c fills its state with the same call. */
-        vif_log2_table_generate((uint16_t *)[lb contents]);
-        s->log2_buf = (__bridge_retained void *)lb;
-
-        /* Ping-pong uint16 pyramid sized to scale 1 (largest decimated). */
-        const size_t pbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(uint16_t);
-        for (int i = 0; i < 2; ++i) {
-            id<MTLBuffer> pr = [device newBufferWithLength:pbytes
-                                                  options:MTLResourceStorageModeShared];
-            id<MTLBuffer> pd = [device newBufferWithLength:pbytes
-                                                  options:MTLResourceStorageModeShared];
-            if (pr == nil || pd == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->pyr_ref[i] = (__bridge_retained void *)pr;
-            s->pyr_dis[i] = (__bridge_retained void *)pd;
-        }
-
-        for (int i = 0; i < IVIF_SCALES; ++i) {
-            const size_t ab = (size_t)s->wg_count[i] * sizeof(VifWgAccumHost);
-            id<MTLBuffer> ba = [device newBufferWithLength:ab
-                                                  options:MTLResourceStorageModeShared];
-            if (ba == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->wg_accum[i] = (__bridge_retained void *)ba;
-        }
-
-        err = build_pipelines(s, device);
+    /* Ping-pong uint16 pyramid sized to scale 1 (largest decimated). */
+    const size_t pbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(uint16_t);
+    for (int i = 0; i < 2; ++i) {
+        s->pyr_ref[i] = vif_metal_new_buffer(device, pbytes);
+        s->pyr_dis[i] = vif_metal_new_buffer(device, pbytes);
+        if (s->pyr_ref[i] == NULL || s->pyr_dis[i] == NULL) { return -ENOMEM; }
     }
-    if (err != 0) { goto fail_pso; }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    for (int i = 0; i < IVIF_SCALES; ++i) {
+        const size_t ab = (size_t)s->wg_count[i] * sizeof(VifWgAccumHost);
+        s->wg_accum[i] = vif_metal_new_buffer(device, ab);
+        if (s->wg_accum[i] == NULL) { return -ENOMEM; }
+    }
     return 0;
+}
 
-fail_pso:
-    if (s->pso_decimate_16) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_16;
-        s->pso_decimate_16 = NULL;
+/* Tear down everything init() may have set up; every step tolerates a handle
+ * that was never created, so this serves a failed init() and close(). */
+static int vif_metal_release(IntegerVifStateMetal *s)
+{
+    int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+    void **psos[] = {&s->pso_decimate_16, &s->pso_decimate_8, &s->pso_compute_16,
+                     &s->pso_compute_8};
+    for (size_t i = 0; i < sizeof(psos) / sizeof(psos[0]); ++i) {
+        if (*psos[i] != NULL) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)*psos[i];
+            *psos[i] = NULL;
+        }
     }
-    if (s->pso_decimate_8) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_8;
-        s->pso_decimate_8 = NULL;
-    }
-    if (s->pso_compute_16) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_16;
-        s->pso_compute_16 = NULL;
-    }
-    if (s->pso_compute_8) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_8;
-        s->pso_compute_8 = NULL;
-    }
-fail_bufs:
     release_buffers(s);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
+    if (s->feature_name_dict != NULL) {
+        const int derr = vmaf_dictionary_free(&s->feature_name_dict);
+        if (derr != 0 && rc == 0) { rc = derr; }
+    }
     vmaf_metal_context_destroy(s->ctx);
     s->ctx = NULL;
+    return rc;
+}
+
+static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                          unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
+
+    /* Direct `integer_vif_metal` requests get no fallback (ADR-1324): refuse
+     * before any device work, so there is nothing to free. */
+    const unsigned min_dim = vif_metal_min_dim();
+    if (w < min_dim || h < min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "integer_vif_metal requires width >= %u and height >= %u (got %ux%u); the "
+                 "CPU extractor `vif` computes smaller frames\n",
+                 min_dim, min_dim, w, h);
+        return -EINVAL;
+    }
+    vif_metal_init_geometry(s, bpc, w, h);
+
+    int err = vmaf_metal_context_new(&s->ctx, 0);
+    if (err == 0) {
+        err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
+    }
+    void *dh = (err == 0) ? vmaf_metal_context_device_handle(s->ctx) : NULL;
+    if (err == 0 && dh == NULL) {
+        err = -ENODEV;
+    }
+    if (err == 0) {
+        err = vif_metal_alloc_buffers(s, (__bridge id<MTLDevice>)dh);
+    }
+    if (err == 0) {
+        err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
+    }
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+    }
+    if (err != 0) {
+        (void)vif_metal_release(s);
+    }
     return err;
 }
 
@@ -368,10 +424,9 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
 static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                              id<MTLBuffer> raw_ref, id<MTLBuffer> raw_dis, id<MTLBuffer> log2_buf,
                              id<MTLBuffer> wg, unsigned width, unsigned height, unsigned raw_stride,
-                             unsigned grid_x, float egl)
+                             unsigned grid_x, VmafMtlGainLimit egl)
 {
     const uint32_t params[4] = {width, height, raw_stride, grid_x};
-    const float cfgf[4]      = {egl, 0.0f, 0.0f, 0.0f};
 
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
@@ -380,7 +435,7 @@ static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineStat
     [enc setBuffer:log2_buf offset:0 atIndex:2];
     [enc setBuffer:wg       offset:0 atIndex:3];
     [enc setBytes:params length:sizeof(params) atIndex:4];
-    [enc setBytes:cfgf   length:sizeof(cfgf)   atIndex:5];
+    [enc setBytes:&egl   length:sizeof(egl)    atIndex:5];
     MTLSize tg   = MTLSizeMake(IVIF_BX, IVIF_BY, 1);
     MTLSize grid = MTLSizeMake((width + IVIF_BX - 1u) / IVIF_BX,
                                (height + IVIF_BY - 1u) / IVIF_BY, 1);
@@ -391,11 +446,10 @@ static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineStat
 static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                               id<MTLBuffer> ref_f, id<MTLBuffer> dis_f, id<MTLBuffer> log2_buf,
                               id<MTLBuffer> wg, int scale, unsigned width, unsigned height,
-                              unsigned f_stride, unsigned grid_x, unsigned bpc, float egl)
+                              unsigned f_stride, unsigned grid_x, unsigned bpc, VmafMtlGainLimit egl)
 {
     const uint32_t params[4] = {width, height, f_stride, grid_x};
     const uint32_t cfg2[4]   = {(uint32_t)scale, bpc, 0u, 0u};
-    const float cfgf[4]      = {egl, 0.0f, 0.0f, 0.0f};
 
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
@@ -405,7 +459,7 @@ static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSta
     [enc setBuffer:wg       offset:0 atIndex:3];
     [enc setBytes:params length:sizeof(params) atIndex:4];
     [enc setBytes:cfg2   length:sizeof(cfg2)   atIndex:5];
-    [enc setBytes:cfgf   length:sizeof(cfgf)   atIndex:6];
+    [enc setBytes:&egl   length:sizeof(egl)    atIndex:6];
     MTLSize tg   = MTLSizeMake(IVIF_BX, IVIF_BY, 1);
     MTLSize grid = MTLSizeMake((width + IVIF_BX - 1u) / IVIF_BX,
                                (height + IVIF_BY - 1u) / IVIF_BY, 1);
@@ -460,6 +514,68 @@ static void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSt
     [enc endEncoding];
 }
 
+/* Scale 0: compute directly from raw (skipped at host level if
+ * vif_skip_scale0, but cheap to always run; collect suppresses it). */
+static void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd,
+                                    VmafMtlGainLimit egl)
+{
+    id<MTLBuffer> raw_ref  = (__bridge id<MTLBuffer>)s->raw_ref;
+    id<MTLBuffer> raw_dis  = (__bridge id<MTLBuffer>)s->raw_dis;
+    id<MTLBuffer> log2_buf = (__bridge id<MTLBuffer>)s->log2_buf;
+    id<MTLBuffer> wg0 = (__bridge id<MTLBuffer>)s->wg_accum[0];
+    const unsigned grid_x = (s->scale_w[0] + (unsigned)IVIF_BX - 1u) / (unsigned)IVIF_BX;
+    if (s->bpc <= 8u) {
+        encode_compute_8(cmd, (__bridge id<MTLComputePipelineState>)s->pso_compute_8, raw_ref,
+                         raw_dis, log2_buf, wg0, s->scale_w[0], s->scale_h[0], s->width, grid_x,
+                         egl);
+    } else {
+        /* HBD scale 0 reads the raw uint16 plane via the _16 compute
+         * kernel; raw_stride is in bytes, but the _16 kernel indexes by
+         * ushort stride, so pass width (ushorts) as the f_stride. */
+        encode_compute_16(cmd, (__bridge id<MTLComputePipelineState>)s->pso_compute_16, raw_ref,
+                          raw_dis, log2_buf, wg0, 0, s->scale_w[0], s->scale_h[0], s->width,
+                          grid_x, s->bpc, egl);
+    }
+}
+
+/* Scale n of 1..3: decimate (previous scale's dims) into ping-pong slot
+ * (n - 1) % 2, then compute this scale's statistic from it. */
+static void vif_metal_encode_scale(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd, int n,
+                                   VmafMtlGainLimit egl)
+{
+    id<MTLComputePipelineState> pso_d16 = (__bridge id<MTLComputePipelineState>)s->pso_decimate_16;
+    id<MTLBuffer> raw_ref = (__bridge id<MTLBuffer>)s->raw_ref;
+    id<MTLBuffer> raw_dis = (__bridge id<MTLBuffer>)s->raw_dis;
+    const int dst_slot = (n - 1) % 2;
+    id<MTLBuffer> ref_out = (__bridge id<MTLBuffer>)s->pyr_ref[dst_slot];
+    id<MTLBuffer> dis_out = (__bridge id<MTLBuffer>)s->pyr_dis[dst_slot];
+    const unsigned out_stride = s->scale_w[n];
+
+    if (n == 1 && s->bpc <= 8u) {
+        encode_decimate_8(cmd, (__bridge id<MTLComputePipelineState>)s->pso_decimate_8, raw_ref,
+                          raw_dis, ref_out, dis_out, s->scale_w[1], s->scale_h[1], s->scale_w[0],
+                          s->scale_h[0], s->width, out_stride);
+    } else if (n == 1) {
+        /* HBD scale 0->1 reads the raw uint16 plane via the _16
+         * decimate kernel (filt_scale = 1, in_stride = width). */
+        encode_decimate_16(cmd, pso_d16, raw_ref, raw_dis, ref_out, dis_out, s->scale_w[1],
+                           s->scale_h[1], s->scale_w[0], s->scale_h[0], s->width, out_stride, 1,
+                           s->bpc);
+    } else {
+        id<MTLBuffer> ref_in = (__bridge id<MTLBuffer>)s->pyr_ref[1 - dst_slot];
+        id<MTLBuffer> dis_in = (__bridge id<MTLBuffer>)s->pyr_dis[1 - dst_slot];
+        encode_decimate_16(cmd, pso_d16, ref_in, dis_in, ref_out, dis_out, s->scale_w[n],
+                           s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->scale_w[n - 1],
+                           out_stride, n, s->bpc);
+    }
+
+    id<MTLBuffer> wgn = (__bridge id<MTLBuffer>)s->wg_accum[n];
+    const unsigned grid_x = (s->scale_w[n] + (unsigned)IVIF_BX - 1u) / (unsigned)IVIF_BX;
+    encode_compute_16(cmd, (__bridge id<MTLComputePipelineState>)s->pso_compute_16, ref_out,
+                      dis_out, (__bridge id<MTLBuffer>)s->log2_buf, wgn, n, s->scale_w[n],
+                      s->scale_h[n], out_stride, grid_x, s->bpc, egl);
+}
+
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
@@ -469,89 +585,25 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
     s->index = index;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (qh == NULL) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
-    id<MTLComputePipelineState> pso_c8  = (__bridge id<MTLComputePipelineState>)s->pso_compute_8;
-    id<MTLComputePipelineState> pso_c16 = (__bridge id<MTLComputePipelineState>)s->pso_compute_16;
-    id<MTLComputePipelineState> pso_d8  = (__bridge id<MTLComputePipelineState>)s->pso_decimate_8;
-    id<MTLComputePipelineState> pso_d16 = (__bridge id<MTLComputePipelineState>)s->pso_decimate_16;
-    id<MTLBuffer> raw_ref  = (__bridge id<MTLBuffer>)s->raw_ref;
-    id<MTLBuffer> raw_dis  = (__bridge id<MTLBuffer>)s->raw_dis;
-    id<MTLBuffer> log2_buf = (__bridge id<MTLBuffer>)s->log2_buf;
+    fill_raw_plane(ref_pic,  (__bridge id<MTLBuffer>)s->raw_ref, s->width, s->height, s->bpc);
+    fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->raw_dis, s->width, s->height, s->bpc);
 
-    fill_raw_plane(ref_pic,  raw_ref, s->width, s->height, s->bpc);
-    fill_raw_plane(dist_pic, raw_dis, s->width, s->height, s->bpc);
-
-    const unsigned bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const unsigned raw_stride = s->width * bpp;
-    const float egl = (float)s->vif_enhn_gain_limit;
-    const bool is8 = (s->bpc <= 8u);
-
+    const VmafMtlGainLimit egl = vmaf_mtl_ivif_make_gain_limit(s->vif_enhn_gain_limit);
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
-    /* Scale 0: compute directly from raw (skipped at host level if
-     * vif_skip_scale0, but cheap to always run; collect suppresses it). */
-    {
-        id<MTLBuffer> wg0 = (__bridge id<MTLBuffer>)s->wg_accum[0];
-        const unsigned grid_x = (s->scale_w[0] + (unsigned)IVIF_BX - 1u) / (unsigned)IVIF_BX;
-        if (is8) {
-            encode_compute_8(cmd, pso_c8, raw_ref, raw_dis, log2_buf, wg0, s->scale_w[0],
-                             s->scale_h[0], raw_stride, grid_x, egl);
-        } else {
-            /* HBD scale 0 reads the raw uint16 plane via the _16 compute
-             * kernel; raw_stride is in bytes, but the _16 kernel indexes by
-             * ushort stride, so pass width (ushorts) as the f_stride. */
-            encode_compute_16(cmd, pso_c16, raw_ref, raw_dis, log2_buf, wg0, 0, s->scale_w[0],
-                              s->scale_h[0], s->width, grid_x, s->bpc, egl);
-        }
-    }
-
-    /* Scales 1..3: decimate (prev dims) then compute (this scale). */
+    vif_metal_encode_scale0(s, cmd, egl);
     for (int n = 1; n < IVIF_SCALES; ++n) {
-        const int dst_slot = (n - 1) % 2;
-        const bool prev_is_raw = (n == 1);
-        id<MTLBuffer> ref_out = (dst_slot == 0) ? (__bridge id<MTLBuffer>)s->pyr_ref[0]
-                                                : (__bridge id<MTLBuffer>)s->pyr_ref[1];
-        id<MTLBuffer> dis_out = (dst_slot == 0) ? (__bridge id<MTLBuffer>)s->pyr_dis[0]
-                                                : (__bridge id<MTLBuffer>)s->pyr_dis[1];
-        const unsigned out_stride = s->scale_w[n];
-
-        if (prev_is_raw) {
-            if (is8) {
-                encode_decimate_8(cmd, pso_d8, raw_ref, raw_dis, ref_out, dis_out, s->scale_w[1],
-                                  s->scale_h[1], s->scale_w[0], s->scale_h[0], raw_stride,
-                                  out_stride);
-            } else {
-                /* HBD scale 0->1 reads the raw uint16 plane via the _16
-                 * decimate kernel (filt_scale = 1, in_stride = width). */
-                encode_decimate_16(cmd, pso_d16, raw_ref, raw_dis, ref_out, dis_out, s->scale_w[1],
-                                   s->scale_h[1], s->scale_w[0], s->scale_h[0], s->width, out_stride,
-                                   1, s->bpc);
-            }
-        } else {
-            id<MTLBuffer> ref_in = (dst_slot == 0) ? (__bridge id<MTLBuffer>)s->pyr_ref[1]
-                                                   : (__bridge id<MTLBuffer>)s->pyr_ref[0];
-            id<MTLBuffer> dis_in = (dst_slot == 0) ? (__bridge id<MTLBuffer>)s->pyr_dis[1]
-                                                   : (__bridge id<MTLBuffer>)s->pyr_dis[0];
-            const unsigned in_stride = s->scale_w[n - 1];
-            encode_decimate_16(cmd, pso_d16, ref_in, dis_in, ref_out, dis_out, s->scale_w[n],
-                               s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], in_stride,
-                               out_stride, n, s->bpc);
-        }
-
-        id<MTLBuffer> wgn = (__bridge id<MTLBuffer>)s->wg_accum[n];
-        const unsigned grid_x = (s->scale_w[n] + (unsigned)IVIF_BX - 1u) / (unsigned)IVIF_BX;
-        encode_compute_16(cmd, pso_c16, ref_out, dis_out, log2_buf, wgn, n, s->scale_w[n],
-                          s->scale_h[n], out_stride, grid_x, s->bpc, egl);
+        vif_metal_encode_scale(s, cmd, n, egl);
     }
 
     [cmd commit];
     [cmd waitUntilCompleted];
-    return 0;
+    return ([cmd status] == MTLCommandBufferStatusCompleted) ? 0 : -EIO;
 }
 
 /* Sum per-WG int64 partials per scale and apply the exact CPU final formula:
@@ -610,38 +662,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
 static int close_fex_metal(VmafFeatureExtractor *fex)
 {
-    IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
-
-    int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-
-    if (s->pso_decimate_16) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_16;
-        s->pso_decimate_16 = NULL;
-    }
-    if (s->pso_decimate_8) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_8;
-        s->pso_decimate_8 = NULL;
-    }
-    if (s->pso_compute_16) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_16;
-        s->pso_compute_16 = NULL;
-    }
-    if (s->pso_compute_8) {
-        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_8;
-        s->pso_compute_8 = NULL;
-    }
-
-    release_buffers(s);
-
-    if (s->feature_name_dict) {
-        int derr = vmaf_dictionary_free(&s->feature_name_dict);
-        if (derr != 0 && rc == 0) { rc = derr; }
-    }
-    if (s->ctx) {
-        vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return vif_metal_release((IntegerVifStateMetal *)fex->priv);
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score",
@@ -684,5 +705,9 @@ VmafFeatureExtractor vmaf_fex_integer_vif_metal = {
         .min_useful_frame_area  = 1920U * 1080U,
         .dispatch_hint          = VMAF_FEATURE_DISPATCH_AUTO,
     },
+    /* ADR-1381 / ADR-1498: frames below the 16-pixel filter footprint run on
+     * the CPU `vif` under model dispatch (ADR-1324 gate). */
+    .context_check         = check_context_metal,
+    .context_fallback_name = "vif",
 };
 } /* extern "C" */

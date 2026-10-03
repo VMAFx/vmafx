@@ -41,15 +41,26 @@
  *  make_constants(), which use fp64: they are host code, or evaluated by the
  *  compiler where a backend's host is C (both are constexpr). A translation
  *  unit that includes this header is compiled with contraction off.
+ *
+ *  The Metal twin compiles the subset Metal Shading Language and host C++
+ *  share (VMAF_FF_MSL_SUBSET, see ff_math.h; ADR-1498). Metal has no fp64
+ *  type at all, so make_pair() and make_constants() do not exist in a Metal
+ *  kernel: the twin's host evaluates them and hands the kernel the result.
+ *  Every reference in Metal names its address space: the backend defines
+ *  VMAF_FF_REF_SPACE, the space of the Constants and Tables the functions
+ *  below take by reference, and this header spells the two parameter types
+ *  with it. For the other backends the preprocessed header is what it was
+ *  before the subset existed.
  */
 
 #ifndef VMAF_FEATURE_CIEDE_FF_MATH_H_
 #define VMAF_FEATURE_CIEDE_FF_MATH_H_
 
+#if !defined(__METAL_VERSION__)
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
-
+#endif
 #include "ff_math.h"
 
 #if !defined(VMAF_FF_LDEXP)
@@ -76,9 +87,9 @@ using vmaf_ffm_base::two_prod;
 using vmaf_ffm_base::two_sum;
 
 /* powf(25., 7): 25^7 = 6103515625 rounded to float. */
-inline constexpr float kPowf25To7 = 6103515648.0f;
+VMAF_FF_CONSTANT float kPowf25To7 = 6103515648.0f;
 /* pow(25, 7), exactly: 6103515648 - 23. */
-inline constexpr Ff kPow25To7 = {.hi = 6103515648.0f, .lo = -23.0f};
+VMAF_FF_CONSTANT Ff kPow25To7 = VMAF_FF_PAIR_INIT(6103515648.0f, -23.0f);
 
 /* ciede.c's fp64 constants as pairs. make_constants() builds them from the
  * reference's own expressions, on the host or at compile time. */
@@ -127,6 +138,17 @@ struct Lab {
     float a;
     float b;
 };
+
+#if defined(VMAF_FF_MSL_SUBSET)
+#if !defined(VMAF_FF_REF_SPACE)
+#error "ciede_ff_math.h: VMAF_FF_MSL_SUBSET needs VMAF_FF_REF_SPACE (see the header comment)"
+#endif
+/* `const Constants &k` and `const Tables &tables` below name their address
+ * space, up to the #undef after pixel(). A macro is not expanded again inside
+ * its own expansion. */
+#define Constants VMAF_FF_REF_SPACE Constants
+#define Tables VMAF_FF_REF_SPACE Tables
+#endif
 
 /* pow(x, 2) for a float x: the exact fp64 square. */
 VMAF_FF_INLINE Ff sq(float x)
@@ -183,9 +205,15 @@ VMAF_FF_INLINE Lab lab_color(float y, float u, float v, const Constants &k)
 
     /* The three results are exact in fp64 before the rounding to float:
      * products of a float with a small integer, sums of two floats. */
+#if defined(VMAF_FF_MSL_SUBSET)
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
+    return {to_float(add_f(two_prod(116.0f, fy), -16.0f)),
+            to_float(mul_f(two_sum(fx, -fy), 500.0f)), to_float(mul_f(two_sum(fy, -fz), 200.0f))};
+#else
     return {.l = to_float(add_f(two_prod(116.0f, fy), -16.0f)),
             .a = to_float(mul_f(two_sum(fx, -fy), 500.0f)),
             .b = to_float(mul_f(two_sum(fy, -fz), 200.0f))};
+#endif
 }
 
 /* ------------------------------------------------------------------ */
@@ -241,7 +269,7 @@ VMAF_FF_INLINE float upcase_h_bar_prime(float h_prime_1, float h_prime_2, const 
 /* get_upcase_t() */
 VMAF_FF_INLINE float upcase_t(float h, const Constants &k, const Tables &tables)
 {
-    const float *table = tables.sin_cos;
+    const VMAF_FF_TABLE_SPACE float *table = tables.sin_cos;
     const Ff cos_1 = vmaf_ffm::sin_cos(sub(from_float(h), k.pi_over_6), table).cos;
     const Ff cos_2 = vmaf_ffm::sin_cos(from_float(2.0f * h), table).cos;
     const Ff cos_3 = vmaf_ffm::sin_cos(ff_add(two_prod(3.0f, h), k.pi_over_30), table).cos;
@@ -334,9 +362,16 @@ VMAF_FF_INLINE float pixel(Samples ref, Samples dis, const Constants &k, const T
     return delta_e(c1, c2, k, tables);
 }
 
+#if defined(VMAF_FF_MSL_SUBSET)
+#undef Constants
+#undef Tables
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Host code, or the compiler's (constexpr)                            */
 /* ------------------------------------------------------------------ */
+
+#if !defined(__METAL_VERSION__)
 
 /* An fp64 value as a pair: hi its nearest float, lo what remains. */
 VMAF_FF_INLINE constexpr Ff make_pair(double value)
@@ -350,7 +385,12 @@ VMAF_FF_INLINE constexpr Ff make_pair(double value)
 VMAF_FF_INLINE constexpr Constants make_constants(unsigned bpc)
 {
     const double pi = std::numbers::pi; /* the constant ciede.c names */
+#if defined(VMAF_FF_MSL_SUBSET)
+    /* The same power of two, shifted unsigned. */
+    const double depth = (double)(1u << (bpc - 8u));
+#else
     const double depth = (double)(1 << (bpc - 8u));
+#endif
     Constants k = {};
     k.luma_offset = (float)(16. * depth);
     k.chroma_offset = (float)(128. * depth);
@@ -392,6 +432,8 @@ VMAF_FF_INLINE constexpr Constants make_constants(unsigned bpc)
     k.ksub_l = (float)0.65;
     return k;
 }
+
+#endif /* !__METAL_VERSION__ */
 
 } // namespace vmaf_ciede_ff
 

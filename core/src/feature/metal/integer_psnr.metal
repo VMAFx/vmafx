@@ -3,148 +3,96 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  Metal compute kernel for integer_psnr (T8-1g / ADR-0421).
- *  Emits `psnr_y`, `psnr_cb`, `psnr_cr` — one kernel invocation per plane.
+ *  Metal compute kernels for integer_psnr (T8-1g / ADR-0421), twin of the CPU
+ *  `psnr` (core/src/feature/integer_psnr.c). One dispatch per plane.
  *
- *  Algorithm (must match CPU core/src/feature/integer_psnr.c::sse_line_*
- *  and CUDA twin core/src/feature/cuda/float_psnr/float_psnr_score.cu):
- *    diff = (int64)(ref_px) - (int64)(dis_px)
- *    sse  += diff * diff        (exact integer)
- *    mse  = sse / (W * H)
- *    psnr = (mse == 0) ? psnr_max
- *                      : min(10 * log10(peak^2 / mse), psnr_max)
- *    where peak = (1 << bpc) - 1, psnr_max = 6*bpc + 12. The host-side
- *    `uncapped` option (ADR-1193) drops the min() and keeps only the
- *    `mse == 0` sentinel; the kernel itself is unaffected.
+ *  The CPU sums each plane's squared differences as integers
+ *  (sse_line_8_c / sse_line_16_c: `e = ref - dis`, `sse += (uint64)e * e`)
+ *  and derives every score from that SSE through psnr_score.h. These kernels
+ *  return the same integer: each thread forms its squared difference in 64
+ *  bits, the threadgroup's 256 values go into threadgroup memory and thread 0
+ *  adds them in uint64, and the group's exact sum is stored in its slot of
+ *  `sse_parts`. The host (integer_psnr_metal.mm) adds the slots in uint64 and
+ *  calls psnr_score.h, so no floating-point value is formed on the device.
  *
- *  Reduction: each pixel produces a uint64 squared-error. MSL lacks
- *  `atomic_ulong`, so we split into (lo, hi) uint32 slots per threadgroup
- *  and reconstruct on the host. Two uint partials per WG:
- *    sse_lo_parts[idx] = (uint32)(sse_wg & 0xFFFFFFFF)
- *    sse_hi_parts[idx] = (uint32)(sse_wg >> 32)
- *  Host reconstructs: sse_wg = ((uint64)hi << 32) | lo, accumulates in
- *  double (which has 53-bit mantissa — sufficient for 64-bit integers up to
- *  ~9e15, well beyond any frame size × max SSE per pixel).
+ *  No simd_sum: a 16-bit squared difference reaches 65535^2 (just under
+ *  2^32), so a 32-lane uint32 sum, or separate sums of the low and high
+ *  halves, would drop carries (core/src/feature/metal/AGENTS.md, exact 64-bit
+ *  reductions). No 64-bit atomics (Apple GPUs have none for ulong).
  *
- *  Buffer bindings (same for 8bpc and 16bpc, strides format differs):
- *   [[buffer(0)]] ref       — const uchar *  (plane Y/Cb/Cr, byte-addressed)
- *   [[buffer(1)]] dis       — const uchar *
- *   [[buffer(2)]] sse_lo    — uint * (grid_w × grid_h per-WG uint32 low)
- *   [[buffer(3)]] sse_hi    — uint * (grid_w × grid_h per-WG uint32 high)
- *   [[buffer(4)]] strides   — uint2 (8bpc: ref_stride, dis_stride)
- *                           — uint4 (16bpc: .x=ref, .y=dis, .z=bpc, .w=0)
- *   [[buffer(5)]] dim       — uint2 (width, height)
+ *  Buffer bindings (both kernels):
+ *   [[buffer(0)]] ref       - const uchar *  (plane, byte-addressed rows)
+ *   [[buffer(1)]] dis       - const uchar *
+ *   [[buffer(2)]] sse_parts - ulong *        (one exact SSE per threadgroup)
+ *   [[buffer(3)]] strides   - uint2          (ref, dis row pitch in bytes)
+ *   [[buffer(4)]] dim       - uint2          (plane width, height)
+ *  Threadgroup: 16 x 16 threads (PSNR_TG_THREADS); grid ceil(w/16) x ceil(h/16).
  */
 
 #include <metal_stdlib>
 using namespace metal;
 
-/* ------------------------------------------------------------------ */
-/*  8 bpc kernel                                                        */
-/* ------------------------------------------------------------------ */
-kernel void integer_psnr_kernel_8bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       uint   *sse_lo   [[buffer(2)]],
-    device       uint   *sse_hi   [[buffer(3)]],
-    constant     uint2  &strides  [[buffer(4)]],
-    constant     uint2  &dim      [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+#define PSNR_TG_THREADS 256u
+
+/* Thread 0 adds the group's 256 squared differences in uint64 and stores the
+ * exact sum. Every thread of the group calls this (the barrier needs all of
+ * them); threads outside the plane contribute 0. */
+inline void psnr_store_group_sse(ulong my_se, uint lid, uint slot, threadgroup ulong *tg_se,
+                                 device ulong *sse_parts)
 {
-    const int width  = (int)dim.x;
-    const int height = (int)dim.y;
-
-    ulong my_se = 0uL;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const long r = (long)ref[(int)gid.y * (int)strides.x + (int)gid.x];
-        const long d = (long)dis[(int)gid.y * (int)strides.y + (int)gid.x];
-        const long diff = r - d;
-        my_se = (ulong)(diff * diff);
-    }
-
-    /* Two-level reduction using uint32 halves (no atomic_ulong). */
-    threadgroup uint sg_lo[8], sg_hi[8];
-    /* Reduce within SIMD group using uint32 simd_sum (two passes). */
-    const uint my_lo = (uint)(my_se & 0xFFFFFFFFuL);
-    const uint my_hi = (uint)(my_se >> 32uL);
-    const uint lane_lo = simd_sum(my_lo);
-    const uint lane_hi = simd_sum(my_hi);
-    /* Carry correction: lo might have overflowed into hi. */
-    /* We accept a small error here — for 256 threads × max diff^2=65025:
-     * max WG sum = 256 * 65025 ≈ 16.6M, fits in uint32 with headroom. */
-    if (simd_lane == 0) {
-        sg_lo[simd_id] = lane_lo;
-        sg_hi[simd_id] = lane_hi;
-    }
+    tg_se[lid] = my_se;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        /* Reconstruct 64-bit per WG and re-split (handles carry). */
-        ulong wg_se = 0uL;
-        for (uint i = 0; i < simd_count; ++i) {
-            wg_se += ((ulong)sg_hi[i] << 32uL) | (ulong)sg_lo[i];
+    if (lid == 0u) {
+        ulong group_se = 0uL;
+        for (uint i = 0u; i < PSNR_TG_THREADS; ++i) {
+            group_se += tg_se[i];
         }
-        const uint idx = bid.y * grid_groups.x + bid.x;
-        sse_lo[idx] = (uint)(wg_se & 0xFFFFFFFFuL);
-        sse_hi[idx] = (uint)(wg_se >> 32uL);
+        sse_parts[slot] = group_se;
     }
 }
 
-/* ------------------------------------------------------------------ */
-/*  16 bpc kernel                                                       */
-/* ------------------------------------------------------------------ */
-kernel void integer_psnr_kernel_16bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       uint   *sse_lo   [[buffer(2)]],
-    device       uint   *sse_hi   [[buffer(3)]],
-    constant     uint4  &strides  [[buffer(4)]],
-    constant     uint2  &dim      [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+kernel void integer_psnr_kernel_8bpc(const device uchar *ref [[buffer(0)]],
+                                     const device uchar *dis [[buffer(1)]],
+                                     device ulong *sse_parts [[buffer(2)]],
+                                     constant uint2 &strides [[buffer(3)]],
+                                     constant uint2 &dim [[buffer(4)]],
+                                     uint2 gid [[thread_position_in_grid]],
+                                     uint2 bid [[threadgroup_position_in_grid]],
+                                     uint2 grid_groups [[threadgroups_per_grid]],
+                                     uint lid [[thread_index_in_threadgroup]])
 {
-    const int width  = (int)dim.x;
-    const int height = (int)dim.y;
+    threadgroup ulong tg_se[PSNR_TG_THREADS];
 
     ulong my_se = 0uL;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const device ushort *ref_row =
-            (const device ushort *)(ref + (int)gid.y * (int)strides.x);
-        const device ushort *dis_row =
-            (const device ushort *)(dis + (int)gid.y * (int)strides.y);
-        const long r = (long)ref_row[(int)gid.x];
-        const long d = (long)dis_row[(int)gid.x];
-        const long diff = r - d;
-        my_se = (ulong)(diff * diff);
+    if (gid.x < dim.x && gid.y < dim.y) {
+        const long r = (long)ref[gid.y * strides.x + gid.x];
+        const long d = (long)dis[gid.y * strides.y + gid.x];
+        const long e = r - d;
+        my_se = (ulong)(e * e);
     }
+    psnr_store_group_sse(my_se, lid, bid.y * grid_groups.x + bid.x, tg_se, sse_parts);
+}
 
-    threadgroup uint sg_lo[8], sg_hi[8];
-    const uint my_lo = (uint)(my_se & 0xFFFFFFFFuL);
-    const uint my_hi = (uint)(my_se >> 32uL);
-    const uint lane_lo = simd_sum(my_lo);
-    const uint lane_hi = simd_sum(my_hi);
-    if (simd_lane == 0) {
-        sg_lo[simd_id] = lane_lo;
-        sg_hi[simd_id] = lane_hi;
+kernel void integer_psnr_kernel_16bpc(const device uchar *ref [[buffer(0)]],
+                                      const device uchar *dis [[buffer(1)]],
+                                      device ulong *sse_parts [[buffer(2)]],
+                                      constant uint2 &strides [[buffer(3)]],
+                                      constant uint2 &dim [[buffer(4)]],
+                                      uint2 gid [[thread_position_in_grid]],
+                                      uint2 bid [[threadgroup_position_in_grid]],
+                                      uint2 grid_groups [[threadgroups_per_grid]],
+                                      uint lid [[thread_index_in_threadgroup]])
+{
+    threadgroup ulong tg_se[PSNR_TG_THREADS];
+
+    ulong my_se = 0uL;
+    if (gid.x < dim.x && gid.y < dim.y) {
+        const device ushort *ref_row = (const device ushort *)(ref + gid.y * strides.x);
+        const device ushort *dis_row = (const device ushort *)(dis + gid.y * strides.y);
+        const long r = (long)ref_row[gid.x];
+        const long d = (long)dis_row[gid.x];
+        const long e = r - d;
+        my_se = (ulong)(e * e);
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        ulong wg_se = 0uL;
-        for (uint i = 0; i < simd_count; ++i) {
-            wg_se += ((ulong)sg_hi[i] << 32uL) | (ulong)sg_lo[i];
-        }
-        const uint idx = bid.y * grid_groups.x + bid.x;
-        sse_lo[idx] = (uint)(wg_se & 0xFFFFFFFFuL);
-        sse_hi[idx] = (uint)(wg_se >> 32uL);
-    }
+    psnr_store_group_sse(my_se, lid, bid.y * grid_groups.x + bid.x, tg_se, sse_parts);
 }
