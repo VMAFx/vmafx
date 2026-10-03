@@ -24,10 +24,12 @@ repos:
       # bundle under .devcontainer/ and the pinned policy catalog under
       # .config/archetypes/. `standardsctl audit` compares them byte-for-byte
       # against recorded digests, so appending a newline breaks the gate.
+      # docs/assets/fonts/ holds vendored upstream licence texts and fonts that
+      # scripts/docs/check_vendored_assets.py holds to recorded SHA-256s.
       - id: trailing-whitespace
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/|^docs/assets/fonts/'
       - id: end-of-file-fixer
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/|^docs/assets/fonts/'
       - id: check-merge-conflict
       - id: check-yaml
         # mkdocs.yml uses `!!python/name:...` tags (Material extensions, pymdownx
@@ -63,7 +65,7 @@ repos:
         # some ONNX / .bin payloads and rewrites bytes inside the serialized
         # model, which then fails sha256 pinning in registry.json.
         # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/|^\.devcontainer/praetor-source\.[0-9]+\.b64$|^\.config/archetypes/|^docs/assets/fonts/'
       - id: detect-private-key
       # forbid-new-submodules: the fork pulls upstream Netflix code via
       # subprojects/ wraps (Meson dependency mechanism) and ffmpeg-patches/
@@ -921,8 +923,16 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|docs/assets/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
+
+      - id: test-docs-vendored-assets
+        name: Vendored docs assets check keeps its contract
+        entry: python3 -B scripts/docs/tests/test_vendored_assets.py
+        language: system
+        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: test-agents-index
         name: AGENTS.d index generator and migration check keep their contract
