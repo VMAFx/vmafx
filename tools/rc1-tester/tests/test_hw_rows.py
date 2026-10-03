@@ -97,3 +97,13 @@ def test_feature_left_out_of_a_fixture_is_not_evidence() -> None:
     ]}  # fmt: skip
     items = hw_rows.gate_evidence({"feature": "x"}, gate)
     assert [item["fixture"] for item in items] == ["f1"] and items[0]["result"] == "OK"
+
+
+def test_cell_the_gate_skips_is_not_evidence() -> None:
+    # The gate skips float_ms_ssim_chroma where a chroma plane is below 176 px.
+    gate = {"fixtures": [
+        {"fixture": "f1", "cells": [{"feature": "x", "status": "SKIP", "max_abs_diff": "0"}]},
+        {"fixture": "f2", "cells": [{"feature": "x", "status": "OK", "max_abs_diff": "0"}]},
+    ]}  # fmt: skip
+    items = hw_rows.gate_evidence({"feature": "x"}, gate)
+    assert [item["fixture"] for item in items] == ["f2"]

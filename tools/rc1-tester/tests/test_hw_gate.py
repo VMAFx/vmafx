@@ -81,3 +81,10 @@ def test_bundle_without_the_gate_is_an_error(tmp_path: Path) -> None:
     section = hw_gate.run_metal_gate(tmp_path, "vmaf", [FIXTURE], CONFIG,
                                      metal_status="identical", timeout_seconds=1, runner=runner())  # fmt: skip
     assert section["status"] == "error"
+
+
+def test_a_cell_the_gate_skips_does_not_fail_it() -> None:
+    entries = [{"fixture": "f1", "cells": [{"status": "OK"}, {"status": "SKIP"}]}]
+    assert hw_gate.status_of_gate(entries) == "pass"
+    entries[0]["cells"].append({"status": "ERROR"})
+    assert hw_gate.status_of_gate(entries) == "fail"
