@@ -2475,6 +2475,50 @@ test('test_metal_float_motion_exact_contract',
     timeout : 30,
 )
 
+# float_vif (ADR-1498)
+# The arithmetic float_vif_metal's kernels run (src/feature/metal/
+# metal_float_vif_math.h, the Metal spelling of the SYCL twin's
+# sycl_float_vif_math.h, ADR-1422), compiled on the host and held value by
+# value against vif_statistic_s(), picture_copy() and compute_vif(), with the
+# kernels' passes composed from the header's helpers. The reference is the
+# CPU extractor's own code, linked from libvmaf, so the TU needs the strict FP
+# flags (ADR-1461). Device-free, every host.
+test_metal_float_vif_math = executable('test_metal_float_vif_math',
+    ['test.c', 'test_metal_float_vif_math.cpp',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+     '../src/gpu_picture_pool.cpp'] + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+    link_language : 'cpp',
+)
+test('test_metal_float_vif_math', test_metal_float_vif_math, suite : ['fast'], timeout : 300)
+
+# ADR-1498: float_vif_metal runs the SYCL twin's design -- the taps come from
+# vif_get_filter() as kernel arguments, log2 is the reference's polynomial as
+# bit patterns, vif_sigma_nsq reaches the statistic as a significand and
+# exponent, a row is added in one thread and the rows on the host, and the
+# option table is the CPU's. Device-free, with planted regressions; the
+# arithmetic check is test_metal_float_vif_math, the device check is
+# test_metal_float_vif_parity.
+test('test_metal_float_vif_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_vif_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of float_motion / float_vif group)
 
 # [metal-ports: ssim family]
