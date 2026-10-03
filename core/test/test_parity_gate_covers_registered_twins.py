@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Every registered CUDA, SYCL and HIP twin is a cell of the parity gate (ADR-1460).
+"""Every registered CUDA, SYCL, HIP and Metal twin is a cell of the parity gate (ADR-1460).
 
 The cross-backend parity gate compares a GPU twin with its CPU extractor for
 the features in ``FEATURE_METRICS``. A twin whose feature is not in that table
@@ -13,9 +13,10 @@ This test reads the extractor registry
 (``core/src/feature/feature_extractor.cpp``) and the name each registered
 extractor carries, and requires every twin of a backend the gate runs to be
 the extractor of some gate feature. A twin of a backend the gate does not run
-(Metal: there is no ``metal`` entry in ``BACKEND_SUFFIX``) is counted and has
-to be on the list below with its state row, so that a new backend cannot be
-left out without a record.
+is counted and has to be on the list below with its state row, so that a new
+backend cannot be left out without a record. Metal was on that list until
+ADR-1496 gave the gate a ``metal`` backend, which the macOS tester bundle runs
+on an Apple device.
 
 Device-free: reads the sources only.
 """
@@ -35,8 +36,8 @@ SINGLE_FEATURE_GATE = ROOT / "scripts" / "ci" / "cross_backend_vif_diff.py"
 
 GPU_BACKENDS = ("cuda", "sycl", "hip", "metal")
 # Backends with registered twins that the gate cannot run, and where that is
-# recorded. The gate has no `metal` backend: no Apple device runs it.
-UNGATED_BACKENDS = {"metal": "T-GATE-NO-METAL-BACKEND-2026-10-02"}
+# recorded. Empty since ADR-1496 (`metal`).
+UNGATED_BACKENDS: dict[str, str] = {}
 
 SOURCE_SUFFIXES = (".c", ".cpp", ".mm")
 DEFINITION = re.compile(
@@ -112,6 +113,8 @@ class ParityGateCoversRegisteredTwins(unittest.TestCase):
         self.assertIn("vif_sycl", twins["sycl"])
         for backend in ("cuda", "sycl", "hip"):
             self.assertGreaterEqual(len(twins[backend]), 19, backend)
+        self.assertIn("integer_adm_metal", twins["metal"])
+        self.assertGreaterEqual(len(twins["metal"]), 17)
 
     def test_every_twin_of_a_gated_backend_is_a_gate_cell(self) -> None:
         self.assertEqual(uncovered(registered_twins(), gated_extractors()), [])
@@ -125,6 +128,16 @@ class ParityGateCoversRegisteredTwins(unittest.TestCase):
             uncovered(registered_twins(), gated),
             ["speed_temporal_cuda", "speed_temporal_hip", "speed_temporal_sycl"],
         )
+
+    def test_metal_twins_are_gate_cells(self) -> None:
+        # ADR-1496: before it, the gate had no `metal` entry and none of the 17
+        # registered Metal twins was a cell.
+        gated = gated_extractors()
+        self.assertIn("metal", gated)
+        self.assertTrue(registered_twins()["metal"] <= gated["metal"])
+        del gated["metal"]
+        twins = registered_twins()
+        self.assertEqual({b for b, n in twins.items() if n and b not in gated}, {"metal"})
 
     def test_backends_the_gate_cannot_run_are_on_record(self) -> None:
         twins = registered_twins()

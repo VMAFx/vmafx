@@ -65,6 +65,9 @@ def verdict_errors(report: dict[str, Any]) -> list[str]:
         report["dispatch_equivalence"]["status"] == "identical"
         and report["reference_equivalence"]["status"] == "identical"
         and report["metal_equivalence"]["status"] in ("identical", "no_device", "not_applicable")
+        # ADR-1496: schema 2 reports carry the parity gate's Metal cells.
+        and report.get("metal_gate", {"status": "not_applicable"})["status"]
+        in ("pass", "no_device", "not_applicable")
         and report["unit_tests"]["status"] == "pass"
         and report["golden_gate"]["status"] in ("pass", "not_applicable")
         and report["image"]["files_match_build"]

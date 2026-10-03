@@ -60,7 +60,9 @@ from scripts.ci.cross_backend_calibration import (
     EXACT_TWIN_PRECISION,
     EXACT_TWIN_SOURCE,
     EXACT_TWIN_TOLERANCE,
+    EXACT_TWINS,
     LIBM_TWIN_SOURCE,
+    LIBM_TWINS,
     CalibrationTable,
     area_tolerance_factor,
     is_exact_pair,
@@ -306,25 +308,37 @@ FEATURE_TOLERANCE: dict[str, float] = {
 }
 
 # Backend → extractor-name suffix and CLI device-selection flag.
+# ADR-1496: `metal` runs on an Apple device, from the macOS tester bundle
+# (tools/rc1-tester/src/vmaf_rc1_tester/hw_gate.py); no hosted runner has one.
 BACKEND_SUFFIX: dict[str, str] = {
     "cpu": "",
     "cuda": "_cuda",
     "sycl": "_sycl",
     "hip": "_hip",
+    "metal": "_metal",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
     "hip": "--hip_device",
+    "metal": "--metal_device",
 }
 
 # Default device index per backend. CUDA gpumask=1 picks the first GPU;
-# SYCL and HIP device 0 is the first compute-capable one.
+# SYCL, HIP and Metal device 0 is the first compute-capable one.
 BACKEND_DEFAULT_DEVICE: dict[str, int] = {
     "cuda": 1,
     "sycl": 0,
     "hip": 0,
+    "metal": 0,
 }
+
+# ADR-1496: `--hold-exact <backend>` compares every cell of that backend as an
+# exact twin (tolerance 0, `--precision max`), or at the LIBM_TWINS bound for a
+# feature whose twins differ only in the math library, before any fragment in
+# scripts/ci/exact_twins.d declares it. The macOS tester bundle measures the
+# Metal twins that way; a fragment follows the measurement, never this flag.
+HELD_EXACT_SOURCE = "held-exact:ADR-1496"
 
 # A fragment in scripts/ci/exact_twins.d naming a feature or backend this gate
 # does not run fails at import, not as a cell that is silently never exact.
@@ -406,6 +420,16 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     ("ssim", "cuda"): "integer_ssim_cuda",
     ("ssim", "sycl"): "integer_ssim_sycl",
     ("ssim", "hip"): "integer_ssim_hip",
+    # The Metal twins of the fixed-point extractors carry the CPU file's name
+    # (integer_<file>.c, ADR-0421); ADR-1496.
+    ("adm", "metal"): "integer_adm_metal",
+    ("cambi", "metal"): "integer_cambi_metal",
+    ("ciede", "metal"): "integer_ciede_metal",
+    ("motion", "metal"): "integer_motion_metal",
+    ("psnr", "metal"): "integer_psnr_metal",
+    ("psnr_hvs", "metal"): "integer_psnr_hvs_metal",
+    ("ssim", "metal"): "integer_ssim_metal",
+    ("vif", "metal"): "integer_vif_metal",
 }
 
 
@@ -586,6 +610,7 @@ def resolve_cell_tolerance(
     width: int | None = None,
     height: int | None = None,
     backends: tuple[str, str] | None = None,
+    held_exact: Iterable[str] = (),
 ) -> tuple[float, str]:
     """Resolve ``(tolerance_abs, source_label)`` for one cell.
 
@@ -606,6 +631,9 @@ def resolve_cell_tolerance(
       extractor; tolerance 0.
     * ``"libm:ADR-1426"`` — both sides run the CPU extractor's arithmetic
       and differ only in their math library; the ``LIBM_TWINS`` tolerance.
+    * ``"held-exact:ADR-1496"`` — a side is a backend in ``held_exact`` and
+      the cell is compared exactly although no fragment lists it
+      (``held_exact_tolerance``).
     * ``"calibrated:<pattern>"`` — calibration table matched and
       supplied a per-feature override; ``status: calibrated`` row.
     * ``"placeholder:<pattern>"`` — calibration table matched but
@@ -622,18 +650,54 @@ def resolve_cell_tolerance(
 
     if feature in fp16_features:
         return DEFAULT_FP16_TOLERANCE, "fp16"
-    if backends is not None and is_exact_pair(feature, *backends):
-        return EXACT_TWIN_TOLERANCE, EXACT_TWIN_SOURCE
-    if backends is not None:
-        libm_tolerance = libm_pair_tolerance(feature, *backends)
-        if libm_tolerance is not None:
-            return libm_tolerance, LIBM_TWIN_SOURCE
+    paired = _pair_tolerance(feature, backends, held_exact) if backends is not None else None
+    if paired is not None:
+        return paired
 
     tolerance, source = _reference_tolerance(feature, calibration=calibration, gpu_id=gpu_id)
     factor = area_tolerance_factor(feature, width, height)
     if factor > 1.0:
         return tolerance * factor, f"{source}+area x{factor:.2f}"
     return tolerance, source
+
+
+def _pair_tolerance(
+    feature: str, backends: tuple[str, str], held_exact: Iterable[str]
+) -> tuple[float, str] | None:
+    """The tolerance the two sides of a cell fix by themselves: listed exact twins,
+    math-library twins, a held-exact backend; None when the feature's applies."""
+
+    if is_exact_pair(feature, *backends):
+        return EXACT_TWIN_TOLERANCE, EXACT_TWIN_SOURCE
+    libm_tolerance = libm_pair_tolerance(feature, *backends)
+    if libm_tolerance is not None:
+        return libm_tolerance, LIBM_TWIN_SOURCE
+    return held_exact_tolerance(feature, backends, held_exact)
+
+
+def held_exact_tolerance(
+    feature: str, backends: tuple[str, str], held_exact: Iterable[str]
+) -> tuple[float, str] | None:
+    """The tolerance of a cell that a held-exact backend takes part in, or None.
+
+    A side qualifies when it is ``cpu``, a backend in ``held_exact``, or a
+    backend that ``EXACT_TWINS`` lists for the feature; at least one side must
+    be held. The cell is compared exactly, or at the largest ``LIBM_TWINS``
+    bound when the feature's twins differ from the CPU only in the math
+    library (ADR-1426), which is what the twins of the other backends are held
+    to. ADR-1496.
+    """
+
+    held = set(held_exact)
+    listed = EXACT_TWINS.get(feature, frozenset())
+    if not any(backend in held for backend in backends):
+        return None
+    if not all(b == "cpu" or b in held or b in listed for b in backends):
+        return None
+    libm = LIBM_TWINS.get(feature)
+    if libm:
+        return max(libm.values()), LIBM_TWIN_SOURCE
+    return EXACT_TWIN_TOLERANCE, HELD_EXACT_SOURCE
 
 
 def _reference_tolerance(
@@ -770,7 +834,7 @@ def run_cell(
     if skip_note:
         skipped = _cell_error(cell, tolerance, tolerance_source, skip_note, metrics=metrics)
         return dataclasses.replace(skipped, status="SKIP")
-    full_precision = tolerance_source in (EXACT_TWIN_SOURCE, LIBM_TWIN_SOURCE)
+    full_precision = tolerance_source in (EXACT_TWIN_SOURCE, LIBM_TWIN_SOURCE, HELD_EXACT_SOURCE)
     precision = EXACT_TWIN_PRECISION if full_precision else None
     out_a = workdir / f"{cell.feature}_{cell.backend_a}.json"
     out_b = workdir / f"{cell.feature}_{cell.backend_b}.json"
@@ -921,6 +985,17 @@ def _add_matrix_arguments(ap: argparse.ArgumentParser) -> None:
         help="backends to pair (default: cpu + cuda)",
     )
     ap.add_argument(
+        "--hold-exact",
+        nargs="*",
+        default=[],
+        choices=sorted(b for b in BACKEND_SUFFIX if b != "cpu"),
+        help=(
+            "compare every cell of these backends exactly (tolerance 0, --precision max; "
+            "the LIBM_TWINS bound for a math-library feature) although no fragment "
+            "lists them: the measurement that precedes a fragment (ADR-1496)"
+        ),
+    )
+    ap.add_argument(
         "--fp16-features",
         nargs="*",
         default=[],
@@ -946,6 +1021,11 @@ def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
         "--hip-device",
         type=int,
         default=BACKEND_DEFAULT_DEVICE["hip"],
+    )
+    ap.add_argument(
+        "--metal-device",
+        type=int,
+        default=BACKEND_DEFAULT_DEVICE["metal"],
     )
     add_output_and_calibration_args(ap)
 
@@ -988,6 +1068,7 @@ def run_cells(
             width=args.width,
             height=args.height,
             backends=(cell.backend_a, cell.backend_b),
+            held_exact=args.hold_exact,
         )
         result = run_cell(
             cell,
@@ -1034,7 +1115,12 @@ def main() -> int:
         sys.stderr.write("empty matrix — supply at least two backends or one feature\n")
         return 2
     args.workdir.mkdir(parents=True, exist_ok=True)
-    devices = {"cuda": args.cuda_device, "sycl": args.sycl_device, "hip": args.hip_device}
+    devices = {
+        "cuda": args.cuda_device,
+        "sycl": args.sycl_device,
+        "hip": args.hip_device,
+        "metal": args.metal_device,
+    }
     results = run_cells(args, cells, requested_calibration(args), devices)
     if args.json_out is not None:
         emit_json(results, args.json_out)

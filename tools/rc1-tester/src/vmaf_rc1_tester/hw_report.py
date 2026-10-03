@@ -24,15 +24,19 @@ from typing import Any
 from . import __version__
 from .hw_equiv import run_dispatch_equivalence
 from .hw_facts import collect_host_facts, read_build_info
-from .hw_metal import run_metal_equivalence
+from .hw_gate import run_metal_gate
+from .hw_metal import run_metal_equivalence_raw
 from .hw_reference import generate_reference, run_reference_equivalence
+from .hw_rows import evaluate_rows, load_row_map
 from .hw_suites import run_golden_gate, run_unit_tests, summary_line
 from .safe_process import run_bounded
 
-SCHEMA_VERSION = "1"
+# 2: the Metal gate and the state-row map (ADR-1496).
+SCHEMA_VERSION = "2"
 DEFAULT_ROOT = "/opt/vmafx"
-CHECKS = ("dispatch", "reference", "metal", "unit", "golden")
+CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden")
 FIXTURE_TIMEOUT_SECONDS = 3600.0
+GATE_TIMEOUT_SECONDS = 3 * 3600.0
 UNIT_TIMEOUT_SECONDS = 900.0
 GOLDEN_TIMEOUT_SECONDS = 4 * 3600.0
 UNHASHED_FIELDS = ("report_sha256", "note")
@@ -116,6 +120,7 @@ def not_exercised(
         items.append(("CUDA, SYCL and HIP twins", "not available on macOS"))
         if report["metal_equivalence"]["status"] == "no_device":
             items.append(("Metal twins", "this host exposes no usable Metal device"))
+            items.append(("Metal parity gate", "this host exposes no usable Metal device"))
     else:
         items.append(("Metal", "needs macOS; this is a Linux container with no Metal device"))
         items.append(
@@ -145,6 +150,7 @@ PASSING = {
     "dispatch_equivalence": ("identical",),
     "reference_equivalence": ("identical",),
     "metal_equivalence": ("identical", "no_device", "not_applicable"),
+    "metal_gate": ("pass", "no_device", "not_applicable"),
     "unit_tests": ("pass",),
     "golden_gate": ("pass", "not_applicable"),
 }
@@ -152,6 +158,7 @@ CHECK_KEYS = {
     "dispatch": "dispatch_equivalence",
     "reference": "reference_equivalence",
     "metal": "metal_equivalence",
+    "gate": "metal_gate",
     "unit": "unit_tests",
     "golden": "golden_gate",
 }
@@ -181,32 +188,51 @@ def _equivalence_sections(
     host: Mapping[str, Any],
     skipped: Sequence[str],
     not_applicable: Mapping[str, str],
-) -> dict[str, Any]:
-    """Dispatch, reference and Metal equivalence; the last two reuse the dispatch scores."""
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Dispatch, reference and Metal equivalence (the last two reuse the dispatch
+    scores), and the raw CPU and Metal scores the state-row map reads."""
     idle = {"status": "not_run"}
+    metal_idle = {"status": "not_applicable"} if "metal" in not_applicable else idle
     sections: dict[str, Any] = {
         "dispatch_equivalence": dict(idle),
         "reference_equivalence": dict(idle),
-        "metal_equivalence": {"status": "not_applicable"} if "metal" in not_applicable else idle,
+        "metal_equivalence": dict(metal_idle),
     }
+    raw_scores: dict[str, Any] = {"cpu": {}, "metal": {}}
     if "dispatch" in skipped:
-        return sections
+        return sections, raw_scores
     vmaf = str(root / "build" / "tools" / "vmaf")
     fixtures = load_fixtures(root)
     sections["dispatch_equivalence"], raw = run_dispatch_equivalence(
         vmaf, fixtures, timeout_seconds=args.fixture_timeout
     )
+    raw_scores["cpu"] = {fixture_id: pair[0] for fixture_id, pair in raw.items()}
     if "reference" not in skipped:
         ref_dir = Path(args.reference_dir or root / "reference")
         sections["reference_equivalence"] = run_reference_equivalence(
             raw, ref_dir, machine=host["machine"], host_flags=host["dispatch_flags"]
         )
     if "metal" not in skipped and "metal" not in not_applicable:
-        cpu = {fixture_id: pair[0] for fixture_id, pair in raw.items()}
-        sections["metal_equivalence"] = run_metal_equivalence(
-            vmaf, fixtures, cpu, timeout_seconds=args.fixture_timeout
+        sections["metal_equivalence"], raw_scores["metal"] = run_metal_equivalence_raw(
+            vmaf, fixtures, raw_scores["cpu"], timeout_seconds=args.fixture_timeout
         )
-    return sections
+    return sections, raw_scores
+
+
+def _gate_section(
+    root: Path, metal_status: str, skipped: Sequence[str], row_map: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """The parity gate's Metal cells on every fixture (ADR-1496)."""
+    if "gate" in skipped:
+        return {"status": "not_run"}
+    return run_metal_gate(
+        root,
+        str(root / "build" / "tools" / "vmaf"),
+        load_fixtures(root),
+        row_map.get("gate") if row_map else None,
+        metal_status=metal_status,
+        timeout_seconds=GATE_TIMEOUT_SECONDS,
+    )
 
 
 def _suite_sections(
@@ -241,6 +267,8 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     skipped = [name for name in CHECKS if name in args.skip]
     if "dispatch" in skipped:  # reference and Metal compare the dispatch run's scores
         skipped += [name for name in ("reference", "metal") if name not in skipped]
+    if "metal" in skipped and "gate" not in skipped:  # the gate runs where Metal ran
+        skipped.append("gate")
     host = collect_host_facts()
     not_applicable = applicability(root, host)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -251,13 +279,32 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "image": image_block(root, args.image_digest),
         "host": host,
     }
-    report.update(_equivalence_sections(args, root, host, skipped, not_applicable))
+    sections, raw_scores = _equivalence_sections(args, root, host, skipped, not_applicable)
+    report.update(sections)
+    row_map = load_row_map(root / "image" / "metal-rows.json")
+    report["metal_gate"] = _gate_section(
+        root, report["metal_equivalence"]["status"], skipped, row_map
+    )
     report.update(_suite_sections(root, skipped, not_applicable))
+    report["metal_rows"] = evaluate_rows(
+        row_map, report["unit_tests"].get("cases", {}), raw_scores["cpu"], raw_scores["metal"],
+        report["metal_gate"],
+    )  # fmt: skip
     report["not_exercised"] = not_exercised(report, skipped, not_applicable)
     report["verdict"], report["failed_checks"] = verdict_of(report, skipped)
     report["note"] = args.note
     report["report_sha256"] = report_digest(report)
     return report
+
+
+def _rows_line(rows: Mapping[str, Any]) -> str:
+    counts = rows.get("counts")
+    if not counts:
+        return f"metal state rows: {rows['status']}"
+    return (
+        f"metal state rows: {counts['pass']} measured passing, {counts['fail']} failing, "
+        f"{counts['not_measured']} not measured"
+    )
 
 
 def suggested_file_name(report: Mapping[str, Any]) -> str:
@@ -275,6 +322,8 @@ def summarize(report: Mapping[str, Any]) -> str:
         f"dispatch equivalence: {report['dispatch_equivalence']['status']}",
         f"reference equivalence: {report['reference_equivalence']['status']}",
         f"metal equivalence: {report['metal_equivalence']['status']}",
+        f"metal parity gate: {report['metal_gate']['status']}",
+        _rows_line(report["metal_rows"]),
         summary_line("unit tests", report["unit_tests"]),
         summary_line("golden gate", report["golden_gate"]),
     ]

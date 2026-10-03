@@ -275,6 +275,7 @@ def minimal_report(**overrides) -> dict:
         "dispatch_equivalence": section,
         "reference_equivalence": section,
         "metal_equivalence": {"status": "no_device"},
+        "metal_gate": {"status": "no_device"},
         "unit_tests": suite,
         "golden_gate": suite,
     }
@@ -305,6 +306,11 @@ def test_metal_and_golden_applicability_in_verdict() -> None:
     assert hw_report.verdict_of(report, []) == ("fail", ["metal_equivalence"])
     report = minimal_report(metal_equivalence={"status": "error"})
     assert hw_report.verdict_of(report, [])[0] == "fail"
+    # ADR-1496: the parity gate's Metal cells are a check of their own.
+    report = minimal_report(metal_gate={"status": "fail"})
+    assert hw_report.verdict_of(report, []) == ("fail", ["metal_gate"])
+    report = minimal_report(metal_gate={"status": "not_applicable"})
+    assert hw_report.verdict_of(report, []) == ("pass", [])
 
 
 def test_not_exercised_names_sve2_only_when_missing() -> None:

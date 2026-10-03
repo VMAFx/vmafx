@@ -6,203 +6,154 @@
  */
 
 /*
- * Metal kernel parity — integer_ssim CPU vs. Metal (ADR-0214 cross-backend
- * gate; ADR-0421 first-kernel Metal scaffolding).
+ * ssim (integer_ssim.c) CPU vs. Metal: the twin must return the CPU's score
+ * bit for bit (T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01; the CUDA, HIP and SYCL
+ * twins are exact, ADR-1424, ADR-1438, ADR-1443). First added as a places=4
+ * test on one 8-bit frame (ADR-0421).
  *
- * The integer (fixed-point) SSIM extractor is registered under the name
- * `ssim` on the CPU (core/src/feature/integer_ssim.c) and emits the
- * feature key `ssim`. The Metal twin `integer_ssim_metal`
- * (core/src/feature/metal/integer_ssim_metal.mm +
- *  core/src/feature/metal/integer_ssim.metal) mirrors the float_ssim_metal
- * two-pass separable-Gaussian dispatch but swaps the float arithmetic for
- * the CPU integer reference's fixed-point 9-tap Gaussian
- * ({2,9,28,55,68,55,28,9,2}, KERNEL_WEIGHT=256) with edge-truncated
- * convolution.
+ * calc_ssim() adds every pixel's double term in raster order. A twin that
+ * adds float partials per work-group is off in the last digits (2.3e-14 on
+ * the Netflix pair, 1.1e-11 on the 10 px checkerboard on CUDA), and enable_db
+ * magnifies a last-place difference. The identical-frame cases also measure
+ * item 1 of T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 for this twin: an
+ * identical window is not forced to 1, the CPU's dB value is what it is. The
+ * fixtures, the comparison and the cases are ssim_twin_parity.h's, all at
+ * `==`. The macOS tester bundle runs this test and reports each case
+ * (ADR-1496).
  *
- * This test runs the CPU `ssim` extractor against `integer_ssim_metal` over
- * a single-frame YUV420P fixture and asserts the `ssim` score matches within
- * places=4 (1e-4). The integer moments are computed exactly on the GPU
- * (int64 accumulators); the per-pixel SSIM combine is done in float (MSL has
- * no double, while the CPU promotes to double) — the float32 residual is the
- * cross-backend divergence the 1e-4 ADR-0214 gate bounds.
- *
- * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip on
- * Linux / Windows / Intel Mac.
- *
- * Cross-references:
- *   - core/test/test_metal_float_ssim_parity.c (float twin)
- *   - core/test/test_metal_integer_motion_parity.c (integer sibling)
- *   - core/src/feature/metal/integer_ssim_metal.mm
- *   - core/src/feature/integer_ssim.c
+ * Skip behaviour: exits 77 when there is no Metal device.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "metal_twin.h"
 
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
-#include "libvmaf/picture.h"
+#include "ssim_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
+static const SsimTwin twin = {
+    .extractor = METAL_TWIN("integer_ssim_metal", "ssim"),
+    .backend = METAL_TWIN_BACKEND,
+    .open = metal_twin_open,
+    .import = metal_twin_import,
+    .close = metal_twin_close,
+};
 
-static int fill_fixture(VmafPicture *pic, unsigned variant)
+static char *test_ssim_metal_registered(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const int v = (int)((row + col) & 0xFFu);
-            const int d = (variant != 0u) ? (int)(((row * 9u + col) & 0x7u)) - 4 : 0;
-            int clamped = v + d;
-            if (clamped < 0)
-                clamped = 0;
-            if (clamped > 255)
-                clamped = 255;
-            y[row * pic->stride[0] + col] = (uint8_t)clamped;
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
+    return ssim_twin_registered(&twin);
 }
 
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-static char *feed_fixture_pair(VmafContext *vmaf)
+static char *test_ssim_8bit(void)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_fixture(&ref, 0u);
-    if (err)
-        return "fill_fixture(ref) failed";
-    err = fill_fixture(&dist, 1u);
-    if (err)
-        return "fill_fixture(dist) failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    if (err)
-        return "vmaf_read_pictures failed";
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err)
-        return "vmaf_read_pictures(EOS) failed";
-    return NULL;
+    return ssim_twin_bit_depth(&twin, 8u);
 }
 
-static char *run_cpu_integer_ssim(double *out_score)
+static char *test_ssim_10bit(void)
 {
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "ssim", NULL);
-    mu_assert("CPU: vmaf_use_feature(ssim) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "ssim", out_score, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(ssim, idx=0) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return ssim_twin_bit_depth(&twin, 10u);
 }
 
-static char *run_metal_integer_ssim(double *out_score, int *skipped)
+static char *test_ssim_12bit(void)
 {
-    *skipped = 0;
-    *out_score = NAN;
-    int err = 0;
-
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        *skipped = 1;
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "integer_ssim_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(integer_ssim_metal) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "ssim", out_score, 0u);
-    mu_assert("Metal: vmaf_feature_score_at_index(ssim, idx=0) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-
-    vmaf_metal_state_free(&mstate);
-    return NULL;
+    return ssim_twin_bit_depth(&twin, 12u);
 }
 
-static char *test_integer_ssim_cpu_metal_parity(void)
+static char *test_ssim_16bit(void)
 {
-    double cpu_score = 0.0;
-    double metal_score = NAN;
-    int skipped = 0;
+    return ssim_twin_bit_depth(&twin, 16u);
+}
 
-    char *msg = run_cpu_integer_ssim(&cpu_score);
-    if (msg)
-        return msg;
-    msg = run_metal_integer_ssim(&metal_score, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
+static char *test_ssim_odd_frame(void)
+{
+    return ssim_twin_odd_frame(&twin);
+}
 
-    const double delta = fabs(cpu_score - metal_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\ninteger_ssim parity FAIL: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, metal_score, delta, PARITY_TOL);
-    }
-    mu_assert("integer_ssim CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
-    return NULL;
+static char *test_ssim_tiny_frame(void)
+{
+    return ssim_twin_tiny_frame(&twin, 8u);
+}
+
+static char *test_ssim_tiny_frame_16bit(void)
+{
+    return ssim_twin_tiny_frame(&twin, 16u);
+}
+
+static char *test_ssim_one_pixel(void)
+{
+    return ssim_twin_one_pixel(&twin);
+}
+
+static char *test_ssim_1080p(void)
+{
+    return ssim_twin_1080p(&twin);
+}
+
+static char *test_ssim_enable_db(void)
+{
+    return ssim_twin_enable_db(&twin);
+}
+
+static char *test_ssim_inverted(void)
+{
+    return ssim_twin_inverted(&twin, 8u);
+}
+
+static char *test_ssim_inverted_16bit(void)
+{
+    return ssim_twin_inverted(&twin, 16u);
+}
+
+static char *test_ssim_identical(void)
+{
+    return ssim_twin_identical(&twin, 323u, 181u, NULL);
+}
+
+static char *test_ssim_identical_clipped(void)
+{
+    return ssim_twin_identical(&twin, 323u, 181u, "clip_db");
+}
+
+static char *test_ssim_identical_tiny(void)
+{
+    return ssim_twin_identical(&twin, 3u, 3u, NULL);
+}
+
+static void run_bit_depth_cases(void)
+{
+    metal_run_case(test_ssim_8bit);
+    metal_run_case(test_ssim_10bit);
+    metal_run_case(test_ssim_12bit);
+    metal_run_case(test_ssim_16bit);
+}
+
+static void run_geometry_cases(void)
+{
+    metal_run_case(test_ssim_odd_frame);
+    metal_run_case(test_ssim_tiny_frame);
+    metal_run_case(test_ssim_tiny_frame_16bit);
+    metal_run_case(test_ssim_one_pixel);
+    metal_run_case(test_ssim_1080p);
+}
+
+static void run_db_cases(void)
+{
+    metal_run_case(test_ssim_enable_db);
+    metal_run_case(test_ssim_inverted);
+    metal_run_case(test_ssim_inverted_16bit);
+    metal_run_case(test_ssim_identical);
+    metal_run_case(test_ssim_identical_clipped);
+    metal_run_case(test_ssim_identical_tiny);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_integer_ssim_cpu_metal_parity);
-    return NULL;
+    metal_run_case(test_ssim_metal_registered);
+    run_bit_depth_cases();
+    run_geometry_cases();
+    run_db_cases();
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

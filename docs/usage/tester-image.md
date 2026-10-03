@@ -38,15 +38,17 @@ shasum -a 256 -c vmafx-tester-macos-arm64-<VERSION>.tar.gz.sha256
 # 3. Unpack into one new directory.
 tar -xzf vmafx-tester-macos-arm64-<VERSION>.tar.gz
 
-# 4. Run the report (a few minutes); the JSON goes to report.json, a summary to the terminal.
+# 4. Run the report (a few minutes; more with a Metal device, which runs the Metal tests and
+#    the parity gate); the JSON goes to report.json, a summary to the terminal.
 cd vmafx-tester-macos-arm64-<VERSION> && ./run.sh > report.json
 
 # 5. Look at the verdict before you send anything.
 grep -E '"(verdict|cpu_model|hw_model)"' report.json
 ```
 
-What the run does: it reads files in this directory, starts `build/tools/vmaf` and the
-test executables in `tests/`, and writes the report. It writes nothing outside the
+What the run does: it reads files in this directory, starts `build/tools/vmaf`, the
+test executables in `tests/` and the parity gate in `tester/gate/` (with the bundled
+interpreter), and writes the report. It writes nothing outside the
 directory except your temporary directory. It needs no network: `run.sh` starts the
 report under macOS's `sandbox-exec` with network access denied when your macOS offers
 it, and says so on the terminal; the report program contains no network code in any
@@ -66,6 +68,7 @@ workflow run that built it.
 | `run.sh` | the one command (about 20 lines of `sh`) | 1 KB |
 | `runtime/` | a Python 3.13 interpreter ([python-build-standalone](https://github.com/astral-sh/python-build-standalone), pinned by SHA-256, standard library only) | about 45 MB |
 | `tester/` | the report program, plain Python (`tools/rc1-tester/` in the repository) | 0.2 MB |
+| `tester/gate/` | the parity gate the report runs on Metal, plain Python (`scripts/ci/cross_backend_parity_gate.py` with its list of exact twins and the decision records that list cites) | 0.5 MB |
 | `build/tools/vmaf` | the VMAFx command line tool; libvmaf is linked in, Metal is on, no ONNX Runtime | about 10 MB |
 | `tests/` | unit test executables, including the Metal parity tests | about 40 MB |
 | `python/test/resource/` | Netflix test videos, each checked against a pinned SHA-256 | about 57 MB |
@@ -171,8 +174,21 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
 - **Metal equivalence** (macOS bundle): every CPU extractor with `--backend metal`
   against the CPU, with the extractors that really ran on Metal, counts, first
   differing frame, both values and the largest absolute difference.
+- **Metal parity gate** (macOS bundle, `metal_gate`): the project's parity gate,
+  `scripts/ci/cross_backend_parity_gate.py`, run on every fixture with
+  `--backends cpu metal --hold-exact metal`: every Metal twin against its CPU
+  extractor, compared exactly at full precision (ciede at its `1e-9` math-library
+  bound), with the option sets the gate has cells for (`enable_lcs`, `debug`, the
+  five-frame motion window). A feature a Metal twin cannot run on a fixture is
+  listed under `left_out` with the reason.
 - **Unit tests** and, in the container, the **Netflix golden gate**: passed, failed,
-  skipped, names of failures.
+  skipped, names of failures. For the Metal parity tests the report also keeps the
+  verdict of every test case (`unit_tests.cases`) and the message of a failing one.
+- **Metal state rows** (macOS bundle, `metal_rows`): for every open Metal row of the
+  project's bug ledger, the cases, fixture scores and gate cells of this run that
+  close it, and a verdict: `pass` (every one of them passed on this Mac), `fail`, or
+  `not_measured` (for example no Metal device). See
+  [Metal state rows](#metal-state-rows).
 - **What was not exercised and why**, the source commit, tool versions and a schema
   version.
 
@@ -184,6 +200,22 @@ before you send it; it is plain text.
 Exit status 0 means every check that ran agreed. A Metal run on a Mac with no usable
 Metal device is reported as `no_device` and is not a failure. A report with verdict
 `fail` is as welcome as a passing one: it is the finding.
+
+### Metal state rows
+
+The macOS report says, row by row, which open Metal defects of
+[`docs/state.md`](../state.md) this run measured. The map from a row to its
+measurements is `image/metal-rows.json` in the bundle (in the repository
+`tools/rc1-tester/image/metal-rows.json`): test cases of the Metal parity tests,
+which compare a Metal twin with its CPU extractor with `==` on synthetic fixtures
+(16-bit full-range noise, frames below 17 pixels, option sets, identical pairs),
+Metal scores on the four fixtures, and cells of the parity gate. A row whose
+verdict is `pass` has every measurement it names passing on this Mac; the
+maintainers close it from that evidence. The summary on the terminal prints the
+counts (`metal state rows: N measured passing, ...`).
+
+On a Mac without a usable Metal device every Metal case is skipped, the gate is
+`no_device` and every row is `not_measured`; that is not a failure.
 
 ## Send the report and get credit
 

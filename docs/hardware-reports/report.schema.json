@@ -24,7 +24,11 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1"
+      "enum": [
+        "1",
+        "2"
+      ],
+      "description": "2 adds metal_gate, metal_rows and per-case unit verdicts (ADR-1496); 1 reports stay valid."
     },
     "tool": {
       "type": "object",
@@ -314,6 +318,83 @@
     "report_sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "metal_gate": {
+      "type": "object",
+      "description": "The parity gate's Metal cells, CPU against Metal held exact, on every fixture (macOS bundle, ADR-1496).",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "error",
+            "no_device",
+            "not_applicable",
+            "not_run"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gateFixture"
+          }
+        }
+      }
+    },
+    "metal_rows": {
+      "type": "object",
+      "description": "Per Metal state row of docs/state.md, the measurements of this run that close it (ADR-1496).",
+      "required": [
+        "status",
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_measured",
+            "not_applicable"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pass",
+            "fail",
+            "not_measured"
+          ],
+          "properties": {
+            "pass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fail": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_measured": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rowVerdict"
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -512,9 +593,220 @@
           "items": {
             "type": "string"
           }
+        },
+        "cases": {
+          "type": "object",
+          "description": "Per test executable that prints @case lines, the verdict of each case (ADR-1496).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "enum": [
+                "pass",
+                "fail",
+                "skip"
+              ]
+            }
+          }
+        },
+        "case_messages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
         }
       },
       "additionalProperties": false
+    },
+    "gateFixture": {
+      "type": "object",
+      "required": [
+        "fixture"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "left_out": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "feature",
+              "reason"
+            ],
+            "properties": {
+              "feature": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "feature",
+              "status",
+              "tolerance",
+              "tolerance_source",
+              "frames",
+              "max_abs_diff",
+              "mismatches",
+              "note"
+            ],
+            "properties": {
+              "feature": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "OK",
+                  "FAIL",
+                  "ERROR",
+                  "SKIP"
+                ]
+              },
+              "tolerance": {
+                "type": "string"
+              },
+              "tolerance_source": {
+                "type": "string"
+              },
+              "frames": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_abs_diff": {
+                "type": "string"
+              },
+              "mismatches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "rowVerdict": {
+      "type": "object",
+      "required": [
+        "id",
+        "verdict",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^T-[A-Z0-9-]+$"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_measured"
+          ]
+        },
+        "device_free": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "result"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "case",
+                  "metric",
+                  "gate"
+                ]
+              },
+              "result": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "skip",
+                  "not_run",
+                  "identical",
+                  "within_bound",
+                  "differing",
+                  "absent",
+                  "not_on_metal",
+                  "OK",
+                  "FAIL",
+                  "ERROR",
+                  "SKIP"
+                ]
+              },
+              "test": {
+                "type": "string"
+              },
+              "case": {
+                "type": "string"
+              },
+              "fixture": {
+                "type": "string"
+              },
+              "extractor": {
+                "type": "string"
+              },
+              "metric": {
+                "type": "string"
+              },
+              "feature": {
+                "type": "string"
+              },
+              "max_abs_diff": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "2"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "metal_gate",
+          "metal_rows"
+        ]
+      }
+    }
+  ]
 }

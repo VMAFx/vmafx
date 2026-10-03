@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import site
 import sys
 import tempfile
@@ -19,6 +20,10 @@ from .safe_process import run_bounded
 
 MESON_SKIP = 77
 MAX_FAILURE_NAMES = 50
+MAX_CASE_MESSAGE = 300
+# One line per case of the Metal parity tests (core/test/metal_twin.h, ADR-1496).
+CASE_LINE = re.compile(r"^@case (test_\w+) (pass|fail|skip)$")
+MESSAGE_LINE = re.compile(r"^@message (test_\w+) (.*)$")
 GOLDEN_FILES = (
     "python/test/quality_runner_test.py",
     "python/test/feature_extractor_test.py",
@@ -43,10 +48,37 @@ def _finish(counts: dict[str, Any]) -> dict[str, Any]:
     return counts
 
 
+def parse_case_lines(text: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Verdict of every case an executable printed, and the failures' messages."""
+    verdicts: dict[str, str] = {}
+    messages: dict[str, str] = {}
+    for line in text.splitlines():
+        match = CASE_LINE.match(line.strip())
+        if match:
+            verdicts[match.group(1)] = match.group(2)
+            continue
+        match = MESSAGE_LINE.match(line.strip())
+        if match:
+            messages[match.group(1)] = match.group(2)[:MAX_CASE_MESSAGE]
+    return verdicts, messages
+
+
+def _record_cases(counts: dict[str, Any], name: str, output: str) -> None:
+    verdicts, messages = parse_case_lines(output)
+    if verdicts:
+        counts.setdefault("cases", {})[name] = verdicts
+    if messages:
+        counts.setdefault("case_messages", {})[name] = messages
+
+
 def run_unit_tests(
     manifest: Path, *, timeout_seconds: float, runner: Runner = run_bounded
 ) -> dict[str, Any]:
-    """Run each executable of the baked manifest; exit 77 counts as skipped."""
+    """Run each executable of the baked manifest; exit 77 counts as skipped.
+
+    The verdict lines of tests that print one per case (`@case`) are kept under
+    `cases`, so the report can say which state rows a run measured (ADR-1496).
+    """
     try:
         tests = json.loads(manifest.read_text(encoding="utf-8"))["tests"]
     except (OSError, ValueError, KeyError) as error:
@@ -55,13 +87,16 @@ def run_unit_tests(
     counts["status"] = "pass"
     counts["total"] = len(tests)
     for test in tests:
+        output = ""
         try:
             result = runner(
                 [str(test["cmd"])], timeout_seconds=timeout_seconds, max_output_bytes=1_048_576
             )
             code = result.returncode
+            output = (result.stderr or "") + "\n" + (result.stdout or "")
         except (TimeoutError, RuntimeError, ValueError):
             code = -1
+        _record_cases(counts, str(test["name"]), output)
         if code == 0:
             counts["passed"] += 1
         elif code == MESON_SKIP:

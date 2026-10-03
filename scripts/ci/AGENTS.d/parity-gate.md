@@ -4,7 +4,8 @@ paths:
   - scripts/ci/gpu_ulp_calibration.yaml
   - scripts/ci/test_calibration.py
   - scripts/ci/test_cross_backend_*.py
-invariant: `tolerance_for()` returns the default when a lookup step falls through; a cell compares every metric of the feature.
+  - scripts/ci/exact_twins.d/*
+invariant: `tolerance_for()` falls back to the default; a cell compares every metric; the gate stays stdlib-only (macOS bundle).
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Cross-backend parity gate: calibration table and lanes
@@ -74,7 +75,8 @@ in BOTH `cross_backend_parity_gate.py` and `cross_backend_vif_diff.py`
 (same tables, held equal), metrics = everything CPU extractor emits by
 default (`psnr` = three planes), tolerance in `FEATURE_TOLERANCE`, row in
 `docs/development/cross-backend-gate.md`. Backend with registered twins but
-no gate backend (`metal`) = listed in `UNGATED_BACKENDS` with state row.
+no gate backend = listed in `UNGATED_BACKENDS` with state row (empty since
+`metal` became a gate backend, ADR-1496).
 Guard: `core/test/test_parity_gate_covers_registered_twins.py`.
 `speed_temporal` = libm twin on `cuda`, `hip`, `sycl` at `4e-5` (five
 float steps below 128; twins round `log2` correctly, CPU = host `log2f`).
@@ -82,6 +84,21 @@ float steps below 128; twins round `log2` correctly, CPU = host `log2f`).
 icx-build CPU on all measured (Intel `log2f` rounds correctly), != glibc CPU
 on 15 of 918: NEVER declare it exact from an icx run; equality = property of
 host libm, not of twin.
+
+**Metal backend + `--hold-exact` (ADR-1496).** `metal` = gate backend
+(`--metal_device`; `integer_*_metal` names via `BACKEND_EXTRACTOR_ALIASES`, same
+tuples in both gate scripts). Runs only on an Apple device = macOS tester
+bundle (`tools/rc1-tester/src/vmaf_rc1_tester/hw_gate.py`): `--backends cpu
+metal --hold-exact metal` on four fixtures. `--hold-exact B` = cells with B
+compared at 0 + `--precision max` (ciede: max `LIBM_TWINS` bound), label
+`held-exact:ADR-1496`; other side must be `cpu`, held, or listed for the
+feature. Measurement before a fragment; NEVER a fragment substitute, never in
+a CI lane. Bundle copies the gate: stdlib imports only, files =
+`GATE_FILES` + `exact_twins.d` + cited ADRs (`prepare_build.py stage_gate`);
+new import or data file -> add there or the bundle's gate run errors.
+Gate features run on Metal = `gate.features` in
+`tools/rc1-tester/image/metal-rows.json` (held equal to the features with a
+registered Metal twin by `core/test/test_metal_report_rows_contract.py`).
 
 ## When adding a new lane
 

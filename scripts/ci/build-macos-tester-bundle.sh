@@ -65,6 +65,9 @@ python3 "$image_dir/prepare_build.py" stage "$build" "$image_dir/unit-tests-maco
 cp -R tools/rc1-tester/src "$bundle/tester/src"
 cp tools/rc1-tester/vmaf-tester-report "$bundle/tester/"
 cp "$image_dir/fixtures.json" "$bundle/image/fixtures.json"
+# ADR-1496: the state rows the report measures, and the parity gate it runs.
+cp "$image_dir/metal-rows.json" "$bundle/image/metal-rows.json"
+python3 "$image_dir/prepare_build.py" gate "$repo" "$bundle"
 cp "$image_dir/macos/run.sh" "$bundle/run.sh"
 cp "$image_dir/macos/README.txt" "$bundle/README.txt"
 find "$bundle/tester" -name __pycache__ -type d -prune -exec rm -r {} +
