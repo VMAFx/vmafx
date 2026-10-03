@@ -2249,6 +2249,27 @@ test('test_metal_soft_double_contract',
 
 # [metal-ports: integer kernels]
 
+# T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02: float_psnr_metal's per-sample
+# term (core/src/feature/metal/metal_float_psnr_math.h) against float_psnr.c's
+# float square through the CPU's picture_copy(), for every sample difference
+# at 8, 10, 12 and 16 bits, and the twin's integer group sums against the
+# CPU's noise on full-range noise frames. The source contract pins the integer
+# reduction of float_psnr.metal and the host's exact total.
+test_metal_float_psnr_math = executable('test_metal_float_psnr_math',
+    ['test.c', 'test_metal_float_psnr_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_psnr_math', test_metal_float_psnr_math, suite : ['fast'])
+test('test_metal_float_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of integer-kernel group)
 
 # [metal-ports: float_motion and float_vif]
