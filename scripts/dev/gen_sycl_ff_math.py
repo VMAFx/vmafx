@@ -10,9 +10,13 @@ in numpy's extended precision (64-bit significand on x86-64), which is 16 bits
 more than a pair holds, and written as hexadecimal fp32 literals between the
 header's BEGIN GENERATED / END GENERATED markers.
 
-The header is the fp32 pair math the SYCL and the HIP ciede twins share
-(ADR-1436, ADR-1448); core/src/feature/sycl/sycl_ff_math.h, which this script
-is named after, now only names the SYCL primitives it is built on.
+The header is the fp32 pair math the SYCL, HIP and Metal ciede twins share
+(ADR-1436, ADR-1448, ADR-1498); core/src/feature/sycl/sycl_ff_math.h, which
+this script is named after, now only names the SYCL primitives it is built on.
+Each constant is written through the header's VMAF_FF_CONSTANT and
+VMAF_FF_PAIR_INIT, which spell it as a C++17 inline variable with designated
+initializers, or, for the Metal subset (VMAF_FF_MSL_SUBSET), in the backend's
+program-scope address space with positional ones.
 
 usage: gen_sycl_ff_math.py --write | --check
 """
@@ -66,7 +70,7 @@ def triple(value: np.longdouble, top_bits: int) -> tuple[np.float32, np.float32,
 
 def pair_line(name: str, value: np.longdouble) -> str:
     high, low = pair(value)
-    return f"inline constexpr Ff {name} = {{.hi = {hexf(high)}, .lo = {hexf(low)}}};"
+    return f"VMAF_FF_CONSTANT Ff {name} = VMAF_FF_PAIR_INIT({hexf(high)}, {hexf(low)});"
 
 
 def scalar_lines() -> list[str]:
@@ -79,10 +83,10 @@ def scalar_lines() -> list[str]:
     ]
     for name, value in (("kPi16", PI / 16), ("kLn2", LN2)):
         for suffix, part in zip("ABC", triple(value, 13), strict=True):
-            lines.append(f"inline constexpr float {name}{suffix} = {hexf(part)};")
+            lines.append(f"VMAF_FF_CONSTANT float {name}{suffix} = {hexf(part)};")
     lines += [
-        f"inline constexpr float kSixteenOverPi = {hexf(F(16 / PI))};",
-        f"inline constexpr float kInvLn2 = {hexf(F(1 / LN2))};",
+        f"VMAF_FF_CONSTANT float kSixteenOverPi = {hexf(F(16 / PI))};",
+        f"VMAF_FF_CONSTANT float kInvLn2 = {hexf(F(1 / LN2))};",
         pair_line("kPi", PI),
         pair_line("kHalfPi", PI / 2),
         pair_line("kThird", LD(1) / 3),
@@ -99,13 +103,13 @@ def scalar_lines() -> list[str]:
         if n <= LAST_PAIR_FACTORIAL:
             lines.append(pair_line(f"kInvF{n}", 1 / factorial))
         else:
-            lines.append(f"inline constexpr float kInvF{n} = {hexf(F(1 / factorial))};")
+            lines.append(f"VMAF_FF_CONSTANT float kInvF{n} = {hexf(F(1 / factorial))};")
     return lines
 
 
 def table_lines() -> list[str]:
     lines = ["", "/* atan(j / 16), j = 0 .. 16, as (hi, lo). */"]
-    lines.append("inline constexpr float kAtanTable[2 * 17] = {")
+    lines.append("VMAF_FF_CONSTANT float kAtanTable[2 * 17] = {")
     for j in range(17):
         high, low = pair(np.arctan(LD(j) / 16))
         lines.append(f"    {hexf(high)}, {hexf(low)},")
@@ -114,7 +118,7 @@ def table_lines() -> list[str]:
         "",
         "/* sin(k pi / 16) and cos(k pi / 16), k = 0 .. 31, as",
         " * (sin hi, sin lo, cos hi, cos lo). */",
-        "inline constexpr float kSinCosTable[4 * 32] = {",
+        "VMAF_FF_CONSTANT float kSinCosTable[4 * 32] = {",
     ]
     for k in range(32):
         angle = PI * k / 16
