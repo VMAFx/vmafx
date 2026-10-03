@@ -927,7 +927,7 @@ VmafMtlShifted reference_shr_round(VmafMtlU128 a, unsigned shift)
     for (unsigned j = 0u; j < 64u; j++) {
         r.kept |= bit_of(a, shift + j) ? UINT64_C(1) << j : UINT64_C(0);
     }
-    r.half = shift > 0u && bit_of(a, shift - 1u);
+    r.halfway = shift > 0u && bit_of(a, shift - 1u);
     for (unsigned i = 0u; i + 1u < shift; i++) {
         r.sticky = r.sticky || bit_of(a, i);
     }
@@ -993,7 +993,8 @@ mu_message_t test_u128_shifts_msb_and_sub()
         const VmafMtlShifted got = vmaf_mtl_u128_shr_round(a, shift);
         const VmafMtlShifted want = reference_shr_round(a, shift);
         wrong[1] +=
-            got.kept == want.kept && got.half == want.half && got.sticky == want.sticky ? 0u : 1u;
+            got.kept == want.kept && got.halfway == want.halfway && got.sticky == want.sticky ? 0u :
+                                                                                                1u;
         unsigned msb = 127u;
         for (; msb > 0u && !bit_of(a, msb); msb--) {
         }

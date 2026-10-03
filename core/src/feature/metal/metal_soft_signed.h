@@ -43,6 +43,7 @@
  *    soft_div_digits               -> vmaf_mtl_soft_div_digits
  *    VMAF_SYCL_ALWAYS_INLINE       -> VMAF_MTL_FUNC
  *    SoftDouble{.mant, .exp}       -> vmaf_mtl_soft_make(mant, exp)
+ *    a variable `half`             -> `halfway` (half is an MSL scalar type)
  */
 
 #ifndef VMAF_FEATURE_METAL_METAL_SOFT_SIGNED_H_
@@ -94,10 +95,10 @@ VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_signed_from_u64(vmaf_mtl_u64 value)
     const vmaf_mtl_u32 drop = wide ? 11u - lead : 0u;
     const vmaf_mtl_u32 lift = wide ? 0u : lead - 11u;
     const vmaf_mtl_u32 half_bit = wide ? drop - 1u : 0u;
-    const bool half = wide && ((value >> half_bit) & 1u) != 0u;
+    const bool halfway = wide && ((value >> half_bit) & 1u) != 0u;
     const bool sticky = wide && (value & ((VMAF_MTL_U64(1) << half_bit) - 1u)) != 0u;
     vmaf_mtl_u64 kept = wide ? value >> drop : value << lift;
-    if (half && (sticky || (kept & 1u) != 0u)) {
+    if (halfway && (sticky || (kept & 1u) != 0u)) {
         kept += 1u;
     }
     vmaf_mtl_i32 exp = wide ? (vmaf_mtl_i32)drop : -(vmaf_mtl_i32)lift;

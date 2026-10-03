@@ -121,6 +121,9 @@ LITERAL = re.compile(r"\b(0[xX][0-9A-Fa-f]+|\d+\.\d*|\d+)[uUfF]*\b")
 # and sycl::clz on 32 bits: the only functions without a SYCL counterpart.
 METAL_ONLY = {"vmaf_mtl_soft_make", "vmaf_mtl_u128_make", "vmaf_mtl_shifted_make"}
 METAL_ONLY |= {"vmaf_mtl_soft_clz32"}
+# SYCL names that are Metal Shading Language type names (Specification 4.1,
+# Table 2.1): the Metal headers spell them otherwise.
+RENAMED = {"half": "halfway"}
 TYPES = {
     "uint64_t": "vmaf_mtl_u64",
     "int64_t": "vmaf_mtl_i64",
@@ -227,12 +230,14 @@ def _function_failures(metal: str, sycl: str) -> list[str]:
 
 
 def _fields(block: str, mapped: bool) -> list[str]:
-    """`type name` per field; a SYCL field's type mapped to its Metal type."""
+    """`type name` per field; a SYCL field's type and name mapped to Metal's."""
     fields = []
     for declaration in filter(None, (d.strip() for d in block.split(";"))):
         *kind, name = declaration.split()
         spelled = " ".join(kind)
-        fields.append(f"{_metal_type(spelled) if mapped else spelled} {name}")
+        if mapped:
+            spelled, name = _metal_type(spelled), RENAMED.get(name, name)
+        fields.append(f"{spelled} {name}")
     return fields
 
 
@@ -435,8 +440,8 @@ class MetalSoftDoubleContract(unittest.TestCase):
         self._assert_detected(failures, "calls the math library")
         failures = self._edited(
             "metal_soft_double.h",
-            "    const vmaf_mtl_u64 half = VMAF_MTL_U64(1) << 28;",
-            "    const vmaf_mtl_u64 half = (vmaf_mtl_u64)metal::sqrt(16.0f);",
+            "    const vmaf_mtl_u64 halfway = VMAF_MTL_U64(1) << 28;",
+            "    const vmaf_mtl_u64 halfway = (vmaf_mtl_u64)metal::sqrt(16.0f);",
         )
         self._assert_detected(failures, "calls the math library")
 
