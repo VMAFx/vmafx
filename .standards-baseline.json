@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T21:25:57Z",
+  "generated_at": "2026-10-03T22:52:15Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "f215dd4090c3c650e0ef1da76699af34b5493c30",
-  "total_infractions": 495,
+  "commit_sha": "4d3792b3ff2e99721e2721f63ac1248ebfc52976",
+  "total_infractions": 479,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -348,134 +348,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:0f34b4adc0f0",
       "fingerprint": ".github/workflows/pr-type-label.yml:HISS-07:text:0f34b4adc0f0#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 106,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1868d5e3095d",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:1868d5e3095d#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 108,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9ed8ec67e753",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:9ed8ec67e753#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 185,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1868d5e3095d",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:1868d5e3095d#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 187,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9ed8ec67e753",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:9ed8ec67e753#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 220,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1868d5e3095d",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:1868d5e3095d#3"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 222,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9ed8ec67e753",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:9ed8ec67e753#3"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 503,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1868d5e3095d",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:1868d5e3095d#4"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 505,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9ed8ec67e753",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:9ed8ec67e753#4"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 522,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3ecbfcc60683",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:3ecbfcc60683#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 572,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1868d5e3095d",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:1868d5e3095d#5"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 574,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9ed8ec67e753",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:9ed8ec67e753#5"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 583,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3a191c22d0b9",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:3a191c22d0b9#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 600,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:68933439fd54",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:68933439fd54#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 636,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3a191c22d0b9",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:3a191c22d0b9#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 680,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:68933439fd54",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:68933439fd54#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rule-enforcement.yml",
-      "line_number": 719,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:dfd8561a2c22",
-      "fingerprint": ".github/workflows/rule-enforcement.yml:HISS-07:text:dfd8561a2c22#1"
     },
     {
       "rule_id": "HISS-07",
