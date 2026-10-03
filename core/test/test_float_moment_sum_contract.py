@@ -11,7 +11,11 @@ kernels (each row's exact sum, a plan per row, each planned row's increments
 composed in pixel order, one walk per plane) that replace the two
 second-moment accumulators on a frame that can pass 2^53 units. The CUDA and
 HIP twins compile the kernels of ``feature/float_moment_sum_gpu.h``; the SYCL
-twin lays the same lane steps out in its own kernels.
+twin lays the same lane steps out in its own kernels; the Metal twin compiles
+``metal/metal_float_moment_sum.h``, a copy of the header with a Metal address
+space on each pointer (its mirror, kernels and host are held by
+``test_metal_float_moment_exact_contract.py``, whose checks this test runs on
+the header it edits).
 
 This test holds, without a device:
 
@@ -33,8 +37,12 @@ test_{cuda,sycl,hip}_float_moment_parity compare the twins with the CPU.
 from __future__ import annotations
 
 import re
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_metal_float_moment_exact_contract as metal_contract
 
 ROOT = Path(__file__).resolve().parents[2]
 FEATURE = ROOT / "core" / "src" / "feature"
@@ -113,10 +121,10 @@ def _kernel_failures(name: str, kernel: str, gpu_header: bool) -> list[str]:
         failures.append(f"{name}: does not include {SUM}")
     if gpu_header and not re.search(rf'#include "(feature/)?{GPU}"', code):
         failures.append(f"{name}: does not compile the kernels of {GPU}")
-    for kernel in KERNELS if gpu_header else ():
-        wrapper = _body(code, f"{kernel}(const VmafMomentSumArgs a)")
-        if f"{kernel}_body(a);" not in wrapper:
-            failures.append(f"{name}: no __global__ {kernel} running {kernel}_body()")
+    for entry in KERNELS if gpu_header else ():
+        wrapper = _body(code, f"{entry}(const VmafMomentSumArgs a)")
+        if f"{entry}_body(a);" not in wrapper:
+            failures.append(f"{name}: no __global__ {entry} running {entry}_body()")
     return failures
 
 
@@ -178,6 +186,15 @@ def _sycl_failures(source: str) -> list[str]:
     return failures
 
 
+def _metal_failures(sources: dict[str, str]) -> list[str]:
+    """The Metal twin's copy of the header, its kernels and its host, against
+    the shared header in `sources` (an edit of it that the copy did not follow
+    fails here)."""
+    metal = metal_contract._sources()
+    metal[metal_contract.SUM_SHARED] = sources[SUM]
+    return metal_contract._contract_failures(metal)
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
         _header_failures(sources[SUM])
@@ -187,6 +204,7 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
         + _cuda_host_failures(sources[CUDA_HOST])
         + _hip_host_failures(sources[HIP_HOST])
         + _sycl_failures(sources[SYCL])
+        + _metal_failures(sources)
     )
 
 
@@ -259,6 +277,16 @@ class FloatMomentSumContract(unittest.TestCase):
     def test_walk_without_the_store_is_detected(self) -> None:
         failures = self._edited(GPU, "        a.sums[2u + plane] = sum;", "        (void)sum;")
         self.assertTrue(any("does not store" in item for item in failures), failures)
+
+    def test_metal_copy_not_following_the_header_is_detected(self) -> None:
+        failures = self._edited(
+            SUM,
+            "    return (uint64_t)vmaf_ordsum_round_shifted(exact, (int)shift).even << shift;",
+            "    return (uint64_t)vmaf_ordsum_round_shifted(exact, (int)shift).odd << shift;",
+        )
+        self.assertTrue(
+            any("vmaf_mtl_msum_add_term differs" in item for item in failures), failures
+        )
 
     def test_sycl_plane_by_index_is_detected(self) -> None:
         failures = self._edited(

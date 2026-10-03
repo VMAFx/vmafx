@@ -2385,6 +2385,18 @@ test_metal_float_moment_math = executable('test_metal_float_moment_math',
     dependencies : [pthread_dependency, math_lib],
 )
 test('test_metal_float_moment_math', test_metal_float_moment_math, suite : ['fast'])
+# ADR-1497 / ADR-1498: metal_float_moment_sum.h, the Metal copy of the rounded
+# second-moment sum past 2^53 units, run on the host the way float_moment.metal
+# lays it out and compared bit for bit with picture_copy() +
+# compute_2nd_moment() on frames up to 7680x4320, with wrong plans too.
+test_metal_float_moment_sum = executable('test_metal_float_moment_sum',
+    ['test.c', 'test_metal_float_moment_sum.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_metal_float_moment_sum', test_metal_float_moment_sum, suite : ['fast'], timeout : 120)
 test('test_metal_float_moment_exact_contract',
     import('python').find_installation(),
     args : files('test_metal_float_moment_exact_contract.py'),
