@@ -6,6 +6,10 @@
  *  float_psnr feature extractor on the Metal backend (T8-1d / ADR-0421).
  *  Dispatches `float_psnr_kernel_{8,16}bpc` from float_psnr.metal.
  *
+ *  Noise: the kernel stores one uint64 per 16x16 threadgroup, the exact sum
+ *  of the CPU's float squares in units of 1 / scaler^2 (ADR-1498, the design
+ *  of ADR-1455); float_psnr_noise() adds them and divides as the CPU does.
+ *
  *  Score: peak² / max(mse, 1e-10) via 10·log10. `psnr_max` is reported
  *  verbatim for a zero-noise pair (infinity sentinel) and, unless the
  *  `uncapped` option is set, also truncates every computed value above it
@@ -44,7 +48,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 
 typedef struct FloatPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
-    VmafMetalKernelBuffer rb;        /* float partials, grid_w × grid_h */
+    VmafMetalKernelBuffer rb;        /* uint64 group sums, grid_w × grid_h */
     VmafMetalContext *ctx;
     void *pso_8bpc;
     void *pso_16bpc;
@@ -135,7 +139,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         const size_t grid_h = (h + 15) / 16;
         s->partials_count   = grid_w * grid_h;
         err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
-                                             s->partials_count * sizeof(float));
+                                             s->partials_count * sizeof(uint64_t));
     }
     if (err != 0) { goto fail_lc; }
 
@@ -204,7 +208,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (cmd == nil) { return -ENOMEM; }
 
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-    [blit fillBuffer:par_buf range:NSMakeRange(0, s->partials_count * sizeof(float)) value:0];
+    [blit fillBuffer:par_buf range:NSMakeRange(0, s->partials_count * sizeof(uint64_t)) value:0];
     [blit endEncoding];
 
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -212,13 +216,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
     [enc setBuffer:par_buf offset:0 atIndex:2];
-    if (s->bpc <= 8u) {
-        uint32_t st[2] = {(uint32_t)row_bytes, (uint32_t)row_bytes};
-        [enc setBytes:st length:sizeof(st) atIndex:3];
-    } else {
-        uint32_t st[4] = {(uint32_t)row_bytes, (uint32_t)row_bytes, (uint32_t)s->bpc, 0};
-        [enc setBytes:st length:sizeof(st) atIndex:3];
-    }
+    uint32_t st[2] = {(uint32_t)row_bytes, (uint32_t)row_bytes};
+    [enc setBytes:st length:sizeof(st) atIndex:3];
     uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
@@ -232,20 +231,34 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
+/* float_psnr_noise - the frame's mean squared difference, as float_psnr.c's.
+ *
+ * The group sums are exact integers of the CPU's own terms in units of
+ * 1 / scaler^2, so their uint64 sum is the exact sum of the terms, which is
+ * what the CPU's running double holds while it is below 2^53 units (ADR-1455).
+ * Dividing by scaler^2, a power of two, and by the pixel count are the CPU's
+ * operations. Past 2^53 units (16 bits only: a PSNR below 6 dB at 3840x2160)
+ * the CPU rounds as it adds its rows and the conversion below rounds once;
+ * test_metal_float_psnr_parity holds the derived bound there.
+ */
+static double float_psnr_noise(const FloatPsnrStateMetal *s)
+{
+    const uint64_t *partials = (const uint64_t *)s->rb.host_view;
+    uint64_t total = 0u;
+    for (size_t i = 0; partials != NULL && i < s->partials_count; i++) {
+        total += partials[i];
+    }
+    const double scaler = (double)(1u << (s->bpc - 8u));
+    const double n_pix = (double)s->frame_w * (double)s->frame_h;
+    return ((double)total / (scaler * scaler)) / n_pix;
+}
+
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatPsnrStateMetal *s = (FloatPsnrStateMetal *)fex->priv;
 
-    const float *parts = (const float *)s->rb.host_view;
-    double mse_sum = 0.0;
-    if (parts != NULL) {
-        for (size_t i = 0; i < s->partials_count; ++i) {
-            mse_sum += (double)parts[i];
-        }
-    }
-    const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    const double mse   = (n_pix > 0.0) ? (mse_sum / n_pix) : 0.0;
+    const double mse = float_psnr_noise(s);
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation applies only when `uncapped` is
      * false. See ADR-1193 / T-UPSTREAM-1109. */
