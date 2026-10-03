@@ -125,7 +125,12 @@ FORBIDDEN = {
     ),
 }
 
-METAL_LCS_GUARDS = ("!isfinite(lnum)", "!isfinite(cnum)", "!isfinite(snum)")
+# Since ADR-1498 float_ssim.metal forms each window's terms as the CPU's
+# (metal_ssim_terms.h: no forced value, the CPU's quotients) and the host adds
+# them and emits through vmaf_ssim_emit_scores_named(), which fails closed on
+# a non-finite mean. The kernel's earlier raw L/C/S isfinite() guards stood in
+# for that and are gone with the forced 1.
+METAL_LCS_TERMS = ('#include "metal_ssim_terms.h"',)
 
 METAL_MS_SSIM_OPTIONS_DB_CALL = (
     "vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "
@@ -169,9 +174,11 @@ def find_incomplete_vif_emitters() -> list[str]:
 def find_missing_metal_guards() -> list[str]:
     missing: list[str] = []
     metal_ssim = (ROOT / "metal/float_ssim.metal").read_text(encoding="utf-8")
-    for guard in METAL_LCS_GUARDS:
-        if guard not in metal_ssim:
-            missing.append(f"metal/float_ssim.metal: missing raw L/C/S guard {guard!r}")
+    for needed in METAL_LCS_TERMS:
+        if needed not in metal_ssim:
+            missing.append(
+                f"metal/float_ssim.metal: the window terms are not the CPU's ({needed!r})"
+            )
     return missing
 
 

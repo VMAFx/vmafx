@@ -9953,6 +9953,7 @@
         "core/src/metal/meson.build": 2,
         "core/test/meson.build": 18,
         "core/test/metal_option_tables.py": 1,
+        "core/test/test_float_adm_csf_upstream_contract.py": 2,
         "core/test/test_gpu_option_value_capability_contract.py": 1,
         "core/test/test_metal_ciede_exact_contract.py": 6,
         "core/test/test_metal_ciede_math_probe.cpp": 1,
@@ -9989,6 +9990,7 @@
         "core/test/test_metal_soft_double_contract.py": 1,
         "core/test/test_metal_twin_option_tables_contract.py": 2,
         "core/test/test_motion_five_frame_window.c": 1,
+        "core/test/test_nonfinite_collector_wiring.py": 1,
         "scripts/dev/gen_sycl_ff_math.py": 1
       },
       "target": "1498-metal-twins-exact-designs.md"
