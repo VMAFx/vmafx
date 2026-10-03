@@ -2908,7 +2908,8 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   the CPU's scores bit for bit, written in a header that also compiles on the
   host, where a test holds it against the CPU extractor. Changes a Metal user
   can see: `float_psnr_metal` and `float_moment_metal` are exact at 10 to 16
-  bits; `integer_psnr_metal` no longer loses carries in its 64-bit error sum
+  bits, `float_moment_metal` also on 16-bit frames whose sum passes 2^53
+  units; `integer_psnr_metal` no longer loses carries in its 64-bit error sum
   and takes `enable_apsnr`; `integer_motion_metal` differences frames before
   the blur, emits `motion_sad_score` and `motion3` and drops the
   `motion_add_uv` option the CPU never had; `motion_v2_metal` and
