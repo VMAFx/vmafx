@@ -2268,6 +2268,27 @@ test('test_metal_motion_v2_exact_contract',
     timeout : 30,
 )
 
+# T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 (ADR-1498, the HIP guard of
+# ADR-1381): the border fold of the integer VIF Metal kernels
+# (feature/metal/metal_integer_vif_math.h) against integer_vif.c's single
+# reflection, every tile load inside the plane, and the 16-pixel minimum from
+# the CPU's filter widths. Every host. The contract pins the twin's ADR-1324
+# context check, CPU fallback and init() refusal.
+test_metal_integer_vif_math = executable('test_metal_integer_vif_math',
+    ['test.c', 'test_metal_integer_vif_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_integer_vif_math', test_metal_integer_vif_math, suite : ['fast'])
+
+test('test_metal_integer_vif_min_dim_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_vif_min_dim_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of host-step group)
 
 # [metal-ports: integer kernels]

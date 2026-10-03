@@ -60,6 +60,8 @@
 #include <metal_stdlib>
 using namespace metal;
 
+#include "metal_integer_vif_math.h"
+
 #define IVIF_BX 16
 #define IVIF_BY 16
 #define IVIF_MAX_HFW 8
@@ -102,16 +104,14 @@ inline int ivif_fw(int scale)
 /* reflect-101 mirror about [0, sup-1], matching the CPU border handling
  * (pad_top_and_bottom and PADDING_SQ_DATA both reflect about the edge
  * sample, excluding the edge sample itself: idx<0 -> -idx; idx>=sup ->
- * 2*(sup-1)-idx). */
+ * 2*(sup-1)-idx). vmaf_mtl_vif_mirror() (metal_integer_vif_math.h) is that
+ * reflection for every tap an output reads from the 16-pixel minimum on
+ * (the host's vif_metal_min_dim()), and keeps the tile loads no output reads
+ * (a 16-wide group with its halo over a scale of 8 or 2 samples) inside the
+ * buffers, where a single reflection sent them out. */
 inline int vif_mirror(int idx, int sup)
 {
-    if (idx < 0) {
-        return -idx;
-    }
-    if (idx >= sup) {
-        return 2 * (sup - 1) - idx;
-    }
-    return idx;
+    return vmaf_mtl_vif_mirror(idx, sup);
 }
 
 /* 64-bit count-leading-zeros, matching __builtin_clzll semantics exactly
