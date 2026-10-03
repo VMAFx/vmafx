@@ -228,10 +228,10 @@ class HipVifLog2TableContractTest(unittest.TestCase):
         # The pre-reuse fill_log2_table().
         failures = self._edited(
             METAL_HOST,
-            "        vif_log2_table_generate((uint16_t *)[lb contents]);",
-            "        for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i)\n"
-            "            ((uint16_t *)[lb contents])[i] =\n"
-            "                (uint16_t)lround(log2f((float)(0x8000u + i)) * 2048.0f);",
+            "    vif_log2_table_generate((uint16_t *)[(__bridge id<MTLBuffer>)s->log2_buf contents]);",
+            "    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i)\n"
+            "        ((uint16_t *)[(__bridge id<MTLBuffer>)s->log2_buf contents])[i] =\n"
+            "            (uint16_t)lround(log2f((float)(0x8000u + i)) * 2048.0f);",
         )
         self.assertTrue(any(f"{METAL_HOST}: the device table" in item for item in failures), failures)
         self.assertTrue(any(f"{METAL_HOST}: a second definition" in item for item in failures))
