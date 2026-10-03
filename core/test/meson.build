@@ -2356,6 +2356,30 @@ test('test_metal_integer_adm_exact_contract',
     timeout : 30,
 )
 
+# T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29 and
+# T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02: integer_motion_metal's
+# diff-first arithmetic (core/src/feature/metal/metal_integer_motion_math.h)
+# run in the kernel's threadgroup layout against the CPU `motion` extractor's
+# VMAF_integer_feature_motion_sad_score on tiny, odd and 16x16-straddling
+# frames at 8 to 16 bits, and the mirror's range at every tile index. The
+# source contract pins the kernel's order, the host's ring and score, the
+# CPU's option table and provided features, and the CPU's window flush.
+test_metal_integer_motion_math = executable('test_metal_integer_motion_math',
+    ['test.c', 'test_metal_integer_motion_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_motion_math', test_metal_integer_motion_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_motion_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_motion_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of integer-kernel group)
 
 # [metal-ports: float_motion and float_vif]
