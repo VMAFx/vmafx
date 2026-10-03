@@ -2523,6 +2523,29 @@ test('test_metal_float_vif_exact_contract',
 
 # [metal-ports: ssim family]
 
+# T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01: integer_ssim_metal's arithmetic
+# (core/src/feature/metal/metal_integer_ssim_math.h) compiled on the host: the
+# per-pixel term against integer_ssim.c's fp64 expression bit for bit at 8, 10,
+# 12 and 16 bits, and the whole twin (both passes, the raster-order sum of the
+# term plane, the line weights) against the CPU `ssim` extractor at `==` on the
+# frames of ssim_twin_parity.h. The source contract pins the kernel's stored
+# terms, the host's raster-order sum and the reference lines.
+test_metal_integer_ssim_math = executable('test_metal_integer_ssim_math',
+    ['test.c', 'test_metal_integer_ssim_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_ssim_math', test_metal_integer_ssim_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of ssim group)
 
 # [metal-ports: ciede and float_adm]
