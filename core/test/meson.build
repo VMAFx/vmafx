@@ -2329,6 +2329,18 @@ test('test_metal_integer_vif_min_dim_contract',
     timeout : 30,
 )
 
+# T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26, option tables (ADR-1498):
+# integer_psnr_hvs_metal, integer_cambi_metal, ssimulacra2_metal and
+# integer_vif_metal declare the CPU's options (one recorded gap: cambi's
+# heatmaps_path), flags and provided features, and execute the options they
+# declare (cambi's src_width / src_height / full_ref included). Device-free.
+test('test_metal_twin_option_tables_contract',
+    import('python').find_installation(),
+    args : files('test_metal_twin_option_tables_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of host-step group)
 
 # [metal-ports: integer kernels]
