@@ -8449,6 +8449,7 @@
     "1395": {
       "sites": {
         "core/src/feature/ff_math.h": 1,
+        "core/src/feature/metal/metal_soft_double.h": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 4,
@@ -9744,10 +9745,14 @@
     "1498": {
       "sites": {
         "core/src/feature/metal/metal_portable.h": 1,
+        "core/src/feature/metal/metal_soft_double.h": 1,
+        "core/src/feature/metal/metal_soft_signed.h": 1,
         "core/src/metal/meson.build": 2,
-        "core/test/meson.build": 2,
+        "core/test/meson.build": 4,
         "core/test/test_metal_portable.c": 1,
-        "core/test/test_metal_shader_build_contract.py": 3
+        "core/test/test_metal_shader_build_contract.py": 3,
+        "core/test/test_metal_soft_double.cpp": 1,
+        "core/test/test_metal_soft_double_contract.py": 1
       },
       "target": "1498-metal-twins-exact-designs.md"
     }
