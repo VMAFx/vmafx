@@ -2460,8 +2460,10 @@ test('test_metal_float_motion_math', test_metal_float_motion_math,
     timeout : 120)
 
 # ADR-1498 — the source contract of the float_motion_metal port: the kernels
-# and the host compute through metal_float_motion_math.h in the CPU's order.
-# Device-free; fails on a planted return of each construct the port removed.
+# and the host compute through metal_float_motion_math.h in the CPU's order;
+# motion3 at the CPU's indices through motion_blend_tools.h (ADR-1404); the
+# option table is the CPU's. Device-free; fails on a planted return of each
+# construct the port removed.
 test('test_metal_float_motion_exact_contract',
     import('python').find_installation(),
     args : files('test_metal_float_motion_exact_contract.py'),
