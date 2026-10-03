@@ -20,6 +20,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import scripts.ci.cross_backend_parity_gate as parity_gate
 from scripts.ci.cross_backend_calibration import (
     ADR_DIR,
     EXACT_TWIN_FRAGMENTS,
@@ -46,6 +47,7 @@ from scripts.ci.cross_backend_parity_gate import (
     DEFAULT_FP32_TOLERANCE,
     FEATURE_METRICS,
     FEATURE_TOLERANCE,
+    HELD_EXACT_SOURCE,
     Cell,
     CellResult,
     build_command,
@@ -1477,3 +1479,111 @@ def test_run_cell_compares_every_metric_when_both_backends_emit_them(
         "integer_motion2": 0,
         "integer_motion3": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# ADR-1496: the `metal` backend and `--hold-exact`
+# ---------------------------------------------------------------------------
+
+
+def test_build_command_metal_selects_the_device(tmp_path: Path) -> None:
+    cmd = build_command(
+        binary=tmp_path / "vmaf",
+        ref=tmp_path / "ref.yuv",
+        dist=tmp_path / "dist.yuv",
+        width=576,
+        height=324,
+        pix_fmt="420",
+        bitdepth=8,
+        feature="adm",
+        backend="metal",
+        device=0,
+        output=tmp_path / "out.json",
+    )
+    assert cmd[cmd.index("--backend") + 1] == "metal"
+    assert cmd[cmd.index("--metal_device") + 1] == "0"
+    assert cmd[cmd.index("--feature") + 1] == "integer_adm_metal"
+
+
+def test_metal_twins_named_after_the_cpu_file() -> None:
+    expected = {
+        "adm": "integer_adm_metal",
+        "cambi": "integer_cambi_metal",
+        "ciede": "integer_ciede_metal",
+        "motion": "integer_motion_metal",
+        "motion_debug": "integer_motion_metal=debug=true",
+        "psnr": "integer_psnr_metal",
+        "psnr_hvs": "integer_psnr_hvs_metal",
+        "ssim": "integer_ssim_metal",
+        "vif": "integer_vif_metal",
+        "float_adm": "float_adm_metal",
+        "float_ms_ssim_lcs": "float_ms_ssim_metal=enable_lcs=true",
+        "motion_v2": "motion_v2_metal",
+    }
+    for feature, name in expected.items():
+        assert feature_extractor_name(feature, "metal") == name, feature
+
+
+def _tolerance(feature: str, backends: tuple[str, str], held: tuple[str, ...]) -> tuple[float, str]:
+    return resolve_cell_tolerance(
+        feature,
+        fp16_features=[],
+        calibration=None,
+        gpu_id=None,
+        backends=backends,
+        held_exact=held,
+    )
+
+
+def test_held_exact_backend_is_compared_exactly() -> None:
+    assert _tolerance("adm", ("cpu", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+    assert _tolerance("float_ms_ssim_lcs", ("cpu", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+
+
+def test_held_exact_math_library_feature_keeps_its_bound() -> None:
+    bound = max(LIBM_TWINS["ciede"].values())
+    assert _tolerance("ciede", ("cpu", "metal"), ("metal",)) == (bound, LIBM_TWIN_SOURCE)
+
+
+def test_without_hold_exact_a_metal_cell_keeps_the_feature_tolerance() -> None:
+    assert _tolerance("adm", ("cpu", "metal"), ()) == (FEATURE_TOLERANCE["adm"], "default")
+
+
+def test_hold_exact_needs_every_other_side_exact() -> None:
+    # adm is listed for CUDA, so a CUDA <-> held Metal cell is exact; a feature
+    # with no CUDA fragment keeps its tolerance in that cell.
+    assert "cuda" in EXACT_TWINS["adm"]
+    assert _tolerance("adm", ("cuda", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+    unlisted = next(f for f in FEATURE_METRICS if "cuda" not in EXACT_TWINS.get(f, frozenset()))
+    tolerance, source = _tolerance(unlisted, ("cuda", "metal"), ("metal",))
+    assert source != HELD_EXACT_SOURCE
+    assert tolerance > 0.0
+
+
+def test_held_exact_cell_runs_at_full_precision(tmp_path: Path, monkeypatch: Any) -> None:
+    seen: list[str | None] = []
+
+    def fake_run_one(*args: Any) -> tuple[int, str]:
+        seen.append(args[-1])
+        out: Path = args[-2]
+        frames = [{"frameNum": 0, "metrics": dict.fromkeys(FEATURE_METRICS["adm"], 0.5)}]
+        out.write_text(json.dumps({"frames": frames}))
+        return 0, ""
+
+    monkeypatch.setattr(parity_gate, "run_one", fake_run_one)
+    result = run_cell(
+        Cell("adm", "cpu", "metal"),
+        binary=tmp_path / "vmaf",
+        ref=tmp_path / "r.yuv",
+        dist=tmp_path / "d.yuv",
+        width=64,
+        height=64,
+        pix_fmt="420",
+        bitdepth=8,
+        workdir=tmp_path,
+        devices={"metal": 0},
+        tolerance=0.0,
+        tolerance_source=HELD_EXACT_SOURCE,
+    )
+    assert result.status == "OK"
+    assert seen == ["max", "max"]

@@ -9,6 +9,8 @@ stage  <build_dir> <unit-tests.txt> <image_root>
 info   <image_root>                   write image/build-info.json
 fixtures <fixtures.sha256> <fixtures.json>
                                       print the manifest lines the report fixtures need
+gate   <repo_root> <image_root>       copy the parity gate into <image_root>/tester/gate
+                                      (macOS bundle, ADR-1496)
 """
 
 from __future__ import annotations
@@ -17,12 +19,24 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 MIN_TESTS = 10
+# The parity gate and what it imports or reads (ADR-1496): it runs under the
+# bundle's standard-library interpreter, so nothing outside these files.
+GATE_FILES = (
+    "scripts/__init__.py",
+    "scripts/ci/cross_backend_parity_gate.py",
+    "scripts/ci/cross_backend_calibration.py",
+    "scripts/lib/__init__.py",
+    "scripts/lib/safe_subprocess.py",
+)
+EXACT_TWINS_DIR = "scripts/ci/exact_twins.d"
+ADR_ID = re.compile(r"ADR-(\d{4})")
 
 
 class BuildError(RuntimeError):
@@ -101,6 +115,29 @@ def info(image_root: Path) -> None:
     out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
 
 
+def stage_gate(repo: Path, image_root: Path) -> None:
+    """The gate, its fragments and the ADR files the fragments cite (the gate checks
+    that each cited ADR exists when it loads them)."""
+    gate = image_root / "tester" / "gate"
+    for name in GATE_FILES:
+        (gate / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(repo / name, gate / name)
+    fragments = sorted((repo / EXACT_TWINS_DIR).iterdir())
+    if not fragments:
+        raise BuildError("scripts/ci/exact_twins.d is empty")
+    (gate / EXACT_TWINS_DIR).mkdir(parents=True, exist_ok=True)
+    cited: set[str] = set()
+    for fragment in fragments:
+        shutil.copy2(fragment, gate / EXACT_TWINS_DIR / fragment.name)
+        cited |= set(ADR_ID.findall(fragment.read_text(encoding="utf-8")))
+    (gate / "docs" / "adr").mkdir(parents=True, exist_ok=True)
+    for number in sorted(cited):
+        matches = sorted((repo / "docs" / "adr").glob(f"{number}-*.md"))
+        if not matches:
+            raise BuildError(f"ADR-{number} cited by an exact-twin fragment has no file")
+        shutil.copy2(matches[0], gate / "docs" / "adr" / matches[0].name)
+
+
 def report_fixture_lines(manifest: Path, fixtures: Path) -> list[str]:
     """Lines of the SHA-256 manifest for the files fixtures.json names."""
     names = set()
@@ -126,6 +163,8 @@ def run(argv: list[str]) -> int:
         print("\n".join(report_fixture_lines(Path(argv[2]), Path(argv[3]))))
     elif command == "info" and len(argv) == 3:
         info(Path(argv[2]))
+    elif command == "gate" and len(argv) == 4:
+        stage_gate(Path(argv[2]).resolve(), Path(argv[3]))
     else:
         print(__doc__, file=sys.stderr)
         return 64

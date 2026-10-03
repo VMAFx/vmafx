@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The macOS tester bundle measures every open Metal row (2026-10-03)
+
+`test/metal-report-full-measurement` (ADR-1496). No score impact: tests, the
+parity gate scripts, the tester report and docs. Fork-only paths.
+
+- `scripts/ci/cross_backend_parity_gate.py` and `cross_backend_vif_diff.py`
+  carry the same `metal` entries in `BACKEND_SUFFIX`, `BACKEND_DEVICE_FLAG` and
+  `BACKEND_EXTRACTOR_ALIASES` (`integer_*_metal`); a rebase that edits one table
+  edits both (`test_parity_gate_covers_registered_twins.py`). `--hold-exact` is
+  measurement only and never used in a CI lane.
+- The bundle copies the gate (`GATE_FILES` in
+  `tools/rc1-tester/image/prepare_build.py`): it must stay standard-library
+  only and read only those files, `exact_twins.d` and the ADRs the fragments
+  cite.
+- `core/test/test_metal_*_parity.c` use `metal_twin.h` and `metal_run_case()`;
+  their case names are referenced by `tools/rc1-tester/image/metal-rows.json`
+  (`test_metal_report_rows_contract.py`). `metal_parity_tests` in
+  `core/test/meson.build` drives both the Metal and the self-test builds;
+  `test_metal_float_moment_parity_10bit` is gone (the shared header covers 10
+  bits). `ciede_twin_parity.h`'s `CIEDE_TWIN_TOL` is `#ifndef`-guarded.
+
 ## The parity allowlist page always has a Pending section (2026-10-03)
 
 `docs/close-parity-pending-row`. No rebase impact: a docs generator and ledger rows. `scripts/docs/generate-upstream-parity-allowlist.py` emits the "Pending" heading with "None" when no fragment is pending; keep that branch, `docs/state.md` links to the anchor.

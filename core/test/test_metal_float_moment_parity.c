@@ -6,235 +6,89 @@
  */
 
 /*
- * Metal kernel coverage round 3 — float_moment CPU vs. Metal parity
- * (ADR-0214 cross-backend gate).
+ * float_moment CPU vs. Metal: the twin must return the CPU's four moments bit
+ * for bit (T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02; the CUDA, SYCL and HIP
+ * twins are exact, ADR-1453, ADR-1449, ADR-1447). First added as a places=4
+ * test at 8 and 10 bits (ADR-0421, ADR-1212), where the exact integer square
+ * of a sample and moment.c's float square are the same number.
  *
- * `float_moment_metal` emits four per-frame moment scores:
- *   - float_moment_ref1st (E[ref])
- *   - float_moment_dis1st (E[dis])
- *   - float_moment_ref2nd (E[ref^2])
- *   - float_moment_dis2nd (E[dis^2])
+ * At 16 bits the CPU's float square is the integer square rounded to 24 bits,
+ * and a twin that adds exact integer squares is off on full-range content (the
+ * CUDA twin was 2.8e-5 off on noise, 1.0e-4 on a bright 1080p frame). The
+ * fixtures, the comparison and the cases are float_moment_twin_parity.h's,
+ * all at `==` except the one past 2^53 units, held to the header's derived
+ * bound. The macOS tester bundle runs this test and reports each case
+ * (ADR-1496).
  *
- * This test runs the CPU `float_moment` extractor against `float_moment_metal`
- * over a single-frame YUV420P fixture and asserts that all four output keys
- * match the CPU twin within places=4 (1e-4). Meson builds this TU at both
- * 8 bpc and 10 bpc because the lost integer reduction was invisible at 8 bpc.
- *
- * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip on
- * Linux / Windows / Intel Mac.
- *
- * Cross-references:
- *   - core/src/feature/metal/float_moment_metal.mm
- *   - core/src/feature/float_moment.c
+ * Skip behaviour: exits 77 when there is no Metal device.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "metal_twin.h"
 
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/libvmaf_metal.h"
-#include "libvmaf/picture.h"
+#include "float_moment_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#ifndef FIXTURE_BPC
-#define FIXTURE_BPC 8u
-#endif
-#define PARITY_TOL 1e-4
-
-static const char *kMomentKeys[4] = {
-    "float_moment_ref1st",
-    "float_moment_dis1st",
-    "float_moment_ref2nd",
-    "float_moment_dis2nd",
+static const FloatMomentTwin twin = {
+    .extractor = METAL_TWIN("float_moment_metal", "float_moment"),
+    .backend = METAL_TWIN_BACKEND,
+    .open = metal_twin_open,
+    .import = metal_twin_import,
+    .close = metal_twin_close,
 };
 
-static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
+static char *test_float_moment_metal_registered(void)
 {
-#if FIXTURE_BPC > 8u
-    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * pic->stride[0]);
-    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
-    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
-#else
-    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
-    (void)low_seed;
-    y[col] = (uint8_t)(v8 & 0xFFu);
-#endif
+    return float_moment_twin_registered(&twin);
 }
 
-static void fill_chroma_grey(VmafPicture *pic)
+static char *test_float_moment_8bit_exact(void)
 {
-    for (unsigned p = 1; p < 3; p++) {
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint8_t *rowp = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
-#if FIXTURE_BPC > 8u
-            uint16_t *r16 = (uint16_t *)rowp;
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                r16[col] = (uint16_t)(1u << (FIXTURE_BPC - 1u));
-            }
-#else
-            memset(rowp, 128, pic->w[p]);
-#endif
-        }
-    }
+    return float_moment_twin_noise_exact(&twin, 8u);
 }
 
-static int fill_fixture(VmafPicture *pic, unsigned variant)
+static char *test_float_moment_10bit_exact(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const int v = (int)((row + col) & 0xFFu);
-            const int d = (variant != 0u) ? (((row * 9u + col) & 0x7) - 4) : 0;
-            int clamped = v + d;
-            if (clamped < 0)
-                clamped = 0;
-            if (clamped > 255)
-                clamped = 255;
-            put_luma(pic, row, col, (unsigned)clamped, row * 7u + col * 5u + variant);
-        }
-    }
-    fill_chroma_grey(pic);
-    return 0;
+    return float_moment_twin_noise_exact(&twin, 10u);
 }
 
-/* Both sides feed the same fixture pair, so the sequence lives here once.
- * Extracting it also keeps each run_* function inside the branch budget the
- * lint profile sets, which is the refactor ADR-0141 asks for rather than a
- * suppression. */
-static char *feed_fixture_pair(VmafContext *vmaf)
+static char *test_float_moment_12bit_exact(void)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_fixture(&ref, 0u);
-    if (err)
-        return "fill_fixture(ref) failed";
-    err = fill_fixture(&dist, 1u);
-    if (err)
-        return "fill_fixture(dist) failed";
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    if (err)
-        return "vmaf_read_pictures failed";
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err)
-        return "vmaf_read_pictures(EOS) failed";
-    return NULL;
+    return float_moment_twin_noise_exact(&twin, 12u);
 }
 
-static char *run_cpu_float_moment(double out_scores[4])
+static char *test_float_moment_16bit_exact(void)
 {
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_moment) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    for (unsigned i = 0; i < 4; i++) {
-        err = vmaf_feature_score_at_index(vmaf, kMomentKeys[i], &out_scores[i], 0u);
-        mu_assert("CPU: vmaf_feature_score_at_index(moment) failed", !err);
-    }
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return float_moment_twin_noise_exact(&twin, 16u);
 }
 
-static char *run_metal_float_moment(double out_scores[4], int *skipped)
+static char *test_float_moment_16bit_bright_exact(void)
 {
-    *skipped = 0;
-    int err = 0;
+    return float_moment_twin_bright_1080p_exact(&twin);
+}
 
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
-        (void)fprintf(stderr, "[skip: no Metal device] ");
-        *skipped = 1;
+/* The case checks that the CPU's double sum rounded where the twin's integer
+ * sum is exact; the CPU in the twin's place has no exact sum to compare. */
+static char *test_float_moment_16bit_past_2_53_within_bound(void)
+{
+    if (metal_twin_device_only()) {
         return NULL;
     }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(float_moment_metal) failed", !err);
-
-    char *feed_err = feed_fixture_pair(vmaf);
-    if (feed_err)
-        return feed_err;
-
-    for (unsigned i = 0; i < 4; i++) {
-        err = vmaf_feature_score_at_index(vmaf, kMomentKeys[i], &out_scores[i], 0u);
-        mu_assert("Metal: vmaf_feature_score_at_index(moment) failed", !err);
-    }
-
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
-    return NULL;
-}
-
-static char *test_float_moment_cpu_metal_parity(void)
-{
-    double cpu_scores[4] = {0.0, 0.0, 0.0, 0.0};
-    double metal_scores[4] = {0.0, 0.0, 0.0, 0.0};
-    int skipped = 0;
-
-    char *msg = run_cpu_float_moment(cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_metal_float_moment(metal_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    for (unsigned i = 0; i < 4; i++) {
-        const double delta = fabs(cpu_scores[i] - metal_scores[i]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\n%s parity FAIL (bpc=%u): cpu=%.8f metal=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kMomentKeys[i], (unsigned)FIXTURE_BPC, cpu_scores[i], metal_scores[i],
-                          delta, PARITY_TOL);
-        }
-        mu_assert("float_moment CPU vs. Metal exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+    return float_moment_twin_past_2_53_within_bound(&twin);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_moment_cpu_metal_parity);
-    return NULL;
+    metal_run_case(test_float_moment_metal_registered);
+    metal_run_case(test_float_moment_8bit_exact);
+    metal_run_case(test_float_moment_10bit_exact);
+    metal_run_case(test_float_moment_12bit_exact);
+    metal_run_case(test_float_moment_16bit_exact);
+    metal_run_case(test_float_moment_16bit_bright_exact);
+    metal_run_case(test_float_moment_16bit_past_2_53_within_bound);
+    return metal_first_failure;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

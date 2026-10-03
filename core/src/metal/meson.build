@@ -113,150 +113,54 @@ metal_deps += declare_dependency(
 # Consumer .mm reads the byte range via linker-defined symbols.
 xcrun = find_program('xcrun', required: true)
 
-mv2_air = custom_target('integer_motion_v2_air',
-    input: '../feature/metal/integer_motion_v2.metal',
-    output: 'integer_motion_v2.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
+# ADR-1496: the language revision and the deployment target of the kernels.
+# Without -mmacosx-version-min the offline compiler stamps each .air with the
+# build machine's SDK version, and a metallib stamped newer than the host's
+# macOS refuses to load ("This library is using a deployment target ... that
+# is not supported on this OS"): every Metal twin then fails init on a tester's
+# Mac whose macOS is older than the hosted runner's SDK. macOS 14 is the floor
+# the macOS tester bundle builds its C code for (MACOSX_DEPLOYMENT_TARGET in
+# scripts/ci/build-macos-tester-bundle.sh); Metal 3.1 is the language revision
+# of macOS 14 (Metal Shading Language Specification 4.1, section 1.6.10).
+metal_shader_target_args = ['-std=metal3.1', '-mmacosx-version-min=14.0']
 
-float_psnr_air = custom_target('float_psnr_air',
-    input: '../feature/metal/float_psnr.metal',
-    output: 'float_psnr.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-float_moment_air = custom_target('float_moment_air',
-    input: '../feature/metal/float_moment.metal',
-    output: 'float_moment.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-integer_psnr_air = custom_target('integer_psnr_air',
-    input: '../feature/metal/integer_psnr.metal',
-    output: 'integer_psnr.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-float_motion_air = custom_target('float_motion_air',
-    input: '../feature/metal/float_motion.metal',
-    output: 'float_motion.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-integer_motion_air = custom_target('integer_motion_air',
-    input: '../feature/metal/integer_motion.metal',
-    output: 'integer_motion.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-float_ssim_air = custom_target('float_ssim_air',
-    input: '../feature/metal/float_ssim.metal',
-    output: 'float_ssim.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# ADR-0490 / ADR-0545: float_ms_ssim.metal — 5-scale float MS-SSIM pyramid.
-float_ms_ssim_air = custom_target('float_ms_ssim_air',
-    input: '../feature/metal/float_ms_ssim.metal',
-    output: 'float_ms_ssim.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# integer_ssim.metal — fixed-point SSIM (feature "ssim"), two-pass
-# separable Gaussian mirroring float_ssim.metal's scaffold.
-integer_ssim_air = custom_target('integer_ssim_air',
-    input: '../feature/metal/integer_ssim.metal',
-    output: 'integer_ssim.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# float_vif.metal — 4-scale VIF Gaussian pyramid (feature "float_vif").
-float_vif_air = custom_target('float_vif_air',
-    input: '../feature/metal/float_vif.metal',
-    output: 'float_vif.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# float_adm.metal — 4-scale DWT + CSF + decouple + CM (feature "float_adm").
-float_adm_air = custom_target('float_adm_air',
-    input: '../feature/metal/float_adm.metal',
-    output: 'float_adm.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# integer_vif.metal — 4-scale fixed-point VIF Gaussian pyramid (feature "vif").
-integer_vif_air = custom_target('integer_vif_air',
-    input: '../feature/metal/integer_vif.metal',
-    output: 'integer_vif.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# integer_adm.metal — fixed-point 4-scale DWT+CSF+decouple+CM (feature "adm").
-integer_adm_air = custom_target('integer_adm_air',
-    input: '../feature/metal/integer_adm.metal',
-    output: 'integer_adm.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
-# Standalone-metric Metal kernels (parity sweep): ciede2000, psnr_hvs, cambi, ssimulacra2.
-integer_ciede_air = custom_target('integer_ciede_air',
-    input: '../feature/metal/integer_ciede.metal', output: 'integer_ciede.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
-integer_psnr_hvs_air = custom_target('integer_psnr_hvs_air',
-    input: '../feature/metal/integer_psnr_hvs.metal', output: 'integer_psnr_hvs.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
-integer_cambi_air = custom_target('integer_cambi_air',
-    input: '../feature/metal/integer_cambi.metal', output: 'integer_cambi.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
-ssimulacra2_air = custom_target('ssimulacra2_air',
-    input: '../feature/metal/ssimulacra2.metal', output: 'ssimulacra2.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
-
-metal_air_files = [
-    mv2_air,
-    float_psnr_air,
-    float_moment_air,
-    integer_psnr_air,
-    float_motion_air,
-    integer_motion_air,
-    float_ssim_air,
-    float_ms_ssim_air,
-    integer_ssim_air,
-    float_vif_air,
-    float_adm_air,
-    integer_vif_air,
-    integer_adm_air,
-    integer_ciede_air,
-    integer_psnr_hvs_air,
-    integer_cambi_air,
-    ssimulacra2_air,
+# One .air per kernel file (core/src/feature/metal/<name>.metal).
+metal_kernel_names = [
+    'integer_motion_v2',
+    'float_psnr',
+    'float_moment',
+    'integer_psnr',
+    'float_motion',
+    'integer_motion',
+    'float_ssim',
+    # ADR-0490 / ADR-0545: 5-scale float MS-SSIM pyramid.
+    'float_ms_ssim',
+    # Fixed-point SSIM (feature "ssim"), two-pass separable Gaussian.
+    'integer_ssim',
+    # 4-scale VIF Gaussian pyramid (feature "float_vif").
+    'float_vif',
+    # 4-scale DWT + CSF + decouple + CM (feature "float_adm").
+    'float_adm',
+    # 4-scale fixed-point VIF Gaussian pyramid (feature "vif").
+    'integer_vif',
+    # Fixed-point 4-scale DWT+CSF+decouple+CM (feature "adm").
+    'integer_adm',
+    # Standalone metrics (parity sweep): ciede2000, psnr_hvs, cambi, ssimulacra2.
+    'integer_ciede',
+    'integer_psnr_hvs',
+    'integer_cambi',
+    'ssimulacra2',
 ]
+
+metal_air_files = []
+foreach _k : metal_kernel_names
+    metal_air_files += custom_target(_k + '_air',
+        input: '../feature/metal/' + _k + '.metal',
+        output: _k + '.air',
+        command: [xcrun, '-sdk', 'macosx', 'metal'] + metal_shader_target_args
+            + ['-c', '@INPUT@', '-o', '@OUTPUT@'],
+    )
+endforeach
 
 metallib_target = custom_target('libvmaf-metallib',
     input: metal_air_files,

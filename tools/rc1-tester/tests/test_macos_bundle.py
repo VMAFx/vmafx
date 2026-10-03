@@ -49,5 +49,7 @@ def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
     result = subprocess.run(args, env=env, capture_output=True, text=True, check=False)
     report = json.loads(result.stdout)
     assert result.returncode in (1, 2) and "verdict" in result.stderr
-    assert report["schema_version"] == "1"
+    assert report["schema_version"] == "2"
+    assert report["metal_gate"]["status"] == "not_run"
+    assert report["metal_rows"]["status"] == "not_applicable"
     assert "sandbox-exec" in result.stderr

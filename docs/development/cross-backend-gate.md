@@ -2,9 +2,9 @@
 # Cross-backend GPU-parity gate
 
 `scripts/ci/cross_backend_parity_gate.py` compares per-frame metrics across
-selected CPU, CUDA, SYCL, and HIP backends. It can run every selected feature over
-every selected backend pair and emits machine-readable JSON plus a Markdown
-summary.
+selected CPU, CUDA, SYCL, HIP and Metal backends. It can run every selected
+feature over every selected backend pair and emits machine-readable JSON plus
+a Markdown summary.
 
 This script is not currently an all-backend, every-PR CI matrix. Vulkan and
 its hosted lavapipe lane were removed by
@@ -182,6 +182,32 @@ extractor of that binary to be the reference arithmetic; for an icx build on
 an AVX-512 host that needs the x86 SIMD libraries built without FP
 contraction (#1706).
 
+## Metal
+
+The `metal` backend (`--metal-device`, default 0) runs where an Apple device
+is: the macOS tester bundle carries the gate and runs it on its four fixtures
+on the tester's Mac
+([ADR-1496](../adr/1496-metal-gate-in-tester-bundle.md)). The Metal twins of
+the fixed-point extractors carry the CPU file's name (`integer_adm_metal`,
+`integer_motion_metal`, ...), which `BACKEND_EXTRACTOR_ALIASES` maps; the
+SpEED features have no Metal twin and are not run there.
+
+No fragment lists a Metal twin yet, so the bundle runs the gate with
+`--hold-exact metal`: every Metal cell is compared with tolerance `0` at
+`--precision max`, or at the `LIBM_TWINS` bound for ciede (`1e-9`), and the
+label in the output is `held-exact:ADR-1496`. That run is the measurement a
+`scripts/ci/exact_twins.d/<feature>.metal` fragment cites; the option never
+replaces the fragment. The bundle leaves `float_ssim` and `float_ssim_lcs` out
+of the 1080p fixtures, where the Metal twin's automatic scale (4) is one it
+does not implement (`T-METAL-FLOAT-SSIM-SCALE-GT1-2026-09-29`); the report
+lists them under `left_out`.
+
+The gate must stay importable with the Python standard library alone and
+read nothing beyond `scripts/ci/cross_backend_calibration.py`,
+`scripts/lib/safe_subprocess.py`, `scripts/ci/exact_twins.d/` and the ADR files
+the fragments cite: those are the files the bundle copies
+(`GATE_FILES` in `tools/rc1-tester/image/prepare_build.py`).
+
 ## Run it locally
 
 Use the dev-MCP container, which carries the backend toolchains and the
@@ -261,7 +287,8 @@ the CPU golden-data gate.
 | **Netflix golden** ([§8](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)) | CPU numerical correctness; required and untouchable. |
 | **SYCL Parity (Arc A380)** | Conditional required lane; CPU↔SYCL `float_ssim` on real Arc hardware. |
 | Backend Meson parity tests | Backend-specific correctness, including large-fixture variants where registered. |
-| This matrix runner outside CI | Broader CPU/CUDA/SYCL feature sweeps and calibration evidence. |
+| This matrix runner outside CI | Broader CPU/CUDA/SYCL/HIP feature sweeps and calibration evidence. |
+| macOS tester bundle ([tester page](../usage/tester-image.md)) | Runs this gate's Metal cells, held exact, on an outside tester's Mac ([ADR-1496](../adr/1496-metal-gate-in-tester-bundle.md)). |
 | Per-backend snapshots (`testdata/scores_cpu_*.json`) | Snapshot-based regression checks, not pairwise parity. |
 
 ## Sources
