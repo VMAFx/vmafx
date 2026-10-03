@@ -2253,6 +2253,34 @@ test('test_metal_portable', test_metal_portable, suite : ['fast'])
 
 # [metal-ports: soft double]
 
+# ADR-1498: the fp64 operations in 64-bit integers that the exact Metal twins
+# run without an fp64 type (src/feature/metal/metal_soft_double.h and
+# metal_soft_signed.h, the Metal spelling of the SYCL twins'
+# sycl_soft_double.h / sycl_soft_signed.h), compiled on the host and held
+# bit for bit against the host's binary64 arithmetic: at least 10^6 operands
+# per operation plus edge tables. The reference is the host's own double
+# arithmetic, so the TU needs the strict FP flags. Every host.
+test_metal_soft_double = executable('test_metal_soft_double',
+    ['test.c', 'test_metal_soft_double.cpp'],
+    include_directories : [test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    cpp_args : vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_soft_double', test_metal_soft_double, suite : ['fast'], timeout : 120)
+
+# ADR-1498: the Metal soft-double headers stay in the subset Metal Shading
+# Language, C and C++ share (no double, no long long, no 64-bit literal
+# suffix, no std::, no pointer or reference parameter, no static local, no
+# 128-bit type) and define every operation the SYCL headers define, under the
+# documented name mapping. Device-free, with planted regressions.
+test('test_metal_soft_double_contract',
+    import('python').find_installation(),
+    args : files('test_metal_soft_double_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of soft-double group)
 
 # [metal-ports: host steps and option tables]
