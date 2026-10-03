@@ -63,6 +63,7 @@
 #endif
 
 /* A positive fp64 value, mant * 2^exp with mant in [2^52, 2^53). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlSoftDouble {
     vmaf_mtl_u64 mant;
     vmaf_mtl_i32 exp;
@@ -72,6 +73,7 @@ typedef struct VmafMtlSoftDouble {
 
 VMAF_MTL_FUNC VmafMtlSoftDouble vmaf_mtl_soft_make(vmaf_mtl_u64 mant, vmaf_mtl_i32 exp)
 {
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlSoftDouble value = {mant, exp};
     return value;
 }
@@ -87,6 +89,7 @@ VMAF_MTL_FUNC vmaf_mtl_u32 vmaf_mtl_soft_clz32(vmaf_mtl_u32 x)
 /* ------------------------------------------------------------------ */
 
 /* A 128-bit unsigned value. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlU128 {
     vmaf_mtl_u64 hi;
     vmaf_mtl_u64 lo;
@@ -94,6 +97,7 @@ typedef struct VmafMtlU128 {
 
 VMAF_MTL_FUNC VmafMtlU128 vmaf_mtl_u128_make(vmaf_mtl_u64 hi, vmaf_mtl_u64 lo)
 {
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlU128 value = {hi, lo};
     return value;
 }
@@ -143,6 +147,7 @@ VMAF_MTL_FUNC vmaf_mtl_u32 vmaf_mtl_u128_msb(VmafMtlU128 a)
 
 /* a >> shift (shift < 128), and whether any dropped bit was set / the value
  * of the highest dropped bit. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlShifted {
     vmaf_mtl_u64 kept;
     bool halfway; /* highest dropped bit */
@@ -151,6 +156,7 @@ typedef struct VmafMtlShifted {
 
 VMAF_MTL_FUNC VmafMtlShifted vmaf_mtl_shifted_make(vmaf_mtl_u64 kept, bool halfway, bool sticky)
 {
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlShifted value = {kept, halfway, sticky};
     return value;
 }
@@ -330,6 +336,7 @@ VMAF_MTL_FUNC VmafMtlSoftDouble vmaf_mtl_soft_from_float_any(float x)
     const vmaf_mtl_u32 biased = (bits >> 23) & 0xFFu;
     const vmaf_mtl_u32 fraction = bits & 0x007FFFFFu;
     const vmaf_mtl_u32 sub_shift = 21u + vmaf_mtl_soft_clz32(fraction | 1u);
+    // NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift): fraction < 2^23 and nonzero after | 1u, so clz32 is 9..31 and sub_shift 30..52, ADR-1498
     const vmaf_mtl_u64 sub_mant = VMAF_MTL_U64(fraction) << sub_shift;
     const vmaf_mtl_i32 sub_exp = -149 - (vmaf_mtl_i32)sub_shift;
     const vmaf_mtl_u64 normal_mant = VMAF_MTL_U64(fraction | 0x00800000u) << 29;

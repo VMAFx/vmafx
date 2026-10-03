@@ -279,10 +279,11 @@ static int float_plane(const Case *c, unsigned side, float *dst)
         uint8_t *line = (uint8_t *)pic.data[0] + (size_t)row * pic.stride[0];
         for (unsigned col = 0u; col < c->w; col++) {
             const unsigned v = sample_of(c, side, row, col);
-            if (c->bpc > 8u)
+            if (c->bpc > 8u) {
                 ((uint16_t *)line)[col] = (uint16_t)v;
-            else
+            } else {
                 line[col] = (uint8_t)v;
+            }
         }
     }
     picture_copy(dst, (ptrdiff_t)((size_t)c->w * sizeof(float)), &pic, 0, pic.bpc, 0);
@@ -390,29 +391,21 @@ static void report_frame(const Case *c, int lcs, const double cpu[4], const doub
         twin[3]);
 }
 
-/* One frame: the CPU's means (scale 1) and the twin's, with and without
- * enable_lcs, at `==`. */
-static char *check_frame(const Case *c)
+static char *check_flat_db(const Case *c, const double cpu[4], const double plain[4])
 {
-    const size_t pixels = (size_t)c->w * c->h;
-    float *ref = (float *)malloc(pixels * sizeof(float));
-    float *cmp = (float *)malloc(pixels * sizeof(float));
-    mu_assert("allocation failed", ref && cmp);
-    mu_assert("the reference plane failed", float_plane(c, 0u, ref) == 0);
-    mu_assert("the distorted plane failed", float_plane(c, 1u, cmp) == 0);
+    const double db = to_db(plain[0]);
+    if (db != c->expect_db) {
+        (void)fprintf(stderr, "\n%s: enable_db twin %.17g cpu %.17g\n", c->what, db, c->expect_db);
+    }
+    mu_assert("enable_db on a flat identical frame is not the CPU's value",
+              db == c->expect_db && to_db(cpu[0]) == c->expect_db);
+    mu_assert("a flat identical frame must not score exactly 1", plain[0] < 1.0);
+    return NULL;
+}
 
-    double cpu[4];
-    const int stride = (int)(c->w * sizeof(float));
-    const int err = compute_ssim(ref, cmp, (int)c->w, (int)c->h, stride, stride, &cpu[0], &cpu[1],
-                                 &cpu[2], &cpu[3], 1);
-    double plain[4] = {0.0, 0.0, 0.0, 0.0};
-    double lcs[4] = {0.0, 0.0, 0.0, 0.0};
-    const int plain_err = twin_means(ref, cmp, c->w, c->h, 0, plain);
-    const int lcs_err = twin_means(ref, cmp, c->w, c->h, 1, lcs);
-    free(ref);
-    free(cmp);
-    mu_assert("compute_ssim failed", err == 0);
-    mu_assert("the twin emulation failed", plain_err == 0 && lcs_err == 0);
+static char *check_means(const Case *c, const double cpu[4], const double plain[4],
+                         const double lcs[4])
+{
     if (plain[0] != cpu[0]) {
         report_frame(c, 0, cpu, plain);
     }
@@ -424,17 +417,46 @@ static char *check_frame(const Case *c)
     mu_assert("float_ssim_l differs from the CPU", lcs[1] == cpu[1]);
     mu_assert("float_ssim_c differs from the CPU", lcs[2] == cpu[2]);
     mu_assert("float_ssim_s differs from the CPU", lcs[3] == cpu[3]);
-    if (c->expect_db != 0.0) {
-        const double db = to_db(plain[0]);
-        if (db != c->expect_db) {
-            (void)fprintf(stderr, "\n%s: enable_db twin %.17g cpu %.17g\n", c->what, db,
-                          c->expect_db);
-        }
-        mu_assert("enable_db on a flat identical frame is not the CPU's value",
-                  db == c->expect_db && to_db(cpu[0]) == c->expect_db);
-        mu_assert("a flat identical frame must not score exactly 1", plain[0] < 1.0);
-    }
     return NULL;
+}
+
+static char *frame_compare(const Case *c, const float *ref, const float *cmp)
+{
+    double cpu[4];
+    const int stride = (int)(c->w * sizeof(float));
+    const int err = compute_ssim(ref, cmp, (int)c->w, (int)c->h, stride, stride, &cpu[0], &cpu[1],
+                                 &cpu[2], &cpu[3], 1);
+    double plain[4] = {0.0, 0.0, 0.0, 0.0};
+    double lcs[4] = {0.0, 0.0, 0.0, 0.0};
+    const int plain_err = twin_means(ref, cmp, c->w, c->h, 0, plain);
+    const int lcs_err = twin_means(ref, cmp, c->w, c->h, 1, lcs);
+    mu_assert("compute_ssim failed", err == 0);
+    mu_assert("the twin emulation failed", plain_err == 0 && lcs_err == 0);
+    mu_assert_msg(check_means(c, cpu, plain, lcs));
+    if (c->expect_db != 0.0)
+        return check_flat_db(c, cpu, plain);
+    return NULL;
+}
+
+/* One frame: the CPU's means (scale 1) and the twin's, with and without
+ * enable_lcs, at `==`. */
+static char *check_frame(const Case *c)
+{
+    const size_t pixels = (size_t)c->w * c->h;
+    float *ref = (float *)malloc(pixels * sizeof(float));
+    float *cmp = (float *)malloc(pixels * sizeof(float));
+    char *msg = "allocation failed";
+    if (ref && cmp) {
+        msg = "the reference plane failed";
+        if (float_plane(c, 0u, ref) == 0) {
+            msg = "the distorted plane failed";
+            if (float_plane(c, 1u, cmp) == 0)
+                msg = frame_compare(c, ref, cmp);
+        }
+    }
+    free(ref);
+    free(cmp);
+    return msg;
 }
 
 static char *check_all(const Case *cases, size_t n)

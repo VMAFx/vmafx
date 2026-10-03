@@ -67,6 +67,7 @@
 
 /* float_vif_vertical and float_vif_compute: the plane filtered at this
  * scale, its filter width and the floats of one moment plane. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifFilterArgs {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
@@ -78,6 +79,7 @@ typedef struct VmafMtlFvifFilterArgs {
  * VmafMtlFvifNoise; the fp64 significand split in two 32-bit halves so that
  * every field is 4 bytes and the layout is the same in C++ and in Metal),
  * (float)vif_enhn_gain_limit and vif_statistic_s()'s sigma_max_inv. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifStatisticArgs {
     vmaf_mtl_u32 noise_mant_hi;
     vmaf_mtl_u32 noise_mant_lo;
@@ -93,6 +95,7 @@ typedef struct VmafMtlFvifStatisticArgs {
  * frame (`raw` != 0, `raw_stride` bytes per row, `bpc` as picture_copy()
  * reads it) or a float plane of the scale's own width (the decimated planes,
  * and scale 0 after a host prescale). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifInputArgs {
     vmaf_mtl_u32 raw;
     vmaf_mtl_u32 raw_stride;
@@ -101,6 +104,7 @@ typedef struct VmafMtlFvifInputArgs {
 
 /* float_vif_decimate: this scale's filter over the previous scale's plane
  * (in_width x in_height), sampled at even positions. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifDecimateArgs {
     vmaf_mtl_u32 in_width;
     vmaf_mtl_u32 in_height;
@@ -110,6 +114,7 @@ typedef struct VmafMtlFvifDecimateArgs {
 } VmafMtlFvifDecimateArgs;
 
 /* float_vif_row_sums: the plane of terms of this scale. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifRowArgs {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
@@ -226,6 +231,7 @@ VMAF_MTL_FUNC float vmaf_mtl_fvif_log2(float x)
 /* operators of the kernels' strict FP line)                           */
 /* ------------------------------------------------------------------ */
 
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifFf {
     float hi;
     float lo;
@@ -233,6 +239,7 @@ typedef struct VmafMtlFvifFf {
 
 VMAF_MTL_FUNC VmafMtlFvifFf vmaf_mtl_fvif_ff_make(float hi, float lo)
 {
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlFvifFf value = {hi, lo};
     return value;
 }
@@ -315,6 +322,7 @@ VMAF_MTL_FUNC VmafMtlFvifFf vmaf_mtl_fvif_ff_div(VmafMtlFvifFf a, VmafMtlFvifFf 
 /* The fp64 value as a pair (to about 2^-48), the smallest fp32 value that is
  * not below it, and the value itself as a VmafMtlSoftDouble significand and
  * exponent (mant 0 when it is zero). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifNoise {
     float hi;
     float lo;
@@ -324,6 +332,7 @@ typedef struct VmafMtlFvifNoise {
 } VmafMtlFvifNoise;
 
 /* vif_statistic_s()'s per-call constants. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifStatParams {
     VmafMtlFvifNoise noise;
     float gain_limit;    /* (float)vif_enhn_gain_limit */
@@ -372,6 +381,7 @@ VMAF_MTL_FUNC bool vmaf_mtl_fvif_near_rounding_boundary(VmafMtlFvifFf sum)
 
 /* A positive fp64 denominator in the two forms the quotient needs: as a
  * pair, and exactly. `exact.mant` is 0 for a zero denominator. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifDenominator {
     VmafMtlFvifFf pair;
     VmafMtlSoftDouble exact;
@@ -380,6 +390,7 @@ typedef struct VmafMtlFvifDenominator {
 VMAF_MTL_FUNC VmafMtlFvifDenominator vmaf_mtl_fvif_denominator_make(VmafMtlFvifFf pair,
                                                                     VmafMtlSoftDouble exact)
 {
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlFvifDenominator value = {pair, exact};
     return value;
 }
@@ -452,7 +463,7 @@ VMAF_MTL_FUNC float vmaf_mtl_fvif_one_plus_ratio(float numerator,
                                                  VmafMtlFvifDenominator denominator)
 {
     const VmafMtlFvifFf sum = vmaf_mtl_fvif_one_plus_ratio_pair(numerator, denominator.pair);
-    if (sum.hi != sum.hi) {
+    if ((VMAF_MTL_F2U(sum.hi) & 0x7FFFFFFFu) > 0x7F800000u) {
         return VMAF_MTL_U2F(0x7FC00000u);
     }
     return vmaf_mtl_fvif_needs_replay(numerator, sum, denominator) ?
@@ -466,6 +477,7 @@ VMAF_MTL_FUNC float vmaf_mtl_fvif_one_plus_ratio(float numerator,
 
 /* A pixel's variances and covariance, as vif_pixel_statistic_s() derives
  * them from the filtered moments (the two variances clamped at 0). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifSigmas {
     float sigma1_sq;
     float sigma2_sq;
@@ -473,6 +485,7 @@ typedef struct VmafMtlFvifSigmas {
 } VmafMtlFvifSigmas;
 
 /* The numerator and denominator term of a pixel. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFvifTerm {
     float num;
     float den;

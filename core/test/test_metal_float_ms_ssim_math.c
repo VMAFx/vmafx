@@ -105,41 +105,66 @@ static float noise_sample(uint64_t seed, size_t i)
            (float)(ssim_order_noise_luma(seed, 1u, i) & 3u) * 0.25f;
 }
 
-static char *check_decimate(unsigned w, unsigned h, uint64_t seed)
+/* Equal as bit patterns, not as float values. */
+static bool same_bits(float a, float b)
+{
+    uint32_t ua;
+    uint32_t ub;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
+}
+
+typedef struct DecimateBufs {
+    float *src;
+    float *twin;
+    float *scalar;
+    float *dispatched;
+} DecimateBufs;
+
+static char *decimate_compare(const DecimateBufs *b, unsigned w, unsigned h, uint64_t seed)
 {
     const unsigned w_out = vmaf_mtl_msdec_extent(w);
     const unsigned h_out = vmaf_mtl_msdec_extent(h);
     const size_t out_count = (size_t)w_out * h_out;
-    float *src = (float *)malloc((size_t)w * h * sizeof(float));
-    float *twin = (float *)malloc(out_count * sizeof(float));
-    float *scalar = (float *)malloc(out_count * sizeof(float));
-    float *dispatched = (float *)malloc(out_count * sizeof(float));
-    mu_assert("allocation failed", src && twin && scalar && dispatched);
     for (size_t i = 0u; i < (size_t)w * h; i++)
-        src[i] = noise_sample(seed, i);
+        b->src[i] = noise_sample(seed, i);
     int rw = 0;
     int rh = 0;
     mu_assert("ms_ssim_decimate_scalar failed",
-              ms_ssim_decimate_scalar(src, (int)w, (int)h, scalar, &rw, &rh) == 0);
+              ms_ssim_decimate_scalar(b->src, (int)w, (int)h, b->scalar, &rw, &rh) == 0);
     mu_assert("the decimated extent differs", (unsigned)rw == w_out && (unsigned)rh == h_out);
     mu_assert("ms_ssim_decimate failed",
-              ms_ssim_decimate(src, (int)w, (int)h, dispatched, NULL, NULL) == 0);
-    twin_decimate(src, w, h, twin);
+              ms_ssim_decimate(b->src, (int)w, (int)h, b->dispatched, NULL, NULL) == 0);
+    twin_decimate(b->src, w, h, b->twin);
     size_t bad = 0u;
     for (size_t i = 0u; i < out_count; i++) {
-        if (memcmp(&twin[i], &scalar[i], sizeof(float)) != 0 ||
-            memcmp(&twin[i], &dispatched[i], sizeof(float)) != 0) {
-            if (bad++ < 3u)
+        if (!same_bits(b->twin[i], b->scalar[i]) || !same_bits(b->twin[i], b->dispatched[i])) {
+            if (bad++ < 3u) {
                 (void)fprintf(stderr, "\n%ux%u [%zu]: twin %.9g scalar %.9g dispatch %.9g\n", w, h,
-                              i, twin[i], scalar[i], dispatched[i]);
+                              i, b->twin[i], b->scalar[i], b->dispatched[i]);
+            }
         }
     }
-    free(src);
-    free(twin);
-    free(scalar);
-    free(dispatched);
     mu_assert("a decimated sample differs from ms_ssim_decimate.c", bad == 0u);
     return NULL;
+}
+
+static char *check_decimate(unsigned w, unsigned h, uint64_t seed)
+{
+    const size_t out_count = (size_t)vmaf_mtl_msdec_extent(w) * vmaf_mtl_msdec_extent(h);
+    DecimateBufs b;
+    b.src = (float *)malloc((size_t)w * h * sizeof(float));
+    b.twin = (float *)malloc(out_count * sizeof(float));
+    b.scalar = (float *)malloc(out_count * sizeof(float));
+    b.dispatched = (float *)malloc(out_count * sizeof(float));
+    char *msg = (b.src && b.twin && b.scalar && b.dispatched) ? decimate_compare(&b, w, h, seed) :
+                                                                "allocation failed";
+    free(b.src);
+    free(b.twin);
+    free(b.scalar);
+    free(b.dispatched);
+    return msg;
 }
 
 static char *test_decimation_is_the_cpu_decimation(void)
@@ -207,10 +232,11 @@ static int float_plane(const Case *c, unsigned side, float *dst)
         uint8_t *line = (uint8_t *)pic.data[0] + (size_t)row * pic.stride[0];
         for (unsigned col = 0u; col < c->w; col++) {
             const unsigned v = sample_of(c, side, row, col);
-            if (c->bpc > 8u)
+            if (c->bpc > 8u) {
                 ((uint16_t *)line)[col] = (uint16_t)v;
-            else
+            } else {
                 line[col] = (uint8_t)v;
+            }
         }
     }
     picture_copy(dst, (ptrdiff_t)((size_t)c->w * sizeof(float)), &pic, 0, pic.bpc, 0);
@@ -337,52 +363,68 @@ static void report_frame(const Case *c, const char *what, int scale, double cpu,
                   c->bpc, what, scale, cpu, twin);
 }
 
+typedef struct FrameScores {
+    double score;
+    double l[SCALES];
+    double c[SCALES];
+    double s[SCALES];
+} FrameScores;
+
+static int frame_mismatches(const Case *c, const FrameScores *cpu, const FrameScores *twin)
+{
+    int bad = 0;
+    for (int i = 0; i < SCALES; i++) {
+        if (cpu->l[i] != twin->l[i]) {
+            report_frame(c, "l", i, cpu->l[i], twin->l[i]);
+            bad = 1;
+        }
+        if (cpu->c[i] != twin->c[i]) {
+            report_frame(c, "c", i, cpu->c[i], twin->c[i]);
+            bad = 1;
+        }
+        if (cpu->s[i] != twin->s[i]) {
+            report_frame(c, "s", i, cpu->s[i], twin->s[i]);
+            bad = 1;
+        }
+    }
+    if (cpu->score != twin->score) {
+        report_frame(c, "score", 0, cpu->score, twin->score);
+        bad = 1;
+    }
+    return bad;
+}
+
+static char *frame_compare(const Case *c, const float *ref, const float *cmp)
+{
+    FrameScores cpu = {0};
+    FrameScores twin = {0};
+    const int stride = (int)(c->w * sizeof(float));
+    const int err = compute_ms_ssim(ref, cmp, (int)c->w, (int)c->h, stride, stride, &cpu.score,
+                                    cpu.l, cpu.c, cpu.s);
+    const int twin_err = twin_ms_ssim(ref, cmp, c->w, c->h, &twin.score, twin.l, twin.c, twin.s);
+    mu_assert("compute_ms_ssim failed", err == 0);
+    mu_assert("the twin emulation failed", twin_err == 0);
+    mu_assert("float_ms_ssim differs from the CPU", frame_mismatches(c, &cpu, &twin) == 0);
+    return NULL;
+}
+
 static char *check_frame(const Case *c)
 {
     const size_t pixels = (size_t)c->w * c->h;
     float *ref = (float *)malloc(pixels * sizeof(float));
     float *cmp = (float *)malloc(pixels * sizeof(float));
-    mu_assert("allocation failed", ref && cmp);
-    mu_assert("the reference plane failed", float_plane(c, 0u, ref) == 0);
-    mu_assert("the distorted plane failed", float_plane(c, 1u, cmp) == 0);
-
-    double cpu_score = 0.0;
-    double cpu_l[SCALES];
-    double cpu_c[SCALES];
-    double cpu_s[SCALES];
-    const int stride = (int)(c->w * sizeof(float));
-    const int err = compute_ms_ssim(ref, cmp, (int)c->w, (int)c->h, stride, stride, &cpu_score,
-                                    cpu_l, cpu_c, cpu_s);
-    double twin_score = 0.0;
-    double twin_l[SCALES];
-    double twin_c[SCALES];
-    double twin_s[SCALES];
-    const int twin_err = twin_ms_ssim(ref, cmp, c->w, c->h, &twin_score, twin_l, twin_c, twin_s);
+    char *msg = "allocation failed";
+    if (ref && cmp) {
+        msg = "the reference plane failed";
+        if (float_plane(c, 0u, ref) == 0) {
+            msg = "the distorted plane failed";
+            if (float_plane(c, 1u, cmp) == 0)
+                msg = frame_compare(c, ref, cmp);
+        }
+    }
     free(ref);
     free(cmp);
-    mu_assert("compute_ms_ssim failed", err == 0);
-    mu_assert("the twin emulation failed", twin_err == 0);
-    int bad = 0;
-    for (int i = 0; i < SCALES; i++) {
-        if (cpu_l[i] != twin_l[i]) {
-            report_frame(c, "l", i, cpu_l[i], twin_l[i]);
-            bad = 1;
-        }
-        if (cpu_c[i] != twin_c[i]) {
-            report_frame(c, "c", i, cpu_c[i], twin_c[i]);
-            bad = 1;
-        }
-        if (cpu_s[i] != twin_s[i]) {
-            report_frame(c, "s", i, cpu_s[i], twin_s[i]);
-            bad = 1;
-        }
-    }
-    if (cpu_score != twin_score) {
-        report_frame(c, "score", 0, cpu_score, twin_score);
-        bad = 1;
-    }
-    mu_assert("float_ms_ssim differs from the CPU", bad == 0);
-    return NULL;
+    return msg;
 }
 
 static char *check_all(const Case *cases, size_t n)

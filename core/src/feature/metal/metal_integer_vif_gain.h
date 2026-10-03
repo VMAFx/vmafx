@@ -116,6 +116,7 @@ VMAF_MTL_FUNC VmafMtlIvifDivisor vmaf_mtl_ivif_divisor_of(vmaf_mtl_u32 sigma1_sq
     /* The last place of the sum is 2^(binade - 52). */
     const vmaf_mtl_u32 shift = (vmaf_mtl_u32)(binade - 52 - VMAF_MTL_IVIF_EPS_EXP);
     const vmaf_mtl_u64 mant = VMAF_MTL_IVIF_EPS_MANT;
+    // NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift): binade is -1..31 (clz32 is 0..32), so shift is 17..49, ADR-1498
     const bool half_bit = ((mant >> (shift - 1u)) & VMAF_MTL_U64(1)) != VMAF_MTL_U64(0);
     const bool sticky =
         (mant & ((VMAF_MTL_U64(1) << (shift - 1u)) - VMAF_MTL_U64(1))) != VMAF_MTL_U64(0);

@@ -58,7 +58,7 @@ FORCE_INLINE float convolution_edge_s(bool horizontal, const float *filter, int 
                                       const float *src, int width, int height, int stride, int i,
                                       int j)
 {
-    int radius = filter_width / 2;
+    const int radius = filter_width / 2;
 
     float accum = 0;
     for (int k = 0; k < filter_width; ++k) {
@@ -104,7 +104,7 @@ FORCE_INLINE float convolution_edge_sq_s(bool horizontal, const float *filter, i
                                          const float *src, int width, int height, int stride, int i,
                                          int j)
 {
-    int radius = filter_width / 2;
+    const int radius = filter_width / 2;
 
     float accum = 0;
     float src_val;
@@ -132,7 +132,7 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
                                          const float *src1, const float *src2, int width,
                                          int height, int stride1, int stride2, int i, int j)
 {
-    int radius = filter_width / 2;
+    const int radius = filter_width / 2;
 
     float accum = 0;
     float src_val1;

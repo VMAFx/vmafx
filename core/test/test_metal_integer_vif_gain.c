@@ -213,15 +213,25 @@ static Moments window_moments(const WindowMode *mode, uint32_t ref[MAX_TAPS][MAX
     const uint16_t *f = vif_filter1d_table[mode->scale];
     const int taps = vif_filter1d_width[mode->scale];
     const int off = (MAX_TAPS - taps) / 2;
-    unsigned shift_mu = 0u, shift_sq = 0u;
+    unsigned shift_mu = 0u;
+    unsigned shift_sq = 0u;
     vertical_shifts(mode, &shift_mu, &shift_sq);
     const uint64_t add_mu = UINT64_C(1) << (shift_mu - 1u);
     const uint64_t add_sq = shift_sq == 0u ? 0u : UINT64_C(1) << (shift_sq - 1u);
-    uint64_t acc_mu1 = 0, acc_mu2 = 0, acc_ref = 0, acc_dis = 0, acc_xy = 0;
+    uint64_t acc_mu1 = 0;
+    uint64_t acc_mu2 = 0;
+    uint64_t acc_ref = 0;
+    uint64_t acc_dis = 0;
+    uint64_t acc_xy = 0;
     for (int j = 0; j < taps; j++) {
-        uint64_t m1 = 0, m2 = 0, rr = 0, dd = 0, rd = 0;
+        uint64_t m1 = 0;
+        uint64_t m2 = 0;
+        uint64_t rr = 0;
+        uint64_t dd = 0;
+        uint64_t rd = 0;
         for (int i = 0; i < taps; i++) {
-            const uint64_t r = ref[off + i][off + j], d = dis[off + i][off + j];
+            const uint64_t r = ref[off + i][off + j];
+            const uint64_t d = dis[off + i][off + j];
             m1 += f[i] * r;
             m2 += f[i] * d;
             rr += f[i] * r * r;
@@ -260,7 +270,8 @@ static int sigmas_of(Moments m, uint32_t *s)
 static unsigned fill_window_samples(unsigned mode_index, unsigned first)
 {
     const WindowMode *mode = &WINDOW_MODE[mode_index];
-    uint32_t ref[MAX_TAPS][MAX_TAPS], dis[MAX_TAPS][MAX_TAPS];
+    uint32_t ref[MAX_TAPS][MAX_TAPS];
+    uint32_t dis[MAX_TAPS][MAX_TAPS];
     unsigned taken = 0u;
     for (unsigned tries = 0u; taken < WINDOW_SAMPLES && tries < 40u * WINDOW_SAMPLES; tries++) {
         random_window(mode, ref, dis);
@@ -392,9 +403,10 @@ static char *test_window_samples_selected_value(void)
 {
     (void)fill_samples(GAIN_LIMIT[0]);
     (void)run_path(GAIN_LIMIT[0], PATH_SELECTED, got_sv, got_gg);
-    for (unsigned i = RANDOM_SAMPLES; i < SAMPLES; i++)
+    for (unsigned i = RANDOM_SAMPLES; i < SAMPLES; i++) {
         mu_assert("a pixel-window sample differs from the reference",
                   got_sv[i] == ref_sv[i] && got_gg[i] == ref_gg[i]);
+    }
     return NULL;
 }
 
@@ -419,6 +431,21 @@ static char *test_fp32_gain_would_differ(void)
     return NULL;
 }
 
+static char *check_gain_limit(double limit)
+{
+    const VmafMtlGainLimit g = vmaf_mtl_ivif_make_gain_limit(limit);
+    const double value = ldexp((double)g.value.mant, g.value.exp);
+    const int is_integer = limit == floor(limit);
+    mu_assert("the limit's fp64 parts are not the limit", value == limit);
+    mu_assert("the limit's significand is not normalised",
+              g.value.mant >= (UINT64_C(1) << 52) && g.value.mant < (UINT64_C(1) << 53));
+    mu_assert("the limit's integer form is wrong",
+              g.integer == (is_integer ? (uint32_t)limit : 0u));
+    mu_assert("the limit's fp32 pair is not the limit",
+              g.hi == (float)limit && fabs((double)g.hi + (double)g.lo - limit) <= 1.0e-13 * limit);
+    return NULL;
+}
+
 static char *test_gain_limit_layout_and_parts(void)
 {
     mu_assert("VmafMtlGainLimit is not 32 bytes", sizeof(VmafMtlGainLimit) == 32u);
@@ -428,17 +455,7 @@ static char *test_gain_limit_layout_and_parts(void)
     mu_assert("VmafMtlGainLimit.hi is not at offset 20", offsetof(VmafMtlGainLimit, hi) == 20u);
     mu_assert("VmafMtlGainLimit.lo is not at offset 24", offsetof(VmafMtlGainLimit, lo) == 24u);
     for (unsigned l = 0u; l < LIMIT_COUNT; l++) {
-        const VmafMtlGainLimit g = vmaf_mtl_ivif_make_gain_limit(GAIN_LIMIT[l]);
-        const double value = ldexp((double)g.value.mant, g.value.exp);
-        const int is_integer = GAIN_LIMIT[l] == floor(GAIN_LIMIT[l]);
-        mu_assert("the limit's fp64 parts are not the limit", value == GAIN_LIMIT[l]);
-        mu_assert("the limit's significand is not normalised",
-                  g.value.mant >= (UINT64_C(1) << 52) && g.value.mant < (UINT64_C(1) << 53));
-        mu_assert("the limit's integer form is wrong",
-                  g.integer == (is_integer ? (uint32_t)GAIN_LIMIT[l] : 0u));
-        mu_assert("the limit's fp32 pair is not the limit",
-                  g.hi == (float)GAIN_LIMIT[l] &&
-                      fabs((double)g.hi + (double)g.lo - GAIN_LIMIT[l]) <= 1.0e-13 * GAIN_LIMIT[l]);
+        mu_assert_msg(check_gain_limit(GAIN_LIMIT[l]));
     }
     return NULL;
 }

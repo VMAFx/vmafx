@@ -29,6 +29,7 @@
 extern "C" {
 #endif
 
+// NOLINTNEXTLINE(performance-enum-size): plain C header, an enumeration has no underlying type before C23, ADR-1142
 enum vif_scaling_method {
     vif_scale_nearest = 0,
     vif_scale_bicubic = 1,

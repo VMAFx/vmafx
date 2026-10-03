@@ -247,9 +247,10 @@ static char *test_terms_are_the_fp64_expression(void)
     for (unsigned depth = 0u; depth < DEPTH_COUNT; depth++) {
         const unsigned bpc = DEPTH[depth];
         const TermRun run = run_terms(bpc);
-        if (run.wrong != 0u)
+        if (run.wrong != 0u) {
             (void)fprintf(stderr, "\n%u-bit: %u of %d terms differ\n", bpc, run.wrong,
                           TERM_SAMPLES);
+        }
         mu_assert("the term is not the reference's fp64 expression", run.wrong == 0u);
         mu_assert("no term is negative: the inverted windows are not reached", run.negative > 0u);
         if (bpc <= 10u) {

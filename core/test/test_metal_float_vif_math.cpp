@@ -117,17 +117,19 @@ const char *test_log2_coefficients_are_the_references()
 {
     /* vif_tools.c::log2_poly_s: each decimal literal rounded to fp32 by the
      * initialiser of a `float` array. */
-    const float reference[9] = {-0.012671635276421f, 0.064841182402670f,  -0.157048836463065f,
-                                0.257167726303123f,  -0.353800560300520f, 0.480131410397451f,
-                                -0.721314327952201f, 1.442694803896991f,  0.0f};
+    const float reference[9] = {
+        -0.012671635276421f, 0.064841182402670f, -0.157048836463065f, 0.257167726303123f,
+        -0.353800560300520f, 0.480131410397451f, -0.721314327952201f,
+        // NOLINTNEXTLINE(modernize-use-std-numbers): the reference's polynomial coefficient, not log2(e), vif_tools.c log2_poly_s, ADR-1498
+        1.442694803896991f, 0.0f};
     const uint32_t pattern[9] = {
         VMAF_MTL_FVIF_LOG2_C0, VMAF_MTL_FVIF_LOG2_C1, VMAF_MTL_FVIF_LOG2_C2,
         VMAF_MTL_FVIF_LOG2_C3, VMAF_MTL_FVIF_LOG2_C4, VMAF_MTL_FVIF_LOG2_C5,
         VMAF_MTL_FVIF_LOG2_C6, VMAF_MTL_FVIF_LOG2_C7, VMAF_MTL_FVIF_LOG2_C8};
     for (unsigned i = 0u; i < 9u; i++) {
         if (pattern[i] != bits_of(reference[i])) {
-            std::fprintf(stderr, "\ncoefficient %u: %08x vs %08x\n", i, pattern[i],
-                         bits_of(reference[i]));
+            (void)fprintf(stderr, "\ncoefficient %u: %08x vs %08x\n", i, pattern[i],
+                          bits_of(reference[i]));
         }
         mu_assert("a log2 coefficient pattern is not the reference's fp32 literal",
                   pattern[i] == bits_of(reference[i]));
@@ -261,37 +263,43 @@ void cpu_terms(const Moments &m, double nsq, double egl, float *num, float *den)
                     static_cast<int>(sizeof(float)), egl, nsq);
 }
 
+/* The samples of one (sigma_nsq, gain limit) pair that differ from the CPU's. */
+unsigned statistic_mismatches(double nsq, double egl, unsigned already_reported)
+{
+    const VmafMtlFvifStatParams p =
+        vmaf_mtl_fvif_stat_params(vmaf_mtl_fvif_statistic_args(nsq, egl));
+    unsigned differing = 0u;
+    for (unsigned i = 0u; i < kStatSamples / 5u; i++) {
+        const Moments m = random_moments(i);
+        float cpu_num = 0.0f;
+        float cpu_den = 0.0f;
+        cpu_terms(m, nsq, egl, &cpu_num, &cpu_den);
+        const VmafMtlFvifTerm t = vmaf_mtl_fvif_pixel_term(m.mu1, m.mu2, m.xx, m.yy, m.xy, p);
+        if (same_bits(t.num, cpu_num) && same_bits(t.den, cpu_den)) {
+            continue;
+        }
+        if (already_reported + differing++ < 5u) {
+            (void)fprintf(stderr,
+                          "\nsample %u (nsq=%g egl=%g): num %.9g vs cpu %.9g, den %.9g vs "
+                          "cpu %.9g",
+                          i, nsq, egl, static_cast<double>(t.num), static_cast<double>(cpu_num),
+                          static_cast<double>(t.den), static_cast<double>(cpu_den));
+        }
+    }
+    return differing;
+}
+
 const char *test_statistic_is_vif_pixel_statistic_s()
 {
     g_rng = 0x2545f491u;
     unsigned differing = 0u;
     for (const double nsq : kSigmaNsq) {
         for (const double egl : kGainLimit) {
-            const VmafMtlFvifStatParams p =
-                vmaf_mtl_fvif_stat_params(vmaf_mtl_fvif_statistic_args(nsq, egl));
-            for (unsigned i = 0u; i < kStatSamples / 5u; i++) {
-                const Moments m = random_moments(i);
-                float cpu_num = 0.0f;
-                float cpu_den = 0.0f;
-                cpu_terms(m, nsq, egl, &cpu_num, &cpu_den);
-                const VmafMtlFvifTerm t =
-                    vmaf_mtl_fvif_pixel_term(m.mu1, m.mu2, m.xx, m.yy, m.xy, p);
-                if (same_bits(t.num, cpu_num) && same_bits(t.den, cpu_den)) {
-                    continue;
-                }
-                if (differing++ < 5u) {
-                    std::fprintf(stderr,
-                                 "\nsample %u (nsq=%g egl=%g): num %.9g vs cpu %.9g, den %.9g vs "
-                                 "cpu %.9g",
-                                 i, nsq, egl, static_cast<double>(t.num),
-                                 static_cast<double>(cpu_num), static_cast<double>(t.den),
-                                 static_cast<double>(cpu_den));
-                }
-            }
+            differing += statistic_mismatches(nsq, egl, differing);
         }
     }
     if (differing != 0u) {
-        std::fprintf(stderr, "\n%u samples differ\n", differing);
+        (void)fprintf(stderr, "\n%u samples differ\n", differing);
     }
     mu_assert("metal_float_vif_math.h differs from vif_pixel_statistic_s()", differing == 0u);
     return nullptr;
@@ -331,11 +339,11 @@ void check_ratio(float numerator, bool has_addend, float addend, double sigma_ns
     const float reference = reference_ratio(numerator, has_addend, addend, sigma_nsq);
     if ((!same_bits(selected, reference) || !same_bits(replay, reference)) &&
         counts->selected_wrong + counts->replay_wrong < 5u) {
-        std::fprintf(stderr,
-                     "\nnumerator=%a addend=%a (%d) nsq=%.17g: fp64 %a, selected %a, replay %a",
-                     static_cast<double>(numerator), static_cast<double>(addend),
-                     has_addend ? 1 : 0, sigma_nsq, static_cast<double>(reference),
-                     static_cast<double>(selected), static_cast<double>(replay));
+        (void)fprintf(stderr,
+                      "\nnumerator=%a addend=%a (%d) nsq=%.17g: fp64 %a, selected %a, replay %a",
+                      static_cast<double>(numerator), static_cast<double>(addend),
+                      has_addend ? 1 : 0, sigma_nsq, static_cast<double>(reference),
+                      static_cast<double>(selected), static_cast<double>(replay));
     }
     counts->selected_wrong += same_bits(selected, reference) ? 0u : 1u;
     counts->replay_wrong += same_bits(replay, reference) ? 0u : 1u;
@@ -347,7 +355,8 @@ void check_ratio(float numerator, bool has_addend, float addend, double sigma_ns
 const char *test_ratio_is_the_fp64_expression()
 {
     static const float scale[] = {1.0e-9f, 1.0e-3f, 1.5f, 40.0f, 3000.0f, 16000.0f};
-    RatioCounts counts = {0u, 0u, 0u, 0u};
+    RatioCounts counts = {
+        .selected_wrong = 0u, .replay_wrong = 0u, .pair_wrong = 0u, .replays = 0u};
     g_rng = 0x9e3779b9u;
     for (unsigned i = 0u; i < kRatioSamples; i++) {
         /* The zero variance has its own test: a zero denominator makes the
@@ -375,7 +384,8 @@ const char *test_ratio_is_the_fp64_expression()
  * reaching it. */
 const char *test_ratio_next_to_a_rounding_boundary()
 {
-    RatioCounts counts = {0u, 0u, 0u, 0u};
+    RatioCounts counts = {
+        .selected_wrong = 0u, .replay_wrong = 0u, .pair_wrong = 0u, .replays = 0u};
     g_rng = 0x1b873593u;
     for (unsigned i = 0u; i < kBoundarySamples; i++) {
         const double sigma_nsq = kSigmaNsq[i % 4u];
@@ -391,13 +401,13 @@ const char *test_ratio_next_to_a_rounding_boundary()
     mu_assert("next to a rounding boundary the selected value is not the reference's fp64",
               counts.selected_wrong == 0u);
     if (counts.replays < kBoundarySamples / 2u) {
-        std::fprintf(stderr, "\nonly %u of %u boundary samples take the replay\n", counts.replays,
-                     kBoundarySamples);
+        (void)fprintf(stderr, "\nonly %u of %u boundary samples take the replay\n", counts.replays,
+                      kBoundarySamples);
     }
     mu_assert("the boundary samples do not reach the integer replay",
               counts.replays >= kBoundarySamples / 2u);
-    std::fprintf(stderr, "[replay taken on %u of %u, pair alone wrong on %u] ", counts.replays,
-                 kBoundarySamples, counts.pair_wrong);
+    (void)fprintf(stderr, "[replay taken on %u of %u, pair alone wrong on %u] ", counts.replays,
+                  kBoundarySamples, counts.pair_wrong);
     return nullptr;
 }
 
@@ -416,21 +426,49 @@ struct RatioWitness {
 const char *test_pair_alone_is_not_the_fp64_expression()
 {
     static const RatioWitness witness[] = {
-        {0x1.2b38p-11f, true, 0x1.543d0cp-33f, 5.0},
-        {0x1.800aa2p-22f, true, 0x1.c5b018p-13f, 2.0},
-        {0x1.4f1662p-10f, true, 0x1.234676p-13f, 5.0},
-        {0x1.18p-18f, true, 0x1.febc18p-31f, 2.0},
-        {0x1.416ce8p+20f, true, 0x1.11354ap+3f, 0.3},
-        {0x1.2f3788p+2f, true, 0x1.374cfp+0f, 4.7},
-        {0x1.653388p+5f, true, 0x1.3bd38p-11f, 4.7},
-        {0x1.333334p-26f, false, 0.0f, 0.3},
-        {0x1.241e6ep+1f, true, 0x1.68cc86p-12f, 1.5},
-        {0x1.69570ep+26f, true, 0x1.e4383cp+3f, 4.7},
-        {0x1.3949p+17f, true, 0x1.55ae86p+0f, 1.5},
-        {0x1.f2p-18f, true, 0x1.069bb8p-31f, 1.5},
+        {.numerator = 0x1.2b38p-11f,
+         .has_addend = true,
+         .addend = 0x1.543d0cp-33f,
+         .sigma_nsq = 5.0},
+        {.numerator = 0x1.800aa2p-22f,
+         .has_addend = true,
+         .addend = 0x1.c5b018p-13f,
+         .sigma_nsq = 2.0},
+        {.numerator = 0x1.4f1662p-10f,
+         .has_addend = true,
+         .addend = 0x1.234676p-13f,
+         .sigma_nsq = 5.0},
+        {.numerator = 0x1.18p-18f, .has_addend = true, .addend = 0x1.febc18p-31f, .sigma_nsq = 2.0},
+        {.numerator = 0x1.416ce8p+20f,
+         .has_addend = true,
+         .addend = 0x1.11354ap+3f,
+         .sigma_nsq = 0.3},
+        {.numerator = 0x1.2f3788p+2f,
+         .has_addend = true,
+         .addend = 0x1.374cfp+0f,
+         .sigma_nsq = 4.7},
+        {.numerator = 0x1.653388p+5f,
+         .has_addend = true,
+         .addend = 0x1.3bd38p-11f,
+         .sigma_nsq = 4.7},
+        {.numerator = 0x1.333334p-26f, .has_addend = false, .addend = 0.0f, .sigma_nsq = 0.3},
+        {.numerator = 0x1.241e6ep+1f,
+         .has_addend = true,
+         .addend = 0x1.68cc86p-12f,
+         .sigma_nsq = 1.5},
+        {.numerator = 0x1.69570ep+26f,
+         .has_addend = true,
+         .addend = 0x1.e4383cp+3f,
+         .sigma_nsq = 4.7},
+        {.numerator = 0x1.3949p+17f,
+         .has_addend = true,
+         .addend = 0x1.55ae86p+0f,
+         .sigma_nsq = 1.5},
+        {.numerator = 0x1.f2p-18f, .has_addend = true, .addend = 0x1.069bb8p-31f, .sigma_nsq = 1.5},
     };
     const unsigned count = static_cast<unsigned>(sizeof(witness) / sizeof(witness[0]));
-    RatioCounts counts = {0u, 0u, 0u, 0u};
+    RatioCounts counts = {
+        .selected_wrong = 0u, .replay_wrong = 0u, .pair_wrong = 0u, .replays = 0u};
     for (const RatioWitness &w : witness) {
         check_ratio(w.numerator, w.has_addend, w.addend, w.sigma_nsq, &counts);
     }
@@ -447,7 +485,7 @@ const char *test_pair_alone_is_not_the_fp64_expression()
  * significand. The statistic over a flat plane must equal the CPU's. */
 const char *test_zero_noise_flat_plane_is_the_references()
 {
-    const Moments flat = {10.0f, 12.0f, 100.0f, 144.0f, 120.0f};
+    const Moments flat = {.mu1 = 10.0f, .mu2 = 12.0f, .xx = 100.0f, .yy = 144.0f, .xy = 120.0f};
     for (const double egl : kGainLimit) {
         float cpu_num = 0.0f;
         float cpu_den = 0.0f;
@@ -470,55 +508,64 @@ const char *test_zero_noise_flat_plane_is_the_references()
 
 /* A float plane, stride = width, as the kernels read and write it. */
 struct Plane {
-    int w;
-    int h;
+    int w = 0;
+    int h = 0;
     std::vector<float> v;
-    Plane() : w(0), h(0)
-    {
-    }
-    Plane(int width, int height)
-        : w(width), h(height), v(static_cast<size_t>(width) * static_cast<size_t>(height))
-    {
-    }
-    float at(int x, int y) const
-    {
-        return v[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)];
-    }
-    void set(int x, int y, float value)
-    {
-        v[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)] = value;
-    }
 };
+
+Plane make_plane(int width, int height)
+{
+    Plane plane;
+    plane.w = width;
+    plane.h = height;
+    plane.v.assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0.0f);
+    return plane;
+}
+
+float plane_at(const Plane &plane, int x, int y)
+{
+    return plane.v[static_cast<size_t>(y) * static_cast<size_t>(plane.w) + static_cast<size_t>(x)];
+}
+
+void plane_set(Plane &plane, int x, int y, float value)
+{
+    plane.v[static_cast<size_t>(y) * static_cast<size_t>(plane.w) + static_cast<size_t>(x)] = value;
+}
 
 /* float_vif.metal's filter taps: the CPU's own, per scale. */
 struct Filters {
     float taps[4][128];
     int count[4];
-    int init(float kernelscale)
-    {
-        std::memset(taps, 0, sizeof(taps));
-        for (int scale = 0; scale < 4; scale++) {
-            count[scale] = vif_get_filter_size(scale, kernelscale);
-            if (count[scale] < 1 || count[scale] > 128) {
-                return -1;
-            }
-            vif_get_filter(taps[scale], scale, kernelscale);
-        }
-        return 0;
-    }
 };
+
+int filters_init(Filters &f, float kernelscale)
+{
+    std::memset(f.taps, 0, sizeof(f.taps));
+    for (int scale = 0; scale < 4; scale++) {
+        f.count[scale] = vif_get_filter_size(scale, kernelscale);
+        if (f.count[scale] < 1 || f.count[scale] > 128) {
+            return -1;
+        }
+        vif_get_filter(f.taps[scale], scale, kernelscale);
+    }
+    return 0;
+}
 
 /* float_vif_vertical for one pixel: the five moments, taps in order. */
 void kernel_vertical(const Filters &f, int scale, const Plane &ref, const Plane &dis, int x, int y,
                      float m[5])
 {
-    float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
+    float mu1 = 0.0f;
+    float mu2 = 0.0f;
+    float xx = 0.0f;
+    float yy = 0.0f;
+    float xy = 0.0f;
     const int half = f.count[scale] / 2;
     for (int k = 0; k < f.count[scale]; k++) {
         const int row = vmaf_mtl_fvif_mirror(y - half + k, ref.h);
         const float c = f.taps[scale][k];
-        const float r = ref.at(x, row);
-        const float d = dis.at(x, row);
+        const float r = plane_at(ref, x, row);
+        const float d = plane_at(dis, x, row);
         const float rr = r * r;
         const float dd = d * d;
         const float rd = r * d;
@@ -540,17 +587,21 @@ void kernel_vertical(const Filters &f, int scale, const Plane &ref, const Plane 
 void kernel_compute(const Filters &f, int scale, const Plane moments[5],
                     const VmafMtlFvifStatParams &p, int x, int y, std::vector<float> &terms)
 {
-    float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
+    float mu1 = 0.0f;
+    float mu2 = 0.0f;
+    float xx = 0.0f;
+    float yy = 0.0f;
+    float xy = 0.0f;
     const int w = moments[0].w;
     const int half = f.count[scale] / 2;
     for (int k = 0; k < f.count[scale]; k++) {
         const int col = vmaf_mtl_fvif_mirror(x - half + k, w);
         const float c = f.taps[scale][k];
-        mu1 = vmaf_mtl_fvif_tap(mu1, c, moments[0].at(col, y));
-        mu2 = vmaf_mtl_fvif_tap(mu2, c, moments[1].at(col, y));
-        xx = vmaf_mtl_fvif_tap(xx, c, moments[2].at(col, y));
-        yy = vmaf_mtl_fvif_tap(yy, c, moments[3].at(col, y));
-        xy = vmaf_mtl_fvif_tap(xy, c, moments[4].at(col, y));
+        mu1 = vmaf_mtl_fvif_tap(mu1, c, plane_at(moments[0], col, y));
+        mu2 = vmaf_mtl_fvif_tap(mu2, c, plane_at(moments[1], col, y));
+        xx = vmaf_mtl_fvif_tap(xx, c, plane_at(moments[2], col, y));
+        yy = vmaf_mtl_fvif_tap(yy, c, plane_at(moments[3], col, y));
+        xy = vmaf_mtl_fvif_tap(xy, c, plane_at(moments[4], col, y));
     }
     const VmafMtlFvifTerm t = vmaf_mtl_fvif_pixel_term(mu1, mu2, xx, yy, xy, p);
     const size_t at =
@@ -580,17 +631,19 @@ void kernel_row_sums(const std::vector<float> &terms, int w, int h, int y, std::
 void kernel_decimate(const Filters &f, int scale, const Plane &in_ref, const Plane &in_dis, int x,
                      int y, float *out_ref, float *out_dis)
 {
-    float acc_ref = 0.0f, acc_dis = 0.0f;
+    float acc_ref = 0.0f;
+    float acc_dis = 0.0f;
     const int half = f.count[scale] / 2;
     for (int kj = 0; kj < f.count[scale]; kj++) {
         const float c_j = f.taps[scale][kj];
         const int px = vmaf_mtl_fvif_mirror(2 * x - half + kj, in_ref.w);
-        float v_ref = 0.0f, v_dis = 0.0f;
+        float v_ref = 0.0f;
+        float v_dis = 0.0f;
         for (int ki = 0; ki < f.count[scale]; ki++) {
             const float c_i = f.taps[scale][ki];
             const int py = vmaf_mtl_fvif_mirror(2 * y - half + ki, in_ref.h);
-            v_ref = vmaf_mtl_fvif_tap(v_ref, c_i, in_ref.at(px, py));
-            v_dis = vmaf_mtl_fvif_tap(v_dis, c_i, in_dis.at(px, py));
+            v_ref = vmaf_mtl_fvif_tap(v_ref, c_i, plane_at(in_ref, px, py));
+            v_dis = vmaf_mtl_fvif_tap(v_dis, c_i, plane_at(in_dis, px, py));
         }
         acc_ref = vmaf_mtl_fvif_tap(acc_ref, c_j, v_ref);
         acc_dis = vmaf_mtl_fvif_tap(acc_dis, c_j, v_dis);
@@ -619,14 +672,14 @@ void run_scale(const Filters &f, int scale, const Plane &ref, const Plane &dis,
 {
     Plane moments[5];
     for (Plane &plane : moments) {
-        plane = Plane(ref.w, ref.h);
+        plane = make_plane(ref.w, ref.h);
     }
     for (int y = 0; y < ref.h; y++) {
         for (int x = 0; x < ref.w; x++) {
             float m[5];
             kernel_vertical(f, scale, ref, dis, x, y, m);
             for (int i = 0; i < 5; i++) {
-                moments[i].set(x, y, m[i]);
+                plane_set(moments[i], x, y, m[i]);
             }
         }
     }
@@ -647,15 +700,15 @@ void run_scale(const Filters &f, int scale, const Plane &ref, const Plane &dis,
  * sample. */
 void next_scale(const Filters &f, int scale, Plane *ref, Plane *dis)
 {
-    Plane out_ref(ref->w / 2, ref->h / 2);
-    Plane out_dis(ref->w / 2, ref->h / 2);
+    Plane out_ref = make_plane(ref->w / 2, ref->h / 2);
+    Plane out_dis = make_plane(ref->w / 2, ref->h / 2);
     for (int y = 0; y < out_ref.h; y++) {
         for (int x = 0; x < out_ref.w; x++) {
             float r = 0.0f;
             float d = 0.0f;
             kernel_decimate(f, scale, *ref, *dis, x, y, &r, &d);
-            out_ref.set(x, y, r);
-            out_dis.set(x, y, d);
+            plane_set(out_ref, x, y, r);
+            plane_set(out_dis, x, y, d);
         }
     }
     *ref = out_ref;
@@ -687,8 +740,8 @@ struct Frames {
 Frames make_frames(int w, int h, unsigned bpc)
 {
     Frames f;
-    f.ref = Plane(w, h);
-    f.dis = Plane(w, h);
+    f.ref = make_plane(w, h);
+    f.dis = make_plane(w, h);
     f.cpu_stride_bytes = static_cast<int>(ALIGN_CEIL(static_cast<size_t>(w) * sizeof(float)));
     const size_t stride_floats = static_cast<size_t>(f.cpu_stride_bytes) / sizeof(float);
     f.cpu_ref.assign(stride_floats * static_cast<size_t>(h), 0.0f);
@@ -697,8 +750,8 @@ Frames make_frames(int w, int h, unsigned bpc)
         for (int x = 0; x < w; x++) {
             const float r = frame_sample(x, y, bpc, false);
             const float d = frame_sample(x, y, bpc, true);
-            f.ref.set(x, y, r);
-            f.dis.set(x, y, d);
+            plane_set(f.ref, x, y, r);
+            plane_set(f.dis, x, y, d);
             f.cpu_ref[static_cast<size_t>(y) * stride_floats + static_cast<size_t>(x)] = r;
             f.cpu_dis[static_cast<size_t>(y) * stride_floats + static_cast<size_t>(x)] = d;
         }
@@ -716,7 +769,9 @@ bool cpu_scores(const Frames &fr, const Filters &flt, float kernelscale, double 
         std::memcpy(filters[s], flt.taps[s], sizeof(filters[s]));
         widths[s] = flt.count[s];
     }
-    double score = 0.0, score_num = 0.0, score_den = 0.0;
+    double score = 0.0;
+    double score_num = 0.0;
+    double score_den = 0.0;
     return compute_vif(fr.cpu_ref.data(), fr.cpu_dis.data(), fr.ref.w, fr.ref.h,
                        fr.cpu_stride_bytes, fr.cpu_stride_bytes, &score, &score_num, &score_den,
                        cpu, egl, static_cast<double>(kernelscale), 0, nsq,
@@ -725,11 +780,11 @@ bool cpu_scores(const Frames &fr, const Filters &flt, float kernelscale, double 
 
 const char *check_pipeline(int w, int h, unsigned bpc, float kernelscale, double nsq, double egl)
 {
-    Filters flt;
-    mu_assert("a filter is outside the kernels' 128 taps", flt.init(kernelscale) == 0);
+    Filters flt = {};
+    mu_assert("a filter is outside the kernels' 128 taps", filters_init(flt, kernelscale) == 0);
     mu_assert("the frame is below the four-scale ladder's floor",
               w >= vif_get_min_dim(kernelscale) && h >= vif_get_min_dim(kernelscale));
-    Frames fr = make_frames(w, h, bpc);
+    const Frames fr = make_frames(w, h, bpc);
     double cpu[8] = {0};
     mu_assert("compute_vif() failed", cpu_scores(fr, flt, kernelscale, nsq, egl, cpu));
     const VmafMtlFvifStatParams p =
@@ -743,16 +798,16 @@ const char *check_pipeline(int w, int h, unsigned bpc, float kernelscale, double
         double num = 0.0;
         double den = 0.0;
         run_scale(flt, scale, ref, dis, p, &num, &den);
-        if (num != cpu[2 * scale] || den != cpu[2 * scale + 1]) {
-            std::fprintf(stderr,
-                         "\n%dx%d bpc=%u ks=%g scale %d: num %.17g vs cpu %.17g, den %.17g vs "
-                         "cpu %.17g\n",
-                         w, h, bpc, static_cast<double>(kernelscale), scale, num, cpu[2 * scale],
-                         den, cpu[2 * scale + 1]);
+        const size_t ni = static_cast<size_t>(scale) * 2u;
+        if (num != cpu[ni] || den != cpu[ni + 1u]) {
+            (void)fprintf(stderr,
+                          "\n%dx%d bpc=%u ks=%g scale %d: num %.17g vs cpu %.17g, den %.17g vs "
+                          "cpu %.17g\n",
+                          w, h, bpc, static_cast<double>(kernelscale), scale, num, cpu[ni], den,
+                          cpu[ni + 1u]);
         }
-        mu_assert("the pipeline's numerator differs from compute_vif()", num == cpu[2 * scale]);
-        mu_assert("the pipeline's denominator differs from compute_vif()",
-                  den == cpu[2 * scale + 1]);
+        mu_assert("the pipeline's numerator differs from compute_vif()", num == cpu[ni]);
+        mu_assert("the pipeline's denominator differs from compute_vif()", den == cpu[ni + 1u]);
     }
     return nullptr;
 }
@@ -858,6 +913,26 @@ const char *test_argument_blocks_have_no_padding()
     return nullptr;
 }
 
+/* The statistic tests. */
+mu_message_t run_statistic_tests()
+{
+    mu_run_test(test_statistic_is_vif_pixel_statistic_s);
+    mu_run_test(test_zero_noise_flat_plane_is_the_references);
+    return nullptr;
+}
+
+/* The ratio, pipeline and reduction tests. */
+mu_message_t run_pipeline_tests()
+{
+    mu_run_test(test_ratio_is_the_fp64_expression);
+    mu_run_test(test_ratio_next_to_a_rounding_boundary);
+    mu_run_test(test_pair_alone_is_not_the_fp64_expression);
+    mu_run_test(test_row_sums_are_vif_statistic_s);
+    mu_run_test(test_pipeline_is_compute_vif);
+    mu_run_test(test_pipeline_runs_every_kernelscale);
+    return nullptr;
+}
+
 } // namespace
 
 mu_message_t run_tests(void)
@@ -867,13 +942,7 @@ mu_message_t run_tests(void)
     mu_run_test(test_raw_samples_are_picture_copy);
     mu_run_test(test_statistic_arguments_rebuild_the_double);
     mu_run_test(test_argument_blocks_have_no_padding);
-    mu_run_test(test_statistic_is_vif_pixel_statistic_s);
-    mu_run_test(test_zero_noise_flat_plane_is_the_references);
-    mu_run_test(test_ratio_is_the_fp64_expression);
-    mu_run_test(test_ratio_next_to_a_rounding_boundary);
-    mu_run_test(test_pair_alone_is_not_the_fp64_expression);
-    mu_run_test(test_row_sums_are_vif_statistic_s);
-    mu_run_test(test_pipeline_is_compute_vif);
-    mu_run_test(test_pipeline_runs_every_kernelscale);
+    mu_assert_msg(run_statistic_tests());
+    mu_assert_msg(run_pipeline_tests());
     return nullptr;
 }

@@ -255,7 +255,7 @@ double odd27(Sequence &s)
     return (double)((s.next() >> 37) | (UINT64_C(1) << 26) | 1u);
 }
 
-enum PairKind {
+enum PairKind : uint8_t {
     PAIR_RANDOM,
     PAIR_NEAR_EXPONENT, /* exponents at most one apart */
     PAIR_FAR_BELOW,     /* the smaller 50 to 70 binades below */
@@ -407,8 +407,8 @@ constexpr unsigned kEdgeCount = sizeof(kEdges) / sizeof(kEdges[0]);
 /* Positive operations                                                 */
 /* ------------------------------------------------------------------ */
 
-typedef VmafMtlSoftDouble (*SoftBinary)(VmafMtlSoftDouble, VmafMtlSoftDouble);
-typedef double (*NativeBinary)(double, double);
+using SoftBinary = VmafMtlSoftDouble (*)(VmafMtlSoftDouble, VmafMtlSoftDouble);
+using NativeBinary = double (*)(double, double);
 
 double native_add(double a, double b)
 {
@@ -448,9 +448,9 @@ bool positive_binary_passes(const char *name, SoftBinary soft, NativeBinary nati
         positive_pair(s, i % PAIR_KINDS, a, b);
         compare_positive(tally, soft, native, a, b);
     }
-    for (unsigned i = 0u; i < kEdgeCount; i++) {
-        for (unsigned j = 0u; j < kEdgeCount; j++) {
-            compare_positive(tally, soft, native, kEdges[i], kEdges[j]);
+    for (const double a : kEdges) {
+        for (const double b : kEdges) {
+            compare_positive(tally, soft, native, a, b);
         }
     }
     return tally.passed(kSamples);
@@ -508,10 +508,10 @@ mu_message_t test_soft_less_is_the_fp64_comparison()
         const bool got = vmaf_mtl_soft_less(soft_of(a), soft_of(b));
         tally.compare(got ? 1u : 0u, a < b ? 1u : 0u, a, b);
     }
-    for (unsigned i = 0u; i < kEdgeCount; i++) {
-        for (unsigned j = 0u; j < kEdgeCount; j++) {
-            const bool got = vmaf_mtl_soft_less(soft_of(kEdges[i]), soft_of(kEdges[j]));
-            tally.compare(got ? 1u : 0u, kEdges[i] < kEdges[j] ? 1u : 0u, kEdges[i], kEdges[j]);
+    for (const double a : kEdges) {
+        for (const double b : kEdges) {
+            const bool got = vmaf_mtl_soft_less(soft_of(a), soft_of(b));
+            tally.compare(got ? 1u : 0u, a < b ? 1u : 0u, a, b);
         }
     }
     mu_assert("vmaf_mtl_soft_less() is not a < b", tally.passed(kSamples));
@@ -526,7 +526,7 @@ mu_message_t test_soft_trunc_is_the_conversion()
     Sequence s(7u);
     const double edges[] = {DBL_MIN,      0.5,    1.0 - DBL_EPSILON / 2.0, 1.0, 1.5, 0x1p52,
                             0x1p53 - 1.0, 0x1p62, 0x1p63 - 1024.0};
-    for (double v : edges) {
+    for (const double v : edges) {
         tally.compare((uint64_t)vmaf_mtl_soft_trunc(soft_of(v)), (uint64_t)(int64_t)v, v, 0.0);
     }
     for (unsigned i = 0u; i < kSamples; i++) {
@@ -685,7 +685,7 @@ mu_message_t test_soft_to_float_any_covers_every_regime()
 {
     Tally tally("soft_to_float_any");
     Sequence s(12u);
-    for (double d : kToFloatEdges) {
+    for (const double d : kToFloatEdges) {
         tally.compare(fbits_of(vmaf_mtl_soft_to_float_any(soft_of(d))),
                       fbits_of(native_to_float(d)), d, 0.0);
     }
@@ -704,7 +704,7 @@ mu_message_t test_soft_to_float_any_covers_every_regime()
 /* Signed operations                                                   */
 /* ------------------------------------------------------------------ */
 
-typedef VmafMtlSoftSigned (*SignedBinary)(VmafMtlSoftSigned, VmafMtlSoftSigned);
+using SignedBinary = VmafMtlSoftSigned (*)(VmafMtlSoftSigned, VmafMtlSoftSigned);
 
 void compare_signed(Tally &tally, SignedBinary soft, NativeBinary native, double a, double b)
 {
@@ -882,10 +882,11 @@ bool bit_of(VmafMtlU128 a, unsigned i)
 
 void set_bit(VmafMtlU128 &a, unsigned i)
 {
-    if (i < 64u)
+    if (i < 64u) {
         a.lo |= UINT64_C(1) << i;
-    else if (i < 128u)
+    } else if (i < 128u) {
         a.hi |= UINT64_C(1) << (i - 64u);
+    }
 }
 
 /* a * b from 16-bit digits. */
@@ -897,23 +898,24 @@ VmafMtlU128 reference_mul(uint64_t a, uint64_t b)
             digit[i + j] += ((a >> (16u * i)) & 0xFFFFu) * ((b >> (16u * j)) & 0xFFFFu);
         }
     }
-    VmafMtlU128 r = {0u, 0u};
+    VmafMtlU128 r = {.hi = 0u, .lo = 0u};
     uint64_t carry = 0u;
     for (unsigned k = 0u; k < 8u; k++) {
         const uint64_t total = digit[k] + carry;
         const uint64_t part = total & 0xFFFFu;
         carry = total >> 16;
-        if (k < 4u)
+        if (k < 4u) {
             r.lo |= part << (16u * k);
-        else
+        } else {
             r.hi |= part << (16u * (k - 4u));
+        }
     }
     return r;
 }
 
 VmafMtlU128 reference_shl(uint64_t value, unsigned shift)
 {
-    VmafMtlU128 r = {0u, 0u};
+    VmafMtlU128 r = {.hi = 0u, .lo = 0u};
     for (unsigned i = 0u; i < 64u; i++) {
         if (((value >> i) & 1u) != 0u)
             set_bit(r, i + shift);
@@ -923,7 +925,7 @@ VmafMtlU128 reference_shl(uint64_t value, unsigned shift)
 
 VmafMtlShifted reference_shr_round(VmafMtlU128 a, unsigned shift)
 {
-    VmafMtlShifted r = {0u, false, false};
+    VmafMtlShifted r = {.kept = 0u, .halfway = false, .sticky = false};
     for (unsigned j = 0u; j < 64u; j++) {
         r.kept |= bit_of(a, shift + j) ? UINT64_C(1) << j : UINT64_C(0);
     }
@@ -937,7 +939,7 @@ VmafMtlShifted reference_shr_round(VmafMtlU128 a, unsigned shift)
 /* a - b by a ripple borrow over 128 bits. */
 VmafMtlU128 reference_sub(VmafMtlU128 a, uint64_t b)
 {
-    VmafMtlU128 r = {0u, 0u};
+    VmafMtlU128 r = {.hi = 0u, .lo = 0u};
     unsigned borrow = 0u;
     for (unsigned i = 0u; i < 128u; i++) {
         const unsigned x = bit_of(a, i) ? 1u : 0u;
@@ -987,7 +989,7 @@ mu_message_t test_u128_shifts_msb_and_sub()
     unsigned wrong[4] = {0u, 0u, 0u, 0u};
     for (unsigned i = 0u; i < 128u * 8192u; i++) {
         const unsigned shift = i % 128u;
-        const VmafMtlU128 a = {random_word(s, i), random_word(s, i + 1u)};
+        const VmafMtlU128 a = {.hi = random_word(s, i), .lo = random_word(s, i + 1u)};
         const uint64_t v = random_word(s, i + 2u);
         wrong[0] += same_u128(vmaf_mtl_u128_shl(v, shift), reference_shl(v, shift)) ? 0u : 1u;
         const VmafMtlShifted got = vmaf_mtl_u128_shr_round(a, shift);
@@ -1032,9 +1034,8 @@ mu_message_t test_rounding_helpers()
     return nullptr;
 }
 
-} // namespace
-
-mu_message_t run_tests(void)
+/* The 128-bit helpers, the rounding helpers and the first operations. */
+mu_message_t run_positive_tests_a()
 {
     mu_run_test(test_u128_mul_is_the_full_product);
     mu_run_test(test_u128_shifts_msb_and_sub);
@@ -1042,20 +1043,49 @@ mu_message_t run_tests(void)
     mu_run_test(test_soft_add_is_the_fp64_sum);
     mu_run_test(test_soft_mul_is_the_fp64_product);
     mu_run_test(test_soft_div_is_the_fp64_quotient);
+    return nullptr;
+}
+
+/* Division by digits, comparison, truncation and the float conversions in. */
+mu_message_t run_positive_tests_b()
+{
     mu_run_test(test_soft_div_digits_is_soft_div);
     mu_run_test(test_soft_less_is_the_fp64_comparison);
     mu_run_test(test_soft_trunc_is_the_conversion);
     mu_run_test(test_soft_sub_trunc_is_the_truncated_difference);
     mu_run_test(test_soft_from_float_is_exact);
     mu_run_test(test_soft_from_float_any_takes_subnormals);
+    return nullptr;
+}
+
+/* The remaining conversions. */
+mu_message_t run_positive_tests_c()
+{
     mu_run_test(test_soft_from_u32_is_exact);
     mu_run_test(test_soft_to_float_rounds_to_nearest_even);
     mu_run_test(test_soft_to_float_any_covers_every_regime);
+    return nullptr;
+}
+
+/* The signed operations and conversions. */
+mu_message_t run_signed_tests()
+{
     mu_run_test(test_signed_add_sub_are_the_fp64_operations);
     mu_run_test(test_signed_mul_div_are_the_fp64_operations);
     mu_run_test(test_signed_bits_round_trip);
     mu_run_test(test_signed_from_integers_are_the_conversions);
     mu_run_test(test_signed_from_float_is_exact);
     mu_run_test(test_signed_unary_operations);
+    return nullptr;
+}
+
+} // namespace
+
+mu_message_t run_tests(void)
+{
+    mu_assert_msg(run_positive_tests_a());
+    mu_assert_msg(run_positive_tests_b());
+    mu_assert_msg(run_positive_tests_c());
+    mu_assert_msg(run_signed_tests());
     return nullptr;
 }
