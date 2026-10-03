@@ -13,8 +13,9 @@ Fork ports widened those to ``double`` (PR #760, PR #44), which moved every
 This test reads the sources:
 
 - the quantisation step keeps ``r``, ``temp`` and ``Q`` in ``float`` and forms
-  ``params->k * temp * temp`` without a promoted operand, in the CPU header and
-  in the Metal twin's own copy (which cannot be run on a Linux runner);
+  ``params->k * temp * temp`` without a promoted operand, in the CPU header;
+  the Metal twin, which kept its own copy until ADR-1498, takes its weights
+  from ``adm_csf_rfactor_s()`` and must not bring a copy back;
 - the Barten header promotes no operand of a float product or quotient, and
   writes the promotion of each result out. The SYCL and Metal twins of integer
   ADM compile that header as C++, where ``pow(float, float)`` and
@@ -45,9 +46,9 @@ STEP_FLOAT_LOCALS = ("float r =", "float temp =", "float Q =")
 STEP_DOUBLE_LOCAL = re.compile(r"\bdouble\s+(?:r|temp|Q)\b")
 STEP_WIDENED_OPERAND = re.compile(r"\(\s*double\s*\)\s*(?:temp\b|params->k\b)")
 
-# metal/float_adm_metal.mm::fadm_dwt_quant_step()
-METAL_FLOAT_PRODUCT = re.compile(r"fadm_dwt_k_Y\s*\*\s*temp\s*\*\s*temp")
-METAL_WIDENED_OPERAND = re.compile(r"\(\s*double\s*\)\s*(?:temp\b|fadm_dwt_k_Y\b)")
+# metal/float_adm_metal.mm: the CPU's routine, no copy of the step (ADR-1498).
+METAL_REFERENCE_CALL = "adm_csf_rfactor_s("
+METAL_COPY = re.compile(r"\b\w*dwt_quant_step\s*\(|\b\w*dwt_k_Y\b|\bbarten_csf\s*\(")
 
 # barten_csf_tools.h: the float expressions upstream forms, each with its
 # result promoted explicitly where a math function takes it.
@@ -121,14 +122,12 @@ def _step_failures(sources: dict[str, str]) -> list[str]:
 
 
 def _metal_failures(sources: dict[str, str]) -> list[str]:
+    code = COMMENT.sub(" ", sources[METAL])
     failures: list[str] = []
-    body = _function_body(sources[METAL], "fadm_dwt_quant_step")
-    if body is None:
-        return [f"{METAL}: no definition of fadm_dwt_quant_step()"]
-    if not METAL_FLOAT_PRODUCT.search(body):
-        failures.append(f"{METAL}: fadm_dwt_quant_step() does not form fadm_dwt_k_Y * temp * temp")
-    if METAL_WIDENED_OPERAND.search(body):
-        failures.append(f"{METAL}: fadm_dwt_quant_step() promotes an operand of the exponent")
+    if METAL_REFERENCE_CALL not in code:
+        failures.append(f"{METAL}: the CSF weights do not come from adm_csf_rfactor_s()")
+    if METAL_COPY.search(code):
+        failures.append(f"{METAL}: a copy of the CSF step is back")
     return failures
 
 
@@ -167,17 +166,25 @@ class FloatAdmCsfUpstreamContract(unittest.TestCase):
                 failures = _contract_failures(sources)
                 self.assertTrue(any("keeps an intermediate in double" in item for item in failures))
 
-    def test_widened_exponent_is_detected_in_both_copies(self) -> None:
+    def test_widened_exponent_is_detected(self) -> None:
         sources = _sources()
         sources[ADM_TOOLS] = STEP_FLOAT_PRODUCT.sub(
             "params->k * (double)temp * temp", sources[ADM_TOOLS]
         )
-        sources[METAL] = METAL_FLOAT_PRODUCT.sub(
-            "(double)fadm_dwt_k_Y * (double)temp * (double)temp", sources[METAL]
-        )
         failures = _contract_failures(sources)
         self.assertTrue(any(ADM_TOOLS in item and "promotes" in item for item in failures))
-        self.assertTrue(any(METAL in item and "promotes" in item for item in failures))
+
+    def test_a_metal_copy_of_the_step_is_detected(self) -> None:
+        sources = _sources()
+        sources[
+            METAL
+        ] += "\nstatic float fadm_dwt_quant_step(int lambda, int theta) { return 0; }\n"
+        failures = _contract_failures(sources)
+        self.assertTrue(any("a copy of the CSF step is back" in item for item in failures))
+        sources = _sources()
+        sources[METAL] = sources[METAL].replace(METAL_REFERENCE_CALL, "local_rfactor(")
+        failures = _contract_failures(sources)
+        self.assertTrue(any("adm_csf_rfactor_s()" in item for item in failures))
 
     def test_every_promoted_barten_operand_is_detected(self) -> None:
         # The forms PR #44 introduced, planted one at a time.

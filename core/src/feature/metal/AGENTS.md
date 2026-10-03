@@ -429,12 +429,9 @@ Metal float-ADM change as unverified until someone runs
   PR. Device-free guard: `core/test/test_integer_adm_quant_step_contract.py`.
   Not run on device since edit (no Apple hardware on lanes).
 
-## `float_adm_metal.mm`: quantisation step (ADR-1489)
+## `float_adm_metal.mm`: CSF weights from the CPU (ADR-1489, ADR-1498)
 
-- `fadm_dwt_quant_step()` = copy of CPU `dwt_quant_step()`
-  (`core/src/feature/adm_tools.h`, upstream statements): `float r`,
-  `float temp`, exponent `fadm_dwt_k_Y * temp * temp` in named `float`, then
-  `pow(10.0, (double)exponent)`. No `(double)` on product operand. CPU
-  statement changes -> this copy, same PR. Device-free guard:
-  `core/test/test_float_adm_csf_upstream_contract.py`. Not run on device
-  since edit (no Apple hardware on lanes).
+- No copy of `dwt_quant_step()` since ADR-1498: weights =
+  `adm_csf_rfactor_s()` (`adm_float_reference.h`) with every CPU option,
+  `adm_f1sN` / `adm_f2sN` included. Never bring a local step back. Guard:
+  `core/test/test_float_adm_csf_upstream_contract.py`.
