@@ -303,6 +303,36 @@ The same parity tests build on every host as self-tests
 standing in for the twin: every `==` case must pass there, so a wrong fixture,
 key or option string fails CI before it reaches a tester.
 
+### What a ported twin computes
+
+[ADR-1498](../../adr/1498-metal-twins-exact-designs.md) ports the Metal
+twins to the designs that make the CUDA, HIP and SYCL twins return the CPU's
+scores bit for bit. Every `.metal` file builds with
+`-fno-fast-math -ffp-contract=off`, the arithmetic of each twin lives in a
+header that compiles both as Metal Shading Language and as host C, and a host
+test holds that header against the CPU extractor value by value. Until a
+tester's report shows a twin's parity test passing on an Apple GPU, its state
+row stays open.
+
+| Twin | What changed for a user | Host proof |
+| --- | --- | --- |
+| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences (integer sum of the CPU's `float` terms). | `test_metal_float_psnr_math` |
+| `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares). | `test_metal_float_moment_math` |
+| `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. | `test_metal_integer_adm_math` |
+| `integer_motion_metal` | Differences frames before the blur, as the CPU; emits `motion_sad_score` and `motion3`; CPU option table (`motion_add_uv` is gone); `motion2` / `motion3` from the CPU's window code. | `test_metal_integer_motion_math` |
+| `integer_motion_v2_metal` | Same window code; `motion_fps_weight` and `motion_max_val` applied per frame, as the CPU. | `test_metal_motion_v2_exact_contract.py` |
+| `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above 2^32); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
+| `integer_vif_metal` | In a model run, frames below 16 pixels go to the CPU `vif`; a direct request on them fails at init. Borders fold as the CPU's mirror. | `test_metal_integer_vif_math` |
+| `integer_cambi_metal` | CPU option table except `heatmaps_path`. | `test_metal_twin_option_tables_contract.py` |
+| `float_motion_metal` | Row sums in the CPU's order, `motion3` and the CPU's nine options. | `test_metal_float_motion_math` |
+| `integer_ciede_metal` | `ciede.c`'s arithmetic on fp32 pairs, one float per pixel summed in raster order. | `test_metal_ciede_math` |
+| `float_adm_metal` | Frames below 17x17 are refused at init, as the CPU refuses them. | `test_metal_float_adm_exact_contract.py` |
+
+Options that a twin accepts are now its CPU extractor's, with the same names,
+defaults and ranges, so a feature string that works with `--backend cpu` works
+with `--backend metal`. `integer_cambi_metal` rejects `heatmaps_path`, because
+the CPU's heatmap writer is internal to `cambi.c`.
+
 ## References
 
 - [ADR-0361](../../adr/0361-metal-compute-backend.md) — original

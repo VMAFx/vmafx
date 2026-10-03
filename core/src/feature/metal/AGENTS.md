@@ -167,17 +167,14 @@ when conversion happens.
 
 ## Rebase-sensitive invariants (motion_fps_weight)
 
-- **`motion_fps_weight` cross-backend parity** — see canonical
+- **`motion_fps_weight` = CPU's, per frame (ADR-1498)** — see canonical
   invariant note in [`../cuda/AGENTS.md`](../cuda/AGENTS.md).
-  `integer_motion_v2_metal.mm` and `float_motion_metal.mm` both carry
-  `motion_fps_weight` option and apply it identically to CUDA / SYCL /
-  Vulkan / HIP twins: `motion_v2` applies weight in `flush()` to both
-  scores before min; `float_motion` applies it in `collect()` (index
-  >= 2, to both `w_cur` and `w_prev` before min) and in `flush()`
-  (scaled tail emission). When `motion_fps_weight = 1.0` (default),
-  arithmetic is no-op and `places=4` gate must pass. Any future
-  change to weight application math must span all motion-family GPU
-  twins in same PR.
+  `integer_motion_metal`, `motion_v2_metal`: `collect()` stores
+  `MIN(sad / 256. / (w * h) * motion_fps_weight, motion_max_val)` (CPU
+  `extract()`), `flush()` = `vmaf_motion_window_flush()` only, no own
+  window. `float_motion_metal`: motion / motion2 / debug score =
+  `MIN(score * motion_fps_weight, motion_max_val)`. Parity at `==`
+  (`test_metal_*_parity`), not places=4.
 
 ## Registration coverage invariant
 
@@ -256,17 +253,66 @@ lookups back into the runtime test. See Research-2091.
 - [ADR-0361](../../../../docs/adr/0361-metal-compute-backend.md) — scaffold (T8-1), origin
 - [ADR-0214](../../../../docs/adr/0214-gpu-parity-ci-gate.md) — `places=4` cross-backend parity gate
 
+## Exact designs of the Metal twins (ADR-1498)
+
+Twins = CPU bits by construction, on the CUDA / HIP / SYCL exact designs. No
+Apple device on lanes: arithmetic checked on host only; device = tester report
+(ADR-1496). Every `.metal` compiles `-fno-fast-math -ffp-contract=off`
+(`metal_shader_strict_fp_args`, one list, `test_metal_shader_build_contract`).
+
+- **Per-sample arithmetic** = header on `metal_portable.h` (MSL + host
+  C/C++ subset: values in/out, no ptr/ref param, no double / long long /
+  `ULL` / static local / `std::`). Kernel includes it; host test compiles it
+  against CPU. Change to the CPU routine -> header, same PR.
+- **fp64 in integers** = `metal_soft_double.h` / `metal_soft_signed.h`:
+  SYCL `sycl_soft_double.h` / `sycl_soft_signed.h` statement for statement;
+  mapping at header top (`vmaf_sycl_soft::f` -> `vmaf_mtl_f`, `S` ->
+  `VmafMtlS`, `kX` -> `VMAF_MTL_SOFT_X`). Change one copy -> other, same PR
+  (RC5 row `T-METAL-SYCL-FP64-FREE-ARITHMETIC-COPIES-2026-10-03`). Metal
+  masks shift counts to 6 bits -> keep every `shift >= 64` guard. Guards:
+  `test_metal_soft_double`, `test_metal_soft_double_contract.py`.
+- **float_psnr**: term = `vmaf_mtl_fpsnr_term()` (fp32 product of raw diff,
+  uint32); group sum ulong in threadgroup memory (no `simd_sum`: excludes
+  64-bit); host uint64 + CUDA `float_psnr_noise()` form.
+- **float_moment**: 10/12/16-bit kernel adds `vmaf_mtl_moment_float_square()`,
+  never `rv * rv`; host uint64 sum.
+- **integer ADM**: decouple = `metal_integer_adm_math.h`: reciprocal = CPU
+  integer `2^30 / o` (never fp32 quotient), gain limit =
+  `adm_gain_limit_product()` of shared `adm_gain_limit.h` (Metal guard keeps
+  other `-E` byte-identical; keep line count), `IadmCsf` / `IadmCsfHost`
+  gain fields identical.
+- **integer motion**: diff first (`metal_integer_motion_math.h`), raw ring 2
+  (3 with five-frame window) slots, `collect()` = CPU SAD score first in
+  `provided_features`, table = `integer_motion.c`'s. No `motion_add_uv`, no
+  `motion_y_score`.
+- **psnr**: exact uint64 SSE per threadgroup (lid 0 serial sum); host CPU MSE
+  expr + `psnr_score.h`; `flush()` = apsnr; TEMPORAL | METAL; chroma by pixel
+  format.
+- **integer vif**: min dim 16 from `vif_filter1d_width`; `check_context` ->
+  CPU `vif`; init -EINVAL before device work; border =
+  `vmaf_mtl_vif_mirror()` (fold 2*(sup-1)), never single bounce.
+- **float_motion**: blur stores |cur-prev| transposed (64-row groups),
+  `float_motion_row_sum` one thread/row left-to-right fp32, host
+  `vmaf_float_motion_score_from_row_sads()`; every per-sample op in
+  `metal_float_motion_math.h`; motion3 = `motion_blend()` of motion2,
+  `mbf` / `mbo` in CPU order; table = `float_motion.c`'s (nine options, order
+  spells feature names).
+- **ciede**: `ciede_ff_math.h` `pixel()` on `metal_ciede_math.h` primitives;
+  one float/pixel, host `ciede_frame_sum()`; constants `make_constants(bpc)`
+  on host. Shared `ff_pair.h` / `ff_math.h` / `ciede_ff_math.h`
+  `VMAF_FF_MSL_SUBSET` branches: edit only with byte-identical `-E -P` proof on
+  SYCL + HIP TUs; keep `#endif` directly above `#include "ff_math.h"`.
+- **cambi table**: CPU's except `heatmaps_path` (CPU writers static in
+  `cambi.c`); helpers from `cambi_internal.h` only.
+- **float_adm**: `adm_frame_size_check()` first in `init()`.
+
 ## motion3_v2 cross-twin invariant (ADR-1108)
 
-- `integer_motion_v2_metal` emits `motion3_v2_score` host-side in its
-  flush, mirroring CPU `integer_motion_v2.c::flush` and CUDA twin
-  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
-  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value`
-  seed for `i < min_idx (= 1)`, and optional 2-tap
-  `motion_moving_average`, via shared `motion_blend_tools.h` helper.
-  Any change to CPU flush blend/clip/seed/average logic must be
-  mirrored into all four GPU twins (cuda/sycl/hip/metal) in same PR
-  to keep `places=4` `test_metal_motion_v2_parity` gate green.
+- `integer_motion_v2_metal` and `integer_motion_metal` derive `motion2` /
+  `motion3` with the CPU's own `vmaf_motion_window_flush()` (blend, clip,
+  seed, moving average, five-frame window), never a copy. One-frame input
+  -> 0 / 0 as CPU. Guard: `test_metal_motion_v2_exact_contract.py`,
+  `test_metal_integer_motion_exact_contract.py`.
 
 ## mv2_mirror cross-twin invariant (ADR-1176)
 
