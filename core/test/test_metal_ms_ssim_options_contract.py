@@ -59,8 +59,8 @@ def production_wiring_problems(metal_source: str) -> list[str]:
     finite_guard = "vmaf_feature_validate_finite_scores_named"
     if finite_guard not in reducer:
         problems.append("Metal reducer does not validate every L/C/S atom")
-    elif reducer.index(finite_guard) > reducer.index("pow("):
-        problems.append("Metal reducer validates L/C/S atoms only after pow")
+    elif reducer.index(finite_guard) > reducer.index("vmaf_mtl_ms_ssim_combine("):
+        problems.append("Metal reducer validates L/C/S atoms only after the scale combine")
     elif "atoms, 3u" not in reducer:
         problems.append("Metal reducer validates fewer than the three L/C/S atoms")
 
