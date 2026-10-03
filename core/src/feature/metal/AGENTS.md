@@ -273,7 +273,9 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   `test_metal_soft_double`, `test_metal_soft_double_contract.py`.
 - **float_psnr**: term = `vmaf_mtl_fpsnr_term()` (fp32 product of raw diff,
   uint32); group sum ulong in threadgroup memory (no `simd_sum`: excludes
-  64-bit); host uint64 + CUDA `float_psnr_noise()` form.
+  64-bit); threadgroup = 256 pixels of one row; host
+  `vmaf_float_psnr_row_noise()` (`float_psnr_rows.h`, ADR-1499): segments
+  exact, rows into double in order. Never one frame total rounded once.
 - **float_moment**: 10/12/16-bit kernel adds `vmaf_mtl_moment_float_square()`,
   never `rv * rv`; host uint64 sum. Past 2^53 units (ADR-1497):
   `metal_float_moment_sum.h` = statement-for-statement copy of

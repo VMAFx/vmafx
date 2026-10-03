@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin float_psnr_metal's sums to exact integers (ADR-1498; the design of ADR-1455).
+"""Pin float_psnr_metal's sums to exact integers in the CPU's row order (ADR-1498, ADR-1499).
 
 ``float_psnr.c`` squares each sample difference in ``float`` and adds the
 squares in ``double``; that sum is exact while it is below 2^53 units of
@@ -12,9 +12,14 @@ which is exact at 8 bits only (T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02).
 The kernel now forms the raw sample difference's float square as an integer
 (``vmaf_mtl_fpsnr_term()`` in ``metal_float_psnr_math.h``, the CPU's term
 times scaler^2), each threadgroup adds its terms as ``ulong`` in threadgroup
-memory and stores one ``ulong``, and the host adds the group sums in
-``uint64`` and divides the exact total by scaler^2 and the pixel count, as
-``float_psnr_cuda.c::float_psnr_noise()`` does.
+memory and stores one ``ulong``, and the host divides by scaler^2 and the
+pixel count, as ``float_psnr_cuda.c::float_psnr_noise()`` does.
+
+Since ADR-1499 a threadgroup covers 256 pixels of one row, and the host adds
+each row's segments exactly and the rows into a double in order
+(``vmaf_float_psnr_row_noise()`` in ``float_psnr_rows.h``), as ``float_psnr.c``
+adds its rows: past 2^53 units those adds round, and a frame total rounded
+once is another number.
 
 Device-free: reads the sources only. ``test_metal_float_psnr_math`` holds the
 term against the CPU on the host; ``test_metal_float_psnr_parity`` compares the
@@ -65,14 +70,22 @@ KERNEL_PIECES = (
 )
 HOST_SUM = (
     "const uint64_t *partials = (const uint64_t *)s->rb.host_view;",
-    "uint64_t total = 0u;",
-    "total += partials[i];",
+    "const double total = vmaf_float_psnr_row_noise(partials, s->frame_h, s->per_row);",
     "const double scaler = (double)(1u << (s->bpc - 8u));",
-    "return ((double)total / (scaler * scaler)) / n_pix;",
+    "return (total / (scaler * scaler)) / n_pix;",
 )
 HOST_PIECES = (
     "s->partials_count * sizeof(uint64_t));",
     "const double mse = float_psnr_noise(s);",
+    '#include "float_psnr_rows.h"',
+)
+# ADR-1499: one threadgroup per 256-pixel segment of one row.
+HOST_ROWS = (
+    "#define FPSNR_SEGMENT 256u",
+    "s->per_row = (w + FPSNR_SEGMENT - 1u) / FPSNR_SEGMENT;",
+    "s->partials_count = (size_t)s->per_row * h;",
+    "MTLSize tg = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
+    "MTLSize grid = MTLSizeMake(s->per_row, s->frame_h, 1);",
 )
 # The CPU's term and its sum, which the header and the host mirror.
 REFERENCE_LINES = (
@@ -145,8 +158,10 @@ def _host_failures(host: str) -> list[str]:
         failures.append(
             f"{HOST}: the host does not add the integer sums and divide the exact total"
         )
-    if re.search(r"\bdouble (?:total|mse_sum)\b", noise) or "const float *parts" in code:
-        failures.append(f"{HOST}: the host adds the group sums in floating point")
+    if re.search(r"\bdouble mse_sum\b|\buint64_t total\b", noise) or "const float *parts" in code:
+        failures.append(f"{HOST}: the host does not add the rows in the CPU's order")
+    if any(piece not in code for piece in HOST_ROWS):
+        failures.append(f"{HOST}: a threadgroup is not one 256-pixel segment of one row")
     if any(piece not in code for piece in HOST_PIECES):
         failures.append(f"{HOST}: the readback is not one uint64 per threadgroup")
     return failures
@@ -207,9 +222,23 @@ class FloatPsnrMetalExactContract(unittest.TestCase):
         )
         self._assert_detected(failures, "does not add the header's integer terms")
 
-    def test_float_host_sum_is_detected(self) -> None:
-        failures = self._edited(HOST, "    uint64_t total = 0u;", "    double total = 0.0;")
-        self._assert_detected(failures, "host adds the group sums in floating point")
+    def test_frame_total_rounded_once_is_detected(self) -> None:
+        # The ADR-1455 form: one exact frame total, rounded once.
+        failures = self._edited(
+            HOST,
+            "    const double total = vmaf_float_psnr_row_noise(partials, s->frame_h, s->per_row);",
+            "    uint64_t total = 0u;\n    for (size_t i = 0; i < s->partials_count; i++) {\n"
+            "        total += partials[i];\n    }",
+        )
+        self._assert_detected(failures, "not add the rows in the CPU's order")
+
+    def test_square_threadgroup_is_detected(self) -> None:
+        failures = self._edited(
+            HOST,
+            "    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
+            "    MTLSize tg   = MTLSizeMake(16, 16, 1);",
+        )
+        self._assert_detected(failures, "not one 256-pixel segment of one row")
 
     def test_float_readback_is_detected(self) -> None:
         failures = self._edited(
@@ -251,8 +280,8 @@ class FloatPsnrMetalExactContract(unittest.TestCase):
     def test_host_division_in_another_order_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    return ((double)total / (scaler * scaler)) / n_pix;",
-            "    return (double)total / (scaler * scaler * n_pix);",
+            "    return (total / (scaler * scaler)) / n_pix;",
+            "    return total / (scaler * scaler * n_pix);",
         )
         self._assert_detected(failures, "divide the exact total")
 

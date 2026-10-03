@@ -12,10 +12,12 @@
  *  2^(bpc - 8)), so its running sum is exact and is the exact sum of its
  *  terms. Each thread forms the CPU's term as an integer in that unit
  *  (vmaf_mtl_fpsnr_term(), metal_float_psnr_math.h: one fp32 product of the
- *  raw sample difference, below 2^32); the threadgroup adds its 256 terms in
- *  64 bits and stores one ulong per threadgroup; the host adds those in
- *  uint64 and divides by scaler^2 and the pixel count
- *  (float_psnr_metal.mm::float_psnr_noise()).
+ *  raw sample difference, below 2^32); a threadgroup covers 256 pixels of
+ *  one row, adds its terms in 64 bits and stores one ulong; the host adds
+ *  each row's segments exactly and the rows into a double in order, as
+ *  float_psnr.c adds its rows, which keeps the CPU's rounding past 2^53
+ *  units (vmaf_float_psnr_row_noise(), ADR-1499), and divides by scaler^2
+ *  and the pixel count (float_psnr_metal.mm::float_psnr_noise()).
  *
  *  A fp32 threadgroup sum, which this kernel had, is exact only at 8 bits: at
  *  10, 12 and 16 bits it rounds once a group's differences are large. MSL has
@@ -38,7 +40,7 @@ using namespace metal;
 
 #include "metal_float_psnr_math.h"
 
-/* The 16 x 16 threadgroup the host dispatches. */
+/* The threadgroup the host dispatches: 256 pixels of one row (ADR-1499). */
 #define FPSNR_THREADS_PER_GROUP 256u
 
 /* The threadgroup's sum of `mine` over its threads, at partials[group]. The

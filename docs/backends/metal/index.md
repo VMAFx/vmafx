@@ -316,7 +316,7 @@ row stays open.
 
 | Twin | What changed for a user | Host proof |
 | --- | --- | --- |
-| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences (integer sum of the CPU's `float` terms). | `test_metal_float_psnr_math` |
+| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences: integer sums of the CPU's `float` terms per row segment, rows added in the CPU's order, so frames past 2^53 units match too. | `test_metal_float_psnr_math` |
 | `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares), and past 2^53 units of the sum (16-bit frames above about 2 megapixels) it forms the CPU's rounded sum with five more kernels; a device whose pipelines cannot run 256 threads per threadgroup fails at init. | `test_metal_float_moment_math`, `test_metal_float_moment_sum` |
 | `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. | `test_metal_integer_adm_math` |
 | `integer_motion_metal` | Differences frames before the blur, as the CPU; emits `motion_sad_score` and `motion3`; CPU option table (`motion_add_uv` is gone); `motion2` / `motion3` from the CPU's window code. | `test_metal_integer_motion_math` |

@@ -6,9 +6,12 @@
  *  float_psnr feature extractor on the Metal backend (T8-1d / ADR-0421).
  *  Dispatches `float_psnr_kernel_{8,16}bpc` from float_psnr.metal.
  *
- *  Noise: the kernel stores one uint64 per 16x16 threadgroup, the exact sum
- *  of the CPU's float squares in units of 1 / scaler^2 (ADR-1498, the design
- *  of ADR-1455); float_psnr_noise() adds them and divides as the CPU does.
+ *  Noise: the kernel stores one uint64 per threadgroup of 256 pixels of one
+ *  row, the exact sum of the CPU's float squares in units of 1 / scaler^2
+ *  (ADR-1498, the design of ADR-1455); float_psnr_noise() adds each row's
+ *  segments exactly and the rows into a double in order, as float_psnr.c
+ *  adds its rows (vmaf_float_psnr_row_noise(), ADR-1499), and divides as the
+ *  CPU does.
  *
  *  Score: peak² / max(mse, 1e-10) via 10·log10. `psnr_max` is reported
  *  verbatim for a zero-noise pair (infinity sentinel) and, unless the
@@ -35,6 +38,7 @@ extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
+#include "float_psnr_rows.h"
 #include "libvmaf/picture.h"
 
 #include "../../metal/common.h"
@@ -46,9 +50,13 @@ extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
+/* Pixels per threadgroup: one segment of one row; FPSNR_THREADS_PER_GROUP
+ * in float_psnr.metal. */
+#define FPSNR_SEGMENT 256u
+
 typedef struct FloatPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
-    VmafMetalKernelBuffer rb;        /* uint64 group sums, grid_w × grid_h */
+    VmafMetalKernelBuffer rb;        /* uint64 row-segment sums, per_row × h */
     VmafMetalContext *ctx;
     void *pso_8bpc;
     void *pso_16bpc;
@@ -62,6 +70,7 @@ typedef struct FloatPsnrStateMetal {
     bool uncapped;
     size_t plane_bytes;
     size_t partials_count;
+    unsigned per_row; /* threadgroups (256-pixel segments) per row */
     unsigned frame_w;
     unsigned frame_h;
     unsigned bpc;
@@ -135,9 +144,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_ctx; }
 
     {
-        const size_t grid_w = (w + 15) / 16;
-        const size_t grid_h = (h + 15) / 16;
-        s->partials_count   = grid_w * grid_h;
+        s->per_row        = (w + FPSNR_SEGMENT - 1u) / FPSNR_SEGMENT;
+        s->partials_count = (size_t)s->per_row * h;
         err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
                                              s->partials_count * sizeof(uint64_t));
     }
@@ -221,8 +229,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
-    MTLSize tg   = MTLSizeMake(16, 16, 1);
-    MTLSize grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
+    /* One threadgroup per 256-pixel segment of one row (ADR-1499). */
+    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);
+    MTLSize grid = MTLSizeMake(s->per_row, s->frame_h, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 
@@ -234,23 +243,22 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 /* float_psnr_noise - the frame's mean squared difference, as float_psnr.c's.
  *
  * The group sums are exact integers of the CPU's own terms in units of
- * 1 / scaler^2, so their uint64 sum is the exact sum of the terms, which is
- * what the CPU's running double holds while it is below 2^53 units (ADR-1455).
+ * 1 / scaler^2, each group a segment of one row (ADR-1455). The CPU's rows
+ * are those rows' exact sums, added row after row into a double, which
+ * vmaf_float_psnr_row_noise() repeats, past 2^53 units included (ADR-1499).
  * Dividing by scaler^2, a power of two, and by the pixel count are the CPU's
- * operations. Past 2^53 units (16 bits only: a PSNR below 6 dB at 3840x2160)
- * the CPU rounds as it adds its rows and the conversion below rounds once;
- * test_metal_float_psnr_parity holds the derived bound there.
+ * operations.
  */
 static double float_psnr_noise(const FloatPsnrStateMetal *s)
 {
     const uint64_t *partials = (const uint64_t *)s->rb.host_view;
-    uint64_t total = 0u;
-    for (size_t i = 0; partials != NULL && i < s->partials_count; i++) {
-        total += partials[i];
+    if (partials == NULL) {
+        return 0.0;
     }
+    const double total = vmaf_float_psnr_row_noise(partials, s->frame_h, s->per_row);
     const double scaler = (double)(1u << (s->bpc - 8u));
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    return ((double)total / (scaler * scaler)) / n_pix;
+    return (total / (scaler * scaler)) / n_pix;
 }
 
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,

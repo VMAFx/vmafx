@@ -123,7 +123,7 @@
   },
   {
    "id": "T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02",
-   "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences",
+   "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences, past 2^53 units included",
    "cases": [
     {
      "test": "test_metal_float_psnr_parity",
@@ -156,6 +156,10 @@
     {
      "test": "test_metal_float_psnr_parity",
      "case": "test_float_psnr_identical_16bit"
+    },
+    {
+     "test": "test_metal_float_psnr_parity",
+     "case": "test_float_psnr_16bit_past_2_53_exact"
     }
    ],
    "metrics": [
