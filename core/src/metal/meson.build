@@ -124,6 +124,27 @@ xcrun = find_program('xcrun', required: true)
 # of macOS 14 (Metal Shading Language Specification 4.1, section 1.6.10).
 metal_shader_target_args = ['-std=metal3.1', '-mmacosx-version-min=14.0']
 
+# BEGIN VMAF Metal shader strict FP policy
+# ADR-1498: every .metal kernel compiles without fast math and without FP
+# contraction. The Metal compiler's default is fast math (no NaNs or INFs,
+# reciprocals for division, reassociation, contraction across statements);
+# -fno-fast-math (= -fmetal-math-mode=safe -fmetal-math-fp32-functions=precise)
+# makes fp32 + - * /, sqrt and fma correctly rounded, and -ffp-contract=off
+# stops the contraction safe mode still allows within a statement (Metal
+# Shading Language Specification 4.1, sections 1.6.3 and 8.4). The twins
+# reproduce the CPU's fp32 operations one rounding at a time, as the CUDA
+# (ADR-1403), HIP and SYCL (ADR-1367) policies make theirs do. One list for
+# every kernel; no kernel adds a floating-point flag of its own.
+metal_shader_strict_fp_args = ['-fno-fast-math', '-ffp-contract=off']
+# END VMAF Metal shader strict FP policy
+
+# Kernels include the backend-neutral arithmetic of feature/ and the Metal
+# arithmetic headers of feature/metal/ (metal_portable.h), ADR-1498.
+metal_shader_include_args = [
+    '-I', meson.current_source_dir() / '..' / 'feature',
+    '-I', meson.current_source_dir() / '..' / 'feature' / 'metal',
+]
+
 # One .air per kernel file (core/src/feature/metal/<name>.metal).
 metal_kernel_names = [
     'integer_motion_v2',
@@ -158,6 +179,7 @@ foreach _k : metal_kernel_names
         input: '../feature/metal/' + _k + '.metal',
         output: _k + '.air',
         command: [xcrun, '-sdk', 'macosx', 'metal'] + metal_shader_target_args
+            + metal_shader_strict_fp_args + metal_shader_include_args
             + ['-c', '@INPUT@', '-o', '@OUTPUT@'],
     )
 endforeach
