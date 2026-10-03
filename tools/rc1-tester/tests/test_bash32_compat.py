@@ -173,3 +173,7 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     assert "status=0" in result.stdout, result.stderr
     assert "mapfile" not in result.stderr, result.stderr
     assert "command not found" not in result.stderr.replace("sandbox-exec", ""), result.stderr
+    # The interpreter archive is an input: nothing but the bundle's own files
+    # may be left where the workflow publishes every *.tar.gz.
+    assert not (tmp_path / "out" / "pbs.tar.gz").exists()
+    assert not (tmp_path / "out" / "pbs").exists()
