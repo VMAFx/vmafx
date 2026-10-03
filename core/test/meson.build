@@ -2173,6 +2173,44 @@ test_ordered_sum = executable('test_ordered_sum',
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
 
+# ADR-1498: the host side of core/src/feature/metal/metal_portable.h, the
+# prelude the Metal twins' arithmetic headers compile on in a kernel and in
+# the host tests that hold them against the CPU. Every host.
+test_metal_portable = executable('test_metal_portable',
+    ['test.c', 'test_metal_portable.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_portable', test_metal_portable, suite : ['fast'])
+
+# Host tests and source contracts of the Metal ports (ADR-1498). Each group
+# of ports adds its blocks directly below its own marker line.
+
+# [metal-ports: soft double]
+
+# (end of soft-double group)
+
+# [metal-ports: host steps and option tables]
+
+# (end of host-step group)
+
+# [metal-ports: integer kernels]
+
+# (end of integer-kernel group)
+
+# [metal-ports: float_motion and float_vif]
+
+# (end of float_motion / float_vif group)
+
+# [metal-ports: ssim family]
+
+# (end of ssim group)
+
+# [metal-ports: ciede and float_adm]
+
+# (end of ciede / float_adm group)
+
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     ['test.c', 'test_adm_nonfinite_score.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

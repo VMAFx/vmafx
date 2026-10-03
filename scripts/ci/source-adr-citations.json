@@ -6359,6 +6359,7 @@
         "core/test/test_metal_kernel_registration.c": 1,
         "core/test/test_metal_motion_v2_parity.c": 1,
         "core/test/test_metal_ms_ssim_option_semantics.c": 1,
+        "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_smoke.c": 1,
         "core/test/test_metal_ssimulacra2_parity.c": 1,
         "core/test/test_metal_twin_option_parity.c": 1,
@@ -8118,6 +8119,7 @@
         "core/src/feature/sycl/sycl_float_vif_math.h": 1,
         "core/src/feature/sycl/sycl_ssim_terms.h": 2,
         "core/src/meson.build": 6,
+        "core/src/metal/meson.build": 1,
         "core/test/meson.build": 2,
         "core/test/test_strict_fp_compiler_args.py": 3,
         "core/test/test_sycl_float_motion_parity.c": 1,
@@ -8594,6 +8596,7 @@
         "core/src/feature/hip/integer_ms_ssim_hip.c": 3,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/meson.build": 3,
+        "core/src/metal/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_device_resident_contract.py": 1,
         "core/test/test_cuda_exact_twins.c": 1,
@@ -9349,6 +9352,7 @@
       "sites": {
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
+        "core/src/feature/metal/metal_portable.h": 1,
         "core/src/feature/speed_givens.h": 1,
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
@@ -9718,6 +9722,16 @@
         "tools/rc1-tester/tests/test_prepare_build.py": 1
       },
       "target": "1496-metal-gate-in-tester-bundle.md"
+    },
+    "1498": {
+      "sites": {
+        "core/src/feature/metal/metal_portable.h": 1,
+        "core/src/metal/meson.build": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_metal_portable.c": 1,
+        "core/test/test_metal_shader_build_contract.py": 3
+      },
+      "target": "1498-metal-twins-exact-designs.md"
     }
   },
   "retired": {
