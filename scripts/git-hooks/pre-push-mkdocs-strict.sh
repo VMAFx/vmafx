@@ -6,9 +6,13 @@
 #
 # Detects whether the push touches docs/ or mkdocs.yml; skips entirely if it
 # does not (non-docs pushes see no latency penalty). When docs are touched,
-# runs `mkdocs build --strict --quiet` against a temporary output directory,
-# prints the exact mkdocs error lines on failure, and exits non-zero to block
+# runs `mkdocs build --strict` against a temporary output directory, prints
+# the mkdocs WARNING and ERROR lines on failure, and exits non-zero to block
 # the push.
+#
+# Never add --quiet: it raises the log level to ERROR, so the WARNINGs that
+# --strict counts are never emitted and a build with broken anchors exits 0.
+# scripts/ci/tests/test_pre_push_mkdocs_strict.py fails on that form.
 #
 # Rationale (ADR-0466): audit slice G found that 38 of 50 master pushes failed
 # the docs.yml CI lane for trivial mkdocs strict-mode breakage (broken anchors,
@@ -35,8 +39,7 @@ if [[ "${SKIP:-}" == *mkdocs-strict* ]]; then
 fi
 
 # ── Repo root ─────────────────────────────────────────────────────────────────
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -z "${repo_root}" ]; then
+if ! repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || [ -z "${repo_root}" ]; then
   exit 0
 fi
 
@@ -52,7 +55,9 @@ elif ! git rev-parse --verify origin/master >/dev/null 2>&1; then
   # No remote reference yet (first push) — run the check conservatively.
   touched_docs=1
 else
-  base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
+  if ! base="$(git merge-base origin/master HEAD 2>/dev/null)"; then
+    base=""
+  fi
   if [ -n "${base}" ]; then
     # Consume the full diff before matching: grep -q can close a large pipe
     # early, making Git fail with SIGPIPE under pipefail and skipping docs.
@@ -88,28 +93,39 @@ mkdocs_out="$(mktemp)"
 trap 'rm -f "${mkdocs_out}"; rm -rf "${tmp_site}"' EXIT
 
 set +e
-mkdocs build --strict --quiet \
+mkdocs build --strict \
   --config-file "${repo_root}/mkdocs.yml" \
   --site-dir "${tmp_site}" \
   >"${mkdocs_out}" 2>&1
 mkdocs_exit=$?
 set -e
 
-if [ "${mkdocs_exit}" -ne 0 ]; then
+# --strict turns every WARNING into a failed build; count them as well, so a
+# future flag that silences or downgrades them cannot pass a broken tree.
+# grep -c prints the count and exits 1 when it is 0.
+if ! warning_count="$(grep -cE '^(WARNING|ERROR)' "${mkdocs_out}")"; then
+  warning_count=0
+fi
+
+if [ "${mkdocs_exit}" -ne 0 ] || [ "${warning_count}" -ne 0 ]; then
   cat >&2 <<'HEADER'
 
 pre-push-mkdocs-strict: BLOCKED — mkdocs build --strict failed.
 Fix the errors below before pushing (saves a ~6-minute CI round-trip):
 
 HEADER
-  cat "${mkdocs_out}" >&2
+  if [ "${warning_count}" -ne 0 ]; then
+    grep -E '^(WARNING|ERROR)' "${mkdocs_out}" >&2
+  else
+    cat "${mkdocs_out}" >&2
+  fi
   cat >&2 <<'FOOTER'
 
 Bypass (this check only): SKIP=mkdocs-strict git push
 Bypass (all pre-push checks): git push --no-verify
 
 See docs/development/pre-push-mkdocs-strict.md for troubleshooting.
-ADR-0466: docs/adr/0457-mkdocs-strict-pre-push-hook.md
+ADR-0466: docs/adr/0466-mkdocs-strict-pre-push-hook.md
 FOOTER
   exit 1
 fi

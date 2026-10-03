@@ -32,11 +32,16 @@ pip install -r docs/requirements.txt
 2. **Toolchain check** — once documentation is selected, missing `mkdocs`
    blocks the push with an installation hint. Install via
    `pip install -r docs/requirements.txt` in the active environment.
-3. **Build** — runs `mkdocs build --strict --quiet` against a
-   temporary `--site-dir`. The temporary directory is cleaned up
-   on exit regardless of outcome.
+3. **Build** — runs `mkdocs build --strict` against a temporary
+   `--site-dir`. The temporary directory is cleaned up on exit
+   regardless of outcome. The build is never `--quiet`: that flag
+   raises the log level to ERROR, so the WARNINGs `--strict` counts
+   are never emitted and a site with broken anchors builds with exit
+   code 0. The hook also blocks when the output holds a `WARNING` or
+   `ERROR` line, and `scripts/ci/tests/test_pre_push_mkdocs_strict.py`
+   (run by the `docs.yml` workflow) fails on the quiet form.
 4. **Result** — on success, a single confirmation line is printed.
-   On failure, the exact mkdocs error lines are printed to stderr
+   On failure, the mkdocs WARNING and ERROR lines are printed to stderr
    and the push is blocked with exit code 1.
 
 ## Bypassing the hook

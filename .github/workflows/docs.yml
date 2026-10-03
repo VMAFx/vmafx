@@ -97,6 +97,11 @@ jobs:
       - name: Check generated documentation freshness
         if: steps.impact.outputs.docs == 'true'
         run: make docs-fragments-check
+      # The pre-push hook must block a strict build that warns; a --quiet
+      # build hides the warnings and exits 0 (fixed 2026-10-03).
+      - name: Pre-push mkdocs hook refuses a warning build
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 -B -m unittest scripts/ci/tests/test_pre_push_mkdocs_strict.py -v
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict

@@ -3068,6 +3068,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged.
 
 
+- The pre-push documentation gate (`scripts/git-hooks/pre-push-mkdocs-strict.sh`)
+  now blocks a push whose `mkdocs build --strict` warns. It ran the build with
+  `--quiet`, which hides the warnings `--strict` counts, so broken anchors passed
+  it. `scripts/ci/tests/test_pre_push_mkdocs_strict.py`, run by the docs
+  workflow, fails on the quiet form.
+
+
 - **`psnr_hvs` on aarch64 returns the scores of the scalar path and of an
   x86-64 build.** `calc_psnrhvs_neon()` multiplied the two `float` factors of
   the masking threshold as `float`; the scalar reference and the AVX2 function
