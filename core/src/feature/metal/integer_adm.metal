@@ -79,6 +79,9 @@
 #include <metal_stdlib>
 using namespace metal;
 
+/* The decouple (reciprocal, Q15 ratio, gain limit): ADR-1498, ADR-1413. */
+#include "metal_integer_adm_math.h"
+
 #define IADM_NUM_BANDS 3
 #define IADM_ACCUM_SLOTS 9
 
@@ -88,8 +91,6 @@ constant int IADM_LO[4] = {15826, 27411, 7345, -4240};
 constant int IADM_HI[4] = {-4240, -7345, 27411, -15826};
 constant int IADM_LO_SUM = 46342; /* dwt2_db2_coeffs_lo_sum */
 
-/* Fixed-point reciprocal constant 2^30, mirrors div_Q_factor. */
-constant float IADM_DIV_Q_FACTOR = 1073741824.0f; /* 2^30 */
 /* Exact significand of cos(1 deg)^2 as binary32 (0x3F7FEC0A): the constant
  * is MC * 2^-24 with MC = 16772106, so IADM_AF_D = 2^24 - MC. Used by
  * iadm_angle_flag(); mirrors ADM_ANGLE_FLAG_D in
@@ -130,8 +131,11 @@ struct IadmCsf {
     uint i_rfactor_h;
     uint i_rfactor_v;
     uint i_rfactor_d;
-    /* enhancement gain limit (float, applied to the integer decouple rst). */
-    float gain_limit;
+    /* adm_enhn_gain_limit as adm_gain_limit_split() returns it (significand
+     * halves and binary point), for adm_gain_limit_product(). */
+    uint gain_m_hi;
+    uint gain_m_lo;
+    int gain_frac_bits;
     /* DWT scale-0 raw normalisation: v_shift / v_add_shift / h_shift /
      * h_add_shift packed for the stage-0/1 kernels. */
     int v_shift;
@@ -308,7 +312,8 @@ static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
 
 /* ------------------------------------------------------------------ */
 /*  Fixed-point decouple — scale 0 (int16 bands).                      */
-/*  Bit-for-bit replica of decouple_angle_flag_s0 / decouple_r_s0.     */
+/*  Replica of decouple_angle_flag_s0; the decouple itself is          */
+/*  vmaf_mtl_iadm_decouple_s0() (metal_integer_adm_math.h).            */
 /* ------------------------------------------------------------------ */
 static inline bool iadm_angle_flag_s0(int oh, int ov, int th, int tv)
 {
@@ -318,73 +323,27 @@ static inline bool iadm_angle_flag_s0(int oh, int ov, int th, int tv)
     return iadm_angle_flag(ot_dp, o_mag_sq, t_mag_sq);
 }
 
-static inline int iadm_decouple_r_s0(int o_val, int t_val, bool angle_flag, float gain_limit)
+/* The gain limit of the frame, from the uniform. */
+static inline AdmGainLimit iadm_gain(constant IadmCsf &c)
 {
-    int tmp_k = (o_val == 0) ?
-                    32768 :
-                    (int)((((long)(int)(IADM_DIV_Q_FACTOR / float(o_val)) * t_val) + 16384) >> 15);
-    int k = max(0, min(32768, tmp_k));
-    float egl = angle_flag ? gain_limit : 1.0f;
-
-    int rst = (int)((float)(((k * o_val) + 16384) >> 15) * egl);
-    int rst_s = k * o_val;
-    if (angle_flag) {
-        if (rst_s > 0) {
-            rst = min(rst, t_val);
-        }
-        if (rst_s < 0) {
-            rst = max(rst, t_val);
-        }
-    }
-    return rst;
+    AdmGainLimit g;
+    g.m_hi = c.gain_m_hi;
+    g.m_lo = c.gain_m_lo;
+    g.frac_bits = c.gain_frac_bits;
+    return g;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Fixed-point decouple — scales 1-3 (int32 bands).                   */
-/*  Replica of get_best15_from32 / decouple_angle_flag_s123 /          */
-/*  decouple_r_s123. MSL clz(uint) == CUDA __clz.                      */
+/*  Replica of decouple_angle_flag_s123; the decouple itself is        */
+/*  vmaf_mtl_iadm_decouple_s123() (metal_integer_adm_math.h).          */
 /* ------------------------------------------------------------------ */
-static inline uint iadm_get_best15_from32(uint temp, thread int *x)
-{
-    int k = (int)clz(temp);
-    k = 17 - k;
-    temp = (temp + (1u << (k - 1))) >> k;
-    *x = k;
-    return temp;
-}
-
 static inline bool iadm_angle_flag_s123(int oh, int ov, int th, int tv)
 {
     long ot_dp = (long)oh * th + (long)ov * tv;
     long o_mag_sq = (long)oh * oh + (long)ov * ov;
     long t_mag_sq = (long)th * th + (long)tv * tv;
     return iadm_angle_flag(ot_dp, o_mag_sq, t_mag_sq);
-}
-
-static inline int iadm_decouple_r_s123(int o_val, int t_val, bool angle_flag, float gain_limit)
-{
-    const int div_Q_factor = 1073741824; /* 2^30 */
-    int kh_shift = 0;
-    uint abs_o = (uint)abs(o_val);
-    int sign_o = (o_val < 0) ? -1 : 1;
-    int o_msb = (abs_o < 32768u) ? (int)abs_o : (int)iadm_get_best15_from32(abs_o, &kh_shift);
-
-    long tmp_k = (o_val == 0) ?
-                     32768 :
-                     ((((long)(div_Q_factor / o_msb) * t_val) * sign_o + (1l << (14 + kh_shift))) >>
-                      (15 + kh_shift));
-    long k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);
-
-    float egl = angle_flag ? gain_limit : 1.0f;
-    int rst = (int)((float)(((k * o_val) + 16384) >> 15) * egl);
-    float rst_f = ((float)k / 32768.0f) * ((float)o_val / 64.0f);
-    if (angle_flag && (rst_f > 0.0f)) {
-        rst = min(rst, t_val);
-    }
-    if (angle_flag && (rst_f < 0.0f)) {
-        rst = max(rst, t_val);
-    }
-    return rst;
 }
 
 /* ------------------------------------------------------------------ */
@@ -687,7 +646,7 @@ static inline int iadm_s0_band_vals(const device short *ref, const device short 
     bool af = iadm_angle_flag_s0(oh, ov, th, tv);
     int o_val = (theta == 0) ? oh : (theta == 1) ? ov : od;
     int t_val = (theta == 0) ? th : (theta == 1) ? tv : td;
-    int r_val = iadm_decouple_r_s0(o_val, t_val, af, c.gain_limit);
+    int r_val = vmaf_mtl_iadm_decouple_s0(o_val, t_val, af, iadm_gain(c));
 
     uint irf = (theta == 0) ? c.i_rfactor_h : (theta == 1) ? c.i_rfactor_v : c.i_rfactor_d;
     int band = theta + 1;
@@ -719,7 +678,7 @@ static inline int iadm_i4_band_vals(const device int *ref, const device int *dis
     bool af = iadm_angle_flag_s123(oh, ov, th, tv);
     int o_val = (theta == 0) ? oh : (theta == 1) ? ov : od;
     int t_val = (theta == 0) ? th : (theta == 1) ? tv : td;
-    int r_val = iadm_decouple_r_s123(o_val, t_val, af, c.gain_limit);
+    int r_val = vmaf_mtl_iadm_decouple_s123(o_val, t_val, af, iadm_gain(c));
 
     uint irf = (theta == 0) ? c.i_rfactor_h : (theta == 1) ? c.i_rfactor_v : c.i_rfactor_d;
     int src = use_r ? r_val : (t_val - r_val);
@@ -965,7 +924,7 @@ static void iadm_csf_cm_s0(const device short *ref_band, const device short *dis
         int o_val = ((int)band_idx == 0) ? oh : ((int)band_idx == 1) ? ov : od;
         int t_val = ((int)band_idx == 0) ? th : ((int)band_idx == 1) ? tv : td;
         (void)td;
-        int decouple_r = iadm_decouple_r_s0(o_val, t_val, af, c.gain_limit);
+        int decouple_r = vmaf_mtl_iadm_decouple_s0(o_val, t_val, af, iadm_gain(c));
         const int x = adm_cm_excess_s0((int)(irf * (uint)decouple_r), thr, shift_sub);
         local_cm += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
@@ -1144,7 +1103,7 @@ static inline int iadm_s0_csf_r_at(const device short *ref, const device short *
     int t_val = (theta == 0) ? th : (theta == 1) ? tv : td;
     (void)od;
     (void)td;
-    int r_val = iadm_decouple_r_s0(o_val, t_val, af, c.gain_limit);
+    int r_val = vmaf_mtl_iadm_decouple_s0(o_val, t_val, af, iadm_gain(c));
     uint irf = (theta == 0) ? c.i_rfactor_h : (theta == 1) ? c.i_rfactor_v : c.i_rfactor_d;
     int band = theta + 1;
     int dst_val = (int)(irf * (uint)r_val);

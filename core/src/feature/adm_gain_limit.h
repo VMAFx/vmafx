@@ -18,9 +18,9 @@
  * nothing else from floating point.
  *
  * adm_gain_limit_product() returns that value from 64-bit integer arithmetic,
- * for a backend whose device code may not hold a double (SYCL, ADR-0220). It
- * is not an approximation: for every limit the option admits and every int32
- * sample it returns what the scalar's double product truncates to.
+ * for a backend whose device code may not hold a double (SYCL, ADR-0220; Metal,
+ * ADR-1498). It is not an approximation: for every limit the option admits and
+ * every int32 sample it returns what the scalar's double product truncates to.
  *
  * Derivation. Write gain = M * 2^-s with the 53-bit significand M in
  * [2^52, 2^53), and a = |rst| <= 2^31. The exact product is P * 2^-s with
@@ -42,23 +42,23 @@
 
 #ifndef LIBVMAF_FEATURE_ADM_GAIN_LIMIT_H_
 #define LIBVMAF_FEATURE_ADM_GAIN_LIMIT_H_
-
+#if !defined(__METAL_VERSION__)
 #include <math.h>
 #include <stdint.h>
-
+#endif
 /* The gain limit as significand * 2^-frac_bits, the significand in two halves
  * so that a device without 128-bit integers can multiply by it. No typedef:
- * the header is included from C and from C++ (SYCL) translation units, and
- * `struct AdmGainLimit` reads the same in both. */
+ * the header is included from C, C++ (SYCL) and Metal Shading Language units
+ * (the includer defines UINT64_C there), and `struct AdmGainLimit` reads alike. */
 struct AdmGainLimit {
     uint32_t m_hi;     /* significand bits 52..32 */
     uint32_t m_lo;     /* significand bits 31..0 */
     int32_t frac_bits; /* 46 for a limit of 100, 52 for a limit of 1 */
 };
 
-/* Splits `gain` on the host. adm_gain_limit_product() needs
- * 32 <= frac_bits <= 54, that is a limit in [0.25, 2^21); the option admits
- * [1, 100]. */
+#if !defined(__METAL_VERSION__) /* Metal has no double: the host splits. */
+/* Splits `gain` on the host. adm_gain_limit_product() needs 32 <= frac_bits
+ * <= 54, that is a limit in [0.25, 2^21); the option admits [1, 100]. */
 static inline struct AdmGainLimit adm_gain_limit_split(double gain)
 {
     int exponent = 0;
@@ -69,7 +69,7 @@ static inline struct AdmGainLimit adm_gain_limit_split(double gain)
                                    .frac_bits = 53 - exponent};
     return g;
 }
-
+#endif
 /* (int64_t)((double)rst * gain): the double product of a sample and the gain
  * limit, truncated toward zero. Integer arithmetic only. */
 static inline int64_t adm_gain_limit_product(int32_t rst, struct AdmGainLimit g)
