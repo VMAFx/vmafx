@@ -3,258 +3,172 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  Metal compute kernel for float_motion (T8-1h / ADR-0421).
- *  Mirrors `core/src/feature/vulkan/shaders/float_motion.comp`.
+ *  Metal compute kernels for float_motion (T8-1h / ADR-0421), on the design
+ *  of float_motion_hip (ADR-1404, ADR-1419) and the arithmetic of
+ *  metal_float_motion_math.h (ADR-1498).
  *
- *  Algorithm (must match CPU core/src/feature/float_motion.c,
- *  FILTER_5_s path):
- *    1. Convert: val = (raw / scaler) - 128.0
- *       scaler: 1 for bpc=8, 4/16/256 for 10/12/16bpc.
- *    2. 5-tap Gaussian vertical pass → s_vert[TILE_W * WG_H].
- *    3. 5-tap Gaussian horizontal pass → blurred[x] (per-thread).
- *    4. Write blurred pixel to `cur_blurred[y*stride + x]`.
- *    5. If `compute_sad`: SAD += |blurred - prev_blurred[y*stride + x]|.
- *    6. Host: score = sad_sum / (W * H).
+ *  Algorithm (CPU core/src/feature/float_motion.c):
+ *    1. picture_copy() of every sample: raw / scaler - 128.
+ *    2. convolution_f32_c_s() with the filter motion_filter_size selects
+ *       (motion_blur_plane()): FILTER_5_s by default, FILTER_3_s for 3,
+ *       FILTER_5_NO_OP_s for 1; reflect-101 edges (`float_motion_blur`).
+ *    3. From the second frame on, |cur - prev| of every sample, stored by
+ *       the blur kernel transposed in groups of VMAF_MTL_FM_ROW_GROUP rows,
+ *       and one fp32 sum per row, the row's differences added left to right
+ *       (`float_motion_row_sum`, one thread per row): float_sad_line().
+ *    4. `motion_add_scale1`: the same over both blurred frames scaled to half
+ *       size with motion.c::motion_scale_bilinear()
+ *       (`float_motion_scale1_diff`, then `float_motion_row_sum`).
+ *    The host adds the row sums of each plane top to bottom and divides in
+ *    fp32 (feature/float_motion_sad.h); `motion_add_uv` runs steps 1 to 4 on
+ *    the U and V planes too.
  *
- *  Mirror padding: SKIP-BOUNDARY reflective (2*(sup-1) - idx for idx >= sup).
- *  This DIVERGES from motion_v2's edge-replicating form — matches the CPU
- *  reference's `convolution_f32_c_s` path.
+ *  Numerical contract: every value is computed by a function of
+ *  metal_float_motion_math.h, which core/test/test_metal_float_motion_math.cpp
+ *  holds against the CPU's own functions on the host. The kernels build with
+ *  -fno-fast-math -ffp-contract=off (core/src/metal/meson.build): fp32
+ *  + - * / are correctly rounded and nothing is fused, as on the CPU. No
+ *  kernel reduces across threads: a running fp32 sum rounds at every step,
+ *  and only one thread per row walking the row in order gives the CPU's sum.
  *
- *  Reduction: per-WG float SAD partial. `compute_sad` is passed via push
- *  constant (uint2 dim = {width, height} for first dispatch; set
- *  compute_sad separately via strides.z).
+ *  Layout: the blur runs 16x16 threadgroups over a 20x20 tile with a
+ *  2-sample halo (every thread loads its share, then blurs its sample from
+ *  the tile); the tile indices are folded into the plane with
+ *  vmaf_mtl_fm_reflect101() for every thread, padding threads included, so
+ *  no load leaves the plane whatever its size. The row kernel runs
+ *  VMAF_MTL_FM_ROW_GROUP threads per threadgroup.
  *
  *  Buffer bindings:
- *   [[buffer(0)]] ref          — const uchar *  (current frame)
- *   [[buffer(1)]] prev_blurred — float *         (previous blurred frame)
- *   [[buffer(2)]] cur_blurred  — float *         (output: current blurred)
- *   [[buffer(3)]] sad_parts    — float *         (grid_w × grid_h, 0 if frame 0)
- *   [[buffer(4)]] strides      — uint4 (.x=ref_stride_bytes, .y=blur_stride_floats,
- *                                        .z=bpc, .w=compute_sad 0/1)
- *   [[buffer(5)]] dim          — uint2 (width, height)
+ *   float_motion_blur
+ *    [[buffer(0)]] ref        — const uchar *: the raw plane, packed rows
+ *                               (uint16 samples above 8 bits)
+ *    [[buffer(1)]] cur_blur   — float *: this frame's blurred plane
+ *    [[buffer(2)]] prev_blur  — const float *: the previous frame's
+ *    [[buffer(3)]] diff       — float *: |cur - prev|, transposed
+ *    [[buffer(4)]] args       — VmafMtlFmBlurArgs
+ *   float_motion_scale1_diff
+ *    [[buffer(0)]] cur_blur, [[buffer(1)]] prev_blur — const float *
+ *    [[buffer(2)]] diff       — float *: scale-1 |cur - prev|, transposed
+ *    [[buffer(3)]] args       — VmafMtlFmScale1Args
+ *   float_motion_row_sum
+ *    [[buffer(0)]] diff       — const float *: a transposed plane
+ *    [[buffer(1)]] row_sad    — float *: the read-back of every row sum
+ *    [[buffer(2)]] args       — VmafMtlFmRowArgs
  */
 
 #include <metal_stdlib>
+
+#include "metal_float_motion_math.h"
+
 using namespace metal;
 
-constant float FILT[5] = {
-    0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f
-};
-
-#define HALF_FW 2
-#define TILE_W  20   /* 16 + 2*HALF_FW */
-#define TILE_H  20   /* 16 + 2*HALF_FW: vertical halo required for 5-tap filter */
-/* s_vert: TILE_H × TILE_W. */
-#define TILE_PITCH_V 20
-
-/* Reflect-101 index fold, iterated.
- *
- * The kernels below load a TILE_W x TILE_H = 20x20 source tile at origin
- * `bid * 16 - HALF_FW`, so this helper is handed indices spanning
- * [-2, 16*bid + 17] -- far wider than the 5-tap neighbourhood it looks like
- * it serves. A SINGLE bounce only lands back in range when the overshoot is
- * at most `sup - 1`, i.e. `idx <= 2 * (sup - 1)`. Enumerated over the real
- * tile span, the single-bounce form read OUT OF BOUNDS for every dimension
- * in 1..9 and for exactly 17 -- at 17 the last workgroup's tile reaches
- * idx = 33 while 2 * (17 - 1) = 32, folding to -1. The `w < 3 || h < 3`
- * guard in the host wrapper covers neither case, which is why the fix
- * belongs here and not in the guard.
- *
- * Folding until the index is in range is bit-identical to the single bounce
- * for every index one bounce already handled (verified by exhaustive
- * enumeration over dims 1..299 across the full tile span), so no
- * in-contract score moves. `sup <= 1` has no interior to reflect into and
- * would not terminate, so it short-circuits.
- *
- * Same defect and same fix as the CPU scalar path in
- * core/src/feature/common/convolution_internal.h (Netflix/vmaf#1582 and
- * Netflix/vmaf#1581).
- */
-static inline int skip_mirror(int idx, int sup) {
-    if (sup <= 1) { return 0; }
-    while (idx < 0 || idx >= sup) {
-        idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx;
-    }
-    return idx;
+/* picture_copy() of the sample at `idx` of the packed plane. */
+inline float fm_load_sample(const device uchar *ref, uint hbd, uint idx, float inv_scaler)
+{
+    const uint raw = (hbd != 0u) ? (uint)((const device ushort *)ref)[idx] : (uint)ref[idx];
+    return vmaf_mtl_fm_sample(raw, inv_scaler);
 }
 
-/* ------------------------------------------------------------------ */
-/*  8 bpc kernel                                                        */
-/* ------------------------------------------------------------------ */
-kernel void float_motion_kernel_8bpc(
-    const device uchar  *ref          [[buffer(0)]],
-    const device float  *prev_blurred [[buffer(1)]],
-    device       float  *cur_blurred  [[buffer(2)]],
-    device       float  *sad_parts    [[buffer(3)]],
-    constant     uint4  &strides      [[buffer(4)]],
-    constant     uint2  &dim          [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint2  lid2        [[thread_position_in_threadgroup]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+/* The four samples of `plane` (`width` columns) motion_bilinear_interp()
+ * weighs for one half-size sample. */
+inline VmafMtlFmCorners fm_corners(const device float *plane, uint width, VmafMtlFmBilinearAt at)
 {
-    const int width       = (int)dim.x;
-    const int height      = (int)dim.y;
-    const int compute_sad = (int)strides.w;
+    const uint row1 = (uint)at.y1 * width;
+    const uint row2 = (uint)at.y2 * width;
+    VmafMtlFmCorners s;
+    s.s11 = plane[row1 + (uint)at.x1];
+    s.s12 = plane[row1 + (uint)at.x2];
+    s.s21 = plane[row2 + (uint)at.x1];
+    s.s22 = plane[row2 + (uint)at.x2];
+    return s;
+}
 
-    /* --- Phase 1: load 20×20 ref tile into shared (halo on x and y). */
-    threadgroup float s_tile[TILE_H * TILE_PITCH_V];
-    {
-        const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* 2-row halo for 5-tap vertical filter */
-        const int n_elems = TILE_W * TILE_H;
-        const int wg_size = 16 * 16;
-        for (int i = (int)lid; i < n_elems; i += wg_size) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            const int sy = skip_mirror(wg_oy + ty, height);
-            const int sx = skip_mirror(wg_ox + tx, width);
-            s_tile[ty * TILE_PITCH_V + tx] =
-                (float)ref[sy * (int)strides.x + sx] - 128.0f;
-        }
+/* Blurs the plane into `cur_blur` and, when `args.compute_sad` is set,
+ * stores |cur_blur - prev_blur| of every sample in the transposed plane
+ * `diff` for float_motion_row_sum. */
+kernel void float_motion_blur(const device uchar *ref [[buffer(0)]],
+                              device float *cur_blur [[buffer(1)]],
+                              const device float *prev_blur [[buffer(2)]],
+                              device float *diff [[buffer(3)]],
+                              constant VmafMtlFmBlurArgs &args [[buffer(4)]],
+                              uint2 gid [[thread_position_in_grid]],
+                              uint2 bid [[threadgroup_position_in_grid]],
+                              uint2 lid2 [[thread_position_in_threadgroup]],
+                              uint lid [[thread_index_in_threadgroup]])
+{
+    threadgroup float tile[VMAF_MTL_FM_TILE * VMAF_MTL_FM_TILE];
+
+    const int width = (int)args.width;
+    const int height = (int)args.height;
+    const uint hbd = (args.bpc > 8u) ? 1u : 0u;
+    const float inv_scaler = vmaf_mtl_fm_inv_scaler(args.bpc);
+    const int tile_ox = (int)(bid.x * VMAF_MTL_FM_BLOCK) - VMAF_MTL_FM_RADIUS;
+    const int tile_oy = (int)(bid.y * VMAF_MTL_FM_BLOCK) - VMAF_MTL_FM_RADIUS;
+    for (uint i = lid; i < VMAF_MTL_FM_TILE * VMAF_MTL_FM_TILE;
+         i += VMAF_MTL_FM_BLOCK * VMAF_MTL_FM_BLOCK) {
+        const int sy = vmaf_mtl_fm_reflect101(tile_oy + (int)(i / VMAF_MTL_FM_TILE), height);
+        const int sx = vmaf_mtl_fm_reflect101(tile_ox + (int)(i % VMAF_MTL_FM_TILE), width);
+        tile[i] = fm_load_sample(ref, hbd, (uint)(sy * width + sx), inv_scaler);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    /* --- Phase 2: vertical filter (each thread computes its column). */
-    threadgroup float s_vert[TILE_H * TILE_PITCH_V];
-    {
-        const int col = (int)lid2.x;  /* 0..15 */
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* halo origin, same as tile load */
-        /* Iterate over all TILE_H rows (output rows HALF_FW..TILE_H-1-HALF_FW are the
-         * 16 WG rows needed for Phase 3; halo rows are consumed here but not written out). */
-        for (int row = (int)lid2.y; row < TILE_H; row += 16) {
-            const int tile_col = col + HALF_FW;  /* offset into tile */
-            float acc = 0.0f;
-            for (int k = 0; k < 5; ++k) {
-                const int src_row = skip_mirror(wg_oy + row + (k - 2), height);
-                /* src_row is absolute; map back to tile-relative (wg_oy is halo origin). */
-                const int tile_row = src_row - wg_oy;
-                /* Clamp to tile bounds. */
-                const int tr = max(0, min(tile_row, TILE_H - 1));
-                acc += FILT[k] * s_tile[tr * TILE_PITCH_V + tile_col];
-            }
-            s_vert[row * TILE_PITCH_V + tile_col] = acc;
+    if (gid.x >= args.width || gid.y >= args.height) {
+        return;
+    }
+    VmafMtlFmWindow win;
+    for (uint r = 0u; r < (uint)VMAF_MTL_FM_TAPS; r++) {
+        for (uint c = 0u; c < (uint)VMAF_MTL_FM_TAPS; c++) {
+            win.v[r * (uint)VMAF_MTL_FM_TAPS + c] =
+                tile[(lid2.y + r) * VMAF_MTL_FM_TILE + lid2.x + c];
         }
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    /* --- Phase 3: horizontal filter, write blurred, accumulate SAD.
-     * The 16 output rows within the WG tile correspond to s_vert rows
-     * HALF_FW .. TILE_H-1-HALF_FW (== 2..17); lid2.y addresses these as
-     * ty = lid2.y + HALF_FW so that the horizontal pass reads from the
-     * vertically-filtered rows that align with gid.y. */
-    float my_sad = 0.0f;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y + HALF_FW;
-        const int tx = (int)lid2.x + HALF_FW;
-        float blurred = 0.0f;
-        for (int k = 0; k < 5; ++k) {
-            blurred += FILT[k] * s_vert[ty * TILE_PITCH_V + (tx + k - 2)];
-        }
-        const int flat = (int)gid.y * (int)strides.y + (int)gid.x;
-        cur_blurred[flat] = blurred;
-        if (compute_sad != 0) {
-            my_sad = abs(blurred - prev_blurred[flat]);
-        }
-    }
-
-    threadgroup float sg_sad[8];
-    const float lane_sum = simd_sum(my_sad);
-    if (simd_lane == 0) { sg_sad[simd_id] = lane_sum; }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        float gs = 0.0f;
-        for (uint i = 0; i < simd_count; ++i) { gs += sg_sad[i]; }
-        sad_parts[bid.y * grid_groups.x + bid.x] = gs;
+    const float blurred = vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), win);
+    const uint off = gid.y * args.width + gid.x;
+    cur_blur[off] = blurred;
+    if (args.compute_sad != 0u) {
+        diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.width)] =
+            vmaf_mtl_fm_abs_diff(blurred, prev_blur[off]);
     }
 }
 
-/* ------------------------------------------------------------------ */
-/*  16 bpc kernel                                                       */
-/* ------------------------------------------------------------------ */
-kernel void float_motion_kernel_16bpc(
-    const device uchar  *ref          [[buffer(0)]],
-    const device float  *prev_blurred [[buffer(1)]],
-    device       float  *cur_blurred  [[buffer(2)]],
-    device       float  *sad_parts    [[buffer(3)]],
-    constant     uint4  &strides      [[buffer(4)]],
-    constant     uint2  &dim          [[buffer(5)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint2  lid2        [[thread_position_in_threadgroup]],
-    uint   lid         [[thread_index_in_threadgroup]],
-    uint   simd_lane   [[thread_index_in_simdgroup]],
-    uint   simd_id     [[simdgroup_index_in_threadgroup]],
-    uint   simd_count  [[simdgroups_per_threadgroup]])
+/* `motion_add_scale1`: the differences of the scale-1 term of
+ * motion.c::vmaf_image_sad_c(). Both blurred frames are scaled to
+ * `args.scaled_width` x `args.scaled_height` with motion_scale_bilinear(),
+ * one thread per half-size sample, and |cur - prev| is stored in the
+ * transposed plane `diff`. Runs after the blur kernel of the same frame. */
+kernel void float_motion_scale1_diff(const device float *cur_blur [[buffer(0)]],
+                                     const device float *prev_blur [[buffer(1)]],
+                                     device float *diff [[buffer(2)]],
+                                     constant VmafMtlFmScale1Args &args [[buffer(3)]],
+                                     uint2 gid [[thread_position_in_grid]])
 {
-    const int width       = (int)dim.x;
-    const int height      = (int)dim.y;
-    const float scaler    = (float)(1u << ((uint)strides.z - 8u));
-    const int compute_sad = (int)strides.w;
-
-    threadgroup float s_tile[TILE_H * TILE_PITCH_V];
-    {
-        const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* 2-row halo for 5-tap vertical filter */
-        const int n_elems = TILE_W * TILE_H;
-        const int wg_size = 16 * 16;
-        for (int i = (int)lid; i < n_elems; i += wg_size) {
-            const int ty = i / TILE_W;
-            const int tx = i % TILE_W;
-            const int sy = skip_mirror(wg_oy + ty, height);
-            const int sx = skip_mirror(wg_ox + tx, width);
-            const device ushort *row_ptr =
-                (const device ushort *)(ref + sy * (int)strides.x);
-            s_tile[ty * TILE_PITCH_V + tx] = (float)row_ptr[sx] / scaler - 128.0f;
-        }
+    if (gid.x >= args.scaled_width || gid.y >= args.scaled_height) {
+        return;
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    const VmafMtlFmBilinearAt at = vmaf_mtl_fm_bilinear_at(args.width, args.height, args.ratio_x,
+                                                           args.ratio_y, gid.x, gid.y);
+    const float cur = vmaf_mtl_fm_bilinear(fm_corners(cur_blur, args.width, at), at.dx, at.dy);
+    const float prev = vmaf_mtl_fm_bilinear(fm_corners(prev_blur, args.width, at), at.dx, at.dy);
+    diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.scaled_width)] =
+        vmaf_mtl_fm_abs_diff(cur, prev);
+}
 
-    threadgroup float s_vert[TILE_H * TILE_PITCH_V];
-    {
-        const int col = (int)lid2.x;
-        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* halo origin, same as tile load */
-        for (int row = (int)lid2.y; row < TILE_H; row += 16) {
-            const int tile_col = col + HALF_FW;
-            float acc = 0.0f;
-            for (int k = 0; k < 5; ++k) {
-                const int src_row = skip_mirror(wg_oy + row + (k - 2), height);
-                const int tile_row = src_row - wg_oy;
-                const int tr = max(0, min(tile_row, TILE_H - 1));
-                acc += FILT[k] * s_tile[tr * TILE_PITCH_V + tile_col];
-            }
-            s_vert[row * TILE_PITCH_V + tile_col] = acc;
-        }
+/* float_sad_line() of every row of an `args.width` x `args.height` plane:
+ * one thread per row adds the row's absolute differences, left to right,
+ * into one fp32 accumulator. `diff` is the transposed plane the blur or the
+ * scale-1 kernel wrote; the sums land at `args.first_row` of `row_sad`. */
+kernel void float_motion_row_sum(const device float *diff [[buffer(0)]],
+                                 device float *row_sad [[buffer(1)]],
+                                 constant VmafMtlFmRowArgs &args [[buffer(2)]],
+                                 uint y [[thread_position_in_grid]])
+{
+    if (y >= args.height) {
+        return;
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    float my_sad = 0.0f;
-    if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y + HALF_FW;  /* offset by halo to reach WG output rows */
-        const int tx = (int)lid2.x + HALF_FW;
-        float blurred = 0.0f;
-        for (int k = 0; k < 5; ++k) {
-            blurred += FILT[k] * s_vert[ty * TILE_PITCH_V + (tx + k - 2)];
-        }
-        const int flat = (int)gid.y * (int)strides.y + (int)gid.x;
-        cur_blurred[flat] = blurred;
-        if (compute_sad != 0) {
-            my_sad = abs(blurred - prev_blurred[flat]);
-        }
+    const uint base = vmaf_mtl_fm_diff_index(0u, y, args.width);
+    float accum = 0.0f;
+    for (uint j = 0u; j < args.width; j++) {
+        accum += diff[base + j * VMAF_MTL_FM_ROW_GROUP];
     }
-
-    threadgroup float sg_sad[8];
-    const float lane_sum = simd_sum(my_sad);
-    if (simd_lane == 0) { sg_sad[simd_id] = lane_sum; }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (lid == 0) {
-        float gs = 0.0f;
-        for (uint i = 0; i < simd_count; ++i) { gs += sg_sad[i]; }
-        sad_parts[bid.y * grid_groups.x + bid.x] = gs;
-    }
+    row_sad[args.first_row + y] = accum;
 }
