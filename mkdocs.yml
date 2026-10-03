@@ -1613,6 +1613,8 @@ nav:
         - "ADR-1496: metal-gate-in-tester-bundle": adr/1496-metal-gate-in-tester-bundle.md
         - "ADR-1497: float-moment-twins-cpu-sum-past-2-53": adr/1497-float-moment-twins-cpu-sum-past-2-53.md
         - "ADR-1499: float-psnr-twins-cpu-row-order": adr/1499-float-psnr-twins-cpu-row-order.md
+      - "1500-1599 — Misc":
+        - "ADR-1501: sycl-float-adm-terms-large-grf-xe2": adr/1501-sycl-float-adm-terms-large-grf-xe2.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

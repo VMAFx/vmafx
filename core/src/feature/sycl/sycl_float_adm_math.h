@@ -477,6 +477,17 @@ struct TermArgs {
     bool bypass_cm; /* adm_bypass_cm: no masking threshold */
 };
 
+/* The term kernel's shape, for the twin and the probe (ADR-1501): no required
+ * sub-group size and the large register file. With the default register file
+ * icpx compiles the kernel at SIMD-32 for lnl-m, bmg-g21 and bmg-g31 (Xe2),
+ * where it spills two registers (128 bytes of scratch memory, measured on an
+ * Arc B580; ADR-1395). A required size of 16 spills on every other target of
+ * the default AOT list (58 to 91 registers), and Xe-LP has no large register
+ * file. With 256 registers and the size left to the compiler no target
+ * spills. */
+inline constexpr int kTermsSubGroup = 0;
+inline constexpr int kTermsGrf = 256;
+
 /* The per-sample terms are stored slot by slot and, inside a slot, column by
  * column: the row kernel runs one work-item per (slot, row), so at every step
  * neighbouring work-items read neighbouring addresses. */

@@ -173,8 +173,28 @@ void run_scale_host(const VmafTestFadmScale &s, float *terms)
     }
 }
 
+/* The term kernel in the extractor's shape (sycl_float_adm_math.h). */
+class TermsKernel
+    : public VmafSyclKernelShape<vmaf_sycl_fadm::kTermsSubGroup, vmaf_sycl_fadm::kTermsGrf>
+{
+  public:
+    explicit TermsKernel(const TermArgs &args) : args_(args)
+    {
+    }
+
+    void operator()(sycl::id<2> region) const
+    {
+        vmaf_sycl_fadm::terms_sample(args_, (unsigned)region[0], (unsigned)region[1]);
+    }
+
+  private:
+    TermArgs args_;
+};
+
 /* The three kernels in the extractor's launch shapes: 16x16 tiles for the
- * decouple, a plain range for the terms, sub-group size 16 for the rows. */
+ * decouple, the term kernel's shape, sub-group size 16 for the rows. Each
+ * reads what the one before wrote, so the queue must be in order
+ * (on_default_gpu()), as libvmaf's is. */
 void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers &b)
 {
     const ScaleSizes n = sizes_of(s);
@@ -191,9 +211,7 @@ void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers
             }
         });
     const TermArgs terms_of = term_args(s, b);
-    q.parallel_for(sycl::range<2>(n.region_h, n.region_w), [=](sycl::id<2> region) {
-        vmaf_sycl_fadm::terms_sample(terms_of, (unsigned)region[0], (unsigned)region[1]);
-    });
+    q.parallel_for(sycl::range<2>(n.region_h, n.region_w), TermsKernel(terms_of));
     const RowArgs rows = row_args(s, b);
     q.parallel_for(sycl::range<1>((size_t)kTermSlots * n.region_h),
                    [=](sycl::id<1> id)
@@ -306,7 +324,10 @@ template <typename Body> int on_default_gpu(Body body)
         return -ENODEV;
     }
     try {
-        sycl::queue q(*device);
+        /* In order: launch_scale() submits three kernels that each read the
+         * one before. On an out-of-order queue an Arc B580 runs them
+         * concurrently and the row sums read terms not yet written. */
+        sycl::queue q(*device, sycl::property::queue::in_order{});
         body(q);
     } catch (const std::exception &) {
         return -EIO;

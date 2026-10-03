@@ -377,13 +377,29 @@ static sycl::event launch_decouple_csf(sycl::queue &q, const vmaf_sycl_fadm::Dec
     });
 }
 
-/* Stage 3 — the nine terms of every sample of the reduced region. */
+/* Stage 3 — the nine terms of every sample of the reduced region, in the
+ * shape sycl_float_adm_math.h gives the term kernel. */
+class FadmTermsKernel
+    : public VmafSyclKernelShape<vmaf_sycl_fadm::kTermsSubGroup, vmaf_sycl_fadm::kTermsGrf>
+{
+  public:
+    explicit FadmTermsKernel(const vmaf_sycl_fadm::TermArgs &args) : args_(args)
+    {
+    }
+
+    void operator()(sycl::id<2> region) const
+    {
+        vmaf_sycl_fadm::terms_sample(args_, (unsigned)region[0], (unsigned)region[1]);
+    }
+
+  private:
+    vmaf_sycl_fadm::TermArgs args_;
+};
+
 static sycl::event launch_terms(sycl::queue &q, const vmaf_sycl_fadm::TermArgs &args)
 {
     return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(sycl::range<2>(args.region_h, args.region_w), [=](sycl::id<2> region) {
-            vmaf_sycl_fadm::terms_sample(args, (unsigned)region[0], (unsigned)region[1]);
-        });
+        cgh.parallel_for(sycl::range<2>(args.region_h, args.region_w), FadmTermsKernel(args));
     });
 }
 

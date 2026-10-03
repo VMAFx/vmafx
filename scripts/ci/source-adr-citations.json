@@ -8465,7 +8465,7 @@
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/sycl_compat.h": 4,
         "core/src/feature/sycl/sycl_ff_math.h": 1,
-        "core/src/feature/sycl/sycl_float_adm_math.h": 1,
+        "core/src/feature/sycl/sycl_float_adm_math.h": 2,
         "core/src/feature/sycl/sycl_ordered_sum.h": 1,
         "core/src/feature/sycl/sycl_soft_double.h": 2,
         "core/src/feature/sycl/sycl_soft_signed.h": 1,
@@ -9788,6 +9788,15 @@
         "scripts/ci/exact_twins.d/float_psnr.hip": 2
       },
       "target": "1499-float-psnr-twins-cpu-row-order.md"
+    },
+    "1501": {
+      "sites": {
+        "core/src/feature/sycl/sycl_compat.h": 3,
+        "core/src/feature/sycl/sycl_float_adm_math.h": 1,
+        "core/test/test_sycl_float_adm_exact_contract.py": 3,
+        "core/test/test_sycl_sub_group_size_contract.py": 2
+      },
+      "target": "1501-sycl-float-adm-terms-large-grf-xe2.md"
     }
   },
   "retired": {

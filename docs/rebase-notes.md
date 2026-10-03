@@ -59619,3 +59619,22 @@ upstream parity guard's allowlist.
   pair). On a conflict in `docs/development/cross-backend-exact-twins.md`
   take master's side and run `make docs-fragments-write`.
 - No CPU extractor, snapshot or golden value moves.
+
+## `float_adm_sycl`'s term kernel takes the large register file; its probe's queue is in order (ADR-1501, 2026-10-03)
+
+`fix/sycl-xe2-float-adm-terms`, `T-SYCL-FLOAT-ADM-TERMS-XE2-SPILL-2026-10-03`,
+`T-SYCL-FLOAT-ADM-PROBE-OUT-OF-ORDER-QUEUE-2026-10-03`.
+
+- `core/src/feature/sycl/sycl_compat.h`: `VmafSyclKernelShape<0, 256>` means
+  no required sub-group size with the large register file
+  (`VmafSyclShapeSubGroup<0>`; a `static_assert` refuses size 0 with
+  GRF 0). A rebase that changes the shape template keeps both.
+- `core/src/feature/sycl/float_adm_sycl.cpp` (`FadmTermsKernel`) and
+  `core/test/test_sycl_float_adm_math_probe.cpp` (`TermsKernel`): the term
+  kernel is a functor in the shape `kTermsSubGroup` / `kTermsGrf` of
+  `sycl_float_adm_math.h` (0 / 256). Do not turn it back into a lambda or
+  give it a fixed sub-group size: either spills on some default AOT target.
+  The probe's queue is created in order.
+- `core/test/test_sycl_sub_group_size_contract.py` and
+  `core/test/test_sycl_float_adm_exact_contract.py` guard it.
+- No score, public C API, Netflix golden-data or FFmpeg patch impact.

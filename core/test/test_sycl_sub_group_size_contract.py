@@ -16,7 +16,9 @@ Device-free and compiler-free. It holds:
 - ``sycl_compat.h``'s compile-time check (``VmafSyclSubGroupSize``) to the
   sizes every default target accepts;
 - every size a SYCL source requires, through the fork's macros and kernel
-  shape or as a named constant, to that set;
+  shape or as a named constant (of the file, or a namespace-qualified one of
+  any SYCL source), to that set; a kernel shape may require none (size 0)
+  only with the large register file (ADR-1501);
 - the sources to the fork's macros: a raw attribute or property would pass
   the header's check by.
 
@@ -45,12 +47,16 @@ SOURCE_GLOBS = (
 )
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
-# The fork's three spellings of a required sub-group size.
-REQUESTS = (
-    re.compile(r"\bVMAF_SYCL_REQD_SG_SIZE\(\s*([A-Za-z_0-9]+)\s*\)"),
-    re.compile(r"\bVMAF_SYCL_FUNCTOR_SG_SIZE\(\s*([A-Za-z_0-9]+)\s*\)"),
-    re.compile(r"\bVmafSyclKernelShape<\s*([A-Za-z_0-9]+)\s*,"),
+# A literal, a constant or a namespace-qualified constant.
+NAME = r"([A-Za-z_0-9]+(?:::[A-Za-z_][A-Za-z_0-9]*)*)"
+# The fork's three spellings of a required sub-group size: two macros and
+# the kernel shape, whose second argument is the register file size.
+MACROS = (
+    re.compile(rf"\bVMAF_SYCL_REQD_SG_SIZE\(\s*{NAME}\s*\)"),
+    re.compile(rf"\bVMAF_SYCL_FUNCTOR_SG_SIZE\(\s*{NAME}\s*\)"),
 )
+SHAPE = re.compile(rf"\bVmafSyclKernelShape<\s*{NAME}\s*,\s*{NAME}\s*>")
+REQUESTS = (*MACROS, SHAPE)
 # What the macros expand to: outside sycl_compat.h it would skip the check.
 RAW = re.compile(r"reqd_sub_group_size\s*\(|\bsub_group_size\s*<")
 ASSERTED = re.compile(r"static_assert\(\s*N == (\d+) \|\| N == (\d+)\s*,")
@@ -68,20 +74,52 @@ def _sources() -> dict[str, str]:
     return found
 
 
-def _value(code: str, name: str) -> int | None:
-    """An integer literal, a constant of the file, or None for a template parameter."""
+def _value(code: str, name: str, everywhere: str = "") -> int | None:
+    """An integer literal, a constant of the file (of any source when the name
+    is namespace-qualified), or None for a template parameter."""
     if name.isdigit():
         return int(name)
-    constant = re.search(rf"\bconstexpr\s+int\s+{name}\s*=\s*(\d+)\s*;", code)
-    if constant:
-        return int(constant.group(1))
-    if re.search(rf"\btemplate\s*<[^>]*\bint\s+{name}\b", code):
+    bare = name.rsplit("::", 1)[-1]
+    for text in (code, everywhere if "::" in name else ""):
+        constant = re.search(rf"\bconstexpr\s+int\s+{bare}\s*=\s*(\d+)\s*;", text)
+        if constant:
+            return int(constant.group(1))
+    if re.search(rf"\btemplate\s*<[^>]*\bint\s+{bare}\b", code):
         return None
     raise ValueError(name)
 
 
+def _size_failure(name: str, size: int | None, allowed: set[int]) -> list[str]:
+    if size is None or size in allowed:
+        return []
+    return [
+        f"{name}: requires sub-group size {size}; every default AOT "
+        f"target accepts only {sorted(allowed)}"
+    ]
+
+
+def _request_failures(name: str, code: str, everywhere: str, allowed: set[int]) -> list[str]:
+    failures: list[str] = []
+    for macro in MACROS:
+        for spelled in macro.findall(code):
+            if spelled in ("N", "SG") and name.endswith("sycl_compat.h"):
+                continue  # the macros' own parameters
+            failures += _size_failure(name, _value(code, spelled, everywhere), allowed)
+    for spelled, grf in SHAPE.findall(code):
+        size = _value(code, spelled, everywhere)
+        if size == 0 and _value(code, grf, everywhere) not in (None, 256):
+            failures.append(
+                f"{name}: a kernel shape without a required sub-group size needs "
+                "the large register file (GRF 256, ADR-1501)"
+            )
+        elif size != 0:
+            failures += _size_failure(name, size, allowed)
+    return failures
+
+
 def _source_failures(sources: dict[str, str], allowed: set[int]) -> list[str]:
     failures: list[str] = []
+    everywhere = "\n".join(_code(text) for text in sources.values())
     for name, text in sources.items():
         code = _code(text)
         if not name.endswith("sycl_compat.h") and RAW.search(code):
@@ -89,20 +127,10 @@ def _source_failures(sources: dict[str, str], allowed: set[int]) -> list[str]:
                 f"{name}: a raw sub-group size attribute or property; use the "
                 "macros of sycl_compat.h, which check the size"
             )
-        for request in REQUESTS:
-            for spelled in request.findall(code):
-                if spelled in ("N", "SG") and name.endswith("sycl_compat.h"):
-                    continue  # the macros' own parameters
-                try:
-                    size = _value(code, spelled)
-                except ValueError:
-                    failures.append(f"{name}: sub-group size `{spelled}` is not a constant here")
-                    continue
-                if size is not None and size not in allowed:
-                    failures.append(
-                        f"{name}: requires sub-group size {size}; every default AOT "
-                        f"target accepts only {sorted(allowed)}"
-                    )
+        try:
+            failures += _request_failures(name, code, everywhere, allowed)
+        except ValueError as error:
+            failures.append(f"{name}: sub-group size `{error}` is not a constant here")
     return failures
 
 
@@ -124,7 +152,9 @@ def _contract_failures(options: str, compat: str, sources: dict[str, str]) -> li
         )
     for piece in (
         "[[sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)]]",
-        "static constexpr int sub_group_size = VmafSyclSubGroupSize<SG_SIZE>::value;",
+        "struct VmafSyclShapeSubGroup : VmafSyclSubGroupSize<SG_SIZE>",
+        "static constexpr int sub_group_size = VmafSyclShapeSubGroup<SG_SIZE>::value;",
+        "static_assert(SG_SIZE != 0 || GRF_SIZE == 256,",
     ):
         if piece not in compat:
             failures.append(f"sycl_compat.h: `{piece}` is gone; a size is no longer checked")
@@ -188,6 +218,32 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
         self._detected(_contract_failures(options, compat, sources), "requires sub-group size 8")
 
+    def test_qualified_constant_is_resolved(self) -> None:
+        # float_adm_sycl.cpp and its probe name the shape of sycl_float_adm_math.h.
+        options, compat, sources = _live()
+        name = "core/src/feature/sycl/sycl_float_adm_math.h"
+        self.assertIn("inline constexpr int kTermsSubGroup = 0;", sources[name])
+        sources[name] = sources[name].replace(
+            "inline constexpr int kTermsSubGroup = 0;",
+            "inline constexpr int kTermsSubGroup = 8;",
+            1,
+        )
+        self._detected(_contract_failures(options, compat, sources), "requires sub-group size 8")
+
+    def test_no_size_without_the_large_register_file_is_detected(self) -> None:
+        options, compat, sources = _live()
+        name = "core/src/feature/sycl/sycl_float_adm_math.h"
+        self.assertIn("inline constexpr int kTermsGrf = 256;", sources[name])
+        sources[name] = sources[name].replace(
+            "inline constexpr int kTermsGrf = 256;", "inline constexpr int kTermsGrf = 0;", 1
+        )
+        self._detected(_contract_failures(options, compat, sources), "large register file")
+
+    def test_unchecked_shape_size_is_detected(self) -> None:
+        options, compat, sources = _live()
+        compat = compat.replace("VmafSyclShapeSubGroup<SG_SIZE>::value", "SG_SIZE", 1)
+        self._detected(_contract_failures(options, compat, sources), "no longer checked")
+
     def test_raw_attribute_is_detected(self) -> None:
         options, compat, sources = _live()
         name = "core/src/feature/sycl/float_psnr_sycl.cpp"
@@ -224,7 +280,9 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         # The set follows the list: it is not a constant of this test.
         options, compat, sources = _live()
         options = options.replace(",lnl-m,bmg-g21,bmg-g31", "", 1)
-        self._detected(_contract_failures(options, compat, sources), "must accept exactly [8, 16, 32]")
+        self._detected(
+            _contract_failures(options, compat, sources), "must accept exactly [8, 16, 32]"
+        )
 
 
 # A JIT-only and an ahead-of-time unit as meson writes them into build.ninja.
@@ -258,11 +316,11 @@ class SyclAotCommandRewrite(unittest.TestCase):
         )
 
     def test_jit_command_becomes_the_aot_command(self) -> None:
-        argv = aot_build.for_targets(aot_build.units(JIT_NINJA)[0][2], ["dg2-g11", "lnl-m"], "/t/0.o")
-        start = argv.index("-fsycl")
-        self.assertEqual(
-            argv[start : start + 6], [*aot_build.AOT_ARGS, "-device dg2-g11,lnl-m"]
+        argv = aot_build.for_targets(
+            aot_build.units(JIT_NINJA)[0][2], ["dg2-g11", "lnl-m"], "/t/0.o"
         )
+        start = argv.index("-fsycl")
+        self.assertEqual(argv[start : start + 6], [*aot_build.AOT_ARGS, "-device dg2-g11,lnl-m"])
         self.assertEqual(argv[-2:], ["-o", "/t/0.o"])
         self.assertNotIn("-MD", argv)
         self.assertNotIn("src/float_motion_sycl.o.d", argv)

@@ -16,7 +16,11 @@
 * the masking threshold is one sum per band with the centre tap fifth;
 * every reduction adds a row left to right in fp32 and then the rows, and
 * the CSF weights, the reduced region, the pooling and the frame floor are the
-  reference's own routines and expression.
+  reference's own routines and expression;
+* the term kernel keeps the large register file with the sub-group size left
+  to the compiler (ADR-1501), in the twin and in the probe, which spills on no
+  default AOT target, and the probe's queue is in order, as libvmaf's is: its
+  three kernels each read what the one before wrote.
 
 Device-free: reads the sources only. ``test_sycl_float_adm_math`` checks the
 arithmetic against ``adm_tools.c`` on the host and on a device, and
@@ -38,6 +42,12 @@ MATH = "sycl/sycl_float_adm_math.h"
 CPU = "adm_tools.c"
 CPU_FRAME = "adm.c"
 MATH_TEST = "test_sycl_float_adm_math.c"
+PROBE = "test_sycl_float_adm_math_probe.cpp"
+TERMS_SHAPE = "VmafSyclKernelShape<vmaf_sycl_fadm::kTermsSubGroup, vmaf_sycl_fadm::kTermsGrf>"
+TERMS_SHAPE_CONSTANTS = (
+    "inline constexpr int kTermsSubGroup = 0;",
+    "inline constexpr int kTermsGrf = 256;",
+)
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 SPACE = re.compile(r"\s+")
@@ -77,7 +87,8 @@ def _sources() -> dict[str, str]:
         name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
         for name in (TWIN, MATH, CPU, CPU_FRAME)
     }
-    sources[MATH_TEST] = (TEST_ROOT / MATH_TEST).read_text(encoding="utf-8")
+    for name in (MATH_TEST, PROBE):
+        sources[name] = (TEST_ROOT / name).read_text(encoding="utf-8")
     return sources
 
 
@@ -226,14 +237,44 @@ def _device_type_failures(math: str) -> list[str]:
     return failures
 
 
+def _class_body(source: str, name: str) -> str:
+    """Text of class `name` up to its closing `};`, or empty."""
+    match = re.search(rf"\bclass {name}\b(.*?)\}};", source, re.S)
+    return match.group(1) if match else ""
+
+
+def _terms_kernel_failures(file: str, source: str, kernel: str, call: str) -> list[str]:
+    """The term kernel's shape and work-item in the twin or the probe."""
+    body = _class_body(source, kernel)
+    if TERMS_SHAPE not in body or "vmaf_sycl_fadm::terms_sample(args_," not in body:
+        return [f"{file}: {kernel} must run terms_sample() in the term kernel's shape (ADR-1501)"]
+    if call not in source:
+        return [f"{file}: the term kernel must be launched as `{call}`"]
+    return []
+
+
+def _terms_shape_failures(sources: dict[str, str], math: str, twin: str) -> list[str]:
+    failures = [
+        f"{MATH}: the term kernel's shape must be `{piece}` (ADR-1501)"
+        for piece in TERMS_SHAPE_CONSTANTS
+        if piece not in math
+    ]
+    probe = _code(sources[PROBE])
+    failures += _terms_kernel_failures(TWIN, twin, "FadmTermsKernel", "FadmTermsKernel(args));")
+    failures += _terms_kernel_failures(PROBE, probe, "TermsKernel", "TermsKernel(terms_of));")
+    if "sycl::queue q(*device, sycl::property::queue::in_order{});" not in _function_body(
+        probe, "on_default_gpu"
+    ):
+        failures.append(f"{PROBE}: the probe's queue must be in order, as libvmaf's is")
+    return failures
+
+
 def _twin_failures(twin: str) -> list[str]:
     failures: list[str] = []
-    for kernel, item in (
-        ("launch_decouple_csf", "vmaf_sycl_fadm::decouple_sample(args, y, x);"),
-        ("launch_terms", "vmaf_sycl_fadm::terms_sample(args,"),
+    if "vmaf_sycl_fadm::decouple_sample(args, y, x);" not in _function_body(
+        twin, "launch_decouple_csf"
     ):
-        if item not in _function_body(twin, kernel):
-            failures.append(f"{TWIN}: {kernel}() must run sycl_float_adm_math.h's work-item")
+        failures.append(f"{TWIN}: launch_decouple_csf() must run sycl_float_adm_math.h's work-item")
     for routine in (
         "adm_csf_rfactor_s(",
         "adm_border_s(",
@@ -262,6 +303,7 @@ def _failures(sources: dict[str, str]) -> list[str]:
         + _reduction_failures(math, twin)
         + _device_type_failures(math)
         + _twin_failures(twin)
+        + _terms_shape_failures(sources, math, twin)
     )
 
 
@@ -277,6 +319,34 @@ class SyclFloatAdmExactContractTest(unittest.TestCase):
 
     def test_live_sources_keep_the_cpu_arithmetic(self) -> None:
         self.assertEqual(_failures(_sources()), [])
+
+    def test_out_of_order_probe_queue_is_detected(self) -> None:
+        # The B580 ran the probe's three kernels concurrently on this queue.
+        failures = self._edited(
+            PROBE,
+            "sycl::queue q(*device, sycl::property::queue::in_order{});",
+            "sycl::queue q(*device);",
+        )
+        self._detects(failures, "must be in order")
+
+    def test_terms_kernel_default_shape_is_detected(self) -> None:
+        # The lambda that spilled 128 bytes on an Arc B580.
+        failures = self._edited(
+            TWIN,
+            "FadmTermsKernel(args));",
+            "[=](sycl::id<2> r) { vmaf_sycl_fadm::terms_sample(args, (unsigned)r[0], (unsigned)r[1]); });",
+        )
+        self._detects(failures, "must be launched as")
+
+    def test_terms_kernel_without_large_grf_is_detected(self) -> None:
+        failures = self._edited(
+            MATH, "inline constexpr int kTermsGrf = 256;", "inline constexpr int kTermsGrf = 0;"
+        )
+        self._detects(failures, "term kernel's shape")
+
+    def test_probe_terms_kernel_shape_is_detected(self) -> None:
+        failures = self._edited(PROBE, TERMS_SHAPE, "VmafSyclKernelShape<16, 0>")
+        self._detects(failures, "TermsKernel must run terms_sample()")
 
     def test_reciprocal_division_is_detected(self) -> None:
         # Upstream's ADM_OPT_RECIP_DIVISION, and the twin before ADR-1442.

@@ -50,6 +50,11 @@
  *      toolchains the base is empty and the functor's call operator
  *      carries VMAF_SYCL_FUNCTOR_SG_SIZE(SG), which expands to the
  *      sub-group attribute where VMAF_SYCL_REQD_SG_SIZE does.
+ *      SG 0 (with GRF 256 only) requires no sub-group size: the compiler
+ *      picks one per target, with the large register file where the
+ *      target has one (ADR-1501). For a kernel that fits SIMD-8 on Xe-LP,
+ *      which has no large register file, but spills at the SIMD-32 icpx
+ *      picks for Xe2. Its call operator carries no sub-group attribute.
  *
  *    VMAF_SYCL_ALWAYS_INLINE  (ADR-1395)
  *      `inline` plus the always-inline attribute, for header functions a
@@ -128,14 +133,25 @@ template <int N> struct VmafSyclSubGroupSize {
 #define VMAF_SYCL_ALWAYS_INLINE inline
 #endif
 
+/* The sub-group size a kernel shape requires: SG_SIZE, checked by
+ * VmafSyclSubGroupSize; 0 requires none (ADR-1501). */
+template <int SG_SIZE> struct VmafSyclShapeSubGroup : VmafSyclSubGroupSize<SG_SIZE> {};
+template <> struct VmafSyclShapeSubGroup<0> {
+    static constexpr int value = 0;
+};
+
 template <int SG_SIZE, int GRF_SIZE> struct VmafSyclKernelShape {
     static_assert(GRF_SIZE == 0 || GRF_SIZE == 256, "GRF_SIZE: 0 (device default) or 256");
-    static constexpr int sub_group_size = VmafSyclSubGroupSize<SG_SIZE>::value;
+    static_assert(SG_SIZE != 0 || GRF_SIZE == 256,
+                  "SG_SIZE 0 (no required sub-group size) only with GRF_SIZE 256 (ADR-1501)");
+    static constexpr int sub_group_size = VmafSyclShapeSubGroup<SG_SIZE>::value;
 #if VMAF_SYCL_KERNEL_PROPERTIES
     [[nodiscard]] auto get(sycl::ext::oneapi::experimental::properties_tag /*tag*/) const
     {
         namespace syclex = sycl::ext::oneapi::experimental;
-        if constexpr (GRF_SIZE == 256) {
+        if constexpr (SG_SIZE == 0) {
+            return syclex::properties{sycl::ext::intel::experimental::grf_size<256>};
+        } else if constexpr (GRF_SIZE == 256) {
             return syclex::properties{syclex::sub_group_size<sub_group_size>,
                                       sycl::ext::intel::experimental::grf_size<256>};
         } else {

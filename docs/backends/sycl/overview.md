@@ -258,7 +258,11 @@ It fails when a kernel uses scratch memory: the ratchet list that used to
 exempt the known ones is empty and stays empty
 (`test_sycl_kernel_source_contract.py` rejects a new entry without a device).
 It skips without a GPU, so CI, which has none, does not run it. On an Arc A380
-it audits 110 kernels and finds none.
+and on an Arc B580 and an Arc Pro B60 (Xe2, xe driver) it audits 127 kernels
+and finds none. Both Xe2 cards return correct values from the two probes, so
+they log no warning; until
+2026-10-03 the term kernel of `float_adm_sycl` used 128 bytes of scratch
+memory there ([ADR-1501](../../adr/1501-sycl-float-adm-terms-large-grf-xe2.md)).
 
 **SIMD-32 VIF kernels.** Every Intel GPU supports SIMD-16 sub-groups, so
 `vif_sycl` never picks its SIMD-32 kernels there by itself. They take the
@@ -275,8 +279,24 @@ at run time (`pixel.original[band]`) is enough to need scratch memory: select
 by value instead, as `fadm_load_cm_pixel()` in `float_adm_sycl.cpp` does.
 When a kernel cannot stay within 128 registers, give it the 256-entry file
 with `VmafSyclKernelShape<SG, 256>` from `core/src/feature/sycl/sycl_compat.h`,
-as `integer_vif_sycl.cpp` does. Then run `test_sycl_kernel_scratch` on an
-Intel GPU.
+as `integer_vif_sycl.cpp` does. Xe-LP integrated GPUs (`tgllp`, `adl-*`,
+`rpl-*`) have no 256-entry file and spill at that size anyway; a kernel that
+fits them only at the SIMD-8 the compiler picks there, while Xe2 accepts no
+sub-group below 16, takes `VmafSyclKernelShape<0, 256>`: no required
+sub-group size, the large file where the target has one. The term kernel of
+`float_adm_sycl.cpp` does
+([ADR-1501](../../adr/1501-sycl-float-adm-terms-large-grf-xe2.md)). Then run
+`test_sycl_kernel_scratch` on an Intel GPU.
+
+The build log of a default-list build (every target of
+`sycl_icpx_aot_targets`) also names each spill per target, which shows a
+spill on a GPU you do not have:
+
+```text
+[bmg-g21] warning: in kernel '...launch_terms...': compiled SIMD32 allocated 128 regs and spilled around 2
+```
+
+The log does not show private arrays in memory; only the device test does.
 
 ## Picture pre-allocation
 

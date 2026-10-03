@@ -50,7 +50,17 @@ invariant: float_adm_sycl.cpp = CPU float_adm, bit for bit; options must be capt
   `test_sycl_float_adm_math` (host + device vs `adm_tools.c`),
   `test_sycl_float_adm_parity` (`==`, cases in
   `core/test/float_adm_twin_parity.h`),
-  `test_sycl_float_adm_exact_contract.py` (15 planted regressions).
+  `test_sycl_float_adm_exact_contract.py` (19 planted regressions).
+- **Term kernel shape = `VmafSyclKernelShape<kTermsSubGroup = 0, kTermsGrf
+  = 256>` ([ADR-1501](../../../../../docs/adr/1501-sycl-float-adm-terms-large-grf-xe2.md)),
+  twin `FadmTermsKernel` + probe `TermsKernel`.** Plain lambda = SIMD-32 on
+  Xe2, 2 regs spilled (128 B, Arc B580, `test_sycl_kernel_scratch` fail).
+  SG 16 spills 58-91 regs on the 16 other targets; SG 16 + GRF 256 spills
+  on Xe-LP (no large GRF). Never a plain lambda, never a fixed SG here.
+  Spill check without device: default-list build log, `spilled around N`
+  per target. Probe queue in order (`on_default_gpu()`): its three kernels
+  read each other's output; out of order the B580 ran them concurrently
+  (row sums before terms, wrong and changing values).
 
 - [ADR-0202](../../../../../docs/adr/0202-float-adm-cuda-sycl.md) +
   [ADR-0206](../../../../../docs/adr/0206-ssimulacra2-cuda-sycl.md) —
