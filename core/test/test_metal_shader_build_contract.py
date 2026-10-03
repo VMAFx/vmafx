@@ -111,7 +111,7 @@ def kernel_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     while pending:
         path = pending.pop().resolve()
-        key = str(path.relative_to(ROOT))
+        key = path.relative_to(ROOT).as_posix()
         if key in sources:
             continue
         sources[key] = path.read_text(encoding="utf-8")
