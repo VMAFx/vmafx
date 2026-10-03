@@ -2245,6 +2245,18 @@ test('test_metal_soft_double_contract',
 
 # [metal-ports: host steps and option tables]
 
+# T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26 (psnr part) and item (2) of
+# T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 (ADR-1498): integer_psnr_metal
+# keeps an exact uint64 SSE per threadgroup, the CPU option table, the
+# psnr_score.h helpers, a flush for apsnr_* and the TEMPORAL flag. Device-free;
+# metal_option_tables.py reads both option tables from the sources.
+test('test_metal_integer_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of host-step group)
 
 # [metal-ports: integer kernels]
