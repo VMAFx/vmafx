@@ -3,35 +3,28 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
- *  integer_ssim feature extractor on the Metal backend.
- *  Integer (fixed-point) twin of float_ssim_metal.mm — mirrors the
- *  float twin's two-pass dispatch scaffolding verbatim and swaps the
- *  float arithmetic for the fixed-point arithmetic of the CPU integer
- *  reference core/src/feature/integer_ssim.c (feature name `ssim`).
+ *  integer_ssim feature extractor on the Metal backend (feature name `ssim`).
+ *  The twin returns the CPU's score bit for bit (ADR-1498; the design of the
+ *  SYCL twin, ADR-1443, and of the CUDA and HIP twins, ADR-1424, ADR-1438).
  *
- *  Two-pass dispatch:
- *    pass 0 -> integer_ssim_horiz_{8,16}bpc  (6 int64 moment planes)
- *    pass 1 -> integer_ssim_vert_combine     (per-WG float partials)
+ *  Two passes (integer_ssim.metal):
+ *    pass 0 -> integer_ssim_horiz_{8,16}bpc  (5 int64 moment planes)
+ *    pass 1 -> integer_ssim_vert_terms       (the fp64 bit pattern of every
+ *                                             pixel's term, raster order)
  *
- *  Unlike float_ssim, the integer path:
- *   - operates on raw integer pixels (NO [0,255] normalisation / scaler);
- *   - uses the 9-tap fixed-point Gaussian {2,9,28,55,68,55,28,9,2}
- *     (gaussian_filter_init(1.5, 5), KERNEL_WEIGHT=256) for BOTH the
- *     horizontal and vertical passes — see integer_ssim.metal;
- *   - covers the FULL W x H grid with edge-truncated convolution (the
- *     per-pixel weight `w` shrinks near edges), so the host divides
- *     sum(ssim_term) by sum(weight) rather than by a fixed pixel count;
- *   - has NO luminance/contrast/structure sub-scores.
+ *  integer_ssim.c::calc_ssim() adds every pixel's fp64 term into one double,
+ *  row after row, and divides by the sum of the window weights. The kernel
+ *  forms that term without fp64 (metal_integer_ssim_math.h, the reference's
+ *  operations on values in 64-bit integers) and stores it unreduced; the
+ *  host adds the read-back plane in index order (issim_frame_sum()). The
+ *  weight of a window is the product of its two tap sums, so the frame's
+ *  weight sum is the product of the two line sums (issim_line_weight()).
  *
- *  Partials: two float buffers, grid_w x grid_h each — `ssim_parts`
- *  (per-WG sum of SSIM terms) and `ssimw_parts` (per-WG sum of weights).
- *  Host: score = sum(ssim_parts) / sum(ssimw_parts).
- *
- *  Options (matching integer_ssim.c CPU parity):
- *    enable_db   — convert SSIM to dB: score = -10*log10(1 - ssim).
- *    clip_db     — clamp dB output to a peak-derived finite maximum.
- *
- *  Feature name: ssim.
+ *  Options (equal to integer_ssim.c's table):
+ *    enable_db   — write SSIM as dB, -10 * log10(1 - ssim);
+ *    clip_db     — clip dB scores to the peak-derived ceiling.
+ *  Both go through the CPU's helpers (vmaf_ssim_max_db(),
+ *  vmaf_ssim_emit_ratio_score_named(), nonfinite_score.h).
  */
 
 #include <errno.h>
@@ -60,29 +53,39 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "metal/metal_integer_ssim_math.h"
+
 extern "C" {
 extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
+/* integer_ssim.c's SSIM_K1 and SSIM_K2. */
+#define ISSIM_K1 (0.01 * 0.01)
+#define ISSIM_K2 (0.03 * 0.03)
+
+/* The moment planes of pass 0: mux, muy, x2, xy, y2. */
+#define ISSIM_MOMENT_PLANES 5u
+
 typedef struct IntegerSsimStateMetal {
     VmafMetalKernelLifecycle lc;
-    VmafMetalKernelBuffer rb;        /* float ssim_term partials, grid_w x grid_h */
-    VmafMetalKernelBuffer rbw;       /* float weight partials, grid_w x grid_h */
+    VmafMetalKernelBuffer terms;     /* fp64 bit pattern per pixel, raster order */
     VmafMetalContext *ctx;
     void *pso_horiz_8;               /* integer_ssim_horiz_8bpc  (pass 0) */
     void *pso_horiz_16;              /* integer_ssim_horiz_16bpc (pass 0) */
-    void *pso_vert;                  /* integer_ssim_vert_combine (pass 1) */
-    void *hbuf_buf;                  /* intermediate 6-plane int64 buffer */
+    void *pso_vert;                  /* integer_ssim_vert_terms  (pass 1) */
+    void *hbuf_buf;                  /* intermediate 5-plane int64 buffer */
 
-    /* Options (matching integer_ssim.c CPU). */
+    /* Options (integer_ssim.c's table). */
     bool    enable_db;
     bool    clip_db;
 
-    double  max_db;          /* INFINITY unless clip_db */
-    uint32_t samplemax;      /* (1 << bpc) - 1 */
-    size_t  hbuf_size;
-    size_t  partials_count;
+    double  max_db;          /* vmaf_ssim_max_db(): +inf unless clip_db */
+    /* calc_ssim()'s `ssimw`: the sum of every window's weight. */
+    int64_t total_weight;
+    /* Kernel arguments: the frame and the fp64 bit patterns of
+     * fl64(sm * sm * SSIM_K1) and fl64(sm * sm * SSIM_K2). */
+    VmafMtlIssimParams params;
     unsigned frame_w;
     unsigned frame_h;
     unsigned bpc;
@@ -97,7 +100,7 @@ typedef struct IntegerSsimStateMetal {
 static const VmafOption options[] = {
     {
         .name        = "enable_db",
-        .help        = "write SSIM values as dB: -10*log10(1 - ssim)",
+        .help        = "write SSIM values as dB: -10*log10(1-ssim)",
         .offset      = offsetof(IntegerSsimStateMetal, enable_db),
         .type        = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -113,7 +116,46 @@ static const VmafOption options[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Helpers                                                              */
+/* Host arithmetic                                                      */
+/* ------------------------------------------------------------------ */
+
+/* The fp64 bit pattern of integer_ssim.c's `sm * sm * k`, the factor of c1
+ * (k = SSIM_K1) or c2 (k = SSIM_K2) that does not depend on the window. */
+static uint64_t issim_stabiliser_bits(unsigned bpc, double k)
+{
+    const int samplemax = (1 << bpc) - 1;
+    const double sm = (double)samplemax;
+    const double value = sm * sm * k;
+    uint64_t bits = 0u;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+/* The sum of the window weights along a line of `extent` samples. */
+static int64_t issim_line_weight(unsigned extent)
+{
+    int64_t weight = 0;
+    for (unsigned position = 0u; position < extent; position++) {
+        weight += vmaf_mtl_issim_tap_weight(vmaf_mtl_issim_tap_range(position, extent));
+    }
+    return weight;
+}
+
+/* calc_ssim()'s `ssim` accumulator: the terms of the plane added into one
+ * double in index order, which is the reference's raster order. */
+static double issim_frame_sum(const uint64_t *terms, size_t count)
+{
+    double sum = 0.0;
+    for (size_t i = 0u; i < count; i++) {
+        double term = 0.0;
+        memcpy(&term, &terms[i], sizeof(term));
+        sum += term;
+    }
+    return sum;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lifecycle                                                            */
 /* ------------------------------------------------------------------ */
 
 static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
@@ -133,7 +175,7 @@ static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 
     id<MTLFunction> fn_h8  = [lib newFunctionWithName:@"integer_ssim_horiz_8bpc"];
     id<MTLFunction> fn_h16 = [lib newFunctionWithName:@"integer_ssim_horiz_16bpc"];
-    id<MTLFunction> fn_vert = [lib newFunctionWithName:@"integer_ssim_vert_combine"];
+    id<MTLFunction> fn_vert = [lib newFunctionWithName:@"integer_ssim_vert_terms"];
     if (fn_h8 == nil || fn_h16 == nil || fn_vert == nil) { return -ENODEV; }
 
     id<MTLComputePipelineState> pso_h8  = [device newComputePipelineStateWithFunction:fn_h8  error:&err];
@@ -147,90 +189,122 @@ static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
+/* The frame, the weight sum, the stabilisers and the dB ceiling. */
+static int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigned h)
+{
+    if (w < 1u || h < 1u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "integer_ssim_metal: invalid frame size %ux%u.\n", w, h);
+        return -EINVAL;
+    }
+    s->frame_w = w;
+    s->frame_h = h;
+    s->bpc = bpc;
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
+    s->total_weight = issim_line_weight(w) * issim_line_weight(h);
+    s->params.width = w;
+    s->params.height = h;
+    s->params.k1_bits = issim_stabiliser_bits(bpc, ISSIM_K1);
+    s->params.k2_bits = issim_stabiliser_bits(bpc, ISSIM_K2);
+    return 0;
+}
+
+/* The term plane, the moment planes and the pipelines. */
+static int allocate(IntegerSsimStateMetal *s)
+{
+    const size_t pixels = (size_t)s->frame_w * (size_t)s->frame_h;
+    int err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, pixels * sizeof(uint64_t));
+    if (err != 0) { return err; }
+
+    void *dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == NULL) { return -ENODEV; }
+    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+
+    id<MTLBuffer> hb = [device newBufferWithLength:ISSIM_MOMENT_PLANES * pixels * sizeof(int64_t)
+                                           options:MTLResourceStorageModeShared];
+    if (hb == nil) { return -ENOMEM; }
+    s->hbuf_buf = (__bridge_retained void *)hb;
+    return build_pipelines(s, device);
+}
+
+static int close_fex_metal(VmafFeatureExtractor *fex);
+
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
 
-    if (w < 1u || h < 1u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "integer_ssim_metal: invalid frame size %ux%u.\n", w, h);
-        return -EINVAL;
-    }
-
-    s->frame_w   = w;
-    s->frame_h   = h;
-    s->bpc       = bpc;
-    s->samplemax = (1u << bpc) - 1u;
-
-    /* Derive max_db used by clip_db. Mirrors integer_ssim.c::init. */
-    if (s->clip_db) {
-        const unsigned peak = (1u << bpc) - 1u;
-        const double mse  = 0.5 / ((double)w * (double)h);
-        s->max_db = ceil(10.0 * log10((double)(peak * peak) / mse));
-    } else {
-        s->max_db = INFINITY;
-    }
-
-    int err = vmaf_metal_context_new(&s->ctx, 0);
+    int err = configure(s, bpc, w, h);
     if (err != 0) { return err; }
 
+    err = vmaf_metal_context_new(&s->ctx, 0);
+    if (err != 0) { return err; }
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
-
-    {
-        /* SSIM partials grid is over the full W x H output. */
-        const size_t grid_w = (s->frame_w + 15u) / 16u;
-        const size_t grid_h = (s->frame_h +  7u) /  8u;
-        s->partials_count   = grid_w * grid_h;
-        err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
-                                             s->partials_count * sizeof(float));
+    if (err == 0) { err = allocate(s); }
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features,
+                                                          fex->options, s);
+        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
     }
-    if (err != 0) { goto fail_lc; }
-
-    err = vmaf_metal_kernel_buffer_alloc(&s->rbw, s->ctx,
-                                         s->partials_count * sizeof(float));
-    if (err != 0) { goto fail_rb; }
-
-    {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rbw; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        /* hbuf: 6 planes x W x H int64 (mux, muy, x2, xy, y2, w). */
-        s->hbuf_size = 6u * (size_t)s->frame_w * (size_t)s->frame_h * sizeof(int64_t);
-        id<MTLBuffer> hb = [device newBufferWithLength:s->hbuf_size
-                                               options:MTLResourceStorageModeShared];
-        if (hb == nil) { err = -ENOMEM; goto fail_rbw; }
-        s->hbuf_buf = (__bridge_retained void *)hb;
-
-        err = build_pipelines(s, device);
+    if (err != 0) {
+        /* close_fex_metal releases what was made; it tolerates the rest. */
+        (void)close_fex_metal(fex);
     }
-    if (err != 0) { goto fail_hbuf; }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features,
-                                                      fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
-    return 0;
-
-fail_pso:
-    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = NULL; }
-    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = NULL; }
-    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = NULL; }
-fail_hbuf:
-    if (s->hbuf_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf; s->hbuf_buf = NULL; }
-fail_rbw:
-    (void)vmaf_metal_kernel_buffer_free(&s->rbw, s->ctx);
-fail_rb:
-    (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
     return err;
+}
+
+/* ------------------------------------------------------------------ */
+/* Per frame                                                            */
+/* ------------------------------------------------------------------ */
+
+/* One packed copy of the luma plane of `pic`, `row_bytes` per row. */
+static id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
+                                 size_t row_bytes, unsigned height)
+{
+    id<MTLBuffer> buf = [device newBufferWithLength:row_bytes * height
+                                            options:MTLResourceStorageModeShared];
+    if (buf == nil) { return nil; }
+    uint8_t *dst = (uint8_t *)[buf contents];
+    const uint8_t *src = (const uint8_t *)pic->data[0];
+    for (unsigned y = 0; y < height; ++y) {
+        memcpy(dst + (size_t)y * row_bytes, src + (size_t)y * pic->stride[0], row_bytes);
+    }
+    return buf;
+}
+
+static void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd,
+                              id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf, size_t row_bytes)
+{
+    id<MTLComputePipelineState> pso_h = (s->bpc <= 8u)
+        ? (__bridge id<MTLComputePipelineState>)s->pso_horiz_8
+        : (__bridge id<MTLComputePipelineState>)s->pso_horiz_16;
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:pso_h];
+    [enc setBuffer:ref_buf offset:0 atIndex:0];
+    [enc setBuffer:dis_buf offset:0 atIndex:1];
+    [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:2];
+    uint32_t params[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h,
+                          (uint32_t)row_bytes, (uint32_t)row_bytes};
+    [enc setBytes:params length:sizeof(params) atIndex:3];
+    MTLSize tg   = MTLSizeMake(16, 8, 1);
+    MTLSize grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+    [enc endEncoding];
+}
+
+static void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
+{
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert];
+    [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
+    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->terms.buffer offset:0 atIndex:1];
+    [enc setBytes:&s->params length:sizeof(s->params) atIndex:2];
+    MTLSize tg   = MTLSizeMake(16, 8, 1);
+    MTLSize grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+    [enc endEncoding];
 }
 
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
@@ -240,91 +314,31 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
 
-    s->frame_w = ref_pic->w[0];
-    s->frame_h = ref_pic->h[0];
-
-    const size_t px_bytes  = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t row_bytes = (size_t)s->frame_w * px_bytes;
-    const size_t plane_bytes = row_bytes * s->frame_h;
+    /* The buffers, the weight sum and the kernel arguments are the frame's
+     * of init(). */
+    if (ref_pic->w[0] != s->frame_w || ref_pic->h[0] != s->frame_h ||
+        dist_pic->w[0] != s->frame_w || dist_pic->h[0] != s->frame_h) {
+        return -EINVAL;
+    }
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == NULL || qh == NULL) { return -ENODEV; }
-
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>    hbuf_buf  = (__bridge id<MTLBuffer>)s->hbuf_buf;
-    id<MTLBuffer>    par_buf   = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
-    id<MTLBuffer>    parw_buf  = (__bridge id<MTLBuffer>)(void *)s->rbw.buffer;
 
-    /* Upload ref and dis as raw (un-normalised) integer pixels — the
-     * Metal buffers are tightly packed (stride == w*px_bytes), so the
-     * kernel strides are row_bytes. */
-    id<MTLBuffer> ref_buf = [device newBufferWithLength:plane_bytes options:MTLResourceStorageModeShared];
-    id<MTLBuffer> dis_buf = [device newBufferWithLength:plane_bytes options:MTLResourceStorageModeShared];
+    /* Raw (un-normalised) integer samples, packed rows. */
+    const size_t row_bytes = (size_t)s->frame_w * ((s->bpc <= 8u) ? 1u : 2u);
+    id<MTLBuffer> ref_buf = upload_luma(device, ref_pic, row_bytes, s->frame_h);
+    id<MTLBuffer> dis_buf = upload_luma(device, dist_pic, row_bytes, s->frame_h);
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
-    {
-        uint8_t *rd = (uint8_t *)[ref_buf contents];
-        uint8_t *dd = (uint8_t *)[dis_buf contents];
-        for (unsigned y = 0; y < s->frame_h; ++y) {
-            memcpy(rd + y * row_bytes, (uint8_t *)ref_pic->data[0]  + y * ref_pic->stride[0],  row_bytes);
-            memcpy(dd + y * row_bytes, (uint8_t *)dist_pic->data[0] + y * dist_pic->stride[0], row_bytes);
-        }
-    }
-
-    const size_t grid_w = (s->frame_w + 15u) / 16u;
-    const size_t grid_h = (s->frame_h +  7u) /  8u;
 
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-
-    {
-        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-        [blit fillBuffer:par_buf  range:NSMakeRange(0, s->partials_count * sizeof(float)) value:0];
-        [blit fillBuffer:parw_buf range:NSMakeRange(0, s->partials_count * sizeof(float)) value:0];
-        [blit endEncoding];
-    }
-
-    /* Pass 0: horizontal moment accumulation -> hbuf (6 int64 planes). */
-    {
-        id<MTLComputePipelineState> pso_h = (s->bpc <= 8u)
-            ? (__bridge id<MTLComputePipelineState>)s->pso_horiz_8
-            : (__bridge id<MTLComputePipelineState>)s->pso_horiz_16;
-        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-        [enc setComputePipelineState:pso_h];
-        [enc setBuffer:ref_buf  offset:0 atIndex:0];
-        [enc setBuffer:dis_buf  offset:0 atIndex:1];
-        [enc setBuffer:hbuf_buf offset:0 atIndex:2];
-        uint32_t params[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h,
-                              (uint32_t)row_bytes, (uint32_t)row_bytes};
-        [enc setBytes:params length:sizeof(params) atIndex:3];
-        MTLSize tg   = MTLSizeMake(16, 8, 1);
-        MTLSize grid = MTLSizeMake(grid_w, grid_h, 1);
-        [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-        [enc endEncoding];
-    }
-
-    /* Pass 1: vertical accumulation + SSIM combine -> partials. */
-    {
-        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-        [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert];
-        [enc setBuffer:hbuf_buf offset:0 atIndex:0];
-        [enc setBuffer:par_buf  offset:0 atIndex:1];
-        [enc setBuffer:parw_buf offset:0 atIndex:2];
-        uint32_t params[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h,
-                              (uint32_t)s->samplemax, 0};
-        [enc setBytes:params length:sizeof(params) atIndex:3];
-        uint32_t gdim[2] = {(uint32_t)grid_w, (uint32_t)grid_h};
-        [enc setBytes:gdim length:sizeof(gdim) atIndex:4];
-        MTLSize tg      = MTLSizeMake(16, 8, 1);
-        MTLSize grid_sz = MTLSizeMake(grid_w, grid_h, 1);
-        [enc dispatchThreadgroups:grid_sz threadsPerThreadgroup:tg];
-        [enc endEncoding];
-    }
-
+    encode_horizontal(s, cmd, ref_buf, dis_buf, row_bytes);
+    encode_terms(s, cmd);
     [cmd commit];
     [cmd waitUntilCompleted];
-    (void)plane_bytes;
     return 0;
 }
 
@@ -332,20 +346,15 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
+    const uint64_t *terms = (const uint64_t *)s->terms.host_view;
+    if (terms == NULL) { return -EINVAL; }
 
-    const float *parts  = (const float *)s->rb.host_view;
-    const float *partsw = (const float *)s->rbw.host_view;
-    double ssim_sum  = 0.0;
-    double ssimw_sum = 0.0;
-    if (parts != NULL && partsw != NULL) {
-        for (size_t i = 0; i < s->partials_count; ++i) {
-            ssim_sum  += (double)parts[i];
-            ssimw_sum += (double)partsw[i];
-        }
-    }
+    /* calc_ssim(): the frame sum in the reference's order, then ssim / ssimw. */
+    const double total_ssim = issim_frame_sum(terms, (size_t)s->frame_w * s->frame_h);
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                            "integer_ssim_metal", "ssim", ssim_sum, ssimw_sum,
-                                            s->enable_db, s->max_db, index);
+                                            "integer_ssim_metal", "ssim", total_ssim,
+                                            (double)s->total_weight, s->enable_db, s->max_db,
+                                            index);
 }
 
 static int close_fex_metal(VmafFeatureExtractor *fex)
@@ -358,9 +367,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = NULL; }
     if (s->hbuf_buf)     { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                   s->hbuf_buf     = NULL; }
 
-    int err = vmaf_metal_kernel_buffer_free(&s->rbw, s->ctx);
-    if (err != 0 && rc == 0) { rc = err; }
-    err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
+    const int err = vmaf_metal_kernel_buffer_free(&s->terms, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
     if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
