@@ -159,6 +159,14 @@ typedef struct FloatAdmStateMetal {
     double adm_p_norm;
     double adm_dlm_weight;
     double adm_min_val;
+    double adm_f1s0;
+    double adm_f1s1;
+    double adm_f1s2;
+    double adm_f1s3;
+    double adm_f2s0;
+    double adm_f2s1;
+    double adm_f2s2;
+    double adm_f2s3;
     int adm_skip_aim_scale;
     bool adm_skip_scale0;
 
@@ -278,13 +286,85 @@ static const VmafOption options[] = {
      .min = 0.0,
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s0",
+     .alias = "f1s0",
+     .help = "factor1 scale0",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s0),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s1",
+     .alias = "f1s1",
+     .help = "factor1 scale1",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s1),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s2",
+     .alias = "f1s2",
+     .help = "factor1 scale2",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s2),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f1s3",
+     .alias = "f1s3",
+     .help = "factor1 scale3",
+     .offset = offsetof(FloatAdmStateMetal, adm_f1s3),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s0",
+     .alias = "f2s0",
+     .help = "factor2 scale0",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s0),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s1",
+     .alias = "f2s1",
+     .help = "factor2 scale1",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s1),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s2",
+     .alias = "f2s2",
+     .help = "factor2 scale2",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s2),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_f2s3",
+     .alias = "f2s3",
+     .help = "factor2 scale3",
+     .offset = offsetof(FloatAdmStateMetal, adm_f2s3),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = -1.0},
+     .min = -1.0,
+     .max = 10.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_skip_aim_scale",
      .alias = "sasc",
      .help = "when set, skip AIM calculations for that scale",
      .offset = offsetof(FloatAdmStateMetal, adm_skip_aim_scale),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = -1},
-     .min = -1,
+     .min = 0,
      .max = 3,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_skip_scale0",
@@ -431,14 +511,14 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     /* The constants the reference derives per frame, taken from its own
      * routines so they cannot drift from it (ADR-1420, ADR-1434). The CSF
      * weights come from adm_csf_rfactor_s() with the options float_adm.c
-     * passes; in the Watson-97 mode this twin supports they ignore
-     * adm_csf_scale / adm_csf_diag_scale, as on the CPU (ADR-1214). The
-     * per-scale overrides adm_f1sN / adm_f2sN are not options of this twin's
-     * table yet: -1.0 keeps the model's values, the CPU's default. */
+     * passes, the per-scale overrides adm_f1sN / adm_f2sN included; in the
+     * Watson-97 mode this twin supports they ignore adm_csf_scale /
+     * adm_csf_diag_scale, as on the CPU (ADR-1214). */
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
         adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
                           s->adm_csf_mode, DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale,
-                          s->adm_csf_diag_scale, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
+                          s->adm_csf_diag_scale, s->adm_f1s0, s->adm_f1s1, s->adm_f1s2,
+                          s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2, s->adm_f2s3,
                           s->rfactor[scale]);
     }
     s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();

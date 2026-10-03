@@ -15,7 +15,6 @@ DEFAULT_ONLY_OPTIONS = (
     ("cuda/float_vif_cuda.c", "vif_kernelscale"),
     ("sycl/float_vif_sycl.cpp", "vif_kernelscale"),
     ("hip/float_vif_hip.c", "vif_kernelscale"),
-    ("metal/float_vif_metal.mm", "vif_kernelscale"),
     ("cuda/float_adm_cuda.c", "adm_csf_mode"),
     ("sycl/float_adm_sycl.cpp", "adm_csf_mode"),
     ("hip/float_adm_hip.c", "adm_csf_mode"),
@@ -24,6 +23,9 @@ DEFAULT_ONLY_OPTIONS = (
 
 FULL_RANGE_OPTIONS = (
     ("metal/integer_adm_metal.mm", "adm_csf_mode"),
+    # ADR-1498: float_vif_metal takes the taps of every kernelscale from
+    # vif_get_filter() as kernel arguments, as the CPU computes them.
+    ("metal/float_vif_metal.mm", "vif_kernelscale"),
     # ADR-1491: these twins compute the five-frame window (the frame two back
     # on the device, the CPU's window function on the host). A
     # VMAF_OPT_FLAG_DEFAULT_ONLY on the option would send it back to the CPU.
