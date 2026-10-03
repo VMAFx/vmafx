@@ -54,6 +54,7 @@
 
 /* An fp64 value: (negative ? -1 : 1) * mant * 2^exp with mant in
  * [2^52, 2^53), or zero (mant 0, exp VMAF_MTL_SOFT_ZERO_EXP, not negative). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlSoftSigned {
     vmaf_mtl_u64 mant;
     vmaf_mtl_i32 exp;
@@ -81,6 +82,7 @@ VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_signed_make(vmaf_mtl_u64 mant, vmaf_mtl
                                                      bool negative)
 {
     const bool zero = mant == 0u;
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlSoftSigned value = {mant, zero ? VMAF_MTL_SOFT_ZERO_EXP : exp,
                                      (!zero && negative) ? 1u : 0u};
     return value;
@@ -113,6 +115,7 @@ VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_signed_from_u64(vmaf_mtl_u64 value)
 VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_signed_from_exact(vmaf_mtl_u64 value)
 {
     const vmaf_mtl_u32 lift = VMAF_MTL_CLZ64(value | VMAF_MTL_U64(1)) - 11u;
+    // NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift): value < 2^53, so clz64 is 11..63 and lift 0..52, ADR-1498
     return vmaf_mtl_signed_make(value << lift, -(vmaf_mtl_i32)lift, false);
 }
 
@@ -247,6 +250,7 @@ VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_signed_mul(VmafMtlSoftSigned a, VmafMtl
  * within three divisors of zero, so its low 64 bits are its value, and two
  * corrections each way put the digit right whichever way the device's
  * division rounds. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlDivStep {
     vmaf_mtl_u64 rem;
     vmaf_mtl_u64 digit;
@@ -274,6 +278,7 @@ VMAF_MTL_FUNC VmafMtlDivStep vmaf_mtl_div_step(vmaf_mtl_u64 rem, vmaf_mtl_u64 de
         left -= above ? divisor : VMAF_MTL_I64(0);
         digit += above ? VMAF_MTL_U64(1) : VMAF_MTL_U64(0);
     }
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
     const VmafMtlDivStep next = {(vmaf_mtl_u64)left, digit};
     return next;
 }

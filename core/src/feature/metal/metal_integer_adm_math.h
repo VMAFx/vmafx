@@ -83,6 +83,7 @@ VMAF_MTL_FUNC vmaf_mtl_i64 vmaf_mtl_iadm_k_s123(vmaf_mtl_i32 o, vmaf_mtl_i32 t)
     if (abs_o >= 32768u) {
         b = vmaf_mtl_iadm_best15(abs_o);
     }
+    // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): the reference's own (int64_t)(1u << (14 + k_shift)), integer_adm_kernels.h, ADR-1498
     const vmaf_mtl_i64 rnd = (vmaf_mtl_i64)(1u << (14 + b.shift));
     const vmaf_mtl_i64 tmp_k =
         ((((vmaf_mtl_i64)vmaf_mtl_iadm_recip((vmaf_mtl_i32)b.value) * t) * k_sign) + rnd) >>

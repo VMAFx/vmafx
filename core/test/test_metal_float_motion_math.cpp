@@ -34,11 +34,11 @@
  * rounded operations the specification promises under -fno-fast-math.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "test.h"
 
@@ -103,22 +103,28 @@ uint32_t fm_hash(unsigned x, unsigned y, unsigned frame, unsigned plane)
     return v;
 }
 
+/* Plane `c` of the noise picture. */
+void fm_fill_plane(VmafPicture *pic, unsigned bpc, unsigned frame, unsigned c)
+{
+    for (unsigned y = 0; y < pic->h[c]; y++) {
+        uint8_t *row = static_cast<uint8_t *>(pic->data[c]) + (ptrdiff_t)y * pic->stride[c];
+        for (unsigned x = 0; x < pic->w[c]; x++) {
+            const uint32_t code = fm_hash(x, y, frame, c) >> (32u - bpc);
+            if (bpc <= 8u) {
+                row[x] = (uint8_t)code;
+            } else {
+                reinterpret_cast<uint16_t *>(row)[x] = (uint16_t)code;
+            }
+        }
+    }
+}
+
 /* A YUV420P picture of noise at `bpc` bits: frame `frame` of the fixture. */
 int fm_picture(VmafPicture *pic, unsigned w, unsigned h, unsigned bpc, unsigned frame)
 {
     const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, w, h);
     for (unsigned c = 0; err == 0 && c < 3u; c++) {
-        for (unsigned y = 0; y < pic->h[c]; y++) {
-            uint8_t *row = static_cast<uint8_t *>(pic->data[c]) + (ptrdiff_t)y * pic->stride[c];
-            for (unsigned x = 0; x < pic->w[c]; x++) {
-                const uint32_t code = fm_hash(x, y, frame, c) >> (32u - bpc);
-                if (bpc <= 8u) {
-                    row[x] = (uint8_t)code;
-                } else {
-                    reinterpret_cast<uint16_t *>(row)[x] = (uint16_t)code;
-                }
-            }
-        }
+        fm_fill_plane(pic, bpc, frame, c);
     }
     return err;
 }
@@ -488,9 +494,9 @@ int fm_twin_case_score(const FmCase *k, double *score)
         err = fm_twin_case_plane(pics, c, k, &plane);
         *score += plane;
     }
-    for (unsigned f = 0u; f < 2u; f++) {
-        if (pics[f].data[0] != nullptr) {
-            (void)vmaf_picture_unref(&pics[f]);
+    for (VmafPicture &pic : pics) {
+        if (pic.data[0] != nullptr) {
+            (void)vmaf_picture_unref(&pic);
         }
     }
     return err;
@@ -557,18 +563,24 @@ int fm_frame_case(const FmCase *k)
 /* The reduction the twin used before ADR-1409: one fp32 sum per 16x16
  * block (simd_sum, then a serial sum of the SIMD groups), the blocks added
  * in double. */
+float fm_block_sum(const float *cur, const float *prev, unsigned w, unsigned h, unsigned bx,
+                   unsigned by)
+{
+    float block = 0.0f;
+    for (unsigned y = by; y < by + 16u && y < h; y++) {
+        for (unsigned x = bx; x < bx + 16u && x < w; x++) {
+            block += vmaf_mtl_fm_abs_diff(cur[(size_t)y * w + x], prev[(size_t)y * w + x]);
+        }
+    }
+    return block;
+}
+
 double fm_block_score(const float *cur, const float *prev, unsigned w, unsigned h)
 {
     double total = 0.0;
     for (unsigned by = 0u; by < h; by += 16u) {
         for (unsigned bx = 0u; bx < w; bx += 16u) {
-            float block = 0.0f;
-            for (unsigned y = by; y < by + 16u && y < h; y++) {
-                for (unsigned x = bx; x < bx + 16u && x < w; x++) {
-                    block += vmaf_mtl_fm_abs_diff(cur[(size_t)y * w + x], prev[(size_t)y * w + x]);
-                }
-            }
-            total += (double)block;
+            total += (double)fm_block_sum(cur, prev, w, h, bx, by);
         }
     }
     return total / ((double)w * (double)h);
@@ -662,26 +674,69 @@ mu_message_t test_scale1_row_sums_are_compute_motion()
     return nullptr;
 }
 
+const FmCase kFrameCases[] = {
+    {.w = 161u,
+     .h = 91u,
+     .bpc = 8u,
+     .opts = {nullptr},
+     .key = "VMAF_feature_motion_score",
+     .filter_size = 5u,
+     .scale1 = false,
+     .uv = false},
+    {.w = 161u,
+     .h = 91u,
+     .bpc = 10u,
+     .opts = {nullptr},
+     .key = "VMAF_feature_motion_score",
+     .filter_size = 5u,
+     .scale1 = false,
+     .uv = false},
+    {.w = 64u,
+     .h = 36u,
+     .bpc = 16u,
+     .opts = {nullptr},
+     .key = "VMAF_feature_motion_score",
+     .filter_size = 5u,
+     .scale1 = false,
+     .uv = false},
+    {.w = 161u,
+     .h = 91u,
+     .bpc = 8u,
+     .opts = {"motion_add_scale1", "true", "motion_add_uv", "true", nullptr},
+     .key = "motion_mdc_mau",
+     .filter_size = 5u,
+     .scale1 = true,
+     .uv = true},
+    {.w = 37u,
+     .h = 23u,
+     .bpc = 12u,
+     .opts = {"motion_add_uv", "true", nullptr},
+     .key = "motion_mau",
+     .filter_size = 5u,
+     .scale1 = false,
+     .uv = true},
+    {.w = 161u,
+     .h = 91u,
+     .bpc = 8u,
+     .opts = {"motion_filter_size", "3", nullptr},
+     .key = "motion_mfs_3",
+     .filter_size = 3u,
+     .scale1 = false,
+     .uv = false},
+    {.w = 161u,
+     .h = 91u,
+     .bpc = 10u,
+     .opts = {"motion_filter_size", "1", nullptr},
+     .key = "motion_mfs_1",
+     .filter_size = 1u,
+     .scale1 = false,
+     .uv = false},
+};
+
 mu_message_t test_frame_score_is_the_cpu_extractor()
 {
-    static const FmCase cases[] = {
-        {161u, 91u, 8u, {nullptr}, "VMAF_feature_motion_score", 5u, false, false},
-        {161u, 91u, 10u, {nullptr}, "VMAF_feature_motion_score", 5u, false, false},
-        {64u, 36u, 16u, {nullptr}, "VMAF_feature_motion_score", 5u, false, false},
-        {161u,
-         91u,
-         8u,
-         {"motion_add_scale1", "true", "motion_add_uv", "true", nullptr},
-         "motion_mdc_mau",
-         5u,
-         true,
-         true},
-        {37u, 23u, 12u, {"motion_add_uv", "true", nullptr}, "motion_mau", 5u, false, true},
-        {161u, 91u, 8u, {"motion_filter_size", "3", nullptr}, "motion_mfs_3", 3u, false, false},
-        {161u, 91u, 10u, {"motion_filter_size", "1", nullptr}, "motion_mfs_1", 1u, false, false},
-    };
     unsigned bad = 0u;
-    for (const FmCase &k : cases) {
+    for (const FmCase &k : kFrameCases) {
         bad += (fm_frame_case(&k) != 0) ? 1u : 0u;
     }
     mu_assert("the twin's frame score is not the CPU extractor's", bad == 0u);

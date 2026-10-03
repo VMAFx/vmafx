@@ -159,6 +159,15 @@ typedef struct Spots {
     size_t n;
 } Spots;
 
+static void spots_free(Spots *s)
+{
+    free(s->a);
+    free(s->sum);
+    free(s->rst);
+    free(s->t);
+    memset(s, 0, sizeof(*s));
+}
+
 static int spots_alloc(Spots *s, size_t n)
 {
     memset(s, 0, sizeof(*s));
@@ -167,15 +176,10 @@ static int spots_alloc(Spots *s, size_t n)
     s->sum = calloc(n, sizeof(float));
     s->rst = calloc(n, sizeof(float));
     s->t = calloc(n, sizeof(float));
-    return (s->a && s->sum && s->rst && s->t) ? 0 : -1;
-}
-
-static void spots_free(Spots *s)
-{
-    free(s->a);
-    free(s->sum);
-    free(s->rst);
-    free(s->t);
+    if (s->a && s->sum && s->rst && s->t)
+        return 0;
+    spots_free(s);
+    return -1;
 }
 
 /* Samples of every magnitude and sign; a quarter of the clamp's inputs sit at
@@ -275,6 +279,19 @@ static bool near_exact(double value, double hi, double lo, double bound)
     return fabs((hi + lo) - value) <= bound;
 }
 
+static char *check_constant_pairs(const VmafMtlFadmConst *c30, const VmafMtlFadmConst *c15)
+{
+    mu_assert("one_by_30's pair must be the literal to 2^-48",
+              near_exact(REFERENCE_ONE_BY_30, c30->hi, c30->lo, REFERENCE_ONE_BY_30 * 0x1p-48));
+    mu_assert("one_by_15's pair must be the literal to 2^-48",
+              near_exact(REFERENCE_ONE_BY_15, c15->hi, c15->lo, REFERENCE_ONE_BY_15 * 0x1p-48));
+    mu_assert("one_by_30's significand must be normalised",
+              c30->mant >= (VMAF_MTL_U64(1) << 52) && c30->mant < (VMAF_MTL_U64(1) << 53));
+    mu_assert("one_by_15's significand must be normalised",
+              c15->mant >= (VMAF_MTL_U64(1) << 52) && c15->mant < (VMAF_MTL_U64(1) << 53));
+    return NULL;
+}
+
 static char *test_constants_are_the_reference_literals(void)
 {
     const VmafMtlFadmConst c30 = vmaf_mtl_fadm_one_by_30();
@@ -283,14 +300,9 @@ static char *test_constants_are_the_reference_literals(void)
               ldexp((double)c30.mant, c30.exp) == REFERENCE_ONE_BY_30);
     mu_assert("one_by_15 must be the double literal FLOAT_ONE_BY_15",
               ldexp((double)c15.mant, c15.exp) == REFERENCE_ONE_BY_15);
-    mu_assert("one_by_30's pair must be the literal to 2^-48",
-              near_exact(REFERENCE_ONE_BY_30, c30.hi, c30.lo, REFERENCE_ONE_BY_30 * 0x1p-48));
-    mu_assert("one_by_15's pair must be the literal to 2^-48",
-              near_exact(REFERENCE_ONE_BY_15, c15.hi, c15.lo, REFERENCE_ONE_BY_15 * 0x1p-48));
-    mu_assert("one_by_30's significand must be normalised",
-              c30.mant >= (VMAF_MTL_U64(1) << 52) && c30.mant < (VMAF_MTL_U64(1) << 53));
-    mu_assert("one_by_15's significand must be normalised",
-              c15.mant >= (VMAF_MTL_U64(1) << 52) && c15.mant < (VMAF_MTL_U64(1) << 53));
+    char *pairs = check_constant_pairs(&c30, &c15);
+    if (pairs)
+        return pairs;
     mu_assert("the decouple epsilon must be (float)1e-30", VMAF_MTL_FADM_EPS == (float)1e-30);
     mu_assert("the pair floor must be 2^-100", vmaf_mtl_fadm_fast_low() == 0x1p-100f);
     return NULL;

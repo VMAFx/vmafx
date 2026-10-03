@@ -179,21 +179,26 @@ static uint64_t old_sad(const Fixture *fx)
     return sad;
 }
 
+static void fill_plane(VmafPicture *pic, unsigned p, const Fixture *fx, unsigned frame)
+{
+    for (unsigned row = 0; row < pic->h[p]; row++) {
+        uint8_t *line = (uint8_t *)pic->data[p] + ((size_t)row * (size_t)pic->stride[p]);
+        for (unsigned col = 0; col < pic->w[p]; col++) {
+            const int v = p ? (1 << (fx->bpc - 1u)) : sample(fx, frame, row, col);
+            if (fx->bpc > 8u) {
+                ((uint16_t *)line)[col] = (uint16_t)v;
+            } else {
+                line[col] = (uint8_t)v;
+            }
+        }
+    }
+}
+
 static int put_frame(VmafPicture *pic, const Fixture *fx, unsigned frame)
 {
     const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, fx->bpc, fx->w, fx->h);
     for (unsigned p = 0; !err && p < 3u; p++) {
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint8_t *line = (uint8_t *)pic->data[p] + ((size_t)row * (size_t)pic->stride[p]);
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                const int v = p ? (1 << (fx->bpc - 1u)) : sample(fx, frame, row, col);
-                if (fx->bpc > 8u) {
-                    ((uint16_t *)line)[col] = (uint16_t)v;
-                } else {
-                    line[col] = (uint8_t)v;
-                }
-            }
-        }
+        fill_plane(pic, p, fx, frame);
     }
     return err;
 }
@@ -271,19 +276,25 @@ static char *check_fixture(const Fixture *fx, unsigned *bad, unsigned *old_off)
     return NULL;
 }
 
+static char *check_kind(unsigned k, unsigned *bad, unsigned *old_off, unsigned *cases)
+{
+    for (unsigned d = 0; d < 4u; d++) {
+        for (unsigned s = 0; s < 8u; s++) {
+            const Fixture fx = {(Kind)k, DEPTHS[d], SIZES[s][0], SIZES[s][1]};
+            mu_assert_msg(check_fixture(&fx, bad, old_off));
+            (*cases)++;
+        }
+    }
+    return NULL;
+}
+
 static char *test_sad_score_is_the_cpus(void)
 {
     unsigned bad = 0u;
     unsigned old_off = 0u;
     unsigned cases = 0u;
     for (unsigned k = 0; k < 3u; k++) {
-        for (unsigned d = 0; d < 4u; d++) {
-            for (unsigned s = 0; s < 8u; s++) {
-                const Fixture fx = {(Kind)k, DEPTHS[d], SIZES[s][0], SIZES[s][1]};
-                mu_assert_msg(check_fixture(&fx, &bad, &old_off));
-                cases++;
-            }
-        }
+        mu_assert_msg(check_kind(k, &bad, &old_off, &cases));
     }
     (void)fprintf(stderr, "[%u cases, former order off on %u] ", cases, old_off);
     mu_assert("the twin's SAD score is not the CPU motion extractor's", bad == 0u);

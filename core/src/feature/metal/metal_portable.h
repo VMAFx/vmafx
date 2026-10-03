@@ -50,9 +50,13 @@ typedef ulong vmaf_mtl_u64;
 #include <stdint.h>
 #include <string.h>
 
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef int32_t vmaf_mtl_i32;
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef uint32_t vmaf_mtl_u32;
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef int64_t vmaf_mtl_i64;
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef uint64_t vmaf_mtl_u64;
 
 #define VMAF_MTL_FUNC static inline

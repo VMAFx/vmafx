@@ -55,6 +55,7 @@
 
 /* Arguments of the blur kernel. `filter_size` is the motion_filter_size
  * option, `compute_sad` 0 on the first frame. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmBlurArgs {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
@@ -65,6 +66,7 @@ typedef struct VmafMtlFmBlurArgs {
 
 /* Arguments of the scale-1 kernel: the blurred plane, the half-size plane
  * and vmaf_mtl_fm_scale_ratio() of each axis. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmScale1Args {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
@@ -76,6 +78,7 @@ typedef struct VmafMtlFmScale1Args {
 
 /* Arguments of the row kernel: the plane of the differences, and where its
  * first row sum goes in the read-back. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmRowArgs {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
@@ -95,6 +98,7 @@ VMAF_MTL_CONSTANT float vmaf_mtl_fm_filter_no_op[VMAF_MTL_FM_TAPS] = {
     0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
 };
 
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmTaps {
     float w[VMAF_MTL_FM_TAPS];
 } VmafMtlFmTaps;
@@ -102,12 +106,14 @@ typedef struct VmafMtlFmTaps {
 /* The 5x5 neighbourhood of one output sample, row-major: v[r * 5 + c] is
  * the sample at row y - 2 + r and column x - 2 + c, both mirrored with
  * vmaf_mtl_fm_reflect101(). */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmWindow {
     float v[VMAF_MTL_FM_TAPS * VMAF_MTL_FM_TAPS];
 } VmafMtlFmWindow;
 
 /* The four samples motion_bilinear_interp() weighs: rows y1 / y2, columns
  * x1 / x2. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmCorners {
     float s11;
     float s12;
@@ -116,6 +122,7 @@ typedef struct VmafMtlFmCorners {
 } VmafMtlFmCorners;
 
 /* Where motion_bilinear_interp() reads for one half-size sample. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlFmBilinearAt {
     vmaf_mtl_i32 x1;
     vmaf_mtl_i32 x2;
@@ -317,6 +324,7 @@ static inline uint64_t vmaf_mtl_fm_diff_count(unsigned width, unsigned height)
 /* motion.c::vmaf_image_sad_c()'s half-size extent: (int)(extent * 0.5 + 0.5). */
 static inline unsigned vmaf_mtl_fm_scaled_extent(unsigned extent)
 {
+    // NOLINTNEXTLINE(bugprone-incorrect-roundings): the reference's own (int)(width * 0.5 + 0.5), motion.c::vmaf_image_sad_c(), ADR-1498
     return (unsigned)(((double)extent * 0.5) + 0.5);
 }
 
