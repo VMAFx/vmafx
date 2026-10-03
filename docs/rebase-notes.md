@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `rule-enforcement.yml` swallows no exit status (2026-10-04)
+
+`ci/rule-enforcement-hiss07`. CI and baseline only; no libvmaf change.
+
+- The sixteen baselined `|| true` (HISS-07) are gone: the `git fetch` of the
+  base and head SHAs fails the step; the ADR-collision steps filter through
+  `keep()` (grep status 1 = no match, the only mapped status) under
+  `set -euo pipefail` and read their lists from a captured variable, not a
+  process substitution whose failure `set -e` never sees; the open-PR table
+  comes from a captured `python3` whose failure fails the step. A sync that
+  re-adds `|| true` re-adds the baseline rows; keep this side.
+- The `release-script-contract` job runs `check-vcs-version-not-bare-sha.sh`
+  and its test (until now only `make lint-sh` ran them).
+- `.standards-baseline.json` and the README count: 495 to 479, re-recorded
+  with `praetorctl baseline --record`; on conflict re-record at the tip.
+
 ## `lint-and-format.yml` swallows no exit status (2026-10-03)
 
 `ci/lint-and-format-hiss07`. CI and baseline only; no libvmaf change.

@@ -103,9 +103,9 @@ jobs:
         run: |
           set -euo pipefail
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${BASE_SHA}" || true
+            || git fetch --no-tags origin "${BASE_SHA}"
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${HEAD_SHA}" || true
+            || git fetch --no-tags origin "${HEAD_SHA}"
 
       - name: Classify dependency-only PR (ADR-1152)
         id: dep_scope
@@ -182,9 +182,9 @@ jobs:
         run: |
           set -euo pipefail
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${BASE_SHA}" || true
+            || git fetch --no-tags origin "${BASE_SHA}"
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${HEAD_SHA}" || true
+            || git fetch --no-tags origin "${HEAD_SHA}"
 
       - name: Classify dependency-only PR (ADR-1152)
         id: dep_scope
@@ -217,9 +217,9 @@ jobs:
           # SHAs explicitly so the diff range is valid regardless of
           # how actions/checkout populated origin/master.
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${BASE_SHA}" || true
+            || git fetch --no-tags origin "${BASE_SHA}"
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${HEAD_SHA}" || true
+            || git fetch --no-tags origin "${HEAD_SHA}"
 
           git diff --name-only "${BASE_SHA}".."${HEAD_SHA}" > /tmp/diff_files.txt
 
@@ -500,9 +500,9 @@ jobs:
 
           # See deliverables-checklist job for rationale.
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${BASE_SHA}" || true
+            || git fetch --no-tags origin "${BASE_SHA}"
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${HEAD_SHA}" || true
+            || git fetch --no-tags origin "${HEAD_SHA}"
 
           git diff --name-only "${BASE_SHA}".."${HEAD_SHA}" > /tmp/diff_files.txt
 
@@ -519,7 +519,7 @@ jobs:
           if [ "${policy_hit}" -eq 1 ] && [ "${adr_added}" -eq 0 ]; then
             echo "ADR-0106 advisory: policy / public-surface paths changed without a new ADR."
             echo "Policy paths in this PR:"
-            grep -E '^(core/include/|meson_options\.|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt || true
+            grep -E '^(core/include/|meson_options\.|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt
             echo ""
             echo "If the change is a refactor or a pure bug fix, no new ADR is required."
             echo "Otherwise write docs/adr/NNNN-*.md before merging (see ADR-0106)."
@@ -566,21 +566,26 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # grep exits 1 when no line matches: an empty result, not an error.
+          # keep() maps exactly that status; 2 or more (and any failure
+          # earlier in the pipe, under pipefail) fails the step.
+          keep() { grep "$@" || { rc=$?; [ "$rc" -eq 1 ] || return "$rc"; }; }
 
           # Make sure both tip SHAs are reachable.
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${BASE_SHA}" || true
+            || git fetch --no-tags origin "${BASE_SHA}"
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-            || git fetch --no-tags origin "${HEAD_SHA}" || true
+            || git fetch --no-tags origin "${HEAD_SHA}"
 
           # Collect every docs/adr/NNNN-*.md file ADDED (status A) or RENAMED to
           # (status R) in this PR, relative to its merge base.
+          added_list="$(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
+            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
+            | keep -E '^docs/adr/[0-9]{4}-.*\.md$')"
           added_adrs=()
           while IFS= read -r f; do
-            added_adrs+=("${f}")
-          done < <(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
-            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
-            | grep -E '^docs/adr/[0-9]{4}-.*\.md$' || true)
+            [ -n "${f}" ] && added_adrs+=("${f}")
+          done <<< "${added_list}"
 
           if [ "${#added_adrs[@]}" -eq 0 ]; then
             echo "ADR-collision-check: no new ADR files in this PR, nothing to check."
@@ -597,7 +602,7 @@ jobs:
             # collides with its own just-merged ADR file.
             collision="$(git ls-tree "${BASE_SHA}" "docs/adr/" \
               | awk '{ print $4 }' \
-              | grep -E "^docs/adr/${num}-" || true)"
+              | keep -E "^docs/adr/${num}-")"
 
             if [ -n "${collision}" ]; then
               echo "::error file=${adr_file}::ADR number collision: ${adr_file} uses prefix ${num}, but the PR base already has: ${collision}"
@@ -625,15 +630,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # grep exits 1 when no line matches: an empty result, not an error.
+          # keep() maps exactly that status; 2 or more (and any failure
+          # earlier in the pipe, under pipefail) fails the step.
+          keep() { grep "$@" || { rc=$?; [ "$rc" -eq 1 ] || return "$rc"; }; }
 
           # Collect ADR numbers added by THIS PR (same logic as phase 1).
+          added_list="$(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
+            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
+            | keep -E '^docs/adr/[0-9]{4}-.*\.md$')"
           added_nums=()
           while IFS= read -r f; do
+            [ -z "${f}" ] && continue
             num="$(basename "${f}" | grep -oE '^[0-9]{4}')"
             added_nums+=("${num}")
-          done < <(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
-            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
-            | grep -E '^docs/adr/[0-9]{4}-.*\.md$' || true)
+          done <<< "${added_list}"
 
           if [ "${#added_nums[@]}" -eq 0 ]; then
             echo "ADR-collision-check phase 2: no new ADR files, skipping open-PR scan."
@@ -652,43 +663,9 @@ jobs:
             exit 0
           fi
 
-          # For each open PR (excluding this one and stacked descendants), fetch
-          # its HEAD and check docs/adr/.
-          fail=0
-          while IFS=$'\t' read -r pr_num pr_branch pr_sha is_descendant; do
-            [ "${pr_num}" = "${THIS_PR}" ] && continue
-            [ -z "${pr_sha}" ] && continue
-            if [ "${is_descendant}" = "1" ]; then
-              echo "ADR-collision-check phase 2: skipping stacked descendant PR #${pr_num} (${pr_branch})."
-              continue
-            fi
-
-            # Fetch the PR tip (shallow; soft failure if SHA unavailable).
-            git fetch --no-tags --depth=1 --quiet origin "${pr_sha}" 2>/dev/null || continue
-
-            # If the descendant branch was already rebased onto this exact
-            # head, the branch-name chain and the commit ancestry both agree it
-            # is not an independent collision.
-            if git merge-base --is-ancestor "${HEAD_SHA}" "${pr_sha}" 2>/dev/null; then
-              echo "ADR-collision-check phase 2: skipping descendant commit PR #${pr_num} (${pr_branch})."
-              continue
-            fi
-
-            # Check if this PR's HEAD contains any of the numbers added by THIS PR.
-            for num in "${added_nums[@]}"; do
-              collision="$(git ls-tree -r --name-only "${pr_sha}" -- docs/adr/ 2>/dev/null \
-                | grep -E "^docs/adr/${num}-" || true)"
-              if [ -n "${collision}" ]; then
-                echo "::error::ADR number collision with open PR #${pr_num} (${pr_branch}):"
-                echo "  This PR adds ADR number ${num}."
-                echo "  Open PR #${pr_num} also contains: ${collision}"
-                echo "  Whichever PR merges second will need a renumber."
-                echo "  Run 'scripts/adr/next-free.sh --claim <slug>' on your branch to get a free number."
-                fail=1
-              fi
-            done
-          done < <(printf '%s' "${open_prs_json}" \
-            | python3 -c "
+          # Build the table of open PRs. A failure of the parser (bad JSON, a
+          # missing key) fails the step; an empty table is a valid result.
+          pr_table_py=$(cat <<'PY'
           import json, os, sys
           prs = json.load(sys.stdin)
           this_pr = os.environ.get('THIS_PR', '')
@@ -716,7 +693,46 @@ jobs:
                   '1' if is_descendant_stack(pr) else '0',
               ]
               print('\t'.join(fields))
-          " 2>/dev/null || true)
+          PY
+          )
+          pr_table="$(printf '%s' "${open_prs_json}" | python3 -c "${pr_table_py}")"
+
+          # For each open PR (excluding this one and stacked descendants), fetch
+          # its HEAD and check docs/adr/.
+          fail=0
+          while IFS=$'\t' read -r pr_num pr_branch pr_sha is_descendant; do
+            [ "${pr_num}" = "${THIS_PR}" ] && continue
+            [ -z "${pr_sha}" ] && continue
+            if [ "${is_descendant}" = "1" ]; then
+              echo "ADR-collision-check phase 2: skipping stacked descendant PR #${pr_num} (${pr_branch})."
+              continue
+            fi
+
+            # Fetch the PR tip (shallow; soft failure if SHA unavailable).
+            git fetch --no-tags --depth=1 --quiet origin "${pr_sha}" 2>/dev/null || continue
+
+            # If the descendant branch was already rebased onto this exact
+            # head, the branch-name chain and the commit ancestry both agree it
+            # is not an independent collision.
+            if git merge-base --is-ancestor "${HEAD_SHA}" "${pr_sha}" 2>/dev/null; then
+              echo "ADR-collision-check phase 2: skipping descendant commit PR #${pr_num} (${pr_branch})."
+              continue
+            fi
+
+            # Check if this PR's HEAD contains any of the numbers added by THIS PR.
+            for num in "${added_nums[@]}"; do
+              collision="$(git ls-tree -r --name-only "${pr_sha}" -- docs/adr/ 2>/dev/null \
+                | keep -E "^docs/adr/${num}-")"
+              if [ -n "${collision}" ]; then
+                echo "::error::ADR number collision with open PR #${pr_num} (${pr_branch}):"
+                echo "  This PR adds ADR number ${num}."
+                echo "  Open PR #${pr_num} also contains: ${collision}"
+                echo "  Whichever PR merges second will need a renumber."
+                echo "  Run 'scripts/adr/next-free.sh --claim <slug>' on your branch to get a free number."
+                fail=1
+              fi
+            done
+          done <<< "${pr_table}"
 
           if [ "${fail}" -eq 1 ]; then
             echo ""
@@ -754,6 +770,15 @@ jobs:
           bash scripts/release/tests/test-docker-image-runtime-contract.sh
           bash scripts/release/tests/test-release-please-draft-gate.sh
           scripts/release/concat-changelog-fragments.sh --check
+
+      - name: Check tester versions name the nearest v tag
+        # `make lint-sh` runs both; no hosted job did. The check reads the
+        # tester workflows and core/include/meson.build; the test plants the
+        # defects it must refuse (--always, a describe without --match, a
+        # moved describe, a missing workflow).
+        run: |
+          bash scripts/ci/check-vcs-version-not-bare-sha.sh
+          bash scripts/ci/tests/test-check-vcs-version-not-bare-sha.sh
 
       - name: Test the release-PR exemption predicate
         # ADR-1151. The four authoring-discipline gates above disarm
