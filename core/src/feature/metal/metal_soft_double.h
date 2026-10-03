@@ -41,8 +41,9 @@
  *    u128_shl, u128_sub, u128_mul,
  *    u128_msb, u128_shr_round      -> vmaf_mtl_u128_shl, ... (prefix vmaf_mtl_)
  *    struct Shifted{kept, half,
- *                   sticky}        -> VmafMtlShifted,
- *                                     vmaf_mtl_shifted_make(kept, half, sticky)
+ *                   sticky}        -> VmafMtlShifted{kept, halfway, sticky},
+ *                                     vmaf_mtl_shifted_make(kept, halfway, sticky)
+ *    a variable or field `half`    -> `halfway` (half is an MSL scalar type)
  *    round_kept                    -> vmaf_mtl_round_kept
  *    soft_<op>                     -> vmaf_mtl_soft_<op> (from_float, from_u32,
  *                                     round, add, div, mul, less, trunc,
@@ -144,13 +145,13 @@ VMAF_MTL_FUNC vmaf_mtl_u32 vmaf_mtl_u128_msb(VmafMtlU128 a)
  * of the highest dropped bit. */
 typedef struct VmafMtlShifted {
     vmaf_mtl_u64 kept;
-    bool half;   /* highest dropped bit */
-    bool sticky; /* any lower dropped bit */
+    bool halfway; /* highest dropped bit */
+    bool sticky;  /* any lower dropped bit */
 } VmafMtlShifted;
 
-VMAF_MTL_FUNC VmafMtlShifted vmaf_mtl_shifted_make(vmaf_mtl_u64 kept, bool half, bool sticky)
+VMAF_MTL_FUNC VmafMtlShifted vmaf_mtl_shifted_make(vmaf_mtl_u64 kept, bool halfway, bool sticky)
 {
-    const VmafMtlShifted value = {kept, half, sticky};
+    const VmafMtlShifted value = {kept, halfway, sticky};
     return value;
 }
 
@@ -161,7 +162,7 @@ VMAF_MTL_FUNC VmafMtlShifted vmaf_mtl_u128_shr_round(VmafMtlU128 a, vmaf_mtl_u32
     }
     /* the highest dropped bit is bit shift - 1 */
     const vmaf_mtl_u32 half_bit = shift - 1u;
-    const bool half =
+    const bool halfway =
         half_bit >= 64u ? ((a.hi >> (half_bit - 64u)) & 1u) != 0u : ((a.lo >> half_bit) & 1u) != 0u;
     bool sticky = false;
     if (half_bit >= 64u) {
@@ -179,13 +180,13 @@ VMAF_MTL_FUNC VmafMtlShifted vmaf_mtl_u128_shr_round(VmafMtlU128 a, vmaf_mtl_u32
     } else {
         kept = (a.lo >> shift) | (a.hi << (64u - shift));
     }
-    return vmaf_mtl_shifted_make(kept, half, sticky);
+    return vmaf_mtl_shifted_make(kept, halfway, sticky);
 }
 
 /* Round to nearest, ties to even. */
 VMAF_MTL_FUNC vmaf_mtl_u64 vmaf_mtl_round_kept(VmafMtlShifted s)
 {
-    const bool up = s.half && (s.sticky || (s.kept & 1u) != 0u);
+    const bool up = s.halfway && (s.sticky || (s.kept & 1u) != 0u);
     return s.kept + (up ? VMAF_MTL_U64(1) : VMAF_MTL_U64(0));
 }
 
@@ -306,10 +307,10 @@ VMAF_MTL_FUNC vmaf_mtl_i64 vmaf_mtl_soft_trunc(VmafMtlSoftDouble a)
 VMAF_MTL_FUNC float vmaf_mtl_soft_to_float(VmafMtlSoftDouble value)
 {
     const vmaf_mtl_u64 low = value.mant & ((VMAF_MTL_U64(1) << 29) - 1u);
-    const vmaf_mtl_u64 half = VMAF_MTL_U64(1) << 28;
+    const vmaf_mtl_u64 halfway = VMAF_MTL_U64(1) << 28;
     vmaf_mtl_u64 kept = value.mant >> 29;
     vmaf_mtl_i32 exp = value.exp + 29;
-    if (low > half || (low == half && (kept & 1u) != 0u)) {
+    if (low > halfway || (low == halfway && (kept & 1u) != 0u)) {
         kept += 1u;
     }
     if (kept == (VMAF_MTL_U64(1) << 24)) {
@@ -350,10 +351,10 @@ VMAF_MTL_FUNC float vmaf_mtl_soft_to_float_any(VmafMtlSoftDouble value)
         return 0.0f;
     }
     const vmaf_mtl_u32 drop = normal ? 29u : (vmaf_mtl_u32)sub_drop;
-    const vmaf_mtl_u64 half = VMAF_MTL_U64(1) << (drop - 1u);
-    const vmaf_mtl_u64 low = value.mant & ((half << 1) - 1u);
+    const vmaf_mtl_u64 halfway = VMAF_MTL_U64(1) << (drop - 1u);
+    const vmaf_mtl_u64 low = value.mant & ((halfway << 1) - 1u);
     vmaf_mtl_u64 kept = value.mant >> drop;
-    if (low > half || (low == half && (kept & 1u) != 0u)) {
+    if (low > halfway || (low == halfway && (kept & 1u) != 0u)) {
         kept += 1u;
     }
     if (!normal) {
