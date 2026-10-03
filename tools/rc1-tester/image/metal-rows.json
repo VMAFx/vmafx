@@ -214,7 +214,7 @@
   },
   {
    "id": "T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02",
-   "closes_when": "float_moment_metal returns the CPU's second moments on full-range 16-bit content",
+   "closes_when": "float_moment_metal returns the CPU's second moments on full-range 16-bit content, past 2^53 units included",
    "cases": [
     {
      "test": "test_metal_float_moment_parity",
@@ -235,6 +235,10 @@
     {
      "test": "test_metal_float_moment_parity",
      "case": "test_float_moment_16bit_bright_exact"
+    },
+    {
+     "test": "test_metal_float_moment_parity",
+     "case": "test_float_moment_16bit_past_2_53_exact"
     }
    ],
    "metrics": [

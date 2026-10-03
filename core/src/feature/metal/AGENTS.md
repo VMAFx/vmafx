@@ -275,7 +275,14 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   uint32); group sum ulong in threadgroup memory (no `simd_sum`: excludes
   64-bit); host uint64 + CUDA `float_psnr_noise()` form.
 - **float_moment**: 10/12/16-bit kernel adds `vmaf_mtl_moment_float_square()`,
-  never `rv * rv`; host uint64 sum.
+  never `rv * rv`; host uint64 sum. Past 2^53 units (ADR-1497):
+  `metal_float_moment_sum.h` = statement-for-statement copy of
+  `float_moment_sum.h` + four `ordered_sum.h` functions, address spaces via
+  `VMAF_MTL_DEV` / `VMAF_MTL_TG` / `VMAF_MTL_THR`. Change to either shared
+  header -> copy, same PR (`test_metal_float_moment_exact_contract.py`,
+  `test_float_moment_sum_contract.py`). Five kernels, one wait; never a device
+  reduction for the walk; never trust the plan. `.mm` takes `sums[2..3]` from
+  the walk, fails closed. Guard: `test_metal_float_moment_sum`.
 - **integer ADM**: decouple = `metal_integer_adm_math.h`: reciprocal = CPU
   integer `2^30 / o` (never fp32 quotient), gain limit =
   `adm_gain_limit_product()` of shared `adm_gain_limit.h` (Metal guard keeps
