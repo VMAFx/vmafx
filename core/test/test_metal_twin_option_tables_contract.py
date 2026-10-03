@@ -66,7 +66,7 @@ EXECUTED = {
     "vif": (
         ".skip_scale0 = s->vif_skip_scale0,",
         ".debug = s->debug,",
-        "const float egl = (float)s->vif_enhn_gain_limit;",
+        "const VmafMtlGainLimit egl = vmaf_mtl_ivif_make_gain_limit(s->vif_enhn_gain_limit);",
     ),
     "cambi": (
         "if (s->src_width == 0 || s->src_height == 0) {",

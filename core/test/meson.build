@@ -2321,6 +2321,30 @@ test('test_metal_twin_option_tables_contract',
     timeout : 30,
 )
 
+# integer vif gain (ADR-1498)
+# T-METAL-INTEGER-VIF-FP32-GAIN-2026-10-03: the two integers integer_vif_metal's
+# kernels take from the gain (feature/metal/metal_integer_vif_gain.h, the Metal
+# spelling of the SYCL twin's sycl_integer_vif_math.h, ADR-1432) against the
+# CPU's fp64 expressions of integer_vif.c::vif_accumulate_pixel(), value by
+# value, on the host: random and boundary variances, variances from random
+# pixel windows at 8, 10, 12 and 16 bits, six gain limits. The reference is the
+# host's own double arithmetic, so the TU needs the strict FP flags. Every
+# host. The contract pins the construct and fails on planted regressions.
+test_metal_integer_vif_gain = executable('test_metal_integer_vif_gain',
+    ['test.c', 'test_metal_integer_vif_gain.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    dependencies : [math_lib],
+)
+test('test_metal_integer_vif_gain', test_metal_integer_vif_gain, suite : ['fast'], timeout : 300)
+
+test('test_metal_integer_vif_gain_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_vif_gain_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of host-step group)
 
 # [metal-ports: integer kernels]
