@@ -232,7 +232,7 @@ SPEC = {"credist": "compiler/latest/share/doc/credist.txt", "components": [
 def test_intel_runtime_copies_listed_files_unmodified(tmp_path: Path) -> None:
     oneapi = fake_oneapi(tmp_path / "oneapi", ["libsycl.so.9", "libsycl.so.9.0.0"])
     (tmp_path / "spec.json").write_text(json.dumps(SPEC))
-    pb.stage_intel_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img")
+    pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img")
     lib = tmp_path / "img" / "lib" / "intel"
     assert (lib / "libsycl.so.9").is_symlink() and (
         lib / "libsycl.so.9.0.0"
@@ -244,11 +244,11 @@ def test_intel_runtime_refuses_files_credist_does_not_list(tmp_path: Path) -> No
     oneapi = fake_oneapi(tmp_path / "oneapi", ["libsycl.so.9.0.0"])  # the link is not listed
     (tmp_path / "spec.json").write_text(json.dumps(SPEC))
     with pytest.raises(pb.BuildError, match="not in credist.txt"):
-        pb.stage_intel_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img")
+        pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img")
     missing = {**SPEC, "components": [{**SPEC["components"][0], "names": ["libabsent.so"]}]}
     (tmp_path / "spec.json").write_text(json.dumps(missing))
     with pytest.raises(pb.BuildError, match="nothing matches"):
-        pb.stage_intel_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img2")
+        pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img2")
 
 
 def test_shipped_sycl_runtime_list_names_only_libraries() -> None:

@@ -1,0 +1,414 @@
+{
+ "comment": "State rows of docs/state.md the AMD GPU tester image measures, and on which device families (hw_gpu.py, hw_rows.py). A row applies to a device when its gfx target falls in one of the listed families (hw_hipprobe.py). tests: device test executables that must pass; gate: cells of the parity gate's HIP run on every fixture (every gate feature). tools/rc1-tester/tests/test_gpu_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
+ "backend": "hip",
+ "rows": [
+  {
+   "id": "T-HIP-TWINS-OTHER-TARGETS-2026-10-03",
+   "part": "CDNA (gfx908, gfx90a, gfx942, gfx950: Instinct MI100, MI200, MI300, MI350; wave64): open",
+   "families": [
+    "cdna1",
+    "cdna2",
+    "cdna3",
+    "cdna4"
+   ],
+   "closes_when": "on a device of the family the fourteen device tests of the row pass and the parity gate holds every HIP cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_hip_exact_twins",
+    "test_hip_adm_parity",
+    "test_hip_vif_parity",
+    "test_hip_float_adm_parity",
+    "test_hip_float_adm_math",
+    "test_hip_float_vif_parity",
+    "test_hip_ssimulacra2_parity",
+    "test_hip_ciede_parity",
+    "test_hip_psnr_hvs_parity",
+    "test_hip_float_ssim_parity",
+    "test_hip_ms_ssim_parity",
+    "test_hip_float_motion_parity",
+    "test_hip_float_moment_parity",
+    "test_hip_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-HIP-TWINS-OTHER-TARGETS-2026-10-03",
+   "part": "RDNA3 and RDNA3.5 (gfx1100 to gfx1103, gfx1150, gfx1151: Radeon RX 7000, Radeon 780M, 890M, 8060S): open",
+   "families": [
+    "rdna3",
+    "rdna3.5"
+   ],
+   "closes_when": "on a device of the family the fourteen device tests of the row pass and the parity gate holds every HIP cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_hip_exact_twins",
+    "test_hip_adm_parity",
+    "test_hip_vif_parity",
+    "test_hip_float_adm_parity",
+    "test_hip_float_adm_math",
+    "test_hip_float_vif_parity",
+    "test_hip_ssimulacra2_parity",
+    "test_hip_ciede_parity",
+    "test_hip_psnr_hvs_parity",
+    "test_hip_float_ssim_parity",
+    "test_hip_ms_ssim_parity",
+    "test_hip_float_motion_parity",
+    "test_hip_float_moment_parity",
+    "test_hip_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-HIP-TWINS-OTHER-TARGETS-2026-10-03",
+   "part": "RDNA4 (gfx1200, gfx1201: Radeon RX 9060, RX 9070, AI PRO R9700): open",
+   "families": [
+    "rdna4"
+   ],
+   "closes_when": "on a device of the family the fourteen device tests of the row pass and the parity gate holds every HIP cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_hip_exact_twins",
+    "test_hip_adm_parity",
+    "test_hip_vif_parity",
+    "test_hip_float_adm_parity",
+    "test_hip_float_adm_math",
+    "test_hip_float_vif_parity",
+    "test_hip_ssimulacra2_parity",
+    "test_hip_ciede_parity",
+    "test_hip_psnr_hvs_parity",
+    "test_hip_float_ssim_parity",
+    "test_hip_ms_ssim_parity",
+    "test_hip_float_motion_parity",
+    "test_hip_float_moment_parity",
+    "test_hip_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-HIP-TWINS-OTHER-TARGETS-2026-10-03",
+   "part": "RDNA2 (gfx1030 to gfx1036): measured on the gfx1036 iGPU of ryzen-4090-arc on 2026-10-03; a run, on a discrete RX 6000 card above all, repeats it",
+   "families": [
+    "rdna2"
+   ],
+   "closes_when": "on a device of the family the fourteen device tests of the row pass and the parity gate holds every HIP cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_hip_exact_twins",
+    "test_hip_adm_parity",
+    "test_hip_vif_parity",
+    "test_hip_float_adm_parity",
+    "test_hip_float_adm_math",
+    "test_hip_float_vif_parity",
+    "test_hip_ssimulacra2_parity",
+    "test_hip_ciede_parity",
+    "test_hip_psnr_hvs_parity",
+    "test_hip_float_ssim_parity",
+    "test_hip_ms_ssim_parity",
+    "test_hip_float_motion_parity",
+    "test_hip_float_moment_parity",
+    "test_hip_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  }
+ ]
+}

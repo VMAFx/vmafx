@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T21:25:57Z",
+  "generated_at": "2026-10-03T22:54:51Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "f215dd4090c3c650e0ef1da76699af34b5493c30",
-  "total_infractions": 495,
+  "commit_sha": "4d3792b3ff2e99721e2721f63ac1248ebfc52976",
+  "total_infractions": 489,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2848,54 +2848,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:1f6277d435cb",
       "fingerprint": "scripts/ci/install-intel-oneapi.sh:HISS-07:text:1f6277d435cb#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 115,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:a9161e5c07b8",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-02:text:a9161e5c07b8#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 124,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "fn:fetch_manifest",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-02:fn:fetch_manifest#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 173,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:350983dc0c4a",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-02:text:350983dc0c4a#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 177,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:8bb862307d44",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-07:text:8bb862307d44#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 187,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:09591d72c63c",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-07:text:09591d72c63c#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/install-rocm-from-image.sh",
-      "line_number": 248,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:29a8b3a3ab80",
-      "fingerprint": "scripts/ci/install-rocm-from-image.sh:HISS-07:text:29a8b3a3ab80#1"
     },
     {
       "rule_id": "HISS-01",

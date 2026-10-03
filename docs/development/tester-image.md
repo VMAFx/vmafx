@@ -6,8 +6,9 @@ and how reports reach the tree. The tester-facing steps are in
 [the tester guide](../usage/tester-image.md); the decisions are
 [ADR-1492](../adr/1492-tester-image-arm64-report.md),
 [ADR-1493](../adr/1493-macos-tester-bundle.md) and, for the GPU images,
-[ADR-1505](../adr/1505-intel-gpu-tester-image.md) (Intel) and
-[ADR-1509](../adr/1509-nvidia-gpu-tester-image.md) (NVIDIA).
+[ADR-1505](../adr/1505-intel-gpu-tester-image.md) (Intel),
+[ADR-1509](../adr/1509-nvidia-gpu-tester-image.md) (NVIDIA) and
+[ADR-1511](../adr/1511-amd-gpu-tester-image.md) (AMD).
 
 ## Pieces
 
@@ -15,9 +16,10 @@ and how reports reach the tree. The tester-facing steps are in
 | :--- | :--- |
 | Container image | [`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester), build inputs in `tools/rc1-tester/image/` |
 | Intel GPU image | target `final-sycl` of the same Dockerfile; `image/sycl-tests.txt` (device tests), `sycl-rows.json` (state rows), `sycl-runtime.json` (the Intel runtime files it ships); its licence record is the `sycl-image` artifact of `licensing.json` |
+| AMD GPU image | target `final-hip` of the same Dockerfile; `image/hip-tests.txt` (device tests), `hip-rows.json` (state rows), `hip-runtime.json` (the ROCm runtime files it ships); `image/hip-targets.json` is written by the build from its offload targets; its licence record is the `hip-image` artifact of `licensing.json` |
 | NVIDIA GPU image | target `final-cuda` of the same Dockerfile; `image/cuda-tests.txt` (device tests), `cuda-rows.json` (state rows); `image/cuda-targets.json` is written by the build from its gencode list; its licence record is the `cuda-image` artifact of `licensing.json` |
 | macOS bundle | `scripts/ci/build-macos-tester-bundle.sh`, `tools/rc1-tester/image/macos/` |
-| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py`, its CUDA backend `hw_cuda.py` and `hw_cudaprobe.py` |
+| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py`, its CUDA backend `hw_cuda.py` and `hw_cudaprobe.py`, its HIP backend `hw_hip.py` and `hw_hipprobe.py` |
 | Report schema and gate | `docs/hardware-reports/report.schema.json`, `scripts/ci/check-hardware-reports.py` (in `make docs-fragments-check`) |
 | Index page | `scripts/docs/generate-hardware-reports.py --write` (in `make docs-fragments-write`) |
 | Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml` |
@@ -59,18 +61,18 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    accessible by integration`. A release made by the release-bot identity starts other
    workflows, as release-please's own pushes do.
 
-3. **GPU images**: the same workflow also builds `final-sycl` and `final-cuda` (job
-   `build-gpu`, one matrix leg per kit, linux/amd64 only) and runs the documented command
-   without a GPU (the report must say `gpu.status` `no_device` with the missing option,
-   `--device /dev/dri` or `--gpus all`, every CPU check passing); the dispatch
-   publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl` and `-tester-cuda` in job
-   `publish-gpu`: signed, with provenance and an attested SPDX SBOM (syft), each with its
+3. **GPU images**: the same workflow also builds `final-sycl`, `final-cuda` and
+   `final-hip` (job `build-gpu`, one matrix leg per kit, linux/amd64 only) and runs the
+   documented command without a GPU (the report must say `gpu.status` `no_device` with
+   the missing option, `--device /dev/dri`, `--gpus all` or `--device /dev/kfd`, every
+   CPU check passing); the dispatch publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl`,
+   `-tester-cuda` and `-tester-hip` in job `publish-gpu`: signed, with provenance and an attested SPDX SBOM (syft), each with its
    source image `<describe>-tester-<kit>-source` (target `<kit>-source-export`). Like the
    CPU image, each build cannot finish without its licence check (stage
-   `<kit>-licence-check`, artifacts `sycl-image` and `cuda-image`, see
+   `<kit>-licence-check`, artifacts `sycl-image`, `cuda-image` and `hip-image`, see
    [Licensing](#licensing)). The hosted runner has no GPU: every device measurement
    happens on the tester's machine. Before giving a tag to a tester, run it on the
-   project's Arc A380 or RTX 4090 (see [Local checks](#local-checks)).
+   project's Arc A380, RTX 4090 or gfx1036 (see [Local checks](#local-checks)).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
 
@@ -129,6 +131,21 @@ terms. The component `nv-codec-headers` carries the MIT notices of the CUDA load
 copied from them at build time. The scan records each kernel object
 (`src/<kernel>.fatbin.c`, the `bin2c` output) with the licence of the `.cu` source it was
 compiled from (`generated_build_files` rule with `compiled_from`).
+
+The AMD GPU image is the artifact `hip-image`. Its build stage streams `/opt/rocm` out
+of the pinned ROCm image (`scripts/ci/install-rocm-from-image.sh --keep-docs`, which keeps
+`share/doc` for the licence texts) and `prepare_build.py rocm-runtime` copies the files of
+`hip-runtime.json` unmodified into `/opt/vmafx/lib/rocm`, keeping `llvm/lib` and
+`rocm_sysdeps/lib` next to them as the libraries' RPATHs expect. One `fixed` component per
+ROCm part carries the text ROCm installs in `share/doc` or a `fetched_texts` entry where
+it installs none (kpack, LLVM, Clang and the bundled system libraries, pinned by URL and
+SHA-256). The bundled system libraries are component `rocm-sysdeps` with
+`vendored_libraries`: one rule per library, and for the two LGPL ones (`libelf`,
+`libnuma`) the ELF build IDs of the ROCm 10.0.0 files mapped to their source archives
+(the upstream tarballs TheRock pins and the TheRock tree with its patches); the check
+fails on a rule that matches no file or a copyleft library of another build, and
+`licensing.py sources` puts the archives into the `-tester-hip-source` image. A ROCm bump
+changes those build IDs: read the new TheRock manifest, record the new archives and IDs.
 
 When the check fails after a lock, base-image or interpreter bump, record what changed in
 `licensing.json`: a new grafted library needs its licence and, when copyleft, the source
@@ -196,6 +213,8 @@ tracked files other than a commit trailer the person asked for.
 | Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_gpu_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
 | CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` | a new CUDA version brings a new EULA: the build checks the EULA's "Last updated" date, so update that check, the `nvidia-cuda-device-code` component and ADR-1509's citation together after reading the new Attachment A |
 | NVIDIA GPU state rows | `tools/rc1-tester/image/cuda-rows.json` | the same contract test; every CUDA family has a row, and each row holds every gate feature |
+| ROCm runtime | `ROCM_BUILDER` in `build-config.env` (mirrored in `docker/Dockerfile.tester`); `HIP_GFX_TARGETS` in `docker/Dockerfile.tester`; `tools/rc1-tester/image/hip-runtime.json`; the `rocm-*` components, `fetched_texts` and `source_archives` of `licensing.json` | a new ROCm brings new file names, a new TheRock commit and new build IDs of the bundled LGPL libraries: the build and the licence check fail until `hip-runtime.json` and the record match; a new gfx target needs a row family (`tests/test_gpu_rows_contract.py`) |
+| AMD GPU state rows | `tools/rc1-tester/image/hip-rows.json` | the same contract test; every family of `HIP_GFX_TARGETS` has a row, and each row holds every gate feature |
 
 The Debian archive packages of the build stage are not version-pinned, as in the release
 build (ADR-1346); the base image digest is.
@@ -244,6 +263,22 @@ flock ~/.cache/vmafx-locks/cuda-4090.lock timeout 300 \
 
 `timeout` stops the `docker` client, not the container: give the run a `--name` and
 remove it after the timeout (`docker rm -f <name>`) inside the same locked command.
+
+The AMD GPU image, on the project's gfx1036 (the ROCm runtime download is about 8 GB on
+the first build):
+
+```sh
+docker build -f docker/Dockerfile.tester --target final-hip --build-arg VMAF_BUILD_JOBS=6 \
+  -t vmafx-tester:hip-dev .
+flock ~/.cache/vmafx-locks/hip-gfx1036.lock timeout 300 \
+  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --tmpfs /tmp --device /dev/kfd --device /dev/dri \
+  $(stat -c '--group-add %g' /dev/kfd /dev/dri/renderD* | sort -u) vmafx-tester:hip-dev > report.json
+```
+
+The gfx1036 now and then drops a stream's dispatches
+(`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`): run a failing report again before
+blaming the image.
 
 An image built this way has `built_by_workflow: false` and the CI report gate refuses it,
 as intended. The local build runs the licence check as well; to see the source companion,

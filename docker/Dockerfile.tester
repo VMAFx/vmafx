@@ -29,6 +29,7 @@ ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46e
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
 ARG ONEAPI_BUILDER="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 
 # ---------------------------------------------------------------------------
 # fixtures: Netflix test videos, fetched at a pinned commit and SHA-256 checked
@@ -646,6 +647,215 @@ LABEL org.opencontainers.image.title="vmafx-tester-cuda" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=cuda-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
+USER 10001:10001
+ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
+
+# ===========================================================================
+# AMD GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-hip (linux/amd64).
+#   docker build -f docker/Dockerfile.tester --target final-hip .
+# The HIP runtime comes from the pinned ROCm 10.0.0 image (ROCM_BUILDER of
+# build-config.env); the image ships only the files libvmaf loads, unmodified,
+# with their licence texts (tools/rc1-tester/image/hip-runtime.json).
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# hip-build: Debian 13 with /opt/rocm streamed out of the ROCm image
+# (scripts/ci/install-rocm-from-image.sh, as the CI HIP legs do; share/doc kept
+# for the licence texts). The code objects cover the targets of HIP_GFX_TARGETS,
+# the GPUs ROCm 10.0.0 ships libraries for that a tester is likely to own. The
+# compilers stay in this stage.
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS hip-build
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+ARG ROCM_BUILDER
+ARG HIP_GFX_TARGETS=gfx908,gfx90a,gfx942,gfx950,gfx1030,gfx1031,gfx1032,gfx1034,gfx1035,gfx1036,gfx1100,gfx1101,gfx1102,gfx1103,gfx1150,gfx1151,gfx1200,gfx1201
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl gcc g++ jq meson nasm ninja-build pkg-config python3 xxd zstd \
+    && rm -rf /var/lib/apt/lists/*
+COPY scripts/ci/install-rocm-from-image.sh /tmp/vmafx/install-rocm-from-image.sh
+RUN bash /tmp/vmafx/install-rocm-from-image.sh --image "${ROCM_BUILDER}" --dest /opt/rocm --keep-docs \
+    && rm -rf /tmp/vmafx
+ENV PATH="/opt/rocm/bin:${PATH}" ROCM_PATH=/opt/rocm HIP_PATH=/opt/rocm
+WORKDIR /opt/vmafx/src
+COPY core core
+COPY model model
+COPY REUSE.toml REUSE.toml
+COPY scripts/__init__.py scripts/__init__.py
+COPY scripts/lib scripts/lib
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
+     scripts/ci/cross_backend_calibration.py scripts/ci/
+COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY docs/adr docs/adr
+COPY tools/rc1-tester/image tools/rc1-tester/image
+# hadolint ignore=SC2046
+RUN meson setup build core --buildtype=release --strip -Db_lto=false \
+        -Denable_float=true -Denable_cuda=false -Denable_sycl=false \
+        -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets="${HIP_GFX_TARGETS}" \
+        -Denable_dnn=disabled -Denable_docs=false -Denable_tests=true \
+    && nice -n 10 ninja -C build -j"${VMAF_BUILD_JOBS}" tools/vmaf \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/unit-tests.txt) \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/hip-tests.txt) \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build build \
+        --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
+# The ROCm runtime files go next to each other as in /opt/rocm/lib, so their
+# RPATHs ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib) resolve without patching.
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+    && cp build/tools/vmaf /opt/vmafx/build/tools/ \
+    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+        -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/hip-tests.txt /opt/vmafx gpu-tests.json \
+    && python3 tools/rc1-tester/image/prepare_build.py gate /opt/vmafx/src /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py twins /opt/vmafx hip \
+    && python3 tools/rc1-tester/image/prepare_build.py hip-targets build /opt/rocm /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py rocm-runtime \
+        tools/rc1-tester/image/hip-runtime.json /opt/rocm /opt/vmafx \
+    && cp -r model/. /opt/vmafx/model/ \
+    && rm -r /opt/vmafx/model/tiny \
+    && find /opt/vmafx/model -maxdepth 1 -name '*.onnx*' -delete
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_SOURCE_REF=unknown
+ARG VMAFX_RECIPE_COMMIT=unknown
+ARG VMAFX_BUILT_BY_WORKFLOW=false
+ARG VMAFX_IMAGE_TAG=unknown
+ARG RELEASE_BUILDER_BASE
+ENV VMAFX_SOURCE_COMMIT=${VMAFX_SOURCE_COMMIT} VMAFX_SOURCE_REF=${VMAFX_SOURCE_REF} \
+    VMAFX_RECIPE_COMMIT=${VMAFX_RECIPE_COMMIT} \
+    VMAFX_BUILT_BY_WORKFLOW=${VMAFX_BUILT_BY_WORKFLOW} VMAFX_IMAGE_TAG=${VMAFX_IMAGE_TAG} \
+    VMAFX_BASE_IMAGE=${RELEASE_BUILDER_BASE} VMAFX_GPU_BACKEND=hip \
+    VMAFX_NOT_APPLICABLE='{"golden": "the HIP image carries no Python test stack; the CPU tester image runs the Netflix golden gate"}'
+RUN python3 tools/rc1-tester/image/prepare_build.py info /opt/vmafx
+
+# ---------------------------------------------------------------------------
+# hip-licence-texts: the licence texts ROCm does not install (kpack, LLVM, the
+# system libraries its runtime bundles), pinned by URL and SHA-256 in
+# licensing.json (fetched_texts)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS hip-licence-texts
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/licensing \
+    python3 /licensing/licensing.py fetch-texts --artifact hip-image --python-version none \
+        --out /texts
+
+# ---------------------------------------------------------------------------
+# hip-runtime: Debian 13 with its Python 3, the VMAFx files and the ROCm runtime
+# files of hip-runtime.json. The GPU kernel driver (amdgpu, /dev/kfd) is the
+# host's; every binary must resolve its libraries in the image.
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS hip-runtime
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && apt-get clean \
+    && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
+    && rm -rf /var/lib/apt/lists/*
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib/rocm \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+COPY --from=hip-build /opt/vmafx/lib /opt/vmafx/lib
+COPY --from=hip-build /opt/vmafx/licenses /opt/vmafx/licenses
+COPY --from=hip-build /opt/vmafx/build /opt/vmafx/build
+COPY --from=hip-build /opt/vmafx/tests /opt/vmafx/tests
+COPY --from=hip-build /opt/vmafx/image /opt/vmafx/image
+COPY --from=hip-build /opt/vmafx/model /opt/vmafx/model
+COPY --from=hip-build /opt/vmafx/tester/gate /opt/vmafx/tester/gate
+COPY --from=fixtures /out /opt/vmafx/python/test/resource
+COPY tools/rc1-tester/src /opt/vmafx/tester/src
+COPY tools/rc1-tester/vmaf-tester-report /opt/vmafx/tester/vmaf-tester-report
+COPY tools/rc1-tester/image/fixtures.json tools/rc1-tester/image/hip-rows.json /opt/vmafx/image/
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=hip-build,source=/licence-inputs,target=/licence-inputs \
+    --mount=type=bind,from=hip-licence-texts,source=/texts,target=/texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact hip-image --root / \
+        --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+RUN for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/* \
+        /opt/vmafx/lib/rocm/*.so.* /opt/vmafx/lib/rocm/llvm/lib/*.so.* \
+        /opt/vmafx/lib/rocm/rocm_sysdeps/lib/*.so*; do \
+        if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \
+            echo "unresolved dependency in ${binary}" >&2; exit 1; \
+        fi; \
+    done \
+    && /opt/vmafx/build/tools/vmaf --version
+
+# ---------------------------------------------------------------------------
+# hip-refs-gen: CPU scores of this image's own binary, produced at build time
+# ---------------------------------------------------------------------------
+FROM hip-runtime AS hip-refs-gen
+RUN python3 /opt/vmafx/tester/vmaf-tester-report generate-reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# hip-assembled: the image's content before the licence check
+# ---------------------------------------------------------------------------
+FROM hip-runtime AS hip-assembled
+COPY --from=hip-refs-gen /opt/vmafx/reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# hip-licence-check: every file of the assembled image has a recorded licence
+# (ADR-1503 rule 3); final-hip copies its receipt
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS hip-licence-check
+RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=hip-build,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact hip-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# hip-source-export: the corresponding source of the AMD GPU image's copyleft
+# parts (its Debian packages, and the upstream archives and the TheRock tree of
+# the LGPL libraries the ROCm runtime bundles), published as
+# ghcr.io/vmafx/vmafx:<tag>-hip-source (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS hip-source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact hip-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS hip-source-export
+COPY --from=hip-source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# final-hip
+# ---------------------------------------------------------------------------
+FROM hip-assembled AS final-hip
+ARG VMAFX_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="vmafx-tester-hip" \
+      org.opencontainers.image.description="VMAFx AMD GPU tester image: HIP build, HIP device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
+      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.vendor="Lusoris" \
+      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+COPY --from=hip-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
 USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 

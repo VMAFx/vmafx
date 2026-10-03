@@ -28,6 +28,7 @@ from .hw_facts import collect_host_facts, read_build_info
 from .hw_gate import run_metal_gate
 from .hw_gpu import Budget, GpuBackend, gpu_not_exercised, run_gpu_section
 from .hw_gpu import summary_lines as gpu_summary_lines
+from .hw_hip import HIP
 from .hw_metal import run_metal_equivalence_raw
 from .hw_reference import generate_reference, run_reference_equivalence
 from .hw_rows import evaluate_rows, load_row_map
@@ -36,12 +37,12 @@ from .hw_sycl import SYCL
 from .safe_process import run_bounded
 
 # 2: the Metal gate and the state-row map (ADR-1496). 3: the backend-neutral GPU
-# section (hw_gpu.py; the SYCL and CUDA images' measurements).
+# section (hw_gpu.py; the SYCL, CUDA and HIP images' measurements).
 SCHEMA_VERSION = "3"
 DEFAULT_ROOT = "/opt/vmafx"
 CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden", "gpu")
 # The GPU backends an image can carry, by the name in image/build-info.json.
-GPU_BACKENDS: dict[str, GpuBackend] = {"sycl": SYCL, "cuda": CUDA}
+GPU_BACKENDS: dict[str, GpuBackend] = {"sycl": SYCL, "cuda": CUDA, "hip": HIP}
 FIXTURE_TIMEOUT_SECONDS = 3600.0
 GATE_TIMEOUT_SECONDS = 3 * 3600.0
 UNIT_TIMEOUT_SECONDS = 900.0

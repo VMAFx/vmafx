@@ -9770,7 +9770,8 @@
         "core/test/test_float_moment_sum.c": 2,
         "core/test/test_float_moment_sum_contract.py": 1,
         "core/test/test_hip_float_moment_parity.c": 1,
-        "scripts/ci/exact_twins.d/float_moment.hip": 2
+        "scripts/ci/exact_twins.d/float_moment.hip": 2,
+        "tools/rc1-tester/tests/test_hw_hip.py": 1
       },
       "target": "1497-float-moment-twins-cpu-sum-past-2-53.md"
     },
@@ -9820,8 +9821,9 @@
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         "REUSE.toml": 2,
-        "docker/Dockerfile.tester": 11,
+        "docker/Dockerfile.tester": 13,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
+        "scripts/ci/install-rocm-from-image.sh": 1,
         "tools/rc1-tester/image/licensing.py": 4,
         "tools/rc1-tester/tests/test_licensing.py": 1
       },

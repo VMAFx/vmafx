@@ -7,20 +7,21 @@ to check the fork on it. You build nothing, install no toolchain and need no
 repository checkout. You run one prepared package, it prints one JSON report, and you
 can send that report to the project and be credited for it.
 
-There are four packages. On a Mac, run the **native bundle** first: it also exercises
+There are five packages. On a Mac, run the **native bundle** first: it also exercises
 the Metal backend, which no container can reach. The **container image** tests the
 CPU code paths and works on any machine with Docker. The **Intel GPU image** tests the
 SYCL backend on an Intel GPU (integrated UHD or Iris Xe graphics, Arc, Data Center),
 on Linux or on Windows with WSL2. The **NVIDIA GPU image** tests the CUDA backend on
 an NVIDIA GPU (GeForce RTX 30 series or newer, RTX professional cards, A100, H100,
-B200).
+B200). The **AMD GPU image** tests the HIP backend on an AMD GPU (Radeon RX 6000, 7000
+and 9000 series, Ryzen graphics, Instinct), on Linux.
 
-| | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image |
-| :--- | :--- | :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) |
-| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests |
-| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate |
-| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit |
+| | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image | AMD GPU image |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) |
+| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests |
+| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate |
+| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit | Docker and access to `/dev/kfd` and the GPU's render node |
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
 
@@ -409,6 +410,101 @@ and see [Licences of what you download](#licences-of-what-you-download).
 The image holds no NVIDIA library, no compiler, no development package and no GPU
 driver, and it cannot reach the network when run with the commands above.
 
+## E. AMD GPU image (Linux)
+
+You need Docker, Linux with the kernel's `amdgpu` driver (every current distribution
+has it) and an AMD GPU the image has code for. The image holds a HIP build of VMAFx and
+the ROCm 10.0.0 runtime files it needs; the GPU kernel driver stays your system's own.
+
+| Your GPU | Examples | gfx targets in the image |
+| :--- | :--- | :--- |
+| CDNA (Instinct) | MI100, MI210, MI250, MI300X, MI300A, MI325X, MI350X | `gfx908`, `gfx90a`, `gfx942`, `gfx950` |
+| RDNA2 | Radeon RX 6800 / 6900, RX 6700, RX 6600, RX 6500, PRO W6800, Radeon 680M, Ryzen 7000 desktop graphics | `gfx1030`, `gfx1031`, `gfx1032`, `gfx1034`, `gfx1035`, `gfx1036` |
+| RDNA3 and RDNA3.5 | Radeon RX 7900, RX 7800 / 7700, RX 7600, PRO W7000 series, Radeon 780M, 890M, 8060S | `gfx1100`, `gfx1101`, `gfx1102`, `gfx1103`, `gfx1150`, `gfx1151` |
+| RDNA4 | Radeon RX 9070, RX 9060, AI PRO R9700 | `gfx1200`, `gfx1201` |
+
+A GPU whose gfx target is not in the list (older GCN cards, RDNA1) is listed in the
+report with the reason and not run. Windows is not supported: ROCm under WSL2 needs
+AMD's own WSL runtime, which this image does not carry; a run there reports
+`gpu: no_device` and says so.
+
+What the run does on every AMD GPU it finds (at most four), one after the other:
+
+- runs every CPU feature extractor on the four test fixtures with `--backend hip` at
+  full precision and compares each value with the CPU's, per fixture and per feature
+  (`adm` and `float_vif` keep their CPU extractor in that run; the gate below measures
+  their HIP twins);
+- runs the project's parity gate for every HIP twin on every fixture, compared exactly
+  (ciede at its `1e-9` math-library bound);
+- runs the HIP device tests of the build (73 tests);
+- says which open state rows your GPU's measurements close (see
+  [AMD GPU state rows](#amd-gpu-state-rows)).
+
+It also runs the CPU checks of the container image, except the Python golden gate.
+On a desktop with one GPU it takes about two minutes.
+
+`<VERSION>` is the version the maintainers give you, as for the other packages. The
+signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
+`ghcr.io/vmafx/vmafx:<VERSION>-tester-hip`.
+
+### On Linux
+
+```sh
+docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-hip
+
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp \
+  --device /dev/kfd --device /dev/dri \
+  $(stat -c '--group-add %g' /dev/kfd /dev/dri/renderD* | sort -u) \
+  ghcr.io/vmafx/vmafx:<VERSION>-tester-hip > report.json
+```
+
+`/dev/kfd` is ROCm's compute device and `/dev/dri` holds the GPU's render nodes. The
+container runs as an unprivileged user (uid 10001), and these nodes usually belong to
+the group `render` (on some systems `video`). The `$(stat ...)` part prints one
+`--group-add <group id>` per group that owns them, so the container's user may open
+them; it changes nothing on your system. With rootless Podman, use
+`--group-add keep-groups` in its place (the project has not tested Podman).
+
+### What to check before you send it
+
+The terminal summary ends with one line per GPU, for example:
+
+```text
+gpu (hip): pass, path kfd
+  device 0 AMD Radeon Graphics (rdna2 gfx1036): pass; twins identical, gate pass, tests pass (73 passed, 0 failed, 0 skipped), no audit; state rows 1 passing, 0 failing, 0 not measured
+```
+
+`gpu (hip): no_device` with a reason means the container could not reach your GPU; the
+reason names the missing `docker run` option. A `fail` on a GPU is a finding: send it.
+
+### AMD GPU state rows
+
+The image carries `image/hip-rows.json` (in the repository
+`tools/rc1-tester/image/hip-rows.json`). Every HIP twin is proven exact on one GPU of
+the project, the small RDNA2 graphics of a Ryzen 7000 desktop processor (`gfx1036`);
+the row `T-HIP-TWINS-OTHER-TARGETS-2026-10-03` of [`docs/state.md`](../state.md) stays
+open for CDNA, RDNA3, RDNA3.5 and RDNA4 until a report from such a GPU arrives. The
+report reads each GPU's family from its gfx target and gives the row a verdict for
+that GPU: `pass`, `fail`, `not_measured`, or `not_applicable` for a part of another
+family.
+
+### What is in the AMD GPU image
+
+About 0.6 GB to download and 1.9 GB on disk. Read its notices with
+`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-hip /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+and see [Licences of what you download](#licences-of-what-you-download).
+
+| Path | What | Licence |
+| :--- | :--- | :--- |
+| `/opt/vmafx/build`, `/opt/vmafx/tests`, `/opt/vmafx/tester` | VMAFx: the `vmaf` tool and library (HIP build, with its GPU code objects inside), about a hundred test programs, the report program and the parity gate | EUPL-1.2 and BSD-2-Clause-Patent (Netflix), per file |
+| `/opt/vmafx/python/test/resource` | Netflix test videos, each checked against a pinned SHA-256 | BSD-2-Clause-Patent |
+| `/opt/vmafx/lib/rocm` | the ROCm 10.0.0 runtime the HIP build loads, copied unmodified: the HIP runtime (`libamdhip64`), the ROCm runtime (`libhsa-runtime64`), the code object manager (`libamd_comgr`) with the LLVM and Clang libraries it links, `rocprofiler-register`, `kpack`, and the system libraries ROCm bundles (`rocm_sysdeps`) | MIT (HIP runtime, rocprofiler-register, kpack, libdrm), NCSA (ROCm runtime), Apache-2.0 WITH LLVM-exception (comgr, LLVM, Clang), LGPL (libelf, libnuma), Zlib, BSD-3-Clause (zstd), 0BSD (liblzma), bzip2 |
+| Debian packages | Python 3.13 and the Debian 13 base | each package's own (`/usr/share/doc/<package>/copyright`) |
+
+The image holds no compiler, no development package and no GPU driver, and it cannot
+reach the network when run with the commands above.
+
 ## Licences of what you download
 
 Every package carries the licence of everything in it, and its publishing
@@ -469,6 +565,16 @@ workflow refuses to build a package with a file whose licence is not recorded
   `libvmaf` compiles in comes from FFmpeg's `nv-codec-headers` (MIT), whose notices are
   in `/opt/vmafx/licenses/nv-codec-headers/`. The source of the image's Debian
   packages is `ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda-source`.
+- **AMD GPU image only**: the ROCm 10.0.0 runtime files in `/opt/vmafx/lib/rocm` are
+  open source and ship unmodified: the HIP runtime, `rocprofiler-register` and `kpack`
+  under MIT, the ROCm runtime under NCSA, the code object manager and the LLVM and Clang
+  libraries it links under Apache-2.0 WITH LLVM-exception, and the system libraries ROCm
+  bundles under their own licences (libdrm MIT, zlib, zstd BSD-3-Clause, liblzma 0BSD,
+  bzip2). Their texts are in `/opt/vmafx/licenses/rocm/` and `/opt/vmafx/licenses/texts/`.
+  Two of the bundled libraries are LGPL (elfutils' `libelf`, numactl's `libnuma`): you
+  may replace them, and their corresponding source (the upstream archives and the
+  TheRock tree that built them) is in `ghcr.io/vmafx/vmafx:<VERSION>-tester-hip-source`
+  with the source of the image's Debian packages.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle, and an
   attestation on each platform image of the container
@@ -504,13 +610,14 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
   five-frame motion window). A feature a Metal twin cannot run on a fixture is
   listed under `left_out` with the reason.
 - **GPU section** (GPU images, `gpu`): how the container reached the GPU
-  (`access.path`: `drm` for a Linux render node or `nvidia` for the NVIDIA device
-  nodes, `wsl` for WSL2's `/dev/dxg`, `none` with the reason), the versions of the GPU
+  (`access.path`: `drm` for a Linux render node, `nvidia` for the NVIDIA device nodes,
+  `kfd` for ROCm's `/dev/kfd`, `wsl` for WSL2's `/dev/dxg`, `none` with the reason), the versions of the GPU
   runtime in the image (the NVIDIA image: the CUDA version of your driver and of the
   build), and per GPU its name and family with, for Intel, the PCI device ID, IP
   version, execution units and sub-group sizes, for NVIDIA the compute capability,
   multiprocessor count, memory size and the kernel code it ran (a cubin of the build
-  or PTX your driver compiled); the twins against the CPU per fixture and per feature (identical values, values
+  or PTX your driver compiled), for AMD the gfx target, compute units, clock and PCI
+  device ID; the twins against the CPU per fixture and per feature (identical values, values
   within the gate's bound for that twin, or the first differing value with both
   numbers); the parity gate's cells; every device test's verdict and the ones left
   out with the reason; on Intel GPUs the scratch audit (kernels audited, kernels in
@@ -596,4 +703,8 @@ Reports from outside the project's own hosts are listed on the
   missing or the NVIDIA Container Toolkit is not set up; no `libcuda.so.1`: the toolkit
   did not lend the driver; a GPU below compute capability 8.0) (see
   [D](#d-nvidia-gpu-image-linux-or-windows-with-wsl2)).
+- The AMD GPU image says `gpu (hip): no_device` — the container could not open
+  `/dev/kfd` or the render node, or your GPU's gfx target is not in the image; the
+  reason says which and names the missing `docker run` option (see
+  [E](#e-amd-gpu-image-linux)).
 - Anything that stops before a report is printed — send the terminal output in an issue.

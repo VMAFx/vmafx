@@ -1,0 +1,71 @@
+{
+ "comment": "The ROCm runtime files the AMD GPU tester image ships, copied unmodified from the ROCm 10.0.0 tree of its build stage (prepare_build.py rocm-runtime; paths relative to /opt/rocm): libamdhip64 and what it loads, keeping the directories their RPATHs name ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib), and the licence texts ROCm installs. The texts ROCm does not install (kpack, LLVM, the bundled system libraries) are fetched_texts of licensing.json. tools/rc1-tester/tests/test_prepare_build.py keeps the list to library files.",
+ "licence_dir": "licenses/rocm",
+ "components": [
+  {
+   "id": "rocm-clr",
+   "dir": "lib",
+   "credist": false,
+   "dest": "lib/rocm",
+   "names": ["libamdhip64.so.7*"],
+   "licences": ["share/doc/hip/LICENSE.md"]
+  },
+  {
+   "id": "rocm-rocr",
+   "dir": "lib",
+   "credist": false,
+   "dest": "lib/rocm",
+   "names": ["libhsa-runtime64.so.1*"],
+   "licences": ["share/doc/rocr/LICENSE.md"]
+  },
+  {
+   "id": "rocm-comgr",
+   "dir": "lib",
+   "credist": false,
+   "dest": "lib/rocm",
+   "names": ["libamd_comgr.so.3*"],
+   "licences": ["share/doc/amd_comgr/LICENSE.txt"]
+  },
+  {
+   "id": "rocm-rocprofiler-register",
+   "dir": "lib",
+   "credist": false,
+   "dest": "lib/rocm",
+   "names": ["librocprofiler-register.so.0*"],
+   "licences": ["share/doc/rocprofiler-register/LICENSE.md"]
+  },
+  {
+   "id": "rocm-kpack",
+   "dir": "lib",
+   "credist": false,
+   "dest": "lib/rocm",
+   "names": ["librocm_kpack.so.0*"],
+   "licences": []
+  },
+  {
+   "id": "rocm-llvm",
+   "dir": "lib/llvm/lib",
+   "credist": false,
+   "dest": "lib/rocm/llvm/lib",
+   "names": ["libLLVM.so.23.0git", "libclang-cpp.so.23.0git"],
+   "licences": []
+  },
+  {
+   "id": "rocm-sysdeps",
+   "dir": "lib/rocm_sysdeps/lib",
+   "credist": false,
+   "dest": "lib/rocm/rocm_sysdeps/lib",
+   "names": [
+    "librocm_sysdeps_elf.so.1",
+    "librocm_sysdeps_numa.so.1",
+    "librocm_sysdeps_drm.so.2",
+    "librocm_sysdeps_drm_amdgpu.so.1",
+    "librocm_sysdeps_z.so.1*",
+    "librocm_sysdeps_zstd.so.1*",
+    "librocm_sysdeps_liblzma.so.5*",
+    "librocm_sysdeps_bz2.so"
+   ],
+   "licences": []
+  }
+ ]
+}

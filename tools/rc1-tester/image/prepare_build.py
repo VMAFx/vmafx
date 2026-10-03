@@ -22,6 +22,15 @@ intel-runtime <runtime.json> <oneapi_root> <image_root>
 cuda-targets <build_dir> <image_root> write image/cuda-targets.json: the CUDA version
                                       and the cubin and PTX targets of the build's
                                       gencode list, from its Meson log (NVIDIA GPU image)
+hip-targets <build_dir> <rocm_root> <image_root>
+                                      write image/hip-targets.json: the gfx targets of
+                                      the build's code objects, from its Meson log, and
+                                      the ROCm release (AMD GPU image)
+rocm-runtime <runtime.json> <rocm_root> <image_root>
+                                      copy the listed ROCm runtime files, unmodified,
+                                      keeping their directories (the libraries find
+                                      each other through their RPATH), and their
+                                      licence texts (AMD GPU image)
 
 A list names one test of the Meson build per line, or `suite:<name>` for every
 test of that suite. A test runs from the image when it is an executable of the
@@ -321,17 +330,21 @@ def component_files(oneapi: Path, component: dict, redistributable: set[str]) ->
     return files
 
 
-def stage_intel_runtime(spec_path: Path, oneapi: Path, image_root: Path) -> None:
-    """Copy the runtime files and licence texts named in sycl-runtime.json."""
+def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -> None:
+    """Copy the runtime files and licence texts a runtime spec names (sycl-runtime.json,
+    hip-runtime.json), byte for byte. A component's files go to its `dest` under the
+    image root (default lib/intel), its texts to <licence_dir>/<id> (default
+    licenses/intel); compiler files must be in the spec's `credist` list when it has one."""
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    redistributable = credist_names(oneapi / spec["credist"])
+    redistributable = credist_names(vendor_root / spec["credist"]) if spec.get("credist") else set()
     for component in spec["components"]:
-        for path in component_files(oneapi, component, redistributable):
-            copy_unmodified(path, image_root / "lib" / "intel" / path.name)
-        texts = image_root / "licenses" / "intel" / component["id"]
-        texts.mkdir(parents=True, exist_ok=True)
+        dest = image_root / component.get("dest", "lib/intel")
+        for path in component_files(vendor_root, component, redistributable):
+            copy_unmodified(path, dest / path.name)
+        texts = image_root / spec.get("licence_dir", "licenses/intel") / component["id"]
         for text in component["licences"]:
-            source = oneapi / text
+            texts.mkdir(parents=True, exist_ok=True)
+            source = vendor_root / text
             if not source.is_file():
                 raise BuildError(f"{component['id']}: licence text {text} is missing")
             shutil.copy2(source, texts / source.name)
@@ -364,11 +377,46 @@ def _arch_key(code: str) -> int:
     return int(code.rsplit("_", 1)[1])
 
 
-def write_cuda_targets(build_dir: Path, image_root: Path) -> None:
-    log = (build_dir / "meson-logs" / "meson-log.txt").read_text(encoding="utf-8", errors="replace")
-    out = image_root / "image" / "cuda-targets.json"
+def meson_log(build_dir: Path) -> str:
+    return (build_dir / "meson-logs" / "meson-log.txt").read_text(
+        encoding="utf-8", errors="replace"
+    )
+
+
+def write_image_json(image_root: Path, name: str, document: dict) -> None:
+    out = image_root / "image" / name
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(cuda_targets(log), indent=1) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+
+
+def write_cuda_targets(build_dir: Path, image_root: Path) -> None:
+    write_image_json(image_root, "cuda-targets.json", cuda_targets(meson_log(build_dir)))
+
+
+HIP_TARGETS_LINE = re.compile(r"Message: HIP HSACO targets: (.*)")
+
+
+def hip_targets(log: str, manifest: dict) -> dict:
+    """The gfx targets the build compiled its code objects for, as core/src/meson.build
+    reports them in the Meson log, and the ROCm release of TheRock's manifest."""
+    line = HIP_TARGETS_LINE.search(log)
+    targets = (
+        sorted(set(re.findall(r"--offload-arch=(gfx[0-9a-f]+)", line.group(1)))) if line else []
+    )
+    if not targets:
+        raise BuildError("the Meson log names no HIP offload target")
+    return {"rocm_version": str(manifest.get("rocm_version", "unknown")),
+            "therock_commit": str(manifest.get("the_rock_commit", "unknown")),
+            "targets": targets}  # fmt: skip
+
+
+def write_hip_targets(build_dir: Path, rocm_root: Path, image_root: Path) -> None:
+    manifest_path = rocm_root / "share" / "therock" / "therock_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise BuildError(f"cannot read {manifest_path}: {error}") from error
+    write_image_json(image_root, "hip-targets.json", hip_targets(meson_log(build_dir), manifest))
 
 
 def print_targets(build_dir: Path, names: list[str]) -> None:
@@ -391,10 +439,12 @@ def run(argv: list[str]) -> int:
         stage_gate(Path(argv[2]).resolve(), Path(argv[3]))
     elif command == "twins" and len(argv) == 4:
         write_twins(Path(argv[2]), argv[3])
-    elif command == "intel-runtime" and len(argv) == 5:
-        stage_intel_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
+    elif command in ("intel-runtime", "rocm-runtime") and len(argv) == 5:
+        stage_vendor_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
     elif command == "cuda-targets" and len(argv) == 4:
         write_cuda_targets(Path(argv[2]), Path(argv[3]))
+    elif command == "hip-targets" and len(argv) == 5:
+        write_hip_targets(Path(argv[2]), Path(argv[3]), Path(argv[4]))
     else:
         print(__doc__, file=sys.stderr)
         return 64

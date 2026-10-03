@@ -23,16 +23,25 @@
 # Usage:
 #   scripts/ci/install-rocm-from-image.sh \
 #       --image rocm/dev-ubuntu-24.04@sha256:<digest> \
-#       --dest /opt/rocm
+#       --dest /opt/rocm [--keep-docs]
+#
+# --keep-docs keeps share/doc (the components' licence texts), which the AMD
+# GPU tester image ships next to the runtime files it copies (ADR-1503).
 #
 # Requires: curl, jq, tar, gzip; zstd only if the registry serves zstd layers.
 set -euo pipefail
+# tar's messages are matched below; keep them in English.
+export LC_ALL=C
 
 IMAGE=""
 DEST="/opt/rocm"
+KEEP_DOCS=0
 REGISTRY="registry-1.docker.io"
 AUTH="https://auth.docker.io/token"
 AUTH_SERVICE="registry.docker.io"
+# Deadlines (seconds): a registry call, and one layer (the largest is about 8 GB).
+API_MAX_TIME=120
+LAYER_MAX_TIME=3600
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +52,10 @@ while [ $# -gt 0 ]; do
     --dest)
       DEST="$2"
       shift 2
+      ;;
+    --keep-docs)
+      KEEP_DOCS=1
+      shift
       ;;
     *)
       echo "install-rocm-from-image.sh: unknown argument '$1'" >&2
@@ -108,11 +121,15 @@ EXCLUDES=(
 
 tar_excludes=()
 for pattern in "${EXCLUDES[@]}"; do
+  if [ "$KEEP_DOCS" -eq 1 ] && [ "$pattern" = 'opt/rocm/*/share/doc' ]; then
+    continue
+  fi
   tar_excludes+=("--exclude=$pattern")
 done
 
 echo "==> Authenticating to $REGISTRY for $REPO"
-TOKEN="$(curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull" | jq -r .token)"
+TOKEN="$(curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
+  "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull" | jq -r .token)"
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   echo "install-rocm-from-image.sh: failed to obtain a registry pull token" >&2
   exit 1
@@ -121,7 +138,7 @@ fi
 ACCEPT='application/vnd.docker.distribution.manifest.v2+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.oci.image.index.v1+json'
 
 fetch_manifest() {
-  curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+  curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
     -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
     "https://${REGISTRY}/v2/${REPO}/manifests/$1"
 }
@@ -151,6 +168,33 @@ echo "==> $LAYER_COUNT layers to scan"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
+TAR_ERRORS="$STAGE/.tar-errors"
+
+# One layer, streamed from the registry into tar. A layer with no opt/rocm/
+# member makes GNU tar exit 2 with "Not found in archive", the normal case for
+# most layers; any other failure of the download, the decompression or tar
+# stops the install instead of leaving a partial tree.
+extract_layer() {
+  local digest="$1" statuses
+  set +e
+  curl -fsSL --max-time "$LAYER_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://${REGISTRY}/v2/${REPO}/blobs/${digest}" |
+    "${decomp[@]}" |
+    tar -x -C "$STAGE" "${tar_excludes[@]}" --wildcards 'opt/rocm/*' 2>"$TAR_ERRORS"
+  statuses=("${PIPESTATUS[@]}")
+  set -e
+  if [ "${statuses[0]}" -ne 0 ] || [ "${statuses[1]}" -ne 0 ]; then
+    echo "install-rocm-from-image.sh: layer $digest: download exit ${statuses[0]}," \
+      "decompression exit ${statuses[1]}" >&2
+    exit 1
+  fi
+  if [ "${statuses[2]}" -ne 0 ] &&
+    grep -v -e 'Not found in archive' -e 'Exiting with failure status' "$TAR_ERRORS" >&2; then
+    echo "install-rocm-from-image.sh: layer $digest: tar exit ${statuses[2]}" >&2
+    exit 1
+  fi
+}
 
 # Layers apply in order, so extracting them in order reproduces the image's
 # view of /opt/rocm (later layers overwrite earlier ones). Whiteout entries
@@ -168,13 +212,7 @@ while [ "$i" -lt "$LAYER_COUNT" ]; do
     *) decomp=(gzip -dc) ;;
   esac
   echo "==> layer $((i + 1))/$LAYER_COUNT ($layer_media)"
-  # `|| true` on tar: a layer with no opt/rocm/ member makes GNU tar exit 2
-  # with "Not found in archive", which is the normal case for most layers.
-  curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
-    -H "Authorization: Bearer ${TOKEN}" \
-    "https://${REGISTRY}/v2/${REPO}/blobs/${layer_digest}" |
-    "${decomp[@]}" |
-    tar -x -C "$STAGE" "${tar_excludes[@]}" --wildcards 'opt/rocm/*' 2>/dev/null || true
+  extract_layer "$layer_digest"
   i=$((i + 1))
 done
 
@@ -184,7 +222,7 @@ if [ ! -d "$STAGE/opt/rocm" ]; then
 fi
 
 # Overlay whiteout markers are an artefact of layering, not content.
-find "$STAGE/opt/rocm" -name '.wh.*' -delete 2>/dev/null || true
+find "$STAGE/opt/rocm" -name '.wh.*' -delete
 
 # ROCm 10 installs the real tree under /opt/rocm/core-<major>.<minor>/ and
 # makes /opt/rocm/{bin,lib,include,llvm,share,libexec,amdgcn} symlinks into
@@ -245,4 +283,6 @@ if ! ls "$DEST"/lib/libamdhip64.so* >/dev/null 2>&1; then
 fi
 
 echo "==> ROCm installed at $DEST"
-"$DEST/bin/hipconfig" --version || true
+if ! "$DEST/bin/hipconfig" --version; then
+  echo "install-rocm-from-image.sh: hipconfig --version failed; hipcc and libamdhip64 are present" >&2
+fi
