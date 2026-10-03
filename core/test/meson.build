@@ -2312,6 +2312,30 @@ test('test_metal_float_moment_exact_contract',
     timeout : 30,
 )
 
+# T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01: integer_adm_metal's decouple
+# (core/src/feature/metal/metal_integer_adm_math.h: div_lookup's integer
+# reciprocal, the Q15 ratio and adm_gain_limit_product() of the shared
+# adm_gain_limit.h) against the CPU's adm_decouple_band() and
+# adm_decouple_band_s123() at gain limits 1, 1.2, 1.5 and 100: every scale-0
+# operand, every distorted value at the operands whose fp32 reciprocal is
+# wrong, and two million scales-1-3 pairs. The source contract pins the
+# kernel's use of the header and the host's split of the limit.
+test_metal_integer_adm_math = executable('test_metal_integer_adm_math',
+    ['test.c', 'test_metal_integer_adm_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_integer_adm_math', test_metal_integer_adm_math, suite : ['fast'],
+    timeout : 120)
+test('test_metal_integer_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_integer_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of integer-kernel group)
 
 # [metal-ports: float_motion and float_vif]
