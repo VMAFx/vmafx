@@ -6340,6 +6340,7 @@
         "core/test/test_log.c": 1,
         "core/test/test_lpips.c": 1,
         "core/test/test_metal_float_adm_parity.c": 1,
+        "core/test/test_metal_float_moment_math.c": 1,
         "core/test/test_metal_float_moment_parity.c": 1,
         "core/test/test_metal_float_motion_parity.c": 1,
         "core/test/test_metal_float_ms_ssim_parity.c": 1,
@@ -9198,10 +9199,13 @@
       "sites": {
         "core/src/feature/hip/float_moment/moment_score.hip": 2,
         "core/src/feature/hip/float_moment_hip.c": 1,
+        "core/src/feature/metal/float_moment.metal": 1,
+        "core/src/feature/metal/metal_float_moment_math.h": 1,
         "core/test/float_moment_twin_parity.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_hip_float_moment_exact_contract.py": 2,
         "core/test/test_hip_float_moment_parity.c": 1,
+        "core/test/test_metal_float_moment_exact_contract.py": 1,
         "core/test/test_metal_float_moment_parity.c": 1,
         "scripts/ci/exact_twins.d/float_moment.hip": 1
       },
@@ -9232,9 +9236,12 @@
     },
     "1449": {
       "sites": {
+        "core/src/feature/metal/float_moment.metal": 1,
+        "core/src/feature/metal/metal_float_moment_math.h": 1,
         "core/src/feature/sycl/integer_moment_sycl.cpp": 2,
         "core/test/float_moment_twin_parity.h": 1,
         "core/test/meson.build": 1,
+        "core/test/test_metal_float_moment_exact_contract.py": 1,
         "core/test/test_metal_float_moment_parity.c": 1,
         "core/test/test_sycl_float_moment_exact_contract.py": 2,
         "core/test/test_sycl_float_moment_parity.c": 1
@@ -9274,9 +9281,13 @@
       "sites": {
         "core/src/feature/cuda/integer_moment/moment_score.cu": 1,
         "core/src/feature/cuda/integer_moment_cuda.c": 1,
+        "core/src/feature/metal/float_moment.metal": 1,
+        "core/src/feature/metal/float_moment_metal.mm": 2,
+        "core/src/feature/metal/metal_float_moment_math.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_cuda_float_moment_exact_contract.py": 2,
         "core/test/test_cuda_float_moment_parity.c": 1,
+        "core/test/test_metal_float_moment_exact_contract.py": 1,
         "core/test/test_metal_float_moment_parity.c": 1
       },
       "target": "1453-cuda-float-moment-cpu-float-squares.md"
@@ -9733,12 +9744,17 @@
     },
     "1498": {
       "sites": {
+        "core/src/feature/metal/float_moment.metal": 1,
+        "core/src/feature/metal/float_moment_metal.mm": 1,
         "core/src/feature/metal/float_psnr.metal": 1,
         "core/src/feature/metal/float_psnr_metal.mm": 1,
+        "core/src/feature/metal/metal_float_moment_math.h": 1,
         "core/src/feature/metal/metal_float_psnr_math.h": 1,
         "core/src/feature/metal/metal_portable.h": 1,
         "core/src/metal/meson.build": 2,
         "core/test/meson.build": 2,
+        "core/test/test_metal_float_moment_exact_contract.py": 1,
+        "core/test/test_metal_float_moment_math.c": 1,
         "core/test/test_metal_float_psnr_exact_contract.py": 1,
         "core/test/test_metal_float_psnr_math.c": 1,
         "core/test/test_metal_portable.c": 1,
