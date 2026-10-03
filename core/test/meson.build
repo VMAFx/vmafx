@@ -2310,6 +2310,28 @@ test('test_metal_float_psnr_exact_contract',
     timeout : 30,
 )
 
+# T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02: float_moment_metal's 16-bit
+# second-moment term (core/src/feature/metal/metal_float_moment_math.h)
+# against moment.c's float square (picture_copy() and compute_2nd_moment())
+# for every sample value at 8 to 16 bits, and the twin's moments against
+# compute_1st_moment() / compute_2nd_moment() on full-range noise and a bright
+# 16-bit 1920x1080 frame. The source contract pins the kernel's float squares
+# and the host's uint64 totals.
+test_metal_float_moment_math = executable('test_metal_float_moment_math',
+    ['test.c', 'test_metal_float_moment_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_float_moment_math', test_metal_float_moment_math, suite : ['fast'])
+test('test_metal_float_moment_exact_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_moment_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # (end of integer-kernel group)
 
 # [metal-ports: float_motion and float_vif]
