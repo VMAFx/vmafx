@@ -110,6 +110,15 @@ at run time on any host that actually dispatches the backend:
    `cuInit(0)` and the return code so the failure mode is
    distinguishable from the dlopen case above.
 
+3. **The driver is new enough for the toolkit that built libvmaf.** A
+   build made with CUDA 13.x needs driver R580 or newer (NVIDIA's minor
+   version compatibility table in the
+   [CUDA Toolkit release notes](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/)).
+   The kernels are stored compressed (`compress_device_code`, on by default,
+   see [Build](#build)): `nvcc --compress-mode` output needs a driver from CUDA
+   12.4 (R550) or later, which the R580 floor already covers. An older driver
+   fails `cuModuleLoadData()` in the first extractor that loads a kernel.
+
 Statically-linked consumers (for example, ffmpeg binaries built with
 `--enable-libvmaf` in static mode) are **not** exempt: the driver
 library is loaded through `dlopen`, which bypasses `DT_NEEDED` and
@@ -134,6 +143,7 @@ Meson options:
 | `enable_nvcc` | `true` | build kernel objects with `nvcc` (when `false`, the clang CUDA driver is used; experimental). Only effective with `enable_cuda=true` |
 | `enable_nvtx` | `false` | instrument kernels with NVTX ranges; requires `enable_cuda=true` (see [NVTX profiling](../nvtx/profiling.md)) |
 | `nvcc_threads` | `4` | parallel `nvcc` threads per kernel compile (1 to 32); see [build flags](../../development/build-flags.md) |
+| `compress_device_code` | `true` | store every fatbin entry (cubins and PTX) compressed with `nvcc --compress-mode=size`; `false` stores them raw. Requires `enable_nvcc=true`: the clang CUDA path cannot compress, so it needs `false`. See [`compress_device_code`](../../development/build-flags.md#compress_device_code) |
 
 ## Run
 

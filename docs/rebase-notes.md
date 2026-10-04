@@ -60587,3 +60587,22 @@ upstream parity guard's allowlist.
   that links the first is left as written. On a conflict in a corrected page, keep the verified
   statement (each names the workflow, script or file it was checked against). No score, public API
   or FFmpeg patch impact.
+## GPU device code compressed (`build/compress-everything`, ADR-1590)
+
+- `core/src/meson.build` defines `cuda_compress_args`, `hip_compress_args` and
+  `sycl_compress_args` between `BEGIN/END VMAF {CUDA,HIP,SYCL} device code
+  compression policy` markers, gated by the new option `compress_device_code`
+  in `core/meson_options.txt`. The nvcc fatbin command, every
+  `[hipcc_exe, '--genco']` command (the two HIP test probes in
+  `core/test/meson.build` too), the SYCL AOT compile line (toolchain and per-TU
+  skip path), `sycl_link_args` (one `if not sycl_msvc_device_link` append
+  after the existing assignment) and the MSVC `sycl_device_link_args` take the
+  list. The literal `--offload-compress` left `sycl_icpx_aot_base_args` and the
+  MSVC device link list. An upstream sync that rewrites the CUDA gencode or
+  HIP target blocks keeps the lists on the commands; a new device compile site
+  adds its backend's list. The build-time checks (`*_device_compression_check`,
+  `core/src/check_device_compression.py`) fail a build that stores raw device
+  code. `scripts/ci/gen-sycl-compile-commands.py` strips
+  `--offload-compression-level=`. Guard: `core/test/test_device_code_compression.py`.
+  No score, public API or FFmpeg patch impact; builds with the clang CUDA
+  driver or AdaptiveCpp need `-Dcompress_device_code=false`.

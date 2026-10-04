@@ -62,6 +62,7 @@ container image. On a workstation, use your distribution's ROCm packages
 | `enable_hipcc` | `false` | Compiles the device kernels with `hipcc` and embeds the HSACO code objects. Without it, every extractor returns `-ENOSYS` at `init()`; `float_ssim_hip`, `integer_ssim_hip` and `vmaf_hip_picture_alloc` log an error that names `-Denable_hipcc=true`. Requires `enable_hip=true`. |
 | `hip_gfx_targets` | empty (auto-detect) | Comma-separated `--offload-arch` list for the HSACO fat binary. See [GFX targets](#gfx-targets). |
 | `enable_float_vif_hip_autodispatch` | `false` | Sets `VMAF_FEATURE_EXTRACTOR_HIP` on `float_vif_hip`, so `--backend hip` selects it for `float_vif` ([ADR-0623](../../adr/0623-scaffold-audit-p2-half-finished.md)). Without it the twin runs only when named. |
+| `compress_device_code` | `true` | Stores each kernel's code object bundle compressed (`hipcc --offload-compress --offload-compression-level=22`, a zstd `CCOB` bundle): 1.09 MB instead of 17.9 MB for the 25 tester targets. The HIP runtime decompresses a bundle when `hipModuleLoadData()` loads it (measured on a gfx1036 with the ROCm 7.2.4 runtime, no change in load time, and with the ROCm 10 runtime of the dev container); the AMD tester image ships the runtime of the ROCm that compiled its kernels. See [`compress_device_code`](../../development/build-flags.md#compress_device_code). |
 
 Pre-compiled HSACO fat binaries are not bundled without `hipcc`, because ROCm
 needs target-specific code objects. The CI compile lane (`Ubuntu HIP`) builds

@@ -65,9 +65,14 @@ or configure with `-Dsycl_icpx_aot_targets=''`. Without `ocloc`, `meson setup`
 stops with an error that says so.
 
 Each SYCL source file is compiled to native code for every listed target at
-compile time (`-fno-sycl-rdc`), and the images are zstd-compressed
-(`--offload-compress`). Every binary that links a SYCL object carries them:
-`libvmaf.so`, static consumers of `libvmaf.a`, and the test executables.
+compile time (`-fno-sycl-rdc`). Every binary that links a SYCL object carries
+the images: `libvmaf.so`, static consumers of `libvmaf.a`, and the test
+executables. With `compress_device_code` (on by default) every image is stored
+zstd-compressed at level 22 (`--offload-compress
+--offload-compression-level=22`): the native images on the compile line, the
+SPIR-V fallback on the link that generates it. The build checks
+`libvmaf.so` for a device image stored raw
+([`compress_device_code`](../../development/build-flags.md#compress_device_code)).
 
 After linking `libvmaf.so` on Linux, the build runs
 `core/src/sycl/check_aot_image.py`. It fails the build unless the library holds

@@ -134,6 +134,12 @@ under [Option details](#option-details).
 | `hip_gfx_targets` | string | auto-detect | AMD GFX targets for `hipcc --offload-arch`; see [`hip_gfx_targets`](#hip_gfx_targets). |
 | `enable_float_vif_hip_autodispatch` | bool | `false` | Let the model registry pick `float_vif_hip` on its own; see [`enable_float_vif_hip_autodispatch`](#enable_float_vif_hip_autodispatch). |
 
+### GPU device code (CUDA, HIP, SYCL)
+
+| Option | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `compress_device_code` | bool | `true` | Store every backend's device code compressed at the toolchain's strongest setting; see [`compress_device_code`](#compress_device_code). |
+
 ### Metal (Apple Silicon)
 
 | Option | Type | Default | Effect |
@@ -186,8 +192,9 @@ count is this value times the ninja job count: lower it on a small runner.
 ### `sycl_icpx_aot_targets`
 
 A comma-separated list of Intel device codenames. Each `icpx` compile gets
-`-fno-sycl-rdc --offload-compress -fsycl-targets=spir64_gen,spir64
--Xsycl-target-backend=spir64_gen '-device <list>'`. Scoping the list to
+`-fno-sycl-rdc -fsycl-targets=spir64_gen,spir64
+-Xsycl-target-backend=spir64_gen '-device <list>'`, after the compression
+flags of [`compress_device_code`](#compress_device_code). Scoping the list to
 `spir64_gen` keeps the portable `spir64` fallback free of warnings.
 
 The default covers Arc dGPU and every common Intel iGPU generation from Tiger
@@ -205,6 +212,45 @@ native image for every listed target. The option is ignored when
 [ADR-0568](../adr/0568-sycl-icpx-aot-targets-default.md) and
 [ADR-1360](../adr/1360-sycl-aot-compile-time-device-codegen.md); the install
 steps are in [oneapi-install.md](oneapi-install.md).
+
+### `compress_device_code`
+
+The GPU kernels are embedded in `libvmaf` and, through `libvmaf.a`, in every
+test program. With this option on (the default) every device compiler stores
+them compressed at its strongest setting; the driver or runtime decompresses a
+module when it loads it, and the code the GPU runs is the same
+([ADR-1590](../adr/1590-device-code-compression.md)):
+
+| Backend | Flags | Device code, before and after |
+| --- | --- | --- |
+| CUDA | `-Xfatbin=-compress-all --compress-mode=size`: every cubin and PTX entry of a fatbin (nvcc alone compresses only the PTX) | 21 fatbins: 10.97 MB to 2.60 MB; `libvmaf.so` 14.2 MB to 5.9 MB |
+| HIP | `--offload-compress --offload-compression-level=22`: a zstd-compressed code object bundle | 25 targets: 17.9 MB to 1.09 MB; `libvmaf.so` 21.0 MB to 4.2 MB |
+| SYCL (`icpx`) | `--offload-compress --offload-compression-level=22` on the AOT compile line and on the link that generates the SPIR-V image | 19 AOT targets: 6.42 MB to 5.23 MB, SPIR-V 1.90 MB to 0.44 MB; `libvmaf.so` 12.8 MB to 10.2 MB |
+
+Module loading is not measurably slower: 1.4 ms against 3.0 ms for all 21
+CUDA fatbins, and a one-frame `vmaf` run with 15 GPU twins takes the same time
+on all three backends.
+
+What a build needs:
+
+- CUDA: `nvcc` 12.8 or newer (it added `--compress-mode`). The output loads on
+  drivers from CUDA 12.4 (R550) on; a CUDA 13 build needs R580 anyway.
+- HIP: a ROCm clang with `--offload-compression-level` (LLVM 19 on, so every
+  ROCm 7 release). The HIP runtime decompresses the bundle.
+- SYCL: `icpx` with `--offload-compression-level`.
+
+Configure stops with an error when a compiler in use cannot compress: the
+clang CUDA driver (`enable_nvcc=false`), AdaptiveCpp (`sycl_compiler=acpp`),
+or a toolchain without the flags. Such builds pass
+`-Dcompress_device_code=false`; so does anyone who wants the raw images, for
+example to read them with tools that do not decompress. With the option off,
+nvcc stores every entry raw (`--no-compress`) and hipcc and `icpx` store plain
+images.
+
+The build checks its own output: `core/src/check_device_compression.py` fails
+it when a fatbin holds a raw cubin or PTX entry, a HIP bundle is not a
+compressed (`CCOB`) bundle, or a SYCL image section of `libvmaf.so` (Linux
+shared builds) is not zstd-compressed.
 
 ### `enable_hip` and `enable_hipcc`
 
@@ -306,7 +352,8 @@ the resulting static library into `libvmaf.so`. CI keeps it off.
 | `enable_asm=false` | Disables every SIMD path. | A pure-scalar binary, much slower than the AVX2 path; an escape hatch for toolchains that cannot compile the `*.asm` kernels. |
 | `-Denable_avx512=true` | Downgraded when `nasm --version` is below 2.14 or the host headers lack the intrinsics. | Scripted builds must not assume the flag survives configure. |
 | `enable_cuda` with `enable_sycl` | Both compile into one binary. | The runtime picks one backend per extractor; `--no_cuda` / `--no_sycl` pin a backend for A/B runs. |
-| `enable_nvcc=false` | Uses the clang CUDA driver. | Experimental; clang CUDA lags `nvcc` on new toolchains, so use it only to investigate codegen regressions. |
+| `enable_nvcc=false` | Uses the clang CUDA driver. | Experimental; clang CUDA lags `nvcc` on new toolchains, so use it only to investigate codegen regressions. It cannot compress device code: pair it with `-Dcompress_device_code=false`. |
+| `sycl_compiler=acpp` | AdaptiveCpp has no device image compression. | Pair it with `-Dcompress_device_code=false`, or configure stops. |
 | `enable_float` | Adds float twins on top of the integer path. | Turning it off never removes an integer extractor. |
 | `enable_dnn=auto` | Skips DNN tests when ONNX Runtime fails to link. | The gap is not reported as a failure; use `enabled` in CI. |
 

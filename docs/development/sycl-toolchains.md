@@ -53,9 +53,15 @@ meson setup build-acpp core \
     -Denable_cuda=false \
     -Denable_sycl=true \
     -Dsycl_compiler=acpp \
-    -Dsycl_acpp_targets=generic
+    -Dsycl_acpp_targets=generic \
+    -Dcompress_device_code=false
 ninja -C build-acpp
 ```
+
+`-Dcompress_device_code=false` is required: AdaptiveCpp has no device image
+compression, and the option's default (`true`) makes configure stop with an
+error that says so rather than build uncompressed without telling you
+([`compress_device_code`](build-flags.md#compress_device_code)).
 
 `-Dsycl_acpp_targets` accepts any AdaptiveCpp `--acpp-targets`
 string. Common values:
@@ -168,7 +174,8 @@ AdaptiveCpp into a system path, or pass the absolute path:
 meson setup build-acpp core \
     -Dsycl_compiler=/opt/adaptivecpp/bin/acpp \
     -Dsycl_acpp_targets=generic \
-    -Denable_sycl=true
+    -Denable_sycl=true \
+    -Dcompress_device_code=false
 ```
 
 ### `cannot find -lacpp-rt`

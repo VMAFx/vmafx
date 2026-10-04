@@ -285,7 +285,7 @@ Xe-LPG GPU.
 
 ### What is in the Intel GPU image
 
-About 0.95 GB to download and 1.6 GB on disk. Its notices are
+About 0.85 GB to download and 1.35 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Its notices are
 `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`, with the licence texts next to it; read
 them with
 `docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
@@ -408,7 +408,7 @@ another family.
 
 ### What is in the NVIDIA GPU image
 
-About 0.5 GB to download and 1.5 GB on disk. Read its notices with
+About 0.45 GB to download and 0.75 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Read its notices with
 `docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
 and see [Licences of what you download](#licences-of-what-you-download).
 
@@ -504,7 +504,7 @@ family.
 
 ### What is in the AMD GPU image
 
-About 0.7 GB to download and 2.4 GB on disk. Read its notices with
+About 0.35 GB to download and 0.7 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Read its notices with
 `docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-hip /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
 and see [Licences of what you download](#licences-of-what-you-download).
 
@@ -622,7 +622,7 @@ workflow run that built it.
 | `runtime\` | a Python 3.13 interpreter ([python-build-standalone](https://github.com/astral-sh/python-build-standalone), pinned by SHA-256, standard library only, about 31 MB) with the two Microsoft Visual C++ runtime DLLs it needs |
 | `tester\` | the report program, plain Python (`tools/rc1-tester/` in the repository) |
 | `build\tools\vmaf.exe` | the VMAFx command line tool; libvmaf and the C runtime are linked in |
-| `tests\` | unit test programs, each with libvmaf linked in (most of the zip's size) |
+| `tests\` | unit test programs, each with libvmaf linked in (most of the zip's size); in the CUDA zip each carries the CUDA kernels, stored compressed (2.6 MB instead of 11 MB, [ADR-1590](../adr/1590-device-code-compression.md)) |
 | `python\test\resource\` | Netflix test videos, each checked against a pinned SHA-256 (about 57 MB) |
 | `reference\`, `image\` | scores recorded by the build, manifests |
 | `licenses\` | `THIRD_PARTY_NOTICES.txt` and the licence texts of everything above |

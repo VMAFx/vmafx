@@ -33,6 +33,7 @@ class ClangTidyCommandTests(unittest.TestCase):
         translated = generator.clang_tidy_command(
             "/opt/intel/oneapi/compiler/2026/bin/icpx -fsycl "
             "-fsycl-targets=spir64_gen,spir64 -fno-sycl-rdc --offload-compress "
+            "--offload-compression-level=22 "
             "-Xsycl-target-backend=spir64_gen '-device pvc' -fp-model=precise "
             "-ffp-contract=off -foffload-fp32-prec-div -foffload-fp32-prec-sqrt "
             "-pedantic -Wall -Wextra -Werror -c ../unit.cpp -o unit.o"
@@ -45,6 +46,7 @@ class ClangTidyCommandTests(unittest.TestCase):
         self.assertIn("-ffp-contract=off", translated)
         self.assertNotIn("-fsycl", translated)
         self.assertNotIn("-fno-sycl-rdc", translated)
+        # ADR-1590: the compression level is icpx-only as well.
         self.assertNotIn("--offload-compress", translated)
         self.assertNotIn("-Xsycl-target-backend", translated)
         self.assertNotIn("-device", translated)

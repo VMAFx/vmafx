@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1240), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1241), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4971,3 +4971,7 @@ Every ADR, one heading each (1240), so the site search finds an ADR by its title
 ## ADR-1570: Tiny models trained on restricted data stay, their cards quote the data's terms, and RC9 retrains them on cleared data
 
 [1570-tiny-model-dataset-terms-retrain-rc9](1570-tiny-model-dataset-terms-retrain-rc9.md)
+
+## ADR-1590: Every build stores its GPU device code compressed at the toolchain's strongest setting, and the build refuses raw device code
+
+[1590-device-code-compression](1590-device-code-compression.md)

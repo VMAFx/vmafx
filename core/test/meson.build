@@ -109,6 +109,16 @@ test('test_sycl_aot_image_check',
     timeout : 30,
 )
 
+# ADR-1590: every device compile takes its backend's compression list, and the
+# build-time check that refuses raw device code, on synthetic fixtures.
+# Device-free.
+test('test_device_code_compression',
+    import('python').find_installation(),
+    args : files('test_device_code_compression.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # SYCL runtime (core/src/sycl/): the state is constructed from the queues of
 # the selected device (a default-constructed sycl::queue touches the default
 # device), a type C and C++ both read has one definition (no C++-only enum
@@ -6165,7 +6175,7 @@ hip_fp_arith_probe_hsaco = custom_target('hip_fp_arith_probe_hsaco',
     input : 'test_hip_fp_arith_probe.hip',
     output : 'test_hip_fp_arith_probe.hsaco',
     command : [hipcc_exe, '--genco'] + hip_offload_arch_flags + hip_include_flags
-              + hip_strict_fp_args + ['@INPUT@', '-o', '@OUTPUT@'],
+              + hip_compress_args + hip_strict_fp_args + ['@INPUT@', '-o', '@OUTPUT@'],
 )
 hip_fp_arith_probe_hsaco_c = custom_target('hip_fp_arith_probe_hsaco_c',
     input : hip_fp_arith_probe_hsaco,
@@ -6204,7 +6214,7 @@ hip_float_adm_math_probe_hsaco = custom_target('hip_float_adm_math_probe_hsaco',
                          '../src/feature/float_adm_gpu_common.h',
                          '../src/feature/hip/float_adm/float_adm_hip_math.h'),
     command : [hipcc_exe, '--genco'] + hip_offload_arch_flags + hip_include_flags
-              + hip_strict_fp_args
+              + hip_compress_args + hip_strict_fp_args
               + ['-I', meson.current_source_dir(),
                  '-I', join_paths(meson.current_source_dir(), '../src'),
                  '@INPUT@', '-o', '@OUTPUT@'],

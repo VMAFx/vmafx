@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (785), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (786), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2151,6 +2151,10 @@ Every research digest, one heading each (785), so the site search finds a digest
 ## Research-1489: the fork's float ADM against Netflix master, before and after its CSF weights went back to `float`
 
 [1489-float-adm-barten-upstream-float](1489-float-adm-barten-upstream-float.md)
+
+## Research-1590: GPU device code compression
+
+[1590-device-code-compression](1590-device-code-compression.md)
 
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 

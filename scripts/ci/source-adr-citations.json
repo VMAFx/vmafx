@@ -8120,9 +8120,11 @@
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
         "core/meson_options.txt": 1,
+        "core/src/check_device_compression.py": 1,
         "core/src/meson.build": 8,
         "core/src/sycl/check_aot_image.py": 2,
         "core/test/meson.build": 1,
+        "core/test/test_device_code_compression.py": 1,
         "core/test/test_sycl_aot_default_targets.py": 1,
         "core/test/test_sycl_aot_image_check.py": 1,
         "dev/Containerfile": 1,
@@ -8176,7 +8178,7 @@
     "1364": {
       "sites": {
         ".github/workflows/libvmaf-build-matrix.yml": 1,
-        "core/src/meson.build": 7,
+        "core/src/meson.build": 8,
         "core/src/sycl/coff_add_anchor.py": 1,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/common.h": 1,
@@ -10264,6 +10266,19 @@
         "scripts/ci/tests/test_model_card_dataset_terms.py": 1
       },
       "target": "1570-tiny-model-dataset-terms-retrain-rc9.md"
+    },
+    "1590": {
+      "sites": {
+        "core/meson_options.txt": 1,
+        "core/src/check_device_compression.py": 2,
+        "core/src/meson.build": 13,
+        "core/test/meson.build": 1,
+        "core/test/test_device_code_compression.py": 2,
+        "scripts/ci/gen-sycl-compile-commands.py": 1,
+        "scripts/ci/tests/test_gen_sycl_compile_commands.py": 1,
+        "scripts/ci/tests/test_sycl_aot_command.py": 1
+      },
+      "target": "1590-device-code-compression.md"
     }
   },
   "retired": {

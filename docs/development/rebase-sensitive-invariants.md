@@ -353,6 +353,19 @@ backend within it.
   `core/test/test_strict_fp_compiler_args.py` executes the block per compiler
   pair. See [core/AGENTS.md](../../core/AGENTS.md).
 
+- **GPU device code is stored compressed ([ADR-1590](../adr/1590-device-code-compression.md))**:
+  `core/src/meson.build` defines one compression list per backend between the
+  `BEGIN/END VMAF {CUDA,HIP,SYCL} device code compression policy` markers
+  (`cuda_compress_args`, `hip_compress_args`, `sycl_compress_args`), gated by
+  the `compress_device_code` option (default `true`). Every nvcc fatbin, every
+  `hipcc --genco` command (the test probes in `core/test/meson.build` too),
+  the SYCL AOT compile, `sycl_link_args` and the MSVC device link take the
+  list; the flags are spelled nowhere else. A rebase that adds a device compile
+  site adds the list, and must not drop the `error()` that refuses a compiler
+  without compression. The build checks its own output with
+  `core/src/check_device_compression.py`; `core/test/test_device_code_compression.py`
+  guards the policy without a device. See
+  [core/AGENTS.d/device-code-compression.md](../../core/AGENTS.d/device-code-compression.md).
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
   `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
   `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets

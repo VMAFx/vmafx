@@ -418,6 +418,26 @@ if is_hipcc_enabled and is_hip_enabled
     # the device probe of test_hip_fp_arith_contract with this list.
     hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']
     # END VMAF HIP strict FP policy
+    # BEGIN VMAF HIP device code compression policy
+    # ADR-1590: the code object bundle of every HIP kernel is stored as a
+    # compressed bundle (CCOB, zstd) at zstd's strongest level, 22. The bundle
+    # carries one code object per --offload-arch target; compressed, the 20
+    # kernels for the 25 tester targets take 1.09 MB instead of 17.9 MB. The
+    # runtime decompresses the bundle once, when hipModuleLoadData() loads it;
+    # the code objects inside are the ones an uncompressed build holds. Off
+    # (-Dcompress_device_code=false) stores the plain bundle.
+    hip_compress_args = []
+    if get_option('compress_device_code')
+        hipcc_help = run_command(hipcc_exe, '--help-hidden', check : false)
+        if not hipcc_help.stdout().contains('--offload-compression-level')
+            error('compress_device_code=true, but ' + hipcc_exe.full_path() +
+                  ' does not offer --offload-compress / --offload-compression-level ' +
+                  '(clang from LLVM 19 on has both). Configure -Dcompress_device_code=false ' +
+                  'to store the HIP code objects uncompressed. See ADR-1590.')
+        endif
+        hip_compress_args = ['--offload-compress', '--offload-compression-level=22']
+    endif
+    # END VMAF HIP device code compression policy
     # ADR-1320: Explicit shared header dependencies for HIP device kernels.
     # While hipcc passes -Xclang -dependency-file on Linux, depend_files
     # provides declarative dependency tracking across all platforms.
@@ -491,6 +511,7 @@ if is_hipcc_enabled and is_hip_enabled
     hip_kernel_extra_args = {
         'ciede_score' : ['-std=c++20'],
     }
+    hip_hsacos = []
     foreach name, src : hip_kernel_sources
         # hipcc ignores -MD/-MF under --genco; the device frontend writes the
         # depfile when asked directly, so header edits rebuild the HSACO.
@@ -501,7 +522,7 @@ if is_hipcc_enabled and is_hip_enabled
             depfile: name + '.hsaco.d',
             depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
-                     hip_include_flags + hip_strict_fp_args +
+                     hip_include_flags + hip_strict_fp_args + hip_compress_args +
                      hip_kernel_extra_args.get(name, []) +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
@@ -520,7 +541,18 @@ if is_hipcc_enabled and is_hip_enabled
             command: [xxd_hip, '-i', '-n', name + '_hsaco', '@INPUT@'],
         )
         hip_hsaco_sources += hsaco_c_target
+        hip_hsacos += hsaco_target
     endforeach
+    # ADR-1590: fail the build when a code object bundle is stored raw.
+    if get_option('compress_device_code')
+        custom_target('hip_device_compression_check',
+            input : hip_hsacos,
+            output : 'hip_device_compression_check.stamp',
+            command : [import('python').find_installation(), files('check_device_compression.py'),
+                       '--stamp', '@OUTPUT@', '--hsaco', '@INPUT@'],
+            build_by_default : true,
+        )
+    endif
 endif
 
 # Metal (Apple Silicon) compute backend (ADR-0338 / T8-1 scaffold). Same
@@ -1531,6 +1563,37 @@ if is_cuda_enabled
         cuda_device_strict_fp_args = ['-ffp-contract=off']
     endif
     # END VMAF CUDA device strict FP policy
+    # BEGIN VMAF CUDA device code compression policy
+    # ADR-1590: every fatbin stores all of its entries (the cubins of each
+    # gencode target and the two PTX) compressed in nvcc's size mode. nvcc's
+    # default compresses only PTX, so the cubins, most of a fatbin, went in
+    # raw: the 21 kernels took 10.97 MB, 2.60 MB compressed. The driver
+    # decompresses an entry when cuModuleLoadData() loads it; the cubins and
+    # the PTX inside are byte-identical to an uncompressed build's.
+    # `--compress-mode` needs a driver of CUDA 12.4 or later (R550); a CUDA 13
+    # build already needs R580. `--concat` (nvcc 13.4) packs smaller still,
+    # but NVIDIA documents no driver floor for it, so it stays off.
+    # Off (-Dcompress_device_code=false) stores every entry raw.
+    cuda_compress_args = []
+    if get_option('compress_device_code')
+        if not get_option('enable_nvcc')
+            error('compress_device_code=true, but enable_nvcc=false builds the ' +
+                  'kernels with the clang CUDA driver, which emits PTX text and ' +
+                  'cannot compress it. Configure -Dcompress_device_code=false for ' +
+                  'this build. See ADR-1590.')
+        endif
+        nvcc_help = run_command(nvcc_exe, '--help', check : false)
+        if not nvcc_help.stdout().contains('--compress-mode')
+            error('compress_device_code=true, but ' + nvcc_exe.full_path() +
+                  ' has no --compress-mode (nvcc 12.8 added it). Configure ' +
+                  '-Dcompress_device_code=false to store the fatbins uncompressed. ' +
+                  'See ADR-1590.')
+        endif
+        cuda_compress_args = ['-Xfatbin=-compress-all', '--compress-mode=size']
+    elif get_option('enable_nvcc')
+        cuda_compress_args = ['--no-compress']
+    endif
+    # END VMAF CUDA device code compression policy
     if get_option('buildtype') == 'debug'
         cuda_flags += ['-DCUDA_DEBUG', '-G']
     else
@@ -1643,6 +1706,7 @@ if is_cuda_enabled
     nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
         '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}
+    cuda_fatbins = []
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
         cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)
@@ -1660,12 +1724,24 @@ if is_cuda_enabled
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
             ] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
-              + nvcc_host_includes + per_kernel_flags + nvcc_dep_flags
+              + nvcc_host_includes + per_kernel_flags + cuda_compress_args + nvcc_dep_flags
         )
         ptx_files += {name : [t]}
+        cuda_fatbins += t
     endforeach
 
     message('ptx_files = @0@'.format(ptx_files.keys()))
+
+    # ADR-1590: fail the build when a fatbin holds a raw cubin or PTX entry.
+    if get_option('compress_device_code')
+        custom_target('cuda_device_compression_check',
+            input : cuda_fatbins,
+            output : 'cuda_device_compression_check.stamp',
+            command : [import('python').find_installation(), files('check_device_compression.py'),
+                       '--stamp', '@OUTPUT@', '--fatbin', '@INPUT@'],
+            build_by_default : true,
+        )
+    endif
 
     # bin2c is distributed along with cuda tools. Use '--padd 0x00' to add a NULL-terminator byte
     # to the end of the generated array.
@@ -1798,10 +1874,41 @@ if is_sycl_enabled
     # executables that link libvmaf.a, and static downstream consumers. The
     # AOT cost is paid once per TU, in parallel, instead of once per link.
     # It forbids SYCL_EXTERNAL calls across TUs; none exist.
-    # `--offload-compress` zstd-compresses those images: 60 MB of native ISA per
-    # binary for the default 19 targets becomes 3 MB (libvmaf.so 65 MB -> 7.7 MB;
-    # every test executable linking libvmaf.a carries the same payload), with no
-    # measurable startup cost on Arc B580 or UHD 770 (ADR-1360).
+    # sycl_compress_args (below) zstd-compresses those images: 60 MB of native
+    # ISA per binary for the default 19 targets becomes 3 MB (libvmaf.so 65 MB
+    # -> 7.7 MB; every test executable linking libvmaf.a carries the same
+    # payload), with no measurable startup cost on Arc B580 or UHD 770
+    # (ADR-1360).
+    #
+    # BEGIN VMAF SYCL device code compression policy
+    # ADR-1590: every SYCL device image is stored zstd-compressed at zstd's
+    # strongest level, 22. The flags go where an image is generated: on the
+    # compile line for the spir64_gen images (generated there under
+    # -fno-sycl-rdc), on the link for the SPIR-V image (generated by the final
+    # link, see sycl_link_args), and on the MSVC build's one device link
+    # (ADR-1364), which generates them all. Before ADR-1590 the link carried no
+    # flag and every binary held its SPIR-V fallback uncompressed. The runtime
+    # decompresses an image when it first builds a kernel from it. Off
+    # (-Dcompress_device_code=false) stores every image raw. AdaptiveCpp has no
+    # device image compression, so it needs the option off.
+    sycl_compress_args = []
+    if get_option('compress_device_code')
+        if is_sycl_acpp
+            error('compress_device_code=true, but AdaptiveCpp (' + sycl_compiler_basename +
+                  ') has no device image compression. Configure ' +
+                  '-Dcompress_device_code=false for this build. See ADR-1590.')
+        endif
+        icpx_help = run_command(icpx, '--help-hidden', check : false)
+        if not icpx_help.stdout().contains('--offload-compression-level')
+            error('compress_device_code=true, but ' + icpx.full_path() +
+                  ' does not offer --offload-compress / --offload-compression-level. ' +
+                  'Configure -Dcompress_device_code=false to store the SYCL device ' +
+                  'images uncompressed. See ADR-1590.')
+        endif
+        sycl_compress_args = ['--offload-compress', '--offload-compression-level=22']
+    endif
+    # END VMAF SYCL device code compression policy
+
     if is_sycl_acpp
         acpp_targets = get_option('sycl_acpp_targets')
         sycl_toolchain_args = ['--acpp-targets=' + acpp_targets]
@@ -1823,11 +1930,10 @@ if is_sycl_enabled
             sycl_icpx_aot_base_args = [
                 '-fsycl',
                 '-fno-sycl-rdc',
-                '--offload-compress',
                 '-fsycl-targets=spir64_gen,spir64',
                 '-Xsycl-target-backend=spir64_gen',
             ]
-            sycl_toolchain_args = sycl_icpx_aot_base_args + [
+            sycl_toolchain_args = sycl_compress_args + sycl_icpx_aot_base_args + [
                 '-device ' + ','.join(sycl_icpx_aot_list),
             ]
             # icpx hands spir64_gen code generation to ocloc (intel-ocloc from
@@ -1861,7 +1967,7 @@ if is_sycl_enabled
     # There the TUs are compiled as relocatable device code and one explicit
     # device link (`-fsycl -fsycl-link`, below the feature TUs) turns all of
     # them into a single host object that registers every image. The AOT
-    # device list and --offload-compress move to that step. `-fsycl-link`
+    # device list and the compression flags move to that step. `-fsycl-link`
     # cannot take -fno-sycl-rdc objects (clang-offload-wrapper crashes in
     # oneAPI 2025.1). Other toolchains keep the ADR-1360 per-TU codegen.
     sycl_msvc_device_link = not is_sycl_acpp and cc.get_argument_syntax() == 'msvc'
@@ -1870,11 +1976,11 @@ if is_sycl_enabled
         # One device link builds every TU's images for every target, so let
         # it run ocloc in parallel: 355 s serial, 127 s with 8 jobs, for 18
         # targets on an i9-12900K.
-        sycl_device_link_args = ['-fsycl', '-fsycl-link', '-fsycl-max-parallel-link-jobs=8']
+        sycl_device_link_args = ['-fsycl', '-fsycl-link', '-fsycl-max-parallel-link-jobs=8'] \
+            + sycl_compress_args
         if sycl_icpx_aot_list.length() > 0
             sycl_toolchain_args = ['-fsycl', '-fsycl-targets=spir64_gen,spir64']
             sycl_device_link_args += [
-                '--offload-compress',
                 '-fsycl-targets=spir64_gen,spir64',
                 '-Xsycl-target-backend=spir64_gen',
                 '-device ' + ','.join(sycl_icpx_aot_list),
@@ -2057,6 +2163,12 @@ if is_sycl_enabled
     # build options. The MSVC build passes the pair to its explicit device link
     # instead, with the rest of sycl_strict_fp_args.
     sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : (['-fsycl'] + sycl_fp32_prec_args)
+    # ADR-1590: the link also compresses that SPIR-V image; the spir64_gen
+    # images of the objects it links are compressed already. The MSVC build
+    # compresses at its explicit device link instead.
+    if not sycl_msvc_device_link
+        sycl_link_args += sycl_compress_args
+    endif
     sycl_dependency += declare_dependency(
         dependencies : [sycl_lib, libze_dep] + sycl_extra_runtime_deps + sycl_surface_deps,
         link_args : sycl_link_args,
@@ -2347,7 +2459,7 @@ if is_sycl_enabled
                 endif
             endforeach
             if tu_aot_list.length() > 0
-                tu_toolchain_args = sycl_icpx_aot_base_args + [
+                tu_toolchain_args = sycl_compress_args + sycl_icpx_aot_base_args + [
                     '-device ' + ','.join(tu_aot_list),
                 ]
             else
@@ -2733,6 +2845,19 @@ if is_sycl_enabled and sycl_icpx_aot_list.length() > 0 \
         output : 'sycl_aot_image_check.stamp',
         command : [import('python').find_installation(), files('sycl/check_aot_image.py')]
                   + sycl_aot_check_args + ['--stamp', '@OUTPUT@', '@INPUT@'],
+        build_by_default : true,
+    )
+endif
+
+# ADR-1590: fail the build when a SYCL device image of libvmaf is stored raw,
+# the SPIR-V image of the final link included. ELF only, as the check above.
+if is_sycl_enabled and get_option('compress_device_code') \
+        and host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    sycl_device_compression_check = custom_target('sycl_device_compression_check',
+        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        output : 'sycl_device_compression_check.stamp',
+        command : [import('python').find_installation(), files('check_device_compression.py'),
+                   '--stamp', '@OUTPUT@', '--sycl-elf', '@INPUT@'],
         build_by_default : true,
     )
 endif
