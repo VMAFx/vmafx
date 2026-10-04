@@ -156,7 +156,7 @@ vif_statistic_calculation(const aligned_dtype &mu1, const aligned_dtype &mu2,
             g = min(g, vif_enhn_gain_limit);
 
             if (sigma1_sq >= sigma_nsq) {
-                uint32_t log_den_stage1 = (uint32_t)(sigma_nsq + sigma1_sq);
+                uint32_t log_den_stage1 = (uint32_t)sigma_nsq + (uint32_t)sigma1_sq;
                 int x;
                 uint16_t log_den1 = get_best16_from32(log_den_stage1, &x);
 

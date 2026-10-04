@@ -1,0 +1,1 @@
+| [ADR-1601](1601-vif-den-log-sum-unsigned.md) | Integer VIF forms the denominator log argument `sigma_nsq + sigma1_sq` in `uint32_t` in the scalar, AVX2, NEON, CUDA, HIP and Metal copies: the signed sum overflowed above `INT32_MAX - 131072`; no output moves | Accepted | numerics, vif, simd, cuda, hip, metal, aarch64, upstream-parity, rc3, fork-local |

@@ -168,7 +168,7 @@ __device__ __forceinline__ static void vif_statistic_log_domain(
     int32_t sigma1_sq, int32_t sigma12, uint32_t sv_sq, double g,
     const uint16_t *log2_table, vif_accums_hip *acc)
 {
-    uint32_t log_den_stage1 = (uint32_t)(VIF_SIGMA_NSQ + sigma1_sq);
+    uint32_t log_den_stage1 = (uint32_t)VIF_SIGMA_NSQ + (uint32_t)sigma1_sq;
     int x;
     uint16_t log_den1 = get_best16_from32(log_den_stage1, &x);
 
