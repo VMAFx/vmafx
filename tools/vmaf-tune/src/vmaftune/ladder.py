@@ -73,11 +73,14 @@ import math
 import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from .defaultmodel import DEFAULT_MODEL
 from .jsonio import dumps_strict
 from .uncertainty import ConfidenceDecision, ConfidenceThresholds, classify_interval
+
+if TYPE_CHECKING:
+    from .corpus import CorpusJob, CorpusOptions
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -253,29 +256,92 @@ def make_default_sampler(
     The default preserves the historic ``vmaf_v0.6.1`` behaviour for
     callers that do not pass ``vmaf_model``.
     """
-    sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
+    return _SamplerSettings(
+        pix_fmt=pix_fmt,
+        framerate=framerate,
+        duration_s=duration_s,
+        crf_sweep=_resolve_crf_sweep(crf_sweep),
+        src_width=src_width,
+        src_height=src_height,
+        cloud_sink=cloud_sink,
+        score_backend=score_backend,
+        vmaf_model=vmaf_model,
+    ).bind()
 
-    def _sampler(
-        src: Path, encoder: str, width: int, height: int, target_vmaf: float
+
+def _resolve_crf_sweep(crf_sweep: Sequence[int] | None) -> tuple[int, ...]:
+    """``crf_sweep`` as a tuple of ints, or the canonical default sweep."""
+    return tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
+
+
+@dataclasses.dataclass(frozen=True)
+class _SamplerSettings:
+    """Keyword arguments of :func:`_default_sampler`, bundled.
+
+    :func:`make_default_sampler` builds one with ``crf_sweep`` already
+    resolved and returns :meth:`bind`; :func:`_default_sampler` builds
+    one per call and runs :meth:`sample`, which resolves ``crf_sweep``
+    after the adapter preset so an unknown encoder is reported first.
+    """
+
+    pix_fmt: str
+    framerate: float
+    duration_s: float
+    crf_sweep: Sequence[int] | None
+    src_width: int | None
+    src_height: int | None
+    cloud_sink: list[LadderPoint] | None
+    score_backend: str | None
+    vmaf_model: str
+
+    def bind(self) -> SamplerFn:
+        """Closure calling :func:`_default_sampler` with these settings.
+
+        ``_default_sampler`` is resolved at call time, so patching the
+        module attribute reaches every bound sampler.
+        """
+
+        def _sampler(
+            src: Path, encoder: str, width: int, height: int, target_vmaf: float
+        ) -> LadderPoint:
+            return _default_sampler(
+                src,
+                encoder,
+                width,
+                height,
+                target_vmaf,
+                pix_fmt=self.pix_fmt,
+                framerate=self.framerate,
+                duration_s=self.duration_s,
+                crf_sweep=self.crf_sweep,
+                src_width=self.src_width,
+                src_height=self.src_height,
+                cloud_sink=self.cloud_sink,
+                score_backend=self.score_backend,
+                vmaf_model=self.vmaf_model,
+            )
+
+        return _sampler
+
+    def sample(
+        self, src: Path, encoder: str, width: int, height: int, target_vmaf: float
     ) -> LadderPoint:
-        return _default_sampler(
-            src,
-            encoder,
-            width,
-            height,
-            target_vmaf,
-            pix_fmt=pix_fmt,
-            framerate=framerate,
-            duration_s=duration_s,
-            crf_sweep=sweep,
-            src_width=src_width,
-            src_height=src_height,
-            cloud_sink=cloud_sink,
-            score_backend=score_backend,
-            vmaf_model=vmaf_model,
-        )
+        """Body of :func:`_default_sampler`: encode the sweep, pick by VMAF."""
+        # Lazy imports — see ``_default_sampler_preset``.
+        from .corpus import iter_rows
+        from .recommend import pick_target_vmaf
 
-    return _sampler
+        preset = _default_sampler_preset(encoder)
+        cells = tuple((preset, crf) for crf in _resolve_crf_sweep(self.crf_sweep))
+        with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
+            job = _sweep_corpus_job(src, width, height, cells, self)
+            opts = _sweep_corpus_options(encoder, Path(tmp), self)
+            rows = [r for r in iter_rows(job, opts) if int(r.get("exit_status", 0)) == 0]
+
+        _require_scorable_rows(rows, src, width, height, encoder)
+        _capture_cloud(self.cloud_sink, width, height, rows)
+        pick = pick_target_vmaf(rows, target_vmaf)
+        return _ladder_point_from_row(width, height, pick.row)
 
 
 def _default_sampler(
@@ -318,14 +384,34 @@ def _default_sampler(
     the requested rendition. The historic single-resolution code path
     (``src_width`` / ``src_height`` left at ``None``) is preserved.
     """
-    # Lazy imports — see ``_default_sampler_preset``.
-    from .corpus import CorpusJob, CorpusOptions, iter_rows
-    from .recommend import pick_target_vmaf
+    return _SamplerSettings(
+        pix_fmt=pix_fmt,
+        framerate=framerate,
+        duration_s=duration_s,
+        crf_sweep=crf_sweep,
+        src_width=src_width,
+        src_height=src_height,
+        cloud_sink=cloud_sink,
+        score_backend=score_backend,
+        vmaf_model=vmaf_model,
+    ).sample(src, encoder, width, height, target_vmaf)
 
-    preset = _default_sampler_preset(encoder)
-    sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
-    cells = tuple((preset, crf) for crf in sweep)
 
+def _sweep_corpus_job(
+    src: Path,
+    width: int,
+    height: int,
+    cells: tuple[tuple[str, int], ...],
+    settings: _SamplerSettings,
+) -> CorpusJob:
+    """Corpus job encoding one rung's ``(preset, crf)`` cells.
+
+    Source dims go to the job only for a cross-resolution rung (BBB e2e
+    v2 Bug #v2-B, see :func:`_default_sampler`).
+    """
+    from .corpus import CorpusJob
+
+    src_width, src_height = settings.src_width, settings.src_height
     # Resolve the dims to hand the corpus job:
     # - When the caller bound ``src_width / src_height`` (CLI path, ADR-0498)
     #   AND they differ from the rung target, decode at the source geometry
@@ -337,41 +423,50 @@ def _default_sampler(
         and src_height is not None
         and (src_width, src_height) != (width, height)
     )
+    # ``CorpusJob.{width,height}`` are the rung's *target* dimensions
+    # used by the libvmaf score step and (when no source dims are
+    # supplied) by the encoder's raw-YUV input shape. ``src_width``
+    # / ``src_height`` (added 2026-05-18, ADR-0498) carry the actual
+    # source dimensions so :func:`vmaftune.corpus.iter_rows` can
+    # tell ffmpeg the demuxer geometry separately from the encoded
+    # rendition geometry and inject a ``-vf scale=W:H`` filter when
+    # they differ — fixes Bug #v2-B (the historic code path passed
+    # the rung target as the source ``-s`` argument, corrupting
+    # every cross-res rung against a raw-YUV source).
+    return CorpusJob(
+        source=src,
+        width=int(width),
+        height=int(height),
+        pix_fmt=settings.pix_fmt,
+        framerate=float(settings.framerate),
+        duration_s=float(settings.duration_s),
+        cells=cells,
+        src_width=int(src_width) if use_src_dims else None,
+        src_height=int(src_height) if use_src_dims else None,
+    )
 
-    with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
-        tmp_path = Path(tmp)
-        # ``CorpusJob.{width,height}`` are the rung's *target* dimensions
-        # used by the libvmaf score step and (when no source dims are
-        # supplied) by the encoder's raw-YUV input shape. ``src_width``
-        # / ``src_height`` (added 2026-05-18, ADR-0498) carry the actual
-        # source dimensions so :func:`vmaftune.corpus.iter_rows` can
-        # tell ffmpeg the demuxer geometry separately from the encoded
-        # rendition geometry and inject a ``-vf scale=W:H`` filter when
-        # they differ — fixes Bug #v2-B (the historic code path passed
-        # the rung target as the source ``-s`` argument, corrupting
-        # every cross-res rung against a raw-YUV source).
-        job = CorpusJob(
-            source=src,
-            width=int(width),
-            height=int(height),
-            pix_fmt=pix_fmt,
-            framerate=float(framerate),
-            duration_s=float(duration_s),
-            cells=cells,
-            src_width=int(src_width) if use_src_dims else None,
-            src_height=int(src_height) if use_src_dims else None,
-        )
-        opts = CorpusOptions(
-            encoder=encoder,
-            output=tmp_path / "corpus.jsonl",
-            encode_dir=tmp_path / "encodes",
-            keep_encodes=False,
-            src_sha256=False,
-            score_backend=score_backend,
-            vmaf_model=vmaf_model,
-        )
-        rows = [r for r in iter_rows(job, opts) if int(r.get("exit_status", 0)) == 0]
 
+def _sweep_corpus_options(
+    encoder: str, tmp_path: Path, settings: _SamplerSettings
+) -> CorpusOptions:
+    """Corpus options writing the throwaway JSONL and encodes under ``tmp_path``."""
+    from .corpus import CorpusOptions
+
+    return CorpusOptions(
+        encoder=encoder,
+        output=tmp_path / "corpus.jsonl",
+        encode_dir=tmp_path / "encodes",
+        keep_encodes=False,
+        src_sha256=False,
+        score_backend=settings.score_backend,
+        vmaf_model=settings.vmaf_model,
+    )
+
+
+def _require_scorable_rows(
+    rows: Sequence[dict], src: Path, width: int, height: int, encoder: str
+) -> None:
+    """Raise ``RuntimeError`` when the sweep produced no scorable encode."""
     if not rows:
         raise RuntimeError(
             f"default sampler produced no scorable encodes for "
@@ -379,6 +474,11 @@ def _default_sampler(
             f"explicit sampler= to build_ladder() to debug."
         )
 
+
+def _capture_cloud(
+    cloud_sink: list[LadderPoint] | None, width: int, height: int, rows: Sequence[dict]
+) -> None:
+    """Append every scored sweep row to ``cloud_sink`` when one is wired in."""
     # ADR-0505 / BBB e2e v5 Bug #V5-2: when a cloud sink is wired in,
     # capture every successfully-scored CRF row before the
     # ``pick_target_vmaf`` collapse. Downstream JSON ``samples`` then
@@ -390,9 +490,6 @@ def _default_sampler(
     if cloud_sink is not None:
         for row in rows:
             cloud_sink.append(_ladder_point_from_row(width, height, row))
-
-    pick = pick_target_vmaf(rows, target_vmaf)
-    return _ladder_point_from_row(width, height, pick.row)
 
 
 def _ladder_point_from_row(width: int, height: int, row: dict) -> LadderPoint:
@@ -752,26 +849,53 @@ def build_and_emit(
     ladder = build_ladder(src, encoder, resolutions, target_vmafs, sampler=sampler)
     hull = convex_hull([_plain_ladder_point(p) for p in ladder.points])
     if with_uncertainty:
-        thresholds = uncertainty_thresholds or ConfidenceThresholds()
-        if point_interval_width is None:
-            point_interval_width = thresholds.wide_interval_min_width
-        uncertainty_hull = _restore_uncertainty_on_hull(
+        hull = _uncertainty_adjusted_hull(
             hull,
             ladder.points,
+            uncertainty_thresholds=uncertainty_thresholds,
+            rung_overlap_threshold=rung_overlap_threshold,
             point_interval_width=point_interval_width,
         )
-        overlap = (
-            DEFAULT_RUNG_OVERLAP_THRESHOLD
-            if rung_overlap_threshold is None
-            else rung_overlap_threshold
-        )
-        adjusted = apply_uncertainty_recipe(
-            uncertainty_hull,
-            thresholds=thresholds,
-            overlap_threshold=overlap,
-        )
-        hull = [p.as_ladder_point() for p in adjusted]
     rungs = select_knees(hull, n=quality_tiers, spacing=spacing)
+    plain_samples = _manifest_samples(ladder.points, extra_samples)
+    return emit_manifest(rungs, format=format, samples=plain_samples)
+
+
+def _uncertainty_adjusted_hull(
+    hull: Sequence[LadderPoint],
+    points: Sequence[LadderPoint],
+    *,
+    uncertainty_thresholds: ConfidenceThresholds | None,
+    rung_overlap_threshold: float | None,
+    point_interval_width: float | None,
+) -> list[LadderPoint]:
+    """Prune / insert rungs on ``hull`` by conformal interval width.
+
+    Runs after :func:`convex_hull` and before :func:`select_knees`.
+    """
+    thresholds = uncertainty_thresholds or ConfidenceThresholds()
+    if point_interval_width is None:
+        point_interval_width = thresholds.wide_interval_min_width
+    uncertainty_hull = _restore_uncertainty_on_hull(
+        hull,
+        points,
+        point_interval_width=point_interval_width,
+    )
+    overlap = (
+        DEFAULT_RUNG_OVERLAP_THRESHOLD if rung_overlap_threshold is None else rung_overlap_threshold
+    )
+    adjusted = apply_uncertainty_recipe(
+        uncertainty_hull,
+        thresholds=thresholds,
+        overlap_threshold=overlap,
+    )
+    return [p.as_ladder_point() for p in adjusted]
+
+
+def _manifest_samples(
+    points: Sequence[LadderPoint], extra_samples: Sequence[LadderPoint] | None
+) -> list[LadderPoint]:
+    """Plain, de-duplicated sample cloud for the manifest's ``samples`` array."""
     # ADR-0501 / BBB e2e v4 Bug #V4-B: thread the pre-hull sample
     # cloud through so the JSON emitter's ``samples`` array carries
     # every scored cell.
@@ -782,9 +906,8 @@ def build_and_emit(
     if extra_samples is not None:
         plain_samples = [_plain_ladder_point(p) for p in extra_samples]
     else:
-        plain_samples = [_plain_ladder_point(p) for p in ladder.points]
-    plain_samples = _dedup_samples(plain_samples)
-    return emit_manifest(rungs, format=format, samples=plain_samples)
+        plain_samples = [_plain_ladder_point(p) for p in points]
+    return _dedup_samples(plain_samples)
 
 
 def _dedup_samples(samples: Sequence[LadderPoint]) -> list[LadderPoint]:
