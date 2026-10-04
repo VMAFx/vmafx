@@ -46,6 +46,13 @@ invariant: Subprocess boundary is test seam; run_encode_with_stats captures enco
   into one — encoder won't emit parseable stats file outside
   ``-pass 1`` mode.
 
+- **Pass-1 input args are not `_build_input_args` (HISS-04 split).**
+  `build_pass1_stats_command` uses `_pass1_input_args`. It shares
+  `_raw_demuxer_args` with `_build_input_args` but keeps its own clip
+  guard: the `duration_s` fallback requires
+  `sample_clip_seconds <= 0.0`, so a NaN clip length emits no `-t`
+  there, while `_build_seek_args` does emit one. Merging the two
+  changes pass-1 argv; do it only as a tested behaviour change.
 - **`_build_input_args` emits `-f rawvideo` block before seek args**
   (`encode.py`). `-ss` / `-t` must stay input-side, ahead of `-i`, or
   ffmpeg decodes whole source. ADR-0506 / Bug #V6-1.

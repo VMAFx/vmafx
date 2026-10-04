@@ -14,6 +14,16 @@ invariant: compare_codecs_sweep builds one bisect predicate per target; runtime 
   binds `target_vmaf` at construction time (per-iteration
   candidate-CRF probe wants right rung), so re-using one closure
   across multiple targets re-runs same target every time.
+- **Dispatch order is ranking input (HISS-04 split).**
+  `compare_codecs` and `compare_codecs_sweep` share
+  `_dispatch_predicates`, which returns `(index, result)` pairs in
+  completion order (submission order when sequential).
+  `compare_codecs` feeds that order to `_rank`; its stable sort keeps
+  it for equal `(bitrate_kbps, codec)` keys and NaN-bitrate rows. Do
+  not sort the dispatcher output by index or route it through a dict.
+  Sweep writes rows by index, so order does not matter there. Sweep
+  takes `t0` before `_probe_availability`; `wall_time_ms` includes
+  probe time.
 - **Compare runtime variants are labels, not adapters
   ([ADR-0644](../../../docs/adr/0644-vmaf-tune-codec-runtime-variants.md)).**
   `ADAPTER@VARIANT` tokens in `vmaf-tune compare` must parse through

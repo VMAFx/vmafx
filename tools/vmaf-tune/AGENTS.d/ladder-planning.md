@@ -55,5 +55,16 @@ invariant: Ladder math is two-pass and order-sensitive; default 5-point CRF samp
   Bayesian bisect, or precomputed corpus stream pass explicit
   `sampler=` — that seam stays open. Tests stub `iter_rows` via
   `monkeypatch.setattr(corpus_module, "iter_rows", ...)`; lazy
-  `from .corpus import iter_rows` inside `_default_sampler`
-  resolves through patched module attribute on every call.
+  `from .corpus import iter_rows` inside `_SamplerSettings.sample`
+  (body of `_default_sampler`) resolves through patched module
+  attribute on every call.
+- **Default-sampler call order (HISS-04 split).** `_default_sampler`
+  only bundles its kwargs into `_SamplerSettings` and runs
+  `.sample()`; `make_default_sampler` returns
+  `_SamplerSettings.bind()`, whose closure looks `_default_sampler`
+  up at call time, so patching that attribute still reaches every
+  bound sampler. Inside `sample`, `_default_sampler_preset(encoder)`
+  runs before `_resolve_crf_sweep()` (unknown encoder `KeyError`
+  wins over bad-sweep `ValueError`), then `_require_scorable_rows`
+  -> `_capture_cloud` -> `pick_target_vmaf` (cloud sink gets every
+  scored row before the per-cell collapse). Keep that order.
