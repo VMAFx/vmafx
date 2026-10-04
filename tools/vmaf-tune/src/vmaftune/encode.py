@@ -235,24 +235,27 @@ def _build_seek_args(req: EncodeRequest) -> list[str]:
     return []
 
 
+def _raw_demuxer_args(req: EncodeRequest) -> list[str]:
+    """``-f rawvideo`` demuxer flags describing a raw YUV source."""
+    return [
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        req.pix_fmt,
+        "-s",
+        f"{req.width}x{req.height}",
+        "-r",
+        f"{req.framerate}",
+    ]
+
+
 def _build_input_args(req: EncodeRequest) -> list[str]:
     """Demuxer flags, seek window and ``-i`` for the source leg."""
     args: list[str] = []
     if not req.source_is_container:
         # Raw YUV source: must tell ffmpeg the format explicitly.
         # A container source is left to ffmpeg's auto-detection.
-        args.extend(
-            [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                req.pix_fmt,
-                "-s",
-                f"{req.width}x{req.height}",
-                "-r",
-                f"{req.framerate}",
-            ]
-        )
+        args.extend(_raw_demuxer_args(req))
     args.extend(_build_seek_args(req))
     args.extend(["-i", str(req.source)])
     return args
@@ -608,51 +611,9 @@ def build_pass1_stats_command(
     the window via :func:`build_ffmpeg_command`), so each cell still
     burned >60x the requested wall time on the stats sweep alone.
     """
-    # V6-1 / #1266 follow-up: `build_pass1_stats_command` lost the
-    # duration_s fallback that `build_ffmpeg_command` got — the ladder's
-    # pass-1 stats sweep still ran on the full source. Apply the same
-    # precedence: sample_clip_seconds wins (with --ss start), else
-    # plain --t duration_s, else no clip.
-    fallback_duration = (
-        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
-    )
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
-    if req.source_is_container:
-        if req.sample_clip_seconds > 0.0:
-            cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
-            cmd.extend(["-t", f"{req.sample_clip_seconds}"])
-        elif fallback_duration > 0.0:
-            cmd.extend(["-t", f"{fallback_duration}"])
-        cmd.extend(["-i", str(req.source)])
-    else:
-        cmd.extend(
-            [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                req.pix_fmt,
-                "-s",
-                f"{req.width}x{req.height}",
-                "-r",
-                f"{req.framerate}",
-            ]
-        )
-        if req.sample_clip_seconds > 0.0:
-            cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
-            cmd.extend(["-t", f"{req.sample_clip_seconds}"])
-        elif fallback_duration > 0.0:
-            cmd.extend(["-t", f"{fallback_duration}"])
-        cmd.extend(["-i", str(req.source)])
-    cmd.extend(
-        [
-            "-c:v",
-            req.encoder,
-            "-preset",
-            req.preset,
-            "-crf",
-            str(req.crf),
-        ]
-    )
+    cmd.extend(_pass1_input_args(req))
+    cmd.extend(_legacy_codec_args(req.encoder, req.preset, req.crf))
     cmd.extend(req.extra_params)
     cmd.extend(
         [
@@ -666,6 +627,33 @@ def build_pass1_stats_command(
         ]
     )
     return cmd
+
+
+def _pass1_input_args(req: EncodeRequest) -> list[str]:
+    """Demuxer flags, seek window and ``-i`` for the pass-1 stats run.
+
+    Same argv as :func:`_build_input_args` except for a NaN
+    ``sample_clip_seconds``: the ``duration_s`` fallback here requires
+    ``sample_clip_seconds <= 0.0``, so a NaN clip length emits no ``-t``.
+    """
+    # V6-1 / #1266 follow-up: `build_pass1_stats_command` lost the
+    # duration_s fallback that `build_ffmpeg_command` got — the ladder's
+    # pass-1 stats sweep still ran on the full source. Apply the same
+    # precedence: sample_clip_seconds wins (with --ss start), else
+    # plain --t duration_s, else no clip.
+    fallback_duration = (
+        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
+    )
+    args: list[str] = []
+    if not req.source_is_container:
+        args.extend(_raw_demuxer_args(req))
+    if req.sample_clip_seconds > 0.0:
+        args.extend(["-ss", f"{req.sample_clip_start_s}"])
+        args.extend(["-t", f"{req.sample_clip_seconds}"])
+    elif fallback_duration > 0.0:
+        args.extend(["-t", f"{fallback_duration}"])
+    args.extend(["-i", str(req.source)])
+    return args
 
 
 def _stats_file_for(prefix: Path) -> Path:
@@ -809,19 +797,9 @@ def run_two_pass_encode(
 
     adapter = get_adapter(req.encoder)
     if not getattr(adapter, "supports_two_pass", False):
-        msg = (
-            f"vmaf-tune: encoder {req.encoder!r} does not support 2-pass "
-            "encoding; falling back to single-pass."
+        return _encode_two_pass_unsupported(
+            req, on_unsupported, ffmpeg_bin=ffmpeg_bin, runner=runner
         )
-        if on_unsupported == "raise":
-            raise ValueError(msg)
-        if on_unsupported != "fallback":
-            raise ValueError(
-                f"run_two_pass_encode: unknown on_unsupported={on_unsupported!r}; "
-                "expected 'fallback' or 'raise'"
-            )
-        sys.stderr.write(msg + "\n")
-        return run_encode(req, ffmpeg_bin=ffmpeg_bin, runner=runner)
 
     own_scratch = scratch_dir is None
     if scratch_dir is None:
@@ -832,46 +810,91 @@ def run_two_pass_encode(
     pass2_req = dataclasses.replace(req, pass_number=2, stats_path=stats_path)
 
     try:
-        pass1 = run_encode(pass1_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
-        if pass1.exit_status != 0:
-            # Don't bother with pass 2 if pass 1 failed; surface the
-            # pass-1 failure in the EncodeResult (with a clarifying
-            # tail) so the caller can disambiguate from a pass-2 fault.
-            return dataclasses.replace(
-                pass1,
-                request=req,  # report against the user-supplied request
-                stderr_tail=f"[pass 1 failed]\n{pass1.stderr_tail}",
-            )
-        pass2 = run_encode(pass2_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
-        combined_status = pass2.exit_status  # pass1 was 0 by branch above
-        return EncodeResult(
-            request=req,
-            encode_size_bytes=pass2.encode_size_bytes,
-            encode_time_ms=pass1.encode_time_ms + pass2.encode_time_ms,
-            encoder_version=pass2.encoder_version,
-            ffmpeg_version=pass2.ffmpeg_version,
-            exit_status=combined_status,
-            stderr_tail=pass2.stderr_tail,
-        )
+        return _encode_both_passes(req, pass1_req, pass2_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
     finally:
-        # Remove known stats artefacts. libx265 writes ``<stats>`` and
-        # may add ``<stats>.cutree``; FFmpeg's generic passlogfile path
-        # (used by libx264) writes ``<stats>-0.log`` plus an optional
-        # mbtree sidecar.
-        for candidate in _two_pass_cleanup_candidates(stats_path):
+        _remove_two_pass_files(stats_path, scratch_dir if own_scratch else None)
+
+
+def _encode_two_pass_unsupported(
+    req: EncodeRequest,
+    on_unsupported: str,
+    *,
+    ffmpeg_bin: str,
+    runner: object | None,
+) -> EncodeResult:
+    """``on_unsupported`` policy of :func:`run_two_pass_encode`.
+
+    ``"raise"`` raises; ``"fallback"`` warns on stderr and returns a
+    single-pass encode; any other value is a ``ValueError``.
+    """
+    msg = (
+        f"vmaf-tune: encoder {req.encoder!r} does not support 2-pass "
+        "encoding; falling back to single-pass."
+    )
+    if on_unsupported == "raise":
+        raise ValueError(msg)
+    if on_unsupported != "fallback":
+        raise ValueError(
+            f"run_two_pass_encode: unknown on_unsupported={on_unsupported!r}; "
+            "expected 'fallback' or 'raise'"
+        )
+    sys.stderr.write(msg + "\n")
+    return run_encode(req, ffmpeg_bin=ffmpeg_bin, runner=runner)
+
+
+def _encode_both_passes(
+    req: EncodeRequest,
+    pass1_req: EncodeRequest,
+    pass2_req: EncodeRequest,
+    *,
+    ffmpeg_bin: str,
+    runner: object | None,
+) -> EncodeResult:
+    """Run pass 1 then pass 2 and fold them into one result against ``req``."""
+    pass1 = run_encode(pass1_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
+    if pass1.exit_status != 0:
+        # Don't bother with pass 2 if pass 1 failed; surface the
+        # pass-1 failure in the EncodeResult (with a clarifying
+        # tail) so the caller can disambiguate from a pass-2 fault.
+        return dataclasses.replace(
+            pass1,
+            request=req,  # report against the user-supplied request
+            stderr_tail=f"[pass 1 failed]\n{pass1.stderr_tail}",
+        )
+    pass2 = run_encode(pass2_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
+    combined_status = pass2.exit_status  # pass1 was 0 by branch above
+    return EncodeResult(
+        request=req,
+        encode_size_bytes=pass2.encode_size_bytes,
+        encode_time_ms=pass1.encode_time_ms + pass2.encode_time_ms,
+        encoder_version=pass2.encoder_version,
+        ffmpeg_version=pass2.ffmpeg_version,
+        exit_status=combined_status,
+        stderr_tail=pass2.stderr_tail,
+    )
+
+
+def _remove_two_pass_files(stats_path: Path, own_scratch_dir: Path | None) -> None:
+    """Best-effort removal of the stats artefacts and an owned scratch dir."""
+    # Remove known stats artefacts. libx265 writes ``<stats>`` and
+    # may add ``<stats>.cutree``; FFmpeg's generic passlogfile path
+    # (used by libx264) writes ``<stats>-0.log`` plus an optional
+    # mbtree sidecar.
+    for candidate in _two_pass_cleanup_candidates(stats_path):
+        try:
+            candidate.unlink()
+        except (OSError, FileNotFoundError):
+            pass
+    if own_scratch_dir is None:
+        return
+    try:
+        # Best-effort cleanup; if anything remains the OS will
+        # garbage-collect /tmp eventually.
+        for child in own_scratch_dir.iterdir():
             try:
-                candidate.unlink()
-            except (OSError, FileNotFoundError):
-                pass
-        if own_scratch:
-            try:
-                # Best-effort cleanup; if anything remains the OS will
-                # garbage-collect /tmp eventually.
-                for child in scratch_dir.iterdir():
-                    try:
-                        child.unlink()
-                    except OSError:
-                        pass
-                scratch_dir.rmdir()
+                child.unlink()
             except OSError:
                 pass
+        own_scratch_dir.rmdir()
+    except OSError:
+        pass
