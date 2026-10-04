@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # The functions the row names; every CPU extractor that differed calls one.
 MATH_FUNCTIONS = ("log10", "pow", "powf", "log2f", "exp", "log")
@@ -169,6 +170,18 @@ def _loader_trace(cli: Path) -> str:
     return result.stderr
 
 
+def _gnu_libc_version() -> str:
+    """`glibc 2.xx`, or an empty string on a platform without glibc.
+
+    `os.confstr("CS_GNU_LIBC_VERSION")` raises ValueError on macOS and has no
+    such name on Windows, so it is guarded rather than trusted.
+    """
+    try:
+        return os.confstr("CS_GNU_LIBC_VERSION") or ""
+    except (AttributeError, ValueError, OSError):
+        return ""
+
+
 def _build_compiler_ids(build_root: Path) -> tuple[str, str]:
     compilers = json.loads(
         (build_root / "meson-info" / "intro-compilers.json").read_text(encoding="utf-8")
@@ -254,13 +267,44 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(len(binding_failures("", ("libvmaf", "vmaf"))), len(MATH_FUNCTIONS))
 
 
+class LibcDetectionTest(unittest.TestCase):
+    """The glibc probe answers on every platform instead of raising."""
+
+    def test_confstr_value_error_means_no_glibc(self) -> None:
+        # macOS: os.confstr("CS_GNU_LIBC_VERSION") raises ValueError.
+        with mock.patch.object(
+            os, "confstr", side_effect=ValueError("unrecognized configuration name")
+        ):
+            self.assertEqual(_gnu_libc_version(), "")
+
+    def test_no_confstr_means_no_glibc(self) -> None:
+        # Windows: the os module has no confstr.
+        with mock.patch.object(os, "confstr", side_effect=AttributeError):
+            self.assertEqual(_gnu_libc_version(), "")
+
+    def test_glibc_value_is_passed_through(self) -> None:
+        with mock.patch.object(os, "confstr", return_value="glibc 2.44"):
+            self.assertEqual(_gnu_libc_version(), "glibc 2.44")
+
+    def test_trace_test_skips_without_glibc(self) -> None:
+        # The skip names its precondition and the trace is not attempted.
+        case = LoaderTraceTest("test_trace_does_not_run_the_program")
+        with (
+            mock.patch.object(os, "confstr", side_effect=ValueError),
+            mock.patch(f"{__name__}._loader_trace", side_effect=AssertionError("traced")),
+        ):
+            with self.assertRaises(unittest.SkipTest) as raised:
+                case.test_trace_does_not_run_the_program()
+        self.assertIn("needs glibc's dynamic loader", str(raised.exception))
+
+
 class LoaderTraceTest(unittest.TestCase):
     """The trace runs nothing, so no program or IFUNC resolver can crash it."""
 
     def test_trace_does_not_run_the_program(self) -> None:
-        libc = os.confstr("CS_GNU_LIBC_VERSION") if hasattr(os, "confstr") else None
-        if not libc or not libc.startswith("glibc"):
-            self.skipTest(f"the loader trace needs glibc's ld.so (C library: {libc})")
+        libc = _gnu_libc_version()
+        if not libc.startswith("glibc"):
+            self.skipTest(f"needs glibc's dynamic loader (C library: {libc or 'not glibc'})")
         false = shutil.which("false")
         if false is None or "(NEEDED)" not in _readelf("-d", false):
             self.skipTest("no dynamically linked `false` to trace")

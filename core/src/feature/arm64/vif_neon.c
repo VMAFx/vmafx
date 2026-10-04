@@ -504,7 +504,8 @@ static FORCE_INLINE void vif_accumulate_pixel(const VifPublicState *s, VifResidu
         * multiplied by 2048 as log_value = log2(i)*2048 i=16384 to 65535 generated using log_value
         * x because best 16 bits are taken
         */
-        totals->accum_den_log += log2_32(s->log2_table, sigma_nsq + sigma1_sq) - 2048 * 17;
+        totals->accum_den_log +=
+            log2_32(s->log2_table, (uint32_t)sigma_nsq + (uint32_t)sigma1_sq) - 2048 * 17;
 
         if (sigma12 > 0 && sigma2_sq > 0) {
             // num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + sigma_nsq));

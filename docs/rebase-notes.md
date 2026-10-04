@@ -7,6 +7,15 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## macOS glibc probe and VIF signed sum (2026-10-04)
+
+`fix/master-red-macos-ubsan`. Two test fixes and one cast.
+
+- `core/test/test_icx_system_libm.py` probes glibc through `_gnu_libc_version()`
+  (never a bare `os.confstr()`); a sync keeps the guard, `LibcDetectionTest` fails without it.
+- `sigma_nsq + sigma1_sq` is formed in `uint32_t` in `integer_vif.c`, `x86/vif_avx2.c`
+  and `arm64/vif_neon.c`; a sync must not restore the signed sum.
+
 ## The registry validator has no fallback (2026-10-04)
 
 `fix/model-registry-validator-no-fallback`. One script and its tests.

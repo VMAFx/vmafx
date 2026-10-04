@@ -304,7 +304,8 @@ static FORCE_INLINE void vif_accumulate_pixel(VifResiduals *acc, const uint16_t 
         * multiplied by 2048 as log_value = log2(i)*2048 i=16384 to 65535 generated using log_value
         * x because best 16 bits are taken
         */
-        acc->accum_den_log += log2_32(log2_table, sigma_nsq + sigma1_sq) - 2048 * 17;
+        acc->accum_den_log +=
+            log2_32(log2_table, (uint32_t)sigma_nsq + (uint32_t)sigma1_sq) - 2048 * 17;
 
         if (sigma12 > 0 && sigma2_sq > 0) {
             /**

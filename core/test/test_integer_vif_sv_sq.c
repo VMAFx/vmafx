@@ -185,7 +185,7 @@ static int32_t filtered(uint32_t value)
 static VifResiduals expected_pixel(int32_t s1, int32_t s2, int32_t s12, double limit)
 {
     VifResiduals r = {0};
-    r.accum_den_log = log2_32(state.log2_table, (uint32_t)(sigma_nsq + s1)) - 2048 * 17;
+    r.accum_den_log = log2_32(state.log2_table, (uint32_t)sigma_nsq + (uint32_t)s1) - 2048 * 17;
     const double g = gain(s1, s12);
     const uint32_t numer1 = x86_sv_sq(s2, g, s12) + (uint32_t)sigma_nsq;
     const double gl = g < limit ? g : limit;

@@ -286,7 +286,8 @@ static FORCE_INLINE void vif_accumulate_pixel256(const VifPublicState *s, VifRes
 {
     static const int32_t sigma_nsq = 65536 << 1;
     if (sigma1_sq >= sigma_nsq) {
-        totals->accum_den_log += log2_32(s->log2_table, sigma_nsq + sigma1_sq) - 2048 * 17;
+        totals->accum_den_log +=
+            log2_32(s->log2_table, (uint32_t)sigma_nsq + (uint32_t)sigma1_sq) - 2048 * 17;
         if (sigma12 > 0 && sigma2_sq > 0) {
             totals->accum_num_log += vif_num_log256(s->log2_table, s->vif_enhn_gain_limit,
                                                     sigma1_sq, sigma2_sq, sigma12);
