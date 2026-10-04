@@ -122,3 +122,34 @@ promoting corresponding phase.
   "VMAF 4-9 at 50 Mbps" bug — encode driver then emits
   `-f rawvideo -pix_fmt yuv420p -s WxH -i src.mp4` and
   re-interprets compressed bytes as planar YUV pixels.
+
+## HISS-04 helper-ordering invariants
+
+Split of `iter_rows` / `_row_for` / `_maybe_decode_reference` /
+`coarse_to_fine_search` moved ordering contracts from one function
+body into call sites. Each breaks silently; no test name points at it.
+
+- **Once-per-sweep work stays in `_prepare_sweep`, in order**: adapter
+  lookup, source hash, encode-dir mkdir, cache open, sample-clip
+  window, shot detection, HDR, reference decode. `iter_rows` calls it
+  first inside generator body (lazy: nothing runs before first
+  `next()`). Reference decode runs once, before first cell; no cell
+  helper may call `_decode_job_reference` / `_maybe_decode_reference`.
+- **`_cell_row` order**: `adapter.validate` -> cache lookup
+  (`_cached_row`) -> reference-decode-failed short-circuit -> encode
+  -> score model (HDR warning) -> score -> `_row_for` -> `_cache_put`
+  -> `_cleanup_encode` -> return. `_cache_put` before
+  `_cleanup_encode`: put copies encode file. Every cell side effect
+  ends before row returns, so `iter_rows` yields after cleanup.
+- **`tune_cache.flush()` follows loop in `iter_rows` body**: runs only
+  when generator is exhausted. Not `finally`, not per cell.
+- **Reference-decode-failed rows score against `opts.vmaf_model`**
+  (HDR-resolved, no resolution-aware pick).
+  `_ref_decode_failed_row` must not call `_cell_score_model`.
+- **`_row_for` column helpers apply in schema order**:
+  `_row_source_columns`, `_row_result_columns`, `_row_context_columns`,
+  `_row_canonical6_columns`, then `aggregate_stats`. Dict insertion
+  order = row column order; reordering changes emitted rows.
+- **`subprocess.run` resolved at call time** in `_run_ffmpeg`,
+  `_decode_job_reference`, `_score_cell`: tests monkeypatch
+  `subprocess.run`. Never bind it at import or store it in `_Sweep`.

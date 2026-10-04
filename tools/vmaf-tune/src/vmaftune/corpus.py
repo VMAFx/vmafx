@@ -31,7 +31,7 @@ import sys
 import uuid
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import (
     CANONICAL6_FEATURES,
@@ -66,6 +66,11 @@ from aiutils.time_utils import now_iso_8601 as _utc_now_iso
 
 from .defaultmodel import DEFAULT_MODEL
 
+if TYPE_CHECKING:
+    from .cache import CachedResult, TuneCache
+    from .codec_adapters import CodecAdapter
+    from .encode import EncodeResult
+
 _LOG = logging.getLogger(__name__)
 
 # Suffixes the vmaf CLI accepts as raw YUV without a prior ffmpeg decode
@@ -81,6 +86,50 @@ _LOG = logging.getLogger(__name__)
 # standing convention in fixture trees); they get correct behaviour
 # because ``--width`` / etc. already pin the geometry.
 _VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ""})
+
+
+def _raw_demuxer_args(
+    pix_fmt: str,
+    source_width: int | None,
+    source_height: int | None,
+    source_framerate: float | None,
+) -> list[str]:
+    """Return the input-side ``-f rawvideo -pix_fmt … -s WxH -r FR`` block.
+
+    BBB e2e v6 Bug #V6-2: tell ffmpeg the demuxer geometry on the input
+    side so raw YUV is parseable. ``source_width`` / ``source_height``
+    are required for raw decode; framerate defaults to 24 (matches
+    ``_default_sampler`` legacy) when not bound. The error names
+    :func:`_decode_source_to_yuv`, the only caller.
+    """
+    if source_width is None or source_height is None:
+        raise ValueError(
+            "_decode_source_to_yuv: source_is_raw=True requires source_width and source_height"
+        )
+    return [
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        pix_fmt,
+        "-s",
+        f"{int(source_width)}x{int(source_height)}",
+        "-r",
+        f"{float(source_framerate) if source_framerate is not None else 24.0}",
+    ]
+
+
+def _run_ffmpeg(cmd: list[str], runner: object) -> int:
+    """Run ``cmd`` through ``runner`` and return its exit status.
+
+    A non-callable ``runner`` falls back to :func:`subprocess.run`,
+    looked up when the call is made so a monkeypatched
+    ``subprocess.run`` still intercepts it.
+    """
+    import subprocess as _sp
+
+    run_fn = runner if callable(runner) else _sp.run
+    completed = run_fn(cmd, capture_output=True, text=True, check=False)
+    return int(getattr(completed, "returncode", 1))
 
 
 def _decode_source_to_yuv(
@@ -129,36 +178,9 @@ def _decode_source_to_yuv(
     container-source auto-detect path.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    cmd: list[str] = [
-        ffmpeg_bin,
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-    ]
+    cmd: list[str] = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error"]
     if source_is_raw:
-        # BBB e2e v6 Bug #V6-2: tell ffmpeg the demuxer geometry on
-        # the input side so raw YUV is parseable. ``source_width`` /
-        # ``source_height`` are required for raw decode; framerate
-        # defaults to 24 (matches ``_default_sampler`` legacy) when
-        # not bound.
-        if source_width is None or source_height is None:
-            raise ValueError(
-                "_decode_source_to_yuv: source_is_raw=True requires "
-                "source_width and source_height"
-            )
-        cmd.extend(
-            [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                pix_fmt,
-                "-s",
-                f"{int(source_width)}x{int(source_height)}",
-                "-r",
-                f"{float(source_framerate) if source_framerate is not None else 24.0}",
-            ]
-        )
+        cmd.extend(_raw_demuxer_args(pix_fmt, source_width, source_height, source_framerate))
     cmd.extend(["-i", str(source)])
     cmd.extend(["-f", "rawvideo", "-pix_fmt", pix_fmt])
     if target_width is not None and target_height is not None:
@@ -166,11 +188,7 @@ def _decode_source_to_yuv(
     if duration_s > 0.0:
         cmd.extend(["-t", f"{float(duration_s)}"])
     cmd.append(str(destination))
-    import subprocess as _sp
-
-    run_fn = runner if callable(runner) else _sp.run
-    completed = run_fn(cmd, capture_output=True, text=True, check=False)
-    return int(getattr(completed, "returncode", 1))
+    return _run_ffmpeg(cmd, runner)
 
 
 def _maybe_decode_distorted(
@@ -263,17 +281,54 @@ def _maybe_decode_reference(
     under ``encode_dir`` with a ``.ref.decoded.yuv`` suffix so the
     same path can be reused across every cell in the sweep.
     """
+    request = _ReferenceDecode(
+        source=source,
+        encode_dir=encode_dir,
+        pix_fmt=pix_fmt,
+        duration_s=duration_s,
+        ffmpeg_bin=ffmpeg_bin,
+        runner=runner,
+        target_width=target_width,
+        target_height=target_height,
+        source_width=source_width,
+        source_height=source_height,
+        source_framerate=source_framerate,
+    )
+    return _decode_reference(request)
+
+
+@dataclasses.dataclass(frozen=True)
+class _ReferenceDecode:
+    """The arguments of one :func:`_maybe_decode_reference` call."""
+
+    source: Path
+    encode_dir: Path
+    pix_fmt: str
+    duration_s: float
+    ffmpeg_bin: str
+    runner: object
+    target_width: int | None
+    target_height: int | None
+    source_width: int | None
+    source_height: int | None
+    source_framerate: float | None
+
+
+def _decode_reference(request: _ReferenceDecode) -> tuple[Path, int]:
+    """Do the work of :func:`_maybe_decode_reference`; see its docstring."""
+    source = request.source
+    target_width, target_height = request.target_width, request.target_height
     source_is_raw = source.suffix.lower() in _VMAF_RAW_SUFFIXES
     if source_is_raw and target_width is None and target_height is None:
         return source, 0
     if target_width is not None and target_height is not None:
         # Per-rung sidecar — embed WxH in the filename so multi-rung
         # sweeps don't collide on a stale decode (ADR-0501).
-        decoded = encode_dir / (
+        decoded = request.encode_dir / (
             f"{source.stem}.ref.decoded.{int(target_width)}x{int(target_height)}.yuv"
         )
     else:
-        decoded = encode_dir / (source.stem + ".ref.decoded.yuv")
+        decoded = request.encode_dir / (source.stem + ".ref.decoded.yuv")
     # Re-use a previous decode if one is already on disk for this
     # ``iter_rows`` call. The same source + same window length is
     # constant across every cell so a single decode suffices.
@@ -282,10 +337,10 @@ def _maybe_decode_reference(
     rc = _decode_source_to_yuv(
         source,
         destination=decoded,
-        pix_fmt=pix_fmt,
-        duration_s=duration_s,
-        ffmpeg_bin=ffmpeg_bin,
-        runner=runner,
+        pix_fmt=request.pix_fmt,
+        duration_s=request.duration_s,
+        ffmpeg_bin=request.ffmpeg_bin,
+        runner=request.runner,
         target_width=target_width,
         target_height=target_height,
         # BBB e2e v6 Bug #V6-2 (ADR-0506): when the source is raw YUV
@@ -295,9 +350,9 @@ def _maybe_decode_reference(
         # carry the caller-bound geometry (the corpus job's source
         # dims) so this helper can synthesise the demuxer ``-s WxH``.
         source_is_raw=source_is_raw,
-        source_width=source_width,
-        source_height=source_height,
-        source_framerate=source_framerate,
+        source_width=request.source_width,
+        source_height=request.source_height,
+        source_framerate=request.source_framerate,
     )
     if rc == 0 and decoded.exists():
         return decoded, 0
@@ -552,6 +607,158 @@ def _resolve_shot_metadata(
     return summarise_shots(shots, framerate=job.framerate)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Sweep:
+    """State :func:`iter_rows` resolves once, before its cell loop.
+
+    Built by :func:`_prepare_sweep`. ``score_model_warned`` is the
+    one-element flag every cell shares so the missing-HDR-model warning
+    fires once per sweep (see :func:`_resolve_hdr_score_model`).
+    """
+
+    job: CorpusJob
+    opts: CorpusOptions
+    adapter: CodecAdapter
+    src_hash: str
+    tune_cache: TuneCache | None
+    clip_seconds: float
+    start_s: float
+    frame_skip_ref: int
+    frame_cnt: int
+    clip_mode: str
+    shot_meta: ShotMetadata
+    hdr_info: HdrInfo | None
+    hdr_forced: bool
+    hdr_extra_params: tuple[str, ...]
+    score_model_warned: list[bool]
+    decoded_reference: Path
+    ref_decode_rc: int
+
+
+def _open_tune_cache(opts: CorpusOptions) -> TuneCache | None:
+    """Open the content-addressed encode cache (ADR-0298), or return ``None``.
+
+    Called once per :func:`iter_rows` call so the cache index is loaded
+    only once, not per cell.
+    """
+    if not (opts.cache_enabled and opts.cache_dir is not None):
+        return None
+    from .cache import TuneCache
+
+    return TuneCache(path=opts.cache_dir)
+
+
+def _reference_scale_target(job: CorpusJob) -> tuple[int | None, int | None]:
+    """Return the rung target the reference decode scales to, or ``(None, None)``.
+
+    ADR-0501 / BBB e2e v4 Bug #V4-B: when the caller bound source dims
+    distinct from the rung target (cross-resolution ladder) OR when the
+    rung target differs from the raw-YUV source's native geometry, the
+    reference decode must downscale to the rung target so the libvmaf
+    CLI reads both legs at the same width/height. Otherwise the binary
+    mis-parses the planar bytes and emits a catastrophic VMAF (~21
+    instead of ~93). Container sources without explicit src dims keep
+    the legacy "decode at native geometry" path — width/height for
+    those rungs already match the source after ffmpeg's auto-detect.
+    """
+    if (
+        job.src_width is not None
+        and job.src_height is not None
+        and ((int(job.src_width), int(job.src_height)) != (int(job.width), int(job.height)))
+    ):
+        return int(job.width), int(job.height)
+    return None, None
+
+
+def _decode_job_reference(job: CorpusJob, opts: CorpusOptions) -> tuple[Path, int]:
+    """Decode ``job.source`` to the raw-YUV reference every cell scores against.
+
+    ADR-0499 / BBB e2e v3 Bug #V3-B: decode the *reference* leg to raw
+    YUV once before iterating cells. The libvmaf CLI's
+    ``raw_input_open`` path (active whenever ``--width`` / ``--height``
+    / ``--pixel_format`` / ``--bitdepth`` are passed, which vmaf-tune
+    always does) refuses container/Y4M inputs. Previously only the
+    distorted leg was decoded; container sources tripped the score step
+    with "file size mismatch" and the sampler reported "produced no
+    scorable encodes". Doing this once per :func:`iter_rows` call
+    (instead of per cell) keeps the cost flat across CRF/preset sweeps.
+    ``subprocess.run`` is used directly: test stubs injected via
+    ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
+    """
+    import subprocess as _sp
+
+    ref_target_w, ref_target_h = _reference_scale_target(job)
+    # BBB e2e v6 Bug #V6-2 (ADR-0506): pass the source's native
+    # geometry into the reference decoder so a raw-YUV source can be
+    # parsed by ffmpeg's rawvideo demuxer when a cross-resolution
+    # scale is required. For container sources the demuxer auto-
+    # detects and the ``source_*`` hints are unused.
+    src_dim_w = int(job.src_width) if job.src_width is not None else int(job.width)
+    src_dim_h = int(job.src_height) if job.src_height is not None else int(job.height)
+    return _maybe_decode_reference(
+        job.source,
+        encode_dir=opts.encode_dir,
+        pix_fmt=job.pix_fmt,
+        # Cap the reference decode at the analysed window so a 10 s
+        # probe doesn't spill ~58 GB of raw YUV (BBB e2e v2 Bug #v2-A).
+        duration_s=float(job.duration_s),
+        ffmpeg_bin=opts.ffmpeg_bin,
+        runner=_sp.run,
+        target_width=ref_target_w,
+        target_height=ref_target_h,
+        source_width=src_dim_w,
+        source_height=src_dim_h,
+        source_framerate=float(job.framerate),
+    )
+
+
+def _prepare_sweep(job: CorpusJob, opts: CorpusOptions, *, shot_runner: object | None) -> _Sweep:
+    """Resolve everything :func:`iter_rows` computes once per call, in order.
+
+    Adapter lookup, source hash, encode directory, encode cache, sample
+    clip window, shot metadata, HDR signaling and the reference decode
+    all run here, before the first cell is evaluated.
+    """
+    adapter = get_adapter(opts.encoder)
+    src_hash = _sha256_file(job.source) if (opts.src_sha256 and job.source.exists()) else ""
+
+    opts.encode_dir.mkdir(parents=True, exist_ok=True)
+    tune_cache = _open_tune_cache(opts)
+
+    clip_seconds, start_s, frame_skip_ref, frame_cnt, clip_mode = _resolve_sample_clip(job, opts)
+    shot_meta = _resolve_shot_metadata(job, shot_runner=shot_runner, per_shot_bin="vmaf-perShot")
+
+    # HDR resolution happens once per source: detection (or the forced
+    # synthetic info) is constant across the (preset, crf) grid for a
+    # given input. Re-probing per cell would burn an ffprobe per encode
+    # for no signal gain.
+    hdr_info, hdr_forced = _resolve_hdr(job, opts)
+    hdr_extra_params: tuple[str, ...] = ()
+    if hdr_info is not None:
+        hdr_extra_params = hdr_codec_args(opts.encoder, hdr_info)
+
+    decoded_reference, ref_decode_rc = _decode_job_reference(job, opts)
+    return _Sweep(
+        job=job,
+        opts=opts,
+        adapter=adapter,
+        src_hash=src_hash,
+        tune_cache=tune_cache,
+        clip_seconds=clip_seconds,
+        start_s=start_s,
+        frame_skip_ref=frame_skip_ref,
+        frame_cnt=frame_cnt,
+        clip_mode=clip_mode,
+        shot_meta=shot_meta,
+        hdr_info=hdr_info,
+        hdr_forced=hdr_forced,
+        hdr_extra_params=hdr_extra_params,
+        score_model_warned=[False],
+        decoded_reference=decoded_reference,
+        ref_decode_rc=ref_decode_rc,
+    )
+
+
 def iter_rows(
     job: CorpusJob,
     opts: CorpusOptions,
@@ -567,419 +774,408 @@ def iter_rows(
     are subprocess-runner stubs parameterised for tests. Production
     callers leave them ``None``.
     """
-    adapter = get_adapter(opts.encoder)
-    src_hash = _sha256_file(job.source) if (opts.src_sha256 and job.source.exists()) else ""
-
-    opts.encode_dir.mkdir(parents=True, exist_ok=True)
-
-    # Content-addressed cache (ADR-0298). Initialise once per iter_rows
-    # call so the cache index is loaded only once, not per cell.
-    tune_cache = None
-    if opts.cache_enabled and opts.cache_dir is not None:
-        from .cache import TuneCache
-
-        tune_cache = TuneCache(path=opts.cache_dir)
-
-    clip_seconds, start_s, frame_skip_ref, frame_cnt, clip_mode = _resolve_sample_clip(job, opts)
-    shot_meta = _resolve_shot_metadata(job, shot_runner=shot_runner, per_shot_bin="vmaf-perShot")
-
-    # HDR resolution happens once per source: detection (or the forced
-    # synthetic info) is constant across the (preset, crf) grid for a
-    # given input. Re-probing per cell would burn an ffprobe per encode
-    # for no signal gain.
-    hdr_info, hdr_forced = _resolve_hdr(job, opts)
-    hdr_extra_params: tuple[str, ...] = ()
-    if hdr_info is not None:
-        hdr_extra_params = hdr_codec_args(opts.encoder, hdr_info)
-    score_model_warned = [False]
-
-    # ADR-0499 / BBB e2e v3 Bug #V3-B: decode the *reference* leg to
-    # raw YUV once before iterating cells. The libvmaf CLI's
-    # ``raw_input_open`` path (active whenever ``--width`` / ``--height``
-    # / ``--pixel_format`` / ``--bitdepth`` are passed, which vmaf-tune
-    # always does) refuses container/Y4M inputs. Previously only the
-    # distorted leg was decoded; container sources tripped the score
-    # step with "file size mismatch" and the sampler reported "produced
-    # no scorable encodes". Doing this once per ``iter_rows`` call
-    # (instead of per cell) keeps the cost flat across CRF/preset
-    # sweeps. ``_sp.run`` is used directly: test stubs injected via
-    # ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
-    import subprocess as _sp
-
-    # ADR-0501 / BBB e2e v4 Bug #V4-B: when the caller bound source
-    # dims distinct from the rung target (cross-resolution ladder)
-    # OR when the rung target differs from the raw-YUV source's
-    # native geometry, the reference decode must downscale to the
-    # rung target so the libvmaf CLI reads both legs at the same
-    # width/height. Otherwise the binary mis-parses the planar bytes
-    # and emits a catastrophic VMAF (~21 instead of ~93). Container
-    # sources without explicit src dims keep the legacy "decode at
-    # native geometry" path — width/height for those rungs already
-    # match the source after ffmpeg's auto-detect.
-    _ref_target_w: int | None = None
-    _ref_target_h: int | None = None
-    if (
-        job.src_width is not None
-        and job.src_height is not None
-        and ((int(job.src_width), int(job.src_height)) != (int(job.width), int(job.height)))
-    ):
-        _ref_target_w = int(job.width)
-        _ref_target_h = int(job.height)
-    # BBB e2e v6 Bug #V6-2 (ADR-0506): pass the source's native
-    # geometry into the reference decoder so a raw-YUV source can be
-    # parsed by ffmpeg's rawvideo demuxer when a cross-resolution
-    # scale is required. For container sources the demuxer auto-
-    # detects and the ``source_*`` hints are unused.
-    _src_dim_w = int(job.src_width) if job.src_width is not None else int(job.width)
-    _src_dim_h = int(job.src_height) if job.src_height is not None else int(job.height)
-    decoded_reference, ref_decode_rc = _maybe_decode_reference(
-        job.source,
-        encode_dir=opts.encode_dir,
-        pix_fmt=job.pix_fmt,
-        # Cap the reference decode at the analysed window so a 10 s
-        # probe doesn't spill ~58 GB of raw YUV (BBB e2e v2 Bug #v2-A).
-        duration_s=float(job.duration_s),
-        ffmpeg_bin=opts.ffmpeg_bin,
-        runner=_sp.run,
-        target_width=_ref_target_w,
-        target_height=_ref_target_h,
-        source_width=_src_dim_w,
-        source_height=_src_dim_h,
-        source_framerate=float(job.framerate),
-    )
-
+    sweep = _prepare_sweep(job, opts, shot_runner=shot_runner)
     for preset, crf in job.cells:
-        adapter.validate(preset, crf)
-
-        # Cache hit: return the cached row without encoding.
-        if tune_cache is not None and src_hash:
-            from .cache import cache_key
-
-            key = cache_key(
-                src_sha256=src_hash,
-                encoder=opts.encoder,
-                preset=preset,
-                crf=crf,
-                adapter_version="",
-                ffmpeg_version="",
-            )
-            cached = tune_cache.get(key)
-            if cached is not None:
-                # Reconstruct a minimal corpus row from CachedResult fields.
-                # Provenance metadata (run_id, timestamp) gets a fresh stamp
-                # so downstream tools can tell the row came from cache.
-                nan = float("nan")
-                hit_row: dict[str, Any] = {k: nan for k in CORPUS_ROW_KEYS}
-                hit_row.update(
-                    {
-                        "schema_version": SCHEMA_VERSION,
-                        "run_id": uuid.uuid4().hex,
-                        "timestamp": _utc_now_iso(),
-                        "src": str(job.source),
-                        "src_sha256": src_hash,
-                        "width": job.width,
-                        "height": job.height,
-                        "pix_fmt": job.pix_fmt,
-                        "framerate": job.framerate,
-                        "duration_s": job.duration_s,
-                        "encoder": opts.encoder,
-                        "encoder_version": cached.encoder_version,
-                        "preset": preset,
-                        "crf": crf,
-                        "extra_params": [],
-                        "encode_path": str(cached.artifact_path) if opts.keep_encodes else "",
-                        "encode_size_bytes": cached.encode_size_bytes,
-                        "bitrate_kbps": bitrate_kbps(
-                            cached.encode_size_bytes, job.duration_s or 1.0
-                        ),
-                        "encode_time_ms": cached.encode_time_ms,
-                        "vmaf_score": cached.vmaf_score,
-                        "vmaf_model": cached.vmaf_model,
-                        "score_time_ms": cached.score_time_ms,
-                        "ffmpeg_version": cached.ffmpeg_version,
-                        "vmaf_binary_version": cached.vmaf_binary_version,
-                        "exit_status": 0,
-                        "clip_mode": "full",
-                        "hdr_transfer": "",
-                        "hdr_primaries": "",
-                        "hdr_forced": False,
-                        "shot_count": 0,
-                        "shot_avg_duration_sec": nan,
-                        "shot_duration_std_sec": nan,
-                    }
-                )
-                yield hit_row
-                continue
-
-        out = _encode_path(opts, job.source, preset, crf)
-        # ADR-0499 / Bug #V3-B: when the once-per-sweep reference
-        # decode failed, every cell's score will fail the same way.
-        # Synthesize a failed ``EncodeResult`` instead of re-running
-        # ffmpeg N times for output we cannot score; the
-        # ref-decode-fail branch below short-circuits the score step
-        # too. ``_row_for`` requires a non-None ``enc_res`` for the
-        # row-shape invariant.
-        if ref_decode_rc != 0:
-            from .encode import EncodeRequest as _EncReq
-            from .encode import EncodeResult as _EncRes
-
-            enc_res = _EncRes(
-                request=_EncReq(
-                    source=job.source,
-                    width=int(job.width),
-                    height=int(job.height),
-                    pix_fmt=job.pix_fmt,
-                    framerate=float(job.framerate),
-                    encoder=adapter.encoder,
-                    preset=preset,
-                    crf=crf,
-                    output=out,
-                ),
-                encode_size_bytes=0,
-                encode_time_ms=0.0,
-                encoder_version="skipped",
-                ffmpeg_version="skipped",
-                exit_status=ref_decode_rc,
-                stderr_tail=(f"encode skipped: reference decode failed (rc={ref_decode_rc})"),
-            )
-            base_model = opts.vmaf_model
-            score_model = _resolve_hdr_score_model(hdr_info, base_model, warned=score_model_warned)
-            score_req = ScoreRequest(
-                reference=decoded_reference,
-                distorted=out,
-                width=job.width,
-                height=job.height,
-                pix_fmt=job.pix_fmt,
-                model=score_model,
-                frame_skip_ref=frame_skip_ref,
-                frame_cnt=frame_cnt,
-                duration_s=float(job.duration_s),
-            )
-            score_res = ScoreResult(
-                request=score_req,
-                vmaf_score=float("nan"),
-                score_time_ms=0.0,
-                vmaf_binary_version="skipped",
-                exit_status=ref_decode_rc,
-                stderr_tail=(
-                    f"reference decode to raw YUV failed (rc={ref_decode_rc}) " f"for {job.source}"
-                ),
-            )
-            row = _row_for(
-                job=job,
-                opts=opts,
-                preset=preset,
-                crf=crf,
-                src_sha=src_hash,
-                enc_res=enc_res,
-                score_res=score_res,
-                score_model=score_model,
-                clip_mode=clip_mode,
-                hdr_info=hdr_info,
-                hdr_forced=hdr_forced,
-                shot_meta=shot_meta,
-            )
-            yield row
-            continue
-        # ADR-0498 / Bug #v2-B: when the caller supplied source dims
-        # distinct from the rung target, tell ffmpeg the *source*
-        # geometry on the input side (-s) and add a -vf scale=W:H
-        # filter so the encoded rendition lands at the rung target.
-        # Both fields ``None`` keeps the legacy behaviour where the
-        # rung target serves as both source and encode geometry.
-        enc_src_w = int(job.src_width) if job.src_width is not None else int(job.width)
-        enc_src_h = int(job.src_height) if job.src_height is not None else int(job.height)
-        # ADR-0505 / BBB e2e v5 Bug #V5-2 root cause: when the source is
-        # a container/Y4M (anything outside :data:`_VMAF_RAW_SUFFIXES`)
-        # the encode pipe MUST treat it as a container — letting ffmpeg
-        # auto-detect format and resolution. The historic path always
-        # built the encode argv with ``-f rawvideo -pix_fmt … -s WxH``,
-        # which reinterprets the container's compressed bytes as planar
-        # YUV pixels and produces a catastrophic encode (uniformly
-        # ~50 Mbps regardless of CRF, garbage frames, VMAF in the 4-9
-        # band). The reference leg is already decoded to raw YUV by
-        # :func:`_maybe_decode_reference`; the encode leg gets the
-        # complementary fix here so cross-resolution scoring is well-
-        # defined and the CRF flag actually controls bitrate.
-        source_is_container = job.source.suffix.lower() not in _VMAF_RAW_SUFFIXES
-        scale_extra: tuple[str, ...] = ()
-        if source_is_container:
-            # Container sources: enforce the rung target via a scale
-            # filter unconditionally (ffmpeg's auto-detected geometry
-            # may not match the requested rendition). For native-
-            # geometry rungs the scale is a cheap no-op.
-            scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
-        elif (enc_src_w, enc_src_h) != (int(job.width), int(job.height)):
-            scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
-        enc_req = EncodeRequest(
-            source=job.source,
-            width=enc_src_w,
-            height=enc_src_h,
-            pix_fmt=job.pix_fmt,
-            framerate=job.framerate,
-            encoder=adapter.encoder,
-            preset=preset,
-            crf=crf,
-            output=out,
-            extra_params=tuple(hdr_extra_params) + scale_extra,
-            sample_clip_seconds=clip_seconds,
-            sample_clip_start_s=start_s,
-            source_is_container=source_is_container,
-            # BBB e2e v6 Bug #V6-1 (ADR-0506): plumb the job's analysed
-            # window length so the encode is bounded when the caller
-            # didn't opt into sample-clip mode (the ladder/CLI
-            # ``--duration`` flag exercises this path). The reference
-            # decode already honours ``job.duration_s``; mirroring it on
-            # the encode side stops a 10-second smoke run from re-
-            # encoding the full 9-minute source.
-            duration_s=float(job.duration_s),
-        )
-        if opts.two_pass:
-            # Phase F (ADR-0333). The driver gracefully falls back
-            # to single-pass when the adapter does not opt into
-            # 2-pass; keeps mixed-codec corpora honest.
-            enc_res = run_two_pass_encode(
-                enc_req,
-                ffmpeg_bin=opts.ffmpeg_bin,
-                runner=encode_runner,
-            )
-        elif getattr(adapter, "supports_encoder_stats", False):
-            # ADR-0332: codec adapters that emit a parseable pass-1 stats
-            # file opt in via ``supports_encoder_stats``; the dispatcher
-            # routes those through the stats-capturing wrapper. Hardware
-            # encoders fall through to the legacy single-pass path.
-            enc_res = run_encode_with_stats(
-                enc_req,
-                ffmpeg_bin=opts.ffmpeg_bin,
-                runner=encode_runner,
-            )
-        else:
-            enc_res = run_encode(enc_req, ffmpeg_bin=opts.ffmpeg_bin, runner=encode_runner)
-
-        base_model = opts.vmaf_model
-        if opts.resolution_aware:
-            from .resolution import select_vmaf_model_version
-
-            base_model = select_vmaf_model_version(job.width, job.height)
-        score_model = _resolve_hdr_score_model(hdr_info, base_model, warned=score_model_warned)
-        score_req = ScoreRequest(
-            # ADR-0499 / Bug #V3-B: ``decoded_reference`` is the
-            # pre-decoded raw-YUV path when ``job.source`` was a
-            # container, or ``job.source`` itself when the source was
-            # already raw. Container sources that fail to decode are
-            # short-circuited above (the cell yields a failed row
-            # without invoking ffmpeg or the vmaf binary).
-            reference=decoded_reference,
-            distorted=out,
-            width=job.width,
-            height=job.height,
-            pix_fmt=job.pix_fmt,
-            model=score_model,
-            frame_skip_ref=frame_skip_ref,
-            frame_cnt=frame_cnt,
-            # BBB e2e v2 Bug #v2-A: forward the job duration so the
-            # post-encode container -> raw YUV decode is bounded.
-            duration_s=float(job.duration_s),
-        )
-        if enc_res.exit_status == 0:
-            # The vmaf CLI only reads raw .yuv / .y4m input; decode the
-            # encoded container to a temporary YUV before scoring.
-            # Always use the real subprocess for the decode step — test
-            # stubs injected via ``score_runner`` handle vmaf CLI calls only.
-            import subprocess as _sp
-
-            score_req = _maybe_decode_distorted(
-                score_req,
-                encode_dir=opts.encode_dir,
-                ffmpeg_bin=opts.ffmpeg_bin,
-                runner=_sp.run,
-            )
-            score_res = run_score(
-                score_req,
-                vmaf_bin=opts.vmaf_bin,
-                runner=score_runner,
-                backend=opts.score_backend,
-            )
-        else:
-            # Skip scoring on encode failure; row records the failure.
-            score_res = ScoreResult(
-                request=score_req,
-                vmaf_score=float("nan"),
-                score_time_ms=0.0,
-                vmaf_binary_version="skipped",
-                exit_status=enc_res.exit_status,
-                stderr_tail="encode failed; score skipped",
-            )
-
-        row = _row_for(
-            job=job,
-            opts=opts,
-            preset=preset,
-            crf=crf,
-            src_sha=src_hash,
-            enc_res=enc_res,
-            score_res=score_res,
-            score_model=score_model,
-            clip_mode=clip_mode,
-            hdr_info=hdr_info,
-            hdr_forced=hdr_forced,
-            shot_meta=shot_meta,
-        )
-        # Cache put: must happen BEFORE cleanup so artifact_path exists.
-        # Store successful rows so the next run gets a hit.
-        if tune_cache is not None and src_hash and enc_res.exit_status == 0:
-            from .cache import CachedResult, TuneCache, cache_key
-
-            key = cache_key(
-                src_sha256=src_hash,
-                encoder=opts.encoder,
-                preset=preset,
-                crf=crf,
-                adapter_version="",
-                ffmpeg_version=enc_res.ffmpeg_version,
-            )
-            with contextlib.suppress(Exception):
-                # Re-compute key with the same placeholder values used at
-                # lookup so get(key) and put(key, ...) are always
-                # consistent. adapter_version / ffmpeg_version are set
-                # to "" in both paths; the corpus row records the real
-                # values in the encoder_version / ffmpeg_version columns.
-                put_key = cache_key(
-                    src_sha256=src_hash,
-                    encoder=opts.encoder,
-                    preset=preset,
-                    crf=crf,
-                    adapter_version="",
-                    ffmpeg_version="",
-                )
-                tune_cache.put(
-                    put_key,
-                    CachedResult(
-                        encode_size_bytes=enc_res.encode_size_bytes,
-                        encode_time_ms=enc_res.encode_time_ms,
-                        encoder_version=enc_res.encoder_version,
-                        ffmpeg_version=enc_res.ffmpeg_version,
-                        vmaf_score=score_res.vmaf_score,
-                        vmaf_model=score_model,
-                        score_time_ms=score_res.score_time_ms,
-                        vmaf_binary_version=score_res.vmaf_binary_version,
-                        artifact_path=out,  # placeholder; put() overwrites it
-                    ),
-                    artifact_path=out,
-                )
-
-        if not opts.keep_encodes and out.exists() and enc_res.exit_status == 0:
-            # best-effort cleanup; corpus row stays valid either way
-            with contextlib.suppress(OSError):
-                out.unlink()
-
-        yield row
+        yield _cell_row(sweep, preset, crf, encode_runner, score_runner)
 
     # Flush the cache index after the sweep completes. This batches
     # the LRU timestamp updates from get() and put() into a single
     # final write, avoiding O(N) index rewrites per cell.
-    if tune_cache is not None:
-        tune_cache.flush()
+    if sweep.tune_cache is not None:
+        sweep.tune_cache.flush()
+
+
+def _cell_row(
+    sweep: _Sweep, preset: str, crf: int, encode_runner: object | None, score_runner: object | None
+) -> dict[str, Any]:
+    """Evaluate one (preset, crf) cell and return its corpus row.
+
+    A cache hit returns the cached row; a failed reference decode
+    returns a failed row without running ffmpeg or the vmaf binary;
+    otherwise the cell is encoded and scored. Every side effect of the
+    cell, the cache put and the encode cleanup included, is done before
+    the row is returned.
+    """
+    sweep.adapter.validate(preset, crf)
+    hit_row = _cached_row(sweep, preset, crf)
+    if hit_row is not None:
+        return hit_row
+
+    out = _encode_path(sweep.opts, sweep.job.source, preset, crf)
+    if sweep.ref_decode_rc != 0:
+        return _ref_decode_failed_row(sweep, preset, crf, out)
+
+    enc_res = _encode_cell(sweep, preset, crf, out, encode_runner)
+    score_model = _cell_score_model(sweep)
+    score_req = _cell_score_request(sweep, out, score_model)
+    score_res = _score_cell(sweep.opts, score_req, enc_res, score_runner)
+    row = _cell_row_for(sweep, preset, crf, enc_res, score_res, score_model)
+    # Cache put: must happen BEFORE cleanup so artifact_path exists.
+    # Store successful rows so the next run gets a hit.
+    _cache_put(sweep, preset, crf, out, enc_res, score_res, score_model)
+    _cleanup_encode(sweep.opts, out, enc_res)
+    return row
+
+
+def _cell_cache_key(sweep: _Sweep, preset: str, crf: int, ffmpeg_version: str) -> str:
+    """Return the encode-cache key of one cell; ``adapter_version`` is ``""``."""
+    from .cache import cache_key
+
+    return cache_key(
+        src_sha256=sweep.src_hash,
+        encoder=sweep.opts.encoder,
+        preset=preset,
+        crf=crf,
+        adapter_version="",
+        ffmpeg_version=ffmpeg_version,
+    )
+
+
+def _cached_row(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any] | None:
+    """Return the cache-hit row of one cell; ``None`` on a miss or without a cache."""
+    if sweep.tune_cache is None or not sweep.src_hash:
+        return None
+    cached = sweep.tune_cache.get(_cell_cache_key(sweep, preset, crf, ""))
+    if cached is None:
+        return None
+    return _cache_hit_row(sweep, preset, crf, cached)
+
+
+def _cache_hit_row(sweep: _Sweep, preset: str, crf: int, cached: CachedResult) -> dict[str, Any]:
+    """Reconstruct a minimal corpus row from :class:`CachedResult` fields.
+
+    Provenance metadata (run_id, timestamp) gets a fresh stamp so
+    downstream tools can tell the row came from cache.
+    """
+    job, opts = sweep.job, sweep.opts
+    nan = float("nan")
+    hit_row: dict[str, Any] = {k: nan for k in CORPUS_ROW_KEYS}
+    hit_row.update(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "run_id": uuid.uuid4().hex,
+            "timestamp": _utc_now_iso(),
+            "src": str(job.source),
+            "src_sha256": sweep.src_hash,
+            "width": job.width,
+            "height": job.height,
+            "pix_fmt": job.pix_fmt,
+            "framerate": job.framerate,
+            "duration_s": job.duration_s,
+            "encoder": opts.encoder,
+            "encoder_version": cached.encoder_version,
+            "preset": preset,
+            "crf": crf,
+            "extra_params": [],
+            "encode_path": str(cached.artifact_path) if opts.keep_encodes else "",
+            "encode_size_bytes": cached.encode_size_bytes,
+            "bitrate_kbps": bitrate_kbps(cached.encode_size_bytes, job.duration_s or 1.0),
+            "encode_time_ms": cached.encode_time_ms,
+            "vmaf_score": cached.vmaf_score,
+            "vmaf_model": cached.vmaf_model,
+            "score_time_ms": cached.score_time_ms,
+            "ffmpeg_version": cached.ffmpeg_version,
+            "vmaf_binary_version": cached.vmaf_binary_version,
+            "exit_status": 0,
+            "clip_mode": "full",
+            "hdr_transfer": "",
+            "hdr_primaries": "",
+            "hdr_forced": False,
+            "shot_count": 0,
+            "shot_avg_duration_sec": nan,
+            "shot_duration_std_sec": nan,
+        }
+    )
+    return hit_row
+
+
+def _ref_decode_failed_row(sweep: _Sweep, preset: str, crf: int, out: Path) -> dict[str, Any]:
+    """Return the failed row of a cell whose sweep could not decode its reference.
+
+    ADR-0499 / Bug #V3-B: when the once-per-sweep reference decode
+    failed, every cell's score will fail the same way. Synthesize a
+    failed ``EncodeResult`` instead of re-running ffmpeg N times for
+    output we cannot score, and skip the score step too. ``_row_for``
+    requires a non-None ``enc_res`` for the row-shape invariant. The
+    score model is ``opts.vmaf_model`` after HDR resolution, without
+    the resolution-aware selection of :func:`_cell_score_model`.
+    """
+    rc = sweep.ref_decode_rc
+    enc_res = _skipped_encode_result(sweep, preset, crf, out)
+    base_model = sweep.opts.vmaf_model
+    score_model = _resolve_hdr_score_model(
+        sweep.hdr_info, base_model, warned=sweep.score_model_warned
+    )
+    score_req = _cell_score_request(sweep, out, score_model)
+    score_res = _skipped_score_result(
+        score_req, rc, f"reference decode to raw YUV failed (rc={rc}) for {sweep.job.source}"
+    )
+    return _cell_row_for(sweep, preset, crf, enc_res, score_res, score_model)
+
+
+def _skipped_encode_result(sweep: _Sweep, preset: str, crf: int, out: Path) -> EncodeResult:
+    """Return the failed encode a cell records when its reference decode failed."""
+    from .encode import EncodeRequest as _EncReq
+    from .encode import EncodeResult as _EncRes
+
+    job, rc = sweep.job, sweep.ref_decode_rc
+    return _EncRes(
+        request=_EncReq(
+            source=job.source,
+            width=int(job.width),
+            height=int(job.height),
+            pix_fmt=job.pix_fmt,
+            framerate=float(job.framerate),
+            encoder=sweep.adapter.encoder,
+            preset=preset,
+            crf=crf,
+            output=out,
+        ),
+        encode_size_bytes=0,
+        encode_time_ms=0.0,
+        encoder_version="skipped",
+        ffmpeg_version="skipped",
+        exit_status=rc,
+        stderr_tail=(f"encode skipped: reference decode failed (rc={rc})"),
+    )
+
+
+def _cell_score_request(sweep: _Sweep, out: Path, score_model: str) -> ScoreRequest:
+    """Return the score request of one cell against the sweep's reference."""
+    job = sweep.job
+    return ScoreRequest(
+        # ADR-0499 / Bug #V3-B: ``decoded_reference`` is the
+        # pre-decoded raw-YUV path when ``job.source`` was a
+        # container, or ``job.source`` itself when the source was
+        # already raw. Container sources that fail to decode are
+        # short-circuited by :func:`_ref_decode_failed_row`: the cell
+        # yields a failed row without invoking ffmpeg or the vmaf binary.
+        reference=sweep.decoded_reference,
+        distorted=out,
+        width=job.width,
+        height=job.height,
+        pix_fmt=job.pix_fmt,
+        model=score_model,
+        frame_skip_ref=sweep.frame_skip_ref,
+        frame_cnt=sweep.frame_cnt,
+        # BBB e2e v2 Bug #v2-A: forward the job duration so the
+        # post-encode container -> raw YUV decode is bounded.
+        duration_s=float(job.duration_s),
+    )
+
+
+def _skipped_score_result(
+    score_req: ScoreRequest, exit_status: int, stderr_tail: str
+) -> ScoreResult:
+    """Return the NaN score a cell records when its scoring was skipped."""
+    return ScoreResult(
+        request=score_req,
+        vmaf_score=float("nan"),
+        score_time_ms=0.0,
+        vmaf_binary_version="skipped",
+        exit_status=exit_status,
+        stderr_tail=stderr_tail,
+    )
+
+
+def _encode_source_geometry(job: CorpusJob) -> tuple[int, int, bool, tuple[str, ...]]:
+    """Return ``(src_width, src_height, source_is_container, scale_extra)``.
+
+    The source-side geometry and filter of the encode leg.
+    """
+    # ADR-0498 / Bug #v2-B: when the caller supplied source dims
+    # distinct from the rung target, tell ffmpeg the *source*
+    # geometry on the input side (-s) and add a -vf scale=W:H
+    # filter so the encoded rendition lands at the rung target.
+    # Both fields ``None`` keeps the legacy behaviour where the
+    # rung target serves as both source and encode geometry.
+    enc_src_w = int(job.src_width) if job.src_width is not None else int(job.width)
+    enc_src_h = int(job.src_height) if job.src_height is not None else int(job.height)
+    # ADR-0505 / BBB e2e v5 Bug #V5-2 root cause: when the source is
+    # a container/Y4M (anything outside :data:`_VMAF_RAW_SUFFIXES`)
+    # the encode pipe MUST treat it as a container — letting ffmpeg
+    # auto-detect format and resolution. The historic path always
+    # built the encode argv with ``-f rawvideo -pix_fmt … -s WxH``,
+    # which reinterprets the container's compressed bytes as planar
+    # YUV pixels and produces a catastrophic encode (uniformly
+    # ~50 Mbps regardless of CRF, garbage frames, VMAF in the 4-9
+    # band). The reference leg is already decoded to raw YUV by
+    # :func:`_maybe_decode_reference`; the encode leg gets the
+    # complementary fix here so cross-resolution scoring is well-
+    # defined and the CRF flag actually controls bitrate.
+    source_is_container = job.source.suffix.lower() not in _VMAF_RAW_SUFFIXES
+    scale_extra: tuple[str, ...] = ()
+    if source_is_container:
+        # Container sources: enforce the rung target via a scale
+        # filter unconditionally (ffmpeg's auto-detected geometry
+        # may not match the requested rendition). For native-
+        # geometry rungs the scale is a cheap no-op.
+        scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
+    elif (enc_src_w, enc_src_h) != (int(job.width), int(job.height)):
+        scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
+    return enc_src_w, enc_src_h, source_is_container, scale_extra
+
+
+def _cell_encode_request(sweep: _Sweep, preset: str, crf: int, out: Path) -> EncodeRequest:
+    """Return the encode request of one cell."""
+    job = sweep.job
+    enc_src_w, enc_src_h, source_is_container, scale_extra = _encode_source_geometry(job)
+    return EncodeRequest(
+        source=job.source,
+        width=enc_src_w,
+        height=enc_src_h,
+        pix_fmt=job.pix_fmt,
+        framerate=job.framerate,
+        encoder=sweep.adapter.encoder,
+        preset=preset,
+        crf=crf,
+        output=out,
+        extra_params=tuple(sweep.hdr_extra_params) + scale_extra,
+        sample_clip_seconds=sweep.clip_seconds,
+        sample_clip_start_s=sweep.start_s,
+        source_is_container=source_is_container,
+        # BBB e2e v6 Bug #V6-1 (ADR-0506): plumb the job's analysed
+        # window length so the encode is bounded when the caller
+        # didn't opt into sample-clip mode (the ladder/CLI
+        # ``--duration`` flag exercises this path). The reference
+        # decode already honours ``job.duration_s``; mirroring it on
+        # the encode side stops a 10-second smoke run from re-
+        # encoding the full 9-minute source.
+        duration_s=float(job.duration_s),
+    )
+
+
+def _encode_cell(
+    sweep: _Sweep, preset: str, crf: int, out: Path, encode_runner: object | None
+) -> EncodeResult:
+    """Encode one cell with the driver the options and the adapter select."""
+    enc_req = _cell_encode_request(sweep, preset, crf, out)
+    opts = sweep.opts
+    if opts.two_pass:
+        # Phase F (ADR-0333). The driver gracefully falls back
+        # to single-pass when the adapter does not opt into
+        # 2-pass; keeps mixed-codec corpora honest.
+        return run_two_pass_encode(enc_req, ffmpeg_bin=opts.ffmpeg_bin, runner=encode_runner)
+    if getattr(sweep.adapter, "supports_encoder_stats", False):
+        # ADR-0332: codec adapters that emit a parseable pass-1 stats
+        # file opt in via ``supports_encoder_stats``; the dispatcher
+        # routes those through the stats-capturing wrapper. Hardware
+        # encoders fall through to the legacy single-pass path.
+        return run_encode_with_stats(enc_req, ffmpeg_bin=opts.ffmpeg_bin, runner=encode_runner)
+    return run_encode(enc_req, ffmpeg_bin=opts.ffmpeg_bin, runner=encode_runner)
+
+
+def _cell_score_model(sweep: _Sweep) -> str:
+    """Return the model an encoded cell is scored against.
+
+    Resolution-aware selection when ``opts.resolution_aware`` is set,
+    then the HDR model resolution, which may warn once per sweep.
+    """
+    base_model = sweep.opts.vmaf_model
+    if sweep.opts.resolution_aware:
+        from .resolution import select_vmaf_model_version
+
+        base_model = select_vmaf_model_version(sweep.job.width, sweep.job.height)
+    return _resolve_hdr_score_model(sweep.hdr_info, base_model, warned=sweep.score_model_warned)
+
+
+def _score_cell(
+    opts: CorpusOptions, score_req: ScoreRequest, enc_res: EncodeResult, score_runner: object | None
+) -> ScoreResult:
+    """Score one encode; record a skipped score when the encode failed."""
+    if enc_res.exit_status == 0:
+        # The vmaf CLI only reads raw .yuv / .y4m input; decode the
+        # encoded container to a temporary YUV before scoring.
+        # Always use the real subprocess for the decode step — test
+        # stubs injected via ``score_runner`` handle vmaf CLI calls only.
+        import subprocess as _sp
+
+        score_req = _maybe_decode_distorted(
+            score_req, encode_dir=opts.encode_dir, ffmpeg_bin=opts.ffmpeg_bin, runner=_sp.run
+        )
+        return run_score(
+            score_req, vmaf_bin=opts.vmaf_bin, runner=score_runner, backend=opts.score_backend
+        )
+    # Skip scoring on encode failure; row records the failure.
+    return _skipped_score_result(score_req, enc_res.exit_status, "encode failed; score skipped")
+
+
+def _cell_row_for(
+    sweep: _Sweep,
+    preset: str,
+    crf: int,
+    enc_res: EncodeResult,
+    score_res: ScoreResult,
+    score_model: str,
+) -> dict:
+    """Build one cell's row with :func:`_row_for` and the sweep's per-source columns."""
+    return _row_for(
+        job=sweep.job,
+        opts=sweep.opts,
+        preset=preset,
+        crf=crf,
+        src_sha=sweep.src_hash,
+        enc_res=enc_res,
+        score_res=score_res,
+        score_model=score_model,
+        clip_mode=sweep.clip_mode,
+        hdr_info=sweep.hdr_info,
+        hdr_forced=sweep.hdr_forced,
+        shot_meta=sweep.shot_meta,
+    )
+
+
+def _cache_put(
+    sweep: _Sweep,
+    preset: str,
+    crf: int,
+    out: Path,
+    enc_res: EncodeResult,
+    score_res: ScoreResult,
+    score_model: str,
+) -> None:
+    """Store a successfully encoded cell in the encode cache, if one is open.
+
+    Must run before :func:`_cleanup_encode` so ``out`` still exists.
+    """
+    if not (sweep.tune_cache is not None and sweep.src_hash and enc_res.exit_status == 0):
+        return
+    from .cache import CachedResult
+
+    # This key, built with the real ffmpeg version, is never used: lookup
+    # and put both use the placeholder key below. It stays so this
+    # function raises exactly what it raised before the HISS-04 split.
+    _cell_cache_key(sweep, preset, crf, enc_res.ffmpeg_version)
+    with contextlib.suppress(Exception):
+        # Re-compute key with the same placeholder values used at
+        # lookup so get(key) and put(key, ...) are always
+        # consistent. adapter_version / ffmpeg_version are set
+        # to "" in both paths; the corpus row records the real
+        # values in the encoder_version / ffmpeg_version columns.
+        put_key = _cell_cache_key(sweep, preset, crf, "")
+        sweep.tune_cache.put(
+            put_key,
+            CachedResult(
+                encode_size_bytes=enc_res.encode_size_bytes,
+                encode_time_ms=enc_res.encode_time_ms,
+                encoder_version=enc_res.encoder_version,
+                ffmpeg_version=enc_res.ffmpeg_version,
+                vmaf_score=score_res.vmaf_score,
+                vmaf_model=score_model,
+                score_time_ms=score_res.score_time_ms,
+                vmaf_binary_version=score_res.vmaf_binary_version,
+                artifact_path=out,  # placeholder; put() overwrites it
+            ),
+            artifact_path=out,
+        )
+
+
+def _cleanup_encode(opts: CorpusOptions, out: Path, enc_res: EncodeResult) -> None:
+    """Delete a successful encode unless ``opts.keep_encodes`` keeps it."""
+    if not opts.keep_encodes and out.exists() and enc_res.exit_status == 0:
+        # best-effort cleanup; corpus row stays valid either way
+        with contextlib.suppress(OSError):
+            out.unlink()
 
 
 def _row_for(
@@ -997,15 +1193,36 @@ def _row_for(
     hdr_forced: bool = False,
     shot_meta: ShotMetadata | None = None,
 ) -> dict:
-    # Bitrate is computed against the *encoded* duration so sample-clip
-    # rows aren't biased low by dividing slice-bytes by full-source
-    # seconds. ``duration_s`` keeps the source provenance.
-    encoded_duration_s = (
-        enc_res.request.sample_clip_seconds
-        if enc_res.request.sample_clip_seconds > 0.0
-        else job.duration_s
+    row = _row_source_columns(job, src_sha)
+    row.update(
+        _row_result_columns(
+            job=job,
+            opts=opts,
+            preset=preset,
+            crf=crf,
+            enc_res=enc_res,
+            score_res=score_res,
+            score_model=score_model,
+            clip_mode=clip_mode,
+        )
     )
-    row = {
+    row.update(_row_context_columns(hdr_info, hdr_forced, shot_meta))
+    row.update(_row_canonical6_columns(score_res))
+    # ADR-0332: encoder-internal stats aggregates. Always emit the
+    # ten ``enc_internal_*`` columns so v3 rows are schema-uniform
+    # across codecs; aggregator returns zeros for empty input.
+    encoder_stats_frames = getattr(enc_res, "encoder_stats", ())
+    row.update(aggregate_stats(encoder_stats_frames))
+    # Schema-shape assertion — catches drift in development; cheap.
+    missing = set(CORPUS_ROW_KEYS) - row.keys()
+    if missing:
+        raise AssertionError(f"corpus row missing keys: {sorted(missing)}")
+    return row
+
+
+def _row_source_columns(job: CorpusJob, src_sha: str) -> dict[str, Any]:
+    """Return the leading provenance columns of a corpus row, in schema order."""
+    return {
         "schema_version": SCHEMA_VERSION,
         "run_id": uuid.uuid4().hex,
         "timestamp": _utc_now_iso(),
@@ -1016,6 +1233,30 @@ def _row_for(
         "pix_fmt": job.pix_fmt,
         "framerate": job.framerate,
         "duration_s": job.duration_s,
+    }
+
+
+def _row_result_columns(
+    *,
+    job: CorpusJob,
+    opts: CorpusOptions,
+    preset: str,
+    crf: int,
+    enc_res,
+    score_res,
+    score_model: str,
+    clip_mode: str,
+) -> dict[str, Any]:
+    """Return the encode and score columns of a corpus row, in schema order."""
+    # Bitrate is computed against the *encoded* duration so sample-clip
+    # rows aren't biased low by dividing slice-bytes by full-source
+    # seconds. ``duration_s`` keeps the source provenance.
+    encoded_duration_s = (
+        enc_res.request.sample_clip_seconds
+        if enc_res.request.sample_clip_seconds > 0.0
+        else job.duration_s
+    )
+    return {
         "encoder": opts.encoder,
         "encoder_version": enc_res.encoder_version,
         "preset": preset,
@@ -1032,6 +1273,14 @@ def _row_for(
         "vmaf_binary_version": score_res.vmaf_binary_version,
         "exit_status": enc_res.exit_status or score_res.exit_status,
         "clip_mode": clip_mode,
+    }
+
+
+def _row_context_columns(
+    hdr_info: HdrInfo | None, hdr_forced: bool, shot_meta: ShotMetadata | None
+) -> dict[str, Any]:
+    """Return the HDR and shot-metadata columns of a corpus row, in schema order."""
+    return {
         "hdr_transfer": hdr_info.transfer if hdr_info is not None else "",
         "hdr_primaries": hdr_info.primaries if hdr_info is not None else "",
         "hdr_forced": bool(hdr_forced),
@@ -1043,28 +1292,25 @@ def _row_for(
         "shot_avg_duration_sec": (shot_meta.avg_duration_sec if shot_meta is not None else 0.0),
         "shot_duration_std_sec": (shot_meta.duration_std_sec if shot_meta is not None else 0.0),
     }
-    # v3 canonical-6 aggregate columns (ADR-0366). Missing features
-    # (model didn't expose them, or scoring was skipped) become NaN —
-    # callers may filter on isnan() / pandas .dropna() rather than
-    # train on synthetic zeros. Iteration is in canonical order so
-    # downstream positional consumers stay stable.
+
+
+def _row_canonical6_columns(score_res) -> dict[str, float]:
+    """Return the v3 canonical-6 aggregate columns (ADR-0366).
+
+    Missing features (model didn't expose them, or scoring was skipped)
+    become NaN — callers may filter on isnan() / pandas .dropna() rather
+    than train on synthetic zeros. Iteration is in canonical order so
+    downstream positional consumers stay stable.
+    """
     feature_means = score_res.feature_means or {}
     feature_stds = score_res.feature_stds or {}
+    columns: dict[str, float] = {}
     for feature, mean_key, std_key in zip(
         CANONICAL6_FEATURES, CANONICAL6_MEAN_KEYS, CANONICAL6_STD_KEYS, strict=True
     ):
-        row[mean_key] = float(feature_means.get(feature, float("nan")))
-        row[std_key] = float(feature_stds.get(feature, float("nan")))
-    # ADR-0332: encoder-internal stats aggregates. Always emit the
-    # ten ``enc_internal_*`` columns so v3 rows are schema-uniform
-    # across codecs; aggregator returns zeros for empty input.
-    encoder_stats_frames = getattr(enc_res, "encoder_stats", ())
-    row.update(aggregate_stats(encoder_stats_frames))
-    # Schema-shape assertion — catches drift in development; cheap.
-    missing = set(CORPUS_ROW_KEYS) - row.keys()
-    if missing:
-        raise AssertionError(f"corpus row missing keys: {sorted(missing)}")
-    return row
+        columns[mean_key] = float(feature_means.get(feature, float("nan")))
+        columns[std_key] = float(feature_stds.get(feature, float("nan")))
+    return columns
 
 
 def write_jsonl(rows: Sequence[dict] | Iterator[dict], path: Path) -> int:
@@ -1281,6 +1527,59 @@ def _should_skip_refinement(
     return best_crf >= max(coarse_grid) or best_crf >= crf_max
 
 
+def _coarse_score_at(coarse_rows: Sequence[dict], best_crf: int | None) -> float:
+    """Return the ``vmaf_score`` of the first coarse row at ``best_crf``, else NaN."""
+    best_score = float("nan")
+    if best_crf is not None:
+        for r in coarse_rows:
+            if int(r["crf"]) == best_crf:
+                try:
+                    best_score = float(r["vmaf_score"])
+                except (TypeError, ValueError):
+                    best_score = float("nan")
+                break
+    return best_score
+
+
+def _fine_pass_crfs(
+    coarse_rows: Sequence[dict],
+    coarse_grid: tuple[int, ...],
+    *,
+    target_vmaf: float | None,
+    fine_radius: int,
+    fine_step: int,
+    crf_min: int,
+    crf_max: int,
+) -> tuple[int, ...]:
+    """Return the CRFs the fine pass visits after ``coarse_rows``.
+
+    Empty when :func:`_should_skip_refinement` skips the fine pass or
+    the window around the best coarse CRF holds no unmeasured point.
+    """
+    best_crf = _pick_best_crf(coarse_rows, target_vmaf=target_vmaf)
+    best_score = _coarse_score_at(coarse_rows, best_crf)
+    if _should_skip_refinement(
+        best_crf=best_crf,
+        coarse_grid=coarse_grid,
+        target_vmaf=target_vmaf,
+        best_score=best_score,
+        crf_max=crf_max,
+    ):
+        return ()
+
+    # mypy: best_crf cannot be None here — _should_skip_refinement
+    # would have returned True above.
+    assert best_crf is not None
+    return fine_grid_crfs(
+        best_crf,
+        fine_radius=fine_radius,
+        fine_step=fine_step,
+        crf_min=crf_min,
+        crf_max=crf_max,
+        exclude=coarse_grid,
+    )
+
+
 def coarse_to_fine_search(
     job: CorpusJob,
     opts: CorpusOptions,
@@ -1312,58 +1611,28 @@ def coarse_to_fine_search(
     coarse_grid = coarse_grid_crfs(crf_min=crf_min, crf_max=crf_max, coarse_step=coarse_step)
 
     for preset in presets:
-        coarse_cells = tuple((preset, c) for c in coarse_grid)
-        coarse_job = dataclasses.replace(job, cells=coarse_cells)
+        coarse_job = dataclasses.replace(job, cells=tuple((preset, c) for c in coarse_grid))
         coarse_rows: list[dict] = []
         for row in iter_rows(
-            coarse_job,
-            opts,
-            encode_runner=encode_runner,
-            score_runner=score_runner,
+            coarse_job, opts, encode_runner=encode_runner, score_runner=score_runner
         ):
             coarse_rows.append(row)
             yield row
 
-        best_crf = _pick_best_crf(coarse_rows, target_vmaf=target_vmaf)
-        best_score = float("nan")
-        if best_crf is not None:
-            for r in coarse_rows:
-                if int(r["crf"]) == best_crf:
-                    try:
-                        best_score = float(r["vmaf_score"])
-                    except (TypeError, ValueError):
-                        best_score = float("nan")
-                    break
-
-        if _should_skip_refinement(
-            best_crf=best_crf,
-            coarse_grid=coarse_grid,
+        fine_crfs = _fine_pass_crfs(
+            coarse_rows,
+            coarse_grid,
             target_vmaf=target_vmaf,
-            best_score=best_score,
-            crf_max=crf_max,
-        ):
-            continue
-
-        # mypy: best_crf cannot be None here — _should_skip_refinement
-        # would have returned True above.
-        assert best_crf is not None
-        fine_crfs = fine_grid_crfs(
-            best_crf,
             fine_radius=fine_radius,
             fine_step=fine_step,
             crf_min=crf_min,
             crf_max=crf_max,
-            exclude=coarse_grid,
         )
         if not fine_crfs:
             continue
 
-        fine_cells = tuple((preset, c) for c in fine_crfs)
-        fine_job = dataclasses.replace(job, cells=fine_cells)
+        fine_job = dataclasses.replace(job, cells=tuple((preset, c) for c in fine_crfs))
         for row in iter_rows(
-            fine_job,
-            opts,
-            encode_runner=encode_runner,
-            score_runner=score_runner,
+            fine_job, opts, encode_runner=encode_runner, score_runner=score_runner
         ):
             yield row
