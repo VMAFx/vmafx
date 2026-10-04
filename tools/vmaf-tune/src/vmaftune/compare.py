@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import functools
 import io
 import math
 import time
@@ -224,6 +225,94 @@ def _rank(rows: Iterable[RecommendResult]) -> tuple[RecommendResult, ...]:
     return (*ok_rows, *fail_rows)
 
 
+def _failed_result(codec: str, error: str) -> RecommendResult:
+    """``ok=False`` row with sentinel numeric fields and ``error``."""
+    return RecommendResult(
+        codec=codec,
+        best_crf=-1,
+        bitrate_kbps=float("nan"),
+        encode_time_ms=float("nan"),
+        vmaf_score=float("nan"),
+        ok=False,
+        error=error,
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class _PredicateRun:
+    """Predicate, worker source and row-provenance hook of one compare run.
+
+    ``worker_src`` is the pre-decoded reference YUV when the caller
+    passed one (ADR-0607), else the source path itself.
+    """
+
+    pred: PredicateFn
+    worker_src: Path
+    row_metadata: RowMetadataFn | None
+
+    def settle(self, codec: str, outcome: Callable[[], RecommendResult]) -> RecommendResult:
+        """Attach row provenance to ``outcome()``; a raising call becomes a failed row."""
+        try:
+            return _apply_row_metadata(codec, outcome(), self.row_metadata)
+        except Exception as exc:
+            failed = _failed_result(codec, f"{type(exc).__name__}: {exc}")
+            return _apply_row_metadata(codec, failed, self.row_metadata)
+
+
+def _bind_predicate(
+    predicate: PredicateFn | None,
+    src_path: Path,
+    pre_decoded_ref: Path | None,
+    row_metadata: RowMetadataFn | None,
+) -> _PredicateRun:
+    """Resolve the predicate and the ``src`` every worker receives."""
+    pred = predicate if predicate is not None else _default_predicate
+    # ADR-0607: workers receive the pre-decoded YUV when available so each
+    # bisect sees a raw-YUV src and skips the per-bisect reference decode.
+    worker_src = Path(pre_decoded_ref) if pre_decoded_ref is not None else src_path
+    return _PredicateRun(pred=pred, worker_src=worker_src, row_metadata=row_metadata)
+
+
+def _dispatch_predicates(
+    run: _PredicateRun,
+    jobs: Sequence[tuple[int, str, float]],
+    *,
+    parallel: bool,
+    max_workers: int | None,
+) -> list[tuple[int, RecommendResult]]:
+    """Run every ``(index, codec, target_vmaf)`` job through ``run``.
+
+    Returns ``(index, result)`` pairs in completion order: submission
+    order when sequential, ``as_completed`` order on the thread pool.
+    ``compare_codecs`` ranks the rows in that order, so it is kept.
+    """
+    if parallel and len(jobs) > 1:
+        return _dispatch_parallel(run, jobs, max_workers)
+    return [
+        (i, run.settle(codec, functools.partial(run.pred, codec, run.worker_src, target)))
+        for i, codec, target in jobs
+    ]
+
+
+def _dispatch_parallel(
+    run: _PredicateRun,
+    jobs: Sequence[tuple[int, str, float]],
+    max_workers: int | None,
+) -> list[tuple[int, RecommendResult]]:
+    """Thread-pool leg of :func:`_dispatch_predicates`, one future per job."""
+    workers = max_workers if max_workers is not None else len(jobs)
+    settled: list[tuple[int, RecommendResult]] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(run.pred, codec, run.worker_src, target): (i, codec)
+            for i, codec, target in jobs
+        }
+        for fut in as_completed(futures):
+            i, codec = futures[fut]
+            settled.append((i, run.settle(codec, fut.result)))
+    return settled
+
+
 def compare_codecs(
     src: Path,
     target_vmaf: float,
@@ -251,69 +340,17 @@ def compare_codecs(
     """
     if not encoders:
         raise ValueError("compare_codecs requires at least one encoder")
-    pred = predicate if predicate is not None else _default_predicate
     src_path = Path(src)
-    # ADR-0607: workers receive the pre-decoded YUV when available so each
-    # bisect sees a raw-YUV src and skips the per-bisect reference decode.
-    worker_src = Path(pre_decoded_ref) if pre_decoded_ref is not None else src_path
+    run = _bind_predicate(predicate, src_path, pre_decoded_ref, row_metadata)
     t0 = time.monotonic()
-
-    results: list[RecommendResult] = []
-    if parallel and len(encoders) > 1:
-        workers = max_workers if max_workers is not None else len(encoders)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(pred, codec, worker_src, target_vmaf): codec for codec in encoders
-            }
-            for fut in as_completed(futures):
-                codec = futures[fut]
-                try:
-                    results.append(_apply_row_metadata(codec, fut.result(), row_metadata))
-                except Exception as exc:
-                    results.append(
-                        _apply_row_metadata(
-                            codec,
-                            RecommendResult(
-                                codec=codec,
-                                best_crf=-1,
-                                bitrate_kbps=float("nan"),
-                                encode_time_ms=float("nan"),
-                                vmaf_score=float("nan"),
-                                ok=False,
-                                error=f"{type(exc).__name__}: {exc}",
-                            ),
-                            row_metadata,
-                        )
-                    )
-    else:
-        for codec in encoders:
-            try:
-                results.append(
-                    _apply_row_metadata(codec, pred(codec, worker_src, target_vmaf), row_metadata)
-                )
-            except Exception as exc:
-                results.append(
-                    _apply_row_metadata(
-                        codec,
-                        RecommendResult(
-                            codec=codec,
-                            best_crf=-1,
-                            bitrate_kbps=float("nan"),
-                            encode_time_ms=float("nan"),
-                            vmaf_score=float("nan"),
-                            ok=False,
-                            error=f"{type(exc).__name__}: {exc}",
-                        ),
-                        row_metadata,
-                    )
-                )
-
+    jobs = [(i, codec, target_vmaf) for i, codec in enumerate(encoders)]
+    settled = _dispatch_predicates(run, jobs, parallel=parallel, max_workers=max_workers)
     return ComparisonReport(
         src=str(src_path),
         target_vmaf=float(target_vmaf),
         tool_version=TOOL_VERSION,
         wall_time_ms=(time.monotonic() - t0) * 1000.0,
-        rows=_rank(results),
+        rows=_rank(result for _, result in settled),
     )
 
 
@@ -594,22 +631,11 @@ def probe_encoder_available(
     The ``runner`` hook keeps the helper test-friendly. Returns
     ``(True, "")`` when the encoder is usable.
     """
-    import shlex
     import subprocess
 
     encoder_spec = parse_encoder_runtime_token(encoder, ffmpeg_bin=ffmpeg_bin)
     adapter_encoder = encoder_spec.adapter
-
-    def _default_runner(argv: Sequence[str], timeout: float = 30.0):
-        return subprocess.run(
-            argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-            check=False,
-        )
-
-    run = runner if runner is not None else _default_runner
+    run = runner if runner is not None else _default_probe_runner
 
     # Stage 1: encoder list. ``ffmpeg -encoders`` prints one line per
     # encoder with the encoder name in the second column.
@@ -618,63 +644,100 @@ def probe_encoder_available(
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return False, f"ffmpeg unavailable for encoder probe: {exc}"
 
-    # ``run()``'s subprocess.CompletedProcess.stdout is bytes by default.
-    out = getattr(listing, "stdout", b"") or b""
-    if isinstance(out, bytes):
-        out_str = out.decode("utf-8", errors="replace")
-    else:
-        out_str = str(out)
-    if not _encoder_listed(out_str, adapter_encoder):
+    if not _encoder_listed(_probe_stdout_text(listing), adapter_encoder):
         return False, (
             f"hardware encoder not available: {adapter_encoder} not compiled into ffmpeg"
         )
 
-    # Stage 2 (hardware only): dummy 1-frame encode. The probe argv
-    # uses lavfi ``nullsrc`` so it doesn't depend on any input file
-    # being on disk. ``-f null -`` discards the output container so
-    # we don't pay for muxer setup.
-    #
-    # ADR-0601 Bug V14-A: use 320x240 at 24 fps. Hardware encoders
-    # (NVENC, QSV, AMF) reject 64x64 with -22 (EINVAL) because their
-    # fixed-function encode blocks enforce a minimum resolution
-    # (NVENC: 145x49; QSV: 128x96). 320x240 clears every known minimum.
+    # Stage 2 (hardware only): dummy 1-frame encode.
     if adapter_encoder in HARDWARE_ENCODERS:
-        # ADR-0601 Bug V14-B: QSV requires hardware-device init flags
-        # before the input and an hwupload filter before the encoder.
-        # NVENC and AMF need no pre-input device-init.
-        pre_input_args = _hw_init_args_for_encoder(adapter_encoder, vaapi_device)
-        argv = [
-            ffmpeg_bin,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            *pre_input_args,
-            "-f",
-            "lavfi",
-            "-i",
-            "nullsrc=size=320x240:rate=24:duration=0.5",
-            "-frames:v",
-            "1",
-        ]
-        if adapter_encoder in _QSV_ENCODERS:
-            argv += ["-vf", "format=nv12,hwupload=extra_hw_frames=64"]
-        argv += ["-c:v", adapter_encoder, "-f", "null", "-"]
-        try:
-            probe = run(argv)
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            return False, (f"hardware encoder not available: {adapter_encoder} probe failed: {exc}")
-        rc = getattr(probe, "returncode", -1)
-        if rc != 0:
-            tail = getattr(probe, "stdout", b"") or b""
-            tail_str = (
-                tail.decode("utf-8", errors="replace") if isinstance(tail, bytes) else str(tail)
-            )
-            last_line = _probe_error_line(tail_str)
-            return False, (
-                f"hardware encoder not available: {adapter_encoder} dummy encode failed "
-                f"(argv={shlex.join(argv)!r}): {last_line}"
-            )
+        return _probe_hw_dummy_encode(run, ffmpeg_bin, adapter_encoder, vaapi_device)
 
+    return True, ""
+
+
+def _default_probe_runner(argv: Sequence[str], timeout: float = 30.0):
+    """``subprocess.run`` with stderr folded into stdout, never raising on rc."""
+    import subprocess
+
+    return subprocess.run(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _probe_stdout_text(completed: Any) -> str:
+    """Probe output as text; ``CompletedProcess.stdout`` is bytes by default."""
+    out = getattr(completed, "stdout", b"") or b""
+    if isinstance(out, bytes):
+        return out.decode("utf-8", errors="replace")
+    return str(out)
+
+
+def _hw_probe_argv(ffmpeg_bin: str, adapter_encoder: str, vaapi_device: str) -> list[str]:
+    """Argv of the 1-frame hardware dummy encode.
+
+    The probe argv uses lavfi ``nullsrc`` so it doesn't depend on any
+    input file being on disk. ``-f null -`` discards the output
+    container so we don't pay for muxer setup.
+
+    ADR-0601 Bug V14-A: use 320x240 at 24 fps. Hardware encoders
+    (NVENC, QSV, AMF) reject 64x64 with -22 (EINVAL) because their
+    fixed-function encode blocks enforce a minimum resolution
+    (NVENC: 145x49; QSV: 128x96). 320x240 clears every known minimum.
+
+    ADR-0601 Bug V14-B: QSV requires hardware-device init flags
+    before the input and an hwupload filter before the encoder.
+    NVENC and AMF need no pre-input device-init.
+    """
+    pre_input_args = _hw_init_args_for_encoder(adapter_encoder, vaapi_device)
+    argv = [
+        ffmpeg_bin,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        *pre_input_args,
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=size=320x240:rate=24:duration=0.5",
+        "-frames:v",
+        "1",
+    ]
+    if adapter_encoder in _QSV_ENCODERS:
+        argv += ["-vf", "format=nv12,hwupload=extra_hw_frames=64"]
+    argv += ["-c:v", adapter_encoder, "-f", "null", "-"]
+    return argv
+
+
+def _probe_hw_dummy_encode(
+    run: Callable[..., Any],
+    ffmpeg_bin: str,
+    adapter_encoder: str,
+    vaapi_device: str,
+) -> tuple[bool, str]:
+    """Stage 2 of :func:`probe_encoder_available`: run the dummy encode.
+
+    Catches "encoder present but no compatible GPU runtime".
+    """
+    import shlex
+    import subprocess
+
+    argv = _hw_probe_argv(ffmpeg_bin, adapter_encoder, vaapi_device)
+    try:
+        probe = run(argv)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, (f"hardware encoder not available: {adapter_encoder} probe failed: {exc}")
+    rc = getattr(probe, "returncode", -1)
+    if rc != 0:
+        last_line = _probe_error_line(_probe_stdout_text(probe))
+        return False, (
+            f"hardware encoder not available: {adapter_encoder} dummy encode failed "
+            f"(argv={shlex.join(argv)!r}): {last_line}"
+        )
     return True, ""
 
 
@@ -733,15 +796,34 @@ def compare_codecs_sweep(
     if not target_vmafs:
         raise ValueError("compare_codecs_sweep requires at least one target VMAF")
 
-    pred = predicate if predicate is not None else _default_predicate
     src_path = Path(src)
-    # ADR-0607: workers receive the pre-decoded YUV when available so each
-    # bisect sees a raw-YUV src and skips the per-bisect reference decode.
-    worker_src = Path(pre_decoded_ref) if pre_decoded_ref is not None else src_path
+    run = _bind_predicate(predicate, src_path, pre_decoded_ref, row_metadata)
     t0 = time.monotonic()
+    availability = _probe_availability(encoders, availability_probe)
+    pairs: list[tuple[str, float]] = [(c, float(t)) for c in encoders for t in target_vmafs]
+    results, dispatch_pairs = _split_unavailable(pairs, availability, row_metadata)
+    settled = _dispatch_predicates(run, dispatch_pairs, parallel=parallel, max_workers=max_workers)
+    for i, result in settled:
+        results[i] = result
+    return SweepReport(
+        src=str(src_path),
+        target_vmafs=tuple(float(t) for t in target_vmafs),
+        tool_version=TOOL_VERSION,
+        wall_time_ms=(time.monotonic() - t0) * 1000.0,
+        rows=tuple(results),
+        row_targets=tuple(t for _, t in pairs),
+    )
 
-    # Probe each encoder once up front. Cache the per-encoder verdict
-    # so we don't pay the probe cost N times across target sweeps.
+
+def _probe_availability(
+    encoders: Sequence[str],
+    availability_probe: Callable[[str], tuple[bool, str]] | None,
+) -> dict[str, tuple[bool, str]]:
+    """Probe each encoder once up front; a crashing probe marks it unavailable.
+
+    The per-encoder verdict is cached so the probe cost is not paid N
+    times across target sweeps.
+    """
     probe = availability_probe if availability_probe is not None else _no_probe
     availability: dict[str, tuple[bool, str]] = {}
     for codec in encoders:
@@ -749,88 +831,28 @@ def compare_codecs_sweep(
             availability[codec] = probe(codec)
         except Exception as exc:
             availability[codec] = (False, f"hardware encoder not available: probe crashed: {exc}")
+    return availability
 
-    # Build the work list, substituting unavailable rows before dispatch.
-    pairs: list[tuple[str, float]] = [(c, float(t)) for c in encoders for t in target_vmafs]
+
+def _split_unavailable(
+    pairs: Sequence[tuple[str, float]],
+    availability: Mapping[str, tuple[bool, str]],
+    row_metadata: RowMetadataFn | None,
+) -> tuple[list[RecommendResult], list[tuple[int, str, float]]]:
+    """Fill unavailable ``(codec, target)`` rows before dispatch.
+
+    Returns the row list (``None`` where a job still has to run) and
+    the ``(index, codec, target)`` jobs to dispatch.
+    """
     results: list[RecommendResult] = [None] * len(pairs)  # type: ignore[list-item]
-    target_track: list[float] = [t for _, t in pairs]
-
     dispatch_pairs: list[tuple[int, str, float]] = []
     for i, (codec, target) in enumerate(pairs):
         ok, reason = availability[codec]
         if not ok:
-            results[i] = _apply_row_metadata(
-                codec,
-                RecommendResult(
-                    codec=codec,
-                    best_crf=-1,
-                    bitrate_kbps=float("nan"),
-                    encode_time_ms=float("nan"),
-                    vmaf_score=float("nan"),
-                    ok=False,
-                    error=reason,
-                ),
-                row_metadata,
-            )
+            results[i] = _apply_row_metadata(codec, _failed_result(codec, reason), row_metadata)
         else:
             dispatch_pairs.append((i, codec, target))
-
-    if parallel and len(dispatch_pairs) > 1:
-        workers = max_workers if max_workers is not None else len(dispatch_pairs)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(pred, codec, worker_src, target): (i, codec)
-                for i, codec, target in dispatch_pairs
-            }
-            for fut in as_completed(futures):
-                i, codec = futures[fut]
-                try:
-                    results[i] = _apply_row_metadata(codec, fut.result(), row_metadata)
-                except Exception as exc:
-                    results[i] = _apply_row_metadata(
-                        codec,
-                        RecommendResult(
-                            codec=codec,
-                            best_crf=-1,
-                            bitrate_kbps=float("nan"),
-                            encode_time_ms=float("nan"),
-                            vmaf_score=float("nan"),
-                            ok=False,
-                            error=f"{type(exc).__name__}: {exc}",
-                        ),
-                        row_metadata,
-                    )
-    else:
-        for i, codec, target in dispatch_pairs:
-            try:
-                results[i] = _apply_row_metadata(
-                    codec,
-                    pred(codec, worker_src, target),
-                    row_metadata,
-                )
-            except Exception as exc:
-                results[i] = _apply_row_metadata(
-                    codec,
-                    RecommendResult(
-                        codec=codec,
-                        best_crf=-1,
-                        bitrate_kbps=float("nan"),
-                        encode_time_ms=float("nan"),
-                        vmaf_score=float("nan"),
-                        ok=False,
-                        error=f"{type(exc).__name__}: {exc}",
-                    ),
-                    row_metadata,
-                )
-
-    return SweepReport(
-        src=str(src_path),
-        target_vmafs=tuple(float(t) for t in target_vmafs),
-        tool_version=TOOL_VERSION,
-        wall_time_ms=(time.monotonic() - t0) * 1000.0,
-        rows=tuple(results),
-        row_targets=tuple(target_track),
-    )
+    return results, dispatch_pairs
 
 
 def _no_probe(_codec: str) -> tuple[bool, str]:
