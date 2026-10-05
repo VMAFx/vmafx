@@ -17,6 +17,7 @@ import re
 import shutil
 import sys
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -43,7 +44,7 @@ def image_keys(config_text: str) -> set[str]:
     }
 
 
-def base_files(files: list[str], read) -> set[str]:
+def base_files(files: list[str], read: Callable[[str], str]) -> set[str]:
     """build-config.env and every Dockerfile in the single-source gate's scope that
     mirrors one of its image keys as an ARG default. Derived from the tree, so a
     new mirror the custom manager does not select fails the tests below instead
