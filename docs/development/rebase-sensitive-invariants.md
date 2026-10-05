@@ -132,6 +132,17 @@ backend within it.
   last), `-ss` of the per-shot probe and signalstats takes seconds
   (`ShotStartArg` / `_shot_start_arg`), and no HDR argv carries `-master_display`
   or `-max_cll` for `hevc_nvenc` (FFmpeg has no such option).
+- **VMAFx API compat shims own four libvmaf entry points ([ADR-1852](../adr/1852-vmafx-api-redesign.md))**:
+  `vmaf_init`, `vmaf_close`, `vmaf_version` and `vmaf_feature_score_at_index`
+  are generated from `core/api/vmafx.toml` into
+  `core/src/vmafx/compat_libvmaf_gen.c` on the `vmafx_*` API; their former
+  bodies are `vmaf_engine_*` in `core/src/libvmaf.c`. An upstream sync that
+  changes one of the four ports the change into its `vmaf_engine_*` body and
+  never re-adds the old definition (duplicate symbol). Generated files are
+  never hand-merged: take either side and run
+  `python3 scripts/codegen/vmafx-api.py --write`; the Meson test
+  `test_vmafx_api_generated_current` fails on any difference. See
+  [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fail when libvmaf.so exports anything but its public API (ADR-0379).
 
-Every exported symbol must be either a ``vmaf_*`` function or object declared
-in a public header under ``core/include/``, or belong to a C++ runtime whose
+Every exported symbol must be either a ``vmaf_*`` or ``vmafx_*`` function or
+object declared in a public header under ``core/include/``, or belong to a C++ runtime whose
 headers declare its namespace with default visibility: ``std`` (libstdc++) and,
 in SYCL builds, ``sycl`` (DPC++). Template members of those namespaces that a TU
 instantiates are exported whatever the compile flags, and they are the
@@ -130,7 +130,8 @@ def runtime_owned(mangled: str, plain: str) -> bool:
 def public_identifiers(include_dir: Path) -> set[str]:
     names: set[str] = set()
     for header in include_dir.rglob("*.h"):
-        names.update(re.findall(r"\bvmaf_\w+", header.read_text(errors="replace")))
+        # vmafx_: the VMAFx API headers under core/include/vmafx/ (ADR-1852).
+        names.update(re.findall(r"\bvmafx?_\w+", header.read_text(errors="replace")))
     return names
 
 

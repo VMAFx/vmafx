@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 443,
+  "tus": 449,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -165,6 +165,10 @@
     "core/src/sycl/dispatch_strategy.cpp",
     "core/src/thread_locale.cpp",
     "core/src/thread_pool.c",
+    "core/src/vmafx/compat_libvmaf_gen.c",
+    "core/src/vmafx/context.c",
+    "core/src/vmafx/error.c",
+    "core/src/vmafx/status_gen.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
     "core/test/dnn/test_dnn_session_api.c",
@@ -424,6 +428,8 @@
     "core/test/test_vif_tools.c",
     "core/test/test_vmaf_roi.c",
     "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_vmafx_abi_layout.c",
+    "core/test/test_vmafx_api_slice.c",
     "core/test/test_x86_cpu_gate.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
@@ -764,6 +770,31 @@
         }
       },
       "previous_baseline_sha256": "20d4783a034368045e55f07d9c3276317edcc2539ee72e78d13a8df23146dfda"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/vmafx/compat_libvmaf_gen.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/error.c",
+        "core/src/vmafx/status_gen.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_api_slice.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/compat_libvmaf_gen.c",
+            "core/src/vmafx/context.c",
+            "core/src/vmafx/error.c",
+            "core/src/vmafx/status_gen.c",
+            "core/test/test_vmafx_abi_layout.c",
+            "core/test/test_vmafx_api_slice.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "6c72929411ec0a50d5dc3bcbc0078bf87c17700a1e700b4b6db0919d0ced0b25"
     }
   ]
 }

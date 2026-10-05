@@ -321,6 +321,10 @@ core/src/sycl/picture_sycl.cpp
 core/src/sycl/scratch_check.cpp
 core/src/thread_locale.cpp
 core/src/thread_pool.c
+core/src/vmafx/compat_libvmaf_gen.c
+core/src/vmafx/context.c
+core/src/vmafx/error.c
+core/src/vmafx/status_gen.c
 core/src/x86/cpu.c
 core/test/barten_csf_cxx.cpp
 core/test/dnn/test_dnn_session_api.c
@@ -749,6 +753,8 @@ core/test/test_vif_skip_scale0.c
 core/test/test_vif_tools.c
 core/test/test_vmaf_roi.c
 core/test/test_vmaf_roi_bounds.c
+core/test/test_vmafx_abi_layout.c
+core/test/test_vmafx_api_slice.c
 core/test/test_x86_cpu_gate.c
 core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c

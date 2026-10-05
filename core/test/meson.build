@@ -1222,6 +1222,45 @@ test_public_api_score = executable('test_public_api_score',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# ADR-1852: VMAFx API prototype slice. test_vmafx_abi_layout is generated from
+# core/api/vmafx.toml (struct sizes, offsets and constants as _Static_assert);
+# test_vmafx_api_slice exercises the hand-written core and the generated
+# libvmaf compat shims; test_vmafx_api_generated_current fails when any
+# generated file differs from what the definition produces (a hand edit).
+test_vmafx_abi_layout = executable('test_vmafx_abi_layout',
+    ['test_vmafx_abi_layout.c'],
+    include_directories : [libvmaf_inc],
+)
+test('test_vmafx_abi_layout', test_vmafx_abi_layout, suite : ['fast'])
+
+test_vmafx_api_slice = executable('test_vmafx_api_slice',
+    ['test.c', 'test_vmafx_api_slice.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_api_slice', test_vmafx_api_slice, suite : ['fast'])
+
+test('test_vmafx_api_generated_current',
+    import('python').find_installation(),
+    args : [meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'vmafx-api.py',
+            '--check', '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+)
+
+if get_option('default_library') != 'static'
+    test('test_vmafx_python_binding',
+        import('python').find_installation(),
+        args : [files('test_vmafx_python_binding.py')],
+        env : {
+            'VMAFX_LIBRARY' : libvmaf_public_link.full_path(),
+            'PYTHONPATH' : meson.project_source_root() / '..' / 'bindings' / 'python',
+        },
+        depends : libvmaf_public_link,
+        suite : ['fast'],
+    )
+endif
+
 # Linux static-link fault control for output_file_open(). The project's
 # large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
 # and injects EINTR once for the target path.
