@@ -563,7 +563,7 @@ static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
 /* The device planes and the pipelines. */
 static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 {
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
@@ -586,7 +586,7 @@ static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 static int cambi_metal_release(IntegerCambiStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    void * const*handles[] = {&s->pso_filter_mode, &s->pso_decimate, &s->pso_mask,
+    void **const handles[] = {&s->pso_filter_mode, &s->pso_decimate, &s->pso_mask,
                         &s->d_tmp,           &s->d_mask,       &s->d_image};
     for (auto & handle : handles) {
         if (*handle != nullptr) {
@@ -836,7 +836,7 @@ static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, 
                              unsigned height, uint16_t window, const unsigned *heatmap_frame,
                              double *score)
 {
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -895,7 +895,7 @@ static double cambi_metal_cap(const IntegerCambiStateMetal *s, double score)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerCambiStateMetal  const*s = (IntegerCambiStateMetal *)fex->priv;
+    IntegerCambiStateMetal *const s = (IntegerCambiStateMetal *)fex->priv;
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "Cambi_feature_cambi_score",
                                                       cambi_metal_cap(s, s->dist_score), index);

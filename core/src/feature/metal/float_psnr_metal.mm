@@ -152,7 +152,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_lc; }
 
     {
-        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
@@ -188,8 +188,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>      device = (__bridge id<MTLDevice>)dh;
@@ -264,7 +264,7 @@ static double float_psnr_noise(const FloatPsnrStateMetal *s)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatPsnrStateMetal  const*s = (FloatPsnrStateMetal *)fex->priv;
+    FloatPsnrStateMetal *const s = (FloatPsnrStateMetal *)fex->priv;
 
     const double mse = float_psnr_noise(s);
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the

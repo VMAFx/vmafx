@@ -240,7 +240,7 @@ static int allocate(FloatSsimStateMetal *s)
     int const err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, windows * sizeof(uint64_t));
     if (err != 0) { return err; }
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
@@ -350,7 +350,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         dist_pic->w[0] != s->frame_w || dist_pic->h[0] != s->frame_h) {
         return -EINVAL;
     }
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -404,7 +404,7 @@ static int emit_lcs(const FloatSsimStateMetal *s, const VmafMtlSsimFrameSums *su
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatSsimStateMetal  const*s = (FloatSsimStateMetal *)fex->priv;
+    FloatSsimStateMetal *const s = (FloatSsimStateMetal *)fex->priv;
     const uint64_t *terms = (const uint64_t *)s->terms.host_view;
     if (terms == nullptr) { return -EINVAL; }
 

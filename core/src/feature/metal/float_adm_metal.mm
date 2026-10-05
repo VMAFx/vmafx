@@ -448,7 +448,7 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 /* Release every retained PSO. Safe on a partially-built state. */
 static void release_psos(FloatAdmStateMetal *s)
 {
-    void * const*psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
+    void **const psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
                      &s->pso_dwt_hori,    &s->pso_dwt_vert_16, &s->pso_dwt_vert_8};
     for (auto & pso : psos) {
         if (*pso) {
@@ -471,7 +471,7 @@ static void release_buffers(FloatAdmStateMetal *s)
             s->dis_band[i] = nullptr;
         }
     }
-    void * const*single[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
+    void **const single[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
                        &s->csf_fa,  &s->csf_r,   &s->csf_fr,      &s->terms,       &s->rows};
     for (auto & i : single) {
         if (*i) {
@@ -531,7 +531,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_ctx; }
 
     {
-        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
@@ -569,7 +569,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
         const size_t csf_bytes =
             (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-        void * const*csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
+        void **const csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
         for (auto & csf_slot : csf_slots) {
             id<MTLBuffer> cb = [device newBufferWithLength:csf_bytes
                                                    options:MTLResourceStorageModeShared];
@@ -789,8 +789,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -853,7 +853,7 @@ static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
 
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
-    FloatAdmStateMetal  const*s = (FloatAdmStateMetal *)fex->priv;
+    FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
 
     double score_num = 0.0;
     double score_den = 0.0;

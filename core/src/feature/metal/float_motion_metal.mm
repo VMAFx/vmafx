@@ -482,7 +482,7 @@ static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
-    FloatMotionStateMetal  const*s = (FloatMotionStateMetal *)fex->priv;
+    FloatMotionStateMetal *const s = (FloatMotionStateMetal *)fex->priv;
 
     /* CPU float_motion.c::motion_append_forced_zero: every output 0. */
     int err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
@@ -522,7 +522,7 @@ static int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal
     if (err != 0) { return err; }
     if (s->rb.host_view == nullptr) { return -ENOMEM; }
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
@@ -711,7 +711,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     int err = fm_metal_upload(s, ref_pic);
     if (err != 0) { return err; }
 
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
     id<MTLCommandBuffer> cmd = [queue commandBuffer];

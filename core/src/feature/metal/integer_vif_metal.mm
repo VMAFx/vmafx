@@ -349,7 +349,7 @@ static int vif_metal_alloc_buffers(IntegerVifStateMetal *s, id<MTLDevice> device
 static int vif_metal_release(IntegerVifStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    void * const*psos[] = {&s->pso_decimate_16, &s->pso_decimate_8, &s->pso_compute_16,
+    void **const psos[] = {&s->pso_decimate_16, &s->pso_decimate_8, &s->pso_compute_16,
                      &s->pso_compute_8};
     for (auto & pso : psos) {
         if (*pso != nullptr) {
@@ -389,7 +389,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err == 0) {
         err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     }
-    void  const*dh = (err == 0) ? vmaf_metal_context_device_handle(s->ctx) : nullptr;
+    void *const dh = (err == 0) ? vmaf_metal_context_device_handle(s->ctx) : nullptr;
     if (err == 0 && dh == nullptr) {
         err = -ENODEV;
     }
@@ -588,7 +588,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
     s->index = index;
 
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -642,7 +642,7 @@ static void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num,
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerVifStateMetal  const*s = (IntegerVifStateMetal *)fex->priv;
+    IntegerVifStateMetal *const s = (IntegerVifStateMetal *)fex->priv;
 
     double num[IVIF_SCALES];
     double den[IVIF_SCALES];

@@ -665,7 +665,7 @@ static int build_pipelines(Ssimu2StateMetal *s, id<MTLDevice> device)
 static int ss2m_alloc_device_buffers(Ssimu2StateMetal *s, id<MTLDevice> device)
 {
     const size_t bytes = s->three_plane_bytes;
-    void * const*slots[] = {
+    void **const slots[] = {
         &s->buf_ref_xyb, &s->buf_dis_xyb, &s->buf_mul, &s->buf_blur_scr,
         &s->buf_mu1,     &s->buf_mu2,     &s->buf_s11, &s->buf_s22, &s->buf_s12,
     };
@@ -680,7 +680,7 @@ static int ss2m_alloc_device_buffers(Ssimu2StateMetal *s, id<MTLDevice> device)
 
 static void ss2m_release_device_buffers(Ssimu2StateMetal *s)
 {
-    void * const*slots[] = {
+    void **const slots[] = {
         &s->buf_ref_xyb, &s->buf_dis_xyb, &s->buf_mul, &s->buf_blur_scr,
         &s->buf_mu1,     &s->buf_mu2,     &s->buf_s11, &s->buf_s22, &s->buf_s12,
     };
@@ -744,7 +744,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_ctx; }
 
     {
-        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
@@ -897,8 +897,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)index;
     Ssimu2StateMetal *s = (Ssimu2StateMetal *)fex->priv;
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 

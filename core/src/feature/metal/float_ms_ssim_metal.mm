@@ -393,7 +393,7 @@ static int init_metal_device_context(FloatMsSsimStateMetal *s)
         return err;
     }
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) {
         (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
         vmaf_metal_context_destroy(s->ctx);
@@ -554,7 +554,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     s->index = index;
 
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
 
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
@@ -637,7 +637,7 @@ static int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane, un
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMsSsimStateMetal  const*s = (FloatMsSsimStateMetal *)fex->priv;
+    FloatMsSsimStateMetal *const s = (FloatMsSsimStateMetal *)fex->priv;
 
     double plane_scores[MS_SSIM_MAX_PLANES] = {0.0};
     double l_means[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
