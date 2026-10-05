@@ -20,7 +20,7 @@ extern "C" {
  * wrapper, see ADR-0361).
  */
 
-using VmafMetalContext = struct VmafMetalContext;
+typedef struct VmafMetalContext VmafMetalContext;
 
 int vmaf_metal_context_new(VmafMetalContext **ctx, int device_index);
 void vmaf_metal_context_destroy(VmafMetalContext *ctx);

@@ -45,7 +45,7 @@ static const uint16_t vif_filter1d_table[4][18] = {
 
 static const int vif_filter1d_width[4] = {17, 9, 5, 3};
 
-using VifBuffer = struct VifBuffer {
+typedef struct VifBuffer {
     void *data;
 
     void *ref;
@@ -72,20 +72,20 @@ using VifBuffer = struct VifBuffer {
     ptrdiff_t stride_16;
     ptrdiff_t stride_32;
     ptrdiff_t stride_tmp;
-};
+} VifBuffer;
 
-using VifResiduals = struct VifResiduals {
+typedef struct VifResiduals {
     int64_t accum_num_log;
     int64_t accum_den_log;
     int64_t accum_num_non_log;
     int64_t accum_den_non_log;
-};
+} VifResiduals;
 
-using VifPublicState = struct VifPublicState {
+typedef struct VifPublicState {
     VifBuffer buf;
     uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
     double vif_enhn_gain_limit;
-};
+} VifPublicState;
 
 static inline void PADDING_SQ_DATA(const VifBuffer *buf, int w, unsigned fwidth_half)
 {

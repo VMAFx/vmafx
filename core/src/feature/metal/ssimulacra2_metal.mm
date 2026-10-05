@@ -52,6 +52,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include <numbers>
 #include <utility>
 
 /* feature_extractor.h uses `#if defined(__cplusplus)` to include <atomic>

@@ -83,11 +83,11 @@ extern "C" {
  *               just a fence — the readback itself is a host load,
  *               not a copy.
  */
-using VmafMetalKernelLifecycle = struct VmafMetalKernelLifecycle {
+typedef struct VmafMetalKernelLifecycle {
     uintptr_t cmd_queue;
     uintptr_t submit;
     uintptr_t finished;
-};
+} VmafMetalKernelLifecycle;
 
 /*
  * One MTLBuffer (storage-mode shared on Apple Silicon → host can read
@@ -99,11 +99,11 @@ using VmafMetalKernelLifecycle = struct VmafMetalKernelLifecycle {
  * will cache the contents pointer in `host_view` to avoid the
  * Objective-C++ message-send on every collect.
  */
-using VmafMetalKernelBuffer = struct VmafMetalKernelBuffer {
+typedef struct VmafMetalKernelBuffer {
     uintptr_t buffer; /* MTLBuffer handle (uintptr_t cast) */
     void *host_view;  /* cached `[buffer contents]` for host loads */
     size_t bytes;
-};
+} VmafMetalKernelBuffer;
 
 /*
  * Init: command queue + event-pair create. Scaffold returns -ENOSYS;
