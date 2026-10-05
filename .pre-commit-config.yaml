@@ -485,6 +485,25 @@ repos:
         files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: check-tidy-coverage
+        # Every tracked C, C++, CUDA, HIP, Objective-C++ and Metal translation
+        # unit is read by a clang-tidy lane (measured_sources of a
+        # scripts/ci/tidy-baseline-*.json) or sits in the exception list
+        # .config/lint-exceptions.d/clang-tidy-coverage.toml with a reason and
+        # an expiry. pass_filenames is off: the answer depends on the whole set.
+        name: Every translation unit is read by a tidy lane or excepted
+        entry: python3 scripts/ci/check-tidy-coverage.py
+        language: system
+        files: '(\.(c|cc|cpp|cxx|cu|hip|mm|metal)|scripts/ci/(tidy-baseline-[a-z0-9]+\.json|check-tidy-coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml)$'
+        pass_filenames: false
+
+      - id: test-tidy-coverage
+        name: The tidy coverage check refuses a unit no lane reads
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_tidy_coverage.py
+        language: system
+        files: '^(scripts/ci/(check-tidy-coverage\.py|tests/test_check_tidy_coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-tidy-lane-container
         # ADR-1471: the lanes are measured in the dev container. The lane
         # configuration lives in the Makefile, the hosted job repeats the cpu
@@ -494,7 +513,7 @@ repos:
         name: Tidy lanes in the dev container (ADR-1471)
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_lane_container.py
         language: system
-        files: '^(Makefile|scripts/dev/tidy-lane\.sh|scripts/ci/(clang-tidy-(hip|sycl)\.sh|tests/test_tidy_lane_container\.py)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/dev/tidy-lane\.sh|scripts/ci/(clang-tidy-(hip|sycl)\.sh|tests/test_tidy_lane_container\.py)|\.github/workflows/(lint-and-format|tidy-metal)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-gen-gpu-compile-commands

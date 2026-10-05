@@ -1,0 +1,274 @@
+# Declared exceptions to the clang-tidy coverage rule (ADR-1762): a tracked translation unit that no lane's
+# measured_sources can read. Format and rules: scripts/ci/lint_exceptions.py; checked by
+# scripts/ci/check-tidy-coverage.py. An entry stops holding on `expires`; a lane that starts reading the file
+# makes its entry stale.
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-01/c/positive/goto.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-02/c/negative/bounded-while.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-02/c/positive/spaced-while-one.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/c/gap/cyclomatic-high.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/c/negative/loc-at-cap-60.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/c/positive/loc-func-over-cap.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-08/c/gap/system-shell.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-08/c/negative/bounded-snprintf.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-08/c/positive/gets.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-09/c/gap/unproven-pointer-arith.c"
+reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
+expires = 2027-06-30
+
+[[exception]]
+path = "cmd/vmafx-node/bpf/rclone_bypass.bpf.c"
+reason = "eBPF program: includes vmlinux.h, generated from the running kernel's BTF and absent on every runner, so clang-tidy stops at the include; compiled by clang -target bpf through bpf2go."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/convolve.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/corrDn.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges-orig.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/wrap.c"
+reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_adm.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_moment.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_motion.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_ms_ssim.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_psnr.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_ssim.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/float_vif.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_adm.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_cambi.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_ciede.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_motion.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_motion_v2.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_psnr.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_psnr_hvs.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_ssim.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/integer_vif.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/metal/ssimulacra2.metal"
+reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/feature/tad_rust.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo and cbindgen; the dev image has neither, so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/test/test_sycl_cuda_serial_upload_lifetime.c"
+reason = "Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); the cuda lane configures sycl off and the sycl lane configures cuda off, so no lane's compile database has an entry. Needs a lane with both backends."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/test/test_tad_rust.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo and cbindgen; the dev image has neither, so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/tools/compat/win32/getopt.c"
+reason = "Windows-only translation unit (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/tools/test/test_vmaf_windows_utf8_argv.cpp"
+reason = "Windows-only test (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
+expires = 2027-03-31
+
+[[exception]]
+path = "scripts/dev/hip_dispatch_drop_probe.hip"
+reason = "Standalone hipcc probe (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01), built by hand, not by meson; no compile database has an entry."
+expires = 2026-12-31
+
+[[exception]]
+path = "scripts/dev/upstream_parity_harness.c"
+reason = "Built by scripts/dev/upstream_parity.py against two trees (upstream Netflix/vmaf and this one) with its own command line, not by meson; no compile database has an entry."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/src/interop/pelorus_deband_params.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/interop/pelorus_denoise_params.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/interop/pelorus_interop.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/interop/pelorus_qp_report_csv.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/src/interop/pelorus_version.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31
+
+[[exception]]
+path = "core/test/test_pelorus_interop.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+expires = 2027-03-31

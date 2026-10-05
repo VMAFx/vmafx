@@ -194,14 +194,15 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 Every tracked `.c`, `.cc`, `.cpp`, `.cxx`, `.cu`, `.hip`, `.mm` and `.metal`
 file is in the `measured_sources` of at least one baseline
 (`scripts/ci/tidy-baseline-<lane>.json`) or in
-the shared lint exception list. The check that fails otherwise lands in the
-follow-up pull request; until then the rule is by review.
+the shared lint exception list (`.config/lint-exceptions.d/clang-tidy-coverage.toml`).
+`python3 scripts/ci/check-tidy-coverage.py` fails otherwise; it is a pre-commit hook
+(`check-tidy-coverage`) and runs in CI with the rest of the hooks.
 
 A new translation unit therefore has to land in a lane: configure the option
 that builds it in the lane that reads it, and write its allowance with
 `scripts/dev/tidy-lane.sh --write --only <path> <lane>` (the scoped write also
 records the file as measured). A file no lane can read gets one entry in the
-exception list: the path, the rule `tidy-coverage`, a reason that names the
+exception list: the path, the rule `clang-tidy-coverage` (the file name), a reason that names the
 missing tool or toolchain, and an expiry date. An entry fails the check once
 it has expired, when its file is gone, and when a lane reads the file after
 all; extend or delete it, never leave it.
@@ -211,6 +212,7 @@ all; extend or delete it, never leave it.
 | C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |
 | Metal host code (`core/src/metal/*.mm`, `core/src/feature/metal/*_metal.mm`) and the Metal-only C tests | `metal` (macOS, below) | |
 | Metal kernels (`core/src/feature/metal/*.metal`) | nothing | Upstream clang-tidy has no Metal language mode (`clang -x metal` answers "language not recognized"). |
+| Pelorus mirror (`core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) | nothing here | Byte-identical mirror of VMAFx/pelorus (ADR-1113); `scripts/ci/pelorus-mirror-paths.txt` keeps it out of every lane. It is tidied in the pelorus repository's own CI at the pinned SHA, fixed there and re-vendored. One entry per file; the check fails on a mirror file without one. |
 | `.config/hiss/testdata/` | nothing | The planted defect is the fixture. |
 | `cmd/vmafx-node/bpf/` | nothing | Includes `vmlinux.h`, generated from a running kernel's BTF. |
 | `core/tools/compat/win32/getopt.c`, `core/tools/test/test_vmaf_windows_utf8_argv.cpp` | nothing | Built on Windows only. |
@@ -239,6 +241,16 @@ The job is not a required check yet. It becomes one after it has passed on
 `master`, the path the SYCL lane took (ADR-1297). The artifact of a run
 (`tidy-ratchet-metal`) holds every diagnostic behind the counts; the baseline
 is the same JSON without them.
+
+Today the baseline holds 939 findings across the 21 Objective-C++ files and
+five C tests, not zero: the first hosted measurement was 1640, and the
+fixes `clang-tidy` could make itself brought it down. Dispatch the workflow with
+`fix=true` to have the runner apply those fixes and upload them as
+`tidy-metal-fixes.patch`; apply the patch to the `.mm` files only (the fixes
+to the headers break the Metal shader compiler and the C translation units that
+include them), push, and dispatch again without `fix` to compile and measure.
+The ratchet refuses growth; the remaining findings are tracked by
+`T-TIDY-METAL-HOST-FINDINGS-2026-10-05` in [state](../state.md).
 
 ## What the hosted job covers
 

@@ -555,6 +555,16 @@ positive operands) and must not replace the fp32 correction with an integer
 division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
 `test_cuda_adm_cm_register_pressure`. `core/test/test_adm_decouple_recip.cpp`
 (one executable per twin header) fails on the old form without a device.
+## The tidy coverage check (RC3 exit, 2026-10-05)
+
+`rc3-tidy-coverage-2`. Tooling only. `scripts/ci/check-tidy-coverage.py`, its hooks in
+`.pre-commit-config.yaml` and `.config/lint-exceptions.d/clang-tidy-coverage.toml` belong
+together; a sync that adds a `.c` / `.cpp` / `.mm` / `.cu` / `.hip` file lands it in a lane
+(`scripts/dev/tidy-lane.sh --write --only <file> <lane>`) or adds one entry there. The
+Pelorus mirror entries mirror `scripts/ci/pelorus-mirror-paths.txt`
+(`test_check_tidy_coverage.py` compares them). `write-compile-commands.py` keeps its
+`OPTIONAL_COMPILER_RULES`: without them the macOS lane loses every `.mm`.
+
 ## Every translation unit is read by a tidy lane (RC3 exit, 2026-10-05)
 
 `rc3-tidy-coverage`. Tooling only; no library change.

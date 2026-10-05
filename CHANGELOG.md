@@ -2633,6 +2633,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/development/release-workflow-verification.md`.
 
 
+- `scripts/ci/check-tidy-coverage.py` (pre-commit hook `check-tidy-coverage`) fails when a tracked C, C++, CUDA, HIP, Objective-C++ or Metal translation unit is in no clang-tidy lane's measured sources and not in `.config/lint-exceptions.d/clang-tidy-coverage.toml`; the Metal kernels, the Pelorus mirror and the other files no tool can read are listed there with a reason and an expiry. `write-compile-commands.py` now exports the Objective-C and Objective-C++ rules, so the macOS lane reads the `.mm` files. Details: [tidy lanes](docs/development/tidy-lanes.md). The macOS lane's baseline (`scripts/ci/tidy-baseline-metal.json`) records 939 findings in the Metal host code; `Tidy Metal` takes a `fix` dispatch input that uploads clang-tidy's own fixes as a patch.
+
+
 - **Every translation unit is read by a clang-tidy lane, or excepted by name.**
   The `cpu` lane now configures the embedded MCP server, a new `clang` lane
   builds the libFuzzer harnesses (which need clang), and a macOS `metal` lane
