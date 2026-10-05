@@ -22,9 +22,11 @@
 
 #ifdef __cplusplus
 #include <climits>
+#include <cstddef>
 #else
 #include <limits.h>
 #include <stdbool.h>
+#include <stddef.h>
 #endif
 #include <pthread.h>
 
@@ -146,6 +148,11 @@ char *vmaf_model_generate_name(VmafModelConfig *cfg);
 int vmaf_model_ref(VmafModel *model);
 
 int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafModel *model);
+
+/* The embedded JSON of built-in model (or model set) `version` and its length,
+ * the bytes vmaf_model_load() parses (ADR-1852: the VMAFx API hashes them).
+ * Returns 0, -ENOENT for an unknown version, or -EINVAL. */
+int vmaf_model_builtin_data(const char *version, const char **data, size_t *len);
 
 #ifdef __cplusplus
 } /* extern "C" */

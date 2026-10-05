@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <vmafx/types.h>
 #include <vmafx/error.h>
+#include <vmafx/frame.h>
+#include <vmafx/model.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +34,14 @@ typedef struct VmafxContext VmafxContext;
 
 typedef struct VmafxContextConfig VmafxContextConfig;
 typedef struct VmafxExtractorInfo VmafxExtractorInfo;
+typedef struct VmafxFeatureResolution VmafxFeatureResolution;
+
+/**
+ * Receives the log messages of one context: `level` is a VmafxLogLevel, `message` one line without
+ * its newline, valid during the call.
+ * @since 0.1
+ */
+typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
 
 /**
  * Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT.
@@ -50,6 +60,14 @@ struct VmafxContextConfig {
     uint64_t cpumask;
     /** GPU dispatch bits to disable. */
     uint64_t gpumask;
+    /**
+     * Receives this context's messages at or below `log_level` and every failure reported without
+     * an error out-parameter; NULL: the process log (stderr), whose level the context then sets, as
+     * vmaf_init() does. Added in ABI 0.1.1.
+     */
+    VmafxLogCallback log_callback;
+    /** Passed to `log_callback`. Added in ABI 0.1.1. */
+    void *log_user;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
@@ -72,6 +90,28 @@ struct VmafxExtractorInfo {
 #define VMAFX_EXTRACTOR_INFO_INIT {.struct_size = sizeof(VmafxExtractorInfo)}
 
 /**
+ * Which extractor computes a feature on a context (ADR-1359). Strings live for the process
+ * lifetime.
+ * @since 0.1
+ */
+struct VmafxFeatureResolution {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Backend of `extractor`. Values: VmafxBackend. */
+    uint32_t backend;
+    /**
+     * Extractor that computes the feature: the CPU extractor on a context without a device backend,
+     * else its device twin.
+     */
+    const char *extractor;
+    /** The option the twin cannot honour when the call returns VMAFX_E_NOTSUP, else NULL. */
+    const char *unsupported_option;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FEATURE_RESOLUTION_INIT {.struct_size = sizeof(VmafxFeatureResolution)}
+
+/**
  * Create a context. `config` may be NULL for the defaults; `*out` is NULL on failure.
  * @since 0.1
  */
@@ -91,6 +131,104 @@ VMAFX_EXPORT VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_extractor_info(const VmafxContext *context, uint32_t index,
                                                       VmafxExtractorInfo *out, VmafxError **error);
+
+/**
+ * Set `key` to `value` in `*options`, creating the set when `*options` is NULL; numeric values are
+ * normalised as libvmaf does. The caller owns the set and releases it with vmafx_options_free().
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_options_set(VmafxOptions **options, const char *key,
+                                           const char *value, VmafxError **error);
+
+/**
+ * Release an option set; NULL is a no-op.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_options_free(VmafxOptions *options);
+
+/**
+ * Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite
+ * number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key,
+                                                  const char *value, VmafxError **error);
+
+/**
+ * Register the extractor named `extractor` with `options` (copied; may be NULL). VMAFX_E_NOTFOUND
+ * names an unknown extractor.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extractor,
+                                                   const VmafxOptions *options, VmafxError **error);
+
+/**
+ * Register the extractors of every feature `model` reads and mount the model. The context takes a
+ * reference to the model until it is destroyed (ADR-1755); the caller may release its own at once.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model,
+                                                 VmafxError **error);
+
+/**
+ * Register the extractors of every member of `set` and mount the members. The context takes a
+ * reference to the set until it is destroyed.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *set,
+                                                     VmafxError **error);
+
+/**
+ * Record `value` as the score of `feature` at frame `index`, computed outside the library.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_import_score(VmafxContext *context, const char *feature,
+                                                    uint64_t index, double value,
+                                                    VmafxError **error);
+
+/**
+ * Number of registered feature extractors; 0 for NULL.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_extractor_count(const VmafxContext *context);
+
+/**
+ * Which extractor would compute the CPU extractor `extractor` with `options` (may be NULL) on this
+ * context, for frames of `frame` (may be NULL: no geometry check). On a context without a device
+ * backend that is the CPU extractor itself. VMAFX_E_NOTFOUND names an unknown extractor;
+ * VMAFX_E_NOTSUP names a device backend without a twin, or the option (and
+ * `out.unsupported_option`) the twin cannot honour (ADR-1359).
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_feature_resolve(const VmafxContext *context, const char *extractor,
+                                               const VmafxOptions *options,
+                                               const VmafxFrameDesc *frame,
+                                               VmafxFeatureResolution *out, VmafxError **error);
+
+/**
+ * How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1),
+ * or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to
+ * `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_frame_retention(const VmafxContext *context);
+
+/**
+ * Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on
+ * every path, failures included (the same frame as both inputs needs two); a frame submitted to
+ * several contexts needs one reference per submit and is never copied. Indices increase strictly
+ * and every frame keeps the first frame's geometry.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference,
+                                      VmafxFrame *distorted, uint64_t index, VmafxError **error);
+
+/**
+ * Finish every submitted frame; scores of the last frames (motion) become final. A context is
+ * flushed once; a second flush or a submit after it is VMAFX_E_INVALID.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error);
 
 #ifdef __cplusplus
 }

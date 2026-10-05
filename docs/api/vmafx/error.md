@@ -6,6 +6,26 @@ Errors that name what failed.
 
 `#include <vmafx/error.h>`.
 
+## `VmafxSubjectKind`
+
+What the subject of a VmafxError names. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_SUBJECT_NONE` | 0 | 0.1 |
+| `VMAFX_SUBJECT_PARAMETER` | 1 | 0.1 |
+| `VMAFX_SUBJECT_CONTEXT` | 2 | 0.1 |
+| `VMAFX_SUBJECT_OPTION` | 3 | 0.1 |
+| `VMAFX_SUBJECT_FEATURE` | 4 | 0.1 |
+| `VMAFX_SUBJECT_EXTRACTOR` | 5 | 0.1 |
+| `VMAFX_SUBJECT_MODEL` | 6 | 0.1 |
+| `VMAFX_SUBJECT_FRAME` | 7 | 0.1 |
+| `VMAFX_SUBJECT_PLANE` | 8 | 0.1 |
+| `VMAFX_SUBJECT_DEVICE` | 9 | 0.1 |
+| `VMAFX_SUBJECT_BACKEND` | 10 | 0.1 |
+| `VMAFX_SUBJECT_PATH` | 11 | 0.1 |
+| `VMAFX_SUBJECT_FENCE` | 12 | 0.1 |
+
 ## Handles and callbacks
 
 | Type | Since | Description |
@@ -22,6 +42,8 @@ Errors that name what failed.
 | `vmafx_error_subject` | 0.1 | Name of the parameter, feature, extractor or backend that failed; empty string when none. |
 | `vmafx_error_errno` | 0.1 | Negative errno the engine reported, 0 when the failure did not come from the engine. |
 | `vmafx_error_free` | 0.1 | Release an error; NULL is a no-op. |
+| `vmafx_error_subject_kind` | 0.1 | What the subject names (a VmafxSubjectKind); VMAFX_SUBJECT_NONE for NULL. |
+| `vmafx_error_function` | 0.1 | Name of the library function that failed; empty string for NULL. |
 
 ```c
 VMAFX_EXPORT const char *vmafx_status_name(VmafxStatus status);
@@ -30,6 +52,8 @@ VMAFX_EXPORT const char *vmafx_error_message(const VmafxError *error);
 VMAFX_EXPORT const char *vmafx_error_subject(const VmafxError *error);
 VMAFX_EXPORT int32_t vmafx_error_errno(const VmafxError *error);
 VMAFX_EXPORT void vmafx_error_free(VmafxError *error);
+VMAFX_EXPORT uint32_t vmafx_error_subject_kind(const VmafxError *error);
+VMAFX_EXPORT const char *vmafx_error_function(const VmafxError *error);
 ```
 
 Back to the [reference index](reference.md).

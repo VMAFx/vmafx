@@ -1311,3 +1311,4 @@
 2170-warnings-are-errors-per-leg
 2169-ci-fewer-runs
 1897-vmafx-abi-0x-numbering
+1906-vmafx-core-api-semantics

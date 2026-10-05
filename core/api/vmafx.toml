@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.0"
+abi_version = "0.1.1"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -213,6 +213,14 @@ errno = "EIO"
 reverse = false
 doc = "Engine error without a more specific status; the error carries the engine's errno."
 
+[[status]]
+name = "VMAFX_E_ABI"
+since = "0.1"
+value = -11
+errno = "EINVAL"
+reverse = false
+doc = "A struct_size below the size the struct had when it was introduced; the error names the struct."
+
 # ---------------------------------------------------------------------------
 # Enumerations (values equal the libvmaf ones where libvmaf has the concept).
 
@@ -242,6 +250,69 @@ values = [
   { name = "VMAFX_BACKEND_HIP", value = 4 },
 ]
 
+[[enums]]
+name = "VmafxPixelFormat"
+header = "vmafx/types.h"
+since = "0.1"
+doc = "Planar pixel layout of a frame (values equal enum VmafPixelFormat)."
+values = [
+  { name = "VMAFX_PIXEL_FORMAT_UNKNOWN", value = 0, doc = "Not set; refused by every frame constructor." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV420P", value = 1, doc = "4:2:0, chroma halved in both directions (rounded up)." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV422P", value = 2, doc = "4:2:2, chroma halved horizontally (rounded up)." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV444P", value = 3, doc = "4:4:4, no chroma subsampling." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV400P", value = 4, doc = "Luma only." },
+]
+
+[[enums]]
+name = "VmafxPool"
+header = "vmafx/types.h"
+since = "0.1"
+doc = "Pooling method of a pooled score (values equal enum VmafPoolingMethod)."
+values = [
+  { name = "VMAFX_POOL_NONE", value = 0, doc = "No pooling: a per-frame score." },
+  { name = "VMAFX_POOL_MIN", value = 1 },
+  { name = "VMAFX_POOL_MAX", value = 2 },
+  { name = "VMAFX_POOL_MEAN", value = 3 },
+  { name = "VMAFX_POOL_HARMONIC_MEAN", value = 4 },
+  { name = "VMAFX_POOL_MEDIAN", value = 5 },
+  { name = "VMAFX_POOL_PERC5", value = 6, doc = "5th percentile (linear interpolation)." },
+  { name = "VMAFX_POOL_PERC10", value = 7, doc = "10th percentile." },
+  { name = "VMAFX_POOL_PERC20", value = 8, doc = "20th percentile." },
+]
+
+[[enums]]
+name = "VmafxSubjectKind"
+header = "vmafx/error.h"
+since = "0.1"
+doc = "What the subject of a VmafxError names."
+values = [
+  { name = "VMAFX_SUBJECT_NONE", value = 0, doc = "No subject." },
+  { name = "VMAFX_SUBJECT_PARAMETER", value = 1, doc = "A parameter or a struct field (`desc.w`)." },
+  { name = "VMAFX_SUBJECT_CONTEXT", value = 2, doc = "The context." },
+  { name = "VMAFX_SUBJECT_OPTION", value = 3, doc = "An option key." },
+  { name = "VMAFX_SUBJECT_FEATURE", value = 4, doc = "A feature name." },
+  { name = "VMAFX_SUBJECT_EXTRACTOR", value = 5, doc = "A feature extractor." },
+  { name = "VMAFX_SUBJECT_MODEL", value = 6, doc = "A model name, version or model set." },
+  { name = "VMAFX_SUBJECT_FRAME", value = 7, doc = "A frame or a frame index." },
+  { name = "VMAFX_SUBJECT_PLANE", value = 8, doc = "A plane of a frame." },
+  { name = "VMAFX_SUBJECT_DEVICE", value = 9, doc = "A device." },
+  { name = "VMAFX_SUBJECT_BACKEND", value = 10, doc = "A backend." },
+  { name = "VMAFX_SUBJECT_PATH", value = 11, doc = "A file path." },
+  { name = "VMAFX_SUBJECT_FENCE", value = 12, doc = "A fence." },
+]
+
+[[flags]]
+name = "VmafxModelFlags"
+header = "vmafx/model.h"
+type = "u64"
+since = "0.1"
+doc = "Model load flags (bit values equal enum VmafModelFlags)."
+bits = [
+  { name = "VMAFX_MODEL_DISABLE_CLIP", bit = 0, doc = "Do not clip the score to the model's range." },
+  { name = "VMAFX_MODEL_ENABLE_TRANSFORM", bit = 1, doc = "Apply the model's score transform." },
+  { name = "VMAFX_MODEL_DISABLE_TRANSFORM", bit = 2, doc = "Do not apply the model's score transform." },
+]
+
 # ---------------------------------------------------------------------------
 # Handles (opaque).
 
@@ -259,6 +330,66 @@ since = "0.1"
 release = "vmafx_error_free"
 doc = "A failure: status, message, the named subject and the engine's errno."
 
+[[handles]]
+name = "VmafxOptions"
+header = "vmafx/types.h"
+since = "0.1"
+release = "vmafx_options_free"
+doc = "Feature options: string keys and values (the libvmaf feature dictionary)."
+
+[[handles]]
+name = "VmafxDevice"
+header = "vmafx/device.h"
+since = "0.1"
+release = "vmafx_device_unref"
+doc = "A compute device. Refcounted; frames and contexts hold references."
+
+[[handles]]
+name = "VmafxModel"
+header = "vmafx/model.h"
+since = "0.1"
+release = "vmafx_model_unref"
+doc = "A loaded model. Refcounted; a context that uses it holds a reference (ADR-1755)."
+
+[[handles]]
+name = "VmafxModelSet"
+header = "vmafx/model.h"
+since = "0.1"
+release = "vmafx_model_set_unref"
+doc = "A bootstrap model set: a lead model and its member models. Refcounted."
+
+[[handles]]
+name = "VmafxFrame"
+header = "vmafx/frame.h"
+since = "0.1"
+release = "vmafx_frame_unref"
+doc = "Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts."
+
+# ---------------------------------------------------------------------------
+# Callbacks.
+
+[[callbacks]]
+name = "VmafxLogCallback"
+header = "vmafx/context.h"
+returns = "void"
+since = "0.1"
+doc = "Receives the log messages of one context: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call."
+params = [
+  { name = "level", type = "u32", pass = "in" },
+  { name = "message", type = "cstr", pass = "in" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[callbacks]]
+name = "VmafxFrameReleaseCallback"
+header = "vmafx/frame.h"
+returns = "void"
+since = "0.1"
+doc = "Called once, on any thread, when the library has stopped reading the planes of a wrapped host frame."
+params = [
+  { name = "user", type = "ptr", pass = "in" },
+]
+
 # ---------------------------------------------------------------------------
 # Structs.
 
@@ -274,6 +405,8 @@ fields = [
   { name = "n_subsample", type = "u32", doc = "Score every n-th frame; 0 and 1 score every frame." },
   { name = "cpumask", type = "u64", doc = "CPU instruction-set bits to disable." },
   { name = "gpumask", type = "u64", doc = "GPU dispatch bits to disable." },
+  { name = "log_callback", type = "VmafxLogCallback", doc = "Receives this context's messages at or below `log_level` and every failure reported without an error out-parameter; NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1." },
+  { name = "log_user", type = "ptr", doc = "Passed to `log_callback`. Added in ABI 0.1.1." },
 ]
 
 [[structs]]
@@ -314,6 +447,113 @@ fields = [
   { name = "value", type = "f64", doc = "Score." },
   { name = "feature", type = "cstr", doc = "Feature name as requested." },
   { name = "extractor", type = "cstr", doc = "Registered extractor that declares the feature, or NULL (imported scores, option-decorated names until WP5)." },
+]
+
+[[structs]]
+name = "VmafxFeatureResolution"
+header = "vmafx/context.h"
+since = "0.1"
+sized = true
+doc = "Which extractor computes a feature on a context (ADR-1359). Strings live for the process lifetime."
+fields = [
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of `extractor`." },
+  { name = "extractor", type = "cstr", doc = "Extractor that computes the feature: the CPU extractor on a context without a device backend, else its device twin." },
+  { name = "unsupported_option", type = "cstr", doc = "The option the twin cannot honour when the call returns VMAFX_E_NOTSUP, else NULL." },
+]
+
+[[structs]]
+name = "VmafxDeviceDesc"
+header = "vmafx/device.h"
+since = "0.1"
+sized = true
+doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
+fields = [
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device; this release creates CPU devices only." },
+  { name = "index", type = "i32", doc = "Device index within the backend; 0 or -1 (any) for the CPU." },
+]
+
+[[structs]]
+name = "VmafxModelConfig"
+header = "vmafx/model.h"
+since = "0.1"
+sized = true
+doc = "How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT."
+fields = [
+  { name = "name", type = "cstr", doc = "Name of the model's scores (copied); NULL: `vmaf`." },
+  { name = "flags", type = "u64", flags = "VmafxModelFlags", doc = "Load flags; 0 keeps the model file's defaults." },
+]
+
+[[structs]]
+name = "VmafxFrameDesc"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."
+fields = [
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout." },
+  { name = "bpc", type = "u32", doc = "Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t." },
+  { name = "w", type = "u32", doc = "Luma width in pixels." },
+  { name = "h", type = "u32", doc = "Luma height in pixels." },
+]
+
+[[structs]]
+name = "VmafxHostPlanes"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT."
+fields = [
+  { name = "data", type = "ptr", count = 3, doc = "First sample of each plane; planes the format does not have are NULL." },
+  { name = "stride", type = "u64", count = 3, doc = "Bytes from one row to the next, at least the row's bytes." },
+  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once when the library no longer reads the planes; NULL: the caller keeps the planes valid until it destroys every context the frame was submitted to." },
+  { name = "user", type = "ptr", doc = "Passed to `release`." },
+]
+
+[[structs]]
+name = "VmafxFramePlanes"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "Where the samples of a frame are. The data pointers live as long as the frame."
+fields = [
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout." },
+  { name = "bpc", type = "u32", doc = "Bits per component." },
+  { name = "n_planes", type = "u32", doc = "Planes in use: 1 for YUV400P, else 3." },
+  { name = "w", type = "u32", count = 3, doc = "Width of each plane in samples." },
+  { name = "h", type = "u32", count = 3, doc = "Height of each plane in rows." },
+  { name = "stride", type = "u64", count = 3, doc = "Bytes from one row to the next." },
+  { name = "data", type = "ptr", count = 3, doc = "First sample of each plane; NULL past `n_planes`." },
+]
+
+[[structs]]
+name = "VmafxPooledScore"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "A score pooled over a range of frames."
+fields = [
+  { name = "pool", type = "u32", enum = "VmafxPool", doc = "Pooling method." },
+  { name = "first", type = "u64", doc = "First frame index (inclusive)." },
+  { name = "last", type = "u64", doc = "Last frame index (inclusive)." },
+  { name = "value", type = "f64", doc = "Pooled score." },
+  { name = "feature", type = "cstr", doc = "The model's name (lives as long as the model) or the `feature` argument as passed." },
+]
+
+[[structs]]
+name = "VmafxModelSetScore"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "The bootstrap score of a model set at one frame or pooled over frames."
+fields = [
+  { name = "pool", type = "u32", enum = "VmafxPool", doc = "Pooling method; VMAFX_POOL_NONE for a per-frame score." },
+  { name = "first", type = "u64", doc = "First frame index (the frame of a per-frame score)." },
+  { name = "last", type = "u64", doc = "Last frame index (inclusive)." },
+  { name = "bagging", type = "f64", doc = "Mean of the member models' scores." },
+  { name = "stddev", type = "f64", doc = "Standard deviation of the member models' scores." },
+  { name = "ci95_lo", type = "f64", doc = "Lower bound of the 95% confidence interval." },
+  { name = "ci95_hi", type = "f64", doc = "Upper bound of the 95% confidence interval." },
+  { name = "name", type = "cstr", doc = "Name of the model set; lives as long as the set." },
 ]
 
 # ---------------------------------------------------------------------------
@@ -462,6 +702,578 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
+# Errors (WP2).
+
+[[functions]]
+name = "vmafx_error_subject_kind"
+header = "vmafx/error.h"
+since = "0.1"
+returns = "u32"
+doc = "What the subject names (a VmafxSubjectKind); VMAFX_SUBJECT_NONE for NULL."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_error_function"
+header = "vmafx/error.h"
+since = "0.1"
+returns = "cstr"
+doc = "Name of the library function that failed; empty string for NULL."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+# ---------------------------------------------------------------------------
+# Options (WP2).
+
+[[functions]]
+name = "vmafx_options_set"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Set `key` to `value` in `*options`, creating the set when `*options` is NULL; numeric values are normalised as libvmaf does. The caller owns the set and releases it with vmafx_options_free()."
+params = [
+  { name = "options", type = "VmafxOptions", pass = "out_handle" },
+  { name = "key", type = "cstr", pass = "in" },
+  { name = "value", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_options_free"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "void"
+doc = "Release an option set; NULL is a no-op."
+params = [
+  { name = "options", type = "VmafxOptions", pass = "in", nullable = true },
+]
+
+# ---------------------------------------------------------------------------
+# Context: options, registration, introspection, submission (WP2).
+
+[[functions]]
+name = "vmafx_context_set_option"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "key", type = "cstr", pass = "in" },
+  { name = "value", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_feature"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Register the extractor named `extractor` with `options` (copied; may be NULL). VMAFX_E_NOTFOUND names an unknown extractor."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "extractor", type = "cstr", pass = "in" },
+  { name = "options", type = "VmafxOptions", pass = "in_const", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_model"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Register the extractors of every feature `model` reads and mount the model. The context takes a reference to the model until it is destroyed (ADR-1755); the caller may release its own at once."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "model", type = "VmafxModel", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_model_set"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Register the extractors of every member of `set` and mount the members. The context takes a reference to the set until it is destroyed."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "set", type = "VmafxModelSet", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_import_score"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Record `value` as the score of `feature` at frame `index`, computed outside the library."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "feature", type = "cstr", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "value", type = "f64", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_extractor_count"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "Number of registered feature extractors; 0 for NULL."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_feature_resolve"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Which extractor would compute the CPU extractor `extractor` with `options` (may be NULL) on this context, for frames of `frame` (may be NULL: no geometry check). On a context without a device backend that is the CPU extractor itself. VMAFX_E_NOTFOUND names an unknown extractor; VMAFX_E_NOTSUP names a device backend without a twin, or the option (and `out.unsupported_option`) the twin cannot honour (ADR-1359)."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "extractor", type = "cstr", pass = "in" },
+  { name = "options", type = "VmafxOptions", pass = "in_const", nullable = true },
+  { name = "frame", type = "VmafxFrameDesc", pass = "in", nullable = true },
+  { name = "out", type = "VmafxFeatureResolution", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_frame_retention"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_submit"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "reference", type = "VmafxFrame", pass = "in" },
+  { name = "distorted", type = "VmafxFrame", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_flush"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
+# Devices: the CPU skeleton (WP2; WP3 adds the device backends).
+
+[[functions]]
+name = "vmafx_device_create"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "status"
+doc = "Create a device. `desc` may be NULL for the CPU. Any other backend is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "desc", type = "VmafxDeviceDesc", pass = "in", nullable = true },
+  { name = "out", type = "VmafxDevice", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_device_ref"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "handle:VmafxDevice"
+doc = "Take one more reference; returns `device` (NULL for NULL)."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_device_unref"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "void"
+doc = "Drop one reference; the last one releases the device. NULL is a no-op."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_device_backend"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "u32"
+doc = "Backend of a device (a VmafxBackend); VMAFX_BACKEND_CPU for NULL."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in_const" },
+]
+
+# ---------------------------------------------------------------------------
+# Host frames (WP2; WP3 adds device imports, pools and fences).
+
+[[functions]]
+name = "vmafx_frame_create_host"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Allocate a host frame on `device` (NULL: the CPU) with zeroed planes; fill them through vmafx_frame_planes() before the first submit. The caller holds one reference."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in", nullable = true },
+  { name = "desc", type = "VmafxFrameDesc", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_wrap_host"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A host frame on the caller's planes, without a copy. The planes stay valid and unchanged until `planes.release` is called, once, when the last reference (the caller's or a context's) is gone. On failure `release` is not called."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in", nullable = true },
+  { name = "desc", type = "VmafxFrameDesc", pass = "in" },
+  { name = "planes", type = "VmafxHostPlanes", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_planes"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Describe the planes of a frame."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in_const" },
+  { name = "out", type = "VmafxFramePlanes", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_ref"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "handle:VmafxFrame"
+doc = "Take one more reference (for example to submit the frame to a second context); returns `frame` (NULL for NULL)."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_frame_unref"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "void"
+doc = "Drop one reference; the last one, the caller's or a context's, frees the planes or calls the release callback. NULL is a no-op."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in", nullable = true },
+]
+
+# ---------------------------------------------------------------------------
+# Models and model sets (WP2).
+
+[[functions]]
+name = "vmafx_model_load"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load the built-in model `version` (see vmafx_model_builtin_next()). `config` may be NULL. VMAFX_E_NOTFOUND names an unknown version."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "version", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModel", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_load_file"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load a JSON model file (UTF-8 path). VMAFX_E_IO names a file that cannot be read, VMAFX_E_INVALID one that is not a single model, VMAFX_E_NOTSUP a `.pkl` file."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModel", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_override_feature"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Merge `options` (copied) into the options the model passes to `extractor`. Only while the caller holds the only reference: a model a context uses is immutable (VMAFX_E_BUSY)."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in" },
+  { name = "extractor", type = "cstr", pass = "in" },
+  { name = "options", type = "VmafxOptions", pass = "in_const" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_ref"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "handle:VmafxModel"
+doc = "Take one more reference; returns `model` (NULL for NULL)."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_unref"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "void"
+doc = "Drop one reference; the last one releases the model. NULL is a no-op."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_model_name"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "Name the model's scores are recorded under; NULL for NULL."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_model_feature_count"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "u32"
+doc = "Number of features the model reads; 0 for NULL."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_model_feature_name"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "Name of feature `index`, or NULL past the last one."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_hash"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "SHA-256 of the model bytes as loaded, 64 lowercase hex digits (equal to `sha256sum` of the file); lives as long as the model. NULL for NULL."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_model_builtin_next"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "The built-in model version after `previous`, the first one for NULL, NULL after the last or for an unknown `previous`. Built-in model sets are listed too."
+params = [
+  { name = "previous", type = "cstr", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_model_default_version"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "Version of the default model (`vmaf_v1.0.16_3d0h`)."
+params = []
+
+[[functions]]
+name = "vmafx_model_set_load"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load the built-in model set `version` (for example `vmaf_b_v0.6.3`). `config` may be NULL. VMAFX_E_NOTFOUND names an unknown version, VMAFX_E_INVALID one that is not a set."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "version", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModelSet", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_set_load_file"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load a JSON model set file (UTF-8 path); failures as vmafx_model_load_file()."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModelSet", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_set_override_feature"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "vmafx_model_override_feature() for the lead model and every member; VMAFX_E_BUSY once the set is shared."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in" },
+  { name = "extractor", type = "cstr", pass = "in" },
+  { name = "options", type = "VmafxOptions", pass = "in_const" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_set_ref"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "handle:VmafxModelSet"
+doc = "Take one more reference; returns `set` (NULL for NULL)."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_set_unref"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "void"
+doc = "Drop one reference; the last one releases the set and its models. NULL is a no-op."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_model_set_lead"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "handle:VmafxModel"
+doc = "The set's lead model, borrowed: valid as long as the set; take a reference with vmafx_model_ref() to keep it longer. NULL for NULL."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_model_set_size"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "u32"
+doc = "Number of member models, without the lead; 0 for NULL."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_model_set_hash"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "cstr"
+doc = "SHA-256 of the set's bytes as loaded, as vmafx_model_hash(); NULL for NULL."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in_const" },
+]
+
+# ---------------------------------------------------------------------------
+# Scores, synchronous (WP2; WP4 adds windows).
+
+[[functions]]
+name = "vmafx_score_frame"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Score of `model` at frame `index`, predicted on first read; VMAFX_PENDING while a feature it reads is not final."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_score_frame_model_set"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Bootstrap score of `set` at frame `index`; VMAFX_PENDING while a feature it reads is not final."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "set", type = "VmafxModelSet", pass = "in_const" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxModelSetScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_score_pooled"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Score of `model` pooled with `pool` (a VmafxPool) over frames `first` to `last` (inclusive, subsampled frames skipped); VMAFX_PENDING where vmaf_score_pooled() returns -EAGAIN."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "model", type = "VmafxModel", pass = "in_const" },
+  { name = "pool", type = "u32", pass = "in" },
+  { name = "first", type = "u64", pass = "in" },
+  { name = "last", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxPooledScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_feature_score_pooled"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Scores of `feature` pooled as vmafx_score_pooled() does."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "feature", type = "cstr", pass = "in" },
+  { name = "pool", type = "u32", pass = "in" },
+  { name = "first", type = "u64", pass = "in" },
+  { name = "last", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxPooledScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_score_pooled_model_set"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Bootstrap score of `set` with each of its four values pooled with `pool` over frames `first` to `last`."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "set", type = "VmafxModelSet", pass = "in_const" },
+  { name = "pool", type = "u32", pass = "in" },
+  { name = "first", type = "u64", pass = "in" },
+  { name = "last", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxModelSetScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
 # Functions of vmafx/libvmaf_bridge.h.
 
 [[functions]]
@@ -501,7 +1313,7 @@ params = [
 ]
 null_checks = ["vmaf"]
 clear = "*vmaf = NULL;"
-build = { var = "config", type = "VmafxContextConfig", from = { log_level = "(uint32_t)cfg.log_level", n_threads = "cfg.n_threads", n_subsample = "cfg.n_subsample", cpumask = "cfg.cpumask", gpumask = "cfg.gpumask" } }
+build = { var = "config", type = "VmafxContextConfig", from = { log_level = "(uint32_t)cfg.log_level", n_threads = "cfg.n_threads", n_subsample = "cfg.n_subsample", cpumask = "cfg.cpumask", gpumask = "cfg.gpumask", log_callback = "NULL", log_user = "NULL" } }
 out_handle = { var = "context", type = "VmafxContext" }
 args = ["&config", "&context", "&error"]
 store = "*vmaf = vmafx_context_libvmaf_handle(context);"

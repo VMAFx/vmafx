@@ -17,12 +17,61 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <vmafx/types.h>
+#include <vmafx/error.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* No declarations yet: later RC4 work packages fill this header. */
+/**
+ * A compute device. Refcounted; frames and contexts hold references.
+ * @since 0.1
+ */
+typedef struct VmafxDevice VmafxDevice;
+
+typedef struct VmafxDeviceDesc VmafxDeviceDesc;
+
+/**
+ * Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT.
+ * @since 0.1
+ */
+struct VmafxDeviceDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Backend of the device; this release creates CPU devices only. Values: VmafxBackend. */
+    uint32_t backend;
+    /** Device index within the backend; 0 or -1 (any) for the CPU. */
+    int32_t index;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_DEVICE_DESC_INIT {.struct_size = sizeof(VmafxDeviceDesc)}
+
+/**
+ * Create a device. `desc` may be NULL for the CPU. Any other backend is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out,
+                                             VmafxError **error);
+
+/**
+ * Take one more reference; returns `device` (NULL for NULL).
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxDevice *vmafx_device_ref(VmafxDevice *device);
+
+/**
+ * Drop one reference; the last one releases the device. NULL is a no-op.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_device_unref(VmafxDevice *device);
+
+/**
+ * Backend of a device (a VmafxBackend); VMAFX_BACKEND_CPU for NULL.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_device_backend(const VmafxDevice *device);
 
 #ifdef __cplusplus
 }

@@ -4,6 +4,6 @@
 
 VMAFx public C API (generated): includes every core header.
 
-Includes every core header: [`vmafx/types.h`](types.md), [`vmafx/version.h`](version.md), [`vmafx/error.h`](error.md), [`vmafx/context.h`](context.md), [`vmafx/device.h`](device.md), [`vmafx/frame.h`](frame.md), [`vmafx/model.h`](model.md), [`vmafx/score.h`](score.md), [`vmafx/provenance.h`](provenance.md), [`vmafx/report.h`](report.md), [`vmafx/dnn.h`](dnn.md), [`vmafx/mcp.h`](mcp.md).
+Includes every core header: [`vmafx/types.h`](types.md), [`vmafx/version.h`](version.md), [`vmafx/error.h`](error.md), [`vmafx/device.h`](device.md), [`vmafx/frame.h`](frame.md), [`vmafx/model.h`](model.md), [`vmafx/context.h`](context.md), [`vmafx/score.h`](score.md), [`vmafx/provenance.h`](provenance.md), [`vmafx/report.h`](report.md), [`vmafx/dnn.h`](dnn.md), [`vmafx/mcp.h`](mcp.md).
 
 Back to the [reference index](reference.md).

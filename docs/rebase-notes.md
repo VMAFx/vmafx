@@ -62725,3 +62725,38 @@ gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep bot
 - `core/test/check_exported_symbols.py` takes a third argument (the symbol
   list) and judges `vmafx_` exports by it, not by the header regex.
 - No score, FFmpeg patch or `libvmaf.h` impact.
+
+## VMAFx core API: engine entry points, per-thread log sink, shared picture helpers
+
+`rc4/api-wp2-core`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-1906](adr/1906-vmafx-core-api-semantics.md).
+
+- `core/src/libvmaf.c` renames the bodies of `vmaf_use_feature`,
+  `vmaf_use_features_from_model`, `vmaf_use_features_from_model_collection`,
+  `vmaf_import_feature_score`, `vmaf_set_perceptual_weight_enabled`,
+  `vmaf_set_perceptual_weight_strength`, `vmaf_feature_backend_twin`,
+  `vmaf_registered_feature_extractor`, `vmaf_read_pictures`,
+  `vmaf_score_at_index`, `vmaf_score_at_index_model_collection`,
+  `vmaf_feature_score_pooled`, `vmaf_score_pooled` and
+  `vmaf_score_pooled_model_collection` to `vmaf_engine_*` (declared in
+  `core/src/vmafx/engine.h`) and keeps the libvmaf names as one-line
+  forwarders in a block near the end of the file. An upstream change to one of
+  these bodies goes into its `vmaf_engine_*` function; engine-internal callers
+  (the pooling loops, the Metal import, the tiny-model registration) call the
+  `vmaf_engine_` names. New helpers there: `vmaf_engine_frame_retention`,
+  `vmaf_engine_is_flushed`, `vmaf_engine_extractor_backend`.
+- `core/src/log.cpp` and `core/src/log.h` gain `vmaf_get_log_level()` and a
+  per-thread sink (`VmafLogSink`, `vmaf_log_swap_thread_sink()`): while one is
+  installed `vmaf_log()` delivers to it, filtered by the sink's level. Keep the
+  sink check in `vmaf_log()` on an upstream sync of the logger. `core/src/log.c`
+  is not built (ADR-0708 moved the logger to `log.cpp`) and is unchanged.
+- `core/src/picture.c` exports `vmaf_picture_plane_extents()` (the plane
+  geometry `picture_compute_geometry()` used inline); `core/src/model.c` adds
+  `vmaf_model_builtin_data()` (the embedded bytes of a built-in model).
+- `core/src/vmafx/` gains `device.c`, `frame_host.c`, `model.c`, `options.c`,
+  `register.c`, `score.c`, `sha256.c`, `sized.c`, `submit.c` and the internal
+  headers `internal.h`, `options_internal.h`, `sha256.h`. Generated files as
+  before: regenerate with `python3 scripts/codegen/vmafx-api.py --write`.
+- No score impact (`test_vmafx_bitexact` compares every score with the
+  `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
+  values are unchanged.

@@ -24,6 +24,39 @@ extern "C" {
 #endif
 
 /**
+ * What the subject of a VmafxError names.
+ * @since 0.1
+ */
+typedef enum VmafxSubjectKind {
+    /** No subject. */
+    VMAFX_SUBJECT_NONE = 0,
+    /** A parameter or a struct field (`desc.w`). */
+    VMAFX_SUBJECT_PARAMETER = 1,
+    /** The context. */
+    VMAFX_SUBJECT_CONTEXT = 2,
+    /** An option key. */
+    VMAFX_SUBJECT_OPTION = 3,
+    /** A feature name. */
+    VMAFX_SUBJECT_FEATURE = 4,
+    /** A feature extractor. */
+    VMAFX_SUBJECT_EXTRACTOR = 5,
+    /** A model name, version or model set. */
+    VMAFX_SUBJECT_MODEL = 6,
+    /** A frame or a frame index. */
+    VMAFX_SUBJECT_FRAME = 7,
+    /** A plane of a frame. */
+    VMAFX_SUBJECT_PLANE = 8,
+    /** A device. */
+    VMAFX_SUBJECT_DEVICE = 9,
+    /** A backend. */
+    VMAFX_SUBJECT_BACKEND = 10,
+    /** A file path. */
+    VMAFX_SUBJECT_PATH = 11,
+    /** A fence. */
+    VMAFX_SUBJECT_FENCE = 12,
+} VmafxSubjectKind;
+
+/**
  * A failure: status, message, the named subject and the engine's errno.
  * @since 0.1
  */
@@ -64,6 +97,18 @@ VMAFX_EXPORT int32_t vmafx_error_errno(const VmafxError *error);
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_error_free(VmafxError *error);
+
+/**
+ * What the subject names (a VmafxSubjectKind); VMAFX_SUBJECT_NONE for NULL.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_error_subject_kind(const VmafxError *error);
+
+/**
+ * Name of the library function that failed; empty string for NULL.
+ * @since 0.1
+ */
+VMAFX_EXPORT const char *vmafx_error_function(const VmafxError *error);
 
 #ifdef __cplusplus
 }

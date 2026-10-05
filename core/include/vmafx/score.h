@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <vmafx/types.h>
 #include <vmafx/error.h>
+#include <vmafx/model.h>
 #include <vmafx/context.h>
 
 #ifdef __cplusplus
@@ -26,6 +27,8 @@ extern "C" {
 #endif
 
 typedef struct VmafxScore VmafxScore;
+typedef struct VmafxPooledScore VmafxPooledScore;
+typedef struct VmafxModelSetScore VmafxModelSetScore;
 
 /**
  * One score and the extractor that produced it.
@@ -53,12 +56,105 @@ struct VmafxScore {
 #define VMAFX_SCORE_INIT {.struct_size = sizeof(VmafxScore)}
 
 /**
+ * A score pooled over a range of frames.
+ * @since 0.1
+ */
+struct VmafxPooledScore {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pooling method. Values: VmafxPool. */
+    uint32_t pool;
+    /** First frame index (inclusive). */
+    uint64_t first;
+    /** Last frame index (inclusive). */
+    uint64_t last;
+    /** Pooled score. */
+    double value;
+    /** The model's name (lives as long as the model) or the `feature` argument as passed. */
+    const char *feature;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_POOLED_SCORE_INIT {.struct_size = sizeof(VmafxPooledScore)}
+
+/**
+ * The bootstrap score of a model set at one frame or pooled over frames.
+ * @since 0.1
+ */
+struct VmafxModelSetScore {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pooling method; VMAFX_POOL_NONE for a per-frame score. Values: VmafxPool. */
+    uint32_t pool;
+    /** First frame index (the frame of a per-frame score). */
+    uint64_t first;
+    /** Last frame index (inclusive). */
+    uint64_t last;
+    /** Mean of the member models' scores. */
+    double bagging;
+    /** Standard deviation of the member models' scores. */
+    double stddev;
+    /** Lower bound of the 95% confidence interval. */
+    double ci95_lo;
+    /** Upper bound of the 95% confidence interval. */
+    double ci95_hi;
+    /** Name of the model set; lives as long as the set. */
+    const char *name;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_MODEL_SET_SCORE_INIT {.struct_size = sizeof(VmafxModelSetScore)}
+
+/**
  * Score of `feature` at frame `index` with its producer; VMAFX_PENDING while the frame is not
  * final.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_feature_score(VmafxContext *context, const char *feature,
                                              uint64_t index, VmafxScore *out, VmafxError **error);
+
+/**
+ * Score of `model` at frame `index`, predicted on first read; VMAFX_PENDING while a feature it
+ * reads is not final.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_score_frame(VmafxContext *context, const VmafxModel *model,
+                                           uint64_t index, VmafxScore *out, VmafxError **error);
+
+/**
+ * Bootstrap score of `set` at frame `index`; VMAFX_PENDING while a feature it reads is not final.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_score_frame_model_set(VmafxContext *context,
+                                                     const VmafxModelSet *set, uint64_t index,
+                                                     VmafxModelSetScore *out, VmafxError **error);
+
+/**
+ * Score of `model` pooled with `pool` (a VmafxPool) over frames `first` to `last` (inclusive,
+ * subsampled frames skipped); VMAFX_PENDING where vmaf_score_pooled() returns -EAGAIN.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_score_pooled(VmafxContext *context, const VmafxModel *model,
+                                            uint32_t pool, uint64_t first, uint64_t last,
+                                            VmafxPooledScore *out, VmafxError **error);
+
+/**
+ * Scores of `feature` pooled as vmafx_score_pooled() does.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_feature_score_pooled(VmafxContext *context, const char *feature,
+                                                    uint32_t pool, uint64_t first, uint64_t last,
+                                                    VmafxPooledScore *out, VmafxError **error);
+
+/**
+ * Bootstrap score of `set` with each of its four values pooled with `pool` over frames `first` to
+ * `last`.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context,
+                                                      const VmafxModelSet *set, uint32_t pool,
+                                                      uint64_t first, uint64_t last,
+                                                      VmafxModelSetScore *out, VmafxError **error);
 
 #ifdef __cplusplus
 }

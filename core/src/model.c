@@ -193,6 +193,20 @@ const char *vmaf_built_in_model_version_for_test(const void *built_in_model)
     return model->version;
 }
 
+int vmaf_model_builtin_data(const char *version, const char **data, size_t *len)
+{
+    if (!version || !data || !len)
+        return -EINVAL;
+    for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
+        if (!strcmp(version, built_in_models[i].version)) {
+            *data = built_in_models[i].data;
+            *len = (size_t)*built_in_models[i].data_len;
+            return 0;
+        }
+    }
+    return -ENOENT;
+}
+
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
     /* `version` reaches strcmp unprotected; a NULL caller would dereference
