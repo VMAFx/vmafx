@@ -230,8 +230,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
     /* One threadgroup per 256-pixel segment of one row (ADR-1499). */
-    MTLSize const tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);
-    MTLSize const grid = MTLSizeMake(s->per_row, s->frame_h, 1);
+    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);
+    MTLSize grid = MTLSizeMake(s->per_row, s->frame_h, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 

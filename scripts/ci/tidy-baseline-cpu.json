@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 407,
+  "tus": 409,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -244,6 +244,7 @@
     "core/test/test_hip_wavefront_reduce.c",
     "core/test/test_integer_adm_aim_unclipped.c",
     "core/test/test_integer_adm_cm_budget.c",
+    "core/test/test_integer_adm_cm_row_unsigned.c",
     "core/test/test_integer_adm_cm_threshold.c",
     "core/test/test_integer_adm_dwt16_range.c",
     "core/test/test_integer_adm_min_dim.c",
@@ -363,6 +364,7 @@
     "core/test/test_speed.c",
     "core/test/test_speed_chroma.c",
     "core/test/test_speed_clamp_score.c",
+    "core/test/test_speed_cov_count_division.c",
     "core/test/test_speed_filter.c",
     "core/test/test_speed_frame_buffers.c",
     "core/test/test_speed_lanczos4_weights.c",
@@ -515,6 +517,22 @@
         }
       },
       "previous_baseline_sha256": "5090e228215b111b0497fee3e85b90b6e9a619630d34f0b8b3907fb21b13cb34"
+    },
+    {
+      "sources": [
+        "core/test/test_integer_adm_cm_row_unsigned.c",
+        "core/test/test_speed_cov_count_division.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_integer_adm_cm_row_unsigned.c",
+            "core/test/test_speed_cov_count_division.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c7600cc5d8afe33cf8581140b8da54dac5f9b2407193e43b2139674fc3518e4a"
     }
   ]
 }

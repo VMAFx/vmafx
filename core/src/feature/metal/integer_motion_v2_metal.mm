@@ -447,7 +447,7 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
     MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
 
     /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == nullptr) { return 1; }
+    if (s->feature_name_dict == NULL) { return 1; }
 
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",

@@ -86,7 +86,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 
 /* One picture plane: its geometry, where its row sums sit in the read-back,
  * and its buffers. */
-using FmPlaneMetal = struct FmPlaneMetal {
+typedef struct FmPlaneMetal {
     unsigned w;
     unsigned h;
     /* Half-size plane of the scale-1 SAD (motion_add_scale1). */
@@ -105,9 +105,9 @@ using FmPlaneMetal = struct FmPlaneMetal {
     void *ref_in;
     void *blur[2];
     void *diff[2];
-};
+} FmPlaneMetal;
 
-using FloatMotionStateMetal = struct FloatMotionStateMetal {
+typedef struct FloatMotionStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* float row sums of every plane and scale */
     VmafMetalContext *ctx;
@@ -135,7 +135,7 @@ using FloatMotionStateMetal = struct FloatMotionStateMetal {
     bool motion_add_uv;
 
     VmafDictionary *feature_name_dict;
-};
+} FloatMotionStateMetal;
 
 /* The CPU float_motion.c table: same names, aliases, defaults, ranges and
  * order. The order spells the feature names. */
@@ -229,7 +229,7 @@ static const VmafOption options[] = {
         .max         = 10000.0,
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {.name=nullptr},
+    {0},
 };
 
 static int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector *feature_collector,
@@ -498,9 +498,9 @@ static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_
 static int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
 {
     fex->extract = extract_force_zero_metal;
-    fex->submit = nullptr;
-    fex->collect = nullptr;
-    fex->flush = nullptr;
+    fex->submit = NULL;
+    fex->collect = NULL;
+    fex->flush = NULL;
     fex->close = close_fex_metal;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
@@ -845,7 +845,7 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
 }
 
 static const char *provided_features[] = {
-    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", nullptr
+    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL
 };
 
 extern "C" {

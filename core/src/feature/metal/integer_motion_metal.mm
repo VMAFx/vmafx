@@ -173,7 +173,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
-    {.name=nullptr}};
+    {nullptr}};
 
 static int build_pipelines(IntegerMotionStateMetal *s, id<MTLDevice> device)
 {
@@ -421,7 +421,7 @@ static const char *provided_features[] = {
     "VMAF_integer_feature_motion_score",
     "VMAF_integer_feature_motion2_score",
     "VMAF_integer_feature_motion3_score",
-    nullptr
+    NULL
 };
 
 extern "C" {

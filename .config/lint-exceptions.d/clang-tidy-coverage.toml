@@ -279,6 +279,6 @@ reason = "Built only with -Denable_zimg=true (core/test/meson.build); no lane co
 expires = 2026-12-31
 
 [[exception]]
-path = "ffmpeg-patches/test/fault_inject_sycl_import.c"
-reason = "LD_PRELOAD fault injector that check-sycl-import-retry.sh compiles against the installed libvmaf headers; no meson target builds it, so it is in no compile database. Fix: give it a SYCL-lane target, then record the unit."
+path = "ffmpeg-patches/test/fault_inject_libvmaf.c"
+reason = "LD_PRELOAD fault injector that check-libvmaf-no-score-after-error.sh and check-sycl-import-retry.sh compile against the installed libvmaf headers; no meson target builds it, so it is in no compile database. Fix: give it a test target, then record the unit."
 expires = 2026-12-31

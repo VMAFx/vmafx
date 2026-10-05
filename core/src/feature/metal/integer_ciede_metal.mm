@@ -81,7 +81,7 @@ using CiedeStateMetal = struct CiedeStateMetal {
 };
 
 /* The CPU extractor has no options. */
-static const VmafOption options[] = {{.name=nullptr}};
+static const VmafOption options[] = {{0}};
 
 static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
@@ -179,10 +179,10 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
     const ptrdiff_t in_stride_t = (ptrdiff_t)pic->stride[p] / (ptrdiff_t)sizeof(T);
     for (unsigned i = 0; i < out_h; i++) {
         for (unsigned j = 0; j < out_w; j++) {
-            unsigned const in_x = ss_hor ? (j >> 1) : j;
+            unsigned in_x = ss_hor ? (j >> 1) : j;
             out_buf[j] = in_buf[in_x];
         }
-        unsigned const in_row_step = ss_ver ? (i & 1u) : 1u;
+        unsigned in_row_step = ss_ver ? (i & 1u) : 1u;
         in_buf += in_row_step * in_stride_t;
         out_buf += out_w;
     }
