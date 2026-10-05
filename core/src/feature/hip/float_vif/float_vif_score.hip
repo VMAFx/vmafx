@@ -38,8 +38,8 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 #include "../hip_tile_index.h"
 
@@ -51,42 +51,54 @@
 
 #define FVIF_MAX_TILE_W (FVIF_BX + 2 * FVIF_MAX_HFW)
 
+namespace {
+
+/* The shared argument structs carry device pointers as uint64_t; this is the
+ * one place they become typed pointers (same size, same address). */
+template <typename T>
+__device__ __forceinline__ T *fvif_device_ptr(uint64_t address)
+{
+    return __builtin_bit_cast(T *, address);
+}
+
 /* picture_copy() with offset -128: an 8-bit sample as is, a 10-, 12- or
  * 16-bit sample divided by 4, 16 or 256 (exact in fp32). */
-__device__ static __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes,
+__device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes,
                                                       int y, int x, unsigned bpc)
 {
-    if (bpc <= 8u)
+    if (bpc <= 8u) {
         return FVIF_FSUB((float)plane[y * stride_bytes + x], 128.0f);
+    }
     const uint16_t v = reinterpret_cast<const uint16_t *>(plane + y * stride_bytes)[x];
     float scaler = 1.0f;
-    if (bpc == 10u)
+    if (bpc == 10u) {
         scaler = 4.0f;
-    else if (bpc == 12u)
+    } else if (bpc == 12u) {
         scaler = 16.0f;
-    else if (bpc == 16u)
+    } else if (bpc == 16u) {
         scaler = 256.0f;
+    }
     return FVIF_FSUB(FVIF_FDIV((float)v, scaler), 128.0f);
 }
 
 /* One sample of each input plane at (x, y), already inside the plane. */
-__device__ static __forceinline__ void fvif_read_pair(const FloatVifGpuInput &in, int y, int x,
+__device__ __forceinline__ void fvif_read_pair(const FloatVifGpuInput &in, int y, int x,
                                                       float *ref, float *dis)
 {
     if (in.is_raw != 0u) {
-        *ref = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.ref), (ptrdiff_t)in.stride, y, x,
+        *ref = fvif_read_raw(fvif_device_ptr<const uint8_t>(in.ref), (ptrdiff_t)in.stride, y, x,
                              in.bpc);
-        *dis = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.dis), (ptrdiff_t)in.stride, y, x,
+        *dis = fvif_read_raw(fvif_device_ptr<const uint8_t>(in.dis), (ptrdiff_t)in.stride, y, x,
                              in.bpc);
         return;
     }
     const size_t at = (size_t)y * (size_t)in.stride + (size_t)x;
-    *ref = reinterpret_cast<const float *>(in.ref)[at];
-    *dis = reinterpret_cast<const float *>(in.dis)[at];
+    *ref = fvif_device_ptr<const float>(in.ref)[at];
+    *dis = fvif_device_ptr<const float>(in.dis)[at];
 }
 
 /* Reflect-101 for a consumed sample, clamped for one that is not. */
-__device__ static __forceinline__ int fvif_plane_index(int idx, int extent)
+__device__ __forceinline__ int fvif_plane_index(int idx, int extent)
 {
     return vmaf_hip_tile_index(vmaf_hip_reflect_101(idx, extent), extent);
 }
@@ -103,7 +115,7 @@ struct FvifMoments {
 
 /* Phase 1: this thread's share of the block's tile, mirrored at the plane
  * edges. The tile is the block plus `hfw` samples on every side. */
-__device__ static __forceinline__ void fvif_load_tile(const FloatVifGpuInput &in, int hfw,
+__device__ __forceinline__ void fvif_load_tile(const FloatVifGpuInput &in, int hfw,
                                                       float *s_ref, float *s_dis)
 {
     const int tile_w = FVIF_BX + 2 * hfw;
@@ -122,7 +134,7 @@ __device__ static __forceinline__ void fvif_load_tile(const FloatVifGpuInput &in
 }
 
 /* Phase 2: this thread's share of the vertical pass, taps in order. */
-__device__ static __forceinline__ void fvif_vertical_pass(const FloatVifGpuTaps &taps,
+__device__ __forceinline__ void fvif_vertical_pass(const FloatVifGpuTaps &taps,
                                                           const float *s_ref, const float *s_dis,
                                                           FvifMoments *v)
 {
@@ -156,7 +168,7 @@ __device__ static __forceinline__ void fvif_vertical_pass(const FloatVifGpuTaps 
 
 /* Phase 3: this thread's pixel. The horizontal pass over the vertically
  * filtered moments, then the statistic. */
-__device__ static __forceinline__ void
+__device__ __forceinline__ void
 fvif_pixel_terms(const FloatVifGpuComputeArgs &args, const FvifMoments *v, float *num, float *den)
 {
     const int at = (int)threadIdx.y * FVIF_MAX_TILE_W + (int)threadIdx.x;
@@ -176,6 +188,8 @@ fvif_pixel_terms(const FloatVifGpuComputeArgs &args, const FvifMoments *v, float
     fvif_pixel_statistic(mu1, mu2, xx, yy, xy, args.sigma_max_inv, args.vif_enhn_gain_limit,
                          args.vif_sigma_nsq, num, den);
 }
+
+} /* namespace */
 
 extern "C" {
 
@@ -202,7 +216,7 @@ __global__ void float_vif_compute(FloatVifGpuComputeArgs args)
     float den = 0.0f;
     fvif_pixel_terms(args, &s_v, &num, &den);
 
-    float *terms = reinterpret_cast<float *>(args.terms);
+    float *terms = fvif_device_ptr<float>(args.terms);
     const size_t at = fvif_term_index(gx, gy, args.in.height);
     terms[at] = num;
     terms[at + 1u] = den;
@@ -216,9 +230,9 @@ __global__ void float_vif_row_sums(FloatVifGpuRowArgs args)
         return;
     float num = 0.0f;
     float den = 0.0f;
-    fvif_row_sum(reinterpret_cast<const float *>(args.terms), args.width, args.height, y, &num,
+    fvif_row_sum(fvif_device_ptr<const float>(args.terms), args.width, args.height, y, &num,
                  &den);
-    float *rows = reinterpret_cast<float *>(args.rows);
+    float *rows = fvif_device_ptr<float>(args.rows);
     rows[(size_t)y * FVIF_TERM_FLOATS] = num;
     rows[(size_t)y * FVIF_TERM_FLOATS + 1u] = den;
 }
@@ -261,8 +275,8 @@ __global__ void float_vif_decimate(FloatVifGpuDecimateArgs args)
     }
 
     const size_t at = (size_t)gy * (size_t)args.out_width + (size_t)gx;
-    reinterpret_cast<float *>(args.ref_out)[at] = acc_ref;
-    reinterpret_cast<float *>(args.dis_out)[at] = acc_dis;
+    fvif_device_ptr<float>(args.ref_out)[at] = acc_ref;
+    fvif_device_ptr<float>(args.dis_out)[at] = acc_dis;
 }
 
 } /* extern "C" */

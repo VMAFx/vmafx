@@ -123,13 +123,22 @@ constexpr HvsTables hvs_make_tables()
 }
 
 /* Constant-initialised: hipcc emits both tables as static data. */
-__device__ const HvsTables HVS_TABLES = hvs_make_tables();
+__device__ constexpr HvsTables HVS_TABLES = hvs_make_tables();
 
 /* Round-toward-zero right shift — matches OD_UNBIASED_RSHIFT32
  * macro in xiph/psnr_hvs.c.  Identical to the CUDA twin. */
-__device__ inline int od_dct_rshift(int a, int b)
+__device__ inline int od_ashr(int value, unsigned shift)
 {
-    return (int)(((unsigned int)a >> (32 - b)) + (unsigned int)a) >> b;
+    /* Arithmetic right shift without a signed operand: a negative value gets
+     * its vacated high bits set. `shift` is 1..15. */
+    const uint32_t bits = (uint32_t)value;
+    const uint32_t sign_fill = (value < 0) ? ~(~0u >> shift) : 0u;
+    return (int)((bits >> shift) | sign_fill);
+}
+
+__device__ inline int od_dct_rshift(int a, unsigned b)
+{
+    return od_ashr((int)(((unsigned int)a >> (32u - b)) + (unsigned int)a), b);
 }
 
 /* Forward 8-point DCT — port of od_bin_fdct8 from
@@ -150,39 +159,39 @@ __device__ void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y
     int t4h;
     int t6h;
     t1 = t0 - t1;
-    t1h = od_dct_rshift(t1, 1);
+    t1h = od_dct_rshift(t1, 1u);
     t0 -= t1h;
     t4 += t5;
-    t4h = od_dct_rshift(t4, 1);
+    t4h = od_dct_rshift(t4, 1u);
     t5 -= t4h;
     t3 = t2 - t3;
-    t2 -= od_dct_rshift(t3, 1);
+    t2 -= od_dct_rshift(t3, 1u);
     t6 += t7;
-    t6h = od_dct_rshift(t6, 1);
+    t6h = od_dct_rshift(t6, 1u);
     t7 = t6h - t7;
     t0 += t6h;
     t6 = t0 - t6;
     t2 = t4h - t2;
     t4 = t2 - t4;
-    t0 -= (t4 * 13573 + 16384) >> 15;
-    t4 += (t0 * 11585 + 8192) >> 14;
-    t0 -= (t4 * 13573 + 16384) >> 15;
-    t6 -= (t2 * 21895 + 16384) >> 15;
-    t2 += (t6 * 15137 + 8192) >> 14;
-    t6 -= (t2 * 21895 + 16384) >> 15;
-    t3 += (t5 * 19195 + 16384) >> 15;
-    t5 += (t3 * 11585 + 8192) >> 14;
-    t3 -= (t5 * 7489 + 4096) >> 13;
-    t7 = od_dct_rshift(t5, 1) - t7;
+    t0 -= od_ashr(t4 * 13573 + 16384, 15u);
+    t4 += od_ashr(t0 * 11585 + 8192, 14u);
+    t0 -= od_ashr(t4 * 13573 + 16384, 15u);
+    t6 -= od_ashr(t2 * 21895 + 16384, 15u);
+    t2 += od_ashr(t6 * 15137 + 8192, 14u);
+    t6 -= od_ashr(t2 * 21895 + 16384, 15u);
+    t3 += od_ashr(t5 * 19195 + 16384, 15u);
+    t5 += od_ashr(t3 * 11585 + 8192, 14u);
+    t3 -= od_ashr(t5 * 7489 + 4096, 13u);
+    t7 = od_dct_rshift(t5, 1u) - t7;
     t5 -= t7;
     t3 = t1h - t3;
     t1 -= t3;
-    t7 += (t1 * 3227 + 16384) >> 15;
-    t1 -= (t7 * 6393 + 16384) >> 15;
-    t7 += (t1 * 3227 + 16384) >> 15;
-    t5 += (t3 * 2485 + 4096) >> 13;
-    t3 -= (t5 * 18205 + 16384) >> 15;
-    t5 += (t3 * 2485 + 4096) >> 13;
+    t7 += od_ashr(t1 * 3227 + 16384, 15u);
+    t1 -= od_ashr(t7 * 6393 + 16384, 15u);
+    t7 += od_ashr(t1 * 3227 + 16384, 15u);
+    t5 += od_ashr(t3 * 2485 + 4096, 13u);
+    t3 -= od_ashr(t5 * 18205 + 16384, 15u);
+    t5 += od_ashr(t3 * 2485 + 4096, 13u);
     y0 = t0;
     y1 = t1;
     y2 = t2;
@@ -306,21 +315,22 @@ __device__ float hvs_variance_ratio(const int *blk)
 {
     float means[4] = {0.f, 0.f, 0.f, 0.f};
     float gmean = 0.f;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+    for (unsigned i = 0; i < 8u; i++) {
+        for (unsigned j = 0; j < 8u; j++) {
+            const unsigned sub = ((i & 12u) >> 2u) + ((j & 12u) >> 1u);
             gmean += (float)blk[i * 8 + j];
             means[sub] += (float)blk[i * 8 + j];
         }
     }
     gmean /= 64.f;
-    for (float &mean : means)
+    for (float &mean : means) {
         mean /= 16.f;
+    }
     float vars[4] = {0.f, 0.f, 0.f, 0.f};
     float gvar = 0.f;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+    for (unsigned i = 0; i < 8u; i++) {
+        for (unsigned j = 0; j < 8u; j++) {
+            const unsigned sub = ((i & 12u) >> 2u) + ((j & 12u) >> 1u);
             const float ds = (float)blk[i * 8 + j] - gmean;
             gvar += ds * ds;
             const float qs = (float)blk[i * 8 + j] - means[sub];
@@ -365,9 +375,9 @@ __device__ uint64_t hvs_store_terms(float *terms, const int *ref, const int *dis
                                     int plane)
 {
     uint64_t mask = 0ULL;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const int index = (i * 8) + j;
+    for (unsigned i = 0; i < 8u; i++) {
+        for (unsigned j = 0; j < 8u; j++) {
+            const unsigned index = (i * 8u) + j;
             const float csf = HVS_TABLES.csf[plane][index];
             float error = (float)abs(ref[index] - dist[index]);
             if (index != 0) {
@@ -399,7 +409,7 @@ __global__ __launch_bounds__(PSNR_HVS_HIP_WG) void psnr_hvs_hip(PsnrHvsHipKernel
     const size_t id = ((size_t)blockIdx.x * PSNR_HVS_HIP_WG) + local;
     const bool active = id < 2u * (size_t)args.total_blocks;
     const bool is_dist = (id & 1u) != 0u;
-    const HvsLaneBlock lane = hvs_locate(args, active ? (unsigned)(id >> 1) : 0u, is_dist);
+    const HvsLaneBlock lane = hvs_locate(args, active ? (unsigned)(id >> 1u) : 0u, is_dist);
     int *blk = s_blocks + ((size_t)local * kLaneStride);
     hvs_load_block(blk, lane, args.wide != 0u);
     const float ratio = hvs_variance_ratio(blk);

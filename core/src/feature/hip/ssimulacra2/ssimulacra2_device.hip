@@ -69,6 +69,11 @@ namespace
 
 constexpr float kSs2C2 = 0.0009f; /* ssimulacra2.c kC2 */
 
+/* Pixels of one reduction chunk and chunks of one staged batch, as size_t so
+ * that the index arithmetic below is formed in 64 bits. */
+constexpr size_t kChunkPixels = (size_t)SS2H_REDUCE_BLOCK * SS2H_CHUNK_RUN;
+constexpr size_t kBatchChunks = (size_t)SS2H_REDUCE_BLOCK * SS2H_BATCH_RUN;
+
 /* ------------------------------------------------------------------ */
 /* YUV -> linear RGB, XYB, downsample                                  */
 /* ------------------------------------------------------------------ */
@@ -78,7 +83,7 @@ __device__ inline unsigned ss2h_map(unsigned v, unsigned plane_dim, unsigned lum
 {
     uint64_t s = v;
     if (plane_dim != luma_dim) {
-        s = (plane_dim * 2u == luma_dim) ? (uint64_t)(v >> 1) : (uint64_t)v * plane_dim / luma_dim;
+        s = (plane_dim * 2u == luma_dim) ? (uint64_t)(v >> 1u) : (uint64_t)v * plane_dim / luma_dim;
     }
     return (s >= plane_dim) ? plane_dim - 1u : (unsigned)s;
 }
@@ -287,7 +292,7 @@ __device__ inline void ss2h_terms(const Ss2hCombineArgs &a, size_t idx, double t
 __device__ inline void ss2h_lane_terms(const Ss2hCombineArgs &a, unsigned c, unsigned chunk,
                                        unsigned lane, unsigned j, double terms[SS2H_SUMS])
 {
-    const size_t i = (size_t)chunk * SS2H_CHUNK_PIXELS + (size_t)lane * SS2H_CHUNK_RUN + j;
+    const size_t i = (size_t)chunk * kChunkPixels + (size_t)lane * SS2H_CHUNK_RUN + j;
     if (i < a.pixels) {
         ss2h_terms(a, (size_t)c * a.pixels + i, terms);
         return;
@@ -307,7 +312,7 @@ __device__ inline void ss2h_block_tree(double *shared, unsigned lane, const doub
         shared[lane * SS2H_SUMS + k] = sums[k];
     }
     __syncthreads();
-    for (unsigned half = SS2H_REDUCE_BLOCK / 2u; half > 0u; half >>= 1) {
+    for (unsigned half = SS2H_REDUCE_BLOCK / 2u; half > 0u; half >>= 1u) {
         if (lane < half) {
             for (unsigned k = 0; k < SS2H_SUMS; k++) {
                 shared[lane * SS2H_SUMS + k] += shared[(lane + half) * SS2H_SUMS + k];
@@ -344,7 +349,7 @@ __device__ inline void ss2h_units_store(long long *shared, unsigned lane, unsign
  * composition is not commutative, so the pairing must be adjacent. */
 __device__ inline void ss2h_ordered_tree(long long *shared, unsigned lane)
 {
-    for (unsigned step = 1u; step < SS2H_REDUCE_BLOCK; step <<= 1) {
+    for (unsigned step = 1u; step < SS2H_REDUCE_BLOCK; step <<= 1u) {
         if ((lane & (2u * step - 1u)) == 0u) {
             for (unsigned k = 0; k < SS2H_SUMS; k++) {
                 const VmafOrdsumUnits left = ss2h_units_load(shared, lane, k);
@@ -357,7 +362,7 @@ __device__ inline void ss2h_ordered_tree(long long *shared, unsigned lane)
 }
 
 /* What the lanes of ssimulacra2_ordered_totals do next. */
-enum ss2h_walk_command : unsigned {
+enum ss2h_walk_command : uint8_t {
     SS2H_WALK_LOAD = 0u,  /* stage batch `operand` of the plan and increments */
     SS2H_WALK_TERMS = 1u, /* compute the terms of chunk `operand` */
     SS2H_WALK_DONE = 2u,
@@ -370,7 +375,7 @@ __device__ inline void ss2h_stage_chunk_sums(const double *sums, unsigned chunks
 {
     for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
         const unsigned slot = lane * SS2H_BATCH_RUN + j;
-        const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+        const size_t chunk = (size_t)batch * kBatchChunks + slot;
         staged[slot] = chunk < chunks ? sums[chunk * SS2H_SUMS] : 0.0;
     }
 }
@@ -383,13 +388,14 @@ __device__ inline void ss2h_stage_batch(const int16_t *plan, const int64_t *unit
 {
     for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
         const unsigned slot = lane * SS2H_BATCH_RUN + j;
-        const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+        const size_t chunk = (size_t)batch * kBatchChunks + slot;
         if (chunk >= chunks) {
             continue;
         }
         staged_plan[slot] = (short)plan[chunk];
-        staged_units[slot * 2u] = (long long)units[chunk * 2u];
-        staged_units[slot * 2u + 1u] = (long long)units[chunk * 2u + 1u];
+        const size_t pair = (size_t)slot * 2u;
+        staged_units[pair] = (long long)units[chunk * 2u];
+        staged_units[pair + 1u] = (long long)units[chunk * 2u + 1u];
     }
 }
 
@@ -402,8 +408,8 @@ __device__ inline unsigned ss2h_walk_batch(double *sum, unsigned *chunk, unsigne
 {
     while (*chunk < chunks && *chunk / SS2H_BATCH == staged_batch) {
         const unsigned slot = *chunk % SS2H_BATCH;
-        const VmafOrdsumUnits u =
-            vmaf_ordsum_units((int64_t)units[slot * 2u], (int64_t)units[slot * 2u + 1u]);
+        const size_t pair = (size_t)slot * 2u;
+        const VmafOrdsumUnits u = vmaf_ordsum_units((int64_t)units[pair], (int64_t)units[pair + 1u]);
         if (!vmaf_ordsum_add_chunk(sum, (int)plan[slot], u)) {
             *operand = *chunk;
             return SS2H_WALK_TERMS;
@@ -471,12 +477,59 @@ __device__ inline void ss2h_row_tile_load(const Ss2hRowPlane &rows, const Ss2hBl
         const unsigned row = rows.row0 + (j * kRowsPerLoad) + sub;
         const bool inside = col_ok && row < args.height;
         const size_t idx = inside ? ((size_t)row * args.width) + col : 0u;
-        float v = rows.a[idx];
-        if constexpr (kProduct) {
-            const float pb = rows.b[idx];
-            v = v * pb;
-        }
+        const float pa = rows.a[idx];
+        const float v = kProduct ? pa * rows.b[idx] : pa;
         vals[j] = inside ? v : 0.0f;
+    }
+}
+
+/* Parity of a tile index: the two tile slots alternate. */
+__device__ inline unsigned ss2h_tile_slot(int chunk)
+{
+    return (unsigned)chunk & 1u;
+}
+
+/* One chunk's walk of the IIR over this lane's row: the steps n = first + k.
+ * The left input lies in tile c - 1 or c, the right one is column k of tile
+ * c; steps left of column 0 store nothing. */
+__device__ inline void ss2h_row_walk(const Ss2hBlurArgs &args,
+                                     float (*tile)[SS2H_ROW_TILE][SS2H_ROW_COLS + 1],
+                                     float (*outs)[SS2H_ROW_COLS + 1], int chunk, int first,
+                                     Ss2hIirState &st)
+{
+    constexpr int kCols = (int)SS2H_ROW_COLS;
+    const unsigned lane = threadIdx.x;
+    const int width = (int)args.width;
+    const int radius = args.iir.radius;
+    const float *right = tile[ss2h_tile_slot(chunk)][lane];
+    for (int k = 0; k < kCols && first + k < width; k++) {
+        const int n = first + k;
+        const int left = n - radius - 1;
+        const float lv =
+            (left >= 0) ? tile[ss2h_tile_slot(left / kCols)][lane][left % kCols] : 0.0f;
+        const float s = ss2h_iir_step(lv + right[k], st, args.iir);
+        if (n >= 0) {
+            outs[lane][k] = s;
+        }
+    }
+}
+
+/* This lane's share of the chunk's outputs, from LDS to the plane. */
+__device__ inline void ss2h_row_store(const Ss2hRowPlane &rows, const Ss2hBlurArgs &args,
+                                      const float (*outs)[SS2H_ROW_COLS + 1], int col)
+{
+    const unsigned lane = threadIdx.x;
+    const unsigned my_col = lane % SS2H_ROW_COLS;
+    const unsigned sub = lane / SS2H_ROW_COLS;
+    if (col < 0 || col >= (int)args.width) {
+        return;
+    }
+#pragma unroll
+    for (unsigned j = 0; j < kTileLoads; j++) {
+        const unsigned r = (j * kRowsPerLoad) + sub;
+        if (rows.row0 + r < args.height) {
+            rows.out[((size_t)(rows.row0 + r) * args.width) + (size_t)col] = outs[r][my_col];
+        }
     }
 }
 
@@ -493,8 +546,7 @@ __device__ inline void ss2h_blur_rows(const Ss2hBlurArgs &args,
     const unsigned sub = lane / SS2H_ROW_COLS;
     const Ss2hRowPlane rows = ss2h_row_plane(args, blockIdx.y, blockIdx.x * SS2H_ROW_TILE);
     const int width = (int)args.width;
-    const int radius = args.iir.radius;
-    const int lead = radius - 1;
+    const int lead = args.iir.radius - 1;
 
     float vals[kTileLoads];
     ss2h_row_tile_load<kProduct>(rows, args, 0, lane, vals);
@@ -509,34 +561,65 @@ __device__ inline void ss2h_blur_rows(const Ss2hBlurArgs &args,
     for (int chunk = 0; (chunk * kCols) - lead < width; chunk++) {
         const int first = (chunk * kCols) - lead;
         ss2h_row_tile_load<kProduct>(rows, args, chunk + 1, lane, vals);
-        const float *right = tile[chunk & 1][lane];
-        for (int k = 0; k < kCols && first + k < width; k++) {
-            const int n = first + k;
-            const int left = n - radius - 1;
-            const float lv = (left >= 0) ? tile[(left / kCols) & 1][lane][left % kCols] : 0.0f;
-            const float s = ss2h_iir_step(lv + right[k], st, args.iir);
-            if (n >= 0) {
-                outs[lane][k] = s;
-            }
-        }
+        ss2h_row_walk(args, tile, outs, chunk, first, st);
         __syncwarp();
-        const int col = first + (int)my_col;
-        if (col >= 0 && col < width) {
-#pragma unroll
-            for (unsigned j = 0; j < kTileLoads; j++) {
-                const unsigned r = (j * kRowsPerLoad) + sub;
-                if (rows.row0 + r < args.height) {
-                    rows.out[((size_t)(rows.row0 + r) * args.width) + (size_t)col] =
-                        outs[r][my_col];
-                }
-            }
-        }
+        ss2h_row_store(rows, args, outs, first + (int)my_col);
 #pragma unroll
         for (unsigned j = 0; j < kTileLoads; j++) {
-            tile[(chunk + 1) & 1][(j * kRowsPerLoad) + sub][my_col] = vals[j];
+            tile[ss2h_tile_slot(chunk + 1)][(j * kRowsPerLoad) + sub][my_col] = vals[j];
         }
         __syncwarp();
     }
+}
+
+/* What every lane of ssimulacra2_ordered_totals does in one round: stage the
+ * next batch of the plan and increments, or compute its run of terms of
+ * chunk `what` into LDS (`k` selects the sum). */
+__device__ inline void ss2h_totals_round(const Ss2hCombineArgs &a, unsigned todo, unsigned what,
+                                         unsigned c, unsigned k, size_t first, unsigned lane,
+                                         double *terms_of_chunk, short *staged_plan,
+                                         long long *staged_units)
+{
+    if (todo == SS2H_WALK_LOAD) {
+        ss2h_stage_batch(a.plan + first, a.units + first * 2u, a.chunks, what, lane, staged_plan,
+                         staged_units);
+        return;
+    }
+    for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
+        double terms[SS2H_SUMS];
+        ss2h_lane_terms(a, c, what, lane, j, terms);
+        terms_of_chunk[lane * SS2H_CHUNK_RUN + j] = terms[k];
+    }
+}
+
+/* The walk's state in lane 0 of ssimulacra2_ordered_totals, kept in LDS
+ * words shared with the other lanes (command, operand) and in registers. */
+struct Ss2hTotalsState {
+    double sum;
+    unsigned chunk;
+    unsigned staged_batch;
+    unsigned *command;
+    unsigned *operand;
+};
+
+/* Lane 0, after a round: adds the computed chunk's terms in pixel order (the
+ * CPU's loop) or notes the staged batch, then walks on. */
+__device__ inline void ss2h_totals_walk(const Ss2hCombineArgs &a, unsigned todo, unsigned what,
+                                        const double *terms_of_chunk, const short *staged_plan,
+                                        const long long *staged_units, Ss2hTotalsState *state)
+{
+    if (todo == SS2H_WALK_TERMS) {
+        for (size_t i = 0; i < kChunkPixels; i++) {
+            state->sum += terms_of_chunk[i];
+        }
+        state->chunk = what + 1u;
+    } else {
+        state->staged_batch = what;
+    }
+    unsigned next = 0u;
+    *state->command = ss2h_walk_batch(&state->sum, &state->chunk, a.chunks, state->staged_batch,
+                                      staged_plan, staged_units, &next);
+    *state->operand = next;
 }
 
 } // namespace
@@ -657,7 +740,7 @@ __global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_chunk_plan(Ss2h
         __syncthreads();
         for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
             const unsigned slot = lane * SS2H_BATCH_RUN + j;
-            const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+            const size_t chunk = (size_t)batch * kBatchChunks + slot;
             if (chunk < a.chunks) {
                 plan[chunk] = (int16_t)staged_plan[slot];
             }
@@ -676,8 +759,8 @@ __global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_chunk_units(Ss2
     const unsigned lane = threadIdx.x;
     const size_t first = ((size_t)c * SS2H_SUMS) * a.chunks + chunk;
     VmafOrdsumUnits units[SS2H_SUMS];
-    for (unsigned k = 0; k < SS2H_SUMS; k++) {
-        units[k] = vmaf_ordsum_units(0, 0);
+    for (VmafOrdsumUnits &unit : units) {
+        unit = vmaf_ordsum_units(0, 0);
     }
     for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
         double terms[SS2H_SUMS];
@@ -718,9 +801,7 @@ __global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_ordered_totals(
     const unsigned lane = threadIdx.x;
     const size_t first = ((size_t)c * SS2H_SUMS + k) * a.chunks;
     const unsigned rounds = a.chunks + a.chunks / SS2H_BATCH + 2u;
-    double sum = 0.0;
-    unsigned chunk = 0u;
-    unsigned staged_batch = 0u;
+    Ss2hTotalsState state = {0.0, 0u, 0u, &command, &operand};
     if (lane == 0u) {
         command = SS2H_WALK_LOAD;
         operand = 0u;
@@ -732,34 +813,15 @@ __global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_ordered_totals(
         if (todo == SS2H_WALK_DONE) {
             break;
         }
-        if (todo == SS2H_WALK_LOAD) {
-            ss2h_stage_batch(a.plan + first, a.units + first * 2u, a.chunks, what, lane,
-                             staged_plan, staged_units);
-        } else {
-            for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
-                double terms[SS2H_SUMS];
-                ss2h_lane_terms(a, c, what, lane, j, terms);
-                terms_of_chunk[lane * SS2H_CHUNK_RUN + j] = terms[k];
-            }
-        }
+        ss2h_totals_round(a, todo, what, c, k, first, lane, terms_of_chunk, staged_plan,
+                          staged_units);
         __syncthreads();
         if (lane == 0u) {
-            if (todo == SS2H_WALK_TERMS) {
-                for (unsigned i = 0; i < SS2H_CHUNK_PIXELS; i++) {
-                    sum += terms_of_chunk[i];
-                }
-                chunk = what + 1u;
-            } else {
-                staged_batch = what;
-            }
-            unsigned next = 0u;
-            command = ss2h_walk_batch(&sum, &chunk, a.chunks, staged_batch, staged_plan,
-                                      staged_units, &next);
-            operand = next;
+            ss2h_totals_walk(a, todo, what, terms_of_chunk, staged_plan, staged_units, &state);
         }
     }
     if (lane == 0u) {
-        a.totals[(size_t)c * SS2H_SUMS + k] = sum;
+        a.totals[(size_t)c * SS2H_SUMS + k] = state.sum;
     }
 }
 
