@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: 8bc53c066fd8ce179382f04ce995d11a4f9cdc45c8efc24b2b8b618091878254
+# vmafx-input-sha256: 9ba319c8277328848b1b5277576c071ee12b5cf48a96bcf5e7ac447e7b6b99f8
 # vmafx-inputs: tools/vmaf-roi-score/pyproject.toml, requirements/locks/package-build.in
 build==1.6.1 \
     --hash=sha256:51cc11666391ab6f092070437ac747002ff46f3e4113a3622177ee6b488bfc53 \
@@ -154,6 +154,10 @@ pluggy==1.6.0 \
     # via
     #   hatchling
     #   pytest
+poetry-core==2.5.0 \
+    --hash=sha256:81d04c9253b19d0604718268d781867c8f7b2128e5b25bbf1e84141eec6b89c4 \
+    --hash=sha256:98ee465b66f7e14bb9fbe68fb5e00d0cff184f036993ec94610ae4b5612f3add
+    # via -r requirements/locks/package-build.in
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c

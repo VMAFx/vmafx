@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Build backend lock and vmaf-tune host assumptions (2026-10-05)
+
+`fix/master-red-tests-2026-10-05`. One lock input and two test files.
+
+- `requirements/locks/package-build.in` carries `poetry-core==2.5.0` (`reuse` 6.2.0 builds from
+  source on Python 3.14); the six locks that include it were regenerated. A sync that
+  regenerates every lock brings unrelated newer pins: keep this change's `poetry-core` entries.
+- `tools/vmaf-tune/tests/test_bisect_concurrency_cap.py` passes `score_runner` to every bisect
+  call that reaches scoring; `test_bbb_e2e_v14_bug_cluster.py` detects an NVIDIA GPU before the
+  live NVENC probe. A sync keeps both.
+
 ## Python lock declarations and the cosign verifier contract (2026-10-04)
 
 `fix/master-red-locks-cosign`. Three declarations and one test.

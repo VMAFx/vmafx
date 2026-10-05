@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: f5ec9a4ca962fc3931d51443213f75fa81d943e023bd3d5f0fc0b13ec822c183
+# vmafx-input-sha256: 29f83af25f83363c529903f9f4b937e81dcc8b1b471ad7223270c65d88e3b30a
 # vmafx-inputs: tools/ensemble-training-kit/pyproject.toml, requirements/locks/package-build.in, requirements/locks/ensemble-kit-dev.in
 build==1.6.1 \
     --hash=sha256:51cc11666391ab6f092070437ac747002ff46f3e4113a3622177ee6b488bfc53 \
@@ -92,9 +92,9 @@ editables==0.6 \
     --hash=sha256:1163834902381c4613787951c5914800fdf155ae08848a373b8ea5006780977c \
     --hash=sha256:d70e4698078a1d033e7786d9c64e5be070d058a67c21417024d38a58ac20aa43
     # via -r requirements/locks/package-build.in
-filelock==4.0.10 \
-    --hash=sha256:00d6a81f976a6332551c2c10f39e12b4abb7e01c64d4c497b81a615bc9186f1f \
-    --hash=sha256:698048d158dc3c9e18cc5e88b3efdd4bd0e77d76686b22adb4511cc4b2c2f0db
+filelock==4.0.11 \
+    --hash=sha256:1cbdc4ace7fb11d2f6d073f5c3d91537a23b3d58d2bf2fdffc12c6d717a589c6 \
+    --hash=sha256:9dc453a1edd25626a6fc97c2cb1bd9f7e46345843d40b3181c071761fb9a5f7a
     # via torch
 flatbuffers==25.12.19 \
     --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
@@ -618,6 +618,10 @@ pluggy==1.6.0 \
     # via
     #   hatchling
     #   pytest
+poetry-core==2.5.0 \
+    --hash=sha256:81d04c9253b19d0604718268d781867c8f7b2128e5b25bbf1e84141eec6b89c4 \
+    --hash=sha256:98ee465b66f7e14bb9fbe68fb5e00d0cff184f036993ec94610ae4b5612f3add
+    # via -r requirements/locks/package-build.in
 protobuf==7.36.2 \
     --hash=sha256:497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb \
     --hash=sha256:89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2 \

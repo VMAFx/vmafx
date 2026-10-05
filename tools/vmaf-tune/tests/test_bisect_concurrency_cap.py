@@ -142,6 +142,7 @@ class TestDecodeSemaphore:
             duration_s=1.0,
             max_iterations=1,
             encode_runner=_make_fake_encode_runner(),
+            score_runner=_make_fake_score_runner(),
             decode_runner=_fake_decode_runner,
             workdir=tmp_path / "bisect_work",
             decode_semaphore=sem,
@@ -251,6 +252,7 @@ class TestAggressiveCleanup:
             duration_s=1.0,
             max_iterations=1,
             encode_runner=_make_fake_encode_runner(),
+            score_runner=_make_fake_score_runner(),
             decode_runner=self._fake_decode_runner_yuv_creator(created_yuv_files),
             workdir=work,
         )
@@ -290,6 +292,7 @@ class TestAggressiveCleanup:
                 duration_s=1.0,
                 max_iterations=1,
                 encode_runner=encode_runner,
+                score_runner=_make_fake_score_runner(),
                 workdir=work,
             )
 

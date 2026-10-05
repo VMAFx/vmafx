@@ -3761,6 +3761,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   stops `test_integer_vif_sv_sq`.
 
 
+- **The hosted `Tooling Tests` job installs its lock again, and the `vmaf-tune` suite no
+  longer assumes a GPU host or a `vmaf` on `PATH`.** `reuse==6.2.0` has no wheel for
+  Python 3.14, so pip builds it from source with `poetry-core`, which the locked build
+  backend set lacked (`poetry-core==2.5.0` is now in `requirements/locks/package-build.in` and the
+  locks that include it). The NVENC probe test needs a GPU the driver lists, and the two
+  bisect cap tests stub the scoring step the way their docstring says.
+
+
 - **The Metal twins compute the CPU's scores by construction
   ([ADR-1498](docs/adr/1498-metal-twins-exact-designs.md)).** Each Metal
   extractor now runs the design that makes its CUDA, HIP or SYCL twin return

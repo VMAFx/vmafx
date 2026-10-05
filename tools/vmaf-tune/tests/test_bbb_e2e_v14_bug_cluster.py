@@ -335,10 +335,63 @@ def _ffmpeg_reports_encoder(encoder: str) -> bool:
     return False
 
 
+def _nvidia_gpu_present() -> bool:
+    """Return True iff the host exposes an NVIDIA GPU to user space.
+
+    ffmpeg advertises ``h264_nvenc`` whenever it is compiled with the NVENC
+    headers, on a host without a GPU too (hosted CI runners), so the encoder
+    listing says nothing about the hardware. ``nvidia-smi -L`` names every
+    GPU the driver sees; the character device ``/dev/nvidiactl`` is the same
+    evidence where the tool is not installed.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    smi = shutil.which("nvidia-smi")
+    if smi is not None:
+        try:
+            result = subprocess.run(
+                [smi, "-L"], capture_output=True, text=True, timeout=10, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0 and "GPU " in result.stdout
+    return os.path.exists("/dev/nvidiactl")
+
+
+def test_nvidia_gpu_detection_is_false_without_driver_evidence(monkeypatch):
+    """No nvidia-smi and no /dev/nvidiactl means no GPU host (hosted runner)."""
+    import os
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    monkeypatch.setattr(os.path, "exists", lambda _path: False)
+    assert _nvidia_gpu_present() is False
+
+
+def test_nvidia_gpu_detection_follows_nvidia_smi_listing(monkeypatch):
+    """A listed GPU is a GPU host; a failing or empty listing is not."""
+    import shutil
+    import subprocess
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/nvidia-smi")
+
+    def _fake(stdout: str, rc: int):
+        return lambda *a, **k: subprocess.CompletedProcess(a, rc, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake("GPU 0: NVIDIA RTX (UUID: x)\n", 0))
+    assert _nvidia_gpu_present() is True
+    monkeypatch.setattr(subprocess, "run", _fake("", 9))
+    assert _nvidia_gpu_present() is False
+    monkeypatch.setattr(subprocess, "run", _fake("No devices were found\n", 0))
+    assert _nvidia_gpu_present() is False
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
-    not _ffmpeg_reports_encoder("h264_nvenc"),
-    reason="h264_nvenc not compiled into local ffmpeg or no NVIDIA GPU",
+    not (_ffmpeg_reports_encoder("h264_nvenc") and _nvidia_gpu_present()),
+    reason="h264_nvenc not compiled into local ffmpeg or no NVIDIA GPU visible to the driver",
 )
 def test_v14_a_nvenc_probe_succeeds_on_gpu_host():
     """Live NVENC probe succeeds with the 320x240 fix (requires NVIDIA GPU + driver)."""
