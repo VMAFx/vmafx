@@ -50,7 +50,7 @@ typedef struct Session {
 
 static bool same_bits(double a, double b)
 {
-    return memcmp(&a, &b, sizeof(a)) == 0;
+    return vt_same_bits(a, b);
 }
 
 static bool submit_frames(VmafxContext *context, unsigned n)
@@ -333,6 +333,16 @@ static char *test_pooled_refusals(void)
               vmafx_score_pooled(s.context, s.model, VMAFX_POOL_MEAN, 3, 1, &pooled, &error) ==
                       VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "first", VMAFX_SUBJECT_FRAME));
+    mu_assert("close", close_session(&s));
+    return NULL;
+}
+
+static char *test_pooled_set_refusals(void)
+{
+    Session s;
+    mu_assert("session", open_session(&s, true));
+    VmafxPooledScore pooled = VMAFX_POOLED_SCORE_INIT;
+    VmafxError *error = NULL;
     const uint64_t too_far = (uint64_t)UINT_MAX + 1u;
     mu_assert("NULL out", vmafx_score_pooled_model_set(s.context, s.set, VMAFX_POOL_MEAN, 0,
                                                        too_far, NULL, &error) == VMAFX_E_INVALID &&
@@ -357,6 +367,7 @@ char *run_tests(void)
         MU_TEST(test_set_pooled_score),           MU_TEST(test_pooled_matches_libvmaf),
         MU_TEST(test_pending_is_not_an_error),    MU_TEST(test_frame_score_refusals),
         MU_TEST(test_unscored_frame_named),       MU_TEST(test_pooled_refusals),
+        MU_TEST(test_pooled_set_refusals),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

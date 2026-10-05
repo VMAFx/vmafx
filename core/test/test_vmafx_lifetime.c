@@ -26,6 +26,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,15 +131,25 @@ static char *test_model_released_before_destroy(void)
     return NULL;
 }
 
-static char *test_failed_destroy_is_retried(void)
+/* A threaded context holding the vmaf_b_v0.6.3 set (the caller's reference
+ * released), N_FRAMES scored and flushed. */
+static VmafxContext *scored_set_context(VmafxModelSet **set)
 {
     VmafxContext *context = threaded_context();
+    *set = NULL;
+    const bool ok = context && vmafx_model_set_load(NULL, "vmaf_b_v0.6.3", set, NULL) == VMAFX_OK &&
+                    vmafx_context_use_model_set(context, *set, NULL) == VMAFX_OK;
+    vmafx_model_set_unref(*set);
+    return ok && submit_heap_frames(context, N_FRAMES) && vmafx_flush(context, NULL) == VMAFX_OK ?
+               context :
+               NULL;
+}
+
+static char *test_failed_destroy_is_retried(void)
+{
     VmafxModelSet *set = NULL;
-    mu_assert("load", vmafx_model_set_load(NULL, "vmaf_b_v0.6.3", &set, NULL) == VMAFX_OK);
-    mu_assert("use", vmafx_context_use_model_set(context, set, NULL) == VMAFX_OK);
-    vmafx_model_set_unref(set);
-    mu_assert("frames", submit_heap_frames(context, N_FRAMES));
-    mu_assert("flush", vmafx_flush(context, NULL) == VMAFX_OK);
+    VmafxContext *context = scored_set_context(&set);
+    mu_assert("context", context != NULL);
     fail_pool_destroy_once = 1;
     VmafxError *error = NULL;
     mu_assert("the forced failure fails the destroy",

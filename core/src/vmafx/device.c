@@ -11,6 +11,7 @@
  * enumeration and external handles are WP3's (core/src/vmafx/device*.c).
  */
 
+#include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -61,6 +62,7 @@ VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out, 
         return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE, "device",
                           "cannot allocate a device");
     }
+    assert(d.backend == VMAFX_BACKEND_CPU && d.struct_size == sizeof(d));
     device->backend = d.backend;
     device->index = 0;
     if (vmaf_ref_init(&device->refs) != 0) {

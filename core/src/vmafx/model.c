@@ -43,7 +43,7 @@
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
 /* Largest model file read; the largest shipped model is far below 1 MiB. */
-#define VMAFX_MODEL_FILE_MAX (64u * 1024u * 1024u)
+#define VMAFX_MODEL_FILE_MAX (UINT64_C(64) << 20)
 /* Bound of the built-in table walk (HISS-02); the table holds about 20. */
 #define VMAFX_MODEL_BUILTIN_MAX 1024u
 
@@ -94,8 +94,8 @@ static VmafxStatus model_file_size(const VmafxReport *report, const char *path, 
     }
     if (info.size == 0 || info.size > VMAFX_MODEL_FILE_MAX) {
         return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_PATH, path,
-                          "%llu bytes; a model file holds 1 to %u bytes",
-                          (unsigned long long)info.size, VMAFX_MODEL_FILE_MAX);
+                          "%llu bytes; a model file holds 1 to %llu bytes",
+                          (unsigned long long)info.size, (unsigned long long)VMAFX_MODEL_FILE_MAX);
     }
     *size = (size_t)info.size;
     return VMAFX_OK;
@@ -112,9 +112,11 @@ static VmafxStatus read_model_file(const VmafxReport *report, const char *path, 
                                    size_t *len)
 {
     *data = NULL;
+    *len = 0;
     VmafxStatus status = model_file_size(report, path, len);
-    if (status != VMAFX_OK) {
-        return status;
+    if (status != VMAFX_OK || *len == 0) {
+        /* model_file_size() refuses an empty file, naming the path. */
+        return status != VMAFX_OK ? status : VMAFX_E_RANGE;
     }
     FILE *const file = vmaf_fopen_utf8(path, "rb");
     if (!file) {

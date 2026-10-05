@@ -54,8 +54,9 @@ VmafxStatus vmafx_held_reserve(const VmafxReport *report, VmafxHeld *held)
         return VMAFX_OK;
     }
     const uint32_t capacity = held->capacity ? held->capacity * 2u : 4u;
-    void **const items =
-        capacity <= VMAFX_HELD_MAX ? realloc((void *)held->items, capacity * sizeof(*items)) : NULL;
+    void **const items = capacity <= VMAFX_HELD_MAX ?
+                             (void **)realloc((void *)held->items, capacity * sizeof(*items)) :
+                             NULL;
     if (!items) {
         return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "cannot hold %u more references", (unsigned)capacity);
@@ -130,13 +131,30 @@ static VmafxStatus read_config(const VmafxReport *report, const VmafxContextConf
     return VMAFX_OK;
 }
 
+/* The engine's log level of a checked VmafxLogLevel (values equal). */
+static enum VmafLogLevel engine_log_level(uint32_t level)
+{
+    switch (level) {
+    case VMAFX_LOG_LEVEL_ERROR:
+        return VMAF_LOG_LEVEL_ERROR;
+    case VMAFX_LOG_LEVEL_WARNING:
+        return VMAF_LOG_LEVEL_WARNING;
+    case VMAFX_LOG_LEVEL_INFO:
+        return VMAF_LOG_LEVEL_INFO;
+    case VMAFX_LOG_LEVEL_DEBUG:
+        return VMAF_LOG_LEVEL_DEBUG;
+    default:
+        return VMAF_LOG_LEVEL_NONE;
+    }
+}
+
 /* The engine configuration. With a log callback the engine keeps the process
  * log level as it is (the context filters its own messages). */
 static VmafConfiguration engine_config(const VmafxContextConfig *cfg)
 {
     VmafConfiguration ecfg;
     memset(&ecfg, 0, sizeof(ecfg));
-    ecfg.log_level = cfg->log_callback ? vmaf_get_log_level() : (enum VmafLogLevel)cfg->log_level;
+    ecfg.log_level = cfg->log_callback ? vmaf_get_log_level() : engine_log_level(cfg->log_level);
     ecfg.n_threads = cfg->n_threads;
     ecfg.n_subsample = cfg->n_subsample;
     ecfg.cpumask = cfg->cpumask;
@@ -154,7 +172,7 @@ static VmafxContext *new_context(const VmafxContextConfig *cfg)
     context->log_user = cfg->log_user;
     context->sink.deliver = deliver_to_callback;
     context->sink.user = context;
-    context->sink.level = (enum VmafLogLevel)cfg->log_level;
+    context->sink.level = engine_log_level(cfg->log_level);
     return context;
 }
 

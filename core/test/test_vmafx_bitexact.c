@@ -13,13 +13,13 @@
  * one session runs through libvmaf (vmaf_init, vmaf_picture_alloc,
  * vmaf_read_pictures) and one through VMAFx (vmafx_context_create, frames
  * borrowed from the file buffers with vmafx_frame_wrap_host, vmafx_submit).
- * Compared with memcmp of the doubles: the model score of every frame, the
+ * Compared bit for bit: the model score of every frame, the
  * pooled model score for every pool method, every feature the collector
  * holds at every frame, and every feature pooled with every method. The two
  * sessions must also hold the same feature names.
  *
- * The YUV files live in python/test/resource/yuv (VMAFX_TEST_YUV_DIR); the
- * test is skipped (77) when they are missing.
+ * The YUV files live in python/test/resource/yuv (VMAFX_TEST_YUV_DIR, set by
+ * Meson at build time); the test is skipped (77) when they are missing.
  *
  * Failing first: on the WP1 base the vmafx_ functions do not exist. Measured
  * with planted defects on this branch: a borrowed frame whose chroma planes
@@ -69,6 +69,10 @@ static const uint32_t all_pools[] = {
 };
 #define N_POOLS (sizeof(all_pools) / sizeof(all_pools[0]))
 
+#ifndef VMAFX_TEST_YUV_DIR
+#error "VMAFX_TEST_YUV_DIR: the fixture directory, set by core/test/meson.build"
+#endif
+
 /* Values compared, over the whole run. */
 static unsigned long compared;
 
@@ -82,9 +86,8 @@ typedef struct Clip {
 /* The whole file `name` of the fixture directory, or NULL. */
 static uint8_t *read_fixture(const char *name, size_t *size)
 {
-    const char *dir = getenv("VMAFX_TEST_YUV_DIR");
     char path[4096];
-    const int n = snprintf(path, sizeof(path), "%s/%s", dir ? dir : ".", name);
+    const int n = snprintf(path, sizeof(path), "%s/%s", VMAFX_TEST_YUV_DIR, name);
     FILE *file = n > 0 && (size_t)n < sizeof(path) ? fopen(path, "rb") : NULL;
     if (!file) {
         return NULL;
@@ -182,7 +185,7 @@ static VmafxContext *run_vmafx(Clip *clip, VmafxModel *model)
 static bool same_bits(double a, double b)
 {
     compared++;
-    return memcmp(&a, &b, sizeof(a)) == 0;
+    return vt_same_bits(a, b);
 }
 
 static char *compare_model(VmafContext *vmaf, VmafModel *legacy, VmafxContext *context,

@@ -11360,6 +11360,7 @@
         "core/src/vmafx/submit.c": 1,
         "core/test/check_exported_symbols.py": 3,
         "core/test/meson.build": 4,
+        "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
         "core/test/test_vmafx_abi_layout.c": 1,
         "core/test/test_vmafx_api_slice.c": 1,
         "core/test/test_vmafx_bitexact.c": 1,

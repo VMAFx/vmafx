@@ -57,6 +57,22 @@ static int frame_release(VmafPicture *pic, void *cookie)
     return err;
 }
 
+enum VmafPixelFormat vmafx_engine_pixel_format(uint32_t pix_fmt)
+{
+    switch (pix_fmt) {
+    case VMAFX_PIXEL_FORMAT_YUV420P:
+        return VMAF_PIX_FMT_YUV420P;
+    case VMAFX_PIXEL_FORMAT_YUV422P:
+        return VMAF_PIX_FMT_YUV422P;
+    case VMAFX_PIXEL_FORMAT_YUV444P:
+        return VMAF_PIX_FMT_YUV444P;
+    case VMAFX_PIXEL_FORMAT_YUV400P:
+        return VMAF_PIX_FMT_YUV400P;
+    default:
+        return VMAF_PIX_FMT_UNKNOWN;
+    }
+}
+
 static uint32_t plane_count(uint32_t pix_fmt)
 {
     return pix_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
@@ -126,7 +142,7 @@ VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *d
                                                "frame", "cannot allocate a frame");
     }
     const int err =
-        vmaf_picture_alloc(&frame->pic, (enum VmafPixelFormat)d.pix_fmt, d.bpc, d.w, d.h);
+        vmaf_picture_alloc(&frame->pic, vmafx_engine_pixel_format(d.pix_fmt), d.bpc, d.w, d.h);
     if (err) {
         free(frame);
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_PARAMETER,
@@ -154,7 +170,7 @@ static VmafxStatus check_host_planes(const VmafxReport *report, const VmafxFrame
                                                "planes.stride[2]"};
     unsigned w[3];
     unsigned h[3];
-    vmaf_picture_plane_extents((enum VmafPixelFormat)d->pix_fmt, d->w, d->h, w, h);
+    vmaf_picture_plane_extents(vmafx_engine_pixel_format(d->pix_fmt), d->w, d->h, w, h);
     const uint64_t bytes = d->bpc > 8u ? 2u : 1u;
     const uint32_t n_planes = plane_count(d->pix_fmt);
     for (uint32_t i = 0; i < n_planes; i++) {
@@ -175,7 +191,7 @@ static VmafxStatus check_host_planes(const VmafxReport *report, const VmafxFrame
 static int wrap_picture(VmafxFrame *frame, const VmafxFrameDesc *d, const VmafxHostPlanes *p)
 {
     VmafPicture *const pic = &frame->pic;
-    pic->pix_fmt = (enum VmafPixelFormat)d->pix_fmt;
+    pic->pix_fmt = vmafx_engine_pixel_format(d->pix_fmt);
     pic->bpc = d->bpc;
     vmaf_picture_plane_extents(pic->pix_fmt, d->w, d->h, pic->w, pic->h);
     for (uint32_t i = 0; i < plane_count(d->pix_fmt); i++) {

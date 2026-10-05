@@ -170,20 +170,34 @@ static inline VmafxFrame *vt_wrap_frame(const VmafxFrameDesc *d, uint8_t *data, 
     return vmafx_frame_wrap_host(NULL, d, &planes, &frame, NULL) == VMAFX_OK ? frame : NULL;
 }
 
-/* Deterministic content: a gradient that differs per frame and per `seed`. */
+/* Deterministic content: a gradient that differs per frame and per `seed`;
+ * samples above 8 bits are masked to the depth. */
 static inline void vt_fill(const VmafxFrameDesc *d, uint8_t *data, unsigned seed)
 {
     const size_t n = vt_frame_bytes(d);
+    const size_t offset = (size_t)seed * 29u;
     for (size_t i = 0; i < n; i++) {
-        data[i] = (uint8_t)((i * 7u + (i / 64u) * 13u + seed * 29u) & 0xffu);
+        data[i] = (uint8_t)((i * 7u + (i / 64u) * 13u + offset) & 0xffu);
     }
     if (d->bpc > 8u) {
-        uint16_t *samples = (uint16_t *)(void *)data;
         const uint16_t max = (uint16_t)((1u << d->bpc) - 1u);
-        for (size_t i = 0; i < n / 2u; i++) {
-            samples[i] = (uint16_t)(samples[i] & max);
+        for (size_t i = 0; i + 1u < n; i += 2u) {
+            uint16_t sample = 0;
+            memcpy(&sample, data + i, sizeof(sample));
+            sample = (uint16_t)(sample & max);
+            memcpy(data + i, &sample, sizeof(sample));
         }
     }
+}
+
+/* Bit-for-bit equality of two doubles (no memcmp of a floating object). */
+static inline bool vt_same_bits(double a, double b)
+{
+    uint64_t x = 0;
+    uint64_t y = 0;
+    memcpy(&x, &a, sizeof(x));
+    memcpy(&y, &b, sizeof(y));
+    return x == y;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

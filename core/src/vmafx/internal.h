@@ -143,6 +143,10 @@ VmafxDevice *vmafx_device_cpu(void);
  * reference moves into the returned picture, which the engine releases. */
 VmafPicture vmafx_frame_take_picture(VmafxFrame *frame);
 
+/* The engine's pixel format of a VmafxPixelFormat (UNKNOWN for any other
+ * value; values equal). */
+enum VmafPixelFormat vmafx_engine_pixel_format(uint32_t pix_fmt);
+
 /* A model set's engine collection. */
 VmafModelCollection *vmafx_model_set_engine(const VmafxModelSet *set);
 

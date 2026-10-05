@@ -63,7 +63,7 @@ static void store_be32(uint8_t *p, uint32_t v)
 static void schedule(const uint8_t block[SHA256_BLOCK], uint32_t w[SHA256_ROUNDS])
 {
     for (unsigned t = 0; t < 16u; t++) {
-        w[t] = load_be32(block + 4u * t);
+        w[t] = load_be32(block + (size_t)4u * t);
     }
     for (unsigned t = 16; t < SHA256_ROUNDS; t++) {
         const uint32_t s0 = rotr(w[t - 15u], 7) ^ rotr(w[t - 15u], 18) ^ (w[t - 15u] >> 3);
@@ -107,11 +107,11 @@ static void compress_tail(uint32_t state[8], const uint8_t *tail, size_t tail_le
     blocks[tail_len] = 0x80u;
     const size_t n_blocks = tail_len + 1u + SHA256_LENGTH_FIELD > SHA256_BLOCK ? 2u : 1u;
     const uint64_t bits = (uint64_t)len * 8u;
-    uint8_t *const length = blocks + n_blocks * SHA256_BLOCK - SHA256_LENGTH_FIELD;
+    uint8_t *const length = blocks + n_blocks * (size_t)SHA256_BLOCK - SHA256_LENGTH_FIELD;
     store_be32(length, (uint32_t)(bits >> 32));
     store_be32(length + 4, (uint32_t)bits);
     for (size_t b = 0; b < n_blocks; b++) {
-        compress(state, blocks + b * SHA256_BLOCK);
+        compress(state, blocks + b * (size_t)SHA256_BLOCK);
     }
 }
 
@@ -123,11 +123,12 @@ void vmafx_sha256(const void *data, size_t len, uint8_t digest[VMAFX_SHA256_DIGE
     memcpy(state, initial_state, sizeof(state));
     const size_t full = len / SHA256_BLOCK;
     for (size_t b = 0; b < full; b++) {
-        compress(state, bytes + b * SHA256_BLOCK);
+        compress(state, bytes + b * (size_t)SHA256_BLOCK);
     }
-    compress_tail(state, bytes ? bytes + full * SHA256_BLOCK : bytes, len % SHA256_BLOCK, len);
+    compress_tail(state, bytes ? bytes + full * (size_t)SHA256_BLOCK : bytes, len % SHA256_BLOCK,
+                  len);
     for (unsigned i = 0; i < 8u; i++) {
-        store_be32(digest + 4u * i, state[i]);
+        store_be32(digest + (size_t)4u * i, state[i]);
     }
 }
 
@@ -137,8 +138,8 @@ void vmafx_sha256_hex(const void *data, size_t len, char hex[VMAFX_SHA256_HEX_CH
     uint8_t digest[VMAFX_SHA256_DIGEST_SIZE];
     vmafx_sha256(data, len, digest);
     for (unsigned i = 0; i < VMAFX_SHA256_DIGEST_SIZE; i++) {
-        hex[2u * i] = digits[digest[i] >> 4];
-        hex[2u * i + 1u] = digits[digest[i] & 0x0fu];
+        hex[(size_t)2u * i] = digits[digest[i] >> 4];
+        hex[(size_t)2u * i + 1u] = digits[digest[i] & 0x0fu];
     }
-    hex[2u * VMAFX_SHA256_DIGEST_SIZE] = '\0';
+    hex[VMAFX_SHA256_HEX_CHARS - 1u] = '\0';
 }

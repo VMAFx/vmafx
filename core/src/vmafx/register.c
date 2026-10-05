@@ -12,6 +12,7 @@
  * uses until it is destroyed (ADR-1755).
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -92,6 +93,7 @@ VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model, Vm
     if (status != VMAFX_OK) {
         return status;
     }
+    assert(context->models.count < context->models.capacity);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model(context->engine, model->engine);
     vmafx_engine_leave(previous);
@@ -115,6 +117,7 @@ VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *se
     if (status != VMAFX_OK) {
         return status;
     }
+    assert(context->model_sets.count < context->model_sets.capacity);
     VmafModelCollection *const collection = vmafx_model_set_engine(set);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model_collection(context->engine, collection);
@@ -167,7 +170,7 @@ static VmafxStatus resolve_geometry(const VmafxReport *report, const VmafxFrameD
     pic_cfg->pic_params.w = d.w;
     pic_cfg->pic_params.h = d.h;
     pic_cfg->pic_params.bpc = d.bpc;
-    pic_cfg->pic_params.pix_fmt = (enum VmafPixelFormat)d.pix_fmt;
+    pic_cfg->pic_params.pix_fmt = vmafx_engine_pixel_format(d.pix_fmt);
     return VMAFX_OK;
 }
 
