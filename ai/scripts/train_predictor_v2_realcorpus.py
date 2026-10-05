@@ -539,55 +539,44 @@ def evaluate_gate(
 # ---------------------------------------------------------------------
 
 
-def train_codec_loso(
+def _corpus_provenance(rows: Sequence[dict]) -> tuple[str, ...]:
+    """Sorted distinct ``_source_corpus`` labels of ``rows``."""
+    return tuple(sorted({r["_source_corpus"] for r in rows if "_source_corpus" in r}))
+
+
+def _no_fold_result(
     codec: str,
-    rows: Sequence[dict],
+    status: str,
     *,
-    epochs: int = 200,
-    seed: int = 42,
+    n_rows_total: int,
+    n_sources: int,
+    reasons: tuple[str, ...],
+    provenance: tuple[str, ...],
 ) -> CodecResult:
-    """Run 5-fold LOSO + gate evaluation for one codec.
+    """CodecResult for a codec that could not be trained (no folds, zeroed metrics)."""
+    return CodecResult(
+        codec=codec,
+        status=status,
+        folds=(),
+        mean_plcc=0.0,
+        plcc_spread=0.0,
+        mean_srocc=0.0,
+        mean_rmse=float("nan"),
+        n_rows_total=n_rows_total,
+        n_distinct_sources=n_sources,
+        failure_reasons=reasons,
+        corpus_provenance=provenance,
+    )
 
-    Defers per-fold training to ``_train_one_fold`` (which in turn
-    requires ``vmaftune.predictor_train``). When the row count is
-    insufficient for 5-fold LOSO, returns a CodecResult with
-    ``status='insufficient-sources'`` so the caller can mark the
-    model card accordingly without crashing the batch.
-    """
-    if not rows:
-        return CodecResult(
-            codec=codec,
-            status="missing-rows",
-            folds=(),
-            mean_plcc=0.0,
-            plcc_spread=0.0,
-            mean_srocc=0.0,
-            mean_rmse=float("nan"),
-            n_rows_total=0,
-            n_distinct_sources=0,
-            failure_reasons=("no rows in corpus for this codec",),
-            corpus_provenance=(),
-        )
 
-    n_sources = source_count(rows)
-    folds_split = loso_folds(rows, LOSO_FOLD_COUNT, seed=seed)
-    if not folds_split:
-        return CodecResult(
-            codec=codec,
-            status="insufficient-sources",
-            folds=(),
-            mean_plcc=0.0,
-            plcc_spread=0.0,
-            mean_srocc=0.0,
-            mean_rmse=float("nan"),
-            n_rows_total=len(rows),
-            n_distinct_sources=n_sources,
-            failure_reasons=(f"need >= {LOSO_FOLD_COUNT} distinct sources; have {n_sources}",),
-            corpus_provenance=tuple(
-                sorted({r["_source_corpus"] for r in rows if "_source_corpus" in r})
-            ),
-        )
-
+def _run_loso_folds(
+    codec: str,
+    folds_split: Sequence[tuple[Sequence[dict], Sequence[dict]]],
+    *,
+    epochs: int,
+    seed: int,
+) -> list[FoldResult]:
+    """Train and score every LOSO fold of one codec."""
     fold_results: list[FoldResult] = []
     for i, (train_rows, val_rows) in enumerate(folds_split):
         held = tuple(sorted({row_source(r) for r in val_rows}))
@@ -605,7 +594,47 @@ def train_codec_loso(
                 n_val=len(val_rows),
             )
         )
+    return fold_results
 
+
+def train_codec_loso(
+    codec: str,
+    rows: Sequence[dict],
+    *,
+    epochs: int = 200,
+    seed: int = 42,
+) -> CodecResult:
+    """Run 5-fold LOSO + gate evaluation for one codec.
+
+    Defers per-fold training to ``_train_one_fold`` (which in turn
+    requires ``vmaftune.predictor_train``). When the row count is
+    insufficient for 5-fold LOSO, returns a CodecResult with
+    ``status='insufficient-sources'`` so the caller can mark the
+    model card accordingly without crashing the batch.
+    """
+    if not rows:
+        return _no_fold_result(
+            codec,
+            "missing-rows",
+            n_rows_total=0,
+            n_sources=0,
+            reasons=("no rows in corpus for this codec",),
+            provenance=(),
+        )
+
+    n_sources = source_count(rows)
+    folds_split = loso_folds(rows, LOSO_FOLD_COUNT, seed=seed)
+    if not folds_split:
+        return _no_fold_result(
+            codec,
+            "insufficient-sources",
+            n_rows_total=len(rows),
+            n_sources=n_sources,
+            reasons=(f"need >= {LOSO_FOLD_COUNT} distinct sources; have {n_sources}",),
+            provenance=_corpus_provenance(rows),
+        )
+
+    fold_results = _run_loso_folds(codec, folds_split, epochs=epochs, seed=seed)
     passed, reasons = evaluate_gate(codec, fold_results)
     plccs = [f.plcc for f in fold_results]
     return CodecResult(
@@ -619,9 +648,7 @@ def train_codec_loso(
         n_rows_total=len(rows),
         n_distinct_sources=n_sources,
         failure_reasons=reasons,
-        corpus_provenance=tuple(
-            sorted({r["_source_corpus"] for r in rows if "_source_corpus" in r})
-        ),
+        corpus_provenance=_corpus_provenance(rows),
     )
 
 

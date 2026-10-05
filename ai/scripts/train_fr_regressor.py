@@ -277,6 +277,40 @@ def _train_final(
     return model, {"feature_mean": mean.tolist(), "feature_std": std.tolist()}, in_sample
 
 
+def _model_notes(loso_summary: dict) -> str:
+    """Human-readable notes string stored in the sidecar and the registry."""
+    return (
+        "Tiny FR regressor (C1) — 6-feature canonical-6 vector "
+        "(adm2, vif_scale0..3, motion2) → VMAF teacher score scalar. "
+        "Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) "
+        f"with vmaf_v0.6.1 as DMOS-aligned teacher. "
+        f"9-fold LOSO mean PLCC = {loso_summary['mean_plcc']:.4f} ± "
+        f"{loso_summary['std_plcc']:.4f}. "
+        "Shipped checkpoint trained on all 9 sources. "
+        "Exported via ai/scripts/train_fr_regressor.py. See "
+        "docs/ai/models/fr_regressor_v1.md + ADR-0249."
+    )
+
+
+def _upsert_registry_entry(registry_path: Path, onnx_path: Path, digest: str, notes: str) -> None:
+    """Replace any 'fr_regressor_v1' row of registry.json (idempotent)."""
+    registry = json.loads(registry_path.read_text())
+    models = registry.get("models", [])
+    new_entry = {
+        "id": "fr_regressor_v1",
+        "kind": "fr",
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "sha256": digest,
+        "notes": notes,
+    }
+    models = [m for m in models if m.get("id") != "fr_regressor_v1"]
+    models.append(new_entry)
+    models.sort(key=lambda e: e.get("id", ""))
+    registry["models"] = models
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+
+
 def _export_and_register(
     model,  # type: ignore[no-untyped-def]
     *,
@@ -301,18 +335,7 @@ def _export_and_register(
     )
     digest = sha256(onnx_path)
 
-    notes = (
-        "Tiny FR regressor (C1) — 6-feature canonical-6 vector "
-        "(adm2, vif_scale0..3, motion2) → VMAF teacher score scalar. "
-        "Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) "
-        f"with vmaf_v0.6.1 as DMOS-aligned teacher. "
-        f"9-fold LOSO mean PLCC = {loso_summary['mean_plcc']:.4f} ± "
-        f"{loso_summary['std_plcc']:.4f}. "
-        "Shipped checkpoint trained on all 9 sources. "
-        "Exported via ai/scripts/train_fr_regressor.py. See "
-        "docs/ai/models/fr_regressor_v1.md + ADR-0249."
-    )
-
+    notes = _model_notes(loso_summary)
     sidecar = {
         "id": "fr_regressor_v1",
         "kind": "fr",
@@ -338,24 +361,7 @@ def _export_and_register(
         "run_provenance": run_provenance,
     }
     write_manifest_json(sidecar_path, sidecar)
-
-    # Update registry.json. Idempotent: replace any existing
-    # 'fr_regressor_v1' row.
-    registry = json.loads(registry_path.read_text())
-    models = registry.get("models", [])
-    new_entry = {
-        "id": "fr_regressor_v1",
-        "kind": "fr",
-        "onnx": onnx_path.name,
-        "opset": 17,
-        "sha256": digest,
-        "notes": notes,
-    }
-    models = [m for m in models if m.get("id") != "fr_regressor_v1"]
-    models.append(new_entry)
-    models.sort(key=lambda e: e.get("id", ""))
-    registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    _upsert_registry_entry(registry_path, onnx_path, digest, notes)
 
 
 def _build_fr_regressor_parser() -> argparse.ArgumentParser:

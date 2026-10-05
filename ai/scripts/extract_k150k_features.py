@@ -102,7 +102,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -637,6 +637,45 @@ def _merge_frame_metrics(
     return merged
 
 
+def _run_cuda_split(
+    vmaf_pass: Callable[..., list[dict]],
+    vmaf_bin: Path,
+    cpu_vmaf_bin: Path,
+    out_json: Path,
+    model_args: list[str],
+) -> list[dict[str, Any]]:
+    """CUDA primary pass plus the (currently empty) CPU residual pass, merged to ``out_json``."""
+    cuda_json = out_json.with_name(out_json.stem + ".cuda.json")
+    cpu_json = out_json.with_name(out_json.stem + ".cpu.json")
+    try:
+        cuda_frames = vmaf_pass(
+            vmaf_bin, cuda_json, CUDA_EXTRACTOR_NAMES, ["--backend", "cuda", *model_args]
+        )
+        # CPU residual pass — kept structurally for future feature
+        # additions that lack a CUDA implementation. As of 2026-05-15
+        # the residual is empty (CAMBI + float_ssim got promoted to
+        # the CUDA pass); the call short-circuits to an empty frames
+        # list without spawning a subprocess.
+        if CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES:
+            cpu_frames = vmaf_pass(
+                cpu_vmaf_bin,
+                cpu_json,
+                CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES,
+                ["--no_cuda", "--no_sycl"],
+            )
+            frames = _merge_frame_metrics(cuda_frames, cpu_frames)
+        else:
+            frames = cuda_frames
+        out_json.write_text(
+            json.dumps({"frames": [{"metrics": row} for row in frames]}),
+            encoding="utf-8",
+        )
+        return frames
+    finally:
+        cuda_json.unlink(missing_ok=True)
+        cpu_json.unlink(missing_ok=True)
+
+
 def _run_feature_passes(
     vmaf_bin: Path,
     cpu_vmaf_bin: Path,
@@ -659,67 +698,27 @@ def _run_feature_passes(
     m_arg = teacher_model_arg if teacher_model_arg is not None else f"version={DEFAULT_MODEL}"
     model_args: list[str] = ["--model", m_arg]
 
-    if not use_cuda:
+    def vmaf_pass(binary: Path, out: Path, names: Any, extra_args: list[str]) -> list[dict]:
         return _run_vmaf_json(
-            vmaf_bin,
+            binary,
             yuv_path,
             width,
             height,
             pix_fmt,
-            out_json,
+            out,
             threads,
-            EXTRACTOR_NAMES,
-            ["--no_cuda", "--no_sycl", *model_args],
+            names,
+            extra_args,
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_fps_weight_value,
         )
 
-    cuda_json = out_json.with_name(out_json.stem + ".cuda.json")
-    cpu_json = out_json.with_name(out_json.stem + ".cpu.json")
-    try:
-        cuda_frames = _run_vmaf_json(
-            vmaf_bin,
-            yuv_path,
-            width,
-            height,
-            pix_fmt,
-            cuda_json,
-            threads,
-            CUDA_EXTRACTOR_NAMES,
-            ["--backend", "cuda", *model_args],
-            is_hdr=is_hdr,
-            motion_fps_weight_value=motion_fps_weight_value,
+    if not use_cuda:
+        return vmaf_pass(
+            vmaf_bin, out_json, EXTRACTOR_NAMES, ["--no_cuda", "--no_sycl", *model_args]
         )
-        # CPU residual pass — kept structurally for future feature
-        # additions that lack a CUDA implementation. As of 2026-05-15
-        # the residual is empty (CAMBI + float_ssim got promoted to
-        # the CUDA pass); the call short-circuits to an empty frames
-        # list without spawning a subprocess.
-        if CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES:
-            cpu_frames = _run_vmaf_json(
-                cpu_vmaf_bin,
-                yuv_path,
-                width,
-                height,
-                pix_fmt,
-                cpu_json,
-                threads,
-                CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES,
-                ["--no_cuda", "--no_sycl"],
-                is_hdr=is_hdr,
-                motion_fps_weight_value=motion_fps_weight_value,
-            )
-            frames = _merge_frame_metrics(cuda_frames, cpu_frames)
-        else:
-            frames = cuda_frames
-        out_json.write_text(
-            json.dumps({"frames": [{"metrics": row} for row in frames]}),
-            encoding="utf-8",
-        )
-        return frames
-    finally:
-        cuda_json.unlink(missing_ok=True)
-        cpu_json.unlink(missing_ok=True)
+
+    return _run_cuda_split(vmaf_pass, vmaf_bin, cpu_vmaf_bin, out_json, model_args)
 
 
 # ---------------------------------------------------------------------------
@@ -1043,6 +1042,29 @@ def _parquet_row_count(path: Path) -> int:
         return len(pd.read_parquet(path))
 
 
+def _extraction_provenance(args: argparse.Namespace, manifest_out: Path) -> dict[str, Any]:
+    """Build the ``run_provenance`` block of the extraction manifest."""
+    return build_run_provenance(
+        entrypoint=Path(__file__),
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={
+            "clips_dir": args.clips_dir,
+            "scores_csv": args.scores,
+            "metadata_jsonl": args.metadata_jsonl,
+            "vmaf_bin": args.vmaf_bin,
+            "cpu_vmaf_bin": args.cpu_vmaf_bin,
+        },
+        outputs={
+            "parquet": args.out,
+            "done": args.out.with_suffix(".done"),
+            "staging_jsonl": _staging_path(args.out),
+            "manifest": manifest_out,
+        },
+    )
+
+
 def _write_extraction_manifest(
     *,
     manifest_out: Path,
@@ -1058,8 +1080,6 @@ def _write_extraction_manifest(
     status: str,
 ) -> None:
     """Write the replay manifest for a K150K/FR-from-NR table extraction."""
-    done_path = args.out.with_suffix(".done")
-    staging_path = _staging_path(args.out)
     payload = {
         "schema": "k150k-feature-extraction-manifest-v1",
         "status": status,
@@ -1091,25 +1111,7 @@ def _write_extraction_manifest(
             "allow_fr_from_nr": bool(args.allow_fr_from_nr),
             "split_seed": str(args.split_seed),
         },
-        "run_provenance": build_run_provenance(
-            entrypoint=Path(__file__),
-            repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
-            args=args,
-            inputs={
-                "clips_dir": args.clips_dir,
-                "scores_csv": args.scores,
-                "metadata_jsonl": args.metadata_jsonl,
-                "vmaf_bin": args.vmaf_bin,
-                "cpu_vmaf_bin": args.cpu_vmaf_bin,
-            },
-            outputs={
-                "parquet": args.out,
-                "done": done_path,
-                "staging_jsonl": staging_path,
-                "manifest": manifest_out,
-            },
-        ),
+        "run_provenance": _extraction_provenance(args, manifest_out),
     }
     write_manifest_json(manifest_out, payload)
 
@@ -1117,6 +1119,81 @@ def _write_extraction_manifest(
 # ---------------------------------------------------------------------------
 # Worker (runs in a subprocess via ProcessPoolExecutor)
 # ---------------------------------------------------------------------------
+
+
+def _clip_geometry(
+    mp4: Path, sidecar_meta: dict[str, Any] | None
+) -> tuple[int, int, str, str, dict[str, str]]:
+    """Return (width, height, pix_fmt, fps_str, color_meta) from the sidecar or ffprobe."""
+    # Win 2: if the CHUG sidecar provides complete geometry, skip ffprobe
+    # entirely for that clip (Research-0135).  Only fall back to ffprobe
+    # when the sidecar is absent or missing required fields.
+    # When sidecar geometry is present, color_meta defaults to {} so that
+    # _is_hdr_source fails-safe to SDR (its documented behaviour on
+    # missing metadata — see the function docstring).
+    geom = _geometry_from_sidecar(sidecar_meta)
+    if geom is not None:
+        width, height, pix_fmt, fps_str = geom
+        return width, height, pix_fmt, fps_str, {}
+    width, height, pix_fmt, fps_str, color_meta = _probe_geometry(mp4)
+    return width, height, pix_fmt, fps_str, color_meta
+
+
+def _score_clip(
+    mp4: Path,
+    yuv_path: Path,
+    out_json: Path,
+    *,
+    mos: float,
+    vmaf_bin: Path,
+    cpu_vmaf_bin: Path,
+    vmaf_threads: int,
+    use_cuda: bool,
+    sidecar_meta: dict[str, Any] | None,
+    teacher_model_arg: str | None,
+    teacher_model_name: str | None,
+) -> dict[str, Any]:
+    """Resolve geometry, decode ``mp4`` to ``yuv_path``, score it and build the row."""
+    width, height, pix_fmt, fps_str, color_meta = _clip_geometry(mp4, sidecar_meta)
+    is_hdr = _is_hdr_source(pix_fmt, color_meta)
+    fps = _parse_fps(fps_str)
+    motion_w = _motion_fps_weight(fps)
+    _decode_to_yuv(mp4, yuv_path, pix_fmt)
+    frames = _run_feature_passes(
+        vmaf_bin,
+        cpu_vmaf_bin,
+        yuv_path,
+        width,
+        height,
+        pix_fmt,
+        out_json,
+        vmaf_threads,
+        use_cuda,
+        is_hdr=is_hdr,
+        motion_fps_weight_value=motion_w,
+        teacher_model_arg=teacher_model_arg,
+    )
+    if not frames:
+        # A clip that decodes but yields zero scored frames aggregates to an
+        # all-NaN row. Writing that row + marking the clip done (see the
+        # as_completed loop) would silently drop it from the retrain corpus
+        # with no retry. Honour this function's "raises on any failure"
+        # contract instead, so the caller logs + skips it for a later resume.
+        raise ValueError(
+            f"no frames scored for {mp4.name} ({width}x{height} {pix_fmt}); "
+            "vmaf produced an empty frame list"
+        )
+    return {
+        "clip_name": mp4.name,
+        "mos": mos,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "is_hdr": is_hdr,
+        "motion_fps_weight": motion_w,
+        "teacher_model": teacher_model_name or DEFAULT_MODEL,
+        **_aggregate_frames(frames),
+    }
 
 
 def _process_clip(
@@ -1159,59 +1236,19 @@ def _process_clip(
     out_json = scratch_dir / f"{stem}.json"
 
     try:
-        # Win 2: if the CHUG sidecar provides complete geometry, skip ffprobe
-        # entirely for that clip (Research-0135).  Only fall back to ffprobe
-        # when the sidecar is absent or missing required fields.
-        # When sidecar geometry is present, color_meta defaults to {} so that
-        # _is_hdr_source fails-safe to SDR (its documented behaviour on
-        # missing metadata — see the function docstring).
-        geom = _geometry_from_sidecar(sidecar_meta)
-        if geom is not None:
-            width, height, pix_fmt, fps_str = geom
-            color_meta: dict[str, str] = {}
-        else:
-            _pw, _ph, _ppf, fps_str, color_meta = _probe_geometry(mp4)
-            width, height, pix_fmt = _pw, _ph, _ppf
-        is_hdr = _is_hdr_source(pix_fmt, color_meta)
-        fps = _parse_fps(fps_str)
-        motion_w = _motion_fps_weight(fps)
-        _decode_to_yuv(mp4, yuv_path, pix_fmt)
-        frames = _run_feature_passes(
-            vmaf_bin,
-            cpu_vmaf_bin,
+        return _score_clip(
+            mp4,
             yuv_path,
-            width,
-            height,
-            pix_fmt,
             out_json,
-            vmaf_threads,
-            use_cuda,
-            is_hdr=is_hdr,
-            motion_fps_weight_value=motion_w,
+            mos=mos,
+            vmaf_bin=vmaf_bin,
+            cpu_vmaf_bin=cpu_vmaf_bin,
+            vmaf_threads=vmaf_threads,
+            use_cuda=use_cuda,
+            sidecar_meta=sidecar_meta,
             teacher_model_arg=teacher_model_arg,
+            teacher_model_name=teacher_model_name,
         )
-        if not frames:
-            # A clip that decodes but yields zero scored frames aggregates to an
-            # all-NaN row. Writing that row + marking the clip done (see the
-            # as_completed loop) would silently drop it from the retrain corpus
-            # with no retry. Honour this function's "raises on any failure"
-            # contract instead, so the caller logs + skips it for a later resume.
-            raise ValueError(
-                f"no frames scored for {mp4.name} ({width}x{height} {pix_fmt}); "
-                "vmaf produced an empty frame list"
-            )
-        agg = _aggregate_frames(frames)
-        return {
-            "clip_name": mp4.name,
-            "mos": mos,
-            "width": width,
-            "height": height,
-            "fps": fps,
-            "is_hdr": is_hdr,
-            "motion_fps_weight": motion_w,
-            "teacher_model": teacher_model_name or DEFAULT_MODEL,
-            **agg,
-        }
     finally:
         yuv_path.unlink(missing_ok=True)
         out_json.unlink(missing_ok=True)

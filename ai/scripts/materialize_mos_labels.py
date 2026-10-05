@@ -29,6 +29,7 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.tree_utils import map_tree  # noqa: E402
 
 MOS_MIN = 1.0
 MOS_MAX = 5.0
@@ -160,11 +161,8 @@ def _write_table(df: pd.DataFrame, path: Path) -> None:
     raise ValueError(f"unsupported output format for {path}; use parquet, jsonl, ndjson, or json")
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(v) for v in value]
+def _json_leaf(value: Any) -> Any:
+    """Map one non-container value to its JSON-safe scalar."""
     if pd.isna(value):
         return None
     if hasattr(value, "item"):
@@ -173,6 +171,17 @@ def _json_safe(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert pandas/numpy scalars nested in dicts and lists to JSON-safe values."""
+    return map_tree(
+        value,
+        _json_leaf,
+        is_mapping=lambda v: isinstance(v, dict),
+        is_sequence=lambda v: isinstance(v, list),
+        key=str,
+    )
 
 
 def _find_column(
@@ -348,6 +357,195 @@ def _existing_target_columns(df: pd.DataFrame, planned: list[str]) -> list[str]:
     return [column for column in planned if column in df.columns]
 
 
+@dataclass
+class _JoinedColumns:
+    """The label columns of a feature table, one entry per feature row."""
+
+    mos: list[float]
+    raw: list[float]
+    statuses: list[str]
+    sources: list[str]
+    extras: dict[str, list[Any]]
+    matched_rows: int = 0
+    missing_rows: int = 0
+
+
+def _require_match_rate(
+    unique_feature_keys: set[str], labels: dict[str, MosLabel], min_match_rate: float
+) -> set[str]:
+    """Return the feature keys that have a label; fail when too few do."""
+    matched_feature_keys = unique_feature_keys & set(labels)
+    match_rate = (
+        len(matched_feature_keys) / len(unique_feature_keys) if unique_feature_keys else 0.0
+    )
+    if match_rate < min_match_rate:
+        raise ValueError(
+            f"MOS label match rate {match_rate:.3f} below --min-match-rate "
+            f"{min_match_rate:.3f} ({len(matched_feature_keys)}/{len(unique_feature_keys)} keys)"
+        )
+    return matched_feature_keys
+
+
+def _join_labels(
+    row_keys: list[str], labels: dict[str, MosLabel], planned: list[str], status_column: str
+) -> _JoinedColumns:
+    """Look every row key up in ``labels`` and collect the output columns."""
+    joined = _JoinedColumns(
+        mos=[],
+        raw=[],
+        statuses=[],
+        sources=[],
+        extras={
+            column: []
+            for column in planned
+            if column not in {"mos", "mos_raw_0_100", status_column, "mos_label_source"}
+        },
+    )
+    for key in row_keys:
+        label = labels.get(key)
+        if label is None:
+            joined.mos.append(float("nan"))
+            joined.raw.append(float("nan"))
+            joined.statuses.append(STATUS_MISSING)
+            joined.sources.append("")
+            for values in joined.extras.values():
+                values.append(None)
+            joined.missing_rows += 1
+            continue
+        joined.mos.append(label.mos)
+        joined.raw.append(label.mos_raw_0_100)
+        joined.statuses.append(STATUS_OK)
+        joined.sources.append(label.source)
+        for column, values in joined.extras.items():
+            values.append(label.extras.get(column))
+        joined.matched_rows += 1
+    return joined
+
+
+def _assign_columns(df: pd.DataFrame, joined: _JoinedColumns, status_column: str) -> None:
+    """Write the joined label columns into ``df``."""
+    df["mos"] = joined.mos
+    df["mos_raw_0_100"] = joined.raw
+    df[status_column] = joined.statuses
+    df["mos_label_source"] = joined.sources
+    for column, values in joined.extras.items():
+        df[column] = values
+
+
+@dataclass(frozen=True)
+class _Request:
+    """The arguments of one ``materialize`` call."""
+
+    features: Path
+    label_paths: list[Path]
+    out: Path
+    audit_json: Path | None
+    feature_key_column: str | None
+    label_key_column: str | None
+    label_mos_column: str | None
+    key_normalize: str
+    feature_key_regex: str | None
+    label_key_regex: str | None
+    min_match_rate: float
+    status_column: str
+    overwrite: bool
+    run_provenance: dict[str, Any] | None
+
+
+@dataclass
+class _Prepared:
+    """The feature table with its labels loaded and its keys matched."""
+
+    df: pd.DataFrame
+    feature_column: str
+    label_key: str
+    label_mos: str
+    labels: dict[str, MosLabel]
+    planned: list[str]
+    row_keys: list[str]
+    unique_feature_keys: set[str]
+    matched_feature_keys: set[str]
+
+
+def _prepare(req: _Request) -> _Prepared:
+    """Read the inputs, check the output columns are free and the match rate is high enough."""
+    if not (0.0 <= req.min_match_rate <= 1.0):
+        raise ValueError("--min-match-rate must be in [0, 1]")
+    df = _read_table(req.features)
+    feature_column = _find_column(
+        df, req.feature_key_column, KEY_CANDIDATES, "--feature-key-column"
+    )
+    labels, label_key, label_mos = _load_labels(
+        req.label_paths,
+        key_column=req.label_key_column,
+        mos_column=req.label_mos_column,
+        key_normalize=req.key_normalize,
+        key_regex=req.label_key_regex,
+    )
+    planned = _planned_columns(labels, req.status_column)
+    existing = _existing_target_columns(df, planned)
+    if existing and not req.overwrite:
+        raise ValueError("refusing to overwrite existing MOS columns: " + ", ".join(existing))
+
+    row_keys = [
+        _normalise_key(
+            value,
+            mode=req.key_normalize,
+            column_name=feature_column,
+            regex=req.feature_key_regex,
+        )
+        for value in df[feature_column].tolist()
+    ]
+    unique_feature_keys = {key for key in row_keys if key}
+    matched = _require_match_rate(unique_feature_keys, labels, req.min_match_rate)
+    return _Prepared(
+        df,
+        feature_column,
+        label_key,
+        label_mos,
+        labels,
+        planned,
+        row_keys,
+        unique_feature_keys,
+        matched,
+    )
+
+
+def _materialize(req: _Request) -> dict[str, Any]:
+    prepared = _prepare(req)
+    df = prepared.df
+    joined = _join_labels(prepared.row_keys, prepared.labels, prepared.planned, req.status_column)
+    _assign_columns(df, joined, req.status_column)
+
+    _write_table(df, req.out)
+    stats = MaterializeStats(
+        feature_table=str(req.features),
+        output=str(req.out),
+        feature_key_column=prepared.feature_column,
+        label_key_column=prepared.label_key,
+        label_mos_column=prepared.label_mos,
+        key_normalize=req.key_normalize,
+        feature_key_regex=req.feature_key_regex or "",
+        label_key_regex=req.label_key_regex or "",
+        min_match_rate=req.min_match_rate,
+        input_rows=len(prepared.row_keys),
+        output_rows=len(df),
+        total_feature_keys=len(prepared.unique_feature_keys),
+        matched_feature_keys=len(prepared.matched_feature_keys),
+        matched_rows=joined.matched_rows,
+        missing_rows=joined.missing_rows,
+        labels_loaded=len(prepared.labels),
+        label_sources=[str(path) for path in req.label_paths],
+    )
+    audit = asdict(stats)
+    audit["match_rate"] = stats.match_rate
+    if req.run_provenance is not None:
+        audit["run_provenance"] = req.run_provenance
+    if req.audit_json is not None:
+        write_manifest_json(req.audit_json, audit)
+    return audit
+
+
 def materialize(
     features: Path,
     label_paths: list[Path],
@@ -366,106 +564,24 @@ def materialize(
     run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Join MOS labels onto ``features`` and return an audit dictionary."""
-    if not (0.0 <= min_match_rate <= 1.0):
-        raise ValueError("--min-match-rate must be in [0, 1]")
-    df = _read_table(features)
-    feature_column = _find_column(df, feature_key_column, KEY_CANDIDATES, "--feature-key-column")
-    labels, inferred_label_key, inferred_label_mos = _load_labels(
-        label_paths,
-        key_column=label_key_column,
-        mos_column=label_mos_column,
-        key_normalize=key_normalize,
-        key_regex=label_key_regex,
-    )
-    planned = _planned_columns(labels, status_column)
-    existing = _existing_target_columns(df, planned)
-    if existing and not overwrite:
-        raise ValueError("refusing to overwrite existing MOS columns: " + ", ".join(existing))
-
-    row_keys = [
-        _normalise_key(
-            value,
-            mode=key_normalize,
-            column_name=feature_column,
-            regex=feature_key_regex,
+    return _materialize(
+        _Request(
+            features,
+            label_paths,
+            out,
+            audit_json,
+            feature_key_column,
+            label_key_column,
+            label_mos_column,
+            key_normalize,
+            feature_key_regex,
+            label_key_regex,
+            min_match_rate,
+            status_column,
+            overwrite,
+            run_provenance,
         )
-        for value in df[feature_column].tolist()
-    ]
-    unique_feature_keys = {key for key in row_keys if key}
-    matched_feature_keys = unique_feature_keys & set(labels)
-    match_rate = (
-        len(matched_feature_keys) / len(unique_feature_keys) if unique_feature_keys else 0.0
     )
-    if match_rate < min_match_rate:
-        raise ValueError(
-            f"MOS label match rate {match_rate:.3f} below --min-match-rate "
-            f"{min_match_rate:.3f} ({len(matched_feature_keys)}/{len(unique_feature_keys)} keys)"
-        )
-
-    mos_values: list[float] = []
-    raw_values: list[float] = []
-    statuses: list[str] = []
-    sources: list[str] = []
-    extras_by_column: dict[str, list[Any]] = {
-        column: []
-        for column in planned
-        if column not in {"mos", "mos_raw_0_100", status_column, "mos_label_source"}
-    }
-    matched_rows = 0
-    missing_rows = 0
-    for key in row_keys:
-        label = labels.get(key)
-        if label is None:
-            mos_values.append(float("nan"))
-            raw_values.append(float("nan"))
-            statuses.append(STATUS_MISSING)
-            sources.append("")
-            for values in extras_by_column.values():
-                values.append(None)
-            missing_rows += 1
-            continue
-        mos_values.append(label.mos)
-        raw_values.append(label.mos_raw_0_100)
-        statuses.append(STATUS_OK)
-        sources.append(label.source)
-        for column, values in extras_by_column.items():
-            values.append(label.extras.get(column))
-        matched_rows += 1
-
-    df["mos"] = mos_values
-    df["mos_raw_0_100"] = raw_values
-    df[status_column] = statuses
-    df["mos_label_source"] = sources
-    for column, values in extras_by_column.items():
-        df[column] = values
-
-    _write_table(df, out)
-    stats = MaterializeStats(
-        feature_table=str(features),
-        output=str(out),
-        feature_key_column=feature_column,
-        label_key_column=inferred_label_key,
-        label_mos_column=inferred_label_mos,
-        key_normalize=key_normalize,
-        feature_key_regex=feature_key_regex or "",
-        label_key_regex=label_key_regex or "",
-        min_match_rate=min_match_rate,
-        input_rows=len(row_keys),
-        output_rows=len(df),
-        total_feature_keys=len(unique_feature_keys),
-        matched_feature_keys=len(matched_feature_keys),
-        matched_rows=matched_rows,
-        missing_rows=missing_rows,
-        labels_loaded=len(labels),
-        label_sources=[str(path) for path in label_paths],
-    )
-    audit = asdict(stats)
-    audit["match_rate"] = stats.match_rate
-    if run_provenance is not None:
-        audit["run_provenance"] = run_provenance
-    if audit_json is not None:
-        write_manifest_json(audit_json, audit)
-    return audit
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:

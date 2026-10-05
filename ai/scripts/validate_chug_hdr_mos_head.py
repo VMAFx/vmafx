@@ -428,24 +428,9 @@ def _run_inference_and_metrics(
     return pred, mos_arr, plcc, srocc, rmse
 
 
-def _build_and_write_reports(
-    args: "Any",
-    raw_argv: list[str],
-    shard_paths: list[Path],
-    pred: "Any",
-    mos_arr: "Any",
-    plcc: float,
-    srocc: float,
-    rmse: float,
-) -> "tuple[dict[str, Any], int]":
-    """Build the gate dict, write JSON + MD reports, print verdict.
-
-    Returns ``(gate, exit_code)`` where exit_code is 0 on pass or 2 on fail.
-    """
-    import numpy as np
-
-    n_rows = len(mos_arr)
-    gate: dict[str, Any] = {
+def _build_gate(args: "Any", plcc: float, srocc: float, rmse: float) -> dict[str, Any]:
+    """Held-out gate verdict: every metric must be finite and on the right side of its bound."""
+    return {
         "passed": bool(
             (not math.isnan(plcc))
             and plcc >= args.gate_plcc
@@ -463,6 +448,26 @@ def _build_and_write_reports(
             "rmse_max": args.gate_rmse,
         },
     }
+
+
+def _build_and_write_reports(
+    args: "Any",
+    raw_argv: list[str],
+    shard_paths: list[Path],
+    pred: "Any",
+    mos_arr: "Any",
+    plcc: float,
+    srocc: float,
+    rmse: float,
+) -> "tuple[dict[str, Any], int]":
+    """Build the gate dict, write JSON + MD reports, print verdict.
+
+    Returns ``(gate, exit_code)`` where exit_code is 0 on pass or 2 on fail.
+    """
+    import numpy as np
+
+    n_rows = len(mos_arr)
+    gate = _build_gate(args, plcc, srocc, rmse)
     sample_pred = [float(v) for v in pred[:5].tolist()]
     sample_mos = [float(v) for v in np.asarray(mos_arr)[:5].tolist()]
     if args.out_json is not None:

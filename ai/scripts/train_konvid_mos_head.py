@@ -723,6 +723,87 @@ def _heldout_split_indices(splits: np.ndarray) -> tuple[np.ndarray, np.ndarray] 
 # ---------------------------------------------------------------------
 
 
+# (low, high) of the uniformly drawn synthetic columns that are not derived
+# from a canonical-6 base column.
+_SYNTH_UNIFORM_RANGES: dict[str, tuple[float, float]] = {
+    "distorted_width_norm": (0.16, 1.0),
+    "distorted_height_norm": (0.16, 1.0),
+    "reference_width_norm": (0.16, 1.0),
+    "reference_height_norm": (0.16, 1.0),
+    "duration_s_norm": (0.05, 0.25),
+    "n_feature_frames_norm": (0.05, 0.25),
+    "display_peak_luminance_nits_norm": (0.04, 0.20),
+    "display_black_luminance_nits_norm": (0.0001, 0.02),
+    "display_contrast_ratio_log_norm": (0.55, 0.95),
+    "display_ambient_lux_norm": (0.0, 0.25),
+    "display_bt2020_coverage": (0.65, 1.0),
+    "display_p3_coverage": (0.65, 1.0),
+}
+_SYNTH_BINARY_COLUMNS = frozenset(
+    {
+        "chug_orientation_portrait",
+        "display_panel_oled",
+        "display_panel_qled",
+        "display_panel_lcd",
+        "display_local_dimming",
+        "display_tone_mapping_dynamic",
+    }
+)
+
+
+def _synth_base_features(rng: np.random.Generator, n_rows: int) -> np.ndarray:
+    """Draw the canonical-6 + saliency + shot base columns, in FEATURE_COLUMNS order."""
+    return np.column_stack(
+        [
+            rng.uniform(0.4, 1.0, size=n_rows),  # adm2
+            rng.uniform(0.2, 0.95, size=n_rows),  # vif_scale0
+            rng.uniform(0.3, 0.95, size=n_rows),  # vif_scale1
+            rng.uniform(0.4, 0.97, size=n_rows),  # vif_scale2
+            rng.uniform(0.5, 0.98, size=n_rows),  # vif_scale3
+            rng.uniform(0.0, 30.0, size=n_rows),  # motion2
+            rng.uniform(0.0, 0.6, size=n_rows),  # saliency_mean
+            rng.uniform(0.0, 0.05, size=n_rows),  # saliency_var
+            rng.uniform(0.0, 1.0, size=n_rows),  # shot_count_norm
+            rng.uniform(0.0, 1.0, size=n_rows),  # shot_mean_len_norm
+            rng.uniform(0.0, 0.1, size=n_rows),  # shot_cut_density
+        ]
+    ).astype(np.float32)
+
+
+def _synth_derived_column(
+    name: str, base_map: dict[str, np.ndarray], rng: np.random.Generator, n_rows: int
+) -> np.ndarray | None:
+    """Column derived from a base column by its ``_p10`` / ``_p90`` / ``_std`` suffix."""
+    if name.endswith("_p10") and name.removesuffix("_p10") in base_map:
+        return np.maximum(0.0, base_map[name.removesuffix("_p10")] * 0.90)
+    if name.endswith("_p90") and name.removesuffix("_p90") in base_map:
+        return base_map[name.removesuffix("_p90")] * 1.08
+    if name.endswith("_std") and name.removesuffix("_std") in base_map:
+        return rng.uniform(0.005, 0.05, size=n_rows).astype(np.float32)
+    return None
+
+
+def _synth_column(
+    name: str, base_map: dict[str, np.ndarray], rng: np.random.Generator, n_rows: int
+) -> np.ndarray:
+    """One synthetic feature column; the RNG draw order matches the column order."""
+    if name in base_map:
+        return base_map[name]
+    derived = _synth_derived_column(name, base_map, rng, n_rows)
+    if derived is not None:
+        return derived
+    if name == "chug_bitrate_mbps":
+        return rng.choice([0.2, 0.5, 1.0, 2.0, 4.0], size=n_rows).astype(np.float32)
+    if name in _SYNTH_BINARY_COLUMNS:
+        return rng.integers(0, 2, size=n_rows).astype(np.float32)
+    if name in _SYNTH_UNIFORM_RANGES:
+        low, high = _SYNTH_UNIFORM_RANGES[name]
+        return rng.uniform(low, high, size=n_rows).astype(np.float32)
+    if name == "feature_bitdepth_norm":
+        return np.full(n_rows, 0.5, dtype=np.float32)
+    return np.zeros(n_rows, dtype=np.float32)
+
+
 def _synthesize_corpus(
     n_rows: int = 600,
     seed: int = 0,
@@ -738,87 +819,9 @@ def _synthesize_corpus(
     fresh checkout reproduces the gate verdict bit-for-bit.
     """
     rng = np.random.default_rng(seed)
-    base_feats = np.column_stack(
-        [
-            rng.uniform(0.4, 1.0, size=n_rows),  # adm2
-            rng.uniform(0.2, 0.95, size=n_rows),  # vif_scale0
-            rng.uniform(0.3, 0.95, size=n_rows),  # vif_scale1
-            rng.uniform(0.4, 0.97, size=n_rows),  # vif_scale2
-            rng.uniform(0.5, 0.98, size=n_rows),  # vif_scale3
-            rng.uniform(0.0, 30.0, size=n_rows),  # motion2
-            rng.uniform(0.0, 0.6, size=n_rows),  # saliency_mean
-            rng.uniform(0.0, 0.05, size=n_rows),  # saliency_var
-            rng.uniform(0.0, 1.0, size=n_rows),  # shot_count_norm
-            rng.uniform(0.0, 1.0, size=n_rows),  # shot_mean_len_norm
-            rng.uniform(0.0, 0.1, size=n_rows),  # shot_cut_density
-        ]
-    ).astype(np.float32)
+    base_feats = _synth_base_features(rng, n_rows)
     base_map = {name: base_feats[:, idx] for idx, name in enumerate(FEATURE_COLUMNS)}
-    columns: list[np.ndarray] = []
-    for name in feature_columns:
-        if name in base_map:
-            columns.append(base_map[name])
-            continue
-        if name.endswith("_p10") and name.removesuffix("_p10") in base_map:
-            columns.append(np.maximum(0.0, base_map[name.removesuffix("_p10")] * 0.90))
-            continue
-        if name.endswith("_p90") and name.removesuffix("_p90") in base_map:
-            columns.append(base_map[name.removesuffix("_p90")] * 1.08)
-            continue
-        if name.endswith("_std") and name.removesuffix("_std") in base_map:
-            columns.append(rng.uniform(0.005, 0.05, size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_bitrate_mbps":
-            columns.append(rng.choice([0.2, 0.5, 1.0, 2.0, 4.0], size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_orientation_portrait":
-            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_ref":
-            columns.append(np.zeros(n_rows, dtype=np.float32))
-            continue
-        if name in {
-            "distorted_width_norm",
-            "distorted_height_norm",
-            "reference_width_norm",
-            "reference_height_norm",
-        }:
-            columns.append(rng.uniform(0.16, 1.0, size=n_rows).astype(np.float32))
-            continue
-        if name == "duration_s_norm":
-            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name == "n_feature_frames_norm":
-            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name == "feature_bitdepth_norm":
-            columns.append(np.full(n_rows, 0.5, dtype=np.float32))
-            continue
-        if name == "display_peak_luminance_nits_norm":
-            columns.append(rng.uniform(0.04, 0.20, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_black_luminance_nits_norm":
-            columns.append(rng.uniform(0.0001, 0.02, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_contrast_ratio_log_norm":
-            columns.append(rng.uniform(0.55, 0.95, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_ambient_lux_norm":
-            columns.append(rng.uniform(0.0, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name in {"display_bt2020_coverage", "display_p3_coverage"}:
-            columns.append(rng.uniform(0.65, 1.0, size=n_rows).astype(np.float32))
-            continue
-        if name in {
-            "display_panel_oled",
-            "display_panel_qled",
-            "display_panel_lcd",
-            "display_local_dimming",
-            "display_tone_mapping_dynamic",
-        }:
-            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
-            continue
-        columns.append(np.zeros(n_rows, dtype=np.float32))
+    columns = [_synth_column(name, base_map, rng, n_rows) for name in feature_columns]
     feats = np.column_stack(columns).astype(np.float32)
 
     feature_columns_list = list(feature_columns)
@@ -951,6 +954,49 @@ def _rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
+def _fit_model(
+    features: np.ndarray,
+    encoder: np.ndarray,
+    mos: np.ndarray,
+    *,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    weight_decay: float,
+    seed: int,
+    n_features: int,
+    device: str,
+):  # type: ignore[no-untyped-def]
+    """Train a fresh MLP on the given arrays; return ``(eval-mode model, torch device)``."""
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    _set_seed(seed)
+    torch_device = _resolve_device(device)
+    model = _build_model(in_features=n_features).to(torch_device)
+    ds = TensorDataset(
+        torch.from_numpy(features.astype(np.float32)),
+        torch.from_numpy(encoder.astype(np.float32)),
+        torch.from_numpy(mos.astype(np.float32)),
+    )
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    loss_fn = torch.nn.MSELoss()
+    model.train()
+    for _ep in range(epochs):
+        for fb, eb, yb in loader:
+            fb = fb.to(torch_device)
+            eb = eb.to(torch_device)
+            yb = yb.to(torch_device)
+            opt.zero_grad()
+            pred = model(fb, eb)
+            loss = loss_fn(pred, yb)
+            loss.backward()
+            opt.step()
+    model.eval()
+    return model, torch_device
+
+
 def _train_one_fold(
     *,
     features_train: np.ndarray,
@@ -969,31 +1015,19 @@ def _train_one_fold(
 ) -> tuple[np.ndarray, dict[str, float]]:
     """Train one fold; return ``(val_pred, fold_metrics)``."""
     import torch
-    from torch.utils.data import DataLoader, TensorDataset
 
-    _set_seed(seed)
-    torch_device = _resolve_device(device)
-    model = _build_model(in_features=n_features).to(torch_device)
-    ds = TensorDataset(
-        torch.from_numpy(features_train.astype(np.float32)),
-        torch.from_numpy(encoder_train.astype(np.float32)),
-        torch.from_numpy(mos_train.astype(np.float32)),
+    model, torch_device = _fit_model(
+        features_train,
+        encoder_train,
+        mos_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        weight_decay=weight_decay,
+        seed=seed,
+        n_features=n_features,
+        device=device,
     )
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = torch.nn.MSELoss()
-    model.train()
-    for _ep in range(epochs):
-        for fb, eb, yb in loader:
-            fb = fb.to(torch_device)
-            eb = eb.to(torch_device)
-            yb = yb.to(torch_device)
-            opt.zero_grad()
-            pred = model(fb, eb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            opt.step()
-    model.eval()
     with torch.no_grad():
         val_pred = (
             model(
@@ -1028,32 +1062,18 @@ def _train_full(
     device: str = "cpu",
 ):  # type: ignore[no-untyped-def]
     """Train one model on the full corpus — the ship checkpoint."""
-    import torch
-    from torch.utils.data import DataLoader, TensorDataset
-
-    _set_seed(seed)
-    torch_device = _resolve_device(device)
-    model = _build_model(in_features=n_features).to(torch_device)
-    ds = TensorDataset(
-        torch.from_numpy(features.astype(np.float32)),
-        torch.from_numpy(encoder.astype(np.float32)),
-        torch.from_numpy(mos.astype(np.float32)),
+    model, _torch_device = _fit_model(
+        features,
+        encoder,
+        mos,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        weight_decay=weight_decay,
+        seed=seed,
+        n_features=n_features,
+        device=device,
     )
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = torch.nn.MSELoss()
-    model.train()
-    for _ep in range(epochs):
-        for fb, eb, yb in loader:
-            fb = fb.to(torch_device)
-            eb = eb.to(torch_device)
-            yb = yb.to(torch_device)
-            opt.zero_grad()
-            pred = model(fb, eb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            opt.step()
-    model.eval()
     return model
 
 
@@ -1338,6 +1358,50 @@ def _validate_run_argv(
     return parsed_argv, None
 
 
+def _smoke_corpus(
+    args: argparse.Namespace, feature_columns: tuple[str, ...]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool]:
+    """Synthetic corpus for ``--smoke`` runs."""
+    n_rows = 600
+    features, encoder, mos = _synthesize_corpus(
+        n_rows=n_rows, seed=args.seed, feature_columns=feature_columns
+    )
+    splits = np.empty((features.shape[0],), dtype="<U5")
+    epochs = args.smoke_epochs
+    print(
+        f"[{args.log_prefix}] smoke mode: {n_rows} synthetic rows, "
+        f"epochs={epochs}, seed={args.seed}, device={args.device}",
+        flush=True,
+    )
+    return features, encoder, mos, splits, epochs, True
+
+
+def _synthetic_fallback(
+    args: argparse.Namespace, feature_columns: tuple[str, ...], attempted: list[str]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | int:
+    """Synthetic arrays when no real rows exist and the fallback is allowed, else exit code 2."""
+    if not args.allow_synthetic_fallback:
+        print(
+            f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
+            f"{attempted}. Add mos/mos_raw_0_100 with "
+            "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
+            "explicit synthetic pipeline run.",
+            file=sys.stderr,
+        )
+        return 2
+    print(
+        f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
+        "falling back to synthetic because --allow-synthetic-fallback was set. "
+        "Prefer --smoke for CI smoke runs.",
+        file=sys.stderr,
+    )
+    features, encoder, mos = _synthesize_corpus(
+        n_rows=600, seed=args.seed, feature_columns=feature_columns
+    )
+    splits = np.empty((features.shape[0],), dtype="<U5")
+    return features, encoder, mos, splits
+
+
 def _load_or_synthesize_konvid_corpus(
     args: argparse.Namespace,
     feature_columns: tuple[str, ...],
@@ -1345,19 +1409,7 @@ def _load_or_synthesize_konvid_corpus(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool] | int:
     """Load real corpus or synthesize; return (features, encoder, mos, splits, epochs, synthetic) or int error code."""
     if args.smoke:
-        n_rows = 600
-        features, encoder, mos = _synthesize_corpus(
-            n_rows=n_rows, seed=args.seed, feature_columns=feature_columns
-        )
-        splits = np.empty((features.shape[0],), dtype="<U5")
-        epochs = args.smoke_epochs
-        synthetic = True
-        print(
-            f"[{args.log_prefix}] smoke mode: {n_rows} synthetic rows, "
-            f"epochs={epochs}, seed={args.seed}, device={args.device}",
-            flush=True,
-        )
-        return features, encoder, mos, splits, epochs, synthetic
+        return _smoke_corpus(args, feature_columns)
     paths = [p for p in (args.konvid_1k, args.konvid_150k) if p is not None]
     feature_jsonls = [p for p in args.feature_jsonl if p is not None]
     feature_parquets = [p for p in args.feature_parquet if p is not None]
@@ -1369,30 +1421,14 @@ def _load_or_synthesize_konvid_corpus(
         display_profile=display_profile_values,
     )
     features, encoder, mos, splits = (arrays.features, arrays.encoder, arrays.mos, arrays.splits)
+    synthetic = False
     if features.shape[0] == 0:
         attempted = [str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]
-        if not args.allow_synthetic_fallback:
-            print(
-                f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
-                f"{attempted}. Add mos/mos_raw_0_100 with "
-                "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
-                "explicit synthetic pipeline run.",
-                file=sys.stderr,
-            )
-            return 2
-        print(
-            f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
-            "falling back to synthetic because --allow-synthetic-fallback was set. "
-            "Prefer --smoke for CI smoke runs.",
-            file=sys.stderr,
-        )
-        features, encoder, mos = _synthesize_corpus(
-            n_rows=600, seed=args.seed, feature_columns=feature_columns
-        )
-        splits = np.empty((features.shape[0],), dtype="<U5")
+        fallback = _synthetic_fallback(args, feature_columns, attempted)
+        if isinstance(fallback, int):
+            return fallback
+        features, encoder, mos, splits = fallback
         synthetic = True
-    else:
-        synthetic = False
     epochs = args.epochs
     print(
         f"[{args.log_prefix}] {'real' if not synthetic else 'synthetic-fallback'} "
@@ -1463,6 +1499,53 @@ def _run_konvid_cv(
     return folds_report, gate, split_indices
 
 
+def _ship_subset(
+    features: np.ndarray,
+    encoder: np.ndarray,
+    mos: np.ndarray,
+    split_indices: tuple[np.ndarray, np.ndarray] | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Rows the ship checkpoint trains on: everything, or the explicit train split."""
+    if split_indices is None:
+        return features, encoder, mos
+    ship_idx = split_indices[0]
+    return features[ship_idx], encoder[ship_idx], mos[ship_idx]
+
+
+def _export_run_provenance(args: argparse.Namespace, run_argv: list[str]) -> dict[str, Any]:
+    """Run-provenance block of the export manifest (names the shared trainer when used)."""
+    run_provenance = build_run_provenance(
+        entrypoint=args.run_entrypoint,
+        repo_root=REPO_ROOT,
+        argv=run_argv,
+        args=args,
+        inputs={
+            "konvid_1k": args.konvid_1k,
+            "konvid_150k": args.konvid_150k,
+            "feature_jsonl": args.feature_jsonl,
+            "feature_parquet": args.feature_parquet,
+            "display_profile_json": args.display_profile_json,
+        },
+        outputs={"onnx": args.out_onnx, "card": args.out_card, "manifest": args.out_manifest},
+        exclude_args={"run_entrypoint", "run_argv_json"},
+    )
+    if args.run_entrypoint.resolve() != SCRIPT_PATH:
+        run_provenance["shared_trainer"] = describe_path(SCRIPT_PATH, repo_root=REPO_ROOT)
+    return run_provenance
+
+
+def _print_export_summary(
+    args: argparse.Namespace, n_params: int, sha256: str, wall_s: float
+) -> None:
+    """Log the export outcome line."""
+    print(
+        f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, "
+        f"sha256={sha256[:16]}…); manifest={args.out_manifest.name}; "
+        f"wall={wall_s:.1f}s",
+        flush=True,
+    )
+
+
 def _run_konvid_export(
     args: argparse.Namespace,
     run_argv: list[str],
@@ -1482,13 +1565,7 @@ def _run_konvid_export(
     """Train the ship checkpoint, export ONNX, and write the manifest."""
     feature_mean = features.mean(axis=0).astype(np.float32).tolist()
     feature_std = features.std(axis=0).astype(np.float32).tolist()
-    if split_indices is None:
-        ship_features, ship_encoder, ship_mos = features, encoder, mos
-    else:
-        ship_idx = split_indices[0]
-        ship_features = features[ship_idx]
-        ship_encoder = encoder[ship_idx]
-        ship_mos = mos[ship_idx]
+    ship_features, ship_encoder, ship_mos = _ship_subset(features, encoder, mos, split_indices)
     ship_model = _train_full(
         features=ship_features,
         encoder=ship_encoder,
@@ -1503,23 +1580,7 @@ def _run_konvid_export(
     )
     n_params = _count_parameters(ship_model)
     sha256 = _export_onnx(ship_model, args.out_onnx, n_features=features.shape[1])
-    run_provenance = build_run_provenance(
-        entrypoint=args.run_entrypoint,
-        repo_root=REPO_ROOT,
-        argv=run_argv,
-        args=args,
-        inputs={
-            "konvid_1k": args.konvid_1k,
-            "konvid_150k": args.konvid_150k,
-            "feature_jsonl": args.feature_jsonl,
-            "feature_parquet": args.feature_parquet,
-            "display_profile_json": args.display_profile_json,
-        },
-        outputs={"onnx": args.out_onnx, "card": args.out_card, "manifest": args.out_manifest},
-        exclude_args={"run_entrypoint", "run_argv_json"},
-    )
-    if args.run_entrypoint.resolve() != SCRIPT_PATH:
-        run_provenance["shared_trainer"] = describe_path(SCRIPT_PATH, repo_root=REPO_ROOT)
+    run_provenance = _export_run_provenance(args, run_argv)
     manifest = _build_manifest(
         onnx_path=args.out_onnx,
         sha256=sha256,
@@ -1539,13 +1600,7 @@ def _run_konvid_export(
         run_provenance=run_provenance,
     )
     write_manifest_json(args.out_manifest, manifest)
-    wall_s = time.time() - t0
-    print(
-        f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, "
-        f"sha256={sha256[:16]}…); manifest={args.out_manifest.name}; "
-        f"wall={wall_s:.1f}s",
-        flush=True,
-    )
+    _print_export_summary(args, n_params, sha256, time.time() - t0)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -284,6 +284,53 @@ def _normalise_arch(arch: str) -> str:
     return arch.strip().lower().replace(" ", "-").replace("_", "-")
 
 
+_HWCAP_KEYS = (
+    "hwcap_known",
+    "hwcap_arch_name",
+    "hwcap_vendor",
+    "hwcap_gen_year",
+    "hwcap_codec",
+    "hwcap_codec_supported",
+    "hwcap_max_width",
+    "hwcap_max_height",
+    "hwcap_encoding_blocks",
+    "hwcap_tensor_cores",
+    "hwcap_npu_present",
+    "hwcap_driver_min_version",
+    "hwcap_source_url",
+    "hwcap_verified_date",
+)
+
+
+def _blank_cap_vector() -> dict[str, object]:
+    """All-``None`` capability fingerprint with ``hwcap_known`` = 0."""
+    blank: dict[str, object] = {k: None for k in _HWCAP_KEYS}
+    blank["hwcap_known"] = 0
+    return blank
+
+
+def _known_cap_vector(row: HardwareCapRow, codec: str) -> dict[str, object]:
+    """Capability fingerprint of ``codec`` on the resolved architecture ``row``."""
+    supported = codec in row.codecs_supported
+    max_wh = row.max_resolution_for(codec) if supported else None
+    return {
+        "hwcap_known": 1,
+        "hwcap_arch_name": row.arch_name,
+        "hwcap_vendor": row.vendor,
+        "hwcap_gen_year": row.gen_year,
+        "hwcap_codec": codec,
+        "hwcap_codec_supported": int(supported),
+        "hwcap_max_width": max_wh[0] if max_wh else None,
+        "hwcap_max_height": max_wh[1] if max_wh else None,
+        "hwcap_encoding_blocks": row.encoding_blocks,
+        "hwcap_tensor_cores": int(row.tensor_cores),
+        "hwcap_npu_present": int(row.npu_present),
+        "hwcap_driver_min_version": row.driver_min_version,
+        "hwcap_source_url": row.source_url,
+        "hwcap_verified_date": row.verified_date,
+    }
+
+
 def cap_vector_for(
     caps: HardwareCapsTable,
     *,
@@ -318,25 +365,7 @@ def cap_vector_for(
         downstream parquet writers flag them as nulls). All keys are
         prefixed with ``hwcap_``.
     """
-    keys = (
-        "hwcap_known",
-        "hwcap_arch_name",
-        "hwcap_vendor",
-        "hwcap_gen_year",
-        "hwcap_codec",
-        "hwcap_codec_supported",
-        "hwcap_max_width",
-        "hwcap_max_height",
-        "hwcap_encoding_blocks",
-        "hwcap_tensor_cores",
-        "hwcap_npu_present",
-        "hwcap_driver_min_version",
-        "hwcap_source_url",
-        "hwcap_verified_date",
-    )
-    blank: dict[str, object] = {k: None for k in keys}
-    blank["hwcap_known"] = 0
-
+    blank = _blank_cap_vector()
     if encoder_arch_hint is None:
         return blank
     if encoder not in ENCODER_TO_CODEC:
@@ -347,25 +376,7 @@ def cap_vector_for(
     row = caps.by_arch(encoder_arch_hint)
     if row is None:
         return blank
-    codec = ENCODER_TO_CODEC[encoder]
-    supported = codec in row.codecs_supported
-    max_wh = row.max_resolution_for(codec) if supported else None
-    return {
-        "hwcap_known": 1,
-        "hwcap_arch_name": row.arch_name,
-        "hwcap_vendor": row.vendor,
-        "hwcap_gen_year": row.gen_year,
-        "hwcap_codec": codec,
-        "hwcap_codec_supported": int(supported),
-        "hwcap_max_width": max_wh[0] if max_wh else None,
-        "hwcap_max_height": max_wh[1] if max_wh else None,
-        "hwcap_encoding_blocks": row.encoding_blocks,
-        "hwcap_tensor_cores": int(row.tensor_cores),
-        "hwcap_npu_present": int(row.npu_present),
-        "hwcap_driver_min_version": row.driver_min_version,
-        "hwcap_source_url": row.source_url,
-        "hwcap_verified_date": row.verified_date,
-    }
+    return _known_cap_vector(row, ENCODER_TO_CODEC[encoder])
 
 
 def row_as_dict(row: HardwareCapRow) -> dict[str, object]:

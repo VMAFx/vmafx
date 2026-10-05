@@ -475,6 +475,101 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
     return dest
 
 
+def _print_progress(i: int, n_entries: int, n_rows: int, t0: float) -> None:
+    """Print a progress line every fifth clip and after the last one."""
+    if (i + 1) % 5 == 0 or (i + 1) == n_entries:
+        wt = time.time() - t0
+        print(
+            f"[bvi-dvc-full] {i + 1}/{n_entries} clips, {n_rows} frames, {wt:.1f}s",
+            flush=True,
+        )
+
+
+def _zip_clip_rows(
+    zf: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    args: argparse.Namespace,
+    cache_dir: Path | None,
+    teacher_model_arg: str,
+    teacher_model_name: str,
+) -> list[dict] | None:
+    """Extract, process and clean up one zip entry; None when the clip failed."""
+    base = info.filename.rsplit("/", 1)[-1]
+    key = base[: -len(".mp4")]
+    local_mp4 = args.scratch / base
+    try:
+        # Skip extraction if the cached vmaf JSON already exists —
+        # _process_clip will short-circuit before touching the mp4.
+        cache_hit = cache_dir is not None and (cache_dir / f"{key}.json").is_file()
+        if not cache_hit:
+            _stream_extract(zf, info, local_mp4)
+        return _process_clip(
+            key,
+            local_mp4,
+            args.vmaf_bin,
+            teacher_model_arg,
+            args.crf,
+            cache_dir,
+            args.scratch,
+            args.codec,
+            teacher_model=teacher_model_name,
+        )
+    except Exception as exc:
+        # Don't let one bad clip (corrupt stream, ffmpeg/vmaf failure,
+        # decode-out-of-memory) abort a multi-hour run — log the key and
+        # continue with the next clip.
+        print(f"[bvi-dvc-full] FAIL {key}: {exc}", file=sys.stderr, flush=True)
+        return None
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            local_mp4.unlink()
+
+
+def _dir_clip_rows(
+    entry: Any,
+    args: argparse.Namespace,
+    cache_dir: Path | None,
+    teacher_model_arg: str,
+    teacher_model_name: str,
+) -> list[dict] | None:
+    """Process one pre-extracted clip in place; None when the clip failed."""
+    key = entry.path.stem
+    try:
+        if entry.path.suffix.lower() == ".yuv":
+            return _process_clip_yuv(
+                key,
+                entry.path,
+                entry.w,
+                entry.h,
+                entry.fps,
+                entry.depth,
+                args.vmaf_bin,
+                teacher_model_arg,
+                args.crf,
+                cache_dir,
+                args.scratch,
+                args.codec,
+                teacher_model=teacher_model_name,
+            )
+        # Video-container path: decode to YUV, then re-encode a distorted side.
+        return _process_clip(
+            key,
+            entry.path,
+            args.vmaf_bin,
+            teacher_model_arg,
+            args.crf,
+            cache_dir,
+            args.scratch,
+            args.codec,
+            teacher_model=teacher_model_name,
+        )
+    except Exception as exc:
+        # One unreadable clip must not abort a multi-hour dir-mode run —
+        # log the key and continue with the next entry.
+        print(f"[bvi-dvc-full] FAIL {key}: {exc}", file=sys.stderr, flush=True)
+        return None
+
+
 def _run_zip_mode(
     args: argparse.Namespace,
     out_path: Path,
@@ -514,45 +609,13 @@ def _run_zip_mode(
         rows: list[dict] = []
         t0 = time.time()
         for i, info in enumerate(entries):
-            base = info.filename.rsplit("/", 1)[-1]
-            key = base[: -len(".mp4")]
-            local_mp4 = args.scratch / base
-            try:
-                # Skip extraction if the cached vmaf JSON already exists —
-                # _process_clip will short-circuit before touching the mp4.
-                cache_hit = cache_dir is not None and (cache_dir / f"{key}.json").is_file()
-                if not cache_hit:
-                    _stream_extract(zf, info, local_mp4)
-                rows += _process_clip(
-                    key,
-                    local_mp4,
-                    args.vmaf_bin,
-                    teacher_model_arg,
-                    args.crf,
-                    cache_dir,
-                    args.scratch,
-                    args.codec,
-                    teacher_model=teacher_model_name,
-                )
-            except Exception as exc:
-                # Don't let one bad clip (corrupt stream, ffmpeg/vmaf
-                # failure, decode-out-of-memory) abort a multi-hour run —
-                # log the key and continue with the next clip.
-                print(
-                    f"[bvi-dvc-full] FAIL {key}: {exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+            clip_rows = _zip_clip_rows(
+                zf, info, args, cache_dir, teacher_model_arg, teacher_model_name
+            )
+            if clip_rows is None:
                 continue
-            finally:
-                with contextlib.suppress(FileNotFoundError):
-                    local_mp4.unlink()
-            if (i + 1) % 5 == 0 or (i + 1) == len(entries):
-                wt = time.time() - t0
-                print(
-                    f"[bvi-dvc-full] {i + 1}/{len(entries)} clips, {len(rows)} frames, {wt:.1f}s",
-                    flush=True,
-                )
+            rows += clip_rows
+            _print_progress(i, len(entries), len(rows), t0)
 
     stats = _write_parquet(rows, len(entries), out_path)
     stats["input_mode"] = "zip"
@@ -592,56 +655,14 @@ def _run_dir_mode(
         flush=True,
     )
 
-    rows: list[dict] = []
+    rows = []
     t0 = time.time()
     for i, entry in enumerate(entries):
-        key = entry.path.stem
-        try:
-            if entry.path.suffix.lower() == ".yuv":
-                rows += _process_clip_yuv(
-                    key,
-                    entry.path,
-                    entry.w,
-                    entry.h,
-                    entry.fps,
-                    entry.depth,
-                    args.vmaf_bin,
-                    teacher_model_arg,
-                    args.crf,
-                    cache_dir,
-                    args.scratch,
-                    args.codec,
-                    teacher_model=teacher_model_name,
-                )
-            else:
-                # Video-container path: decode to YUV, then re-encode a distorted side.
-                local_mp4 = entry.path
-                rows += _process_clip(
-                    key,
-                    local_mp4,
-                    args.vmaf_bin,
-                    teacher_model_arg,
-                    args.crf,
-                    cache_dir,
-                    args.scratch,
-                    args.codec,
-                    teacher_model=teacher_model_name,
-                )
-        except Exception as exc:
-            # One unreadable clip must not abort a multi-hour dir-mode run —
-            # log the key and continue with the next entry.
-            print(
-                f"[bvi-dvc-full] FAIL {key}: {exc}",
-                file=sys.stderr,
-                flush=True,
-            )
+        clip_rows = _dir_clip_rows(entry, args, cache_dir, teacher_model_arg, teacher_model_name)
+        if clip_rows is None:
             continue
-        if (i + 1) % 5 == 0 or (i + 1) == len(entries):
-            wt = time.time() - t0
-            print(
-                f"[bvi-dvc-full] {i + 1}/{len(entries)} clips, {len(rows)} frames, {wt:.1f}s",
-                flush=True,
-            )
+        rows += clip_rows
+        _print_progress(i, len(entries), len(rows), t0)
 
     stats = _write_parquet(rows, len(entries), out_path)
     stats["input_mode"] = "dir"

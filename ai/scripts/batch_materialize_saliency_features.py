@@ -88,6 +88,43 @@ def load_batch_manifest(path: Path, *, base_dir: Path | None = None) -> list[Bat
     return specs
 
 
+def _run_table(
+    spec: BatchTableSpec,
+    manifest_path: Path,
+    runner: SubprocessRunner,
+    saliency_fn: SaliencyFn | None,
+    totals: dict[str, int],
+) -> dict[str, Any]:
+    """Materialize one table; return its report and add its row counts to ``totals``."""
+    report: dict[str, Any] = {
+        "id": spec.table_id,
+        "input": str(spec.input),
+        "output": str(spec.output),
+        "audit_json": str(spec.audit_json) if spec.audit_json else None,
+        "config": _config_payload(spec.config),
+    }
+    try:
+        rows = read_table(spec.input)
+        enriched, summary = materialize_rows(
+            rows,
+            spec.config,
+            runner=runner,
+            saliency_fn=saliency_fn,
+        )
+        write_table(spec.output, enriched)
+        _write_table_audit(spec, summary=asdict(summary), manifest_path=manifest_path)
+        report["summary"] = asdict(summary)
+        report["status"] = "row-failures" if summary.failed else "ok"
+        totals["total"] += summary.total
+        totals["ok"] += summary.ok
+        totals["skipped_existing"] += summary.skipped_existing
+        totals["failed"] += summary.failed
+    except Exception as exc:  # pragma: no cover - exercised through main
+        report["status"] = "error"
+        report["error"] = str(exc)
+    return report
+
+
 def run_batch(
     specs: list[BatchTableSpec],
     *,
@@ -100,53 +137,20 @@ def run_batch(
 ) -> dict[str, Any]:
     """Run every table spec and return the batch report payload."""
     table_reports: list[dict[str, Any]] = []
-    total_rows = 0
-    ok_rows = 0
-    skipped_rows = 0
-    failed_rows = 0
+    totals = {"total": 0, "ok": 0, "skipped_existing": 0, "failed": 0}
     failed_tables = 0
     for spec in specs:
-        report: dict[str, Any] = {
-            "id": spec.table_id,
-            "input": str(spec.input),
-            "output": str(spec.output),
-            "audit_json": str(spec.audit_json) if spec.audit_json else None,
-            "config": _config_payload(spec.config),
-        }
-        try:
-            rows = read_table(spec.input)
-            enriched, summary = materialize_rows(
-                rows,
-                spec.config,
-                runner=runner,
-                saliency_fn=saliency_fn,
-            )
-            write_table(spec.output, enriched)
-            _write_table_audit(spec, summary=asdict(summary), manifest_path=manifest_path)
-            report["summary"] = asdict(summary)
-            if summary.failed:
-                report["status"] = "row-failures"
-                failed_tables += 1
-            else:
-                report["status"] = "ok"
-            total_rows += summary.total
-            ok_rows += summary.ok
-            skipped_rows += summary.skipped_existing
-            failed_rows += summary.failed
-        except Exception as exc:  # pragma: no cover - exercised through main
-            report["status"] = "error"
-            report["error"] = str(exc)
+        report = _run_table(spec, manifest_path, runner, saliency_fn, totals)
+        table_reports.append(report)
+        if report["status"] != "ok":
             failed_tables += 1
-            table_reports.append(report)
             if options.fail_fast:
                 break
-            continue
-        table_reports.append(report)
-        if options.fail_fast and report["status"] != "ok":
-            break
     batch_status = "ok"
     if failed_tables:
-        batch_status = "row-failures" if failed_rows and options.allow_row_failures else "failed"
+        batch_status = (
+            "row-failures" if totals["failed"] and options.allow_row_failures else "failed"
+        )
     payload = {
         "schema": "saliency-materializer-batch-v1",
         "status": batch_status,
@@ -154,10 +158,7 @@ def run_batch(
         "summary": {
             "tables": len(table_reports),
             "failed_tables": failed_tables,
-            "total": total_rows,
-            "ok": ok_rows,
-            "skipped_existing": skipped_rows,
-            "failed": failed_rows,
+            **totals,
         },
         "tables": table_reports,
         "run_provenance": build_run_provenance(

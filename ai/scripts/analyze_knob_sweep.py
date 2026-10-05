@@ -388,6 +388,42 @@ def write_slice_csv(
     return path
 
 
+def _regression_lines(regressions: Sequence[Mapping[str, object]]) -> list[str]:
+    """Markdown body of the regressions section (without its heading)."""
+    lines: list[str] = []
+    if not regressions:
+        lines.append(
+            "No regressions detected at the configured tolerance — every "
+            "non-bare recipe at matched bitrate either matched or beat "
+            "the bare default."
+        )
+        return lines
+    lines.append(
+        "The following recipes regress against the bare encoder "
+        "default at matched bitrate within their slice and **must "
+        "not ship** as `tools/vmaf-tune/codec_adapters/*` defaults "
+        "(ADR-0305 / `ai/AGENTS.md` knob-sweep corpus invariant):"
+    )
+    lines.append("")
+    lines.append("| source | codec | rc_mode | knob_combo | cand vmaf | bare vmaf | Δ vmaf |")
+    lines.append("|--------|-------|---------|-----------|----------:|----------:|-------:|")
+    for reg in regressions:
+        lines.append(
+            "| {source} | {codec} | {rc_mode} | "
+            "`{candidate_knob_combo}` | {cand:.2f} | "
+            "{bare:.2f} | {delta:+.2f} |".format(
+                source=reg["source"],
+                codec=reg["codec"],
+                rc_mode=reg["rc_mode"],
+                candidate_knob_combo=reg["candidate_knob_combo"],
+                cand=float(reg["candidate_vmaf"]),
+                bare=float(reg["bare_vmaf"]),
+                delta=float(reg["vmaf_delta"]),
+            )
+        )
+    return lines
+
+
 def write_summary_md(
     out_dir: Path,
     hulls: Mapping[tuple[str, str, str], Sequence[SweepRow]],
@@ -423,38 +459,7 @@ def write_summary_md(
     lines.append("")
     lines.append("## Recipe regressions vs bare encoder defaults")
     lines.append("")
-    if not regressions:
-        lines.append(
-            "No regressions detected at the configured tolerance — every "
-            "non-bare recipe at matched bitrate either matched or beat "
-            "the bare default."
-        )
-    else:
-        lines.append(
-            "The following recipes regress against the bare encoder "
-            "default at matched bitrate within their slice and **must "
-            "not ship** as `tools/vmaf-tune/codec_adapters/*` defaults "
-            "(ADR-0305 / `ai/AGENTS.md` knob-sweep corpus invariant):"
-        )
-        lines.append("")
-        lines.append(
-            "| source | codec | rc_mode | knob_combo | " "cand vmaf | bare vmaf | Δ vmaf |"
-        )
-        lines.append("|--------|-------|---------|-----------|" "----------:|----------:|-------:|")
-        for reg in regressions:
-            lines.append(
-                "| {source} | {codec} | {rc_mode} | "
-                "`{candidate_knob_combo}` | {cand:.2f} | "
-                "{bare:.2f} | {delta:+.2f} |".format(
-                    source=reg["source"],
-                    codec=reg["codec"],
-                    rc_mode=reg["rc_mode"],
-                    candidate_knob_combo=reg["candidate_knob_combo"],
-                    cand=float(reg["candidate_vmaf"]),
-                    bare=float(reg["bare_vmaf"]),
-                    delta=float(reg["vmaf_delta"]),
-                )
-            )
+    lines.extend(_regression_lines(regressions))
     lines.append("")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path

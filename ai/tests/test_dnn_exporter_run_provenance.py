@@ -98,3 +98,36 @@ def test_feature_model_export_sidecar_records_run_provenance(
     assert payload["id"] == model_id
     assert payload["onnx"] == onnx_path.name
     assert payload["run_provenance"] == provenance
+
+
+@pytest.mark.parametrize("module", [fastdvdnet_placeholder, transnet_placeholder])
+def test_placeholder_update_registry_raises_when_registry_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, module
+) -> None:
+    missing = tmp_path / "registry.json"
+    monkeypatch.setattr(module, "REGISTRY", missing)
+
+    with pytest.raises(FileNotFoundError, match="missing"):
+        module._update_registry(tmp_path / "model.onnx")
+
+
+@pytest.mark.parametrize("module", [fastdvdnet_placeholder, transnet_placeholder])
+def test_placeholder_main_returns_one_when_registry_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    module,
+) -> None:
+    onnx_path = tmp_path / "model.onnx"
+    missing = tmp_path / "registry.json"
+    monkeypatch.setattr(module, "REGISTRY", missing)
+    monkeypatch.setattr(module, "_export", lambda *a, **k: onnx_path.write_bytes(b"onnx"))
+    monkeypatch.setattr(module, "_write_sidecar", lambda path, **k: path.with_suffix(".json"))
+
+    assert module.main(["--output", str(onnx_path)]) == 1
+    assert f"missing {missing}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("module", [fastdvdnet_placeholder, transnet_placeholder])
+def test_placeholder_main_no_registry_returns_zero(module, tmp_path: Path) -> None:
+    assert module.main(["--output", str(tmp_path / "m.onnx"), "--no-registry"]) == 0

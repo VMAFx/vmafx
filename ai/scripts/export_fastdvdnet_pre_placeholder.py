@@ -143,7 +143,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
 
 def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
-        sys.exit(f"missing {REGISTRY}")
+        raise FileNotFoundError(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
     models: list[dict] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
@@ -170,7 +170,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--output",
@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(raw_argv)
 
     if args.no_registry:
-        return
+        return 0
     _export(args.output, args.height, args.width, args.opset)
     print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
     sidecar = _write_sidecar(
@@ -208,9 +208,14 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
     print(f"[export] wrote {sidecar}")
-    _update_registry(args.output)
+    try:
+        _update_registry(args.output)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     print(f"[export] updated {REGISTRY}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -58,6 +58,7 @@ from corpus.base import (  # noqa: E402
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
+    parse_mos_stats,
     pick,
     utc_now_iso,
     write_ingest_manifest,
@@ -108,6 +109,38 @@ _SPLIT_SCORE_MOS_KEYS: tuple[str, ...] = ("mos", "video_score", "MOS")
 # ---------------------------------------------------------------------------
 
 
+def _parse_manifest_row(row: dict[str, str], csv_path: Path, line_no: int) -> dict[str, Any] | None:
+    """Parse one manifest row; None (after a warning) when it must be skipped."""
+    filename_str = pick(row, _CSV_FILENAME_KEYS)
+    if not filename_str:
+        _LOG.warning(
+            "%s:%d: no filename column (looked for %s); skipping",
+            csv_path,
+            line_no,
+            ", ".join(_CSV_FILENAME_KEYS),
+        )
+        return None
+    filename = normalise_clip_name(filename_str)
+    url = pick(row, _CSV_URL_KEYS) or ""
+    mos_str = pick(row, _CSV_MOS_KEYS)
+    if mos_str is None:
+        _LOG.warning("%s:%d: no MOS column for %s; skipping", csv_path, line_no, filename)
+        return None
+    try:
+        mos = float(mos_str)
+    except ValueError:
+        _LOG.warning("%s:%d: bad MOS value %r; skipping", csv_path, line_no, mos_str)
+        return None
+    mos_std_dev, n_ratings = parse_mos_stats(row, _CSV_MOS_STD_KEYS, _CSV_NRATINGS_KEYS)
+    return {
+        "filename": filename,
+        "url": url,
+        "mos": mos,
+        "mos_std_dev": mos_std_dev,
+        "n_ratings": n_ratings,
+    }
+
+
 def parse_manifest_csv(
     csv_path: Path, *, min_rows: int = _KONVID_150K_MIN_ROWS
 ) -> list[dict[str, Any]]:
@@ -130,45 +163,9 @@ def parse_manifest_csv(
 
     parsed: list[dict[str, Any]] = []
     for line_no, row in enumerate(all_rows, start=2):
-        filename_str = pick(row, _CSV_FILENAME_KEYS)
-        if not filename_str:
-            _LOG.warning(
-                "%s:%d: no filename column (looked for %s); skipping",
-                csv_path,
-                line_no,
-                ", ".join(_CSV_FILENAME_KEYS),
-            )
-            continue
-        filename = normalise_clip_name(filename_str)
-        url = pick(row, _CSV_URL_KEYS) or ""
-        mos_str = pick(row, _CSV_MOS_KEYS)
-        if mos_str is None:
-            _LOG.warning("%s:%d: no MOS column for %s; skipping", csv_path, line_no, filename)
-            continue
-        try:
-            mos = float(mos_str)
-        except ValueError:
-            _LOG.warning("%s:%d: bad MOS value %r; skipping", csv_path, line_no, mos_str)
-            continue
-        std_str = pick(row, _CSV_MOS_STD_KEYS)
-        try:
-            mos_std_dev = float(std_str) if std_str is not None else 0.0
-        except ValueError:
-            mos_std_dev = 0.0
-        n_str = pick(row, _CSV_NRATINGS_KEYS)
-        try:
-            n_ratings = int(float(n_str)) if n_str is not None else 0
-        except ValueError:
-            n_ratings = 0
-        parsed.append(
-            {
-                "filename": filename,
-                "url": url,
-                "mos": mos,
-                "mos_std_dev": mos_std_dev,
-                "n_ratings": n_ratings,
-            }
-        )
+        entry = _parse_manifest_row(row, csv_path, line_no)
+        if entry is not None:
+            parsed.append(entry)
     return parsed
 
 

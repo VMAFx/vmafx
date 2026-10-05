@@ -29,6 +29,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -349,6 +350,56 @@ def _prefixed_hdr_metadata(prefix: str, metadata: dict[str, Any] | None) -> dict
     return {f"{prefix}_{field}": values.get(field) for field in HDR_METADATA_FIELDS}
 
 
+_BT2020_PRIMARIES = frozenset({"bt2020", "bt2020nc", "bt2020-ncl", "bt2020c", "bt2020-cl"})
+
+
+@dataclass
+class _HdrAuditTally:
+    """Running counters of the HDR metadata audit."""
+
+    transfer_counts: Counter[str] = dc_field(default_factory=Counter)
+    primaries_counts: Counter[str] = dc_field(default_factory=Counter)
+    pix_fmt_counts: Counter[str] = dc_field(default_factory=Counter)
+    split_row_counts: Counter[str] = dc_field(default_factory=Counter)
+    malformed: list[dict[str, Any]] = dc_field(default_factory=list)
+    missing: int = 0
+    probe_failed: int = 0
+    probed: int = 0
+
+
+def _tally_probed_clip(
+    tally: _HdrAuditTally,
+    row: dict[str, Any],
+    content: str,
+    split: str,
+    payload: dict[str, Any] | None,
+) -> None:
+    """Fold one ffprobe payload into ``tally`` (probe failures count separately)."""
+    streams = (payload or {}).get("streams") or []
+    if not streams:
+        tally.probe_failed += 1
+        return
+    metadata = hdr_metadata_from_payload(payload)
+    tally.probed += 1
+    transfer = metadata["transfer_class"]
+    primaries = metadata["color_primaries"]
+    pix_fmt = metadata["pix_fmt"]
+    tally.transfer_counts[transfer] += 1
+    tally.primaries_counts[primaries] += 1
+    tally.pix_fmt_counts[pix_fmt] += 1
+    if transfer in {"pq", "hlg"} and primaries not in _BT2020_PRIMARIES:
+        tally.malformed.append(
+            {
+                "src": row.get("src", ""),
+                "chug_content_name": content,
+                "split": split,
+                "color_transfer": metadata["color_transfer"],
+                "color_primaries": primaries,
+                "pix_fmt": pix_fmt,
+            }
+        )
+
+
 def audit_chug_hdr_metadata(
     rows: Iterable[dict[str, Any]],
     *,
@@ -362,67 +413,31 @@ def audit_chug_hdr_metadata(
     """Probe local CHUG clips and write a compact HDR metadata audit."""
     rows_list = list(rows)
     split_map = build_content_split_map(rows_list, seed=split_seed)
-    transfer_counts: Counter[str] = Counter()
-    primaries_counts: Counter[str] = Counter()
-    pix_fmt_counts: Counter[str] = Counter()
-    split_row_counts: Counter[str] = Counter()
-    malformed: list[dict[str, Any]] = []
-    missing = 0
-    probe_failed = 0
-    probed = 0
-
+    tally = _HdrAuditTally()
     for row in rows_list:
-        clip_path = _row_clip_path(row, clips_dir)
         content = str(row.get("chug_content_name", "")).strip()
         split = split_map.get(content, "unknown")
-        split_row_counts[split] += 1
+        tally.split_row_counts[split] += 1
+        clip_path = _row_clip_path(row, clips_dir)
         if not clip_path.is_file():
-            missing += 1
+            tally.missing += 1
             continue
         payload = _ffprobe_hdr_payload(clip_path, ffprobe_bin=ffprobe_bin, runner=runner)
-        streams = (payload or {}).get("streams") or []
-        if not streams:
-            probe_failed += 1
-            continue
-        metadata = hdr_metadata_from_payload(payload)
-        probed += 1
-        transfer = metadata["transfer_class"]
-        primaries = metadata["color_primaries"]
-        pix_fmt = metadata["pix_fmt"]
-        transfer_counts[transfer] += 1
-        primaries_counts[primaries] += 1
-        pix_fmt_counts[pix_fmt] += 1
-        if transfer in {"pq", "hlg"} and primaries not in {
-            "bt2020",
-            "bt2020nc",
-            "bt2020-ncl",
-            "bt2020c",
-            "bt2020-cl",
-        }:
-            malformed.append(
-                {
-                    "src": row.get("src", ""),
-                    "chug_content_name": content,
-                    "split": split,
-                    "color_transfer": metadata["color_transfer"],
-                    "color_primaries": primaries,
-                    "pix_fmt": pix_fmt,
-                }
-            )
+        _tally_probed_clip(tally, row, content, split, payload)
 
     payload = {
         "policy": "chug-hdr-ffprobe-audit-v1",
         "split_policy": "content-name-blake2s-80-10-10",
         "split_seed": split_seed,
         "rows": len(rows_list),
-        "probed": probed,
-        "missing_files": missing,
-        "probe_failed": probe_failed,
-        "transfer_counts": dict(sorted(transfer_counts.items())),
-        "primaries_counts": dict(sorted(primaries_counts.items())),
-        "pix_fmt_counts": dict(sorted(pix_fmt_counts.items())),
-        "split_row_counts": dict(sorted(split_row_counts.items())),
-        "malformed_hdr_rows": malformed,
+        "probed": tally.probed,
+        "missing_files": tally.missing,
+        "probe_failed": tally.probe_failed,
+        "transfer_counts": dict(sorted(tally.transfer_counts.items())),
+        "primaries_counts": dict(sorted(tally.primaries_counts.items())),
+        "pix_fmt_counts": dict(sorted(tally.pix_fmt_counts.items())),
+        "split_row_counts": dict(sorted(tally.split_row_counts.items())),
+        "malformed_hdr_rows": tally.malformed,
     }
     if run_provenance is not None:
         payload["run_provenance"] = run_provenance
@@ -637,6 +652,25 @@ def _read_done_keys(output: Path) -> set[str]:
     return done
 
 
+def _read_cached_pair(
+    cache_path: Path, visual_cache_path: Path
+) -> tuple[FeatureExtractionResult | None, ExtractedPairPayload | None]:
+    """Read the cached fp32 result and, when both caches exist, the full payload."""
+    result: FeatureExtractionResult | None = None
+    if cache_path.is_file():
+        from ai.data.feature_extractor import FeatureExtractionResult as FeatureResult
+
+        result = FeatureResult.from_jsonable(json.loads(cache_path.read_text()))
+    if result is not None and visual_cache_path.is_file():
+        visual_payload = json.loads(visual_cache_path.read_text())
+        return result, ExtractedPairPayload(
+            result=result,
+            ref_visual_signals=visual_payload.get("ref") or _empty_visual_signals(),
+            dis_visual_signals=visual_payload.get("dis") or _empty_visual_signals(),
+        )
+    return result, None
+
+
 def _extract_pair_payload(
     pair: FeaturePair,
     *,
@@ -650,40 +684,24 @@ def _extract_pair_payload(
 ) -> ExtractedPairPayload:
     cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.json"
     visual_cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.visual.json"
-    result: FeatureExtractionResult | None = None
-    if cache_path.is_file():
-        from ai.data.feature_extractor import FeatureExtractionResult as FeatureResult
-
-        result = FeatureResult.from_jsonable(json.loads(cache_path.read_text()))
-    if result is not None and visual_cache_path.is_file():
-        visual_payload = json.loads(visual_cache_path.read_text())
-        return ExtractedPairPayload(
-            result=result,
-            ref_visual_signals=visual_payload.get("ref") or _empty_visual_signals(),
-            dis_visual_signals=visual_payload.get("dis") or _empty_visual_signals(),
-        )
+    result, cached = _read_cached_pair(cache_path, visual_cache_path)
+    if cached is not None:
+        return cached
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="chug-features-") as tmp_s:
         tmp = Path(tmp_s)
         ref_yuv = tmp / "ref.yuv"
         dis_yuv = tmp / "dis.yuv"
-        _decode_to_yuv10(
-            src=pair.ref_path,
-            out=ref_yuv,
-            width=pair.width,
-            height=pair.height,
-            ffmpeg_bin=ffmpeg_bin,
-            runner=runner,
-        )
-        _decode_to_yuv10(
-            src=pair.dis_path,
-            out=dis_yuv,
-            width=pair.width,
-            height=pair.height,
-            ffmpeg_bin=ffmpeg_bin,
-            runner=runner,
-        )
+        for src, out in ((pair.ref_path, ref_yuv), (pair.dis_path, dis_yuv)):
+            _decode_to_yuv10(
+                src=src,
+                out=out,
+                width=pair.width,
+                height=pair.height,
+                ffmpeg_bin=ffmpeg_bin,
+                runner=runner,
+            )
         if result is None:
             result = extractor(
                 ref_yuv,
@@ -700,16 +718,8 @@ def _extract_pair_payload(
                 json.dumps(result.to_jsonable(), sort_keys=True),
             )
         visual_payload = {
-            "ref": compute_visual_signals_from_yuv10(
-                ref_yuv,
-                width=pair.width,
-                height=pair.height,
-            ),
-            "dis": compute_visual_signals_from_yuv10(
-                dis_yuv,
-                width=pair.width,
-                height=pair.height,
-            ),
+            "ref": compute_visual_signals_from_yuv10(ref_yuv, width=pair.width, height=pair.height),
+            "dis": compute_visual_signals_from_yuv10(dis_yuv, width=pair.width, height=pair.height),
         }
         write_text_atomic(
             visual_cache_path,
@@ -775,6 +785,130 @@ def _build_output_row(
     return row
 
 
+def _write_side_outputs(
+    rows: list[dict[str, Any]],
+    *,
+    clips_dir: Path,
+    split_manifest: Path | None,
+    audit_output: Path | None,
+    split_seed: str,
+    ffprobe_bin: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    run_provenance: dict[str, Any] | None,
+) -> None:
+    """Write the optional split manifest and HDR metadata audit."""
+    if split_manifest is not None:
+        write_split_manifest(
+            rows,
+            output=split_manifest,
+            seed=split_seed,
+            run_provenance=run_provenance,
+        )
+    if audit_output is not None:
+        audit_chug_hdr_metadata(
+            rows,
+            clips_dir=clips_dir,
+            output=audit_output,
+            split_seed=split_seed,
+            ffprobe_bin=ffprobe_bin,
+            runner=runner,
+            run_provenance=run_provenance,
+        )
+
+
+@dataclass
+class _PairRowWriter:
+    """Extract one pair and append its output row; caches per-clip HDR metadata."""
+
+    feature_names: tuple[str, ...]
+    feature_set: str
+    cache_dir: Path
+    ffmpeg_bin: str
+    ffprobe_bin: str
+    vmaf_bin: Path
+    runner: Callable[..., subprocess.CompletedProcess[str]]
+    extractor: Callable[..., FeatureExtractionResult]
+    hdr_cache: dict[Path, dict[str, Any]] = dc_field(default_factory=dict)
+
+    def hdr_for(self, path: Path) -> dict[str, Any]:
+        """Return the (cached) HDR metadata of ``path``."""
+        resolved = path.resolve()
+        if resolved not in self.hdr_cache:
+            self.hdr_cache[resolved] = probe_clip_hdr_metadata(
+                path,
+                ffprobe_bin=self.ffprobe_bin,
+                runner=self.runner,
+            )
+        return self.hdr_cache[resolved]
+
+    def __call__(self, out: Any, pair: FeaturePair) -> None:
+        payload = _extract_pair_payload(
+            pair,
+            feature_names=self.feature_names,
+            feature_set=self.feature_set,
+            cache_dir=self.cache_dir,
+            ffmpeg_bin=self.ffmpeg_bin,
+            vmaf_bin=self.vmaf_bin,
+            runner=self.runner,
+            extractor=self.extractor,
+        )
+        row = _build_output_row(
+            pair,
+            payload.result,
+            feature_set=self.feature_set,
+            ref_hdr_metadata=self.hdr_for(pair.ref_path),
+            dis_hdr_metadata=self.hdr_for(pair.dis_path),
+            ref_visual_signals=payload.ref_visual_signals,
+            dis_visual_signals=payload.dis_visual_signals,
+        )
+        out.write(json.dumps(row) + "\n")
+        out.flush()
+
+
+def _validated_feature_names(split: str, feature_set: str) -> tuple[str, ...]:
+    """Validate the split and feature-set names; return the feature names."""
+    if split not in ("all", *SPLIT_NAMES):
+        raise ValueError(f"unknown split {split!r}; valid: all, {', '.join(SPLIT_NAMES)}")
+    try:
+        return FEATURE_SETS[feature_set]
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown feature set {feature_set!r}; valid: {sorted(FEATURE_SETS)}"
+        ) from exc
+
+
+def _write_pairs(
+    output_jsonl: Path,
+    pairs: list[FeaturePair],
+    done: set[str],
+    feature_set: str,
+    write_row: Callable[[Any, FeaturePair], None],
+) -> int:
+    """Append one row per extractable pair, isolating per-pair failures."""
+    written = 0
+    with output_jsonl.open("a", encoding="utf-8") as out:
+        for idx, pair in enumerate(pairs, start=1):
+            pair_key = _cache_key(pair, feature_set)
+            if pair_key in done:
+                continue
+            if not pair.ref_path.is_file() or not pair.dis_path.is_file():
+                continue
+            # Per-clip isolation: one bad pair (ffmpeg/vmaf failure, malformed
+            # cached JSON, read error) must be logged and skipped, not abort the
+            # whole batch (R3-19).  The done-set/cache resume lets a re-run
+            # continue, but the active batch should keep going on its own.
+            try:
+                write_row(out, pair)
+            except Exception as exc:
+                print(f"[chug-features] FAIL {pair_key}: {exc}", file=sys.stderr, flush=True)
+                continue
+            done.add(pair_key)
+            written += 1
+            if idx % 100 == 0:
+                print(f"[chug-features] {idx}/{len(pairs)} rows considered; wrote {written}")
+    return written
+
+
 def run(
     *,
     input_jsonl: Path,
@@ -796,34 +930,20 @@ def run(
     run_provenance: dict[str, Any] | None = None,
 ) -> int:
     """Materialise CHUG feature rows and return the number written."""
-    if split not in ("all", *SPLIT_NAMES):
-        raise ValueError(f"unknown split {split!r}; valid: all, {', '.join(SPLIT_NAMES)}")
-    try:
-        feature_names = FEATURE_SETS[feature_set]
-    except KeyError as exc:
-        raise ValueError(
-            f"unknown feature set {feature_set!r}; valid: {sorted(FEATURE_SETS)}"
-        ) from exc
+    feature_names = _validated_feature_names(split, feature_set)
 
     rows = _load_jsonl(input_jsonl)
     split_map = build_content_split_map(rows, seed=split_seed)
-    if split_manifest is not None:
-        write_split_manifest(
-            rows,
-            output=split_manifest,
-            seed=split_seed,
-            run_provenance=run_provenance,
-        )
-    if audit_output is not None:
-        audit_chug_hdr_metadata(
-            rows,
-            clips_dir=clips_dir,
-            output=audit_output,
-            split_seed=split_seed,
-            ffprobe_bin=ffprobe_bin,
-            runner=runner,
-            run_provenance=run_provenance,
-        )
+    _write_side_outputs(
+        rows,
+        clips_dir=clips_dir,
+        split_manifest=split_manifest,
+        audit_output=audit_output,
+        split_seed=split_seed,
+        ffprobe_bin=ffprobe_bin,
+        runner=runner,
+        run_provenance=run_provenance,
+    )
     pairs = build_feature_pairs(
         rows,
         clips_dir=clips_dir,
@@ -836,64 +956,17 @@ def run(
 
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     done = _read_done_keys(output_jsonl)
-    hdr_cache: dict[Path, dict[str, Any]] = {}
-
-    def hdr_for(path: Path) -> dict[str, Any]:
-        resolved = path.resolve()
-        if resolved not in hdr_cache:
-            hdr_cache[resolved] = probe_clip_hdr_metadata(
-                path,
-                ffprobe_bin=ffprobe_bin,
-                runner=runner,
-            )
-        return hdr_cache[resolved]
-
-    written = 0
-    with output_jsonl.open("a", encoding="utf-8") as out:
-        for idx, pair in enumerate(pairs, start=1):
-            pair_key = _cache_key(pair, feature_set)
-            if pair_key in done:
-                continue
-            if not pair.ref_path.is_file() or not pair.dis_path.is_file():
-                continue
-            # Per-clip isolation: one bad pair (ffmpeg/vmaf failure, malformed
-            # cached JSON, read error) must be logged and skipped, not abort the
-            # whole batch (R3-19).  The done-set/cache resume lets a re-run
-            # continue, but the active batch should keep going on its own.
-            try:
-                payload = _extract_pair_payload(
-                    pair,
-                    feature_names=feature_names,
-                    feature_set=feature_set,
-                    cache_dir=cache_dir,
-                    ffmpeg_bin=ffmpeg_bin,
-                    vmaf_bin=vmaf_bin,
-                    runner=runner,
-                    extractor=extractor,
-                )
-                out.write(
-                    json.dumps(
-                        _build_output_row(
-                            pair,
-                            payload.result,
-                            feature_set=feature_set,
-                            ref_hdr_metadata=hdr_for(pair.ref_path),
-                            dis_hdr_metadata=hdr_for(pair.dis_path),
-                            ref_visual_signals=payload.ref_visual_signals,
-                            dis_visual_signals=payload.dis_visual_signals,
-                        )
-                    )
-                    + "\n"
-                )
-                out.flush()
-            except Exception as exc:
-                print(f"[chug-features] FAIL {pair_key}: {exc}", file=sys.stderr, flush=True)
-                continue
-            done.add(pair_key)
-            written += 1
-            if idx % 100 == 0:
-                print(f"[chug-features] {idx}/{len(pairs)} rows considered; wrote {written}")
-    return written
+    writer = _PairRowWriter(
+        feature_names=feature_names,
+        feature_set=feature_set,
+        cache_dir=cache_dir,
+        ffmpeg_bin=ffmpeg_bin,
+        ffprobe_bin=ffprobe_bin,
+        vmaf_bin=vmaf_bin,
+        runner=runner,
+        extractor=extractor,
+    )
+    return _write_pairs(output_jsonl, pairs, done, feature_set, writer)
 
 
 def _build_chug_parser() -> argparse.ArgumentParser:

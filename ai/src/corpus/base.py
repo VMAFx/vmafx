@@ -97,6 +97,23 @@ def pick(row: dict[str, str], keys: tuple[str, ...] | list[str]) -> str | None:
     return None
 
 
+def parse_mos_stats(
+    row: dict[str, str], std_keys: Sequence[str], n_keys: Sequence[str]
+) -> tuple[float, int]:
+    """Return ``(mos_std_dev, n_ratings)`` from a CSV row; 0 when absent or malformed."""
+    std_str = pick(row, std_keys)
+    try:
+        mos_std_dev = float(std_str) if std_str is not None else 0.0
+    except ValueError:
+        mos_std_dev = 0.0
+    n_str = pick(row, n_keys)
+    try:
+        n_ratings = int(float(n_str)) if n_str is not None else 0
+    except ValueError:
+        n_ratings = 0
+    return mos_std_dev, n_ratings
+
+
 def normalise_clip_name(stem: str, *, suffix: str = ".mp4") -> str:
     """Return ``stem`` with ``suffix`` appended if it has no extension.
 

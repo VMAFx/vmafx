@@ -412,61 +412,7 @@ def aggregate(
             counters["inputs_missing"] += 1
             continue
         counters["inputs_seen"] += 1
-        override = overrides.get(path)
-        for line_no, raw in iter_jsonl(path):
-            counters["rows_in"] += 1
-            _validate_input_row(path, line_no, raw)
-
-            corpus_source = _resolve_corpus_source(raw, override)
-            if corpus_source is None:
-                _LOG.warning(
-                    "%s:%d: unknown corpus label %r; row dropped (no scale "
-                    "conversion defined). Add an entry to SCALE_CONVERSIONS "
-                    "or pass --corpus-source for this input.",
-                    path,
-                    line_no,
-                    raw.get("corpus"),
-                )
-                counters["dropped_unknown_corpus"] += 1
-                continue
-
-            try:
-                converted = transform_row(
-                    raw,
-                    corpus_source=corpus_source,
-                    aggregated_at_utc=aggregated_at_utc,
-                )
-            except (ValueError, TypeError) as exc:
-                # ValueError: out-of-range / unknown-scale MOS (convert_mos).
-                # TypeError: malformed mos cell (None, list, ...) reaching
-                # float() in transform_row. Both are bad-scale rows: drop
-                # with a warning rather than crashing the whole aggregation.
-                _LOG.warning("%s:%d: %s; row dropped", path, line_no, exc)
-                counters["dropped_bad_scale"] += 1
-                continue
-
-            sha = converted["src_sha256"]
-            if not isinstance(sha, str) or not sha:
-                # No content key — keep but namespace under (src,
-                # corpus_source) so we don't false-merge unrelated
-                # rows missing a sha. This is a legitimate path for
-                # corpora that pre-date sha enrichment.
-                key = f"__nokey__/{converted.get('src', '')}/{corpus_source}"
-            else:
-                key = sha
-
-            existing = keyed.get(key)
-            if existing is None:
-                keyed[key] = converted
-                continue
-            if existing.get("corpus_source") == converted.get("corpus_source"):
-                # Same-corpus dup — out of scope for this aggregator;
-                # the per-corpus ingestion already deduped, so trust
-                # first-seen.
-                continue
-            # Cross-corpus duplicate. Apply uncertainty-weighted resolve.
-            counters["cross_corpus_dedups"] += 1
-            keyed[key] = resolve_duplicate(existing, converted)
+        _merge_input(path, overrides.get(path), keyed, counters, aggregated_at_utc)
 
     if counters["inputs_seen"] == 0:
         raise SystemExit(
@@ -475,6 +421,86 @@ def aggregate(
             f"unified corpus"
         )
 
+    _write_keyed_rows(keyed, output, counters)
+    return counters
+
+
+def _merge_input(
+    path: Path,
+    override: str | None,
+    keyed: dict[str, dict[str, Any]],
+    counters: dict[str, int],
+    aggregated_at_utc: str,
+) -> None:
+    """Fold every row of one input shard into ``keyed`` and update ``counters``."""
+    for line_no, raw in iter_jsonl(path):
+        counters["rows_in"] += 1
+        _validate_input_row(path, line_no, raw)
+
+        corpus_source = _resolve_corpus_source(raw, override)
+        if corpus_source is None:
+            _LOG.warning(
+                "%s:%d: unknown corpus label %r; row dropped (no scale "
+                "conversion defined). Add an entry to SCALE_CONVERSIONS "
+                "or pass --corpus-source for this input.",
+                path,
+                line_no,
+                raw.get("corpus"),
+            )
+            counters["dropped_unknown_corpus"] += 1
+            continue
+
+        try:
+            converted = transform_row(
+                raw,
+                corpus_source=corpus_source,
+                aggregated_at_utc=aggregated_at_utc,
+            )
+        except (ValueError, TypeError) as exc:
+            # ValueError: out-of-range / unknown-scale MOS (convert_mos).
+            # TypeError: malformed mos cell (None, list, ...) reaching
+            # float() in transform_row. Both are bad-scale rows: drop
+            # with a warning rather than crashing the whole aggregation.
+            _LOG.warning("%s:%d: %s; row dropped", path, line_no, exc)
+            counters["dropped_bad_scale"] += 1
+            continue
+
+        _add_converted_row(keyed, converted, corpus_source, counters)
+
+
+def _add_converted_row(
+    keyed: dict[str, dict[str, Any]],
+    converted: dict[str, Any],
+    corpus_source: str,
+    counters: dict[str, int],
+) -> None:
+    """Insert ``converted`` into ``keyed``, resolving cross-corpus duplicates."""
+    sha = converted["src_sha256"]
+    if not isinstance(sha, str) or not sha:
+        # No content key — keep but namespace under (src, corpus_source) so we
+        # don't false-merge unrelated rows missing a sha. This is a legitimate
+        # path for corpora that pre-date sha enrichment.
+        key = f"__nokey__/{converted.get('src', '')}/{corpus_source}"
+    else:
+        key = sha
+
+    existing = keyed.get(key)
+    if existing is None:
+        keyed[key] = converted
+        return
+    if existing.get("corpus_source") == converted.get("corpus_source"):
+        # Same-corpus dup — out of scope for this aggregator; the per-corpus
+        # ingestion already deduped, so trust first-seen.
+        return
+    # Cross-corpus duplicate. Apply uncertainty-weighted resolve.
+    counters["cross_corpus_dedups"] += 1
+    keyed[key] = resolve_duplicate(existing, converted)
+
+
+def _write_keyed_rows(
+    keyed: dict[str, dict[str, Any]], output: Path, counters: dict[str, int]
+) -> None:
+    """Write ``keyed`` to ``output`` atomically in stable (corpus, sha, key) order."""
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temp file in the same directory then rename atomically so
     # a crash mid-write never leaves a partially-truncated output JSONL.
@@ -482,9 +508,8 @@ def aggregate(
     tmp = Path(tmp_str)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as out_fp:
-            # Stable sort by (corpus_source, src_sha256) so the output is
-            # bytewise-deterministic given a fixed input set, which makes
-            # diffing across runs trivial in CI.
+            # Stable sort so the output is bytewise-deterministic given a
+            # fixed input set, which makes diffing across runs trivial in CI.
             for key in sorted(
                 keyed,
                 key=lambda k: (keyed[k]["corpus_source"], keyed[k]["src_sha256"], k),
@@ -495,8 +520,6 @@ def aggregate(
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
-
-    return counters
 
 
 # ---------------------------------------------------------------------------

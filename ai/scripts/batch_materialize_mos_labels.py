@@ -83,6 +83,62 @@ def load_batch_manifest(path: Path, *, base_dir: Path | None = None) -> list[Mos
     return specs
 
 
+def _run_table(
+    spec: MosBatchSpec,
+    manifest_path: Path,
+    raw_argv: list[str],
+    args: argparse.Namespace,
+    totals: dict[str, int],
+) -> dict[str, Any]:
+    """Materialize one manifest table; return its report and add its rows to ``totals``."""
+    report: dict[str, Any] = {
+        "id": spec.table_id,
+        "features": str(spec.features),
+        "labels": [str(path) for path in spec.labels],
+        "out": str(spec.out),
+        "audit_json": str(spec.audit_json) if spec.audit_json else None,
+        "config": dict(spec.config),
+    }
+    try:
+        audit = materialize(
+            spec.features,
+            list(spec.labels),
+            spec.out,
+            audit_json=spec.audit_json,
+            run_provenance=build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={
+                    "manifest": manifest_path,
+                    "features": spec.features,
+                    "labels": spec.labels,
+                },
+                outputs={
+                    "out": str(spec.out),
+                    "audit_json": str(spec.audit_json),
+                },
+            ),
+            **spec.config,
+        )
+        report["status"] = "ok"
+        report["summary"] = {
+            "input_rows": audit["input_rows"],
+            "output_rows": audit["output_rows"],
+            "matched_rows": audit["matched_rows"],
+            "missing_rows": audit["missing_rows"],
+            "match_rate": audit["match_rate"],
+            "labels_loaded": audit["labels_loaded"],
+        }
+        for key in totals:
+            totals[key] += int(audit[key])
+    except Exception as exc:  # pragma: no cover - exercised through main
+        report["status"] = "error"
+        report["error"] = str(exc)
+    return report
+
+
 def run_batch(
     specs: list[MosBatchSpec],
     *,
@@ -94,76 +150,19 @@ def run_batch(
     """Run each manifest table and return the batch report."""
     table_reports: list[dict[str, Any]] = []
     failed_tables = 0
-    input_rows = 0
-    output_rows = 0
-    matched_rows = 0
-    missing_rows = 0
+    totals = {"input_rows": 0, "output_rows": 0, "matched_rows": 0, "missing_rows": 0}
     for spec in specs:
-        report: dict[str, Any] = {
-            "id": spec.table_id,
-            "features": str(spec.features),
-            "labels": [str(path) for path in spec.labels],
-            "out": str(spec.out),
-            "audit_json": str(spec.audit_json) if spec.audit_json else None,
-            "config": dict(spec.config),
-        }
-        try:
-            audit = materialize(
-                spec.features,
-                list(spec.labels),
-                spec.out,
-                audit_json=spec.audit_json,
-                run_provenance=build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={
-                        "manifest": manifest_path,
-                        "features": spec.features,
-                        "labels": spec.labels,
-                    },
-                    outputs={
-                        "out": str(spec.out),
-                        "audit_json": str(spec.audit_json),
-                    },
-                ),
-                **spec.config,
-            )
-            report["status"] = "ok"
-            report["summary"] = {
-                "input_rows": audit["input_rows"],
-                "output_rows": audit["output_rows"],
-                "matched_rows": audit["matched_rows"],
-                "missing_rows": audit["missing_rows"],
-                "match_rate": audit["match_rate"],
-                "labels_loaded": audit["labels_loaded"],
-            }
-            input_rows += int(audit["input_rows"])
-            output_rows += int(audit["output_rows"])
-            matched_rows += int(audit["matched_rows"])
-            missing_rows += int(audit["missing_rows"])
-        except Exception as exc:  # pragma: no cover - exercised through main
-            report["status"] = "error"
-            report["error"] = str(exc)
+        report = _run_table(spec, manifest_path, raw_argv, args, totals)
+        table_reports.append(report)
+        if report["status"] == "error":
             failed_tables += 1
-            table_reports.append(report)
             if options.fail_fast:
                 break
-            continue
-        table_reports.append(report)
     return {
         "schema": "mos-label-materializer-batch-v1",
         "status": "failed" if failed_tables else "ok",
         "manifest": str(manifest_path),
-        "summary": {
-            "tables": len(table_reports),
-            "failed_tables": failed_tables,
-            "input_rows": input_rows,
-            "output_rows": output_rows,
-            "matched_rows": matched_rows,
-            "missing_rows": missing_rows,
-        },
+        "summary": {"tables": len(table_reports), "failed_tables": failed_tables, **totals},
         "tables": table_reports,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,

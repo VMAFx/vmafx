@@ -86,7 +86,7 @@ import json
 import logging
 import statistics
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -379,18 +379,8 @@ def _ugc_saliency_benefit_fraction(rows: Sequence[CorpusRow]) -> float:
 # ----------------------------------------------------------------------
 
 
-def calibrate(
-    rows: Sequence[CorpusRow],
-    *,
-    corpus_path: Path,
-    corpus_row_count: int,
-) -> dict[str, Any]:
-    """Build the calibration JSON dict from corpus rows."""
-
-    # UGC is the corpus-derived class. Everything in K150K is UGC; we
-    # don't filter further because the JSONL has no class column yet.
-    ugc_rows = list(rows)
-
+def _ugc_recipe(ugc_rows: Sequence[CorpusRow]) -> tuple[dict[str, Any], float]:
+    """Build the corpus-derived UGC recipe; also return its tight-interval width."""
     ugc_target_offset = _ugc_target_vmaf_offset(ugc_rows)
     ugc_width = _ugc_tight_interval_width(ugc_rows)
     ugc_dominance = _resolution_dominance(ugc_rows)
@@ -402,67 +392,72 @@ def calibrate(
     # landscape at the same physical resolution; locking UGC
     # single-rung would be wrong even though the dominance crosses
     # the 0.90 threshold.
-
-    recipes: dict[str, dict[str, Any]] = {
-        "ugc": {
-            "tight_interval_max_width": ugc_width,
-            "force_single_rung": False,  # K150K mixes 540 portrait/landscape,
-            # no single resolution dominates per ADR-0289 single-rung gate.
-            "saliency_intensity": saliency_benefit_to_intensity(ugc_saliency_benefit),
-            "target_vmaf_offset": ugc_target_offset,
-            "_provenance": {
-                "source": "corpus",
-                "corpus_rows_used": len(ugc_rows),
-                "ugc_resolution_dominance": round(ugc_dominance, 3),
-                "ugc_saliency_benefit_fraction": round(ugc_saliency_benefit, 3),
-            },
+    recipe = {
+        "tight_interval_max_width": ugc_width,
+        "force_single_rung": False,  # K150K mixes 540 portrait/landscape,
+        # no single resolution dominates per ADR-0289 single-rung gate.
+        "saliency_intensity": saliency_benefit_to_intensity(ugc_saliency_benefit),
+        "target_vmaf_offset": ugc_target_offset,
+        "_provenance": {
+            "source": "corpus",
+            "corpus_rows_used": len(ugc_rows),
+            "ugc_resolution_dominance": round(ugc_dominance, 3),
+            "ugc_saliency_benefit_fraction": round(ugc_saliency_benefit, 3),
         },
     }
+    return recipe, ugc_width
 
-    for cls, adj in _PROXY_ADJUSTMENTS.items():
-        # Proxy ``target_vmaf_offset`` anchors absolutely on the
-        # F.4-documented envelope, not on the UGC offset. K150K's
-        # MOS-proxy distribution is intrinsically skewed (upper
-        # tail heavier than lower); chaining proxy targets off
-        # UGC would push animation / screen-content out of the
-        # conservative envelope Research-0067 §F.4 fixes. The
-        # corpus-derived UGC value is reported alongside in the
-        # provenance block so a future class-labelled corpus
-        # (PR #477) can compose a consistent set.
-        target_offset = round(float(adj["target_vmaf_offset_abs"]), 1)
-        width = round(ugc_width * adj["tight_interval_width_factor"], 2)
-        intensity = saliency_benefit_to_intensity(adj["saliency_benefit_fraction"])
-        recipe: dict[str, Any] = {}
-        # Match F.4's "only carry the keys that actually override"
-        # convention: screen_content has no force_single_rung / width;
-        # animation has all four; ugc has three; live_action_hdr has
-        # two. The runtime loader merges the recipe dict directly.
-        if cls == "animation":
-            recipe = {
-                "tight_interval_max_width": width,
-                "force_single_rung": bool(adj["force_single_rung"]),
-                "saliency_intensity": intensity,
-                "target_vmaf_offset": target_offset,
-            }
-        elif cls == "screen_content":
-            recipe = {
-                "saliency_intensity": intensity,
-                "target_vmaf_offset": target_offset,
-            }
-        elif cls == "live_action_hdr":
-            recipe = {
-                "tight_interval_max_width": width,
-                "target_vmaf_offset": target_offset,
-            }
-        recipe["_provenance"] = {
-            "source": "proxy",
-            "anchor": "ugc",
-            "research_section": ("Research-0067 §F.4 recipe-override placeholders"),
-            "adjustment": dict(adj),
+
+def _proxy_recipe(cls: str, adj: Mapping[str, Any], ugc_width: float) -> dict[str, Any]:
+    """Build the proxy-derived recipe of one non-UGC content class."""
+    # Proxy ``target_vmaf_offset`` anchors absolutely on the
+    # F.4-documented envelope, not on the UGC offset. K150K's
+    # MOS-proxy distribution is intrinsically skewed (upper
+    # tail heavier than lower); chaining proxy targets off
+    # UGC would push animation / screen-content out of the
+    # conservative envelope Research-0067 §F.4 fixes. The
+    # corpus-derived UGC value is reported alongside in the
+    # provenance block so a future class-labelled corpus
+    # (PR #477) can compose a consistent set.
+    target_offset = round(float(adj["target_vmaf_offset_abs"]), 1)
+    width = round(ugc_width * adj["tight_interval_width_factor"], 2)
+    intensity = saliency_benefit_to_intensity(adj["saliency_benefit_fraction"])
+    recipe: dict[str, Any] = {}
+    # Match F.4's "only carry the keys that actually override"
+    # convention: screen_content has no force_single_rung / width;
+    # animation has all four; ugc has three; live_action_hdr has
+    # two. The runtime loader merges the recipe dict directly.
+    if cls == "animation":
+        recipe = {
+            "tight_interval_max_width": width,
+            "force_single_rung": bool(adj["force_single_rung"]),
+            "saliency_intensity": intensity,
+            "target_vmaf_offset": target_offset,
         }
-        recipes[cls] = recipe
+    elif cls == "screen_content":
+        recipe = {
+            "saliency_intensity": intensity,
+            "target_vmaf_offset": target_offset,
+        }
+    elif cls == "live_action_hdr":
+        recipe = {
+            "tight_interval_max_width": width,
+            "target_vmaf_offset": target_offset,
+        }
+    recipe["_provenance"] = {
+        "source": "proxy",
+        "anchor": "ugc",
+        "research_section": ("Research-0067 §F.4 recipe-override placeholders"),
+        "adjustment": dict(adj),
+    }
+    return recipe
 
-    metadata: dict[str, Any] = {
+
+def _calibration_metadata(
+    ugc_rows: Sequence[CorpusRow], corpus_path: Path, corpus_row_count: int
+) -> dict[str, Any]:
+    """Build the ``metadata`` block of the calibration JSON."""
+    return {
         "schema_version": 1,
         "phase": "F.5",
         "adr": "ADR-0325",
@@ -507,8 +502,26 @@ def calibrate(
         },
     }
 
+
+def calibrate(
+    rows: Sequence[CorpusRow],
+    *,
+    corpus_path: Path,
+    corpus_row_count: int,
+) -> dict[str, Any]:
+    """Build the calibration JSON dict from corpus rows."""
+
+    # UGC is the corpus-derived class. Everything in K150K is UGC; we
+    # don't filter further because the JSONL has no class column yet.
+    ugc_rows = list(rows)
+
+    ugc_recipe, ugc_width = _ugc_recipe(ugc_rows)
+    recipes: dict[str, dict[str, Any]] = {"ugc": ugc_recipe}
+    for cls, adj in _PROXY_ADJUSTMENTS.items():
+        recipes[cls] = _proxy_recipe(cls, adj, ugc_width)
+
     return {
-        "metadata": metadata,
+        "metadata": _calibration_metadata(ugc_rows, corpus_path, corpus_row_count),
         "recipes": recipes,
     }
 

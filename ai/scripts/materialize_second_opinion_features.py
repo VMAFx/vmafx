@@ -28,6 +28,7 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.tree_utils import map_tree  # noqa: E402
 
 KEY_CANDIDATES: tuple[str, ...] = (
     "clip_id",
@@ -131,11 +132,8 @@ def _write_table(df: pd.DataFrame, path: Path) -> None:
     raise ValueError(f"unsupported output format for {path}; use parquet, jsonl, ndjson, or json")
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(v) for v in value]
+def _json_leaf(value: Any) -> Any:
+    """Map one non-container value to its JSON-safe scalar."""
     if pd.isna(value):
         return None
     if hasattr(value, "item"):
@@ -144,6 +142,17 @@ def _json_safe(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert pandas/numpy scalars nested in dicts and lists to JSON-safe values."""
+    return map_tree(
+        value,
+        _json_leaf,
+        is_mapping=lambda v: isinstance(v, dict),
+        is_sequence=lambda v: isinstance(v, list),
+        key=str,
+    )
 
 
 def _read_score_payloads(path: Path) -> list[dict[str, Any]]:
@@ -392,6 +401,102 @@ def _load_scores(
     return scores
 
 
+@dataclass
+class _Joined:
+    """The output columns of one competitor, one entry per feature row."""
+
+    scores: list[float]
+    statuses: list[str]
+    runtimes: list[float]
+    frame_counts: list[int]
+    sources: list[str]
+
+
+def _check_free_columns(df: pd.DataFrame, col_base: str, overwrite: bool) -> None:
+    """Fail when the columns of ``col_base`` exist and ``overwrite`` is off."""
+    planned = [
+        f"{col_base}_score",
+        f"{col_base}_status",
+        f"{col_base}_runtime_ms",
+        f"{col_base}_frames",
+        f"{col_base}_source",
+    ]
+    existing = [c for c in planned if c in df.columns]
+    if existing and not overwrite:
+        raise ValueError(
+            "refusing to overwrite existing second-opinion columns: " + ", ".join(existing)
+        )
+
+
+def _join_competitor(
+    keys: list[str],
+    by_key: dict[str, Any],
+    stat: CompetitorStats,
+    keep_mask: list[bool],
+    missing_policy: str,
+) -> _Joined:
+    """Look every row key up in one competitor's scores; count matches in ``stat``."""
+    joined = _Joined([], [], [], [], [])
+    for idx, key in enumerate(keys):
+        record = by_key.get(key)
+        if record is None:
+            stat.missing_rows += 1
+            joined.scores.append(float("nan"))
+            joined.statuses.append(STATUS_MISSING)
+            joined.runtimes.append(float("nan"))
+            joined.frame_counts.append(0)
+            joined.sources.append("")
+            if missing_policy == "drop":
+                keep_mask[idx] = False
+            continue
+        if record.status == STATUS_OK:
+            stat.matched_rows += 1
+        else:
+            stat.bad_rows += 1
+        joined.scores.append(record.score)
+        joined.statuses.append(record.status)
+        joined.runtimes.append(record.runtime_ms)
+        joined.frame_counts.append(record.frames)
+        joined.sources.append(record.source)
+    return joined
+
+
+def _assign_competitor(df: pd.DataFrame, col_base: str, joined: _Joined) -> None:
+    """Write one competitor's columns into ``df``."""
+    df[f"{col_base}_score"] = joined.scores
+    df[f"{col_base}_status"] = joined.statuses
+    df[f"{col_base}_runtime_ms"] = joined.runtimes
+    df[f"{col_base}_frames"] = joined.frame_counts
+    df[f"{col_base}_source"] = joined.sources
+
+
+def _fail_on_missing(stats: dict[str, CompetitorStats]) -> None:
+    """Raise when any competitor lacks a score for some row (``missing_policy="fail"``)."""
+    missing = [s for s in stats.values() if s.missing_rows]
+    if missing:
+        summary = ", ".join(f"{s.competitor}={s.missing_rows}" for s in missing)
+        raise ValueError(f"missing second-opinion scores: {summary}")
+
+
+def _row_keys(df: pd.DataFrame, column: str, key_normalize: str) -> list[str]:
+    """Normalised join key of every row of ``df``."""
+    return [
+        _normalise_key(value, mode=key_normalize, column_name=column)
+        for value in df[column].tolist()
+    ]
+
+
+def _finish_audit(
+    audit: dict[str, Any], run_provenance: dict[str, Any] | None, audit_json: Path | None
+) -> dict[str, Any]:
+    """Attach the run provenance, write the audit file when asked, return the audit."""
+    if run_provenance is not None:
+        audit["run_provenance"] = run_provenance
+    if audit_json is not None:
+        write_manifest_json(audit_json, audit)
+    return audit
+
+
 def materialize(
     features: Path,
     score_specs: list[str],
@@ -416,72 +521,23 @@ def materialize(
         key_normalize=key_normalize,
     )
 
-    keys = [
-        _normalise_key(value, mode=key_normalize, column_name=column)
-        for value in df[column].tolist()
-    ]
+    keys = _row_keys(df, column, key_normalize)
     keep_mask = [True] * len(df)
     stats: dict[str, CompetitorStats] = {}
 
     for competitor, by_key in sorted(records.items()):
-        slug = _slug(competitor)
-        col_base = f"{prefix}_{slug}"
+        col_base = f"{prefix}_{_slug(competitor)}"
         stats[competitor] = CompetitorStats(
             competitor=competitor,
             column_prefix=col_base,
             scores_loaded=len(by_key),
         )
-        planned = [
-            f"{col_base}_score",
-            f"{col_base}_status",
-            f"{col_base}_runtime_ms",
-            f"{col_base}_frames",
-            f"{col_base}_source",
-        ]
-        existing = [c for c in planned if c in df.columns]
-        if existing and not overwrite:
-            raise ValueError(
-                "refusing to overwrite existing second-opinion columns: " + ", ".join(existing)
-            )
-
-        scores: list[float] = []
-        statuses: list[str] = []
-        runtimes: list[float] = []
-        frame_counts: list[int] = []
-        sources: list[str] = []
-        for idx, key in enumerate(keys):
-            record = by_key.get(key)
-            if record is None:
-                stats[competitor].missing_rows += 1
-                scores.append(float("nan"))
-                statuses.append(STATUS_MISSING)
-                runtimes.append(float("nan"))
-                frame_counts.append(0)
-                sources.append("")
-                if missing_policy == "drop":
-                    keep_mask[idx] = False
-                continue
-            if record.status == STATUS_OK:
-                stats[competitor].matched_rows += 1
-            else:
-                stats[competitor].bad_rows += 1
-            scores.append(record.score)
-            statuses.append(record.status)
-            runtimes.append(record.runtime_ms)
-            frame_counts.append(record.frames)
-            sources.append(record.source)
-
-        df[f"{col_base}_score"] = scores
-        df[f"{col_base}_status"] = statuses
-        df[f"{col_base}_runtime_ms"] = runtimes
-        df[f"{col_base}_frames"] = frame_counts
-        df[f"{col_base}_source"] = sources
+        _check_free_columns(df, col_base, overwrite)
+        joined = _join_competitor(keys, by_key, stats[competitor], keep_mask, missing_policy)
+        _assign_competitor(df, col_base, joined)
 
     if missing_policy == "fail":
-        missing = [s for s in stats.values() if s.missing_rows]
-        if missing:
-            summary = ", ".join(f"{s.competitor}={s.missing_rows}" for s in missing)
-            raise ValueError(f"missing second-opinion scores: {summary}")
+        _fail_on_missing(stats)
     if missing_policy == "drop":
         df = df.loc[keep_mask].reset_index(drop=True)
 
@@ -496,11 +552,7 @@ def materialize(
         "missing_policy": missing_policy,
         "competitors": {name: asdict(stat) for name, stat in sorted(stats.items())},
     }
-    if run_provenance is not None:
-        audit["run_provenance"] = run_provenance
-    if audit_json is not None:
-        write_manifest_json(audit_json, audit)
-    return audit
+    return _finish_audit(audit, run_provenance, audit_json)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:

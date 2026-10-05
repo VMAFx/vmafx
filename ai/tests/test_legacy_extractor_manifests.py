@@ -247,3 +247,54 @@ def test_extract_konvid_frames_manifest(tmp_path: Path) -> None:
     assert payload["missing_count"] == 1
     assert payload["target_hw"] == 224
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
+def test_collect_gpu_calibration_write_parquet_reports_missing_pandas(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing pandas raises ParquetUnavailableError instead of exiting the process."""
+    mod = _load_script("collect_gpu_calibration_data")
+    row = mod.Row("cuda:smoke", "psnr", "psnr_y", 0, 1.0, 1.0)
+    monkeypatch.setitem(sys.modules, "pandas", None)  # import pandas -> ImportError
+
+    with pytest.raises(mod.ParquetUnavailableError, match="pandas required"):
+        mod.write_parquet([row], tmp_path / "out.parquet")
+
+
+def test_collect_gpu_calibration_write_parquet_empty_rows_writes_nothing(tmp_path: Path) -> None:
+    mod = _load_script("collect_gpu_calibration_data")
+
+    assert mod.write_parquet([], tmp_path / "out.parquet") == 0
+    assert not (tmp_path / "out.parquet").exists()
+
+
+def test_collect_gpu_calibration_main_returns_two_without_pandas(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """main() turns the missing-pandas error into exit status 2 with the same stderr text."""
+    mod = _load_script("collect_gpu_calibration_data")
+    row = mod.Row("cuda:smoke", "psnr", "psnr_y", 0, 1.0, 1.0)
+    monkeypatch.setattr(mod, "_validate_inputs", lambda args: True)
+    monkeypatch.setattr(mod, "_resolve_selection", lambda args: (["psnr"], ["cuda"], None))
+    monkeypatch.setattr(mod, "_collect_rows", lambda *a, **k: [row])
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    rc = mod.main(
+        [
+            "--vmaf-binary",
+            str(tmp_path / "vmaf"),
+            "--reference",
+            str(tmp_path / "ref.yuv"),
+            "--distorted",
+            str(tmp_path / "dis.yuv"),
+            "--width",
+            "16",
+            "--height",
+            "16",
+            "--output",
+            str(tmp_path / "out.parquet"),
+        ]
+    )
+
+    assert rc == 2
+    assert "pandas required for parquet output" in capsys.readouterr().err

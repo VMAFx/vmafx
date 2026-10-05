@@ -36,7 +36,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -221,48 +221,46 @@ def collect_for_cell(
     out_cpu = workdir / f"{feature}_cpu.json"
     out_gpu = workdir / f"{feature}_{backend}.json"
 
-    cpu_cmd = build_command(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        feature,
-        "cpu",
-        None,
-        out_cpu,
-        frame_limit,
-    )
-    gpu_cmd = build_command(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        feature,
-        backend,
-        device,
-        out_gpu,
-        frame_limit,
-    )
+    def command(target: str, target_device: int | None, out: Path) -> list[str]:
+        return build_command(
+            binary,
+            ref,
+            dist,
+            width,
+            height,
+            pix_fmt,
+            bitdepth,
+            feature,
+            target,
+            target_device,
+            out,
+            frame_limit,
+        )
 
-    rc_cpu, err_cpu = run_one(cpu_cmd)
+    rc_cpu, err_cpu = run_one(command("cpu", None, out_cpu))
     if rc_cpu != 0:
         sys.stderr.write(f"[{feature}/cpu] vmaf failed (rc={rc_cpu}): {err_cpu.strip()[:200]}\n")
         return []
-    rc_gpu, err_gpu = run_one(gpu_cmd)
+    rc_gpu, err_gpu = run_one(command(backend, device, out_gpu))
     if rc_gpu != 0:
         sys.stderr.write(
             f"[{feature}/{backend}] vmaf failed (rc={rc_gpu}): {err_gpu.strip()[:200]}\n"
         )
         return []
+    return _paired_rows(
+        feature, backend, arch_id, metrics, load_frames(out_cpu), load_frames(out_gpu)
+    )
 
-    cpu_frames = load_frames(out_cpu)
-    gpu_frames = load_frames(out_gpu)
+
+def _paired_rows(
+    feature: str,
+    backend: str,
+    arch_id: str,
+    metrics: Sequence[str],
+    cpu_frames: list[dict[str, Any]],
+    gpu_frames: list[dict[str, Any]],
+) -> list[Row]:
+    """Pair per-frame CPU and GPU scores into rows; [] on a frame-count mismatch."""
     if len(cpu_frames) != len(gpu_frames):
         sys.stderr.write(
             f"[{feature}/{backend}] frame-count mismatch "
@@ -287,8 +285,15 @@ def collect_for_cell(
     return rows
 
 
+class ParquetUnavailableError(RuntimeError):
+    """Raised when pandas (the parquet writer's dependency) cannot be imported."""
+
+
 def write_parquet(rows: Iterable[Row], path: Path) -> int:
-    """Write ``rows`` to ``path`` as parquet. Returns the row count."""
+    """Write ``rows`` to ``path`` as parquet. Returns the row count.
+
+    Raises ``ParquetUnavailableError`` when pandas is not importable.
+    """
 
     rows_list = list(rows)
     if not rows_list:
@@ -300,11 +305,10 @@ def write_parquet(rows: Iterable[Row], path: Path) -> int:
     try:
         import pandas as pd
     except ImportError as exc:
-        sys.stderr.write(
+        raise ParquetUnavailableError(
             f"pandas required for parquet output ({exc}); "
-            "install via `pip install pandas pyarrow`\n"
-        )
-        sys.exit(2)
+            "install via `pip install pandas pyarrow`"
+        ) from exc
 
     df = pd.DataFrame(
         [
@@ -524,7 +528,11 @@ def main(argv: list[str] | None = None) -> int:
 
     features, backends, frame_limit = _resolve_selection(args)
     all_rows = _collect_rows(args, features, backends, frame_limit)
-    n = write_parquet(all_rows, args.output)
+    try:
+        n = write_parquet(all_rows, args.output)
+    except ParquetUnavailableError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
     _write_manifest(
         path=args.manifest_out,
         args=args,
