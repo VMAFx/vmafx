@@ -272,3 +272,13 @@ expires = 2027-03-31
 path = "core/test/test_pelorus_interop.c"
 reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
+
+[[exception]]
+path = "core/test/test_colorspace.c"
+reason = "Built only with -Denable_zimg=true (core/test/meson.build); no lane configures libzimg yet, so the file is in no compile database. Fix: add the option and the library to the cpu lane and its hosted job, then record the unit."
+expires = 2026-12-31
+
+[[exception]]
+path = "ffmpeg-patches/test/fault_inject_sycl_import.c"
+reason = "LD_PRELOAD fault injector that check-sycl-import-retry.sh compiles against the installed libvmaf headers; no meson target builds it, so it is in no compile database. Fix: give it a SYCL-lane target, then record the unit."
+expires = 2026-12-31
