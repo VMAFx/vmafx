@@ -18,7 +18,7 @@ re-pin and exact-mirror guard rails are recorded in
 
 !!! warning "The mirror is read-only"
     Do not edit the vendored files. They are byte-identical to their Pelorus
-    origin (pinned at `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`)
+    origin (pinned at `VMAFx/pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955`)
     except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
     rewrite described below. Fix any defect upstream in Pelorus, then
     [re-sync](#re-syncing-the-mirror).
@@ -50,7 +50,7 @@ Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
 ### The only local edits
 
 1. A `VENDORED FROM
-   VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 — DO NOT EDIT`
+   VMAFx/pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955 — DO NOT EDIT`
    banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
@@ -200,7 +200,7 @@ python3 scripts/ci/run_meson_test.py -- \
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show 93bef1206d68d9e09024c08a12732fb8e77b9b16:libpelorus/…`), so it
+(`git show 013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955:libpelorus/…`), so it
 stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
 pin. A directory that is not a Git checkout, or a checkout that lacks the exact
 object, fails closed.
@@ -215,7 +215,7 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 ```
 
 The output is
-`OK   - mirror matches pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`,
+`OK   - mirror matches pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955`,
 or `FAIL - mirror has drifted` with a diff and exit code 1.
 
 To re-vendor after a reviewed Pelorus ABI addition or a released parser

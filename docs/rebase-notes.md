@@ -61207,3 +61207,11 @@ No score, public API or FFmpeg patch impact.
   `cargo clippy --workspace --all-targets -- -D warnings`. A sync or rebase keeps
   both on `--workspace` / `--all`: a `-p <crate>` form would leave the other members
   unlinted again. No score, public API or FFmpeg patch impact.
+- **HISS native batch 4 (`refactor/hiss-zero-native-vendor`)**: `PELORUS_VENDOR_SHA`
+  moves to a `VMAFx/pelorus` commit that carries the HISS splits of
+  `interop.c` and `qp_report_csv.c` and Pelorus's UTF-8 CSV path opening
+  (ADR-0149 upstream). The mirror stays verbatim (ADR-1113): an upstream sync that
+  conflicts in `core/src/interop/pelorus_*.c`, `core/include/libvmaf/pelorus/*.h` or
+  `core/test/test_pelorus_interop.c` takes master's side and re-runs
+  `scripts/sync-pelorus-interop.sh --update`; never merge a hunk by hand. No score,
+  public API or FFmpeg patch impact.

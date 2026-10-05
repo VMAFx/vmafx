@@ -17,7 +17,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -41,6 +41,11 @@
  * parsing, no libx265 / oneVPL link. Banned-function policy (AGENTS.md §3):
  * no atoi/atof/strtok/strcpy/sprintf — strtol/strtod + a hand-rolled
  * comma-field splitter that never writes past the line buffer.
+ *
+ * The CSV path is UTF-8 on every platform (ADR-0149). On Windows the narrow CRT
+ * decodes a path through the process ANSI code page, so the one open goes
+ * through open_utf8(), which widens to UTF-16 for _wfopen; the only extra
+ * dependency is kernel32 (MultiByteToWideChar), which every Windows link has.
  */
 
 #include "libvmaf/pelorus/interop.h"
@@ -50,6 +55,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <wchar.h>
+#include <windows.h>
+#endif
 
 /* ASCII-only character classifiers. The standard <ctype.h> macros index a
  * locale table by the byte value, which clang-analyzer (rightly, CERT STR37-C)
@@ -107,8 +120,9 @@ static char *trim(char *s)
  * Writes up to max_fields into fields[]; returns the field count.
  *
  * Loop bound (P10 r2): `line` is always a fgets-filled, NUL-terminated buffer of
- * <= PEL_CSV_LINE_MAX bytes, so the walk hits '\0' in a bounded number of steps;
- * the `n >= max_fields` break bounds the field count independently. */
+ * <= PEL_CSV_LINE_MAX bytes, so the walk hits '\0' within PEL_CSV_LINE_MAX steps, the
+ * explicit scalar bound of the loop; the `n >= max_fields` break bounds the field count
+ * independently. */
 static size_t split_fields(char *line, char **fields, size_t max_fields)
 {
     size_t n = 0;
@@ -118,7 +132,7 @@ static size_t split_fields(char *line, char **fields, size_t max_fields)
     if (max_fields == 0) {
         return 0;
     }
-    for (;;) {
+    for (size_t step = 0; step <= (size_t)PEL_CSV_LINE_MAX; step++) {
         if (*p == ',' || *p == '\0') {
             int last = (*p == '\0');
             *p = '\0';
@@ -279,15 +293,172 @@ static void row_to_frame(char **fields, size_t nf, const csv_cols *c, PelorusX26
     fr->slice_type = (t[0] != '\0') ? ascii_upper(t[0]) : '?';
 }
 
+#ifdef _WIN32
+/* Every Windows path, even a \\?\ extended-length one, is bounded by the
+ * 32767-code-unit UNICODE_STRING limit; +1 for the terminator. */
+#define PEL_WPATH_UNITS_MAX 32768
+/* One UTF-16 code unit never needs more than 3 UTF-8 bytes (an astral scalar is
+ * 4 bytes for 2 units), so a longer byte string cannot name a Windows file. */
+#define PEL_UTF8_PATH_BYTES_MAX ((size_t)3u * ((size_t)PEL_WPATH_UNITS_MAX - 1u))
+/* Longest CRT mode string accepted, terminator included ("r, ccs=UTF-16LE"). */
+#define PEL_WMODE_MAX 16u
+
+/* Widen an ASCII CRT mode string ("r", "rb", ...) into wmode[PEL_WMODE_MAX].
+ * Mode strings are ASCII by definition; anything else is a caller bug. */
+static pel_result widen_mode(const char *mode, wchar_t *wmode)
+{
+    size_t i;
+
+    for (i = 0; i < PEL_WMODE_MAX; i++) {
+        unsigned char c = (unsigned char)mode[i];
+
+        if (c > 0x7Fu) {
+            break;
+        }
+        wmode[i] = (wchar_t)c;
+        if (c == 0u) {
+            return PEL_OK;
+        }
+    }
+    errno = EINVAL; /* non-ASCII, or no terminator within PEL_WMODE_MAX */
+    return PEL_ERR_INVALID;
+}
+
+/* strlen(s), or PEL_UTF8_PATH_BYTES_MAX + 1 when s is longer: the scan never
+ * reads past that many bytes (P10 r2), and the result always fits an int. */
+static size_t bounded_path_len(const char *s)
+{
+    size_t n = 0;
+
+    while (n <= PEL_UTF8_PATH_BYTES_MAX && s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+
+/* Widen a NUL-terminated UTF-8 path into a heap UTF-16 copy in *out, which the
+ * caller frees. MB_ERR_INVALID_CHARS makes the decode strict: overlong forms,
+ * encoded surrogates, truncated or stray sequences and values above U+10FFFF
+ * fail instead of decaying to U+FFFD, so an ill-formed path can never alias a
+ * different, existing file. Returns PEL_OK; PEL_ERR_ABSENT + ENAMETOOLONG (too
+ * long to be any Windows path; checked first, before decoding);
+ * PEL_ERR_INVALID + EILSEQ (ill-formed UTF-8); or PEL_ERR_NOMEM. */
+static pel_result utf8_to_wide(const char *path, wchar_t **out)
+{
+    const size_t len = bounded_path_len(path);
+    int units;
+    wchar_t *wpath;
+
+    *out = NULL;
+    if (len > PEL_UTF8_PATH_BYTES_MAX) {
+        errno = ENAMETOOLONG;
+        return PEL_ERR_ABSENT;
+    }
+    /* len + 1 counts the terminator, so the UTF-16 copy is NUL-terminated too;
+     * len <= PEL_UTF8_PATH_BYTES_MAX keeps the int conversion exact. */
+    units = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, (int)len + 1, NULL, 0);
+    if (units <= 0) {
+        errno = EILSEQ;
+        return PEL_ERR_INVALID;
+    }
+    if (units > (int)PEL_WPATH_UNITS_MAX) {
+        errno = ENAMETOOLONG;
+        return PEL_ERR_ABSENT;
+    }
+    wpath = malloc((size_t)units * sizeof(*wpath));
+    if (wpath == NULL) {
+        errno = ENOMEM;
+        return PEL_ERR_NOMEM;
+    }
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, (int)len + 1, wpath, units) !=
+        units) {
+        free(wpath);
+        errno = EILSEQ;
+        return PEL_ERR_INVALID;
+    }
+    *out = wpath;
+    return PEL_OK;
+}
+#endif
+
+/* Open a caller-supplied UTF-8 path (ADR-0149); *out stays NULL on failure.
+ *
+ * POSIX: a literal fopen(path, mode). The kernel takes a path as bytes, so this
+ * is byte-for-byte the pre-ADR-0149 behaviour (a non-UTF-8 byte name still
+ * opens). Windows: the narrow CRT would decode the bytes through the ANSI code
+ * page, so the path is widened strictly and opened with _wfopen. No \\?\ prefix
+ * is added: a caller that needs an extended-length path passes one.
+ *
+ * Every failure of the open itself maps to PEL_ERR_ABSENT (the pre-ADR-0149
+ * contract); errno is preserved across the cleanup for a host that logs it. */
+static pel_result open_utf8(const char *path, const char *mode, FILE **out)
+{
+#ifdef _WIN32
+    wchar_t wmode[PEL_WMODE_MAX];
+    wchar_t *wpath = NULL;
+    pel_result rc;
+    int open_errno;
+
+    *out = NULL;
+    rc = widen_mode(mode, wmode);
+    if (rc == PEL_OK) {
+        rc = utf8_to_wide(path, &wpath);
+    }
+    if (rc != PEL_OK) {
+        return rc; /* nothing was allocated: utf8_to_wide frees on its failures */
+    }
+    *out = _wfopen(wpath, wmode);
+    open_errno = errno;
+    free(wpath); /* the one allocation, released before any return below */
+    errno = open_errno;
+#else
+    *out = fopen(path, mode);
+#endif
+    return (*out != NULL) ? PEL_OK : PEL_ERR_ABSENT;
+}
+
+/* Read the header and the frame rows from fp into out_frames. Sets *truncated when more frame
+ * rows exist than cap, *have_header once a usable header was seen, and returns PEL_ERR_ABSENT
+ * for a header without the QP and Bits columns. */
+static pel_result x265_csv_read_rows(FILE *fp, PelorusX265Frame *out_frames, size_t cap,
+                                     size_t *count, int *truncated, int *have_header)
+{
+    char line[PEL_CSV_LINE_MAX]; /* bounded, fixed (Po10): no heap, no VLA  */
+    char *fields[PEL_CSV_MAX_FIELDS];
+    csv_cols cols;
+
+    while (fgets(line, (int)sizeof(line), fp) != NULL) {
+        size_t nf = split_fields(line, fields, PEL_CSV_MAX_FIELDS);
+
+        if (!*have_header) {
+            locate_columns(fields, nf, &cols);
+            /* QP + Bits are the minimum we require to call this an x265 CSV. */
+            if (cols.qp < 0 || cols.bits < 0) {
+                return PEL_ERR_ABSENT;
+            }
+            *have_header = 1;
+            continue;
+        }
+
+        if (nf == 0 || !row_is_frame(fields, nf, &cols)) {
+            continue;
+        }
+        if (*count >= cap) {
+            *truncated = 1;
+            break;
+        }
+        row_to_frame(fields, nf, &cols, &out_frames[*count]);
+        (*count)++;
+    }
+    return PEL_OK;
+}
+
 pel_result pel_x265_csv_parse(const char *path, PelorusX265Frame *out_frames, size_t cap,
                               size_t *out_count)
 {
     FILE *fp;
-    char line[PEL_CSV_LINE_MAX]; /* bounded, fixed (Po10): no heap, no VLA  */
-    char *fields[PEL_CSV_MAX_FIELDS];
-    csv_cols cols;
     size_t count = 0;
-    pel_result rc = PEL_OK;
+    pel_result rc;
     int truncated = 0;
     int have_header = 0;
 
@@ -296,35 +467,12 @@ pel_result pel_x265_csv_parse(const char *path, PelorusX265Frame *out_frames, si
     }
     *out_count = 0;
 
-    fp = fopen(path, "r");
-    if (fp == NULL) {
-        return PEL_ERR_ABSENT;
+    rc = open_utf8(path, "r", &fp); /* UTF-8 path on every platform (ADR-0149) */
+    if (rc != PEL_OK) {
+        return rc;
     }
 
-    while (fgets(line, (int)sizeof(line), fp) != NULL) {
-        size_t nf = split_fields(line, fields, PEL_CSV_MAX_FIELDS);
-
-        if (!have_header) {
-            locate_columns(fields, nf, &cols);
-            /* QP + Bits are the minimum we require to call this an x265 CSV. */
-            if (cols.qp < 0 || cols.bits < 0) {
-                rc = PEL_ERR_ABSENT;
-                break;
-            }
-            have_header = 1;
-            continue;
-        }
-
-        if (nf == 0 || !row_is_frame(fields, nf, &cols)) {
-            continue;
-        }
-        if (count >= cap) {
-            truncated = 1;
-            break;
-        }
-        row_to_frame(fields, nf, &cols, &out_frames[count]);
-        count++;
-    }
+    rc = x265_csv_read_rows(fp, out_frames, cap, &count, &truncated, &have_header);
 
     /* Distinguish EOF from a mid-file read error (CERT FIO35-C): fgets returns
      * NULL for both, so without this a truncated read would report PEL_OK. */

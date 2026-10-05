@@ -18,7 +18,7 @@
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16
+ * conformance fixture (VMAFx/pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955
  * test/interop_test.c, ABI 1.3).
  *
  * Both repos run byte-for-byte the same checks against their own copy of
@@ -41,15 +41,324 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+/* windows.h first: sddl.h relies on its types. */
+#include <sddl.h>
+#ifdef _MSC_VER
+/* The fixture's Win32 security calls live in advapi32. */
+#pragma comment(lib, "advapi32.lib")
+#endif
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 static int g_fail;
 
 #define CHECK(cond)                                                                                \
     do {                                                                                           \
         if (!(cond)) {                                                                             \
-            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                        \
+            (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
             g_fail++;                                                                              \
         }                                                                                          \
     } while (0)
+
+/*
+ * Fixture files (Pelorus issues #60 and #62, Pelorus ADR-0148). The fixture
+ * writes files into the working directory, so it must never widen access or
+ * write through a path it did not create:
+ *   - creation is exclusive: an existing file, link, or dangling link at the
+ *     path is refused, never followed, truncated, or replaced;
+ *   - the file is owner-only from the first open: POSIX mode 0600 (the umask
+ *     can only remove bits), Windows a protected DACL granting only the owner;
+ *   - a file this code created is removed again on every failure path, and a
+ *     path it refused is never touched.
+ */
+#define FIXTURE_MAX_BYTES 4096u
+
+typedef enum {
+    FIXTURE_CREATED,  /* created and fully written */
+    FIXTURE_REFUSED,  /* nothing created: the path exists or creation failed */
+    FIXTURE_ABANDONED /* created, then a write or close failed */
+} fixture_status;
+
+#ifdef _WIN32
+/* Protected DACL, one ACE: full access for the file's owner (OWNER RIGHTS).
+ * Nothing is inherited from the directory, the 0600 analogue. */
+#define FIXTURE_OWNER_ONLY_SDDL "D:P(A;;FA;;;OW)"
+
+static fixture_status fixture_write_new(const char *path, const char *contents, size_t len)
+{
+    SECURITY_ATTRIBUTES sa;
+    PSECURITY_DESCRIPTOR sd = NULL;
+    HANDLE file;
+    DWORD written = 0;
+    BOOL wrote;
+    BOOL closed;
+
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(FIXTURE_OWNER_ONLY_SDDL,
+                                                              SDDL_REVISION_1, &sd, NULL)) {
+        return FIXTURE_REFUSED;
+    }
+    sa.nLength = (DWORD)sizeof(sa);
+    sa.lpSecurityDescriptor = sd;
+    sa.bInheritHandle = FALSE;
+    /* CREATE_NEW alone follows a dangling link and creates its target;
+     * FILE_FLAG_OPEN_REPARSE_POINT makes any existing link name fail. */
+    file = CreateFileA(path, GENERIC_WRITE, 0, &sa, CREATE_NEW,
+                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    (void)LocalFree(sd);
+    if (file == INVALID_HANDLE_VALUE) {
+        return FIXTURE_REFUSED;
+    }
+    wrote = WriteFile(file, contents, (DWORD)len, &written, NULL);
+    closed = CloseHandle(file);
+    if (!wrote || !closed || written != (DWORD)len) {
+        return FIXTURE_ABANDONED;
+    }
+    return FIXTURE_CREATED;
+}
+
+typedef union {
+    SECURITY_DESCRIPTOR absolute; /* alignment for the self-relative copy */
+    unsigned char bytes[1024];
+} fixture_security_buf;
+
+/* 1 when path is a regular file (not a link) with a present, non-NULL DACL,
+ * read into buf; *control receives the descriptor's control flags. */
+static int fixture_read_dacl(const char *path, fixture_security_buf *buf,
+                             SECURITY_DESCRIPTOR_CONTROL *control, PACL *dacl)
+{
+    const DWORD attributes = GetFileAttributesA(path);
+    DWORD need = 0;
+    DWORD revision = 0;
+    BOOL present = FALSE;
+    BOOL defaulted = FALSE;
+
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+        !GetFileSecurityA(path, DACL_SECURITY_INFORMATION, buf, (DWORD)sizeof(*buf), &need) ||
+        !GetSecurityDescriptorControl(buf, control, &revision) ||
+        !GetSecurityDescriptorDacl(buf, &present, dacl, &defaulted)) {
+        return 0;
+    }
+    return present && *dacl != NULL;
+}
+
+/* A regular file (not a link) whose DACL is protected and holds exactly one
+ * allow ACE, for OWNER RIGHTS: no inherited, group, or world entry. */
+static int fixture_is_owner_only(const char *path)
+{
+    fixture_security_buf buf;
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    PACL dacl = NULL;
+    void *ace = NULL;
+
+    if (!fixture_read_dacl(path, &buf, &control, &dacl) || (control & SE_DACL_PROTECTED) == 0 ||
+        dacl->AceCount != 1 || !GetAce(dacl, 0, &ace)) {
+        return 0;
+    }
+    return ((const ACE_HEADER *)ace)->AceType == ACCESS_ALLOWED_ACE_TYPE &&
+           IsWellKnownSid(&((ACCESS_ALLOWED_ACE *)ace)->SidStart, WinCreatorOwnerRightsSid);
+}
+
+/* 0 created, 1 this account may not create links (skip), -1 error. Windows
+ * needs Developer Mode or SeCreateSymbolicLinkPrivilege for file links. */
+static int fixture_symlink(const char *target, const char *link_path)
+{
+    DWORD error;
+
+    if (CreateSymbolicLinkA(link_path, target, SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE)) {
+        return 0;
+    }
+    error = GetLastError();
+    return (error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_INVALID_PARAMETER) ? 1 : -1;
+}
+#else
+static fixture_status fixture_write_new(const char *path, const char *contents, size_t len)
+{
+    /* O_EXCL fails on any existing name, links included (POSIX open());
+     * O_NOFOLLOW states the same intent for the final component. */
+    const int fd =
+        open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR);
+    ssize_t written;
+    int closed;
+
+    if (fd < 0) {
+        return FIXTURE_REFUSED;
+    }
+    written = write(fd, contents, len);
+    closed = close(fd);
+    if (written < 0 || (size_t)written != len || closed != 0) {
+        return FIXTURE_ABANDONED;
+    }
+    return FIXTURE_CREATED;
+}
+
+/* A regular file (not a link) with exactly mode 0600. */
+static int fixture_is_owner_only(const char *path)
+{
+    struct stat st;
+
+    if (lstat(path, &st) != 0) {
+        return 0;
+    }
+    return S_ISREG(st.st_mode) &&
+           (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) == (S_IRUSR | S_IWUSR);
+}
+
+/* 0 created, -1 error: every supported POSIX host can create links. */
+static int fixture_symlink(const char *target, const char *link_path)
+{
+    return symlink(target, link_path) == 0 ? 0 : -1;
+}
+#endif
+
+/* Create path exclusively and write contents. 0 on success. */
+static int write_private_fixture(const char *path, const char *contents)
+{
+    const size_t len = strlen(contents);
+    fixture_status status;
+
+    if (len > FIXTURE_MAX_BYTES) {
+        return -1;
+    }
+    status = fixture_write_new(path, contents, len);
+    if (status == FIXTURE_ABANDONED) {
+        CHECK(remove(path) == 0); /* ours: never leave a partial fixture behind */
+    }
+    return status == FIXTURE_CREATED ? 0 : -1;
+}
+
+/* Create a fixture under the most permissive umask, so only the requested
+ * mode can keep it private, then prove it is owner-only. 0 on success; on
+ * failure nothing this call created remains. */
+static int create_checked_fixture(const char *path, const char *contents)
+{
+    int rc;
+#ifndef _WIN32
+    const mode_t old_umask = umask(0);
+#endif
+
+    rc = write_private_fixture(path, contents);
+#ifndef _WIN32
+    (void)umask(old_umask);
+#endif
+    if (rc != 0) {
+        (void)fprintf(stderr,
+                      "fixture %s: exclusive create refused (stale file from an aborted run?)\n",
+                      path);
+        return -1;
+    }
+    if (!fixture_is_owner_only(path)) {
+        (void)fprintf(stderr, "fixture %s: group/world access or not a regular file\n", path);
+        CHECK(remove(path) == 0);
+        return -1;
+    }
+    return 0;
+}
+
+/* The whole file equals expected: nothing truncated, appended, or replaced. */
+static int fixture_equals(const char *path, const char *expected)
+{
+    char buf[64];
+    size_t n;
+    int closed;
+    FILE *fp = fopen(path, "rb");
+
+    if (fp == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, sizeof(buf), fp);
+    closed = fclose(fp);
+    return closed == 0 && n == strlen(expected) && memcmp(buf, expected, n) == 0;
+}
+
+/* 1 when the path exists (checked by opening it, so a link is followed). */
+static int fixture_path_exists(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+
+    if (fp == NULL) {
+        return 0;
+    }
+    CHECK(fclose(fp) == 0);
+    return 1;
+}
+
+/* A link to an existing file is refused; the target keeps its bytes. Returns
+ * 1 when this account cannot create links (Windows without the right). */
+static int check_fixture_refuses_live_link(const char *target, const char *original)
+{
+    const char *live = "pelorus_fixture_link.tmp";
+    const int link_rc = fixture_symlink(target, live);
+
+    if (link_rc == 1) {
+        (void)fprintf(stderr, "note: no symlink privilege; fixture link cases skipped\n");
+        return 1;
+    }
+    CHECK(link_rc == 0);
+    if (link_rc != 0) {
+        return 0;
+    }
+    CHECK(write_private_fixture(live, "clobbered\n") != 0);
+    CHECK(fixture_equals(target, original));
+    CHECK(remove(live) == 0);
+    return 0;
+}
+
+/* A dangling link is refused, and nothing is created at its target. */
+static void check_fixture_refuses_dangling_link(void)
+{
+    const char *dangling = "pelorus_fixture_dangling.tmp";
+    const char *absent = "pelorus_fixture_absent.tmp";
+    const int stale = fixture_path_exists(absent);
+    int link_rc;
+    int created;
+
+    CHECK(!stale); /* else the link would not dangle; never touch that file */
+    if (stale) {
+        return;
+    }
+    link_rc = fixture_symlink(absent, dangling);
+    CHECK(link_rc == 0);
+    if (link_rc != 0) {
+        return;
+    }
+    CHECK(write_private_fixture(dangling, "clobbered\n") != 0);
+    created = fixture_path_exists(absent);
+    CHECK(!created); /* nothing may be created through the link */
+    if (created) {
+        CHECK(remove(absent) == 0);
+    }
+    CHECK(remove(dangling) == 0);
+}
+
+/* Pelorus issues #60 and #62: fixture creation never grants group/world
+ * access and never follows, truncates, or replaces an existing path. */
+static void test_fixture_file_safety(void)
+{
+    const char *plant = "pelorus_fixture_plant.tmp";
+    const char *original = "planted\n";
+    int rc;
+
+    rc = create_checked_fixture(plant, original);
+    CHECK(rc == 0);
+    if (rc != 0) {
+        return;
+    }
+    CHECK(write_private_fixture(plant, "clobbered\n") != 0);
+    CHECK(fixture_equals(plant, original));
+    if (check_fixture_refuses_live_link(plant, original) == 0) {
+        check_fixture_refuses_dangling_link();
+    }
+    CHECK(remove(plant) == 0);
+}
 
 static void fill_meta(PelorusSideData *m)
 {
@@ -62,6 +371,40 @@ static void fill_meta(PelorusSideData *m)
     m->producer_id = PEL_FOURCC('P', 'L', 'R', 'S');
 }
 
+static void check_roundtrip_sections(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_BANDING, sizeof(PelorusBandingSection), &p,
+                                &got) == PEL_OK);
+    CHECK(got == sizeof(PelorusBandingSection));
+    {
+        const PelorusBandingSection *b = p;
+        CHECK(b->global_banding_risk == 0.42f);
+        CHECK(b->flat_area_fraction == 0.61f);
+    }
+
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_VARIANCE, sizeof(PelorusVarianceSection), &p,
+                                &got) == PEL_OK);
+    {
+        const PelorusVarianceSection *v = p;
+        CHECK(v->texture_energy == 0.33f);
+    }
+
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection), &p,
+                                &got) == PEL_OK);
+    {
+        const PelorusFilmGrainSection *g = p;
+        CHECK(g->seed == 0xDEADBEEFCAFEULL);
+        CHECK(g->num_y_points == 3);
+        CHECK(g->apply == 1);
+    }
+
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
+                                &got) == PEL_ERR_ABSENT);
+}
+
 /* Round-trip: pack three sections, parse them back, verify scalars + framing. */
 static void test_roundtrip(void)
 {
@@ -72,8 +415,6 @@ static void test_roundtrip(void)
     PelorusPackSection secs[3];
     uint8_t *blob = NULL;
     size_t len = 0;
-    const void *p = NULL;
-    size_t got = 0;
 
     fill_meta(&meta);
 
@@ -108,38 +449,7 @@ static void test_roundtrip(void)
     CHECK(pel_blob_pack(&meta, secs, 3, &blob, &len) == PEL_OK);
     CHECK(blob != NULL);
     CHECK(pel_blob_is_present(blob, len) == 1);
-
-    /* banding */
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_BANDING, sizeof(PelorusBandingSection), &p,
-                                &got) == PEL_OK);
-    CHECK(got == sizeof(PelorusBandingSection));
-    {
-        const PelorusBandingSection *b = p;
-        CHECK(b->global_banding_risk == 0.42f);
-        CHECK(b->flat_area_fraction == 0.61f);
-    }
-
-    /* variance */
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_VARIANCE, sizeof(PelorusVarianceSection), &p,
-                                &got) == PEL_OK);
-    {
-        const PelorusVarianceSection *v = p;
-        CHECK(v->texture_energy == 0.33f);
-    }
-
-    /* film grain — verify the 64-bit seed survived (alignment) */
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection), &p,
-                                &got) == PEL_OK);
-    {
-        const PelorusFilmGrainSection *g = p;
-        CHECK(g->seed == 0xDEADBEEFCAFEULL);
-        CHECK(g->num_y_points == 3);
-        CHECK(g->apply == 1);
-    }
-
-    /* a section we did not write is absent (R3 back-compat fallback) */
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
-                                &got) == PEL_ERR_ABSENT);
+    check_roundtrip_sections(blob, len);
 
     pel_blob_free(blob);
 }
@@ -316,6 +626,36 @@ static void test_pack_size_overflow(void)
     CHECK(blob == NULL);
 }
 
+static void check_qp_report_section(const uint8_t *blob, size_t len, uint16_t cells)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, sizeof(PelorusQpReportSection), &p,
+                                &got) == PEL_OK);
+    CHECK(got == sizeof(PelorusQpReportSection));
+    {
+        const PelorusQpReportSection *r = p;
+        CHECK(r->avg_qp == 27.5f);
+        CHECK(r->psnr_y == 41.2f);
+        CHECK(r->total_bits == 1234567ULL);
+        CHECK(r->num_inter_blocks == 200);
+        CHECK(r->honored_fraction == 0.75f);
+        CHECK(r->report_source == PEL_QPSRC_QSV);
+        CHECK(r->block_size_log2 == 4);
+        CHECK(r->qp_valid == 1);
+        CHECK(r->qp_cell_size == cells);
+        CHECK(r->num_intra_blocks == 40);
+        CHECK(r->num_skipped_blocks == 16);
+        CHECK(r->psnr_u == 0.0f);
+        CHECK(r->psnr_v == 0.0f);
+    }
+
+    /* An older consumer (knows only the first two floats) still parses (R4). */
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, 8, &p, &got) == PEL_OK);
+    CHECK(got == 8);
+}
+
 /* PEL_SEC_QPREPORT (f): pack the encoder-honored QP readback with a per-cell
  * QP map appended after the blob, parse it back, verify scalars + the map. */
 static void test_qp_report_roundtrip(void)
@@ -325,8 +665,6 @@ static void test_qp_report_roundtrip(void)
     PelorusPackSection sec;
     uint8_t *blob = NULL;
     size_t len = 0;
-    const void *p = NULL;
-    size_t got = 0;
     const uint16_t cells = 16 * 9; /* matches fill_meta grid */
     int8_t cellmap[16 * 9];
     int i;
@@ -364,31 +702,34 @@ static void test_qp_report_roundtrip(void)
     CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
     CHECK(blob != NULL);
     CHECK(pel_blob_is_present(blob, len) == 1);
+    check_qp_report_section(blob, len, cells);
 
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, sizeof(PelorusQpReportSection), &p,
+    pel_blob_free(blob);
+}
+
+static void check_motion_conf_pair(const PelorusSideData *meta,
+                                   const PelorusMotionConfSection *conf)
+{
+    PelorusMotionSection motion;
+    PelorusPackSection sections[2];
+    uint8_t *blob = NULL;
+    size_t len = 0;
+    const void *p = NULL;
+    size_t got = 0;
+
+    memset(&motion, 0, sizeof(motion));
+    sections[0].id = PEL_SEC_MOTION;
+    sections[0].data = &motion;
+    sections[0].size = (uint32_t)sizeof(motion);
+    sections[1].id = PEL_SEC_MOTION_CONF;
+    sections[1].data = conf;
+    sections[1].size = (uint32_t)sizeof(*conf);
+    CHECK(pel_blob_pack(meta, sections, 2, &blob, &len) == PEL_OK);
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
                                 &got) == PEL_OK);
-    CHECK(got == sizeof(PelorusQpReportSection));
-    {
-        const PelorusQpReportSection *r = p;
-        CHECK(r->avg_qp == 27.5f);
-        CHECK(r->psnr_y == 41.2f);
-        CHECK(r->total_bits == 1234567ULL);
-        CHECK(r->num_inter_blocks == 200);
-        CHECK(r->honored_fraction == 0.75f);
-        CHECK(r->report_source == PEL_QPSRC_QSV);
-        CHECK(r->block_size_log2 == 4);
-        CHECK(r->qp_valid == 1);
-        CHECK(r->qp_cell_size == cells);
-        CHECK(r->num_intra_blocks == 40);
-        CHECK(r->num_skipped_blocks == 16);
-        CHECK(r->psnr_u == 0.0f);
-        CHECK(r->psnr_v == 0.0f);
-    }
-
-    /* An older consumer (knows only the first two floats) still parses (R4). */
-    CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, 8, &p, &got) == PEL_OK);
-    CHECK(got == 8);
-
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection),
+                                &p, &got) == PEL_OK);
+    CHECK(got == sizeof(PelorusMotionConfSection));
     pel_blob_free(blob);
 }
 
@@ -438,30 +779,8 @@ static void test_motion_conf_roundtrip(void)
                                 &got) == PEL_ERR_ABSENT);
 
     pel_blob_free(blob);
-
-    /* Production usage: vf_pelorus_mc writes MOTION and MOTION_CONF together —
-     * both must round-trip from one blob regardless of dir[] ordering. */
-    {
-        PelorusMotionSection mo;
-        PelorusPackSection both[2];
-        uint8_t *b2 = NULL;
-        size_t l2 = 0;
-
-        memset(&mo, 0, sizeof(mo));
-        both[0].id = PEL_SEC_MOTION;
-        both[0].data = &mo;
-        both[0].size = (uint32_t)sizeof(mo);
-        both[1].id = PEL_SEC_MOTION_CONF;
-        both[1].data = &conf;
-        both[1].size = (uint32_t)sizeof(conf);
-        CHECK(pel_blob_pack(&meta, both, 2, &b2, &l2) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
-                                    &got) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection),
-                                    &p, &got) == PEL_OK);
-        CHECK(got == sizeof(PelorusMotionConfSection));
-        pel_blob_free(b2);
-    }
+    /* Production writes MOTION and MOTION_CONF together; both must survive. */
+    check_motion_conf_pair(&meta, &conf);
 }
 
 /* PEL_SEC_COMPLEXITY (h): pack the per-frame complexity scalar, round-trip the
@@ -554,6 +873,30 @@ static void test_qp_report_fold(void)
     CHECK(pel_qp_report_from_blocks(&in, 0, 2, &out, cells, sizeof(cells)) == PEL_ERR_INVALID);
 }
 
+static void check_x265_fold(const PelorusX265Frame *frames, size_t count)
+{
+    PelorusQpReportSection qp;
+    const float requested_flat[3] = {28.0f, 28.0f, 28.0f};
+    const float requested_shaped[3] = {24.0f, 30.0f, 36.0f};
+
+    CHECK(pel_qp_report_from_x265_frames(frames, count, NULL, &qp) == PEL_OK);
+    CHECK(qp.qp_valid == 0);
+    CHECK(qp.report_source == PEL_QPSRC_NONE);
+    CHECK(qp.total_bits == 35000ULL);
+    /* bit-weighted: (26*24000 + 30*8000 + 34*3000)/35000 = 27.6 exactly. */
+    CHECK(qp.avg_qp > 27.55f && qp.avg_qp < 27.65f);
+    CHECK(qp.psnr_y > 41.0f && qp.psnr_y < 43.2f); /* I-frame-dominated */
+    CHECK(qp.honored_fraction == 0.0f);            /* no request to compare */
+
+    /* Flat requested QP agrees only with the achieved mean frame: 1/3. */
+    CHECK(pel_qp_report_from_x265_frames(frames, count, requested_flat, &qp) == PEL_OK);
+    CHECK(qp.honored_fraction > 0.33f && qp.honored_fraction < 0.34f);
+
+    /* A requested shape matching achieved low/flat/high QP agrees everywhere. */
+    CHECK(pel_qp_report_from_x265_frames(frames, count, requested_shaped, &qp) == PEL_OK);
+    CHECK(qp.honored_fraction == 1.0f);
+}
+
 /* The x265 CSV reader (ADR-0122): write a minimal x265-shaped CSV to a temp
  * file, parse it, fold it into a PEL_SEC_QPREPORT, and verify the aggregated
  * scalars + the requested-vs-honored honored_fraction. This is the runnable
@@ -571,17 +914,15 @@ static void test_x265_csv_reader(void)
                              "Total frames, 3, , 30.00, , , , \n";
     PelorusX265Frame frames[8];
     size_t count = 0;
-    PelorusQpReportSection qp;
     const char *path = "pelorus_x265_csv_test.csv";
-    FILE *fp;
+    int fixture_rc;
 
-    fp = fopen(path, "w");
-    CHECK(fp != NULL);
-    if (fp == NULL) {
+    fixture_rc = create_checked_fixture(path, csv);
+    CHECK(fixture_rc == 0);
+    if (fixture_rc != 0) {
         return;
     }
-    CHECK(fputs(csv, fp) >= 0);
-    CHECK(fclose(fp) == 0);
+    /* Once created, every later step falls through to the remove() below. */
 
     /* Parse: 3 coded frames, the "Total frames" aggregate row dropped. */
     CHECK(pel_x265_csv_parse(path, frames, 8, &count) == PEL_OK);
@@ -593,41 +934,23 @@ static void test_x265_csv_reader(void)
     CHECK(frames[2].qp == 34.0f);
     CHECK(frames[2].psnr_v == 35.5f);
 
-    /* Fold, no requested map: bit-weighted mean QP, summed bits, qp_valid 0. */
-    CHECK(pel_qp_report_from_x265_frames(frames, count, NULL, &qp) == PEL_OK);
-    CHECK(qp.qp_valid == 0);
-    CHECK(qp.report_source == PEL_QPSRC_NONE);
-    CHECK(qp.total_bits == 35000ULL);
-    /* bit-weighted: (26*24000 + 30*8000 + 34*3000)/35000 = 27.6 exactly. */
-    CHECK(qp.avg_qp > 27.55f && qp.avg_qp < 27.65f);
-    CHECK(qp.psnr_y > 41.0f && qp.psnr_y < 43.2f); /* I-frame-dominated */
-    CHECK(qp.honored_fraction == 0.0f);            /* no request to compare */
-
-    /* honored_fraction: a downstream pass requested a FLAT QP 28 on every
-     * frame; the encoder spread it (26/30/34). Frame 0 moved DOWN, frames 1+2
-     * moved UP from the achieved mean (30). A flat request has zero per-frame
-     * delta, so every frame's requested delta is "flat" while the achieved
-     * deltas are not -> agreement only where the achieved delta is also flat.
-     * Achieved mean = 30: frame1 (30) is flat -> agrees with flat request;
-     * frames 0,2 moved -> disagree. Expect 1/3. */
-    {
-        const float requested_flat[3] = {28.0f, 28.0f, 28.0f};
-        CHECK(pel_qp_report_from_x265_frames(frames, count, requested_flat, &qp) == PEL_OK);
-        CHECK(qp.honored_fraction > 0.33f && qp.honored_fraction < 0.34f);
-    }
-
-    /* honored_fraction: a request that mirrors the achieved shape (low for the
-     * I frame, high for the B frame) should score 1.0 (every sign agrees). */
-    {
-        const float requested_shaped[3] = {24.0f, 30.0f, 36.0f};
-        CHECK(pel_qp_report_from_x265_frames(frames, count, requested_shaped, &qp) == PEL_OK);
-        CHECK(qp.honored_fraction == 1.0f);
-    }
+    check_x265_fold(frames, count);
 
     /* A capacity smaller than the row count truncates and reports RANGE. */
     CHECK(pel_x265_csv_parse(path, frames, 2, &count) == PEL_ERR_RANGE);
     CHECK(count == 2);
 
+    CHECK(remove(path) == 0);
+}
+
+/* The x265 CSV reader's error paths need no fixture file. */
+static void test_x265_csv_reader_guards(void)
+{
+    PelorusX265Frame frames[8];
+    size_t count = 0;
+    PelorusQpReportSection qp;
+
+    memset(frames, 0, sizeof(frames));
     /* A missing file is ABSENT, not a crash. */
     CHECK(pel_x265_csv_parse("pelorus_no_such_file.csv", frames, 8, &count) == PEL_ERR_ABSENT);
 
@@ -635,8 +958,6 @@ static void test_x265_csv_reader(void)
     CHECK(pel_x265_csv_parse(NULL, frames, 8, &count) == PEL_ERR_INVALID);
     CHECK(pel_qp_report_from_x265_frames(NULL, 1, NULL, &qp) == PEL_ERR_INVALID);
     CHECK(pel_qp_report_from_x265_frames(frames, 0, NULL, &qp) == PEL_ERR_INVALID);
-
-    (void)remove(path);
 }
 
 /* The deband param contract: defaults validate, out-of-range is rejected. */
@@ -754,14 +1075,16 @@ int main(void)
     test_motion_conf_roundtrip();
     test_complexity_roundtrip();
     test_qp_report_fold();
+    test_fixture_file_safety();
     test_x265_csv_reader();
+    test_x265_csv_reader_guards();
     test_deband_params();
 
     if (g_fail != 0) {
-        fprintf(stderr, "%d check(s) failed\n", g_fail);
+        (void)fprintf(stderr, "%d check(s) failed\n", g_fail);
         return EXIT_FAILURE;
     }
-    printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n", pelorus_version_string(),
-           PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
+    (void)printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n",
+                 pelorus_version_string(), PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
     return EXIT_SUCCESS;
 }

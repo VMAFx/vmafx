@@ -17,7 +17,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@013bc59f04f1701d9f9e8e6ff2a2f6b985c6d955 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -77,6 +77,14 @@ typedef enum pel_result {
 
 /* Human-readable, static string for a pel_result. Never NULL. */
 const char *pel_result_str(pel_result r);
+
+/* ---- Path arguments ------------------------------------------------------ *
+ * Every libpelorus parameter that names a file (today: the path argument of
+ * pel_x265_csv_parse in interop.h) is a NUL-terminated UTF-8 string on every
+ * platform, never the Windows ANSI code page. POSIX hands the bytes to the C
+ * library unchanged; Windows converts them to UTF-16 and rejects ill-formed
+ * UTF-8 with PEL_ERR_INVALID. See docs/adr/0149-windows-utf8-paths.md.
+ */
 
 #ifdef __cplusplus
 }
