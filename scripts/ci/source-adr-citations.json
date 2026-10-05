@@ -5863,6 +5863,7 @@
       "sites": {
         ".claude/hooks/auto-format-on-edit.sh": 1,
         ".codex/hooks/auto-format-on-edit.sh": 1,
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml": 6,
         ".config/lint-exceptions.d/spdx.toml": 10,
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
@@ -11120,6 +11121,12 @@
         "core/test/test_sycl_filter_import_contract.py": 2
       },
       "target": "1761-sycl-filter-import-retry-then-fail.md"
+    },
+    "1762": {
+      "sites": {
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml": 1
+      },
+      "target": "1762-tidy-every-translation-unit-read.md"
     },
     "1768": {
       "sites": {
