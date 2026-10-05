@@ -20,11 +20,11 @@
  *  Peak / psnr_max table matches float_psnr_vulkan.c::init().
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -54,7 +54,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
  * in float_psnr.metal. */
 #define FPSNR_SEGMENT 256u
 
-typedef struct FloatPsnrStateMetal {
+using FloatPsnrStateMetal = struct FloatPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* uint64 row-segment sums, per_row × h */
     VmafMetalContext *ctx;
@@ -76,7 +76,7 @@ typedef struct FloatPsnrStateMetal {
     unsigned bpc;
 
     VmafDictionary *feature_name_dict;
-} FloatPsnrStateMetal;
+};
 
 static const VmafOption options[] = {
     {
@@ -87,18 +87,18 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0}};
+    {.name=nullptr}};
 
 static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
 {
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -152,8 +152,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_lc; }
 
     {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
+        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
     if (err != 0) { goto fail_rb; }
@@ -161,19 +161,19 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
 fail_rb:
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -188,9 +188,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>      device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
@@ -230,8 +230,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
     /* One threadgroup per 256-pixel segment of one row (ADR-1499). */
-    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);
-    MTLSize grid = MTLSizeMake(s->per_row, s->frame_h, 1);
+    MTLSize const tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);
+    MTLSize const grid = MTLSizeMake(s->per_row, s->frame_h, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 
@@ -252,7 +252,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static double float_psnr_noise(const FloatPsnrStateMetal *s)
 {
     const uint64_t *partials = (const uint64_t *)s->rb.host_view;
-    if (partials == NULL) {
+    if (partials == nullptr) {
         return 0.0;
     }
     const double total = vmaf_float_psnr_row_noise(partials, s->frame_h, s->per_row);
@@ -264,7 +264,7 @@ static double float_psnr_noise(const FloatPsnrStateMetal *s)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatPsnrStateMetal *s = (FloatPsnrStateMetal *)fex->priv;
+    FloatPsnrStateMetal  const*s = (FloatPsnrStateMetal *)fex->priv;
 
     const double mse = float_psnr_noise(s);
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
@@ -291,17 +291,17 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     FloatPsnrStateMetal *s = (FloatPsnrStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
 
-    int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
+    int const err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
-static const char *provided_features[] = {"float_psnr", NULL};
+static const char *provided_features[] = {"float_psnr", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -314,7 +314,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr_metal = {
     .init                = init_fex_metal,
     .submit              = submit_fex_metal,
     .collect             = collect_fex_metal,
-    .flush               = NULL,
+    .flush               = nullptr,
     .close               = close_fex_metal,
     .options             = options,
     .priv_size           = sizeof(FloatPsnrStateMetal),

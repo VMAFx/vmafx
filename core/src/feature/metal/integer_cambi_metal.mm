@@ -82,6 +82,8 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include <utility>
+
 /* feature_extractor.h uses `#if defined(__cplusplus)` to include <atomic>
  * (Xcode 16.4 / macOS 15 libc++ emits "templates must have C++ linkage"
  * when that header is pulled into an extern "C" block — ADR-fix macOS-Metal). */
@@ -122,7 +124,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define CAMBI_METAL_BLOCK_X           16u
 #define CAMBI_METAL_BLOCK_Y           16u
 
-typedef struct IntegerCambiStateMetal {
+using IntegerCambiStateMetal = struct IntegerCambiStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
@@ -185,7 +187,7 @@ typedef struct IntegerCambiStateMetal {
     double src_score;
 
     VmafDictionary *feature_name_dict;
-} IntegerCambiStateMetal;
+};
 
 /* --- Options: the CPU cambi.c table (names, aliases, defaults, ranges,
  * flags). --- */
@@ -372,7 +374,7 @@ static const VmafOption options[] = {
         .max         = 2160,
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0},
+    {.name=nullptr},
 };
 
 /* ADR-1219 — delegate to the shared CPU helper rather than re-deriving the
@@ -394,7 +396,7 @@ static int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
     const int num_diffs = 1 << s->max_log_contrast;
     return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
                                        s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                       s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
+                                       s->buffers.tvi_for_diff, &s->vlt_luma, nullptr, nullptr);
 }
 
 /* ------------------------------------------------------------------ */
@@ -406,11 +408,11 @@ static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -437,15 +439,15 @@ static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
 
 static void release_host_buffers(IntegerCambiStateMetal *s)
 {
-    free(s->buffers.diffs_to_consider);   s->buffers.diffs_to_consider   = NULL;
-    free(s->buffers.diff_weights);        s->buffers.diff_weights        = NULL;
-    free(s->buffers.all_diffs);           s->buffers.all_diffs           = NULL;
-    free(s->buffers.tvi_for_diff);        s->buffers.tvi_for_diff        = NULL;
-    free(s->buffers.c_values);            s->buffers.c_values            = NULL;
-    free(s->buffers.c_values_histograms); s->buffers.c_values_histograms = NULL;
-    free(s->buffers.mask_dp);             s->buffers.mask_dp             = NULL;
-    free(s->buffers.filter_mode_buffer);  s->buffers.filter_mode_buffer  = NULL;
-    free(s->buffers.derivative_buffer);   s->buffers.derivative_buffer   = NULL;
+    free(s->buffers.diffs_to_consider);   s->buffers.diffs_to_consider   = nullptr;
+    free(s->buffers.diff_weights);        s->buffers.diff_weights        = nullptr;
+    free(s->buffers.all_diffs);           s->buffers.all_diffs           = nullptr;
+    free(s->buffers.tvi_for_diff);        s->buffers.tvi_for_diff        = nullptr;
+    free(s->buffers.c_values);            s->buffers.c_values            = nullptr;
+    free(s->buffers.c_values_histograms); s->buffers.c_values_histograms = nullptr;
+    free(s->buffers.mask_dp);             s->buffers.mask_dp             = nullptr;
+    free(s->buffers.filter_mode_buffer);  s->buffers.filter_mode_buffer  = nullptr;
+    free(s->buffers.derivative_buffer);   s->buffers.derivative_buffer   = nullptr;
 }
 
 /* ------------------------------------------------------------------ */
@@ -469,7 +471,7 @@ static int cambi_metal_resolve_dimensions(IntegerCambiStateMetal *s, unsigned bp
         s->src_width  = (int)w;
         s->src_height = (int)h;
     }
-    if ((unsigned)s->enc_height > h || (unsigned)s->enc_width > w) {
+    if (std::cmp_greater(s->enc_height, h) || std::cmp_greater(s->enc_width, w)) {
         s->enc_width  = (int)w;
         s->enc_height = (int)h;
     }
@@ -529,7 +531,7 @@ static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
         !s->buffers.tvi_for_diff) {
         return -ENOMEM;
     }
-    const int *contrast_weights = vmaf_cambi_contrast_weights(NULL);
+    const int *contrast_weights = vmaf_cambi_contrast_weights(nullptr);
     for (int d = 0; d < num_diffs; d++) {
         s->buffers.diffs_to_consider[d] = (uint16_t)(d + 1);
         s->buffers.diff_weights[d]      = contrast_weights[d];
@@ -561,8 +563,8 @@ static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
 /* The device planes and the pipelines. */
 static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 {
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
     const size_t buf_bytes = (size_t)s->alloc_width * (size_t)s->alloc_height * sizeof(uint16_t);
@@ -584,18 +586,18 @@ static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 static int cambi_metal_release(IntegerCambiStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    void **handles[] = {&s->pso_filter_mode, &s->pso_decimate, &s->pso_mask,
+    void * const*handles[] = {&s->pso_filter_mode, &s->pso_decimate, &s->pso_mask,
                         &s->d_tmp,           &s->d_mask,       &s->d_image};
-    for (size_t i = 0; i < sizeof(handles) / sizeof(handles[0]); ++i) {
-        if (*handles[i] != NULL) {
-            (void)(__bridge_transfer id)*handles[i];
-            *handles[i] = NULL;
+    for (auto & handle : handles) {
+        if (*handle != nullptr) {
+            (void)(__bridge_transfer id)*handle;
+            *handle = nullptr;
         }
     }
-    for (unsigned i = 0; i < 2u; ++i) {
+    for (auto & pic : s->pics) {
         /* A slot init() never allocated has no ref; unref would fail on it. */
-        if (s->pics[i].ref != NULL) {
-            const int e = vmaf_picture_unref(&s->pics[i]);
+        if (pic.ref != nullptr) {
+            const int e = vmaf_picture_unref(&pic);
             if (e != 0 && rc == 0) { rc = e; }
         }
     }
@@ -607,7 +609,7 @@ static int cambi_metal_release(IntegerCambiStateMetal *s)
         if (e != 0 && rc == 0) { rc = e; }
     }
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return rc;
 }
 
@@ -722,13 +724,13 @@ static int cambi_metal_commit(id<MTLCommandBuffer> cmd)
 /* The three device planes of one picture's pipeline. They rotate through
  * local handles only: s->d_image / d_mask / d_tmp keep pointing at the
  * buffers init() made. */
-typedef struct CambiMetalPlanes {
+using CambiMetalPlanes = struct CambiMetalPlanes {
     void *image;
     void *mask;
     void *tmp;
     unsigned width;
     unsigned height;
-} CambiMetalPlanes;
+};
 
 /* pics[0] <- `pic` decimated or resized to width x height and shifted to 10
  * bits (the CPU's vmaf_cambi_preprocessing()), uploaded packed to d_image,
@@ -834,8 +836,8 @@ static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, 
                              unsigned height, uint16_t window, const unsigned *heatmap_frame,
                              double *score)
 {
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (qh == NULL) { return -ENODEV; }
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
     int err = cambi_metal_prepare(s, queue, pic, width, height);
@@ -843,7 +845,7 @@ static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, 
      * `cambi_topk` (cambi.c). */
     const double topk = (s->topk != CAMBI_METAL_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
     double scores_per_scale[CAMBI_METAL_NUM_SCALES] = {0.0, 0.0, 0.0, 0.0, 0.0};
-    CambiMetalPlanes pl = {s->d_image, s->d_mask, s->d_tmp, width, height};
+    CambiMetalPlanes pl = {.image=s->d_image, .mask=s->d_mask, .tmp=s->d_tmp, .width=width, .height=height};
     for (int scale = 0; scale < CAMBI_METAL_NUM_SCALES && err == 0; ++scale) {
         err = cambi_metal_scale_gpu(s, queue, scale, &pl);
         if (err == 0) {
@@ -893,7 +895,7 @@ static double cambi_metal_cap(const IntegerCambiStateMetal *s, double score)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
+    IntegerCambiStateMetal  const*s = (IntegerCambiStateMetal *)fex->priv;
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "Cambi_feature_cambi_score",
                                                       cambi_metal_cap(s, s->dist_score), index);
@@ -920,7 +922,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {
-    "Cambi_feature_cambi_score", NULL
+    "Cambi_feature_cambi_score", nullptr
 };
 
 extern "C" {
@@ -934,7 +936,7 @@ VmafFeatureExtractor vmaf_fex_integer_cambi_metal = {
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerCambiStateMetal),

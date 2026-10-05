@@ -31,11 +31,11 @@
  *  compares like keys.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -64,7 +64,7 @@ extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
-typedef struct CiedeStateMetal {
+using CiedeStateMetal = struct CiedeStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* one float per pixel, raster order */
     VmafMetalContext *ctx;
@@ -78,21 +78,21 @@ typedef struct CiedeStateMetal {
     enum VmafPixelFormat pix_fmt;
 
     VmafDictionary *feature_name_dict;
-} CiedeStateMetal;
+};
 
 /* The CPU extractor has no options. */
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {{.name=nullptr}};
 
 static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -139,8 +139,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_lc; }
 
     {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
+        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
     if (err != 0) { goto fail_rb; }
@@ -148,19 +148,19 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
 fail_rb:
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -179,10 +179,10 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
     const ptrdiff_t in_stride_t = (ptrdiff_t)pic->stride[p] / (ptrdiff_t)sizeof(T);
     for (unsigned i = 0; i < out_h; i++) {
         for (unsigned j = 0; j < out_w; j++) {
-            unsigned in_x = ss_hor ? (j >> 1) : j;
+            unsigned const in_x = ss_hor ? (j >> 1) : j;
             out_buf[j] = in_buf[in_x];
         }
-        unsigned in_row_step = ss_ver ? (i & 1u) : 1u;
+        unsigned const in_row_step = ss_ver ? (i & 1u) : 1u;
         in_buf += in_row_step * in_stride_t;
         out_buf += out_w;
     }
@@ -221,9 +221,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     /* The readback holds init()'s frame size. */
     if (ref_pic->w[0] != s->frame_w || ref_pic->h[0] != s->frame_h) { return -EINVAL; }
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
     id<MTLBuffer>    terms_buf = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
@@ -270,10 +270,10 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
+    CiedeStateMetal  const*s = (CiedeStateMetal *)fex->priv;
 
     const float *terms = (const float *)s->rb.host_view;
-    if (terms == NULL) { return -EINVAL; }
+    if (terms == nullptr) { return -EINVAL; }
     /* extract()'s sum and score, over the whole plane in raster order. */
     const double de00_sum = ciede_frame_sum(terms, (size_t)s->frame_w * s->frame_h);
     const double score = 45. - 20. * log10(de00_sum / (s->frame_w * s->frame_h));
@@ -287,17 +287,17 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
 
-    int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
+    int const err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
-static const char *provided_features[] = {"ciede2000", NULL};
+static const char *provided_features[] = {"ciede2000", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -310,7 +310,7 @@ VmafFeatureExtractor vmaf_fex_integer_ciede_metal = {
     .init                = init_fex_metal,
     .submit              = submit_fex_metal,
     .collect             = collect_fex_metal,
-    .flush               = NULL,
+    .flush               = nullptr,
     .close               = close_fex_metal,
     .options             = options,
     .priv_size           = sizeof(CiedeStateMetal),

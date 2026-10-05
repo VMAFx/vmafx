@@ -99,17 +99,17 @@ VMAF_MTL_CONSTANT float vmaf_mtl_hvs_csf[VMAF_MTL_HVS_PLANES][VMAF_MTL_HVS_TERMS
 
 /* calc_psnrhvs()'s accumulators for one image of a block: the whole block
  * and its four 4x4 quadrants. Means first, variances after. */
-typedef struct VmafMtlHvsMoments {
+using VmafMtlHvsMoments = struct VmafMtlHvsMoments {
     float whole;
     float quadrant[4];
-} VmafMtlHvsMoments;
+};
 
-VMAF_MTL_FUNC VmafMtlHvsMoments vmaf_mtl_hvs_moments_zero(void)
+VMAF_MTL_FUNC VmafMtlHvsMoments vmaf_mtl_hvs_moments_zero()
 {
     VmafMtlHvsMoments m;
     m.whole = 0.f;
-    for (int k = 0; k < 4; k++)
-        m.quadrant[k] = 0.f;
+    for (float &k : m.quadrant)
+        k = 0.f;
     return m;
 }
 
@@ -133,8 +133,8 @@ VMAF_MTL_FUNC VmafMtlHvsMoments vmaf_mtl_hvs_mean_add(VmafMtlHvsMoments m, vmaf_
 VMAF_MTL_FUNC VmafMtlHvsMoments vmaf_mtl_hvs_means(VmafMtlHvsMoments sums)
 {
     sums.whole /= 64.f;
-    for (int k = 0; k < 4; k++)
-        sums.quadrant[k] /= 16.f;
+    for (float &k : sums.quadrant)
+        k /= 16.f;
     return sums;
 }
 
@@ -160,8 +160,8 @@ VMAF_MTL_FUNC float vmaf_mtl_hvs_variance_ratio(VmafMtlHvsMoments v)
 {
     float whole = v.whole;
     whole *= 1.f / 63.f * 64.f;
-    for (int k = 0; k < 4; k++)
-        v.quadrant[k] *= 1.f / 15.f * 16.f;
+    for (float &k : v.quadrant)
+        k *= 1.f / 15.f * 16.f;
     if (whole > 0.f)
         whole = (v.quadrant[0] + v.quadrant[1] + v.quadrant[2] + v.quadrant[3]) / whole;
     return whole;
@@ -172,9 +172,9 @@ VMAF_MTL_FUNC float vmaf_mtl_hvs_variance_ratio(VmafMtlHvsMoments v)
 /* ------------------------------------------------------------------ */
 
 /* Eight coefficients: the input of one 8-point transform, or its output. */
-typedef struct VmafMtlHvsLine {
+using VmafMtlHvsLine = struct VmafMtlHvsLine {
     vmaf_mtl_i32 v[8];
-} VmafMtlHvsLine;
+};
 
 /* OD_UNBIASED_RSHIFT32(a, b): a right shift that rounds toward zero. */
 VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_hvs_rshift(vmaf_mtl_i32 a, vmaf_mtl_i32 b)
@@ -183,7 +183,7 @@ VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_hvs_rshift(vmaf_mtl_i32 a, vmaf_mtl_i32 b)
 }
 
 /* od_bin_fdct8()'s registers between its two halves. */
-typedef struct VmafMtlHvsDct {
+using VmafMtlHvsDct = struct VmafMtlHvsDct {
     vmaf_mtl_i32 t0;
     vmaf_mtl_i32 t1;
     vmaf_mtl_i32 t2;
@@ -193,7 +193,7 @@ typedef struct VmafMtlHvsDct {
     vmaf_mtl_i32 t6;
     vmaf_mtl_i32 t7;
     vmaf_mtl_i32 t1h;
-} VmafMtlHvsDct;
+};
 
 /* The initial permutation, the +1/-1 butterflies, the embedded 4-point DCT
  * with its 2-point DCT and 2-point DST. */

@@ -36,11 +36,11 @@
  *  return -EINVAL at init.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -79,7 +79,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define FADM_ROW_TG 64u
 
 /* Geometry uniform mirroring `FadmDims` in float_adm.metal. */
-typedef struct FadmDimsHost {
+using FadmDimsHost = struct FadmDimsHost {
     int32_t scale;
     int32_t cur_w;
     int32_t cur_h;
@@ -92,15 +92,15 @@ typedef struct FadmDimsHost {
     int32_t parent_buf_stride;
     uint32_t bpc;
     uint32_t _pad0;
-} FadmDimsHost;
+};
 
 /* DWT stage uniform mirroring `FadmCsf` in float_adm.metal. */
-typedef struct FadmCsfHost {
+using FadmCsfHost = struct FadmCsfHost {
     float scaler;
     float pixel_offset;
-} FadmCsfHost;
+};
 
-typedef struct FloatAdmStateMetal {
+using FloatAdmStateMetal = struct FloatAdmStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
@@ -172,7 +172,7 @@ typedef struct FloatAdmStateMetal {
 
     unsigned index;
     VmafDictionary *feature_name_dict;
-} FloatAdmStateMetal;
+};
 
 static const VmafOption options[] = {
     {.name = "debug",
@@ -374,7 +374,7 @@ static const VmafOption options[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0},
+    {.name=nullptr},
 };
 
 static void compute_per_scale_dims(FloatAdmStateMetal *s)
@@ -410,10 +410,10 @@ static void compute_per_scale_dims(FloatAdmStateMetal *s)
 static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
 {
     id<MTLFunction> fn = [lib newFunctionWithName:name];
-    if (fn == nil) { return NULL; }
+    if (fn == nil) { return nullptr; }
     NSError *err = nil;
     id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
-    if (pso == nil) { return NULL; }
+    if (pso == nil) { return nullptr; }
     return (__bridge_retained void *)pso;
 }
 
@@ -422,11 +422,11 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -438,8 +438,8 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
     s->pso_decouple = make_pipeline(device, lib, @"float_adm_decouple");
     s->pso_terms = make_pipeline(device, lib, @"float_adm_terms");
     s->pso_rows = make_pipeline(device, lib, @"float_adm_rows");
-    if (s->pso_dwt_vert_8 == NULL || s->pso_dwt_vert_16 == NULL || s->pso_dwt_hori == NULL ||
-        s->pso_decouple == NULL || s->pso_terms == NULL || s->pso_rows == NULL) {
+    if (s->pso_dwt_vert_8 == nullptr || s->pso_dwt_vert_16 == nullptr || s->pso_dwt_hori == nullptr ||
+        s->pso_decouple == nullptr || s->pso_terms == nullptr || s->pso_rows == nullptr) {
         return -ENODEV;
     }
     return 0;
@@ -448,12 +448,12 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 /* Release every retained PSO. Safe on a partially-built state. */
 static void release_psos(FloatAdmStateMetal *s)
 {
-    void **psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
+    void * const*psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
                      &s->pso_dwt_hori,    &s->pso_dwt_vert_16, &s->pso_dwt_vert_8};
-    for (size_t i = 0; i < sizeof(psos) / sizeof(psos[0]); ++i) {
-        if (*psos[i]) {
-            (void)(__bridge_transfer id<MTLComputePipelineState>)(*psos[i]);
-            *psos[i] = NULL;
+    for (auto & pso : psos) {
+        if (*pso) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)(*pso);
+            *pso = nullptr;
         }
     }
 }
@@ -464,19 +464,19 @@ static void release_buffers(FloatAdmStateMetal *s)
     for (int i = 0; i < FADM_NUM_SCALES; ++i) {
         if (s->ref_band[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->ref_band[i];
-            s->ref_band[i] = NULL;
+            s->ref_band[i] = nullptr;
         }
         if (s->dis_band[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->dis_band[i];
-            s->dis_band[i] = NULL;
+            s->dis_band[i] = nullptr;
         }
     }
-    void **single[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
+    void * const*single[] = {&s->src_ref, &s->src_dis, &s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
                        &s->csf_fa,  &s->csf_r,   &s->csf_fr,      &s->terms,       &s->rows};
-    for (size_t i = 0; i < sizeof(single) / sizeof(single[0]); ++i) {
-        if (*single[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)(*single[i]);
-            *single[i] = NULL;
+    for (auto & i : single) {
+        if (*i) {
+            (void)(__bridge_transfer id<MTLBuffer>)(*i);
+            *i = nullptr;
         }
     }
 }
@@ -531,8 +531,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_ctx; }
 
     {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
+        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         const size_t bpp = (bpc <= 8u) ? 1u : 2u;
@@ -569,12 +569,12 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
         const size_t csf_bytes =
             (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-        void **csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
-        for (size_t i = 0; i < sizeof(csf_slots) / sizeof(csf_slots[0]); ++i) {
+        void * const*csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
+        for (auto & csf_slot : csf_slots) {
             id<MTLBuffer> cb = [device newBufferWithLength:csf_bytes
                                                    options:MTLResourceStorageModeShared];
             if (cb == nil) { err = -ENOMEM; goto fail_bufs; }
-            *csf_slots[i] = (__bridge_retained void *)cb;
+            *csf_slot = (__bridge_retained void *)cb;
         }
 
         const size_t term_bytes = (s->term_floats > 0u ? s->term_floats : 1u) * sizeof(float);
@@ -593,7 +593,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
@@ -604,7 +604,7 @@ fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -789,9 +789,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
     fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->width, s->height, s->bpc);
@@ -816,15 +816,15 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
  * bottom. The scale is then concluded by the reference's own
  * adm_pool_bands_s(), with the noise weight for the denominator and the adm2
  * numerator and with none for the AIM numerator. */
-typedef struct FadmScaleSums {
+using FadmScaleSums = struct FadmScaleSums {
     float numerator;
     float denominator;
     float aim_numerator;
-} FadmScaleSums;
+};
 
 static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
 {
-    FadmScaleSums sums = {0.0f, 0.0f, 0.0f};
+    FadmScaleSums sums = {.numerator=0.0f, .denominator=0.0f, .aim_numerator=0.0f};
     if (scale == 0 && s->adm_skip_scale0) {
         /* compute_adm(): `den_scale = 1e-10; // avoid divide by zero`. */
         sums.denominator = (float)1e-10;
@@ -853,7 +853,7 @@ static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
 
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
-    FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
+    FloatAdmStateMetal  const*s = (FloatAdmStateMetal *)fex->priv;
 
     double score_num = 0.0;
     double score_den = 0.0;
@@ -902,24 +902,24 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
         return err;
 
     VmafNamedScore values[18] = {
-        {"VMAF_feature_adm2_score", score},
-        {"VMAF_feature_aim_score", score_aim},
-        {"VMAF_feature_adm3_score", score_adm3},
-        {"VMAF_feature_adm_scale0_score", scale_scores[0]},
-        {"VMAF_feature_adm_scale1_score", scale_scores[1]},
-        {"VMAF_feature_adm_scale2_score", scale_scores[2]},
-        {"VMAF_feature_adm_scale3_score", scale_scores[3]},
+        {.name="VMAF_feature_adm2_score", .value=score},
+        {.name="VMAF_feature_aim_score", .value=score_aim},
+        {.name="VMAF_feature_adm3_score", .value=score_adm3},
+        {.name="VMAF_feature_adm_scale0_score", .value=scale_scores[0]},
+        {.name="VMAF_feature_adm_scale1_score", .value=scale_scores[1]},
+        {.name="VMAF_feature_adm_scale2_score", .value=scale_scores[2]},
+        {.name="VMAF_feature_adm_scale3_score", .value=scale_scores[3]},
     };
     size_t value_count = 7u;
     if (s->debug) {
         static const char *const debug_names[8] = {
             "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
             "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{"adm", score};
-        values[value_count++] = VmafNamedScore{"adm_num", score_num};
-        values[value_count++] = VmafNamedScore{"adm_den", score_den};
+        values[value_count++] = VmafNamedScore{.name="adm", .value=score};
+        values[value_count++] = VmafNamedScore{.name="adm_num", .value=score_num};
+        values[value_count++] = VmafNamedScore{.name="adm_den", .value=score_den};
         for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = VmafNamedScore{debug_names[i], scores[i]};
+            values[value_count++] = VmafNamedScore{.name=debug_names[i], .value=scores[i]};
     }
     return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_metal", values,
                                            value_count, index);
@@ -934,12 +934,12 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     release_buffers(s);
 
     if (s->feature_name_dict) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        int const err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -964,7 +964,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_den_scale2",
                                           "adm_num_scale3",
                                           "adm_den_scale3",
-                                          NULL};
+                                          nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -977,7 +977,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_metal = {
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(FloatAdmStateMetal),

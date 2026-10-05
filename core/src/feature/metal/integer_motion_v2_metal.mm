@@ -32,10 +32,10 @@
  *  `dispatch_data_create` and hands it to `[device newLibraryWithData:]`.
  */
 
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -72,7 +72,7 @@ extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
-typedef struct MotionV2StateMetal {
+using MotionV2StateMetal = struct MotionV2StateMetal {
     VmafMetalKernelLifecycle lc;
     /* One uint32 SAD per threadgroup (exact: 256 x 65536 < 2^32). */
     VmafMetalKernelBuffer rb;
@@ -105,7 +105,7 @@ typedef struct MotionV2StateMetal {
     bool motion_moving_average;
 
     VmafDictionary *feature_name_dict;
-} MotionV2StateMetal;
+};
 
 /* The CPU integer_motion_v2.c table: same names, aliases, defaults, ranges
  * and flags, so co-scheduled CPU and Metal runs name features identically
@@ -182,18 +182,18 @@ static const VmafOption options[] = {
         .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0}};
+    {.name=nullptr}};
 
 static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 {
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -217,8 +217,8 @@ static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 /* The luma planes of the last `depth` frames and the pipelines. */
 static int mv2_metal_device_setup(MotionV2StateMetal *s)
 {
-    void *device_handle = vmaf_metal_context_device_handle(s->ctx);
-    if (device_handle == NULL) { return -ENODEV; }
+    void  const*device_handle = vmaf_metal_context_device_handle(s->ctx);
+    if (device_handle == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
     for (unsigned i = 0; i < s->depth; i++) {
         id<MTLBuffer> plane = [device newBufferWithLength:s->plane_bytes
@@ -235,28 +235,28 @@ static int mv2_metal_device_setup(MotionV2StateMetal *s)
 static int mv2_metal_release(MotionV2StateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (s->pso_16bpc != NULL) {
+    if (s->pso_16bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
-    if (s->pso_8bpc != NULL) {
+    if (s->pso_8bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
-    for (unsigned i = 0; i < MOTION_V2_METAL_MAX_DEPTH; i++) {
-        if (s->prev_luma[i] != NULL) {
-            (void)(__bridge_transfer id<MTLBuffer>)s->prev_luma[i];
-            s->prev_luma[i] = NULL;
+    for (auto & i : s->prev_luma) {
+        if (i != nullptr) {
+            (void)(__bridge_transfer id<MTLBuffer>)i;
+            i = nullptr;
         }
     }
     int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != nullptr) {
         err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) { rc = err; }
     }
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return rc;
 }
 
@@ -302,7 +302,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
     if (err != 0) {
         (void)mv2_metal_release(s);
@@ -379,9 +379,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
     id<MTLBuffer> slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
     if (index >= s->depth) {
-        void *device_handle = vmaf_metal_context_device_handle(s->ctx);
-        void *queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
-        if (device_handle == NULL || queue_handle == NULL) { return -ENODEV; }
+        void  const*device_handle = vmaf_metal_context_device_handle(s->ctx);
+        void  const*queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
+        if (device_handle == nullptr || queue_handle == nullptr) { return -ENODEV; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
         id<MTLBuffer> cur = [device newBufferWithLength:s->plane_bytes
                                                 options:MTLResourceStorageModeShared];
@@ -401,7 +401,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
 {
     const uint32_t *partials = (const uint32_t *)s->rb.host_view;
-    if (partials == NULL) { return -EIO; }
+    if (partials == nullptr) { return -EIO; }
     uint64_t sum = 0U;
     for (size_t i = 0; i < s->partials_count; ++i) {
         sum += partials[i];
@@ -413,7 +413,7 @@ static int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
+    MotionV2StateMetal  const*s = (MotionV2StateMetal *)fex->priv;
 
     /* motion_force_zero, or no frame `depth` back (the CPU's min_idx): the
      * CPU stores 0. */
@@ -444,10 +444,10 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
  * gets motion2_v2 = motion3_v2 = 0, as on the CPU; an empty run nothing. */
 static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
-    MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
+    MotionV2StateMetal  const*s = (MotionV2StateMetal *)fex->priv;
 
     /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == NULL) { return 1; }
+    if (s->feature_name_dict == nullptr) { return 1; }
 
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
@@ -470,7 +470,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

@@ -17,9 +17,9 @@
  *  ADR-0361 §"Header purity".
  */
 
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -49,7 +49,7 @@ static inline id transfer_from_uptr(uintptr_t slot)
     if (slot == 0) {
         return nil;
     }
-    void *p = (void *)slot;
+    void  const*p = (void *)slot;
     return (__bridge_transfer id)p;
 }
 
@@ -63,17 +63,17 @@ static inline id borrow_from_uptr(uintptr_t slot)
 
 int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalContext *ctx)
 {
-    if (lc == NULL) {
+    if (lc == nullptr) {
         return -EINVAL;
     }
     VMAF_LIFECYCLE_ZERO(lc);
 
-    if (ctx == NULL) {
+    if (ctx == nullptr) {
         return -EINVAL;
     }
 
-    void *device_handle = vmaf_metal_context_device_handle(ctx);
-    if (device_handle == NULL) {
+    void  const*device_handle = vmaf_metal_context_device_handle(ctx);
+    if (device_handle == nullptr) {
         return -ENODEV;
     }
     id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
@@ -100,21 +100,21 @@ int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalCont
 
 int vmaf_metal_kernel_buffer_alloc(VmafMetalKernelBuffer *buf, VmafMetalContext *ctx, size_t bytes)
 {
-    if (buf == NULL) {
+    if (buf == nullptr) {
         return -EINVAL;
     }
     VMAF_LIFECYCLE_ZERO(buf);
     buf->bytes = bytes;
 
-    if (ctx == NULL) {
+    if (ctx == nullptr) {
         return -EINVAL;
     }
     if (bytes == 0) {
         return -EINVAL;
     }
 
-    void *device_handle = vmaf_metal_context_device_handle(ctx);
-    if (device_handle == NULL) {
+    void  const*device_handle = vmaf_metal_context_device_handle(ctx);
+    if (device_handle == nullptr) {
         return -ENODEV;
     }
     id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
@@ -135,7 +135,7 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
                                         uintptr_t dist_ready_event)
 {
     (void)ctx;
-    if (lc == NULL || buf == NULL) {
+    if (lc == nullptr || buf == nullptr) {
         return -EINVAL;
     }
     if (lc->cmd_queue == 0 || buf->buffer == 0) {
@@ -177,7 +177,7 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
 int vmaf_metal_kernel_collect_wait(VmafMetalKernelLifecycle *lc, VmafMetalContext *ctx)
 {
     (void)ctx;
-    if (lc == NULL) {
+    if (lc == nullptr) {
         return -EINVAL;
     }
     if (lc->cmd_queue == 0) {
@@ -201,7 +201,7 @@ int vmaf_metal_kernel_collect_wait(VmafMetalKernelLifecycle *lc, VmafMetalContex
 int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalContext *ctx)
 {
     (void)ctx;
-    if (lc == NULL) {
+    if (lc == nullptr) {
         return 0;
     }
 
@@ -218,15 +218,15 @@ int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalCon
     /* Bridge-transfer each slot back to ARC ownership so the +1
      * retains we took in init() are released by scope exit. */
     if (lc->finished != 0) {
-        id ev __attribute__((unused)) = transfer_from_uptr(lc->finished);
+        id const ev __attribute__((unused)) = transfer_from_uptr(lc->finished);
         lc->finished = 0;
     }
     if (lc->submit != 0) {
-        id ev __attribute__((unused)) = transfer_from_uptr(lc->submit);
+        id const ev __attribute__((unused)) = transfer_from_uptr(lc->submit);
         lc->submit = 0;
     }
     if (lc->cmd_queue != 0) {
-        id q __attribute__((unused)) = transfer_from_uptr(lc->cmd_queue);
+        id const q __attribute__((unused)) = transfer_from_uptr(lc->cmd_queue);
         lc->cmd_queue = 0;
     }
     return 0;
@@ -235,14 +235,14 @@ int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalCon
 int vmaf_metal_kernel_buffer_free(VmafMetalKernelBuffer *buf, VmafMetalContext *ctx)
 {
     (void)ctx;
-    if (buf == NULL) {
+    if (buf == nullptr) {
         return 0;
     }
     if (buf->buffer != 0) {
-        id b __attribute__((unused)) = transfer_from_uptr(buf->buffer);
+        id const b __attribute__((unused)) = transfer_from_uptr(buf->buffer);
         buf->buffer = 0;
     }
-    buf->host_view = NULL;
+    buf->host_view = nullptr;
     buf->bytes     = 0;
     return 0;
 }

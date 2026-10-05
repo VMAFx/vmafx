@@ -27,11 +27,11 @@
  *  vmaf_ssim_emit_ratio_score_named(), nonfinite_score.h).
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -67,7 +67,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 /* The moment planes of pass 0: mux, muy, x2, xy, y2. */
 #define ISSIM_MOMENT_PLANES 5u
 
-typedef struct IntegerSsimStateMetal {
+using IntegerSsimStateMetal = struct IntegerSsimStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer terms;     /* fp64 bit pattern per pixel, raster order */
     VmafMetalContext *ctx;
@@ -91,7 +91,7 @@ typedef struct IntegerSsimStateMetal {
     unsigned bpc;
 
     VmafDictionary *feature_name_dict;
-} IntegerSsimStateMetal;
+};
 
 /* ------------------------------------------------------------------ */
 /* Options                                                              */
@@ -112,7 +112,7 @@ static const VmafOption options[] = {
         .type        = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
-    {0}
+    {.name=nullptr}
 };
 
 /* ------------------------------------------------------------------ */
@@ -163,11 +163,11 @@ static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -213,11 +213,11 @@ static int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigne
 static int allocate(IntegerSsimStateMetal *s)
 {
     const size_t pixels = (size_t)s->frame_w * (size_t)s->frame_h;
-    int err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, pixels * sizeof(uint64_t));
+    int const err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, pixels * sizeof(uint64_t));
     if (err != 0) { return err; }
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
     id<MTLBuffer> hb = [device newBufferWithLength:ISSIM_MOMENT_PLANES * pixels * sizeof(int64_t)
@@ -246,7 +246,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                           fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
     if (err != 0) {
         /* close_fex_metal releases what was made; it tolerates the rest. */
@@ -288,8 +288,8 @@ static void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd
     uint32_t params[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h,
                           (uint32_t)row_bytes, (uint32_t)row_bytes};
     [enc setBytes:params length:sizeof(params) atIndex:3];
-    MTLSize tg   = MTLSizeMake(16, 8, 1);
-    MTLSize grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
+    MTLSize const tg   = MTLSizeMake(16, 8, 1);
+    MTLSize const grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 }
@@ -301,8 +301,8 @@ static void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->terms.buffer offset:0 atIndex:1];
     [enc setBytes:&s->params length:sizeof(s->params) atIndex:2];
-    MTLSize tg   = MTLSizeMake(16, 8, 1);
-    MTLSize grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
+    MTLSize const tg   = MTLSizeMake(16, 8, 1);
+    MTLSize const grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 }
@@ -321,9 +321,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         return -EINVAL;
     }
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -345,9 +345,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
+    IntegerSsimStateMetal  const*s = (IntegerSsimStateMetal *)fex->priv;
     const uint64_t *terms = (const uint64_t *)s->terms.host_view;
-    if (terms == NULL) { return -EINVAL; }
+    if (terms == nullptr) { return -EINVAL; }
 
     /* calc_ssim(): the frame sum in the reference's order, then ssim / ssimw. */
     const double total_ssim = issim_frame_sum(terms, (size_t)s->frame_w * s->frame_h);
@@ -362,20 +362,20 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = NULL; }
-    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = NULL; }
-    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = NULL; }
-    if (s->hbuf_buf)     { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                   s->hbuf_buf     = NULL; }
+    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = nullptr; }
+    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = nullptr; }
+    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = nullptr; }
+    if (s->hbuf_buf)     { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                   s->hbuf_buf     = nullptr; }
 
     const int err = vmaf_metal_kernel_buffer_free(&s->terms, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
 static const char *provided_features[] = {
-    "ssim", NULL
+    "ssim", nullptr
 };
 
 extern "C" {
@@ -389,7 +389,7 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_metal = {
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerSsimStateMetal),

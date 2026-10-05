@@ -27,11 +27,11 @@
  *  subsampling per pixel format (Research-0094).
  */
 
-#include <errno.h>
-#include <float.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cfloat>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -60,7 +60,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define PSNR_NUM_PLANES 3U
 #define PSNR_BLOCK 16U
 
-typedef struct IntegerPsnrStateMetal {
+using IntegerPsnrStateMetal = struct IntegerPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
     /* One exact uint64 SSE per threadgroup, per active plane. */
     VmafMetalKernelBuffer rb[PSNR_NUM_PLANES];
@@ -92,7 +92,7 @@ typedef struct IntegerPsnrStateMetal {
     uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
 
     VmafDictionary *feature_name_dict;
-} IntegerPsnrStateMetal;
+};
 
 /* The CPU integer_psnr.c table: same names, defaults, ranges and flags. */
 static const VmafOption options[] = {
@@ -141,7 +141,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0}};
+    {.name=nullptr}};
 
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
 static const char *const mse_name[PSNR_NUM_PLANES] = {"mse_y", "mse_cb", "mse_cr"};
@@ -160,11 +160,11 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -187,8 +187,8 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 
 static int psnr_metal_load_pipelines(IntegerPsnrStateMetal *s)
 {
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
     return build_pipelines(s, (__bridge id<MTLDevice>)dh);
 }
 
@@ -231,24 +231,24 @@ static void psnr_metal_init_scores(IntegerPsnrStateMetal *s, unsigned bpc)
 static int psnr_metal_release(IntegerPsnrStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (s->pso_16bpc != NULL) {
+    if (s->pso_16bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
-    if (s->pso_8bpc != NULL) {
+    if (s->pso_8bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
-    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
-        const int e = vmaf_metal_kernel_buffer_free(&s->rb[p], s->ctx);
+    for (auto & p : s->rb) {
+        const int e = vmaf_metal_kernel_buffer_free(&p, s->ctx);
         if (e != 0 && rc == 0) { rc = e; }
     }
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != nullptr) {
         const int d = vmaf_dictionary_free(&s->feature_name_dict);
         if (d != 0 && rc == 0) { rc = d; }
     }
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return rc;
 }
 
@@ -273,7 +273,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
     if (err != 0) {
         (void)psnr_metal_release(s);
@@ -342,9 +342,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)index;
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
@@ -364,7 +364,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int psnr_metal_plane_sse(const IntegerPsnrStateMetal *s, unsigned p, uint64_t *sse)
 {
     const uint64_t *parts = (const uint64_t *)s->rb[p].host_view;
-    if (parts == NULL) { return -EIO; }
+    if (parts == nullptr) { return -EIO; }
     const size_t n = psnr_metal_groups(s, p);
     uint64_t sum = 0U;
     for (size_t i = 0; i < n; i++) {
@@ -433,7 +433,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return psnr_metal_release((IntegerPsnrStateMetal *)fex->priv);
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

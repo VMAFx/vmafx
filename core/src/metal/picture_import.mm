@@ -30,11 +30,11 @@
  *  the Vulkan v1 contract before ADR-0251 ring back-pressure landed.
  */
 
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -82,15 +82,15 @@ struct MetalImportRing {
 static struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
 {
     if (w == 0u || h == 0u) {
-        return NULL;
+        return nullptr;
     }
     if (bpc != 8u && bpc != 10u && bpc != 12u && bpc != 16u) {
-        return NULL;
+        return nullptr;
     }
     struct MetalImportRing *r =
         (struct MetalImportRing *)calloc(1, sizeof(*r));
-    if (r == NULL) {
-        return NULL;
+    if (r == nullptr) {
+        return nullptr;
     }
     r->w = w;
     r->h = h;
@@ -129,7 +129,7 @@ static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned p
 {
     const VmafMetalSurfaceFormat *fmt =
         vmaf_metal_surface_format((uint32_t)IOSurfaceGetPixelFormat(surf));
-    if (fmt == NULL) {
+    if (fmt == nullptr) {
         return -ENOTSUP;
     }
     const size_t src_plane = (size_t)vmaf_metal_surface_src_plane(fmt, plane);
@@ -149,11 +149,11 @@ static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned p
 static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                       const VmafMetalPlaneRead *rd)
 {
-    if (pic->data[plane] == NULL) {
+    if (pic->data[plane] == nullptr) {
         return -EINVAL;
     }
     const void *src = IOSurfaceGetBaseAddressOfPlane(surf, (size_t)rd->src_plane);
-    if (src == NULL) {
+    if (src == nullptr) {
         return -EIO;
     }
     const size_t src_stride = IOSurfaceGetBytesPerRowOfPlane(surf, (size_t)rd->src_plane);
@@ -169,10 +169,10 @@ static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
 int vmaf_metal_state_init_external(VmafMetalState **out,
                                    VmafMetalExternalHandles handles)
 {
-    if (out == NULL) {
+    if (out == nullptr) {
         return -EINVAL;
     }
-    *out = NULL;
+    *out = nullptr;
 
     id<MTLDevice> device = nil;
     if (handles.device != 0u) {
@@ -213,7 +213,7 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
 
     VmafMetalState *state = (VmafMetalState *)calloc(1, sizeof(*state));
-    if (state == NULL) {
+    if (state == nullptr) {
         return -ENOMEM;
     }
     state->ctx.device_index = -1; /* external; no -d N enumeration */
@@ -227,7 +227,7 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
      * __bridge_transfer in vmaf_metal_state_free, regardless of whether the
      * queue was caller-supplied or created here. */
     state->ctx.command_queue = (__bridge_retained void *)queue;
-    state->import_ring = NULL;
+    state->import_ring = nullptr;
 
     *out = state;
     return 0;
@@ -240,9 +240,9 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
 static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsigned bpc,
                            struct MetalImportRing **out)
 {
-    if (state->import_ring == NULL) {
-        struct MetalImportRing *r = ring_alloc(w, h, bpc);
-        if (r == NULL) {
+    if (state->import_ring == nullptr) {
+        struct MetalImportRing  const*r = ring_alloc(w, h, bpc);
+        if (r == nullptr) {
             return -ENOMEM;
         }
         state->import_ring = r;
@@ -273,7 +273,7 @@ static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref
         *filled = 0u;
     }
     if (!*pending) {
-        int err = vmaf_picture_alloc(pic, ring->pix_fmt, ring->bpc, ring->w, ring->h);
+        int const err = vmaf_picture_alloc(pic, ring->pix_fmt, ring->bpc, ring->w, ring->h);
         if (err) {
             return err;
         }
@@ -291,12 +291,12 @@ static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref
 static int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                              const VmafMetalPlaneRead *rd)
 {
-    IOReturn lock_ret = IOSurfaceLock(surf, kIOSurfaceLockReadOnly, NULL);
+    IOReturn const lock_ret = IOSurfaceLock(surf, kIOSurfaceLockReadOnly, nullptr);
     if (lock_ret != kIOReturnSuccess) {
         return -EIO;
     }
-    int err = copy_plane(surf, pic, plane, rd);
-    IOReturn unlock_ret = IOSurfaceUnlock(surf, kIOSurfaceLockReadOnly, NULL);
+    int const err = copy_plane(surf, pic, plane, rd);
+    IOReturn const unlock_ret = IOSurfaceUnlock(surf, kIOSurfaceLockReadOnly, nullptr);
     if (err) {
         return err;
     }
@@ -307,7 +307,7 @@ int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
                               unsigned plane, unsigned w, unsigned h,
                               unsigned bpc, int is_ref, unsigned index)
 {
-    if (state == NULL || iosurface == 0u || plane >= 3u) {
+    if (state == nullptr || iosurface == 0u || plane >= 3u) {
         return -EINVAL;
     }
     if (w == 0u || h == 0u || (is_ref != 0 && is_ref != 1)) {
@@ -315,13 +315,13 @@ int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
     }
     IOSurfaceRef surf = (IOSurfaceRef)(uintptr_t)iosurface;
 
-    struct MetalImportRing *ring = NULL;
+    struct MetalImportRing *ring = nullptr;
     int err = import_ring_for(state, w, h, bpc, &ring);
     if (err) {
         return err;
     }
-    VmafPicture *pic = NULL;
-    unsigned *filled = NULL;
+    VmafPicture *pic = nullptr;
+    unsigned *filled = nullptr;
     err = slot_picture(ring, index, is_ref, &pic, &filled);
     if (err) {
         return err;
@@ -341,7 +341,7 @@ int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
 
 int vmaf_metal_wait_compute(VmafMetalState *state)
 {
-    if (state == NULL) {
+    if (state == nullptr) {
         return -EINVAL;
     }
     /* Synchronous CPU memcpy path: data is host-visible the moment
@@ -358,10 +358,10 @@ int vmaf_metal_wait_compute(VmafMetalState *state)
 int vmaf_metal_state_build_pictures(VmafMetalState *state, unsigned index,
                                     VmafPicture *out_ref, VmafPicture *out_dis)
 {
-    if (state == NULL || out_ref == NULL || out_dis == NULL) {
+    if (state == nullptr || out_ref == nullptr || out_dis == nullptr) {
         return -EINVAL;
     }
-    if (state->import_ring == NULL) {
+    if (state->import_ring == nullptr) {
         return -EINVAL;
     }
     struct MetalImportRing *ring = (struct MetalImportRing *)state->import_ring;
@@ -400,13 +400,13 @@ int vmaf_metal_state_build_pictures(VmafMetalState *state, unsigned index,
 
 void vmaf_metal_state_import_ring_free(VmafMetalState *state)
 {
-    if (state == NULL || state->import_ring == NULL) {
+    if (state == nullptr || state->import_ring == nullptr) {
         return;
     }
     struct MetalImportRing *ring = (struct MetalImportRing *)state->import_ring;
-    for (unsigned i = 0u; i < VMAF_METAL_IMPORT_RING; i++) {
-        slot_release(&ring->slots[i]);
+    for (auto & slot : ring->slots) {
+        slot_release(&slot);
     }
     free(ring);
-    state->import_ring = NULL;
+    state->import_ring = nullptr;
 }

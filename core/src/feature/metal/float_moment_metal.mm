@@ -22,10 +22,10 @@
  *                 float_moment_ref2nd, float_moment_dis2nd.
  */
 
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -67,7 +67,7 @@ static const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
     "float_moment_row_units",   "float_moment_ordered_totals",
 };
 
-typedef struct FloatMomentStateMetal {
+using FloatMomentStateMetal = struct FloatMomentStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb[FM_PARTIAL_BUFFER_COUNT]; /* 4 uint64 lo/hi pairs */
     VmafMetalContext *ctx;
@@ -85,16 +85,16 @@ typedef struct FloatMomentStateMetal {
     unsigned bpc;
 
     VmafDictionary *feature_name_dict;
-} FloatMomentStateMetal;
+};
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {{.name=nullptr}};
 
 static void release_sum_pipelines(FloatMomentStateMetal *s)
 {
-    for (unsigned k = 0u; k < FM_SUM_KERNEL_COUNT; ++k) {
-        if (s->pso_sum[k]) {
-            (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_sum[k];
-            s->pso_sum[k] = NULL;
+    for (auto & k : s->pso_sum) {
+        if (k) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)k;
+            k = nullptr;
         }
     }
 }
@@ -128,11 +128,11 @@ static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -162,8 +162,8 @@ static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
  * can pass 2^53 units; none otherwise. */
 static void free_sum_buffers(FloatMomentStateMetal *s)
 {
-    for (unsigned b = 0u; b < FM_SUM_BUFFER_COUNT; ++b) {
-        (void)vmaf_metal_kernel_buffer_free(&s->sum_buf[b], s->ctx);
+    for (auto & b : s->sum_buf) {
+        (void)vmaf_metal_kernel_buffer_free(&b, s->ctx);
     }
 }
 
@@ -227,8 +227,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_rb; }
 
     {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) {
+        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        if (dh == nullptr) {
             err = -ENODEV;
             goto fail_sum;
         }
@@ -238,7 +238,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict = vmaf_feature_name_dict_from_provided_features(
         fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
+    if (s->feature_name_dict == nullptr) {
         err = -ENOMEM;
         goto fail_pso;
     }
@@ -247,24 +247,24 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 fail_pso:
     if (s->pso_8bpc) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
     if (s->pso_16bpc) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
     release_sum_pipelines(s);
 fail_sum:
     if (s->rounds) { free_sum_buffers(s); }
 fail_rb:
-    for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        (void)vmaf_metal_kernel_buffer_free(&s->rb[b], s->ctx);
+    for (auto & b : s->rb) {
+        (void)vmaf_metal_kernel_buffer_free(&b, s->ctx);
     }
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -359,9 +359,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
@@ -390,8 +390,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     const size_t par_size = s->partials_count * sizeof(uint32_t);
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-    for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+    for (auto & b : s->rb) {
+        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)b.buffer;
         [blit fillBuffer:buf range:NSMakeRange(0, par_size) value:0];
     }
     [blit endEncoding];
@@ -419,8 +419,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
     [enc setBytes:dim length:sizeof(dim) atIndex:11];
 
-    MTLSize tg = MTLSizeMake(16, 16, 1);
-    MTLSize grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
+    MTLSize const tg = MTLSizeMake(16, 16, 1);
+    MTLSize const grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     if (s->rounds) { encode_sum_passes(s, enc, ref_buf, dis_buf, row_bytes); }
     [enc endEncoding];
@@ -446,7 +446,7 @@ static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
     const uint32_t *parts[FM_PARTIAL_BUFFER_COUNT];
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
         parts[b] = (const uint32_t *)s->rb[b].host_view;
-        if (parts[b] == NULL) { return; }
+        if (parts[b] == nullptr) { return; }
     }
     for (size_t i = 0; i < s->partials_count; ++i) {
         sum[0] += reconstruct_partial(parts[0], parts[1], i);
@@ -464,7 +464,7 @@ static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
 {
     if (!s->rounds) { return 0; }
     const uint64_t *frame = (const uint64_t *)s->sum_buf[FM_SUM_FRAME].host_view;
-    if (frame == NULL) { return -ENODEV; }
+    if (frame == nullptr) { return -ENODEV; }
     sum[2] = frame[2];
     sum[3] = frame[3];
     return 0;
@@ -473,7 +473,7 @@ static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMomentStateMetal *s = (FloatMomentStateMetal *)fex->priv;
+    FloatMomentStateMetal  const*s = (FloatMomentStateMetal *)fex->priv;
     uint64_t sum[4] = {0u, 0u, 0u, 0u};
     accumulate_partials(s, sum);
     const int sum_err = apply_rounded_sums(s, sum);
@@ -512,23 +512,23 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
     if (s->pso_16bpc) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
     if (s->pso_8bpc) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
 
     release_sum_pipelines(s);
-    for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        int err = vmaf_metal_kernel_buffer_free(&s->rb[b], s->ctx);
+    for (auto & b : s->rb) {
+        int const err = vmaf_metal_kernel_buffer_free(&b, s->ctx);
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->rounds) { free_sum_buffers(s); }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -538,7 +538,7 @@ static const char *provided_features[] = {
     "float_moment_dis1st",
     "float_moment_ref2nd",
     "float_moment_dis2nd",
-    NULL,
+    nullptr,
 };
 
 extern "C" {
@@ -552,7 +552,7 @@ VmafFeatureExtractor vmaf_fex_float_moment_metal = {
     .init = init_fex_metal,
     .submit = submit_fex_metal,
     .collect = collect_fex_metal,
-    .flush = NULL,
+    .flush = nullptr,
     .close = close_fex_metal,
     .options = options,
     .priv_size = sizeof(FloatMomentStateMetal),

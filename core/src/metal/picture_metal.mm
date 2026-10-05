@@ -16,8 +16,8 @@
  *  can stay pure-C.
  */
 
-#include <errno.h>
-#include <stddef.h>
+#include <cerrno>
+#include <cstddef>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -29,15 +29,15 @@ extern "C" {
 
 int vmaf_metal_picture_alloc(VmafMetalContext *ctx, void **out, size_t size)
 {
-    if (ctx == NULL || out == NULL) {
+    if (ctx == nullptr || out == nullptr) {
         return -EINVAL;
     }
     if (size == 0) {
         return -EINVAL;
     }
 
-    void *device_handle = vmaf_metal_context_device_handle(ctx);
-    if (device_handle == NULL) {
+    void  const*device_handle = vmaf_metal_context_device_handle(ctx);
+    if (device_handle == nullptr) {
         return -ENODEV;
     }
     id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
@@ -57,7 +57,7 @@ int vmaf_metal_picture_alloc(VmafMetalContext *ctx, void **out, size_t size)
 void vmaf_metal_picture_free(VmafMetalContext *ctx, void *buf)
 {
     (void)ctx;
-    if (buf == NULL) {
+    if (buf == nullptr) {
         return;
     }
     /* Bridge-transfer back to ARC; the temporary id<MTLBuffer> goes
