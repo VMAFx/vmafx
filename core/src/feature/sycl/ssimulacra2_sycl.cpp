@@ -116,7 +116,14 @@ constexpr float SS2S_ADVICE_MAX = 0x1p100f;
 /* Shapes of the kernels that run the fp64 operations in integers. */
 constexpr int SS2S_UNITS_SG = 16;
 constexpr int SS2S_UNITS_GRF = 0;
-constexpr int SS2S_SLOT_SG = 16;
+/* The slot kernel needs more than the 128 registers of a SIMD-16 thread. It
+ * leaves the sub-group size to the compiler (ADR-1501) with the large register
+ * file: Xe-LP (tgllp, adl-*, rpl-*) has no large register file and spilled
+ * 384 bytes at a required SIMD-16 (measured on a UHD 770); without a required
+ * size icpx compiles it at SIMD-8 there and at SIMD-16 with 256 registers
+ * everywhere else. Its result does not depend on the sub-group size: it
+ * shares values only through local memory and work-group barriers. */
+constexpr int SS2S_SLOT_SG = 0;
 constexpr int SS2S_SLOT_GRF = 256;
 /* The walk runs on one lane; 16 is the narrowest sub-group every AOT target
  * accepts (ADR-1468). */
@@ -1147,7 +1154,7 @@ class Ss2SlotKernel : public VmafSyclKernelShape<SS2S_SLOT_SG, SS2S_SLOT_GRF>
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_SLOT_SG) void operator()(sycl::nd_item<2> it) const
+    void operator()(sycl::nd_item<2> it) const
     {
         const auto which = (unsigned)it.get_global_id(0);
         const auto lane = (unsigned)it.get_local_id(1);

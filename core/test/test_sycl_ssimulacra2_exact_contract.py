@@ -90,11 +90,13 @@ HOST_SUMS = "sum[k] = std::bit_cast<double>(totals[(size_t)c * SS2S_SUMS + k]);"
 ADVICE_READ = "args.chunk_sums + (size_t)c * args.chunks * SS2S_SUMS + k;"
 ADVICE_USES = 4  # the struct member, the store, the plan's read, the frame chain
 # Measured on an Arc A380: wider sub-groups spill registers, and the slot
-# kernel does at the default register file (scratch memory, ADR-1395).
+# kernel does at the default register file (scratch memory, ADR-1395). On
+# Xe-LP, which has no large register file, the slot kernel spills at a
+# required SIMD-16 (UHD 770): its size is left to the compiler (ADR-1501).
 SHAPES = (
     "constexpr int SS2S_UNITS_SG = 16;",
     "constexpr int SS2S_UNITS_GRF = 0;",
-    "constexpr int SS2S_SLOT_SG = 16;",
+    "constexpr int SS2S_SLOT_SG = 0;",
     "constexpr int SS2S_SLOT_GRF = 256;",
     "constexpr int SS2S_WALK_SG = 16;",
     "constexpr int SS2S_WALK_GRF = 0;",
@@ -361,6 +363,10 @@ class Ssimulacra2SyclExactContract(unittest.TestCase):
 
     def test_wider_sub_group_is_detected(self) -> None:
         failures = _replaced(TWIN, SHAPES[0], "constexpr int SS2S_UNITS_SG = 32;")
+        self._assert_detected(failures, "kernel shape changed")
+
+    def test_required_slot_sub_group_is_detected(self) -> None:
+        failures = _replaced(TWIN, SHAPES[2], "constexpr int SS2S_SLOT_SG = 16;")
         self._assert_detected(failures, "kernel shape changed")
 
     def test_small_register_file_is_detected(self) -> None:

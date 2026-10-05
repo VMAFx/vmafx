@@ -320,7 +320,9 @@ class SyclAotCommandRewrite(unittest.TestCase):
             aot_build.units(JIT_NINJA)[0][2], ["dg2-g11", "lnl-m"], "/t/0.o"
         )
         start = argv.index("-fsycl")
-        self.assertEqual(argv[start : start + 6], [*aot_build.AOT_ARGS, "-device dg2-g11,lnl-m"])
+        # Uncompressed: the scratch check reads the images from the object.
+        uncompressed = [a for a in aot_build.AOT_ARGS if a != aot_build.COMPRESSION]
+        self.assertEqual(argv[start : start + 5], [*uncompressed, "-device dg2-g11,lnl-m"])
         self.assertEqual(argv[-2:], ["-o", "/t/0.o"])
         self.assertNotIn("-MD", argv)
         self.assertNotIn("src/float_motion_sycl.o.d", argv)
@@ -331,7 +333,8 @@ class SyclAotCommandRewrite(unittest.TestCase):
         argv = aot_build.for_targets(aot_build.units(AOT_NINJA)[0][2], ["lnl-m"], "/t/1.o")
         self.assertEqual([a for a in argv if a.startswith("-device ")], ["-device lnl-m"])
         for argument in aot_build.AOT_ARGS:
-            self.assertEqual(argv.count(argument), 1, argument)
+            expected = 0 if argument == aot_build.COMPRESSION else 1
+            self.assertEqual(argv.count(argument), expected, argument)
 
 
 if __name__ == "__main__":

@@ -952,8 +952,28 @@ struct VifHoriCoeffs {
 
 constexpr int VIF_HORI_MAX_SUBGROUPS = 32;
 
+/* The scale-0 instance of the SIMD-16 horizontal kernel (17 taps) spilled
+ * 384 bytes on Xe-LP (tgllp, adl-*, rpl-*: no large register file; measured
+ * on a UHD 770) and 128 bytes on Xe-LPG (mtl-*, arl-*) at a required SIMD-16
+ * with the default register file (ADR-1395). It leaves the sub-group size to
+ * the compiler with the large register file (ADR-1501): SIMD-8 on Xe-LP,
+ * SIMD-16 with 256 registers on Xe-HPG and Xe-LPG, SIMD-32 with 256 on Xe2,
+ * no spill on any target of the default AOT list. Its sums are exact int64
+ * additions, so the size does not change them, and a 16x16 work-group has at
+ * most VIF_HORI_MAX_SUBGROUPS sub-groups of 8. */
+constexpr int vif_hori_sg_size(int scale, int sg_size)
+{
+    return (scale == 0 && sg_size == 16) ? 0 : sg_size;
+}
+
+constexpr int vif_hori_grf_size(int scale, int sg_size)
+{
+    return (scale == 0) ? 256 : vif_grf_size(sg_size);
+}
+
 template <int SCALE, int SG_SIZE>
-class IntegerVifHoriKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_size(SG_SIZE)>
+class IntegerVifHoriKernel : public VmafSyclKernelShape<vif_hori_sg_size(SCALE, SG_SIZE),
+                                                        vif_hori_grf_size(SCALE, SG_SIZE)>
 {
   public:
     IntegerVifHoriKernel(const VifHoriLaunchParams &p, const VifHoriCoeffs &c,

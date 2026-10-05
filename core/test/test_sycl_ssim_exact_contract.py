@@ -46,7 +46,7 @@ PLAIN_INLINE = re.compile(r"^inline\s+(?!constexpr)", re.M)
 
 TERM_STORE = "a_.terms[id[0] * (size_t)a_.width + id[1]] ="
 KERNEL_SHAPE = "class IssimTermKernel : public VmafSyclKernelShape<ISSIM_TERM_SG, ISSIM_TERM_GRF>"
-SHAPE_VALUES = ("constexpr int ISSIM_TERM_SG = 16;", "constexpr int ISSIM_TERM_GRF = 256;")
+SHAPE_VALUES = ("constexpr int ISSIM_TERM_SG = 0;", "constexpr int ISSIM_TERM_GRF = 256;")
 FLATTENED = "__attribute__((flatten, always_inline)) static inline uint64_t\ninteger_ssim_term("
 # frame_sum_of_terms() is shared with float_ssim_sycl (ADR-1463) and sits
 # above the fixed-point twin's section.
@@ -142,7 +142,10 @@ def _kernel_failures(twin: str) -> list[str]:
     if FLOAT_TYPE.search(code):
         failures.append(f"{TWIN}: the fixed-point twin computes in float")
     if KERNEL_SHAPE not in code or any(value not in code for value in SHAPE_VALUES):
-        failures.append(f"{TWIN}: the term kernel is not SIMD-16 with the 256-entry register file")
+        failures.append(
+            f"{TWIN}: the term kernel does not leave its sub-group size to the compiler with the "
+            "256-entry register file"
+        )
     if FLATTENED not in code:
         failures.append(f"{TWIN}: the term is not flattened into the kernel")
     return failures
@@ -242,10 +245,11 @@ class IntegerSsimSyclExactContract(unittest.TestCase):
         failures = _replaced(TWIN, TERM_STORE, "const uint64_t term =")
         self._assert_detected(failures, "raster position")
 
-    def test_wider_sub_group_is_detected(self) -> None:
-        # SIMD-32 spills registers: scratch memory (ADR-1395).
-        failures = _replaced(TWIN, SHAPE_VALUES[0], "constexpr int ISSIM_TERM_SG = 32;")
-        self._assert_detected(failures, "SIMD-16")
+    def test_required_sub_group_is_detected(self) -> None:
+        # A required SIMD-16 spills on Xe-LP, SIMD-32 everywhere (ADR-1395).
+        for size in (16, 32):
+            failures = _replaced(TWIN, SHAPE_VALUES[0], f"constexpr int ISSIM_TERM_SG = {size};")
+            self._assert_detected(failures, "sub-group size")
 
     def test_unflattened_term_is_detected(self) -> None:
         failures = _replaced(

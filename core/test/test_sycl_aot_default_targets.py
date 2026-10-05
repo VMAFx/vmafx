@@ -21,6 +21,14 @@ This test runs in a build of any configuration and needs no device:
    every SYCL translation unit of ``build.ninja`` again, for the full list,
    into a scratch directory, and reports each unit that fails with the
    compiler's lines for the kernel and the target.
+3. From the objects of that compile it reads every target's kernel image and
+   fails on a kernel that uses scratch memory (a register spill or a private
+   array, ADR-1395) on any target, outside ``sycl_aot_scratch.KNOWN_SCRATCH``.
+   The device audit ``test_sycl_kernel_scratch`` sees only the GPU it runs
+   on; Xe-LP, which has no 256-entry register file, spilled in kernels that
+   were scratch-free on the Arc A380 and B580. A build configured with the
+   full list compiled its images compressed, so the check is not run there and
+   the test says so.
 
 Exit 0: everything compiles. Exit 1: a failure, listed. Exit 77 (skip): the
 build has no icpx SYCL units, or ocloc is not installed; the reason is
@@ -39,8 +47,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import sycl_aot_scratch as scratch
 import sycl_aot_targets as aot
 
 SKIP = 77
@@ -60,6 +70,10 @@ AOT_ARGS = (
     "-Xsycl-target-backend=spir64_gen",
 )
 DIAGNOSTIC = re.compile(r"error: in kernel|unsupported on this platform|Build failed for")
+# The images are compressed into the object only to save space; uncompressed,
+# sycl_aot_scratch reads them from the object.
+COMPRESSION = "--offload-compress"
+MATCHED_IDS = re.compile(r"Matched ids:\s*(\d+\.\d+\.\d+)")
 
 
 def unescape(command: str) -> str:
@@ -84,7 +98,7 @@ def configured_targets(argv: list[str]) -> list[str]:
 
 
 def for_targets(argv: list[str], targets: list[str], output: str) -> list[str]:
-    """The unit's command, compiling for `targets` into `output`, no depfile."""
+    """The unit's command, compiling for `targets` into `output`, no depfile, uncompressed."""
     device = "-device " + ",".join(targets)
     rewritten: list[str] = []
     skip = False
@@ -92,8 +106,8 @@ def for_targets(argv: list[str], targets: list[str], output: str) -> list[str]:
         if skip:
             skip = False
         elif argument == "-fsycl":
-            rewritten += [*AOT_ARGS, device]
-        elif argument in AOT_ARGS or argument.startswith("-device ") or argument == "-MD":
+            rewritten += [*(a for a in AOT_ARGS if a != COMPRESSION), device]
+        elif argument in (*AOT_ARGS, "-MD") or argument.startswith(("-device ", COMPRESSION)):
             continue
         elif argument == "-MF":
             skip = True
@@ -120,31 +134,77 @@ def measured_size_failures(ocloc: str, targets: list[str], workdir: Path) -> lis
     return failures
 
 
-def compile_unit(build_dir: Path, source: str, argv: list[str]) -> tuple[str, list[str]]:
-    """Run one rewritten compile; the unit's diagnostics when it fails."""
+def target_ips(ocloc: str, targets: list[str]) -> dict[str, set[str]]:
+    """GFX IP version -> the families of the default targets that have it (`ocloc ids`)."""
+    families: dict[str, set[str]] = {}
+    for target in targets:
+        result = subprocess.run(  # noqa: S603 -- the resolved ocloc, fixed arguments, no shell
+            [ocloc, "ids", target], capture_output=True, text=True, timeout=120, check=False
+        )
+        match = MATCHED_IDS.search(result.stdout + result.stderr)
+        if match is None:
+            raise RuntimeError(f"ocloc ids {target}: no GFX IP version in its output")
+        families.setdefault(match.group(1), set()).add(aot.family(target))
+    return families
+
+
+@dataclass
+class UnitResult:
+    """One rewritten compile: its diagnostics, its images and their kernels in scratch."""
+
+    source: str
+    diagnostics: list[str]
+    images: list[str] = field(default_factory=list)  # the GFX IP of each image
+    in_scratch: list[scratch.KernelScratch] = field(default_factory=list)
+
+
+def compile_unit(build_dir: Path, source: str, argv: list[str], output: str) -> UnitResult:
+    """Run one rewritten compile and read the kernel images of its object."""
     result = subprocess.run(  # noqa: S603 -- the build's own compile command, no shell
         argv, cwd=build_dir, capture_output=True, text=True, timeout=3000, check=False
     )
-    if result.returncode == 0:
-        return source, []
-    text = result.stdout + result.stderr
-    lines = [line.strip() for line in text.splitlines() if DIAGNOSTIC.search(line)]
-    return source, lines or [text.strip()[-2000:] or f"exit status {result.returncode}"]
+    if result.returncode != 0:
+        text = result.stdout + result.stderr
+        lines = [line.strip() for line in text.splitlines() if DIAGNOSTIC.search(line)]
+        return UnitResult(source, lines or [text.strip()[-2000:] or f"exit {result.returncode}"])
+    images, in_scratch = scratch.object_scratch(Path(output).read_bytes())
+    return UnitResult(source, [], images, in_scratch)
 
 
-def compile_failures(build_dir: Path, targets: list[str], jobs: int, workdir: Path) -> list[str]:
-    """Every unit of the build that does not compile for `targets`."""
+def scratch_failures(results: list[UnitResult], ip_families: dict[str, set[str]]) -> list[str]:
+    """Kernels in scratch memory on any target, and images that do not cover the list."""
+    found = [entry for result in results for entry in result.in_scratch]
+    images = [ip for result in results for ip in result.images]
+    failures, notes = scratch.judge(found, ip_families)
+    print(
+        f"read {len(images)} kernel images for {len(set(images))} GFX IP versions; "
+        f"kernels in scratch memory: {len(found)}, "
+        f"{len(found) - len(failures)} of them in KNOWN_SCRATCH"
+    )
+    if set(images) != set(ip_families):
+        failures.append(
+            f"kernel images for GFX IP {sorted(set(images))}; the default list has {sorted(ip_families)}"
+        )
+    for note in notes:
+        print(f"note: {note}")
+    return failures
+
+
+def compile_failures(
+    build_dir: Path, targets: list[str], jobs: int, workdir: Path, ip_families: dict[str, set[str]]
+) -> list[str]:
+    """Every unit of the build that does not compile for `targets`, and every scratch kernel."""
     found = units((build_dir / "build.ninja").read_text(encoding="utf-8"))
-    tasks = [
-        (source, for_targets(argv, targets, str(workdir / f"{index}.o")))
-        for index, (_output, source, argv) in enumerate(found)
-    ]
-    failures = []
+    tasks = []
+    for index, (_output, source, argv) in enumerate(found):
+        output = str(workdir / f"{index}.o")
+        tasks.append((source, for_targets(argv, targets, output), output))
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-        for source, lines in pool.map(lambda task: compile_unit(build_dir, *task), tasks):
-            for line in lines:
-                failures.append(f"{source}: {line}")
+        results = list(pool.map(lambda task: compile_unit(build_dir, *task), tasks))
+    failures = [f"{r.source}: {line}" for r in results for line in r.diagnostics]
     print(f"compiled {len(tasks)} SYCL translation units for {len(targets)} targets")
+    if not failures:
+        failures += scratch_failures(results, ip_families)
     return failures
 
 
@@ -164,9 +224,16 @@ def run(build_dir: Path, jobs: int) -> int:
         failures = measured_size_failures(ocloc, targets, workdir)
         configured = configured_targets(found[0][2])
         if set(targets) <= set(configured):
-            print(f"the build compiled its {len(found)} SYCL translation units for the default list")
+            print(
+                f"the build compiled its {len(found)} SYCL translation units for the default list"
+            )
+            print(
+                "scratch check not run: this build's images are compressed in its objects; "
+                "run the suite from a build configured with another target list"
+            )
         else:
-            failures += compile_failures(build_dir, targets, jobs, workdir)
+            ip_families = target_ips(ocloc, targets)
+            failures += compile_failures(build_dir, targets, jobs, workdir, ip_families)
     for failure in failures:
         print(f"FAIL: {failure}")
     return 1 if failures else 0
