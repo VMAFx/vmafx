@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T08:52:29Z",
+  "generated_at": "2026-10-05T10:18:16Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "60ec9bc275831de60e605f974a80d54e04776d6d",
-  "total_infractions": 365,
+  "commit_sha": "35c32953ba99bff1102a8203044a538718e53238",
+  "total_infractions": 352,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -912,123 +912,6 @@
       "message": "Function 'assert_equivalent_commands' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:assert_equivalent_commands",
       "fingerprint": "compat/python-vmaf/tools/testutils.py:HISS-04:fn:assert_equivalent_commands#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_host_neon.c",
-      "line_number": 69,
-      "symbol": "ssimulacra2_host_linear_rgb_to_xyb_neon",
-      "message": "Function 'ssimulacra2_host_linear_rgb_to_xyb_neon' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_host_linear_rgb_to_xyb_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_host_neon.c:HISS-04:fn:ssimulacra2_host_linear_rgb_to_xyb_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 82,
-      "symbol": "ssimulacra2_linear_rgb_to_xyb_neon",
-      "message": "Function 'ssimulacra2_linear_rgb_to_xyb_neon' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_linear_rgb_to_xyb_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:ssimulacra2_linear_rgb_to_xyb_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 232,
-      "symbol": "ssimulacra2_ssim_map_neon",
-      "message": "Function 'ssimulacra2_ssim_map_neon' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_ssim_map_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:ssimulacra2_ssim_map_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 299,
-      "symbol": "ssimulacra2_edge_diff_map_neon",
-      "message": "Function 'ssimulacra2_edge_diff_map_neon' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_edge_diff_map_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:ssimulacra2_edge_diff_map_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 372,
-      "symbol": "hblur_4rows_neon",
-      "message": "Function 'hblur_4rows_neon' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:hblur_4rows_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:hblur_4rows_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 455,
-      "symbol": "vblur_simd_4cols_neon",
-      "message": "Function 'vblur_simd_4cols_neon' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:vblur_simd_4cols_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:vblur_simd_4cols_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 635,
-      "symbol": "ssimulacra2_picture_to_linear_rgb_neon",
-      "message": "Function 'ssimulacra2_picture_to_linear_rgb_neon' (113 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_picture_to_linear_rgb_neon",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:HISS-04:fn:ssimulacra2_picture_to_linear_rgb_neon#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 105,
-      "symbol": "ssimulacra2_linear_rgb_to_xyb_sve2",
-      "message": "Function 'ssimulacra2_linear_rgb_to_xyb_sve2' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_linear_rgb_to_xyb_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:ssimulacra2_linear_rgb_to_xyb_sve2#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 264,
-      "symbol": "ssimulacra2_ssim_map_sve2",
-      "message": "Function 'ssimulacra2_ssim_map_sve2' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_ssim_map_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:ssimulacra2_ssim_map_sve2#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 334,
-      "symbol": "ssimulacra2_edge_diff_map_sve2",
-      "message": "Function 'ssimulacra2_edge_diff_map_sve2' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_edge_diff_map_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:ssimulacra2_edge_diff_map_sve2#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 410,
-      "symbol": "hblur_4rows_sve2",
-      "message": "Function 'hblur_4rows_sve2' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:hblur_4rows_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:hblur_4rows_sve2#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 490,
-      "symbol": "vblur_simd_4cols_sve2",
-      "message": "Function 'vblur_simd_4cols_sve2' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:vblur_simd_4cols_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:vblur_simd_4cols_sve2#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 676,
-      "symbol": "ssimulacra2_picture_to_linear_rgb_sve2",
-      "message": "Function 'ssimulacra2_picture_to_linear_rgb_sve2' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ssimulacra2_picture_to_linear_rgb_sve2",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:HISS-04:fn:ssimulacra2_picture_to_linear_rgb_sve2#1"
     },
     {
       "rule_id": "HISS-04",

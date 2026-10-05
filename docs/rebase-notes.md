@@ -61136,3 +61136,13 @@ No score, public API or FFmpeg patch impact.
   (`mcp-server/.../server.py::_vmaf_binary`, `tools/rc1-tester/.../probe.py`)
   and `scripts/ci/run_affected_suites.py` are not test resolvers. No score,
   public API or FFmpeg patch impact.
+
+- **HISS native batch 3 (`refactor/hiss-zero-native-arm64`)**: the arm64 SSIMULACRA 2
+  kernels (`core/src/feature/arm64/ssimulacra2_neon.c`, `ssimulacra2_sve2.c`,
+  `ssimulacra2_host_neon.c`) are drivers over static helpers (`xyb_block_*`,
+  `ssim_block_*`, `edge_add_*`, `iir_*`, `vblur_*`, `ptlr_*`). An upstream or fork
+  change to one of these functions edits the helper that holds the changed
+  statement; the arithmetic and the FMA pattern stay as the ADR-1205 / ADR-1208
+  contracts fix them. In the SVE2 file constants are scalars broadcast with
+  `svdup_f32` (sizeless SVE types cannot be struct members); keep that shape. No
+  score, public API or FFmpeg patch impact.
