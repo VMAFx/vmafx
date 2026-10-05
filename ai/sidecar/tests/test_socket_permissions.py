@@ -201,6 +201,25 @@ def _published_server(
         raise AssertionError("server thread failed") from server_errors[0]
 
 
+def _wait_until_listening(sock_path: str, timeout_s: float = 3.0) -> None:
+    """Poll ``sock_path`` until a connect succeeds or ``timeout_s`` elapses."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            try:
+                probe.connect(sock_path)
+                break
+            except OSError:
+                time.sleep(0.01)
+
+
+def _wake_accept_loop(sock_path: str) -> None:
+    """Open and close one connection so a blocked accept() returns."""
+    with contextlib.suppress(OSError):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as wake:
+            wake.connect(sock_path)
+
+
 class TestSocketPermissionsAndOwnership:
     """Regression tests for Unix socket permissions and pathname ownership."""
 
@@ -646,15 +665,7 @@ class TestSocketPermissionsAndOwnership:
             )
             server_thread.start()
 
-            # Wait until server is listening
-            deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
-                    try:
-                        probe.connect(sock_path)
-                        break
-                    except OSError:
-                        time.sleep(0.01)
+            _wait_until_listening(sock_path)
 
             # Connect client
             c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -666,9 +677,7 @@ class TestSocketPermissionsAndOwnership:
             # Trigger shutdown while worker thread is still in delayed_handle sleep
             start_time = time.monotonic()
             stop_event.set()
-            with contextlib.suppress(OSError):
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as wake:
-                    wake.connect(sock_path)
+            _wake_accept_loop(sock_path)
 
             server_thread.join(timeout=2.0)
             shutdown_elapsed = time.monotonic() - start_time

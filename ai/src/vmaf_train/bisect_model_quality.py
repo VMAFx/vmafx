@@ -16,6 +16,7 @@ caller has to fix their list before proceeding.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -85,6 +86,18 @@ def _resolve_threshold(
     return chosen[0]
 
 
+def _search_boundary(check: Callable[[int], BisectStep], n_models: int) -> tuple[int, int]:
+    """Binary-search (last_good, first_bad) given index 0 passes and the last fails."""
+    lo, hi = 0, n_models - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if check(mid).passed:
+            lo = mid
+        else:
+            hi = mid
+    return lo, hi
+
+
 def bisect_model_quality(
     models: list[Path],
     features: np.ndarray,
@@ -108,19 +121,18 @@ def bisect_model_quality(
     cache: dict[int, BisectStep] = {}
 
     def check(idx: int) -> BisectStep:
-        if idx in cache:
-            return cache[idx]
-        model = models[idx]
-        report = evaluate_onnx(model, features, targets, input_name=input_name)
-        step = BisectStep(
-            index=idx,
-            model=model,
-            report=report,
-            passed=_gate(kind, threshold, report),
-        )
-        cache[idx] = step
-        result.steps.append(step)
-        return step
+        """Evaluate model ``idx`` once and log the step."""
+        if idx not in cache:
+            report = evaluate_onnx(models[idx], features, targets, input_name=input_name)
+            step = BisectStep(
+                index=idx,
+                model=models[idx],
+                report=report,
+                passed=_gate(kind, threshold, report),
+            )
+            cache[idx] = step
+            result.steps.append(step)
+        return cache[idx]
 
     first = check(0)
     last = check(len(models) - 1)
@@ -135,15 +147,7 @@ def bisect_model_quality(
         result.last_good_model = models[-1]
         return result
 
-    lo, hi = 0, len(models) - 1
-    while hi - lo > 1:
-        mid = (lo + hi) // 2
-        step = check(mid)
-        if step.passed:
-            lo = mid
-        else:
-            hi = mid
-
+    lo, hi = _search_boundary(check, len(models))
     result.first_bad_index = hi
     result.first_bad_model = models[hi]
     result.last_good_index = lo

@@ -63,21 +63,34 @@ class AllowlistReport:
         return "allowlist FAIL: " + " | ".join(parts)
 
 
+def _subgraphs(node: "onnx.NodeProto") -> list[tuple[str, "onnx.GraphProto"]]:
+    """Return (attribute label, graph) for every subgraph attribute of ``node``.
+
+    Labels follow the diagnostics format: ``name`` for GRAPH attributes and
+    ``name[i]`` for GRAPHS attributes.
+    """
+    found: list[tuple[str, "onnx.GraphProto"]] = []
+    for attr in node.attribute:
+        if attr.type == onnx.AttributeProto.GRAPH:
+            found.append((attr.name, attr.g))
+        elif attr.type == onnx.AttributeProto.GRAPHS:
+            found.extend((f"{attr.name}[{i}]", sub) for i, sub in enumerate(attr.graphs))
+    return found
+
+
 def _collect_op_types(graph: "onnx.GraphProto") -> set[str]:
-    """Walk a GraphProto and collect every op_type, recursing into the
+    """Walk a GraphProto and collect every op_type, descending into the
     embedded subgraphs of control-flow ops (Loop.body, If.then_branch,
-    If.else_branch). Mirrors the C-side scanner's recursion in
+    If.else_branch) with an explicit stack. Mirrors the C-side scanner in
     `core/src/dnn/onnx_scan.c` so the export-time check and the
     runtime load-time check stay in lockstep (ADR-0169 / T6-5)."""
     used: set[str] = set()
-    for node in graph.node:
-        used.add(node.op_type)
-        for attr in node.attribute:
-            if attr.type == onnx.AttributeProto.GRAPH:
-                used |= _collect_op_types(attr.g)
-            elif attr.type == onnx.AttributeProto.GRAPHS:
-                for sub in attr.graphs:
-                    used |= _collect_op_types(sub)
+    pending = [graph]
+    while pending:
+        current = pending.pop()
+        for node in current.node:
+            used.add(node.op_type)
+            pending.extend(sub for _label, sub in _subgraphs(node))
     return used
 
 
@@ -112,68 +125,57 @@ def _constant_int64_value(node: "onnx.NodeProto") -> int | None:
     return None
 
 
+def _loop_violation(
+    node: "onnx.NodeProto",
+    producers: dict[str, "onnx.NodeProto"],
+    scope: str,
+    max_trip_count: int,
+) -> str | None:
+    """Return the diagnostic for an unbounded ``Loop`` node, or None if bounded."""
+    if not node.input:
+        return f"{scope}::Loop(no inputs)"
+    m_input = node.input[0]
+    producer = producers.get(m_input)
+    if producer is None:
+        return f"{scope}::Loop(M={m_input!r} is a graph input, not a Constant)"
+    val = _constant_int64_value(producer)
+    if val is None:
+        return f"{scope}::Loop(M traces to {producer.op_type!r}, not a scalar int64 Constant)"
+    if val < 0 or val > max_trip_count:
+        return f"{scope}::Loop(M={val}, max_trip_count={max_trip_count})"
+    return None
+
+
 def _collect_loop_violations(
     graph: "onnx.GraphProto", *, max_trip_count: int = MAX_LOOP_TRIP_COUNT, scope: str = "<top>"
 ) -> list[str]:
     """Walk a GraphProto and surface every `Loop` whose first input does
     not trace to a `Constant` int64 scalar with value in [0, max_trip_count].
 
-    Inner subgraphs are walked recursively; a Loop body is checked in
-    isolation against the same rule (a Loop nested inside a Loop must
-    itself be statically bounded).
+    Inner subgraphs are walked with an explicit stack in document order; a
+    Loop body is checked in isolation against the same rule (a Loop nested
+    inside a Loop must itself be statically bounded).
 
     Returns a list of human-readable diagnostics.
     """
     violations: list[str] = []
-    # Build an output-name -> producer-node map for this scope. ONNX
-    # requires nodes in topological order, but a forward map costs us
-    # nothing and makes the lookup obvious.
-    producers: dict[str, "onnx.NodeProto"] = {}
-    for node in graph.node:
-        for out in node.output:
-            producers[out] = node
-
-    for node in graph.node:
-        if node.op_type == "Loop":
-            if not node.input:
-                violations.append(f"{scope}::Loop(no inputs)")
-            else:
-                m_input = node.input[0]
-                producer = producers.get(m_input)
-                if producer is None:
-                    violations.append(
-                        f"{scope}::Loop(M={m_input!r} is a graph input, not a Constant)"
-                    )
-                else:
-                    val = _constant_int64_value(producer)
-                    if val is None:
-                        violations.append(
-                            f"{scope}::Loop(M traces to {producer.op_type!r}, "
-                            "not a scalar int64 Constant)"
-                        )
-                    elif val < 0 or val > max_trip_count:
-                        violations.append(
-                            f"{scope}::Loop(M={val}, " f"max_trip_count={max_trip_count})"
-                        )
-        # Recurse into embedded subgraphs regardless of op_type.
-        for attr in node.attribute:
-            if attr.type == onnx.AttributeProto.GRAPH:
-                violations.extend(
-                    _collect_loop_violations(
-                        attr.g,
-                        max_trip_count=max_trip_count,
-                        scope=f"{scope}::{node.op_type}.{attr.name}",
-                    )
-                )
-            elif attr.type == onnx.AttributeProto.GRAPHS:
-                for i, sub in enumerate(attr.graphs):
-                    violations.extend(
-                        _collect_loop_violations(
-                            sub,
-                            max_trip_count=max_trip_count,
-                            scope=f"{scope}::{node.op_type}.{attr.name}[{i}]",
-                        )
-                    )
+    pending: list[str | tuple["onnx.GraphProto", str]] = [(graph, scope)]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            violations.append(item)
+            continue
+        current, cur_scope = item
+        producers = {out: node for node in current.node for out in node.output}
+        ordered: list[str | tuple["onnx.GraphProto", str]] = []
+        for node in current.node:
+            if node.op_type == "Loop":
+                found = _loop_violation(node, producers, cur_scope, max_trip_count)
+                if found is not None:
+                    ordered.append(found)
+            for label, sub in _subgraphs(node):
+                ordered.append((sub, f"{cur_scope}::{node.op_type}.{label}"))
+        pending.extend(reversed(ordered))
     return violations
 
 

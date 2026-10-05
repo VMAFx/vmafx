@@ -33,6 +33,26 @@ def _guess_dummy(model: nn.Module, in_shape: tuple[int, ...] | None) -> torch.Te
     return torch.zeros(1, in_f, dtype=dtype)
 
 
+def _strip_initialiser_value_info(out_path: Path) -> "onnx.ModelProto":
+    """Load ``out_path``, drop value_info duplicating initialisers, and validate it."""
+    loaded = onnx.load(str(out_path))
+    # torch.onnx duplicates every initialiser into graph.value_info with
+    # static-shape annotations that don't survive the dynamic batch axis;
+    # this trips onnxruntime.quantization.quantize_dynamic's shape
+    # inference with "Inferred shape and existing shape differ" (see
+    # ADR-0174 / PR #174 for the vmaf_tiny_v1 precedent). Initializers
+    # carry their own canonical shape, so dropping the duplicate
+    # value_info records is safe and unblocks downstream PTQ.
+    init_names = {t.name for t in loaded.graph.initializer}
+    survivors = [vi for vi in loaded.graph.value_info if vi.name not in init_names]
+    if len(survivors) != len(loaded.graph.value_info):
+        del loaded.graph.value_info[:]
+        loaded.graph.value_info.extend(survivors)
+        onnx.save(loaded, str(out_path), save_as_external_data=False)
+    onnx.checker.check_model(loaded)
+    return loaded
+
+
 def export_to_onnx(
     model: nn.Module,
     out_path: Path,
@@ -64,21 +84,7 @@ def export_to_onnx(
         dynamic_shapes=dynamic_shapes,
         opset_version=opset,
     )
-    loaded = onnx.load(str(out_path))
-    # torch.onnx duplicates every initialiser into graph.value_info with
-    # static-shape annotations that don't survive the dynamic batch axis;
-    # this trips onnxruntime.quantization.quantize_dynamic's shape
-    # inference with "Inferred shape and existing shape differ" (see
-    # ADR-0174 / PR #174 for the vmaf_tiny_v1 precedent). Initializers
-    # carry their own canonical shape, so dropping the duplicate
-    # value_info records is safe and unblocks downstream PTQ.
-    init_names = {t.name for t in loaded.graph.initializer}
-    survivors = [vi for vi in loaded.graph.value_info if vi.name not in init_names]
-    if len(survivors) != len(loaded.graph.value_info):
-        del loaded.graph.value_info[:]
-        loaded.graph.value_info.extend(survivors)
-        onnx.save(loaded, str(out_path), save_as_external_data=False)
-    onnx.checker.check_model(loaded)
+    loaded = _strip_initialiser_value_info(out_path)
 
     report = check_graph(loaded)
     if not report.ok:

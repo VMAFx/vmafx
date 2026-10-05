@@ -672,6 +672,89 @@ def _handle_connection(
     logger.debug("Connection from %s closed", addr)
 
 
+def _default_trainer(n_features: int) -> OnlineTrainer:
+    """Build the trainer used when the caller passes none."""
+    return OnlineTrainer(
+        n_features=n_features,
+        base_model_path=_BASE_MODEL_PATH,
+        config=SGDEMAConfig(
+            lr=_LR,
+            ema_decay=_EMA_DECAY,
+            checkpoint_interval_s=_CHECKPOINT_INTERVAL_S,
+            min_samples_per_checkpoint=_MIN_SAMPLES_PER_CKPT,
+        ),
+    )
+
+
+def _publish_bound_socket(socket_path: str) -> tuple[int, int]:
+    """Verify and lock down the freshly bound socket; return its identity."""
+    identity = _socket_path_identity(socket_path)
+    if identity is None:
+        raise OSError(
+            errno.EADDRINUSE,
+            f"bound socket path was replaced before publication: {socket_path}",
+        )
+    # The shipped deployment runs both peers under one UID. Keep the
+    # unauthenticated local endpoint owner-only by default.
+    os.chmod(socket_path, 0o600, follow_symlinks=False)
+    if _socket_path_identity(socket_path) != identity:
+        raise OSError(
+            errno.EADDRINUSE,
+            f"bound socket path changed during publication: {socket_path}",
+        )
+    return identity
+
+
+def _install_stop_handlers(stop: threading.Event, previous: list[Any]) -> None:
+    """Route SIGTERM/SIGINT to ``stop``; store the old handlers in ``previous``."""
+
+    def _sighandler(signum: int, _frame: Any) -> None:
+        logger.info("Received signal %d — initiating shutdown", signum)
+        stop.set()
+
+    with contextlib.suppress(ValueError):
+        previous[0] = signal.signal(signal.SIGTERM, _sighandler)
+        previous[1] = signal.signal(signal.SIGINT, _sighandler)
+
+
+def _accept_loop(
+    srv: socket.socket,
+    trainer: OnlineTrainer,
+    registry: _ConnectionRegistry,
+    stop: threading.Event,
+    threads: list[threading.Thread],
+) -> None:
+    """Accept connections and hand each to a worker thread until ``stop`` is set."""
+    while not stop.is_set():
+        try:
+            conn, _ = srv.accept()
+        except socket.timeout:
+            continue
+        except OSError:
+            if stop.is_set():
+                break
+            raise
+
+        if not registry.register_if_active(conn, stop):
+            break
+
+        try:
+            t = threading.Thread(
+                target=_handle_connection,
+                args=(conn, trainer, registry),
+                daemon=True,
+            )
+            t.start()
+        except Exception:
+            registry.discard(conn)
+            with contextlib.suppress(OSError):
+                conn.close()
+            raise
+        threads.append(t)
+        # Prune dead threads to avoid unbounded list growth.
+        threads[:] = [tt for tt in threads if tt.is_alive()]
+
+
 def _run_server_with_claim(
     socket_path: str = _SOCKET_PATH,
     trainer: OnlineTrainer | None = None,
@@ -693,91 +776,32 @@ def _run_server_with_claim(
         Optional ``threading.Event`` to trigger shutdown programmatically.
     """
     if trainer is None:
-        trainer = OnlineTrainer(
-            n_features=n_features,
-            base_model_path=_BASE_MODEL_PATH,
-            config=SGDEMAConfig(
-                lr=_LR,
-                ema_decay=_EMA_DECAY,
-                checkpoint_interval_s=_CHECKPOINT_INTERVAL_S,
-                min_samples_per_checkpoint=_MIN_SAMPLES_PER_CKPT,
-            ),
-        )
+        trainer = _default_trainer(n_features)
 
     _prepare_socket_path(socket_path)
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     threads: list[threading.Thread] = []
     registry = _ConnectionRegistry()
-    old_sigterm: Any = None
-    old_sigint: Any = None
+    old_handlers: list[Any] = [None, None]
     owned_socket_identity: tuple[int, int] | None = None
 
     try:
         srv.bind(socket_path)
-        owned_socket_identity = _socket_path_identity(socket_path)
-        if owned_socket_identity is None:
-            raise OSError(
-                errno.EADDRINUSE,
-                f"bound socket path was replaced before publication: {socket_path}",
-            )
-        # The shipped deployment runs both peers under one UID. Keep the
-        # unauthenticated local endpoint owner-only by default.
-        os.chmod(socket_path, 0o600, follow_symlinks=False)
-        if _socket_path_identity(socket_path) != owned_socket_identity:
-            raise OSError(
-                errno.EADDRINUSE,
-                f"bound socket path changed during publication: {socket_path}",
-            )
+        owned_socket_identity = _publish_bound_socket(socket_path)
         srv.listen(16)
         srv.settimeout(1.0)  # allows the signal check below to fire promptly
 
         _stop = stop_event if stop_event is not None else threading.Event()
-
-        def _sighandler(signum: int, _frame: Any) -> None:
-            logger.info("Received signal %d — initiating shutdown", signum)
-            _stop.set()
-
-        with contextlib.suppress(ValueError):
-            old_sigterm = signal.signal(signal.SIGTERM, _sighandler)
-            old_sigint = signal.signal(signal.SIGINT, _sighandler)
-
+        _install_stop_handlers(_stop, old_handlers)
         logger.info("vmafx-sidecar listening on %s", socket_path)
-
-        while not _stop.is_set():
-            try:
-                conn, _ = srv.accept()
-            except socket.timeout:
-                continue
-            except OSError:
-                if _stop.is_set():
-                    break
-                raise
-
-            if not registry.register_if_active(conn, _stop):
-                break
-
-            try:
-                t = threading.Thread(
-                    target=_handle_connection,
-                    args=(conn, trainer, registry),
-                    daemon=True,
-                )
-                t.start()
-            except Exception:
-                registry.discard(conn)
-                with contextlib.suppress(OSError):
-                    conn.close()
-                raise
-            threads.append(t)
-            # Prune dead threads to avoid unbounded list growth.
-            threads = [tt for tt in threads if tt.is_alive()]
+        _accept_loop(srv, trainer, registry, _stop, threads)
     finally:
         with contextlib.suppress(ValueError):
-            if old_sigterm is not None:
-                signal.signal(signal.SIGTERM, old_sigterm)
-            if old_sigint is not None:
-                signal.signal(signal.SIGINT, old_sigint)
+            if old_handlers[0] is not None:
+                signal.signal(signal.SIGTERM, old_handlers[0])
+            if old_handlers[1] is not None:
+                signal.signal(signal.SIGINT, old_handlers[1])
 
         # Promptly unblock and close any held client connections
         registry.close_all()

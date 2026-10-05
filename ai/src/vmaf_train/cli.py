@@ -478,6 +478,25 @@ def check_ops_cmd(
     raise typer.Exit(code=2)
 
 
+def _emit_cli_report(
+    json_out: Path, payload: dict[str, Any], args: dict[str, Any], inputs: dict[str, Any]
+) -> None:
+    """Write the JSON report with its provenance block and announce the path."""
+    _write_cli_report_json(json_out, payload, args=args, inputs=inputs)
+    console.print(f"[green]Wrote {json_out}[/green]")
+
+
+def _load_frame_list(frames: Path) -> list:
+    """Load an (N, H, W) .npy stack as a list of frames or exit with code 2."""
+    import numpy as np
+
+    corpus = np.load(frames)
+    if corpus.ndim != 3:
+        console.print(f"[red]{frames} must be (N, H, W); got {corpus.shape}[/red]")
+        raise typer.Exit(code=2)
+    return [corpus[i] for i in range(corpus.shape[0])]
+
+
 @app.command("audit-learned-filter")
 def audit_learned_filter_cmd(
     model: Path = typer.Option(..., exists=True, help="Learned-filter ONNX model"),
@@ -505,46 +524,34 @@ def audit_learned_filter_cmd(
     clean content, deployed on heavily-compressed content" class of
     silent failure before the model hits a production pipeline.
     """
-    import numpy as np
-
     from .learned_filter_audit import audit_learned_filter, render_table
 
-    corpus = np.load(frames)
-    if corpus.ndim != 3:
-        console.print(f"[red]{frames} must be (N, H, W); got {corpus.shape}[/red]")
-        raise typer.Exit(code=2)
-    frames_list = [corpus[i] for i in range(corpus.shape[0])]
-
+    frames_list = _load_frame_list(frames)
+    thresholds = {
+        "ssim_min": ssim_min,
+        "mean_shift_max": mean_shift_max,
+        "std_ratio_max": std_ratio_max,
+        "clip_fraction_max": clip_fraction_max,
+    }
     report = audit_learned_filter(
         model=model,
         frames=frames_list,
         peak=peak,
         input_name=input_name,
-        ssim_min=ssim_min,
-        mean_shift_max=mean_shift_max,
-        std_ratio_max=std_ratio_max,
-        clip_fraction_max=clip_fraction_max,
+        **thresholds,
     )
     console.print(render_table(report))
     if json_out:
-        _write_cli_report_json(
-            json_out,
-            report.to_dict(),
-            args={
-                "model": model,
-                "frames": frames,
-                "peak": peak,
-                "input_name": input_name,
-                "ssim_min": ssim_min,
-                "mean_shift_max": mean_shift_max,
-                "std_ratio_max": std_ratio_max,
-                "clip_fraction_max": clip_fraction_max,
-                "json": json_out,
-                "fail_on_warning": fail_on_warning,
-            },
-            inputs={"model": model, "frames": frames},
-        )
-        console.print(f"[green]Wrote {json_out}[/green]")
+        args = {
+            "model": model,
+            "frames": frames,
+            "peak": peak,
+            "input_name": input_name,
+            **thresholds,
+            "json": json_out,
+            "fail_on_warning": fail_on_warning,
+        }
+        _emit_cli_report(json_out, report.to_dict(), args, {"model": model, "frames": frames})
     if fail_on_warning and not report.ok:
         raise typer.Exit(code=2)
 
@@ -638,9 +645,7 @@ def cross_backend_cmd(
     """
     from .cross_backend import compare_backends, render_table
 
-    parsed_shape: tuple[int, ...] | None = None
-    if shape:
-        parsed_shape = tuple(int(x) for x in shape.split(","))
+    parsed_shape = tuple(int(x) for x in shape.split(",")) if shape else None
     report = compare_backends(
         model_path=model,
         providers=list(provider) if provider else None,
@@ -651,27 +656,38 @@ def cross_backend_cmd(
     )
     console.print(render_table(report))
     if json_out:
+        args = {
+            "model": model,
+            "features": features,
+            "provider": provider,
+            "shape": shape,
+            "n_rows": n_rows,
+            "atol": atol,
+            "json": json_out,
+            "fail_on_mismatch": fail_on_mismatch,
+        }
         inputs: dict[str, Any] = {"model": model}
         if features is not None:
             inputs["features"] = features
-        _write_cli_report_json(
-            json_out,
-            report.to_dict(),
-            args={
-                "model": model,
-                "features": features,
-                "provider": provider,
-                "shape": shape,
-                "n_rows": n_rows,
-                "atol": atol,
-                "json": json_out,
-                "fail_on_mismatch": fail_on_mismatch,
-            },
-            inputs=inputs,
-        )
-        console.print(f"[green]Wrote {json_out}[/green]")
+        _emit_cli_report(json_out, report.to_dict(), args, inputs)
     if fail_on_mismatch and not report.ok:
         raise typer.Exit(code=2)
+
+
+def _load_bisect_inputs(features: Path) -> tuple[Any, Any]:
+    """Read the held-out parquet as (feature matrix, mos targets) float32 arrays."""
+    import pandas as pd
+
+    from .data.feature_dump import DEFAULT_FEATURES
+
+    df = pd.read_parquet(features)
+    if "mos" not in df.columns:
+        raise typer.BadParameter("features parquet must contain a 'mos' column")
+    df = df.dropna(subset=["mos"])
+    feat_cols = [c for c in DEFAULT_FEATURES if c in df.columns]
+    if not feat_cols:
+        raise typer.BadParameter("features parquet has none of the expected feature columns")
+    return df[feat_cols].to_numpy(dtype="float32"), df["mos"].to_numpy(dtype="float32")
 
 
 @app.command("bisect-model-quality")
@@ -698,21 +714,9 @@ def bisect_model_quality_cmd(
     Assumes the list is ordered good→bad; if not, exits 0 with the verdict
     "no regression detected" or "first model already fails".
     """
-    import pandas as pd
-
     from .bisect_model_quality import bisect_model_quality, render_table
-    from .data.feature_dump import DEFAULT_FEATURES
 
-    df = pd.read_parquet(features)
-    if "mos" not in df.columns:
-        raise typer.BadParameter("features parquet must contain a 'mos' column")
-    df = df.dropna(subset=["mos"])
-    feat_cols = [c for c in DEFAULT_FEATURES if c in df.columns]
-    if not feat_cols:
-        raise typer.BadParameter("features parquet has none of the expected feature columns")
-    feat_matrix = df[feat_cols].to_numpy(dtype="float32")
-    targets = df["mos"].to_numpy(dtype="float32")
-
+    feat_matrix, targets = _load_bisect_inputs(features)
     result = bisect_model_quality(
         models=list(models),
         features=feat_matrix,
@@ -724,27 +728,20 @@ def bisect_model_quality_cmd(
     )
     console.print(render_table(result))
     if json_out:
-        _write_cli_report_json(
-            json_out,
-            result.to_dict(),
-            args={
-                "models": list(models),
-                "features": features,
-                "min_plcc": min_plcc,
-                "min_srocc": min_srocc,
-                "max_rmse": max_rmse,
-                "input_name": input_name,
-                "json": json_out,
-                "fail_on_first_bad": fail_on_first_bad,
-            },
-            inputs={"models": list(models), "features": features},
-        )
-        console.print(f"[green]Wrote {json_out}[/green]")
-    if (
-        fail_on_first_bad
-        and result.first_bad_index is not None
-        and result.last_good_index is not None
-    ):
+        args = {
+            "models": list(models),
+            "features": features,
+            "min_plcc": min_plcc,
+            "min_srocc": min_srocc,
+            "max_rmse": max_rmse,
+            "input_name": input_name,
+            "json": json_out,
+            "fail_on_first_bad": fail_on_first_bad,
+        }
+        inputs = {"models": list(models), "features": features}
+        _emit_cli_report(json_out, result.to_dict(), args, inputs)
+    localized = result.first_bad_index is not None and result.last_good_index is not None
+    if fail_on_first_bad and localized:
         raise typer.Exit(code=2)
 
 

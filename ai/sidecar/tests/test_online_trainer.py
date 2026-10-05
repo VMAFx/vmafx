@@ -206,6 +206,31 @@ class TestOnlineTrainerInit:
 # ---------------------------------------------------------------------------
 
 
+def _arm_first_step_failure(
+    trainer: OnlineTrainer, monkeypatch: pytest.MonkeyPatch
+) -> tuple[threading.Event, threading.Event, list[list[float]]]:
+    """Make the first training step block, then fail; later steps succeed.
+
+    Returns the (started, release) events and the list of attempted score batches.
+    """
+    started = threading.Event()
+    release = threading.Event()
+    attempted_scores: list[list[float]] = []
+
+    def train_with_first_step_failure(batch: list[Sample], _new_sample_count: int) -> float:
+        scores = [sample.true_score for sample in batch]
+        attempted_scores.append(scores)
+        if len(attempted_scores) == 1:
+            started.set()
+            release.wait(timeout=3.0)
+            raise ValueError("prediction/target count mismatch")
+        return 0.0
+
+    monkeypatch.setattr(trainer, "_train_on_batch", train_with_first_step_failure)
+    monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
+    return started, release, attempted_scores
+
+
 class TestOnlineTrainerIngest:
     def _trainer(self, tmp_path: pathlib.Path, batch_size: int = 4) -> OnlineTrainer:
         return OnlineTrainer(
@@ -298,23 +323,11 @@ class TestOnlineTrainerIngest:
             pending_capacity=4,
             config=_fast_config(),
         )
-        failed_step_started = threading.Event()
-        release_failed_step = threading.Event()
-        attempted_scores: list[list[float]] = []
+        failed_step_started, release_failed_step, attempted_scores = _arm_first_step_failure(
+            trainer, monkeypatch
+        )
         thread_results: list[dict[str, object]] = []
         thread_errors: list[BaseException] = []
-
-        def train_with_first_step_failure(batch: list[Sample], _new_sample_count: int) -> float:
-            scores = [sample.true_score for sample in batch]
-            attempted_scores.append(scores)
-            if len(attempted_scores) == 1:
-                failed_step_started.set()
-                release_failed_step.wait(timeout=3.0)
-                raise ValueError("prediction/target count mismatch")
-            return 0.0
-
-        monkeypatch.setattr(trainer, "_train_on_batch", train_with_first_step_failure)
-        monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
 
         trainer.ingest([1.0] * N_FEATURES, 1.0)
 

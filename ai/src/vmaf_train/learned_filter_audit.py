@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -82,6 +83,61 @@ def _ssim(a: np.ndarray, b: np.ndarray, peak: float, k1: float = 0.01, k2: float
     return float(num / den) if den > 0 else 0.0
 
 
+def _measure_frame(
+    sess: Any, idx: int, frame: np.ndarray, input_name: str, peak: float
+) -> FrameStats:
+    """Run the filter on one frame and collect its input/output statistics."""
+    if frame.ndim != 2:
+        raise ValueError(f"frame {idx} must be 2-D (H, W); got shape {frame.shape}")
+    x = frame.astype(np.float32)[None, None, :, :]
+    out = np.asarray(sess.run(None, {input_name: x})[0]).reshape(*frame.shape)
+
+    mu_in = float(frame.mean())
+    mu_out = float(out.mean())
+    std_in = float(frame.std()) or 1e-9
+    std_out = float(out.std())
+    return FrameStats(
+        mean_input=mu_in,
+        mean_output=mu_out,
+        mean_shift=mu_out - mu_in,
+        std_input=std_in,
+        std_output=std_out,
+        std_ratio=std_out / std_in,
+        ssim=_ssim(frame.astype(np.float64), out.astype(np.float64), peak=peak),
+        clip_fraction=float(np.mean((out <= 0.0) | (out >= peak))),
+        max_abs_delta=float(np.abs(out - frame).max()),
+    )
+
+
+def _frame_warnings(
+    idx: int,
+    stats: FrameStats,
+    peak: float,
+    ssim_min: float,
+    mean_shift_max: float,
+    std_ratio_max: float,
+    clip_fraction_max: float,
+) -> list[str]:
+    """Return the gate warnings (in report order) that ``stats`` trips."""
+    warnings: list[str] = []
+    if abs(stats.mean_shift) > mean_shift_max * peak:
+        warnings.append(
+            f"frame {idx}: |Δmean| = {abs(stats.mean_shift):.3g} > {mean_shift_max * peak:.3g}"
+        )
+    if stats.std_ratio > std_ratio_max:
+        warnings.append(f"frame {idx}: std_ratio = {stats.std_ratio:.2f}× (filter amplifies noise)")
+    if stats.clip_fraction > clip_fraction_max:
+        warnings.append(
+            f"frame {idx}: {stats.clip_fraction * 100:.1f}% of output clipped "
+            f"(threshold {clip_fraction_max * 100:.0f}%)"
+        )
+    if stats.ssim < ssim_min:
+        warnings.append(
+            f"frame {idx}: SSIM = {stats.ssim:.2f} < {ssim_min} (filter destroying structure)"
+        )
+    return warnings
+
+
 def audit_learned_filter(
     model: Path,
     frames: list[np.ndarray],
@@ -108,50 +164,13 @@ def audit_learned_filter(
     report = LearnedFilterAuditReport(model=model, n_frames=len(frames), peak=peak)
 
     for idx, frame in enumerate(frames):
-        if frame.ndim != 2:
-            raise ValueError(f"frame {idx} must be 2-D (H, W); got shape {frame.shape}")
-        x = frame.astype(np.float32)[None, None, :, :]
-        out = np.asarray(sess.run(None, {input_name: x})[0]).reshape(*frame.shape)
-
-        mu_in = float(frame.mean())
-        mu_out = float(out.mean())
-        std_in = float(frame.std()) or 1e-9
-        std_out = float(out.std())
-        clip = float(np.mean((out <= 0.0) | (out >= peak)))
-        ssim = _ssim(frame.astype(np.float64), out.astype(np.float64), peak=peak)
-
-        stats = FrameStats(
-            mean_input=mu_in,
-            mean_output=mu_out,
-            mean_shift=mu_out - mu_in,
-            std_input=std_in,
-            std_output=std_out,
-            std_ratio=std_out / std_in,
-            ssim=ssim,
-            clip_fraction=clip,
-            max_abs_delta=float(np.abs(out - frame).max()),
-        )
+        stats = _measure_frame(sess, idx, frame, input_name, peak)
         report.frames.append(stats)
-
-        if abs(stats.mean_shift) > mean_shift_max * peak:
-            report.warnings.append(
-                f"frame {idx}: |Δmean| = {abs(stats.mean_shift):.3g} "
-                f"> {mean_shift_max * peak:.3g}"
+        report.warnings.extend(
+            _frame_warnings(
+                idx, stats, peak, ssim_min, mean_shift_max, std_ratio_max, clip_fraction_max
             )
-        if stats.std_ratio > std_ratio_max:
-            report.warnings.append(
-                f"frame {idx}: std_ratio = {stats.std_ratio:.2f}× (filter amplifies noise)"
-            )
-        if stats.clip_fraction > clip_fraction_max:
-            report.warnings.append(
-                f"frame {idx}: {stats.clip_fraction * 100:.1f}% of output clipped "
-                f"(threshold {clip_fraction_max * 100:.0f}%)"
-            )
-        if stats.ssim < ssim_min:
-            report.warnings.append(
-                f"frame {idx}: SSIM = {stats.ssim:.2f} < {ssim_min} "
-                f"(filter destroying structure)"
-            )
+        )
 
     # Summary stats for a single-line CI gate.
     ssims = [f.ssim for f in report.frames]

@@ -144,8 +144,6 @@ class SGDEMATrainer:
         float
             The scalar MSE loss for this batch (for logging).
         """
-        import torch
-
         batch_size = int(features.shape[0])
         if new_sample_count is None:
             new_sample_count = batch_size
@@ -156,41 +154,49 @@ class SGDEMATrainer:
             )
 
         with self._lock:
-            self._model.train()
-            self._opt.zero_grad()
-
-            preds = self._model(features)
-            pred_values = preds.reshape(-1)
-            target_values = targets.float().reshape(-1)
-            if pred_values.shape != target_values.shape:
-                raise ValueError(
-                    "prediction/target shape mismatch: "
-                    f"{tuple(preds.shape)} vs {tuple(targets.shape)}"
-                )
-            loss = self._loss_fn(pred_values, target_values)
-            loss.backward()
-
-            # Gradient clipping — protects against outlier feature vectors.
-            import torch.nn.utils as nn_utils
-
-            nn_utils.clip_grad_norm_(self._model.parameters(), self._cfg.max_grad_norm)
-
-            # Apply warmup LR scaling before the optimizer step.
-            self._apply_warmup_lr()
-            self._opt.step()
-            self._step_count += 1
-
-            # EMA update: θ_ema ← β·θ_ema + (1−β)·θ_live
-            beta = self._cfg.ema_decay
-            with torch.no_grad():
-                for p_live, p_ema in zip(
-                    self._model.parameters(), self._ema_model.parameters(), strict=True
-                ):
-                    p_ema.data.mul_(beta).add_(p_live.data, alpha=1.0 - beta)
-
+            loss = self._gradient_step(features, targets)
+            self._update_ema()
             self._samples_since_ckpt += new_sample_count
 
         return float(loss.item())
+
+    def _gradient_step(self, features: "torch.Tensor", targets: "torch.Tensor") -> "torch.Tensor":
+        """Run forward, backward, clipping and the optimizer step; return the loss."""
+        self._model.train()
+        self._opt.zero_grad()
+
+        preds = self._model(features)
+        pred_values = preds.reshape(-1)
+        target_values = targets.float().reshape(-1)
+        if pred_values.shape != target_values.shape:
+            raise ValueError(
+                "prediction/target shape mismatch: "
+                f"{tuple(preds.shape)} vs {tuple(targets.shape)}"
+            )
+        loss = self._loss_fn(pred_values, target_values)
+        loss.backward()
+
+        # Gradient clipping — protects against outlier feature vectors.
+        import torch.nn.utils as nn_utils
+
+        nn_utils.clip_grad_norm_(self._model.parameters(), self._cfg.max_grad_norm)
+
+        # Apply warmup LR scaling before the optimizer step.
+        self._apply_warmup_lr()
+        self._opt.step()
+        self._step_count += 1
+        return loss
+
+    def _update_ema(self) -> None:
+        """EMA update: θ_ema ← β·θ_ema + (1−β)·θ_live."""
+        import torch
+
+        beta = self._cfg.ema_decay
+        with torch.no_grad():
+            for p_live, p_ema in zip(
+                self._model.parameters(), self._ema_model.parameters(), strict=True
+            ):
+                p_ema.data.mul_(beta).add_(p_live.data, alpha=1.0 - beta)
 
     def should_checkpoint(self) -> bool:
         """Return True when both checkpoint conditions are satisfied."""

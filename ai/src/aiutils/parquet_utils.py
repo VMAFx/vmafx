@@ -128,6 +128,35 @@ def _classify(
     return "feature"
 
 
+def _partition_columns(
+    df: pd.DataFrame,
+    labels: Sequence[str] | None,
+    metadata: Sequence[str] | None,
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Split ``df`` columns into (leading, features, labels, metadata) lists."""
+    leading: list[str] = []
+    features: list[str] = []
+    label_cols: list[str] = []
+    meta_cols: list[str] = []
+    # Preserve the user-supplied order for the explicit ``leading`` block.
+    seen = set()
+    for name in _LEADING_COLUMNS:
+        if name in df.columns and name not in seen:
+            leading.append(name)
+            seen.add(name)
+    for column in df.columns:
+        if column in seen:
+            continue
+        kind = _classify(str(column), labels, metadata)
+        if kind == "label":
+            label_cols.append(str(column))
+        elif kind == "metadata":
+            meta_cols.append(str(column))
+        else:
+            features.append(str(column))
+    return leading, features, label_cols, meta_cols
+
+
 def apply_standard_column_order(
     df: pd.DataFrame,
     *,
@@ -156,29 +185,7 @@ def apply_standard_column_order(
     if df.columns.empty:
         return df
 
-    leading: list[str] = []
-    features: list[str] = []
-    label_cols: list[str] = []
-    meta_cols: list[str] = []
-
-    # Preserve the user-supplied order for the explicit ``leading`` block.
-    seen = set()
-    for name in _LEADING_COLUMNS:
-        if name in df.columns and name not in seen:
-            leading.append(name)
-            seen.add(name)
-
-    for column in df.columns:
-        if column in seen:
-            continue
-        kind = _classify(str(column), labels, metadata)
-        if kind == "label":
-            label_cols.append(str(column))
-        elif kind == "metadata":
-            meta_cols.append(str(column))
-        else:
-            features.append(str(column))
-
+    leading, features, label_cols, meta_cols = _partition_columns(df, labels, metadata)
     ordered = (
         leading
         + sorted(features)
@@ -274,6 +281,28 @@ def _write_v2(
     pq.write_table(table, str(target), **write_kwargs)
 
 
+def _pop_write_options(kwargs: dict[str, Any]) -> tuple[str, int | None, bool]:
+    """Consume the recognised writer keywords; reject any leftovers."""
+    compression = kwargs.pop("compression", "zstd")
+    compression_level = kwargs.pop("compression_level", None)
+    if compression == "zstd" and compression_level is None:
+        compression_level = DEFAULT_ZSTD_LEVEL
+    index = bool(kwargs.pop("index", False))
+    # ``engine`` is accepted for source-compat with old callers (pandas
+    # idiom) but ignored — pyarrow is the only writer.
+    kwargs.pop("engine", None)
+    if kwargs:
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(f"write_parquet_atomic() got unexpected keyword argument(s): {unexpected}")
+    return compression, compression_level, index
+
+
+def _reserve_temp_path(output: Path) -> Path:
+    """Create an empty temp file next to ``output`` and return its path."""
+    with tempfile.NamedTemporaryFile(mode="wb", dir=output.parent, delete=False) as tmp_fh:
+        return Path(tmp_fh.name)
+
+
 def write_parquet_atomic(
     df: pd.DataFrame,
     output: Path,
@@ -315,24 +344,8 @@ def write_parquet_atomic(
     pass ``index=True`` keep the index column.  The v2 metadata block is
     always written regardless of compression choice.
     """
-    compression = kwargs.pop("compression", "zstd")
-    compression_level = kwargs.pop("compression_level", None)
-    if compression == "zstd" and compression_level is None:
-        compression_level = DEFAULT_ZSTD_LEVEL
-    index = bool(kwargs.pop("index", False))
-    # ``engine`` is accepted for source-compat with old callers (pandas
-    # idiom) but ignored — pyarrow is the only writer.
-    kwargs.pop("engine", None)
-    if kwargs:
-        unexpected = ", ".join(sorted(kwargs))
-        raise TypeError(f"write_parquet_atomic() got unexpected keyword argument(s): {unexpected}")
-
-    with tempfile.NamedTemporaryFile(
-        mode="wb",
-        dir=output.parent,
-        delete=False,
-    ) as tmp_fh:
-        tmp = Path(tmp_fh.name)
+    compression, compression_level, index = _pop_write_options(kwargs)
+    tmp = _reserve_temp_path(output)
     try:
         _write_v2(
             df,

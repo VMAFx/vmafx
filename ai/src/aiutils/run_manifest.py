@@ -12,27 +12,38 @@ from pathlib import Path
 from typing import Any
 
 from aiutils.file_utils import sha256, write_text_atomic
+from aiutils.tree_utils import map_tree
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
-def normalise_manifest_value(value: Any) -> JsonValue:
-    """Convert common Python CLI values to deterministic JSON values."""
+def _manifest_leaf(value: Any) -> JsonValue:
+    """Convert one non-container CLI value to a JSON scalar."""
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
-    if isinstance(value, Mapping):
-        return {
-            str(key): normalise_manifest_value(item)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-        }
-    if isinstance(value, tuple | list):
-        return [normalise_manifest_value(item) for item in value]
     if isinstance(value, JsonScalar):
         return value
     return str(value)
+
+
+def _sorted_by_str_key(items: Any) -> Any:
+    """Order mapping items by the string form of their key."""
+    return sorted(items, key=lambda pair: str(pair[0]))
+
+
+def normalise_manifest_value(value: Any) -> JsonValue:
+    """Convert common Python CLI values to deterministic JSON values."""
+    return map_tree(
+        value,
+        _manifest_leaf,
+        is_mapping=lambda v: isinstance(v, Mapping),
+        is_sequence=lambda v: isinstance(v, tuple | list),
+        key=str,
+        order=_sorted_by_str_key,
+    )
 
 
 def normalise_namespace(
@@ -70,13 +81,22 @@ def describe_path(path: Path, *, repo_root: Path) -> dict[str, JsonValue]:
 
 
 def _describe_path_value(value: Any, *, repo_root: Path) -> JsonValue:
-    if value is None:
-        return None
-    if isinstance(value, Path):
-        return describe_path(value, repo_root=repo_root)
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return [_describe_path_value(item, repo_root=repo_root) for item in value]
-    return normalise_manifest_value(value)
+    """Describe a Path (or a sequence of them) for a manifest."""
+
+    def leaf(item: Any) -> JsonValue:
+        """Describe a Path, pass None through, normalise anything else."""
+        if item is None:
+            return None
+        if isinstance(item, Path):
+            return describe_path(item, repo_root=repo_root)
+        return normalise_manifest_value(item)
+
+    return map_tree(
+        value,
+        leaf,
+        is_sequence=lambda v: isinstance(v, Sequence)
+        and not isinstance(v, str | bytes | bytearray),
+    )
 
 
 def describe_paths(paths: Mapping[str, Any], *, repo_root: Path) -> dict[str, JsonValue]:

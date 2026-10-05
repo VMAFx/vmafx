@@ -9,20 +9,28 @@ import math
 from pathlib import Path
 from typing import Any, Iterator
 
+from aiutils.tree_utils import map_tree
+
+
+def _null_nonfinite(value: Any) -> Any:
+    """Return ``None`` for a non-finite float, else ``value``."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
 
 def _sanitize_nonfinite(obj: Any) -> Any:
-    """Recursively replace non-finite floats (NaN, Infinity) with None.
+    """Replace non-finite floats (NaN, Infinity) nested in dicts/lists with None.
 
     Standard JSON does not support NaN or Infinity; replacing with null
     (None) keeps the document valid while preserving all other fields.
     """
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_nonfinite(v) for v in obj]
-    return obj
+    return map_tree(
+        obj,
+        _null_nonfinite,
+        is_mapping=lambda v: isinstance(v, dict),
+        is_sequence=lambda v: isinstance(v, list),
+    )
 
 
 def dumps_jsonl_row(obj: dict[str, Any], **kwargs: Any) -> str:

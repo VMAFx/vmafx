@@ -618,6 +618,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   row no longer lists the `filter1d.cu` function-size rows as open.
 
 
+- **`ai/src` and `ai/sidecar` are at the HISS standard.** The recursive JSON
+  walks (`_sanitize_nonfinite`, `normalise_manifest_value`,
+  `_describe_path_value`) now share one iterative `aiutils.tree_utils.map_tree`;
+  `op_allowlist` walks ONNX subgraphs with an explicit stack and reports
+  findings in the same document order. `bisect_model_quality`, the three
+  `vmaf-train` commands, `audit_learned_filter`, `export_to_onnx`, the parquet
+  writers, `SGDEMATrainer.step` and the sidecar server loop are split into
+  helpers that keep their names and signatures. No behaviour change; the HISS
+  baseline loses the rows of these files.
+
+
 - **`testdata/bench_upstream_ab.py` takes its score verdict from the upstream
   parity guard and builds upstream at the recorded parity head** (ADR-1487).
   The `--max-score-delta` option and its `1e-5` ceiling on the six-decimal
