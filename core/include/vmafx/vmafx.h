@@ -18,10 +18,10 @@
 #include <vmafx/types.h>
 #include <vmafx/version.h>
 #include <vmafx/error.h>
-#include <vmafx/context.h>
 #include <vmafx/device.h>
 #include <vmafx/frame.h>
 #include <vmafx/model.h>
+#include <vmafx/context.h>
 #include <vmafx/score.h>
 #include <vmafx/provenance.h>
 #include <vmafx/report.h>

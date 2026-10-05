@@ -6,25 +6,34 @@
  */
 
 /*
- * VMAFx API, prototype slice (ADR-1852): context create / destroy, version,
- * provenance and extractor queries, and one score call, on the scoring engine
- * of core/src/libvmaf.c. libvmaf's vmaf_init(), vmaf_close(),
- * vmaf_feature_score_at_index() and vmaf_version() are generated shims on
- * these (core/src/vmafx/compat_libvmaf_gen.c).
+ * VMAFx contexts (ADR-1852): create / destroy, the per-context log callback,
+ * context options, version, provenance and extractor queries, on the scoring
+ * engine of core/src/libvmaf.c. libvmaf's vmaf_init(), vmaf_close() and
+ * vmaf_version() are generated shims on these
+ * (core/src/vmafx/compat_libvmaf_gen.c).
  *
- * Struct size negotiation: an input struct must hold at least the fields of
- * ABI 0.1; an output struct receives min(its struct_size, ours) bytes and
- * its struct_size is set to what was written.
+ * Logging (RC4 WP2): a context with a log callback receives its own messages
+ * (failures reported without an error out-parameter, and what the engine logs
+ * on the calling thread during this context's calls) at or below its
+ * log_level, and never changes the process log level. A context without one
+ * logs to the process log and sets its level, as vmaf_init() always did.
  */
 
+#include <assert.h>
+#include <errno.h>
 #include <limits.h>
+#include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "engine.h"
 #include "error_internal.h"
+#include "internal.h"
+#include "log.h"
 #include "status_gen.h"
+#include "thread_locale.h"
 #include "vmafx/libvmaf_bridge.h"
 #include "vmafx/vmafx.h"
 
@@ -33,50 +42,257 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-struct VmafxContext {
-    VmafContext *engine;
-};
+/* Bound of a held-reference list (HISS-02): far more models than a context
+ * can score. */
+#define VMAFX_HELD_MAX 4096u
 
-/* Copy `full` (our complete record of `full_size` bytes) into the caller's
- * `out`, whose first uint32_t is its struct_size. */
-static VmafxStatus copy_out(void *out, const void *full, uint32_t full_size, VmafxError **error,
-                            const char *name)
-{
-    uint32_t caller_size = 0;
-    memcpy(&caller_size, out, sizeof(caller_size));
-    if (caller_size < sizeof(uint32_t)) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, name, "struct_size %u is too small",
-                          (unsigned)caller_size);
-    }
-    const uint32_t written = caller_size < full_size ? caller_size : full_size;
-    memcpy(out, full, written);
-    memcpy(out, &written, sizeof(written));
-    return VMAFX_OK;
-}
+/* ---- Held references -------------------------------------------------------- */
 
-static VmafxStatus engine_config(const VmafxContextConfig *config, VmafConfiguration *cfg,
-                                 VmafxError **error)
+VmafxStatus vmafx_held_reserve(const VmafxReport *report, VmafxHeld *held)
 {
-    memset(cfg, 0, sizeof(*cfg));
-    if (!config) {
+    if (held->count < held->capacity) {
         return VMAFX_OK;
     }
-    if (config->struct_size < sizeof(VmafxContextConfig)) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, "config.struct_size",
-                          "struct_size %u is below the ABI 0.1 size %u",
-                          (unsigned)config->struct_size, (unsigned)sizeof(VmafxContextConfig));
+    const uint32_t capacity = held->capacity ? held->capacity * 2u : 4u;
+    void **const items =
+        capacity <= VMAFX_HELD_MAX ? realloc((void *)held->items, capacity * sizeof(*items)) : NULL;
+    if (!items) {
+        return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
+                          "cannot hold %u more references", (unsigned)capacity);
     }
-    if (config->log_level > VMAFX_LOG_LEVEL_DEBUG) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, "config.log_level",
-                          "log level %u is not a VmafxLogLevel", (unsigned)config->log_level);
-    }
-    cfg->log_level = (enum VmafLogLevel)config->log_level;
-    cfg->n_threads = config->n_threads;
-    cfg->n_subsample = config->n_subsample;
-    cfg->cpumask = config->cpumask;
-    cfg->gpumask = config->gpumask;
+    held->items = items;
+    held->capacity = capacity;
     return VMAFX_OK;
 }
+
+void vmafx_held_push(VmafxHeld *held, void *item)
+{
+    assert(held->count < held->capacity);
+    held->items[held->count++] = item;
+}
+
+static void release_held(VmafxContext *context)
+{
+    for (uint32_t i = 0; i < context->models.count; i++) {
+        vmafx_model_unref(context->models.items[i]);
+    }
+    for (uint32_t i = 0; i < context->model_sets.count; i++) {
+        vmafx_model_set_unref(context->model_sets.items[i]);
+    }
+    free((void *)context->models.items);
+    free((void *)context->model_sets.items);
+}
+
+/* ---- Logging ----------------------------------------------------------------- */
+
+static void deliver_to_callback(enum VmafLogLevel level, const char *message, void *user)
+{
+    const VmafxContext *const context = user;
+    context->log_callback((uint32_t)level, message, context->log_user);
+}
+
+const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context)
+{
+    return context && context->log_callback ? &context->sink : NULL;
+}
+
+const VmafLogSink *vmafx_engine_enter(const VmafxContext *context)
+{
+    return vmaf_log_swap_thread_sink(vmafx_context_log_sink(context));
+}
+
+void vmafx_engine_leave(const VmafLogSink *previous)
+{
+    (void)vmaf_log_swap_thread_sink(previous);
+}
+
+VmafContext *vmafx_context_engine(const VmafxContext *context)
+{
+    return context ? context->engine : NULL;
+}
+
+/* ---- Create / destroy --------------------------------------------------------- */
+
+static VmafxStatus read_config(const VmafxReport *report, const VmafxContextConfig *config,
+                               VmafxContextConfig *cfg)
+{
+    if (config) {
+        const VmafxStatus status = vmafx_read_sized(report, cfg, (uint32_t)sizeof(*cfg), config,
+                                                    VMAFX_MIN_CONTEXT_CONFIG, "config");
+        if (status != VMAFX_OK) {
+            return status;
+        }
+    }
+    if (cfg->log_level > VMAFX_LOG_LEVEL_DEBUG) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "config.log_level",
+                          "log level %u is not a VmafxLogLevel", (unsigned)cfg->log_level);
+    }
+    return VMAFX_OK;
+}
+
+/* The engine configuration. With a log callback the engine keeps the process
+ * log level as it is (the context filters its own messages). */
+static VmafConfiguration engine_config(const VmafxContextConfig *cfg)
+{
+    VmafConfiguration ecfg;
+    memset(&ecfg, 0, sizeof(ecfg));
+    ecfg.log_level = cfg->log_callback ? vmaf_get_log_level() : (enum VmafLogLevel)cfg->log_level;
+    ecfg.n_threads = cfg->n_threads;
+    ecfg.n_subsample = cfg->n_subsample;
+    ecfg.cpumask = cfg->cpumask;
+    ecfg.gpumask = cfg->gpumask;
+    return ecfg;
+}
+
+static VmafxContext *new_context(const VmafxContextConfig *cfg)
+{
+    VmafxContext *const context = calloc(1, sizeof(*context));
+    if (!context) {
+        return NULL;
+    }
+    context->log_callback = cfg->log_callback;
+    context->log_user = cfg->log_user;
+    context->sink.deliver = deliver_to_callback;
+    context->sink.user = context;
+    context->sink.level = (enum VmafLogLevel)cfg->log_level;
+    return context;
+}
+
+VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
+                                 VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!out) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "out",
+                          "no place to store the context");
+    }
+    *out = NULL;
+    VmafxContextConfig cfg = VMAFX_CONTEXT_CONFIG_INIT;
+    const VmafxStatus status = read_config(&report, config, &cfg);
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    VmafxContext *const context = new_context(&cfg);
+    if (!context) {
+        return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
+                          "cannot allocate a context");
+    }
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_init(&context->engine, engine_config(&cfg));
+    vmafx_engine_leave(previous);
+    if (err) {
+        const VmafxReport own = VMAFX_REPORT(context, error);
+        const VmafxStatus failed =
+            VMAFX_FAIL(&own, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT, "engine",
+                       "engine initialisation failed (%d)", err);
+        free(context);
+        return failed;
+    }
+    vmaf_engine_set_api_owner(context->engine, context);
+    *out = context;
+    return VMAFX_OK;
+}
+
+VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(context, error);
+    if (!context) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
+                          "no context");
+    }
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_close(context->engine);
+    vmafx_engine_leave(previous);
+    if (err) {
+        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
+                          "engine", "close failed (%d); the context stays valid for a retry", err);
+    }
+    /* The engine released its collector's model owners; drop the context's
+     * references (ADR-1755) only now, so a failed close keeps them. */
+    release_held(context);
+    free(context);
+    return VMAFX_OK;
+}
+
+/* ---- Context options ------------------------------------------------------------ */
+
+static VmafxStatus parse_switch(const VmafxReport *report, const char *key, const char *value,
+                                int *enabled)
+{
+    if (!strcmp(value, "1") || !strcmp(value, "true")) {
+        *enabled = 1;
+        return VMAFX_OK;
+    }
+    if (!strcmp(value, "0") || !strcmp(value, "false")) {
+        *enabled = 0;
+        return VMAFX_OK;
+    }
+    return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_OPTION, key,
+                      "value \"%s\" is not 0, 1, true or false", value);
+}
+
+/* A finite number >= 0, read in the C locale whatever the process locale. */
+static VmafxStatus parse_strength(const VmafxReport *report, const char *key, const char *value,
+                                  double *strength)
+{
+    VmafThreadLocaleState *const locale = vmaf_thread_locale_push_c();
+    char *end = NULL;
+    const double parsed = strtod(value, &end);
+    vmaf_thread_locale_pop(locale);
+    if (end == value || *end != '\0' || !isfinite(parsed) || parsed < 0.0) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_OPTION, key,
+                          "value \"%s\" is not a finite number >= 0", value);
+    }
+    *strength = parsed;
+    return VMAFX_OK;
+}
+
+/* Apply a parsed option to the engine; returns its errno. */
+static int apply_option(VmafxContext *context, const char *key, int enabled, double strength)
+{
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = !strcmp(key, "perceptual_weight") ?
+                        vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled) :
+                        vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
+    vmafx_engine_leave(previous);
+    return err;
+}
+
+VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key, const char *value,
+                                     VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(context, error);
+    if (!context || !key || !value) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !context ? "context" :
+                          !key     ? "key" :
+                                     "value",
+                          "NULL argument");
+    }
+    int enabled = 0;
+    double strength = 0.0;
+    VmafxStatus status = VMAFX_OK;
+    if (!strcmp(key, "perceptual_weight")) {
+        status = parse_switch(&report, key, value, &enabled);
+    } else if (!strcmp(key, "perceptual_weight_strength")) {
+        status = parse_strength(&report, key, value, &strength);
+    } else {
+        return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_OPTION, key,
+                          "no context option has this name; the context options are "
+                          "perceptual_weight and perceptual_weight_strength");
+    }
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    const int err = apply_option(context, key, enabled, strength);
+    if (err) {
+        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_OPTION, key,
+                          "the engine refused %s=%s (%d)", key, value, err);
+    }
+    return VMAFX_OK;
+}
+
+/* ---- Queries -------------------------------------------------------------------- */
 
 const char *vmafx_version_string(void)
 {
@@ -96,58 +312,19 @@ void vmafx_abi_version(uint32_t *major, uint32_t *minor, uint32_t *patch)
     }
 }
 
-VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
-                                 VmafxError **error)
-{
-    if (!out) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, "out", "no place to store the context");
-    }
-    *out = NULL;
-    VmafConfiguration cfg;
-    const VmafxStatus status = engine_config(config, &cfg, error);
-    if (status != VMAFX_OK) {
-        return status;
-    }
-    VmafxContext *const context = malloc(sizeof(*context));
-    if (!context) {
-        return vmafx_fail(error, VMAFX_E_NOMEM, 0, "context", "cannot allocate a context");
-    }
-    const int err = vmaf_engine_init(&context->engine, cfg);
-    if (err) {
-        free(context);
-        return vmafx_fail(error, vmafx_status_from_errno(err), err, "engine",
-                          "engine initialisation failed (%d)", err);
-    }
-    vmaf_engine_set_api_owner(context->engine, context);
-    *out = context;
-    return VMAFX_OK;
-}
-
-VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
-{
-    if (!context) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, "context", "no context");
-    }
-    const int err = vmaf_engine_close(context->engine);
-    if (err) {
-        return vmafx_fail(error, vmafx_status_from_errno(err), err, "engine",
-                          "close failed (%d); the context stays valid for a retry", err);
-    }
-    free(context);
-    return VMAFX_OK;
-}
-
 VmafxStatus vmafx_context_provenance(const VmafxContext *context, VmafxProvenance *out,
                                      VmafxError **error)
 {
+    const VmafxReport report = VMAFX_REPORT(context, error);
     if (!context || !out) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, context ? "out" : "context", "NULL argument");
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          context ? "out" : "context", "NULL argument");
     }
     enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
     const int err = vmaf_context_get_backend(context->engine, &backend);
     if (err) {
-        return vmafx_fail(error, vmafx_status_from_errno(err), err, "context",
-                          "cannot read the active backend (%d)", err);
+        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
+                          "context", "cannot read the active backend (%d)", err);
     }
     VmafxProvenance full = VMAFX_PROVENANCE_INIT;
     full.abi_major = VMAFX_ABI_VERSION_MAJOR;
@@ -156,59 +333,39 @@ VmafxStatus vmafx_context_provenance(const VmafxContext *context, VmafxProvenanc
     full.active_backend = (uint32_t)backend;
     full.n_extractors = vmaf_engine_extractor_count(context->engine);
     full.version = vmaf_engine_version();
-    return copy_out(out, &full, (uint32_t)sizeof(full), error, "out.struct_size");
+    return vmafx_write_sized(&report, out, &full, (uint32_t)sizeof(full), "out");
 }
 
 VmafxStatus vmafx_context_extractor_info(const VmafxContext *context, uint32_t index,
                                          VmafxExtractorInfo *out, VmafxError **error)
 {
+    const VmafxReport report = VMAFX_REPORT(context, error);
     if (!context || !out) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0, context ? "out" : "context", "NULL argument");
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          context ? "out" : "context", "NULL argument");
     }
     const char *name = NULL;
     enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
-    const int err = vmaf_registered_feature_extractor(context->engine, index, &name, &backend);
+    const int err =
+        vmaf_engine_registered_feature_extractor(context->engine, index, &name, &backend);
     if (err) {
-        return vmafx_fail(error, vmafx_status_from_errno(err), err, "index",
-                          "no registered extractor %u (%d)", (unsigned)index, err);
+        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_EXTRACTOR,
+                          "index", "no registered extractor %u (%d)", (unsigned)index, err);
     }
     VmafxExtractorInfo full = VMAFX_EXTRACTOR_INFO_INIT;
     full.backend = (uint32_t)backend;
     full.name = name;
-    return copy_out(out, &full, (uint32_t)sizeof(full), error, "out.struct_size");
+    return vmafx_write_sized(&report, out, &full, (uint32_t)sizeof(full), "out");
 }
 
-VmafxStatus vmafx_feature_score(VmafxContext *context, const char *feature, uint64_t index,
-                                VmafxScore *out, VmafxError **error)
+uint32_t vmafx_context_extractor_count(const VmafxContext *context)
 {
-    if (!context || !feature || !out) {
-        return vmafx_fail(error, VMAFX_E_INVALID, 0,
-                          !context ? "context" :
-                          !feature ? "feature" :
-                                     "out",
-                          "NULL argument");
-    }
-    if (index > UINT_MAX) {
-        return vmafx_fail(error, VMAFX_E_RANGE, 0, "index", "frame index %llu exceeds %u",
-                          (unsigned long long)index, UINT_MAX);
-    }
-    double value = 0.0;
-    const int err =
-        vmaf_engine_feature_score_at_index(context->engine, feature, &value, (unsigned)index);
-    if (err) {
-        return vmafx_fail(error, vmafx_status_from_errno(err), err, feature,
-                          "no score for frame %llu (%d)", (unsigned long long)index, err);
-    }
-    const char *extractor = NULL;
-    enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
-    (void)vmaf_engine_feature_producer(context->engine, feature, &extractor, &backend);
-    VmafxScore full = VMAFX_SCORE_INIT;
-    full.backend = (uint32_t)backend;
-    full.index = index;
-    full.value = value;
-    full.feature = feature;
-    full.extractor = extractor;
-    return copy_out(out, &full, (uint32_t)sizeof(full), error, "out.struct_size");
+    return context ? vmaf_engine_extractor_count(context->engine) : 0u;
+}
+
+uint32_t vmafx_context_frame_retention(const VmafxContext *context)
+{
+    return context ? vmaf_engine_frame_retention(context->engine) : 0u;
 }
 
 VmafxContext *vmafx_context_from_libvmaf(VmafContext *vmaf)

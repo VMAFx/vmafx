@@ -1005,7 +1005,7 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
      * (including on the error path); the import ring already
      * cleared its slot in build_pictures so no further cleanup is
      * needed here. */
-    return vmaf_read_pictures(vmaf, &ref, &dis, index);
+    return vmaf_engine_read_pictures(vmaf, &ref, &dis, index);
 }
 #endif
 
@@ -1708,7 +1708,7 @@ static int dnn_request_input_features(VmafContext *ctx, const VmafModelSidecar *
     for (size_t i = 0; i < n; ++i) {
         if (i > 0u && fex[i] == fex[i - 1u])
             continue;
-        const int err = vmaf_use_feature(ctx, fex[i]->name, NULL);
+        const int err = vmaf_engine_use_feature(ctx, fex[i]->name, NULL);
         if (err)
             return err;
     }
@@ -2184,8 +2184,8 @@ int vmaf_engine_close(VmafContext *vmaf)
     return 0;
 }
 
-int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
-                              unsigned index)
+int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
+                                     unsigned index)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2202,7 +2202,7 @@ int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, doubl
  * weighting is enabled AND side-data is present for the frame. The Netflix
  * golden pairs carry no side-data and MUST score bit-exact. */
 
-int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
+int vmaf_engine_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2211,7 +2211,7 @@ int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
     return 0;
 }
 
-int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
+int vmaf_engine_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2344,7 +2344,8 @@ static int resolve_context_fallbacks(VmafContext *vmaf)
     return 0;
 }
 
-int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
+int vmaf_engine_use_feature(VmafContext *vmaf, const char *feature_name,
+                            VmafFeatureDictionary *opts_dict)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2471,7 +2472,7 @@ static VmafFeatureExtractor *fex_honouring_model_options(VmafFeatureExtractor *f
     return cpu_fex;
 }
 
-int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
+int vmaf_engine_use_features_from_model(VmafContext *vmaf, VmafModel *model)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2527,8 +2528,8 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
     return 0;
 }
 
-int vmaf_use_features_from_model_collection(VmafContext *vmaf,
-                                            VmafModelCollection *model_collection)
+int vmaf_engine_use_features_from_model_collection(VmafContext *vmaf,
+                                                   VmafModelCollection *model_collection)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2537,7 +2538,7 @@ int vmaf_use_features_from_model_collection(VmafContext *vmaf,
 
     int err = 0;
     for (unsigned i = 0; i < model_collection->cnt; i++)
-        err |= vmaf_use_features_from_model(vmaf, model_collection->model[i]);
+        err |= vmaf_engine_use_features_from_model(vmaf, model_collection->model[i]);
 
     return err;
 }
@@ -2598,10 +2599,10 @@ static int backend_twin_verdict(const VmafFeatureExtractor *twin, const VmafDict
     return backend_twin_check_geometry(twin, opts, pic_cfg);
 }
 
-int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
-                              const VmafFeatureDictionary *opts_dict,
-                              const VmafPictureConfiguration *pic_cfg, const char **twin_name,
-                              const char **unsupported_option)
+int vmaf_engine_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                                     const VmafFeatureDictionary *opts_dict,
+                                     const VmafPictureConfiguration *pic_cfg,
+                                     const char **twin_name, const char **unsupported_option)
 {
     if (unsupported_option)
         *unsupported_option = NULL;
@@ -2643,8 +2644,8 @@ static enum VmafBackend fex_flags_backend(uint64_t flags)
     return VMAF_BACKEND_UNKNOWN;
 }
 
-int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
-                                      enum VmafBackend *backend)
+int vmaf_engine_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
+                                             enum VmafBackend *backend)
 {
     if (!vmaf || !name || !backend)
         return -EINVAL;
@@ -4026,7 +4027,8 @@ static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPictur
     return err;
 }
 
-int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
+int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                              unsigned index)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4316,7 +4318,7 @@ int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_na
     return err;
 }
 
-int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4353,8 +4355,9 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
     return err;
 }
 
-int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                         VmafModelCollectionScore *score, unsigned index)
+int vmaf_engine_score_at_index_model_collection(VmafContext *vmaf,
+                                                VmafModelCollection *model_collection,
+                                                VmafModelCollectionScore *score, unsigned index)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4529,9 +4532,9 @@ static int pool_accumulate(VmafContext *vmaf, const char *feature_name, PoolAccu
     return 0;
 }
 
-int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
-                              enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
-                              unsigned index_high)
+int vmaf_engine_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
+                                     enum VmafPoolingMethod pool_method, double *score,
+                                     unsigned index_low, unsigned index_high)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4578,8 +4581,9 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
     return err;
 }
 
-int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
-                      double *score, unsigned index_low, unsigned index_high)
+int vmaf_engine_score_pooled(VmafContext *vmaf, VmafModel *model,
+                             enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
+                             unsigned index_high)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4596,18 +4600,20 @@ int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMetho
         if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
             continue;
         double vmaf_score;
-        int err = vmaf_score_at_index(vmaf, model, &vmaf_score, i);
+        int err = vmaf_engine_score_at_index(vmaf, model, &vmaf_score, i);
         if (err)
             return err;
     }
 
-    return vmaf_feature_score_pooled(vmaf, model->name, pool_method, score, index_low, index_high);
+    return vmaf_engine_feature_score_pooled(vmaf, model->name, pool_method, score, index_low,
+                                            index_high);
 }
 
-int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                       enum VmafPoolingMethod pool_method,
-                                       VmafModelCollectionScore *score, unsigned index_low,
-                                       unsigned index_high)
+int vmaf_engine_score_pooled_model_collection(VmafContext *vmaf,
+                                              VmafModelCollection *model_collection,
+                                              enum VmafPoolingMethod pool_method,
+                                              VmafModelCollectionScore *score, unsigned index_low,
+                                              unsigned index_high)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4625,7 +4631,7 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
         if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
             continue;
         VmafModelCollectionScore s;
-        err = vmaf_score_at_index_model_collection(vmaf, model_collection, &s, i);
+        err = vmaf_engine_score_at_index_model_collection(vmaf, model_collection, &s, i);
         if (err)
             return err;
     }
@@ -4643,20 +4649,20 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
         return -ENOMEM;
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_BAGGING);
-    err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.bagging_score,
-                                     index_low, index_high);
+    err |= vmaf_engine_feature_score_pooled(vmaf, name, pool_method,
+                                            &score->bootstrap.bagging_score, index_low, index_high);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_STDDEV);
-    err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.stddev, index_low,
-                                     index_high);
+    err |= vmaf_engine_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.stddev,
+                                            index_low, index_high);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_LO);
-    err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.lo,
-                                     index_low, index_high);
+    err |= vmaf_engine_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.lo,
+                                            index_low, index_high);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_HI);
-    err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.hi,
-                                     index_low, index_high);
+    err |= vmaf_engine_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.hi,
+                                            index_low, index_high);
 
     free(name);
     return err;
@@ -4727,6 +4733,120 @@ int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
         return 0;
     }
     return -ENOENT;
+}
+
+unsigned vmaf_engine_frame_retention(const VmafContext *vmaf)
+{
+    if (!vmaf)
+        return 0;
+    /* read_pictures_update_prev_ref() always keeps the reference picture of
+     * frame n-1 and, once an extractor that reads n-2 is registered
+     * (ADR-1478), the one of frame n-2 as well. */
+    return vmaf->keep_prev_prev_ref ? 2u : 1u;
+}
+
+enum VmafBackend vmaf_engine_extractor_backend(const char *extractor)
+{
+    const VmafFeatureExtractor *fex =
+        extractor ? vmaf_get_feature_extractor_by_name(extractor) : NULL;
+    return fex ? fex_flags_backend(fex->flags) : VMAF_BACKEND_UNKNOWN;
+}
+
+bool vmaf_engine_is_flushed(const VmafContext *vmaf)
+{
+    return vmaf && vmaf->flushed;
+}
+
+/* ---- libvmaf entry points on the engine (ADR-1852, RC4 WP2) ---------------
+ * The bodies above are the engine entry points the VMAFx API calls
+ * (core/src/vmafx/engine.h). The libvmaf functions forward to them until the
+ * compat layer generates them as shims on the VMAFx API (WP6); engine code
+ * calls the vmaf_engine_ names, never these, so that change cannot recurse. */
+
+int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
+                              unsigned index)
+{
+    return vmaf_engine_import_feature_score(vmaf, feature_name, value, index);
+}
+
+int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
+{
+    return vmaf_engine_set_perceptual_weight_enabled(vmaf, enabled);
+}
+
+int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
+{
+    return vmaf_engine_set_perceptual_weight_strength(vmaf, strength);
+}
+
+int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
+{
+    return vmaf_engine_use_feature(vmaf, feature_name, opts_dict);
+}
+
+int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
+{
+    return vmaf_engine_use_features_from_model(vmaf, model);
+}
+
+int vmaf_use_features_from_model_collection(VmafContext *vmaf,
+                                            VmafModelCollection *model_collection)
+{
+    return vmaf_engine_use_features_from_model_collection(vmaf, model_collection);
+}
+
+int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                              const VmafFeatureDictionary *opts_dict,
+                              const VmafPictureConfiguration *pic_cfg, const char **twin_name,
+                              const char **unsupported_option)
+{
+    return vmaf_engine_feature_backend_twin(vmaf, feature_name, opts_dict, pic_cfg, twin_name,
+                                            unsupported_option);
+}
+
+int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
+                                      enum VmafBackend *backend)
+{
+    return vmaf_engine_registered_feature_extractor(vmaf, index, name, backend);
+}
+
+int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
+{
+    return vmaf_engine_read_pictures(vmaf, ref, dist, index);
+}
+
+int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+{
+    return vmaf_engine_score_at_index(vmaf, model, score, index);
+}
+
+int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
+                                         VmafModelCollectionScore *score, unsigned index)
+{
+    return vmaf_engine_score_at_index_model_collection(vmaf, model_collection, score, index);
+}
+
+int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
+                              enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
+                              unsigned index_high)
+{
+    return vmaf_engine_feature_score_pooled(vmaf, feature_name, pool_method, score, index_low,
+                                            index_high);
+}
+
+int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
+                      double *score, unsigned index_low, unsigned index_high)
+{
+    return vmaf_engine_score_pooled(vmaf, model, pool_method, score, index_low, index_high);
+}
+
+int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
+                                       enum VmafPoolingMethod pool_method,
+                                       VmafModelCollectionScore *score, unsigned index_low,
+                                       unsigned index_high)
+{
+    return vmaf_engine_score_pooled_model_collection(vmaf, model_collection, pool_method, score,
+                                                     index_low, index_high);
 }
 
 /* Open `output_path` for writing with mode 0644 so the output file is never

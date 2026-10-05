@@ -6,6 +6,84 @@ Frames: host frames, device imports, pools, fences, side data.
 
 `#include <vmafx/frame.h>`.
 
-No declarations yet: a later RC4 work package fills this header.
+## Handles and callbacks
+
+| Type | Since | Description |
+| --- | --- | --- |
+| `VmafxFrame` | 0.1 | Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts. Released by `vmafx_frame_unref`. |
+| `VmafxFrameReleaseCallback` | 0.1 | Called once, on any thread, when the library has stopped reading the planes of a wrapped host frame. |
+
+```c
+typedef void (*VmafxFrameReleaseCallback)(void *user);
+```
+
+## Structs
+
+### `VmafxFrameDesc`
+
+Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT. Size 20 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `pix_fmt` | `uint32_t pix_fmt` | 4 | 0.1 | Pixel layout. Values: `VmafxPixelFormat`. |
+| `bpc` | `uint32_t bpc` | 8 | 0.1 | Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. |
+| `w` | `uint32_t w` | 12 | 0.1 | Luma width in pixels. |
+| `h` | `uint32_t h` | 16 | 0.1 | Luma height in pixels. |
+
+Initialise with `VMAFX_FRAME_DESC_INIT`.
+
+### `VmafxHostPlanes`
+
+Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT. Size 72 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `data` | `void *data[3]` | 8 | 0.1 | First sample of each plane; planes the format does not have are NULL. |
+| `stride` | `uint64_t stride[3]` | 32 | 0.1 | Bytes from one row to the next, at least the row's bytes. |
+| `release` | `VmafxFrameReleaseCallback release` | 56 | 0.1 | Called once when the library no longer reads the planes; NULL: the caller keeps the planes valid until it destroys every context the frame was submitted to. |
+| `user` | `void *user` | 64 | 0.1 | Passed to `release`. |
+
+Initialise with `VMAFX_HOST_PLANES_INIT`.
+
+### `VmafxFramePlanes`
+
+Where the samples of a frame are. The data pointers live as long as the frame. Size 88 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `pix_fmt` | `uint32_t pix_fmt` | 4 | 0.1 | Pixel layout. Values: `VmafxPixelFormat`. |
+| `bpc` | `uint32_t bpc` | 8 | 0.1 | Bits per component. |
+| `n_planes` | `uint32_t n_planes` | 12 | 0.1 | Planes in use: 1 for YUV400P, else 3. |
+| `w` | `uint32_t w[3]` | 16 | 0.1 | Width of each plane in samples. |
+| `h` | `uint32_t h[3]` | 28 | 0.1 | Height of each plane in rows. |
+| `stride` | `uint64_t stride[3]` | 40 | 0.1 | Bytes from one row to the next. |
+| `data` | `void *data[3]` | 64 | 0.1 | First sample of each plane; NULL past `n_planes`. |
+
+Initialise with `VMAFX_FRAME_PLANES_INIT`.
+
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_frame_create_host` | 0.1 | Allocate a host frame on `device` (NULL: the CPU) with zeroed planes; fill them through vmafx_frame_planes() before the first submit. The caller holds one reference. |
+| `vmafx_frame_wrap_host` | 0.1 | A host frame on the caller's planes, without a copy. The planes stay valid and unchanged until `planes.release` is called, once, when the last reference (the caller's or a context's) is gone. On failure `release` is not called. |
+| `vmafx_frame_planes` | 0.1 | Describe the planes of a frame. |
+| `vmafx_frame_ref` | 0.1 | Take one more reference (for example to submit the frame to a second context); returns `frame` (NULL for NULL). |
+| `vmafx_frame_unref` | 0.1 | Drop one reference; the last one, the caller's or a context's, frees the planes or calls the release callback. NULL is a no-op. |
+
+```c
+VMAFX_EXPORT VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *desc,
+                                                 VmafxFrame **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_frame_wrap_host(VmafxDevice *device, const VmafxFrameDesc *desc,
+                                               const VmafxHostPlanes *planes, VmafxFrame **out,
+                                               VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_frame_planes(const VmafxFrame *frame, VmafxFramePlanes *out,
+                                            VmafxError **error);
+VMAFX_EXPORT VmafxFrame *vmafx_frame_ref(VmafxFrame *frame);
+VMAFX_EXPORT void vmafx_frame_unref(VmafxFrame *frame);
+```
 
 Back to the [reference index](reference.md).

@@ -21,13 +21,17 @@ tests.
     ```
 
 3. Implement what the definition declares (hand-written C lives in
-   `core/src/vmafx/`), build, and run the tests:
+   `core/src/vmafx/`; [ADR-1906](../adr/1906-vmafx-core-api-semantics.md)
+   records the rules it follows for logging, struct sizes and references),
+   build, and run the tests:
 
     ```bash
     python3 scripts/ci/run_meson_test.py -- -C build test_vmafx_abi_layout \
         test_vmafx_api_slice test_vmafx_api_generated_current \
         test_vmafx_api_abi_append_only test_vmafx_api_generator \
-        test_vmafx_python_binding check_exported_symbols
+        test_vmafx_python_binding check_exported_symbols \
+        test_vmafx_context test_vmafx_model test_vmafx_frame test_vmafx_score \
+        test_vmafx_bitexact test_vmafx_lifetime test_vmafx_sha256
     ```
 
 4. Check that the new definition is an append-only successor of the one you

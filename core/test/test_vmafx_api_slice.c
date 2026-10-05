@@ -130,8 +130,10 @@ static char *test_create_names_bad_config(void)
     VmafxContext *context = keep; /* a failed create must reset it to NULL */
     VmafxError *error = NULL;
     const VmafxStatus short_struct = vmafx_context_create(&config, &context, &error);
-    mu_assert("short struct", short_struct == VMAFX_E_INVALID && context == NULL);
-    mu_assert("subject struct_size", names_subject(error, "config.struct_size"));
+    /* RC4 WP2: below the size the struct had when it was introduced is an ABI
+     * mismatch (design section 2.6), naming the struct. */
+    mu_assert("short struct", short_struct == VMAFX_E_ABI && context == NULL);
+    mu_assert("subject config", names_subject(error, "config"));
     config.struct_size = sizeof(config);
     config.log_level = 99;
     error = NULL;

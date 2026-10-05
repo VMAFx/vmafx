@@ -17,12 +17,138 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <vmafx/types.h>
+#include <vmafx/error.h>
+#include <vmafx/device.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* No declarations yet: later RC4 work packages fill this header. */
+/**
+ * Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts.
+ * @since 0.1
+ */
+typedef struct VmafxFrame VmafxFrame;
+
+typedef struct VmafxFrameDesc VmafxFrameDesc;
+typedef struct VmafxHostPlanes VmafxHostPlanes;
+typedef struct VmafxFramePlanes VmafxFramePlanes;
+
+/**
+ * Called once, on any thread, when the library has stopped reading the planes of a wrapped host
+ * frame.
+ * @since 0.1
+ */
+typedef void (*VmafxFrameReleaseCallback)(void *user);
+
+/**
+ * Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
+ * @since 0.1
+ */
+struct VmafxFrameDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel layout. Values: VmafxPixelFormat. */
+    uint32_t pix_fmt;
+    /** Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. */
+    uint32_t bpc;
+    /** Luma width in pixels. */
+    uint32_t w;
+    /** Luma height in pixels. */
+    uint32_t h;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FRAME_DESC_INIT {.struct_size = sizeof(VmafxFrameDesc)}
+
+/**
+ * Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT.
+ * @since 0.1
+ */
+struct VmafxHostPlanes {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** First sample of each plane; planes the format does not have are NULL. */
+    void *data[3];
+    /** Bytes from one row to the next, at least the row's bytes. */
+    uint64_t stride[3];
+    /**
+     * Called once when the library no longer reads the planes; NULL: the caller keeps the planes
+     * valid until it destroys every context the frame was submitted to.
+     */
+    VmafxFrameReleaseCallback release;
+    /** Passed to `release`. */
+    void *user;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_HOST_PLANES_INIT {.struct_size = sizeof(VmafxHostPlanes)}
+
+/**
+ * Where the samples of a frame are. The data pointers live as long as the frame.
+ * @since 0.1
+ */
+struct VmafxFramePlanes {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel layout. Values: VmafxPixelFormat. */
+    uint32_t pix_fmt;
+    /** Bits per component. */
+    uint32_t bpc;
+    /** Planes in use: 1 for YUV400P, else 3. */
+    uint32_t n_planes;
+    /** Width of each plane in samples. */
+    uint32_t w[3];
+    /** Height of each plane in rows. */
+    uint32_t h[3];
+    /** Bytes from one row to the next. */
+    uint64_t stride[3];
+    /** First sample of each plane; NULL past `n_planes`. */
+    void *data[3];
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FRAME_PLANES_INIT {.struct_size = sizeof(VmafxFramePlanes)}
+
+/**
+ * Allocate a host frame on `device` (NULL: the CPU) with zeroed planes; fill them through
+ * vmafx_frame_planes() before the first submit. The caller holds one reference.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *desc,
+                                                 VmafxFrame **out, VmafxError **error);
+
+/**
+ * A host frame on the caller's planes, without a copy. The planes stay valid and unchanged until
+ * `planes.release` is called, once, when the last reference (the caller's or a context's) is gone.
+ * On failure `release` is not called.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_wrap_host(VmafxDevice *device, const VmafxFrameDesc *desc,
+                                               const VmafxHostPlanes *planes, VmafxFrame **out,
+                                               VmafxError **error);
+
+/**
+ * Describe the planes of a frame.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_planes(const VmafxFrame *frame, VmafxFramePlanes *out,
+                                            VmafxError **error);
+
+/**
+ * Take one more reference (for example to submit the frame to a second context); returns `frame`
+ * (NULL for NULL).
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxFrame *vmafx_frame_ref(VmafxFrame *frame);
+
+/**
+ * Drop one reference; the last one, the caller's or a context's, frees the planes or calls the
+ * release callback. NULL is a no-op.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_frame_unref(VmafxFrame *frame);
 
 #ifdef __cplusplus
 }

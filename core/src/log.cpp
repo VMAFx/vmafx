@@ -83,6 +83,25 @@ namespace
  * file-scope qualifier (clang-tidy misc-use-anonymous-namespace). */
 VmafLogLevel vmaf_log_level = VMAF_LOG_LEVEL_INFO;
 int istty = 0;
+/* ADR-1852 (RC4 WP2): the sink of the VMAFx context whose engine call runs on
+ * this thread, or nullptr (log.h, VmafLogSink). */
+thread_local const VmafLogSink *thread_sink = nullptr;
+/* Longest message a sink receives; a longer one is truncated. */
+constexpr std::size_t sink_message_max = 1024;
+
+/* Format one message for `sink`: one line, the trailing newline removed. */
+void log_to_sink(const VmafLogSink *sink, VmafLogLevel level, const char *fmt, va_list args)
+{
+    std::array<char, sink_message_max> message{};
+    const int written = std::vsnprintf(message.data(), message.size(), fmt, args);
+    std::size_t len =
+        written < 0 ? 0u : std::min(static_cast<std::size_t>(written), message.size() - 1u);
+    message[len] = '\0';
+    if (len > 0u && message[len - 1u] == '\n') {
+        message[--len] = '\0';
+    }
+    sink->deliver(level, message.data(), sink->user);
+}
 } /* anonymous namespace */
 
 /* Per-level display names.  Indices 0–3 map to VmafLogLevel values 1–4
@@ -155,8 +174,16 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     const int level_int = static_cast<int>(level);
     if (level_int <= static_cast<int>(VMAF_LOG_LEVEL_NONE))
         return;
-    if (level_int > static_cast<int>(vmaf_log_level))
+    const VmafLogSink *const sink = thread_sink;
+    if (level_int > static_cast<int>(sink ? sink->level : vmaf_log_level))
         return;
+    if (sink) {
+        va_list sink_args;
+        va_start(sink_args, fmt);
+        log_to_sink(sink, level, fmt, sink_args);
+        va_end(sink_args);
+        return;
+    }
 
     /* level is in [1, 4] here; map to zero-based array index. */
     const std::size_t idx = static_cast<std::size_t>(level_int) - 1u;
@@ -188,6 +215,18 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     va_start(args, fmt);
     (void)vfprintf(stderr, fmt, args);
     va_end(args);
+}
+
+enum VmafLogLevel vmaf_get_log_level(void)
+{
+    return vmaf_log_level;
+}
+
+const VmafLogSink *vmaf_log_swap_thread_sink(const VmafLogSink *sink)
+{
+    const VmafLogSink *const previous = thread_sink;
+    thread_sink = sink;
+    return previous;
 }
 
 } /* extern "C" */

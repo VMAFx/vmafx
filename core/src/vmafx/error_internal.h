@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+#include "internal.h"
 #include "vmafx/vmafx.h"
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -20,11 +21,26 @@
 #define VMAFX_PRINTF_FORMAT(fmt, args)
 #endif
 
-/* Report a failure: stores a new VmafxError in `*out` when `out` is not NULL,
- * else logs the message at ERROR so no failure is silent. Returns `status`.
- * `engine_errno` is the negative errno the engine returned, 0 for none;
- * `subject` names what failed (parameter, feature, extractor), "" for none. */
-VmafxStatus vmafx_fail(VmafxError **out, VmafxStatus status, int32_t engine_errno,
-                       const char *subject, const char *fmt, ...) VMAFX_PRINTF_FORMAT(5, 6);
+/* What failed: the status, the negative errno the engine returned (0 for
+ * none), what the subject names (a VmafxSubjectKind) and the subject itself
+ * (parameter, feature, extractor, path, ...; "" for none). */
+typedef struct VmafxFailure {
+    VmafxStatus status;
+    int32_t engine_errno;
+    uint32_t kind;
+    const char *subject;
+} VmafxFailure;
+
+/* Report a failure: stores a new VmafxError in `*report->error` when the
+ * caller passed an error out-parameter, else delivers the message at ERROR to
+ * the report's log sink or, without one, to stderr, whatever the log level:
+ * no failure is silent (design section 2.5). Returns the status. */
+VmafxStatus vmafx_fail_report(const VmafxReport *report, VmafxFailure failure, const char *fmt, ...)
+    VMAFX_PRINTF_FORMAT(3, 4);
+
+/* VMAFX_FAIL(report, status, engine_errno, kind, subject, fmt, ...) */
+#define VMAFX_FAIL(report, status, engine_errno, kind, subject, ...)                               \
+    vmafx_fail_report((report), (VmafxFailure){(status), (engine_errno), (kind), (subject)},       \
+                      __VA_ARGS__)
 
 #endif /* VMAFX_ERROR_INTERNAL_H */

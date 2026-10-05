@@ -46,6 +46,13 @@ def bumped(doc: dict[str, Any], version: str) -> dict[str, Any]:
     return doc
 
 
+def next_patch(doc: dict[str, Any]) -> str:
+    """The definition's abi_version with the patch raised by one: the bump an
+    addition within 0.x needs, whatever version the live definition is at."""
+    major, minor, patch = (int(part) for part in doc["api"]["abi_version"].split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
+
 def quiet(function: Callable[..., int], *args: object) -> int:
     with redirect_stdout(io.StringIO()):
         return function(*args)

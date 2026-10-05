@@ -205,8 +205,12 @@ def _record_class(api: Api, item: Struct) -> str:
     lines.append("        return cls(\n")
     lines += [f"            {f.name}={v[1]},\n" for f, v in kept]
     lines.append("        )\n")
-    if _plain(api, fields):
-        lines += _to_c(item, fields)
+    # Pointer fields (`ptr`, handles, callbacks) have no record value and stay
+    # NULL in the C struct, so a record whose other fields are plain numbers
+    # still converts back (VmafxContextConfig and its log callback).
+    plain = [f for f, _ in kept]
+    if _plain(api, plain):
+        lines += _to_c(item, plain)
     return "".join(lines)
 
 
