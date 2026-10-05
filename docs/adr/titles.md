@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1282), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1283), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5139,3 +5139,7 @@ Every ADR, one heading each (1282), so the site search finds an ADR by its title
 ## ADR-1868: Fold the 2026-10-05 scope into the existing RC4 to RC9 candidates
 
 [1868-candidate-map-2026-10-05](1868-candidate-map-2026-10-05.md)
+
+## ADR-1897: VMAFx ABI numbering before 1.0: additions take a patch bump and join the current minor's version node
+
+[1897-vmafx-abi-0x-numbering](1897-vmafx-abi-0x-numbering.md)

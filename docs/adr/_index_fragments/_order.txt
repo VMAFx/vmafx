@@ -1281,3 +1281,4 @@
 1699-root-licence-files-eupl
 1852-vmafx-api-redesign
 1868-candidate-map-2026-10-05
+1897-vmafx-abi-0x-numbering
