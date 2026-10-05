@@ -268,9 +268,9 @@
       "automerge": false
     },
     {
-      "description": "ROCm image version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
+      "description": "ROCm image version bump — manual review required. ROCm bumps carry KFD ioctl ABI and compiler risk; set ROCM_VERSION in build-config.env, re-check the /opt/rocm/core-<major>.<minor> paths, the prune lists (dev/Containerfile rocm-src, scripts/ci/install-rocm-from-image.sh) and tools/rc1-tester/image/hip-runtime.json, and run the HIP device suite before merging (ADR-1225, ADR-0604, ADR-0603).",
       "matchPackageNames": [
-        "rocm/dev-ubuntu-24.04"
+        "rocm/dev-ubuntu-26.04"
       ],
       "groupName": "ROCm (hip runtime)",
       "automerge": false,
@@ -331,6 +331,7 @@
         "docker/Dockerfile.operator",
         "docker/Dockerfile.production",
         "docker/Dockerfile.production-gpu",
+        "docker/Dockerfile.tester",
         "docker/dev/ubuntu-26.04-cuda.Dockerfile"
       ],
       "enabled": false
@@ -508,6 +509,7 @@
         "/^docker/Dockerfile\\.operator$/",
         "/^docker/Dockerfile\\.production$/",
         "/^docker/Dockerfile\\.production-gpu$/",
+        "/^docker/Dockerfile\\.tester$/",
         "/^docker/dev/ubuntu-26\\.04-cuda\\.Dockerfile$/"
       ],
       "matchStrings": [

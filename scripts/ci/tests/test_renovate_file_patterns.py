@@ -26,23 +26,43 @@ from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
-BASE_FILES = {
-    "build-config.env",
-    "Dockerfile",
-    "Dockerfile.go-server",
-    "dev/Containerfile",
-    "docker/Dockerfile.controller",
-    "docker/Dockerfile.node",
-    "docker/Dockerfile.operator",
-    "docker/Dockerfile.production",
-    "docker/Dockerfile.production-gpu",
-    "docker/dev/ubuntu-26.04-cuda.Dockerfile",
-}
+CONFIG = "build-config.env"
+CONFIG_LINE = re.compile(r'^([A-Z][A-Z0-9_]*)="([^"]*)"', re.MULTILINE)
+DOCKERFILE = re.compile(r"^(?:Dockerfile[^/]*|docker/Dockerfile[^/]*|dev/Containerfile[^/]*)$")
+CUDA_COMPAT = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
+
+
+def image_keys(config_text: str) -> set[str]:
+    """The build-config.env keys whose value is an image reference, by the shape
+    scripts/ci/check-base-image-single-source.sh uses: a registry path or a tag
+    separator, and not a URL."""
+    return {
+        key
+        for key, value in CONFIG_LINE.findall(config_text)
+        if not value.startswith("http") and ("/" in value or ":" in value)
+    }
+
+
+def base_files(files: list[str], read) -> set[str]:
+    """build-config.env and every Dockerfile in the single-source gate's scope that
+    mirrors one of its image keys as an ARG default. Derived from the tree, so a
+    new mirror the custom manager does not select fails the tests below instead
+    of being left to the built-in manager (docker/Dockerfile.tester kept ROCm
+    10.0.0 in the 10.1.0 bump, #2170)."""
+    keys = image_keys(read(CONFIG))
+    arg = re.compile(r"^\s*ARG\s+(" + "|".join(sorted(keys)) + r")=", re.MULTILINE)
+    scope = [
+        path
+        for path in files
+        if (DOCKERFILE.match(path) and not path.startswith("docker/dev/")) or path == CUDA_COMPAT
+    ]
+    return {CONFIG} | {path for path in scope if arg.search(read(path))}
 
 
 class RenovateFilePatterns(unittest.TestCase):
     config: ClassVar[dict[str, Any]]
     files: ClassVar[list[str]]
+    base: ClassVar[set[str]]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -60,6 +80,7 @@ class RenovateFilePatterns(unittest.TestCase):
         )
         assert isinstance(result.stdout, str)
         cls.files = result.stdout.splitlines()
+        cls.base = base_files(cls.files, lambda path: (ROOT / path).read_text(encoding="utf-8"))
 
     def patterns(self, manager: dict[str, Any]) -> list[re.Pattern[str]]:
         patterns = manager["managerFilePatterns"]
@@ -92,7 +113,7 @@ class RenovateFilePatterns(unittest.TestCase):
         selected = {
             path for path in self.files if any(pattern.search(path) for pattern in patterns)
         }
-        self.assertEqual(selected, BASE_FILES)
+        self.assertEqual(selected, self.base)
 
     def test_builtin_docker_exclusions_are_covered_by_the_custom_manager(self) -> None:
         rules = [
@@ -101,7 +122,40 @@ class RenovateFilePatterns(unittest.TestCase):
             if rule.get("matchManagers") == ["dockerfile"] and rule.get("enabled") is False
         ]
         self.assertEqual(len(rules), 1)
-        self.assertEqual(set(rules[0]["matchFileNames"]), BASE_FILES - {"build-config.env"})
+        self.assertEqual(set(rules[0]["matchFileNames"]), self.base - {CONFIG})
+
+    def test_base_files_follow_the_config(self) -> None:
+        # The derivation must see the known mirrors, and a Dockerfile that stops
+        # mirroring a config key must drop out of it.
+        self.assertIn("docker/Dockerfile.tester", self.base)
+        self.assertIn("dev/Containerfile", self.base)
+        fake = {
+            CONFIG: 'ROCM_BUILDER="rocm/dev-ubuntu-26.04:1.0-full@sha256:00"\nROCM_VERSION="1.0"\n',
+            "docker/Dockerfile.a": 'ARG ROCM_BUILDER="x"\n',
+            "docker/Dockerfile.b": 'ARG ROCM_VERSION="1.0"\n',
+            "docker/dev/alpine.Dockerfile": 'ARG ROCM_BUILDER="x"\n',
+        }
+        self.assertEqual(base_files(list(fake), fake.__getitem__), {CONFIG, "docker/Dockerfile.a"})
+
+    def test_rocm_review_rule_matches_the_pinned_image(self) -> None:
+        # The manual-review rule (ADR-1225) named rocm/dev-ubuntu-24.04 after the
+        # pin moved to the 26.04 image, so the 10.1.0 bump (#2170) arrived without
+        # its rocm / manual-review labels.
+        config = (ROOT / CONFIG).read_text(encoding="utf-8")
+        pinned = {
+            value.split(":", 1)[0]
+            for key, value in CONFIG_LINE.findall(config)
+            if key in {"ROCM_BUILDER", "ROCM_RUNTIME"}
+        }
+        self.assertEqual(len(pinned), 1)
+        rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if rule.get("groupName") == "ROCm (hip runtime)"
+        ]
+        self.assertEqual(len(rules), 1)
+        self.assertLessEqual(pinned, set(rules[0]["matchPackageNames"]))
+        self.assertIn("manual-review", rules[0]["labels"])
 
     def test_glibc_floor_runner_pin_is_frozen(self) -> None:
         # ADR-1354: Renovate must not move the native-bundle verify job off the

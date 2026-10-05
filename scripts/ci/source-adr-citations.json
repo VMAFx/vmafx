@@ -7323,7 +7323,8 @@
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.production-gpu": 1,
         "scripts/ci/check-workflow-versions.py": 1,
-        "scripts/ci/install-rocm-from-image.sh": 1
+        "scripts/ci/install-rocm-from-image.sh": 1,
+        "scripts/ci/tests/test_renovate_file_patterns.py": 1
       },
       "target": "1225-rocm-10-therock-migration.md"
     },
