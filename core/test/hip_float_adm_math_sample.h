@@ -22,7 +22,11 @@
 #ifndef LIBVMAF_TEST_HIP_FLOAT_ADM_MATH_SAMPLE_H_
 #define LIBVMAF_TEST_HIP_FLOAT_ADM_MATH_SAMPLE_H_
 
+#ifdef __cplusplus
+#include <cstdint>
+#else
 #include <stdint.h>
+#endif
 
 /* Floats per sample: the reference (h, v, d), then the distorted (h, v, d). */
 #define FADM_PROBE_IN 6u
@@ -31,11 +35,14 @@
 #define FADM_PROBE_OUT 18u
 
 /* The exponent of the terms: adm_p_norm = 3 (`is_cube`) or 1. */
-typedef struct FadmProbeArgs {
+struct FadmProbeArgs {
     FloatAdmGpuDecoupleArgs decouple;
     uint32_t is_cube;
     float p_norm;
-} FadmProbeArgs;
+};
+#ifndef __cplusplus
+typedef struct FadmProbeArgs FadmProbeArgs;
+#endif
 
 FADM_HD void fadm_probe_sample(const FadmProbeArgs *a, const float *in, float *out)
 {

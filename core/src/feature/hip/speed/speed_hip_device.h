@@ -43,9 +43,15 @@
 #ifndef FEATURE_HIP_SPEED_SPEED_HIP_DEVICE_H_
 #define FEATURE_HIP_SPEED_SPEED_HIP_DEVICE_H_
 
+#ifdef __cplusplus
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#else
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#endif
 
 /* The per-run contract every device-resident SpEED twin shares (geometry,
  * scoring constants, channel bindings, the per-frame result), filled at init
@@ -103,7 +109,7 @@
 
 /* Everything the kernels read, in device memory, written once at init.
  * Every kernel takes (const SpeedHipParams *, uint32_t binding_set). */
-typedef struct SpeedHipParams {
+struct SpeedHipParams {
     const uint8_t *raw; /* raw planes, raw_planes x plane_bytes */
     float *taps;        /* antialias[128], then lowpass[128] */
     /* lanczos4 prescale weights from the host: SPEED_HIP_LANCZOS_TAPS per
@@ -129,7 +135,10 @@ typedef struct SpeedHipParams {
     uint32_t lowpass_width;
     uint32_t cov_group; /* covariance work-group size, a power of two */
     uint32_t reserved;
-} SpeedHipParams;
+};
+#ifndef __cplusplus
+typedef struct SpeedHipParams SpeedHipParams;
+#endif
 
 /* The host C compiler and hipcc must agree on every offset. */
 SPEED_HIP_STATIC_ASSERT(SPEED_HIP_N == SPEED_GPU_ELEMENTS, "SPEED_HIP_N is elements_in_block");
@@ -148,10 +157,13 @@ static inline SPEED_HD float speed_hd_fma(float a, float b, float c)
     return fmaf(a, b, c);
 }
 
-typedef struct SpeedHdFf {
+struct SpeedHdFf {
     float hi;
     float lo;
-} SpeedHdFf;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdFf SpeedHdFf;
+#endif
 
 static inline SPEED_HD SpeedHdFf speed_hd_ff(float hi, float lo)
 {
@@ -642,12 +654,15 @@ static inline SPEED_HD uint32_t speed_hd_covariance_group_size(uint32_t terms)
 /* + implicit-shift QR), regularity, matrix_qr_decomposition().        */
 /* ------------------------------------------------------------------ */
 
-typedef struct SpeedHdLanes {
+struct SpeedHdLanes {
     uint32_t lid;
     uint32_t count;
-} SpeedHdLanes;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdLanes SpeedHdLanes;
+#endif
 
-typedef struct SpeedHdSlm {
+struct SpeedHdSlm {
     float *a;   /* tridiagonalisation work */
     float *cov; /* covariance, untouched */
     float *z;   /* QR working matrix */
@@ -659,7 +674,10 @@ typedef struct SpeedHdSlm {
     float *d;
     float *sd;
     float *scalar; /* [0] tau, [2] norm, [3] regular, [4] capped, [5] s, [6] beta */
-} SpeedHdSlm;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdSlm SpeedHdSlm;
+#endif
 
 static inline SPEED_HD SpeedHdSlm speed_hd_slm_layout(float *base)
 {
@@ -860,11 +878,14 @@ static inline SPEED_HD void speed_hd_create_givens(float a, float b, float *c, f
     *c = b_larger ? other : unit;
 }
 
-typedef struct SpeedHdRotated {
+struct SpeedHdRotated {
     float ak;
     float bk;
     float ap;
-} SpeedHdRotated;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdRotated SpeedHdRotated;
+#endif
 
 /* G' T G of qr_step_size2() / qr_step_general(), speed.c. */
 static inline SPEED_HD SpeedHdRotated speed_hd_rotate(float c, float s, float ap, float bp,
@@ -901,14 +922,17 @@ static inline SPEED_HD void speed_hd_qr_step_size2(float *d, float *sd, float x,
 }
 
 /* The chase state of qr_step_general(). */
-typedef struct SpeedHdChase {
+struct SpeedHdChase {
     float bk;
     float zk;
     float ap;
     float bp;
     float aq;
     float bq;
-} SpeedHdChase;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdChase SpeedHdChase;
+#endif
 
 /* Step k of qr_step_general()'s bulge chase; returns the new (x, z) in the
  * chase's bk / zk. */
@@ -1203,9 +1227,7 @@ static inline SPEED_HD void speed_hd_block_statistics(const SpeedHipParams *p, u
 {
     const uint32_t blocks = p->geometry.blocks;
     const float *b = p->indterm + (size_t)ch * SPEED_HIP_N * blocks + block;
-    float solution[SPEED_HIP_N];
-    for (uint32_t i = 0u; i < SPEED_HIP_N; i++)
-        solution[i] = 0.0f;
+    float solution[SPEED_HIP_N] = {0.0f};
     if (p->status[(size_t)ch * 2u] == 0) {
         const size_t matrix = (size_t)ch * SPEED_HIP_MATRIX;
         speed_hd_solve_block(b, blocks, p->qmat + matrix, p->rmat + matrix, solution);
