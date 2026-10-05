@@ -141,8 +141,11 @@ backend within it.
   never re-adds the old definition (duplicate symbol). Generated files are
   never hand-merged: take either side and run
   `python3 scripts/codegen/vmafx-api.py --write`; the Meson test
-  `test_vmafx_api_generated_current` fails on any difference. See
-  [core/src/AGENTS.md](../../core/src/AGENTS.md).
+  `test_vmafx_api_generated_current` fails on any difference. `libvmaf`
+  links the generated version script `core/src/vmafx.map` on ELF targets
+  (`-Wl,--no-undefined-version`), and `check_exported_symbols` compares the
+  `vmafx_` exports with `core/src/vmafx_symbols.txt`; keep both when a sync
+  touches the library target. See [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

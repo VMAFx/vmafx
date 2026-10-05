@@ -10,9 +10,27 @@ still change until `v1.0.0` freezes it. The existing
 this one for the functions the slice covers.
 
 Every declaration, the Python binding and the
-[reference page](reference.md) are generated from one definition,
+[reference pages](reference.md) are generated from one definition,
 `core/api/vmafx.toml`; the [API generation guide](../../development/api-generation.md)
 explains how to change it.
+
+## Headers
+
+`#include <vmafx/vmafx.h>` brings in every core header. Each header can also be
+included on its own and includes what its declarations need:
+
+| Header | Declares |
+| --- | --- |
+| `vmafx/version.h` | ABI version macros, `vmafx_version_string`, `vmafx_abi_version` |
+| `vmafx/types.h` | `VmafxStatus` and the status codes, shared enumerations, the export macros |
+| `vmafx/error.h` | `VmafxError` and its accessors, `vmafx_status_name` |
+| `vmafx/context.h` | `VmafxContext`, its configuration, extractor introspection |
+| `vmafx/score.h` | `VmafxScore`, `vmafx_feature_score` |
+| `vmafx/provenance.h` | `VmafxProvenance`, `vmafx_context_provenance` |
+| `vmafx/device.h`, `frame.h`, `model.h`, `report.h`, `dnn.h`, `mcp.h` | Nothing yet; later RC4 work fills them |
+| `vmafx/libvmaf_bridge.h` | Optional (not included by `vmafx.h`): the bridge to a `libvmaf.h` handle |
+
+The [reference index](reference.md) links one generated page per header.
 
 ## What the slice contains
 
@@ -78,11 +96,17 @@ in this preview the slice lives in the same library as `libvmaf.h`. RC4 splits
 it as ADR-1852 decides: `libvmafx.so.1` (pkg-config `libvmafx`) with
 `libvmaf.so.3` as a thin compatibility library on top.
 
+On Linux every `vmafx_*` function carries the symbol version of the ABI minor
+that introduced it (`nm -D libvmaf.so` shows `vmafx_context_create@@VMAFX_0.1`),
+so a program built against a newer minor fails to load against an older
+library instead of failing at its first call. The `vmaf_*` functions keep their
+unversioned symbols.
+
 ## Rules every call follows
 
 - **Status codes** are stable on every platform: `VMAFX_OK` (0), `VMAFX_PENDING`
   (1, the frame is not final yet) and negative errors (`VMAFX_E_INVALID`,
-  `VMAFX_E_NOTFOUND`, `VMAFX_E_RANGE`, ...; see the [reference](reference.md)).
+  `VMAFX_E_NOTFOUND`, `VMAFX_E_RANGE`, ...; see [`vmafx/types.h`](types.md)).
 - **Errors name what failed.** Pass a `VmafxError **` as the last argument to
   receive the status, a message, the subject (the parameter, feature or
   extractor) and the engine's errno; free it with `vmafx_error_free()`. Pass

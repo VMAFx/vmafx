@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Fail when libvmaf.so exports anything but its public API (ADR-0379).
+"""Fail when libvmaf.so exports anything but its public API (ADR-0379, ADR-1852).
 
-Every exported symbol must be either a ``vmaf_*`` or ``vmafx_*`` function or
-object declared in a public header under ``core/include/``, or belong to a C++ runtime whose
-headers declare its namespace with default visibility: ``std`` (libstdc++) and,
-in SYCL builds, ``sycl`` (DPC++). Template members of those namespaces that a TU
-instantiates are exported whatever the compile flags, and they are the
-runtime's definitions, not ours.
+Every exported symbol must be a ``vmaf_*`` function or object declared in a
+public header under ``core/include/``, a ``vmafx_*`` function of the symbol list
+generated from ``core/api/vmafx.toml`` (``core/src/vmafx_symbols.txt``), or
+belong to a C++ runtime whose headers declare its namespace with default
+visibility: ``std`` (libstdc++) and, in SYCL builds, ``sycl`` (DPC++). Template
+members of those namespaces that a TU instantiates are exported whatever the
+compile flags, and they are the runtime's definitions, not ours.
 
 Anything else is an internal symbol leaking out of the shared object. It can be
 interposed by a host application defining the same name, and consumers can
 start depending on it. The library builds with ``-fvisibility=hidden``; this
 test is what notices when a target stops getting that flag.
 
-Usage: check_exported_symbols.py <libvmaf.so> <public include dir>
+The VMAFx symbol list is exact in both directions (ADR-1852): a ``vmafx_``
+export missing from it, a listed symbol the library does not export, and an
+export in another linker version node than the list names (the version script
+``core/src/vmafx.map`` assigns them) all fail. The version-node comparison
+needs ``nm`` to print symbol versions; the C library's own versioned imports
+show whether it does, and the check says so when it cannot compare.
+
+Usage: check_exported_symbols.py <libvmaf.so> <public include dir> <vmafx symbol list>
 """
 
 import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Judged on the demangled name, because the mangling grammar has too many
@@ -64,15 +73,88 @@ SANITIZER_SECTION_BOUND = re.compile(
 COMPILER_VARIANT_SUFFIX = re.compile(r"\|_\._\.\d+\._\.\d+$")
 
 
-def exported_symbols(library: Path) -> list[str]:
+UNDEFINED_TYPES = {"U", "w", "v"}
+NM_TIMEOUT = 120  # seconds; HISS-02 bounds every external call
+
+
+@dataclass(frozen=True)
+class DynamicSymbols:
+    """Defined exports (name -> version node or None) and whether nm prints versions."""
+
+    exports: dict[str, str | None]
+    versions_visible: bool
+
+
+def split_version(token: str) -> tuple[str, str | None]:
+    """`name@@NODE` / `name@NODE` -> (name, NODE); a plain name -> (name, None)."""
+    name, _, node = token.replace("@@", "@", 1).partition("@")
+    return name, node or None
+
+
+def parse_nm(text: str) -> DynamicSymbols:
+    """Read `nm -D` output. Version-definition symbols (`A VMAFX_0.1`) are not exports."""
+    exports: dict[str, str | None] = {}
+    absolute: set[str] = set()
+    visible = False
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2:  # noqa: PLR2004 -- "<type> <name>" at least
+            continue
+        kind, (name, node) = parts[-2], split_version(parts[-1])
+        if kind in UNDEFINED_TYPES:
+            visible = visible or node is not None
+            continue
+        if kind == "A":
+            absolute.add(name)
+        exports[name] = node
+    nodes = {node for node in exports.values() if node is not None}
+    for name in absolute & nodes:
+        del exports[name]
+    return DynamicSymbols(exports=exports, versions_visible=visible)
+
+
+def exported_symbols(library: Path) -> DynamicSymbols:
     nm = shutil.which("nm")
     if nm is None:
         print("SKIP: nm not found")
         raise SystemExit(77)
     out = subprocess.run(  # noqa: S603 -- resolved nm path and the library path, no shell
-        [nm, "-D", "--defined-only", str(library)], check=True, capture_output=True, text=True
+        [nm, "-D", str(library)], check=True, capture_output=True, text=True, timeout=NM_TIMEOUT
     ).stdout
-    return sorted({line.split()[-1] for line in out.splitlines() if line.strip()})
+    return parse_nm(out)
+
+
+def listed_symbols_from_text(text: str) -> dict[str, str]:
+    """`<symbol> <node>` rows of the generated VMAFx symbol list; `#` starts a comment."""
+    rows: dict[str, str] = {}
+    for line in text.splitlines():
+        fields = line.split("#", 1)[0].split()
+        if fields:
+            name, node = fields
+            rows[name] = node
+    return rows
+
+
+def listed_symbols(path: Path) -> dict[str, str]:
+    return listed_symbols_from_text(path.read_text(encoding="utf-8"))
+
+
+def vmafx_findings(symbols: DynamicSymbols, listed: dict[str, str]) -> list[str]:
+    """Differences between the library's vmafx_ exports and the generated list."""
+    exported = {n: v for n, v in symbols.exports.items() if n.startswith("vmafx_")}
+    out = [
+        f"{n}: exported, missing from the VMAFx symbol list"
+        for n in sorted(exported.keys() - listed.keys())
+    ]
+    out += [
+        f"{n}: listed ({listed[n]}), not exported" for n in sorted(listed.keys() - exported.keys())
+    ]
+    if symbols.versions_visible:
+        for name in sorted(exported.keys() & listed.keys()):
+            if exported[name] != listed[name]:
+                node = exported[name] or "no version node"
+                out.append(f"{name}: exported in {node}, the list names {listed[name]}")
+    return out
 
 
 def demangled(names: list[str]) -> dict[str, str]:
@@ -128,36 +210,55 @@ def runtime_owned(mangled: str, plain: str) -> bool:
 
 
 def public_identifiers(include_dir: Path) -> set[str]:
+    """vmaf_ names the public headers mention; vmafx_ names come from the symbol list."""
     names: set[str] = set()
     for header in include_dir.rglob("*.h"):
-        # vmafx_: the VMAFx API headers under core/include/vmafx/ (ADR-1852).
-        names.update(re.findall(r"\bvmafx?_\w+", header.read_text(errors="replace")))
+        names.update(re.findall(r"\bvmaf_\w+", header.read_text(errors="replace")))
     return names
 
 
-def main() -> int:
-    library, include_dir = Path(sys.argv[1]), Path(sys.argv[2])
-    public = public_identifiers(include_dir)
+def leaked_symbols(symbols: DynamicSymbols, public: set[str]) -> list[str]:
+    """Exports that are neither public API nor a runtime's own."""
     candidates = [
         name
-        for name in exported_symbols(library)
-        if COMPILER_VARIANT_SUFFIX.sub("", name) not in public
+        for name in sorted(symbols.exports)
+        if not name.startswith("vmafx_") and COMPILER_VARIANT_SUFFIX.sub("", name) not in public
     ]
     plain = demangled(candidates)
-    leaked = [name for name in candidates if not runtime_owned(name, plain[name])]
-    # Red-cap regression check: ADR-1337 prevents C++ placement new/delete from leaking.
-    if "_ZnwmPv" in candidates or "_ZdlPvS_" in candidates:
-        print("Regression: C++ placement new/delete (_ZnwmPv / _ZdlPvS_) leaked into public ABI.")
-        return 1
+    return [name for name in candidates if not runtime_owned(name, plain[name])]
+
+
+def report(library: Path, leaked: list[str], vmafx: list[str], symbols: DynamicSymbols) -> int:
     if leaked:
         print(f"{library.name} exports {len(leaked)} symbol(s) outside its public API:")
         for name in leaked:
             print(f"  {name}")
         print("Build the defining target with vmaf_cflags_common / vmaf_cppflags_common,")
         print("or declare the symbol VMAF_EXPORT in a public header if it is API.")
+    if vmafx:
+        print(f"{library.name} disagrees with the VMAFx symbol list in {len(vmafx)} place(s):")
+        for finding in vmafx:
+            print(f"  {finding}")
+        print("Regenerate with `python3 scripts/codegen/vmafx-api.py --write` and relink;")
+        print("a vmafx_ function exists only through core/api/vmafx.toml (ADR-1852).")
+    if leaked or vmafx:
         return 1
+    if not symbols.versions_visible:
+        print("NOTE: nm prints no symbol versions here; version nodes were not compared")
     print(f"{library.name}: every export is public API or a runtime's own")
     return 0
+
+
+def main() -> int:
+    library, include_dir, symbol_list = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+    symbols = exported_symbols(library)
+    # Red-cap regression check: ADR-1337 prevents C++ placement new/delete from leaking.
+    if "_ZnwmPv" in symbols.exports or "_ZdlPvS_" in symbols.exports:
+        print("Regression: C++ placement new/delete (_ZnwmPv / _ZdlPvS_) leaked into public ABI.")
+        return 1
+    leaked = leaked_symbols(symbols, public_identifiers(include_dir))
+    vmafx = vmafx_findings(symbols, listed_symbols(symbol_list))
+    return report(library, leaked, vmafx, symbols)
 
 
 if __name__ == "__main__":

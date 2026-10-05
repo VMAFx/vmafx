@@ -53,45 +53,54 @@ class Backend(enum.IntEnum):
 
 
 class VmafxContextConfig(ctypes.Structure):
-    _fields_ = (
-        ("struct_size", ctypes.c_uint32),
-        ("log_level", ctypes.c_uint32),
-        ("n_threads", ctypes.c_uint32),
-        ("n_subsample", ctypes.c_uint32),
-        ("cpumask", ctypes.c_uint64),
-        ("gpumask", ctypes.c_uint64),
-    )
+    """C struct VmafxContextConfig."""
 
 
 class VmafxProvenance(ctypes.Structure):
-    _fields_ = (
-        ("struct_size", ctypes.c_uint32),
-        ("abi_major", ctypes.c_uint32),
-        ("abi_minor", ctypes.c_uint32),
-        ("abi_patch", ctypes.c_uint32),
-        ("active_backend", ctypes.c_uint32),
-        ("n_extractors", ctypes.c_uint32),
-        ("version", ctypes.c_char_p),
-    )
+    """C struct VmafxProvenance."""
 
 
 class VmafxExtractorInfo(ctypes.Structure):
-    _fields_ = (
-        ("struct_size", ctypes.c_uint32),
-        ("backend", ctypes.c_uint32),
-        ("name", ctypes.c_char_p),
-    )
+    """C struct VmafxExtractorInfo."""
 
 
 class VmafxScore(ctypes.Structure):
-    _fields_ = (
-        ("struct_size", ctypes.c_uint32),
-        ("backend", ctypes.c_uint32),
-        ("index", ctypes.c_uint64),
-        ("value", ctypes.c_double),
-        ("feature", ctypes.c_char_p),
-        ("extractor", ctypes.c_char_p),
-    )
+    """C struct VmafxScore."""
+
+
+VmafxContextConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("log_level", ctypes.c_uint32),
+    ("n_threads", ctypes.c_uint32),
+    ("n_subsample", ctypes.c_uint32),
+    ("cpumask", ctypes.c_uint64),
+    ("gpumask", ctypes.c_uint64),
+)
+
+VmafxProvenance._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("abi_major", ctypes.c_uint32),
+    ("abi_minor", ctypes.c_uint32),
+    ("abi_patch", ctypes.c_uint32),
+    ("active_backend", ctypes.c_uint32),
+    ("n_extractors", ctypes.c_uint32),
+    ("version", ctypes.c_char_p),
+)
+
+VmafxExtractorInfo._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("backend", ctypes.c_uint32),
+    ("name", ctypes.c_char_p),
+)
+
+VmafxScore._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("backend", ctypes.c_uint32),
+    ("index", ctypes.c_uint64),
+    ("value", ctypes.c_double),
+    ("feature", ctypes.c_char_p),
+    ("extractor", ctypes.c_char_p),
+)
 
 
 LAYOUT = {

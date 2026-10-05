@@ -14,7 +14,7 @@
 #include <stddef.h>
 
 #include "status_gen.h"
-#include "vmafx/vmafx.h"
+#include "vmafx/error.h"
 
 /* status, name, negative errno for libvmaf, maps back from that errno */
 static const struct {

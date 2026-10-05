@@ -2887,6 +2887,29 @@ libvmaf_sources = [
 # link-time flags that apply only to the library target and not to tests.
 vmaf_link_args = []
 
+# ADR-1852: the linker version script generated from core/api/vmafx.toml gives
+# every vmafx_ function the version node of the ABI minor that introduced it
+# (`since`), so a new function cannot ship unversioned, and a function the
+# script lists but no source defines fails the link (`--no-undefined-version`;
+# lld and gold refuse it by default). ELF only: Mach-O has no symbol versions,
+# and Windows links libvmaf statically (ADR-0121); core/src/vmafx.def is the
+# export list the shared library split links there (ADR-1852 D3, WP12).
+# check_exported_symbols reads core/src/vmafx_symbols.txt and checks each
+# node in the built library.
+vmafx_version_script = files('vmafx.map')
+vmafx_link_depends = []
+vmafx_elf_linkers = ['ld.bfd', 'ld.gold', 'ld.lld', 'ld.mold']
+if get_option('default_library') != 'static' \
+        and host_machine.system() not in ['darwin', 'windows', 'cygwin']
+    if cc.get_linker_id() not in vmafx_elf_linkers
+        error('ADR-1852: libvmaf links core/src/vmafx.map, which needs one of '
+              + ', '.join(vmafx_elf_linkers) + '; the C linker is ' + cc.get_linker_id())
+    endif
+    vmaf_link_args += ['-Wl,--version-script=' + (meson.current_source_dir() / 'vmafx.map'),
+                       '-Wl,--no-undefined-version']
+    vmafx_link_depends += vmafx_version_script
+endif
+
 if is_sycl_enabled
     cpp = meson.get_compiler('cpp')
     cpp_id = cpp.get_id()
@@ -2913,6 +2936,7 @@ libvmaf = library(
     c_args : vmaf_cflags_common + dnn_defines,
     cpp_args : vmaf_cppflags_common + dnn_defines,
     link_args : vmaf_link_args,
+    link_depends : vmafx_link_depends,
     dependencies : [
       thread_lib,
       math_lib,
