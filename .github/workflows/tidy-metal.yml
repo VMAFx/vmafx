@@ -17,6 +17,11 @@ on:
   schedule:
     - cron: "41 4 * * 1"
   workflow_dispatch:
+    inputs:
+      fix:
+        description: "Apply clang-tidy's own fixes to the selected files and upload them as a patch (no ratchet)"
+        type: boolean
+        default: false
   pull_request:
     branches: [master]
     paths:
@@ -79,7 +84,30 @@ jobs:
             -Denable_dnn=disabled -Db_lto=false
           meson compile -C "$TIDY_BUILD_DIR"
           python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
+      - name: Autofix — clang-tidy's own fixes as a patch (dispatch with fix=true)
+        if: ${{ inputs.fix }}
+        run: |
+          # Fixes need the Xcode SDK to parse the Objective-C++, so they are produced here and
+          # downloaded as tidy-metal-fixes.patch; review it, apply it, run the ratchet again.
+          files=$(git ls-files 'core/src/metal/*.mm' 'core/src/metal/*.c' 'core/src/feature/metal/*.mm' \
+            core/test/test_metal_install_header.c core/test/test_metal_kernel_coverage_audit.c \
+            core/test/test_metal_kernel_registration.c core/test/test_metal_smoke.c)
+          # shellcheck disable=SC2086
+          "$(brew --prefix llvm@22)/bin/clang-tidy" -p "$RUNNER_TEMP/vmafx-tidy-metal" --fix --quiet \
+            --extra-arg="-isysroot$(xcrun --show-sdk-path)" $files > tidy-metal-fix.log 2>&1 \
+            || echo "clang-tidy exited $? (findings it could not fix are expected; see tidy-metal-fix.log)"
+          git diff > tidy-metal-fixes.patch
+          wc -l tidy-metal-fixes.patch
+      - name: Upload the autofix patch
+        if: ${{ inputs.fix }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: tidy-metal-fixes
+          path: |
+            tidy-metal-fixes.patch
+            tidy-metal-fix.log
       - name: Ratchet — Metal host code vs committed baseline
+        if: ${{ !inputs.fix }}
         run: |
           # Homebrew's clang-tidy has no implicit SDK: name the Xcode one.
           python3 scripts/ci/tidy-ratchet.py --lane metal \
@@ -93,7 +121,7 @@ jobs:
             --select core/test/test_metal_smoke.c \
             --jobs "$(sysctl -n hw.ncpu)" --report tidy-ratchet-metal.json
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
-        if: always()
+        if: ${{ always() && !inputs.fix }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: tidy-ratchet-metal
