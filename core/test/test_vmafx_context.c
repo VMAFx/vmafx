@@ -357,6 +357,13 @@ static char *test_use_model_and_set(void)
     vmafx_model_unref(model); /* the context holds its own references */
     vmafx_model_set_unref(set);
     mu_assert("extractors registered", vmafx_context_extractor_count(context) > 0);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+static char *test_use_model_refusals(void)
+{
+    VmafxContext *context = plain_context();
     VmafxError *error = NULL;
     mu_assert("NULL model",
               vmafx_context_use_model(context, NULL, &error) == VMAFX_E_INVALID &&
@@ -378,6 +385,14 @@ static char *test_import_score(void)
     VmafxScore score = VMAFX_SCORE_INIT;
     mu_assert("read back", vmafx_feature_score(context, "imported", 7, &score, NULL) == VMAFX_OK &&
                                score.value == 1.25 && score.extractor == NULL);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+static char *test_import_score_refusals(void)
+{
+    VmafxContext *context = plain_context();
+    VmafxError *error = NULL;
     const uint64_t too_far = (uint64_t)UINT_MAX + 1u;
     mu_assert("range", vmafx_context_import_score(context, "imported", too_far, 1.0, &error) ==
                            VMAFX_E_RANGE);
@@ -415,6 +430,16 @@ static char *test_resolve_on_cpu(void)
     const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
     mu_assert("with geometry",
               vmafx_feature_resolve(context, "float_ssim", NULL, &desc, &r, NULL) == VMAFX_OK);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+static char *test_resolve_refusals(void)
+{
+    VmafxContext *context = plain_context();
+    VmafxFeatureResolution r = VMAFX_FEATURE_RESOLUTION_INIT;
+    VmafxError *error = NULL;
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
     mu_assert("unknown", vmafx_feature_resolve(context, "no_such", NULL, NULL, &r, &error) ==
                              VMAFX_E_NOTFOUND);
     mu_assert("named", vt_failed(&error, VMAFX_E_NOTFOUND, "no_such", VMAFX_SUBJECT_EXTRACTOR));
@@ -442,7 +467,7 @@ static char *test_resolve_device_twin(void)
         VmafxFeatureResolution r = VMAFX_FEATURE_RESOLUTION_INIT;
         mu_assert("ciede twin",
                   vmafx_feature_resolve(context, "ciede", NULL, NULL, &r, NULL) == VMAFX_OK &&
-                      r.backend != VMAFX_BACKEND_CPU && strcmp(r.extractor, "ciede"));
+                      r.backend != VMAFX_BACKEND_CPU && strcmp(r.extractor, "ciede") != 0);
         VmafxError *error = NULL;
         mu_assert("no twin", vmafx_feature_resolve(context, "brisque", NULL, NULL, &r, &error) ==
                                  VMAFX_E_NOTSUP);
@@ -492,9 +517,12 @@ char *run_tests(void)
         MU_TEST(test_set_option_null_arguments),
         MU_TEST(test_use_feature),
         MU_TEST(test_use_model_and_set),
+        MU_TEST(test_use_model_refusals),
         MU_TEST(test_import_score),
+        MU_TEST(test_import_score_refusals),
         MU_TEST(test_counts_of_null),
         MU_TEST(test_resolve_on_cpu),
+        MU_TEST(test_resolve_refusals),
         MU_TEST(test_resolve_device_twin),
         MU_TEST(test_frame_retention),
     };

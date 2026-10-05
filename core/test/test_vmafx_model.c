@@ -40,12 +40,15 @@
 #define SHA256_VMAF_V061 "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3"
 #define SHA256_VMAF_B_V063 "34f620dbaff662fe7d33dd80326553c2cc3910e4135349ba4c367171d3a3cfbd"
 
-/* `name` in the model directory the test runner passes (VMAFX_TEST_MODEL_DIR). */
+#ifndef VMAFX_TEST_MODEL_DIR
+#error "VMAFX_TEST_MODEL_DIR: the model directory, set by core/test/meson.build"
+#endif
+
+/* `name` in the source tree's model directory. */
 static const char *model_path(const char *name)
 {
     static char path[4096];
-    const char *dir = getenv("VMAFX_TEST_MODEL_DIR");
-    const int n = snprintf(path, sizeof(path), "%s/%s", dir ? dir : "../model", name);
+    const int n = snprintf(path, sizeof(path), "%s/%s", VMAFX_TEST_MODEL_DIR, name);
     return n > 0 && (size_t)n < sizeof(path) ? path : "";
 }
 
@@ -131,9 +134,8 @@ static char *test_load_file_failures(void)
     mu_assert("a set file is not a model",
               vmafx_model_load_file(NULL, set, &model, &error) == VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, set, VMAFX_SUBJECT_MODEL));
-    const char *dir = getenv("VMAFX_TEST_MODEL_DIR");
-    mu_assert("a directory", dir &&
-                                 vmafx_model_load_file(NULL, dir, &model, &error) == VMAFX_E_IO &&
+    const char *dir = VMAFX_TEST_MODEL_DIR;
+    mu_assert("a directory", vmafx_model_load_file(NULL, dir, &model, &error) == VMAFX_E_IO &&
                                  vt_failed(&error, VMAFX_E_IO, dir, VMAFX_SUBJECT_PATH));
     mu_assert("NULL path", vmafx_model_load_file(NULL, NULL, &model, &error) == VMAFX_E_INVALID &&
                                vt_failed(&error, VMAFX_E_INVALID, "path", VMAFX_SUBJECT_PARAMETER));

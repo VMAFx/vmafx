@@ -1197,10 +1197,10 @@ endif
 # White-box tests (context, bitexact, lifetime) link the static library for
 # libvmaf_priv.h / log.h; the others use only the public headers.
 vmafx_static_link = get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf
-vmafx_test_env = {
-    'VMAFX_TEST_MODEL_DIR' : meson.project_source_root() / '..' / 'model',
-    'VMAFX_TEST_YUV_DIR' : meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv',
-}
+vmafx_test_dirs = [
+    '-DVMAFX_TEST_MODEL_DIR="' + (meson.project_source_root() / '..' / 'model') + '"',
+    '-DVMAFX_TEST_YUV_DIR="' + (meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv') + '"',
+]
 test_vmafx_sha256 = executable('test_vmafx_sha256',
     ['test.c', 'test_vmafx_sha256.c', '../src/vmafx/sha256.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -1223,11 +1223,10 @@ test_vmafx_bitexact = executable('test_vmafx_bitexact',
     ['test.c', 'test_vmafx_bitexact.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : vmafx_static_link,
-    c_args : vmaf_cflags_common,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
-test('test_vmafx_bitexact', test_vmafx_bitexact, suite : ['fast'], env : vmafx_test_env,
-     timeout : 300)
+test('test_vmafx_bitexact', test_vmafx_bitexact, suite : ['fast'], timeout : 300)
 
 # Lifetimes under ASan / UBSan: a model released before the context, a failed
 # destroy retried (`-Wl,--wrap=vmaf_thread_pool_destroy`, the constraints of
@@ -1250,9 +1249,10 @@ foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx
         ['test.c', vmafx_public_test + '.c'],
         include_directories : [libvmaf_inc, test_inc],
         link_with : libvmaf_public_link,
+        c_args : vmafx_test_dirs,
         dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     )
-    test(vmafx_public_test, vmafx_public_exe, suite : ['fast'], env : vmafx_test_env)
+    test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
 endforeach
 
 # Linux static-link fault control for output_file_open(). The project's
