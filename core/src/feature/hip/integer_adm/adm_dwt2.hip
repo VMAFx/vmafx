@@ -33,6 +33,15 @@
 namespace
 {
 
+/* Arithmetic right shift of a signed accumulator, as integer_adm.c's
+ * adm_dwt2_* passes do: a negative sum rounds towards minus infinity, which
+ * a shift of the unsigned bit pattern would not. */
+template <typename A> __device__ __forceinline__ A adm_dwt_asr(A value, unsigned shift)
+{
+    // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-1423: the CPU's arithmetic shift, bit-exact twin
+    return value >> shift;
+}
+
 // Calculates and returns vector with indices for dwt, if upper limit is
 // reached, the indices will be mirrored
 __device__ __forceinline__ int4 calculate_indices(const int n, const int upper_limit)
@@ -89,13 +98,13 @@ dwt_s123_combined_vert_kernel(const T *d_image_scale, int32_t *tmplo_start, int 
     accum_lo += (int64_t)filter_lo[1] * s11;
     accum_lo += (int64_t)filter_lo[2] * s12;
     accum_lo += (int64_t)filter_lo[3] * s13;
-    tmplo[idx] = (int32_t)((accum_lo + add_shift) >> shift);
+    tmplo[idx] = (int32_t)adm_dwt_asr(accum_lo + add_shift, (unsigned)shift);
 
     accum_hi += (int64_t)filter_hi[0] * s10;
     accum_hi += (int64_t)filter_hi[1] * s11;
     accum_hi += (int64_t)filter_hi[2] * s12;
     accum_hi += (int64_t)filter_hi[3] * s13;
-    tmphi[idx] = (int32_t)((accum_hi + add_shift) >> shift);
+    tmphi[idx] = (int32_t)adm_dwt_asr(accum_hi + add_shift, (unsigned)shift);
 }
 
 template <int32_t add_shift, int16_t shift>
@@ -132,28 +141,28 @@ dwt_s123_combined_hori_kernel(hip_i4_adm_dwt_band_t i4_dwt2, const int32_t *tmpl
     accum += (int64_t)filter_lo[1] * s1_lo;
     accum += (int64_t)filter_lo[2] * s2_lo;
     accum += (int64_t)filter_lo[3] * s3_lo;
-    i4_dwt2.band_a[i * dst_stride + idx] = (int32_t)((accum + add_shift) >> shift);
+    i4_dwt2.band_a[i * dst_stride + idx] = (int32_t)adm_dwt_asr(accum + add_shift, (unsigned)shift);
 
     accum = 0;
     accum += (int64_t)filter_hi[0] * s0_lo;
     accum += (int64_t)filter_hi[1] * s1_lo;
     accum += (int64_t)filter_hi[2] * s2_lo;
     accum += (int64_t)filter_hi[3] * s3_lo;
-    i4_dwt2.band_v[i * dst_stride + idx] = (int32_t)((accum + add_shift) >> shift);
+    i4_dwt2.band_v[i * dst_stride + idx] = (int32_t)adm_dwt_asr(accum + add_shift, (unsigned)shift);
 
     accum = 0;
     accum += (int64_t)filter_lo[0] * s0_hi;
     accum += (int64_t)filter_lo[1] * s1_hi;
     accum += (int64_t)filter_lo[2] * s2_hi;
     accum += (int64_t)filter_lo[3] * s3_hi;
-    i4_dwt2.band_h[i * dst_stride + idx] = (int32_t)((accum + add_shift) >> shift);
+    i4_dwt2.band_h[i * dst_stride + idx] = (int32_t)adm_dwt_asr(accum + add_shift, (unsigned)shift);
 
     accum = 0;
     accum += (int64_t)filter_hi[0] * s0_hi;
     accum += (int64_t)filter_hi[1] * s1_hi;
     accum += (int64_t)filter_hi[2] * s2_hi;
     accum += (int64_t)filter_hi[3] * s3_hi;
-    i4_dwt2.band_d[i * dst_stride + idx] = (int32_t)((accum + add_shift) >> shift);
+    i4_dwt2.band_d[i * dst_stride + idx] = (int32_t)adm_dwt_asr(accum + add_shift, (unsigned)shift);
 }
 
 /* Accumulator of the scale-0 vertical pass. The first three low-pass taps add
@@ -248,8 +257,8 @@ adm_dwt2_vert_tile(const T *d_picture, short2 (*s_tile)[tile_width], int w, int 
         accum_hi -= (accum_t)params.dwt2_db2_coeffs_hi_sum * v_add_shift;
 
         s_tile[threadIdx.y * v_rows_per_thread + item][threadIdx.x] =
-            make_short2((short)((accum_lo + v_add_shift) >> v_shift),
-                        (short)((accum_hi + v_add_shift) >> v_shift));
+            make_short2((short)adm_dwt_asr(accum_lo + v_add_shift, (unsigned)v_shift),
+                        (short)adm_dwt_asr(accum_hi + v_add_shift, (unsigned)v_shift));
     }
 }
 
@@ -293,20 +302,20 @@ __device__ __forceinline__ void adm_dwt2_hori_tile(const short2 (*s_tile)[tile_w
         const short2 *const tmp = s_tile[threadIdx.y * v_rows_per_thread + y_thread];
         const int at = y_out * dst_stride + x_out;
 
-        const int32_t band_a =
-            (dwt_tap4(filter_lo, tmp[c0].x, tmp[c1].x, tmp[c2].x, tmp[c3].x) + h_add_shift) >>
-            h_shift;
+        const int32_t band_a = adm_dwt_asr(
+            dwt_tap4(filter_lo, tmp[c0].x, tmp[c1].x, tmp[c2].x, tmp[c3].x) + h_add_shift,
+            (unsigned)h_shift);
         dst.band_a[at] = band_a;
         i4_dwt2.band_a[at] = band_a;
-        dst.band_v[at] =
-            (dwt_tap4(filter_hi, tmp[c0].x, tmp[c1].x, tmp[c2].x, tmp[c3].x) + h_add_shift) >>
-            h_shift;
-        dst.band_h[at] =
-            (dwt_tap4(filter_lo, tmp[c0].y, tmp[c1].y, tmp[c2].y, tmp[c3].y) + h_add_shift) >>
-            h_shift;
-        dst.band_d[at] =
-            (dwt_tap4(filter_hi, tmp[c0].y, tmp[c1].y, tmp[c2].y, tmp[c3].y) + h_add_shift) >>
-            h_shift;
+        dst.band_v[at] = adm_dwt_asr(
+            dwt_tap4(filter_hi, tmp[c0].x, tmp[c1].x, tmp[c2].x, tmp[c3].x) + h_add_shift,
+            (unsigned)h_shift);
+        dst.band_h[at] = adm_dwt_asr(
+            dwt_tap4(filter_lo, tmp[c0].y, tmp[c1].y, tmp[c2].y, tmp[c3].y) + h_add_shift,
+            (unsigned)h_shift);
+        dst.band_d[at] = adm_dwt_asr(
+            dwt_tap4(filter_hi, tmp[c0].y, tmp[c1].y, tmp[c2].y, tmp[c3].y) + h_add_shift,
+            (unsigned)h_shift);
     }
 }
 
@@ -349,7 +358,7 @@ adm_dwt2_8_vert_hori_kernel(const T *d_picture, hip_adm_dwt_band_t dst,
  * the host launches it with a fixed `void *args[]` layout. */
 #define DWT_S123_COMBINED_HORI(add_shift, shift)                                                   \
     __global__ void dwt_s123_combined_hori_kernel_##add_shift##_##shift(                           \
-        const hip_i4_adm_dwt_band_t i4_dwt2, int32_t *tmplo_start, int w, int /* h */,             \
+        const hip_i4_adm_dwt_band_t i4_dwt2, const int32_t *tmplo_start, int w, int /* h */,       \
         int dst_stride, AdmFixedParametersHip params)                                              \
     {                                                                                              \
         dwt_s123_combined_hori_kernel<add_shift, shift>(i4_dwt2, tmplo_start, w, dst_stride,       \

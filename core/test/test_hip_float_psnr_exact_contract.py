@@ -82,7 +82,7 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
     for piece in (
         "const bool split = bpc > 12u;",
         "my_lo = split ? (square & 0xFFFFu) : square;",
-        "my_hi = split ? (square >> 16) : 0u;",
+        "my_hi = split ? (square >> 16u) : 0u;",
         "total_hi = fpsnr_block_sum(s_warps, my_hi);",
     ):
         if piece not in wide:
@@ -107,7 +107,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
     size = _function_body(host, "float_psnr_hip_partials_bytes")
     if "s->wg_count * sizeof(uint64_t)" not in size:
         failures.append(f"{HOST}: the read-back is not one uint64 per block")
-    halves = "partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16);"
+    halves = "partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16u);"
     if halves not in _function_body(kernel, "float_psnr_kernel_16bpc"):
         failures.append(f"{KERNEL}: a block's two halves are not put together into one uint64")
     geometry = (
@@ -158,7 +158,7 @@ class HipFloatPsnrExactContractTest(unittest.TestCase):
     def test_dropped_high_half_is_detected(self) -> None:
         failures = self._edited(
             KERNEL,
-            "(unsigned long long)total_lo + ((unsigned long long)total_hi << 16);",
+            "(unsigned long long)total_lo + ((unsigned long long)total_hi << 16u);",
             "(unsigned long long)total_lo;",
         )
         self.assertTrue(any("two halves" in failure for failure in failures), failures)

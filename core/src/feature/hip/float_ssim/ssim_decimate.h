@@ -30,8 +30,13 @@
 #ifndef VMAF_SRC_FEATURE_HIP_FLOAT_SSIM_SSIM_DECIMATE_H_
 #define VMAF_SRC_FEATURE_HIP_FLOAT_SSIM_SSIM_DECIMATE_H_
 
+#ifdef __cplusplus
+#include <cstddef>
+#include <cstdint>
+#else
 #include <stddef.h>
 #include <stdint.h>
+#endif
 
 #include "../hip_tile_index.h"
 
@@ -46,7 +51,7 @@
  * two fp32 factors of a tap product. `sample_scale` is picture_copy()'s
  * divisor as a reciprocal (1, 1/4, 1/16 or 1/256, all exact); `tap_weight`
  * is ssim.c's `1.0f / (float)(scale * scale)`, computed on the host. */
-typedef struct VmafHipSsimDecimate {
+struct VmafHipSsimDecimate {
     const uint8_t *plane;
     unsigned sample_bytes;
     unsigned width;
@@ -54,7 +59,10 @@ typedef struct VmafHipSsimDecimate {
     int scale;
     float sample_scale;
     float tap_weight;
-} VmafHipSsimDecimate;
+};
+#ifndef __cplusplus
+typedef struct VmafHipSsimDecimate VmafHipSsimDecimate;
+#endif
 
 /* iqa/convolve.c::KBND_SYMMETRIC: period-2n mirror, edge sample repeated.
  * Identity inside the plane, so it also covers iqa_filter_pixel()'s

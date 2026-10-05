@@ -56,7 +56,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "../integer_ms_ssim/ms_ssim_arith.h"
 #include "ssim_decimate.h"
@@ -228,12 +228,13 @@ __global__ void calculate_ssim_hip_horiz_16bpc(
     unsigned w_horiz, unsigned h_horiz, unsigned bpc)
 {
     float scaler = 1.0f;
-    if (bpc == 10u)
+    if (bpc == 10u) {
         scaler = 4.0f;
-    else if (bpc == 12u)
+    } else if (bpc == 12u) {
         scaler = 16.0f;
-    else if (bpc == 16u)
+    } else if (bpc == 16u) {
         scaler = 256.0f;
+    }
     const SsimHorizOut out = {h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp};
     ssim_horiz<uint16_t>(ref, ref_stride, cmp, cmp_stride, out, w_horiz, h_horiz, 1.0f / scaler);
 }

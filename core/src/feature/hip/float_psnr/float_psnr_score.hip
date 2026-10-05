@@ -49,7 +49,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 /* One block per FPSNR_BX pixels of one row (float_psnr_hip.c uses the same
  * numbers), so that each block sum is a segment of a single row. */
@@ -63,10 +63,13 @@
 /* Number of warps per block at minimum warp size = (BX * BY) / MIN_WARP_SIZE = 8. */
 #define FPSNR_WARPS_PER_BLOCK (FPSNR_BX * FPSNR_BY / FPSNR_MIN_WARP_SIZE)
 
+namespace
+{
+
 __device__ __forceinline__ uint32_t fpsnr_warp_reduce(uint32_t v)
 {
     /* Use warpSize at runtime to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
+    for (unsigned off = (unsigned)warpSize / 2u; off > 0u; off >>= 1u)
         v += __shfl_down(v, off);
     return v;
 }
@@ -101,6 +104,8 @@ __device__ __forceinline__ uint32_t fpsnr_square(int ref, int dis)
     const float diff = (float)(ref - dis);
     return (uint32_t)(diff * diff);
 }
+
+} /* namespace */
 
 extern "C" {
 
@@ -159,7 +164,7 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
         const uint16_t dv = reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         const uint32_t square = fpsnr_square(rv, dv);
         my_lo = split ? (square & 0xFFFFu) : square;
-        my_hi = split ? (square >> 16) : 0u;
+        my_hi = split ? (square >> 16u) : 0u;
     }
 
     __shared__ uint32_t s_warps[FPSNR_WARPS_PER_BLOCK];
@@ -174,7 +179,7 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
     }
     if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16);
+        partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16u);
     }
 }
 

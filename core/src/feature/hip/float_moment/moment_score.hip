@@ -51,7 +51,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #define MOMENT_BX 16
 #define MOMENT_BY 16
@@ -61,20 +61,23 @@
  * has the same signature as CUDA __shfl_down_sync without the mask.
  * Uses `warpSize` at runtime to support both wave64 (GCN/RDNA1) and
  * wave32 (RDNA2+: gfx1030/gfx1100/gfx1101) hardware. */
+namespace
+{
+
 __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
 {
     uint32_t lo = (uint32_t)v;
-    uint32_t hi = (uint32_t)(v >> 32);
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
+    uint32_t hi = (uint32_t)(v >> 32u);
+    for (unsigned off = (unsigned)warpSize / 2u; off > 0u; off >>= 1u) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
-        const uint64_t other = ((uint64_t)thi << 32) | tlo;
-        const uint64_t self = ((uint64_t)hi << 32) | lo;
+        const uint64_t other = ((uint64_t)thi << 32u) | tlo;
+        const uint64_t self = ((uint64_t)hi << 32u) | lo;
         const uint64_t sum = self + other;
         lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
+        hi = (uint32_t)(sum >> 32u);
     }
-    return ((uint64_t)hi << 32) | lo;
+    return ((uint64_t)hi << 32u) | lo;
 }
 
 /* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a 10-,
@@ -89,6 +92,8 @@ __device__ __forceinline__ uint64_t moment_float_square(uint64_t v)
     const float square = sample * sample;
     return (uint64_t)square;
 }
+
+} /* namespace */
 
 /* The CPU's second-moment sums past 2^53 units run in device code
  * (ADR-1497): integers only, and a sample's term is moment_float_square(). */
@@ -115,7 +120,10 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
-    uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
+    uint64_t r1 = 0;
+    uint64_t r2 = 0;
+    uint64_t d1 = 0;
+    uint64_t d2 = 0;
     if (x < (int)width && y < (int)height) {
         const uint64_t r = (uint64_t)ref[(ptrdiff_t)y * ref_stride + x];
         const uint64_t d = (uint64_t)dis[(ptrdiff_t)y * dis_stride + x];
@@ -157,7 +165,10 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
-    uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
+    uint64_t r1 = 0;
+    uint64_t r2 = 0;
+    uint64_t d1 = 0;
+    uint64_t d2 = 0;
     if (x < (int)width && y < (int)height) {
         const uint64_t r =
             (uint64_t)reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
