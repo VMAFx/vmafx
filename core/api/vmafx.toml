@@ -9,31 +9,126 @@
 #
 # Prototype slice (RC4): context create / destroy, version and provenance
 # queries, one score call, and the libvmaf compat shims for the matching
-# functions. The rest of the API follows the design in ADR-1852.
+# functions. The rest of the API follows the design in ADR-1852; the format of
+# every table is in docs/development/api-generation.md.
 #
 # Rules the generator enforces:
+# - Every entry names its header (`header`) and the ABI minor that introduced
+#   it (`since`); members (fields, enum values, flag bits) inherit their
+#   parent's `since` unless they name a later one. A function's `since` picks
+#   its linker version node (`VMAFX_<major>.<minor>`); from ABI 1.0 a node that
+#   shipped never gains a symbol.
 # - `sized = true` structs get `uint32_t struct_size` as their first field and
-#   only grow at the end (HISS-14); `scripts/codegen/vmafx-api.py --abi-check`
-#   refuses a reorder, removal, retype or renumber against a previous version.
-# - Enum-valued struct fields are `u32` with an `enum` annotation, so their size
-#   never depends on the compiler.
-# - Every function names the ABI version that introduced it (`since`).
+#   only grow at the end (HISS-14); a struct another struct embeds by value
+#   never grows. `scripts/codegen/vmafx-api.py --abi-check` refuses a reorder,
+#   removal, retype or renumber against a previous version.
+# - Enum-valued and flag fields are `u32` / `u64` with an `enum` / `flags`
+#   annotation, so their size never depends on the compiler; no `bool` crosses
+#   the ABI.
+# - `deprecated = { since, replacement, removal }` names a declared
+#   replacement.
 
 [api]
 name = "vmafx"
+schema = 2
 abi_version = "0.1.0"
 export_macro = "VMAFX_EXPORT"
+# Export / deprecation macros, VmafxStatus and the status codes live here.
+base_header = "vmafx/types.h"
+# ABI version macros live here.
+version_header = "vmafx/version.h"
+# false while the vmafx_ functions share libvmaf.so with the libvmaf API: the
+# version script then versions vmafx_ symbols and leaves the rest alone. The
+# library split (ADR-1852 D3) sets it to true (`local: *;`).
+hide_unlisted = false
 
+# Header layout of design section 2.10. `group`: `umbrella` includes every
+# `core` header; `optional` headers are never included by it. Each header
+# includes the headers whose types its declarations use (computed).
 [[headers]]
 path = "vmafx/vmafx.h"
+group = "umbrella"
 guard = "VMAFX_VMAFX_H"
-brief = "VMAFx public C API (generated)."
+brief = "VMAFx public C API (generated): includes every core header."
+
+[[headers]]
+path = "vmafx/version.h"
+group = "core"
+guard = "VMAFX_VERSION_H"
+brief = "ABI version macros and the version of the loaded library."
+
+[[headers]]
+path = "vmafx/types.h"
+group = "core"
+guard = "VMAFX_TYPES_H"
+brief = "Status codes, shared enumerations and the export macros."
+
+[[headers]]
+path = "vmafx/error.h"
+group = "core"
+guard = "VMAFX_ERROR_H"
+brief = "Errors that name what failed."
+
+[[headers]]
+path = "vmafx/context.h"
+group = "core"
+guard = "VMAFX_CONTEXT_H"
+brief = "Contexts: options, feature and model registration, submit, flush, extractor introspection."
+
+[[headers]]
+path = "vmafx/device.h"
+group = "core"
+guard = "VMAFX_DEVICE_H"
+brief = "Devices: enumeration, creation from a backend index or external handles, profiling."
+
+[[headers]]
+path = "vmafx/frame.h"
+group = "core"
+guard = "VMAFX_FRAME_H"
+brief = "Frames: host frames, device imports, pools, fences, side data."
+
+[[headers]]
+path = "vmafx/model.h"
+group = "core"
+guard = "VMAFX_MODEL_H"
+brief = "Models and model sets."
+
+[[headers]]
+path = "vmafx/score.h"
+group = "core"
+guard = "VMAFX_SCORE_H"
+brief = "Frame scores, pooled scores and windows."
+
+[[headers]]
+path = "vmafx/provenance.h"
+group = "core"
+guard = "VMAFX_PROVENANCE_H"
+brief = "Provenance records: how the scores of a context are made."
+
+[[headers]]
+path = "vmafx/report.h"
+group = "core"
+guard = "VMAFX_REPORT_H"
+brief = "Report writer."
+
+[[headers]]
+path = "vmafx/dnn.h"
+group = "core"
+guard = "VMAFX_DNN_H"
+brief = "Tiny-AI models."
+
+[[headers]]
+path = "vmafx/mcp.h"
+group = "core"
+guard = "VMAFX_MCP_H"
+brief = "Embedded MCP server."
 
 [[headers]]
 path = "vmafx/libvmaf_bridge.h"
+group = "optional"
 guard = "VMAFX_LIBVMAF_BRIDGE_H"
 brief = "Bridge between a VmafxContext and the libvmaf handle bound to it, for callers that migrate one call at a time."
-includes = ["vmafx/vmafx.h", "libvmaf/libvmaf.h"]
+includes = ["libvmaf/libvmaf.h"]
 
 # ---------------------------------------------------------------------------
 # Status codes. Stable on every platform; `errno` is what the libvmaf compat
@@ -41,48 +136,56 @@ includes = ["vmafx/vmafx.h", "libvmaf/libvmaf.h"]
 
 [[status]]
 name = "VMAFX_OK"
+since = "0.1"
 value = 0
 errno = "0"
 doc = "Success."
 
 [[status]]
 name = "VMAFX_PENDING"
+since = "0.1"
 value = 1
 errno = "EAGAIN"
 doc = "The requested score is not final yet (libvmaf returned -EAGAIN)."
 
 [[status]]
 name = "VMAFX_E_INVALID"
+since = "0.1"
 value = -1
 errno = "EINVAL"
 doc = "Invalid argument or state; the error names the parameter."
 
 [[status]]
 name = "VMAFX_E_NOMEM"
+since = "0.1"
 value = -2
 errno = "ENOMEM"
 doc = "Out of memory."
 
 [[status]]
 name = "VMAFX_E_NOTSUP"
+since = "0.1"
 value = -3
 errno = "ENOTSUP"
 doc = "Backend, format or option not supported; the error names it."
 
 [[status]]
 name = "VMAFX_E_NOTFOUND"
+since = "0.1"
 value = -4
 errno = "ENOENT"
 doc = "Unknown feature, model, extractor index or device."
 
 [[status]]
 name = "VMAFX_E_BUSY"
+since = "0.1"
 value = -5
 errno = "EBUSY"
 doc = "Resource already in use."
 
 [[status]]
 name = "VMAFX_E_DEVICE"
+since = "0.1"
 value = -6
 errno = "EIO"
 reverse = false
@@ -90,18 +193,21 @@ doc = "Backend runtime failure; the error carries the runtime's code."
 
 [[status]]
 name = "VMAFX_E_IO"
+since = "0.1"
 value = -7
 errno = "EIO"
 doc = "File or stream error."
 
 [[status]]
 name = "VMAFX_E_RANGE"
+since = "0.1"
 value = -8
 errno = "ERANGE"
 doc = "Value out of range."
 
 [[status]]
 name = "VMAFX_E_INTERNAL"
+since = "0.1"
 value = -9
 errno = "EIO"
 reverse = false
@@ -112,6 +218,8 @@ doc = "Engine error without a more specific status; the error carries the engine
 
 [[enums]]
 name = "VmafxLogLevel"
+header = "vmafx/types.h"
+since = "0.1"
 doc = "Log verbosity (values equal enum VmafLogLevel)."
 values = [
   { name = "VMAFX_LOG_LEVEL_NONE", value = 0 },
@@ -123,6 +231,8 @@ values = [
 
 [[enums]]
 name = "VmafxBackend"
+header = "vmafx/types.h"
+since = "0.1"
 doc = "Compute backend (values equal enum VmafBackend; 5 stays reserved for the removed backend of ADR-0726)."
 values = [
   { name = "VMAFX_BACKEND_CPU", value = 0 },
@@ -137,11 +247,15 @@ values = [
 
 [[handles]]
 name = "VmafxContext"
+header = "vmafx/context.h"
+since = "0.1"
 release = "vmafx_context_destroy"
 doc = "One scoring session."
 
 [[handles]]
 name = "VmafxError"
+header = "vmafx/error.h"
+since = "0.1"
 release = "vmafx_error_free"
 doc = "A failure: status, message, the named subject and the engine's errno."
 
@@ -150,6 +264,8 @@ doc = "A failure: status, message, the named subject and the engine's errno."
 
 [[structs]]
 name = "VmafxContextConfig"
+header = "vmafx/context.h"
+since = "0.1"
 sized = true
 doc = "Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT."
 fields = [
@@ -162,6 +278,8 @@ fields = [
 
 [[structs]]
 name = "VmafxProvenance"
+header = "vmafx/provenance.h"
+since = "0.1"
 sized = true
 doc = "How the scores of a context are made (#2142). Strings live as long as the context."
 fields = [
@@ -175,6 +293,8 @@ fields = [
 
 [[structs]]
 name = "VmafxExtractorInfo"
+header = "vmafx/context.h"
+since = "0.1"
 sized = true
 doc = "One registered feature extractor."
 fields = [
@@ -184,6 +304,8 @@ fields = [
 
 [[structs]]
 name = "VmafxScore"
+header = "vmafx/score.h"
+since = "0.1"
 sized = true
 doc = "One score and the extractor that produced it."
 fields = [
@@ -195,10 +317,11 @@ fields = [
 ]
 
 # ---------------------------------------------------------------------------
-# Functions of vmafx/vmafx.h.
+# Functions (header per entry).
 
 [[functions]]
 name = "vmafx_version_string"
+header = "vmafx/version.h"
 since = "0.1"
 returns = "cstr"
 doc = "Build version (git describe); valid for the process lifetime."
@@ -206,6 +329,7 @@ params = []
 
 [[functions]]
 name = "vmafx_abi_version"
+header = "vmafx/version.h"
 since = "0.1"
 returns = "void"
 doc = "ABI version of the loaded library. Each pointer may be NULL."
@@ -217,6 +341,7 @@ params = [
 
 [[functions]]
 name = "vmafx_status_name"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "cstr"
 doc = "Name of a status code (`VMAFX_E_INVALID`), or `VMAFX_UNKNOWN_STATUS`."
@@ -226,6 +351,7 @@ params = [
 
 [[functions]]
 name = "vmafx_error_status"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "status"
 doc = "Status of an error; VMAFX_E_INVALID for NULL."
@@ -235,6 +361,7 @@ params = [
 
 [[functions]]
 name = "vmafx_error_message"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "cstr"
 doc = "Message formatted at the failure site; empty string for NULL."
@@ -244,6 +371,7 @@ params = [
 
 [[functions]]
 name = "vmafx_error_subject"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "cstr"
 doc = "Name of the parameter, feature, extractor or backend that failed; empty string when none."
@@ -253,6 +381,7 @@ params = [
 
 [[functions]]
 name = "vmafx_error_errno"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "i32"
 doc = "Negative errno the engine reported, 0 when the failure did not come from the engine."
@@ -262,6 +391,7 @@ params = [
 
 [[functions]]
 name = "vmafx_error_free"
+header = "vmafx/error.h"
 since = "0.1"
 returns = "void"
 doc = "Release an error; NULL is a no-op."
@@ -271,6 +401,7 @@ params = [
 
 [[functions]]
 name = "vmafx_context_create"
+header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
 doc = "Create a context. `config` may be NULL for the defaults; `*out` is NULL on failure."
@@ -282,6 +413,7 @@ params = [
 
 [[functions]]
 name = "vmafx_context_destroy"
+header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
 doc = "Destroy a context. On a nonzero status the context stays valid and may be destroyed again (ADR-1336)."
@@ -292,6 +424,7 @@ params = [
 
 [[functions]]
 name = "vmafx_context_provenance"
+header = "vmafx/provenance.h"
 since = "0.1"
 returns = "status"
 doc = "Fill the provenance record of a context."
@@ -303,6 +436,7 @@ params = [
 
 [[functions]]
 name = "vmafx_context_extractor_info"
+header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
 doc = "Describe registered extractor `index`; VMAFX_E_NOTFOUND past the last one."
@@ -315,6 +449,7 @@ params = [
 
 [[functions]]
 name = "vmafx_feature_score"
+header = "vmafx/score.h"
 since = "0.1"
 returns = "status"
 doc = "Score of `feature` at frame `index` with its producer; VMAFX_PENDING while the frame is not final."

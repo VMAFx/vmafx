@@ -61895,3 +61895,21 @@ No score, public API or FFmpeg patch impact.
 - `core/test/check_exported_symbols.py` accepts `vmafx_` symbols declared under
   `core/include/`. No score or FFmpeg patch impact; libvmaf return values are
   unchanged (the shims return the engine's own errno).
+
+## VMAFx API generator: header split and versioned `vmafx_` symbols
+
+`rc4/api-wp1-generator`, [ADR-1852](adr/1852-vmafx-api-redesign.md).
+
+- The generated headers are now `core/include/vmafx/{vmafx,version,types,error,context,device,frame,model,score,provenance,report,dnn,mcp,libvmaf_bridge}.h`;
+  `core/include/vmafx/meson.build` (their install list),
+  `core/src/vmafx.map`, `core/src/vmafx.def`, `core/src/vmafx_symbols.txt` and
+  `docs/api/vmafx/<header>.md` are generated too. Regenerate on a conflict,
+  never merge by hand: `python3 scripts/codegen/vmafx-api.py --write`.
+- `core/src/meson.build` links `libvmaf` with
+  `-Wl,--version-script=core/src/vmafx.map -Wl,--no-undefined-version` on ELF
+  targets (`vmaf_link_args`, `link_depends`). A sync that rewrites the
+  `library('vmaf', ...)` call keeps both; the `vmaf_*` exports stay unversioned
+  while `[api] hide_unlisted = false`.
+- `core/test/check_exported_symbols.py` takes a third argument (the symbol
+  list) and judges `vmafx_` exports by it, not by the header regex.
+- No score, FFmpeg patch or `libvmaf.h` impact.

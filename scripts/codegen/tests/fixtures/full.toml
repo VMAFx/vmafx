@@ -1,0 +1,314 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Test definition that uses every feature of the VMAFx API definition format
+# (ADR-1852): header groups and computed includes, callbacks, flag sets,
+# fixed arrays, nested sized structs, handle / pointer / size fields,
+# deprecation, two ABI minors and option groups. The generator tests render
+# it, compile the C output and plant defects in copies of it. It is not the
+# API: core/api/vmafx.toml is.
+
+[api]
+name = "vmafx"
+schema = 2
+abi_version = "0.2.0"
+export_macro = "VMAFX_EXPORT"
+base_header = "vmafx/types.h"
+version_header = "vmafx/version.h"
+
+[[headers]]
+path = "vmafx/vmafx.h"
+group = "umbrella"
+guard = "VMAFX_VMAFX_H"
+brief = "Umbrella."
+
+[[headers]]
+path = "vmafx/version.h"
+group = "core"
+guard = "VMAFX_VERSION_H"
+brief = "Versions."
+
+[[headers]]
+path = "vmafx/types.h"
+group = "core"
+guard = "VMAFX_TYPES_H"
+brief = "Types."
+
+[[headers]]
+path = "vmafx/error.h"
+group = "core"
+guard = "VMAFX_ERROR_H"
+brief = "Errors."
+
+[[headers]]
+path = "vmafx/frame.h"
+group = "core"
+guard = "VMAFX_FRAME_H"
+brief = "Frames and fences."
+
+[[headers]]
+path = "vmafx/score.h"
+group = "core"
+guard = "VMAFX_SCORE_H"
+brief = "Windows."
+
+[[headers]]
+path = "vmafx/device_test.h"
+group = "optional"
+guard = "VMAFX_DEVICE_TEST_H"
+brief = "Optional helper header."
+
+[[status]]
+name = "VMAFX_OK"
+value = 0
+errno = "0"
+since = "0.1"
+doc = "Success."
+
+[[status]]
+name = "VMAFX_E_INVALID"
+value = -1
+errno = "EINVAL"
+since = "0.1"
+doc = "Invalid argument."
+
+[[status]]
+name = "VMAFX_E_TIMEOUT"
+value = -10
+errno = "ETIMEDOUT"
+since = "0.2"
+doc = "Fence wait timed out."
+
+[[enums]]
+name = "VmafxFenceKind"
+header = "vmafx/types.h"
+since = "0.1"
+doc = "Fence kinds."
+values = [
+  { name = "VMAFX_FENCE_KIND_NONE", value = 0 },
+  { name = "VMAFX_FENCE_KIND_SYNC_FILE", value = 1, doc = "A sync_file descriptor." },
+  { name = "VMAFX_FENCE_KIND_EVENT", value = 2, since = "0.2" },
+]
+
+[[flags]]
+name = "VmafxImportFlags"
+header = "vmafx/frame.h"
+type = "u32"
+since = "0.1"
+doc = "How a frame import may proceed."
+bits = [
+  { name = "VMAFX_IMPORT_REQUIRE_ZERO_COPY", bit = 0, doc = "Refuse a layout the backend cannot bind." },
+  { name = "VMAFX_IMPORT_ALLOW_PLANAR_ONLY", bit = 3, doc = "Accept planar layouts only.", since = "0.2" },
+]
+
+[[handles]]
+name = "VmafxError"
+header = "vmafx/error.h"
+release = "vmafx_error_free"
+since = "0.1"
+doc = "A failure."
+
+[[handles]]
+name = "VmafxWindow"
+header = "vmafx/score.h"
+release = "vmafx_window_release"
+since = "0.2"
+doc = "An asynchronous pooled-score request."
+
+[[handles]]
+name = "VmafxModel"
+header = "vmafx/score.h"
+release = "vmafx_window_release"
+since = "0.2"
+doc = "A model."
+
+[[callbacks]]
+name = "VmafxWindowCallback"
+header = "vmafx/score.h"
+returns = "void"
+since = "0.2"
+doc = "Called once when a window completes."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in" },
+  { name = "result", type = "VmafxWindowResult", pass = "in_const" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[structs]]
+name = "VmafxFence"
+header = "vmafx/types.h"
+sized = true
+since = "0.1"
+doc = "A fence."
+fields = [
+  { name = "kind", type = "u32", enum = "VmafxFenceKind", doc = "Kind." },
+  { name = "handle", type = "uptr", doc = "Event handle." },
+  { name = "value", type = "u64", doc = "Timeline value." },
+  { name = "fd", type = "i32", doc = "sync_file descriptor." },
+  { name = "reserved", type = "u32", doc = "Zero." },
+]
+
+[[structs]]
+name = "VmafxFramePlane"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "One plane of an imported frame."
+fields = [
+  { name = "handle", type = "uptr", doc = "Plane handle." },
+  { name = "fd", type = "i32", doc = "dma-buf descriptor." },
+  { name = "plane_index", type = "u32", doc = "Plane in the buffer." },
+  { name = "offset", type = "u64", doc = "Byte offset." },
+  { name = "pitch", type = "u64", doc = "Row pitch." },
+]
+
+[[structs]]
+name = "VmafxFrameImport"
+header = "vmafx/frame.h"
+sized = true
+since = "0.1"
+doc = "A frame handed over by a producer."
+fields = [
+  { name = "pix_fmt", type = "u32", doc = "Pixel format." },
+  { name = "w", type = "u32", doc = "Width." },
+  { name = "h", type = "u32", doc = "Height." },
+  { name = "plane", type = "VmafxFramePlane", count = 3, doc = "Planes." },
+  { name = "acquire", type = "VmafxFence", doc = "Producer's write before our read." },
+  { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "Import flags." },
+  { name = "fences", type = "VmafxFence", count = 2, since = "0.2", doc = "Per-plane-pair fences." },
+]
+
+[[structs]]
+name = "VmafxWindowResult"
+header = "vmafx/score.h"
+sized = true
+since = "0.2"
+doc = "A finished window."
+fields = [
+  { name = "n_frames", type = "u64", doc = "Frames in the window." },
+  { name = "value", type = "f64", count = 8, doc = "One value per pool method." },
+  { name = "feature", type = "cstr", doc = "Feature." },
+]
+
+[[structs]]
+name = "VmafxWindowRequest"
+header = "vmafx/score.h"
+sized = true
+since = "0.2"
+doc = "An asynchronous pooled-score request."
+fields = [
+  { name = "model", type = "VmafxModel", const = true, doc = "Model to pool." },
+  { name = "first", type = "u64", doc = "First frame." },
+  { name = "last", type = "u64", doc = "Last frame." },
+  { name = "pool_mask", type = "u32", doc = "Pool methods." },
+  { name = "on_complete", type = "VmafxWindowCallback", doc = "Completion callback." },
+  { name = "user", type = "ptr", doc = "Passed to on_complete." },
+  { name = "budget", type = "size", doc = "Bytes the window may hold." },
+  { name = "scale", type = "f32", doc = "Scale." },
+  { name = "offset", type = "i64", doc = "Signed offset." },
+]
+
+[[functions]]
+name = "vmafx_version_string"
+header = "vmafx/version.h"
+since = "0.1"
+returns = "cstr"
+doc = "Build version."
+params = []
+
+[[functions]]
+name = "vmafx_status_name"
+header = "vmafx/error.h"
+since = "0.1"
+returns = "cstr"
+doc = "Name of a status."
+params = [{ name = "status", type = "status", pass = "in" }]
+
+[[functions]]
+name = "vmafx_error_errno"
+header = "vmafx/error.h"
+since = "0.1"
+returns = "i32"
+doc = "Engine errno."
+params = [{ name = "error", type = "VmafxError", pass = "in_const" }]
+
+[[functions]]
+name = "vmafx_error_free"
+header = "vmafx/error.h"
+since = "0.1"
+returns = "void"
+doc = "Release an error."
+params = [{ name = "error", type = "VmafxError", pass = "in", nullable = true }]
+
+[[functions]]
+name = "vmafx_frame_import_check"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Check an import descriptor."
+deprecated = { since = "0.2", replacement = "vmafx_frame_import_check2", removal = "1.0" }
+params = [
+  { name = "desc", type = "VmafxFrameImport", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_import_check2"
+header = "vmafx/frame.h"
+since = "0.2"
+returns = "status"
+doc = "Check an import descriptor and its flags."
+params = [
+  { name = "desc", type = "VmafxFrameImport", pass = "in" },
+  { name = "flags", type = "u32", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_submit"
+header = "vmafx/score.h"
+since = "0.2"
+returns = "status"
+doc = "Submit a window."
+params = [
+  { name = "request", type = "VmafxWindowRequest", pass = "in" },
+  { name = "out", type = "VmafxWindow", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_release"
+header = "vmafx/score.h"
+since = "0.2"
+returns = "void"
+doc = "Release a window."
+params = [{ name = "window", type = "VmafxWindow", pass = "in", nullable = true }]
+
+[[functions]]
+name = "vmafx_test_helper"
+header = "vmafx/device_test.h"
+since = "0.2"
+returns = "status"
+doc = "Optional helper."
+params = [
+  { name = "on_complete", type = "VmafxWindowCallback", pass = "in" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[option_groups]]
+name = "threads"
+since = "0.1"
+doc = "Worker threads."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+options = [
+  { name = "threads", type = "uint", default = 0, range = [0, 256], doc = "Worker threads.", cli = ["--threads"], ffmpeg = "threads", aliases = ["n_threads"], mcp = "threads", proto = { field = 7 } },
+]
+
+[[option_groups]]
+name = "pool"
+since = "0.2"
+doc = "Pooling."
+surfaces = ["cli", "ffmpeg"]
+options = [
+  { name = "pool", type = "enum", default = "mean", enum = ["mean", "min", "harmonic_mean"], doc = "Pool method.", cli = ["--pool"], ffmpeg = "pool" },
+  { name = "subsample", type = "int", default = 1, range = [1, 128], doc = "Every n-th frame.", cli = ["--subsample"], ffmpeg = "n_subsample" },
+]

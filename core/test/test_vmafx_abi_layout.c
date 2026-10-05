@@ -18,6 +18,7 @@
 
 _Static_assert(sizeof(void *) == 8, "VMAFx builds 64-bit only (ADR-1258)");
 _Static_assert(sizeof(VmafxContextConfig) == 32, "VmafxContextConfig size");
+_Static_assert(_Alignof(VmafxContextConfig) == 8, "VmafxContextConfig alignment");
 _Static_assert(offsetof(VmafxContextConfig, struct_size) == 0,
                "VmafxContextConfig.struct_size offset");
 _Static_assert(offsetof(VmafxContextConfig, log_level) == 4, "VmafxContextConfig.log_level offset");
@@ -27,6 +28,7 @@ _Static_assert(offsetof(VmafxContextConfig, n_subsample) == 12,
 _Static_assert(offsetof(VmafxContextConfig, cpumask) == 16, "VmafxContextConfig.cpumask offset");
 _Static_assert(offsetof(VmafxContextConfig, gpumask) == 24, "VmafxContextConfig.gpumask offset");
 _Static_assert(sizeof(VmafxProvenance) == 32, "VmafxProvenance size");
+_Static_assert(_Alignof(VmafxProvenance) == 8, "VmafxProvenance alignment");
 _Static_assert(offsetof(VmafxProvenance, struct_size) == 0, "VmafxProvenance.struct_size offset");
 _Static_assert(offsetof(VmafxProvenance, abi_major) == 4, "VmafxProvenance.abi_major offset");
 _Static_assert(offsetof(VmafxProvenance, abi_minor) == 8, "VmafxProvenance.abi_minor offset");
@@ -37,11 +39,13 @@ _Static_assert(offsetof(VmafxProvenance, n_extractors) == 20,
                "VmafxProvenance.n_extractors offset");
 _Static_assert(offsetof(VmafxProvenance, version) == 24, "VmafxProvenance.version offset");
 _Static_assert(sizeof(VmafxExtractorInfo) == 16, "VmafxExtractorInfo size");
+_Static_assert(_Alignof(VmafxExtractorInfo) == 8, "VmafxExtractorInfo alignment");
 _Static_assert(offsetof(VmafxExtractorInfo, struct_size) == 0,
                "VmafxExtractorInfo.struct_size offset");
 _Static_assert(offsetof(VmafxExtractorInfo, backend) == 4, "VmafxExtractorInfo.backend offset");
 _Static_assert(offsetof(VmafxExtractorInfo, name) == 8, "VmafxExtractorInfo.name offset");
 _Static_assert(sizeof(VmafxScore) == 40, "VmafxScore size");
+_Static_assert(_Alignof(VmafxScore) == 8, "VmafxScore alignment");
 _Static_assert(offsetof(VmafxScore, struct_size) == 0, "VmafxScore.struct_size offset");
 _Static_assert(offsetof(VmafxScore, backend) == 4, "VmafxScore.backend offset");
 _Static_assert(offsetof(VmafxScore, index) == 8, "VmafxScore.index offset");

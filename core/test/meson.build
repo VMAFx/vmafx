@@ -859,7 +859,9 @@ test('test_gpu_public_header_docs',
     timeout : 120,
 )
 
-# ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
+# ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours;
+# ADR-1852: its vmafx_* exports equal core/src/vmafx_symbols.txt, each in the
+# version node the list names.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals
 # (__gcov_*, mangle_path), and a coverage build is never the library that ships.
@@ -869,7 +871,9 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'static
         import('python').find_installation(),
         args : [files('check_exported_symbols.py'),
                 get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
-                meson.project_source_root() / 'include'],
+                meson.project_source_root() / 'include',
+                # ADR-1852: generated from core/api/vmafx.toml beside vmafx.map.
+                meson.project_source_root() / 'src' / 'vmafx_symbols.txt'],
         suite : ['fast'],
     )
 endif
@@ -1132,6 +1136,8 @@ test_public_api_score = executable('test_public_api_score',
 # test_vmafx_api_slice exercises the hand-written core and the generated
 # libvmaf compat shims; test_vmafx_api_generated_current fails when any
 # generated file differs from what the definition produces (a hand edit).
+# check_exported_symbols (above) compares the library with the generated
+# symbol list and version nodes.
 test_vmafx_abi_layout = executable('test_vmafx_abi_layout',
     ['test_vmafx_abi_layout.c'],
     include_directories : [libvmaf_inc],
@@ -1146,11 +1152,31 @@ test_vmafx_api_slice = executable('test_vmafx_api_slice',
 )
 test('test_vmafx_api_slice', test_vmafx_api_slice, suite : ['fast'])
 
+vmafx_api_generator = meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'vmafx-api.py'
 test('test_vmafx_api_generated_current',
     import('python').find_installation(),
-    args : [meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'vmafx-api.py',
-            '--check', '--root', meson.project_source_root() / '..'],
+    args : [vmafx_api_generator, '--check', '--root', meson.project_source_root() / '..'],
     suite : ['fast'],
+)
+
+# The definition must be an append-only successor of the one at the merge base
+# with origin/master (HISS-14). Exits 77 (skipped, reason printed) without git,
+# without that ref (shallow CI clones), or when the merge base has no definition.
+test('test_vmafx_api_abi_append_only',
+    import('python').find_installation(),
+    args : [vmafx_api_generator, '--abi-check', '--against-merge-base', 'origin/master',
+            '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+)
+
+# Generator unit tests: every emitter and gate, each refusing its planted defects.
+test('test_vmafx_api_generator',
+    import('python').find_installation(),
+    args : ['-m', 'unittest', 'discover', '-s',
+            meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'tests',
+            '-p', 'test_*.py'],
+    suite : ['fast'],
+    timeout : 120,
 )
 
 if get_option('default_library') != 'static'

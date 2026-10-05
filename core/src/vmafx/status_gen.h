@@ -16,7 +16,7 @@
 #ifndef VMAFX_STATUS_GEN_H
 #define VMAFX_STATUS_GEN_H
 
-#include "vmafx/vmafx.h"
+#include "vmafx/types.h"
 
 /** Negative errno libvmaf returns for a status without an engine errno. */
 int vmafx_status_to_errno(VmafxStatus status);

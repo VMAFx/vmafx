@@ -13,6 +13,12 @@ from __future__ import annotations
 from . import ctext
 from .model import Api, Compat
 
+HELPER_CALLS = (
+    "vmafx_context_from_libvmaf",
+    "vmafx_context_libvmaf_handle",
+    "vmafx_error_errno",
+    "vmafx_error_free",
+)
 HELPER = """/* The negative errno libvmaf returned for this failure: the engine's own code
  * when the failure came from the engine, else the status's errno. Releases
  * the error. */
@@ -96,13 +102,22 @@ def _function(api: Api, item: Compat) -> str:
     return doc + _signature(item) + "\n{\n" + body + "}\n"
 
 
+def _api_headers(api: Api) -> list[str]:
+    """The umbrella plus every optional header declaring a function the shims call."""
+    declared = {fn.name: fn.header for fn in api.functions}
+    called = {item.target for item in api.compats} | set(HELPER_CALLS)
+    used = {declared[name] for name in called if name in declared}
+    optional = [h.path for h in api.headers if h.group == "optional" and h.path in used]
+    return [api.umbrella.path, *optional]
+
+
 def compat_source(api: Api) -> str:
     headers = sorted({c.header for c in api.compats})
     includes = ["#include <assert.h>", "#include <errno.h>", "#include <stddef.h>"]
     includes += ["#include <stdint.h>", ""]
     includes += [f'#include "{h}"' for h in headers]
     includes += ['#include "status_gen.h"']
-    includes += [f'#include "{h.path}"' for h in api.headers]
+    includes += [f'#include "{path}"' for path in _api_headers(api)]
     functions = "\n".join(_function(api, item) for item in api.compats)
     return (
         ctext.licence_block()
@@ -115,8 +130,7 @@ def compat_source(api: Api) -> str:
         + "\n\n"
         + HELPER
         + "\n"
-        + functions
-        + "\n"
+        + (functions + "\n" if functions else "")
         + ctext.NULLPTR_END
         + "\n"
     )

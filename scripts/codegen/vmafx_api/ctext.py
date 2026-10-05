@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import textwrap
 
-from .model import SCALARS, Api, Field, Function, Param
+from . import typesys
+from .model import Api, Callback, Deprecation, Field, Function, Param, version_text
 
 COLUMNS = 100
 BANNER = (
@@ -51,17 +52,13 @@ def doc_block(text: str, indent: str = "", extra: tuple[str, ...] = ()) -> str:
     return f"{indent}/**\n{body}{indent} */\n"
 
 
-def field_type(field: Field) -> str:
-    return SCALARS[field.type]
-
-
-def type_spelling(api: Api, type_name: str) -> str:
-    """The C type of a value (not a pointer to it)."""
-    if type_name in SCALARS:
-        return SCALARS[type_name]
-    if type_name.startswith("foreign:"):
-        return type_name.split(":", 1)[1]
-    return type_name
+def field_decl(api: Api, fld: Field) -> str:
+    """`uint32_t name;`, `VmafxFence acquire;`, `const VmafxModel *model;`, `VmafxPlane plane[3];`."""
+    base = typesys.base_spelling(fld.type)
+    if typesys.kind(api, fld.type) == "handle":
+        base = ("const " if fld.const else "") + base + " *"
+    suffix = f"[{fld.count}]" if fld.count else ""
+    return typesys.pointer_join(base, fld.name) + suffix + ";"
 
 
 # Spelling of a parameter per pass mode; `{t}` is the value type.
@@ -74,29 +71,23 @@ MODE_SPELLING = {
 
 
 def param_decl(api: Api, param: Param) -> str:
-    base = type_spelling(api, param.type)
+    base = typesys.base_spelling(param.type)
     if param.mode in MODE_SPELLING:
         return MODE_SPELLING[param.mode].format(t=base) + param.name
-    if api.is_struct(param.type):
+    kind = typesys.kind(api, param.type)
+    if kind == "struct":
         return f"const {base} *{param.name}"
-    if api.is_handle(param.type) or param.type.startswith("foreign:"):
+    if kind in ("handle", "foreign"):
         return f"{base} *{param.name}"
-    return pointer_join(base, param.name)
+    return typesys.pointer_join(base, param.name)
 
 
-def pointer_join(c_type: str, name: str) -> str:
-    """`const char *` + `x` -> `const char *x`; `int` + `x` -> `int x`."""
-    if c_type.endswith("*"):
-        return c_type + name
-    return f"{c_type} {name}"
-
-
-def return_spelling(api: Api, fn: Function) -> str:
-    if fn.returns == "void":
+def return_spelling(api: Api, returns: str) -> str:
+    if returns == "void":
         return "void"
-    if fn.returns.startswith(("handle:", "foreign:")):
-        return fn.returns.split(":", 1)[1] + " *"
-    return type_spelling(api, fn.returns)
+    if returns.startswith(("handle:", "foreign:")):
+        return returns.split(":", 1)[1] + " *"
+    return typesys.base_spelling(returns)
 
 
 def packed(head: str, items: list[str], tail: str) -> str:
@@ -132,8 +123,26 @@ def assignment(lhs: str, callee: str, args: list[str]) -> str:
     return packed(f"{lhs} = {callee}", args, ";")
 
 
+def deprecation_note(dep: Deprecation) -> str:
+    since, removal = version_text(dep.since), version_text(dep.removal)
+    return f"since {since}; use {dep.replacement}; removal in {removal}"
+
+
 def declaration(api: Api, fn: Function, export: str) -> str:
-    ret = return_spelling(api, fn)
-    head = pointer_join(f"{export} {ret}", fn.name)
+    ret = return_spelling(api, fn.returns)
+    head = typesys.pointer_join(f"{export} {ret}", fn.name)
     params = [param_decl(api, p) for p in fn.params] or ["void"]
-    return packed(head, params, ";")
+    text = packed(head, params, ";")
+    if fn.deprecated is None:
+        return text
+    return f'VMAFX_DEPRECATED("{deprecation_note(fn.deprecated)}")\n' + text
+
+
+def callback_typedef(api: Api, item: Callback) -> str:
+    """`typedef R (*Name)(params);` packed like a declaration."""
+    head = f"typedef {return_spelling(api, item.returns)} (*{item.name})"
+    head = head.replace("* (*", "*(*")
+    return packed(head, [param_decl(api, p) for p in item.params], ";")
+
+
+pointer_join = typesys.pointer_join

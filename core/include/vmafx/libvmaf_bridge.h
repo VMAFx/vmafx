@@ -20,7 +20,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <vmafx/vmafx.h>
+#include <vmafx/types.h>
+#include <vmafx/context.h>
 #include <libvmaf/libvmaf.h>
 
 #ifdef __cplusplus

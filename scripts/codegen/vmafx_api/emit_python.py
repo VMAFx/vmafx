@@ -12,19 +12,36 @@ fails before it touches the library.
 
 from __future__ import annotations
 
-from .layout import struct_layout
-from .model import Api, Function, Param, Struct
+from . import typesys
+from .layout import by_value_order, layouts
+from .model import Api, Callback, Field, Function, Param, Struct, upper_snake
 from .python_runtime import CONTEXT_CLASS, LIBRARY_CLASS, RUNTIME
 
 CTYPES = {
     "u32": "ctypes.c_uint32",
     "u64": "ctypes.c_uint64",
     "i32": "ctypes.c_int32",
+    "i64": "ctypes.c_int64",
+    "f32": "ctypes.c_float",
     "f64": "ctypes.c_double",
+    "uptr": "ctypes.c_size_t",
+    "size": "ctypes.c_size_t",
+    "ptr": "ctypes.c_void_p",
     "status": "ctypes.c_int32",
     "cstr": "ctypes.c_char_p",
 }
-PYTYPES = {"u32": "int", "u64": "int", "i32": "int", "f64": "float", "cstr": "str | None"}
+PYTYPES = {
+    "u32": "int",
+    "u64": "int",
+    "i32": "int",
+    "i64": "int",
+    "f32": "float",
+    "f64": "float",
+    "uptr": "int",
+    "size": "int",
+    "status": "int",
+    "cstr": "str | None",
+}
 CONTEXT = "VmafxContext"
 LINE_LIMIT = 100  # black line length (pyproject.toml)
 
@@ -59,20 +76,30 @@ def short(name: str) -> str:
 def _ctype_of_param(api: Api, param: Param) -> str:
     if param.mode in ("out_handle", "error"):
         return "ctypes.POINTER(ctypes.c_void_p)"
-    if api.is_struct(param.type):
+    kind = typesys.kind(api, param.type)
+    if kind == "struct":
         return f"ctypes.POINTER({param.type})"
-    if api.is_handle(param.type) or param.type.startswith("foreign:"):
+    if kind in ("handle", "foreign"):
         return "ctypes.c_void_p"
+    if kind == "callback":
+        return param.type
     base = CTYPES[param.type]
     return f"ctypes.POINTER({base})" if param.mode == "out" else base
 
 
-def _ctype_of_return(fn: Function) -> str:
-    if fn.returns == "void":
+def _ctype_of_field(api: Api, fld: Field) -> str:
+    kind = typesys.kind(api, fld.type)
+    base = {"struct": fld.type, "callback": fld.type, "handle": "ctypes.c_void_p"}.get(kind)
+    base = base or CTYPES[fld.type]
+    return f"{base} * {fld.count}" if fld.count else base
+
+
+def _ctype_of_return(returns: str) -> str:
+    if returns == "void":
         return "None"
-    if fn.returns.startswith(("handle:", "foreign:")):
+    if returns.startswith(("handle:", "foreign:")):
         return "ctypes.c_void_p"
-    return CTYPES[fn.returns]
+    return CTYPES[returns]
 
 
 def _enum_classes(api: Api) -> str:
@@ -83,20 +110,38 @@ def _enum_classes(api: Api) -> str:
         out.append(f"\n\nclass {short(item.name)}(enum.IntEnum):\n")
         out.append(f'    """{item.name}."""\n\n')
         out += [f"    {v.name.removeprefix(prefix)} = {v.value}\n" for v in item.values]
+    for flags in api.flags:
+        prefix = upper_snake(flags.name).removesuffix("FLAGS")
+        out.append(f"\n\nclass {short(flags.name)}(enum.IntFlag):\n")
+        out.append(f'    """{flags.name} bits."""\n\n')
+        out += [f"    {b.name.removeprefix(prefix)} = {1 << b.bit}\n" for b in flags.bits]
     return "".join(out)
 
 
 def _struct_class(item: Struct) -> str:
-    fields = "".join(f'        ("{f.name}", {CTYPES[f.type]}),\n' for f in item.fields)
-    return f"class {item.name}(ctypes.Structure):\n    _fields_ = (\n{fields}    )\n"
+    """Declared first, fields set below: a callback or a nested struct may refer to it."""
+    return f'class {item.name}(ctypes.Structure):\n    """C struct {item.name}."""\n'
+
+
+def _callback_type(api: Api, item: Callback) -> str:
+    args = [_ctype_of_return(item.returns)] + [_ctype_of_param(api, p) for p in item.params]
+    return py_call(f"{item.name} = ctypes.CFUNCTYPE", args, "")
+
+
+def _struct_fields(api: Api) -> str:
+    """`T._fields_ = (...)` for every struct, nested structs first."""
+    out = []
+    for item in by_value_order(api):
+        rows = [f'("{f.name}", {_ctype_of_field(api, f)})' for f in item.fields]
+        out.append(f"{item.name}._fields_ = {py_seq(rows, '')}\n")
+    return "\n".join(out)
 
 
 def _layout_table(api: Api) -> str:
     out = ["LAYOUT = {\n"]
-    for item in api.structs:
-        lay = struct_layout(item)
+    for name, lay in layouts(api).items():
         offsets = py_seq([f'("{f.name}", {f.offset})' for f in lay.fields], "        ")
-        out.append(f"    {item.name}: {py_seq([str(lay.size), offsets], '    ')},\n")
+        out.append(f"    {name}: {py_seq([str(lay.size), offsets], '    ')},\n")
     out.append("}\n")
     return "".join(out)
 
@@ -105,31 +150,63 @@ def _signature_table(api: Api) -> str:
     out = ["SIGNATURES = {\n"]
     for fn in api.functions:
         args = py_seq([_ctype_of_param(api, p) for p in fn.params], "        ")
-        out.append(f'    "{fn.name}": {py_seq([_ctype_of_return(fn), args], "    ")},\n')
+        out.append(f'    "{fn.name}": {py_seq([_ctype_of_return(fn.returns), args], "    ")},\n')
     out.append("}\n")
     return "".join(out)
 
 
-def _record_class(item: Struct) -> str:
+def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
+    """(annotation, conversion from `raw`) of a record field; None keeps it C-only.
+
+    Pointers (`ptr`, handles, callbacks) stay on the ctypes struct: a frozen
+    record cannot own what they point at.
+    """
+    kind = typesys.kind(api, fld.type)
+    raw = f"raw.{fld.name}"
+    if kind == "struct":
+        record = short(fld.type)
+        if fld.count:
+            return f"tuple[{record}, ...]", f"tuple({record}.from_c(x) for x in {raw})"
+        return record, f"{record}.from_c({raw})"
+    if kind != "scalar" or fld.type == "ptr":
+        return None
+    value = f"_text({raw})" if fld.type == "cstr" else raw
+    if fld.count:
+        return f"tuple[{PYTYPES[fld.type]}, ...]", f"tuple({raw})"
+    return PYTYPES[fld.type], value
+
+
+def _plain(api: Api, fields: list[Field]) -> bool:
+    """A record converts back to C when every field is a single non-pointer number."""
+    return all(
+        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", "ptr") and not f.count
+        for f in fields
+    )
+
+
+def _to_c(item: Struct, fields: list[Field]) -> list[str]:
+    lines = [f"\n    def to_c(self) -> {item.name}:\n", f"        raw = {item.name}()\n"]
+    if item.sized:
+        lines.append("        raw.struct_size = ctypes.sizeof(raw)\n")
+    lines += [f"        raw.{f.name} = self.{f.name}\n" for f in fields]
+    return [*lines, "        return raw\n"]
+
+
+def _record_class(api: Api, item: Struct) -> str:
     fields = [f for f in item.fields if f.name != "struct_size"]
+    values = [(f, _record_value(api, f)) for f in fields]
+    kept = [(f, v) for f, v in values if v is not None]
     lines = [f"@dataclass(frozen=True)\nclass {short(item.name)}:\n"]
     lines.append(f'    """{item.doc}"""\n\n')
-    lines += [f"    {f.name}: {PYTYPES[f.type]}\n" for f in fields]
+    lines += [f"    {f.name}: {v[0]}\n" for f, v in kept]
     lines.append(
         f"\n    @classmethod\n    def from_c(cls, raw: {item.name}) -> {short(item.name)}:\n"
     )
     lines.append("        return cls(\n")
-    for field in fields:
-        value = f"raw.{field.name}"
-        if field.type == "cstr":
-            value = f"_text(raw.{field.name})"
-        lines.append(f"            {field.name}={value},\n")
+    lines += [f"            {f.name}={v[1]},\n" for f, v in kept]
     lines.append("        )\n")
-    if all(f.type != "cstr" for f in fields):
-        lines.append(f"\n    def to_c(self) -> {item.name}:\n")
-        lines.append(f"        raw = {item.name}()\n        raw.struct_size = ctypes.sizeof(raw)\n")
-        lines += [f"        raw.{f.name} = self.{f.name}\n" for f in fields]
-        lines.append("        return raw\n")
+    if _plain(api, fields):
+        lines += _to_c(item, fields)
     return "".join(lines)
 
 
@@ -181,6 +258,14 @@ def _method(api: Api, fn: Function) -> str:
     return f'    def {_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
 
 
+def _bindable(api: Api, param: Param) -> bool:
+    """Parameter shapes the idiomatic layer wraps; others stay on the C layer (WP7)."""
+    kind = typesys.kind(api, param.type)
+    if param.mode == "error" or (param.mode == "out" and kind == "struct"):
+        return True
+    return param.mode == "in" and kind == "scalar" and param.type != "ptr"
+
+
 def context_methods(api: Api) -> list[Function]:
     """Functions that take a context first and are neither its constructor nor release."""
     release = {h.release for h in api.handles}
@@ -191,6 +276,7 @@ def context_methods(api: Api) -> list[Function]:
         and fn.params[0].type == CONTEXT
         and fn.returns == "status"
         and fn.name not in release
+        and all(_bindable(api, p) for p in fn.params[1:])
     ]
 
 
@@ -214,8 +300,8 @@ def library_functions(api: Api) -> list[Function]:
     """Functions on no handle: methods of `Library`."""
     out = []
     for fn in api.functions:
-        typed = [p.type for p in fn.params]
-        if any(api.is_handle(t) or t.startswith("foreign:") for t in typed):
+        kinds = {typesys.kind(api, p.type) for p in fn.params}
+        if kinds - {"scalar"} or any(p.type == "ptr" for p in fn.params):
             continue
         if fn.returns not in ("cstr", "void"):
             continue
@@ -242,8 +328,11 @@ def _library_method(api: Api, fn: Function) -> str:
 def module_text(api: Api) -> str:
     parts = [_module_header(api), _enum_classes(api)]
     parts += [_struct_class(item) for item in api.structs]
+    parts += [_callback_type(api, item) for item in api.callbacks]
+    if api.structs:
+        parts.append(_struct_fields(api))
     parts += [_layout_table(api), _signature_table(api), RUNTIME]
-    parts += [_record_class(item) for item in api.structs]
+    parts += [_record_class(api, item) for item in api.structs]
     methods = "\n".join(_method(api, fn) for fn in context_methods(api))
     parts.append(CONTEXT_CLASS + "\n" + methods)
     lib_methods = "\n".join(_library_method(api, fn) for fn in library_functions(api))

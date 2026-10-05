@@ -2,31 +2,45 @@
 paths:
   - core/src/vmafx/*
   - core/src/libvmaf.c
+  - core/src/vmafx.map
+  - core/src/vmafx.def
+  - core/src/vmafx_symbols.txt
   - core/api/vmafx.toml
   - core/include/vmafx/*
+  - core/test/check_exported_symbols.py
   - scripts/codegen/**
   - bindings/python/vmafx/*
-invariant: Generated from core/api/vmafx.toml, never hand-edit outputs; four libvmaf calls are shims on vmaf_engine_ bodies.
+invariant: Generated from core/api/vmafx.toml, never hand-edit; libvmaf shims on vmaf_engine_ bodies; vmafx_ symbols versioned.
 ---
 <!-- markdownlint-disable MD013 -->
 # VMAFx API and its libvmaf compat shims (ADR-1852)
 
 ## Generated files
 
-- Source of truth: `core/api/vmafx.toml`. Generated, committed, never hand-edited: `core/include/vmafx/*.h`, `core/src/vmafx/*_gen.{c,h}`, `core/test/test_vmafx_abi_layout.c`, `bindings/python/vmafx/_api.py`, `docs/api/vmafx/reference.md`.
-- Change = edit definition, `python3 scripts/codegen/vmafx-api.py --write`. Meson `test_vmafx_api_generated_current` fails on any byte difference.
-- Merge conflict in a generated file: take either side, re-run `--write`. Never hand-merge.
-- Definition append-only (HISS-14): `python3 scripts/codegen/vmafx-api.py --abi-check --against-ref origin/master`. Break = higher ABI major + `!` + `Migration:` footer.
+- Source of truth: `core/api/vmafx.toml` (`[api] schema = 2`). Generated, committed, never hand-edited: `core/include/vmafx/*.h` + `core/include/vmafx/meson.build`, `core/src/vmafx/*_gen.{c,h}`, `core/src/vmafx.map`, `core/src/vmafx.def`, `core/src/vmafx_symbols.txt`, `core/test/test_vmafx_abi_layout.c`, `bindings/python/vmafx/_api.py`, `docs/api/vmafx/*.md` except hand-written `index.md`.
+- Change: edit definition, run `python3 scripts/codegen/vmafx-api.py --write`. Meson `test_vmafx_api_generated_current` fails on any byte difference.
+- Merge conflict in generated file: take either side, re-run `--write`. Never hand-merge.
+- Definition append-only (HISS-14): `python3 scripts/codegen/vmafx-api.py --abi-check --against-ref <base>`. Meson `test_vmafx_api_abi_append_only`: same check vs merge base with `origin/master`; exit 77 + reason without git, ref or base definition. Break needs higher ABI minor within 0.x, higher major from 1.0, plus `!` + `Migration:` footer; PR body lists accepted breaks.
+- Addition: bump `abi_version`. 0.x: `since` = current minor (patch bump) or newer, never older node. From 1.0: shipped node frozen, `since` = newer minor. Members (fields, enum values, bits) inherit parent `since` unless set.
+- Schema-1 definitions (prototype #2173) read through `loader.upgrade()`, for `--abi-check` only; keep while any comparison base predates schema 2.
+- One generator: missing definition feature goes into `scripts/codegen/vmafx_api/`, never worked around by hand-written output.
+
+## Headers, symbols, link
+
+- `[[headers]] group`: `umbrella` (`vmafx/vmafx.h`; includes every `core` header, declares nothing), `core`, `optional` (`libvmaf_bridge.h`, later `device_<backend>.h`; never in umbrella). Includes computed from used types. Include cycle or by-value struct cycle = generation error.
+- `libvmaf.so` links `core/src/vmafx.map` (`-Wl,--version-script`, `-Wl,--no-undefined-version`; ELF only, not darwin / windows). Listed but undefined function = link error. `hide_unlisted = false` while `vmaf_*` shares library: unlisted exports stay unversioned. Library split (ADR-1852 D3, WP6 / WP12) sets `true` (`local: *;`) and links `vmafx.def` on Windows.
+- `check_exported_symbols` (fast, Linux shared): `vmafx_` exports == `core/src/vmafx_symbols.txt` both ways, version node per symbol; `vmaf_` exports vs header regex until compat lists all 107 (WP6). Version-definition symbols (`A VMAFX_0.1`) are not exports.
+- `*_INIT` macros set `struct_size` of nested sized structs too. Sized struct never inside unsized one; struct embedded by value never grows.
 
 ## Engine split in `libvmaf.c`
 
-- `vmaf_init`, `vmaf_close`, `vmaf_version`, `vmaf_feature_score_at_index` = generated shims (`core/src/vmafx/compat_libvmaf_gen.c`) on `vmafx_*`. Their former bodies = `vmaf_engine_init`, `vmaf_engine_close`, `vmaf_engine_version`, `vmaf_engine_feature_score_at_index` (`core/src/vmafx/engine.h`, not exported).
-- Upstream sync changing one of these four in `libvmaf.c`: port the change into the `vmaf_engine_*` body. Never re-add a `vmaf_init` / `vmaf_close` / `vmaf_version` / `vmaf_feature_score_at_index` definition to `libvmaf.c` (duplicate symbol with the shim).
-- Engine-internal callers call `vmaf_engine_feature_score_at_index()` (pooling loop), not the shim.
+- `vmaf_init`, `vmaf_close`, `vmaf_version`, `vmaf_feature_score_at_index` = generated shims (`core/src/vmafx/compat_libvmaf_gen.c`) on `vmafx_*`. Former bodies = `vmaf_engine_init`, `vmaf_engine_close`, `vmaf_engine_version`, `vmaf_engine_feature_score_at_index` (`core/src/vmafx/engine.h`, not exported).
+- Upstream sync changing one of these four in `libvmaf.c`: port change into `vmaf_engine_*` body. Never re-add `vmaf_init` / `vmaf_close` / `vmaf_version` / `vmaf_feature_score_at_index` definition to `libvmaf.c` (duplicate symbol with shim).
+- Engine-internal callers call `vmaf_engine_feature_score_at_index()` (pooling loop), not shim.
 - `VmafContext.api_owner`: set by `vmafx_context_create()` right after `vmaf_engine_init()`. Every engine context comes from there (also through `vmaf_init`). Compat `vmaf_close()` resolves its context through `vmafx_context_from_libvmaf()`; NULL owner = `-EINVAL`.
-- `vmafx_context_destroy()` keeps the ADR-1336 retry contract: engine close failure -> status returned, context still valid.
+- `vmafx_context_destroy()` keeps ADR-1336 retry contract: engine close failure -> status returned, context still valid.
 
 ## Errors
 
-- Every non-OK status may carry a `VmafxError` (status, message, subject, engine errno). With `error == NULL` the message is logged at ERROR, never dropped.
-- Compat shims return the engine's own negative errno when the error carries one (`compat_errno()`), else the status table's errno: libvmaf return values unchanged.
+- Every non-OK status may carry `VmafxError` (status, message, subject, engine errno). With `error == NULL` message logged at ERROR, never dropped.
+- Compat shims return engine's own negative errno when error carries one (`compat_errno()`), else status table's errno: libvmaf return values unchanged.
