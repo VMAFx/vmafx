@@ -39,8 +39,8 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 /* feature/ciede_ff_math.h on a HIP device's primitives. */
 #include "feature/hip/integer_ciede/ciede_hip_math.h"
@@ -53,6 +53,8 @@ static constexpr vmaf_hip_ciede::Constants kCiedeConstants[4] = {
     vmaf_hip_ciede::make_constants(12u),
     vmaf_hip_ciede::make_constants(16u),
 };
+
+namespace {
 
 /* The planes of one picture: packed rows, the chroma planes at their own
  * resolution. */
@@ -82,16 +84,19 @@ ciede_store_pixel(const CiedeHipPlanes &ref, const CiedeHipPlanes &dis, float *t
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= width || y >= height)
+    if (x >= width || y >= height) {
         return;
-    const unsigned cx = ss_hor ? (x >> 1) : x;
-    const unsigned cy = ss_ver ? (y >> 1) : y;
+    }
+    const unsigned cx = ss_hor ? (x >> 1u) : x;
+    const unsigned cy = ss_ver ? (y >> 1u) : y;
     const vmaf_hip_ffm::Tables tables = {.atan = vmaf_hip_ffm::kAtanTable,
                                          .sin_cos = vmaf_hip_ffm::kSinCosTable};
     terms[(size_t)y * width + x] = vmaf_hip_ciede::pixel(ciede_samples<Sample>(ref, x, y, cx, cy),
                                                          ciede_samples<Sample>(dis, x, y, cx, cy),
                                                          kCiedeConstants[depth & 3u], tables);
 }
+
+} // namespace
 
 extern "C" {
 

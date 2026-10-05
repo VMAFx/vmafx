@@ -30,9 +30,15 @@
 #ifndef FEATURE_HIP_INTEGER_CAMBI_CAMBI_HIP_DEVICE_H_
 #define FEATURE_HIP_INTEGER_CAMBI_CAMBI_HIP_DEVICE_H_
 
+#ifdef __cplusplus
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#else
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#endif
 
 #if defined(__HIPCC__)
 #define CAMBI_HD __host__ __device__
@@ -82,7 +88,7 @@
  * reads the scale's top-K count from CambiHipScale::topk. The four sums hold
  * the low and high 32-bit halves of per-block fixed-point sums, so the exact
  * total is (hi << 32) + lo in 128 bits. */
-typedef struct CambiHipSelect {
+struct CambiHipSelect {
     uint32_t hist[CAMBI_HIP_RADIX_BINS];
     uint32_t prefix;
     uint32_t k_next[CAMBI_HIP_RADIX_PASSES];
@@ -94,21 +100,30 @@ typedef struct CambiHipSelect {
     uint64_t all_hi;
     uint64_t gt_lo; /* c-values strictly above the threshold */
     uint64_t gt_hi;
-} CambiHipSelect;
+};
+#ifndef __cplusplus
+typedef struct CambiHipSelect CambiHipSelect;
+#endif
 
 /* Everything collect() reads back, in one 88-byte device-to-host copy. */
-typedef struct CambiHipResults {
+struct CambiHipResults {
     uint64_t sum_lo[CAMBI_HIP_NUM_SCALES];
     uint64_t sum_hi[CAMBI_HIP_NUM_SCALES];
     uint32_t status;
     uint32_t reserved;
-} CambiHipResults;
+};
+#ifndef __cplusplus
+typedef struct CambiHipResults CambiHipResults;
+#endif
 
 /* The per-frame device state, zeroed by one memset at the start of a frame. */
-typedef struct CambiHipFrameState {
+struct CambiHipFrameState {
     CambiHipSelect select[CAMBI_HIP_NUM_SCALES];
     CambiHipResults results;
-} CambiHipFrameState;
+};
+#ifndef __cplusplus
+typedef struct CambiHipFrameState CambiHipFrameState;
+#endif
 
 /* One scale, fixed at init. The image of scale s is decimated from the image
  * of scale s - 1 (from the preprocessed frame at scale 0 with the high-res
@@ -116,7 +131,7 @@ typedef struct CambiHipFrameState {
  * into image. The spatial mask is never decimated: cambi.c's repeated
  * stride-2 decimation of the mask samples the full-resolution mask at
  * (y << mask_shift, x << mask_shift). */
-typedef struct CambiHipScale {
+struct CambiHipScale {
     uint16_t *image;
     uint16_t *filtered_h;
     const uint16_t *decimate_src;
@@ -130,9 +145,12 @@ typedef struct CambiHipScale {
     uint32_t chunk_rows;
     uint32_t topk;
     uint32_t pool_groups;
-} CambiHipScale;
+};
+#ifndef __cplusplus
+typedef struct CambiHipScale CambiHipScale;
+#endif
 
-typedef struct CambiHipParams {
+struct CambiHipParams {
     const void *src;   /* distorted luma, src_width x src_height, packed */
     uint16_t *preproc; /* preprocessed frame (proc_width x proc_height) */
     uint16_t *mask;    /* full-resolution spatial mask */
@@ -164,7 +182,10 @@ typedef struct CambiHipParams {
     uint32_t v_band_base;
     uint32_t reserved;
     CambiHipScale scale[CAMBI_HIP_NUM_SCALES];
-} CambiHipParams;
+};
+#ifndef __cplusplus
+typedef struct CambiHipParams CambiHipParams;
+#endif
 
 /* The host C compiler and hipcc must agree on every offset: pointers and
  * 32-bit fields only, pointers first, even field counts. */
@@ -333,13 +354,13 @@ static inline CAMBI_HD uint16_t cambi_hd_preproc_pixel(const CambiHipParams *p, 
     if (last_row && last_col)
         return (uint16_t)here;
     if (last_row)
-        return (uint16_t)((here + cambi_hd_preproc_sample(p, i, j + 1u)) >> 1);
+        return (uint16_t)((here + cambi_hd_preproc_sample(p, i, j + 1u)) >> 1u);
     if (last_col)
-        return (uint16_t)((here + cambi_hd_preproc_sample(p, i + 1u, j)) >> 1);
+        return (uint16_t)((here + cambi_hd_preproc_sample(p, i + 1u, j)) >> 1u);
     const uint32_t sum = here + cambi_hd_preproc_sample(p, i, j + 1u) +
                          cambi_hd_preproc_sample(p, i + 1u, j) +
                          cambi_hd_preproc_sample(p, i + 1u, j + 1u);
-    return (uint16_t)(sum >> 2);
+    return (uint16_t)(sum >> 2u);
 }
 
 /* ------------------------------------------------------------------ */
@@ -455,7 +476,7 @@ static inline CAMBI_HD void cambi_hd_row_mask_bits(const uint16_t *q, uint32_t w
 }
 
 /* Everything one c-values work-item reads, resolved once per kernel. */
-typedef struct CambiHdCvals {
+struct CambiHdCvals {
     const uint16_t *q;
     const uint32_t *runs;
     const uint32_t *change;
@@ -474,7 +495,10 @@ typedef struct CambiHdCvals {
     uint32_t num_diffs;
     uint32_t vlt_luma;
     uint32_t v_band_base;
-} CambiHdCvals;
+};
+#ifndef __cplusplus
+typedef struct CambiHdCvals CambiHdCvals;
+#endif
 
 static inline CAMBI_HD CambiHdCvals cambi_hd_cvals_args(const CambiHipParams *p, int scale)
 {
@@ -604,11 +628,14 @@ static inline CAMBI_HD void cambi_hd_cvals_prime(const CambiHdCvals *a, uint16_t
 
 /* A work-item's share of top-K pass 0: the radix count of its c-values (one
  * atomic per run of equal bins) and their fixed-point sum. */
-typedef struct CambiHdTally {
+struct CambiHdTally {
     uint64_t sum;
     uint32_t bin;
     uint32_t count;
-} CambiHdTally;
+};
+#ifndef __cplusplus
+typedef struct CambiHdTally CambiHdTally;
+#endif
 
 static inline CAMBI_HD void cambi_hd_tally_flush(uint32_t *radix_hist, CambiHdTally *tally)
 {
@@ -632,14 +659,17 @@ static inline CAMBI_HD void cambi_hd_tally_add(uint32_t *radix_hist, CambiHdTall
 
 /* One work-item's column of one row chunk: rows [y0, y1), window columns
  * [lo, hi], and its histogram column. */
-typedef struct CambiHdColumn {
+struct CambiHdColumn {
     uint16_t *col_hist;
     uint32_t col;
     uint32_t y0;
     uint32_t y1;
     uint32_t lo;
     uint32_t hi;
-} CambiHdColumn;
+};
+#ifndef __cplusplus
+typedef struct CambiHdColumn CambiHdColumn;
+#endif
 
 /* Resolve histogram column `col` of row chunk `chunk` and load the window of
  * the chunk's first row; 0 when the work-item has no column. The window of
@@ -728,10 +758,13 @@ static inline CAMBI_HD void cambi_hd_scan_pick(CambiHipSelect *sel, uint32_t top
 }
 
 /* 128-bit accumulator: value = hi * 2^64 + lo. */
-typedef struct CambiHdU128 {
+struct CambiHdU128 {
     uint64_t lo;
     uint64_t hi;
-} CambiHdU128;
+};
+#ifndef __cplusplus
+typedef struct CambiHdU128 CambiHdU128;
+#endif
 
 /* hi32 * 2^32 + lo32 as a 128-bit value (both halves < 2^64). */
 static inline CAMBI_HD CambiHdU128 cambi_hd_u128_from_halves(uint64_t hi32_sum, uint64_t lo32_sum)
