@@ -78,19 +78,19 @@ VMAF_MTL_CONSTANT vmaf_mtl_i32 vmaf_mtl_issim_kernel[VMAF_MTL_ISSIM_TAPS] = {2, 
  * the frame and the fp64 bit patterns of fl64(sm * sm * SSIM_K1) and
  * fl64(sm * sm * SSIM_K2), which the host forms with the reference's
  * expression. */
-typedef struct VmafMtlIssimParams {
+using VmafMtlIssimParams = struct VmafMtlIssimParams {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
     vmaf_mtl_u64 k1_bits;
     vmaf_mtl_u64 k2_bits;
-} VmafMtlIssimParams;
+};
 
 /* The taps of the window at `position` that lie inside a line of `extent`
  * samples: the reference's k_min and k_max (last is exclusive). */
-typedef struct VmafMtlIssimTaps {
+using VmafMtlIssimTaps = struct VmafMtlIssimTaps {
     vmaf_mtl_i32 first;
     vmaf_mtl_i32 last;
-} VmafMtlIssimTaps;
+};
 
 VMAF_MTL_FUNC VmafMtlIssimTaps vmaf_mtl_issim_tap_range(vmaf_mtl_u32 position, vmaf_mtl_u32 extent)
 {
@@ -100,7 +100,7 @@ VMAF_MTL_FUNC VmafMtlIssimTaps vmaf_mtl_issim_tap_range(vmaf_mtl_u32 position, v
         (at + VMAF_MTL_ISSIM_HALF >= (vmaf_mtl_i32)extent) ?
             VMAF_MTL_ISSIM_TAPS - (at + VMAF_MTL_ISSIM_HALF - (vmaf_mtl_i32)extent + 1) :
             VMAF_MTL_ISSIM_TAPS;
-    const VmafMtlIssimTaps taps = {first, last};
+    const VmafMtlIssimTaps taps = {.first = first, .last = last};
     return taps;
 }
 
@@ -116,19 +116,19 @@ VMAF_MTL_FUNC vmaf_mtl_i64 vmaf_mtl_issim_tap_weight(VmafMtlIssimTaps taps)
 
 /* The five moment sums of one pass (the weight is not a plane: it is the
  * product of the two tap sums). */
-typedef struct VmafMtlIssimSums {
+using VmafMtlIssimSums = struct VmafMtlIssimSums {
     vmaf_mtl_i64 mux;
     vmaf_mtl_i64 muy;
     vmaf_mtl_i64 x2;
     vmaf_mtl_i64 xy;
     vmaf_mtl_i64 y2;
-} VmafMtlIssimSums;
+};
 
 VMAF_MTL_FUNC VmafMtlIssimSums vmaf_mtl_issim_sums_make(vmaf_mtl_i64 mux, vmaf_mtl_i64 muy,
                                                         vmaf_mtl_i64 x2, vmaf_mtl_i64 xy,
                                                         vmaf_mtl_i64 y2)
 {
-    const VmafMtlIssimSums sums = {mux, muy, x2, xy, y2};
+    const VmafMtlIssimSums sums = {.mux = mux, .muy = muy, .x2 = x2, .xy = xy, .y2 = y2};
     return sums;
 }
 
@@ -154,14 +154,14 @@ VMAF_MTL_FUNC VmafMtlIssimSums vmaf_mtl_issim_vertical_tap(VmafMtlIssimSums acc,
 }
 
 /* One pixel's window moments: integer_ssim.c's ssim_moments. */
-typedef struct VmafMtlIssimMoments {
+using VmafMtlIssimMoments = struct VmafMtlIssimMoments {
     vmaf_mtl_u64 mux;
     vmaf_mtl_u64 muy;
     vmaf_mtl_u64 x2;
     vmaf_mtl_u64 xy;
     vmaf_mtl_u64 y2;
     vmaf_mtl_u64 w;
-} VmafMtlIssimMoments;
+};
 
 /* The window's moments from its vertical sums and the tap sums of its rows
  * and columns. Every moment is a sum of non-negative products. */
@@ -169,24 +169,27 @@ VMAF_MTL_FUNC VmafMtlIssimMoments vmaf_mtl_issim_moments(VmafMtlIssimSums v,
                                                          vmaf_mtl_i64 row_weight,
                                                          vmaf_mtl_i64 column_weight)
 {
-    const VmafMtlIssimMoments m = {(vmaf_mtl_u64)v.mux, (vmaf_mtl_u64)v.muy,
-                                   (vmaf_mtl_u64)v.x2,  (vmaf_mtl_u64)v.xy,
-                                   (vmaf_mtl_u64)v.y2,  (vmaf_mtl_u64)(row_weight * column_weight)};
+    const VmafMtlIssimMoments m = {.mux = (vmaf_mtl_u64)v.mux,
+                                   .muy = (vmaf_mtl_u64)v.muy,
+                                   .x2 = (vmaf_mtl_u64)v.x2,
+                                   .xy = (vmaf_mtl_u64)v.xy,
+                                   .y2 = (vmaf_mtl_u64)v.y2,
+                                   .w = (vmaf_mtl_u64)(row_weight * column_weight)};
     return m;
 }
 
 /* The part of the reference's c1 and c2 that is the same for every pixel:
  * fl64(sm * sm * SSIM_K1) and fl64(sm * sm * SSIM_K2). */
-typedef struct VmafMtlIssimStabilisers {
+using VmafMtlIssimStabilisers = struct VmafMtlIssimStabilisers {
     VmafMtlSoftSigned k1;
     VmafMtlSoftSigned k2;
-} VmafMtlIssimStabilisers;
+};
 
 VMAF_MTL_FUNC VmafMtlIssimStabilisers vmaf_mtl_issim_stabilisers(vmaf_mtl_u64 k1_bits,
                                                                  vmaf_mtl_u64 k2_bits)
 {
-    const VmafMtlIssimStabilisers k = {vmaf_mtl_signed_from_bits(k1_bits),
-                                       vmaf_mtl_signed_from_bits(k2_bits)};
+    const VmafMtlIssimStabilisers k = {.k1 = vmaf_mtl_signed_from_bits(k1_bits),
+                                       .k2 = vmaf_mtl_signed_from_bits(k2_bits)};
     return k;
 }
 
@@ -208,19 +211,23 @@ VMAF_MTL_FUNC VmafMtlSoftSigned vmaf_mtl_issim_times_weight(VmafMtlSoftSigned a,
 /* The six products of two integers in the reference's expression, each exact
  * in 64 bits: mux * mux, mux * muy, muy * muy and x2, xy, y2 times the
  * weight. */
-typedef struct VmafMtlIssimProducts {
+using VmafMtlIssimProducts = struct VmafMtlIssimProducts {
     vmaf_mtl_u64 mx2;
     vmaf_mtl_u64 mxy;
     vmaf_mtl_u64 my2;
     vmaf_mtl_u64 x2w;
     vmaf_mtl_u64 xyw;
     vmaf_mtl_u64 y2w;
-} VmafMtlIssimProducts;
+};
 
 VMAF_MTL_FUNC VmafMtlIssimProducts vmaf_mtl_issim_products(VmafMtlIssimMoments m)
 {
-    const VmafMtlIssimProducts p = {m.mux * m.mux, m.mux * m.muy, m.muy * m.muy,
-                                    m.x2 * m.w,    m.xy * m.w,    m.y2 * m.w};
+    const VmafMtlIssimProducts p = {.mx2 = m.mux * m.mux,
+                                    .mxy = m.mux * m.muy,
+                                    .my2 = m.muy * m.muy,
+                                    .x2w = m.x2 * m.w,
+                                    .xyw = m.xy * m.w,
+                                    .y2w = m.y2 * m.w};
     return p;
 }
 
@@ -232,12 +239,12 @@ VMAF_MTL_FUNC VmafMtlIssimProducts vmaf_mtl_issim_products(VmafMtlIssimMoments m
  *     mx2 + my2
  *     m.x2 * w_d - mx2 + m.y2 * w_d - my2
  */
-typedef struct VmafMtlIssimProductSums {
+using VmafMtlIssimProductSums = struct VmafMtlIssimProductSums {
     VmafMtlSoftSigned twice_mxy;
     VmafMtlSoftSigned twice_covariance;
     VmafMtlSoftSigned mean_squares;
     VmafMtlSoftSigned variances;
-} VmafMtlIssimProductSums;
+};
 
 /* As the reference forms them at any bit depth: each product is rounded to
  * fp64 and each sum and difference rounds again, left to right. */
@@ -251,9 +258,11 @@ VMAF_MTL_FUNC VmafMtlIssimProductSums vmaf_mtl_issim_product_sums_rounded(VmafMt
     const VmafMtlSoftSigned both =
         vmaf_mtl_signed_add(reference_variance, vmaf_mtl_signed_from_u64(p.y2w));
     const VmafMtlIssimProductSums sums = {
-        vmaf_mtl_signed_twice(mxy),
-        vmaf_mtl_signed_twice(vmaf_mtl_signed_sub(vmaf_mtl_signed_from_u64(p.xyw), mxy)),
-        vmaf_mtl_signed_add(mx2, my2), vmaf_mtl_signed_sub(both, my2)};
+        .twice_mxy = vmaf_mtl_signed_twice(mxy),
+        .twice_covariance =
+            vmaf_mtl_signed_twice(vmaf_mtl_signed_sub(vmaf_mtl_signed_from_u64(p.xyw), mxy)),
+        .mean_squares = vmaf_mtl_signed_add(mx2, my2),
+        .variances = vmaf_mtl_signed_sub(both, my2)};
     return sums;
 }
 
@@ -276,10 +285,11 @@ VMAF_MTL_FUNC VmafMtlIssimProductSums vmaf_mtl_issim_product_sums_exact(VmafMtlI
     const vmaf_mtl_u64 covariance = anticorrelated ? p.mxy - p.xyw : p.xyw - p.mxy;
     const VmafMtlSoftSigned twice_covariance = vmaf_mtl_signed_from_exact(2u * covariance);
     const VmafMtlIssimProductSums sums = {
-        vmaf_mtl_signed_from_exact(2u * p.mxy),
-        vmaf_mtl_signed_make(twice_covariance.mant, twice_covariance.exp, anticorrelated),
-        vmaf_mtl_signed_from_exact(p.mx2 + p.my2),
-        vmaf_mtl_signed_from_exact(p.x2w - p.mx2 + p.y2w - p.my2)};
+        .twice_mxy = vmaf_mtl_signed_from_exact(2u * p.mxy),
+        .twice_covariance =
+            vmaf_mtl_signed_make(twice_covariance.mant, twice_covariance.exp, anticorrelated),
+        .mean_squares = vmaf_mtl_signed_from_exact(p.mx2 + p.my2),
+        .variances = vmaf_mtl_signed_from_exact(p.x2w - p.mx2 + p.y2w - p.my2)};
     return sums;
 }
 

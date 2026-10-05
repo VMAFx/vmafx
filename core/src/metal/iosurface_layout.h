@@ -40,45 +40,69 @@
                 (uint32_t)(d)))
 
 /** One accepted surface layout. Every entry is 4:2:0. */
-typedef struct VmafMetalSurfaceFormat {
+using VmafMetalSurfaceFormat = struct VmafMetalSurfaceFormat {
     uint32_t fourcc;  /**< CoreVideo pixel format type of the IOSurface */
     unsigned planes;  /**< 3: planar Y, Cb, Cr; 2: Y, then interleaved Cb/Cr */
     unsigned bpc;     /**< bits per sample after the shift */
     unsigned shift;   /**< right shift that brings an MSB-aligned sample to bit 0 */
     const char *name; /**< FFmpeg's name of the layout, for messages */
-} VmafMetalSurfaceFormat;
+};
 
 /** How one VmafPicture plane is read from the surface. */
-typedef struct VmafMetalPlaneRead {
+using VmafMetalPlaneRead = struct VmafMetalPlaneRead {
     unsigned src_plane; /**< IOSurface plane to read */
     unsigned step;      /**< samples per element: 1 planar, 2 interleaved */
     unsigned offset;    /**< sample within the element: 0 = Cb, 1 = Cr */
     unsigned bytes;     /**< bytes per sample: 1 or 2 */
     unsigned shift;     /**< right shift per sample */
-} VmafMetalPlaneRead;
+};
 
 /** Geometry of one surface plane as IOSurface reports it. */
-typedef struct VmafMetalSurfacePlane {
+using VmafMetalSurfacePlane = struct VmafMetalSurfacePlane {
     size_t width;             /**< elements per row */
     size_t height;            /**< rows */
     size_t bytes_per_element; /**< IOSurfaceGetBytesPerElementOfPlane() */
     size_t bytes_per_row;     /**< IOSurfaceGetBytesPerRowOfPlane() */
-} VmafMetalSurfacePlane;
+};
 
 /** The accepted layout of a CoreVideo pixel format type, or NULL. */
 static inline const VmafMetalSurfaceFormat *vmaf_metal_surface_format(uint32_t fourcc)
 {
     static const VmafMetalSurfaceFormat formats[] = {
-        {VMAF_METAL_FOURCC('y', '4', '2', '0'), 3u, 8u, 0u, "yuv420p"},
-        {VMAF_METAL_FOURCC('f', '4', '2', '0'), 3u, 8u, 0u, "yuv420p"},
-        {VMAF_METAL_FOURCC('4', '2', '0', 'v'), 2u, 8u, 0u, "nv12"},
-        {VMAF_METAL_FOURCC('4', '2', '0', 'f'), 2u, 8u, 0u, "nv12"},
-        {VMAF_METAL_FOURCC('x', '4', '2', '0'), 2u, 10u, 6u, "p010"},
-        {VMAF_METAL_FOURCC('x', 'f', '2', '0'), 2u, 10u, 6u, "p010"},
+        {.fourcc = VMAF_METAL_FOURCC('y', '4', '2', '0'),
+         .planes = 3u,
+         .bpc = 8u,
+         .shift = 0u,
+         .name = "yuv420p"},
+        {.fourcc = VMAF_METAL_FOURCC('f', '4', '2', '0'),
+         .planes = 3u,
+         .bpc = 8u,
+         .shift = 0u,
+         .name = "yuv420p"},
+        {.fourcc = VMAF_METAL_FOURCC('4', '2', '0', 'v'),
+         .planes = 2u,
+         .bpc = 8u,
+         .shift = 0u,
+         .name = "nv12"},
+        {.fourcc = VMAF_METAL_FOURCC('4', '2', '0', 'f'),
+         .planes = 2u,
+         .bpc = 8u,
+         .shift = 0u,
+         .name = "nv12"},
+        {.fourcc = VMAF_METAL_FOURCC('x', '4', '2', '0'),
+         .planes = 2u,
+         .bpc = 10u,
+         .shift = 6u,
+         .name = "p010"},
+        {.fourcc = VMAF_METAL_FOURCC('x', 'f', '2', '0'),
+         .planes = 2u,
+         .bpc = 10u,
+         .shift = 6u,
+         .name = "p010"},
     };
-    for (size_t i = 0u; i < sizeof(formats) / sizeof(formats[0]); i++) {
-        if (formats[i].fourcc == fourcc) {
-            return &formats[i];
+    for (const auto &format : formats) {
+        if (format.fourcc == fourcc) {
+            return &format;
         }
     }
     return NULL;

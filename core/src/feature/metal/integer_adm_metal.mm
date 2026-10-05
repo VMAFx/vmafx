@@ -100,7 +100,7 @@ typedef struct IntegerAdmStateMetal {
 
     unsigned index;
     VmafDictionary *feature_name_dict;
-} IntegerAdmStateMetal;
+};
 
 /* Options mirror integer_adm.c EXACTLY (names, aliases, defaults, ranges). */
 static const VmafOption options[] = {
@@ -212,7 +212,7 @@ static const VmafOption options[] = {
      .min = 1.0,
      .max = 20.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0},
+    {.name=nullptr},
 };
 
 /* The options as integer_adm_metal_host.c reads them. */
@@ -240,11 +240,11 @@ static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
     const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
     if (blob_size == 0) { return -ENODEV; }
 
-    dispatch_data_t data = dispatch_data_create(
+    dispatch_data_t const data = dispatch_data_create(
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -478,9 +478,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
     fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->geom.w, s->geom.h, s->geom.bpc);
@@ -560,12 +560,12 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     release_buffers(s);
 
     if (s->feature_name_dict) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        int const err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -592,7 +592,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_den_scale2",
                                           "integer_adm_num_scale3",
                                           "integer_adm_den_scale3",
-                                          NULL};
+                                          nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -605,7 +605,7 @@ VmafFeatureExtractor vmaf_fex_integer_adm_metal = {
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerAdmStateMetal),
