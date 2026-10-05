@@ -128,14 +128,14 @@ static Mismatches count_mismatches(const Operands *op)
         const float mad = (float)((double)product + (double)op->c[i]);
         const float quot = (float)((double)op->a[i] / (double)op->b[i]);
         const float root = (float)sqrt((double)fabsf(op->a[i]));
-        /* calc_psnrhvs()'s threshold expression: the product rounded to
-         * fp32, its root rounded to fp64 and then to fp32. */
-        const float prod = fabsf(op->a[i]) * fabsf(op->b[i]);
-        const float prod_root = (float)sqrt((double)prod);
         m.mad += !same_float(mad, op->mad[i]);
         m.quot += !same_float(quot, op->quot[i]);
         m.root += !same_float(root, op->root[i]);
 #if FP_ARITH_HAS_PROD_ROOT
+        /* calc_psnrhvs()'s threshold expression: the product rounded to
+         * fp32, its root rounded to fp64 and then to fp32. */
+        const float prod = fabsf(op->a[i]) * fabsf(op->b[i]);
+        const float prod_root = (float)sqrt((double)prod);
         m.prod_root += !same_float(prod_root, op->prod_root[i]);
 #endif
     }
