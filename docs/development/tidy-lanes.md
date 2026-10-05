@@ -242,15 +242,19 @@ The job is not a required check yet. It becomes one after it has passed on
 (`tidy-ratchet-metal`) holds every diagnostic behind the counts; the baseline
 is the same JSON without them.
 
-Today the baseline holds 939 findings across the 21 Objective-C++ files and
-five C tests, not zero: the first hosted measurement was 1640, and the
-fixes `clang-tidy` could make itself brought it down. Dispatch the workflow with
-`fix=true` to have the runner apply those fixes and upload them as
-`tidy-metal-fixes.patch`; apply the patch to the `.mm` files only (the fixes
-to the headers break the Metal shader compiler and the C translation units that
-include them), push, and dispatch again without `fix` to compile and measure.
-The ratchet refuses growth; the remaining findings are tracked by
-`T-TIDY-METAL-HOST-FINDINGS-2026-10-05` in [state](../state.md).
+The lane reads the translation units and the one header only Objective-C++ includes
+(`core/src/metal/objc_handle.h`). Every other header is owned by the `cpu` lane, which reads it
+as C: the Metal shader compiler (C++14) and the C translation units include the Metal math
+headers, so the C++-only fixes `modernize-use-designated-initializers`, `modernize-use-using`
+and `modernize-loop-convert` would break one or the other. The workflow narrows clang-tidy's
+`--header-filter` accordingly.
+
+Dispatch the workflow with `fix=true` to have the runner apply clang-tidy's own fixes (to a fixed
+point), build the fixed tree, measure it and upload the result: `tidy-metal-fixes.patch`,
+`tidy-metal-fix.log`, `tidy-metal-build.log` and `tidy-ratchet-metal.json`. Review the patch
+before applying it: `misc-const-correctness` writes `T const *const p` for a pointer whose
+pointee the code later changes; declare it `T *const p`. Push, then dispatch again without `fix`
+to build and compare with the baseline.
 
 ## What the hosted job covers
 

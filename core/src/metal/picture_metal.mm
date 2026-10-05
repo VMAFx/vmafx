@@ -40,9 +40,9 @@ int vmaf_metal_picture_alloc(VmafMetalContext *ctx, void **out, size_t size)
     if (device_handle == nullptr) {
         return -ENODEV;
     }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
 
-    id<MTLBuffer> buf = [device newBufferWithLength:size
+    id<MTLBuffer> const buf = [device newBufferWithLength:size
                                             options:MTLResourceStorageModeShared];
     if (buf == nil) {
         return -ENOMEM;
@@ -62,6 +62,6 @@ void vmaf_metal_picture_free(VmafMetalContext *ctx, void *buf)
     }
     /* Bridge-transfer back to ARC; the temporary id<MTLBuffer> goes
      * out of scope and ARC releases the +1 retain. */
-    id<MTLBuffer> b __attribute__((unused)) =
+    id<MTLBuffer> const b __attribute__((unused)) =
         (__bridge_transfer id<MTLBuffer>)buf;
 }

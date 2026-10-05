@@ -386,9 +386,12 @@ def run_one(
     # its own unknown options -- "--cuda-host-only", "-x", "hip" -- and every
     # translation unit of the cuda and hip lanes was reported as a compile
     # failure, which is why those baselines could not be re-measured (ledger
-    # L-41). Values that already carry the wrapper pass through unchanged.
+    # L-41). Values that already carry the wrapper pass through unchanged, and so does a
+    # `--header-filter=` option: it is clang-tidy's own, not a compiler flag (the macOS metal
+    # lane narrows it to the headers only Objective-C++ reads).
     forwarded = [
-        arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
+        arg if arg.startswith(("--extra-arg", "--header-filter=")) else f"--extra-arg={arg}"
+        for arg in extra_args
     ]
     argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
     proc = run_command(

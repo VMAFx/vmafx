@@ -82,6 +82,8 @@ extern "C" {
 /* CPU float_motion.c DEFAULT_MOTION_MAX_VAL. */
 #define FMM_DEFAULT_MAX_VAL (10000.0)
 
+namespace {
+
 /* One picture plane: its geometry, where its row sums sit in the read-back,
  * and its buffers. */
 using FmPlaneMetal = struct FmPlaneMetal {
@@ -134,6 +136,7 @@ using FloatMotionStateMetal = struct FloatMotionStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -338,12 +341,12 @@ int fm_metal_init_geometry(FloatMotionStateMetal *s, enum VmafPixelFormat pix_fm
 int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name,
                              NSUInteger threads, void **out)
 {
-    id<MTLFunction> fn = [lib newFunctionWithName:name];
+    id<MTLFunction> const fn = [lib newFunctionWithName:name];
     if (fn == nil) {
         return -ENODEV;
     }
     NSError *err = nil;
-    id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
+    id<MTLComputePipelineState> const pso = [device newComputePipelineStateWithFunction:fn error:&err];
     if (pso == nil || pso.maxTotalThreadsPerThreadgroup < threads) {
         return -ENODEV;
     }
@@ -354,11 +357,11 @@ int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name,
 int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    const NSUInteger block = VMAF_MTL_FM_BLOCK * VMAF_MTL_FM_BLOCK;
+    const NSUInteger block = (NSUInteger)VMAF_MTL_FM_BLOCK * VMAF_MTL_FM_BLOCK;
     int rc = fm_metal_pipeline(device, lib, @"float_motion_blur", block, &s->pso_blur);
     if (rc == 0) {
         rc = fm_metal_pipeline(device, lib, @"float_motion_scale1_diff", block, &s->pso_scale1);
@@ -372,7 +375,7 @@ int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
 
 int fm_metal_new_buffer(id<MTLDevice> device, size_t bytes, void **out)
 {
-    id<MTLBuffer> buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+    id<MTLBuffer> const buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     if (buf == nil) {
         return -ENOMEM;
     }
@@ -516,10 +519,10 @@ int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
 
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     err = build_pipelines(s, device);
-    for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {
+    for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES && err == 0; c++) {
         err = fm_metal_plane_alloc(s, &s->plane[c], device);
     }
     if (err != 0) { return err; }
@@ -579,7 +582,7 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 int fm_metal_upload(const FloatMotionStateMetal *s, const VmafPicture *pic)
 {
     const size_t bps = fm_metal_bytes_per_sample(s);
-    for (unsigned c = 0u; c < s->n_planes; c++) {
+    for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES; c++) {
         const FmPlaneMetal *p = &s->plane[c];
         if (pic->w[c] != p->w || pic->h[c] != p->h) {
             return -EINVAL;
@@ -606,7 +609,7 @@ MTLSize fm_metal_groups(unsigned w, unsigned h)
 int fm_metal_encode_blur(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                 const FmPlaneMetal *p, unsigned compute_sad)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) {
         return -ENOMEM;
     }
@@ -630,7 +633,7 @@ int fm_metal_encode_blur(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cm
 int fm_metal_encode_scale1(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                   const FmPlaneMetal *p)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) {
         return -ENOMEM;
     }
@@ -655,7 +658,7 @@ int fm_metal_encode_row_sum(const FloatMotionStateMetal *s, id<MTLCommandBuffer>
                                    void *diff, unsigned first_row, unsigned width,
                                    unsigned height)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) {
         return -ENOMEM;
     }
@@ -705,14 +708,14 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     /* The first frame has no previous blurred frame: the blur kernel writes
      * the current slot and no SAD kernel runs. */
     const unsigned compute_sad = (index > 0u) ? 1u : 0u;
-    for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {
+    for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES && err == 0; c++) {
         err = fm_metal_encode_plane(s, cmd, &s->plane[c], compute_sad);
     }
     if (err != 0) { return err; }
@@ -738,7 +741,7 @@ double fm_metal_frame_score(const FloatMotionStateMetal *s)
 {
     const float *rows = (const float *)s->rb.host_view;
     double score = 0.0;
-    for (unsigned c = 0u; c < s->n_planes; c++) {
+    for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES; c++) {
         const FmPlaneMetal *p = &s->plane[c];
         const float *scale1_rows = (p->rows1 != 0u) ? rows + p->off1 : nullptr;
         score += vmaf_mtl_fm_plane_score(rows + p->off0, p->w, p->h, scale1_rows, p->sw, p->sh);

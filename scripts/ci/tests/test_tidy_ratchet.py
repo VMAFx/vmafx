@@ -523,6 +523,21 @@ class RunClangTidy(unittest.TestCase):
             # twice: the lanes mix both spellings in TIDY_RATCHET_EXTRA_*.
             self.assertNotIn("--extra-arg=--extra-arg=-nocudalib", argv)
 
+    def test_header_filter_is_clang_tidys_own_option(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = _fake_clang_tidy(root)
+            _source, output, _rc = ratchet.run_one(
+                str(binary),
+                Path("build"),
+                ["--header-filter=^x$", "-nocudalib"],
+                (root / "a.c", root),
+            )
+            argv = output.split()
+            self.assertIn("--header-filter=^x$", argv)
+            self.assertNotIn("--extra-arg=--header-filter=^x$", argv)
+            self.assertIn("--extra-arg=-nocudalib", argv)
+
     def test_relative_wrapper_path_survives_the_tu_directory(self) -> None:
         # clang-tidy runs in each TU's directory; the SYCL lane names its wrapper
         # relative to the repository root.

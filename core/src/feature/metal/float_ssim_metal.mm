@@ -67,6 +67,8 @@ extern "C" {
 #define FSSIM_BLOCK_X 16u
 #define FSSIM_BLOCK_Y 8u
 
+namespace {
+
 using FloatSsimStateMetal = struct FloatSsimStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer terms;     /* u64 per window: lv * cv * sv, or lv under enable_lcs */
@@ -95,6 +97,7 @@ using FloatSsimStateMetal = struct FloatSsimStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -145,7 +148,7 @@ const VmafOption options[] = {
 int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
 {
     if (override_val > 0) { return override_val; }
-    int const scaled = (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
+    int const scaled = (int)lroundf((float)(w < h ? w : h) / 256.0f);
     return (scaled < 1) ? 1 : scaled;
 }
 
@@ -167,18 +170,18 @@ id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
 int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn_horiz = [lib newFunctionWithName:@"float_ssim_horiz"];
-    id<MTLFunction> fn_terms = [lib newFunctionWithName:@"float_ssim_vert_terms"];
-    id<MTLFunction> fn_lcs   = [lib newFunctionWithName:@"float_ssim_vert_lcs"];
+    id<MTLFunction> const fn_horiz = [lib newFunctionWithName:@"float_ssim_horiz"];
+    id<MTLFunction> const fn_terms = [lib newFunctionWithName:@"float_ssim_vert_terms"];
+    id<MTLFunction> const fn_lcs   = [lib newFunctionWithName:@"float_ssim_vert_lcs"];
     if (fn_horiz == nil || fn_terms == nil || fn_lcs == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso_h = [device newComputePipelineStateWithFunction:fn_horiz error:&err];
-    id<MTLComputePipelineState> pso_t = [device newComputePipelineStateWithFunction:fn_terms error:&err];
-    id<MTLComputePipelineState> pso_l = [device newComputePipelineStateWithFunction:fn_lcs   error:&err];
+    id<MTLComputePipelineState> const pso_h = [device newComputePipelineStateWithFunction:fn_horiz error:&err];
+    id<MTLComputePipelineState> const pso_t = [device newComputePipelineStateWithFunction:fn_terms error:&err];
+    id<MTLComputePipelineState> const pso_l = [device newComputePipelineStateWithFunction:fn_lcs   error:&err];
     if (pso_h == nil || pso_t == nil || pso_l == nil) { return -ENODEV; }
 
     s->pso_horiz = (__bridge_retained void *)pso_h;
@@ -234,19 +237,19 @@ int allocate(FloatSsimStateMetal *s)
 
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
-    id<MTLBuffer> hb = shared_buffer(device, 5u * (size_t)s->w_h * s->frame_h * sizeof(float));
-    id<MTLBuffer> rb = shared_buffer(device, pixels * sizeof(float));
-    id<MTLBuffer> db = shared_buffer(device, pixels * sizeof(float));
+    id<MTLBuffer> const hb = shared_buffer(device, 5u * (size_t)s->w_h * s->frame_h * sizeof(float));
+    id<MTLBuffer> const rb = shared_buffer(device, pixels * sizeof(float));
+    id<MTLBuffer> const db = shared_buffer(device, pixels * sizeof(float));
     if (hb == nil || rb == nil || db == nil) { return -ENOMEM; }
     s->hbuf_buf = (__bridge_retained void *)hb;
     s->ref_buf = (__bridge_retained void *)rb;
     s->dis_buf = (__bridge_retained void *)db;
 
     if (s->enable_lcs) {
-        id<MTLBuffer> cb = shared_buffer(device, windows * sizeof(uint64_t));
-        id<MTLBuffer> sb = shared_buffer(device, windows * sizeof(float));
+        id<MTLBuffer> const cb = shared_buffer(device, windows * sizeof(uint64_t));
+        id<MTLBuffer> const sb = shared_buffer(device, windows * sizeof(float));
         if (cb == nil || sb == nil) { return -ENOMEM; }
         s->contrast_buf = (__bridge_retained void *)cb;
         s->structure_buf = (__bridge_retained void *)sb;
@@ -288,7 +291,7 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
 void encode_horizontal(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_horiz];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->ref_buf offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->dis_buf offset:0 atIndex:1];
@@ -304,7 +307,7 @@ void encode_horizontal(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 
 void encode_windows(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
     [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->terms.buffer) offset:0 atIndex:1];
     if (s->enable_lcs) {
@@ -344,12 +347,12 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     }
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     fill_float_plane((__bridge id<MTLBuffer>)s->ref_buf, ref_pic, s->frame_w);
     fill_float_plane((__bridge id<MTLBuffer>)s->dis_buf, dist_pic, s->frame_w);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
     encode_horizontal(s, cmd);
     encode_windows(s, cmd);

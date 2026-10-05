@@ -58,6 +58,8 @@ extern "C" {
  * preallocation pool depth and the Vulkan v1 default). */
 #define VMAF_METAL_IMPORT_RING 2u
 
+namespace {
+
 /* Per-slot state. `ref` / `dis` are allocated via vmaf_picture_alloc
  * on the first plane import for (slot, is_ref) and handed to
  * vmaf_read_pictures on the read path (which takes ownership and
@@ -81,6 +83,7 @@ struct MetalImportRing {
     unsigned bpc; /* bits per component */
     enum VmafPixelFormat pix_fmt;
 };
+} // namespace
 
 namespace {
 
@@ -168,6 +171,47 @@ int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
 }
 } // namespace
 
+namespace {
+
+/* The caller's device, or the system default one (an FFmpeg without an
+ * AVMetalDeviceContext relies on that path; once FFmpeg ships a device-context API the caller
+ * passes the VideoToolbox-rendering MTLDevice and the first branch is taken). nil with *rc set
+ * when there is none or it is not Apple GPU family 7. */
+id<MTLDevice> resolve_device(uintptr_t handle, int *rc)
+{
+    id<MTLDevice> device = nil;
+    if (handle != 0u) {
+        device = vmaf_metal::borrow<id<MTLDevice>>(handle);
+        if (device == nil) { *rc = -EINVAL; return nil; }
+    } else {
+        device = MTLCreateSystemDefaultDevice();
+        if (device == nil) { *rc = -ENODEV; return nil; }
+    }
+    if (![device supportsFamily:MTLGPUFamilyApple7]) {
+        *rc = -ENODEV;
+        return nil;
+    }
+    return device;
+}
+
+/* The caller's queue (it must belong to `device`), or a new one. */
+id<MTLCommandQueue> resolve_queue(uintptr_t handle, id<MTLDevice> device, int *rc)
+{
+    if (handle == 0u) {
+        id<MTLCommandQueue> const created = [device newCommandQueue];
+        if (created == nil) { *rc = -ENOMEM; }
+        return created;
+    }
+    id<MTLCommandQueue> const queue = vmaf_metal::borrow<id<MTLCommandQueue>>(handle);
+    if (queue == nil || queue.device != device) {
+        *rc = -EINVAL;
+        return nil;
+    }
+    return queue;
+}
+
+} // namespace
+
 /* ----------------------------------------------------------------- */
 /* Public C-API                                                       */
 /* ----------------------------------------------------------------- */
@@ -180,43 +224,11 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
     *out = nullptr;
 
-    id<MTLDevice> device = nil;
-    if (handles.device != 0u) {
-        device = vmaf_metal::borrow<id<MTLDevice>>(handles.device);
-        if (device == nil) {
-            return -EINVAL;
-        }
-    } else {
-        /* Fallback: pick the system default Metal device. FFmpeg
-         * n8.1.1 does not expose an AVMetalDeviceContext, so the
-         * libvmaf_metal filter relies on this path. Once FFmpeg
-         * ships a device-context API the caller passes the
-         * VideoToolbox-rendering MTLDevice explicitly and we hit
-         * the external-device branch. */
-        device = MTLCreateSystemDefaultDevice();
-        if (device == nil) {
-            return -ENODEV;
-        }
-    }
-    if (![device supportsFamily:MTLGPUFamilyApple7]) {
-        return -ENODEV;
-    }
-
-    id<MTLCommandQueue> queue = nil;
-    if (handles.command_queue != 0u) {
-        queue = vmaf_metal::borrow<id<MTLCommandQueue>>(handles.command_queue);
-        if (queue == nil) {
-            return -EINVAL;
-        }
-        if (queue.device != device) {
-            return -EINVAL;
-        }
-    } else {
-        queue = [device newCommandQueue];
-        if (queue == nil) {
-            return -ENOMEM;
-        }
-    }
+    int rc = 0;
+    id<MTLDevice> const device = resolve_device(handles.device, &rc);
+    if (device == nil) { return rc; }
+    id<MTLCommandQueue> const queue = resolve_queue(handles.command_queue, device, &rc);
+    if (queue == nil) { return rc; }
 
     VmafMetalState *state = (VmafMetalState *)calloc(1, sizeof(*state));
     if (state == nullptr) {

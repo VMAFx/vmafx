@@ -58,6 +58,8 @@ extern "C" {
 #define PSNR_NUM_PLANES 3U
 #define PSNR_BLOCK 16U
 
+namespace {
+
 using IntegerPsnrStateMetal = struct IntegerPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
     /* One exact uint64 SSE per threadgroup, per active plane. */
@@ -91,6 +93,7 @@ using IntegerPsnrStateMetal = struct IntegerPsnrStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -158,17 +161,17 @@ size_t psnr_metal_groups(const IntegerPsnrStateMetal *s, unsigned p)
 int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_psnr_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_psnr_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"integer_psnr_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"integer_psnr_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
@@ -278,7 +281,7 @@ id<MTLBuffer> psnr_metal_upload_plane(const IntegerPsnrStateMetal *s, id<MTLDevi
                                              const VmafPicture *pic, unsigned p)
 {
     const size_t row_bytes = (size_t)s->width[p] * (s->bpc <= 8U ? 1U : 2U);
-    id<MTLBuffer> buf = [device newBufferWithLength:row_bytes * s->height[p]
+    id<MTLBuffer> const buf = [device newBufferWithLength:row_bytes * s->height[p]
                                             options:MTLResourceStorageModeShared];
     if (buf == nil) { return nil; }
     uint8_t *dst = (uint8_t *)[buf contents];
@@ -294,13 +297,13 @@ int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
                           id<MTLCommandQueue> queue, id<MTLComputePipelineState> pso,
                           const VmafPicture *ref_pic, const VmafPicture *dis_pic, unsigned p)
 {
-    id<MTLBuffer> ref_buf = psnr_metal_upload_plane(s, device, ref_pic, p);
-    id<MTLBuffer> dis_buf = psnr_metal_upload_plane(s, device, dis_pic, p);
+    id<MTLBuffer> const ref_buf = psnr_metal_upload_plane(s, device, ref_pic, p);
+    id<MTLBuffer> const dis_buf = psnr_metal_upload_plane(s, device, dis_pic, p);
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) { return -ENOMEM; }
 
     const uint32_t row_bytes = (uint32_t)(s->width[p] * (s->bpc <= 8U ? 1U : 2U));
@@ -337,9 +340,9 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLComputePipelineState> pso = (s->bpc <= 8U)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8U)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 

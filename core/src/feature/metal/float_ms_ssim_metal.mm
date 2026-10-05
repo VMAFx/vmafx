@@ -77,6 +77,8 @@ extern "C" {
 #define MS_SSIM_BLOCK_X       16
 #define MS_SSIM_BLOCK_Y        8
 
+namespace {
+
 using MsSsimPlaneGeometryMetal = struct MsSsimPlaneGeometryMetal {
     unsigned width;
     unsigned height;
@@ -140,6 +142,7 @@ using FloatMsSsimStateMetal = struct FloatMsSsimStateMetal {
     unsigned index;
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -178,7 +181,7 @@ const VmafOption options[] = {
 id<MTLComputePipelineState> make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib,
                                                  NSString *name)
 {
-    id<MTLFunction> fn = [lib newFunctionWithName:name];
+    id<MTLFunction> const fn = [lib newFunctionWithName:name];
     if (fn == nil) { return nil; }
     NSError *err = nil;
     return [device newComputePipelineStateWithFunction:fn error:&err];
@@ -187,14 +190,14 @@ id<MTLComputePipelineState> make_pipeline(id<MTLDevice> device, id<MTLLibrary> l
 int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLComputePipelineState> pso_dh   = make_pipeline(device, lib, @"ms_ssim_decimate_h");
-    id<MTLComputePipelineState> pso_dv   = make_pipeline(device, lib, @"ms_ssim_decimate_v");
-    id<MTLComputePipelineState> pso_hor  = make_pipeline(device, lib, @"ms_ssim_horiz");
-    id<MTLComputePipelineState> pso_vlcs = make_pipeline(device, lib, @"ms_ssim_vert_lcs");
+    id<MTLComputePipelineState> const pso_dh   = make_pipeline(device, lib, @"ms_ssim_decimate_h");
+    id<MTLComputePipelineState> const pso_dv   = make_pipeline(device, lib, @"ms_ssim_decimate_v");
+    id<MTLComputePipelineState> const pso_hor  = make_pipeline(device, lib, @"ms_ssim_horiz");
+    id<MTLComputePipelineState> const pso_vlcs = make_pipeline(device, lib, @"ms_ssim_vert_lcs");
     if (pso_dh == nil || pso_dv == nil || pso_hor == nil || pso_vlcs == nil) { return -ENODEV; }
 
     s->pso_decimate_h = (__bridge_retained void *)pso_dh;
@@ -246,8 +249,8 @@ int alloc_pyramid(FloatMsSsimStateMetal *s, id<MTLDevice> device)
         const MsSsimPlaneGeometryMetal *geom = &s->geom[p];
         for (int i = 0; i < MS_SSIM_SCALES; ++i) {
             const size_t bytes = (size_t)geom->scale_w[i] * geom->scale_h[i] * sizeof(float);
-            id<MTLBuffer> br = shared_buffer(device, bytes);
-            id<MTLBuffer> bc = shared_buffer(device, bytes);
+            id<MTLBuffer> const br = shared_buffer(device, bytes);
+            id<MTLBuffer> const bc = shared_buffer(device, bytes);
             if (br == nil || bc == nil) { return -ENOMEM; }
             s->pyramid_ref[p][i] = (__bridge_retained void *)br;
             s->pyramid_cmp[p][i] = (__bridge_retained void *)bc;
@@ -261,13 +264,13 @@ int alloc_metal_buffers(FloatMsSsimStateMetal *s, id<MTLDevice> device)
     int const err = alloc_pyramid(s, device);
     if (err != 0) { return err; }
 
-    id<MTLBuffer> lum = shared_buffer(device, s->window_count * sizeof(uint64_t));
-    id<MTLBuffer> con = shared_buffer(device, s->window_count * sizeof(uint64_t));
-    id<MTLBuffer> str = shared_buffer(device, s->window_count * sizeof(float));
-    id<MTLBuffer> tmp = shared_buffer(device, s->dec_tmp_floats * sizeof(float));
+    id<MTLBuffer> const lum = shared_buffer(device, s->window_count * sizeof(uint64_t));
+    id<MTLBuffer> const con = shared_buffer(device, s->window_count * sizeof(uint64_t));
+    id<MTLBuffer> const str = shared_buffer(device, s->window_count * sizeof(float));
+    id<MTLBuffer> const tmp = shared_buffer(device, s->dec_tmp_floats * sizeof(float));
     const size_t hbuf_bytes =
         5u * (size_t)s->geom[0].scale_w_h[0] * s->geom[0].scale_h[0] * sizeof(float);
-    id<MTLBuffer> hb = shared_buffer(device, hbuf_bytes);
+    id<MTLBuffer> const hb = shared_buffer(device, hbuf_bytes);
     if (lum == nil || con == nil || str == nil || tmp == nil || hb == nil) { return -ENOMEM; }
     s->lum_terms = (__bridge_retained void *)lum;
     s->con_terms = (__bridge_retained void *)con;
@@ -392,7 +395,7 @@ int init_metal_device_context(FloatMsSsimStateMetal *s)
         s->ctx = nullptr;
         return -ENODEV;
     }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     err = alloc_metal_buffers(s, device);
     if (err != 0) { goto fail_alloc; }
@@ -447,7 +450,7 @@ void encode_decimate_pass(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> 
                                  id<MTLBuffer> src, id<MTLBuffer> dst,
                                  VmafMtlMsdecParams dims, unsigned columns, unsigned rows)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:src offset:0 atIndex:0];
     [enc setBuffer:dst offset:0 atIndex:1];
@@ -462,17 +465,17 @@ void encode_plane_decimate(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
                                   unsigned plane)
 {
     const MsSsimPlaneGeometryMetal *geom = &s->geom[plane];
-    id<MTLBuffer> tmp = (__bridge id<MTLBuffer>)s->dec_tmp;
-    id<MTLComputePipelineState> pso_h = (__bridge id<MTLComputePipelineState>)s->pso_decimate_h;
-    id<MTLComputePipelineState> pso_v = (__bridge id<MTLComputePipelineState>)s->pso_decimate_v;
+    id<MTLBuffer> const tmp = (__bridge id<MTLBuffer>)s->dec_tmp;
+    id<MTLComputePipelineState> const pso_h = (__bridge id<MTLComputePipelineState>)s->pso_decimate_h;
+    id<MTLComputePipelineState> const pso_v = (__bridge id<MTLComputePipelineState>)s->pso_decimate_v;
     for (int i = 0; i < MS_SSIM_SCALES - 1; ++i) {
         const VmafMtlMsdecParams dims = {.width=geom->scale_w[i], .height=geom->scale_h[i], .output_width=geom->scale_w[i + 1],
                                          .output_height=geom->scale_h[i + 1]};
         for (int side = 0; side < 2; ++side) {
-            id<MTLBuffer> src_buf = (side == 0)
+            id<MTLBuffer> const src_buf = (side == 0)
                 ? (__bridge id<MTLBuffer>)s->pyramid_ref[plane][i]
                 : (__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i];
-            id<MTLBuffer> dst_buf = (side == 0)
+            id<MTLBuffer> const dst_buf = (side == 0)
                 ? (__bridge id<MTLBuffer>)s->pyramid_ref[plane][i + 1]
                 : (__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i + 1];
             encode_decimate_pass(cmd, pso_h, src_buf, tmp, dims, dims.output_width, dims.height);
@@ -489,7 +492,7 @@ void encode_horizontal(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
     const uint32_t params[4] = {
         (uint32_t)geom->scale_w[i], (uint32_t)geom->scale_h[i], (uint32_t)geom->scale_w_h[i], 0u,
     };
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_horiz];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->pyramid_ref[plane][i] offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i] offset:0 atIndex:1];
@@ -514,7 +517,7 @@ void encode_windows(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s, unsigned
     params.reserved          = 0u;
     params.c1                = s->c1;
     params.c2                = s->c2;
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert_lcs];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->lum_terms offset:0 atIndex:1];
@@ -549,8 +552,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
 
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLCommandBuffer> cmd  = [queue commandBuffer];
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandBuffer> const cmd  = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     for (unsigned p = 0; p < s->n_planes; ++p) {

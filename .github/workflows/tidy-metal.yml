@@ -93,17 +93,18 @@ jobs:
             core/test/test_metal_install_header.c core/test/test_metal_kernel_coverage_audit.c \
             core/test/test_metal_kernel_registration.c core/test/test_metal_smoke.c)
           # Fixes cascade (a const fix exposes the next), so run until stable, at most five passes.
-          # Headers are restored after each pass: the Metal shader compiler and the C translation
-          # units read them, and C++-only fixes (`using`, `std::cmp_*`) break both.
+          # Headers other than objc_handle.h are not diagnosed here (--header-filter): the Metal
+          # shader compiler and the C translation units read them, C++-only fixes (`using`,
+          # `std::cmp_*`) break both, and the cpu lane owns them (docs/development/tidy-lanes.md).
           tidy="$(brew --prefix llvm@22)/bin/clang-tidy"
           sdk="$(xcrun --show-sdk-path)"
           : > tidy-metal-fix.log
           for pass in 1 2 3 4 5; do
             # shellcheck disable=SC2086
             "$tidy" -p "$RUNNER_TEMP/vmafx-tidy-metal" --fix --quiet --extra-arg="-isysroot$sdk" \
+              --header-filter='(^|/)core/src/metal/objc_handle\.h$' \
               $files >> tidy-metal-fix.log 2>&1 \
               || echo "pass $pass: clang-tidy exited $? (findings it cannot fix are expected)"
-            git ls-files -m -- '*.h' | xargs -r git checkout --
             before=$(git diff | shasum | cut -d' ' -f1)
             [ "$before" = "${last:-}" ] && break
             last=$before
@@ -132,6 +133,7 @@ jobs:
           python3 scripts/ci/tidy-ratchet.py --lane metal \
             --build-dir "$RUNNER_TEMP/vmafx-tidy-metal" \
             --clang-tidy "$(brew --prefix llvm@22)/bin/clang-tidy" \
+            --extra-arg="--header-filter=(^|/)core/src/metal/objc_handle\\.h$" \
             --extra-arg="-isysroot$(xcrun --show-sdk-path)" \
             --select core/src/metal/ --select core/src/feature/metal/ \
             --select core/test/test_metal_install_header.c \
@@ -146,6 +148,7 @@ jobs:
           python3 scripts/ci/tidy-ratchet.py --lane metal \
             --build-dir "$RUNNER_TEMP/vmafx-tidy-metal" \
             --clang-tidy "$(brew --prefix llvm@22)/bin/clang-tidy" \
+            --extra-arg="--header-filter=(^|/)core/src/metal/objc_handle\\.h$" \
             --extra-arg="-isysroot$(xcrun --show-sdk-path)" \
             --select core/src/metal/ --select core/src/feature/metal/ \
             --select core/test/test_metal_install_header.c \

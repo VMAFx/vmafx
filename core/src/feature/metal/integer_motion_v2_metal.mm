@@ -67,6 +67,8 @@ extern "C" {
  * window: frame n - 2). */
 #define MOTION_V2_METAL_MAX_DEPTH 2U
 
+namespace {
+
 using MotionV2StateMetal = struct MotionV2StateMetal {
     VmafMetalKernelLifecycle lc;
     /* One uint32 SAD per threadgroup (exact: 256 x 65536 < 2^32). */
@@ -101,6 +103,7 @@ using MotionV2StateMetal = struct MotionV2StateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -184,17 +187,17 @@ const VmafOption options[] = {
 int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"motion_v2_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"motion_v2_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"motion_v2_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"motion_v2_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
@@ -208,9 +211,9 @@ int mv2_metal_device_setup(MotionV2StateMetal *s)
 {
     void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
     if (device_handle == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
     for (unsigned i = 0; i < s->depth; i++) {
-        id<MTLBuffer> plane = [device newBufferWithLength:s->plane_bytes
+        id<MTLBuffer> const plane = [device newBufferWithLength:s->plane_bytes
                                                   options:MTLResourceStorageModeShared];
         if (plane == nil) { return -ENOMEM; }
         s->prev_luma[i] = (__bridge_retained void *)plane;
@@ -314,12 +317,12 @@ void copy_y_plane(const VmafPicture *pic, void *dst, size_t row_bytes)
 int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
                               id<MTLBuffer> prev, id<MTLBuffer> cur, size_t row_bytes)
 {
-    id<MTLComputePipelineState> pso = (s->bpc <= 8u)
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) { return -ENOMEM; }
 
     [enc setComputePipelineState:pso];
@@ -336,7 +339,7 @@ int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
     const uint32_t dim[2] = {s->frame_w, s->frame_h};
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
-    const size_t tile_int_count = 20 * 21; /* MV2_TILE_H * MV2_TILE_PITCH */
+    const size_t tile_int_count = (size_t)20 * 21; /* MV2_TILE_H * MV2_TILE_PITCH */
     [enc setThreadgroupMemoryLength:(tile_int_count * sizeof(int32_t)) atIndex:0];
 
     const MTLSize tg_size = MTLSizeMake(MOTION_V2_METAL_BLOCK, MOTION_V2_METAL_BLOCK, 1);
@@ -366,13 +369,13 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     /* The geometry stays the one init() sized the buffers for; libvmaf
      * rejects a picture of any other size before it reaches submit(). */
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
-    id<MTLBuffer> slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
+    id<MTLBuffer> const slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
     if (index >= s->depth) {
         void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
         void *const queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
         if (device_handle == nullptr || queue_handle == nullptr) { return -ENODEV; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
-        id<MTLBuffer> cur = [device newBufferWithLength:s->plane_bytes
+        id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
+        id<MTLBuffer> const cur = [device newBufferWithLength:s->plane_bytes
                                                 options:MTLResourceStorageModeShared];
         if (cur == nil) { return -ENOMEM; }
         copy_y_plane(ref_pic, [cur contents], row_bytes);

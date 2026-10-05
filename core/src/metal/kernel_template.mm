@@ -59,7 +59,7 @@ id<MTLLibrary> vmaf_metal_library_load(id<MTLDevice> device, int *rc)
         return nil;
     }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
+    id<MTLLibrary> const lib = [device newLibraryWithData:data error:&err];
     if (lib == nil) {
         *rc = -ENODEV;
     }
@@ -81,17 +81,17 @@ int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalCont
     if (device_handle == nullptr) {
         return -ENODEV;
     }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
 
-    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLCommandQueue> const queue = [device newCommandQueue];
     if (queue == nil) {
         return -ENOMEM;
     }
-    id<MTLSharedEvent> submit_ev = [device newSharedEvent];
+    id<MTLSharedEvent> const submit_ev = [device newSharedEvent];
     if (submit_ev == nil) {
         return -ENOMEM;
     }
-    id<MTLSharedEvent> finished_ev = [device newSharedEvent];
+    id<MTLSharedEvent> const finished_ev = [device newSharedEvent];
     if (finished_ev == nil) {
         return -ENOMEM;
     }
@@ -122,9 +122,9 @@ int vmaf_metal_kernel_buffer_alloc(VmafMetalKernelBuffer *buf, VmafMetalContext 
     if (device_handle == nullptr) {
         return -ENODEV;
     }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)device_handle;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
 
-    id<MTLBuffer> b = [device newBufferWithLength:bytes
+    id<MTLBuffer> const b = [device newBufferWithLength:bytes
                                           options:MTLResourceStorageModeShared];
     if (b == nil) {
         return -ENOMEM;
@@ -147,16 +147,16 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
         return -EINVAL;
     }
 
-    id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
-    id<MTLBuffer> accum       = borrow<id<MTLBuffer>>(buf->buffer);
+    id<MTLCommandQueue> const queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
+    id<MTLBuffer> const accum       = borrow<id<MTLBuffer>>(buf->buffer);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) {
         return -ENOMEM;
     }
 
     /* Step 1: zero the accumulator on our private command queue. */
-    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    id<MTLBlitCommandEncoder> const blit = [cmd blitCommandEncoder];
     if (blit == nil) {
         return -ENOMEM;
     }
@@ -169,9 +169,9 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
      * skip the cross-queue wait — this is the path during single-
      * buffer testing where there's no producer queue to sync with. */
     if (picture_command_buffer != 0 && dist_ready_event != 0) {
-        id<MTLCommandBuffer> pic_cmd =
+        id<MTLCommandBuffer> const pic_cmd =
             borrow<id<MTLCommandBuffer>>(picture_command_buffer);
-        id<MTLEvent> evt = borrow<id<MTLEvent>>(dist_ready_event);
+        id<MTLEvent> const evt = borrow<id<MTLEvent>>(dist_ready_event);
         [pic_cmd encodeWaitForEvent:evt value:1];
     }
 
@@ -193,8 +193,8 @@ int vmaf_metal_kernel_collect_wait(VmafMetalKernelLifecycle *lc, VmafMetalContex
      * commits a no-op blit + waits on its command buffer; this fences
      * everything previously enqueued, which is what consumers expect
      * after submit() before reading [contents] in collect(). */
-    id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
-    id<MTLCommandBuffer> fence = [queue commandBuffer];
+    id<MTLCommandQueue> const queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
+    id<MTLCommandBuffer> const fence = [queue commandBuffer];
     if (fence == nil) {
         return -ENOMEM;
     }
@@ -212,8 +212,8 @@ int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalCon
 
     /* Best-effort drain before release so any in-flight work finishes. */
     if (lc->cmd_queue != 0) {
-        id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
-        id<MTLCommandBuffer> fence = [queue commandBuffer];
+        id<MTLCommandQueue> const queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
+        id<MTLCommandBuffer> const fence = [queue commandBuffer];
         if (fence != nil) {
             [fence commit];
             [fence waitUntilCompleted];

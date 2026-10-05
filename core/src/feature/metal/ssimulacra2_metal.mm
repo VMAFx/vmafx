@@ -85,12 +85,15 @@ extern "C" {
 #define SS2M_SIGMA      1.5
 #define SS2M_PI         3.14159265358979323846
 
+namespace {
+
 enum ss2m_yuv_matrix : unsigned char {
     SS2M_MATRIX_BT709_LIMITED = 0,
     SS2M_MATRIX_BT601_LIMITED = 1,
     SS2M_MATRIX_BT709_FULL    = 2,
     SS2M_MATRIX_BT601_FULL    = 3,
 };
+} // namespace
 
 namespace {
 
@@ -207,6 +210,8 @@ const double g_weights[108] = {
 };
 } // namespace
 
+namespace {
+
 using Ssimu2StateMetal = struct Ssimu2StateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
@@ -262,6 +267,7 @@ using Ssimu2StateMetal = struct Ssimu2StateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -514,6 +520,22 @@ void ss2m_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsig
     }
 }
 
+/* The mean of the 2x2 block at (ox, oy), edge samples replicated past the plane. */
+float ss2m_block_sum(const float *ip, unsigned iw, unsigned ih, unsigned ox, unsigned oy)
+{
+    float sum = 0.0f;
+    for (unsigned dy = 0; dy < 2; dy++) {
+        for (unsigned dx = 0; dx < 2; dx++) {
+            unsigned ix = ox * 2 + dx;
+            unsigned iy = oy * 2 + dy;
+            if (ix >= iw) { ix = iw - 1; }
+            if (iy >= ih) { iy = ih - 1; }
+            sum += ip[(size_t)iy * iw + ix];
+        }
+    }
+    return sum;
+}
+
 void ss2m_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, unsigned ow,
                                 unsigned oh, size_t plane_stride)
 {
@@ -522,17 +544,7 @@ void ss2m_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, 
         float *op = out + (size_t)c * plane_stride;
         for (unsigned oy = 0; oy < oh; oy++) {
             for (unsigned ox = 0; ox < ow; ox++) {
-                float sum = 0.0f;
-                for (unsigned dy = 0; dy < 2; dy++) {
-                    for (unsigned dx = 0; dx < 2; dx++) {
-                        unsigned ix = ox * 2 + dx;
-                        unsigned iy = oy * 2 + dy;
-                        if (ix >= iw) { ix = iw - 1; }
-                        if (iy >= ih) { iy = ih - 1; }
-                        sum += ip[(size_t)iy * iw + ix];
-                    }
-                }
-                op[(size_t)oy * ow + ox] = sum * 0.25f;
+                op[(size_t)oy * ow + ox] = ss2m_block_sum(ip, iw, ih, ox, oy) * 0.25f;
             }
         }
     }
@@ -635,20 +647,20 @@ double ss2m_pool_score(const double avg_ssim[6][6], const double avg_ed[6][12], 
 int build_pipelines(Ssimu2StateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn_mul = [lib newFunctionWithName:@"ssimulacra2_mul3"];
-    id<MTLFunction> fn_h   = [lib newFunctionWithName:@"ssimulacra2_blur_h3"];
-    id<MTLFunction> fn_v   = [lib newFunctionWithName:@"ssimulacra2_blur_v3"];
+    id<MTLFunction> const fn_mul = [lib newFunctionWithName:@"ssimulacra2_mul3"];
+    id<MTLFunction> const fn_h   = [lib newFunctionWithName:@"ssimulacra2_blur_h3"];
+    id<MTLFunction> const fn_v   = [lib newFunctionWithName:@"ssimulacra2_blur_v3"];
     if (fn_mul == nil || fn_h == nil || fn_v == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso_mul =
+    id<MTLComputePipelineState> const pso_mul =
         [device newComputePipelineStateWithFunction:fn_mul error:&err];
-    id<MTLComputePipelineState> pso_h =
+    id<MTLComputePipelineState> const pso_h =
         [device newComputePipelineStateWithFunction:fn_h error:&err];
-    id<MTLComputePipelineState> pso_v =
+    id<MTLComputePipelineState> const pso_v =
         [device newComputePipelineStateWithFunction:fn_v error:&err];
     if (pso_mul == nil || pso_h == nil || pso_v == nil) { return -ENODEV; }
 
@@ -666,7 +678,7 @@ int ss2m_alloc_device_buffers(Ssimu2StateMetal *s, id<MTLDevice> device)
         &s->buf_mean_ref,     &s->buf_mean_dis,     &s->buf_s11, &s->buf_s22, &s->buf_s12,
     };
     for (auto & slot : slots) {
-        id<MTLBuffer> b = [device newBufferWithLength:bytes
+        id<MTLBuffer> const b = [device newBufferWithLength:bytes
                                              options:MTLResourceStorageModeShared];
         if (b == nil) { return -ENOMEM; }
         *slot = (__bridge_retained void *)b;
@@ -688,6 +700,63 @@ void ss2m_release_device_buffers(Ssimu2StateMetal *s)
     }
 }
 
+/* The frame size, the pyramid's per-scale sizes and the byte sizes of the host planes. */
+void set_frame_geometry(Ssimu2StateMetal *s, unsigned w, unsigned h, unsigned bpc)
+{
+    s->width  = w;
+    s->height = h;
+    s->bpc    = bpc;
+    ss2m_setup_gaussian(s, SS2M_SIGMA);
+
+    s->scale_w[0] = w;
+    s->scale_h[0] = h;
+    for (int i = 1; i < SS2M_NUM_SCALES; i++) {
+        s->scale_w[i] = (s->scale_w[i - 1] + 1) / 2;
+        s->scale_h[i] = (s->scale_h[i - 1] + 1) / 2;
+    }
+
+    s->plane_full_bytes  = (size_t)w * (size_t)h * sizeof(float);
+    s->three_plane_bytes = 3u * s->plane_full_bytes;
+}
+
+void free_host_buffers(Ssimu2StateMetal *s)
+{
+    free(s->h_ref_lin);
+    free(s->h_dis_lin);
+    free(s->h_ref_lin_ds);
+    free(s->h_dis_lin_ds);
+    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
+}
+
+/* The four linear-RGB scratch planes of the host; frees all of them when one fails. */
+int alloc_host_buffers(Ssimu2StateMetal *s)
+{
+    s->h_ref_lin    = (float *)malloc(s->three_plane_bytes);
+    s->h_dis_lin    = (float *)malloc(s->three_plane_bytes);
+    s->h_ref_lin_ds = (float *)malloc(s->three_plane_bytes);
+    s->h_dis_lin_ds = (float *)malloc(s->three_plane_bytes);
+    if (s->h_ref_lin == nullptr || s->h_dis_lin == nullptr || s->h_ref_lin_ds == nullptr ||
+        s->h_dis_lin_ds == nullptr) {
+        free_host_buffers(s);
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+/* The device buffers and the pipelines; *stage says where the caller unwinds from:
+ * 1 no device, 2 the buffers failed, 3 a pipeline failed. */
+int init_device_resources(Ssimu2StateMetal *s, int *stage)
+{
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { *stage = 1; return -ENODEV; }
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    int err = ss2m_alloc_device_buffers(s, device);
+    if (err != 0) { *stage = 2; return err; }
+    err = build_pipelines(s, device);
+    *stage = (err != 0) ? 3 : 0;
+    return err;
+}
+
 int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
@@ -704,52 +773,24 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsi
         return -EINVAL;
     }
 
-    s->width  = w;
-    s->height = h;
-    s->bpc    = bpc;
-    ss2m_setup_gaussian(s, SS2M_SIGMA);
+    set_frame_geometry(s, w, h, bpc);
 
-    s->scale_w[0] = w;
-    s->scale_h[0] = h;
-    for (int i = 1; i < SS2M_NUM_SCALES; i++) {
-        s->scale_w[i] = (s->scale_w[i - 1] + 1) / 2;
-        s->scale_h[i] = (s->scale_h[i - 1] + 1) / 2;
-    }
+    int err = alloc_host_buffers(s);
+    if (err != 0) { return err; }
 
-    s->plane_full_bytes  = (size_t)w * (size_t)h * sizeof(float);
-    s->three_plane_bytes = 3u * s->plane_full_bytes;
-
-    s->h_ref_lin    = (float *)malloc(s->three_plane_bytes);
-    s->h_dis_lin    = (float *)malloc(s->three_plane_bytes);
-    s->h_ref_lin_ds = (float *)malloc(s->three_plane_bytes);
-    s->h_dis_lin_ds = (float *)malloc(s->three_plane_bytes);
-    if (s->h_ref_lin == nullptr || s->h_dis_lin == nullptr || s->h_ref_lin_ds == nullptr ||
-        s->h_dis_lin_ds == nullptr) {
-        free(s->h_ref_lin);
-        free(s->h_dis_lin);
-        free(s->h_ref_lin_ds);
-        free(s->h_dis_lin_ds);
-        s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
-        return -ENOMEM;
-    }
-
-    int err = vmaf_metal_context_new(&s->ctx, 0);
+    err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { goto fail_host; }
 
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0) { goto fail_ctx; }
 
     {
-        void *const dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        err = ss2m_alloc_device_buffers(s, device);
-        if (err != 0) { goto fail_bufs; }
-
-        err = build_pipelines(s, device);
+        int stage = 0;
+        err = init_device_resources(s, &stage);
+        if (stage == 1) { goto fail_lc; }
+        if (stage == 2) { goto fail_bufs; }
+        if (stage == 3) { goto fail_pso; }
     }
-    if (err != 0) { goto fail_pso; }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -768,11 +809,7 @@ fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
     s->ctx = nullptr;
 fail_host:
-    free(s->h_ref_lin);
-    free(s->h_dis_lin);
-    free(s->h_ref_lin_ds);
-    free(s->h_dis_lin_ds);
-    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
+    free_host_buffers(s);
     return err;
 }
 
@@ -780,13 +817,13 @@ fail_host:
 void ss2m_encode_mul3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuffer> a,
                              id<MTLBuffer> b, id<MTLBuffer> out, unsigned cw, unsigned ch)
 {
-    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)s->pso_mul3;
+    id<MTLComputePipelineState> const pso = (__bridge id<MTLComputePipelineState>)s->pso_mul3;
     const uint32_t plane_stride = s->width * s->height;
     const uint32_t params[4] = {(uint32_t)cw, (uint32_t)ch, 3u, plane_stride};
     const size_t gx = (cw + SS2M_MUL_BX - 1u) / SS2M_MUL_BX;
     const size_t gy = (ch + SS2M_MUL_BY - 1u) / SS2M_MUL_BY;
 
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:a   offset:0 atIndex:0];
     [enc setBuffer:b   offset:0 atIndex:1];
@@ -802,8 +839,8 @@ void ss2m_encode_mul3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuffe
 void ss2m_encode_blur3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuffer> in_buf,
                               id<MTLBuffer> out_buf, id<MTLBuffer> scratch, unsigned cw, unsigned ch)
 {
-    id<MTLComputePipelineState> pso_h = (__bridge id<MTLComputePipelineState>)s->pso_blur_h;
-    id<MTLComputePipelineState> pso_v = (__bridge id<MTLComputePipelineState>)s->pso_blur_v;
+    id<MTLComputePipelineState> const pso_h = (__bridge id<MTLComputePipelineState>)s->pso_blur_h;
+    id<MTLComputePipelineState> const pso_v = (__bridge id<MTLComputePipelineState>)s->pso_blur_v;
     const uint32_t plane_stride = s->width * s->height;
     const uint32_t params[4] = {(uint32_t)cw, (uint32_t)ch, (uint32_t)s->rg_radius, plane_stride};
     const float n2v[4] = {s->rg_n2[0], s->rg_n2[1], s->rg_n2[2], 0.0f};
@@ -812,7 +849,7 @@ void ss2m_encode_blur3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuff
     /* H pass: in -> scratch, one thread per row, z=3 fuses XYB planes. */
     {
         const size_t gx = (ch + SS2M_BLUR_BLOCK - 1u) / SS2M_BLUR_BLOCK;
-        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
         [enc setComputePipelineState:pso_h];
         [enc setBuffer:in_buf  offset:0 atIndex:0];
         [enc setBuffer:scratch offset:0 atIndex:1];
@@ -827,7 +864,7 @@ void ss2m_encode_blur3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuff
     /* V pass: scratch -> out, one thread per column, z=3 fuses XYB planes. */
     {
         const size_t gx = (cw + SS2M_BLUR_BLOCK - 1u) / SS2M_BLUR_BLOCK;
-        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
         [enc setComputePipelineState:pso_v];
         [enc setBuffer:scratch offset:0 atIndex:0];
         [enc setBuffer:out_buf offset:0 atIndex:1];
@@ -849,17 +886,17 @@ void ss2m_encode_blur3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<MTLBuff
 int ss2m_run_scale_gpu(Ssimu2StateMetal *s, id<MTLCommandQueue> queue, unsigned cw,
                               unsigned ch)
 {
-    id<MTLBuffer> ref_xyb = (__bridge id<MTLBuffer>)s->buf_ref_xyb;
-    id<MTLBuffer> dis_xyb = (__bridge id<MTLBuffer>)s->buf_dis_xyb;
-    id<MTLBuffer> mul     = (__bridge id<MTLBuffer>)s->buf_mul;
-    id<MTLBuffer> scratch = (__bridge id<MTLBuffer>)s->buf_blur_scr;
-    id<MTLBuffer> mean_ref     = (__bridge id<MTLBuffer>)s->buf_mean_ref;
-    id<MTLBuffer> mean_dis     = (__bridge id<MTLBuffer>)s->buf_mean_dis;
-    id<MTLBuffer> s11     = (__bridge id<MTLBuffer>)s->buf_s11;
-    id<MTLBuffer> s22     = (__bridge id<MTLBuffer>)s->buf_s22;
-    id<MTLBuffer> s12     = (__bridge id<MTLBuffer>)s->buf_s12;
+    id<MTLBuffer> const ref_xyb = (__bridge id<MTLBuffer>)s->buf_ref_xyb;
+    id<MTLBuffer> const dis_xyb = (__bridge id<MTLBuffer>)s->buf_dis_xyb;
+    id<MTLBuffer> const mul     = (__bridge id<MTLBuffer>)s->buf_mul;
+    id<MTLBuffer> const scratch = (__bridge id<MTLBuffer>)s->buf_blur_scr;
+    id<MTLBuffer> const mean_ref     = (__bridge id<MTLBuffer>)s->buf_mean_ref;
+    id<MTLBuffer> const mean_dis     = (__bridge id<MTLBuffer>)s->buf_mean_dis;
+    id<MTLBuffer> const s11     = (__bridge id<MTLBuffer>)s->buf_s11;
+    id<MTLBuffer> const s22     = (__bridge id<MTLBuffer>)s->buf_s22;
+    id<MTLBuffer> const s12     = (__bridge id<MTLBuffer>)s->buf_s12;
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     /* 1) ref^2 -> mul -> blur into s11. */
@@ -896,7 +933,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     /* Stage 1: host YUV -> linear RGB on the full-res frame. */
     ss2m_picture_to_linear_rgb(s, ref_pic, s->h_ref_lin);

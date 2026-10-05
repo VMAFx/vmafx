@@ -62,6 +62,8 @@ extern "C" {
 #include "metal_ciede_math.h"
 
 
+namespace {
+
 using CiedeStateMetal = struct CiedeStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* one float per pixel, raster order */
@@ -77,6 +79,7 @@ using CiedeStateMetal = struct CiedeStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -86,18 +89,18 @@ const VmafOption options[] = {{.name=nullptr}};
 int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_ciede_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_ciede_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"integer_ciede_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"integer_ciede_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
     if (pso8 == nil) { return -ENODEV; }
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso16 == nil) { return -ENODEV; }
 
@@ -222,10 +225,10 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
-    id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>    terms_buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer);
-    id<MTLComputePipelineState> pso = (s->bpc <= 8u)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLBuffer> const terms_buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer);
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
@@ -241,9 +244,9 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     upscale_picture(s, ref_pic, planes);
     upscale_picture(s, dist_pic, planes + 3);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) { return -ENOMEM; }
     [enc setComputePipelineState:pso];
     for (int i = 0; i < 6; ++i) {

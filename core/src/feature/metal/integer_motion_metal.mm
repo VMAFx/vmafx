@@ -61,6 +61,8 @@ extern "C" {
  * five-frame window the one before that, against which the SAD is taken. */
 #define MOTION_METAL_MAX_RING 3u
 
+namespace {
+
 using IntegerMotionStateMetal = struct IntegerMotionStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* uint32 SAD per threadgroup, grid_w × grid_h */
@@ -90,6 +92,7 @@ using IntegerMotionStateMetal = struct IntegerMotionStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -178,16 +181,16 @@ const VmafOption options[] = {
 int build_pipelines(IntegerMotionStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_motion_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_motion_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"integer_motion_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"integer_motion_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8  = [device newComputePipelineStateWithFunction:fn8  error:&err];
-    id<MTLComputePipelineState> pso16 = [device newComputePipelineStateWithFunction:fn16 error:&err];
+    id<MTLComputePipelineState> const pso8  = [device newComputePipelineStateWithFunction:fn8  error:&err];
+    id<MTLComputePipelineState> const pso16 = [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
     s->pso_8bpc  = (__bridge_retained void *)pso8;
@@ -215,9 +218,9 @@ int alloc_device_state(IntegerMotionStateMetal *s)
 {
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     for (unsigned i = 0; i < s->ring; i++) {
-        id<MTLBuffer> plane = [device newBufferWithLength:s->plane_bytes
+        id<MTLBuffer> const plane = [device newBufferWithLength:s->plane_bytes
                                                   options:MTLResourceStorageModeShared];
         if (plane == nil) { return -ENOMEM; }
         s->raw[i] = (__bridge_retained void *)plane;
@@ -282,7 +285,7 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 /* The luma plane of `pic` into ring slot `slot`, rows packed. */
 void upload_plane(IntegerMotionStateMetal *s, const VmafPicture *pic, unsigned slot)
 {
-    id<MTLBuffer> plane = (__bridge id<MTLBuffer>)s->raw[slot];
+    id<MTLBuffer> const plane = (__bridge id<MTLBuffer>)s->raw[slot];
     uint8_t *dst = (uint8_t *)[plane contents];
     for (unsigned y = 0; y < s->frame_h; y++) {
         memcpy(dst + (size_t)y * s->row_bytes,
@@ -295,11 +298,11 @@ int run_sad_kernel(IntegerMotionStateMetal *s, unsigned prev, unsigned cur)
 {
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(s->bpc <= 8u)
                                      ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
                                      : (__bridge id<MTLComputePipelineState>)s->pso_16bpc];

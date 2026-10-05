@@ -65,6 +65,8 @@ extern "C" {
 /* The moment planes of pass 0: mux, muy, x2, xy, y2. */
 #define ISSIM_MOMENT_PLANES 5u
 
+namespace {
+
 using IntegerSsimStateMetal = struct IntegerSsimStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer terms;     /* fp64 bit pattern per pixel, raster order */
@@ -90,6 +92,7 @@ using IntegerSsimStateMetal = struct IntegerSsimStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -161,18 +164,18 @@ double issim_frame_sum(const uint64_t *terms, size_t count)
 int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
-    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
     NSError *err = nil;
 
-    id<MTLFunction> fn_h8  = [lib newFunctionWithName:@"integer_ssim_horiz_8bpc"];
-    id<MTLFunction> fn_h16 = [lib newFunctionWithName:@"integer_ssim_horiz_16bpc"];
-    id<MTLFunction> fn_vert = [lib newFunctionWithName:@"integer_ssim_vert_terms"];
+    id<MTLFunction> const fn_h8  = [lib newFunctionWithName:@"integer_ssim_horiz_8bpc"];
+    id<MTLFunction> const fn_h16 = [lib newFunctionWithName:@"integer_ssim_horiz_16bpc"];
+    id<MTLFunction> const fn_vert = [lib newFunctionWithName:@"integer_ssim_vert_terms"];
     if (fn_h8 == nil || fn_h16 == nil || fn_vert == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso_h8  = [device newComputePipelineStateWithFunction:fn_h8  error:&err];
-    id<MTLComputePipelineState> pso_h16 = [device newComputePipelineStateWithFunction:fn_h16 error:&err];
-    id<MTLComputePipelineState> pso_v   = [device newComputePipelineStateWithFunction:fn_vert error:&err];
+    id<MTLComputePipelineState> const pso_h8  = [device newComputePipelineStateWithFunction:fn_h8  error:&err];
+    id<MTLComputePipelineState> const pso_h16 = [device newComputePipelineStateWithFunction:fn_h16 error:&err];
+    id<MTLComputePipelineState> const pso_v   = [device newComputePipelineStateWithFunction:fn_vert error:&err];
     if (pso_h8 == nil || pso_h16 == nil || pso_v == nil) { return -ENODEV; }
 
     s->pso_horiz_8  = (__bridge_retained void *)pso_h8;
@@ -210,9 +213,9 @@ int allocate(IntegerSsimStateMetal *s)
 
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
-    id<MTLBuffer> hb = [device newBufferWithLength:ISSIM_MOMENT_PLANES * pixels * sizeof(int64_t)
+    id<MTLBuffer> const hb = [device newBufferWithLength:ISSIM_MOMENT_PLANES * pixels * sizeof(int64_t)
                                            options:MTLResourceStorageModeShared];
     if (hb == nil) { return -ENOMEM; }
     s->hbuf_buf = (__bridge_retained void *)hb;
@@ -255,7 +258,7 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
                                  size_t row_bytes, unsigned height)
 {
-    id<MTLBuffer> buf = [device newBufferWithLength:row_bytes * height
+    id<MTLBuffer> const buf = [device newBufferWithLength:row_bytes * height
                                             options:MTLResourceStorageModeShared];
     if (buf == nil) { return nil; }
     uint8_t *dst = (uint8_t *)[buf contents];
@@ -269,10 +272,10 @@ id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
 void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd,
                               id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf, size_t row_bytes)
 {
-    id<MTLComputePipelineState> pso_h = (s->bpc <= 8u)
+    id<MTLComputePipelineState> const pso_h = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_horiz_8
         : (__bridge id<MTLComputePipelineState>)s->pso_horiz_16;
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso_h];
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
@@ -288,7 +291,7 @@ void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd,
 
 void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
     [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->terms.buffer) offset:0 atIndex:1];
@@ -316,16 +319,16 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
-    id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     /* Raw (un-normalised) integer samples, packed rows. */
     const size_t row_bytes = (size_t)s->frame_w * ((s->bpc <= 8u) ? 1u : 2u);
-    id<MTLBuffer> ref_buf = upload_luma(device, ref_pic, row_bytes, s->frame_h);
-    id<MTLBuffer> dis_buf = upload_luma(device, dist_pic, row_bytes, s->frame_h);
+    id<MTLBuffer> const ref_buf = upload_luma(device, ref_pic, row_bytes, s->frame_h);
+    id<MTLBuffer> const dis_buf = upload_luma(device, dist_pic, row_bytes, s->frame_h);
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
     encode_horizontal(s, cmd, ref_buf, dis_buf, row_bytes);
     encode_terms(s, cmd);
