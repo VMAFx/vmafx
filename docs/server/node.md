@@ -331,7 +331,7 @@ the eBPF descriptor tracker on top of this
 The pinned toolkit versions live in `build-config.env` (`CUDA_VERSION`,
 `ROCM_VERSION`, `ONEAPI_VERSION`) and are consumed by
 `docker/Dockerfile.node`; read them there rather than from this page. The
-current release track uses CUDA 13.4.2 and ROCm 10.0.0 libraries, which are
+current release track uses CUDA 13.4.2 and ROCm 10.1.0 libraries, which are
 copied out of Ubuntu 26.04 based images, and oneAPI 2026.1.
 
 The release workflow currently publishes only `node-cpu`. All targets use the

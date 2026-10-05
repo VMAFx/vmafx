@@ -6,19 +6,19 @@
 #
 # Why this exists (ADR-1225): since ROCm 7.14 AMD builds and releases through
 # "TheRock", and the legacy apt channel at repo.radeon.com/rocm/apt/ tops out
-# at 7.2.4 (its own `latest` resolves there; apt/7.14 and apt/10.0.0 both
-# 404). The manylinux channel stops at rocm-rel-7.2.4 and the TheRock wheel
+# at 7.2.4 (its own `latest` resolves there; apt/7.14, apt/10.0.0 and
+# apt/10.1.0 all 404). The manylinux channel stops at rocm-rel-7.2.4 and the TheRock wheel
 # index carries only 7.14.0 alphas, so for ROCm >= 7.14 the official container
 # image is the only stable, digest-pinnable artifact.
 #
-# `docker pull` is not an option on a GitHub-hosted runner: the 10.0.0-full
-# image is 8.2 GB compressed / 29 GB extracted, and the HIP leg shares its
+# `docker pull` is not an option on a GitHub-hosted runner: the 10.1.0-full
+# image is 8.9 GB compressed / 31 GB extracted, and the HIP leg shares its
 # runner with the CUDA toolkit and oneAPI. This script instead streams each
 # layer blob straight from the registry into tar, extracting only /opt/rocm
 # and skipping the math libraries libvmaf never links (hipBLASLt, rocBLAS,
 # MIOpen, Composable Kernel's device-op archives, rocFFT/rocSPARSE/rocSOLVER,
-# the profilers). Nothing is ever stored whole: peak disk is the ~5.5 GB
-# result, not the 29 GB image.
+# RPP, the profilers). Nothing is ever stored whole: peak disk is the ~5.8 GB
+# result, not the 31 GB image.
 #
 # Usage:
 #   scripts/ci/install-rocm-from-image.sh \
@@ -112,6 +112,7 @@ EXCLUDES=(
   'opt/rocm/*/lib/librccl*'
   'opt/rocm/*/lib/librocprof-sys*'
   'opt/rocm/*/lib/librocprofiler-sdk*'
+  'opt/rocm/*/lib/librpp*'
   'opt/rocm/*/share/miopen'
   'opt/rocm/*/share/doc'
 )

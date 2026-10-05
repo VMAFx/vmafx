@@ -433,7 +433,7 @@ driver, and it cannot reach the network when run with the commands above.
 
 You need Docker 23.0 or later ([why](docker.md#what-can-pull-the-images)), Linux with the kernel's `amdgpu` driver (every current distribution
 has it) and an AMD GPU the image has code for. The image holds a HIP build of VMAFx and
-the ROCm 10.0.0 runtime files it needs; the GPU kernel driver stays your system's own.
+the ROCm 10.1.0 runtime files it needs; the GPU kernel driver stays your system's own.
 
 | Your GPU | Examples | gfx targets in the image |
 | :--- | :--- | :--- |
@@ -443,7 +443,7 @@ the ROCm 10.0.0 runtime files it needs; the GPU kernel driver stays your system'
 | RDNA3 and RDNA3.5 | Radeon RX 7900, RX 7800 / 7700, RX 7600, PRO W7000 series, Radeon 780M, 860M, 890M, 8060S | `gfx1100`, `gfx1101`, `gfx1102`, `gfx1103`, `gfx1150`, `gfx1151`, `gfx1152`, `gfx1153` |
 | RDNA4 and RDNA 4m | Radeon RX 9070, RX 9060, AI PRO R9700 (`gfx1250`: products not yet announced) | `gfx1200`, `gfx1201`, `gfx1250` |
 
-These are all 25 targets ROCm 10.0.0 builds its own libraries for. A GPU whose gfx
+These are all 25 targets ROCm 10.1.0 builds its own libraries for. A GPU whose gfx
 target is not in the list (older GCN cards such as the Radeon VII or the RX 500
 series) is listed in the report with the reason and not run. Windows is not supported: ROCm under WSL2 needs
 AMD's own WSL runtime, which this image does not carry; a run there reports
@@ -520,7 +520,7 @@ and see [Licences of what you download](#licences-of-what-you-download).
 | :--- | :--- | :--- |
 | `/opt/vmafx/build`, `/opt/vmafx/tests`, `/opt/vmafx/tester` | VMAFx: the `vmaf` tool and library (HIP build, with its GPU code objects inside), about a hundred test programs, the report program and the parity gate | EUPL-1.2 and BSD-2-Clause-Patent (Netflix), per file |
 | `/opt/vmafx/python/test/resource` | Netflix test videos, each checked against a pinned SHA-256 | BSD-2-Clause-Patent |
-| `/opt/vmafx/lib/rocm` | the ROCm 10.0.0 runtime the HIP build loads, copied unmodified: the HIP runtime (`libamdhip64`), the ROCm runtime (`libhsa-runtime64`), the code object manager (`libamd_comgr`) with the LLVM and Clang libraries it links, `rocprofiler-register`, `kpack`, and the system libraries ROCm bundles (`rocm_sysdeps`) | MIT (HIP runtime, rocprofiler-register, kpack, libdrm), NCSA (ROCm runtime), Apache-2.0 WITH LLVM-exception (comgr, LLVM, Clang), LGPL (libelf, libnuma), Zlib, BSD-3-Clause (zstd), 0BSD (liblzma), bzip2 |
+| `/opt/vmafx/lib/rocm` | the ROCm 10.1.0 runtime the HIP build loads, copied unmodified: the HIP runtime (`libamdhip64`), the ROCm runtime (`libhsa-runtime64`), the code object manager (`libamd_comgr`) with the LLVM and Clang libraries it links, `rocprofiler-register`, `kpack`, and the system libraries ROCm bundles (`rocm_sysdeps`) | MIT (HIP runtime, rocprofiler-register, kpack, libdrm), NCSA (ROCm runtime), Apache-2.0 WITH LLVM-exception (comgr, LLVM, Clang), LGPL (libelf, libnuma), Zlib, BSD-3-Clause (zstd), 0BSD (liblzma), bzip2 |
 | Debian packages | Python 3.13 and the Debian 13 base | each package's own (`/usr/share/doc/<package>/copyright`) |
 
 The image holds no compiler, no development package and no GPU driver, and it cannot
@@ -785,7 +785,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   `libvmaf` compiles in comes from FFmpeg's `nv-codec-headers` (MIT), whose notices are
   in `/opt/vmafx/licenses/nv-codec-headers/`. The source of the image's Debian
   packages is `ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda-source`.
-- **AMD GPU image only**: the ROCm 10.0.0 runtime files in `/opt/vmafx/lib/rocm` are
+- **AMD GPU image only**: the ROCm 10.1.0 runtime files in `/opt/vmafx/lib/rocm` are
   open source and ship unmodified: the HIP runtime, `rocprofiler-register` and `kpack`
   under MIT, the ROCm runtime under NCSA, the code object manager and the LLVM and Clang
   libraries it links under Apache-2.0 WITH LLVM-exception, and the system libraries ROCm

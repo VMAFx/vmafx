@@ -97,7 +97,7 @@ matrix below distinguishes those extractors from CPU-only metrics.
 | CPU | `--backend cpu` | scalar reference; SIMD paths dispatch automatically |
 | CUDA | `--backend cuda` | NVIDIA, CUDA 13.4 |
 | SYCL | `--backend sycl` | Intel oneAPI; fp64-free device contract |
-| HIP | `--backend hip` | AMD ROCm 10.0 |
+| HIP | `--backend hip` | AMD ROCm 10.1 |
 | Metal | `--backend metal` | Apple Silicon, Apple Family 7 and later |
 
 See [GPU and SIMD backends](docs/backends/index.md) for feature coverage per

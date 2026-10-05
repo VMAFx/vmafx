@@ -42,7 +42,7 @@ silently falls back to CPU. Two hard pins live in
   maps host variable and treats unset or empty input as anonymous. Keep
   `scripts/ci/check-dev-container-build-secret.py`, its fixture tests, and   Docker/Compose `--check` workflow steps wired together.
 - **Digest-pinned `rocm-src` stage**
-  (`rocm/dev-ubuntu-26.04:10.0.0-full`) replaces old `ARG ROCM_VER` +
+  (`rocm/dev-ubuntu-26.04:10.1.0-full`) replaces old `ARG ROCM_VER` +
   `repo.radeon.com/rocm/apt/` install. **Invariant (ADR-1225 /
   ADR-1231)**: keep selected digest-pinned image as SDK source.
   Update `ROCM_BUILDER` / `ROCM_RUNTIME` in `build-config.env`,
@@ -56,7 +56,15 @@ silently falls back to CPU. Two hard pins live in
   smoke in this stage; `hipconfig --version` alone doesn't exercise
   compiler dependency closure. Smoke compiles kernel but doesn't
   launch it or require GPU. ROCm 6.x KFD ioctls don't match kernel ≥
-  7.0; 10.0.0 does (verified on Linux 7.2.3 with `gfx1036`).
+  7.0; 10.0.0 / 10.1.0 do (verified on Linux 7.2.3 / 7.2.9 with
+  `gfx1036`). **Invariant (ROCm bump):** Renovate moves only the image
+  pins. Same PR: `ROCM_VERSION`; `core-<major>.<minor>` paths in
+  `rocm-src` stage + `docker/Dockerfile.node`; prune list here = `EXCLUDES`
+  of `scripts/ci/install-rocm-from-image.sh`, every entry must still match;
+  LLVM sonames in `tools/rc1-tester/image/hip-runtime.json`; TheRock /
+  rocm-systems / llvm-project pins in `tools/rc1-tester/image/licensing.json`
+  (from `share/therock/therock_manifest.json`); HIP device suite rerun on
+  `gfx1036` (compiler can move: 10.1.0 = LLVM 24).
 
 CI / maintainer's host running newer kernel that breaks these pins
 -> `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)

@@ -205,19 +205,19 @@
    "file": "elfutils-0.195.tar.bz2",
    "url": "https://sourceware.org/elfutils/ftp/0.195/elfutils-0.195.tar.bz2",
    "sha256": "37629fdf7f1f3dc2818e138fca2b8094177d6c2d0f701d3bb650a561218dc026",
-   "why": "libelf in librocm_sysdeps_elf.so.1 of ROCm 10.0.0 (TheRock pins the same archive by SHA-512)"
+   "why": "libelf in librocm_sysdeps_elf.so.1 of ROCm 10.1.0 (TheRock pins the same archive by SHA-512)"
   },
   "numactl-2.0.19": {
    "file": "numactl-2.0.19.tar.gz",
    "url": "https://github.com/numactl/numactl/releases/download/v2.0.19/numactl-2.0.19.tar.gz",
    "sha256": "f2672a0381cb59196e9c246bf8bcc43d5568bc457700a697f1a1df762b9af884",
-   "why": "libnuma in librocm_sysdeps_numa.so.1 of ROCm 10.0.0 (the archive TheRock pins)"
+   "why": "libnuma in librocm_sysdeps_numa.so.1 of ROCm 10.1.0 (the archive TheRock pins)"
   },
-  "therock-16adc4d8": {
-   "file": "TheRock-16adc4d875fd4f65ea23c7c84e1c66706fde3047.tar.gz",
+  "therock-b324869f": {
+   "file": "TheRock-b324869fb3116353ac7eec5e6926aa3d452ac987.tar.gz",
    "git": "https://github.com/ROCm/TheRock.git",
-   "commit": "16adc4d875fd4f65ea23c7c84e1c66706fde3047",
-   "why": "the scripts and patches with which TheRock built ROCm 10.0.0's bundled libelf and libnuma (third-party/sysdeps, patches/third-party), fetched by its commit and packed with git archive"
+   "commit": "b324869fb3116353ac7eec5e6926aa3d452ac987",
+   "why": "the scripts and patches with which TheRock built ROCm 10.1.0's bundled libelf and libnuma (third-party/sysdeps, patches/third-party), fetched by its commit and packed with git archive"
   }
  },
  "artifacts": {
@@ -2071,7 +2071,7 @@
      "source": "https://github.com/VMAFx/vmafx at the source commit above",
      "notes": [
       "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
-      "The HIP kernels are code objects inside libvmaf and the test executables, one per gfx target of image/hip-targets.json, compiled by ROCm 10.0.0's hipcc from the repository's .hip files."
+      "The HIP kernels are code objects inside libvmaf and the test executables, one per gfx target of image/hip-targets.json, compiled by ROCm 10.1.0's hipcc from the repository's .hip files."
      ]
     },
     {
@@ -2180,7 +2180,7 @@
     {
      "id": "rocm-clr",
      "kind": "fixed",
-     "name": "HIP runtime (CLR) of ROCm 10.0.0: libamdhip64",
+     "name": "HIP runtime (CLR) of ROCm 10.1.0: libamdhip64",
      "paths": [
       "opt/vmafx/lib/rocm/libamdhip64.so*"
      ],
@@ -2188,18 +2188,18 @@
      "copyright": [
       "Copyright (c) Advanced Micro Devices, Inc."
      ],
-     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/clr; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/rocm-systems/tree/7da43026e4f2ef7600433c38c820732f7a205d22/projects/clr; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "artifact": "opt/vmafx/licenses/rocm/rocm-clr/LICENSE.md",
-       "label": "share/doc/hip/LICENSE.md of ROCm 10.0.0"
+       "label": "share/doc/hip/LICENSE.md of ROCm 10.1.0"
       }
      ]
     },
     {
      "id": "rocm-rocr",
      "kind": "fixed",
-     "name": "ROCm runtime (ROCR, HSA) of ROCm 10.0.0: libhsa-runtime64",
+     "name": "ROCm runtime (ROCR, HSA) of ROCm 10.1.0: libhsa-runtime64",
      "paths": [
       "opt/vmafx/lib/rocm/libhsa-runtime64.so*"
      ],
@@ -2207,18 +2207,18 @@
      "copyright": [
       "Copyright (c) Advanced Micro Devices, Inc."
      ],
-     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/rocr-runtime; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/rocm-systems/tree/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocr-runtime; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "artifact": "opt/vmafx/licenses/rocm/rocm-rocr/LICENSE.md",
-       "label": "share/doc/rocr/LICENSE.md of ROCm 10.0.0"
+       "label": "share/doc/rocr/LICENSE.md of ROCm 10.1.0"
       }
      ]
     },
     {
      "id": "rocm-comgr",
      "kind": "fixed",
-     "name": "Code Object Manager (comgr) of ROCm 10.0.0: libamd_comgr, which libamdhip64 links",
+     "name": "Code Object Manager (comgr) of ROCm 10.1.0: libamd_comgr, which libamdhip64 links",
      "paths": [
       "opt/vmafx/lib/rocm/libamd_comgr.so*"
      ],
@@ -2226,18 +2226,18 @@
      "copyright": [
       "Copyright (c) Advanced Micro Devices, Inc."
      ],
-     "source": "https://github.com/ROCm/llvm-project/tree/8f497e0992fb7513f7f78a6f6b6f1056c375e961/amd/comgr; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/llvm-project/tree/d6f6cb691863e9258034ab48c1dfce21689d5606/amd/comgr; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "artifact": "opt/vmafx/licenses/rocm/rocm-comgr/LICENSE.txt",
-       "label": "share/doc/amd_comgr/LICENSE.txt of ROCm 10.0.0"
+       "label": "share/doc/amd_comgr/LICENSE.txt of ROCm 10.1.0"
       }
      ]
     },
     {
      "id": "rocm-rocprofiler-register",
      "kind": "fixed",
-     "name": "rocprofiler-register of ROCm 10.0.0, which libamdhip64 and libhsa-runtime64 link",
+     "name": "rocprofiler-register of ROCm 10.1.0, which libamdhip64 and libhsa-runtime64 link",
      "paths": [
       "opt/vmafx/lib/rocm/librocprofiler-register.so*"
      ],
@@ -2245,18 +2245,18 @@
      "copyright": [
       "Copyright (c) Advanced Micro Devices, Inc."
      ],
-     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/projects/rocprofiler-register; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/rocm-systems/tree/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocprofiler-register; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "artifact": "opt/vmafx/licenses/rocm/rocm-rocprofiler-register/LICENSE.md",
-       "label": "share/doc/rocprofiler-register/LICENSE.md of ROCm 10.0.0"
+       "label": "share/doc/rocprofiler-register/LICENSE.md of ROCm 10.1.0"
       }
      ]
     },
     {
      "id": "rocm-kpack",
      "kind": "fixed",
-     "name": "kpack of ROCm 10.0.0: librocm_kpack, which libamdhip64 links",
+     "name": "kpack of ROCm 10.1.0: librocm_kpack, which libamdhip64 links",
      "paths": [
       "opt/vmafx/lib/rocm/librocm_kpack.so*"
      ],
@@ -2264,7 +2264,7 @@
      "copyright": [
       "Copyright Advanced Micro Devices, Inc."
      ],
-     "source": "https://github.com/ROCm/rocm-systems/tree/6b0e43f341195e203754e08f850e437ff2fc09f9/shared/kpack; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/rocm-systems/tree/7da43026e4f2ef7600433c38c820732f7a205d22/shared/kpack; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "fetched": "rocm-kpack-LICENSE.txt",
@@ -2276,7 +2276,7 @@
     {
      "id": "rocm-llvm",
      "kind": "fixed",
-     "name": "LLVM and Clang libraries of ROCm 10.0.0 (libLLVM, libclang-cpp), which libamd_comgr links",
+     "name": "LLVM and Clang libraries of ROCm 10.1.0 (libLLVM, libclang-cpp), which libamd_comgr links",
      "paths": [
       "opt/vmafx/lib/rocm/llvm/lib/libLLVM.so*",
       "opt/vmafx/lib/rocm/llvm/lib/libclang-cpp.so*"
@@ -2285,7 +2285,7 @@
      "copyright": [
       "Copyright (c) LLVM Project contributors"
      ],
-     "source": "https://github.com/ROCm/llvm-project/tree/8f497e0992fb7513f7f78a6f6b6f1056c375e961; binary from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "https://github.com/ROCm/llvm-project/tree/d6f6cb691863e9258034ab48c1dfce21689d5606; binary from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "texts": [
       {
        "fetched": "llvm-LICENSE.TXT",
@@ -2302,7 +2302,7 @@
     {
      "id": "rocm-sysdeps",
      "kind": "fixed",
-     "name": "System libraries ROCm 10.0.0 bundles for its runtime (rocm_sysdeps): libelf, libnuma, libdrm, libdrm_amdgpu, zlib, zstd, liblzma, libbz2, built by TheRock with renamed sonames",
+     "name": "System libraries ROCm 10.1.0 bundles for its runtime (rocm_sysdeps): libelf, libnuma, libdrm, libdrm_amdgpu, zlib, zstd, liblzma, libbz2, built by TheRock with renamed sonames",
      "paths": [
       "opt/vmafx/lib/rocm/rocm_sysdeps/lib/**"
      ],
@@ -2317,7 +2317,7 @@
       "Copyright (C) Julian R Seward (bzip2)",
       "Copyright (c) Advanced Micro Devices, Inc. (TheRock build scripts and patches)"
      ],
-     "source": "built by TheRock at commit 16adc4d875fd4f65ea23c7c84e1c66706fde3047 (third-party/sysdeps) from elfutils 0.195, numactl 2.0.19, libdrm 2.4.134, zlib 1.3.2, zstd 1.5.7, XZ Utils 5.8.1 and bzip2 1.0.8; copied unmodified from ROCm 10.0.0 (TheRock 16adc4d875fd4f65ea23c7c84e1c66706fde3047; ROCM_BUILDER of build-config.env), copied unmodified",
+     "source": "built by TheRock at commit b324869fb3116353ac7eec5e6926aa3d452ac987 (third-party/sysdeps) from elfutils 0.195, numactl 2.0.19, libdrm 2.4.134, zlib 1.3.2, zstd 1.5.7, XZ Utils 5.8.1 and bzip2 1.0.8; copied unmodified from ROCm 10.1.0 (TheRock b324869fb3116353ac7eec5e6926aa3d452ac987; ROCM_BUILDER of build-config.env), copied unmodified",
      "vendored_libraries": [
       {
        "pattern": "librocm_sysdeps_elf.so*",
@@ -2325,12 +2325,12 @@
        "copyleft": true,
        "archives": [
         "elfutils-0.195",
-        "therock-16adc4d8"
+        "therock-b324869f"
        ],
        "sources": {
         "11dee761756ec5b1608540b5962d4e2e2a175c65": [
          "elfutils-0.195",
-         "therock-16adc4d8"
+         "therock-b324869f"
         ]
        }
       },
@@ -2340,12 +2340,12 @@
        "copyleft": true,
        "archives": [
         "numactl-2.0.19",
-        "therock-16adc4d8"
+        "therock-b324869f"
        ],
        "sources": {
         "ec55f204edfe5332e94336ff95aa1da475a668b0": [
          "numactl-2.0.19",
-         "therock-16adc4d8"
+         "therock-b324869f"
         ]
        }
       },
@@ -4308,24 +4308,24 @@
    "why": "intel-igc-core-2 2.41.5 (the IGC of INTEL_NEO_VERSION) installs no copyright file"
   },
   "rocm-kpack-LICENSE.txt": {
-   "url": "https://raw.githubusercontent.com/ROCm/rocm-systems/6b0e43f341195e203754e08f850e437ff2fc09f9/shared/kpack/LICENSE",
+   "url": "https://raw.githubusercontent.com/ROCm/rocm-systems/7da43026e4f2ef7600433c38c820732f7a205d22/shared/kpack/LICENSE",
    "sha256": "e071e8c7d920817b6415f4b87c115c6aefafe137e36843b3723f28dde5f484c3",
-   "why": "librocm_kpack (rocm-systems at the pin of ROCm 10.0.0's TheRock manifest) installs no licence text"
+   "why": "librocm_kpack (rocm-systems at the pin of ROCm 10.1.0's TheRock manifest) installs no licence text"
   },
   "llvm-LICENSE.TXT": {
-   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/8f497e0992fb7513f7f78a6f6b6f1056c375e961/llvm/LICENSE.TXT",
+   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/d6f6cb691863e9258034ab48c1dfce21689d5606/llvm/LICENSE.TXT",
    "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee",
-   "why": "ROCm 10.0.0's libLLVM installs no licence text (llvm-project at the pin of its TheRock manifest)"
+   "why": "ROCm 10.1.0's libLLVM installs no licence text (llvm-project at the pin of its TheRock manifest)"
   },
   "clang-LICENSE.TXT": {
-   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/8f497e0992fb7513f7f78a6f6b6f1056c375e961/clang/LICENSE.TXT",
+   "url": "https://raw.githubusercontent.com/ROCm/llvm-project/d6f6cb691863e9258034ab48c1dfce21689d5606/clang/LICENSE.TXT",
    "sha256": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
-   "why": "ROCm 10.0.0's libclang-cpp installs no licence text"
+   "why": "ROCm 10.1.0's libclang-cpp installs no licence text"
   },
   "therock-LICENSE.txt": {
-   "url": "https://raw.githubusercontent.com/ROCm/TheRock/16adc4d875fd4f65ea23c7c84e1c66706fde3047/LICENSE",
+   "url": "https://raw.githubusercontent.com/ROCm/TheRock/b324869fb3116353ac7eec5e6926aa3d452ac987/LICENSE",
    "sha256": "7728762ecd3256782c89e28b1887727a484deda6356887ef2f2898598e950cb8",
-   "why": "TheRock, which built ROCm 10.0.0 and its bundled system libraries"
+   "why": "TheRock, which built ROCm 10.1.0 and its bundled system libraries"
   },
   "elfutils-0.195-COPYING-LGPLV3": {
    "url": "https://sourceware.org/git/?p=elfutils.git;a=blob_plain;f=COPYING-LGPLV3;hb=refs/tags/elfutils-0.195",

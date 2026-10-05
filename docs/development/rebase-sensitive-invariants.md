@@ -150,12 +150,17 @@ backend within it.
   floating `cuda-toolkit-13-4` command in the Containerfile. It also pins the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
-  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
+  `rocm/dev-ubuntu-26.04:10.1.0-full` image in the `rocm-src` stage
   (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
   maintenance), update their shared pins in `build-config.env` and regenerate
   the mirrors before merging; a ROCm bump
   additionally means re-validating the `rocm-src` prune list against its
-  hipcc smoke check.
+  hipcc smoke check, setting `ROCM_VERSION` (Renovate moves only the image
+  pins), moving the `/opt/rocm/core-<major>.<minor>` paths of the `rocm-src`
+  stage and `docker/Dockerfile.node`, the LLVM sonames of
+  `tools/rc1-tester/image/hip-runtime.json` and the ROCm source pins of
+  `tools/rc1-tester/image/licensing.json`, and re-running the HIP device suite
+  (ROCm 10.1.0 moved the compiler from LLVM 23 to LLVM 24).
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,

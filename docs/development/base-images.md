@@ -82,7 +82,7 @@ Use named stages or an earlier numeric stage index for `COPY --from`.
 ## ROCm and oneAPI bases
 
 The ROCm builder and runtime source use AMD's released Ubuntu 26.04
-`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`. The
+`10.1.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`. The
 published ROCm image and the AMD GPU tester image do not build `FROM` it: their
 Debian 13 builders stream `/opt/rocm` out of `ROCM_BUILDER` with
 `scripts/ci/install-rocm-from-image.sh`, and their runtimes copy only the HIP
@@ -91,6 +91,14 @@ runtime files `vmaf` loads ([ADR-1517](../adr/1517-gpu-image-licensing.md)).
 - The `rocm-src` stage compiles and links a small HIP kernel after pruning the
   SDK, then runs its host-only entry point. This checks the compiler and loader
   without requiring an AMD GPU; device execution remains a separate test.
+- A ROCm update changes more than the two pins. ROCm installs under
+  `/opt/rocm/core-<major>.<minor>`, which the `rocm-src` stage and
+  `docker/Dockerfile.node` name; `tools/rc1-tester/image/hip-runtime.json`
+  names the LLVM library sonames (`libLLVM.so.24.0git` in 10.1.0); and
+  `tools/rc1-tester/image/licensing.json` names the TheRock, `rocm-systems` and
+  `llvm-project` commits of the release's `share/therock/therock_manifest.json`.
+  The compiler can move with it (10.1.0 ships AMD clang 24, 10.0.0 shipped
+  23), so the HIP device suite runs again on a GPU before the update lands.
 - The node runtime retains the vendor library directory structure when copying
   the HIP dependency closure into Debian 13. See the
   [26.04 verification](../research/rocm-2604-restoration-2026-09-08.md).
@@ -368,4 +376,14 @@ The Level Zero custom manager updates only `LEVEL_ZERO_VERSION` in
 `build-config.env`; its container and workflow consumers read that setting.
 ROCm uses the image manager's `ROCM_BUILDER` and `ROCM_RUNTIME` entries. The old
 ROCm manager for literal workflow versions no longer has an input and is
-removed.
+removed. Renovate does not move `ROCM_VERSION`: a ROCm pull request fails
+`scripts/ci/check-base-image-single-source.sh` until the release is set there
+too, and its `ROCm (hip runtime)` rule labels it `manual-review` for the steps
+in [ROCm and oneAPI bases](#rocm-and-oneapi-bases).
+
+`scripts/ci/tests/test_renovate_file_patterns.py` derives the wired files from
+the tree: every Dockerfile in the single-source gate's scope that declares an
+`ARG` default for an image key of `build-config.env`. A new mirror the custom
+manager does not select fails that test. `docker/Dockerfile.tester` was such a
+mirror until the ROCm 10.1.0 update: no manager selected its `ROCM_BUILDER`, so
+the update left it at 10.0.0.

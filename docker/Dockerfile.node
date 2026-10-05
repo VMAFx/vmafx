@@ -593,7 +593,7 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
-# ROCm 10.0.0 HIP runtime libs (ADR-1225).
+# ROCm 10.1.0 HIP runtime libs (ADR-1225).
 #
 # Two things changed versus the flat `libamdhip64.so* + libhsa-runtime64.so*`
 # copy this stage used under ROCm 7:
@@ -610,26 +610,26 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 #     `$ORIGIN/rocm_sysdeps/lib`), so they must keep their directory
 #     structure rather than being flattened into /usr/local/lib.
 #
-# Source paths use the real `/opt/rocm/core-10.0/` prefix rather than
+# Source paths use the real `/opt/rocm/core-10.1/` prefix rather than
 # `/opt/rocm/`: ROCm 10 makes `/opt/rocm/lib` a Debian-alternatives symlink,
 # and BuildKit resolves a `COPY --from` source against the source image's
 # filesystem without following that indirection reliably.
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libamdhip64.so*            /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libamdhip64.so*            /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libhsa-runtime64.so*       /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libhsa-runtime64.so*       /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libamd_comgr.so*           /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libamd_comgr.so*           /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/librocm_kpack.so*          /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/librocm_kpack.so*          /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/librocprofiler-register.so* /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/librocprofiler-register.so* /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
+     /opt/rocm/core-10.1/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
+     /opt/rocm/core-10.1/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
+     /opt/rocm/core-10.1/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
 
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib"
 

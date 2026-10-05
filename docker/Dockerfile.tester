@@ -29,7 +29,7 @@ ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46e
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151"
 ARG ONEAPI_BUILDER="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
 # ---------------------------------------------------------------------------
 # fixtures: Netflix test videos, fetched at a pinned commit and SHA-256 checked
@@ -656,7 +656,7 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 # ===========================================================================
 # AMD GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-hip (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-hip .
-# The HIP runtime comes from the pinned ROCm 10.0.0 image (ROCM_BUILDER of
+# The HIP runtime comes from the pinned ROCm 10.1.0 image (ROCM_BUILDER of
 # build-config.env); the image ships only the files libvmaf loads, unmodified,
 # with their licence texts (tools/rc1-tester/image/hip-runtime.json).
 # ===========================================================================
@@ -665,7 +665,7 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 # hip-build: Debian 13 with /opt/rocm streamed out of the ROCm image
 # (scripts/ci/install-rocm-from-image.sh, as the CI HIP legs do; share/doc kept
 # for the licence texts). The code objects cover HIP_GFX_TARGETS: every target
-# ROCm 10.0.0 builds its own libraries for (share/therock/dist_info.json; the
+# ROCm 10.1.0 builds its own libraries for (share/therock/dist_info.json; the
 # build checks the two lists agree). The compilers stay in this stage.
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_BUILDER_BASE} AS hip-build

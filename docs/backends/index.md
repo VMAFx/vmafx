@@ -18,7 +18,7 @@ see the [CLI reference](../usage/cli.md#backend-selection).
 | aarch64 CPU | NEON / SVE2 | on by default (`enable_asm`) | `--backend cpu`, `--cpumask` | none | scalar bits for the contracted features | [ARM](arm/overview.md) |
 | NVIDIA GPU | CUDA | `meson setup build core -Denable_cuda=true` | `--backend cuda`, `--no_cuda` | CUDA toolkit 13.4.2 (`nvcc`) | 24 of 25 gate features bit-identical to the CPU; `ciede` bounded at 1e-9 | [CUDA](cuda/overview.md) |
 | Intel GPU (Arc, Xe iGPU, Battlemage) | SYCL | `meson setup build core -Denable_sycl=true` | `--backend sycl`, `--sycl_device N`, `--no_sycl` | oneAPI DPC++ 2026.1 (`icpx`), Level Zero 1.34.0, `ocloc` | 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [SYCL](sycl/overview.md) |
-| AMD GPU | HIP | `meson setup build core -Denable_hip=true -Denable_hipcc=true` | `--backend hip`, `--hip_device N`, `--no_hip` | ROCm 10.0.0 (`hipcc`) | 19 registered extractors; 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [HIP](hip/overview.md) |
+| AMD GPU | HIP | `meson setup build core -Denable_hip=true -Denable_hipcc=true` | `--backend hip`, `--hip_device N`, `--no_hip` | ROCm 10.1.0 (`hipcc`) | 19 registered extractors; 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [HIP](hip/overview.md) |
 | Apple Silicon | Metal | `-Denable_metal=auto` (default; probes on macOS) | `--backend metal`, `--metal_device N`, `--no_metal` | Xcode / Metal.framework | 17 registered, parity-tested kernels; SpEED is the one gap; no exactness declared yet | [Metal](metal/index.md) |
 
 Versions come from `build-config.env` (`CUDA_VERSION`, `ONEAPI_VERSION`,

@@ -6,7 +6,7 @@
 #
 # Targets (the CPU image is docker/Dockerfile.production):
 #   final-cuda13     — CUDA build of libvmaf; no NVIDIA library in the image
-#   final-rocm10     — HIP build with the ROCm 10.0.0 runtime files it loads
+#   final-rocm10     — HIP build with the ROCm 10.1.0 runtime files it loads
 #   final-oneapi2026 — SYCL build with the Intel SYCL runtime files it loads
 #                      and the compute-runtime (NEO) GPU stack (ADR-1368)
 #   final-oneapi2025 — alias of final-oneapi2026, kept for existing callers
@@ -140,12 +140,12 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model /stage/licenses/nvidia /licence-inp
     && python3 tools/rc1-tester/image/licensing.py scan-build --build build --repo /src \
         --out /licence-inputs/vmafx-sources.json
 
-# --- ROCm 10.0.0 build (ADR-1225, ADR-1517) ---
-# ROCm 10.0.0 ships only as a container image (TheRock; the apt channel at
+# --- ROCm 10.1.0 build (ADR-1225, ADR-1517) ---
+# ROCm 10.1.0 ships only as a container image (TheRock; the apt channel at
 # repo.radeon.com/rocm/apt/ tops out at 7.2.4). Debian 13 with /opt/rocm
 # streamed out of that image by scripts/ci/install-rocm-from-image.sh, as the CI
 # HIP legs and the AMD GPU tester image do; share/doc is kept for the licence
-# texts. The code objects cover every target ROCm 10.0.0 builds its own
+# texts. The code objects cover every target ROCm 10.1.0 builds its own
 # libraries for (share/therock/dist_info.json).
 FROM ${RELEASE_BUILDER_BASE} AS builder-rocm10
 ARG DEBIAN_FRONTEND=noninteractive
@@ -382,7 +382,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 # ===========================================================================
 FROM ${RELEASE_BUILDER_BASE} AS rocm10-assembled
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production ROCm 10.0.0 HIP runtime. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
+LABEL org.opencontainers.image.description="VMAFX production ROCm 10.1.0 HIP runtime. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"

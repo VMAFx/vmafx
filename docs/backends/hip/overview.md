@@ -19,14 +19,14 @@ under [More HIP pages](#more-hip-pages).
 
 | Item | Value |
 |---|---|
-| ROCm | 7.0 or later builds; **10.0.0** is the version tested in CI, in the dev container and in the published GPU images (`build-config.env` `ROCM_VERSION`, [ADR-1225](../../adr/1225-rocm-10-therock-migration.md)) |
+| ROCm | 7.0 or later builds; **10.1.0** is the version tested in CI, in the dev container and in the published GPU images (`build-config.env` `ROCM_VERSION`, [ADR-1225](../../adr/1225-rocm-10-therock-migration.md)) |
 | Libraries | `libamdhip64` and `<hip/hip_runtime_api.h>`, found through the `hip-lang` package, `HIP_PATH`, or `/opt/rocm` |
 | Compiler | `hipcc` in `PATH` when `enable_hipcc=true` |
 | Hardware | An AMD GPU visible to ROCm; the default fat binary targets gfx90a, gfx1030, gfx1036 and gfx1100 |
 
 ROCm 10 has no apt channel. Since ROCm 7.14 AMD builds and releases through
 "TheRock", and `repo.radeon.com/rocm/apt/` ends at 7.2.4. VMAFx therefore
-installs ROCm from the digest-pinned `rocm/dev-ubuntu-26.04:10.0.0-full`
+installs ROCm from the digest-pinned `rocm/dev-ubuntu-26.04:10.1.0-full`
 container image. On a workstation, use your distribution's ROCm packages
 (any 7.0+ release builds) or the dev container. CI runs
 `scripts/ci/install-rocm-from-image.sh`, which streams the image's

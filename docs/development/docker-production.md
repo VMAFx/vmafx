@@ -134,7 +134,7 @@ driver's `libcuda.so.1`, which the toolkit mounts. Without `--gpus all` the
 container has no GPU: `--backend cuda` exits with code `100`, and the default
 auto mode scores on the CPU.
 
-### ROCm 10.0.0 (HIP)
+### ROCm 10.1.0 (HIP)
 
 Pass `/dev/kfd` and the render node of the GPU to use, found from its PCI
 address under `/dev/dri/by-path/`. Passing all of `/dev/dri` also works, but
@@ -165,7 +165,7 @@ docker run --rm \
 ```
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>`
-accessible. The HIP kernels cover every GPU target ROCm 10.0.0 builds its own
+accessible. The HIP kernels cover every GPU target ROCm 10.1.0 builds its own
 libraries for (the `dist_amdgpu_targets` list of ROCm's
 `share/therock/dist_info.json`, 25 targets from `gfx908` to `gfx1250`).
 
@@ -511,7 +511,7 @@ Both Dockerfiles use a multi-stage build:
 | Variant | Builder toolchain | Vendor files in the image |
 |---------|-------------------|---------------------------|
 | CUDA 13.4.2 | `nvcc` from NVIDIA's `debian13` repository at exact versions (`scripts/ci/install-cuda-toolkit.sh --mode=builder`) | None; the host driver provides `libcuda.so.1` |
-| ROCm 10.0.0 | `/opt/rocm` streamed out of AMD's pinned `rocm/dev-ubuntu-26.04:10.0.0-full` (`scripts/ci/install-rocm-from-image.sh`) | The HIP runtime files of `tools/rc1-tester/image/hip-runtime.json` |
+| ROCm 10.1.0 | `/opt/rocm` streamed out of AMD's pinned `rocm/dev-ubuntu-26.04:10.1.0-full` (`scripts/ci/install-rocm-from-image.sh`) | The HIP runtime files of `tools/rc1-tester/image/hip-runtime.json` |
 | Intel oneAPI 2026.1 | oneAPI compiler at one exact apt build ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)) | The SYCL runtime files of `tools/rc1-tester/image/sycl-runtime.json`, the pinned Intel GPU compute runtime and Level Zero loader |
 
 Every base-image reference is digest-pinned.

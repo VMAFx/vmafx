@@ -29,7 +29,7 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    `onnxruntime-linux-x64-${ORT_VERSION}.tgz` from
    microsoft/onnxruntime GitHub releases. C API stable across 1.x
    line; however, ROCm EP and CUDA EP only available from ORT 1.26+
-   (matching container's ROCm 10.0.0 + CUDA 13.x stack —
+   (matching container's ROCm 10.1.0 + CUDA 13.x stack —
    ADR-0541/ADR-0542, ROCm bumped by ADR-1225). Bumping ORT_VERSION
    -> verify new version's tarball exists at GitHub releases URL
    before updating ARG, update this note.

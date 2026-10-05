@@ -151,7 +151,7 @@ ninja -C build_full
 ```
 
 required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
-(`false`): it installs ROCm 10.0.0 from digest-pinned image (ADR-1225) and
+(`false`): it installs ROCm 10.1.0 from digest-pinned image (ADR-1225) and
 builds host side without device kernels. Kernel-enabled builds
 (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 7.0+.
 

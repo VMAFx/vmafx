@@ -36,7 +36,7 @@ Registered feature extractors per backend, from the extractor registry:
 
 !!! note "Toolchain minimums"
     HIP needs ROCm 7.0 or newer (`core/meson_options.txt`); the shipped
-    toolchain is ROCm 10.0.0 (`build-config.env`).
+    toolchain is ROCm 10.1.0 (`build-config.env`).
 
 ## Ownership at a glance
 

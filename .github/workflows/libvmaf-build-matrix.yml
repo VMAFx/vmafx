@@ -456,16 +456,16 @@ jobs:
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
       # ---------- ROCm / HIP toolchain (T7-10b) ----------
-      # ROCm 10.0.0 has no apt channel. Since ROCm 7.14 AMD builds and
+      # ROCm 10 has no apt channel. Since ROCm 7.14 AMD builds and
       # releases through "TheRock"; repo.radeon.com/rocm/apt/ tops out at
-      # 7.2.4 (its own `latest` resolves there, and apt/7.14 and apt/10.0.0
-      # both 404), the manylinux channel stops at rocm-rel-7.2.4, and the
-      # TheRock wheel index carries only 7.14.0 alphas. The official
-      # container image is the only stable, digest-pinnable ROCm 10.0.0
-      # artifact -- see ADR-1225.
+      # 7.2.4 (its own `latest` resolves there, and apt/7.14, apt/10.0.0
+      # and apt/10.1.0 all 404), the manylinux channel stops at
+      # rocm-rel-7.2.4, and the TheRock wheel index carries only 7.14.0
+      # alphas. The official container image is the only stable,
+      # digest-pinnable ROCm 10 artifact -- see ADR-1225.
       #
-      # `docker pull` is not viable here: the image is 8.2 GB compressed /
-      # 29 GB extracted and this leg already carries the CUDA toolkit and
+      # `docker pull` is not viable here: the image is 8.9 GB compressed /
+      # 31 GB extracted and this leg already carries the CUDA toolkit and
       # oneAPI on the same runner. `install-rocm-from-image.sh` instead
       # streams each layer blob from the registry straight into tar,
       # extracting only /opt/rocm and skipping the math libraries libvmaf
