@@ -47,6 +47,34 @@ Public surface
 
 Both are imported by `ai/scripts/qat_train.py` and (eventually) by
 the `vmaf-train qat` subcommand.
+
+`run_qat` arguments
+-------------------
+
+model_factory
+    Zero-argument callable returning a torch ``nn.Module`` / Lightning
+    module. Called twice — once for the fp32+QAT phase, once for the
+    post-QAT fp32 export target.
+qat_cfg
+    Knobs from the YAML config (epochs, lr, output paths).
+example_inputs
+    Tuple of tensors used for FX trace and ONNX export. If omitted, we
+    pull ``model.example_input_array`` from the freshly built module.
+input_names / output_names / dynamic_axes
+    Forwarded to ``torch.onnx.export``.
+train_loader_factory
+    Zero-argument callable returning an iterable of ``(input, target)``
+    tensor batches. Required unless ``qat_cfg.smoke`` is set. The
+    factory is called twice — once per training phase — so the iterator
+    is fresh each time.
+loss_fn
+    Loss callable, defaults to L1 (matches `LearnedFilter`).
+calibration_samples
+    Pre-built calibration list for ORT static-quantize. If omitted,
+    falls back to a deterministic random set.
+device
+    Device string ("cuda" / "cpu"). Defaults to "cuda" when available,
+    else "cpu". Quantization ops always run on host regardless.
 """
 
 from __future__ import annotations
@@ -332,6 +360,117 @@ class QatResult:
     epochs_qat: int
 
 
+def _fine_tune_phase(
+    module: Any,
+    qat_cfg: QatConfig,
+    train_loader_factory: Any,
+    *,
+    epochs: int,
+    lr: float,
+    loss_fn: Any,
+    device: str,
+) -> None:
+    """Run one fine-tune phase unless smoke mode, zero epochs or no loader skips it."""
+    if qat_cfg.smoke or epochs <= 0 or train_loader_factory is None:
+        return
+    import torch
+
+    _qat_fine_tune(
+        module,
+        iter(train_loader_factory()),
+        epochs=epochs,
+        lr=lr,
+        loss_fn=loss_fn or torch.nn.functional.l1_loss,
+        device=device,
+    )
+
+
+def _copy_weights_or_raise(qat_model: Any, fp32_export_target: Any) -> None:
+    """Copy QAT-conditioned weights into the fp32 target; fail when none transfer."""
+    if _copy_qat_weights_into_fp32(qat_model, fp32_export_target) == 0:
+        raise RuntimeError(
+            "QAT->fp32 weight transfer copied 0 tensors. "
+            "pt2e capture probably renamed every submodule — check the model "
+            "architecture for top-level Sequentials or untraceable control flow."
+        )
+
+
+def _fp32_onnx_path(qat_cfg: QatConfig) -> Path:
+    """Return the fp32 ONNX path, deriving it from the int8 path when unset."""
+    return qat_cfg.output_fp32_onnx or qat_cfg.output_int8_onnx.with_name(
+        qat_cfg.output_int8_onnx.stem.replace(".int8", "") + ".qat.fp32.onnx"
+    )
+
+
+def _quantize_exported(
+    qat_cfg: QatConfig,
+    fp32_onnx: Path,
+    cpu_examples: tuple[Any, ...],
+    input_names: list[str],
+    calibration_samples: list[dict[str, np.ndarray]] | None,
+) -> Path:
+    """Build calibration when missing, run ORT static quantization, return the int8 path."""
+    if calibration_samples is None:
+        shape = tuple(cpu_examples[0].shape)
+        calibration_samples = _generate_smoke_calibration(
+            input_names[0], shape, qat_cfg.n_calibration, seed=qat_cfg.seed
+        )
+    int8_onnx = qat_cfg.output_int8_onnx
+    if int8_onnx is None:
+        raise ValueError("qat_cfg.output_int8_onnx must be set")
+    _ort_static_quantize(fp32_onnx, int8_onnx, calibration_samples)
+    return int8_onnx
+
+
+def _export_and_quantize(
+    qat_model: Any,
+    model_factory: Any,
+    qat_cfg: QatConfig,
+    cpu_examples: tuple[Any, ...],
+    export_kwargs: dict[str, Any],
+    calibration_samples: list[dict[str, np.ndarray]] | None,
+) -> tuple[Path, Path]:
+    """Export a fresh fp32 module carrying the QAT weights, then ORT-quantize it."""
+    qat_model.cpu()
+    _set_mode(qat_model, train=False)
+    fp32_export_target = model_factory()
+    _copy_weights_or_raise(qat_model, fp32_export_target)
+    fp32_onnx = _fp32_onnx_path(qat_cfg)
+    _export_fp32_onnx(fp32_export_target, cpu_examples, fp32_onnx, **export_kwargs)
+    int8_onnx = _quantize_exported(
+        qat_cfg, fp32_onnx, cpu_examples, export_kwargs["input_names"], calibration_samples
+    )
+    return fp32_onnx, int8_onnx
+
+
+def _warm_start_and_prepare(
+    fp32_model: Any,
+    qat_cfg: QatConfig,
+    train_loader_factory: Any,
+    example_inputs: tuple[Any, ...],
+    tune: dict[str, Any],
+) -> tuple[tuple[Any, ...], Any]:
+    """Run phases 1-3: fp32 warm-start, fake-quant insertion, QAT fine-tune."""
+    # Phase 1 — fp32 warm-start
+    base_lr = qat_cfg.extra.get("lr", 1e-4)
+    _fine_tune_phase(
+        fp32_model, qat_cfg, train_loader_factory, epochs=qat_cfg.epochs_fp32, lr=base_lr, **tune
+    )
+
+    # Phase 2 — fake-quant insertion. Graph capture needs the model on CPU
+    # (torch.export does not handle CUDA buffers cleanly here).
+    fp32_model.cpu()
+    cpu_examples = tuple(t.cpu() if hasattr(t, "cpu") else t for t in example_inputs)
+    qat_model = _prepare_qat(fp32_model, cpu_examples)
+
+    # Phase 3 — QAT fine-tune
+    lr_qat = qat_cfg.lr_qat or (base_lr / 10.0)
+    _fine_tune_phase(
+        qat_model, qat_cfg, train_loader_factory, epochs=qat_cfg.epochs_qat, lr=lr_qat, **tune
+    )
+    return cpu_examples, qat_model
+
+
 def run_qat(
     *,
     model_factory,
@@ -348,46 +487,14 @@ def run_qat(
 ) -> QatResult:
     """Execute the full QAT pipeline against a freshly built fp32 model.
 
-    Parameters
-    ----------
-    model_factory:
-        Zero-argument callable returning a torch ``nn.Module`` /
-        Lightning module. Called twice — once for the fp32+QAT phase,
-        once for the post-QAT fp32 export target.
-    qat_cfg:
-        Knobs from the YAML config (epochs, lr, output paths).
-    example_inputs:
-        Tuple of tensors used for FX trace and ONNX export. If
-        omitted, we pull `model.example_input_array` from the freshly
-        built module.
-    input_names / output_names / dynamic_axes:
-        Forwarded to ``torch.onnx.export``.
-    train_loader_factory:
-        Zero-argument callable returning an iterable of
-        ``(input, target)`` tensor batches. Required unless
-        ``qat_cfg.smoke`` is set. The factory is called twice — once
-        per training phase — so the iterator is fresh each time.
-    loss_fn:
-        Loss callable, defaults to L1 (matches `LearnedFilter`).
-    calibration_samples:
-        Pre-built calibration list for ORT static-quantize. If
-        omitted, falls back to a deterministic random set.
-    device:
-        Device string ("cuda" / "cpu"). Defaults to "cuda" when
-        available, else "cpu". Quantization ops always run on host
-        regardless.
-
-    Returns
-    -------
-    QatResult
-        Paths to the exported fp32 + int8 ONNX, plus diagnostic
-        metadata.
+    Every argument is described in the module docstring ("`run_qat`
+    arguments"). Returns a :class:`QatResult` with the exported fp32 + int8
+    ONNX paths and diagnostic metadata.
     """
     import torch
 
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-
     torch.manual_seed(qat_cfg.seed)
 
     fp32_model = model_factory()
@@ -397,80 +504,23 @@ def run_qat(
         input_names = ["input"]
     if output_names is None:
         output_names = ["output"]
-
     n_params = int(sum(p.numel() for p in fp32_model.parameters() if p.requires_grad))
 
-    # Phase 1 — fp32 warm-start
-    if not qat_cfg.smoke and qat_cfg.epochs_fp32 > 0 and train_loader_factory is not None:
-        loss_fn = loss_fn or torch.nn.functional.l1_loss
-        # Reuse the fine-tune loop for the fp32 phase too — same shape, same loss.
-        loader = train_loader_factory()
-        _qat_fine_tune(
-            fp32_model,
-            iter(loader),
-            epochs=qat_cfg.epochs_fp32,
-            lr=qat_cfg.extra.get("lr", 1e-4),
-            loss_fn=loss_fn,
-            device=device,
-        )
-
-    # Phase 2 — fake-quant insertion. Graph capture needs the model on CPU
-    # (torch.export does not handle CUDA buffers cleanly here).
-    fp32_model.cpu()
-    cpu_examples = tuple(t.cpu() if hasattr(t, "cpu") else t for t in example_inputs)
-    qat_model = _prepare_qat(fp32_model, cpu_examples)
-
-    # Phase 3 — QAT fine-tune
-    if not qat_cfg.smoke and qat_cfg.epochs_qat > 0 and train_loader_factory is not None:
-        lr_qat = qat_cfg.lr_qat or (qat_cfg.extra.get("lr", 1e-4) / 10.0)
-        loss_fn = loss_fn or torch.nn.functional.l1_loss
-        loader = train_loader_factory()
-        _qat_fine_tune(
-            qat_model,
-            iter(loader),
-            epochs=qat_cfg.epochs_qat,
-            lr=lr_qat,
-            loss_fn=loss_fn,
-            device=device,
-        )
-
-    # Phase 4 — export. Build a fresh fp32 module, copy QAT-conditioned
-    # weights in, export ONNX, then ORT-static-quantize.
-    qat_model.cpu()
-    _set_mode(qat_model, train=False)
-    fp32_export_target = model_factory()
-    n_copied = _copy_qat_weights_into_fp32(qat_model, fp32_export_target)
-    if n_copied == 0:
-        raise RuntimeError(
-            "QAT->fp32 weight transfer copied 0 tensors. "
-            "pt2e capture probably renamed every submodule — check the model "
-            "architecture for top-level Sequentials or untraceable control flow."
-        )
-
-    fp32_onnx = qat_cfg.output_fp32_onnx or qat_cfg.output_int8_onnx.with_name(
-        qat_cfg.output_int8_onnx.stem.replace(".int8", "") + ".qat.fp32.onnx"
-    )
-    _export_fp32_onnx(
-        fp32_export_target,
-        cpu_examples,
-        fp32_onnx,
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes=dynamic_axes,
-        opset=opset,
+    tune = {"loss_fn": loss_fn, "device": device}
+    cpu_examples, qat_model = _warm_start_and_prepare(
+        fp32_model, qat_cfg, train_loader_factory, example_inputs, tune
     )
 
-    # Build calibration if not provided
-    if calibration_samples is None:
-        shape = tuple(cpu_examples[0].shape)
-        calibration_samples = _generate_smoke_calibration(
-            input_names[0], shape, qat_cfg.n_calibration, seed=qat_cfg.seed
-        )
-
-    int8_onnx = qat_cfg.output_int8_onnx
-    if int8_onnx is None:
-        raise ValueError("qat_cfg.output_int8_onnx must be set")
-    _ort_static_quantize(fp32_onnx, int8_onnx, calibration_samples)
+    # Phase 4 — export + ORT static quantization.
+    export_kwargs = {
+        "input_names": input_names,
+        "output_names": output_names,
+        "dynamic_axes": dynamic_axes,
+        "opset": opset,
+    }
+    fp32_onnx, int8_onnx = _export_and_quantize(
+        qat_model, model_factory, qat_cfg, cpu_examples, export_kwargs, calibration_samples
+    )
 
     return QatResult(
         fp32_onnx=fp32_onnx,

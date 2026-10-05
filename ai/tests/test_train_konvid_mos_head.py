@@ -433,9 +433,8 @@ def test_chug_hdr_entrypoint_accepts_feature_jsonl_and_custom_model_id(
     assert manifest["run_provenance"]["inputs"]["feature_jsonl"][0]["kind"] == "file"
 
 
-def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
-    tmp_path: Path,
-) -> None:
+def _write_chug_display_features(tmp_path: Path) -> Path:
+    """Write the six-row CHUG feature JSONL used by the display-profile test."""
     p = tmp_path / "chug_features.jsonl"
     rows = []
     for idx in range(6):
@@ -455,6 +454,11 @@ def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
             }
         )
     p.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return p
+
+
+def _write_display_profile(tmp_path: Path) -> Path:
+    """Write the OLED/HDR10 display-profile JSON and return its path."""
     profile_path = tmp_path / "display-profile.json"
     profile_path.write_text(
         json.dumps(
@@ -473,6 +477,14 @@ def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
         ),
         encoding="utf-8",
     )
+    return profile_path
+
+
+def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
+    tmp_path: Path,
+) -> None:
+    p = _write_chug_display_features(tmp_path)
+    profile_path = _write_display_profile(tmp_path)
     onnx_path = tmp_path / "chug_hdr_display_mos_head_v1.onnx"
     manifest_path = tmp_path / "chug_hdr_display_mos_head_v1.json"
 
