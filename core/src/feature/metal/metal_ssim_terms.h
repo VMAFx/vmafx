@@ -65,7 +65,7 @@ VMAF_MTL_CONSTANT float vmaf_mtl_ssim_gauss[VMAF_MTL_SSIM_TAPS] = {
 /* The arguments of a window-term kernel, laid out alike in MSL and on the
  * host: the horizontal pass's plane, the windows' plane, where this
  * (plane, scale) starts in the term buffers, and C1 and C2. */
-using VmafMtlSsimWindowParams = struct VmafMtlSsimWindowParams {
+typedef struct VmafMtlSsimWindowParams {
     vmaf_mtl_u32 horizontal_width;
     vmaf_mtl_u32 horizontal_height;
     vmaf_mtl_u32 final_width;
@@ -74,17 +74,17 @@ using VmafMtlSsimWindowParams = struct VmafMtlSsimWindowParams {
     vmaf_mtl_u32 reserved;
     float c1;
     float c2;
-};
+} VmafMtlSsimWindowParams;
 
 /* An unevaluated sum hi + lo of two fp32 values, about 48 significant bits. */
-using VmafMtlFf = struct VmafMtlFf {
+typedef struct VmafMtlFf {
     float hi;
     float lo;
-};
+} VmafMtlFf;
 
 VMAF_MTL_FUNC VmafMtlFf vmaf_mtl_ff_make(float hi, float lo)
 {
-    const VmafMtlFf value = {.hi = hi, .lo = lo};
+    const VmafMtlFf value = {hi, lo};
     return value;
 }
 
@@ -116,22 +116,22 @@ VMAF_MTL_FUNC VmafMtlFf vmaf_mtl_ff_add(VmafMtlFf a, VmafMtlFf b)
 }
 
 /* The five values of one convolution pass, as fp32. */
-using VmafMtlSsimMoments = struct VmafMtlSsimMoments {
+typedef struct VmafMtlSsimMoments {
     float reference_mean;
     float comparison_mean;
     float reference_square;
     float comparison_square;
     float cross_product;
-};
+} VmafMtlSsimMoments;
 
 /* The five sums of one convolution pass, as pairs. */
-using VmafMtlSsimPairs = struct VmafMtlSsimPairs {
+typedef struct VmafMtlSsimPairs {
     VmafMtlFf reference_mean;
     VmafMtlFf comparison_mean;
     VmafMtlFf reference_square;
     VmafMtlFf comparison_square;
     VmafMtlFf cross_product;
-};
+} VmafMtlSsimPairs;
 
 VMAF_MTL_FUNC VmafMtlSsimMoments vmaf_mtl_ssim_moments_make(float reference_mean,
                                                             float comparison_mean,
@@ -139,22 +139,15 @@ VMAF_MTL_FUNC VmafMtlSsimMoments vmaf_mtl_ssim_moments_make(float reference_mean
                                                             float comparison_square,
                                                             float cross_product)
 {
-    const VmafMtlSsimMoments m = {.reference_mean = reference_mean,
-                                  .comparison_mean = comparison_mean,
-                                  .reference_square = reference_square,
-                                  .comparison_square = comparison_square,
-                                  .cross_product = cross_product};
+    const VmafMtlSsimMoments m = {reference_mean, comparison_mean, reference_square,
+                                  comparison_square, cross_product};
     return m;
 }
 
-VMAF_MTL_FUNC VmafMtlSsimPairs vmaf_mtl_ssim_pairs_zero()
+VMAF_MTL_FUNC VmafMtlSsimPairs vmaf_mtl_ssim_pairs_zero(void)
 {
-    const VmafMtlFf zero = {.hi = 0.0f, .lo = 0.0f};
-    const VmafMtlSsimPairs p = {.reference_mean = zero,
-                                .comparison_mean = zero,
-                                .reference_square = zero,
-                                .comparison_square = zero,
-                                .cross_product = zero};
+    const VmafMtlFf zero = {0.0f, 0.0f};
+    const VmafMtlSsimPairs p = {zero, zero, zero, zero, zero};
     return p;
 }
 
@@ -211,14 +204,14 @@ VMAF_MTL_FUNC VmafMtlSsimMoments vmaf_mtl_ssim_round_moments(VmafMtlSsimPairs su
 
 /* The fp32 values iqa/ssim_tools.c forms for one pixel before its fp64
  * terms: the arguments of ssim_accumulate_lane() (ssim_accumulate_lane.h). */
-using VmafMtlSsimFloatParts = struct VmafMtlSsimFloatParts {
+typedef struct VmafMtlSsimFloatParts {
     float reference_mean;
     float comparison_mean;
     float srsc;      /* sqrtf(ref_sigma_sqd * cmp_sigma_sqd) */
     float l_den;     /* ref_mu^2 + cmp_mu^2 + C1 */
     float c_den;     /* ref_sigma_sqd + cmp_sigma_sqd + C2 */
     float structure; /* sv_f, the fp32 quotient S */
-};
+} VmafMtlSsimFloatParts;
 
 /* iqa/ssim_tools.c for one pixel (ssim_variance_scalar, then the fp32 part of
  * ssim_accumulate_default_scalar, which ssim_accumulate_lane.h shares with
@@ -247,12 +240,8 @@ VMAF_MTL_FUNC VmafMtlSsimFloatParts vmaf_mtl_ssim_float_parts(VmafMtlSsimMoments
     const float flat_covariance = (covariance < 0.0f && srsc <= 0.0f) ? 0.0f : covariance;
     const float s_num = flat_covariance + c3;
     const float s_den = srsc + c3;
-    const VmafMtlSsimFloatParts parts = {.reference_mean = m.reference_mean,
-                                         .comparison_mean = m.comparison_mean,
-                                         .srsc = srsc,
-                                         .l_den = l_den,
-                                         .c_den = c_den,
-                                         .structure = s_num / s_den};
+    const VmafMtlSsimFloatParts parts = {m.reference_mean, m.comparison_mean, srsc, l_den, c_den,
+                                         s_num / s_den};
     return parts;
 }
 
@@ -260,11 +249,11 @@ VMAF_MTL_FUNC VmafMtlSsimFloatParts vmaf_mtl_ssim_float_parts(VmafMtlSsimMoments
  * ssim_accumulate_lane() are doubles, held here as a significand and an
  * exponent in integers (metal_soft_signed.h; a kernel has no fp64 type), and
  * `sv` is the fp32 quotient converted. */
-using VmafMtlSsimDoubleTerms = struct VmafMtlSsimDoubleTerms {
+typedef struct VmafMtlSsimDoubleTerms {
     VmafMtlSoftSigned luminance;
     VmafMtlSoftSigned contrast;
     float structure;
-};
+} VmafMtlSsimDoubleTerms;
 
 /* ssim_accumulate_lane()'s two fp64 expressions, operation for operation:
  *
@@ -286,9 +275,8 @@ VMAF_MTL_FUNC VmafMtlSsimDoubleTerms vmaf_mtl_ssim_double_terms(VmafMtlSsimFloat
     const VmafMtlSoftSigned c_num = vmaf_mtl_signed_add(
         vmaf_mtl_signed_twice(vmaf_mtl_signed_from_float(p.srsc)), vmaf_mtl_signed_from_float(c2));
     const VmafMtlSsimDoubleTerms terms = {
-        .luminance = vmaf_mtl_signed_div(l_num, vmaf_mtl_signed_from_float(p.l_den)),
-        .contrast = vmaf_mtl_signed_div(c_num, vmaf_mtl_signed_from_float(p.c_den)),
-        .structure = p.structure};
+        vmaf_mtl_signed_div(l_num, vmaf_mtl_signed_from_float(p.l_den)),
+        vmaf_mtl_signed_div(c_num, vmaf_mtl_signed_from_float(p.c_den)), p.structure};
     return terms;
 }
 
@@ -301,18 +289,17 @@ VMAF_MTL_FUNC vmaf_mtl_u64 vmaf_mtl_ssim_product_bits(VmafMtlSsimDoubleTerms t)
 }
 
 /* ssim_init_args' C1 and C2 for L = 255, K1 = 0.01, K2 = 0.03, in fp32. */
-using VmafMtlSsimConstants = struct VmafMtlSsimConstants {
+typedef struct VmafMtlSsimConstants {
     float c1;
     float c2;
-};
+} VmafMtlSsimConstants;
 
-VMAF_MTL_FUNC VmafMtlSsimConstants vmaf_mtl_ssim_constants()
+VMAF_MTL_FUNC VmafMtlSsimConstants vmaf_mtl_ssim_constants(void)
 {
     const float range = 255.0f;
     const float k1 = 0.01f;
     const float k2 = 0.03f;
-    const VmafMtlSsimConstants c = {.c1 = (k1 * range) * (k1 * range),
-                                    .c2 = (k2 * range) * (k2 * range)};
+    const VmafMtlSsimConstants c = {(k1 * range) * (k1 * range), (k2 * range) * (k2 * range)};
     return c;
 }
 
@@ -321,12 +308,12 @@ VMAF_MTL_FUNC VmafMtlSsimConstants vmaf_mtl_ssim_constants()
 #include <stddef.h>
 
 /* iqa_ssim()'s four frame sums (host side). */
-using VmafMtlSsimFrameSums = struct VmafMtlSsimFrameSums {
+typedef struct VmafMtlSsimFrameSums {
     double ssim;
     double luminance;
     double contrast;
     double structure;
-};
+} VmafMtlSsimFrameSums;
 
 static inline double vmaf_mtl_ssim_double_of(vmaf_mtl_u64 bits)
 {
@@ -353,7 +340,7 @@ static inline VmafMtlSsimFrameSums vmaf_mtl_ssim_frame_sums(const vmaf_mtl_u64 *
                                                             const vmaf_mtl_u64 *contrast,
                                                             const float *structure, size_t count)
 {
-    VmafMtlSsimFrameSums sums = {.ssim = 0.0, .luminance = 0.0, .contrast = 0.0, .structure = 0.0};
+    VmafMtlSsimFrameSums sums = {0.0, 0.0, 0.0, 0.0};
     for (size_t i = 0u; i < count; i++) {
         vmaf_mtl_ssim_accumulate_window(&sums, vmaf_mtl_ssim_double_of(luminance[i]),
                                         vmaf_mtl_ssim_double_of(contrast[i]), (double)structure[i]);
@@ -368,7 +355,7 @@ static inline VmafMtlSsimFrameSums vmaf_mtl_ssim_lcs_sums(const vmaf_mtl_u64 *lu
                                                           const vmaf_mtl_u64 *contrast,
                                                           const float *structure, size_t count)
 {
-    VmafMtlSsimFrameSums sums = {.ssim = 0.0, .luminance = 0.0, .contrast = 0.0, .structure = 0.0};
+    VmafMtlSsimFrameSums sums = {0.0, 0.0, 0.0, 0.0};
     for (size_t i = 0u; i < count; i++) {
         sums.luminance += vmaf_mtl_ssim_double_of(luminance[i]);
         sums.contrast += vmaf_mtl_ssim_double_of(contrast[i]);

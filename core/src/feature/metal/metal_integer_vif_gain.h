@@ -72,15 +72,15 @@
 
 /* fl64(sigma1_sq + eps): the sum stays in sigma1_sq's binade, so it is
  * sigma1_sq with eps rounded to that binade's last place. */
-using VmafMtlIvifDivisor = struct VmafMtlIvifDivisor {
+typedef struct VmafMtlIvifDivisor {
     VmafMtlSoftDouble value;
     vmaf_mtl_u32 eps_units; /* the rounded eps, in units of the last place */
     vmaf_mtl_i32 binade;    /* floor(log2(sigma1_sq)) */
-};
+} VmafMtlIvifDivisor;
 
 /* The gain limit as the kernels take it. 32 bytes, 8-aligned, the same
  * layout in Metal Shading Language and in the host's C and C++. */
-using VmafMtlGainLimit = struct VmafMtlGainLimit {
+typedef struct VmafMtlGainLimit {
     VmafMtlSoftDouble value; /* vif_enhn_gain_limit */
     /* The limit when it is an integer below 2^11, else 0. `g < limit` is then
      * an integer comparison, and limit * limit * sigma1_sq an integer below
@@ -89,28 +89,28 @@ using VmafMtlGainLimit = struct VmafMtlGainLimit {
     float hi; /* the limit as a pair, for the other limits */
     float lo;
     vmaf_mtl_u32 reserved; /* keeps the size a multiple of 8 */
-};
+} VmafMtlGainLimit;
 
-using VmafMtlGainTerms = struct VmafMtlGainTerms {
+typedef struct VmafMtlGainTerms {
     vmaf_mtl_u32 sv_sq;    /* (uint32_t)MAX((int32_t)(sigma2_sq - g * sigma12), 0) */
     vmaf_mtl_i64 gg_sigma; /* (int64_t)(g * g * sigma1_sq), g after the limit */
-};
+} VmafMtlGainTerms;
 
-using VmafMtlIvifQuotient = struct VmafMtlIvifQuotient {
+typedef struct VmafMtlIvifQuotient {
     vmaf_mtl_u64 quot;
     vmaf_mtl_u32 rem;
-};
+} VmafMtlIvifQuotient;
 
-using VmafMtlIvifGainResult = struct VmafMtlIvifGainResult {
+typedef struct VmafMtlIvifGainResult {
     VmafMtlGainTerms terms;
     bool replay; /* the integer evaluation does not decide: take the replay */
-};
+} VmafMtlIvifGainResult;
 
 /* `g < limit` and whether that decision is certain. */
-using VmafMtlIvifLimitTest = struct VmafMtlIvifLimitTest {
+typedef struct VmafMtlIvifLimitTest {
     bool unlimited;
     bool certain;
-};
+} VmafMtlIvifLimitTest;
 
 VMAF_MTL_FUNC VmafMtlIvifDivisor vmaf_mtl_ivif_divisor_of(vmaf_mtl_u32 sigma1_sq)
 {

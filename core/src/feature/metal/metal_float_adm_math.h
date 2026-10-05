@@ -114,14 +114,14 @@
 /* Exact fp32 pairs                                                    */
 /* ------------------------------------------------------------------ */
 
-using VmafMtlFadmFf = struct VmafMtlFadmFf {
+typedef struct VmafMtlFadmFf {
     float hi;
     float lo;
-};
+} VmafMtlFadmFf;
 
 VMAF_MTL_FUNC VmafMtlFadmFf vmaf_mtl_fadm_ff(float hi, float lo)
 {
-    const VmafMtlFadmFf pair = {.hi = hi, .lo = lo};
+    const VmafMtlFadmFf pair = {hi, lo};
     return pair;
 }
 
@@ -162,7 +162,7 @@ VMAF_MTL_FUNC bool vmaf_mtl_fadm_finite(float x)
     return (VMAF_MTL_F2U(x) & 0x7F800000u) != 0x7F800000u;
 }
 
-VMAF_MTL_FUNC float vmaf_mtl_fadm_fast_low()
+VMAF_MTL_FUNC float vmaf_mtl_fadm_fast_low(void)
 {
     return VMAF_MTL_U2F(VMAF_MTL_FADM_FAST_LOW_BITS);
 }
@@ -172,43 +172,42 @@ VMAF_MTL_FUNC float vmaf_mtl_fadm_fast_low()
 /* ------------------------------------------------------------------ */
 
 /* A positive fp64 value as a pair of floats (good to 2^-48) and exactly. */
-using VmafMtlFadmConst = struct VmafMtlFadmConst {
+typedef struct VmafMtlFadmConst {
     float hi;
     float lo;
     vmaf_mtl_u64 mant; /* the value is mant * 2^exp, mant in [2^52, 2^53) */
     vmaf_mtl_i32 exp;
-};
+} VmafMtlFadmConst;
 
 VMAF_MTL_FUNC VmafMtlFadmConst vmaf_mtl_fadm_const(vmaf_mtl_u32 hi_bits, vmaf_mtl_u32 lo_bits,
                                                    vmaf_mtl_u32 mant_hi, vmaf_mtl_u32 mant_lo,
                                                    vmaf_mtl_i32 exp)
 {
     const vmaf_mtl_u64 mant = (VMAF_MTL_U64(mant_hi) << 32) | VMAF_MTL_U64(mant_lo);
-    const VmafMtlFadmConst c = {
-        .hi = VMAF_MTL_U2F(hi_bits), .lo = VMAF_MTL_U2F(lo_bits), .mant = mant, .exp = exp};
+    const VmafMtlFadmConst c = {VMAF_MTL_U2F(hi_bits), VMAF_MTL_U2F(lo_bits), mant, exp};
     return c;
 }
 
 /* adm_tools.c's FLOAT_ONE_BY_30 (0.0333333351) and FLOAT_ONE_BY_15
  * (0.0666666701): double literals, so not the fp32 values of those names.
  * hi + lo are 0x1.111112p-5 + 0x1.f00fep-36 and 0x1.111112p-4 - 0x1.7f8c18p-35. */
-VMAF_MTL_FUNC VmafMtlFadmConst vmaf_mtl_fadm_one_by_30()
+VMAF_MTL_FUNC VmafMtlFadmConst vmaf_mtl_fadm_one_by_30(void)
 {
     return vmaf_mtl_fadm_const(0x3d088889u, 0x2df807f0u, 0x00111111u, 0x203e01fcu, -57);
 }
 
-VMAF_MTL_FUNC VmafMtlFadmConst vmaf_mtl_fadm_one_by_15()
+VMAF_MTL_FUNC VmafMtlFadmConst vmaf_mtl_fadm_one_by_15(void)
 {
     return vmaf_mtl_fadm_const(0x3d888889u, 0xae3fc60cu, 0x00111111u, 0x1fd00e7du, -56);
 }
 
 /* adm_enhn_gain_limit. */
-using VmafMtlFadmGainLimit = struct VmafMtlFadmGainLimit {
+typedef struct VmafMtlFadmGainLimit {
     float value;           /* (float)limit */
     vmaf_mtl_i32 is_float; /* the limit is an fp32 value: rst * limit is exact in fp64 */
     vmaf_mtl_u64 mant;     /* the limit itself, for the others */
     vmaf_mtl_i32 exp;
-};
+} VmafMtlFadmGainLimit;
 
 /* ------------------------------------------------------------------ */
 /* The two fp64 products with a constant                               */
@@ -388,12 +387,12 @@ VMAF_MTL_FUNC float vmaf_mtl_fadm_csf_flt(float csf)
 /* What the decouple kernel stores for one band sample: the CSF-weighted
  * additive (a = t - rst) and restored (r = rst) signals, each with its
  * filtered magnitude. */
-using VmafMtlFadmCsfSample = struct VmafMtlFadmCsfSample {
+typedef struct VmafMtlFadmCsfSample {
     float csf_a;
     float csf_fa;
     float csf_r;
     float csf_fr;
-};
+} VmafMtlFadmCsfSample;
 
 /* adm_decouple_s() and both adm_csf_s() calls of compute_adm() for one band
  * of one sample. */
@@ -405,19 +404,17 @@ VMAF_MTL_FUNC VmafMtlFadmCsfSample vmaf_mtl_fadm_decouple_csf(VmafMtlFadmGainLim
     const float add = t - rst;
     const float csf_a = rfactor * add;
     const float csf_r = rfactor * rst;
-    const VmafMtlFadmCsfSample sample = {.csf_a = csf_a,
-                                         .csf_fa = vmaf_mtl_fadm_csf_flt(csf_a),
-                                         .csf_r = csf_r,
-                                         .csf_fr = vmaf_mtl_fadm_csf_flt(csf_r)};
+    const VmafMtlFadmCsfSample sample = {csf_a, vmaf_mtl_fadm_csf_flt(csf_a), csf_r,
+                                         vmaf_mtl_fadm_csf_flt(csf_r)};
     return sample;
 }
 
 /* The three sub-bands (h, v, d) of one sample. */
-using VmafMtlFadmDecouple = struct VmafMtlFadmDecouple {
+typedef struct VmafMtlFadmDecouple {
     VmafMtlFadmCsfSample h;
     VmafMtlFadmCsfSample v;
     VmafMtlFadmCsfSample d;
-};
+} VmafMtlFadmDecouple;
 
 /* The decouple kernel for one sample: the angle test of the (h, v) vectors of
  * reference and distorted band, then the three sub-bands. */
@@ -428,16 +425,15 @@ VMAF_MTL_FUNC VmafMtlFadmDecouple vmaf_mtl_fadm_decouple_sample(VmafMtlFadmGainL
                                                                 float th, float tv, float td)
 {
     const bool flag = vmaf_mtl_fadm_angle_flag(oh, ov, th, tv, cos_1deg_sq);
-    const VmafMtlFadmDecouple out = {
-        .h = vmaf_mtl_fadm_decouple_csf(limit, rfactor_h, oh, th, flag),
-        .v = vmaf_mtl_fadm_decouple_csf(limit, rfactor_v, ov, tv, flag),
-        .d = vmaf_mtl_fadm_decouple_csf(limit, rfactor_d, od, td, flag)};
+    const VmafMtlFadmDecouple out = {vmaf_mtl_fadm_decouple_csf(limit, rfactor_h, oh, th, flag),
+                                     vmaf_mtl_fadm_decouple_csf(limit, rfactor_v, ov, tv, flag),
+                                     vmaf_mtl_fadm_decouple_csf(limit, rfactor_d, od, td, flag)};
     return out;
 }
 
 /* The eight filtered neighbours of one band in row order (above-left, above,
  * above-right, left, right, below-left, below, below-right). */
-using VmafMtlFadmNeighbours = struct VmafMtlFadmNeighbours {
+typedef struct VmafMtlFadmNeighbours {
     float above_left;
     float above;
     float above_right;
@@ -446,7 +442,7 @@ using VmafMtlFadmNeighbours = struct VmafMtlFadmNeighbours {
     float below_left;
     float below;
     float below_right;
-};
+} VmafMtlFadmNeighbours;
 
 /* One band of adm_cm_thresh3x3_s(): the neighbours and the unfiltered centre,
  * which is added fifth, as an fp64 addend. */
@@ -466,10 +462,10 @@ VMAF_MTL_FUNC float vmaf_mtl_fadm_thresh_band(VmafMtlFadmNeighbours n, float cen
 }
 
 /* The taps of one band: its neighbours and its centre. */
-using VmafMtlFadmBandTaps = struct VmafMtlFadmBandTaps {
+typedef struct VmafMtlFadmBandTaps {
     VmafMtlFadmNeighbours n;
     float centre;
-};
+} VmafMtlFadmBandTaps;
 
 /* adm_cm_thresh3x3_s(): one sum per band, the three added in band order. */
 VMAF_MTL_FUNC float vmaf_mtl_fadm_threshold(VmafMtlFadmBandTaps b0, VmafMtlFadmBandTaps b1,
@@ -500,24 +496,21 @@ VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_fadm_after(vmaf_mtl_i32 i, vmaf_mtl_i32 n)
 }
 
 /* The 3x3 window of adm_cm_thresh3x3_s() around (x, y), as indices. */
-using VmafMtlFadmWindow = struct VmafMtlFadmWindow {
+typedef struct VmafMtlFadmWindow {
     vmaf_mtl_i32 ym;
     vmaf_mtl_i32 y;
     vmaf_mtl_i32 yp;
     vmaf_mtl_i32 xm;
     vmaf_mtl_i32 x;
     vmaf_mtl_i32 xp;
-};
+} VmafMtlFadmWindow;
 
 VMAF_MTL_FUNC VmafMtlFadmWindow vmaf_mtl_fadm_window(vmaf_mtl_i32 x, vmaf_mtl_i32 y,
                                                      vmaf_mtl_i32 half_w, vmaf_mtl_i32 half_h)
 {
-    const VmafMtlFadmWindow w = {.ym = vmaf_mtl_fadm_before(y, half_h),
-                                 .y = y,
-                                 .yp = vmaf_mtl_fadm_after(y, half_h),
-                                 .xm = vmaf_mtl_fadm_before(x, half_w),
-                                 .x = x,
-                                 .xp = vmaf_mtl_fadm_after(x, half_w)};
+    const VmafMtlFadmWindow w = {
+        vmaf_mtl_fadm_before(y, half_h), y, vmaf_mtl_fadm_after(y, half_h),
+        vmaf_mtl_fadm_before(x, half_w), x, vmaf_mtl_fadm_after(x, half_w)};
     return w;
 }
 
@@ -554,11 +547,11 @@ VMAF_MTL_FUNC float vmaf_mtl_fadm_cm_term(float csf, float thr, bool is_cube, fl
 
 /* What the term kernel stores for one band of one sample of the reduced
  * region. */
-using VmafMtlFadmBandTerms = struct VmafMtlFadmBandTerms {
+typedef struct VmafMtlFadmBandTerms {
     float den; /* |rfactor * ref|^p, the adm2 denominator */
     float cm;  /* decouple_r masked by the threshold of decouple_a (adm2) */
     float aim; /* decouple_a masked by the threshold of decouple_r (AIM) */
-};
+} VmafMtlFadmBandTerms;
 
 VMAF_MTL_FUNC VmafMtlFadmBandTerms vmaf_mtl_fadm_band_terms(float rfactor, float src, float csf_r,
                                                             float csf_a, float thr_additive,
@@ -566,9 +559,9 @@ VMAF_MTL_FUNC VmafMtlFadmBandTerms vmaf_mtl_fadm_band_terms(float rfactor, float
                                                             float p_norm)
 {
     const VmafMtlFadmBandTerms terms = {
-        .den = vmaf_mtl_fadm_den_term(rfactor, src, is_cube, p_norm),
-        .cm = vmaf_mtl_fadm_cm_term(csf_r, thr_additive, is_cube, p_norm),
-        .aim = vmaf_mtl_fadm_cm_term(csf_a, thr_restored, is_cube, p_norm)};
+        vmaf_mtl_fadm_den_term(rfactor, src, is_cube, p_norm),
+        vmaf_mtl_fadm_cm_term(csf_r, thr_additive, is_cube, p_norm),
+        vmaf_mtl_fadm_cm_term(csf_a, thr_restored, is_cube, p_norm)};
     return terms;
 }
 
@@ -588,7 +581,7 @@ VMAF_MTL_FUNC vmaf_mtl_u32 vmaf_mtl_fadm_term_index(vmaf_mtl_u32 slot, vmaf_mtl_
 
 /* The decouple kernel's constant buffer. Both sides compile this one
  * definition, so the layouts cannot differ. */
-using VmafMtlFadmDecoupleArgs = struct VmafMtlFadmDecoupleArgs {
+typedef struct VmafMtlFadmDecoupleArgs {
     VmafMtlFadmGainLimit limit;
     vmaf_mtl_i32 half_w;
     vmaf_mtl_i32 half_h;
@@ -598,10 +591,10 @@ using VmafMtlFadmDecoupleArgs = struct VmafMtlFadmDecoupleArgs {
     float rfactor_v;
     float rfactor_d;
     vmaf_mtl_i32 pad;
-};
+} VmafMtlFadmDecoupleArgs;
 
 /* The term kernel's constant buffer. */
-using VmafMtlFadmTermArgs = struct VmafMtlFadmTermArgs {
+typedef struct VmafMtlFadmTermArgs {
     vmaf_mtl_i32 half_w;
     vmaf_mtl_i32 half_h;
     vmaf_mtl_i32 buf_stride;
@@ -616,13 +609,13 @@ using VmafMtlFadmTermArgs = struct VmafMtlFadmTermArgs {
     float rfactor_v;
     float rfactor_d;
     vmaf_mtl_u32 pad;
-};
+} VmafMtlFadmTermArgs;
 
 /* The row kernel's constant buffer. */
-using VmafMtlFadmRowArgs = struct VmafMtlFadmRowArgs {
+typedef struct VmafMtlFadmRowArgs {
     vmaf_mtl_u32 region_w;
     vmaf_mtl_u32 region_h;
-};
+} VmafMtlFadmRowArgs;
 
 /* ------------------------------------------------------------------ */
 /* Host code                                                           */
