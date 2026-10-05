@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any
 
 COMPILER_RULES = ("c_COMPILER", "cpp_COMPILER")
+# Meson names the Objective-C and Objective-C++ rules only when the project declares the language
+# (the Metal build on macOS). Without them every .m / .mm unit is missing from the database.
+OPTIONAL_COMPILER_RULES = ("objc_COMPILER", "objcpp_COMPILER")
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".m", ".mm"}
 
 
@@ -62,7 +65,7 @@ def compiler_rules(ninja: str, build: Path) -> list[str]:
     missing = [rule for rule in COMPILER_RULES if rule not in available]
     if missing:
         raise ValueError(f"Ninja manifest is missing compiler rules: {', '.join(missing)}")
-    return list(COMPILER_RULES)
+    return [*COMPILER_RULES, *(rule for rule in OPTIONAL_COMPILER_RULES if rule in available)]
 
 
 def validate_entry(entry: object, index: int) -> dict[str, Any]:

@@ -116,6 +116,15 @@ class CompileCommandsExportTest(unittest.TestCase):
         self.assertNotIn("CUSTOM_COMMAND", calls[1])
         self.assertNotIn("cpp_LINKER", calls[1])
 
+    def test_objective_c_rules_are_exported_when_the_project_declares_them(self) -> None:
+        self.rules += ["objc_COMPILER", "objcpp_COMPILER"]
+        self.write_ninja()
+        self.assertEqual(self.run_export().returncode, 0)
+        self.assertEqual(
+            self.calls()[1][-6:],
+            ["-t", "compdb", "c_COMPILER", "cpp_COMPILER", "objc_COMPILER", "objcpp_COMPILER"],
+        )
+
     def test_missing_manifest_preserves_existing_database(self) -> None:
         (self.build / "build.ninja").unlink()
         result = self.assert_preserved_on_failure()
