@@ -82,7 +82,9 @@ class Fixture:
 
 
 class Coverage(unittest.TestCase):
-    def check(self, units, measured, exceptions) -> subprocess.CompletedProcess[str]:
+    def check(
+        self, units: list[str], measured: list[str], exceptions: list[dict[str, str]]
+    ) -> subprocess.CompletedProcess[str]:
         fixture = Fixture(units, measured, exceptions)
         self.addCleanup(fixture.dir.cleanup)
         return fixture.run()
