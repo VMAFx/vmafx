@@ -59,7 +59,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "../hip_tile_index.h"
 #include "float_motion_rows.h"
@@ -210,12 +210,13 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref, p
                                               unsigned compute_sad)
 {
     float scaler = 1.0f;
-    if (bpc == 10u)
+    if (bpc == 10u) {
         scaler = 4.0f;
-    else if (bpc == 12u)
+    } else if (bpc == 12u) {
         scaler = 16.0f;
-    else if (bpc == 16u)
+    } else if (bpc == 16u) {
         scaler = 256.0f;
+    }
     fm_blur<uint16_t>(ref, ref_stride, cur_blur, prev_blur, diff, width, height, 1.0f / scaler,
                       filter_size, compute_sad);
 }

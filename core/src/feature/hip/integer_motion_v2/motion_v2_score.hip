@@ -52,7 +52,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "../hip_tile_index.h"
 
@@ -64,12 +64,12 @@
 /* Pad inner stride to break shared-memory bank conflicts (same as CUDA twin). */
 #define MV2_TILE_PITCH (MV2_TILE_W + 1) /* 21 */
 
-__constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
-
 /* Device helpers are called only by the kernels of this translation unit,
  * so they live in an anonymous namespace (internal linkage). */
 namespace
 {
+
+__constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 
 /* Sample `col` of one packed row of T. */
 template <typename T> __device__ __forceinline__ int mv2_sample(const uint8_t *row, int col)
@@ -108,22 +108,24 @@ mv2_load_diff(int32_t (*s_diff)[MV2_TILE_PITCH], const uint8_t *prev, const uint
  * single tap reaches 26386 * 65535 and the sum overflows int32. */
 template <typename VAcc>
 __device__ __forceinline__ int32_t mv2_vertical_tap(const int32_t (*s_diff)[MV2_TILE_PITCH],
-                                                    unsigned ly, unsigned col, int shift_y)
+                                                    unsigned ly, unsigned col, unsigned shift_y)
 {
     VAcc sum = 0;
 #pragma unroll
     for (int yf = 0; yf < 5; ++yf) {
         sum += (VAcc)mv2_filter_d[yf] * (VAcc)s_diff[ly - MV2_RADIUS + yf][col];
     }
-    const VAcc round_y = (VAcc)1 << (shift_y - 1);
+    const VAcc round_y = (VAcc)((uint64_t)1u << (shift_y - 1u));
     /* Arithmetic right shift, as the CPU and the CUDA twin: ADR-0138/0139. */
+    // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-0138/0139: arithmetic shift as the CPU
     return (int32_t)((sum + round_y) >> shift_y);
 }
 
 /* |h| at this thread's pixel; 0 for the padding threads. */
 template <typename VAcc>
 __device__ __forceinline__ int64_t mv2_filtered_abs(const int32_t (*s_diff)[MV2_TILE_PITCH],
-                                                    unsigned width, unsigned height, int shift_y)
+                                                    unsigned width, unsigned height,
+                                                    unsigned shift_y)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
@@ -138,6 +140,7 @@ __device__ __forceinline__ int64_t mv2_filtered_abs(const int32_t (*s_diff)[MV2_
         const int32_t v = mv2_vertical_tap<VAcc>(s_diff, ly, lx - MV2_RADIUS + xf, shift_y);
         blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
     }
+    // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-0138/0139: arithmetic shift as the CPU
     const int64_t h = (blurred + ((int64_t)1 << 15)) >> 16;
     return h < 0 ? -h : h;
 }
@@ -146,7 +149,7 @@ __device__ __forceinline__ int64_t mv2_filtered_abs(const int32_t (*s_diff)[MV2_
  * GCN/CDNA), then one atomic per wave. */
 __device__ __forceinline__ void mv2_reduce_sad(int64_t abs_h, uint64_t *sad)
 {
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
+    for (unsigned off = (unsigned)warpSize / 2u; off > 0u; off >>= 1u)
         abs_h += __shfl_down(abs_h, off);
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
     if ((lid % (unsigned)warpSize) == 0u) {
@@ -158,7 +161,7 @@ __device__ __forceinline__ void mv2_reduce_sad(int64_t abs_h, uint64_t *sad)
 template <typename T, typename VAcc>
 __device__ __forceinline__ void mv2_sad(const uint8_t *prev, const uint8_t *cur,
                                         ptrdiff_t prev_stride, ptrdiff_t cur_stride, uint64_t *sad,
-                                        unsigned width, unsigned height, int shift_y)
+                                        unsigned width, unsigned height, unsigned shift_y)
 {
     __shared__ int32_t s_diff[MV2_TILE_H][MV2_TILE_PITCH];
     mv2_load_diff<T>(s_diff, prev, cur, prev_stride, cur_stride, width, height);
@@ -175,7 +178,7 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
                                ptrdiff_t prev_stride, ptrdiff_t cur_stride,
                                uint64_t *__restrict__ sad, unsigned width, unsigned height)
 {
-    mv2_sad<uint8_t, int32_t>(prev, cur, prev_stride, cur_stride, sad, width, height, 8);
+    mv2_sad<uint8_t, int32_t>(prev, cur, prev_stride, cur_stride, sad, width, height, 8u);
 }
 
 __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
@@ -184,7 +187,7 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
                                 uint64_t *__restrict__ sad, unsigned width, unsigned height,
                                 unsigned bpc)
 {
-    mv2_sad<uint16_t, int64_t>(prev, cur, prev_stride, cur_stride, sad, width, height, (int)bpc);
+    mv2_sad<uint16_t, int64_t>(prev, cur, prev_stride, cur_stride, sad, width, height, bpc);
 }
 
 } /* extern "C" */

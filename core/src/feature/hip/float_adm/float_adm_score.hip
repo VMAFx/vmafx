@@ -35,8 +35,8 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 /* feature/float_adm_gpu_common.h in the spelling of a HIP device. */
 #include "feature/hip/float_adm/float_adm_hip_math.h"
@@ -50,15 +50,27 @@
 #define FADM_HI2 (0.836516303737469f)
 #define FADM_HI3 (-0.482962913144690f)
 
-__device__ static __forceinline__ int fadm_mirror(int idx, int sup)
+namespace
+{
+
+/* A device address the host passes in a kernel-argument struct as uint64_t
+ * (the struct is shared with the C host, float_adm_gpu_common.h). */
+template <typename T> __device__ __forceinline__ T *fadm_device_ptr(uint64_t address)
+{
+    // NOLINTNEXTLINE(performance-no-int-to-ptr): kernel-argument device address (ADR-0747)
+    return reinterpret_cast<T *>(address);
+}
+
+__device__ __forceinline__ int fadm_mirror(int idx, int sup)
 {
     /* Both axes use `2*sup - idx - 1` — matches CPU
      * dwt2_src_indices_filt_s in adm_tools.c (the only mirror form
      * the float ADM CPU pipeline uses). */
-    if (idx < 0)
+    if (idx < 0) {
         idx = -idx;
-    else if (idx >= sup)
+    } else if (idx >= sup) {
         idx = 2 * sup - idx - 1;
+    }
     /* A one-sample input has nothing to mirror to: the form above yields 1
      * and -1 there, which the reference reads outside its buffer. Stay
      * inside; every longer input is unaffected. */
@@ -67,10 +79,9 @@ __device__ static __forceinline__ int fadm_mirror(int idx, int sup)
     return (idx < 0) ? 0 : idx;
 }
 
-__device__ static __forceinline__ float fadm_read_src_pixel(const uint8_t *plane,
-                                                            ptrdiff_t stride_bytes, int y, int x,
-                                                            int w, int h, unsigned bpc,
-                                                            float scaler, float pixel_offset)
+__device__ __forceinline__ float fadm_read_src_pixel(const uint8_t *plane, ptrdiff_t stride_bytes,
+                                                     int y, int x, int w, int h, unsigned bpc,
+                                                     float scaler, float pixel_offset)
 {
     y = fadm_mirror(y, h);
     if (x < 0)
@@ -84,9 +95,8 @@ __device__ static __forceinline__ float fadm_read_src_pixel(const uint8_t *plane
     return (float)v / scaler + pixel_offset;
 }
 
-__device__ static __forceinline__ float fadm_read_band_a(const float *band_buf, int buf_stride,
-                                                         int half_h, int parent_w, int parent_h,
-                                                         int y, int x)
+__device__ __forceinline__ float fadm_read_band_a(const float *band_buf, int buf_stride, int half_h,
+                                                  int parent_w, int parent_h, int y, int x)
 {
     /* Parent LL band read: parent dims = cur_w/cur_h here. The buffer
      * is 4 sub-bands packed contiguous. Band 0 = LL. */
@@ -99,6 +109,16 @@ __device__ static __forceinline__ float fadm_read_band_a(const float *band_buf, 
     (void)half_h;
     return band_buf[y * buf_stride + x];
 }
+
+__device__ __forceinline__ float fadm_read_dwt_tmp(const float *dwt_tmp, int gy, int x_sub,
+                                                   int cur_w, int half_offset)
+{
+    x_sub = fadm_mirror(x_sub, cur_w);
+    const int stride = cur_w * 2;
+    return dwt_tmp[gy * stride + half_offset + x_sub];
+}
+
+} /* namespace */
 
 extern "C" {
 
@@ -160,14 +180,6 @@ __global__ void float_adm_dwt_vert(int scale, const uint8_t *ref_raw, const uint
  *   band_v = lo · hi (LH high-H); band_d = hi · hi (HH).
  * Same a/h/v/d order as integer ADM convention.
  * ------------------------------------------------------------------ */
-__device__ static __forceinline__ float fadm_read_dwt_tmp(const float *dwt_tmp, int gy, int x_sub,
-                                                          int cur_w, int half_offset)
-{
-    x_sub = fadm_mirror(x_sub, cur_w);
-    const int stride = cur_w * 2;
-    return dwt_tmp[gy * stride + half_offset + x_sub];
-}
-
 __global__ void float_adm_dwt_hori(int scale, const float *dwt_tmp_ref, const float *dwt_tmp_dis,
                                    float *ref_band, float *dis_band, int cur_w, int half_w,
                                    int half_h, int buf_stride)
@@ -223,12 +235,12 @@ __global__ void float_adm_decouple_csf(const FloatAdmGpuDecoupleArgs a)
     if (gx >= bd->half_w || gy >= bd->half_h)
         return;
 
-    const float *ref_band = reinterpret_cast<const float *>(bd->ref_band);
-    const float *dis_band = reinterpret_cast<const float *>(bd->dis_band);
-    float *csf_a = reinterpret_cast<float *>(bd->csf_a);
-    float *csf_fa = reinterpret_cast<float *>(bd->csf_fa);
-    float *csf_r = reinterpret_cast<float *>(bd->csf_r);
-    float *csf_fr = reinterpret_cast<float *>(bd->csf_fr);
+    const float *ref_band = fadm_device_ptr<const float>(bd->ref_band);
+    const float *dis_band = fadm_device_ptr<const float>(bd->dis_band);
+    float *csf_a = fadm_device_ptr<float>(bd->csf_a);
+    float *csf_fa = fadm_device_ptr<float>(bd->csf_fa);
+    float *csf_r = fadm_device_ptr<float>(bd->csf_r);
+    float *csf_fr = fadm_device_ptr<float>(bd->csf_fr);
 
     float o[FADM_BANDS];
     float t[FADM_BANDS];
@@ -268,12 +280,12 @@ __global__ void float_adm_terms(const FloatAdmGpuTermArgs a)
     const int x = a.left + (int)rx;
     const int y = a.top + (int)ry;
 
-    const float *ref_band = reinterpret_cast<const float *>(bd->ref_band);
-    const float *csf_a = reinterpret_cast<const float *>(bd->csf_a);
-    const float *csf_fa = reinterpret_cast<const float *>(bd->csf_fa);
-    const float *csf_r = reinterpret_cast<const float *>(bd->csf_r);
-    const float *csf_fr = reinterpret_cast<const float *>(bd->csf_fr);
-    float *terms = reinterpret_cast<float *>(a.terms);
+    const float *ref_band = fadm_device_ptr<const float>(bd->ref_band);
+    const float *csf_a = fadm_device_ptr<const float>(bd->csf_a);
+    const float *csf_fa = fadm_device_ptr<const float>(bd->csf_fa);
+    const float *csf_r = fadm_device_ptr<const float>(bd->csf_r);
+    const float *csf_fr = fadm_device_ptr<const float>(bd->csf_fr);
+    float *terms = fadm_device_ptr<float>(a.terms);
 
     float thr_a = 0.0f;
     float thr_r = 0.0f;
@@ -307,8 +319,8 @@ __global__ void float_adm_row_sums(const FloatAdmGpuRowArgs a)
     const uint32_t slot = id / a.region_h;
     const uint32_t y = id - slot * a.region_h;
 
-    const float *terms = reinterpret_cast<const float *>(a.terms);
-    float *rows = reinterpret_cast<float *>(a.rows);
+    const float *terms = fadm_device_ptr<const float>(a.terms);
+    float *rows = fadm_device_ptr<float>(a.rows);
     rows[fadm_row_index(slot, y, a.region_h)] = fadm_row_sum(
         terms + fadm_term_index(slot, 0u, y, a.region_w, a.region_h), a.region_h, a.region_w);
 }
