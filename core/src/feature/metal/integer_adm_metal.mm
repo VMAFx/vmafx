@@ -100,8 +100,10 @@ typedef struct IntegerAdmStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* Options mirror integer_adm.c EXACTLY (names, aliases, defaults, ranges). */
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {.name = "debug",
      .help = "debug mode: enable additional output",
      .offset = offsetof(IntegerAdmStateMetal, debug),
@@ -214,7 +216,7 @@ static const VmafOption options[] = {
 };
 
 /* The options as integer_adm_metal_host.c reads them. */
-static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
+IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
 {
     IadmMetalOptions o;
     memset(&o, 0, sizeof(o));
@@ -233,7 +235,7 @@ static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
     return o;
 }
 
-static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -251,7 +253,7 @@ static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static void release_psos(IntegerAdmStateMetal *s)
+void release_psos(IntegerAdmStateMetal *s)
 {
     for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
         if (s->pso[k]) {
@@ -261,7 +263,7 @@ static void release_psos(IntegerAdmStateMetal *s)
     }
 }
 
-static void release_buffer(void **slot)
+void release_buffer(void **slot)
 {
     if (*slot) {
         (void)(__bridge_transfer id<MTLBuffer>)(*slot);
@@ -269,7 +271,7 @@ static void release_buffer(void **slot)
     }
 }
 
-static void release_buffers(IntegerAdmStateMetal *s)
+void release_buffers(IntegerAdmStateMetal *s)
 {
     for (int i = 0; i < IADM_METAL_NUM_SCALES; ++i) {
         release_buffer(&s->ref_band[i]);
@@ -284,7 +286,7 @@ static void release_buffers(IntegerAdmStateMetal *s)
     release_buffer(&s->csf_f);
 }
 
-static int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
+int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
 {
     id<MTLBuffer> b = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     if (b == nil) { return -ENOMEM; }
@@ -293,7 +295,7 @@ static int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
 }
 
 /* Every device buffer at the size integer_adm_metal_host.c gives it. */
-static int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
+int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
 {
     const IadmMetalGeometry *g = &s->geom;
     const size_t source = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_SOURCE, 0);
@@ -315,7 +317,7 @@ static int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
     return err;
 }
 
-static int init_device_state(IntegerAdmStateMetal *s)
+int init_device_state(IntegerAdmStateMetal *s)
 {
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == NULL) { return -ENODEV; }
@@ -325,7 +327,7 @@ static int init_device_state(IntegerAdmStateMetal *s)
     return err;
 }
 
-static void teardown_device_state(IntegerAdmStateMetal *s)
+void teardown_device_state(IntegerAdmStateMetal *s)
 {
     release_psos(s);
     release_buffers(s);
@@ -334,7 +336,7 @@ static void teardown_device_state(IntegerAdmStateMetal *s)
     s->ctx = NULL;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -367,7 +369,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     return err;
 }
 
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h, unsigned bpc)
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h, unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t row_bytes = (size_t)w * bpp;
@@ -378,13 +380,13 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
     }
 }
 
-static void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger index)
+void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger index)
 {
     [enc setBuffer:(__bridge id<MTLBuffer>)buffer offset:0 atIndex:index];
 }
 
 /* The buffers of `entry` at the indices integer_adm.metal declares. */
-static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
                                IadmMetalKernel entry, int scale)
 {
     switch (entry) {
@@ -434,7 +436,7 @@ static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEnco
     }
 }
 
-static void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
+void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
                          const IadmMetalStage *stage, int scale, const IadmDims *d,
                          const IadmCsf *c)
 {
@@ -450,7 +452,7 @@ static void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
 }
 
 /* Zero the reduction slots (a skipped stage must contribute 0). */
-static void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
+void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
@@ -460,7 +462,7 @@ static void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
     [blit endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                             VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
@@ -498,7 +500,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     return 0;
 }
 
-static int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const IadmMetalScores *r,
+int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const IadmMetalScores *r,
                        unsigned index)
 {
     VmafNamedScore values[18] = {
@@ -526,7 +528,7 @@ static int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const 
                                            value_count, index);
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
 
@@ -541,7 +543,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
     return emit_scores(s, fc, &r, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -564,7 +566,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
  * same order) — the parity test and model JSONs depend on it. Note the
  * VMAF_integer_feature_* / integer_adm_* prefixes (distinct from float_adm's
  * VMAF_feature_* / adm_* names). */
-static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "VMAF_integer_feature_aim_score",
                                           "VMAF_integer_feature_adm3_score",
                                           "integer_adm_scale0",
@@ -583,6 +585,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_num_scale3",
                                           "integer_adm_den_scale3",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

@@ -105,7 +105,9 @@ using PsnrHvsStateMetal = struct PsnrHvsStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
-static const VmafOption options[] = {
+namespace {
+
+const VmafOption options[] = {
     {
         .name        = "enable_chroma",
         .help        = "enable calculation for chroma channels",
@@ -123,7 +125,7 @@ static const VmafOption options[] = {
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
 
-static int build_pipelines(PsnrHvsStateMetal *s, id<MTLDevice> device)
+int build_pipelines(PsnrHvsStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -143,7 +145,7 @@ static int build_pipelines(PsnrHvsStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static void free_csf_buffers(PsnrHvsStateMetal *s)
+void free_csf_buffers(PsnrHvsStateMetal *s)
 {
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; ++p) {
         if (s->csf_buf[p]) {
@@ -160,7 +162,7 @@ static void free_csf_buffers(PsnrHvsStateMetal *s)
 /* The plane's CSF table and calc_psnrhvs()'s masking table derived from it,
  * (csf * 0.3885746225901003)^2 taken in double and stored as float
  * (vmaf_psnr_hvs_mask_value()): the kernel has no double. */
-static int upload_plane_tables(PsnrHvsStateMetal *s, id<MTLDevice> device, unsigned p)
+int upload_plane_tables(PsnrHvsStateMetal *s, id<MTLDevice> device, unsigned p)
 {
     float mask[VMAF_MTL_HVS_TERMS];
     for (unsigned k = 0; k < VMAF_MTL_HVS_TERMS; ++k) {
@@ -178,7 +180,7 @@ static int upload_plane_tables(PsnrHvsStateMetal *s, id<MTLDevice> device, unsig
     return 0;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     PsnrHvsStateMetal *s = (PsnrHvsStateMetal *)fex->priv;
@@ -295,7 +297,7 @@ fail_ctx:
     return err;
 }
 
-static int dispatch_plane(PsnrHvsStateMetal *s, id<MTLDevice> device, id<MTLCommandQueue> queue,
+int dispatch_plane(PsnrHvsStateMetal *s, id<MTLDevice> device, id<MTLCommandQueue> queue,
                           id<MTLComputePipelineState> pso, VmafPicture *ref_pic,
                           VmafPicture *dis_pic, unsigned p)
 {
@@ -353,7 +355,7 @@ static int dispatch_plane(PsnrHvsStateMetal *s, id<MTLDevice> device, id<MTLComm
     return 0;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -377,7 +379,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     PsnrHvsStateMetal *const s = (PsnrHvsStateMetal *)fex->priv;
@@ -409,7 +411,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     return err;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     PsnrHvsStateMetal *s = (PsnrHvsStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -427,8 +429,9 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
+const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

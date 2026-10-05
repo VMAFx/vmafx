@@ -77,7 +77,9 @@ using FloatPsnrStateMetal = struct FloatPsnrStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
-static const VmafOption options[] = {
+namespace {
+
+const VmafOption options[] = {
     {
         .name = "uncapped",
         .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
@@ -88,7 +90,7 @@ static const VmafOption options[] = {
     },
     {.name=nullptr}};
 
-static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -111,7 +113,7 @@ static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -168,7 +170,7 @@ fail_ctx:
     return err;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -240,7 +242,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
  * Dividing by scaler^2, a power of two, and by the pixel count are the CPU's
  * operations.
  */
-static double float_psnr_noise(const FloatPsnrStateMetal *s)
+double float_psnr_noise(const FloatPsnrStateMetal *s)
 {
     const uint64_t *partials = (const uint64_t *)s->rb.host_view;
     if (partials == nullptr) {
@@ -252,7 +254,7 @@ static double float_psnr_noise(const FloatPsnrStateMetal *s)
     return (total / (scaler * scaler)) / n_pix;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatPsnrStateMetal *const s = (FloatPsnrStateMetal *)fex->priv;
@@ -277,7 +279,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         feature_collector, s->feature_name_dict, "float_psnr", score, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatPsnrStateMetal *s = (FloatPsnrStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -292,7 +294,8 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"float_psnr", nullptr};
+const char *provided_features[] = {"float_psnr", nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

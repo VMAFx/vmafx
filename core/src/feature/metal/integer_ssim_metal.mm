@@ -91,11 +91,13 @@ using IntegerSsimStateMetal = struct IntegerSsimStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* ------------------------------------------------------------------ */
 /* Options                                                              */
 /* ------------------------------------------------------------------ */
 
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name        = "enable_db",
         .help        = "write SSIM values as dB: -10*log10(1-ssim)",
@@ -119,7 +121,7 @@ static const VmafOption options[] = {
 
 /* The fp64 bit pattern of integer_ssim.c's `sm * sm * k`, the factor of c1
  * (k = SSIM_K1) or c2 (k = SSIM_K2) that does not depend on the window. */
-static uint64_t issim_stabiliser_bits(unsigned bpc, double k)
+uint64_t issim_stabiliser_bits(unsigned bpc, double k)
 {
     const int samplemax = (1 << bpc) - 1;
     const double sm = (double)samplemax;
@@ -130,7 +132,7 @@ static uint64_t issim_stabiliser_bits(unsigned bpc, double k)
 }
 
 /* The sum of the window weights along a line of `extent` samples. */
-static int64_t issim_line_weight(unsigned extent)
+int64_t issim_line_weight(unsigned extent)
 {
     int64_t weight = 0;
     for (unsigned position = 0u; position < extent; position++) {
@@ -141,7 +143,7 @@ static int64_t issim_line_weight(unsigned extent)
 
 /* calc_ssim()'s `ssim` accumulator: the terms of the plane added into one
  * double in index order, which is the reference's raster order. */
-static double issim_frame_sum(const uint64_t *terms, size_t count)
+double issim_frame_sum(const uint64_t *terms, size_t count)
 {
     double sum = 0.0;
     for (size_t i = 0u; i < count; i++) {
@@ -156,7 +158,7 @@ static double issim_frame_sum(const uint64_t *terms, size_t count)
 /* Lifecycle                                                            */
 /* ------------------------------------------------------------------ */
 
-static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -180,7 +182,7 @@ static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 }
 
 /* The frame, the weight sum, the stabilisers and the dB ceiling. */
-static int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigned h)
+int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigned h)
 {
     if (w < 1u || h < 1u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -200,7 +202,7 @@ static int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigne
 }
 
 /* The term plane, the moment planes and the pipelines. */
-static int allocate(IntegerSsimStateMetal *s)
+int allocate(IntegerSsimStateMetal *s)
 {
     const size_t pixels = (size_t)s->frame_w * (size_t)s->frame_h;
     int const err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, pixels * sizeof(uint64_t));
@@ -217,9 +219,9 @@ static int allocate(IntegerSsimStateMetal *s)
     return build_pipelines(s, device);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex);
+int close_fex_metal(VmafFeatureExtractor *fex);
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -250,7 +252,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 /* ------------------------------------------------------------------ */
 
 /* One packed copy of the luma plane of `pic`, `row_bytes` per row. */
-static id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
+id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
                                  size_t row_bytes, unsigned height)
 {
     id<MTLBuffer> buf = [device newBufferWithLength:row_bytes * height
@@ -264,7 +266,7 @@ static id<MTLBuffer> upload_luma(id<MTLDevice> device, const VmafPicture *pic,
     return buf;
 }
 
-static void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd,
+void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd,
                               id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf, size_t row_bytes)
 {
     id<MTLComputePipelineState> pso_h = (s->bpc <= 8u)
@@ -284,7 +286,7 @@ static void encode_horizontal(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd
     [enc endEncoding];
 }
 
-static void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
+void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert];
@@ -297,7 +299,7 @@ static void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
     [enc endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -332,7 +334,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     IntegerSsimStateMetal *const s = (IntegerSsimStateMetal *)fex->priv;
@@ -347,7 +349,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                                             index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -364,9 +366,10 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {
+const char *provided_features[] = {
     "ssim", nullptr
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

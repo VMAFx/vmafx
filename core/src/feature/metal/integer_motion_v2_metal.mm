@@ -102,10 +102,12 @@ using MotionV2StateMetal = struct MotionV2StateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* The CPU integer_motion_v2.c table: same names, aliases, defaults, ranges
  * and flags, so co-scheduled CPU and Metal runs name features identically
  * and a model's options select the twin (ADR-1183). */
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name = "motion_force_zero",
         .help = "forces motion score to be 0",
@@ -179,7 +181,7 @@ static const VmafOption options[] = {
     },
     {.name=nullptr}};
 
-static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
+int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -202,7 +204,7 @@ static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 }
 
 /* The luma planes of the last `depth` frames and the pipelines. */
-static int mv2_metal_device_setup(MotionV2StateMetal *s)
+int mv2_metal_device_setup(MotionV2StateMetal *s)
 {
     void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
     if (device_handle == nullptr) { return -ENODEV; }
@@ -219,7 +221,7 @@ static int mv2_metal_device_setup(MotionV2StateMetal *s)
 /* Tear down everything init() may have set up; every step tolerates a handle
  * that was never created, so this serves a failed init() and close(). Returns
  * the first error but releases everything. */
-static int mv2_metal_release(MotionV2StateMetal *s)
+int mv2_metal_release(MotionV2StateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     if (s->pso_16bpc != nullptr) {
@@ -247,7 +249,7 @@ static int mv2_metal_release(MotionV2StateMetal *s)
     return rc;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -297,7 +299,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     return err;
 }
 
-static void copy_y_plane(const VmafPicture *pic, void *dst, size_t row_bytes)
+void copy_y_plane(const VmafPicture *pic, void *dst, size_t row_bytes)
 {
     const uint8_t *src = (const uint8_t *)pic->data[0];
     const size_t src_stride = pic->stride[0];
@@ -309,7 +311,7 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, size_t row_bytes)
 
 /* The SAD kernel of `cur` against `prev`; every threadgroup writes its slot
  * of rb. Waits for the device. */
-static int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
+int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
                               id<MTLBuffer> prev, id<MTLBuffer> cur, size_t row_bytes)
 {
     id<MTLComputePipelineState> pso = (s->bpc <= 8u)
@@ -349,7 +351,7 @@ static int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
     return ([cmd status] == MTLCommandBufferStatusCompleted) ? 0 : -EIO;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -385,7 +387,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 }
 
 /* The frame's SAD: the threadgroup sums added in uint64. */
-static int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
+int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
 {
     const uint32_t *partials = (const uint32_t *)s->rb.host_view;
     if (partials == nullptr) { return -EIO; }
@@ -397,7 +399,7 @@ static int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
     return 0;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
@@ -429,7 +431,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
  * CPU extractor's own derivation (integer_motion.c::vmaf_motion_window_flush(),
  * ADR-1478), with the three-frame or the five-frame window. A one-frame run
  * gets motion2_v2 = motion3_v2 = 0, as on the CPU; an empty run nothing. */
-static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
 
@@ -450,14 +452,15 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
     return err ? err : 1;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     return mv2_metal_release((MotionV2StateMetal *)fex->priv);
 }
 
-static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
+const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
                                           "VMAF_integer_feature_motion3_v2_score", nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

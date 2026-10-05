@@ -82,7 +82,9 @@ struct MetalImportRing {
     enum VmafPixelFormat pix_fmt;
 };
 
-static struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
+namespace {
+
+struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
 {
     if (w == 0u || h == 0u) {
         return nullptr;
@@ -106,7 +108,7 @@ static struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
     return r;
 }
 
-static void slot_release(struct MetalImportSlot *s)
+void slot_release(struct MetalImportSlot *s)
 {
     if (s->ref_pending) {
         (void)vmaf_picture_unref(&s->ref);
@@ -127,7 +129,7 @@ static void slot_release(struct MetalImportSlot *s)
  * P010 surface is de-interleaved and an MSB-aligned sample shifted, and a
  * layout outside iosurface_layout.h's table is refused rather than copied
  * as if it were planar. */
-static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned plane,
+int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned plane,
                            VmafMetalPlaneRead *rd)
 {
     const VmafMetalSurfaceFormat *fmt =
@@ -149,7 +151,7 @@ static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned p
 /* Copy one planned plane out of the locked surface into the VmafPicture.
  * Handles stride mismatches (IOSurface stride is typically page-aligned and
  * >= vmaf_picture_alloc's DATA_ALIGN-rounded stride). */
-static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
+int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                       const VmafMetalPlaneRead *rd)
 {
     if (pic->data[plane] == nullptr) {
@@ -164,6 +166,7 @@ static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                           (const uint8_t *)src, src_stride, pic->w[plane], pic->h[plane], rd);
     return 0;
 }
+} // namespace
 
 /* ----------------------------------------------------------------- */
 /* Public C-API                                                       */
@@ -236,11 +239,13 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     return 0;
 }
 
+namespace {
+
 /* Lazy-allocate the ring on first import. Geometry is pinned to
  * the first frame's (w, h, bpc) — re-imports with different
  * dims surface as -EINVAL (caller must allocate a new state for
  * a resolution switch, same contract Vulkan enforces). */
-static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsigned bpc,
+int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsigned bpc,
                            struct MetalImportRing **out)
 {
     if (state->import_ring == nullptr) {
@@ -261,7 +266,7 @@ static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsign
 /* The ref or dis picture of frame `index`, allocated on its first plane.
  * If the slot still holds an older frame's picture (caller didn't drain
  * via read_imported_pictures), it is discarded before the slot is reused. */
-static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref,
+int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref,
                         VmafPicture **pic_out, unsigned **filled_out)
 {
     struct MetalImportSlot *slot = &ring->slots[index % VMAF_METAL_IMPORT_RING];
@@ -291,7 +296,7 @@ static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref
 
 /* Lock the IOSurface read-only, copy the planned plane into the
  * VmafPicture's host buffer, unlock. */
-static int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
+int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                              const VmafMetalPlaneRead *rd)
 {
     IOReturn const lock_ret = IOSurfaceLock(surf, kIOSurfaceLockReadOnly, nullptr);
@@ -305,6 +310,7 @@ static int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane
     }
     return (unlock_ret != kIOReturnSuccess) ? -EIO : 0;
 }
+} // namespace
 
 int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
                               unsigned plane, unsigned w, unsigned h,

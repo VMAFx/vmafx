@@ -76,7 +76,7 @@ extern "C" {
 #define FVIF_ROW_TG 64
 
 /* The kernels of float_vif.metal, in the order of FloatVifStateMetal::pso. */
-enum {
+enum : unsigned char {
     FVIF_KERNEL_VERTICAL = 0,
     FVIF_KERNEL_COMPUTE,
     FVIF_KERNEL_ROWS,
@@ -84,8 +84,11 @@ enum {
     FVIF_KERNELS
 };
 
-static NSString *const kernel_names[FVIF_KERNELS] = {
+namespace {
+
+NSString *const kernel_names[FVIF_KERNELS] = {
     @"float_vif_vertical", @"float_vif_compute", @"float_vif_row_sums", @"float_vif_decimate"};
+} // namespace
 
 using FloatVifStateMetal = struct FloatVifStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -150,10 +153,12 @@ using FloatVifStateMetal = struct FloatVifStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* The option table of float_vif.c (core/src/feature/float_vif.c), name, alias,
  * type, default, range and flags. Every option runs on the device: the
  * kernelscale through the taps, the prescale on the host. */
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name        = "debug",
         .help        = "debug mode: enable additional output",
@@ -264,17 +269,17 @@ static const VmafOption options[] = {
     {.name=nullptr},
 };
 
-static id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
+id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
 {
     return [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
 }
 
-static id<MTLBuffer> buffer_of(void *handle)
+id<MTLBuffer> buffer_of(void *handle)
 {
     return (__bridge id<MTLBuffer>)handle;
 }
 
-static void release_handle(void **handle)
+void release_handle(void **handle)
 {
     if (*handle) {
         (void)(__bridge_transfer id)*handle;
@@ -282,7 +287,7 @@ static void release_handle(void **handle)
     }
 }
 
-static void release_buffers(FloatVifStateMetal *s)
+void release_buffers(FloatVifStateMetal *s)
 {
     for (int i = 0; i < 2; ++i) {
         release_handle(&s->pyr_ref[i]);
@@ -305,7 +310,7 @@ static void release_buffers(FloatVifStateMetal *s)
     }
 }
 
-static int build_pipelines(FloatVifStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatVifStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -326,7 +331,7 @@ static int build_pipelines(FloatVifStateMetal *s, id<MTLDevice> device)
 /* The four filters, as float_vif.c::alloc_buffers() derives them, and the
  * statistic's constants. vif_get_min_dim() has bounded the frame, and a
  * filter has at most 128 taps (69 at the largest kernelscale of 4.0). */
-static int init_filters(FloatVifStateMetal *s)
+int init_filters(FloatVifStateMetal *s)
 {
     for (int scale = 0; scale < FVIF_SCALES; ++scale) {
         const int width = vif_get_filter_size(scale, (float)s->vif_kernelscale);
@@ -341,7 +346,7 @@ static int init_filters(FloatVifStateMetal *s)
 /* Frame geometry of the four scales and the guards of float_vif.c::init():
  * the raw frame and the prescaled frame must each hold the four-scale ladder
  * (Netflix/vmaf#1582). */
-static int init_geometry(FloatVifStateMetal *s, unsigned w, unsigned h)
+int init_geometry(FloatVifStateMetal *s, unsigned w, unsigned h)
 {
     const int vif_min_dim = vif_get_min_dim((float)s->vif_kernelscale);
     if (std::cmp_less(w ,vif_min_dim) || std::cmp_less(h ,vif_min_dim)) {
@@ -376,7 +381,7 @@ static int init_geometry(FloatVifStateMetal *s, unsigned w, unsigned h)
     return 0;
 }
 
-static int alloc_planes(FloatVifStateMetal *s, id<MTLDevice> device)
+int alloc_planes(FloatVifStateMetal *s, id<MTLDevice> device)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const size_t raw_bytes = (size_t)s->width * s->height * bpp;
@@ -408,7 +413,7 @@ static int alloc_planes(FloatVifStateMetal *s, id<MTLDevice> device)
     return (s->host_ref && s->host_dis) ? 0 : -ENOMEM;
 }
 
-static int alloc_scratch(FloatVifStateMetal *s, id<MTLDevice> device)
+int alloc_scratch(FloatVifStateMetal *s, id<MTLDevice> device)
 {
     const size_t plane = (size_t)s->scale_w[0] * s->scale_h[0];
     id<MTLBuffer> mo = shared_buffer(device, plane * VMAF_MTL_FVIF_MOMENTS * sizeof(float));
@@ -427,7 +432,7 @@ static int alloc_scratch(FloatVifStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int alloc_device_state(FloatVifStateMetal *s)
+int alloc_device_state(FloatVifStateMetal *s)
 {
     void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
@@ -439,7 +444,7 @@ static int alloc_device_state(FloatVifStateMetal *s)
     return build_pipelines(s, device);
 }
 
-static void release_device_state(FloatVifStateMetal *s)
+void release_device_state(FloatVifStateMetal *s)
 {
     for (auto & i : s->pso) {
         release_handle(&i);
@@ -455,7 +460,7 @@ static void release_device_state(FloatVifStateMetal *s)
     }
 }
 
-static int open_device(FloatVifStateMetal *s)
+int open_device(FloatVifStateMetal *s)
 {
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -465,7 +470,7 @@ static int open_device(FloatVifStateMetal *s)
     return alloc_device_state(s);
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -495,7 +500,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
 /* Copy the ref/dis Y-plane raw bytes (packed, stride = width*bpp) into the
  * shared upload buffer. */
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
                            unsigned bpc)
 {
     uint8_t *out = (uint8_t *)[dst contents];
@@ -509,7 +514,7 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
 
 /* float_vif.c::extract()'s prescale: picture_copy() to float, then
  * vif_scale_frame_s() to the scaled size, written into the scale-0 plane. */
-static void prescale_plane(const FloatVifStateMetal *s, VmafPicture *pic, float *host,
+void prescale_plane(const FloatVifStateMetal *s, VmafPicture *pic, float *host,
                            id<MTLBuffer> dst)
 {
     picture_copy(host, (ptrdiff_t)s->float_stride, pic, -128, pic->bpc, 0);
@@ -518,19 +523,20 @@ static void prescale_plane(const FloatVifStateMetal *s, VmafPicture *pic, float 
                       (int)s->scale_w[0], (int)s->scale_h[0], (int)s->scale_w[0]);
 }
 
-static void bind_buffers(id<MTLComputeCommandEncoder> enc, void *const *buffers, unsigned count)
+void bind_buffers(id<MTLComputeCommandEncoder> enc, void *const *buffers, unsigned count)
 {
     for (unsigned i = 0; i < count; ++i) {
         [enc setBuffer:buffer_of(buffers[i]) offset:0 atIndex:i];
     }
 }
 
-static void dispatch_grid(id<MTLComputeCommandEncoder> enc, unsigned w, unsigned h)
+void dispatch_grid(id<MTLComputeCommandEncoder> enc, unsigned w, unsigned h)
 {
     const MTLSize tg   = MTLSizeMake(FVIF_TG, FVIF_TG, 1);
     const MTLSize grid = MTLSizeMake((w + FVIF_TG - 1u) / FVIF_TG, (h + FVIF_TG - 1u) / FVIF_TG, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
 }
+} // namespace
 
 /* The plane a kernel of `scale` reads: the raw frame, or float planes. */
 using FvifInput = struct FvifInput {
@@ -539,7 +545,9 @@ using FvifInput = struct FvifInput {
     bool raw;
 };
 
-static VmafMtlFvifInputArgs input_args(const FloatVifStateMetal *s, bool raw)
+namespace {
+
+VmafMtlFvifInputArgs input_args(const FloatVifStateMetal *s, bool raw)
 {
     VmafMtlFvifInputArgs input;
     input.raw        = raw ? 1u : 0u;
@@ -549,7 +557,7 @@ static VmafMtlFvifInputArgs input_args(const FloatVifStateMetal *s, bool raw)
 }
 
 /* float_vif_vertical for `scale` over `in`. */
-static void encode_vertical(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale,
+void encode_vertical(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale,
                             FvifInput in)
 {
     const VmafMtlFvifFilterArgs filter = {.width=s->scale_w[scale], .height=s->scale_h[scale],
@@ -573,7 +581,7 @@ static void encode_vertical(const FloatVifStateMetal *s, id<MTLCommandBuffer> cm
 }
 
 /* float_vif_compute for `scale`. */
-static void encode_compute(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_compute(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const VmafMtlFvifFilterArgs filter = {.width=s->scale_w[scale], .height=s->scale_h[scale],
                                           .taps=s->tap_count[scale],
@@ -591,7 +599,7 @@ static void encode_compute(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd
 }
 
 /* float_vif_row_sums for `scale`: one thread per row. */
-static void encode_rows(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_rows(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const VmafMtlFvifRowArgs row = {.width=s->scale_w[scale], .height=s->scale_h[scale]};
 
@@ -608,7 +616,7 @@ static void encode_rows(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, i
 
 /* float_vif_decimate: this scale's filter over `in` (the previous scale's
  * plane), written to ping-pong slot `out_slot`. */
-static void encode_decimate(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale,
+void encode_decimate(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd, int scale,
                             FvifInput in, int out_slot)
 {
     const VmafMtlFvifDecimateArgs dims = {.in_width=s->scale_w[scale - 1], .in_height=s->scale_h[scale - 1],
@@ -632,14 +640,14 @@ static void encode_decimate(const FloatVifStateMetal *s, id<MTLCommandBuffer> cm
 }
 
 /* The plane scale 0 reads: raw, or the prescaled float planes. */
-static FvifInput scale0_input(const FloatVifStateMetal *s)
+FvifInput scale0_input(const FloatVifStateMetal *s)
 {
     FvifInput in = {.ref=s->scaled_ref, .dis=s->scaled_dis, .raw=!s->prescaled};
     return in;
 }
 
 /* Everything of one frame in one command buffer. */
-static void encode_frame(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd)
+void encode_frame(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     FvifInput in = scale0_input(s);
     encode_vertical(s, cmd, 0, in);
@@ -657,7 +665,7 @@ static void encode_frame(const FloatVifStateMetal *s, id<MTLCommandBuffer> cmd)
     }
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -687,7 +695,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
 /* vif_statistic_s()'s outer loop: the row sums added top to bottom into one
  * fp32 accumulator per output; compute_vif() widens the two floats. */
-static void sum_rows(const FloatVifStateMetal *s, double scores[8])
+void sum_rows(const FloatVifStateMetal *s, double scores[8])
 {
     const float *rows = (const float *)[buffer_of(s->rows) contents];
     for (int scale = 0; scale < FVIF_SCALES; ++scale) {
@@ -704,7 +712,7 @@ static void sum_rows(const FloatVifStateMetal *s, double scores[8])
     }
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatVifStateMetal *s = (FloatVifStateMetal *)fex->priv;
@@ -730,7 +738,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                                 &output, VMAF_VIF_FLOAT_NAMES, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatVifStateMetal *s = (FloatVifStateMetal *)fex->priv;
     int rc = 0;
@@ -746,7 +754,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
+const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "VMAF_feature_vif_scale1_score",
                                           "VMAF_feature_vif_scale2_score",
                                           "VMAF_feature_vif_scale3_score",
@@ -762,6 +770,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_num_scale3",
                                           "vif_den_scale3",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

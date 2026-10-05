@@ -35,6 +35,8 @@ extern "C" {
 #include "libvmaf/libvmaf_metal.h"
 }
 
+namespace {
+
 /* Struct layouts for VmafMetalContext + VmafMetalState live in
  * state_priv.h so the IOSurface import TU (picture_import.mm) can
  * construct + tear down states without going through a constructor
@@ -58,7 +60,7 @@ extern "C" {
  * `supportsFamily:` check and surface as -ENODEV. The fork's NEON
  * path remains the production fallback for those hosts.
  */
-static id<MTLDevice> select_device_or_nil(int device_index)
+id<MTLDevice> select_device_or_nil(int device_index)
 {
     if (device_index == -1) {
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
@@ -102,6 +104,7 @@ static id<MTLDevice> select_device_or_nil(int device_index)
     return nil;
 #endif
 }
+} // namespace
 
 /* ---- Internal C++ entry points (common.h) ---- */
 

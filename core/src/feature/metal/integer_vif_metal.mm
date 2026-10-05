@@ -146,10 +146,12 @@ using IntegerVifStateMetal = struct IntegerVifStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* Options mirror the CPU integer_vif.c table EXACTLY (debug,
  * vif_enhn_gain_limit/egl, vif_skip_scale0/ssclz). The integer path has no
  * vif_kernelscale / vif_sigma_nsq option (those are float_vif-only). */
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name        = "debug",
         .help        = "debug mode: enable additional output",
@@ -181,7 +183,7 @@ static const VmafOption options[] = {
     {.name=nullptr},
 };
 
-static int build_pipelines(IntegerVifStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerVifStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -211,7 +213,7 @@ static int build_pipelines(IntegerVifStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static void release_buffers(IntegerVifStateMetal *s)
+void release_buffers(IntegerVifStateMetal *s)
 {
     for (auto & i : s->wg_accum) {
         if (i) {
@@ -254,7 +256,7 @@ static void release_buffers(IntegerVifStateMetal *s)
  * vif_sycl, vif_cuda and vif_hip. Below it the kernels would read other
  * samples than the CPU does.
  */
-static unsigned vif_metal_min_dim()
+unsigned vif_metal_min_dim()
 {
     unsigned min_dim = 1u;
     for (unsigned scale = 0u; scale < (unsigned)IVIF_SCALES; scale++) {
@@ -271,7 +273,7 @@ static unsigned vif_metal_min_dim()
 
 /* ADR-1324 first-picture gate: model dispatch computes frames below
  * vif_metal_min_dim() with the CPU `vif` extractor instead of this twin. */
-static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                unsigned bpc, unsigned w, unsigned h)
 {
     (void)fex;
@@ -283,7 +285,7 @@ static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat p
 
 /* Per-scale geometry: halve each dimension (no border crop); every scale is
  * at least two samples wide and high from the minimum on. */
-static void vif_metal_init_geometry(IntegerVifStateMetal *s, unsigned bpc, unsigned w, unsigned h)
+void vif_metal_init_geometry(IntegerVifStateMetal *s, unsigned bpc, unsigned w, unsigned h)
 {
     s->width  = w;
     s->height = h;
@@ -301,7 +303,7 @@ static void vif_metal_init_geometry(IntegerVifStateMetal *s, unsigned bpc, unsig
     }
 }
 
-static void *vif_metal_new_buffer(id<MTLDevice> device, size_t bytes)
+void *vif_metal_new_buffer(id<MTLDevice> device, size_t bytes)
 {
     id<MTLBuffer> buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     return (buf == nil) ? nullptr : (__bridge_retained void *)buf;
@@ -309,7 +311,7 @@ static void *vif_metal_new_buffer(id<MTLDevice> device, size_t bytes)
 
 /* Raw uploads, the CPU's log2 table, the ping-pong pyramid and the per-scale
  * partials, all Shared, once (zero per-frame heap traffic). */
-static int vif_metal_alloc_buffers(IntegerVifStateMetal *s, id<MTLDevice> device)
+int vif_metal_alloc_buffers(IntegerVifStateMetal *s, id<MTLDevice> device)
 {
     const size_t raw_bytes = (size_t)s->width * s->height * ((s->bpc <= 8u) ? 1u : 2u);
     s->raw_ref = vif_metal_new_buffer(device, raw_bytes);
@@ -336,7 +338,7 @@ static int vif_metal_alloc_buffers(IntegerVifStateMetal *s, id<MTLDevice> device
 
 /* Tear down everything init() may have set up; every step tolerates a handle
  * that was never created, so this serves a failed init() and close(). */
-static int vif_metal_release(IntegerVifStateMetal *s)
+int vif_metal_release(IntegerVifStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     void **const psos[] = {&s->pso_decimate_16, &s->pso_decimate_8, &s->pso_compute_16,
@@ -357,7 +359,7 @@ static int vif_metal_release(IntegerVifStateMetal *s)
     return rc;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -402,7 +404,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
 /* Copy the ref/dis Y-plane raw bytes (packed, stride = width*bpp) into the
  * shared upload buffer. */
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
                            unsigned bpc)
 {
     uint8_t *out = (uint8_t *)[dst contents];
@@ -414,7 +416,7 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
     }
 }
 
-static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                              id<MTLBuffer> raw_ref, id<MTLBuffer> raw_dis, id<MTLBuffer> log2_buf,
                              id<MTLBuffer> wg, unsigned width, unsigned height, unsigned raw_stride,
                              unsigned grid_x, VmafMtlGainLimit egl)
@@ -436,7 +438,7 @@ static void encode_compute_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineStat
     [enc endEncoding];
 }
 
-static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                               id<MTLBuffer> ref_f, id<MTLBuffer> dis_f, id<MTLBuffer> log2_buf,
                               id<MTLBuffer> wg, int scale, unsigned width, unsigned height,
                               unsigned f_stride, unsigned grid_x, unsigned bpc, VmafMtlGainLimit egl)
@@ -460,7 +462,7 @@ static void encode_compute_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSta
     [enc endEncoding];
 }
 
-static void encode_decimate_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_decimate_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                               id<MTLBuffer> raw_ref, id<MTLBuffer> raw_dis, id<MTLBuffer> ref_out,
                               id<MTLBuffer> dis_out, unsigned out_w, unsigned out_h, unsigned in_w,
                               unsigned in_h, unsigned raw_stride, unsigned out_stride)
@@ -483,7 +485,7 @@ static void encode_decimate_8(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSta
     [enc endEncoding];
 }
 
-static void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                                id<MTLBuffer> ref_in, id<MTLBuffer> dis_in, id<MTLBuffer> ref_out,
                                id<MTLBuffer> dis_out, unsigned out_w, unsigned out_h, unsigned in_w,
                                unsigned in_h, unsigned in_stride, unsigned out_stride,
@@ -509,7 +511,7 @@ static void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSt
 
 /* Scale 0: compute directly from raw (skipped at host level if
  * vif_skip_scale0, but cheap to always run; collect suppresses it). */
-static void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd,
+void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd,
                                     VmafMtlGainLimit egl)
 {
     id<MTLBuffer> raw_ref  = (__bridge id<MTLBuffer>)s->raw_ref;
@@ -533,7 +535,7 @@ static void vif_metal_encode_scale0(const IntegerVifStateMetal *s, id<MTLCommand
 
 /* Scale n of 1..3: decimate (previous scale's dims) into ping-pong slot
  * (n - 1) % 2, then compute this scale's statistic from it. */
-static void vif_metal_encode_scale(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd, int n,
+void vif_metal_encode_scale(const IntegerVifStateMetal *s, id<MTLCommandBuffer> cmd, int n,
                                    VmafMtlGainLimit egl)
 {
     id<MTLComputePipelineState> pso_d16 = (__bridge id<MTLComputePipelineState>)s->pso_decimate_16;
@@ -569,7 +571,7 @@ static void vif_metal_encode_scale(const IntegerVifStateMetal *s, id<MTLCommandB
                       s->scale_h[n], out_stride, grid_x, s->bpc, egl);
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -606,7 +608,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
  * Each result is rounded to float, as integer_vif.c::vif_store_residuals()
  * stores it; the double the caller receives holds that float exactly.
  * collect_fex_metal() then divides in single precision, as the CPU does. */
-static void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num, double *den)
+void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num, double *den)
 {
     const VifWgAccumHost *p = (const VifWgAccumHost *)[(__bridge id<MTLBuffer>)s->wg_accum[scale]
                                                           contents];
@@ -629,7 +631,7 @@ static void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num,
     *den = (double)fden;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     IntegerVifStateMetal *const s = (IntegerVifStateMetal *)fex->priv;
@@ -662,12 +664,12 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                                 &output, VMAF_VIF_INTEGER_NAMES, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     return vif_metal_release((IntegerVifStateMetal *)fex->priv);
 }
 
-static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score",
+const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score",
                                           "VMAF_integer_feature_vif_scale1_score",
                                           "VMAF_integer_feature_vif_scale2_score",
                                           "VMAF_integer_feature_vif_scale3_score",
@@ -683,6 +685,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

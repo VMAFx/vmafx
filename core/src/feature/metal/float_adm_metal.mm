@@ -172,7 +172,9 @@ using FloatAdmStateMetal = struct FloatAdmStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
-static const VmafOption options[] = {
+namespace {
+
+const VmafOption options[] = {
     {.name = "debug",
      .help = "debug mode: enable additional output",
      .offset = offsetof(FloatAdmStateMetal, debug),
@@ -375,7 +377,7 @@ static const VmafOption options[] = {
     {.name=nullptr},
 };
 
-static void compute_per_scale_dims(FloatAdmStateMetal *s)
+void compute_per_scale_dims(FloatAdmStateMetal *s)
 {
     unsigned cw = s->width;
     unsigned ch = s->height;
@@ -405,7 +407,7 @@ static void compute_per_scale_dims(FloatAdmStateMetal *s)
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
 }
 
-static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
+void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
 {
     id<MTLFunction> fn = [lib newFunctionWithName:name];
     if (fn == nil) { return nullptr; }
@@ -415,7 +417,7 @@ static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *n
     return (__bridge_retained void *)pso;
 }
 
-static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -436,7 +438,7 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 }
 
 /* Release every retained PSO. Safe on a partially-built state. */
-static void release_psos(FloatAdmStateMetal *s)
+void release_psos(FloatAdmStateMetal *s)
 {
     void **const psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
                      &s->pso_dwt_hori,    &s->pso_dwt_vert_16, &s->pso_dwt_vert_8};
@@ -449,7 +451,7 @@ static void release_psos(FloatAdmStateMetal *s)
 }
 
 /* Release every retained MTLBuffer. Safe on a partially-allocated state. */
-static void release_buffers(FloatAdmStateMetal *s)
+void release_buffers(FloatAdmStateMetal *s)
 {
     for (int i = 0; i < FADM_NUM_SCALES; ++i) {
         if (s->ref_band[i]) {
@@ -471,7 +473,7 @@ static void release_buffers(FloatAdmStateMetal *s)
     }
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -599,7 +601,7 @@ fail_ctx:
 }
 
 /* Copy a Y plane (respecting source stride) into the packed src buffer. */
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
                            unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
@@ -613,7 +615,7 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
 
 /* Dispatch `grid` threadgroups of `tg` threads of `pso` with the buffers and
  * bytes of one stage: buffers[i] at index i, then `bytes` at the next index. */
-static void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
+void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
                            NSArray<id<MTLBuffer>> *buffers, const void *bytes,
                            size_t bytes_length, MTLSize grid, MTLSize tg)
 {
@@ -628,13 +630,13 @@ static void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
     [enc endEncoding];
 }
 
-static MTLSize grid_2d(unsigned w, unsigned h, unsigned z)
+MTLSize grid_2d(unsigned w, unsigned h, unsigned z)
 {
     return MTLSizeMake((w + FADM_BX - 1u) / FADM_BX, (h + FADM_BY - 1u) / FADM_BY, z);
 }
 
 /* Stages 0 and 1: the DWT of one scale, reference and distorted (z = 2). */
-static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const int cur_w = (int)s->scale_w[scale];
     const int cur_h = (int)s->scale_h[scale];
@@ -693,7 +695,7 @@ static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scal
 }
 
 /* Stage 2: decouple + CSF of both signals. */
-static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     VmafMtlFadmDecoupleArgs a;
     memset(&a, 0, sizeof(a));
@@ -718,7 +720,7 @@ static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int
 
 /* Stages 3 and 4: the terms of the reduced region and their row sums. A
  * scale whose region is empty has no terms and no rows. */
-static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const AdmBorderS *r = &s->region[scale];
     const int region_w = r->right - r->left;
@@ -770,7 +772,7 @@ static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cm
     [enc endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -800,6 +802,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [cmd waitUntilCompleted];
     return 0;
 }
+} // namespace
 
 /* One scale of compute_adm() past the kernels. The frame accumulators are the
  * reference's: one fp32 value per band that the row sums are added to top to
@@ -812,7 +815,9 @@ using FadmScaleSums = struct FadmScaleSums {
     float aim_numerator;
 };
 
-static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
+namespace {
+
+FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
 {
     FadmScaleSums sums = {.numerator=0.0f, .denominator=0.0f, .aim_numerator=0.0f};
     if (scale == 0 && s->adm_skip_scale0) {
@@ -841,7 +846,7 @@ static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
     return sums;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
 
@@ -915,7 +920,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
                                            value_count, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -936,7 +941,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
 /* provided_features matches the CPU float_adm.c list EXACTLY (same names,
  * same order) — the parity test and model JSONs depend on it. */
-static const char *provided_features[] = {"VMAF_feature_adm2_score",
+const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "VMAF_feature_aim_score",
                                           "VMAF_feature_adm3_score",
                                           "VMAF_feature_adm_scale0_score",
@@ -955,6 +960,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_num_scale3",
                                           "adm_den_scale3",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

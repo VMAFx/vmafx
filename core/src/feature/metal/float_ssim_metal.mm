@@ -96,11 +96,13 @@ using FloatSsimStateMetal = struct FloatSsimStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* ------------------------------------------------------------------ */
 /* Options                                                              */
 /* ------------------------------------------------------------------ */
 
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name        = "enable_lcs",
         .help        = "emit luminance, contrast and structure sub-scores",
@@ -140,7 +142,7 @@ static const VmafOption options[] = {
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
 
-static int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
+int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
 {
     if (override_val > 0) { return override_val; }
     int const scaled = (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
@@ -148,7 +150,7 @@ static int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
 }
 
 /* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
-static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -157,12 +159,12 @@ static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     return ssim_metal_compute_scale(w, h, s->scale) == 1 ? 0 : -ENOTSUP;
 }
 
-static id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
+id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
 {
     return [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
 }
 
-static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -187,7 +189,7 @@ static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
 
 /* The scale and the frame size the twin runs, the geometry and the dB
  * ceiling. */
-static int configure(FloatSsimStateMetal *s, unsigned bpc, unsigned w, unsigned h)
+int configure(FloatSsimStateMetal *s, unsigned bpc, unsigned w, unsigned h)
 {
     /* Validate scale: v1 supports scale=1 only. */
     const int scale = ssim_metal_compute_scale(w, h, s->scale);
@@ -223,7 +225,7 @@ static int configure(FloatSsimStateMetal *s, unsigned bpc, unsigned w, unsigned 
 }
 
 /* The float planes, the moment planes, the term buffers and the pipelines. */
-static int allocate(FloatSsimStateMetal *s)
+int allocate(FloatSsimStateMetal *s)
 {
     const size_t pixels = (size_t)s->frame_w * (size_t)s->frame_h;
     const size_t windows = (size_t)s->w_h * (size_t)s->h_v;
@@ -252,9 +254,9 @@ static int allocate(FloatSsimStateMetal *s)
     return build_pipelines(s, device);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex);
+int close_fex_metal(VmafFeatureExtractor *fex);
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -284,7 +286,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 /* Per frame                                                            */
 /* ------------------------------------------------------------------ */
 
-static void encode_horizontal(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
+void encode_horizontal(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_horiz];
@@ -300,7 +302,7 @@ static void encode_horizontal(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
     [enc endEncoding];
 }
 
-static void encode_windows(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
+void encode_windows(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
@@ -322,13 +324,13 @@ static void encode_windows(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 }
 
 /* picture_copy(): the CPU's normalisation of a plane to float. */
-static void fill_float_plane(id<MTLBuffer> dst, VmafPicture *pic, unsigned width)
+void fill_float_plane(id<MTLBuffer> dst, VmafPicture *pic, unsigned width)
 {
     picture_copy((float *)[dst contents], (ptrdiff_t)((size_t)width * sizeof(float)), pic, 0,
                  pic->bpc, 0);
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -359,7 +361,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 /* iqa_ssim() returns every frame mean as fp32, `(float)(sum / (double)(w * h))`;
  * the twin rounds the same way, so a frame whose mean rounds to 1 scores
  * exactly 1 and enable_db reports the CPU's +inf / clip_db ceiling for it. */
-static int frame_mean(const char *feature, double sum, double n_windows, unsigned index,
+int frame_mean(const char *feature, double sum, double n_windows, unsigned index,
                       double *mean)
 {
     const int err =
@@ -373,7 +375,7 @@ static int frame_mean(const char *feature, double sum, double n_windows, unsigne
 /* enable_lcs: the four sums become the frame means float_ssim and
  * float_ssim_{l,c,s}, published in CPU float_ssim.c order after the shared
  * SSIM validation. */
-static int emit_lcs(const FloatSsimStateMetal *s, const VmafMtlSsimFrameSums *sums,
+int emit_lcs(const FloatSsimStateMetal *s, const VmafMtlSsimFrameSums *sums,
                     double n_windows, unsigned index, VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
@@ -391,7 +393,7 @@ static int emit_lcs(const FloatSsimStateMetal *s, const VmafMtlSsimFrameSums *su
                                        s->max_db, atoms, 3u, index);
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatSsimStateMetal *const s = (FloatSsimStateMetal *)fex->priv;
@@ -420,7 +422,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                                       s->max_db, index);
 }
 
-static void release_object(void **handle)
+void release_object(void **handle)
 {
     if (*handle != nullptr) {
         (void)(__bridge_transfer id)*handle;
@@ -428,7 +430,7 @@ static void release_object(void **handle)
     }
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatSsimStateMetal *s = (FloatSsimStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -449,9 +451,10 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {
+const char *provided_features[] = {
     "float_ssim", "float_ssim_l", "float_ssim_c", "float_ssim_s", nullptr
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

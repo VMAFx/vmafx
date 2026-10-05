@@ -135,9 +135,11 @@ using FloatMotionStateMetal = struct FloatMotionStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
+namespace {
+
 /* The CPU float_motion.c table: same names, aliases, defaults, ranges and
  * order. The order spells the feature names. */
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name        = "debug",
         .help        = "debug mode: enable additional output",
@@ -230,7 +232,7 @@ static const VmafOption options[] = {
     {.name=nullptr},
 };
 
-static int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector *feature_collector,
+int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector *feature_collector,
                            const char *name, double score, unsigned index)
 {
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
@@ -239,21 +241,21 @@ static int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector 
 
 /* CPU float_motion.c::motion_clip (motion and motion2): the fps weight, then
  * the motion_max_val cap. */
-static double fm_metal_motion_clip(const FloatMotionStateMetal *s, double score)
+double fm_metal_motion_clip(const FloatMotionStateMetal *s, double score)
 {
     return MIN(score * s->motion_fps_weight, s->motion_max_val);
 }
 
 /* CPU float_motion.c::motion_blend_clip (motion3): the fps weight, the blend
  * of motion_blend_tools.h, then the motion_max_val cap. */
-static double fm_metal_motion_blend_clip(const FloatMotionStateMetal *s, double score)
+double fm_metal_motion_blend_clip(const FloatMotionStateMetal *s, double score)
 {
     return MIN(motion_blend(score * s->motion_fps_weight, s->motion_blend_factor,
                             s->motion_blend_offset),
                s->motion_max_val);
 }
 
-static size_t fm_metal_bytes_per_sample(const FloatMotionStateMetal *s)
+size_t fm_metal_bytes_per_sample(const FloatMotionStateMetal *s)
 {
     return (s->bpc <= 8u) ? 1u : 2u;
 }
@@ -267,7 +269,7 @@ static size_t fm_metal_bytes_per_sample(const FloatMotionStateMetal *s)
  * motion_filter_size == 3 narrows the filter. The kernels index a plane's
  * transposed differences in 32 bits, which also bounds the pixel count
  * vmaf_float_motion_score_from_row_sads() divides by (an int on the CPU). */
-static int fm_metal_check_plane(const FloatMotionStateMetal *s, const FmPlaneMetal *p,
+int fm_metal_check_plane(const FloatMotionStateMetal *s, const FmPlaneMetal *p,
                                 const char *name)
 {
     const unsigned taps = (s->motion_filter_size == 3) ? 3u : 5u;
@@ -288,7 +290,7 @@ static int fm_metal_check_plane(const FloatMotionStateMetal *s, const FmPlaneMet
 
 /* Geometry and read-back offsets of one plane; returns the index after its
  * last row sum. */
-static unsigned fm_metal_plane_layout(const FloatMotionStateMetal *s, FmPlaneMetal *p, unsigned w,
+unsigned fm_metal_plane_layout(const FloatMotionStateMetal *s, FmPlaneMetal *p, unsigned w,
                                       unsigned h, unsigned offset)
 {
     p->w = w;
@@ -303,7 +305,7 @@ static unsigned fm_metal_plane_layout(const FloatMotionStateMetal *s, FmPlaneMet
 
 /* Geometry of every plane the options ask for, checked as the CPU checks it
  * (motion_check_min_dim_all_planes()). Touches no device object. */
-static int fm_metal_init_geometry(FloatMotionStateMetal *s, enum VmafPixelFormat pix_fmt,
+int fm_metal_init_geometry(FloatMotionStateMetal *s, enum VmafPixelFormat pix_fmt,
                                   unsigned w, unsigned h)
 {
     s->n_planes = 1u;
@@ -333,7 +335,7 @@ static int fm_metal_init_geometry(FloatMotionStateMetal *s, enum VmafPixelFormat
 
 /* One compute pipeline of the embedded library; refuses a pipeline that
  * cannot run `threads` threads per threadgroup. */
-static int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name,
+int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name,
                              NSUInteger threads, void **out)
 {
     id<MTLFunction> fn = [lib newFunctionWithName:name];
@@ -349,7 +351,7 @@ static int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString 
     return 0;
 }
 
-static int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -368,7 +370,7 @@ static int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
     return rc;
 }
 
-static int fm_metal_new_buffer(id<MTLDevice> device, size_t bytes, void **out)
+int fm_metal_new_buffer(id<MTLDevice> device, size_t bytes, void **out)
 {
     id<MTLBuffer> buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     if (buf == nil) {
@@ -379,7 +381,7 @@ static int fm_metal_new_buffer(id<MTLDevice> device, size_t bytes, void **out)
 }
 
 /* The raw plane, the blur ping-pong and the difference planes of one plane. */
-static int fm_metal_plane_alloc(const FloatMotionStateMetal *s, FmPlaneMetal *p,
+int fm_metal_plane_alloc(const FloatMotionStateMetal *s, FmPlaneMetal *p,
                                 id<MTLDevice> device)
 {
     const size_t pixels = (size_t)p->w * p->h;
@@ -402,7 +404,7 @@ static int fm_metal_plane_alloc(const FloatMotionStateMetal *s, FmPlaneMetal *p,
 }
 
 /* Releases one __bridge_retained handle; safe on NULL. */
-static void fm_metal_drop(void **slot)
+void fm_metal_drop(void **slot)
 {
     if (*slot != nullptr) {
         (void)(__bridge_transfer id)(*slot);
@@ -410,7 +412,7 @@ static void fm_metal_drop(void **slot)
     }
 }
 
-static void fm_metal_drop_objects(FloatMotionStateMetal *s)
+void fm_metal_drop_objects(FloatMotionStateMetal *s)
 {
     for (auto & c : s->plane) {
         FmPlaneMetal *p = &c;
@@ -425,7 +427,7 @@ static void fm_metal_drop_objects(FloatMotionStateMetal *s)
     fm_metal_drop(&s->pso_blur);
 }
 
-static int fm_metal_release_device(FloatMotionStateMetal *s)
+int fm_metal_release_device(FloatMotionStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     fm_metal_drop_objects(s);
@@ -441,7 +443,7 @@ static int fm_metal_release_device(FloatMotionStateMetal *s)
     return rc;
 }
 
-static int fm_metal_release(FloatMotionStateMetal *s)
+int fm_metal_release(FloatMotionStateMetal *s)
 {
     int rc = fm_metal_release_device(s);
     if (s->feature_name_dict != nullptr) {
@@ -453,7 +455,7 @@ static int fm_metal_release(FloatMotionStateMetal *s)
     return rc;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
     return fm_metal_release(s);
@@ -463,7 +465,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 /* motion_force_zero                                                  */
 /* ------------------------------------------------------------------ */
 
-static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                     VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                                     VmafPicture *dist_pic_90, unsigned index,
                                     VmafFeatureCollector *feature_collector)
@@ -485,7 +487,7 @@ static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_
     return err;
 }
 
-static int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
+int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
 {
     fex->extract = extract_force_zero_metal;
     fex->submit = nullptr;
@@ -506,7 +508,7 @@ static int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMeta
 /* ------------------------------------------------------------------ */
 
 /* Device half of init: read-back, pipelines, buffers, name dictionary. */
-static int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
+int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
 {
     int err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx, (size_t)s->row_count * sizeof(float));
     if (err != 0) { return err; }
@@ -529,7 +531,7 @@ static int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal
     return 0;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
@@ -574,7 +576,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 /* ------------------------------------------------------------------ */
 
 /* Copies every plane the extractor reads into its packed `ref_in`. */
-static int fm_metal_upload(const FloatMotionStateMetal *s, const VmafPicture *pic)
+int fm_metal_upload(const FloatMotionStateMetal *s, const VmafPicture *pic)
 {
     const size_t bps = fm_metal_bytes_per_sample(s);
     for (unsigned c = 0u; c < s->n_planes; c++) {
@@ -592,7 +594,7 @@ static int fm_metal_upload(const FloatMotionStateMetal *s, const VmafPicture *pi
     return 0;
 }
 
-static MTLSize fm_metal_groups(unsigned w, unsigned h)
+MTLSize fm_metal_groups(unsigned w, unsigned h)
 {
     return MTLSizeMake((w + VMAF_MTL_FM_BLOCK - 1u) / VMAF_MTL_FM_BLOCK,
                        (h + VMAF_MTL_FM_BLOCK - 1u) / VMAF_MTL_FM_BLOCK, 1);
@@ -601,7 +603,7 @@ static MTLSize fm_metal_groups(unsigned w, unsigned h)
 /* Blur kernel of plane `p`: blurs the raw plane into the current ping-pong
  * slot and, when `compute_sad` is set, stores |cur - prev| of every sample in
  * the plane's scale-0 differences. */
-static int fm_metal_encode_blur(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
+int fm_metal_encode_blur(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                 const FmPlaneMetal *p, unsigned compute_sad)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -625,7 +627,7 @@ static int fm_metal_encode_blur(const FloatMotionStateMetal *s, id<MTLCommandBuf
 /* Scale-1 difference kernel of plane `p`, after its blur kernel: scales both
  * ping-pong slots to half size and stores |cur - prev| of every half-size
  * sample in the plane's scale-1 differences. */
-static int fm_metal_encode_scale1(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
+int fm_metal_encode_scale1(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                   const FmPlaneMetal *p)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -649,7 +651,7 @@ static int fm_metal_encode_scale1(const FloatMotionStateMetal *s, id<MTLCommandB
 /* Row kernel: one thread per row adds the `width` differences of its row in
  * the CPU's order and writes `height` row sums at `first_row` of the
  * read-back. `diff` is a transposed plane a kernel of this frame wrote. */
-static int fm_metal_encode_row_sum(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
+int fm_metal_encode_row_sum(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                    void *diff, unsigned first_row, unsigned width,
                                    unsigned height)
 {
@@ -672,7 +674,7 @@ static int fm_metal_encode_row_sum(const FloatMotionStateMetal *s, id<MTLCommand
 /* Every kernel of plane `p`, in order: the blur and, from the second frame
  * on, the scale-0 row sums and, with motion_add_scale1, the scale-1
  * differences and their row sums. One encoder per kernel orders them. */
-static int fm_metal_encode_plane(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
+int fm_metal_encode_plane(const FloatMotionStateMetal *s, id<MTLCommandBuffer> cmd,
                                  const FmPlaneMetal *p, unsigned compute_sad)
 {
     int err = fm_metal_encode_blur(s, cmd, p, compute_sad);
@@ -690,7 +692,7 @@ static int fm_metal_encode_plane(const FloatMotionStateMetal *s, id<MTLCommandBu
     return err;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -732,7 +734,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
  * motion.c::vmaf_image_sad_c() (the fp32 mean absolute difference, plus the
  * fp32 scale-1 mean with motion_add_scale1), and the planes added in double
  * (CPU float_motion.c::motion_score_pair()). */
-static double fm_metal_frame_score(const FloatMotionStateMetal *s)
+double fm_metal_frame_score(const FloatMotionStateMetal *s)
 {
     const float *rows = (const float *)s->rb.host_view;
     double score = 0.0;
@@ -748,7 +750,7 @@ static double fm_metal_frame_score(const FloatMotionStateMetal *s)
  * float_motion.c::extract() order: motion2 = 0 at index 0 (motion3 at 0
  * waits for the first SAD or for flush), motion3 at 0 from the first SAD
  * alone, then motion2 / motion3 = min(prev, cur) at `index - 1`. */
-static int fm_metal_emit_motion23(const FloatMotionStateMetal *s,
+int fm_metal_emit_motion23(const FloatMotionStateMetal *s,
                                   VmafFeatureCollector *feature_collector, unsigned index,
                                   double motion_score)
 {
@@ -771,7 +773,7 @@ static int fm_metal_emit_motion23(const FloatMotionStateMetal *s,
     return err;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
@@ -797,7 +799,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
 /* The tail of CPU float_motion.c::flush: motion2 / motion3 of the last SAD
  * at the last frame index, motion_clip()ped and motion_blend_clip()ped. */
-static int fm_metal_emit_tail(const FloatMotionStateMetal *s,
+int fm_metal_emit_tail(const FloatMotionStateMetal *s,
                               VmafFeatureCollector *feature_collector)
 {
     int err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score",
@@ -810,7 +812,7 @@ static int fm_metal_emit_tail(const FloatMotionStateMetal *s,
     return err;
 }
 
-static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
 
@@ -834,9 +836,10 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
     return (err != 0) ? err : 1;
 }
 
-static const char *provided_features[] = {
+const char *provided_features[] = {
     "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", nullptr
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

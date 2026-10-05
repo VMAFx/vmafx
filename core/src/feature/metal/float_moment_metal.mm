@@ -60,10 +60,13 @@ extern "C" {
 #define FM_SUM_ROW_UNITS 2u  /* int64 [plane][row][2] */
 #define FM_SUM_FRAME 3u      /* uint64 [4]: ref1, dis1, ref2, dis2 */
 
-static const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
+namespace {
+
+const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
     "float_moment_plane_sums",  "float_moment_row_totals", "float_moment_row_plans",
     "float_moment_row_units",   "float_moment_ordered_totals",
 };
+} // namespace
 
 using FloatMomentStateMetal = struct FloatMomentStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -85,9 +88,11 @@ using FloatMomentStateMetal = struct FloatMomentStateMetal {
     VmafDictionary *feature_name_dict;
 };
 
-static const VmafOption options[] = {{.name=nullptr}};
+namespace {
 
-static void release_sum_pipelines(FloatMomentStateMetal *s)
+const VmafOption options[] = {{.name=nullptr}};
+
+void release_sum_pipelines(FloatMomentStateMetal *s)
 {
     for (auto & k : s->pso_sum) {
         if (k) {
@@ -100,7 +105,7 @@ static void release_sum_pipelines(FloatMomentStateMetal *s)
 /* The five kernels of the rounded-sum pass. Each runs one threadgroup of
  * VMAF_MTL_MSUM_LANES lanes, so a pipeline that cannot is refused (fail
  * closed, never a smaller group). */
-static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, id<MTLLibrary> lib)
+int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, id<MTLLibrary> lib)
 {
     NSError *err = nil;
     for (unsigned k = 0u; k < FM_SUM_KERNEL_COUNT; ++k) {
@@ -121,7 +126,7 @@ static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, i
     return 0;
 }
 
-static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 {
     int load_rc = 0;
     id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
@@ -150,14 +155,14 @@ static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 
 /* Row arrays and the frame sums of the rounded-sum pass, for a frame that
  * can pass 2^53 units; none otherwise. */
-static void free_sum_buffers(FloatMomentStateMetal *s)
+void free_sum_buffers(FloatMomentStateMetal *s)
 {
     for (auto & b : s->sum_buf) {
         (void)vmaf_metal_kernel_buffer_free(&b, s->ctx);
     }
 }
 
-static int alloc_sum_buffers(FloatMomentStateMetal *s)
+int alloc_sum_buffers(FloatMomentStateMetal *s)
 {
     if (!s->rounds) { return 0; }
     const size_t rows = (size_t)VMAF_MTL_MSUM_PLANES * s->frame_h;
@@ -179,7 +184,7 @@ static int alloc_sum_buffers(FloatMomentStateMetal *s)
     return 0;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -258,7 +263,7 @@ fail_ctx:
     return err;
 }
 
-static void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                             unsigned which, NSUInteger index)
 {
     id<MTLBuffer> buf = vmaf_metal::borrow<id<MTLBuffer>>(s->sum_buf[which].buffer);
@@ -267,7 +272,7 @@ static void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommand
 
 /* Selects the pipeline of pass `kernel`; the caller then sets the pass's
  * bindings, in the order the kernel declares them, and dispatches it. */
-static void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                             unsigned kernel)
 {
     id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)s->pso_sum[kernel];
@@ -278,7 +283,7 @@ static void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommand
  * (serial dispatch: each kernel sees the writes of the one before). The
  * kernels of float_moment.metal return at once on a plane whose exact sum is
  * at most 2^53 units. */
-static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                               id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf, size_t row_bytes)
 {
     const uint32_t dim[4] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h, (uint32_t)row_bytes, 0u};
@@ -336,7 +341,7 @@ static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeComma
     [enc dispatchThreadgroups:by_plane threadsPerThreadgroup:lanes];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -420,7 +425,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
-static uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size_t i)
+uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size_t i)
 {
     return ((uint64_t)hi[i] << 32u) | (uint64_t)lo[i];
 }
@@ -431,7 +436,7 @@ static uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size
  * terms, which is what the CPU's running double holds while it is at most 2^53
  * units (every frame of up to 2^21 pixels). Past it the CPU rounds as it adds:
  * apply_rounded_sums() replaces the two second-moment totals (ADR-1497). */
-static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
+void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
 {
     const uint32_t *parts[FM_PARTIAL_BUFFER_COUNT];
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
@@ -450,7 +455,7 @@ static void accumulate_partials(const FloatMomentStateMetal *s, uint64_t sum[4])
  * second-moment sums, each a double the conversion below holds exactly, in
  * entries 2 and 3 of the frame sums (ADR-1497). Fails closed: no sums, no
  * score. */
-static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
+int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
 {
     if (!s->rounds) { return 0; }
     const uint64_t *frame = (const uint64_t *)s->sum_buf[FM_SUM_FRAME].host_view;
@@ -460,7 +465,7 @@ static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
     return 0;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     FloatMomentStateMetal *const s = (FloatMomentStateMetal *)fex->priv;
@@ -495,7 +500,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         feature_collector, s->feature_name_dict, "float_moment_dis2nd", dis2, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatMomentStateMetal *s = (FloatMomentStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -523,13 +528,14 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {
+const char *provided_features[] = {
     "float_moment_ref1st",
     "float_moment_dis1st",
     "float_moment_ref2nd",
     "float_moment_dis2nd",
     nullptr,
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
