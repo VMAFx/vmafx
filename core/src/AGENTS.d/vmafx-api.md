@@ -21,7 +21,7 @@ invariant: Generated from core/api/vmafx.toml, never hand-edit; libvmaf shims on
 - Change: edit definition, run `python3 scripts/codegen/vmafx-api.py --write`. Meson `test_vmafx_api_generated_current` fails on any byte difference.
 - Merge conflict in generated file: take either side, re-run `--write`. Never hand-merge.
 - Definition append-only (HISS-14): `python3 scripts/codegen/vmafx-api.py --abi-check --against-ref <base>`. Meson `test_vmafx_api_abi_append_only`: same check vs merge base with `origin/master`; exit 77 + reason without git, ref or base definition. Break needs higher ABI minor within 0.x, higher major from 1.0, plus `!` + `Migration:` footer; PR body lists accepted breaks.
-- Addition: bump `abi_version`. 0.x: `since` = current minor (patch bump) or newer, never older node. From 1.0: shipped node frozen, `since` = newer minor. Members (fields, enum values, bits) inherit parent `since` unless set.
+- Addition (ADR-1897): bump `abi_version`. 0.x: `since` = current minor (patch bump) or newer, never older node. From 1.0: shipped node frozen, `since` = newer minor. Members (fields, enum values, bits) inherit parent `since` unless set.
 - Schema-1 definitions (prototype #2173) read through `loader.upgrade()`, for `--abi-check` only; keep while any comparison base predates schema 2.
 - One generator: missing definition feature goes into `scripts/codegen/vmafx_api/`, never worked around by hand-written output.
 

@@ -64,7 +64,8 @@ standard library). It never runs during a normal build.
   enough), so work packages that add functions in parallel do not each claim
   a minor; it may never join an older node. From `1.0.0` a node that shipped
   is frozen: an addition's `since` is a newer minor than the ABI it is
-  compared with.
+  compared with. [ADR-1897](../adr/1897-vmafx-abi-0x-numbering.md) records
+  this rule and the alternative of a new minor per addition.
 - **Deprecation**: `deprecated = { since, replacement, removal }` adds the
   `VMAFX_DEPRECATED("...")` attribute to a function (define
   `VMAFX_NO_DEPRECATION_WARNINGS` to silence it), an `@deprecated` line to the
