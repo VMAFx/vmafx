@@ -507,12 +507,23 @@ class HipWrapper(unittest.TestCase):
             "host-tidy -p build --extra-arg=-I/opt/rocm/include core/src/hip/common.c",
         )
 
-    def test_kernels_use_the_rocm_clang_tidy(self) -> None:
+    def test_kernels_use_the_rocm_clang_tidy_on_the_host_job(self) -> None:
+        # A .hip TU compiles twice, for the host and for the device, and
+        # clang-tidy analyses the driver's first job. ROCm 10.0's clang (LLVM
+        # 23) listed the host job first, ROCm 10.1's (LLVM 24) lists the device
+        # job first: the lane measured another compilation without a word, 23
+        # findings more in four headers. The wrapper names the job the
+        # baselines were measured on.
         result = self._run("-p", "build", "core/src/feature/hip/integer_psnr/psnr_score.hip")
         self.assertEqual(
             result.stdout.strip(),
-            "rocm-tidy -p build core/src/feature/hip/integer_psnr/psnr_score.hip",
+            "rocm-tidy --extra-arg=--cuda-host-only -p build "
+            "core/src/feature/hip/integer_psnr/psnr_score.hip",
         )
+
+    def test_host_translation_units_get_no_offload_flag(self) -> None:
+        result = self._run("-p", "build", "core/src/hip/common.c")
+        self.assertNotIn("--cuda-host-only", result.stdout)
 
     def test_version_is_the_lane_clang_tidys(self) -> None:
         self.assertEqual(self._run("--version").stdout.strip(), "host-tidy --version")

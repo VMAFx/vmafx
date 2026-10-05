@@ -68,7 +68,11 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   headers call `__builtin_amdgcn_is_invocable`, stock LLVM 22 stops with
   "builtin functions must be directly called". Host TUs stay on
   `CLANG_TIDY_BIN`; `--version` = that one. Missing ROCm tool -> `error:`
-  line, exit 127 (TU unusable, not clean).
+  line, exit 127 (TU unusable, not clean). `.hip` gets
+  `--extra-arg=--cuda-host-only`: clang-tidy analyses driver's first job;
+  ROCm 10.0 (LLVM 23) = host job first, ROCm 10.1 (LLVM 24) = device job
+  first -> lane silently measured device AST (+23 in four headers). Keep the
+  pin; a ROCm bump re-measures the hip lane against 10.x before landing.
 - Self-test prints nothing: `report()` / `main()` print `::error::` under
   Actions; uncaptured, fixture `a.c` became annotation on hosted job. Use
   `_captured()`; `SelfTestOutput` reruns module with `GITHUB_ACTIONS` on and

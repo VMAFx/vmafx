@@ -194,6 +194,13 @@ TheRock's sources instead.
   texts the tester record fetches are byte-identical at the new commits.
 - **Channels.** `repo.radeon.com/rocm/apt/10.1.0/` is 404 and `apt/latest`
   still ends at 7.2.4.
+- **clang-tidy.** ROCm's clang-tidy analyses the first compilation job of a
+  `.hip` file, and LLVM 24 lists the device job before the host job. The hip
+  lane therefore measured another compilation under 10.1.0 (23 findings more in
+  four headers, all `bugprone-dynamic-static-initializers` on device-side
+  declarations) until `scripts/ci/clang-tidy-hip.sh` pinned the host job with
+  `--cuda-host-only`; with the pin the 10.1.0 lane equals the 10.0.0 lane file
+  for file.
 - **`rocm-smi`.** The fork calls it only after `rocminfo` (`pkg/corpus`,
   `tools/vmaf-tune`) or from `pkg/gpu/detect.go`, which no binary calls; no
   path depends on it.

@@ -142,7 +142,7 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 | `cpu` | gcc-15 / g++-15 | `-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled -Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false` | clang-tidy 22 |
 | `clang` | clang-22 / clang++-22 | the `cpu` options plus `-Dfuzz=true` | clang-tidy 22, `--select core/test/fuzz/ --select core/src/read_json_model.c` |
 | `cuda` | gcc-15 / g++-15, nvcc | `-Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22, `--cuda-host-only -nocudalib` |
-| `hip` | gcc-15 / g++-15, hipcc | `-Denable_hip=true -Denable_hipcc=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 for the host files, ROCm's clang-tidy for the `.hip` kernels |
+| `hip` | gcc-15 / g++-15, hipcc | `-Denable_hip=true -Denable_hipcc=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 for the host files, ROCm's clang-tidy for the `.hip` kernels, on their host compilation (`--cuda-host-only`: LLVM 24 lists the device job first, and clang-tidy analyses the first) |
 | `sycl` | icx / icpx | `-Denable_sycl=true -Dsycl_icpx_aot_targets= -Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 through `scripts/ci/clang-tidy-sycl.sh` |
 | `arm64` | aarch64-linux-gnu-gcc / g++ 15 (cross) | `--cross-file build-aux/aarch64-linux-gnu.ini --cross-file build-aux/aarch64-linux-gnu-qemu-user.ini -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false` | clang-tidy 22, `--target=aarch64-linux-gnu --sysroot=/usr/aarch64-linux-gnu` |
 

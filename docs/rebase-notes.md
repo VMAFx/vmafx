@@ -61882,6 +61882,9 @@ No score, public API or FFmpeg patch impact.
   names the LLVM 24 sonames. A conflict there takes the side that matches `ROCM_VERSION` in
   `build-config.env`. The prune lists of the `rocm-src` stage and of
   `scripts/ci/install-rocm-from-image.sh` stay one list (RPP joined both).
+- `scripts/ci/clang-tidy-hip.sh` passes `--extra-arg=--cuda-host-only` for `.hip` files: ROCm
+  10.1.0's clang-tidy otherwise analyses the device job and the hip lane's counts move. Keep
+  the flag when the wrapper or the hip lane's Makefile recipe changes.
 - `renovate.json` selects `docker/Dockerfile.tester` in the base-image custom manager and in
   the built-in manager's disable rule; `scripts/ci/tests/test_renovate_file_patterns.py`
   derives that set from the tree, so a sync that adds a Dockerfile mirroring a
