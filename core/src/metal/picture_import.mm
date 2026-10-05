@@ -30,6 +30,7 @@
  *  the Vulkan v1 contract before ADR-0251 ring back-pressure landed.
  */
 
+#include <bit>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -48,6 +49,8 @@ extern "C" {
 #include "iosurface_layout.h"
 #include "state_priv.h"
 }
+
+#include "objc_handle.h"
 
 /* Ring depth — caller is typically consuming index N-1 while
  * preparing index N. Two slots is enough for the FFmpeg
@@ -176,7 +179,7 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
 
     id<MTLDevice> device = nil;
     if (handles.device != 0u) {
-        device = (__bridge id<MTLDevice>)(void *)handles.device;
+        device = vmaf_metal::borrow<id<MTLDevice>>(handles.device);
         if (device == nil) {
             return -EINVAL;
         }
@@ -198,7 +201,7 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
 
     id<MTLCommandQueue> queue = nil;
     if (handles.command_queue != 0u) {
-        queue = (__bridge id<MTLCommandQueue>)(void *)handles.command_queue;
+        queue = vmaf_metal::borrow<id<MTLCommandQueue>>(handles.command_queue);
         if (queue == nil) {
             return -EINVAL;
         }
@@ -313,7 +316,7 @@ int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
     if (w == 0u || h == 0u || (is_ref != 0 && is_ref != 1)) {
         return -EINVAL;
     }
-    IOSurfaceRef surf = (IOSurfaceRef)(uintptr_t)iosurface;
+    IOSurfaceRef surf = std::bit_cast<IOSurfaceRef>(iosurface);
 
     struct MetalImportRing *ring = nullptr;
     int err = import_ring_for(state, w, h, bpc, &ring);

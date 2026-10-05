@@ -56,13 +56,11 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 /* feature/ciede_ff_math.h on the host, for make_constants() (C++20). */
 #include "metal_ciede_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 using CiedeStateMetal = struct CiedeStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -85,18 +83,10 @@ static const VmafOption options[] = {{.name=nullptr}};
 
 static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_ciede_kernel_8bpc"];
     id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_ciede_kernel_16bpc"];
@@ -226,7 +216,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>    terms_buf = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
+    id<MTLBuffer>    terms_buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer);
     id<MTLComputePipelineState> pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;

@@ -58,10 +58,8 @@ extern "C" {
 #include "../nonfinite_score.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
+
 
 typedef struct IntegerAdmStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -237,18 +235,10 @@ static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
 
 static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
         const char *name = iadm_metal_kernel_name((IadmMetalKernel)k);

@@ -52,10 +52,8 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
+
 
 #define PSNR_NUM_PLANES 3U
 #define PSNR_BLOCK 16U
@@ -157,18 +155,10 @@ static size_t psnr_metal_groups(const IntegerPsnrStateMetal *s, unsigned p)
 
 static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_psnr_kernel_8bpc"];
     id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_psnr_kernel_16bpc"];
@@ -317,7 +307,7 @@ static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
     [enc setComputePipelineState:pso];
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->rb[p].buffer offset:0 atIndex:2];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->rb[p].buffer) offset:0 atIndex:2];
     [enc setBytes:strides length:sizeof(strides) atIndex:3];
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 

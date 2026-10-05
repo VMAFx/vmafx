@@ -53,12 +53,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal/metal_integer_ssim_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 /* integer_ssim.c's SSIM_K1 and SSIM_K2. */
 #define ISSIM_K1 (0.01 * 0.01)
@@ -160,18 +158,10 @@ static double issim_frame_sum(const uint64_t *terms, size_t count)
 
 static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn_h8  = [lib newFunctionWithName:@"integer_ssim_horiz_8bpc"];
     id<MTLFunction> fn_h16 = [lib newFunctionWithName:@"integer_ssim_horiz_16bpc"];
@@ -299,7 +289,7 @@ static void encode_terms(IntegerSsimStateMetal *s, id<MTLCommandBuffer> cmd)
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->terms.buffer offset:0 atIndex:1];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->terms.buffer) offset:0 atIndex:1];
     [enc setBytes:&s->params length:sizeof(s->params) atIndex:2];
     MTLSize const tg   = MTLSizeMake(16, 8, 1);
     MTLSize const grid = MTLSizeMake((s->frame_w + 15u) / 16u, (s->frame_h + 7u) / 8u, 1);

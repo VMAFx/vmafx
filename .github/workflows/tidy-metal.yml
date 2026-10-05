@@ -119,6 +119,12 @@ jobs:
             tidy-metal-fixes.patch
             tidy-metal-fix.log
             tidy-ratchet-metal.json
+            tidy-metal-build.log
+      - name: Build the fixed tree (log only; a compile error here means a fix broke the code)
+        if: ${{ inputs.fix }}
+        continue-on-error: true
+        run: |
+          meson compile -C "$RUNNER_TEMP/vmafx-tidy-metal" --ninja-args=-k0 > tidy-metal-build.log 2>&1
       - name: Measure after the fixes (report only)
         if: ${{ inputs.fix }}
         continue-on-error: true

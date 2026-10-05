@@ -45,12 +45,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal_float_moment_sum.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[] __asm("section$end$__TEXT$__metallib");
-}
 
 #define FM_PARTIAL_BUFFER_COUNT 8u
 
@@ -125,18 +123,10 @@ static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, i
 
 static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn8 = [lib newFunctionWithName:@"float_moment_kernel_8bpc"];
     id<MTLFunction> fn16 = [lib newFunctionWithName:@"float_moment_kernel_16bpc"];
@@ -271,7 +261,7 @@ fail_ctx:
 static void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                             unsigned which, NSUInteger index)
 {
-    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->sum_buf[which].buffer;
+    id<MTLBuffer> buf = vmaf_metal::borrow<id<MTLBuffer>>(s->sum_buf[which].buffer);
     [enc setBuffer:buf offset:0 atIndex:index];
 }
 
@@ -299,7 +289,7 @@ static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeComma
     /* 0: the four exact frame sums from the workgroup partials. */
     select_sum_pass(s, enc, 0u);
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+        id<MTLBuffer> buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb[b].buffer);
         [enc setBuffer:buf offset:0 atIndex:(NSUInteger)b];
     }
     bind_sum_buffer(s, enc, FM_SUM_FRAME, 8);
@@ -391,7 +381,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     const size_t par_size = s->partials_count * sizeof(uint32_t);
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
     for (auto & b : s->rb) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)b.buffer;
+        id<MTLBuffer> buf = vmaf_metal::borrow<id<MTLBuffer>>(b.buffer);
         [blit fillBuffer:buf range:NSMakeRange(0, par_size) value:0];
     }
     [blit endEncoding];
@@ -401,7 +391,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+        id<MTLBuffer> buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb[b].buffer);
         [enc setBuffer:buf offset:0 atIndex:(NSUInteger)(b + 2u)];
     }
     if (s->bpc <= 8u) {

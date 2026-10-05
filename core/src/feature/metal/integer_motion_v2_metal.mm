@@ -57,6 +57,8 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 /* Default maximum value allowed for motion — mirrors
  * DEFAULT_MOTION_MAX_VAL in integer_motion_v2.c (the CPU reference). */
 #define MOTION_V2_METAL_DEFAULT_MAX_VAL (10000.0)
@@ -64,13 +66,6 @@ extern "C" {
 /* Frames between a frame and the one its SAD reads, at most (five-frame
  * window: frame n - 2). */
 #define MOTION_V2_METAL_MAX_DEPTH 2U
-
-/* Linker-defined symbols bracketing the embedded metallib byte range
- * (`-sectcreate __TEXT __metallib path/to/default.metallib`). */
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 using MotionV2StateMetal = struct MotionV2StateMetal {
     VmafMetalKernelLifecycle lc;
@@ -186,18 +181,10 @@ static const VmafOption options[] = {
 
 static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn8  = [lib newFunctionWithName:@"motion_v2_kernel_8bpc"];
     id<MTLFunction> fn16 = [lib newFunctionWithName:@"motion_v2_kernel_16bpc"];
@@ -336,7 +323,7 @@ static int mv2_metal_dispatch(MotionV2StateMetal *s, id<MTLCommandQueue> queue,
     [enc setComputePipelineState:pso];
     [enc setBuffer:prev offset:0 atIndex:0];
     [enc setBuffer:cur  offset:0 atIndex:1];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->rb.buffer offset:0 atIndex:2];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer) offset:0 atIndex:2];
     if (s->bpc <= 8u) {
         const uint32_t strides[2] = {(uint32_t)row_bytes, (uint32_t)row_bytes};
         [enc setBytes:strides length:sizeof(strides) atIndex:3];

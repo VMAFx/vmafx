@@ -58,12 +58,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal/metal_ssim_terms.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 /* The window grid of the 16 x 8 threadgroups of every dispatch here. */
 #define FSSIM_BLOCK_X 16u
@@ -166,18 +164,10 @@ static id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
 
 static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn_horiz = [lib newFunctionWithName:@"float_ssim_horiz"];
     id<MTLFunction> fn_terms = [lib newFunctionWithName:@"float_ssim_vert_terms"];
@@ -314,7 +304,7 @@ static void encode_windows(FloatSsimStateMetal *s, id<MTLCommandBuffer> cmd)
 {
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf_buf offset:0 atIndex:0];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->terms.buffer offset:0 atIndex:1];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->terms.buffer) offset:0 atIndex:1];
     if (s->enable_lcs) {
         [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_lcs];
         [enc setBuffer:(__bridge id<MTLBuffer>)s->contrast_buf offset:0 atIndex:2];

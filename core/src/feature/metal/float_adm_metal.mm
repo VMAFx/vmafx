@@ -65,12 +65,10 @@ extern "C" {
 #include "../nonfinite_score.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal_float_adm_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 #define FADM_NUM_SCALES 4
 #define FADM_NUM_BANDS  3
@@ -419,18 +417,10 @@ static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *n
 
 static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     s->pso_dwt_vert_8 = make_pipeline(device, lib, @"float_adm_dwt_vert_8bpc");
     s->pso_dwt_vert_16 = make_pipeline(device, lib, @"float_adm_dwt_vert_16bpc");

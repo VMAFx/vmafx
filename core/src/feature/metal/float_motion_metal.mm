@@ -71,12 +71,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal_float_motion_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 /* Y, and U and V with motion_add_uv. */
 #define FMM_MAX_PLANES 3u
@@ -353,18 +351,10 @@ static int fm_metal_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString 
 
 static int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     const NSUInteger block = VMAF_MTL_FM_BLOCK * VMAF_MTL_FM_BLOCK;
     int rc = fm_metal_pipeline(device, lib, @"float_motion_blur", block, &s->pso_blur);
@@ -670,7 +660,7 @@ static int fm_metal_encode_row_sum(const FloatMotionStateMetal *s, id<MTLCommand
     const VmafMtlFmRowArgs args = {.width=width, .height=height, .first_row=first_row};
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_row_sum];
     [enc setBuffer:(__bridge id<MTLBuffer>)diff offset:0 atIndex:0];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->rb.buffer offset:0 atIndex:1];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer) offset:0 atIndex:1];
     [enc setBytes:&args length:sizeof(args) atIndex:2];
     [enc dispatchThreadgroups:MTLSizeMake((height + VMAF_MTL_FM_ROW_GROUP - 1u) /
                                               VMAF_MTL_FM_ROW_GROUP, 1, 1)

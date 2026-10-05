@@ -17,6 +17,7 @@
  *  ADR-0361 §"Header purity".
  */
 
+#include <bit>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -24,41 +25,45 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include "objc_handle.h"
+
 extern "C" {
 #include "../kernel_lifecycle_common.h"
 #include "common.h"
 #include "kernel_template.h"
 }
 
-/*
- * Bridge helpers. The struct stores `uintptr_t`; the .mm TU bridges
- * back and forth via void * intermediates. `_retain` consumes a +1
- * ARC reference from the autoreleased Metal handle and stashes it in
- * the uintptr_t slot; `_transfer` reverses that to release.
- */
-static inline uintptr_t retain_as_uptr(id obj)
-{
-    if (obj == nil) {
-        return 0;
-    }
-    return (uintptr_t)(__bridge_retained void *)obj;
+/* The struct stores `uintptr_t` slots; objc_handle.h bridges them. */
+using vmaf_metal::borrow;
+using vmaf_metal::retain_to_slot;
+using vmaf_metal::transfer;
+
+extern "C" {
+extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
+extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
-static inline id transfer_from_uptr(uintptr_t slot)
+id<MTLLibrary> vmaf_metal_library_load(id<MTLDevice> device, int *rc)
 {
-    if (slot == 0) {
+    const uintptr_t start = std::bit_cast<uintptr_t>(&libvmaf_metallib_start[0]);
+    const uintptr_t blob_size = std::bit_cast<uintptr_t>(&libvmaf_metallib_end[0]) - start;
+    if (blob_size == 0) {
+        *rc = -ENODEV;
         return nil;
     }
-    void *const p = (void *)slot;
-    return (__bridge_transfer id)p;
-}
-
-static inline id borrow_from_uptr(uintptr_t slot)
-{
-    if (slot == 0) {
+    dispatch_data_t const data = dispatch_data_create(
+        libvmaf_metallib_start, blob_size, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    if (data == nullptr) {
+        *rc = -ENOMEM;
         return nil;
     }
-    return (__bridge id)(void *)slot;
+    NSError *err = nil;
+    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
+    if (lib == nil) {
+        *rc = -ENODEV;
+    }
+    return lib;
 }
 
 int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalContext *ctx)
@@ -91,9 +96,9 @@ int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalCont
         return -ENOMEM;
     }
 
-    lc->cmd_queue = retain_as_uptr(queue);
-    lc->submit    = retain_as_uptr(submit_ev);
-    lc->finished  = retain_as_uptr(finished_ev);
+    lc->cmd_queue = retain_to_slot(queue);
+    lc->submit    = retain_to_slot(submit_ev);
+    lc->finished  = retain_to_slot(finished_ev);
 
     return 0;
 }
@@ -124,7 +129,7 @@ int vmaf_metal_kernel_buffer_alloc(VmafMetalKernelBuffer *buf, VmafMetalContext 
     if (b == nil) {
         return -ENOMEM;
     }
-    buf->buffer    = retain_as_uptr(b);
+    buf->buffer    = retain_to_slot(b);
     buf->host_view = [b contents];
     return 0;
 }
@@ -142,8 +147,8 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
         return -EINVAL;
     }
 
-    id<MTLCommandQueue> queue = (id<MTLCommandQueue>)borrow_from_uptr(lc->cmd_queue);
-    id<MTLBuffer> accum       = (id<MTLBuffer>)borrow_from_uptr(buf->buffer);
+    id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
+    id<MTLBuffer> accum       = borrow<id<MTLBuffer>>(buf->buffer);
 
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) {
@@ -165,8 +170,8 @@ int vmaf_metal_kernel_submit_pre_launch(VmafMetalKernelLifecycle *lc, VmafMetalC
      * buffer testing where there's no producer queue to sync with. */
     if (picture_command_buffer != 0 && dist_ready_event != 0) {
         id<MTLCommandBuffer> pic_cmd =
-            (id<MTLCommandBuffer>)borrow_from_uptr(picture_command_buffer);
-        id<MTLEvent> evt = (id<MTLEvent>)borrow_from_uptr(dist_ready_event);
+            borrow<id<MTLCommandBuffer>>(picture_command_buffer);
+        id<MTLEvent> evt = borrow<id<MTLEvent>>(dist_ready_event);
         [pic_cmd encodeWaitForEvent:evt value:1];
     }
 
@@ -188,7 +193,7 @@ int vmaf_metal_kernel_collect_wait(VmafMetalKernelLifecycle *lc, VmafMetalContex
      * commits a no-op blit + waits on its command buffer; this fences
      * everything previously enqueued, which is what consumers expect
      * after submit() before reading [contents] in collect(). */
-    id<MTLCommandQueue> queue = (id<MTLCommandQueue>)borrow_from_uptr(lc->cmd_queue);
+    id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
     id<MTLCommandBuffer> fence = [queue commandBuffer];
     if (fence == nil) {
         return -ENOMEM;
@@ -207,7 +212,7 @@ int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalCon
 
     /* Best-effort drain before release so any in-flight work finishes. */
     if (lc->cmd_queue != 0) {
-        id<MTLCommandQueue> queue = (id<MTLCommandQueue>)borrow_from_uptr(lc->cmd_queue);
+        id<MTLCommandQueue> queue = borrow<id<MTLCommandQueue>>(lc->cmd_queue);
         id<MTLCommandBuffer> fence = [queue commandBuffer];
         if (fence != nil) {
             [fence commit];
@@ -218,15 +223,15 @@ int vmaf_metal_kernel_lifecycle_close(VmafMetalKernelLifecycle *lc, VmafMetalCon
     /* Bridge-transfer each slot back to ARC ownership so the +1
      * retains we took in init() are released by scope exit. */
     if (lc->finished != 0) {
-        id const ev __attribute__((unused)) = transfer_from_uptr(lc->finished);
+        id const ev __attribute__((unused)) = transfer(lc->finished);
         lc->finished = 0;
     }
     if (lc->submit != 0) {
-        id const ev __attribute__((unused)) = transfer_from_uptr(lc->submit);
+        id const ev __attribute__((unused)) = transfer(lc->submit);
         lc->submit = 0;
     }
     if (lc->cmd_queue != 0) {
-        id const q __attribute__((unused)) = transfer_from_uptr(lc->cmd_queue);
+        id const q __attribute__((unused)) = transfer(lc->cmd_queue);
         lc->cmd_queue = 0;
     }
     return 0;
@@ -239,7 +244,7 @@ int vmaf_metal_kernel_buffer_free(VmafMetalKernelBuffer *buf, VmafMetalContext *
         return 0;
     }
     if (buf->buffer != 0) {
-        id const b __attribute__((unused)) = transfer_from_uptr(buf->buffer);
+        id const b __attribute__((unused)) = transfer(buf->buffer);
         buf->buffer = 0;
     }
     buf->host_view = nullptr;

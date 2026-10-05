@@ -69,12 +69,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal/metal_psnr_hvs_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 #define PSNR_HVS_NUM_PLANES 3
 #define PSNR_HVS_BLOCK 8u
@@ -127,18 +125,10 @@ static const VmafOption options[] = {
 
 static int build_pipelines(PsnrHvsStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_psnr_hvs_8bpc"];
     id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_psnr_hvs_16bpc"];
@@ -331,7 +321,7 @@ static int dispatch_plane(PsnrHvsStateMetal *s, id<MTLDevice> device, id<MTLComm
         }
     }
 
-    id<MTLBuffer> term_buf = (__bridge id<MTLBuffer>)(void *)s->rb[p].buffer;
+    id<MTLBuffer> term_buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb[p].buffer);
     id<MTLBuffer> csf_buf  = (__bridge id<MTLBuffer>)s->csf_buf[p];
     id<MTLBuffer> mask_buf = (__bridge id<MTLBuffer>)s->mask_buf[p];
 
