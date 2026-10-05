@@ -52,24 +52,72 @@ static const uint64_t known_model_flags =
 
 /* ---- Loading ------------------------------------------------------------- */
 
-static VmafxStatus model_config(const VmafxReport *report, const VmafxModelConfig *config,
-                                VmafModelConfig *cfg)
+/* One load: its report, the engine configuration, and where its messages go
+ * (a model belongs to no context, so the configuration names the callback).
+ * Self-referential once begun (sink.user): never copied. */
+typedef struct ModelLoad {
+    VmafxReport report;
+    VmafModelConfig cfg;
+    VmafxLogCallback callback;
+    void *user;
+    VmafLogSink sink;
+    const VmafLogSink *previous;
+} ModelLoad;
+
+static void model_log_deliver(enum VmafLogLevel level, const char *message, void *user)
 {
+    const ModelLoad *const load = user;
+    load->callback((uint32_t)level, message, load->user);
+}
+
+/* Read the configuration and route the load's messages, failures reported
+ * without an error out-parameter included, to its callback (else the process
+ * log) until load_end(). On failure nothing is routed and load_end() is not
+ * called. */
+static VmafxStatus load_begin(ModelLoad *load, const VmafxModelConfig *config, VmafxError **error)
+{
+    memset(load, 0, sizeof(*load));
+    load->report = (VmafxReport)VMAFX_REPORT(NULL, error);
     VmafxModelConfig c = VMAFX_MODEL_CONFIG_INIT;
     if (config) {
-        const VmafxStatus status = vmafx_read_sized(report, &c, (uint32_t)sizeof(c), config,
+        const VmafxStatus status = vmafx_read_sized(&load->report, &c, (uint32_t)sizeof(c), config,
                                                     VMAFX_MIN_MODEL_CONFIG, "config");
         if (status != VMAFX_OK) {
             return status;
         }
     }
+    if (c.log_callback) {
+        load->callback = c.log_callback;
+        load->user = c.log_user;
+        load->sink.deliver = model_log_deliver;
+        load->sink.user = load;
+        load->sink.level = vmafx_engine_log_level(c.log_level);
+        load->report.sink = &load->sink;
+    }
     if (c.flags & ~known_model_flags) {
-        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "config.flags",
-                          "unknown model flag bits 0x%llx",
+        return VMAFX_FAIL(&load->report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          "config.flags", "unknown model flag bits 0x%llx",
                           (unsigned long long)(c.flags & ~known_model_flags));
     }
-    cfg->name = c.name;
-    cfg->flags = c.flags;
+    load->cfg.name = c.name;
+    load->cfg.flags = c.flags;
+    load->previous = vmaf_log_swap_thread_sink(load->report.sink);
+    return VMAFX_OK;
+}
+
+static void load_end(const ModelLoad *load)
+{
+    (void)vmaf_log_swap_thread_sink(load->previous);
+}
+
+/* The output (`has_out`) and the version or path of a load are not NULL. */
+static VmafxStatus load_arguments(const ModelLoad *load, bool has_out, const char *source,
+                                  const char *source_name)
+{
+    if (!has_out || !source) {
+        return VMAFX_FAIL(&load->report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !has_out ? "out" : source_name, "NULL argument");
+    }
     return VMAFX_OK;
 }
 
@@ -163,6 +211,7 @@ static VmafxStatus parse_failure(const VmafxReport *report, int err, const char 
 static VmafxStatus wrap_model(const VmafxReport *report, VmafModel *engine, const char *hex,
                               VmafxModel **out)
 {
+    assert(out != NULL);
     VmafxModel *const model = malloc(sizeof(*model));
     if (!model || vmaf_ref_init(&model->refs) != 0) {
         free(model);
@@ -194,42 +243,49 @@ static VmafxStatus parse_model(const VmafxReport *report, VmafModelConfig *cfg, 
 VmafxStatus vmafx_model_load(const VmafxModelConfig *config, const char *version, VmafxModel **out,
                              VmafxError **error)
 {
-    const VmafxReport report = VMAFX_REPORT(NULL, error);
-    if (!out || !version) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          !out ? "out" : "version", "NULL argument");
+    if (out) {
+        *out = NULL;
     }
-    *out = NULL;
-    VmafModelConfig cfg;
-    VmafxStatus status = model_config(&report, config, &cfg);
+    ModelLoad load;
+    VmafxStatus status = load_begin(&load, config, error);
+    if (status != VMAFX_OK) {
+        return status;
+    }
     const char *data = NULL;
     size_t len = 0;
+    status = load_arguments(&load, out != NULL, version, "version");
     if (status == VMAFX_OK) {
-        status = builtin_bytes(&report, version, &data, &len);
+        status = builtin_bytes(&load.report, version, &data, &len);
     }
-    return status == VMAFX_OK ? parse_model(&report, &cfg, data, len, version, out) : status;
+    if (status == VMAFX_OK) {
+        status = parse_model(&load.report, &load.cfg, data, len, version, out);
+    }
+    load_end(&load);
+    return status;
 }
 
 VmafxStatus vmafx_model_load_file(const VmafxModelConfig *config, const char *path,
                                   VmafxModel **out, VmafxError **error)
 {
-    const VmafxReport report = VMAFX_REPORT(NULL, error);
-    if (!out || !path) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          !out ? "out" : "path", "NULL argument");
+    if (out) {
+        *out = NULL;
     }
-    *out = NULL;
-    VmafModelConfig cfg;
-    VmafxStatus status = model_config(&report, config, &cfg);
+    ModelLoad load;
+    VmafxStatus status = load_begin(&load, config, error);
+    if (status != VMAFX_OK) {
+        return status;
+    }
     char *data = NULL;
     size_t len = 0;
+    status = load_arguments(&load, out != NULL, path, "path");
     if (status == VMAFX_OK) {
-        status = read_model_file(&report, path, &data, &len);
+        status = read_model_file(&load.report, path, &data, &len);
     }
     if (status == VMAFX_OK) {
-        status = parse_model(&report, &cfg, data, len, path, out);
+        status = parse_model(&load.report, &load.cfg, data, len, path, out);
     }
     free(data);
+    load_end(&load);
     return status;
 }
 
@@ -364,6 +420,7 @@ const char *vmafx_model_default_version(void)
 static VmafxStatus wrap_set(const VmafxReport *report, VmafModel *lead, VmafModelCollection *engine,
                             const char *hex, VmafxModelSet **out)
 {
+    assert(out != NULL);
     VmafxModelSet *const set = malloc(sizeof(*set));
     if (!set || vmaf_ref_init(&set->refs) != 0) {
         free(set);
@@ -405,42 +462,49 @@ static VmafxStatus parse_set(const VmafxReport *report, VmafModelConfig *cfg, co
 VmafxStatus vmafx_model_set_load(const VmafxModelConfig *config, const char *version,
                                  VmafxModelSet **out, VmafxError **error)
 {
-    const VmafxReport report = VMAFX_REPORT(NULL, error);
-    if (!out || !version) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          !out ? "out" : "version", "NULL argument");
+    if (out) {
+        *out = NULL;
     }
-    *out = NULL;
-    VmafModelConfig cfg;
-    VmafxStatus status = model_config(&report, config, &cfg);
+    ModelLoad load;
+    VmafxStatus status = load_begin(&load, config, error);
+    if (status != VMAFX_OK) {
+        return status;
+    }
     const char *data = NULL;
     size_t len = 0;
+    status = load_arguments(&load, out != NULL, version, "version");
     if (status == VMAFX_OK) {
-        status = builtin_bytes(&report, version, &data, &len);
+        status = builtin_bytes(&load.report, version, &data, &len);
     }
-    return status == VMAFX_OK ? parse_set(&report, &cfg, data, len, version, out) : status;
+    if (status == VMAFX_OK) {
+        status = parse_set(&load.report, &load.cfg, data, len, version, out);
+    }
+    load_end(&load);
+    return status;
 }
 
 VmafxStatus vmafx_model_set_load_file(const VmafxModelConfig *config, const char *path,
                                       VmafxModelSet **out, VmafxError **error)
 {
-    const VmafxReport report = VMAFX_REPORT(NULL, error);
-    if (!out || !path) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          !out ? "out" : "path", "NULL argument");
+    if (out) {
+        *out = NULL;
     }
-    *out = NULL;
-    VmafModelConfig cfg;
-    VmafxStatus status = model_config(&report, config, &cfg);
+    ModelLoad load;
+    VmafxStatus status = load_begin(&load, config, error);
+    if (status != VMAFX_OK) {
+        return status;
+    }
     char *data = NULL;
     size_t len = 0;
+    status = load_arguments(&load, out != NULL, path, "path");
     if (status == VMAFX_OK) {
-        status = read_model_file(&report, path, &data, &len);
+        status = read_model_file(&load.report, path, &data, &len);
     }
     if (status == VMAFX_OK) {
-        status = parse_set(&report, &cfg, data, len, path, out);
+        status = parse_set(&load.report, &load.cfg, data, len, path, out);
     }
     free(data);
+    load_end(&load);
     return status;
 }
 

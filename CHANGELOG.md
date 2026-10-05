@@ -16,13 +16,16 @@
 - **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
   ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
   contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
   context options (`vmafx_context_set_option`), feature option sets
   (`vmafx_options_set`), extractor, model and model-set registration
   (`vmafx_context_use_feature`, `vmafx_context_use_model`,
   `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
   resolution (`vmafx_feature_resolve`), refcounted models and model sets with
   the SHA-256 of the bytes as loaded (`vmafx_model_load`,
-  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...),
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
   the CPU device (`vmafx_device_create`), host frames allocated or borrowed
   without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
   submission (`vmafx_submit`, `vmafx_flush`), frame retention
@@ -179,6 +182,14 @@
 
 ### Fixed
 
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
+
+
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
   encode without the ROI they asked for
   ([ADR-2167](docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)).** Patch
@@ -283,13 +294,16 @@ They are recorded in full, unedited, in
 - **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
   ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
   contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
   context options (`vmafx_context_set_option`), feature option sets
   (`vmafx_options_set`), extractor, model and model-set registration
   (`vmafx_context_use_feature`, `vmafx_context_use_model`,
   `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
   resolution (`vmafx_feature_resolve`), refcounted models and model sets with
   the SHA-256 of the bytes as loaded (`vmafx_model_load`,
-  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...),
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
   the CPU device (`vmafx_device_create`), host frames allocated or borrowed
   without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
   submission (`vmafx_submit`, `vmafx_flush`), frame retention
@@ -4379,6 +4393,12 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   a failed pooled score prints no score line either. This differs from
   upstream FFmpeg on purpose
   ([ADR-1768](docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
 
 
 - **The FFmpeg `libvmaf_sycl` filter no longer scores fewer frames than it

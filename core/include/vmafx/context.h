@@ -37,13 +37,6 @@ typedef struct VmafxExtractorInfo VmafxExtractorInfo;
 typedef struct VmafxFeatureResolution VmafxFeatureResolution;
 
 /**
- * Receives the log messages of one context: `level` is a VmafxLogLevel, `message` one line without
- * its newline, valid during the call.
- * @since 0.1
- */
-typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
-
-/**
  * Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT.
  * @since 0.1
  */
@@ -61,9 +54,11 @@ struct VmafxContextConfig {
     /** GPU dispatch bits to disable. */
     uint64_t gpumask;
     /**
-     * Receives this context's messages at or below `log_level` and every failure reported without
-     * an error out-parameter; NULL: the process log (stderr), whose level the context then sets, as
-     * vmaf_init() does. Added in ABI 0.1.1.
+     * Receives every message the library raises for this context at or below `log_level`, on the
+     * calling thread and on the context's worker threads, and every failure reported without an
+     * error out-parameter; nothing of the context then reaches the process log (ADR-1906). NULL:
+     * the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in
+     * ABI 0.1.1.
      */
     VmafxLogCallback log_callback;
     /** Passed to `log_callback`. Added in ABI 0.1.1. */

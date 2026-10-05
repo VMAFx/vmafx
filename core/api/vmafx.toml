@@ -370,10 +370,10 @@ doc = "Pixels of one picture on a device. Refcounted; one frame may be submitted
 
 [[callbacks]]
 name = "VmafxLogCallback"
-header = "vmafx/context.h"
+header = "vmafx/types.h"
 returns = "void"
 since = "0.1"
-doc = "Receives the log messages of one context: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call."
+doc = "Receives log messages: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call. Runs on the thread that raised the message, a library worker thread included, and may run on several threads at once: it must be thread-safe and must not call back into the context."
 params = [
   { name = "level", type = "u32", pass = "in" },
   { name = "message", type = "cstr", pass = "in" },
@@ -405,7 +405,7 @@ fields = [
   { name = "n_subsample", type = "u32", doc = "Score every n-th frame; 0 and 1 score every frame." },
   { name = "cpumask", type = "u64", doc = "CPU instruction-set bits to disable." },
   { name = "gpumask", type = "u64", doc = "GPU dispatch bits to disable." },
-  { name = "log_callback", type = "VmafxLogCallback", doc = "Receives this context's messages at or below `log_level` and every failure reported without an error out-parameter; NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1." },
+  { name = "log_callback", type = "VmafxLogCallback", doc = "Receives every message the library raises for this context at or below `log_level`, on the calling thread and on the context's worker threads, and every failure reported without an error out-parameter; nothing of the context then reaches the process log (ADR-1906). NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1." },
   { name = "log_user", type = "ptr", doc = "Passed to `log_callback`. Added in ABI 0.1.1." },
 ]
 
@@ -481,6 +481,9 @@ doc = "How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT."
 fields = [
   { name = "name", type = "cstr", doc = "Name of the model's scores (copied); NULL: `vmaf`." },
   { name = "flags", type = "u64", flags = "VmafxModelFlags", doc = "Load flags; 0 keeps the model file's defaults." },
+  { name = "log_level", type = "u32", enum = "VmafxLogLevel", doc = "Level of the messages `log_callback` receives." },
+  { name = "log_callback", type = "VmafxLogCallback", doc = "Receives the messages raised while loading (a model belongs to no context) at or below `log_level`, and a load failure reported without an error out-parameter; NULL: the process log." },
+  { name = "log_user", type = "ptr", doc = "Passed to `log_callback`." },
 ]
 
 [[structs]]

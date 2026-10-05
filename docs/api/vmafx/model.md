@@ -27,13 +27,16 @@ Model load flags (bit values equal enum VmafModelFlags). Bits of a `u64` field. 
 
 ### `VmafxModelConfig`
 
-How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT. Size 24 bytes, alignment 8. Since 0.1.
+How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT. Size 48 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
 | `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
 | `name` | `const char *name` | 8 | 0.1 | Name of the model's scores (copied); NULL: `vmaf`. |
 | `flags` | `uint64_t flags` | 16 | 0.1 | Load flags; 0 keeps the model file's defaults. Bits: `VmafxModelFlags`. |
+| `log_level` | `uint32_t log_level` | 24 | 0.1 | Level of the messages `log_callback` receives. Values: `VmafxLogLevel`. |
+| `log_callback` | `VmafxLogCallback log_callback` | 32 | 0.1 | Receives the messages raised while loading (a model belongs to no context) at or below `log_level`, and a load failure reported without an error out-parameter; NULL: the process log. |
+| `log_user` | `void *log_user` | 40 | 0.1 | Passed to `log_callback`. |
 
 Initialise with `VMAFX_MODEL_CONFIG_INIT`.
 

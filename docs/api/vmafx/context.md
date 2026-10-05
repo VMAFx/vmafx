@@ -11,11 +11,6 @@ Contexts: options, feature and model registration, submit, flush, extractor intr
 | Type | Since | Description |
 | --- | --- | --- |
 | `VmafxContext` | 0.1 | One scoring session. Released by `vmafx_context_destroy`. |
-| `VmafxLogCallback` | 0.1 | Receives the log messages of one context: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call. |
-
-```c
-typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
-```
 
 ## Structs
 
@@ -31,7 +26,7 @@ Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT. Size 48 bytes,
 | `n_subsample` | `uint32_t n_subsample` | 12 | 0.1 | Score every n-th frame; 0 and 1 score every frame. |
 | `cpumask` | `uint64_t cpumask` | 16 | 0.1 | CPU instruction-set bits to disable. |
 | `gpumask` | `uint64_t gpumask` | 24 | 0.1 | GPU dispatch bits to disable. |
-| `log_callback` | `VmafxLogCallback log_callback` | 32 | 0.1 | Receives this context's messages at or below `log_level` and every failure reported without an error out-parameter; NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1. |
+| `log_callback` | `VmafxLogCallback log_callback` | 32 | 0.1 | Receives every message the library raises for this context at or below `log_level`, on the calling thread and on the context's worker threads, and every failure reported without an error out-parameter; nothing of the context then reaches the process log (ADR-1906). NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1. |
 | `log_user` | `void *log_user` | 40 | 0.1 | Passed to `log_callback`. Added in ABI 0.1.1. |
 
 Initialise with `VMAFX_CONTEXT_CONFIG_INIT`.

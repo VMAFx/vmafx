@@ -150,6 +150,15 @@ typedef enum VmafxPool {
  */
 typedef struct VmafxOptions VmafxOptions;
 
+/**
+ * Receives log messages: `level` is a VmafxLogLevel, `message` one line without its newline, valid
+ * during the call. Runs on the thread that raised the message, a library worker thread included,
+ * and may run on several threads at once: it must be thread-safe and must not call back into the
+ * context.
+ * @since 0.1
+ */
+typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
+
 #ifdef __cplusplus
 }
 #endif

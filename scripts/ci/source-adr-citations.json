@@ -4274,7 +4274,8 @@
         "core/src/meson.build": 9,
         "core/src/metadata_handler.cpp": 1,
         "core/src/output.cpp": 1,
-        "core/test/meson.build": 3
+        "core/test/meson.build": 3,
+        "core/test/test_engine_log_routing_contract.py": 1
       },
       "target": "0708-vmafx-cpp23-internals-pilot.md"
     },
@@ -6717,6 +6718,7 @@
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_frame.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
+        "core/test/test_vmafx_log_routing.c": 1,
         "core/test/test_vmafx_model.c": 1,
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
@@ -11456,6 +11458,18 @@
         "core/tools/vmaf_vpl_core.h": 2
       },
       "target": "1900-vpl-decode-ceiling-contract.md"
+    },
+    "1906": {
+      "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/include/vmafx/context.h": 1,
+        "core/src/libvmaf.c": 2,
+        "core/src/log.h": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_engine_log_routing_contract.py": 1,
+        "core/test/test_vmafx_log_routing.c": 1
+      },
+      "target": "1906-vmafx-core-api-semantics.md"
     },
     "1917": {
       "sites": {

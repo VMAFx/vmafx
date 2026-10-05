@@ -72,11 +72,15 @@ _Static_assert(_Alignof(VmafxDeviceDesc) == 4, "VmafxDeviceDesc alignment");
 _Static_assert(offsetof(VmafxDeviceDesc, struct_size) == 0, "VmafxDeviceDesc.struct_size offset");
 _Static_assert(offsetof(VmafxDeviceDesc, backend) == 4, "VmafxDeviceDesc.backend offset");
 _Static_assert(offsetof(VmafxDeviceDesc, index) == 8, "VmafxDeviceDesc.index offset");
-_Static_assert(sizeof(VmafxModelConfig) == 24, "VmafxModelConfig size");
+_Static_assert(sizeof(VmafxModelConfig) == 48, "VmafxModelConfig size");
 _Static_assert(_Alignof(VmafxModelConfig) == 8, "VmafxModelConfig alignment");
 _Static_assert(offsetof(VmafxModelConfig, struct_size) == 0, "VmafxModelConfig.struct_size offset");
 _Static_assert(offsetof(VmafxModelConfig, name) == 8, "VmafxModelConfig.name offset");
 _Static_assert(offsetof(VmafxModelConfig, flags) == 16, "VmafxModelConfig.flags offset");
+_Static_assert(offsetof(VmafxModelConfig, log_level) == 24, "VmafxModelConfig.log_level offset");
+_Static_assert(offsetof(VmafxModelConfig, log_callback) == 32,
+               "VmafxModelConfig.log_callback offset");
+_Static_assert(offsetof(VmafxModelConfig, log_user) == 40, "VmafxModelConfig.log_user offset");
 _Static_assert(sizeof(VmafxFrameDesc) == 20, "VmafxFrameDesc size");
 _Static_assert(_Alignof(VmafxFrameDesc) == 4, "VmafxFrameDesc alignment");
 _Static_assert(offsetof(VmafxFrameDesc, struct_size) == 0, "VmafxFrameDesc.struct_size offset");
@@ -189,6 +193,6 @@ _Static_assert(VMAFX_MODEL_DISABLE_TRANSFORM == 0x4u, "VMAFX_MODEL_DISABLE_TRANS
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 12,
-                 67, 52);
+                 70, 52);
     return 0;
 }

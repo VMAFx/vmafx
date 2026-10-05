@@ -61,8 +61,8 @@ enum VmafLogLevel vmaf_get_log_level(void);
  * `deliver` instead of writing to stderr, filtered by the sink's `level`
  * rather than the process level. The VMAFx API installs the sink of a
  * context that has a log callback around each engine call it makes on that
- * context; messages raised on the engine's worker threads keep going to the
- * process log.
+ * context, and the engine installs the submitting call's sink around every
+ * job it runs on a worker thread (ADR-1906).
  */
 /* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafLogSink {
@@ -78,6 +78,13 @@ typedef struct VmafLogSink {
  * @return The sink installed before, so a caller can restore it.
  */
 const VmafLogSink *vmaf_log_swap_thread_sink(const VmafLogSink *sink);
+
+/**
+ * @brief The sink installed on the calling thread, or NULL. A job the engine
+ *        hands to a worker thread captures it so the worker logs where the
+ *        submitting call logs (ADR-1906).
+ */
+const VmafLogSink *vmaf_log_thread_sink(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

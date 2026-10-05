@@ -131,8 +131,7 @@ static VmafxStatus read_config(const VmafxReport *report, const VmafxContextConf
     return VMAFX_OK;
 }
 
-/* The engine's log level of a checked VmafxLogLevel (values equal). */
-static enum VmafLogLevel engine_log_level(uint32_t level)
+enum VmafLogLevel vmafx_engine_log_level(uint32_t level)
 {
     switch (level) {
     case VMAFX_LOG_LEVEL_ERROR:
@@ -148,13 +147,13 @@ static enum VmafLogLevel engine_log_level(uint32_t level)
     }
 }
 
-/* The engine configuration. With a log callback the engine keeps the process
- * log level as it is (the context filters its own messages). */
+/* The engine configuration (the engine no longer sets the process log level;
+ * vmafx_context_create() does, for a context without a callback). */
 static VmafConfiguration engine_config(const VmafxContextConfig *cfg)
 {
     VmafConfiguration ecfg;
     memset(&ecfg, 0, sizeof(ecfg));
-    ecfg.log_level = cfg->log_callback ? vmaf_get_log_level() : engine_log_level(cfg->log_level);
+    ecfg.log_level = vmafx_engine_log_level(cfg->log_level);
     ecfg.n_threads = cfg->n_threads;
     ecfg.n_subsample = cfg->n_subsample;
     ecfg.cpumask = cfg->cpumask;
@@ -172,7 +171,7 @@ static VmafxContext *new_context(const VmafxContextConfig *cfg)
     context->log_user = cfg->log_user;
     context->sink.deliver = deliver_to_callback;
     context->sink.user = context;
-    context->sink.level = engine_log_level(cfg->log_level);
+    context->sink.level = vmafx_engine_log_level(cfg->log_level);
     return context;
 }
 
@@ -194,6 +193,11 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
     if (!context) {
         return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "cannot allocate a context");
+    }
+    if (!cfg.log_callback) {
+        /* The process log is this context's log: set its level, as
+         * vmaf_init() always did. A context with a callback leaves it. */
+        vmaf_set_log_level(vmafx_engine_log_level(cfg.log_level));
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_init(&context->engine, engine_config(&cfg));

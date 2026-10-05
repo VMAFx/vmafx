@@ -26,6 +26,7 @@
 #include <stdbool.h>
 #include <math.h>
 
+#include "log.h"
 #include "motion.h"
 #include "offset.h"
 #include "motion_options.h"
@@ -160,15 +161,15 @@ int compute_motion(const float *ref, const float *dis, int w, int h, int ref_str
                    double *score, int motion_decimate)
 {
     if (ref_stride % sizeof(float) != 0) {
-        printf("error: ref_stride %% sizeof(float) != 0, ref_stride = %d, sizeof(float) = %zu.\n",
-               ref_stride, sizeof(float));
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: ref_stride %% sizeof(float) != 0, ref_stride = %d, sizeof(float) = %zu.\n",
+                 ref_stride, sizeof(float));
         return 1;
     }
     if (dis_stride % sizeof(float) != 0) {
-        printf("error: dis_stride %% sizeof(float) != 0, dis_stride = %d, sizeof(float) = %zu.\n",
-               dis_stride, sizeof(float));
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: dis_stride %% sizeof(float) != 0, dis_stride = %d, sizeof(float) = %zu.\n",
+                 dis_stride, sizeof(float));
         return 1;
     }
     // stride for vmaf_image_sad_c is in terms of (sizeof(float) bytes)

@@ -405,7 +405,9 @@ int vmaf_engine_init(VmafContext **vmaf, VmafConfiguration cfg)
      * -fsanitize=integer does not fire on the implicit narrowing. */
     vmaf_set_cpu_flags_mask((unsigned)(~cfg.cpumask));
 
-    vmaf_set_log_level(cfg.log_level);
+    /* ADR-1906: the process log level is set by vmafx_context_create() for a
+     * context without a log callback (which every vmaf_init() context is),
+     * never for one with a callback, so it is not set here. */
 
     const int err = vmaf_ctx_subsystems_init(v);
     if (err) {
@@ -2768,6 +2770,9 @@ struct ThreadDataBatch {
     VmafFeatureCollector *feature_collector;
     RegisteredFeatureExtractors *registered_fex;
     unsigned n_subsample;
+    /* ADR-1906: the log sink of the call that submitted the job (the VMAFx
+     * context's, or NULL), installed on the worker while the job runs. */
+    const VmafLogSink *log_sink;
     /* _Atomic int err: the worker thread writes this field multiple times as
      * it iterates over extractors; the thread pool runner reads it once (as
      * the function return value) to accumulate into pool->last_error.  Making
@@ -2890,6 +2895,7 @@ static int batch_extract_one(BatchThreadData *td, struct ThreadDataBatch *f, uns
 static int threaded_extract_batch_func(void *e, void **thread_data)
 {
     struct ThreadDataBatch *f = e;
+    const VmafLogSink *const previous_sink = vmaf_log_swap_thread_sink(f->log_sink);
     /* f->err is _Atomic int; use atomic_store/atomic_load throughout so that
      * TSan sees proper sequenced-before edges and does not report a race if a
      * future caller reads f->err outside the function return value path
@@ -2916,6 +2922,7 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         (void)vmaf_picture_unref(&f->prev_prev_ref);
     (void)vmaf_picture_unref(&f->ref);
     (void)vmaf_picture_unref(&f->dist);
+    (void)vmaf_log_swap_thread_sink(previous_sink);
     return atomic_load(&f->err);
 }
 
@@ -2976,6 +2983,7 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .feature_collector = vmaf->feature_collector,
         .registered_fex = &vmaf->registered_feature_extractors,
         .n_subsample = vmaf->cfg.n_subsample,
+        .log_sink = vmaf_log_thread_sink(),
         .err = 0,
     };
     batch_job_take_pictures(&data, vmaf, ref, dist);

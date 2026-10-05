@@ -60,6 +60,16 @@ struct VmafxModelConfig {
     const char *name;
     /** Load flags; 0 keeps the model file's defaults. Bits: VmafxModelFlags. */
     uint64_t flags;
+    /** Level of the messages `log_callback` receives. Values: VmafxLogLevel. */
+    uint32_t log_level;
+    /**
+     * Receives the messages raised while loading (a model belongs to no context) at or below
+     * `log_level`, and a load failure reported without an error out-parameter; NULL: the process
+     * log.
+     */
+    VmafxLogCallback log_callback;
+    /** Passed to `log_callback`. */
+    void *log_user;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */

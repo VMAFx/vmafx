@@ -210,6 +210,9 @@ VmafxModelConfig._fields_ = (
     ("struct_size", ctypes.c_uint32),
     ("name", ctypes.c_char_p),
     ("flags", ctypes.c_uint64),
+    ("log_level", ctypes.c_uint32),
+    ("log_callback", VmafxLogCallback),
+    ("log_user", ctypes.c_void_p),
 )
 
 VmafxFrameDesc._fields_ = (
@@ -324,11 +327,14 @@ LAYOUT = {
         ),
     ),
     VmafxModelConfig: (
-        24,
+        48,
         (
             ("struct_size", 0),
             ("name", 8),
             ("flags", 16),
+            ("log_level", 24),
+            ("log_callback", 32),
+            ("log_user", 40),
         ),
     ),
     VmafxFrameDesc: (
@@ -997,12 +1003,14 @@ class ModelConfig:
 
     name: str | None
     flags: int
+    log_level: int
 
     @classmethod
     def from_c(cls, raw: VmafxModelConfig) -> ModelConfig:
         return cls(
             name=_text(raw.name),
             flags=raw.flags,
+            log_level=raw.log_level,
         )
 
 

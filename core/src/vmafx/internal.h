@@ -136,6 +136,10 @@ VmafxStatus vmafx_held_reserve(const VmafxReport *report, VmafxHeld *held);
 /* Append `item`; a slot was reserved. */
 void vmafx_held_push(VmafxHeld *held, void *item);
 
+/* The engine's log level of a VmafxLogLevel (NONE for any other value;
+ * values equal). */
+enum VmafLogLevel vmafx_engine_log_level(uint32_t level);
+
 /* The process CPU device (never freed; ref / unref are no-ops on it). */
 VmafxDevice *vmafx_device_cpu(void);
 

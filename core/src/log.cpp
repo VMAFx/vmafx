@@ -232,6 +232,11 @@ enum VmafLogLevel vmaf_get_log_level(void)
     return static_cast<enum VmafLogLevel>(vmaf_log_level.load(std::memory_order_relaxed));
 }
 
+const VmafLogSink *vmaf_log_thread_sink(void)
+{
+    return thread_sink;
+}
+
 const VmafLogSink *vmaf_log_swap_thread_sink(const VmafLogSink *sink)
 {
     const VmafLogSink *const previous = thread_sink;

@@ -62746,10 +62746,33 @@ gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep bot
   `vmaf_engine_` names. New helpers there: `vmaf_engine_frame_retention`,
   `vmaf_engine_is_flushed`, `vmaf_engine_extractor_backend`.
 - `core/src/log.cpp` and `core/src/log.h` gain `vmaf_get_log_level()` and a
-  per-thread sink (`VmafLogSink`, `vmaf_log_swap_thread_sink()`): while one is
-  installed `vmaf_log()` delivers to it, filtered by the sink's level. Keep the
-  sink check in `vmaf_log()` on an upstream sync of the logger. `core/src/log.c`
-  is not built (ADR-0708 moved the logger to `log.cpp`) and is unchanged.
+  per-thread sink (`VmafLogSink`, `vmaf_log_swap_thread_sink()`,
+  `vmaf_log_thread_sink()`): while one is installed `vmaf_log()` delivers to
+  it, filtered by the sink's level. Keep the sink check in `vmaf_log()` on an
+  upstream sync of the logger. `core/src/log.c` is not built (ADR-0708 moved
+  the logger to `log.cpp`) and is unchanged.
+- Full log routing (ADR-1906): `struct ThreadDataBatch` in
+  `core/src/libvmaf.c` carries `log_sink`, set from `vmaf_log_thread_sink()`
+  where the job is enqueued, and `threaded_extract_batch_func()` installs it
+  around the job and restores the previous sink before it returns. A sync
+  that rewrites the job or adds another `vmaf_thread_pool_enqueue()` caller
+  keeps both. `core/src/thread_pool.c` is unchanged.
+- `vmaf_engine_init()` (the former `vmaf_init()` body in `core/src/libvmaf.c`)
+  no longer calls `vmaf_set_log_level()`; `vmafx_context_create()` does, for a
+  context without a log callback (every `vmaf_init()` context). An upstream
+  sync that touches the init body keeps the call out. The atomic
+  `vmaf_log_level` / `istty` of `core/src/log.cpp` come from master (PR #2207,
+  T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06): when this branch rebases onto it,
+  `log.cpp` takes master's atomics and keeps this branch's sink
+  (`thread_sink`, `log_to_sink()`, the sink branch in `vmaf_log()`,
+  `vmaf_get_log_level()` as a relaxed load).
+- The error prints of `core/src/feature/adm.c`, `ssim.c`, `ms_ssim.c`,
+  `motion.c` and `vif.c` (allocation and stride errors, `printf` to stdout
+  plus `fflush(stdout)`) are `vmaf_log(VMAF_LOG_LEVEL_ERROR, ...)` with the
+  same text, and the files include `log.h`. An upstream change to one of
+  these lines keeps `vmaf_log()`; `core/test/test_engine_log_routing_contract.py`
+  fails on a direct stdout / stderr write. `vifdiff()` and the
+  `VIF_OPT_DEBUG_DUMP` output in `vif.c` keep their prints.
 - `core/src/picture.c` exports `vmaf_picture_plane_extents()` (the plane
   geometry `picture_compute_geometry()` used inline); `core/src/model.c` adds
   `vmaf_model_builtin_data()` (the embedded bytes of a built-in model).
