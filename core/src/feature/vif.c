@@ -100,14 +100,13 @@ static int vif_workspace_alloc(VifWorkspace *work, int w, int h)
     if (vif_plane_size(w, h, &work->stride, &plane_size))
         return 1;
     if (SIZE_MAX / plane_size < VIF_BUF_CNT) {
-        printf("error: SIZE_MAX / buf_sz_one < VIF_BUF_CNT, buf_sz_one = %zu.\n", plane_size);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: SIZE_MAX / buf_sz_one < VIF_BUF_CNT, buf_sz_one = %zu.\n", plane_size);
         return 1;
     }
     work->data = aligned_malloc(plane_size * VIF_BUF_CNT, MAX_ALIGN);
     if (!work->data) {
-        printf("error: aligned_malloc failed for data_buf.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: aligned_malloc failed for data_buf.\n");
         return 1;
     }
     /* One aligned slab, in the original order. Every plane contains a whole

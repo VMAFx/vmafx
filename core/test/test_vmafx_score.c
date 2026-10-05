@@ -180,7 +180,8 @@ static bool same_set_score(const VmafxModelSetScore *a, const VmafModelCollectio
 /* A model set's per-frame and pooled scores each in a fresh session: the
  * engine's set prediction writes its member scores once per frame, so a
  * pooled call after a per-frame call of the same frame fails in libvmaf too
- * (docs/state.md T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05). */
+ * (docs/state.md T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05; fixed on master by
+ * PR #2206, after which both may share one session). */
 static char *test_set_frame_score(void)
 {
     Session s;

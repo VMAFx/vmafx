@@ -123,15 +123,23 @@ it as ADR-1852 decides: `libvmafx.so.1` (pkg-config `libvmafx`) with
 defaults): log level, worker threads, subsampling, CPU and GPU masks, and a
 log callback with its user pointer.
 
-- **With a log callback** the context receives, as one line each, the
-  messages at or below its `log_level` that the engine raises on the calling
-  thread during this context's calls, and every failure reported without an
-  error out-parameter. It does not change the process log level, so contexts
-  in one process can log at different levels.
+- **With a log callback** the context receives, as one line each, every
+  message the library raises for it at or below its `log_level`: on the
+  calling thread during its calls, on its worker threads (`n_threads` > 0)
+  while they work for it, and every failure reported without an error
+  out-parameter. Nothing of the context reaches the process log, and the
+  context does not change the process log level, so contexts in one process
+  can log at different levels without seeing each other's lines.
+- The callback runs on the thread that raised the message, a library worker
+  thread included, and may run on several threads at once: make it
+  thread-safe, and do not call back into the context from it.
 - **Without one** messages go to the process log (stderr), and the context
   sets the process level, as `vmaf_init()` always did.
-- Messages the engine raises on its worker threads (`n_threads` > 0) go to
-  the process log in both cases.
+- A model belongs to no context: the messages of a model load go to the
+  `log_callback` of its `VmafxModelConfig` (with its own `log_level`), or to
+  the process log without one.
+- `libvmaf.h` calls, also on a handle bridged from a VMAFx context, keep the
+  process log.
 
 `vmafx_context_set_option()` sets the context options `perceptual_weight`
 (`0` / `1`) and `perceptual_weight_strength` (a finite number >= 0).
@@ -222,7 +230,8 @@ A model set's per-frame call and its pooled call each predict the set's
 members and write their scores once per frame, so call one of them per frame
 range in a session; calling the pooled score after the per-frame score of a
 frame in it fails in `libvmaf.h` as well
-(`docs/state.md`, T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05).
+(`docs/state.md`, T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05; the fix,
+PR #2206, is in review).
 
 ## Rules every call follows
 

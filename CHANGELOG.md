@@ -25,13 +25,16 @@
 - **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
   ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
   contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
   context options (`vmafx_context_set_option`), feature option sets
   (`vmafx_options_set`), extractor, model and model-set registration
   (`vmafx_context_use_feature`, `vmafx_context_use_model`,
   `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
   resolution (`vmafx_feature_resolve`), refcounted models and model sets with
   the SHA-256 of the bytes as loaded (`vmafx_model_load`,
-  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...),
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
   the CPU device (`vmafx_device_create`), host frames allocated or borrowed
   without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
   submission (`vmafx_submit`, `vmafx_flush`), frame retention
@@ -3585,6 +3588,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   compatibility clause (Article 5, GPL v2 and v3 in its Appendix) allows to be
   distributed under the GPL. The object loads as before; only its licence
   section changed.
+
+
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
 
 
 - **The FFmpeg `libvmaf_sycl` filter no longer scores fewer frames than it

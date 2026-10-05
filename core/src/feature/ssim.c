@@ -26,6 +26,7 @@
 #include <string.h>
 #include <math.h>
 
+#include "log.h"
 #include "iqa/math_utils.h"
 #include "iqa/decimate.h"
 #include "iqa/ssim_tools.h"
@@ -123,9 +124,9 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
     float s;
 
     if (ref_stride != cmp_stride) {
-        printf("error: for ssim, ref_stride (%d) != dis_stride (%d) bytes.\n", ref_stride,
-               cmp_stride);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: for ssim, ref_stride (%d) != dis_stride (%d) bytes.\n", ref_stride,
+                 cmp_stride);
         return ret;
     }
     const int stride = ref_stride / (int)sizeof(float); /* in pixels */
@@ -144,8 +145,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
     if (!ref_f || !cmp_f) {
         free(ref_f);
         free(cmp_f);
-        printf("error: unable to malloc ref_f or cmp_f.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: unable to malloc ref_f or cmp_f.\n");
         return ret;
     }
     ssim_convert_input(ref, cmp, w, h, stride, ref_f, cmp_f);
@@ -155,8 +155,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
         if (ssim_decimate_pair(ref_f, cmp_f, &w, &h, scale, &low_pass) != 0) {
             free(ref_f);
             free(cmp_f);
-            printf("error: decimation fails on ref_f or cmp_f.\n");
-            (void)fflush(stdout);
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: decimation fails on ref_f or cmp_f.\n");
             return ret;
         }
     }

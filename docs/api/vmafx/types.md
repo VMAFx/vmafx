@@ -80,5 +80,10 @@ Pooling method of a pooled score (values equal enum VmafPoolingMethod). Since 0.
 | Type | Since | Description |
 | --- | --- | --- |
 | `VmafxOptions` | 0.1 | Feature options: string keys and values (the libvmaf feature dictionary). Released by `vmafx_options_free`. |
+| `VmafxLogCallback` | 0.1 | Receives log messages: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call. Runs on the thread that raised the message, a library worker thread included, and may run on several threads at once: it must be thread-safe and must not call back into the context. |
+
+```c
+typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
+```
 
 Back to the [reference index](reference.md).

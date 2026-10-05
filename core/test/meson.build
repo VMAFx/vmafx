@@ -1244,6 +1244,28 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
     test('test_vmafx_lifetime', test_vmafx_lifetime, suite : ['fast'])
 endif
 
+# Full log routing (ADR-1906): worker-thread messages, two contexts on two
+# threads, the process log of a context without a callback, model loads.
+# POSIX descriptors and threads: Linux only.
+if host_machine.system() == 'linux'
+    test_vmafx_log_routing = executable('test_vmafx_log_routing',
+        ['test.c', 'test_vmafx_log_routing.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_log_routing', test_vmafx_log_routing, suite : ['fast'], timeout : 120)
+endif
+
+# Engine messages go through vmaf_log(), so a context's sink sees them: no
+# direct stdout / stderr write in core/src outside the declared exceptions.
+test('test_engine_log_routing_contract',
+    import('python').find_installation(),
+    args : files('test_engine_log_routing_contract.py'),
+    suite : ['fast'],
+)
+
 foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score']
     vmafx_public_exe = executable(vmafx_public_test,
         ['test.c', vmafx_public_test + '.c'],
