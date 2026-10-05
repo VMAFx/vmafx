@@ -316,7 +316,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 114,
+  "total_warnings": 112,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -330,8 +330,8 @@
     "core/src/feature/arm64/convolve_neon.c": 2,
     "core/src/feature/arm64/ms_ssim_decimate_neon.h": 1,
     "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
-    "core/src/feature/arm64/ssimulacra2_neon.c": 8,
-    "core/src/feature/arm64/ssimulacra2_sve2.c": 8,
+    "core/src/feature/arm64/ssimulacra2_neon.c": 7,
+    "core/src/feature/arm64/ssimulacra2_sve2.c": 7,
     "core/src/feature/simd_dx.h": 1,
     "core/src/fex_ctx_vector.h": 1,
     "core/src/framesync.h": 1,
@@ -371,6 +371,29 @@
         }
       },
       "previous_baseline_sha256": "42b6e0c96ea8847a4d6de9ba456fa0069d9bd8e0cbe1a4023ad2a8da8770d833"
+    },
+    {
+      "sources": [
+        "core/src/feature/arm64/ssimulacra2_host_neon.c",
+        "core/src/feature/arm64/ssimulacra2_neon.c",
+        "core/src/feature/arm64/ssimulacra2_sve2.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/arm64/ssimulacra2_neon.c": {
+          "warnings": [
+            8,
+            7
+          ]
+        },
+        "core/src/feature/arm64/ssimulacra2_sve2.c": {
+          "warnings": [
+            8,
+            7
+          ]
+        }
+      },
+      "previous_baseline_sha256": "d52badae0f723072459a6b073ff4de47c4b997c6efe6e8fc1bb9c6d436573c87"
     }
   ]
 }
