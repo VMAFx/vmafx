@@ -58,12 +58,109 @@ static inline float32x4_t cbrtf_lane4(float32x4_t v)
     return vld1q_f32(tmp);
 }
 
-/* ADR-0141 §2 / ADR-0252 / ADR-0161 / ADR-0278 carve-out: matmul + per-lane
- * cbrtf + rescale kept together for line-for-line diff against the host scalar
- * reference.  The citation lives here rather than on the directive line
- * below because that directive applies to the single line following it — a
- * wrapped justification would suppress the comment, not the function. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
+typedef struct {
+    float32x4_t m00, m01, m02, m10, m11, m12, m20, m21, m22;
+    float32x4_t bias, zero, cbrt_bias, half, c14, c42, c55, c01;
+} host_xyb_vecs_neon;
+
+typedef struct {
+    const float *rp;
+    const float *gp;
+    const float *bp;
+    float *xp;
+    float *yp;
+    float *bxp;
+} host_xyb_planes_neon;
+
+static host_xyb_vecs_neon host_xyb_vecs_init_neon(float m01, float m11, float m22, float cbrt_bias)
+{
+    const host_xyb_vecs_neon c = {
+        .m00 = vdupq_n_f32(kM00),
+        .m01 = vdupq_n_f32(m01),
+        .m02 = vdupq_n_f32(kM02),
+        .m10 = vdupq_n_f32(kM10),
+        .m11 = vdupq_n_f32(m11),
+        .m12 = vdupq_n_f32(kM12),
+        .m20 = vdupq_n_f32(kM20),
+        .m21 = vdupq_n_f32(kM21),
+        .m22 = vdupq_n_f32(m22),
+        .bias = vdupq_n_f32(kOpsinBias),
+        .zero = vdupq_n_f32(0.0f),
+        .cbrt_bias = vdupq_n_f32(cbrt_bias),
+        .half = vdupq_n_f32(0.5f),
+        .c14 = vdupq_n_f32(14.0f),
+        .c42 = vdupq_n_f32(0.42f),
+        .c55 = vdupq_n_f32(0.55f),
+        .c01 = vdupq_n_f32(0.01f),
+    };
+    return c;
+}
+
+/* One LMS channel: (k0*r + k1*g) + k2*b + bias, clamped at zero. */
+static inline float32x4_t host_lms_mix_neon(float32x4_t k0, float32x4_t k1, float32x4_t k2,
+                                            float32x4_t r, float32x4_t g, float32x4_t b,
+                                            const host_xyb_vecs_neon *c)
+{
+    float32x4_t v = vaddq_f32(vmulq_f32(k0, r), vmulq_f32(k1, g));
+    v = vaddq_f32(v, vmulq_f32(k2, b));
+    v = vaddq_f32(v, c->bias);
+    return vmaxq_f32(v, c->zero);
+}
+
+static void host_xyb_block_neon(const host_xyb_vecs_neon *c, const host_xyb_planes_neon *p,
+                                size_t i)
+{
+    const float32x4_t r = vld1q_f32(p->rp + i);
+    const float32x4_t g = vld1q_f32(p->gp + i);
+    const float32x4_t b = vld1q_f32(p->bp + i);
+    const float32x4_t l = host_lms_mix_neon(c->m00, c->m01, c->m02, r, g, b, c);
+    const float32x4_t m = host_lms_mix_neon(c->m10, c->m11, c->m12, r, g, b, c);
+    const float32x4_t sv = host_lms_mix_neon(c->m20, c->m21, c->m22, r, g, b, c);
+    const float32x4_t L = vsubq_f32(cbrtf_lane4(l), c->cbrt_bias);
+    const float32x4_t M = vsubq_f32(cbrtf_lane4(m), c->cbrt_bias);
+    const float32x4_t S = vsubq_f32(cbrtf_lane4(sv), c->cbrt_bias);
+    const float32x4_t X = vmulq_f32(c->half, vsubq_f32(L, M));
+    const float32x4_t Y = vmulq_f32(c->half, vaddq_f32(L, M));
+    const float32x4_t B = S;
+    const float32x4_t Bfinal = vaddq_f32(vsubq_f32(B, Y), c->c55);
+    const float32x4_t Xfinal = vaddq_f32(vmulq_f32(X, c->c14), c->c42);
+    const float32x4_t Yfinal = vaddq_f32(Y, c->c01);
+    vst1q_f32(p->xp + i, Xfinal);
+    vst1q_f32(p->yp + i, Yfinal);
+    vst1q_f32(p->bxp + i, Bfinal);
+}
+
+static void host_xyb_tail_neon(const host_xyb_planes_neon *p, size_t i, size_t n, float m01,
+                               float m11, float m22, float cbrt_bias)
+{
+    for (; i < n; i++) {
+        float r = p->rp[i];
+        float g = p->gp[i];
+        float bb = p->bp[i];
+        float l = kM00 * r + m01 * g + kM02 * bb + kOpsinBias;
+        float m = kM10 * r + m11 * g + kM12 * bb + kOpsinBias;
+        float s = kM20 * r + kM21 * g + m22 * bb + kOpsinBias;
+        if (l < 0.0f)
+            l = 0.0f;
+        if (m < 0.0f)
+            m = 0.0f;
+        if (s < 0.0f)
+            s = 0.0f;
+        float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
+        float M = vmaf_ss2_cbrtf(m) - cbrt_bias;
+        float S = vmaf_ss2_cbrtf(s) - cbrt_bias;
+        float X = 0.5f * (L - M);
+        float Y = 0.5f * (L + M);
+        float B = S;
+        B = (B - Y) + 0.55f;
+        X = X * 14.0f + 0.42f;
+        Y = Y + 0.01f;
+        p->xp[i] = X;
+        p->yp[i] = Y;
+        p->bxp[i] = B;
+    }
+}
+
 void ssimulacra2_host_linear_rgb_to_xyb_neon(const float *lin, float *xyb, unsigned w, unsigned h,
                                              size_t plane_stride)
 {
@@ -72,100 +169,21 @@ void ssimulacra2_host_linear_rgb_to_xyb_neon(const float *lin, float *xyb, unsig
     assert(w > 0 && h > 0);
     assert(plane_stride >= (size_t)w * (size_t)h);
 
-    const float *rp = lin;
-    const float *gp = lin + plane_stride;
-    const float *bp = lin + 2u * plane_stride;
-    float *xp = xyb;
-    float *yp = xyb + plane_stride;
-    float *bxp = xyb + 2u * plane_stride;
+    const host_xyb_planes_neon planes = {lin, lin + plane_stride, lin + 2u * plane_stride,
+                                         xyb, xyb + plane_stride, xyb + 2u * plane_stride};
 
     const float m01 = 1.0f - kM00 - kM02;
     const float m11 = 1.0f - kM10 - kM12;
     const float m22 = 1.0f - kM20 - kM21;
     const float cbrt_bias = vmaf_ss2_cbrtf(kOpsinBias);
-
-    const float32x4_t vm00 = vdupq_n_f32(kM00);
-    const float32x4_t vm01 = vdupq_n_f32(m01);
-    const float32x4_t vm02 = vdupq_n_f32(kM02);
-    const float32x4_t vm10 = vdupq_n_f32(kM10);
-    const float32x4_t vm11 = vdupq_n_f32(m11);
-    const float32x4_t vm12 = vdupq_n_f32(kM12);
-    const float32x4_t vm20 = vdupq_n_f32(kM20);
-    const float32x4_t vm21 = vdupq_n_f32(kM21);
-    const float32x4_t vm22 = vdupq_n_f32(m22);
-    const float32x4_t vbias = vdupq_n_f32(kOpsinBias);
-    const float32x4_t vzero = vdupq_n_f32(0.0f);
-    const float32x4_t vcbrt_bias = vdupq_n_f32(cbrt_bias);
-    const float32x4_t vhalf = vdupq_n_f32(0.5f);
-    const float32x4_t v14 = vdupq_n_f32(14.0f);
-    const float32x4_t v42 = vdupq_n_f32(0.42f);
-    const float32x4_t v55 = vdupq_n_f32(0.55f);
-    const float32x4_t v01 = vdupq_n_f32(0.01f);
+    const host_xyb_vecs_neon vecs = host_xyb_vecs_init_neon(m01, m11, m22, cbrt_bias);
 
     const size_t scale_pixels = (size_t)w * (size_t)h;
     size_t i = 0;
-
     for (; i + 4 <= scale_pixels; i += 4) {
-        const float32x4_t r = vld1q_f32(rp + i);
-        const float32x4_t g = vld1q_f32(gp + i);
-        const float32x4_t b = vld1q_f32(bp + i);
-        /* LMS mixing — left-to-right addition order matches scalar reference. */
-        float32x4_t l = vaddq_f32(vmulq_f32(vm00, r), vmulq_f32(vm01, g));
-        l = vaddq_f32(l, vmulq_f32(vm02, b));
-        l = vaddq_f32(l, vbias);
-        float32x4_t m = vaddq_f32(vmulq_f32(vm10, r), vmulq_f32(vm11, g));
-        m = vaddq_f32(m, vmulq_f32(vm12, b));
-        m = vaddq_f32(m, vbias);
-        float32x4_t sv = vaddq_f32(vmulq_f32(vm20, r), vmulq_f32(vm21, g));
-        sv = vaddq_f32(sv, vmulq_f32(vm22, b));
-        sv = vaddq_f32(sv, vbias);
-        l = vmaxq_f32(l, vzero);
-        m = vmaxq_f32(m, vzero);
-        sv = vmaxq_f32(sv, vzero);
-
-        const float32x4_t L = vsubq_f32(cbrtf_lane4(l), vcbrt_bias);
-        const float32x4_t M = vsubq_f32(cbrtf_lane4(m), vcbrt_bias);
-        const float32x4_t S = vsubq_f32(cbrtf_lane4(sv), vcbrt_bias);
-
-        /* X = 0.5*(L-M); Y = 0.5*(L+M); B = (S-Y)+0.55; X=14X+0.42; Y+=0.01 */
-        const float32x4_t X = vmulq_f32(vhalf, vsubq_f32(L, M));
-        const float32x4_t Y = vmulq_f32(vhalf, vaddq_f32(L, M));
-        const float32x4_t Bfinal = vaddq_f32(vsubq_f32(S, Y), v55);
-        const float32x4_t Xfinal = vaddq_f32(vmulq_f32(X, v14), v42);
-        const float32x4_t Yfinal = vaddq_f32(Y, v01);
-
-        vst1q_f32(xp + i, Xfinal);
-        vst1q_f32(yp + i, Yfinal);
-        vst1q_f32(bxp + i, Bfinal);
+        host_xyb_block_neon(&vecs, &planes, i);
     }
-
-    /* Scalar tail — bit-identical to ss2v_host_linear_rgb_to_xyb body. */
-    for (; i < scale_pixels; i++) {
-        float r = rp[i];
-        float g = gp[i];
-        float bb = bp[i];
-        float lv = kM00 * r + m01 * g + kM02 * bb + kOpsinBias;
-        float mv = kM10 * r + m11 * g + kM12 * bb + kOpsinBias;
-        float sv = kM20 * r + kM21 * g + m22 * bb + kOpsinBias;
-        if (lv < 0.0f)
-            lv = 0.0f;
-        if (mv < 0.0f)
-            mv = 0.0f;
-        if (sv < 0.0f)
-            sv = 0.0f;
-        float L = vmaf_ss2_cbrtf(lv) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(mv) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(sv) - cbrt_bias;
-        float X = 0.5f * (L - M);
-        float Y = 0.5f * (L + M);
-        float B = S;
-        B = (B - Y) + 0.55f;
-        X = X * 14.0f + 0.42f;
-        Y = Y + 0.01f;
-        xp[i] = X;
-        yp[i] = Y;
-        bxp[i] = B;
-    }
+    host_xyb_tail_neon(&planes, i, scale_pixels, m01, m11, m22, cbrt_bias);
 }
 
 void ssimulacra2_host_downsample_2x2_neon(const float *in, unsigned iw, unsigned ih, float *out,
