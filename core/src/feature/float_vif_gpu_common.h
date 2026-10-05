@@ -83,15 +83,18 @@
 /* ------------------------------------------------------------------ */
 
 /* One scale's Gaussian, as vif_get_filter() returns it. */
-typedef struct FloatVifGpuTaps {
+struct FloatVifGpuTaps {
     float coeff[FVIF_MAX_FW];
     int32_t width;
-} FloatVifGpuTaps;
+};
+#ifndef __cplusplus
+typedef struct FloatVifGpuTaps FloatVifGpuTaps;
+#endif
 
 /* The planes a compute or decimate launch reads: the raw luma planes of the
  * frame (uint8 or uint16 samples, tightly packed) when `is_raw`, otherwise the
  * fp32 planes the previous decimate wrote. */
-typedef struct FloatVifGpuInput {
+struct FloatVifGpuInput {
     uint64_t ref;
     uint64_t dis;
     int64_t stride; /* bytes per row when is_raw, floats per row otherwise */
@@ -99,32 +102,44 @@ typedef struct FloatVifGpuInput {
     uint32_t height;
     uint32_t bpc;
     uint32_t is_raw;
-} FloatVifGpuInput;
+};
+#ifndef __cplusplus
+typedef struct FloatVifGpuInput FloatVifGpuInput;
+#endif
 
-typedef struct FloatVifGpuComputeArgs {
+struct FloatVifGpuComputeArgs {
     FloatVifGpuInput in;
     FloatVifGpuTaps taps;
     uint64_t terms;       /* float, see fvif_term_index() */
     double vif_sigma_nsq; /* fp64, like the reference's argument */
     float vif_enhn_gain_limit;
     float sigma_max_inv;
-} FloatVifGpuComputeArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatVifGpuComputeArgs FloatVifGpuComputeArgs;
+#endif
 
-typedef struct FloatVifGpuDecimateArgs {
+struct FloatVifGpuDecimateArgs {
     FloatVifGpuInput in;
     FloatVifGpuTaps taps;
     uint64_t ref_out; /* float, out_width x out_height, tightly packed */
     uint64_t dis_out;
     uint32_t out_width;
     uint32_t out_height;
-} FloatVifGpuDecimateArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatVifGpuDecimateArgs FloatVifGpuDecimateArgs;
+#endif
 
-typedef struct FloatVifGpuRowArgs {
+struct FloatVifGpuRowArgs {
     uint64_t terms; /* float, see fvif_term_index() */
     uint64_t rows;  /* float, FVIF_TERM_FLOATS per row: num, den */
     uint32_t width;
     uint32_t height;
-} FloatVifGpuRowArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatVifGpuRowArgs FloatVifGpuRowArgs;
+#endif
 
 /* ------------------------------------------------------------------ */
 /* The reference's arithmetic.                                          */
@@ -184,7 +199,7 @@ FVIF_HD float fvif_log2(float x)
         return fvif_bits_float(0x7fc00000u); /* NaN */
 
     const uint32_t bits = fvif_float_bits(x);
-    const uint32_t exponent = (bits & 0x7F800000u) >> 23;
+    const uint32_t exponent = (bits & 0x7F800000u) >> 23u;
     const uint32_t mantissa = bits & 0x007FFFFFu;
     const float remain = fvif_bits_float(mantissa | 0x3F800000u);
     const float log_base = (float)((int32_t)exponent - 127);

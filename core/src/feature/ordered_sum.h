@@ -97,16 +97,16 @@ static inline double vmaf_ordsum_host_from_bits(uint64_t bits)
 #define VMAF_ORDSUM_PLAN_TERMS (-32768)
 
 /* 2^52 and 2^53: the integer range of a binade's multiples of u. */
-#define VMAF_ORDSUM_HIDDEN_BIT ((int64_t)1 << 52)
-#define VMAF_ORDSUM_BINADE_END ((int64_t)1 << 53)
+#define VMAF_ORDSUM_HIDDEN_BIT ((int64_t)((uint64_t)1 << 52u))
+#define VMAF_ORDSUM_BINADE_END ((int64_t)((uint64_t)1 << 53u))
 /* A chunk increment at or above this is "does not fit the plan". It is
  * larger than any increment a chunk that stays in its binade can have (2^52)
  * and small enough that adding it to a 53-bit integer cannot overflow. */
-#define VMAF_ORDSUM_UNFIT ((int64_t)1 << 54)
+#define VMAF_ORDSUM_UNFIT ((int64_t)((uint64_t)1 << 54u))
 
 #define VMAF_ORDSUM_EXP_MASK 0x7ffu
 #define VMAF_ORDSUM_EXP_BIAS 1023
-#define VMAF_ORDSUM_FRACTION_MASK (((uint64_t)1 << 52) - 1u)
+#define VMAF_ORDSUM_FRACTION_MASK (((uint64_t)1 << 52u) - 1u)
 
 /* What a run of terms adds to a running sum that is `m * u`: `even` when m is
  * even, `odd` when it is odd. The two differ only by the ties in the run. */
@@ -122,7 +122,7 @@ typedef struct VmafOrdsumUnits VmafOrdsumUnits;
  * infinities and NaN. */
 VMAF_ORDSUM_FUNC unsigned vmaf_ordsum_exponent_field_bits(uint64_t bits)
 {
-    return (unsigned)((bits >> 52) & VMAF_ORDSUM_EXP_MASK);
+    return (unsigned)((bits >> 52u) & VMAF_ORDSUM_EXP_MASK);
 }
 
 /* 1 for a NaN. */
@@ -139,7 +139,7 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_is_nan_bits(uint64_t bits)
 VMAF_ORDSUM_FUNC int vmaf_ordsum_binade_bits(uint64_t bits)
 {
     const unsigned field = vmaf_ordsum_exponent_field_bits(bits);
-    if ((bits >> 63) != 0u || field == 0u)
+    if ((bits >> 63u) != 0u || field == 0u)
         return VMAF_ORDSUM_PLAN_TERMS;
     const int e = (int)field - VMAF_ORDSUM_EXP_BIAS;
     if (e < VMAF_ORDSUM_MIN_EXP || e > VMAF_ORDSUM_MAX_EXP)
@@ -177,14 +177,14 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_units(int64_t even, int64_t odd)
  * m + whole + 1, whichever is even. */
 VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_round_shifted(uint64_t mantissa, int shift)
 {
-    const int64_t whole = (int64_t)(mantissa >> shift);
-    const uint64_t rest = mantissa & (((uint64_t)1 << shift) - 1u);
-    const uint64_t half = (uint64_t)1 << (shift - 1);
+    const int64_t whole = (int64_t)(mantissa >> (unsigned)shift);
+    const uint64_t rest = mantissa & (((uint64_t)1 << (unsigned)shift) - 1u);
+    const uint64_t half = (uint64_t)1 << (unsigned)(shift - 1);
     if (rest != half) {
         const int64_t rounded = whole + (rest > half ? 1 : 0);
         return vmaf_ordsum_units(rounded, rounded);
     }
-    const int64_t odd_whole = whole & 1;
+    const int64_t odd_whole = (int64_t)((uint64_t)whole & 1u);
     return vmaf_ordsum_units(whole + odd_whole, whole + 1 - odd_whole);
 }
 
@@ -192,8 +192,8 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_round_shifted(uint64_t mantissa, in
  * zero), infinite or NaN. */
 VMAF_ORDSUM_FUNC int vmaf_ordsum_term_is_unfit(uint64_t bits)
 {
-    const int negative = (bits >> 63) != 0u && (bits << 1) != 0u;
-    return negative || ((bits >> 52) & VMAF_ORDSUM_EXP_MASK) == VMAF_ORDSUM_EXP_MASK;
+    const int negative = (bits >> 63u) != 0u && (bits << 1u) != 0u;
+    return negative || ((bits >> 52u) & VMAF_ORDSUM_EXP_MASK) == VMAF_ORDSUM_EXP_MASK;
 }
 
 /* Increment of one term `x` for a running sum in binade `e`: x / 2^(e-52)
@@ -206,7 +206,7 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_term_is_unfit(uint64_t bits)
  * binade, or is not a sum of this kind) and yields VMAF_ORDSUM_UNFIT. */
 VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_term_bits(uint64_t bits, int e)
 {
-    const unsigned field = (unsigned)((bits >> 52) & VMAF_ORDSUM_EXP_MASK);
+    const unsigned field = (unsigned)((bits >> 52u) & VMAF_ORDSUM_EXP_MASK);
     if (vmaf_ordsum_term_is_unfit(bits))
         return vmaf_ordsum_units(VMAF_ORDSUM_UNFIT, VMAF_ORDSUM_UNFIT);
     if (field == 0u) /* zero or subnormal: below half a unit of every planned binade */
@@ -229,7 +229,7 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_planned_term_bits(uint64_t bits, in
 {
     if (vmaf_ordsum_plan_is_binade(plan))
         return vmaf_ordsum_term_bits(bits, plan);
-    if (plan == VMAF_ORDSUM_PLAN_ZERO && (bits << 1) != 0u)
+    if (plan == VMAF_ORDSUM_PLAN_ZERO && (bits << 1u) != 0u)
         return vmaf_ordsum_units(VMAF_ORDSUM_UNFIT, VMAF_ORDSUM_UNFIT);
     return vmaf_ordsum_units(0, 0);
 }
@@ -246,6 +246,12 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_planned_term(double x, int plan)
 }
 #endif
 
+/* 1 for an odd running integer (the integers here are never negative). */
+VMAF_ORDSUM_FUNC int vmaf_ordsum_is_odd(int64_t v)
+{
+    return ((uint64_t)v & 1u) != 0u;
+}
+
 VMAF_ORDSUM_FUNC int64_t vmaf_ordsum_cap(int64_t v)
 {
     return v > VMAF_ORDSUM_UNFIT ? VMAF_ORDSUM_UNFIT : v;
@@ -256,8 +262,8 @@ VMAF_ORDSUM_FUNC int64_t vmaf_ordsum_cap(int64_t v)
  * there, so long runs cannot overflow. */
 VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_then(VmafOrdsumUnits a, VmafOrdsumUnits b)
 {
-    const int64_t even = a.even + ((a.even & 1) ? b.odd : b.even);
-    const int64_t odd = a.odd + ((a.odd & 1) ? b.even : b.odd);
+    const int64_t even = a.even + (vmaf_ordsum_is_odd(a.even) ? b.odd : b.even);
+    const int64_t odd = a.odd + (vmaf_ordsum_is_odd(a.odd) ? b.even : b.odd);
     return vmaf_ordsum_units(vmaf_ordsum_cap(even), vmaf_ordsum_cap(odd));
 }
 
@@ -291,8 +297,8 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_plan(double *prefix, double chunk_sum)
 VMAF_ORDSUM_FUNC uint64_t vmaf_ordsum_from_units_bits(int64_t total, int e)
 {
     if (total == VMAF_ORDSUM_BINADE_END)
-        return (uint64_t)(e + 1 + VMAF_ORDSUM_EXP_BIAS) << 52;
-    return ((uint64_t)(e + VMAF_ORDSUM_EXP_BIAS) << 52) |
+        return (uint64_t)(e + 1 + VMAF_ORDSUM_EXP_BIAS) << 52u;
+    return ((uint64_t)(e + VMAF_ORDSUM_EXP_BIAS) << 52u) |
            ((uint64_t)total & VMAF_ORDSUM_FRACTION_MASK);
 }
 
@@ -318,7 +324,7 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_add_chunk_bits(uint64_t *sum_bits, int plan, Vm
     if (vmaf_ordsum_binade_bits(s) != plan)
         return 0;
     const int64_t m = (int64_t)((s & VMAF_ORDSUM_FRACTION_MASK) | (uint64_t)VMAF_ORDSUM_HIDDEN_BIT);
-    const int64_t total = m + ((m & 1) ? units.odd : units.even);
+    const int64_t total = m + (vmaf_ordsum_is_odd(m) ? units.odd : units.even);
     if (total > VMAF_ORDSUM_BINADE_END)
         return 0;
     *sum_bits = vmaf_ordsum_from_units_bits(total, plan);

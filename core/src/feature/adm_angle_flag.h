@@ -96,28 +96,28 @@ ADM_ANGLE_FLAG_FN int adm_angle_flag_fp64(int64_t ot_dp, int64_t o_mag_sq, int64
 ADM_ANGLE_FLAG_FN int adm_angle_flag_bitlen(uint64_t v)
 {
     int n = 0;
-    if (v >> 32) {
-        v >>= 32;
+    if (v >> 32u) {
+        v >>= 32u;
         n += 32;
     }
-    if (v >> 16) {
-        v >>= 16;
+    if (v >> 16u) {
+        v >>= 16u;
         n += 16;
     }
-    if (v >> 8) {
-        v >>= 8;
+    if (v >> 8u) {
+        v >>= 8u;
         n += 8;
     }
-    if (v >> 4) {
-        v >>= 4;
+    if (v >> 4u) {
+        v >>= 4u;
         n += 4;
     }
-    if (v >> 2) {
-        v >>= 2;
+    if (v >> 2u) {
+        v >>= 2u;
         n += 2;
     }
-    if (v >> 1) {
-        v >>= 1;
+    if (v >> 1u) {
+        v >>= 1u;
         n += 1;
     }
     return n + (int)v;
@@ -135,20 +135,20 @@ ADM_ANGLE_FLAG_FN void adm_angle_flag_norm24(uint64_t v, uint64_t *m, int *e)
 
     if (n <= 24) {
         /* Exactly representable; left-normalise into [2^23, 2^24). */
-        *m = v << (24 - n);
+        *m = v << (unsigned)(24 - n);
         *e = n - 24;
         return;
     }
 
     int s = n - 24;
-    uint64_t q = v >> s;
-    const uint64_t rem = v & ((UINT64_C(1) << s) - 1);
-    const uint64_t half = UINT64_C(1) << (s - 1);
+    uint64_t q = v >> (unsigned)s;
+    const uint64_t rem = v & ((UINT64_C(1) << (unsigned)s) - 1u);
+    const uint64_t half = UINT64_C(1) << (unsigned)(s - 1);
 
     if (rem > half || (rem == half && (q & 1u) != 0u)) {
         q++;
-        if (q == (UINT64_C(1) << 24)) { /* carry out of the significand */
-            q >>= 1;
+        if (q == (UINT64_C(1) << 24u)) { /* carry out of the significand */
+            q >>= 1u;
             s++;
         }
     }
@@ -173,23 +173,23 @@ ADM_ANGLE_FLAG_FN uint64_t adm_angle_flag_round53_v(uint64_t mo, uint64_t mt, in
 {
     const uint64_t g = mo * mt; /* < 2^48 */
     const uint64_t r = g & UINT64_C(0xFFFFFF);
-    const uint64_t s_val = g - ADM_ANGLE_FLAG_D * (g >> 24);
+    const uint64_t s_val = g - ADM_ANGLE_FLAG_D * (g >> 24u);
     const uint64_t dr = ADM_ANGLE_FLAG_D * r; /* < 2^37 */
 
     /* Binade of V. S - 2^(n-1) < D*r*2^-24 means V dropped a binade. */
     int n = adm_angle_flag_bitlen(s_val);
-    const uint64_t below = s_val - (UINT64_C(1) << (n - 1));
-    if (below < ADM_ANGLE_FLAG_D && (below << 24) < dr) {
+    const uint64_t below = s_val - (UINT64_C(1) << (unsigned)(n - 1));
+    if (below < ADM_ANGLE_FLAG_D && (below << 24u) < dr) {
         n--;
     }
 
     /* Round V to 53 significant bits: V * 2^p lands in [2^52, 2^53), so
      * round53(V) * 2^p is round-to-nearest-even of that to an integer. */
     const int p = 53 - n; /* 5 <= p <= 8 */
-    const uint64_t u = dr << p;
-    const uint64_t ui = u >> 24;
+    const uint64_t u = dr << (unsigned)p;
+    const uint64_t ui = u >> 24u;
     const uint64_t uf = u & UINT64_C(0xFFFFFF);
-    uint64_t rounded = (s_val << p) - ui;
+    uint64_t rounded = (s_val << (unsigned)p) - ui;
 
     if (uf != 0) {
         /* Fraction of V*2^p is (2^24 - uf) / 2^24, integer part one lower. */
@@ -258,7 +258,7 @@ ADM_ANGLE_FLAG_FN int adm_angle_flag_i64(int64_t ot_dp, int64_t o_mag_sq, int64_
     int p = 0;
     const uint64_t rounded = adm_angle_flag_round53_v(mo, mt, &p);
 
-    return ((mp * mp) << (sp + p)) >= rounded;
+    return ((mp * mp) << (unsigned)(sp + p)) >= rounded;
 }
 
 #endif /* LIBVMAF_FEATURE_ADM_ANGLE_FLAG_H_ */

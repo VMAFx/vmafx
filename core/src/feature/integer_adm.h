@@ -205,6 +205,8 @@ static inline int32_t adm_dwt2_vpass16_tap4(const int16_t *filter, int32_t filte
     accum += (int64_t)filter[2] * s2;
     accum += (int64_t)filter[3] * s3;
     accum -= (int64_t)filter_sum * add;
+    /* The arithmetic shift of the signed accumulator is the upstream rounding. */
+    // NOLINTNEXTLINE(bugprone-signed-bitwise): upstream's arithmetic shift, ADR-1141
     return (int32_t)((accum + add) >> shift);
 }
 

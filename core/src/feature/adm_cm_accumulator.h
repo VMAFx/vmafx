@@ -30,6 +30,9 @@
 static VMAF_ADM_CM_HOST_DEVICE inline int64_t
 adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 {
+    /* The arithmetic shift of the signed row total is the CPU rounding the twins reproduce bit
+     * for bit; an unsigned shift would move its bits. */
+    // NOLINTNEXTLINE(bugprone-signed-bitwise): arithmetic shift of the signed total, ADR-1416
     return (row_total + rounding) >> shift;
 }
 
@@ -72,7 +75,7 @@ static VMAF_ADM_CM_HOST_DEVICE inline int32_t adm_cm_excess_s0(int32_t x, int32_
                                                                uint32_t shift)
 {
     const int64_t magnitude = (x < 0) ? -(int64_t)x : (int64_t)x;
-    const int64_t excess = magnitude - ((int64_t)thr * ((int64_t)1 << shift));
+    const int64_t excess = magnitude - ((int64_t)thr * (int64_t)((uint64_t)1 << shift));
     /* Two selects, not an early return: whether a sample is masked is as good
      * as random on noisy content, and a branch on it mispredicts. */
     const int64_t floored = (excess < 0) ? 0 : excess;
