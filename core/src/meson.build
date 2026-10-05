@@ -2747,6 +2747,14 @@ libvmaf_sources = [
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
+    # ADR-1852: VMAFx API prototype slice. The *_gen.c files are generated from
+    # core/api/vmafx.toml by scripts/codegen/vmafx-api.py and committed;
+    # compat_libvmaf_gen.c defines vmaf_init / vmaf_close / vmaf_version /
+    # vmaf_feature_score_at_index on the new API.
+    src_dir + 'vmafx/context.c',
+    src_dir + 'vmafx/error.c',
+    src_dir + 'vmafx/status_gen.c',
+    src_dir + 'vmafx/compat_libvmaf_gen.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',

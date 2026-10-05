@@ -68,6 +68,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "predict.h"
 #include "thread_pool.h"
 #include "vcs_version.h"
+#include "vmafx/engine.h"
 
 #ifdef HAVE_CUDA
 #include "libvmaf/libvmaf_cuda.h"
@@ -268,6 +269,11 @@ typedef struct VmafContext {
      * a build without this feature. Mutated only by the
      * vmaf_set_perceptual_* entry points; read only in the pooling path. */
     VmafPerceptualWeightStore perceptual;
+    /* ADR-1852: the VMAFx API context this engine context belongs to. Set by
+     * vmafx_context_create() right after vmaf_engine_init(); every engine
+     * context has one, because libvmaf's vmaf_init() is a compat shim on
+     * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
+    struct VmafxContext *api_owner;
 } VmafContext;
 
 typedef struct BatchThreadData {
@@ -365,7 +371,7 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
     return err;
 }
 
-int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
+int vmaf_engine_init(VmafContext **vmaf, VmafConfiguration cfg)
 {
     if (!vmaf)
         return -EINVAL;
@@ -2160,7 +2166,7 @@ static int vmaf_commit_remaining_owners(VmafContext *vmaf)
     return vmaf_close_backends(vmaf);
 }
 
-int vmaf_close(VmafContext *vmaf)
+int vmaf_engine_close(VmafContext *vmaf)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4288,8 +4294,8 @@ static int fence_for_read(VmafContext *vmaf, unsigned index)
     return 0;
 }
 
-int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
-                                unsigned index)
+int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
+                                       unsigned index)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4496,7 +4502,7 @@ static int pool_accumulate(VmafContext *vmaf, const char *feature_name, PoolAccu
             continue;
         a->pic_cnt++;
         double s;
-        int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
+        int err = vmaf_engine_feature_score_at_index(vmaf, feature_name, &s, i);
         if (err)
             return err;
         a->sum += s;
@@ -4673,9 +4679,54 @@ int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out)
     return 0;
 }
 
-const char *vmaf_version(void)
+const char *vmaf_engine_version(void)
 {
     return VMAF_VERSION;
+}
+
+struct VmafxContext *vmaf_engine_api_owner(const VmafContext *vmaf)
+{
+    return vmaf ? vmaf->api_owner : NULL;
+}
+
+void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
+{
+    if (vmaf)
+        vmaf->api_owner = owner;
+}
+
+unsigned vmaf_engine_extractor_count(const VmafContext *vmaf)
+{
+    return vmaf ? vmaf->registered_feature_extractors.cnt : 0;
+}
+
+/* True when the NULL-terminated `features` list names `feature`. */
+static bool fex_declares_feature(const char **features, const char *feature)
+{
+    for (unsigned i = 0; features && features[i] && i < VMAF_ENGINE_MAX_PROVIDED_FEATURES; i++) {
+        if (!strcmp(features[i], feature))
+            return true;
+    }
+    return false;
+}
+
+int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
+                                 const char **extractor, enum VmafBackend *backend)
+{
+    if (!vmaf || !feature || !extractor || !backend)
+        return -EINVAL;
+    *extractor = NULL;
+    *backend = VMAF_BACKEND_UNKNOWN;
+    const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
+        if (!ctx || !ctx->fex || !fex_declares_feature(ctx->fex->provided_features, feature))
+            continue;
+        *extractor = ctx->fex->name;
+        *backend = fex_flags_backend(ctx->fex->flags);
+        return 0;
+    }
+    return -ENOENT;
 }
 
 /* Open `output_path` for writing with mode 0644 so the output file is never

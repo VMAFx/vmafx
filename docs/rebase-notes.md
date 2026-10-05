@@ -61875,3 +61875,23 @@ No score, public API or FFmpeg patch impact.
   `api/openapi/vmafx-server-v1.yaml` changes (header kept, see
   `gen/go/AGENTS.md`); `TestEmbeddedSpecMatchesContract` fails otherwise. No
   score, public C API or FFmpeg patch impact.
+## VMAFx API prototype: four libvmaf entry points become generated shims
+
+`rc4/api-generation-prototype`, [ADR-1852](adr/1852-vmafx-api-redesign.md).
+
+- `core/src/libvmaf.c` renames the bodies of `vmaf_init`, `vmaf_close`,
+  `vmaf_version` and `vmaf_feature_score_at_index` to `vmaf_engine_init`,
+  `vmaf_engine_close`, `vmaf_engine_version` and
+  `vmaf_engine_feature_score_at_index` (declared in `core/src/vmafx/engine.h`,
+  not exported) and adds `VmafContext.api_owner` plus four small accessors.
+  The public functions are defined in the generated
+  `core/src/vmafx/compat_libvmaf_gen.c` on the new `vmafx_*` API. An upstream
+  change to one of the four bodies is ported into its `vmaf_engine_*` function;
+  re-adding the old definition is a duplicate symbol.
+- Generated files (`core/include/vmafx/*.h`, `core/src/vmafx/*_gen.*`,
+  `core/test/test_vmafx_abi_layout.c`, `bindings/python/vmafx/_api.py`,
+  `docs/api/vmafx/reference.md`) are regenerated, never merged by hand:
+  `python3 scripts/codegen/vmafx-api.py --write`.
+- `core/test/check_exported_symbols.py` accepts `vmafx_` symbols declared under
+  `core/include/`. No score or FFmpeg patch impact; libvmaf return values are
+  unchanged (the shims return the engine's own errno).

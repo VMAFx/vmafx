@@ -29,3 +29,5 @@ rev_target = vcs_tag(command: [
 )
 
 subdir('libvmaf')
+# ADR-1852: generated VMAFx API headers (core/api/vmafx.toml).
+subdir('vmafx')

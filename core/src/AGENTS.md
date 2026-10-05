@@ -33,3 +33,4 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 | `read_json_model.c`, `read_json_model.h` | [read-json-model](AGENTS.d/read-json-model.md) | Model feature arrays sync capacity before access and free previous names before strdup. |
 | `predict.c`, `interop/pelorus_interop.c` | [scoring-and-pelorus-interop](AGENTS.d/scoring-and-pelorus-interop.md) | Piecewise linear mapping rejects non-finite scores; Pelorus interop validates framing and QP bounds. |
 | `svm.cpp`, `svm.h` | [vendored-libsvm](AGENTS.d/vendored-libsvm.md) | Vendored libsvm preserves thread-locale isolation, JSON in-memory parser, malloc checks, and RAII Solver. |
+| `vmafx/*`, `libvmaf.c`, `/core/api/vmafx.toml`, `/core/include/vmafx/*`, `/scripts/codegen/**`, `/bindings/python/vmafx/*` | [vmafx-api](AGENTS.d/vmafx-api.md) | Generated from core/api/vmafx.toml, never hand-edit outputs; four libvmaf calls are shims on vmaf_engine_ bodies. |

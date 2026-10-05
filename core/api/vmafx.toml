@@ -1,0 +1,412 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# The VMAFx public API definition (ADR-1852). Every surface listed under
+# "outputs" in docs/development/api-generation.md is generated from this file
+# by scripts/codegen/vmafx-api.py; the generated files are committed and the
+# Meson test `test_vmafx_api_generated_current` fails when one of them differs
+# from what this file produces.
+#
+# Prototype slice (RC4): context create / destroy, version and provenance
+# queries, one score call, and the libvmaf compat shims for the matching
+# functions. The rest of the API follows the design in ADR-1852.
+#
+# Rules the generator enforces:
+# - `sized = true` structs get `uint32_t struct_size` as their first field and
+#   only grow at the end (HISS-14); `scripts/codegen/vmafx-api.py --abi-check`
+#   refuses a reorder, removal, retype or renumber against a previous version.
+# - Enum-valued struct fields are `u32` with an `enum` annotation, so their size
+#   never depends on the compiler.
+# - Every function names the ABI version that introduced it (`since`).
+
+[api]
+name = "vmafx"
+abi_version = "0.1.0"
+export_macro = "VMAFX_EXPORT"
+
+[[headers]]
+path = "vmafx/vmafx.h"
+guard = "VMAFX_VMAFX_H"
+brief = "VMAFx public C API (generated)."
+
+[[headers]]
+path = "vmafx/libvmaf_bridge.h"
+guard = "VMAFX_LIBVMAF_BRIDGE_H"
+brief = "Bridge between a VmafxContext and the libvmaf handle bound to it, for callers that migrate one call at a time."
+includes = ["vmafx/vmafx.h", "libvmaf/libvmaf.h"]
+
+# ---------------------------------------------------------------------------
+# Status codes. Stable on every platform; `errno` is what the libvmaf compat
+# layer returns (negated) when the failure carries no engine errno of its own.
+
+[[status]]
+name = "VMAFX_OK"
+value = 0
+errno = "0"
+doc = "Success."
+
+[[status]]
+name = "VMAFX_PENDING"
+value = 1
+errno = "EAGAIN"
+doc = "The requested score is not final yet (libvmaf returned -EAGAIN)."
+
+[[status]]
+name = "VMAFX_E_INVALID"
+value = -1
+errno = "EINVAL"
+doc = "Invalid argument or state; the error names the parameter."
+
+[[status]]
+name = "VMAFX_E_NOMEM"
+value = -2
+errno = "ENOMEM"
+doc = "Out of memory."
+
+[[status]]
+name = "VMAFX_E_NOTSUP"
+value = -3
+errno = "ENOTSUP"
+doc = "Backend, format or option not supported; the error names it."
+
+[[status]]
+name = "VMAFX_E_NOTFOUND"
+value = -4
+errno = "ENOENT"
+doc = "Unknown feature, model, extractor index or device."
+
+[[status]]
+name = "VMAFX_E_BUSY"
+value = -5
+errno = "EBUSY"
+doc = "Resource already in use."
+
+[[status]]
+name = "VMAFX_E_DEVICE"
+value = -6
+errno = "EIO"
+reverse = false
+doc = "Backend runtime failure; the error carries the runtime's code."
+
+[[status]]
+name = "VMAFX_E_IO"
+value = -7
+errno = "EIO"
+doc = "File or stream error."
+
+[[status]]
+name = "VMAFX_E_RANGE"
+value = -8
+errno = "ERANGE"
+doc = "Value out of range."
+
+[[status]]
+name = "VMAFX_E_INTERNAL"
+value = -9
+errno = "EIO"
+reverse = false
+doc = "Engine error without a more specific status; the error carries the engine's errno."
+
+# ---------------------------------------------------------------------------
+# Enumerations (values equal the libvmaf ones where libvmaf has the concept).
+
+[[enums]]
+name = "VmafxLogLevel"
+doc = "Log verbosity (values equal enum VmafLogLevel)."
+values = [
+  { name = "VMAFX_LOG_LEVEL_NONE", value = 0 },
+  { name = "VMAFX_LOG_LEVEL_ERROR", value = 1 },
+  { name = "VMAFX_LOG_LEVEL_WARNING", value = 2 },
+  { name = "VMAFX_LOG_LEVEL_INFO", value = 3 },
+  { name = "VMAFX_LOG_LEVEL_DEBUG", value = 4 },
+]
+
+[[enums]]
+name = "VmafxBackend"
+doc = "Compute backend (values equal enum VmafBackend; 5 stays reserved for the removed backend of ADR-0726)."
+values = [
+  { name = "VMAFX_BACKEND_CPU", value = 0 },
+  { name = "VMAFX_BACKEND_CUDA", value = 1 },
+  { name = "VMAFX_BACKEND_SYCL", value = 2 },
+  { name = "VMAFX_BACKEND_METAL", value = 3 },
+  { name = "VMAFX_BACKEND_HIP", value = 4 },
+]
+
+# ---------------------------------------------------------------------------
+# Handles (opaque).
+
+[[handles]]
+name = "VmafxContext"
+release = "vmafx_context_destroy"
+doc = "One scoring session."
+
+[[handles]]
+name = "VmafxError"
+release = "vmafx_error_free"
+doc = "A failure: status, message, the named subject and the engine's errno."
+
+# ---------------------------------------------------------------------------
+# Structs.
+
+[[structs]]
+name = "VmafxContextConfig"
+sized = true
+doc = "Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT."
+fields = [
+  { name = "log_level", type = "u32", enum = "VmafxLogLevel", doc = "Log verbosity." },
+  { name = "n_threads", type = "u32", doc = "Worker threads; 0 runs extractors on the calling thread." },
+  { name = "n_subsample", type = "u32", doc = "Score every n-th frame; 0 and 1 score every frame." },
+  { name = "cpumask", type = "u64", doc = "CPU instruction-set bits to disable." },
+  { name = "gpumask", type = "u64", doc = "GPU dispatch bits to disable." },
+]
+
+[[structs]]
+name = "VmafxProvenance"
+sized = true
+doc = "How the scores of a context are made (#2142). Strings live as long as the context."
+fields = [
+  { name = "abi_major", type = "u32", doc = "ABI major version of the library that ran." },
+  { name = "abi_minor", type = "u32", doc = "ABI minor version." },
+  { name = "abi_patch", type = "u32", doc = "ABI patch version." },
+  { name = "active_backend", type = "u32", enum = "VmafxBackend", doc = "Backend imported into the context." },
+  { name = "n_extractors", type = "u32", doc = "Registered feature extractors; see vmafx_context_extractor_info()." },
+  { name = "version", type = "cstr", doc = "Build version (git describe)." },
+]
+
+[[structs]]
+name = "VmafxExtractorInfo"
+sized = true
+doc = "One registered feature extractor."
+fields = [
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend the extractor runs on." },
+  { name = "name", type = "cstr", doc = "Extractor name (for example `psnr`, `adm_cuda`)." },
+]
+
+[[structs]]
+name = "VmafxScore"
+sized = true
+doc = "One score and the extractor that produced it."
+fields = [
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the producing extractor (CPU when none is registered)." },
+  { name = "index", type = "u64", doc = "Frame index." },
+  { name = "value", type = "f64", doc = "Score." },
+  { name = "feature", type = "cstr", doc = "Feature name as requested." },
+  { name = "extractor", type = "cstr", doc = "Registered extractor that declares the feature, or NULL (imported scores, option-decorated names until WP5)." },
+]
+
+# ---------------------------------------------------------------------------
+# Functions of vmafx/vmafx.h.
+
+[[functions]]
+name = "vmafx_version_string"
+since = "0.1"
+returns = "cstr"
+doc = "Build version (git describe); valid for the process lifetime."
+params = []
+
+[[functions]]
+name = "vmafx_abi_version"
+since = "0.1"
+returns = "void"
+doc = "ABI version of the loaded library. Each pointer may be NULL."
+params = [
+  { name = "major", type = "u32", pass = "out", nullable = true },
+  { name = "minor", type = "u32", pass = "out", nullable = true },
+  { name = "patch", type = "u32", pass = "out", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_status_name"
+since = "0.1"
+returns = "cstr"
+doc = "Name of a status code (`VMAFX_E_INVALID`), or `VMAFX_UNKNOWN_STATUS`."
+params = [
+  { name = "status", type = "status", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_error_status"
+since = "0.1"
+returns = "status"
+doc = "Status of an error; VMAFX_E_INVALID for NULL."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_error_message"
+since = "0.1"
+returns = "cstr"
+doc = "Message formatted at the failure site; empty string for NULL."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_error_subject"
+since = "0.1"
+returns = "cstr"
+doc = "Name of the parameter, feature, extractor or backend that failed; empty string when none."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_error_errno"
+since = "0.1"
+returns = "i32"
+doc = "Negative errno the engine reported, 0 when the failure did not come from the engine."
+params = [
+  { name = "error", type = "VmafxError", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_error_free"
+since = "0.1"
+returns = "void"
+doc = "Release an error; NULL is a no-op."
+params = [
+  { name = "error", type = "VmafxError", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_context_create"
+since = "0.1"
+returns = "status"
+doc = "Create a context. `config` may be NULL for the defaults; `*out` is NULL on failure."
+params = [
+  { name = "config", type = "VmafxContextConfig", pass = "in", nullable = true },
+  { name = "out", type = "VmafxContext", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_destroy"
+since = "0.1"
+returns = "status"
+doc = "Destroy a context. On a nonzero status the context stays valid and may be destroyed again (ADR-1336)."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_provenance"
+since = "0.1"
+returns = "status"
+doc = "Fill the provenance record of a context."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "out", type = "VmafxProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_extractor_info"
+since = "0.1"
+returns = "status"
+doc = "Describe registered extractor `index`; VMAFX_E_NOTFOUND past the last one."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxExtractorInfo", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_feature_score"
+since = "0.1"
+returns = "status"
+doc = "Score of `feature` at frame `index` with its producer; VMAFX_PENDING while the frame is not final."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "feature", type = "cstr", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxScore", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
+# Functions of vmafx/libvmaf_bridge.h.
+
+[[functions]]
+name = "vmafx_context_from_libvmaf"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "handle:VmafxContext"
+doc = "The VmafxContext a libvmaf handle is bound to, or NULL."
+params = [
+  { name = "vmaf", type = "foreign:VmafContext", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_context_libvmaf_handle"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "foreign:VmafContext"
+doc = "The libvmaf handle bound to a context, for libvmaf calls not yet migrated; NULL for NULL."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+]
+
+# ---------------------------------------------------------------------------
+# libvmaf compatibility shims (core/src/vmafx/compat_libvmaf_gen.c). The old
+# declarations stay in core/include/libvmaf/*.h unchanged; these entries
+# generate their definitions on top of the functions above.
+
+[[compat]]
+name = "vmaf_init"
+header = "libvmaf/libvmaf.h"
+kind = "glue"
+target = "vmafx_context_create"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext **" },
+  { name = "cfg", c = "VmafConfiguration" },
+]
+null_checks = ["vmaf"]
+clear = "*vmaf = NULL;"
+build = { var = "config", type = "VmafxContextConfig", from = { log_level = "(uint32_t)cfg.log_level", n_threads = "cfg.n_threads", n_subsample = "cfg.n_subsample", cpumask = "cfg.cpumask", gpumask = "cfg.gpumask" } }
+out_handle = { var = "context", type = "VmafxContext" }
+args = ["&config", "&context", "&error"]
+store = "*vmaf = vmafx_context_libvmaf_handle(context);"
+
+[[compat]]
+name = "vmaf_close"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_context_destroy"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+]
+null_checks = ["vmaf"]
+context = "vmaf"
+args = ["context", "&error"]
+
+[[compat]]
+name = "vmaf_feature_score_at_index"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_feature_score"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "score", c = "double *" },
+  { name = "index", c = "unsigned" },
+]
+null_checks = ["vmaf", "feature_name", "score"]
+context = "vmaf"
+out_struct = { var = "record", type = "VmafxScore" }
+args = ["context", "feature_name", "(uint64_t)index", "&record", "&error"]
+store = "*score = record.value;"
+
+[[compat]]
+name = "vmaf_version"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_version_string"
+returns = "const char *"
+params = []
+return_expr = "vmafx_version_string()"
