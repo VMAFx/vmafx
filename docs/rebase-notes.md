@@ -61875,3 +61875,15 @@ No score, public API or FFmpeg patch impact.
   `api/openapi/vmafx-server-v1.yaml` changes (header kept, see
   `gen/go/AGENTS.md`); `TestEmbeddedSpecMatchesContract` fails otherwise. No
   score, public C API or FFmpeg patch impact.
+## ROCm 10.1.0 and the Renovate base-image coverage
+
+- ROCm installs under `/opt/rocm/core-10.1`: `dev/Containerfile` (`rocm-src` stage) and
+  `docker/Dockerfile.node` name that directory, and `tools/rc1-tester/image/hip-runtime.json`
+  names the LLVM 24 sonames. A conflict there takes the side that matches `ROCM_VERSION` in
+  `build-config.env`. The prune lists of the `rocm-src` stage and of
+  `scripts/ci/install-rocm-from-image.sh` stay one list (RPP joined both).
+- `renovate.json` selects `docker/Dockerfile.tester` in the base-image custom manager and in
+  the built-in manager's disable rule; `scripts/ci/tests/test_renovate_file_patterns.py`
+  derives that set from the tree, so a sync that adds a Dockerfile mirroring a
+  `build-config.env` image key adds it to both lists. No score, public API or FFmpeg patch
+  impact.

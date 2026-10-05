@@ -2208,6 +2208,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/development/release-workflow-verification.md`.
 
 
+- The HIP backend is built against ROCm 10.1.0 (`rocm/dev-ubuntu-26.04:10.1.0-full`)
+  in CI, the dev container and the published ROCm, node and AMD tester images. Its
+  compiler is AMD clang 24 (ROCm 10.0.0 shipped 23); every HIP twin returns the same
+  scores as with 10.0.0 on a gfx1036. The images now ship `libLLVM.so.24.0git` and
+  `libclang-cpp.so.24.0git` beside the HIP runtime, the GPU target list is unchanged
+  (25 targets, `gfx908` to `gfx1250`), and ROCm 10.1.0 no longer installs `rocm-smi`
+  (`amd-smi` remains).
+
+
 - Rust CI now runs `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
   Until now only `vmafx-sys` was linted; `vmafx`, `vmafx-tad` and any crate added to the
   workspace are covered without a workflow edit (`docs/development/rust.md`, "Linting").
@@ -4683,6 +4692,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `[not_ports]` entries and stay `EUPL-1.2`
   (`T-RELICENSE-CHECK-PENDING-2026-10-02`,
   [ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)).
+
+
+- Renovate updates `docker/Dockerfile.tester`'s base images together with
+  `build-config.env`; the ROCm 10.1.0 update had left the AMD tester image on
+  ROCm 10.0.0. ROCm image updates are labelled `rocm` and `manual-review` again.
 
 
 - **The repository root states the fork's licence, and every package declares

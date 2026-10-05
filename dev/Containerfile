@@ -543,7 +543,8 @@ ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig
 # `Unable to open /dev/kfd read-write: Invalid argument` plus a silent CPU
 # fallback — which is what ROCm 6.4 did against a 7.x kernel. ROCm 10.0.0 was
 # verified end-to-end on the dev host (Linux 7.2.3, gfx1036), and 10.1.0 again
-# on Linux 7.2.9 with the whole HIP device suite: the agent
+# on Linux 7.2.9, where the HIP device suite returns what a 10.0.0 build of the
+# same tree returns: the agent
 # enumerates, `amdgpu-arch` reports gfx1036 natively, and a HIP-backend VMAF
 # score matches the CPU exactly. HSA_OVERRIDE_GFX_VERSION is no longer needed.
 #

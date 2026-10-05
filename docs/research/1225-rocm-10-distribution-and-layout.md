@@ -148,6 +148,84 @@ Two things to know about that path:
   (`.wh.*`) are deleted after extraction rather than interpreted; ROCm is
   installed by a single layer that never deletes a path a later layer needs.
 
+## 7. ROCm 10.1.0 (measured 2026-10-05)
+
+AMD had published no release notes for 10.1.0 when the update was made:
+`rocm.docs.amd.com/en/docs-10.1.0/about/release-notes.html` served the page
+titled "ROCm Core SDK 10.0.0 release notes", the `ROCm/ROCm` repository had no
+10.1 notes, and TheRock's GitHub release `therock-10.1` (2026-10-05) says only
+"therock release v10.1". What changed was measured from the image and from
+TheRock's sources instead.
+
+| Item | 10.0.0 | 10.1.0 |
+| --- | --- | --- |
+| Image (`rocm/dev-ubuntu-26.04:<v>-full`) | `sha256:8ebc02ee...` | `sha256:4f5ed1bf...`, 8.9 GB compressed, 31 GB extracted |
+| TheRock commit (`share/therock/therock_manifest.json`) | `16adc4d8` | `b324869f` (`rocm_package_version` 10.1.0rc3) |
+| Compiler | AMD clang 23.0.0git, `llvm-project` `8f497e09` | AMD clang 24.0.0git, `llvm-project` `d6f6cb69` (10,434 commits later) |
+| HIP runtime / comgr / ROCr | 7.15.26333 / 3.3.0 / 1.21.0 | 7.16.26385 / 3.5.0 / 1.21.0 |
+| Install root | `/opt/rocm/core-10.0` | `/opt/rocm/core-10.1` |
+| LLVM sonames the HIP runtime loads | `libLLVM.so.23.0git`, `libclang-cpp.so.23.0git` | `libLLVM.so.24.0git`, `libclang-cpp.so.24.0git` |
+| `dist_amdgpu_targets` | 25 targets, `gfx908` to `gfx1250` | the same 25 |
+| Max GLIBC of the runtime closure | 2.28 | 2.28 |
+| `rocm-smi` / `librocm_smi64` | present | removed (TheRock: "disable rocm-smi-lib build (deprecated)"); `amd-smi` remains |
+| New large library | | RPP (`librpp`, 382 MB) |
+
+- **Compiler.** The `llvm-project` history between the two pins holds no commit
+  that changes `-ffp-contract`, `-fhip-fp32-correctly-rounded-divide-sqrt` or
+  the HIP driver's floating-point defaults. The AMDGPU floating-point commits in
+  it are sign-of-zero fixes for legacy multiply and mixed-precision FMA, a
+  denormal flush when constant folding `amdgcn.rcp`, a cheaper integer
+  division and remainder through `frcp`, and `pow` to `sqrt` folds now gated on
+  `nsz` / `ninf`. None reaches code built with `hip_strict_fp_args`; the device
+  suite below is the check.
+- **Targets.** `cmake/therock_amdgpu_targets.cmake` differs between the two
+  TheRock commits by one CMake loop syntax fix; the shipped target list is the
+  same, so `HIP_GFX_TARGETS` of `docker/Dockerfile.tester` stays.
+- **Layout.** Only the version in the core directory moved; `core` and
+  `core-10` alias it as before. `scripts/ci/install-rocm-from-image.sh` finds
+  the directory itself; `dev/Containerfile` and `docker/Dockerfile.node` name it.
+- **Prune list.** Every entry still matches. RPP is new and libvmaf does not
+  link it, so it joins the list: 21 GB to 5.8 GB. The hipcc smoke check passes
+  on the pruned tree and fails (exit 127, `librocprofiler-register.so.0: cannot
+  open shared object file`) when that library is pruned too.
+- **Bundled system libraries.** `rocm_sysdeps` keeps elfutils 0.195, numactl
+  2.0.19, libdrm 2.4.134, zlib 1.3.2, zstd 1.5.7 and XZ 5.8.1; `libelf` and
+  `libnuma` keep their ELF build IDs (`11dee761...`, `ec55f204...`). The licence
+  texts the tester record fetches are byte-identical at the new commits.
+- **Channels.** `repo.radeon.com/rocm/apt/10.1.0/` is 404 and `apt/latest`
+  still ends at 7.2.4.
+- **`rocm-smi`.** The fork calls it only after `rocminfo` (`pkg/corpus`,
+  `tools/vmaf-tune`) or from `pkg/gpu/detect.go`, which no binary calls; no
+  path depends on it.
+
+**Device suite on the gfx1036 (Linux 7.2.9-1-cachyos).** The same tree built
+with ROCm 10.1.0 (`vmaf-dev-mcp` `gpu-sdks` stage) and with ROCm 10.0.0 (the
+previous dev image), HIP-only, `-Dhip_gfx_targets=gfx1036`: 107 HIP tests (the
+`gpu` suite and every `test_hip_*`), and the parity gate
+(`--backends cpu hip --hold-exact hip`, 25 features) on the four tester
+fixtures.
+
+- Both builds return the same results. 103 tests pass; two skip without a CUDA
+  build or the 4K fixture (`test_hip_v1_models_no_fallback` passes 45 of 45
+  cells when the fixture is mounted); `test_hip_speed_temporal_parity_large`
+  (CPU 41.6718, HIP 201.9 to 212.6 from run to run) and
+  `test_hip_speed_lanczos4_parity` (worst relative difference 1.05 to 1.32)
+  fail on every run with either toolchain.
+- Those two failures come from the host, not from ROCm or vmafx: the binaries
+  of the 2026-10-04 AMD tester image, which passed both tests under Linux
+  7.2.8-2 that night, fail them the same way under 7.2.9; a vmafx tree of
+  2026-10-03 fails them too; the kernel is the only GPU package that changed
+  (`T-HIP-GFX1036-KERNEL-729-SPEED-2026-10-05`).
+- The gate holds every HIP cell at 0 on the four fixtures, `ciede` included,
+  with `float_ms_ssim_chroma` skipped on the two 576x324 pairs (chroma below its
+  minimum). One run of the 10-px checkerboard got two wrong `speed_temporal`
+  frames (114.4 off); 8 further runs of the cell per toolchain and 4 full gate
+  runs were exact. Single wrong frames also appeared once in `test_hip_adm_exact`
+  (10.0.0 build) and once in `test_hip_v1_models_no_fallback` (10.1.0 build) and
+  passed on rerun: the dropped dispatches of
+  `T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`, more frequent than recorded
+  there.
+
 ## Reproducing the measurements
 
 ```bash
@@ -171,5 +249,11 @@ ROCM_PATH=/tmp/rocm10 LD_LIBRARY_PATH=/tmp/rocm10/lib \
 ## References
 
 - ROCm release notes — <https://rocm.docs.amd.com/en/latest/about/release-notes.html>
-- TheRock — <https://github.com/ROCm/TheRock>
+  (10.0.0; `docs-10.1.0` served the same page on 2026-10-05)
+- TheRock — <https://github.com/ROCm/TheRock>; release
+  <https://github.com/ROCm/TheRock/releases/tag/therock-10.1>, and the comparison
+  of the two release commits
+  <https://github.com/ROCm/TheRock/compare/16adc4d875fd4f65ea23c7c84e1c66706fde3047...b324869fb3116353ac7eec5e6926aa3d452ac987>
+- ROCm `llvm-project` between the two compiler pins —
+  <https://github.com/ROCm/llvm-project/compare/8f497e0992fb7513f7f78a6f6b6f1056c375e961...d6f6cb691863e9258034ab48c1dfce21689d5606>
 - [ADR-1225](../adr/1225-rocm-10-therock-migration.md)
