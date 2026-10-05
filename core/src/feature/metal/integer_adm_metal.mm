@@ -478,8 +478,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 

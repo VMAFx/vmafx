@@ -82,7 +82,7 @@ jobs:
           CC=clang CXX=clang++ meson setup "$TIDY_BUILD_DIR" core \
             -Denable_metal=enabled -Denable_cuda=false -Denable_sycl=false \
             -Denable_dnn=disabled -Db_lto=false
-          meson compile -C "$TIDY_BUILD_DIR"
+          meson compile -C "$TIDY_BUILD_DIR" --ninja-args=-k0
           python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
       - name: Autofix — clang-tidy's own fixes as a patch (dispatch with fix=true)
         if: ${{ inputs.fix }}

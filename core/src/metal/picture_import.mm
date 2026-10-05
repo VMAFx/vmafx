@@ -241,7 +241,7 @@ static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsign
                            struct MetalImportRing **out)
 {
     if (state->import_ring == nullptr) {
-        struct MetalImportRing  const*r = ring_alloc(w, h, bpc);
+        struct MetalImportRing *const r = ring_alloc(w, h, bpc);
         if (r == nullptr) {
             return -ENOMEM;
         }

@@ -187,7 +187,7 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 
 static int psnr_metal_load_pipelines(IntegerPsnrStateMetal *s)
 {
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     return build_pipelines(s, (__bridge id<MTLDevice>)dh);
 }
@@ -341,8 +341,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)index;
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;

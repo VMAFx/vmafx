@@ -227,7 +227,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_rb; }
 
     {
-        void  const*dh = vmaf_metal_context_device_handle(s->ctx);
+        void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) {
             err = -ENODEV;
             goto fail_sum;
@@ -359,8 +359,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void  const*dh = vmaf_metal_context_device_handle(s->ctx);
-    void  const*qh = vmaf_metal_context_queue_handle(s->ctx);
+    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
@@ -473,7 +473,7 @@ static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMomentStateMetal  const*s = (FloatMomentStateMetal *)fex->priv;
+    FloatMomentStateMetal *const s = (FloatMomentStateMetal *)fex->priv;
     uint64_t sum[4] = {0u, 0u, 0u, 0u};
     accumulate_partials(s, sum);
     const int sum_err = apply_rounded_sums(s, sum);

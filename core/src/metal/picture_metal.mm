@@ -36,7 +36,7 @@ int vmaf_metal_picture_alloc(VmafMetalContext *ctx, void **out, size_t size)
         return -EINVAL;
     }
 
-    void  const*device_handle = vmaf_metal_context_device_handle(ctx);
+    void *const device_handle = vmaf_metal_context_device_handle(ctx);
     if (device_handle == nullptr) {
         return -ENODEV;
     }
