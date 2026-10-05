@@ -46,12 +46,12 @@ VMAF_MTL_CONSTANT float vmaf_mtl_msdec_lpf[VMAF_MTL_MSDEC_TAPS] = {
 
 /* The arguments of a decimation kernel, laid out alike in MSL and on the
  * host: the plane it reads and the plane it writes. */
-using VmafMtlMsdecParams = struct VmafMtlMsdecParams {
+typedef struct VmafMtlMsdecParams {
     vmaf_mtl_u32 width;
     vmaf_mtl_u32 height;
     vmaf_mtl_u32 output_width;
     vmaf_mtl_u32 output_height;
-};
+} VmafMtlMsdecParams;
 
 /* ms_ssim_decimate_mirror(): period-2n mirror with the edge sample repeated,
  * also valid for an offset beyond one reflection. */
