@@ -40,27 +40,9 @@ class ModelCrossValidation(object):
 
         return output
 
-    @classmethod
-    def run_kfold_cross_validation(
-        cls,
-        train_test_model_class,
-        model_param,
-        results_or_df,
-        kfold,
-        logger=None,
-        optional_dict2=None,
-    ):
-        """
-        Standard k-fold cross validation, given hyperparameter set model_param
-        :param train_test_model_class:
-        :param model_param:
-        :param results_or_df: list of BasicResult, or pandas.DataFrame
-        :param kfold: if it is an integer, it is the number of folds; if it is
-        list of indices, then each list contains row indices of the dataframe
-        selected as one fold
-        :return: output
-        """
-
+    @staticmethod
+    def _expand_kfold(kfold, results_or_df):
+        """Normalise ``kfold`` (int or list of index lists) to a list of index ranges."""
         if isinstance(kfold, int):
             kfold_type = "int"
         elif isinstance(kfold, (list, tuple)):
@@ -79,9 +61,13 @@ class ModelCrossValidation(object):
                 index_start = fold * fold_size
                 index_end = min((fold + 1) * fold_size, dataframe_size)
                 kfold.append(range(index_start, index_end))
+        return kfold
 
-        assert len(kfold) >= 2, "kfold list must have length >= 2 for k-fold " "cross validation."
-
+    @classmethod
+    def _run_kfold_folds(
+        cls, train_test_model_class, model_param, results_or_df, kfold, logger, optional_dict2
+    ):
+        """Run every fold of a k-fold cross validation; return (statss, models, contentids)."""
         statss = []
         models = []
         contentids = []
@@ -110,13 +96,147 @@ class ModelCrossValidation(object):
                 optional_dict2,
             )
 
-            stats = output["stats"]
-            model = output["model"]
-
-            statss.append(stats)
-            models.append(model)
+            statss.append(output["stats"])
+            models.append(output["model"])
 
             contentids += list(output["contentids"])
+        return statss, models, contentids
+
+    @classmethod
+    def _best_param_for_fold(
+        cls,
+        train_test_model_class,
+        list_model_param,
+        results_or_df,
+        train_index_range_in_list_of_indices,
+        logger,
+        optional_dict2,
+    ):
+        """Inner grid: return the model_param with the best SRCC aggregate."""
+        best_model_param = None
+        best_stats = None
+        for model_param in list_model_param:
+
+            if logger:
+                logger.info("\tModel parameter: {}".format(model_param))
+
+            output = cls.run_kfold_cross_validation(
+                train_test_model_class,
+                model_param,
+                results_or_df,
+                train_index_range_in_list_of_indices,
+                optional_dict2,
+            )
+            stats = output["aggr_stats"]
+
+            if (best_stats is None) or (
+                train_test_model_class.get_objective_score(stats, score_type="SRCC")
+                > train_test_model_class.get_objective_score(best_stats, score_type="SRCC")
+            ):
+                best_stats = stats
+                best_model_param = model_param
+        return best_model_param
+
+    @classmethod
+    def _run_nested_folds(
+        cls, train_test_model_class, list_model_param, results_or_df, kfold, logger, optional_dict2
+    ):
+        """Run every outer fold; return (statss, model_params, contentids)."""
+        statss = []
+        model_params = []
+        contentids = []
+
+        for fold in range(len(kfold)):
+
+            if logger:
+                logger.info("Fold {}...".format(fold))
+
+            test_index_range = kfold[fold]
+            train_index_range = []
+            train_index_range_in_list_of_indices = []
+
+            # in this case, train_index_range is list of lists
+            for train_fold in range(len(kfold)):
+                if train_fold != fold:
+                    train_index_range += kfold[train_fold]
+                    train_index_range_in_list_of_indices.append(kfold[train_fold])
+
+            # iterate through all possible combinations of model_params
+            best_model_param = cls._best_param_for_fold(
+                train_test_model_class,
+                list_model_param,
+                results_or_df,
+                train_index_range_in_list_of_indices,
+                logger,
+                optional_dict2,
+            )
+
+            # run cross validation based on best model parameters
+            output_ = cls.run_cross_validation(
+                train_test_model_class,
+                best_model_param,
+                results_or_df,
+                train_index_range,
+                test_index_range,
+                optional_dict2,
+            )
+
+            statss.append(output_["stats"])
+            model_params.append(best_model_param)
+
+            contentids += list(output_["contentids"])
+        return statss, model_params, contentids
+
+    @classmethod
+    def _build_model_param_list(
+        cls, model_param_search_range, search_strategy, random_search_times
+    ):
+        """Expand the hyperparameter search range into a list of model params."""
+        if search_strategy == "grid":
+            cls._assert_grid_search(model_param_search_range)
+            list_model_param = unroll_dict_of_lists(model_param_search_range)
+        elif search_strategy == "random":
+            cls._assert_random_search(model_param_search_range)
+            list_model_param = cls._sample_model_param_list(
+                model_param_search_range, random_search_times
+            )
+        else:
+            assert False, "Unknown search_strategy: {}".format(search_strategy)
+        return list_model_param
+
+    @classmethod
+    def run_kfold_cross_validation(
+        cls,
+        train_test_model_class,
+        model_param,
+        results_or_df,
+        kfold,
+        logger=None,
+        optional_dict2=None,
+    ):
+        """
+        Standard k-fold cross validation, given hyperparameter set model_param
+        :param train_test_model_class:
+        :param model_param:
+        :param results_or_df: list of BasicResult, or pandas.DataFrame
+        :param kfold: if it is an integer, it is the number of folds; if it is
+        list of indices, then each list contains row indices of the dataframe
+        selected as one fold
+        :return: output
+        """
+
+        kfold = cls._expand_kfold(kfold, results_or_df)
+
+        assert len(kfold) >= 2, "kfold list must have length >= 2 for k-fold " "cross validation."
+
+        statss, models, contentids = cls._run_kfold_folds(
+            train_test_model_class,
+            model_param,
+            results_or_df,
+            kfold,
+            logger,
+            optional_dict2,
+        )
 
         aggr_stats = train_test_model_class.aggregate_stats_list(statss)
 
@@ -155,98 +275,24 @@ class ModelCrossValidation(object):
         :return: output
         """
 
-        if isinstance(kfold, int):
-            kfold_type = "int"
-        elif isinstance(kfold, (list, tuple)):
-            kfold_type = "list"
-        else:
-            assert False, "kfold must be either a list of lists or an integer."
-
-        # if input is integer (e.g. 4), reconstruct kfold in list of indices
-        # format
-        if kfold_type == "int":
-            num_fold = kfold
-            dataframe_size = len(results_or_df)
-            fold_size = int(floor(dataframe_size / num_fold))
-            kfold = []
-            for fold in range(num_fold):
-                index_start = fold * fold_size
-                index_end = min((fold + 1) * fold_size, dataframe_size)
-                kfold.append(range(index_start, index_end))
+        kfold = cls._expand_kfold(kfold, results_or_df)
 
         assert len(kfold) >= 3, (
             "kfold list must have length >= 2 for nested " "k-fold cross validation."
         )
 
-        if search_strategy == "grid":
-            cls._assert_grid_search(model_param_search_range)
-            list_model_param = unroll_dict_of_lists(model_param_search_range)
-        elif search_strategy == "random":
-            cls._assert_random_search(model_param_search_range)
-            list_model_param = cls._sample_model_param_list(
-                model_param_search_range, random_search_times
-            )
-        else:
-            assert False, "Unknown search_strategy: {}".format(search_strategy)
+        list_model_param = cls._build_model_param_list(
+            model_param_search_range, search_strategy, random_search_times
+        )
 
-        statss = []
-        model_params = []
-        contentids = []
-
-        for fold in range(len(kfold)):
-
-            if logger:
-                logger.info("Fold {}...".format(fold))
-
-            test_index_range = kfold[fold]
-            train_index_range = []
-            train_index_range_in_list_of_indices = []
-
-            # in this case, train_index_range is list of lists
-            for train_fold in range(len(kfold)):
-                if train_fold != fold:
-                    train_index_range += kfold[train_fold]
-                    train_index_range_in_list_of_indices.append(kfold[train_fold])
-
-            # iterate through all possible combinations of model_params
-            best_model_param = None
-            best_stats = None
-            for model_param in list_model_param:
-
-                if logger:
-                    logger.info("\tModel parameter: {}".format(model_param))
-
-                output = cls.run_kfold_cross_validation(
-                    train_test_model_class,
-                    model_param,
-                    results_or_df,
-                    train_index_range_in_list_of_indices,
-                    optional_dict2,
-                )
-                stats = output["aggr_stats"]
-
-                if (best_stats is None) or (
-                    train_test_model_class.get_objective_score(stats, score_type="SRCC")
-                    > train_test_model_class.get_objective_score(best_stats, score_type="SRCC")
-                ):
-                    best_stats = stats
-                    best_model_param = model_param
-
-            # run cross validation based on best model parameters
-            output_ = cls.run_cross_validation(
-                train_test_model_class,
-                best_model_param,
-                results_or_df,
-                train_index_range,
-                test_index_range,
-                optional_dict2,
-            )
-            stats_ = output_["stats"]
-
-            statss.append(stats_)
-            model_params.append(best_model_param)
-
-            contentids += list(output_["contentids"])
+        statss, model_params, contentids = cls._run_nested_folds(
+            train_test_model_class,
+            list_model_param,
+            results_or_df,
+            kfold,
+            logger,
+            optional_dict2,
+        )
 
         aggr_stats = train_test_model_class.aggregate_stats_list(statss)
         top_model_param, count = cls._find_most_frequent_dict(model_params)

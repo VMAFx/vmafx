@@ -414,20 +414,8 @@ def compare_two_quality_runners_on_dataset(
     }
 
 
-def run_test_on_dataset(
-    test_dataset,
-    runner_class,
-    ax,
-    result_store,
-    model_filepath,
-    parallelize=True,
-    fifo_mode=True,
-    aggregate_method=np.mean,
-    type="regressor",
-    allow_uncalibrated=False,
-    **kwargs,
-):
-
+def _read_assets_with_subjective_fallback(test_dataset, kwargs):
+    """Read dataset assets; fall back to subjective modeling without groundtruth."""
     test_assets = read_dataset(test_dataset, **kwargs)
     test_raw_assets = None
     try:
@@ -451,41 +439,44 @@ def run_test_on_dataset(
         test_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
         test_raw_assets = test_assets
         test_assets = read_dataset(test_dataset_aggregate, **kwargs)
+    return test_assets, test_raw_assets
 
+
+def _add_model_filepaths(optional_dict, model_filepath, kwargs):
+    """Record the model paths (default + per-resolution) into optional_dict."""
+    if not optional_dict:
+        optional_dict = {}
+    optional_dict["model_filepath"] = model_filepath
+    for res in ("720", "480", "2160"):
+        key = "model_{}_filepath".format(res)
+        if key in kwargs and kwargs[key] is not None:
+            optional_dict["{}model_filepath".format(res)] = kwargs[key]
+    return optional_dict
+
+
+def _build_test_optional_dict(model_filepath, kwargs):
+    """Assemble the runner's optional_dict from model paths and kwargs flags."""
     optional_dict = kwargs["optional_dict"] if "optional_dict" in kwargs else None
 
     if model_filepath is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["model_filepath"] = model_filepath
-        if "model_720_filepath" in kwargs and kwargs["model_720_filepath"] is not None:
-            optional_dict["720model_filepath"] = kwargs["model_720_filepath"]
-        if "model_480_filepath" in kwargs and kwargs["model_480_filepath"] is not None:
-            optional_dict["480model_filepath"] = kwargs["model_480_filepath"]
-        if "model_2160_filepath" in kwargs and kwargs["model_2160_filepath"] is not None:
-            optional_dict["2160model_filepath"] = kwargs["model_2160_filepath"]
+        optional_dict = _add_model_filepaths(optional_dict, model_filepath, kwargs)
 
-    if "enable_transform_score" in kwargs and kwargs["enable_transform_score"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["enable_transform_score"] = kwargs["enable_transform_score"]
-
-    if "disable_clip_score" in kwargs and kwargs["disable_clip_score"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["disable_clip_score"] = kwargs["disable_clip_score"]
-
-    if "subsample" in kwargs and kwargs["subsample"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["subsample"] = kwargs["subsample"]
+    for flag in ("enable_transform_score", "disable_clip_score", "subsample"):
+        if flag in kwargs and kwargs[flag] is not None:
+            if not optional_dict:
+                optional_dict = {}
+            optional_dict[flag] = kwargs[flag]
 
     if "additional_optional_dict" in kwargs and kwargs["additional_optional_dict"] is not None:
         assert isinstance(kwargs["additional_optional_dict"], dict)
         if not optional_dict:
             optional_dict = {}
         optional_dict.update(kwargs["additional_optional_dict"])
+    return optional_dict
 
+
+def _resolve_test_processes(kwargs, parallelize):
+    """Return the validated ``processes`` kwarg (or None)."""
     if "processes" in kwargs and kwargs["processes"] is not None:
         assert isinstance(kwargs["processes"], int)
         processes = kwargs["processes"]
@@ -493,23 +484,11 @@ def run_test_on_dataset(
         processes = None
     if processes is not None:
         assert parallelize is True, "if processes is not None, parallelize must be True"
+    return processes
 
-    # run
-    runner = runner_class(
-        test_assets,
-        None,
-        fifo_mode=fifo_mode,
-        delete_workdir=True,
-        result_store=result_store,
-        optional_dict=optional_dict,
-        optional_dict2=None,
-    )
-    runner.run(parallelize=parallelize, processes=processes)
-    results = runner.results
 
-    for result in results:
-        result.set_score_aggregate_method(aggregate_method)
-
+def _resolve_test_model_type(runner, type):
+    """Model class of the runner, defaulting from the regressor/classifier ``type``."""
     try:
         model_type = runner.get_train_test_model_class()
     except (AttributeError, NotImplementedError):
@@ -523,80 +502,83 @@ def run_test_on_dataset(
             model_type = ClassifierMixin
         else:
             assert False
+    return model_type
 
-    split_test_indices_for_perf_ci = (
-        kwargs["split_test_indices_for_perf_ci"]
-        if "split_test_indices_for_perf_ci" in kwargs
-        else False
+
+_BOOTSTRAP_KEY_GETTERS = (
+    "get_bagging_score_key",
+    "get_stddev_score_key",
+    "get_ci95_low_score_key",
+    "get_ci95_high_score_key",
+    "get_all_models_score_key",
+)
+
+
+def _bootstrap_prediction_kwargs(runner_class, results):
+    """Return (stats kwargs, num_models) for runners that expose bootstrap predictions."""
+    if not all(hasattr(runner_class, key_getter) for key_getter in _BOOTSTRAP_KEY_GETTERS):
+        return {}, 1
+    predictions_bagging = list(
+        map(lambda result: result[runner_class.get_bagging_score_key()], results)
+    )
+    predictions_stddev = list(
+        map(lambda result: result[runner_class.get_stddev_score_key()], results)
+    )
+    predictions_ci95_low = list(
+        map(lambda result: result[runner_class.get_ci95_low_score_key()], results)
+    )
+    predictions_ci95_high = list(
+        map(lambda result: result[runner_class.get_ci95_high_score_key()], results)
+    )
+    predictions_all_models = list(
+        map(lambda result: result[runner_class.get_all_models_score_key()], results)
     )
 
-    # plot
-    groundtruths = list(map(lambda asset: asset.groundtruth, test_assets))
-    predictions = list(map(lambda result: result[runner_class.get_score_key()], results))
-    raw_grountruths = (
-        None
-        if test_raw_assets is None
-        else list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
-    )
-    groundtruths_std = (
-        None if test_assets is None else list(map(lambda asset: asset.groundtruth_std, test_assets))
-    )
+    # need to revert the list of lists, so that the outer list has the predictions for each model separately
+    predictions_all_models = np.array(predictions_all_models).T.tolist()
+    num_models = np.shape(predictions_all_models)[0]
+    return {
+        "ys_label_pred_bagging": predictions_bagging,
+        "ys_label_pred_stddev": predictions_stddev,
+        "ys_label_pred_ci95_low": predictions_ci95_low,
+        "ys_label_pred_ci95_high": predictions_ci95_high,
+        "ys_label_pred_all_models": predictions_all_models,
+    }, num_models
+
+
+def _get_test_stats(model_type, groundtruths, predictions, stats_kwargs):
+    # ClassifierMixin.get_stats only accepts positional (ys_label,
+    # ys_label_pred); the regressor-specific kwargs below are
+    # invalid for it (CodeQL py/call/wrong-named-argument). Branch
+    # explicitly so the classifier path doesn't unconditionally raise
+    # TypeError into the broad fallback handler.
+    if model_type is ClassifierMixin:
+        return model_type.get_stats(groundtruths, predictions)
+    return model_type.get_stats(groundtruths, predictions, **stats_kwargs)
+
+
+def _compute_test_stats(
+    model_type,
+    groundtruths,
+    predictions,
+    runner_class,
+    results,
+    raw_grountruths,
+    groundtruths_std,
+    split_test_indices_for_perf_ci,
+    allow_uncalibrated,
+):
+    """Return (stats, num_models), falling back to uncalibrated stats when allowed."""
+    num_models = 1
     try:
         stats_kwargs = {
             "ys_label_raw": raw_grountruths,
             "ys_label_stddev": groundtruths_std,
             "split_test_indices_for_perf_ci": split_test_indices_for_perf_ci,
         }
-        num_models = 1
-        has_bootstrap_predictions = all(
-            hasattr(runner_class, key_getter)
-            for key_getter in (
-                "get_bagging_score_key",
-                "get_stddev_score_key",
-                "get_ci95_low_score_key",
-                "get_ci95_high_score_key",
-                "get_all_models_score_key",
-            )
-        )
-        if has_bootstrap_predictions:
-            predictions_bagging = list(
-                map(lambda result: result[runner_class.get_bagging_score_key()], results)
-            )
-            predictions_stddev = list(
-                map(lambda result: result[runner_class.get_stddev_score_key()], results)
-            )
-            predictions_ci95_low = list(
-                map(lambda result: result[runner_class.get_ci95_low_score_key()], results)
-            )
-            predictions_ci95_high = list(
-                map(lambda result: result[runner_class.get_ci95_high_score_key()], results)
-            )
-            predictions_all_models = list(
-                map(lambda result: result[runner_class.get_all_models_score_key()], results)
-            )
-
-            # need to revert the list of lists, so that the outer list has the predictions for each model separately
-            predictions_all_models = np.array(predictions_all_models).T.tolist()
-            num_models = np.shape(predictions_all_models)[0]
-            stats_kwargs.update(
-                {
-                    "ys_label_pred_bagging": predictions_bagging,
-                    "ys_label_pred_stddev": predictions_stddev,
-                    "ys_label_pred_ci95_low": predictions_ci95_low,
-                    "ys_label_pred_ci95_high": predictions_ci95_high,
-                    "ys_label_pred_all_models": predictions_all_models,
-                }
-            )
-
-        # ClassifierMixin.get_stats only accepts positional (ys_label,
-        # ys_label_pred); the regressor-specific kwargs below are
-        # invalid for it (CodeQL py/call/wrong-named-argument). Branch
-        # explicitly so the classifier path doesn't unconditionally raise
-        # TypeError into the broad fallback handler.
-        if model_type is ClassifierMixin:
-            stats = model_type.get_stats(groundtruths, predictions)
-        else:
-            stats = model_type.get_stats(groundtruths, predictions, **stats_kwargs)
+        bootstrap_kwargs, num_models = _bootstrap_prediction_kwargs(runner_class, results)
+        stats_kwargs.update(bootstrap_kwargs)
+        stats = _get_test_stats(model_type, groundtruths, predictions, stats_kwargs)
     except Exception as exc:
         if not allow_uncalibrated:
             raise CalibrationError(
@@ -622,7 +604,10 @@ def run_test_on_dataset(
                 ys_label_stddev=groundtruths_std,
                 split_test_indices_for_perf_ci=split_test_indices_for_perf_ci,
             )
+    return stats, num_models
 
+
+def _print_test_stats(model_type, stats, split_test_indices_for_perf_ci):
     print("Stats on testing data: {}".format(model_type.format_stats_for_print(stats)))
 
     # printing stats if multiple models are present
@@ -648,34 +633,132 @@ def run_test_on_dataset(
             )
         )
 
-    if ax is not None:
-        content_ids = list(map(lambda asset: asset.content_id, test_assets))
 
-        if "point_label" in kwargs and kwargs["point_label"] is not None:
-            if kwargs["point_label"] == "asset_id":
-                point_labels = list(map(lambda asset: asset.asset_id, test_assets))
-            elif kwargs["point_label"] == "dis_path":
-                point_labels = list(
-                    map(lambda asset: get_file_name_without_extension(asset.dis_path), test_assets)
-                )
-            else:
-                raise AssertionError("Unknown point_label {}".format(kwargs["point_label"]))
-        else:
-            point_labels = None
-
-        model_type.plot_scatter(
-            ax, stats, content_ids=content_ids, point_labels=point_labels, **kwargs
-        )
-        ax.set_xlabel("True Score")
-        ax.set_ylabel("Predicted Score")
-        ax.grid()
-        ax.set_title(
-            "{runner}{num_models}\n{stats}".format(
-                runner=runner_class.TYPE,
-                stats=model_type.format_stats_for_plot(stats),
-                num_models=", {} models".format(num_models) if num_models > 1 else "",
+def _test_point_labels(test_assets, kwargs):
+    """Per-point scatter labels selected by the ``point_label`` kwarg (or None)."""
+    if "point_label" in kwargs and kwargs["point_label"] is not None:
+        if kwargs["point_label"] == "asset_id":
+            point_labels = list(map(lambda asset: asset.asset_id, test_assets))
+        elif kwargs["point_label"] == "dis_path":
+            point_labels = list(
+                map(lambda asset: get_file_name_without_extension(asset.dis_path), test_assets)
             )
+        else:
+            raise AssertionError("Unknown point_label {}".format(kwargs["point_label"]))
+    else:
+        point_labels = None
+    return point_labels
+
+
+def _plot_test_scatter(ax, model_type, runner_class, stats, test_assets, num_models, kwargs):
+    content_ids = list(map(lambda asset: asset.content_id, test_assets))
+    point_labels = _test_point_labels(test_assets, kwargs)
+
+    model_type.plot_scatter(ax, stats, content_ids=content_ids, point_labels=point_labels, **kwargs)
+    ax.set_xlabel("True Score")
+    ax.set_ylabel("Predicted Score")
+    ax.grid()
+    ax.set_title(
+        "{runner}{num_models}\n{stats}".format(
+            runner=runner_class.TYPE,
+            stats=model_type.format_stats_for_plot(stats),
+            num_models=", {} models".format(num_models) if num_models > 1 else "",
         )
+    )
+
+
+def _run_test_runner(
+    runner_class,
+    test_assets,
+    fifo_mode,
+    result_store,
+    optional_dict,
+    parallelize,
+    processes,
+    aggregate_method,
+):
+    """Run the quality runner over the test assets; return (runner, results)."""
+    runner = runner_class(
+        test_assets,
+        None,
+        fifo_mode=fifo_mode,
+        delete_workdir=True,
+        result_store=result_store,
+        optional_dict=optional_dict,
+        optional_dict2=None,
+    )
+    runner.run(parallelize=parallelize, processes=processes)
+    results = runner.results
+
+    for result in results:
+        result.set_score_aggregate_method(aggregate_method)
+    return runner, results
+
+
+def _raw_groundtruths(test_raw_assets):
+    if test_raw_assets is None:
+        return None
+    return list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
+
+
+def run_test_on_dataset(
+    test_dataset,
+    runner_class,
+    ax,
+    result_store,
+    model_filepath,
+    parallelize=True,
+    fifo_mode=True,
+    aggregate_method=np.mean,
+    type="regressor",
+    allow_uncalibrated=False,
+    **kwargs,
+):
+
+    test_assets, test_raw_assets = _read_assets_with_subjective_fallback(test_dataset, kwargs)
+    optional_dict = _build_test_optional_dict(model_filepath, kwargs)
+    processes = _resolve_test_processes(kwargs, parallelize)
+
+    runner, results = _run_test_runner(
+        runner_class,
+        test_assets,
+        fifo_mode,
+        result_store,
+        optional_dict,
+        parallelize,
+        processes,
+        aggregate_method,
+    )
+
+    model_type = _resolve_test_model_type(runner, type)
+
+    split_test_indices_for_perf_ci = (
+        kwargs["split_test_indices_for_perf_ci"]
+        if "split_test_indices_for_perf_ci" in kwargs
+        else False
+    )
+
+    # plot
+    groundtruths = list(map(lambda asset: asset.groundtruth, test_assets))
+    predictions = list(map(lambda result: result[runner_class.get_score_key()], results))
+    raw_grountruths = _raw_groundtruths(test_raw_assets)
+    groundtruths_std = list(map(lambda asset: asset.groundtruth_std, test_assets))
+    stats, num_models = _compute_test_stats(
+        model_type,
+        groundtruths,
+        predictions,
+        runner_class,
+        results,
+        raw_grountruths,
+        groundtruths_std,
+        split_test_indices_for_perf_ci,
+        allow_uncalibrated,
+    )
+
+    _print_test_stats(model_type, stats, split_test_indices_for_perf_ci)
+
+    if ax is not None:
+        _plot_test_scatter(ax, model_type, runner_class, stats, test_assets, num_models, kwargs)
 
     return test_assets, results
 
@@ -690,45 +773,43 @@ def print_matplotlib_warning():
     )
 
 
-def train_test_vmaf_on_dataset(
-    train_dataset,
-    test_dataset,
-    feature_param,
-    model_param,
-    train_ax,
-    test_ax,
+def _new_dataset_assembler(
+    feature_dict,
+    feature_option_dict,
+    assets,
+    logger,
+    fifo_mode,
     result_store,
-    logger=None,
-    fifo_mode=True,
-    output_model_filepath=None,
-    aggregate_method=np.mean,
-    **kwargs,
+    parallelize,
+    **extra,
 ):
+    return FeatureAssembler(
+        feature_dict=feature_dict,
+        feature_option_dict=feature_option_dict,
+        assets=assets,
+        logger=logger,
+        fifo_mode=fifo_mode,
+        delete_workdir=True,
+        result_store=result_store,
+        optional_dict=None,  # WARNING: feature param not passed
+        optional_dict2=None,
+        parallelize=parallelize,
+        **extra,
+    )
 
-    train_assets = read_dataset(train_dataset, **kwargs)
-    train_raw_assets = None
-    try:
-        for train_asset in train_assets:
-            assert train_asset.groundtruth is not None
-    except AssertionError:
-        # no groundtruth, try to do subjective modeling
-        from sureal.dataset_reader import RawDatasetReader
-        from sureal.subjective_model import DmosModel
 
-        subj_model_class = (
-            kwargs["subj_model_class"]
-            if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-            else DmosModel
-        )
-        dataset_reader_class = (
-            kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
-        )
-        subjective_model = subj_model_class(dataset_reader_class(train_dataset))
-        subjective_model.run_modeling(**kwargs)
-        train_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-        train_raw_assets = train_assets
-        train_assets = read_dataset(train_dataset_aggregate, **kwargs)
+def _run_assembler(fassembler, aggregate_method):
+    """Run a FeatureAssembler and set the score aggregation on every result."""
+    fassembler.run()
+    features = fassembler.results
 
+    for result in features:
+        result.set_score_aggregate_method(aggregate_method)
+    return features
+
+
+def _validated_parallel_args(kwargs):
+    """Return (parallelize, processes) from kwargs with the original assertions."""
     parallelize = kwargs["parallelize"] if "parallelize" in kwargs else True
     isinstance(parallelize, bool)
 
@@ -737,34 +818,48 @@ def train_test_vmaf_on_dataset(
         assert isinstance(processes, int) and processes > 0
     if processes is not None:
         assert parallelize is True, "if processes is not None, parallelize must be True"
+    return parallelize, processes
 
-    assert hasattr(feature_param, "feature_dict")
-    feature_dict = feature_param.feature_dict
-    feature_option_dict = (
-        feature_param.feature_optional_dict
-        if hasattr(feature_param, "feature_optional_dict")
-        else None
+
+def _report_stats_log(log, logger):
+    if logger:
+        logger.info(log)
+    else:
+        print(log)
+
+
+def _save_trained_model(model, output_model_filepath):
+    format = os.path.splitext(output_model_filepath)[1]
+    supported_formats = [".pkl", ".json"]
+    VmafQualityRunnerModelMixin._assert_extension_format(supported_formats, format)
+    if ".pkl" in format:
+        model.to_file(output_model_filepath, format="pkl")
+    elif ".json" in format:
+        model.to_file(output_model_filepath, format="json", combined=True)
+    else:
+        assert False
+
+
+def _plot_dataset_scatter(ax, model_class, model, dataset, assets, stats):
+    content_ids = list(map(lambda asset: asset.content_id, assets))
+    model_class.plot_scatter(ax, stats, content_ids=content_ids)
+
+    ax.set_xlabel("True Score")
+    ax.set_ylabel("Predicted Score")
+    ax.grid()
+    ax.set_title(
+        "Dataset: {dataset}, Model: {model}\n{stats}".format(
+            dataset=dataset.dataset_name,
+            model=model.model_id,
+            stats=model_class.format_stats_for_plot(stats),
+        )
     )
 
-    train_fassembler = FeatureAssembler(
-        feature_dict=feature_dict,
-        feature_option_dict=feature_option_dict,
-        assets=train_assets,
-        logger=logger,
-        fifo_mode=fifo_mode,
-        delete_workdir=True,
-        result_store=result_store,
-        optional_dict=None,  # WARNING: feature param not passed
-        optional_dict2=None,
-        parallelize=parallelize,
-        processes=processes,
-    )
-    train_fassembler.run()
-    train_features = train_fassembler.results
 
-    for result in train_features:
-        result.set_score_aggregate_method(aggregate_method)
-
+def _train_vmaf_model(
+    train_features, model_param, feature_param, feature_option_dict, logger, kwargs
+):
+    """Train the model on assembled features; return (model, model_class, train_xs, train_ys)."""
     model_type = model_param.model_type
     model_param_dict = model_param.model_param_dict
 
@@ -787,142 +882,210 @@ def train_test_vmaf_on_dataset(
         VmafQualityRunner.set_clip_score(model, model_param_dict["score_clip"])
     if "score_transform" in model_param_dict:
         VmafQualityRunner.set_transform_score(model, model_param_dict["score_transform"])
+    return model, model_class, train_xs, train_ys
+
+
+def _evaluate_vmaf_test_dataset(
+    test_dataset,
+    model,
+    model_class,
+    feature_dict,
+    feature_option_dict,
+    parallelize,
+    test_ax,
+    fifo_mode,
+    logger,
+    result_store,
+    aggregate_method,
+    kwargs,
+):
+    """Run the trained model on the test dataset; return (assets, stats, fassembler)."""
+    if test_dataset is None:
+        return None, None, None
+
+    test_assets, test_raw_assets = _read_assets_with_subjective_fallback(test_dataset, kwargs)
+
+    test_fassembler = _new_dataset_assembler(
+        feature_dict,
+        feature_option_dict,
+        test_assets,
+        logger,
+        fifo_mode,
+        result_store,
+        parallelize,
+    )
+    test_features = _run_assembler(test_fassembler, aggregate_method)
+
+    test_xs = model_class.get_xs_from_results(test_features)
+    test_ys = model_class.get_ys_from_results(test_features)
+
+    test_ys_pred = VmafQualityRunner.predict_with_model(model, test_xs, **kwargs)["ys_pred"]
+
+    raw_groundtruths = _raw_groundtruths(test_raw_assets)
+
+    test_stats = model.get_stats(test_ys["label"], test_ys_pred, ys_label_raw=raw_groundtruths)
+
+    log = "Stats on testing data: {}".format(model_class.format_stats_for_print(test_stats))
+    _report_stats_log(log, logger)
+
+    if test_ax is not None:
+        _plot_dataset_scatter(test_ax, model_class, model, test_dataset, test_assets, test_stats)
+    return test_assets, test_stats, test_fassembler
+
+
+def _fit_and_report_train(
+    train_features,
+    train_dataset,
+    train_assets,
+    train_raw_assets,
+    model_param,
+    feature_param,
+    feature_option_dict,
+    logger,
+    output_model_filepath,
+    train_ax,
+    kwargs,
+):
+    """Train, score, log, save and plot; return (model, model_class, train_stats)."""
+    model, model_class, train_xs, train_ys = _train_vmaf_model(
+        train_features, model_param, feature_param, feature_option_dict, logger, kwargs
+    )
 
     train_ys_pred = VmafQualityRunner.predict_with_model(model, train_xs, **kwargs)["ys_pred"]
 
-    raw_groundtruths = (
-        None
-        if train_raw_assets is None
-        else list(map(lambda asset: asset.raw_groundtruth, train_raw_assets))
-    )
+    raw_groundtruths = _raw_groundtruths(train_raw_assets)
 
     train_stats = model.get_stats(train_ys["label"], train_ys_pred, ys_label_raw=raw_groundtruths)
 
     log = "Stats on training data: {}".format(model.format_stats_for_print(train_stats))
-    if logger:
-        logger.info(log)
-    else:
-        print(log)
+    _report_stats_log(log, logger)
 
     # save model
     if output_model_filepath is not None:
-        format = os.path.splitext(output_model_filepath)[1]
-        supported_formats = [".pkl", ".json"]
-        VmafQualityRunnerModelMixin._assert_extension_format(supported_formats, format)
-        if ".pkl" in format:
-            model.to_file(output_model_filepath, format="pkl")
-        elif ".json" in format:
-            model.to_file(output_model_filepath, format="json", combined=True)
-        else:
-            assert False
+        _save_trained_model(model, output_model_filepath)
 
     if train_ax is not None:
-        train_content_ids = list(map(lambda asset: asset.content_id, train_assets))
-        model_class.plot_scatter(train_ax, train_stats, content_ids=train_content_ids)
-
-        train_ax.set_xlabel("True Score")
-        train_ax.set_ylabel("Predicted Score")
-        train_ax.grid()
-        train_ax.set_title(
-            "Dataset: {dataset}, Model: {model}\n{stats}".format(
-                dataset=train_dataset.dataset_name,
-                model=model.model_id,
-                stats=model_class.format_stats_for_plot(train_stats),
-            )
+        _plot_dataset_scatter(
+            train_ax, model_class, model, train_dataset, train_assets, train_stats
         )
+    return model, model_class, train_stats
+
+
+def _train_phase(
+    train_dataset,
+    feature_param,
+    model_param,
+    train_ax,
+    result_store,
+    logger,
+    fifo_mode,
+    output_model_filepath,
+    aggregate_method,
+    kwargs,
+):
+    """Assemble training features and fit the model; return a SimpleNamespace of the state."""
+    train_assets, train_raw_assets = _read_assets_with_subjective_fallback(train_dataset, kwargs)
+    parallelize, processes = _validated_parallel_args(kwargs)
+
+    assert hasattr(feature_param, "feature_dict")
+    feature_dict = feature_param.feature_dict
+    feature_option_dict = (
+        feature_param.feature_optional_dict
+        if hasattr(feature_param, "feature_optional_dict")
+        else None
+    )
+
+    train_fassembler = _new_dataset_assembler(
+        feature_dict,
+        feature_option_dict,
+        train_assets,
+        logger,
+        fifo_mode,
+        result_store,
+        parallelize,
+        processes=processes,
+    )
+    train_features = _run_assembler(train_fassembler, aggregate_method)
+
+    model, model_class, train_stats = _fit_and_report_train(
+        train_features,
+        train_dataset,
+        train_assets,
+        train_raw_assets,
+        model_param,
+        feature_param,
+        feature_option_dict,
+        logger,
+        output_model_filepath,
+        train_ax,
+        kwargs,
+    )
+
+    return SimpleNamespace(
+        fassembler=train_fassembler,
+        assets=train_assets,
+        stats=train_stats,
+        model=model,
+        model_class=model_class,
+        feature_dict=feature_dict,
+        feature_option_dict=feature_option_dict,
+        parallelize=parallelize,
+    )
+
+
+def train_test_vmaf_on_dataset(
+    train_dataset,
+    test_dataset,
+    feature_param,
+    model_param,
+    train_ax,
+    test_ax,
+    result_store,
+    logger=None,
+    fifo_mode=True,
+    output_model_filepath=None,
+    aggregate_method=np.mean,
+    **kwargs,
+):
+
+    tp = _train_phase(
+        train_dataset,
+        feature_param,
+        model_param,
+        train_ax,
+        result_store,
+        logger,
+        fifo_mode,
+        output_model_filepath,
+        aggregate_method,
+        kwargs,
+    )
 
     # === test model on test dataset ===
 
-    if test_dataset is None:
-        test_assets = None
-        test_stats = None
-        test_fassembler = None
-    else:
-        test_assets = read_dataset(test_dataset, **kwargs)
-        test_raw_assets = None
-        try:
-            for test_asset in test_assets:
-                assert test_asset.groundtruth is not None
-        except AssertionError:
-            # no groundtruth, try to do subjective modeling
-            from sureal.dataset_reader import RawDatasetReader
-            from sureal.subjective_model import DmosModel
-
-            subj_model_class = (
-                kwargs["subj_model_class"]
-                if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-                else DmosModel
-            )
-            dataset_reader_class = (
-                kwargs["dataset_reader_class"]
-                if "dataset_reader_class" in kwargs
-                else RawDatasetReader
-            )
-            subjective_model = subj_model_class(dataset_reader_class(test_dataset))
-            subjective_model.run_modeling(**kwargs)
-            test_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-            test_raw_assets = test_assets
-            test_assets = read_dataset(test_dataset_aggregate, **kwargs)
-
-        test_fassembler = FeatureAssembler(
-            feature_dict=feature_dict,
-            feature_option_dict=feature_option_dict,
-            assets=test_assets,
-            logger=logger,
-            fifo_mode=fifo_mode,
-            delete_workdir=True,
-            result_store=result_store,
-            optional_dict=None,  # WARNING: feature param not passed
-            optional_dict2=None,
-            parallelize=parallelize,
-        )
-        test_fassembler.run()
-        test_features = test_fassembler.results
-
-        for result in test_features:
-            result.set_score_aggregate_method(aggregate_method)
-
-        test_xs = model_class.get_xs_from_results(test_features)
-        test_ys = model_class.get_ys_from_results(test_features)
-
-        test_ys_pred = VmafQualityRunner.predict_with_model(model, test_xs, **kwargs)["ys_pred"]
-
-        raw_groundtruths = (
-            None
-            if test_raw_assets is None
-            else list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
-        )
-
-        test_stats = model.get_stats(test_ys["label"], test_ys_pred, ys_label_raw=raw_groundtruths)
-
-        log = "Stats on testing data: {}".format(model_class.format_stats_for_print(test_stats))
-        if logger:
-            logger.info(log)
-        else:
-            print(log)
-
-        if test_ax is not None:
-            test_content_ids = list(map(lambda asset: asset.content_id, test_assets))
-            model_class.plot_scatter(test_ax, test_stats, content_ids=test_content_ids)
-            test_ax.set_xlabel("True Score")
-            test_ax.set_ylabel("Predicted Score")
-            test_ax.grid()
-            test_ax.set_title(
-                "Dataset: {dataset}, Model: {model}\n{stats}".format(
-                    dataset=test_dataset.dataset_name,
-                    model=model.model_id,
-                    stats=model_class.format_stats_for_plot(test_stats),
-                )
-            )
+    test_assets, test_stats, test_fassembler = _evaluate_vmaf_test_dataset(
+        test_dataset,
+        tp.model,
+        tp.model_class,
+        tp.feature_dict,
+        tp.feature_option_dict,
+        tp.parallelize,
+        test_ax,
+        fifo_mode,
+        logger,
+        result_store,
+        aggregate_method,
+        kwargs,
+    )
 
     return (
-        train_fassembler,
-        train_assets,
-        train_stats,
+        tp.fassembler,
+        tp.assets,
+        tp.stats,
         test_fassembler,
         test_assets,
         test_stats,
-        model,
+        tp.model,
     )
 
 
@@ -934,6 +1097,20 @@ def construct_kfold_list(assets, contentid_groups):
         curr_indices = indices(content_ids, lambda x: x in curr_content_group)
         kfold.append(curr_indices)
     return kfold
+
+
+def _plot_cv_scatter(ax, model_class, model_param, dataset, cv_output):
+    model_class.plot_scatter(ax, cv_output["aggr_stats"], content_ids=cv_output["contentids"])
+    ax.set_xlabel("True Score")
+    ax.set_ylabel("Predicted Score")
+    ax.grid()
+    ax.set_title(
+        "Dataset: {dataset}, Model: {model},\n{stats}".format(
+            dataset=dataset.dataset_name,
+            model=model_param.model_type,
+            stats=model_class.format_stats_for_plot(cv_output["aggr_stats"]),
+        )
+    )
 
 
 def cv_on_dataset(
@@ -973,11 +1150,7 @@ def cv_on_dataset(
         fifo_mode=True,
         # parallelize=False, fifo_mode=False, # VQM
     )
-    fassembler.run()
-    results = fassembler.results
-
-    for result in results:
-        result.set_score_aggregate_method(aggregate_method)
+    results = _run_assembler(fassembler, aggregate_method)
 
     model_class = TrainTestModel.find_subclass(model_param.model_type)
     # run nested kfold cv for each combintation
@@ -995,17 +1168,7 @@ def cv_on_dataset(
     print("Stats: {}".format(model_class.format_stats_for_print(cv_output["aggr_stats"])))
 
     if ax is not None:
-        model_class.plot_scatter(ax, cv_output["aggr_stats"], content_ids=cv_output["contentids"])
-        ax.set_xlabel("True Score")
-        ax.set_ylabel("Predicted Score")
-        ax.grid()
-        ax.set_title(
-            "Dataset: {dataset}, Model: {model},\n{stats}".format(
-                dataset=dataset.dataset_name,
-                model=model_param.model_type,
-                stats=model_class.format_stats_for_plot(cv_output["aggr_stats"]),
-            )
-        )
+        _plot_cv_scatter(ax, model_class, model_param, dataset, cv_output)
 
     return assets, cv_output
 
@@ -1014,6 +1177,20 @@ def run_remove_results_for_dataset(result_store, dataset, executor_class):
     assets = read_dataset(dataset)
     executor = executor_class(assets=assets, logger=None, result_store=result_store)
     executor.remove_results()
+
+
+def _decorate_cv_axes(axs, kwargs):
+    if "xlim" in kwargs:
+        axs[0].set_xlim(kwargs["xlim"])
+        axs[1].set_xlim(kwargs["xlim"])
+
+    if "ylim" in kwargs:
+        axs[0].set_ylim(kwargs["ylim"])
+        axs[1].set_ylim(kwargs["ylim"])
+
+    bbox = {"facecolor": "white", "alpha": 1, "pad": 20}
+    axs[0].annotate("Training Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
+    axs[1].annotate("Testing Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
 
 
 def run_vmaf_cv(
@@ -1062,17 +1239,7 @@ def run_vmaf_cv(
         **kwargs,
     )
 
-    if "xlim" in kwargs:
-        axs[0].set_xlim(kwargs["xlim"])
-        axs[1].set_xlim(kwargs["xlim"])
-
-    if "ylim" in kwargs:
-        axs[0].set_ylim(kwargs["ylim"])
-        axs[1].set_ylim(kwargs["ylim"])
-
-    bbox = {"facecolor": "white", "alpha": 1, "pad": 20}
-    axs[0].annotate("Training Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
-    axs[1].annotate("Testing Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
+    _decorate_cv_axes(axs, kwargs)
 
     plt.tight_layout()
 
@@ -1206,6 +1373,23 @@ def generate_dataset_from_raw(raw_dataset_filepath, output_dataset_filepath, **k
                     f.write(body)
 
 
+def _optional_quality_wh(kwargs, key):
+    """(width, height) from kwargs[key], or (None, None) when absent or None."""
+    if key in kwargs and kwargs[key] is not None:
+        width, height = kwargs[key]
+    else:
+        width = None
+        height = None
+    return width, height
+
+
+def _optional_kwarg(kwargs, key):
+    """kwargs[key] when present and not None, else None."""
+    if key in kwargs and kwargs[key] is not None:
+        return kwargs[key]
+    return None
+
+
 def run_vmaf_cv_from_raw(
     train_dataset_raw_filepath,
     test_dataset_raw_filepath,
@@ -1213,27 +1397,10 @@ def run_vmaf_cv_from_raw(
     output_model_filepath,
     **kwargs,
 ):
-    if "train_quality_wh" in kwargs and kwargs["train_quality_wh"] is not None:
-        train_quality_width, train_quality_height = kwargs["train_quality_wh"]
-    else:
-        train_quality_width = None
-        train_quality_height = None
-
-    if "test_quality_wh" in kwargs and kwargs["test_quality_wh"] is not None:
-        test_quality_width, test_quality_height = kwargs["test_quality_wh"]
-    else:
-        test_quality_width = None
-        test_quality_height = None
-
-    if "train_transform_final" in kwargs and kwargs["train_transform_final"] is not None:
-        train_transform_final = kwargs["train_transform_final"]
-    else:
-        train_transform_final = None
-
-    if "test_transform_final" in kwargs and kwargs["test_transform_final"] is not None:
-        test_transform_final = kwargs["test_transform_final"]
-    else:
-        test_transform_final = None
+    train_quality_width, train_quality_height = _optional_quality_wh(kwargs, "train_quality_wh")
+    test_quality_width, test_quality_height = _optional_quality_wh(kwargs, "test_quality_wh")
+    train_transform_final = _optional_kwarg(kwargs, "train_transform_final")
+    test_transform_final = _optional_kwarg(kwargs, "test_transform_final")
 
     workspace_path = (
         kwargs["workspace_path"] if "workspace_path" in kwargs else VmafConfig.workspace_path()

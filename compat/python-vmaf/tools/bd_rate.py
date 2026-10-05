@@ -30,6 +30,84 @@ INF_REPLACEMENT = 100.0
 NUM_SAMPLES = 100
 
 
+def _validated_sorted_sets(metric_set1, metric_set2, use_convex_hull, at_perc):
+    """Validate both RD sets (same errors, same order) and return them sorted by metric."""
+    if not metric_set1 or not metric_set2:
+        raise BdRateNotEnoughPointsException("One or both of the metric sets is empty or null.")
+
+    if use_convex_hull:
+        metric_set1 = calculate_convex_hull(metric_set1)
+        metric_set2 = calculate_convex_hull(metric_set2)
+
+    if at_perc is not None:
+        if at_perc < 0 or at_perc > 100:
+            raise ValueError(f"at_perc must be between 0 and 100, but got {at_perc}.")
+
+    # pchip_interpolate requires keys sorted by x axis.
+    # x-axis will be our metric, not the bitrate, so sort by metric.
+    metric_set1 = sorted(metric_set1, key=lambda p: p.metric)
+    metric_set2 = sorted(metric_set2, key=lambda p: p.metric)
+
+    if len(metric_set1) < 4 or len(metric_set2) < 4:
+        raise BdRateNotEnoughPointsException("Each metric set must contain at least 4 points.")
+
+    if not _is_curve_monotonic(metric_set1) or not _is_curve_monotonic(metric_set2):
+        raise BdRateNonMonotonicException("One or both curves are non-monotonic.")
+
+    if not _rates_are_nonzero(metric_set1) or not _rates_are_nonzero(metric_set2):
+        raise BdRateZeroRateException("One or both metric sets contain zero rates.")
+    return metric_set1, metric_set2
+
+
+def _log_rate_and_metric(metric_set):
+    """Log of the rate and the metric with infinity clamped, for one RD set."""
+    log_rate = [math.log(x.rate) for x in metric_set]
+    metric = [INF_REPLACEMENT if x.metric == float("inf") else x.metric for x in metric_set]
+    return log_rate, metric
+
+
+def _integration_interval(metric1, metric2, min_metric, max_metric):
+    """Overlapping metric interval of both curves (extrapolation is sketchy so we avoid it)."""
+    min_int = max(min(metric1), min(metric2))
+    if min_metric:
+        min_int = max(min_int, min_metric)
+    max_int = min(max(metric1), max(metric2))
+    if max_metric:
+        max_int = min(max_int, max_metric)
+
+    # No overlap means no sensible metric possible.
+    if max_int <= min_int:
+        raise BdRateNoOverlapException()
+    return min_int, max_int
+
+
+def _bd_rate_average(metric1, log_rate1, metric2, log_rate2, min_int, max_int):
+    # Use Piecewise Cubic Hermite Interpolating Polynomial interpolation to
+    # create 100 new samples points separated by interval.
+    samples, interval = np.linspace(min_int, max_int, num=NUM_SAMPLES, retstep=True)
+    v1 = pchip_interpolate(metric1, log_rate1, samples)
+    v2 = pchip_interpolate(metric2, log_rate2, samples)
+
+    # Calculate the integral using the trapezoid method on the samples.
+    int_v1 = trapezoid(v1, dx=float(interval))
+    int_v2 = trapezoid(v2, dx=float(interval))
+
+    # Calculate the average improvement.
+    avg_exp_diff = (int_v2 - int_v1) / (max_int - min_int)
+
+    # Exponentiate to undo the logarithms
+    return math.exp(avg_exp_diff) - 1
+
+
+def _bd_rate_at_percentile(metric1, log_rate1, metric2, log_rate2, min_int, max_int, at_perc):
+    at_metric = min_int + (max_int - min_int) * at_perc / 100.0
+    v1b: Any = pchip_interpolate(metric1, log_rate1, [at_metric])
+    v2b: Any = pchip_interpolate(metric2, log_rate2, [at_metric])
+
+    # Exponentiate to undo the logarithms
+    return math.exp(v2b[0] - v1b[0]) - 1
+
+
 def calculate_bd_rate(
     metric_set1: Iterable[RdPoint],
     metric_set2: Iterable[RdPoint],
@@ -64,74 +142,16 @@ def calculate_bd_rate(
        BdRateNoOverlapException: If there is no overlapping interval for integration.
     """
 
-    if not metric_set1 or not metric_set2:
-        raise BdRateNotEnoughPointsException("One or both of the metric sets is empty or null.")
-
-    if use_convex_hull:
-        metric_set1 = calculate_convex_hull(metric_set1)
-        metric_set2 = calculate_convex_hull(metric_set2)
-
-    if at_perc is not None:
-        if at_perc < 0 or at_perc > 100:
-            raise ValueError(f"at_perc must be between 0 and 100, but got {at_perc}.")
-
-    # pchip_interpolate requires keys sorted by x axis.
-    # x-axis will be our metric, not the bitrate, so sort by metric.
-    metric_set1 = sorted(metric_set1, key=lambda p: p.metric)
-    metric_set2 = sorted(metric_set2, key=lambda p: p.metric)
-
-    if len(metric_set1) < 4 or len(metric_set2) < 4:
-        raise BdRateNotEnoughPointsException("Each metric set must contain at least 4 points.")
-
-    if not _is_curve_monotonic(metric_set1) or not _is_curve_monotonic(metric_set2):
-        raise BdRateNonMonotonicException("One or both curves are non-monotonic.")
-
-    if not _rates_are_nonzero(metric_set1) or not _rates_are_nonzero(metric_set2):
-        raise BdRateZeroRateException("One or both metric sets contain zero rates.")
-
-    # Pull the log of the rate and clamped metric from metric_sets.
-    log_rate1 = [math.log(x.rate) for x in metric_set1]
-    metric1 = [INF_REPLACEMENT if x.metric == float("inf") else x.metric for x in metric_set1]
-    log_rate2 = [math.log(x.rate) for x in metric_set2]
-    metric2 = [INF_REPLACEMENT if x.metric == float("inf") else x.metric for x in metric_set2]
-
-    # Integration interval. This metric only works on the area that's
-    # overlapping. Extrapolation of these things is sketchy so we avoid.
-    min_int = max(min(metric1), min(metric2))
-    if min_metric:
-        min_int = max(min_int, min_metric)
-    max_int = min(max(metric1), max(metric2))
-    if max_metric:
-        max_int = min(max_int, max_metric)
-
-    # No overlap means no sensible metric possible.
-    if max_int <= min_int:
-        raise BdRateNoOverlapException()
+    metric_set1, metric_set2 = _validated_sorted_sets(
+        metric_set1, metric_set2, use_convex_hull, at_perc
+    )
+    log_rate1, metric1 = _log_rate_and_metric(metric_set1)
+    log_rate2, metric2 = _log_rate_and_metric(metric_set2)
+    min_int, max_int = _integration_interval(metric1, metric2, min_metric, max_metric)
 
     if at_perc is None:
-        # Use Piecewise Cubic Hermite Interpolating Polynomial interpolation to
-        # create 100 new samples points separated by interval.
-        samples, interval = np.linspace(min_int, max_int, num=NUM_SAMPLES, retstep=True)
-        v1 = pchip_interpolate(metric1, log_rate1, samples)
-        v2 = pchip_interpolate(metric2, log_rate2, samples)
-
-        # Calculate the integral using the trapezoid method on the samples.
-        int_v1 = trapezoid(v1, dx=float(interval))
-        int_v2 = trapezoid(v2, dx=float(interval))
-
-        # Calculate the average improvement.
-        avg_exp_diff = (int_v2 - int_v1) / (max_int - min_int)
-
-        # Exponentiate to undo the logarithms
-        return math.exp(avg_exp_diff) - 1
-
-    else:
-        at_metric = min_int + (max_int - min_int) * at_perc / 100.0
-        v1b: Any = pchip_interpolate(metric1, log_rate1, [at_metric])
-        v2b: Any = pchip_interpolate(metric2, log_rate2, [at_metric])
-
-        # Exponentiate to undo the logarithms
-        return math.exp(v2b[0] - v1b[0]) - 1
+        return _bd_rate_average(metric1, log_rate1, metric2, log_rate2, min_int, max_int)
+    return _bd_rate_at_percentile(metric1, log_rate1, metric2, log_rate2, min_int, max_int, at_perc)
 
 
 def _is_curve_monotonic(points: list[RdPoint]) -> bool:

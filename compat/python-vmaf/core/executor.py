@@ -185,6 +185,95 @@ def _wait_for_fifo_workers(workers, logger, warning_message):
     )
 
 
+def _assert_open_workfile_args(
+    decoder_type,
+    preresampling_filterchain,
+    postresampling_filterchain,
+    use_path_as_workpath,
+    path,
+    workfile_path,
+):
+    """Preconditions of Executor._open_workfile (identical assertion messages)."""
+    # decoder type must be None here
+    assert decoder_type is None, f"decoder_type must be None but is: {decoder_type}"
+
+    # preresampling_filterchain must be None here
+    assert (
+        preresampling_filterchain is None
+    ), f"preresampling_filterchain mut be None but is: {preresampling_filterchain}"
+
+    # postresampling_filterchain msut be None here
+    assert (
+        postresampling_filterchain is None
+    ), f"postresampling_filterchain must be None but is: {postresampling_filterchain}"
+
+    # only need to open workfile if the path is different from path
+    assert use_path_as_workpath is False and path != workfile_path
+
+
+def _workfile_frames_and_src_fmt(cls, asset, path, yuv_type, width_height, ref_or_dis):
+    """Return (start_end_frame, src_fmt_cmd) for a workfile of the given side."""
+    if ref_or_dis == "ref":
+        start_end_frame = asset.ref_start_end_frame
+    elif ref_or_dis == "dis":
+        start_end_frame = asset.dis_start_end_frame
+    else:
+        assert False
+
+    if yuv_type != "notyuv":
+        # in this case, for sure has width_height
+        assert width_height is not None
+        width, height = width_height
+        src_fmt_cmd = cls._get_yuv_src_fmt_cmd(yuv_type, height, width)
+    else:
+        src_fmt_cmd = cls._get_notyuv_src_fmt_cmd(path)
+    return start_end_frame, src_fmt_cmd
+
+
+def _build_workfile_vf_cmd(cls, asset, select_cmd, quality_width_height, ref_or_dis):
+    """Comma-joined ffmpeg -vf chain for a workfile."""
+    crop_cmd = cls._get_filter_cmd(asset, "crop", ref_or_dis)
+    pad_cmd = cls._get_filter_cmd(asset, "pad", ref_or_dis)
+    quality_width, quality_height = quality_width_height
+    scale_cmd = f"scale={quality_width}x{quality_height}"
+    filter_cmds = []
+    for key in Asset.ORDERED_FILTER_LIST:
+        if key != "crop" and key != "pad":
+            filter_cmds.append(cls._get_filter_cmd(asset, key, ref_or_dis))
+    vf_cmd = [select_cmd, crop_cmd, pad_cmd, scale_cmd] + filter_cmds
+    return ",".join(filter(lambda s: s != "", vf_cmd))
+
+
+def _build_workfile_ffmpeg_cmd(
+    src_fmt_cmd, vframes_cmd, vf_cmd, path, workfile_path, workfile_yuv_type, resampling_type
+):
+    """Build the ffmpeg command as an argv list so it can be exec'd without a shell.
+
+    `src_fmt_cmd` and `vframes_cmd` are space-joined internal multi-token
+    strings (e.g. "-f rawvideo -pix_fmt yuv420p -s 320x240"); shlex.split
+    tokenises them into individual argv entries while leaving everything
+    else as discrete tokens. Asset-derived paths flow through `path` /
+    `workfile_path` as single argv elements, so shell metacharacters in
+    filenames are inert (CWE-78: prevents shell injection via crafted
+    asset paths).
+    """
+    ffmpeg_cmd: list[str] = []
+    ffmpeg_cmd += [VmafExternalConfig.get_and_assert_ffmpeg()]
+    if src_fmt_cmd:
+        ffmpeg_cmd += shlex.split(src_fmt_cmd)
+    ffmpeg_cmd += ["-i", path]
+    ffmpeg_cmd += ["-an", "-fps_mode", "passthrough"]
+    ffmpeg_cmd += ["-pix_fmt", workfile_yuv_type]
+    if vframes_cmd:
+        ffmpeg_cmd += shlex.split(vframes_cmd)
+    ffmpeg_cmd += ["-vf", vf_cmd]
+    ffmpeg_cmd += ["-f", "rawvideo"]
+    ffmpeg_cmd += ["-sws_flags", resampling_type]
+    ffmpeg_cmd += ["-y", "-nostdin"]
+    ffmpeg_cmd += [workfile_path]
+    return ffmpeg_cmd
+
+
 class Executor(TypeVersionEnabled):
     """
     An Executor takes in a list of Assets, and run computations on them, and
@@ -782,21 +871,14 @@ class Executor(TypeVersionEnabled):
         logger,
     ):
 
-        # decoder type must be None here
-        assert decoder_type is None, f"decoder_type must be None but is: {decoder_type}"
-
-        # preresampling_filterchain must be None here
-        assert (
-            preresampling_filterchain is None
-        ), f"preresampling_filterchain mut be None but is: {preresampling_filterchain}"
-
-        # postresampling_filterchain msut be None here
-        assert (
-            postresampling_filterchain is None
-        ), f"postresampling_filterchain must be None but is: {postresampling_filterchain}"
-
-        # only need to open workfile if the path is different from path
-        assert use_path_as_workpath is False and path != workfile_path
+        _assert_open_workfile_args(
+            decoder_type,
+            preresampling_filterchain,
+            postresampling_filterchain,
+            use_path_as_workpath,
+            path,
+            workfile_path,
+        )
 
         # if fifo mode, mkfifo
         if fifo_mode:
@@ -808,57 +890,21 @@ class Executor(TypeVersionEnabled):
         if open_sem is not None:
             open_sem.release()
 
-        if ref_or_dis == "ref":
-            start_end_frame = asset.ref_start_end_frame
-        elif ref_or_dis == "dis":
-            start_end_frame = asset.dis_start_end_frame
-        else:
-            assert False
-
-        if yuv_type != "notyuv":
-            # in this case, for sure has width_height
-            assert width_height is not None
-            width, height = width_height
-            src_fmt_cmd = cls._get_yuv_src_fmt_cmd(yuv_type, height, width)
-        else:
-            src_fmt_cmd = cls._get_notyuv_src_fmt_cmd(path)
+        start_end_frame, src_fmt_cmd = _workfile_frames_and_src_fmt(
+            cls, asset, path, yuv_type, width_height, ref_or_dis
+        )
 
         vframes_cmd, select_cmd = cls._get_vframes_cmd(start_end_frame)
-
-        crop_cmd = cls._get_filter_cmd(asset, "crop", ref_or_dis)
-        pad_cmd = cls._get_filter_cmd(asset, "pad", ref_or_dis)
-        quality_width, quality_height = quality_width_height
-        scale_cmd = f"scale={quality_width}x{quality_height}"
-        filter_cmds = []
-        for key in Asset.ORDERED_FILTER_LIST:
-            if key != "crop" and key != "pad":
-                filter_cmds.append(cls._get_filter_cmd(asset, key, ref_or_dis))
-        vf_cmd = [select_cmd, crop_cmd, pad_cmd, scale_cmd] + filter_cmds
-        vf_cmd = ",".join(filter(lambda s: s != "", vf_cmd))
-
-        # Build the ffmpeg command as an argv list so it can be exec'd
-        # without a shell. `src_fmt_cmd` and `vframes_cmd` are
-        # space-joined internal multi-token strings (e.g.
-        # "-f rawvideo -pix_fmt yuv420p -s 320x240"); shlex.split is
-        # used to tokenise them into individual argv entries while
-        # leaving everything else as discrete tokens. Asset-derived
-        # paths flow through `path` / `workfile_path` as single argv
-        # elements, so shell metacharacters in filenames are inert
-        # (CWE-78: prevents shell injection via crafted asset paths).
-        ffmpeg_cmd: list[str] = []
-        ffmpeg_cmd += [VmafExternalConfig.get_and_assert_ffmpeg()]
-        if src_fmt_cmd:
-            ffmpeg_cmd += shlex.split(src_fmt_cmd)
-        ffmpeg_cmd += ["-i", path]
-        ffmpeg_cmd += ["-an", "-fps_mode", "passthrough"]
-        ffmpeg_cmd += ["-pix_fmt", workfile_yuv_type]
-        if vframes_cmd:
-            ffmpeg_cmd += shlex.split(vframes_cmd)
-        ffmpeg_cmd += ["-vf", vf_cmd]
-        ffmpeg_cmd += ["-f", "rawvideo"]
-        ffmpeg_cmd += ["-sws_flags", resampling_type]
-        ffmpeg_cmd += ["-y", "-nostdin"]
-        ffmpeg_cmd += [workfile_path]
+        vf_cmd = _build_workfile_vf_cmd(cls, asset, select_cmd, quality_width_height, ref_or_dis)
+        ffmpeg_cmd = _build_workfile_ffmpeg_cmd(
+            src_fmt_cmd,
+            vframes_cmd,
+            vf_cmd,
+            path,
+            workfile_path,
+            workfile_yuv_type,
+            resampling_type,
+        )
         if logger:
             logger.info(" ".join(shlex.quote(part) for part in ffmpeg_cmd))
         run_process(ffmpeg_cmd, shell=False, env=VmafExternalConfig.ffmpeg_env())
@@ -1073,6 +1119,24 @@ class Executor(TypeVersionEnabled):
             )
 
 
+def _run_single_executor(args):
+    """Run one asset in its own executor (worker of run_executors_in_parallel)."""
+    (
+        executor_class,
+        asset,
+        fifo_mode,
+        delete_workdir,
+        result_store,
+        optional_dict,
+        optional_dict2,
+    ) = args
+    executor = executor_class(
+        [asset], None, fifo_mode, delete_workdir, result_store, optional_dict, optional_dict2
+    )
+    executor.run()
+    return executor
+
+
 @deprecated
 def run_executors_in_parallel(
     executor_class,
@@ -1101,22 +1165,8 @@ def run_executors_in_parallel(
     )
 
     # pack key arguments to be used as inputs to map function
-    list_args = []
-    for asset in assets:
-        list_args.append(
-            [
-                executor_class,
-                asset,
-                fifo_mode,
-                delete_workdir,
-                result_store,
-                optional_dict,
-                optional_dict2,
-            ]
-        )
-
-    def run_executor(args):
-        (
+    list_args = [
+        [
             executor_class,
             asset,
             fifo_mode,
@@ -1124,12 +1174,11 @@ def run_executors_in_parallel(
             result_store,
             optional_dict,
             optional_dict2,
-        ) = args
-        executor = executor_class(
-            [asset], None, fifo_mode, delete_workdir, result_store, optional_dict, optional_dict2
-        )
-        executor.run()
-        return executor
+        ]
+        for asset in assets
+    ]
+
+    run_executor = _run_single_executor
 
     # run
     if parallelize:

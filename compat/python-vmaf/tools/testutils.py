@@ -105,6 +105,21 @@ def remove_elements_containing_substring(command_line: str, sub_str: str) -> str
     return " ".join([x for x in command_line.split() if sub_str not in x])
 
 
+def _normalize_command(cmd, root, do_replace_uuid, options_to_remove, substrings_to_remove):
+    """Canonical form of one command line used by assert_equivalent_commands."""
+    if do_replace_uuid is True:
+        cmd1 = replace_uuid(cmd)
+    else:
+        cmd1 = cmd
+    cmd2 = replace_root(cmd1, root)
+    cmd3 = remove_redundant_whitespace(cmd2)
+    for option_to_remove in options_to_remove:
+        cmd3 = remove_option(cmd3, option_to_remove)
+    for sbstr_to_remove in substrings_to_remove:
+        cmd3 = remove_elements_containing_substring(cmd3, sbstr_to_remove)
+    return cmd3
+
+
 def assert_equivalent_commands(
     self,
     cmds: list[str],
@@ -146,25 +161,12 @@ def assert_equivalent_commands(
         cmds_expected
     ), f"length of cmds and cmds_expected are not equal: {len(cmds)} vs. {len(cmds_expected)}"
     for cmd, cmd_expected in zip(cmds, cmds_expected):
-
-        if do_replace_uuid is True:
-            cmd1 = replace_uuid(cmd)
-        else:
-            cmd1 = cmd
-        cmd2 = replace_root(cmd1, root)
-        cmd3 = remove_redundant_whitespace(cmd2)
-        for option_to_remove in options_to_remove:
-            cmd3 = remove_option(cmd3, option_to_remove)
-        for sbstr_to_remove in substrings_to_remove:
-            cmd3 = remove_elements_containing_substring(cmd3, sbstr_to_remove)
-
-        cmd_expected1 = replace_uuid(cmd_expected)
-        cmd_expected2 = replace_root(cmd_expected1, root_expected)
-        cmd_expected3 = remove_redundant_whitespace(cmd_expected2)
-        for option_to_remove in options_to_remove:
-            cmd_expected3 = remove_option(cmd_expected3, option_to_remove)
-        for sbstr_to_remove in substrings_to_remove:
-            cmd_expected3 = remove_elements_containing_substring(cmd_expected3, sbstr_to_remove)
+        cmd3 = _normalize_command(
+            cmd, root, do_replace_uuid, options_to_remove, substrings_to_remove
+        )
+        cmd_expected3 = _normalize_command(
+            cmd_expected, root_expected, True, options_to_remove, substrings_to_remove
+        )
 
         self.assertEqual(
             cmd3,

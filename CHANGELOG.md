@@ -1840,6 +1840,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged (271 passed, 12 skipped, x86-64 and aarch64).
 
 
+- Split the oversized functions of the Python harness (`compat/python-vmaf/`:
+  `routine.py`, `core/cross_validation.py`, `core/executor.py`,
+  `tools/bd_rate.py`, `tools/testutils.py`) into private helpers so every
+  function meets the HISS-04 limits (60 lines, McCabe 10, 50 statements).
+  Public names, signatures, scores, output and error messages are unchanged.
+
+
 - **The Python wheel's `vmafx-mcp` script is a deprecated alias; use `vmaf-mcp`.** `vmafx-mcp`
   is the Go server (`cmd/vmafx-mcp`). For one release the wheel's script of that name prints a
   notice on stderr and hands over to the Go binary when one is on `PATH`, otherwise it runs the
