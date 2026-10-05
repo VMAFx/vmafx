@@ -174,7 +174,13 @@ template <typename Acc> void submit_sad(sycl::queue &queue, const SadArgs &args)
     });
 }
 
-class MotionSadHbdKernel : public VmafSyclKernelShape<32, 256>
+/* The 16-bit kernel: int64 vertical sums. At SIMD-32 it needs the large
+ * register file, which Xe-LP (tgllp, adl-*, rpl-*) does not have: there it
+ * spilled 3200 bytes (measured on a UHD 770; ADR-1395). At SIMD-16 it fits
+ * the default 128 registers on every target of the default AOT list. The
+ * sub-group reduction adds exact int64 values, so the size does not change
+ * the sum. */
+class MotionSadHbdKernel : public VmafSyclKernelShape<16, 0>
 {
   public:
     MotionSadHbdKernel(const sycl::local_accessor<int32_t, 2> &diff,
@@ -183,7 +189,7 @@ class MotionSadHbdKernel : public VmafSyclKernelShape<32, 256>
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(32) void operator()(sycl::nd_item<2> item) const
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::nd_item<2> item) const
     {
         load_diff(item, diff_, args_);
         item.barrier(sycl::access::fence_space::local_space);

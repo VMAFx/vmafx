@@ -256,6 +256,10 @@ MOTION_SUBMIT_FNS = ("submit_fex_sycl", "motion_stage_chroma", "motion_stage_pla
 # for both windows and reads no stored score back; motion_sycl calls it for
 # the five-frame window.
 MOTION_WINDOW_CALL = "vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window)"
+# ADR-1395: the 16-bit SAD kernel fits SIMD-16 with the default register file
+# on every target of the default AOT list. Its old SIMD-32 shape asked for 256
+# registers, which Xe-LP does not have: it spilled 3200 bytes on a UHD 770.
+MOTION_HBD_SHAPE = "class MotionSadHbdKernel : public VmafSyclKernelShape<16, 0>"
 
 
 def _motion_sources() -> dict[str, str]:
@@ -275,6 +279,11 @@ def _motion_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{MOTION_PIPELINE}: fp64 type appears in the motion kernel")
     if not MOTION_DIFF_FIRST.search(pipeline):
         failures.append(f"{MOTION_PIPELINE}: the tile no longer stages prev - cur before the blur")
+    if MOTION_HBD_SHAPE not in pipeline:
+        failures.append(
+            f"{MOTION_PIPELINE}: the 16-bit SAD kernel is not SIMD-16 with the default "
+            "register file (it spills on Xe-LP otherwise)"
+        )
     for name in MOTION_TUS:
         if re.search(r"\b(?:parallel_for|single_task)\b", sources[name]):
             failures.append(f"{name}: device kernel outside {MOTION_PIPELINE}")
@@ -301,6 +310,30 @@ def _motion_window_failures(sources: dict[str, str]) -> list[str]:
             "integer_motion_v2_sycl.cpp: the twin reads stored scores back, a window of its own"
         )
     return failures
+
+
+# ADR-1395 / ADR-1501: the SIMD-16 horizontal vif kernel of scale 0 spilled on
+# Xe-LP (384 B, UHD 770) and Xe-LPG (128 B) at a required SIMD-16 with the
+# default register file. It leaves its size to the compiler with the large
+# register file; the SIMD-32 instances keep VmafSyclKernelShape<32, 256>.
+INTEGER_VIF = "integer_vif_sycl.cpp"
+VIF_HORI_SHAPE_PIECES = (
+    "return (scale == 0 && sg_size == 16) ? 0 : sg_size;",
+    "return (scale == 0) ? 256 : vif_grf_size(sg_size);",
+    "class IntegerVifHoriKernel : public VmafSyclKernelShape<vif_hori_sg_size(SCALE, SG_SIZE),",
+    "vif_hori_grf_size(SCALE, SG_SIZE)>",
+    "return (sg_size == 32) ? 256 : 0;",
+)
+
+
+def _vif_hori_shape_failures(source: str) -> list[str]:
+    code = _code(source)
+    return [
+        f"{INTEGER_VIF}: the horizontal kernel's shape changed ({piece}); scale 0 at a "
+        "required SIMD-16 spills on Xe-LP and Xe-LPG"
+        for piece in VIF_HORI_SHAPE_PIECES
+        if piece not in code
+    ]
 
 
 # ADR-1409 / ADR-1411: float_motion_sycl returns the CPU extractor's bits. The
@@ -500,10 +533,18 @@ def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
             failures.append(f"{MS_SSIM}: not the CPU's window or l / c / s arithmetic ({piece})")
     for name in MS_SSIM_OLD_SUMS:
         if name in twin:
-            failures.append(f"{MS_SSIM}: the l / c / s sums are reduced on the device again ({name})")
+            failures.append(
+                f"{MS_SSIM}: the l / c / s sums are reduced on the device again ({name})"
+            )
     for piece in MS_SSIM_HOST_PIECES:
         if piece not in twin:
             failures.append(f"{MS_SSIM}: the host no longer combines as the CPU does ({piece})")
+    return failures + _ssim_terms_header_failures(sources)
+
+
+def _ssim_terms_header_failures(sources: dict[str, str]) -> list[str]:
+    """The shared SSIM terms header: the CPU's operand types, used by both twins."""
+    failures: list[str] = []
     header = _code(sources[SSIM_TERMS_HEADER])
     for piece in SSIM_TERMS_PIECES:
         if piece not in header:
@@ -543,9 +584,7 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         sources = _sources()
         anchor = "return speed_internal_gpu_tail_scores("
         self.assertIn(anchor, sources[SPEED_PIPELINE])
-        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
-            anchor, "return local_scores(", 1
-        )
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(anchor, "return local_scores(", 1)
         failures = _contract_failures(sources)
         self.assertTrue(any("host tail" in item for item in failures))
 
@@ -572,9 +611,9 @@ class SyclKernelSourceContractTest(unittest.TestCase):
 
     def test_device_sine_for_lanczos_weights_is_detected(self) -> None:
         sources = _sources()
-        sources[SPEED_PIPELINE] += (
-            "\ninline float lanczos_weight(float x)\n{\n    return sycl::sinpi(x);\n}\n"
-        )
+        sources[
+            SPEED_PIPELINE
+        ] += "\ninline float lanczos_weight(float x)\n{\n    return sycl::sinpi(x);\n}\n"
         failures = _contract_failures(sources)
         self.assertTrue(any("device sine" in item for item in failures), failures)
 
@@ -717,9 +756,30 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         sources = _motion_sources()
         sources["integer_motion_v2_sycl.cpp"] += (
             "\nstatic int own_window(VmafFeatureCollector *fc, double *score)\n"
-            "{\n    return vmaf_feature_collector_get_score(fc, \"sad\", score, 0u);\n}\n"
+            '{\n    return vmaf_feature_collector_get_score(fc, "sad", score, 0u);\n}\n'
         )
         self.assertTrue(any("a window of its own" in item for item in _motion_failures(sources)))
+
+    def test_motion_hbd_simd32_shape_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources[MOTION_PIPELINE] = sources[MOTION_PIPELINE].replace(
+            MOTION_HBD_SHAPE, "class MotionSadHbdKernel : public VmafSyclKernelShape<32, 256>", 1
+        )
+        self.assertTrue(any("spills on Xe-LP" in item for item in _motion_failures(sources)))
+
+    def test_live_vif_hori_shape(self) -> None:
+        source = (SYCL_ROOT / INTEGER_VIF).read_text(encoding="utf-8")
+        self.assertEqual(_vif_hori_shape_failures(source), [])
+
+    def test_vif_hori_required_simd16_is_detected(self) -> None:
+        source = (SYCL_ROOT / INTEGER_VIF).read_text(encoding="utf-8")
+        for old, new in (
+            (VIF_HORI_SHAPE_PIECES[0], "return sg_size;"),
+            (VIF_HORI_SHAPE_PIECES[1], "return vif_grf_size(sg_size);"),
+        ):
+            self.assertIn(old, source)
+            failures = _vif_hori_shape_failures(source.replace(old, new, 1))
+            self.assertTrue(any("spills on Xe-LP" in item for item in failures), old)
 
     def test_motion_fp64_is_detected(self) -> None:
         sources = _motion_sources()
@@ -923,6 +983,7 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         sources[FLOAT_ADM] = sources[FLOAT_ADM].replace(old, "    float rfactor[3];\n")
         failures = _scratch_failures(sources)
         self.assertTrue(any("named scalars" in item for item in failures), failures)
+
 
 if __name__ == "__main__":
     unittest.main()

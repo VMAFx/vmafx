@@ -167,6 +167,17 @@ test('test_sycl_sub_group_size_contract',
     timeout : 30,
 )
 
+# ADR-1395: the sycl-aot suite reads every kernel's spill and private memory
+# from the AOT images of all default targets (sycl_aot_scratch.py). This test
+# holds that reader and its judgement to images in IGC's format with planted
+# spills, private arrays and missing targets; no compiler, no device.
+test('test_sycl_aot_scratch_check',
+    import('python').find_installation(),
+    args : files('test_sycl_aot_scratch_check.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1364: the cross-backend gates read vmaf's JSON by the alias.c name.
 test('test_parity_gate_metric_names',
     import('python').find_installation(),

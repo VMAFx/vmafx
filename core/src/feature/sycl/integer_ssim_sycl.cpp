@@ -1315,8 +1315,13 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
 namespace
 {
 
-/* Sub-group size of the term kernel. */
-constexpr int ISSIM_TERM_SG = 16;
+/* Shape of the term kernel: no required sub-group size and the large
+ * register file (ADR-1501). At a required SIMD-16 it spilled 320 bytes on
+ * Xe-LP (tgllp, adl-*, rpl-*), which has no large register file (measured on
+ * a UHD 770); without a required size icpx compiles it at SIMD-8 there and at
+ * SIMD-16 with 256 registers everywhere else. One work-item per pixel and no
+ * sub-group operation: the size does not change a term. */
+constexpr int ISSIM_TERM_SG = 0;
 constexpr int ISSIM_TERM_GRF = 256;
 
 struct IntegerVertArgs {
@@ -1422,7 +1427,7 @@ class IssimTermKernel : public VmafSyclKernelShape<ISSIM_TERM_SG, ISSIM_TERM_GRF
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(ISSIM_TERM_SG) void operator()(sycl::id<2> id) const
+    void operator()(sycl::id<2> id) const
     {
         a_.terms[id[0] * (size_t)a_.width + id[1]] =
             integer_ssim_term(a_, (unsigned)id[1], (unsigned)id[0]);
