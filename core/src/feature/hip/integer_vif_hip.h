@@ -12,6 +12,7 @@
 #ifndef FEATURE_INTEGER_VIF_HIP_H_
 #define FEATURE_INTEGER_VIF_HIP_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* Enhancement gain limit default — mirrors the CUDA twin. */
@@ -31,7 +32,7 @@
  * All fields are int64_t to accommodate full-frame accumulations at
  * 4K resolution without overflow.
  */
-typedef struct vif_accums_hip {
+struct vif_accums_hip {
     int64_t x;
     int64_t x2;
     int64_t num_x;
@@ -39,18 +40,21 @@ typedef struct vif_accums_hip {
     int64_t den_log;
     int64_t num_non_log;
     int64_t den_non_log;
-} vif_accums_hip;
+};
+#ifndef __cplusplus
+typedef struct vif_accums_hip vif_accums_hip;
+#endif
 
 /**
  * Device-side buffer layout for the VIF HIP kernels.
  * Field order and stride semantics mirror VifBufferCuda.
- * All pointer fields are plain device pointers (uintptr_t casted to typed
- * pointers inside the host TU, matching the CUDA Driver API pattern).
+ * All pointer fields are plain device pointers (typed, same size and layout
+ * as the CUdeviceptr-style integers of the CUDA twin).
  */
-typedef struct VifBufferHip {
+struct VifBufferHip {
     /* Half-resolution downsampled ref/dis (CUdeviceptr equivalent). */
-    uintptr_t ref;
-    uintptr_t dis;
+    uint16_t *ref;
+    uint16_t *dis;
 
     /* 16-bit mu planes. */
     uint16_t *mu1;
@@ -84,7 +88,10 @@ typedef struct VifBufferHip {
     ptrdiff_t stride_32;  /* byte stride for 32-bit moment planes      */
     ptrdiff_t stride_64;  /* byte stride for 64-bit accumulator plane  */
     ptrdiff_t stride_tmp; /* byte stride for 32-bit tmp planes         */
-} VifBufferHip;
+};
+#ifndef __cplusplus
+typedef struct VifBufferHip VifBufferHip;
+#endif
 
 #ifdef HAVE_HIPCC
 /**
