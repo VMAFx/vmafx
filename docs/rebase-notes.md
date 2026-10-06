@@ -61917,3 +61917,14 @@ No score, public API or FFmpeg patch impact.
   (the 30 files here were reformatted; a conflict takes the incoming side and re-runs black).
   `core/test/test_*_contract.py` files carry named constants for the counts they assert; a change
   to a counted construct changes the constant. No score, public API or FFmpeg patch impact.
+
+## The Metal host code at zero clang-tidy findings (RC3 exit, 2026-10-06)
+
+`rc3-tidy-metal-zero`. `core/src/metal/objc_handle.h` (the `vmaf_metal::borrow<>()` / `retain_to_slot()` /
+`transfer()` bridges and `vmaf_metal_library_load()`, implemented in `kernel_template.mm`) is the only place
+a handle slot becomes a Metal object or the embedded metallib is read: a Metal twin that comes from upstream or
+from another branch with its own `libvmaf_metallib_start` / `(__bridge ...)(void *)slot` code takes the helper
+instead. The `.mm` files keep their file-scope helpers and types in anonymous namespaces. The `metal` lane
+reads only `.mm` / `.c` units and `objc_handle.h` (`--header-filter` in `tidy-metal.yml`); the other headers
+are the `cpu` lane's, read as C. A rebase takes master's side of a conflicting `.mm` hunk and re-runs the
+`Tidy Metal` workflow with `fix=true`; `tidy-baseline-metal.json` is generated.

@@ -2669,6 +2669,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   scoped write under a clang-tidy other than the baseline's stops with exit 5.
 
 
+- **The Metal host code is clean under clang-tidy.** The macOS `metal` lane measures 0 findings on its 27 translation units (it started at 1640 once `write-compile-commands.py` stopped dropping the `.mm` files). `core/src/metal/objc_handle.h` now holds the one `uintptr_t` slot to Metal object bridge and `vmaf_metal_library_load()` the one metallib loader, replacing 17 copies; file-scope helpers sit in anonymous namespaces; no score, public API or FFmpeg patch changes. See [tidy lanes](docs/development/tidy-lanes.md).
+
+
 - The clang-tidy `cpu` lane baseline is empty (70 findings in 23 files to 0).
   C headers shared by C and C++ translation units carry cited `NOLINT` blocks
   (ADR-1138, ADR-1470), `cJSON.h` macros parenthesise their arguments and

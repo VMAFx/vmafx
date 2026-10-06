@@ -276,6 +276,19 @@ class Compare(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("a.c: warnings 3 -> 1 (-2)", printed)
 
+    def test_committed_metal_baseline_is_zero_and_refuses_a_planted_finding(self) -> None:
+        committed = json.loads(
+            (Path(__file__).resolve().parents[1] / "tidy-baseline-metal.json").read_text()
+        )
+        base = ratchet.Measurement.from_json(committed)
+        self.assertEqual(base.warnings, {})
+        self.assertEqual(base.nolint_uncited, {})
+        self.assertGreater(len(base.sources), 20)
+        planted = self._m({"core/src/metal/common.mm": 1})
+        code, printed = _captured(ratchet.report, base, planted, False)
+        self.assertEqual(code, 2)
+        self.assertIn("core/src/metal/common.mm: warnings 0 -> 1 (+1)", printed)
+
     def test_verdict_is_a_workflow_command_only_under_github_actions(self) -> None:
         base, above = self._m({"a.c": 3}), self._m({"a.c": 5})
         with mock.patch.object(ratchet, "GITHUB_ACTIONS", True):
