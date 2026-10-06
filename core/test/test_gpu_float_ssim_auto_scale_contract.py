@@ -160,7 +160,9 @@ class GpuFloatSsimAutoScaleContractTest(unittest.TestCase):
         direct_end = libvmaf.index("static unsigned compute_fex_flags(")
         self.assertNotIn("allow_context_fallback = true", libvmaf[direct_start:direct_end])
 
-        read_start = libvmaf.index("int vmaf_engine_read_pictures(")
+        # ADR-2090: the frame path is read_pictures_frame(), which
+        # vmaf_engine_read_pictures() calls before it advances the extractors.
+        read_start = libvmaf.index("static int read_pictures_frame(")
         read_end = libvmaf.index("#ifdef HAVE_SYCL", read_start)
         read_body = libvmaf[read_start:read_end]
         self.assertIn("resolve_context_fallbacks(vmaf)", read_body)

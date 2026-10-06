@@ -20,6 +20,9 @@
 #ifndef VMAF_SRC_PICTURE_H_
 #define VMAF_SRC_PICTURE_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #ifdef HAVE_CUDA
 #ifdef DEVICE_CODE
 #include <cuda.h>
@@ -41,14 +44,11 @@ enum VmafPictureBufferType {
     /* ADR-0726: Vulkan backend removed. Enum value deleted — no source file
      * referenced VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE after ADR-0726.
      * Any future Vulkan revival must use a new ADR and a new value. */
-    /* ADR-0530 / ADR-0613: HIP-backed picture pool (hipMalloc).
-     * picture_hip.{c,h} is fully implemented as of ADR-0613: the
-     * previous -ENOSYS stub was replaced with a real hipMalloc /
-     * hipFree allocation path.  HIP pictures are now allocated on
-     * the device and no longer arrive as VMAF_PICTURE_BUFFER_TYPE_HOST
-     * with a caller-side HtoD copy.  The tag allows the dispatch check
-     * in feature_extractor.c to reject mixed backings
-     * (e.g. CUDA-buffer-into-HIP-extractor). */
+    /* A frame of the VMAFx API in HIP device memory (RC4 WP3, ADR-2092):
+     * an imported device pointer, dma-buf or GL texture, read by the HIP
+     * twins on the device and never copied to the host; see the `hip` member
+     * of VmafPicturePrivate. The libvmaf.h HIP path takes host pictures and
+     * uploads them (ADR-0530, ADR-1408). */
     VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE,
 };
 /* NOLINTEND(performance-enum-size) */
@@ -63,14 +63,33 @@ typedef struct VmafPicturePrivate {
         CUevent ready, finished;
         CUstream str;
         VmafCudaState *state;
+        /* RC4 WP3 (ADR-2023): a frame of the VMAFx API (an import or a pool
+         * frame), never copied to the host; `ordered` when its stream waits
+         * for the producer already, so the ADR-1199 barrier is skipped. */
+        bool vmafx;
+        bool ordered;
     } cuda;
 #endif
 #ifdef HAVE_SYCL
     struct {
         void *state;
         void *ready_event;
+        /* RC4 WP3 (ADR-2091): the VMAFx SYCL frame (VmafxSyclFrameRt) of a
+         * picture whose planes are device USM; NULL for every other picture. */
+        void *frame;
     } sycl;
 #endif
+    /* RC4 WP3 (ADR-2092): a frame of the VMAFx API in HIP device memory
+     * (buf_type VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE). `str` is the device's
+     * library stream (a hipStream_t carried as uintptr_t, ADR-0241): every
+     * read of the planes is enqueued there, behind the producer's acquire
+     * fence, and the twins' streams wait for those reads
+     * (core/src/hip/picture_hip.h). Outside a HAVE_HIP guard so that the
+     * struct has one layout in every translation unit: HAVE_HIP reaches many
+     * of them through config.h only. */
+    struct {
+        uintptr_t str;
+    } hip;
     enum VmafPictureBufferType buf_type;
 } VmafPicturePrivate;
 /* NOLINTEND(modernize-use-using) */

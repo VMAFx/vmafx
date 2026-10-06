@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 6)
+ABI_VERSION = (0, 1, 10)
 
 
 class Status(enum.IntEnum):
@@ -66,6 +66,19 @@ class PixelFormat(enum.IntEnum):
     NV12 = 16
     P010 = 17
     P016 = 18
+    NV16 = 19
+    P210 = 20
+    P216 = 21
+    NV24 = 22
+    P410 = 23
+    P416 = 24
+    Y210 = 25
+    Y410 = 26
+    YUYV422 = 27
+    Y212 = 28
+    VUYX = 29
+    XV36 = 30
+    YUV444P_MSB = 31
 
 
 class Pool(enum.IntEnum):
@@ -111,6 +124,8 @@ class MemoryKind(enum.IntEnum):
     METAL_SURFACE = 5
     METAL_TEXTURE = 6
     WIN32_SHARED = 7
+    GL_TEXTURE = 8
+    VULKAN = 9
 
 
 class FenceKind(enum.IntEnum):
@@ -124,6 +139,26 @@ class FenceKind(enum.IntEnum):
     SYNC_FILE = 5
     METAL_SHARED_EVENT = 6
     WIN32_SHARED = 7
+    GL_SYNC = 8
+    VULKAN_SEMAPHORE = 9
+
+
+class VulkanHandleType(enum.IntEnum):
+    """VmafxVulkanHandleType."""
+
+    NONE = 0
+    OPAQUE_FD = 1
+    OPAQUE_WIN32 = 2
+    OPAQUE_WIN32_KMT = 4
+    DMA_BUF = 512
+
+
+class VulkanTiling(enum.IntEnum):
+    """VmafxVulkanTiling."""
+
+    OPTIMAL = 0
+    LINEAR = 1
+    DRM_FORMAT_MODIFIER = 1000158000
 
 
 class FeatureSource(enum.IntEnum):
@@ -142,6 +177,15 @@ class ReportFormat(enum.IntEnum):
     JSON = 2
     CSV = 3
     SUB = 4
+
+
+class WindowTarget(enum.IntEnum):
+    """VmafxWindowTarget."""
+
+    NONE = 0
+    MODEL = 1
+    MODEL_SET = 2
+    FEATURE = 3
 
 
 class ColorRange(enum.IntEnum):
@@ -235,6 +279,12 @@ class ImportFlags(enum.IntFlag):
     ALLOW_COPY = 1
 
 
+class VulkanFlags(enum.IntFlag):
+    """VmafxVulkanFlags bits."""
+
+    DEDICATED = 1
+
+
 class DeviceFlags(enum.IntFlag):
     """VmafxDeviceFlags bits."""
 
@@ -251,6 +301,25 @@ class ProvenanceJsonFlags(enum.IntFlag):
     """VmafxProvenanceJsonFlags bits."""
 
     CANONICAL = 1
+
+
+class PoolMask(enum.IntFlag):
+    """VmafxPoolMask bits."""
+
+    _MIN = 2
+    _MAX = 4
+    _MEAN = 8
+    _HARMONIC_MEAN = 16
+    _MEDIAN = 32
+    _PERC5 = 64
+    _PERC10 = 128
+    _PERC20 = 256
+
+
+class WindowFlags(enum.IntFlag):
+    """VmafxWindowFlags bits."""
+
+    PARTIAL = 1
 
 
 class DnnFlags(enum.IntFlag):
@@ -335,6 +404,22 @@ class VmafxModelSetScore(ctypes.Structure):
     """C struct VmafxModelSetScore."""
 
 
+class VmafxWindowRequest(ctypes.Structure):
+    """C struct VmafxWindowRequest."""
+
+
+class VmafxWindowResult(ctypes.Structure):
+    """C struct VmafxWindowResult."""
+
+
+class VmafxWindowClockConfig(ctypes.Structure):
+    """C struct VmafxWindowClockConfig."""
+
+
+class VmafxWindowSpan(ctypes.Structure):
+    """C struct VmafxWindowSpan."""
+
+
 class VmafxColor(ctypes.Structure):
     """C struct VmafxColor."""
 
@@ -375,6 +460,11 @@ VmafxLogCallback = ctypes.CFUNCTYPE(None, ctypes.c_uint32, ctypes.c_char_p, ctyp
 
 
 VmafxFrameReleaseCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+
+
+VmafxWindowCallback = ctypes.CFUNCTYPE(
+    None, ctypes.c_void_p, ctypes.POINTER(VmafxWindowResult), ctypes.c_void_p
+)
 
 
 VmafxContextConfig._fields_ = (
@@ -493,6 +583,7 @@ VmafxDeviceInfo._fields_ = (
     ("fence_kinds", ctypes.c_uint32),
     ("total_memory", ctypes.c_uint64),
     ("name", ctypes.c_char_p),
+    ("pci", ctypes.c_uint32 * 4),
 )
 
 VmafxFence._fields_ = (
@@ -525,6 +616,13 @@ VmafxFrameImport._fields_ = (
     ("plane", VmafxImportPlane * 3),
     ("acquire", VmafxFence),
     ("flags", ctypes.c_uint32),
+    ("release", VmafxFrameReleaseCallback),
+    ("user", ctypes.c_void_p),
+    ("acquire_more", VmafxFence * 2),
+    ("vulkan_handle_type", ctypes.c_uint32),
+    ("vulkan_tiling", ctypes.c_uint32),
+    ("vulkan_flags", ctypes.c_uint32),
+    ("vulkan_pci", ctypes.c_uint32 * 4),
 )
 
 VmafxModelConfig._fields_ = (
@@ -582,6 +680,53 @@ VmafxModelSetScore._fields_ = (
     ("ci95_lo", ctypes.c_double),
     ("ci95_hi", ctypes.c_double),
     ("name", ctypes.c_char_p),
+)
+
+VmafxWindowRequest._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("target", ctypes.c_uint32),
+    ("pool_mask", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("model", ctypes.c_void_p),
+    ("model_set", ctypes.c_void_p),
+    ("feature", ctypes.c_char_p),
+    ("on_complete", VmafxWindowCallback),
+    ("user", ctypes.c_void_p),
+)
+
+VmafxWindowResult._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("status", ctypes.c_int32),
+    ("flags", ctypes.c_uint32),
+    ("target", ctypes.c_uint32),
+    ("pool_mask", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("n_frames", ctypes.c_uint64),
+    ("n_scored", ctypes.c_uint64),
+    ("value", ctypes.c_double * 9),
+    ("stddev", ctypes.c_double * 9),
+    ("ci95_lo", ctypes.c_double * 9),
+    ("ci95_hi", ctypes.c_double * 9),
+    ("name", ctypes.c_char_p),
+)
+
+VmafxWindowClockConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("n_stats", ctypes.c_double),
+    ("n_stats_frames", ctypes.c_uint64),
+)
+
+VmafxWindowSpan._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("flags", ctypes.c_uint32),
+    ("window", ctypes.c_uint64),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("n_frames", ctypes.c_uint64),
+    ("start_ns", ctypes.c_int64),
+    ("end_ns", ctypes.c_int64),
 )
 
 VmafxColor._fields_ = (
@@ -780,7 +925,7 @@ LAYOUT = {
         ),
     ),
     VmafxDeviceInfo: (
-        40,
+        56,
         (
             ("struct_size", 0),
             ("backend", 4),
@@ -790,6 +935,7 @@ LAYOUT = {
             ("fence_kinds", 20),
             ("total_memory", 24),
             ("name", 32),
+            ("pci", 40),
         ),
     ),
     VmafxFence: (
@@ -816,7 +962,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        216,
+        328,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -828,6 +974,13 @@ LAYOUT = {
             ("plane", 32),
             ("acquire", 176),
             ("flags", 208),
+            ("release", 216),
+            ("user", 224),
+            ("acquire_more", 232),
+            ("vulkan_handle_type", 296),
+            ("vulkan_tiling", 300),
+            ("vulkan_flags", 304),
+            ("vulkan_pci", 308),
         ),
     ),
     VmafxModelConfig: (
@@ -897,6 +1050,61 @@ LAYOUT = {
             ("ci95_lo", 40),
             ("ci95_hi", 48),
             ("name", 56),
+        ),
+    ),
+    VmafxWindowRequest: (
+        72,
+        (
+            ("struct_size", 0),
+            ("target", 4),
+            ("pool_mask", 8),
+            ("first", 16),
+            ("last", 24),
+            ("model", 32),
+            ("model_set", 40),
+            ("feature", 48),
+            ("on_complete", 56),
+            ("user", 64),
+        ),
+    ),
+    VmafxWindowResult: (
+        352,
+        (
+            ("struct_size", 0),
+            ("status", 4),
+            ("flags", 8),
+            ("target", 12),
+            ("pool_mask", 16),
+            ("first", 24),
+            ("last", 32),
+            ("n_frames", 40),
+            ("n_scored", 48),
+            ("value", 56),
+            ("stddev", 128),
+            ("ci95_lo", 200),
+            ("ci95_hi", 272),
+            ("name", 344),
+        ),
+    ),
+    VmafxWindowClockConfig: (
+        24,
+        (
+            ("struct_size", 0),
+            ("n_stats", 8),
+            ("n_stats_frames", 16),
+        ),
+    ),
+    VmafxWindowSpan: (
+        56,
+        (
+            ("struct_size", 0),
+            ("flags", 4),
+            ("window", 8),
+            ("first", 16),
+            ("last", 24),
+            ("n_frames", 32),
+            ("start_ns", 40),
+            ("end_ns", 48),
         ),
     ),
     VmafxColor: (
@@ -1282,6 +1490,14 @@ SIGNATURES = {
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
+    "vmafx_frame_signal_on_release": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_fence_create": (
         ctypes.c_int32,
         (
@@ -1618,6 +1834,70 @@ SIGNATURES = {
             ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_void_p),
         ),
+    ),
+    "vmafx_window_submit": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowRequest),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_poll": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowResult),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_wait": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxWindowResult),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_release": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_max_in_flight": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_window_clock_create": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxWindowClockConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_frame": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.c_int64,
+            ctypes.POINTER(VmafxWindowSpan),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_finish": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowSpan),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_destroy": (
+        None,
+        (ctypes.c_void_p,),
     ),
     "vmafx_context_from_libvmaf": (
         ctypes.c_void_p,
@@ -2190,6 +2470,7 @@ class DeviceInfo:
     fence_kinds: int
     total_memory: int
     name: str | None
+    pci: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxDeviceInfo) -> DeviceInfo:
@@ -2201,6 +2482,7 @@ class DeviceInfo:
             fence_kinds=raw.fence_kinds,
             total_memory=raw.total_memory,
             name=_text(raw.name),
+            pci=tuple(raw.pci),
         )
 
 
@@ -2284,6 +2566,11 @@ class FrameImport:
     plane: tuple[ImportPlane, ...]
     acquire: Fence
     flags: int
+    acquire_more: tuple[Fence, ...]
+    vulkan_handle_type: int
+    vulkan_tiling: int
+    vulkan_flags: int
+    vulkan_pci: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxFrameImport) -> FrameImport:
@@ -2297,6 +2584,11 @@ class FrameImport:
             plane=tuple(ImportPlane.from_c(x) for x in raw.plane),
             acquire=Fence.from_c(raw.acquire),
             flags=raw.flags,
+            acquire_more=tuple(Fence.from_c(x) for x in raw.acquire_more),
+            vulkan_handle_type=raw.vulkan_handle_type,
+            vulkan_tiling=raw.vulkan_tiling,
+            vulkan_flags=raw.vulkan_flags,
+            vulkan_pci=tuple(raw.vulkan_pci),
         )
 
 
@@ -2427,6 +2719,123 @@ class ModelSetScore:
             ci95_hi=raw.ci95_hi,
             name=_text(raw.name),
         )
+
+
+@dataclass(frozen=True)
+class WindowRequest:
+    """A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.8."""
+
+    target: int
+    pool_mask: int
+    first: int
+    last: int
+    feature: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowRequest) -> WindowRequest:
+        return cls(
+            target=raw.target,
+            pool_mask=raw.pool_mask,
+            first=raw.first,
+            last=raw.last,
+            feature=_text(raw.feature),
+        )
+
+
+@dataclass(frozen=True)
+class WindowResult:
+    """The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(), vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first + n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.8."""
+
+    status: int
+    flags: int
+    target: int
+    pool_mask: int
+    first: int
+    last: int
+    n_frames: int
+    n_scored: int
+    value: tuple[float, ...]
+    stddev: tuple[float, ...]
+    ci95_lo: tuple[float, ...]
+    ci95_hi: tuple[float, ...]
+    name: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowResult) -> WindowResult:
+        return cls(
+            status=raw.status,
+            flags=raw.flags,
+            target=raw.target,
+            pool_mask=raw.pool_mask,
+            first=raw.first,
+            last=raw.last,
+            n_frames=raw.n_frames,
+            n_scored=raw.n_scored,
+            value=tuple(raw.value),
+            stddev=tuple(raw.stddev),
+            ci95_lo=tuple(raw.ci95_lo),
+            ci95_hi=tuple(raw.ci95_hi),
+            name=_text(raw.name),
+        )
+
+
+@dataclass(frozen=True)
+class WindowClockConfig:
+    """Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT. Added in ABI 0.1.8."""
+
+    n_stats: float
+    n_stats_frames: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowClockConfig) -> WindowClockConfig:
+        return cls(
+            n_stats=raw.n_stats,
+            n_stats_frames=raw.n_stats_frames,
+        )
+
+    def to_c(self) -> VmafxWindowClockConfig:
+        raw = VmafxWindowClockConfig()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.n_stats = self.n_stats
+        raw.n_stats_frames = self.n_stats_frames
+        return raw
+
+
+@dataclass(frozen=True)
+class WindowSpan:
+    """One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.8."""
+
+    flags: int
+    window: int
+    first: int
+    last: int
+    n_frames: int
+    start_ns: int
+    end_ns: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowSpan) -> WindowSpan:
+        return cls(
+            flags=raw.flags,
+            window=raw.window,
+            first=raw.first,
+            last=raw.last,
+            n_frames=raw.n_frames,
+            start_ns=raw.start_ns,
+            end_ns=raw.end_ns,
+        )
+
+    def to_c(self) -> VmafxWindowSpan:
+        raw = VmafxWindowSpan()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.flags = self.flags
+        raw.window = self.window
+        raw.first = self.first
+        raw.last = self.last
+        raw.n_frames = self.n_frames
+        raw.start_ns = self.start_ns
+        raw.end_ns = self.end_ns
+        return raw
 
 
 @dataclass(frozen=True)

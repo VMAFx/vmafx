@@ -29,16 +29,16 @@ Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT. Size 32 bytes, a
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
 | `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
-| `backend` | `uint32_t backend` | 4 | 0.1 | Backend of the device; this release creates CPU devices only. Values: `VmafxBackend`. |
+| `backend` | `uint32_t backend` | 4 | 0.1 | Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it. Values: `VmafxBackend`. |
 | `index` | `int32_t index` | 8 | 0.1 | Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set. |
 | `flags` | `uint32_t flags` | 12 | 0.1 | How to create the device. Added in ABI 0.1.2. Bits: `VmafxDeviceFlags`. |
-| `external` | `uintptr_t external[2]` | 16 | 0.1 | The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2. |
+| `external` | `uintptr_t external[2]` | 16 | 0.1 | The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2. |
 
 Initialise with `VMAFX_DEVICE_DESC_INIT`.
 
 ### `VmafxDeviceInfo`
 
-What a device is and what it imports. Grows at the end: the format envelope of each device (largest frame, bit depths, chroma layouts; PR #2185) is appended by the generated capability tables of RC6 / RC7. Strings live for the process lifetime. Size 40 bytes, alignment 8. Since 0.1.
+What a device is and what it imports. Grows at the end: the format envelope of each device (largest frame, bit depths, chroma layouts; PR #2185) is appended by the generated capability tables of RC6 / RC7. Strings live for the process lifetime. Size 56 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
@@ -50,6 +50,7 @@ What a device is and what it imports. Grows at the end: the format envelope of e
 | `fence_kinds` | `uint32_t fence_kinds` | 20 | 0.1 | Bit `1 << k` set for each VmafxFenceKind `k` the device waits on and returns as a release fence. |
 | `total_memory` | `uint64_t total_memory` | 24 | 0.1 | Bytes of device memory; 0 when the backend does not report it (the CPU). |
 | `name` | `const char *name` | 32 | 0.1 | Name of the device as its runtime reports it (`cpu` for the CPU). |
+| `pci` | `uint32_t pci[4]` | 40 | 0.1 | PCI domain, bus, device and function of the device (a producer on the same GPU has the same, VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in ABI 0.1.10. |
 
 Initialise with `VMAFX_DEVICE_INFO_INIT`.
 

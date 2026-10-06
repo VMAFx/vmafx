@@ -139,6 +139,75 @@ sycl/
   Public surface change touches patch file too — see CLAUDE.md §12
   r14.
 
+## VMAFx device frames on SYCL (RC4 WP3, ADR-2091)
+
+- 4:2:2 / 4:4:4 layouts (ADR-2133): packed (Y210, Y212, YUYV422, Y410 / XV30,
+  XV36, VUYX) and MSB planar words are one `vmafx_sycl_rt_frame_gather()` per
+  output plane (`launch_gather()` in `vmafx_sycl_rt.cpp`: the plan of
+  `vmafx_import_plane_read()` / `vmafx_import_read_plane()`,
+  `core/src/vmafx/import_convert.h`; change both together; scratch-free,
+  `test_sycl_kernel_scratch`). Semi-planar NV16 .. P416 use the existing
+  de-interleave and shift kernels (they take the chroma plane's own size).
+  Packed / MSB in a GL texture or an Intel-tiled dma-buf: refused naming
+  `desc.memory` / the plane's `modifier`. `test_vmafx_import_sycl_formats`
+  (`VfOps` of `core/test/vmafx_format_cells.h`) holds all of it on the A380.
+
+- Files: `vmafx_sycl.h` (what `core/src/vmafx/` calls),
+  `vmafx_sycl_internal.h`, `import_device.c` (Level Zero GPUs, devices,
+  engine attach), `import_frame.c` (checks, plan, conversions, picture
+  attach), `import_dmabuf.c` (Linux dma-buf planes, implicit fences),
+  `import_gl.c` (GL textures through the shared `vmafx/egl_export.c` in its
+  keep mode: tiled exports stay tiled for the device de-tile; HISS-19),
+  `import_fence.c`,
+  `import_pool.c`; the C++ half is `vmafx_sycl_rt.{h,cpp}` (C ABI, catches
+  every exception). C files build into the library target; the `.cpp` is in
+  `sycl_sources`.
+- One in-order library queue per device with `immediate_command_list`
+  (draft PR #2217's ADR-1763 precaution; `vmafx_sycl_rt_test_omit_immediate()`
+  and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
+  states of contexts on the device live in its SYCL context
+  (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` is the one place a
+  `VmafSyclState` is built.
+- A frame is a SYCL device picture (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`,
+  `priv->sycl.frame` = `VmafxSyclFrameRt`). Every engine reader copies a
+  plane with `vmaf_sycl_picture_read_plane()` (a kernel on the reader's
+  queue after the frame's ready event; the read's event is recorded on the
+  frame). Never `ext_oneapi_memcpy2d()` (behind a host task it lost the
+  A380 on DPC++ 2026.0 and 2026.1.1, Research-2160 finding 1) and never a
+  host read.
+- Ordering: `join()` (an empty kernel with `depends_on()`) for the acquire and
+  the release, never `ext_oneapi_submit_barrier()`: a barrier on the event of
+  a command behind a host task returns only after that host task ran
+  (finding 2). Release = join over ready + every recorded read; behind it the
+  HOST fence's host task, the SYCL_EVENT slot record and deferred frees
+  (`vmafx_sycl_rt_collect()`). Never `ext_oneapi_get_last_event()` in a hot
+  path: it waits for the queue (finding 3).
+- SYCL_EVENT release fences are slots of the table in `vmafx_sycl_rt.cpp`
+  (4096, refcounted): pending until the release records the join's event; the
+  release callback runs after the record. `vmafx_fence_destroy()` of a
+  caller's own event is `VMAFX_E_INVALID` (the caller's stays the caller's).
+- De-tile address math lives once in `detile.h`, shared with the VA-surface
+  import of `dmabuf_import.cpp` (`detile_tiled()`): a change to Intel Y-tiled
+  / Tile4 handling changes it there and both paths follow. The P010 shift is
+  fused (`shift = 16 - bpc` when bpc > 8). Kernels are byte-wise integer and
+  scratch-free (ADR-1395): `test_sycl_kernel_scratch` audits every kernel of
+  its program, and `vmafx_sycl_rt.o` is linked into it through
+  `vmaf_sycl_picture_read_plane()` (common.cpp); keep that reference or the
+  lane's kernels drop out of the audit.
+- `WIN32_SHARED` refused (`VMAFX_E_NOTSUP` naming `desc.memory`); SYNC_FILE
+  release fences refused. Adding either changes `sycl_info()` in
+  `import_device.c`, the docs table of `docs/api/vmafx/index.md` and the
+  refusal rows of `test_vmafx_import_sycl.c` together.
+- Guards: `test_vmafx_import_sycl`, `test_vmafx_import_sycl_bitexact`
+  (`VMAFX_TEST_ONLY=netflix|bbb`), `test_vmafx_import_sycl_fence`,
+  `test_vmafx_import_sycl_gl` (suite `gpu`/`sycl`, Linux, not AdaptiveCpp),
+  `test_vmafx_import_sycl_cells_contract.py` (fast: the cell table equals
+  `scripts/ci/exact_twins.d/*.sycl`).
+- Tests never wait on the host for a producer queue while one of its host
+  tasks completes: the DPC++ runtime crashed in its host-task cleanup that
+  way (2026.0 and 2026.1.1, Research-2160 finding 8). The fence test zeroes
+  every buffer before its first host task.
+
 ## Rebase-sensitive build invariants
 
 - **`-fsycl` must be present at every link step pulling SYCL `.o`

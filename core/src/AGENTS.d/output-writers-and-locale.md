@@ -3,6 +3,9 @@ paths:
   - core/src/output.cpp
   - core/src/thread_locale.cpp
   - core/src/thread_locale.h
+  - core/src/opt.cpp
+  - core/src/dict.cpp
+  - core/src/feature/feature_name.cpp
 invariant: Score capacity checks use >=; JSON writers guard delimiters; locale pushes flush before pop.
 ---
 <!-- markdownlint-disable MD013 -->
@@ -74,3 +77,12 @@ temporary C numeric locale lifetime. Path-based `vmaf_write_output()` uses
 `fdopen()` and may otherwise leave final flush to `fclose()` after
 locale has been restored/freed; that = macOS-only SIGSEGV shape for
 `test_output` and `test_public_api_score`.
+
+## Option numbers: C locale on the calling thread (T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06)
+
+`opt.cpp` `parse_double()` + `dict.cpp` `dict_normalize_numeric()` + `feature_name.cpp` `format_double_c_locale()`: `strtod()` / `%g`
+inside `vmaf_thread_locale_push_c()` scope (`CLocaleScope` RAII in `dict.cpp`). Decimal-comma
+caller locale otherwise refuses `0.7` (-EINVAL; `vmaf_v1.0.16_3d0h` unusable) or stores
+`0.02` as `0` / `0,02`, or names features `..._0,7` (model scores NOTFOUND). Standalone test builds of either file link `thread_locale.cpp`.
+Guard: `test_locale_handling` (`test_option_double_with_comma_locale`,
+`test_dictionary_number_with_comma_locale`, `test_feature_name_with_comma_locale`, `test_model_features_with_comma_locale`).

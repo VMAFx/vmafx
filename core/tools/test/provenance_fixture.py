@@ -59,6 +59,9 @@ def score(
         "-m",
         f"version={MODEL}",
         "--quiet",
+        # The CPU record: a GPU build would score on its device otherwise.
+        "--backend",
+        "cpu",
         "-o",
         str(output),
         *extra,

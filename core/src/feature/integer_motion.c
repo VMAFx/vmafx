@@ -17,7 +17,9 @@
  *
  */
 
+#include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +71,7 @@ typedef struct MotionState {
     bool motion_force_zero;
     bool debug;
     VmafDictionary *feature_name_dict;
+    VmafMotionWindowState window_state; /* ADR-2090: derivation of motion2 / motion3 */
 } MotionState;
 
 static const VmafOption options[] = {
@@ -462,25 +465,15 @@ static int motion_flush_one(VmafFeatureCollector *feature_collector,
     return 0;
 }
 
-/* The body of flush() below the feature-name dictionary: upstream's
- * statements, shared through motion_window.h (ADR-1478). */
-int vmaf_motion_window_flush(VmafFeatureCollector *feature_collector,
-                             VmafDictionary *feature_name_dict, const VmafMotionWindow *window)
+/* upstream flush()'s stamp value: motion3 of the frames below min_idx, from
+ * the SAD score of frame min_idx when the n SAD scores reach past it, else 0.
+ * The statements of upstream's flush(), lifted out so that the first
+ * derivation computes it, whether that is an advance or the flush (ADR-2090);
+ * both see n > min_idx exactly when the flush over the whole stream does. */
+static double motion_window_stamp(VmafFeatureCollector *feature_collector, const char *sad_name,
+                                  const VmafMotionWindow *window, unsigned n)
 {
-    const VmafDictionaryEntry *sad_entry =
-        vmaf_dictionary_get(&feature_name_dict, window->sad_feature, 0);
-    if (!sad_entry)
-        return -EINVAL;
-    const char *sad_name = sad_entry->val;
-
-    unsigned n = 0;
-    double score;
-    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &score, n))
-        n++;
     const unsigned min_idx = window->motion_five_frame_window ? 2 : 1;
-    if (!n)
-        return 0;
-
     double stamp_value = 0.;
     if (n > min_idx) {
         double sad_at_min_idx;
@@ -491,28 +484,94 @@ int vmaf_motion_window_flush(VmafFeatureCollector *feature_collector,
                               window->motion_max_val);
         }
     }
+    return stamp_value;
+}
 
-    double prev_processed = 0.;
-    for (unsigned i = 0; i < n; i++) {
-        const int loop_err = motion_flush_one(feature_collector, feature_name_dict, window,
-                                              sad_name, i, stamp_value, &prev_processed);
-        if (loop_err)
-            return loop_err;
+/* Extend state->n_sad over the SAD scores the collector holds without a gap:
+ * upstream flush()'s count of n, resumed where the last call stopped. A score
+ * a worker thread has not appended yet ends the run; a later call finds it. */
+static void motion_window_count_sads(VmafFeatureCollector *feature_collector, const char *sad_name,
+                                     VmafMotionWindowState *state)
+{
+    double score;
+    while (state->n_sad < UINT_MAX &&
+           !vmaf_feature_collector_get_score(feature_collector, sad_name, &score, state->n_sad))
+        state->n_sad++;
+}
+
+/* Derive frames state->next .. end - 1, in index order, with upstream
+ * flush()'s per-frame statements (motion_flush_one()) and the values it
+ * carries kept in `state`. */
+static int motion_window_derive(VmafFeatureCollector *feature_collector,
+                                VmafDictionary *feature_name_dict, const VmafMotionWindow *window,
+                                const char *sad_name, unsigned end)
+{
+    VmafMotionWindowState *state = window->state;
+    assert(state != NULL);
+    if (state->next == 0 && end > 0)
+        state->stamp_value = motion_window_stamp(feature_collector, sad_name, window, state->n_sad);
+    for (; state->next < end; state->next++) {
+        const int err = motion_flush_one(feature_collector, feature_name_dict, window, sad_name,
+                                         state->next, state->stamp_value, &state->prev_processed);
+        if (err)
+            return err;
     }
     return 0;
 }
 
-static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+/* The collector name of the window's SAD score, or NULL. */
+static const char *motion_window_sad_name(VmafDictionary *feature_name_dict,
+                                          const VmafMotionWindow *window)
 {
-    MotionState *s = fex->priv;
+    const VmafDictionaryEntry *sad_entry =
+        vmaf_dictionary_get(&feature_name_dict, window->sad_feature, 0);
+    return sad_entry ? sad_entry->val : NULL;
+}
 
-    if (!s->feature_name_dict) {
-        s->feature_name_dict =
-            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (!s->feature_name_dict)
-            return -ENOMEM;
-    }
+/* ADR-2090: frame i is complete once the SAD scores of frames
+ * 0 .. max(i + 1, min_idx) are in: then its motion2 has its later frame and
+ * its motion3 the moving-average state of frames 0 .. i - 1, the values the
+ * flush over the whole stream gives it. */
+int vmaf_motion_window_advance(VmafFeatureCollector *feature_collector,
+                               VmafDictionary *feature_name_dict, const VmafMotionWindow *window)
+{
+    if (!window->state)
+        return -EINVAL;
+    const char *sad_name = motion_window_sad_name(feature_name_dict, window);
+    if (!sad_name)
+        return -EINVAL;
 
+    VmafMotionWindowState *state = window->state;
+    motion_window_count_sads(feature_collector, sad_name, state);
+    const unsigned min_idx = window->motion_five_frame_window ? 2 : 1;
+    if (state->n_sad <= min_idx)
+        return 0;
+    return motion_window_derive(feature_collector, feature_name_dict, window, sad_name,
+                                state->n_sad - 1);
+}
+
+/* The body of flush() below the feature-name dictionary: upstream's
+ * statements, shared through motion_window.h (ADR-1478), from the first frame
+ * an advance has not derived (ADR-2090). */
+int vmaf_motion_window_flush(VmafFeatureCollector *feature_collector,
+                             VmafDictionary *feature_name_dict, const VmafMotionWindow *window)
+{
+    const char *sad_name = motion_window_sad_name(feature_name_dict, window);
+    if (!sad_name)
+        return -EINVAL;
+
+    VmafMotionWindowState fresh = {0};
+    VmafMotionWindow whole = *window;
+    if (!whole.state)
+        whole.state = &fresh;
+    motion_window_count_sads(feature_collector, sad_name, whole.state);
+    return motion_window_derive(feature_collector, feature_name_dict, &whole, sad_name,
+                                whole.state->n_sad);
+}
+
+/* The window of this extractor's options and keys, on its state. */
+static VmafMotionWindow motion_window_of(MotionState *s)
+{
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
         .motion2_feature = "VMAF_integer_feature_motion2_score",
@@ -522,13 +581,51 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = s->motion_five_frame_window,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* The feature-name dictionary, built on first use. With worker threads the
+ * engine advances and flushes the registered extractor, whose init() never
+ * runs (ADR-2090; flush_non_temporal_cpu_extractors() in libvmaf.c). */
+static int motion_ensure_dict(VmafFeatureExtractor *fex, MotionState *s)
+{
+    if (s->feature_name_dict)
+        return 0;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    return s->feature_name_dict ? 0 : -ENOMEM;
+}
+
+/* ADR-2090: motion2 / motion3 of the frames whose window the SAD scores in
+ * the collector complete. Called by the engine on the thread that feeds
+ * frames, never next to extract() of the same instance or flush(). */
+static int advance(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionState *s = fex->priv;
+    const int err = motion_ensure_dict(fex, s);
+    if (err)
+        return err;
+    const VmafMotionWindow window = motion_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionState *s = fex->priv;
+
+    const int dict_err = motion_ensure_dict(fex, s);
+    if (dict_err)
+        return dict_err;
+
+    const VmafMotionWindow window = motion_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     if (err)
         return err;
 
-    vmaf_dictionary_free(&s->feature_name_dict);
-    return 1;
+    const int free_err = vmaf_dictionary_free(&s->feature_name_dict);
+    return free_err ? free_err : 1;
 }
 
 /* ADR-1478: the reference picture of frame n-2 is read, and the context
@@ -554,6 +651,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion = {
     .init = init,
     .extract = extract,
     .flush = flush,
+    .advance = advance,
     .close = close_fex,
     .priv_size = sizeof(MotionState),
     .provided_features = provided_features,

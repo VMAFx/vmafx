@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -53,6 +54,37 @@ static VmafxStatus cpu_extractor(const VmafxReport *report, const char *extracto
     return VMAFX_OK;
 }
 
+/* The extractor a context registers for `extractor`: on a context with a
+ * device, the CPU extractor's twin on the device's backend (RC4 WP3: the
+ * context picks twins at registration, ADR-1929 item 10); the CPU extractor
+ * when the backend has none or the twin cannot honour an option (named in
+ * the log; admission then names it for device frames, ADR-1929 item 9). */
+static const char *registered_name(const VmafxContext *context, const char *extractor,
+                                   const VmafxOptions *options)
+{
+    if (!context->device || context->device->backend == VMAFX_BACKEND_CPU) {
+        return extractor;
+    }
+    const char *twin = NULL;
+    const char *unsupported = NULL;
+    const int err = vmaf_engine_feature_backend_twin(context->engine, extractor,
+                                                     (const VmafFeatureDictionary *)options, NULL,
+                                                     &twin, &unsupported);
+    if (err == 0 && twin) {
+        return twin;
+    }
+    if (err == -ENOENT || err == -ENOTSUP) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "vmafx: extractor %s: %s; the CPU extractor computes it on this %s context, and "
+                 "frames in device memory are refused by admission\n",
+                 extractor,
+                 err == -ENOENT ? "the device backend has no twin" :
+                                  "its twin cannot honour an option",
+                 vmafx_backend_name(context->device->backend));
+    }
+    return extractor;
+}
+
 VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extractor,
                                       const VmafxOptions *options, VmafxError **error)
 {
@@ -73,11 +105,35 @@ VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extract
     }
     /* Consumes `copy` on every path past its argument checks. */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
-    const int err = vmaf_engine_use_feature(context->engine, extractor, copy);
-    vmafx_engine_leave(previous);
+    const char *const name = registered_name(context, extractor, options);
+    const int err = vmaf_engine_use_feature(context->engine, name, copy);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_EXTRACTOR,
                           extractor, "cannot register the extractor (%d)", err);
+    }
+    return VMAFX_OK;
+}
+
+/* A context keeps a model's scores under the model's name and a model set's
+ * under its name with the bootstrap suffixes (`_bagging`, ...): a second model
+ * or set of a name already used would read the first one's scores, so it is
+ * refused (the CLI refuses it too: "Each model should be uniquely named"). A
+ * model and a set may share a name; their scores do not. */
+static VmafxStatus name_unused(const VmafxReport *report, const VmafxHeld *held, bool sets,
+                               const char *name)
+{
+    bool used = false;
+    for (uint32_t i = 0; i < held->count && !used; i++) {
+        const char *other =
+            sets ? vmafx_model_set_engine(held->items[i])->name : vmafx_model_name(held->items[i]);
+        used = strcmp(other, name) == 0;
+    }
+    if (used) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_MODEL, name,
+                          "the context already scores a %s of this name; give each one its own "
+                          "name (VmafxModelConfig.name, name= in a model spec)",
+                          sets ? "model set" : "model");
     }
     return VMAFX_OK;
 }
@@ -89,14 +145,17 @@ VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model, Vm
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
                           !context ? "context" : "model", "NULL argument");
     }
-    const VmafxStatus status = vmafx_held_reserve(&report, &context->models);
+    VmafxStatus status = name_unused(&report, &context->models, false, model->engine->name);
+    if (status == VMAFX_OK) {
+        status = vmafx_held_reserve(&report, &context->models);
+    }
     if (status != VMAFX_OK) {
         return status;
     }
     assert(context->models.count < context->models.capacity);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model(context->engine, model->engine);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_MODEL,
                           model->engine->name, "cannot register the model's extractors (%d)", err);
@@ -113,7 +172,11 @@ VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *se
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
                           !context ? "context" : "set", "NULL argument");
     }
-    const VmafxStatus status = vmafx_held_reserve(&report, &context->model_sets);
+    VmafxStatus status =
+        name_unused(&report, &context->model_sets, true, vmafx_model_set_engine(set)->name);
+    if (status == VMAFX_OK) {
+        status = vmafx_held_reserve(&report, &context->model_sets);
+    }
     if (status != VMAFX_OK) {
         return status;
     }
@@ -121,7 +184,7 @@ VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *se
     VmafModelCollection *const collection = vmafx_model_set_engine(set);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model_collection(context->engine, collection);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_MODEL,
                           collection->name, "cannot register the set's extractors (%d)", err);
@@ -145,12 +208,13 @@ VmafxStatus vmafx_context_import_score(VmafxContext *context, const char *featur
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err =
         vmaf_engine_import_feature_score(context->engine, feature, value, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_FEATURE,
                           feature, "cannot record the score of frame %llu (%d)",
                           (unsigned long long)index, err);
     }
+    vmafx_windows_note_index(context, index); /* RC4 WP4: windows this score made final */
     return VMAFX_OK;
 }
 
@@ -235,7 +299,7 @@ VmafxStatus vmafx_feature_resolve(const VmafxContext *context, const char *extra
     const int err = vmaf_engine_feature_backend_twin(
         context->engine, extractor, (const VmafFeatureDictionary *)options, frame ? &pic_cfg : NULL,
         &full.extractor, &full.unsupported_option);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     status = resolve_verdict(&report, err, fex->name, &full);
     if (status == VMAFX_OK || status == VMAFX_E_NOTSUP) {
         vmafx_store_sized(out, &full, (uint32_t)sizeof(full));

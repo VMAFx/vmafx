@@ -23,8 +23,14 @@
  * that takes the SAD against frame n-1, that reads a plane it never filled,
  * or that scores the first two frames fails here.
  *
+ * Frame by frame (ADR-2090): motion2 and motion3 of frame i are final before
+ * the flush, once the frame `lag` reads after its window's last SAD is read
+ * (CPU 1; a device twin's SAD lands one read later, CUDA `motion`'s at its
+ * readback batch), and they keep the value they had then. A twin that
+ * derives them only at the flush fails here.
+ *
  * A test file defines an MftBackend (how to open its device state and bind
- * it to a context) and calls mft_failed_cases().
+ * it to a context, and its lags) and calls mft_failed_cases().
  */
 
 #ifndef LIBVMAF_TEST_MOTION_FIVE_FRAME_TWIN_PARITY_H_
@@ -78,6 +84,10 @@ typedef struct MftBackend {
     int (*import)(VmafContext *vmaf, void *state);
     /* Release the state; 0 on success. */
     int (*close)(void *state);
+    /* ADR-2090: reads after the one that brings the SAD of frame
+     * max(i + 1, 2) by which frame i is final, plus one (1 = that read). */
+    unsigned lag_motion;
+    unsigned lag_motion_v2;
 } MftBackend;
 
 static const MftCase mft_cases[] = {
@@ -207,6 +217,58 @@ static inline int mft_feed_frame(VmafContext *vmaf, unsigned bpc, unsigned frame
     return vmaf_read_pictures(vmaf, &ref, &dist, frame);
 }
 
+/* The read after which frame i is final (ADR-2090): the five-frame window
+ * needs the SAD of frame max(i + 1, 2), which lands `lag - 1` reads later. */
+static inline unsigned mft_final_after(unsigned i, unsigned lag)
+{
+    return ((i + 1u > 2u) ? i + 1u : 2u) + lag - 1u;
+}
+
+static inline unsigned mft_lag(const MftCase *c, const MftBackend *backend, const void *state)
+{
+    if (state == NULL) {
+        return 1u;
+    }
+    return c->v2 ? backend->lag_motion_v2 : backend->lag_motion;
+}
+
+/* After read `frame`: every frame due by then has motion2 and motion3 (the
+ * last two keys), recorded in `early` (frame-major, MFT_MAX_KEYS a frame). */
+static inline int mft_check_early(VmafContext *vmaf, const MftCase *c, unsigned frame, unsigned lag,
+                                  double *early)
+{
+    const size_t count = mft_key_count(c);
+    for (unsigned i = 0; i <= frame; i++) {
+        for (size_t k = count - 2u; k < count && mft_final_after(i, lag) <= frame; k++) {
+            if (vmaf_feature_score_at_index(vmaf, c->keys[k],
+                                            &early[((size_t)i * MFT_MAX_KEYS) + k], i)) {
+                (void)fprintf(stderr, "\n%s: %s of frame %u not final after frame %u\n", c->name,
+                              c->keys[k], i, frame);
+                return -EAGAIN;
+            }
+        }
+    }
+    return 0;
+}
+
+/* The values read early are the values after the flush. */
+static inline int mft_check_unchanged(const MftCase *c, unsigned frames, unsigned lag,
+                                      const double *early, const double *out)
+{
+    const size_t count = mft_key_count(c);
+    for (unsigned i = 0; i < frames && mft_final_after(i, lag) < frames; i++) {
+        for (size_t k = count - 2u; k < count; k++) {
+            if (!vmaf_test_identical_f64(early[((size_t)i * MFT_MAX_KEYS) + k],
+                                         out[((size_t)i * count) + k])) {
+                (void)fprintf(stderr, "\n%s: %s of frame %u changed after it was final\n", c->name,
+                              c->keys[k], i);
+                return -EINVAL;
+            }
+        }
+    }
+    return 0;
+}
+
 /* A context with the case's CPU extractor, or with its twin on `state`. */
 static inline int mft_case_context(VmafContext **vmaf, const MftCase *c, const MftBackend *backend,
                                    void *state)
@@ -236,10 +298,15 @@ static inline int mft_case_scores(const MftCase *c, const MftBackend *backend, v
                                   unsigned bpc, unsigned frames, double *out)
 {
     const size_t count = mft_key_count(c);
+    const unsigned lag = mft_lag(c, backend, state);
+    double early[MFT_MAX_KEYS * MFT_MAX_FRAMES] = {0.0};
     VmafContext *vmaf = NULL;
     int err = mft_case_context(&vmaf, c, backend, state);
     for (unsigned frame = 0; frame < frames && !err; frame++) {
         err = mft_feed_frame(vmaf, bpc, frame);
+        if (!err) {
+            err = mft_check_early(vmaf, c, frame, lag, early);
+        }
     }
     if (!err) {
         err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
@@ -251,6 +318,9 @@ static inline int mft_case_scores(const MftCase *c, const MftBackend *backend, v
                           state ? backend->label : "cpu", c->name, frames, c->keys[i % count],
                           (unsigned)(i / count));
         }
+    }
+    if (!err) {
+        err = mft_check_unchanged(c, frames, lag, early, out);
     }
     const int closed = vmaf ? vmaf_close(vmaf) : 0;
     return err ? err : closed;

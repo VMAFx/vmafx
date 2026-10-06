@@ -168,6 +168,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_use_feature(VmafxContext *context, const 
 /**
  * Register the extractors of every feature `model` reads and mount the model. The context takes a
  * reference to the model until it is destroyed (ADR-1755); the caller may release its own at once.
+ * A model whose name another model of the context already has is refused with VMAFX_E_INVALID
+ * naming it: its scores would be the other model's (a model set may share the name).
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model,
@@ -175,7 +177,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxMod
 
 /**
  * Register the extractors of every member of `set` and mount the members. The context takes a
- * reference to the set until it is destroyed.
+ * reference to the set until it is destroyed. A set whose name another set of the context already
+ * has is refused with VMAFX_E_INVALID naming it.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *set,
@@ -210,8 +213,8 @@ VMAFX_EXPORT VmafxStatus vmafx_feature_resolve(const VmafxContext *context, cons
 
 /**
  * How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1),
- * or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to
- * `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL.
+ * or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads more frames stay
+ * in flight until their work finishes: vmafx_context_max_in_flight() gives the bound. 0 for NULL.
  * @since 0.1
  */
 VMAFX_EXPORT uint32_t vmafx_context_frame_retention(const VmafxContext *context);
@@ -263,6 +266,19 @@ VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const 
 VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
+
+/**
+ * The most frames of each input the context holds when vmafx_submit() returns, whatever the
+ * producer's rate: with `R` = vmafx_context_frame_retention() and `T` = n_threads, `R + 2 * T * (R
+ * + 1)`, plus 1 on a device backend. Without worker threads a submit scores its frame before it
+ * returns (`R`). With them a submit waits while `T` frames wait for a worker (backpressure), so at
+ * most `2 * T` frames are in flight, each holding itself and its `R` earlier reference frames; a
+ * device extractor holds its frame until the next submit collects it. A producer that recycles its
+ * frames (a texture ring, a frame pool) needs this many plus the frame it is filling. 0 for NULL.
+ * Added in ABI 0.1.8.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_max_in_flight(const VmafxContext *context);
 
 /**
  * Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a

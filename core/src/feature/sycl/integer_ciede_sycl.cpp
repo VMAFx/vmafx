@@ -251,6 +251,36 @@ static bool ciede_alloc_buffers(CiedeStateSycl *s)
     return s->d_terms != nullptr && s->h_terms != nullptr && s->d_tables != nullptr;
 }
 
+/* Every plane of both pictures into d_ref / d_dis: staged on the host and
+ * enqueued plane by plane so the DMA of one plane overlaps the host packing
+ * the next, or, for frames of the VMAFx API on this device, copied on the
+ * device (ADR-2091; the frame's planes are never read on the host). */
+static int upload_planes(sycl::queue &q, const CiedeStateSycl *s, const VmafPicture *ref_pic,
+                         const VmafPicture *dist_pic)
+{
+    const bool device =
+        vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic);
+    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
+        const size_t row = s->row_bytes[p];
+        if (device) {
+            const int err = vmaf_sycl_picture_read_plane(ref_pic, p, &q, s->d_ref[p], row, row,
+                                                         s->plane_h[p], nullptr) ||
+                            vmaf_sycl_picture_read_plane(dist_pic, p, &q, s->d_dis[p], row, row,
+                                                         s->plane_h[p], nullptr);
+            if (err) {
+                return -EIO;
+            }
+            continue;
+        }
+        const size_t bytes = row * s->plane_h[p];
+        stage_plane(ref_pic, p, s->h_ref[p], row, s->plane_h[p]);
+        q.memcpy(s->d_ref[p], s->h_ref[p], bytes);
+        stage_plane(dist_pic, p, s->h_dis[p], row, s->plane_h[p]);
+        q.memcpy(s->d_dis[p], s->h_dis[p], bytes);
+    }
+    return 0;
+}
+
 /* True when `pic` has the geometry the staging buffers were sized for. */
 static bool ciede_picture_matches(const CiedeStateSycl *s, const VmafPicture *pic)
 {
@@ -335,15 +365,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->tables_uploaded = true;
     }
 
+    if (upload_planes(q, s, ref_pic, dist_pic) != 0)
+        return -EIO;
     CiedeKernelArgs args = {};
-    /* Stage and enqueue plane by plane so the DMA of one plane overlaps
-     * the host packing the next. */
     for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
-        const size_t bytes = s->row_bytes[p] * s->plane_h[p];
-        stage_plane(ref_pic, p, s->h_ref[p], s->row_bytes[p], s->plane_h[p]);
-        q.memcpy(s->d_ref[p], s->h_ref[p], bytes);
-        stage_plane(dist_pic, p, s->h_dis[p], s->row_bytes[p], s->plane_h[p]);
-        q.memcpy(s->d_dis[p], s->h_dis[p], bytes);
         args.ref[p] = s->d_ref[p];
         args.dis[p] = s->d_dis[p];
     }

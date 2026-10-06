@@ -17,6 +17,7 @@
  * (admission, frame_import_admit.c).
  */
 
+#include <assert.h>
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,6 +26,16 @@
 #include "error_internal.h"
 #include "frame_import_hooks.h"
 #include "internal.h"
+#include "config.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
+#endif
 #include "ref.h"
 #include "status_gen.h"
 #include "vmafx/vmafx.h"
@@ -112,6 +123,21 @@ static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
         if (fence) {
             vmafx_host_fence_signal(fence);
         }
+#ifdef HAVE_CUDA
+        if (frames[i]->residency == VMAFX_BACKEND_CUDA) {
+            vmafx_cuda_release_early(frames[i]); /* its CUDA_EVENT release fences */
+        }
+#endif
+#ifdef HAVE_SYCL
+        if (frames[i]->residency == VMAFX_BACKEND_SYCL) {
+            vmafx_sycl_release_early(frames[i]); /* its SYCL_EVENT release fences */
+        }
+#endif
+#ifdef HAVE_HIP
+        if (frames[i]->residency == VMAFX_BACKEND_HIP) {
+            vmafx_hip_release_early(frames[i]); /* its HIP_EVENT release fences */
+        }
+#endif
     }
 }
 
@@ -128,7 +154,7 @@ static int engine_read(VmafxContext *context, VmafxFrame *reference, VmafxFrame 
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, ref, dist, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (early) {
         signal_release_early(reference, distorted);
         vmafx_frame_unref(reference);
@@ -190,6 +216,7 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
                           "the engine could not score frame %llu (%d)", (unsigned long long)index,
                           err);
     }
+    vmafx_windows_note_index(context, index); /* RC4 WP4: windows this frame made final */
     return VMAFX_OK;
 }
 
@@ -200,17 +227,19 @@ VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "NULL argument");
     }
+    assert(context->engine); /* vmafx_context_create() fails without one */
     if (vmaf_engine_is_flushed(context->engine)) {
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "the context was flushed already");
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, NULL, NULL, 0);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "context", "flush failed (%d)", err);
     }
+    vmafx_windows_note_flush(context); /* RC4 WP4: every open window completes */
     return VMAFX_OK;
 }
 

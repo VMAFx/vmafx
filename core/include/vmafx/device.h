@@ -50,7 +50,10 @@ typedef struct VmafxDeviceInfo VmafxDeviceInfo;
 struct VmafxDeviceDesc {
     /** Size of this struct as the caller compiled it; set by the _INIT macro. */
     uint32_t struct_size;
-    /** Backend of the device; this release creates CPU devices only. Values: VmafxBackend. */
+    /**
+     * Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend;
+     * another backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
+     */
     uint32_t backend;
     /**
      * Device index within the backend (see vmafx_device_count()); -1: any device of the backend.
@@ -61,8 +64,9 @@ struct VmafxDeviceDesc {
     uint32_t flags;
     /**
      * The caller's runtime objects, which stay the caller's and must outlive the device: CUDA
-     * context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue.
-     * 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2.
+     * context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal
+     * device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI
+     * 0.1.2.
      */
     uintptr_t external[2];
 };
@@ -96,6 +100,12 @@ struct VmafxDeviceInfo {
     uint64_t total_memory;
     /** Name of the device as its runtime reports it (`cpu` for the CPU). */
     const char *name;
+    /**
+     * PCI domain, bus, device and function of the device (a producer on the same GPU has the same,
+     * VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in
+     * ABI 0.1.10.
+     */
+    uint32_t pci[4];
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */

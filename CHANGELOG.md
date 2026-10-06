@@ -49,6 +49,27 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
+- **VMAFx device frames on CUDA (RC4, ADR-1929, ADR-2023).** In a build with
+  the CUDA backend the VMAFx API creates CUDA devices by index or from your
+  context and stream (`vmafx_device_create` with `VMAFX_BACKEND_CUDA`,
+  `vmafx_device_count`, `vmafx_device_info`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  CUDA twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): CUDA device pointers are read where they are, NV12,
+  P010 and P016 are planarised on the device, CUDA arrays and OpenGL textures
+  (the new `VMAFX_MEMORY_GL_TEXTURE`) are read out on the device. Acquire
+  fences of kind `VMAFX_FENCE_CUDA_EVENT` are waited on by the device's
+  stream, and the new `VMAFX_FENCE_GL_SYNC` orders a GL producer's rendering;
+  release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_CUDA_EVENT`) are signalled
+  after the last reader in every context, and the new release callback of
+  `VmafxFrameImport` (`release`, `user`) lets a producer make its stream wait
+  on the release event before it reuses its memory. CUDA frame pools
+  (`vmafx_frame_pool_create` with a CUDA device) hand out device frames.
+  Imported frames score bit for bit as the same frames uploaded from the
+  host. ABI 0.1.7. See
+  [CUDA devices](docs/api/vmafx/index.md#cuda-devices).
+
+
 - **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
   The VMAFx API gains the shared contract of zero-copy frame import:
   device enumeration and information (`vmafx_device_count`,
@@ -72,6 +93,40 @@
   same functions. An imported frame scores bit for bit as the same frame
   created on the host. ABI 0.1.3. See
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
+
+
+- **VMAFx device frames on HIP (RC4, ADR-2092).** In a build with the HIP
+  backend the VMAFx API creates HIP devices by index or from your stream
+  (`vmafx_device_create` with `VMAFX_BACKEND_HIP`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  HIP twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
+  dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
+  and OpenGL textures from an EGL context on the device's GPU; NV12, P010 and
+  P016 are planarised on the device. Acquire fences of kind
+  `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
+  `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
+  `VMAFX_FENCE_GL_SYNC` are checked on the host and waited for by
+  `vmafx_context_import_frame`. Release fences (`VMAFX_FENCE_HOST`,
+  `VMAFX_FENCE_HIP_EVENT`) are signalled after the last reader in every
+  context, and the release callback runs after them. `vmafx_fence_wait`
+  waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
+  build. Imported frames score bit for bit as the same frames uploaded from
+  the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
+  release fence is refused (the ROCm runtime cannot signal one). See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
+- **4:2:2 and 4:4:4 frames import on a device (RC4, ADR-2133, ABI 0.1.9 on the integration branch; 0.1.5 on its lane).**
+  `vmafx_frame_import()` takes semi-planar `VMAFX_PIXEL_FORMAT_NV16`, `P210`,
+  `P216`, `NV24`, `P410`, `P416`, the packed layouts `Y210`, `Y212`,
+  `YUYV422`, `Y410` (Intel XV30), `XV36`, `VUYX`, and `YUV444P_MSB` (NVDEC's
+  10- and 12-bit 4:4:4 words with the sample in the top bits), next to NV12 /
+  P010 / P016. A CUDA, HIP, SYCL or CPU device converts them to planar by a gather,
+  a shift and a mask and nothing else, so an imported frame scores bit for bit
+  as the same frame created on the host. See
+  [Importing a frame](docs/api/vmafx/index.md#importing-a-frame) for the table
+  of layouts and what NVDEC and the Intel and AMD VAAPI decoders emit.
 
 
 - **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
@@ -129,6 +184,72 @@
   device-target arguments `target_width`, `target_height` and
   `target_scaling`, which accept only their defaults until device-targeted
   scoring lands.
+
+
+- **VMAFx device frames on SYCL (RC4, ADR-1929, ADR-2091).** In a build with
+  the SYCL backend the VMAFx API creates SYCL devices on the Level Zero GPUs,
+  by index or in the context of your `sycl::queue` (`vmafx_device_create` with
+  `VMAFX_BACKEND_SYCL`), scores a context on one (`vmafx_context_use_device`;
+  features registered afterwards run on their SYCL twins) and imports frames
+  without a copy through the host (`vmafx_frame_import`): USM planes of any
+  pitch, and on Linux dma-bufs (linear, Intel Y-tiled and Tile4, de-tiled on
+  the device) and OpenGL textures (exported through EGL as dma-bufs). NV12,
+  P010 and P016 are planarised on the device, and every SYCL twin, the chroma
+  twins included, reads imported frames. Acquire fences of kind
+  `VMAFX_FENCE_SYCL_EVENT` are waited on by the device, `VMAFX_FENCE_SYNC_FILE`
+  and `VMAFX_FENCE_GL_SYNC` and a dma-buf's own write fences are checked on
+  the host; release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_SYCL_EVENT`) and
+  the release callback signal after the last reader in every context. SYCL
+  frame pools hand out device frames. Imported frames score bit for bit as
+  the same frames uploaded from the host. Windows shared textures and
+  `sync_file` release fences are refused for now. See
+  [SYCL devices](docs/api/vmafx/index.md#sycl-devices).
+
+
+- **VMAFx imports Vulkan frames (RC4, ADR-2152).** In a build with the CUDA,
+  SYCL or HIP backend, `vmafx_frame_import` takes frames a Vulkan producer
+  exported (FFmpeg's Vulkan decode and filters, libplacebo, a GStreamer
+  Vulkan element) as `VMAFX_MEMORY_VULKAN`, without a copy through the host
+  and without the library creating any Vulkan object. The descriptor names
+  how the memory was exported (`vulkan_handle_type`), the images' tiling
+  (`vulkan_tiling`), dedicated allocations (`vulkan_flags`) and the
+  producer's GPU (`vulkan_pci`; `VmafxDeviceInfo.pci` gives each device's
+  PCI location); `acquire_more` carries the fences of a frame written under
+  several timelines. A CUDA device reads OPTIMAL images as CUDA arrays and
+  LINEAR images and buffers as device pointers, waits on the producer's
+  timeline semaphores (`VMAFX_FENCE_VULKAN_SEMAPHORE`) on its stream and
+  signals them back behind the last reader (`vmafx_frame_signal_on_release`).
+  SYCL and HIP devices read LINEAR and DRM-modifier frames through their
+  dma-buf paths, with a sync_file of the producer's write as the acquire
+  fence and a host release fence. Imported frames score bit for bit as the
+  same frames uploaded from the host. Memory of another GPU, a plane of a
+  multi-plane image, Windows handles, OPTIMAL tiling on SYCL and HIP and
+  Vulkan semaphores on SYCL and HIP are refused, each naming its field.
+  ABI 0.1.10 on the integration branch (0.1.5 on its lane).
+  `vmafx_fence_destroy` closes a `VMAFX_FENCE_SYNC_FILE`
+  descriptor in every build. See
+  [Vulkan frames](docs/api/vmafx/index.md#vulkan-frames).
+
+
+- **VMAFx window scores and the window clock (RC4, ADR-1852, ADR-2074).**
+  The VMAFx API gains asynchronous pooled scores over a range of frames:
+  `vmafx_window_submit` takes a `VmafxWindowRequest` (a model, a model set or
+  a feature, a set of pooling methods `VmafxPoolMask`, `first` / `last`, an
+  optional callback) and returns at once; `vmafx_window_poll`,
+  `vmafx_window_wait` and the callback deliver a `VmafxWindowResult` (one
+  value per method, `n_frames`, `n_scored`, a partial flag) once every frame
+  of the window is final, with the values of the synchronous pooled call bit
+  for bit; `vmafx_window_release` cancels or frees it. Each context's
+  completion thread finds completion as worker threads finish frames, so a
+  window completes whether or not the producer calls again; callbacks run on
+  a separate callback thread. `vmafx_flush` completes
+  open windows over the frames the stream had. `VmafxWindowClock`
+  (`vmafx_window_clock_create`, `_frame`, `_finish`, `_destroy`) cuts a stream
+  into windows of `n_stats` seconds or `n_stats_frames` frames (#2138), and
+  `vmafx_context_max_in_flight` reports the most frames a context holds after
+  a submit (#2238). Windows over `motion2` / `motion3`, and so over VMAF
+  models, complete one frame after their last frame (ADR-2090). ABI 0.1.8. See
+  [window scores](docs/api/vmafx/windows.md).
 
 
 - **vmafx-controller reads and enforces its tenant configuration
@@ -1047,6 +1168,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   sweep).
 
 
+- **The CUDA MS-SSIM twin no longer copies frames through the host.**
+  `float_ms_ssim_cuda` converted every plane of every frame on the host
+  (a device-to-host copy, a wait, `picture_copy()` and an upload); the
+  conversion now runs on the device with the same arithmetic, so its scores
+  are unchanged and the frame stays on the GPU.
+
+
 - **The parity gate covers `speed_chroma` on CUDA, at `5e-6`.**
   `speed_chroma_cuda` reproduces the CPU extractor's arithmetic and rounds
   `log2` correctly; the CPU extractor calls the C library's `log2f`, and
@@ -1452,6 +1580,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `_avx512`) are removed.
 
 
+- **`float_vif_hip` runs for `float_vif` under `--backend hip` by default
+  (ADR-2092).** The build option `enable_float_vif_hip_autodispatch` now
+  defaults to `true`, so `--backend hip --feature float_vif`, models that
+  read `float_vif` and a VMAFx context on a HIP device run the HIP twin, which
+  returns the CPU's scores bit for bit (ADR-1444), instead of the CPU
+  extractor. Build with `-Denable_float_vif_hip_autodispatch=false` for the
+  old behaviour, where the twin runs only as `--feature float_vif_hip`. See
+  [`enable_float_vif_hip_autodispatch`](docs/development/build-flags.md#enable_float_vif_hip_autodispatch).
+
+
 - **The cross-backend parity gate covers every registered CUDA, SYCL and HIP
   twin.** `speed_temporal` was the one feature whose three GPU twins were
   registered and compared by no gate cell. It is now a gate feature, with a
@@ -1575,6 +1713,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   previous options are bit-identical to the previous build.
 
 
+- **HIP imports OpenGL textures through EGL dma-buf export**
+  ([ADR-2132](docs/adr/2132-hip-gl-textures-through-egl-dmabuf.md)): GL
+  texture imports on a HIP device now work on the project's ROCm 10.1 (the
+  runtime's GL interop could not read a mapped texture) and need an EGL
+  context, not GLX. A texture exported in the driver's own tiling is copied
+  on the GPU into a linear dma-buf and needs `VMAFX_IMPORT_ALLOW_COPY`;
+  `libgbm.so.1` is needed for that copy. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
 - **The HIP runtime and four HIP host files are clean under clang-tidy
   (ADR-1142).** `core/src/hip/kernel_template.c` and `core/src/hip/common.c`
   convert the stream and event handles they keep as `uintptr_t` through
@@ -1652,6 +1800,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   options matches the CPU exactly, `apsnr_*` included, and the parity gate
   passes every HIP cell; see
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **`psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` read device
+  frames on the device (ADR-2092).** Given a frame in HIP device memory, the
+  three twins that staged planes on the host copy or convert them on the
+  device (`float_ms_ssim_hip` builds level 0 with a kernel of the same
+  arithmetic as `picture_copy()`); host frames are read as before.
 
 
 - **The vendored Pelorus interop sources are re-vendored at a pin that carries
@@ -1776,6 +1931,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   them on data cleared for redistribution
   ([ADR-1570](docs/adr/1570-tiny-model-dataset-terms-retrain-rc9.md),
   [dataset terms](docs/ai/training-data.md#dataset-terms)).
+
+
+- **`motion2` / `motion3` are final one frame after their frame, not at the
+  flush (RC4, ADR-2090).** The integer motion extractors (`motion`,
+  `motion_v2`) and every GPU twin that derived `motion2` / `motion3` at the
+  end of the stream now write a frame's scores as soon as the frame after it
+  is scored (frame 2 for frames 0 and 1 with `motion_five_frame_window`); the
+  last frame's scores still come with the flush. The values are unchanged,
+  bit for bit: the derivation runs the same statements in the same order and
+  carries the moving average from frame to frame. A per-frame model score, a
+  metadata callback for a model, `vmaf_score_pooled()` over the frames read
+  so far, and a VMAFx window over a VMAF model are therefore available while
+  the stream runs; on CUDA, `motion_cuda` completes frames per readback
+  batch of eight. See [motion](docs/metrics/motion.md#when-motion2-and-motion3-are-final).
 
 
 - **Building `vmafx-node` now generates its eBPF object; none is committed
@@ -3688,6 +3857,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (Netflix/vmaf#1305).
 
 
+- **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
+  read both input pictures with the pitch of the engine's own device
+  pictures, so a CUDA picture with another pitch (a frame imported where its
+  producer holds it) scored wrong VIF values; it now uses each picture's
+  stride.
+
+
 - **The Python extension builds again on every compiler.**
   `compat/python-vmaf/core/adm_dwt2_cy.pyx` re-declares `adm.c`'s static
   `init_dwt_band_d()` for Cython. PR #1859 changed that helper's cursor from
@@ -3743,6 +3919,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   compatibility clause (Article 5, GPL v2 and v3 in its Appendix) allows to be
   distributed under the GPL. The object loads as before; only its licence
   section changed.
+
+
+- **A score read of a frame still on a worker thread answered "invalid"
+  (RC4, ADR-2090).** `vmaf_feature_score_at_index()` waited for the worker
+  threads only when the frame's slot existed but was unwritten; for a fed
+  frame whose feature had no slot yet (its first score, or a frame past the
+  first eight) it returned `-EINVAL` at once. It now waits for the frames in
+  flight before it answers, as the documentation of `-EAGAIN` describes; a
+  feature name no extractor writes still returns `-EINVAL`.
 
 
 - **Float extractors report their errors through the log (ADR-1906).** The
@@ -4636,6 +4821,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([licensing](docs/licensing.md#models)).
 
 
+- **A model collection's score can be read more than once.**
+  `vmaf_score_at_index_model_collection()` failed with `-EINVAL` when the
+  frame had been scored before, and so did
+  `vmaf_score_pooled_model_collection()` over a range holding a frame already
+  scored per frame (the collector refused to write the members' scores of
+  that frame a second time, `feature "..." cannot be overwritten`). A frame
+  already predicted now returns its stored bootstrap scores, as a single
+  model's `vmaf_score_at_index()` does; the values are the first
+  prediction's, bit for bit.
+
+
 - **The tiny-model registry validator no longer validates less when `jsonschema` is
   missing.** `ai/scripts/validate_model_registry.py` used to fall back to a
   four-field structural check and print `OK`; it now exits 2 and names the
@@ -4698,6 +4894,19 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `VMAFX_CONTROLLER_TLS` / `_CA_FILE` / `_SERVER_NAME`. Both programs refuse to
   send a JWT whose `exp` has passed and say which file holds it; a malformed
   combination stops the operator at startup.
+
+
+- **Feature options with fractions work in any numeric locale.** A program
+  that set a decimal-comma locale (`setlocale(LC_ALL, "")` under `de_DE`,
+  `fr_FR` and similar) could not use the default model `vmaf_v1.0.16_3d0h`:
+  `vmaf_use_features_from_model()` returned `-EINVAL`, because the option
+  parser read `0.7` with `strtod()` in the caller's locale and stopped at the
+  period. The feature dictionary's number normalisation had the same fault and
+  could store `0.02` as `0` or `0,02`, and a feature named after a fractional
+  option came out as `..._0,7`, so a model never found its scores. All three
+  now parse and format option numbers
+  in the C locale on the calling thread only, as the model reader and the report
+  writers already do; the caller's locale is left as it was.
 
 
 - **The vendored Pelorus x265 CSV reader builds without warnings under an

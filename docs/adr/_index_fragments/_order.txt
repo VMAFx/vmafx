@@ -1287,3 +1287,11 @@
 2044-vmafx-option-groups-scoring-contract
 2073-vmafx-provenance-record
 2094-libvmaf-compat-library-split
+2023-vmafx-cuda-device-frames
+2074-vmafx-window-scores
+2090-motion-window-incremental
+2092-vmafx-hip-device-frames
+2132-hip-gl-textures-through-egl-dmabuf
+2133-vmafx-import-422-444-formats
+2091-vmafx-sycl-device-frames
+2152-vmafx-vulkan-frame-import

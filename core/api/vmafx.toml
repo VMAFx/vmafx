@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.6"
+abi_version = "0.1.10"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -279,6 +279,19 @@ values = [
   { name = "VMAFX_PIXEL_FORMAT_NV12", value = 16, doc = "4:2:0, a luma plane and one plane of interleaved Cb/Cr bytes; vmafx_frame_import() only, the frame it makes is YUV420P at 8 bits. Added in ABI 0.1.2." },
   { name = "VMAFX_PIXEL_FORMAT_P010", value = 17, doc = "NV12 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV420P at 10 bits (each sample shifted down by 6, ADR-1679). Added in ABI 0.1.2." },
   { name = "VMAFX_PIXEL_FORMAT_P016", value = 18, doc = "NV12 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV420P at 16 bits. Added in ABI 0.1.2." },
+  { name = "VMAFX_PIXEL_FORMAT_NV16", value = 19, doc = "4:2:2, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per chroma column, full-height rows); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P210", value = 20, doc = "NV16 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P216", value = 21, doc = "NV16 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV422P at 16 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_NV24", value = 22, doc = "4:4:4, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per pixel); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P410", value = 23, doc = "NV24 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P416", value = 24, doc = "NV24 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV444P at 16 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y210", value = 25, doc = "Packed 4:2:2 in one plane: 16-bit little-endian words Y0 Cb Y1 Cr (8 bytes per two pixels) whose 10 bits are the most significant (Intel Y210, FFmpeg y210le); vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y410", value = 26, doc = "Packed 4:4:4 in one plane: one 32-bit little-endian word per pixel, Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29, the top two bits alpha or unused (Intel Y410 and XV30, FFmpeg xv30le); vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_YUYV422", value = 27, doc = "Packed 4:2:2 in one plane: the bytes Y0 Cb Y1 Cr per two pixels (YUY2, FFmpeg yuyv422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y212", value = 28, doc = "Y210 with 12 significant bits (16-bit words, the 12 bits most significant; Intel Y212, FFmpeg y212le); vmafx_frame_import() only, the frame it makes is YUV422P at 12 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_VUYX", value = 29, doc = "Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_XV36", value = 30, doc = "Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it makes is YUV444P at 12 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV444P_MSB", value = 31, doc = "Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample shifted down by 16 - bpc). Added in ABI 0.1.9." },
 ]
 
 [[enums]]
@@ -345,11 +358,13 @@ values = [
   { name = "VMAFX_MEMORY_NONE", value = 0, doc = "Not set; refused by vmafx_frame_import()." },
   { name = "VMAFX_MEMORY_HOST", value = 1, doc = "Host memory the CPU reads: `handle` is the address of the plane's allocation, `offset` the bytes to its first sample." },
   { name = "VMAFX_MEMORY_DEVICE_POINTER", value = 2, doc = "A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context." },
-  { name = "VMAFX_MEMORY_DEVICE_ARRAY", value = 3, doc = "A device array (CUDA array) in the device's context." },
+  { name = "VMAFX_MEMORY_DEVICE_ARRAY", value = 3, doc = "A device array (CUDA or HIP array) in the device's context." },
   { name = "VMAFX_MEMORY_DMABUF", value = 4, doc = "A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives in." },
   { name = "VMAFX_MEMORY_METAL_SURFACE", value = 5, doc = "A shared surface: `handle` is the surface, `plane_index` its plane." },
   { name = "VMAFX_MEMORY_METAL_TEXTURE", value = 6, doc = "A Metal texture per plane: `handle` is the texture." },
   { name = "VMAFX_MEMORY_WIN32_SHARED", value = 7, doc = "A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane." },
+  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf export from an EGL context of the device's GPU, ADR-2132; SYCL through an EGL dma-buf export of each texture, Linux). Added in ABI 0.1.7." },
+  { name = "VMAFX_MEMORY_VULKAN", value = 9, doc = "Vulkan device memory a Vulkan producer exported, one VkDeviceMemory per plane or shared by several (an AVVkFrame, a GStreamer Vulkan image memory): `fd` is the plane's memory exported as VmafxFrameImport.vulkan_handle_type says (Linux; the library duplicates it, yours stays open and yours), `handle` the exported Windows handle; `size` the allocation's size (required), `offset` the plane's first byte in it (the image's bind offset plus its plane's offset), `pitch` its row pitch (LINEAR and DRM_FORMAT_MODIFIER tiling, from vkGetImageSubresourceLayout(); 0 for OPTIMAL), `modifier` its DRM format modifier (DRM_FORMAT_MODIFIER tiling), `plane_index` the plane of a multi-plane image (0 for an image or buffer per plane). The images are in VK_IMAGE_LAYOUT_GENERAL and released to VK_QUEUE_FAMILY_EXTERNAL. Added in ABI 0.1.10." },
 ]
 
 [[enums]]
@@ -363,9 +378,11 @@ values = [
   { name = "VMAFX_FENCE_CUDA_EVENT", value = 2, doc = "A CUDA event (`handle`) of the device's context." },
   { name = "VMAFX_FENCE_HIP_EVENT", value = 3, doc = "A HIP event (`handle`) of the device." },
   { name = "VMAFX_FENCE_SYCL_EVENT", value = 4, doc = "A pointer to a SYCL event (`handle`) of the device's context." },
-  { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`)." },
+  { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`), borrowed: an acquire fence a device without a kernel-scheduled queue checks on the host (HIP)." },
   { name = "VMAFX_FENCE_METAL_SHARED_EVENT", value = 6, doc = "A Metal shared event (`handle`) and the value it reaches when signalled (`value`)." },
   { name = "VMAFX_FENCE_WIN32_SHARED", value = 7, doc = "A Windows shared fence (`handle`, an NT handle) and the value it reaches when signalled (`value`)." },
+  { name = "VMAFX_FENCE_GL_SYNC", value = 8, doc = "An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread, or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports. Added in ABI 0.1.7." },
+  { name = "VMAFX_FENCE_VULKAN_SEMAPHORE", value = 9, doc = "A Vulkan timeline semaphore exported as VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT (`fd`, borrowed: the library duplicates it) or OPAQUE_WIN32 (`handle`), and a value of it (`value`). As an acquire fence the device waits, on the device, for the semaphore to reach `value`; given to vmafx_frame_signal_on_release() the device signals it to `value` behind the frame's last reader. A device that cannot import it refuses it naming the kind; the library never returns one. Added in ABI 0.1.10." },
 ]
 
 [[flags]]
@@ -376,6 +393,40 @@ since = "0.1"
 doc = "How vmafx_frame_import() may bind the producer's memory. 0, the value of a zeroed descriptor, requires zero copy: a layout the device cannot bind is refused, never copied (design section 2.7)."
 bits = [
   { name = "VMAFX_IMPORT_ALLOW_COPY", bit = 0, doc = "A layout the device cannot bind may be copied on the device; the copy is logged once per context. Never a host copy of device memory." },
+]
+
+[[enums]]
+name = "VmafxVulkanHandleType"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "How the memory of a VMAFX_MEMORY_VULKAN import was exported (values equal VkExternalMemoryHandleTypeFlagBits). Added in ABI 0.1.10."
+values = [
+  { name = "VMAFX_VULKAN_HANDLE_NONE", value = 0, doc = "Not set; refused for VULKAN memory." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_FD", value = 1, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT: a descriptor only the producer's driver interprets (`fd`)." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_WIN32", value = 2, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT: an NT handle (`handle`)." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_WIN32_KMT", value = 4, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT: a global share handle (`handle`)." },
+  { name = "VMAFX_VULKAN_HANDLE_DMA_BUF", value = 512, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: a Linux dma-buf (`fd`)." },
+]
+
+[[enums]]
+name = "VmafxVulkanTiling"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Tiling of the images of a VMAFX_MEMORY_VULKAN import (values equal VkImageTiling). Added in ABI 0.1.10."
+values = [
+  { name = "VMAFX_VULKAN_TILING_OPTIMAL", value = 0, doc = "VK_IMAGE_TILING_OPTIMAL: a layout only the producer's driver knows; readable by a device that imports images of that driver (CUDA)." },
+  { name = "VMAFX_VULKAN_TILING_LINEAR", value = 1, doc = "VK_IMAGE_TILING_LINEAR, or a VkBuffer: rows at `pitch`." },
+  { name = "VMAFX_VULKAN_TILING_DRM_FORMAT_MODIFIER", value = 1000158000, doc = "VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT: the layout `modifier` names." },
+]
+
+[[flags]]
+name = "VmafxVulkanFlags"
+header = "vmafx/frame.h"
+type = "u32"
+since = "0.1"
+doc = "Properties of the memory of a VMAFX_MEMORY_VULKAN import. Added in ABI 0.1.10."
+bits = [
+  { name = "VMAFX_VULKAN_DEDICATED", bit = 0, doc = "Each memory object is a dedicated allocation of its image (VkMemoryDedicatedAllocateInfo)." },
 ]
 
 [[flags]]
@@ -689,10 +740,10 @@ since = "0.1"
 sized = true
 doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
 fields = [
-  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device; this release creates CPU devices only." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it." },
   { name = "index", type = "i32", doc = "Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set." },
   { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "How to create the device. Added in ABI 0.1.2." },
-  { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
+  { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
 ]
 
 [[structs]]
@@ -709,6 +760,7 @@ fields = [
   { name = "fence_kinds", type = "u32", doc = "Bit `1 << k` set for each VmafxFenceKind `k` the device waits on and returns as a release fence." },
   { name = "total_memory", type = "u64", doc = "Bytes of device memory; 0 when the backend does not report it (the CPU)." },
   { name = "name", type = "cstr", doc = "Name of the device as its runtime reports it (`cpu` for the CPU)." },
+  { name = "pci", type = "u32", count = 4, doc = "PCI domain, bus, device and function of the device (a producer on the same GPU has the same, VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in ABI 0.1.10." },
 ]
 
 [[structs]]
@@ -749,14 +801,21 @@ sized = true
 doc = "A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT."
 fields = [
   { name = "memory", type = "u32", enum = "VmafxMemoryKind", doc = "What each plane's handle refers to." },
-  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Layout of the producer's planes; NV12, P010 and P016 are converted to planar on the device (a de-interleave, and for P010 a shift), nothing else." },
-  { name = "bpc", type = "u32", doc = "Bits per component: 8 for NV12, 10 for P010, 16 for P016, 8 to 16 for the planar formats." },
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing else." },
+  { name = "bpc", type = "u32", doc = "Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to 16 for the planar formats." },
   { name = "w", type = "u32", doc = "Luma width in pixels." },
   { name = "h", type = "u32", doc = "Luma height in pixels." },
-  { name = "n_planes", type = "u32", doc = "Planes in `plane`: 1 for YUV400P, 2 for NV12 / P010 / P016 (luma, interleaved chroma), else 3." },
+  { name = "n_planes", type = "u32", doc = "Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1 for the packed layouts, else 3." },
   { name = "plane", type = "VmafxImportPlane", count = 3, doc = "Each plane; entries past `n_planes` are ignored." },
   { name = "acquire", type = "VmafxFence", doc = "Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written." },
   { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "0: zero copy only." },
+  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT, HIP_EVENT or SYCL_EVENT release fence can be waited on from here (a producer makes its stream or queue wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.7." },
+  { name = "user", type = "ptr", doc = "Passed to `release`. Added in ABI 0.1.7." },
+  { name = "acquire_more", type = "VmafxFence", count = 2, doc = "Further acquire fences, waited on as `acquire` is, for a producer whose planes are written under several fences (the timeline semaphore of each image of a Vulkan frame with one image per plane). NONE entries are ignored; a device that waits on the device for none of their kinds refuses them naming the entry. Added in ABI 0.1.10." },
+  { name = "vulkan_handle_type", type = "u32", enum = "VmafxVulkanHandleType", doc = "VULKAN memory: how each plane's memory was exported. Ignored for other kinds. Added in ABI 0.1.10." },
+  { name = "vulkan_tiling", type = "u32", enum = "VmafxVulkanTiling", doc = "VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10." },
+  { name = "vulkan_flags", type = "u32", flags = "VmafxVulkanFlags", doc = "VULKAN memory: properties of the memory objects. Added in ABI 0.1.10." },
+  { name = "vulkan_pci", type = "u32", count = 4, doc = "VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10." },
 ]
 
 [[structs]]
@@ -1074,7 +1133,7 @@ name = "vmafx_context_use_model"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Register the extractors of every feature `model` reads and mount the model. The context takes a reference to the model until it is destroyed (ADR-1755); the caller may release its own at once."
+doc = "Register the extractors of every feature `model` reads and mount the model. The context takes a reference to the model until it is destroyed (ADR-1755); the caller may release its own at once. A model whose name another model of the context already has is refused with VMAFX_E_INVALID naming it: its scores would be the other model's (a model set may share the name)."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "model", type = "VmafxModel", pass = "in" },
@@ -1086,7 +1145,7 @@ name = "vmafx_context_use_model_set"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Register the extractors of every member of `set` and mount the members. The context takes a reference to the set until it is destroyed."
+doc = "Register the extractors of every member of `set` and mount the members. The context takes a reference to the set until it is destroyed. A set whose name another set of the context already has is refused with VMAFX_E_INVALID naming it."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "set", type = "VmafxModelSet", pass = "in" },
@@ -1137,7 +1196,7 @@ name = "vmafx_context_frame_retention"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "u32"
-doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL."
+doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads more frames stay in flight until their work finishes: vmafx_context_max_in_flight() gives the bound. 0 for NULL."
 params = [
   { name = "context", type = "VmafxContext", pass = "in_const" },
 ]
@@ -1347,7 +1406,7 @@ name = "vmafx_frame_import"
 header = "vmafx/frame.h"
 since = "0.1"
 returns = "status"
-doc = "A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are; NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and unchanged until the frame's release fence is signalled. The caller holds one reference."
+doc = "A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are; the semi-planar (NV12, NV16, NV24, P010, P016, P210, P216, P410, P416) and packed (Y210, Y212, Y410, XV36, YUYV422, VUYX) layouts and YUV444P_MSB are converted to planar on the device. A layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and unchanged until the frame's release fence is signalled. The caller holds one reference."
 params = [
   { name = "device", type = "VmafxDevice", pass = "in" },
   { name = "desc", type = "VmafxFrameImport", pass = "in" },
@@ -1360,11 +1419,23 @@ name = "vmafx_frame_release_fence"
 header = "vmafx/frame.h"
 since = "0.1"
 returns = "status"
-doc = "A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it."
+doc = "A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT, HIP_EVENT: an event the library records on its stream behind the last reader where the last reference is dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means something only from the frame's release callback (VmafxFrameImport.release) or after a host wait returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it."
 params = [
   { name = "frame", type = "VmafxFrame", pass = "in" },
   { name = "kind", type = "u32", pass = "in" },
   { name = "out", type = "VmafxFence", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_signal_on_release"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Signal a fence of the producer's once the last reference of the frame is gone, in every context it was submitted to: the device signals `signal` behind the frame's last reader, before the frame's release callback runs, so the producer reuses its memory after a wait on its own fence. VULKAN_SEMAPHORE: the semaphore is signalled to `value` on the device (a CUDA device; the producer submits its next write waiting for that value). Call it while holding a reference, before the frame is submitted; up to 3 fences per frame. The fence is borrowed (the library duplicates its descriptor). A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it. Added in ABI 0.1.10."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in" },
+  { name = "signal", type = "VmafxFence", pass = "in" },
   { name = "error", type = "VmafxError", pass = "error" },
 ]
 
@@ -1918,6 +1989,249 @@ params = [
   { name = "recorded", type = "VmafxReportFile", pass = "in_const" },
   { name = "rerun", type = "VmafxReportFile", pass = "in_const", nullable = true },
   { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
+# Window scores (RC4 WP4, ADR-2074; design section 2.8, #2138, #2238).
+# Owned by WP4: every entry from here to the libvmaf_bridge.h functions.
+# Added in ABI 0.1.8 (node VMAFX_0.1, ADR-1897).
+
+[[enums]]
+name = "VmafxWindowTarget"
+header = "vmafx/score.h"
+since = "0.1"
+doc = "What a window pools. Added in ABI 0.1.8."
+values = [
+  { name = "VMAFX_WINDOW_TARGET_NONE", value = 0, doc = "Not set; refused by vmafx_window_submit()." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL", value = 1, doc = "The scores of `model`, as vmafx_score_pooled() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL_SET", value = 2, doc = "The bootstrap scores of `model_set`, as vmafx_score_pooled_model_set() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_FEATURE", value = 3, doc = "The scores of `feature`, as vmafx_feature_score_pooled() pools them." },
+]
+
+[[flags]]
+name = "VmafxPoolMask"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "A set of pooling methods: bit `1 << p` for each VmafxPool `p`. Bit 0 (VMAFX_POOL_NONE) is not a method. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_POOL_MASK_MIN", bit = 1, doc = "VMAFX_POOL_MIN." },
+  { name = "VMAFX_POOL_MASK_MAX", bit = 2, doc = "VMAFX_POOL_MAX." },
+  { name = "VMAFX_POOL_MASK_MEAN", bit = 3, doc = "VMAFX_POOL_MEAN." },
+  { name = "VMAFX_POOL_MASK_HARMONIC_MEAN", bit = 4, doc = "VMAFX_POOL_HARMONIC_MEAN." },
+  { name = "VMAFX_POOL_MASK_MEDIAN", bit = 5, doc = "VMAFX_POOL_MEDIAN." },
+  { name = "VMAFX_POOL_MASK_PERC5", bit = 6, doc = "VMAFX_POOL_PERC5." },
+  { name = "VMAFX_POOL_MASK_PERC10", bit = 7, doc = "VMAFX_POOL_PERC10." },
+  { name = "VMAFX_POOL_MASK_PERC20", bit = 8, doc = "VMAFX_POOL_PERC20." },
+]
+
+[[flags]]
+name = "VmafxWindowFlags"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "What is true of a window result or a window span. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_WINDOW_PARTIAL", bit = 0, doc = "The stream ended inside the window: a result pooled fewer frames than it asked for (the context was flushed before frame `last`); a span is the last window of the stream, cut off by vmafx_window_clock_finish()." },
+]
+
+[[handles]]
+name = "VmafxWindow"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_release"
+doc = "An asynchronous pooled score over a range of frames (vmafx_window_submit()). Owns its result until released. Added in ABI 0.1.8."
+
+[[handles]]
+name = "VmafxWindowClock"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_clock_destroy"
+doc = "Cuts a stream of frames into windows of `n_stats` seconds or `n_stats_frames` frames (#2138). Holds no context; one per stream. Added in ABI 0.1.8."
+
+[[callbacks]]
+name = "VmafxWindowCallback"
+header = "vmafx/score.h"
+returns = "void"
+since = "0.1"
+doc = "Called once when a window completes, on the context's callback thread (a library thread, never the caller's, apart from the completion thread so a slow callback holds up no window), in completion order. `result` is valid during the call; the same result stays readable with vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and vmafx_window_release() (also on its own window) and must not call any other function on the window's context: no vmafx_submit(), no vmafx_flush(). Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in" },
+  { name = "result", type = "VmafxWindowResult", pass = "in_const" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[structs]]
+name = "VmafxWindowRequest"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What to pool; the matching one of `model`, `model_set` and `feature` is set, the other two are ignored." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "Pooling methods, at least one." },
+  { name = "first", type = "u64", doc = "First frame index (inclusive)." },
+  { name = "last", type = "u64", doc = "Last frame index (inclusive), at most 4294967295 (the engine's frame index)." },
+  { name = "model", type = "VmafxModel", const = true, doc = "The model of a MODEL window; the window holds a reference until it is released." },
+  { name = "model_set", type = "VmafxModelSet", const = true, doc = "The model set of a MODEL_SET window; the window holds a reference until it is released." },
+  { name = "feature", type = "cstr", doc = "The feature of a FEATURE window, as vmafx_feature_score_pooled() names it (copied)." },
+  { name = "on_complete", type = "VmafxWindowCallback", doc = "Called once when the window completes; NULL: observe completion with vmafx_window_poll() or vmafx_window_wait()." },
+  { name = "user", type = "ptr", doc = "Passed to `on_complete`." },
+]
+
+[[structs]]
+name = "VmafxWindowResult"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(), vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first + n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "status", type = "status", doc = "VMAFX_OK when every requested method has its value; otherwise why the window has none, for example VMAFX_E_RANGE when no scored frame of the window was in the stream, VMAFX_E_NOTFOUND when its feature or a feature its model reads was never scored, VMAFX_E_INVALID when the context was destroyed first. The failure is also logged to the context." },
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL when the stream ended before frame `last`." },
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What the window pooled." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "The requested methods; `value[p]` is set for each bit `1 << p`." },
+  { name = "first", type = "u64", doc = "First frame index, as requested." },
+  { name = "last", type = "u64", doc = "Last frame index, as requested." },
+  { name = "n_frames", type = "u64", doc = "Frames pooled over: `last - first + 1`, fewer for a partial window." },
+  { name = "n_scored", type = "u64", doc = "Frames of those the context scored (every `n_subsample`-th index) and the values summarise." },
+  { name = "value", type = "f64", count = 9, doc = "Indexed by VmafxPool: the pooled score of each requested method (the bagging score for a model set); 0 elsewhere." },
+  { name = "stddev", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled standard deviation per method; 0 otherwise." },
+  { name = "ci95_lo", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled lower bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "ci95_hi", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled upper bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "name", type = "cstr", doc = "The model's name, the model set's name or the feature; lives as long as the window." },
+]
+
+[[structs]]
+name = "VmafxWindowClockConfig"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "n_stats", type = "f64", doc = "Window length in seconds, finite and above 0, rounded to whole nanoseconds (at least 1); 0: windows by frame count. Window `k` holds the frames whose presentation time lies in `[t0 + k * n_stats, t0 + (k + 1) * n_stats)`, `t0` the first frame's." },
+  { name = "n_stats_frames", type = "u64", doc = "Window length in frames; 0: windows by time. Window `k` holds the frames whose index lies in `[i0 + k * n_stats_frames, i0 + (k + 1) * n_stats_frames)`, `i0` the first frame's." },
+]
+
+[[structs]]
+name = "VmafxWindowSpan"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL for the last window of the stream when the stream ended inside it." },
+  { name = "window", type = "u64", doc = "Window number `k`. Windows without a frame (a gap in the stream) are skipped, so numbers can jump." },
+  { name = "first", type = "u64", doc = "Index of the window's first frame." },
+  { name = "last", type = "u64", doc = "Index of the window's last frame." },
+  { name = "n_frames", type = "u64", doc = "Frames the clock saw in the window." },
+  { name = "start_ns", type = "i64", doc = "Windows by time: the window's start, `t0 + k * n_stats`, in the stream's nanoseconds. Windows by frame count: the presentation time of its first frame." },
+  { name = "end_ns", type = "i64", doc = "Windows by time: the window's end, `t0 + (k + 1) * n_stats` (exclusive). Windows by frame count: the presentation time of its last frame." },
+]
+
+[[functions]]
+name = "vmafx_window_submit"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Ask for `request.target` pooled with every method of `request.pool_mask` over frames `first` to `last`, and return at once. The window completes when every scored frame of its range is final, or at vmafx_flush(), which completes it over the frames the stream had and flags it VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's scores one submit later. motion2 / motion3 of a frame, and so every VMAF model, are final once the frame after it is scored (ADR-2090); the last frame's at vmafx_flush(). The context's completion thread (started by its first window) finds completion: the worker that finishes a frame, a submit, a flush, an import and this call wake it, so a window completes whether or not the feeding thread calls again; a window already final completes right after this call. At most 1024 windows of a context are open; one more is VMAFX_E_BUSY naming `context`. The caller holds the window until vmafx_window_release(). Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "request", type = "VmafxWindowRequest", pass = "in" },
+  { name = "out", type = "VmafxWindow", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_poll"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "VMAFX_OK and the result when the window has completed, VMAFX_PENDING (no error, `out` untouched) while it has not. Thread-safe: may run on any thread while the context is in use. A completed window's own failure is in `out.status`, not in the return value. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_wait"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "vmafx_window_poll() after waiting up to `timeout_ns` nanoseconds for the window to complete (UINT64_MAX: without a limit); VMAFX_PENDING, without an error, when it has not by then. Thread-safe, also on the thread that feeds the context: the completion thread completes the window. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "timeout_ns", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_release"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Release the caller's window, completed or not. An open window is cancelled: its callback never runs. A callback of the window running on the callback thread is waited for, unless this call is made from that callback. Thread-safe; NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_context_max_in_flight"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "The most frames of each input the context holds when vmafx_submit() returns, whatever the producer's rate: with `R` = vmafx_context_frame_retention() and `T` = n_threads, `R + 2 * T * (R + 1)`, plus 1 on a device backend. Without worker threads a submit scores its frame before it returns (`R`). With them a submit waits while `T` frames wait for a worker (backpressure), so at most `2 * T` frames are in flight, each holding itself and its `R` earlier reference frames; a device extractor holds its frame until the next submit collects it. A producer that recycles its frames (a texture ring, a frame pool) needs this many plus the frame it is filling. 0 for NULL. Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_create"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "A clock that cuts a stream into windows of `config.n_stats` seconds or `config.n_stats_frames` frames (#2138). Both set, neither set, or `n_stats` negative, not finite or below 1 ns is VMAFX_E_INVALID naming the field. Added in ABI 0.1.8."
+params = [
+  { name = "config", type = "VmafxWindowClockConfig", pass = "in" },
+  { name = "out", type = "VmafxWindowClock", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_frame"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Tell the clock frame `index` at presentation time `pts_ns`. When the frame lies past the open window, that window is complete: VMAFX_OK, its span in `out`, and the frame opens the next window. Otherwise VMAFX_PENDING (no error, `out` untouched). Indices increase strictly and times never decrease, else VMAFX_E_INVALID naming `index` or `pts_ns`. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "pts_ns", type = "i64", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_finish"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "End of stream: VMAFX_OK and the span of the open window, flagged VMAFX_WINDOW_PARTIAL unless it is a full window by frame count; VMAFX_PENDING (no error, `out` untouched) when no window is open. Afterwards the clock takes no more frames. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_destroy"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Free the clock. NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in", nullable = true },
 ]
 
 # ---------------------------------------------------------------------------

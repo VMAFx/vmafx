@@ -37,7 +37,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_adm_cuda.c`, `integer_ssim_cuda.c` | [kernel-templates](AGENTS.d/kernel-templates.md) | Kernel templates mirror HIP, enforce extern C, mul24 ban, register caps, and LDG loads. |
 | `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [module-lifetime](AGENTS.d/module-lifetime.md) | Every successfully loaded CUDA module has an owned handle and context. |
 | `integer_moment_cuda.c`, `integer_moment_cuda.h`, `integer_moment/moment_score.cu` | [moment](AGENTS.d/moment.md) | float_moment_cuda reproduces CPU float_moment bit for bit, past 2^53 units too. |
-| `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on CUDA twins = ring of three raw planes + CPU window function at flush; bit-identical. |
+| `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | CUDA five-frame window = ring of three raw planes + CPU window function per frame and at flush; bit-identical. |
 | `integer_motion_v2_cuda.c`, `integer_motion_v2_cuda.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 CPU mirror contract and score emission parity. |
 | `integer_motion_cuda.c`, `integer_motion_cuda.h`, `integer_motion_sad_cuda.c` | [motion](AGENTS.d/motion.md) | Motion parity, dispatch bottleneck mitigation, SAD batch depth, and output sets. |
 | `integer_ms_ssim_cuda.c`, `integer_ms_ssim_cuda.h` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option flags, and clip_db ceiling semantics. |
@@ -50,4 +50,4 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `ssim_cuda.c`, `integer_ssim_cuda.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fmad-false flags. |
 | `ssimulacra2_cuda.c`, `ssimulacra2_cuda.h` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_cuda is device-resident and computes bit-exact CPU scores. |
 | `integer_psnr_cuda.c`, `integer_ciede_cuda.c` | [twin-update-rules](AGENTS.d/twin-update-rules.md) | Cross-backend twin parity table and synchronised update requirements. |
-| `integer_vif_cuda.c`, `integer_vif_cuda.h`, `integer_vif/filter1d.cu` | [vif](AGENTS.d/vif.md) | vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing enable_chroma, picture-stream reset. |
+| `integer_vif_cuda.c`, `integer_vif_cuda.h`, `integer_vif/filter1d.cu` | [vif](AGENTS.d/vif.md) | vif_cuda: 16-px minimum, CPU log2 table, names before clearing enable_chroma, stream reset, per-picture pitch. |

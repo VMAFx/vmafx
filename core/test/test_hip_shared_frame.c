@@ -23,7 +23,10 @@
  *     vmaf_hip_shared_frame_end(), so a caller may refill them at once
  *     (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18);
  *   - a frame's planes stay untouched while a twin can still read them, and
- *     a twin that skipped a frame makes the next upload wait for the device.
+ *     a twin that skipped a frame makes the next upload wait for the device;
+ *   - device pictures of the VMAFx API (ADR-2092) are copied on their
+ *     library stream, never uploaded from the host, and every twin's stream,
+ *     the later ones' included, waits for the copies on the device.
  */
 
 #include <errno.h>
@@ -38,6 +41,7 @@
 #include "test.h"
 
 #include "hip/common.h"
+#include "hip/hip_handle.h"
 #include "hip/picture_hip.h"
 #include "hip/shared_frame.h"
 #include "libvmaf/picture.h"
@@ -126,8 +130,104 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
     return 0;
 }
 
+/* Device pictures (ADR-2092): a picture listed here is a device picture
+ * whose library stream is LIBRARY. */
+#define LIBRARY ((uintptr_t)0x99u)
+static const VmafPicture *g_device_pics[2];
+static unsigned g_copy_calls;
+static unsigned g_planes_copied;
+static uintptr_t g_copy_library;
+static unsigned g_records_on_library;
+static uintptr_t g_waiters[8];
+static unsigned g_n_waiters;
+static unsigned g_events_created;
+static unsigned g_events_destroyed;
+static int g_event_slots[4];
+
+uintptr_t vmaf_hip_picture_device_stream(const VmafPicture *pic)
+{
+    for (unsigned i = 0u; i < 2u; i++) {
+        if (pic != NULL && pic == g_device_pics[i])
+            return LIBRARY;
+    }
+    return 0u;
+}
+
+/* The device-to-device copies of core/src/hip/picture_hip.c, enqueued on the
+ * library stream: done at once here. */
+int vmaf_hip_picture_copy_enqueue(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                  uintptr_t library)
+{
+    g_copy_calls++;
+    g_copy_library = library;
+    for (unsigned i = 0u; i < n_planes; i++) {
+        const VmafHipPlaneUpload *p = &planes[i];
+        const uint8_t *src = p->pic->data[p->plane];
+        uint8_t *dst = p->dst;
+        for (size_t row = 0u; row < p->rows; row++) {
+            (void)memcpy(dst + (row * p->dst_pitch), src + (row * (size_t)p->pic->stride[p->plane]),
+                         p->row_bytes);
+        }
+        g_planes_copied++;
+    }
+    return 0;
+}
+
+hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags)
+{
+    (void)flags;
+    if (g_events_created >= 4u)
+        return hipErrorOutOfMemory;
+    /* The event handle is the address of a slot: opaque, never read. */
+    *event = vmaf_hip_event_of((uintptr_t)&g_event_slots[g_events_created++]);
+    return hipSuccess;
+}
+
+hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream)
+{
+    (void)event;
+    if (vmaf_hip_stream_bits(stream) == LIBRARY)
+        g_records_on_library++;
+    return hipSuccess;
+}
+
+hipError_t hipStreamWaitEvent(hipStream_t stream, hipEvent_t event, unsigned int flags)
+{
+    (void)event;
+    (void)flags;
+    if (g_n_waiters < 8u)
+        g_waiters[g_n_waiters++] = vmaf_hip_stream_bits(stream);
+    return hipSuccess;
+}
+
+hipError_t hipEventDestroy(hipEvent_t event)
+{
+    (void)event;
+    g_events_destroyed++;
+    return hipSuccess;
+}
+
+/* `stream` waited on the library stream's copies. */
+static bool waited(uintptr_t stream)
+{
+    for (unsigned i = 0u; i < g_n_waiters; i++) {
+        if (g_waiters[i] == stream)
+            return true;
+    }
+    return false;
+}
+
 static void counters_reset(void)
 {
+    g_device_pics[0] = NULL;
+    g_device_pics[1] = NULL;
+    g_copy_calls = 0u;
+    g_planes_copied = 0u;
+    g_copy_library = 0u;
+    g_records_on_library = 0u;
+    g_n_waiters = 0u;
+    g_events_created = 0u;
+    g_events_destroyed = 0u;
     g_dev_allocs = 0u;
     g_dev_frees = 0u;
     g_device_syncs = 0u;
@@ -579,6 +679,49 @@ static char *test_arguments_are_checked(void)
     return fixture_close(&fx);
 }
 
+/* ADR-2092: device pictures are copied on their library stream (no host
+ * upload), once per frame, and every twin's stream waits on the device for
+ * the copies of the slot it reads, the twin that found them done included. */
+static char *check_device_twins(Fixture *fx)
+{
+    void *a_ref = NULL;
+    void *a_dis = NULL;
+    void *b_ref = NULL;
+    void *b_dis = NULL;
+    mu_assert("first twin",
+              vmaf_hip_plane_source_acquire_luma(&fx->twin[0], fx->frame, &fx->ref.pic,
+                                                 &fx->dis.pic, STREAM_A, &a_ref, &a_dis) == 0);
+    mu_assert("device planes are copied on the library stream, never uploaded",
+              g_copy_calls == 1u && g_copy_library == LIBRARY && g_upload_calls == 0u &&
+                  g_records_on_library == 1u);
+    mu_assert("the first twin's stream waits for the copies", waited(STREAM_A));
+    mu_assert("second twin",
+              vmaf_hip_plane_source_acquire_luma(&fx->twin[1], fx->frame, &fx->ref.pic,
+                                                 &fx->dis.pic, STREAM_B, &b_ref, &b_dis) == 0);
+    mu_assert("the second twin reuses the slot's planes",
+              b_ref == a_ref && b_dis == a_dis && g_copy_calls == 1u);
+    mu_assert("the second twin's stream waits for the copies too", waited(STREAM_B));
+    mu_assert("the planes hold the frame", luma_holds(a_ref, 50u) && luma_holds(a_dis, 60u));
+    return NULL;
+}
+
+static char *test_device_pictures_are_copied_on_the_library_stream(void)
+{
+    Fixture fx;
+    mu_assert_msg(fixture_open(&fx, 50u, 60u));
+    g_device_pics[0] = &fx.ref.pic;
+    mu_assert("a host and a device picture in one frame are refused",
+              vmaf_hip_shared_frame_begin(fx.frame, &fx.ref.pic, &fx.dis.pic) == -EINVAL);
+    g_device_pics[1] = &fx.dis.pic;
+    mu_assert("begin", fixture_begin(&fx));
+    mu_assert_msg(check_device_twins(&fx));
+    vmaf_hip_shared_frame_end(fx.frame);
+    mu_assert_msg(fixture_close(&fx));
+    mu_assert("the slot events are destroyed with the frame",
+              g_events_destroyed == g_events_created && g_events_created == 1u);
+    return NULL;
+}
+
 static char *run_sharing_tests(void)
 {
     mu_run_test(test_plane_is_uploaded_once_per_frame);
@@ -594,6 +737,7 @@ static char *run_edge_tests(void)
     mu_run_test(test_unshared_requests_use_private_planes);
     mu_run_test(test_failed_upload_is_not_remembered);
     mu_run_test(test_arguments_are_checked);
+    mu_run_test(test_device_pictures_are_copied_on_the_library_stream);
     return NULL;
 }
 

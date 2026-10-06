@@ -178,9 +178,9 @@ generated list of declarations is
 - **HIP** — 19 extractors are registered in `feature_extractor_list[]` and
   resolve through `vmaf_get_feature_extractor_by_name` (T7-10b). See
   [`backends/hip/overview.md`](../backends/hip/overview.md).
-- **`float_vif_hip`** takes part in model-driven dispatch only with the build
-  option `enable_float_vif_hip_autodispatch`, which is off by default
-  ([vif](vif.md)).
+- **`float_vif_hip`** takes part in model-driven dispatch through the build
+  option `enable_float_vif_hip_autodispatch`, on by default since
+  [ADR-2092](../adr/2092-vmafx-hip-device-frames.md) ([vif](vif.md)).
 - **`null`** is a registered no-op extractor used by tests.
 - **`float_ansnr`** was removed (PR #38, ADR-0865): `--feature float_ansnr`
   fails with feature-not-found on a current build. See

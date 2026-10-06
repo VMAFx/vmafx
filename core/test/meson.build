@@ -223,6 +223,16 @@ if get_option('enable_tools')
     endforeach
 endif
 
+# RC4 WP3 CUDA lane (ADR-2023): the cells of the CUDA import bit-exactness test
+# are every CUDA twin declared exact, each registered as the parity gate does.
+# Device-free.
+test('test_vmafx_import_cuda_cells_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_cuda_cells_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # No CUDA, HIP, SYCL or Metal source advances a pointer to samples wider than
 # a byte by a byte stride (the class of an upstream CUDA 16-bit motion defect):
 # a static scan of core/src with planted upstream forms. Device-free.
@@ -376,6 +386,27 @@ test('test_hip_float_psnr_exact_contract',
 # vmaf_read_pictures() announces and ends the frame around the dispatch loop,
 # the shared upload waits, a slot is fenced before it is written), with a
 # planted regression per check.
+# ADR-2092: device-free source guard for the HIP lane of the VMAFx API (twins
+# read device pictures on the device, the null stream waits for the copies,
+# an import submits its work, GL textures are exported as dma-bufs (ADR-2132),
+# dma-bufs are imported with their own size, no faked SYNC_FILE release), with
+# a planted regression per check.
+test('test_vmafx_import_hip_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_hip_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# HISS-19: one EGL export (vmafx/egl_export.c) and one sync-object
+# implementation (vmafx/sync_object.c) for every lane, with planted copies.
+test('test_vmafx_one_egl_export_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_one_egl_export_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_hip_shared_frame_contract',
     import('python').find_installation(),
     args : files('test_hip_shared_frame_contract.py'),
@@ -985,6 +1016,17 @@ test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
 # ADR-1188 — percentile temporal pooling (MEDIAN / PERC5 / PERC10 / PERC20).
 # Pools imported per-frame scores, so it needs no YUV fixture and no model.
+# T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05: a model collection's per-frame
+# score read twice, and its pooled score after a per-frame read of a frame in
+# the range, return the stored values instead of -EINVAL.
+test_model_collection_score_repeat = executable('test_model_collection_score_repeat',
+    ['test.c', 'test_model_collection_score_repeat.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : vmaf_test_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_model_collection_score_repeat', test_model_collection_score_repeat, suite : ['fast'])
+
 test_pool_percentile = executable('test_pool_percentile',
     ['test.c', 'test_pool_percentile.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -1407,6 +1449,17 @@ test_vmafx_import_api = executable('test_vmafx_import_api',
 )
 test('test_vmafx_import_api', test_vmafx_import_api, suite : ['fast'])
 
+# ADR-2133: the CPU reference of the import conversions (semi-planar 4:2:2 /
+# 4:4:4, packed Y210 and Y410 / XV30) on hand-computed bytes.
+test_vmafx_import_convert = executable('test_vmafx_import_convert',
+    ['test.c', 'test_vmafx_import_convert.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_convert', test_vmafx_import_convert, suite : ['fast'])
+
 test_vmafx_import_bitexact = executable('test_vmafx_import_bitexact',
     ['test.c', 'test_vmafx_import_bitexact.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -1425,6 +1478,31 @@ if host_machine.system() == 'linux'
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
     )
     test('test_vmafx_import_fence', test_vmafx_import_fence, suite : ['fast'], timeout : 120)
+
+    # RC4 WP3 (ADR-2023, ADR-2092): the fence machinery the device lanes share,
+    # on the CPU: SYNC_FILE fences polled on the host (a pipe stands in), a
+    # GL_SYNC fence without a GL context, the release-event table.
+    test_vmafx_fence_kinds = executable('test_vmafx_fence_kinds',
+        ['test.c', 'test_vmafx_fence_kinds.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_fence_kinds', test_vmafx_fence_kinds, suite : ['fast'], timeout : 60)
+
+    # RC4 WP3 Vulkan import lane: the device-free checks of VMAFX_MEMORY_VULKAN
+    # descriptors, the CPU device's refusals and the VULKAN_SEMAPHORE fence
+    # kind, white-box on the CPU (no Vulkan driver needed).
+    test_vmafx_import_vulkan_api = executable('test_vmafx_import_vulkan_api',
+        ['test.c', 'test_vmafx_import_vulkan_api.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_import_vulkan_api', test_vmafx_import_vulkan_api, suite : ['fast'],
+        timeout : 60)
 endif
 
 # Engine messages go through vmaf_log(), so a context's sink sees them: no
@@ -1434,6 +1512,46 @@ test('test_engine_log_routing_contract',
     args : files('test_engine_log_routing_contract.py'),
     suite : ['fast'],
 )
+
+# RC4 WP4 (ADR-2074): window scores against the synchronous pooled calls,
+# completion, flush, subsampling, callbacks and refusals (public headers), and
+# the window clock (#2138 n_stats semantics).
+foreach vmafx_window_test : ['test_vmafx_window', 'test_vmafx_window_clock']
+    vmafx_window_exe = executable(vmafx_window_test,
+        ['test.c', vmafx_window_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : libvmaf_public_link,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test(vmafx_window_test, vmafx_window_exe, suite : ['fast'], timeout : 120)
+endforeach
+
+# RC4 WP4 (#2238): the live-plugin harness: textures imported per frame at
+# 60 fps, windows polled from another thread, latency budget, backpressure,
+# no host copy (the counter of the static library). POSIX clocks and
+# threads: Linux only; the 576x324 fixture pair or exit 77.
+if host_machine.system() == 'linux'
+    test_vmafx_window_live = executable('test_vmafx_window_live',
+        ['test.c', 'test_vmafx_window_live.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    # Timed: run alone, not beside other tests (is_parallel).
+    test('test_vmafx_window_live', test_vmafx_window_live, suite : ['fast'], timeout : 120,
+         is_parallel : false)
+    # The harness's windows against the vmaf CLI's per-frame scores of the
+    # same pair, pooled with the engine's arithmetic (#2238 acceptance).
+    test('test_vmafx_window_cli',
+        import('python').find_installation(),
+        args : [files('test_vmafx_window_cli.py'), test_vmafx_window_live, vmaf,
+                meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv'],
+        suite : ['fast'],
+        timeout : 300,
+        is_parallel : false,
+    )
+endif
 
 foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score',
                              'test_vmafx_provenance', 'test_vmafx_report']
@@ -1909,13 +2027,13 @@ endif
 endif
 
 test_dict = executable('test_dict',
-    ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
+    ['test.c', 'test_dict.cpp', '../src/dict.cpp', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
 test_opt = executable('test_opt',
-    ['test.c', 'test_opt.c'],
+    ['test.c', 'test_opt.c', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [math_lib, pthread_dependency, sycl_dependency],
     # wave8_opt_only_objects: test_opt only exercises opt.cpp (vmaf_option_set);
@@ -1949,7 +2067,7 @@ test_ref = executable('test_ref',
 
 test_feature = executable('test_feature',
     ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp',
-     '../src/feature/feature_name.cpp'],
+     '../src/feature/feature_name.cpp', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -2891,6 +3009,18 @@ test('test_metal_integer_psnr_exact_contract',
 test('test_metal_motion_v2_exact_contract',
     import('python').find_installation(),
     args : files('test_metal_motion_v2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-2090: every extractor that derives motion2 / motion3 through
+# vmaf_motion_window_flush() (CPU, CUDA, SYCL, HIP, Metal) also derives them
+# frame by frame with vmaf_motion_window_advance() from a registered
+# `.advance` callback on its own VmafMotionWindowState, and the engine calls
+# advance() after a frame and after a read fence. Device-free; planted cases.
+test('test_motion_window_advance_contract',
+    import('python').find_installation(),
+    args : files('test_motion_window_advance_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
@@ -4629,6 +4759,37 @@ test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
     suite : ['fast'])
 
 if get_option('enable_cuda')
+# RC4 WP3 CUDA lane (ADR-2023): the VMAFx device-frame API on a CUDA device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). Each needs the device (77 without
+# one) and runs alone on it; the bit-exactness run reads the Netflix fixtures
+# and testdata/bbb. Linux: the producer side of the fence tests uses POSIX
+# threads and sleeps, the GL test EGL.
+vmafx_cuda_test_args = vmaf_cflags_common + vmafx_test_dirs + [
+    '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+]
+vmafx_cuda_tests = host_machine.system() != 'linux' ? [] : [
+    ['test_vmafx_import_cuda', 300],
+    ['test_vmafx_import_cuda_bitexact', 900],
+    ['test_vmafx_import_cuda_formats', 1800],
+    ['test_vmafx_import_cuda_fence', 300],
+    ['test_vmafx_import_cuda_gl', 120],
+]
+foreach vmafx_cuda_test : vmafx_cuda_tests
+    vmafx_cuda_name = vmafx_cuda_test[0]
+    vmafx_cuda_exe = executable(vmafx_cuda_name,
+        ['test.c', vmafx_cuda_name + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_cuda_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, cuda_dependency],
+    )
+    test(vmafx_cuda_name, vmafx_cuda_exe,
+        suite : ['gpu', 'cuda'],
+        is_parallel : false,
+        timeout : vmafx_cuda_test[1])
+endforeach
+
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.cpp', '../src/cuda/picture_cuda.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -5131,6 +5292,23 @@ test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06 — float_ms_ssim_cuda reads its input
+# pictures on the device. Device pictures in, every copy with a host side
+# counted while the frames are scored (wrapped entries of the CUDA state's
+# driver table): no upload, no plane copy, only the per-window term readback;
+# every output the CPU's bits. GPU-gated: exits 77 when no CUDA device is
+# visible.
+test_cuda_float_ms_ssim_host_traffic = executable('test_cuda_float_ms_ssim_host_traffic',
+    ['test.c', 'test_cuda_float_ms_ssim_host_traffic.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ms_ssim_host_traffic', test_cuda_float_ms_ssim_host_traffic,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # The same contract without a device: ms_ssim_vert_lcs stores every window's
 # terms at its raster position and the host adds each scale's three sums in
 # index order.
@@ -5596,6 +5774,21 @@ test_motion_five_frame_window = executable('test_motion_five_frame_window',
     dependencies: [pthread_dependency, thread_lib],
 )
 test('test_motion_five_frame_window', test_motion_five_frame_window,
+    suite : ['fast'])
+
+# ADR-2090 — motion2 / motion3 of the integer motion extractors derived frame by
+# frame: vmaf_motion_window_advance() + _flush() equal upstream's flush() over
+# the whole stream bit for bit (both windows, moving average, blend, cap, SADs
+# in and out of order), and on a context frame i is final once frame i + 1 is
+# read, serial and with worker threads, before the flush.
+test_motion_window_incremental = executable('test_motion_window_incremental',
+    ['test.c', 'test_motion_window_incremental.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_motion_window_incremental', test_motion_window_incremental,
     suite : ['fast'])
 
 # Regression: validate_pic_params bpc check used && instead of || — ref/dist
@@ -7350,6 +7543,55 @@ test_hip_shared_frame = executable('test_hip_shared_frame',
 )
 test('test_hip_shared_frame', test_hip_shared_frame, suite : ['fast'])
 
+# RC4 WP3 HIP lane (ADR-2092): the VMAFx device-frame API on a HIP device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). Each needs the device (77 without
+# one) and runs alone on it; the bit-exactness run reads the Netflix fixtures
+# and testdata/bbb. With libgbm the producer side also writes dma-bufs on the
+# device's render node (VMAFX_TEST_HAVE_GBM); the GL test needs an EGL context
+# on the HIP device's GPU and skips without one. Linux: the producers use
+# POSIX threads, dma-bufs, sync_files and EGL.
+vmafx_gbm_dep = dependency('gbm', required : false)
+vmafx_hip_test_args = vmaf_cflags_common + vmafx_test_dirs + ['-DHAVE_HIP=1',
+    '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+] + (vmafx_gbm_dep.found() ? ['-DVMAFX_TEST_HAVE_GBM'] : [])
+vmafx_hip_tests = host_machine.system() != 'linux' ? [] : [
+    ['test_vmafx_import_hip', 300],
+    ['test_vmafx_import_hip_bitexact', 1800],
+    ['test_vmafx_import_hip_formats', 1800],
+    ['test_vmafx_import_hip_fence', 300],
+]
+foreach vmafx_hip_test : vmafx_hip_tests
+    vmafx_hip_name = vmafx_hip_test[0]
+    vmafx_hip_exe = executable(vmafx_hip_name,
+        ['test.c', vmafx_hip_name + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_hip_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps, vmafx_gbm_dep],
+    )
+    test(vmafx_hip_name, vmafx_hip_exe,
+        suite : ['gpu', 'hip'],
+        is_parallel : false,
+        timeout : vmafx_hip_test[1])
+endforeach
+# The GL test (ADR-2132) renders through a headless EGL context on the HIP
+# device's GPU, with EGL and GL resolved at run time: no extra dependency.
+if host_machine.system() == 'linux'
+    test_vmafx_import_hip_gl = executable('test_vmafx_import_hip_gl',
+        ['test.c', 'test_vmafx_import_hip_gl.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_hip_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps,
+                        meson.get_compiler('c').find_library('dl', required : false)],
+    )
+    test('test_vmafx_import_hip_gl', test_vmafx_import_hip_gl,
+        suite : ['gpu', 'hip'],
+        is_parallel : false,
+        timeout : 120)
+endif
+
 # ADR-1407: `hip_strict_fp_args` gives every HIP kernel the CPU reference's
 # fp32 arithmetic. The probe kernel is compiled by hipcc with that list, as
 # the feature kernels in src/meson.build are, and run over a million random
@@ -7429,7 +7671,9 @@ test('test_hip_float_adm_math', test_hip_float_adm_math,
 # an allocator that fails on a chosen call index, so both ss2h_alloc_device()
 # and ss2h_alloc_pinned() can be driven independently.
 test_hip_ssimulacra2_init_unwind = executable('test_hip_ssimulacra2_init_unwind',
-    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c'],
+    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c',
+     # ADR-2092: submit() reads device pictures through picture_hip.c.
+     '../src/hip/picture_hip.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'),
                            include_directories('../src/feature/common/'),
@@ -8624,3 +8868,137 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
 test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages,
     suite : ['fast', 'simd'], timeout : 180)
 endif
+
+# RC4 WP3 SYCL lane (ADR-2091): the VMAFx device-frame API on a SYCL device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). The producer side (USM uploads, held
+# queues, dma-buf export, device load) is vmafx_sycl_producer.cpp, compiled by
+# the SYCL compiler; each test needs a Level Zero GPU (77 without one) and
+# runs alone on it; the bit-exactness run reads the Netflix fixtures and
+# testdata/bbb. Linux: the dma-buf, sync_file and EGL paths are Linux ones.
+if get_option('enable_sycl') and host_machine.system() == 'linux' and not is_sycl_acpp
+    vmafx_sycl_producer = custom_target('vmafx_sycl_producer',
+        output : 'vmafx_sycl_producer.o',
+        input : 'vmafx_sycl_producer.cpp',
+        depend_files : files('vmafx_sycl_producer.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20']
+                  + sycl_pic_arg + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    vmafx_sycl_test_args = vmaf_cflags_common + vmafx_test_dirs + [
+        '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+    ]
+    vmafx_sycl_test_deps = [math_lib, pthread_dependency, thread_lib, sycl_dependency]
+    if have_sycl_dmabuf
+        vmafx_sycl_test_args += ['-DVMAFX_TEST_HAVE_VA=1']
+        vmafx_sycl_test_deps += [libva_dep, libva_drm_dep]
+    endif
+    vmafx_sycl_tests = [
+        ['test_vmafx_import_sycl', 300],
+        ['test_vmafx_import_sycl_bitexact', 1800],
+        ['test_vmafx_import_sycl_formats', 1800],
+        ['test_vmafx_import_sycl_fence', 300],
+        ['test_vmafx_import_sycl_gl', 120],
+    ]
+    foreach vmafx_sycl_test : vmafx_sycl_tests
+        vmafx_sycl_name = vmafx_sycl_test[0]
+        vmafx_sycl_exe = executable(vmafx_sycl_name,
+            ['test.c', vmafx_sycl_name + '.c', vmafx_sycl_producer],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmafx_sycl_test_args,
+            dependencies : vmafx_sycl_test_deps,
+            link_language : 'cpp',
+        )
+        test(vmafx_sycl_name, vmafx_sycl_exe,
+            suite : ['gpu', 'sycl'],
+            is_parallel : false,
+            timeout : vmafx_sycl_test[1])
+    endforeach
+endif
+
+# Device-free contract of the SYCL import cells (ADR-2091): the table equals
+# scripts/ci/exact_twins.d/*.sycl, on planted defects too.
+test('test_vmafx_import_sycl_cells_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_sycl_cells_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# RC4 WP3 Vulkan import lane: Vulkan frames on a CUDA, SYCL or HIP device,
+# white-box through the static library. Each source is built once per device
+# lane of the build (VMAFX_VK_LANE = the VmafxBackend value); the producer is
+# vmafx_vulkan_producer.c on the Vulkan loader, so the tests are built where
+# the loader and headers are found (dependency('vulkan')). Each needs the
+# lane's device and a Vulkan driver on its GPU (77 without one) and runs alone
+# on it; the bit-exactness run reads the Netflix fixtures and testdata/bbb.
+# Linux: opaque descriptors, dma-bufs and sync_files are Linux objects.
+vmafx_vulkan_dep = dependency('vulkan', required : false)
+vmafx_vulkan_lanes = []
+if host_machine.system() == 'linux' and vmafx_vulkan_dep.found()
+    if get_option('enable_cuda')
+        vmafx_vulkan_lanes += [['cuda', '1', [cuda_dependency], []]]
+    endif
+    if get_option('enable_sycl') and not is_sycl_acpp
+        vmafx_vulkan_lanes += [['sycl', '2', vmafx_sycl_test_deps, [vmafx_sycl_producer]]]
+    endif
+    if get_option('enable_hip')
+        vmafx_vulkan_lanes += [['hip', '4', hip_deps, []]]
+    endif
+endif
+# A real FFmpeg Vulkan decode imported into the lane's device (device
+# evidence: the inputs come from VMAFX_TEST_VULKAN_REF / _DIST), where FFmpeg's
+# libraries and their Vulkan hwcontext header are found.
+vmafx_vulkan_ffmpeg_deps = [
+    dependency('libavcodec', required : false),
+    dependency('libavformat', required : false),
+    dependency('libavutil', required : false),
+]
+vmafx_vulkan_ffmpeg = vmafx_vulkan_ffmpeg_deps[0].found() and vmafx_vulkan_ffmpeg_deps[1].found() \
+    and vmafx_vulkan_ffmpeg_deps[2].found() \
+    and cc.has_header('libavutil/hwcontext_vulkan.h', dependencies : vmafx_vulkan_ffmpeg_deps)
+foreach vmafx_vulkan_lane : vmafx_vulkan_lanes
+    foreach vmafx_vulkan_test : [
+        ['', 'test_vmafx_import_vulkan.c', 300],
+        ['_bitexact', 'test_vmafx_import_vulkan_bitexact.c', 1800],
+        ['_fence', 'test_vmafx_import_vulkan_fence.c', 300],
+    ]
+        vmafx_vulkan_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + vmafx_vulkan_test[0]
+        vmafx_vulkan_exe = executable(vmafx_vulkan_name,
+            ['test.c', vmafx_vulkan_test[1], 'vmafx_vulkan_producer.c'] + vmafx_vulkan_lane[3],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmaf_cflags_common + vmafx_test_dirs + [
+                '-DVMAFX_VK_LANE=' + vmafx_vulkan_lane[1],
+                '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+            ],
+            dependencies : [math_lib, pthread_dependency, thread_lib, vmafx_vulkan_dep]
+                           + vmafx_vulkan_lane[2],
+            # libvmaf.a holds C++ objects (and SYCL ones on the SYCL lane).
+            link_language : 'cpp',
+        )
+        test(vmafx_vulkan_name, vmafx_vulkan_exe,
+            suite : ['gpu', vmafx_vulkan_lane[0], 'vulkan'],
+            is_parallel : false,
+            timeout : vmafx_vulkan_test[2])
+    endforeach
+    if vmafx_vulkan_ffmpeg
+        vmafx_vulkan_ffmpeg_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + '_ffmpeg'
+        vmafx_vulkan_ffmpeg_exe = executable(vmafx_vulkan_ffmpeg_name,
+            ['test.c', 'test_vmafx_import_vulkan_ffmpeg.c', 'vmafx_vulkan_producer.c']
+            + vmafx_vulkan_lane[3],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmaf_cflags_common + vmafx_test_dirs + [
+                '-DVMAFX_VK_LANE=' + vmafx_vulkan_lane[1],
+            ],
+            dependencies : [math_lib, pthread_dependency, thread_lib, vmafx_vulkan_dep]
+                           + vmafx_vulkan_lane[2] + vmafx_vulkan_ffmpeg_deps,
+            link_language : 'cpp',
+        )
+        test(vmafx_vulkan_ffmpeg_name, vmafx_vulkan_ffmpeg_exe,
+            suite : ['gpu', vmafx_vulkan_lane[0], 'vulkan'],
+            is_parallel : false,
+            timeout : 300)
+    endif
+endforeach

@@ -51,6 +51,7 @@
 #include <string_view>
 
 #include "dict.h"
+#include "thread_locale.h"
 #include "libvmaf/feature.h"
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,26 @@ namespace
     return d;
 }
 
+/* The C locale on this thread for as long as the scope lives. */
+class CLocaleScope
+{
+  public:
+    CLocaleScope() : state_(vmaf_thread_locale_push_c())
+    {
+    }
+    ~CLocaleScope()
+    {
+        vmaf_thread_locale_pop(state_);
+    }
+    CLocaleScope(const CLocaleScope &) = delete;
+    CLocaleScope &operator=(const CLocaleScope &) = delete;
+    CLocaleScope(CLocaleScope &&) = delete;
+    CLocaleScope &operator=(CLocaleScope &&) = delete;
+
+  private:
+    VmafThreadLocaleState *state_;
+};
+
 /*
  * dict_normalize_numeric — if val is numeric, format it via %g and return the
  * normalised string as a unique_ptr<char[]>.  Returns nullopt (not numeric)
@@ -103,6 +124,10 @@ namespace
     // Use strtod (not strtof) to preserve double precision; strtof rounds
     // to ~6-7 significant digits and loses precision on widening to double.
     // Fix for CRITICAL finding in adversarial review PR #78.
+    // Both the parse and the %g format use the period whatever the caller's
+    // numeric locale (T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06): a
+    // decimal-comma locale read "0.02" as 0 or wrote it as "0,02".
+    const CLocaleScope c_locale;
     const double dv = std::strtod(val, &end);
     if (dv == 0.0 && end == val)
         return std::unexpected(0); // not numeric — sentinel 0 means "skip"

@@ -36,7 +36,18 @@
 #include "error_internal.h"
 #include "frame_import_hooks.h"
 #include "internal.h"
+#include "sync_object.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -52,7 +63,7 @@
 
 /* Why an extractor on `backend` cannot read a frame in the memory of
  * `residency`, or NULL when it can. */
-static const char *refusal(uint32_t backend, uint32_t residency)
+static const char *refusal(const char *extractor, uint32_t backend, uint32_t residency)
 {
     if (residency == VMAFX_BACKEND_CPU) {
         return NULL;
@@ -65,6 +76,22 @@ static const char *refusal(uint32_t backend, uint32_t residency)
     }
     /* The backend lanes answer this per extractor and options (the
      * generalisation of reads_shared_luma_only(), ADR-1688). */
+#ifdef HAVE_CUDA
+    if (backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_refusal(extractor);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_refusal(extractor);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_refusal(extractor);
+    }
+#endif
+    (void)extractor;
     return "reads no imported frame on this backend in this build";
 }
 
@@ -110,7 +137,7 @@ VmafxStatus vmafx_admit_residency(const VmafxReport *report, const VmafxContext 
         if (vmaf_engine_registered_feature_extractor(context->engine, i, &name, &backend) != 0) {
             continue;
         }
-        const char *const why = refusal((uint32_t)backend, residency);
+        const char *const why = refusal(name, (uint32_t)backend, residency);
         if (why) {
             first = first ? first : name;
             len = append(list, sizeof(list), len, "%s%s (%s, %s)", refused ? "; " : "", name,
@@ -220,8 +247,10 @@ static VmafxFrameImport readable_desc(const VmafxFrameImport *desc)
     VmafxFrameImport d = VMAFX_FRAME_IMPORT_INIT;
     uint32_t size = 0;
     memcpy(&size, desc, sizeof(size));
-    if (size >= sizeof(d)) {
-        memcpy(&d, desc, sizeof(d));
+    if (size >= VMAFX_MIN_FRAME_IMPORT) {
+        /* The prefix the caller's ABI has; the fields after it keep their
+         * initialiser's values. */
+        memcpy(&d, desc, size < sizeof(d) ? size : sizeof(d));
         d.struct_size = (uint32_t)sizeof(d);
     }
     return d;
@@ -251,6 +280,10 @@ VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *devic
         vmafx_test_note_retry_wait(context->import_retry_wait_ns);
         (void)vmafx_fence_wait(&d.acquire, context->import_retry_wait_ns, &waited);
         vmafx_error_free(waited);
+        if (d.memory == VMAFX_MEMORY_DMABUF) {
+            /* A dma-buf's implicit write fences (ADR-2091). */
+            vmafx_dmabuf_wait_writers(&d, context->import_retry_wait_ns);
+        }
         vmafx_error_free(last);
         last = NULL;
         status = import_admitted(context, device, desc, out, &last);

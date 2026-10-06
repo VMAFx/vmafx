@@ -361,6 +361,39 @@ static char *test_use_model_and_set(void)
     return NULL;
 }
 
+/* Two models, or two model sets, of one name: the second would read the first
+ * one's scores. A model and a set may share a name (their scores do not). */
+static char *test_use_model_name_taken(void)
+{
+    VmafxModel *model = NULL;
+    VmafxModel *neg = NULL;
+    VmafxModelSet *set = NULL;
+    VmafxModelSet *again = NULL;
+    mu_assert("load", vmafx_model_load(NULL, "vmaf_v0.6.1", &model, NULL) == VMAFX_OK &&
+                          vmafx_model_load(NULL, "vmaf_v0.6.1neg", &neg, NULL) == VMAFX_OK &&
+                          vmafx_model_set_load(NULL, "vmaf_b_v0.6.3", &set, NULL) == VMAFX_OK &&
+                          vmafx_model_set_load(NULL, "vmaf_b_v0.6.3", &again, NULL) == VMAFX_OK);
+    VmafxContext *context = plain_context();
+    VmafxError *error = NULL;
+    mu_assert("first", vmafx_context_use_model(context, model, NULL) == VMAFX_OK);
+    mu_assert("model of the same name",
+              vmafx_context_use_model(context, neg, &error) == VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "vmaf", VMAFX_SUBJECT_MODEL));
+    mu_assert("the same model again",
+              vmafx_context_use_model(context, model, NULL) == VMAFX_E_INVALID);
+    mu_assert("a set of the model's name",
+              vmafx_context_use_model_set(context, set, NULL) == VMAFX_OK);
+    mu_assert("set of the same name",
+              vmafx_context_use_model_set(context, again, &error) == VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "vmaf", VMAFX_SUBJECT_MODEL));
+    vmafx_model_unref(model);
+    vmafx_model_unref(neg);
+    vmafx_model_set_unref(set);
+    vmafx_model_set_unref(again);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
 static char *test_use_model_refusals(void)
 {
     VmafxContext *context = plain_context();
@@ -518,6 +551,7 @@ char *run_tests(void)
         MU_TEST(test_use_feature),
         MU_TEST(test_use_model_and_set),
         MU_TEST(test_use_model_refusals),
+        MU_TEST(test_use_model_name_taken),
         MU_TEST(test_import_score),
         MU_TEST(test_import_score_refusals),
         MU_TEST(test_counts_of_null),

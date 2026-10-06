@@ -171,7 +171,8 @@ when conversion happens.
   invariant note in [`../cuda/AGENTS.md`](../cuda/AGENTS.md).
   `integer_motion_metal`, `motion_v2_metal`: `collect()` stores
   `MIN(sad / 256. / (w * h) * motion_fps_weight, motion_max_val)` (CPU
-  `extract()`), `flush()` = `vmaf_motion_window_flush()` only, no own
+  `extract()`), `.advance` = `vmaf_motion_window_advance()` per frame and
+  `flush()` = `vmaf_motion_window_flush()` for the rest (ADR-2090), no own
   window. `float_motion_metal`: motion / motion2 / debug score =
   `MIN(score * motion_fps_weight, motion_max_val)`. Parity at `==`
   (`test_metal_*_parity`), not places=4.
@@ -379,10 +380,14 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
 ## motion3_v2 cross-twin invariant (ADR-1108)
 
 - `integer_motion_v2_metal` and `integer_motion_metal` derive `motion2` /
-  `motion3` with the CPU's own `vmaf_motion_window_flush()` (blend, clip,
-  seed, moving average, five-frame window), never a copy. One-frame input
-  -> 0 / 0 as CPU. Guard: `test_metal_motion_v2_exact_contract.py`,
-  `test_metal_integer_motion_exact_contract.py`.
+  `motion3` with the CPU's own `vmaf_motion_window_advance()` (each frame
+  once its window is complete, registered `.advance`, state
+  `s->window_state`) and `vmaf_motion_window_flush()` (the rest) (blend,
+  clip, seed, moving average, five-frame window; ADR-2090), never a copy.
+  One-frame input -> 0 / 0 as CPU. No device here: compile via the macOS CI
+  job. Guard: `test_metal_motion_v2_exact_contract.py`,
+  `test_metal_integer_motion_exact_contract.py`,
+  `test_motion_window_advance_contract.py`.
 
 ## mv2_mirror cross-twin invariant (ADR-1176)
 

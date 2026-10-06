@@ -66,7 +66,7 @@ VmafxStatus vmafx_context_preallocate(VmafxContext *context, const VmafxFrameDes
     cfg.pic_cnt = count;
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_preallocate_pictures(context->engine, cfg);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return engine_failure(&report, err, VMAFX_SUBJECT_PARAMETER, "count",
                               "preallocating the context's frames");
@@ -85,7 +85,7 @@ VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
     VmafPicture pic = {0};
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_fetch_preallocated_picture(context->engine, &pic);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return engine_failure(&report, err, VMAFX_SUBJECT_CONTEXT, "context",
                               "taking a preallocated frame (none preallocated?)");
@@ -131,7 +131,7 @@ VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err =
         vmaf_engine_set_perceptual_sidedata(context->engine, data, size, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return engine_failure(&report, err, VMAFX_SUBJECT_PARAMETER, "data",
                               "reading the perceptual side data");

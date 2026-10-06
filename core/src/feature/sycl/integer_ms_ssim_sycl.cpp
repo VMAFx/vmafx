@@ -121,6 +121,10 @@ struct MsSsimPlaneGeometry {
     float *h_cmp;
     float *d_pyramid_ref[MS_SSIM_SCALES];
     float *d_pyramid_cmp[MS_SSIM_SCALES];
+    /* The raw samples of a VMAFx device frame (ADR-2091), allocated with the
+     * first such frame. */
+    void *d_raw_ref;
+    void *d_raw_cmp;
 };
 
 struct MsSsimStateSycl {
@@ -679,6 +683,78 @@ static void enqueue_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned p
                             .c2 = s->c2});
 }
 
+/* picture_copy()'s divisor of a 16-bit sample at `bpc` bits, or 0 where it
+ * reads one byte per sample (8 bits and the depths it has no case for). */
+static float picture_copy_scaler(unsigned bpc)
+{
+    return bpc == 10U ? 4.0f : bpc == 12U ? 16.0f : bpc == 16U ? 256.0f : 0.0f;
+}
+
+/* Level 0 of a pyramid from raw device samples: picture_copy() sample for
+ * sample (offset 0). A 16-bit sample divided by a power of two (exact) or
+ * one byte converted; bytes loaded one at a time. Integer loads, one fp32
+ * division, no private array (scratch-free, ADR-1395). */
+static void launch_picture_to_float(sycl::queue &q, const void *raw, float *dst, unsigned w,
+                                    unsigned h, float scaler)
+{
+    const auto *src = static_cast<const std::uint8_t *>(raw);
+    q.parallel_for(sycl::range<2>(h, w), [=](sycl::id<2> id) {
+        const size_t i = id[0] * (size_t)w + id[1];
+        if (scaler != 0.0f) {
+            const unsigned v = (unsigned)src[2U * i] | ((unsigned)src[2U * i + 1U] << 8U);
+            dst[i] = (float)v / scaler;
+        } else {
+            dst[i] = (float)src[i];
+        }
+    });
+}
+
+/* Level 0 of plane `plane` of a VMAFx device frame (ADR-2091): its raw rows
+ * copied on the device, then converted there; the frame's planes are never
+ * read on the host. */
+static int stage_device_level0(MsSsimStateSycl *s, sycl::queue &q, unsigned plane,
+                               const VmafPicture *pic, bool reference)
+{
+    MsSsimPlaneGeometry &geometry = s->geom[plane];
+    const float scaler = picture_copy_scaler(pic->bpc);
+    const size_t row = (size_t)geometry.width * (scaler != 0.0f ? 2U : 1U);
+    void *&raw = reference ? geometry.d_raw_ref : geometry.d_raw_cmp;
+    if (!raw) {
+        raw = vmaf_sycl_malloc_device(s->sycl_state, 2U * (size_t)geometry.width * geometry.height);
+    }
+    if (!raw) {
+        return -ENOMEM;
+    }
+    const int err =
+        vmaf_sycl_picture_read_plane(pic, plane, &q, raw, row, row, geometry.height, nullptr);
+    if (err) {
+        return err;
+    }
+    launch_picture_to_float(q, raw,
+                            reference ? geometry.d_pyramid_ref[0] : geometry.d_pyramid_cmp[0],
+                            geometry.width, geometry.height, scaler);
+    return 0;
+}
+
+/* Level 0 of plane `plane` of both pictures: picture_copy() on the host and
+ * an upload, or the device conversion for VMAFx device frames. */
+static int stage_level0(MsSsimStateSycl *s, sycl::queue &q, unsigned plane, VmafPicture *ref_pic,
+                        VmafPicture *dist_pic)
+{
+    if (vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic)) {
+        const int err = stage_device_level0(s, q, plane, ref_pic, true);
+        return err ? err : stage_device_level0(s, q, plane, dist_pic, false);
+    }
+    const MsSsimPlaneGeometry &geometry = s->geom[plane];
+    const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
+    picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
+    picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
+    const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
+    q.memcpy(geometry.d_pyramid_ref[0], geometry.h_ref, input_bytes);
+    q.memcpy(geometry.d_pyramid_cmp[0], geometry.h_cmp, input_bytes);
+    return 0;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -699,13 +775,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * (ADR-1363). */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         const MsSsimPlaneGeometry &geometry = s->geom[plane];
-        const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
-        picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
-        picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
-
-        const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
-        q.memcpy(geometry.d_pyramid_ref[0], geometry.h_ref, input_bytes);
-        q.memcpy(geometry.d_pyramid_cmp[0], geometry.h_cmp, input_bytes);
+        const int stage_err = stage_level0(s, q, plane, ref_pic, dist_pic);
+        if (stage_err) {
+            return stage_err;
+        }
 
         /* Build pyramid scales 1..4. */
         for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
@@ -897,6 +970,8 @@ static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
         MsSsimPlaneGeometry &geometry = s->geom[plane];
         free_ms_ssim_pointer(s->sycl_state, geometry.h_ref);
         free_ms_ssim_pointer(s->sycl_state, geometry.h_cmp);
+        free_ms_ssim_pointer(s->sycl_state, geometry.d_raw_ref);
+        free_ms_ssim_pointer(s->sycl_state, geometry.d_raw_cmp);
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
             free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_ref[scale]);
             free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_cmp[scale]);

@@ -57,6 +57,8 @@
 
 #include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
+#include "../../hip/hip_handle.h"
+#include "../../hip/picture_hip.h"
 #include "picture.h"
 #include "ssimulacra2_hip.h"
 
@@ -247,6 +249,9 @@ typedef struct Ssimu2StateHip {
     /* The frame submit() enqueued and collect() has not read yet. */
     bool has_pending;
     unsigned pending_index;
+    /* This frame's pictures are device pictures of the VMAFx API, copied
+     * into d_raw on the device: no staging (ADR-2092). */
+    bool device_input;
 } Ssimu2StateHip;
 
 static const VmafOption options[] = {
@@ -798,7 +803,7 @@ static int ss2h_enqueue_scale(const Ssimu2StateHip *s, int scale)
  * the copy of the per-scale sums into h_totals. */
 static int ss2h_enqueue_frame(const Ssimu2StateHip *s)
 {
-    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+    for (unsigned img = 0; img < SS2H_IMAGES && !s->device_input; img++) {
         for (unsigned p = 0; p < SS2H_CHANNELS; p++) {
             const hipError_t hip_rc =
                 hipMemcpyAsync(s->d_raw[img][p], s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p],
@@ -906,6 +911,42 @@ static void ss2h_stage_plane(const VmafPicture *pic, unsigned p, void *dst, size
         (void)memcpy(out + (size_t)i * row_bytes, src + (size_t)i * stride, row_bytes);
 }
 
+/* Device pictures of the VMAFx API (ADR-2092): the six raw planes copied
+ * into d_raw on the pictures' library stream, which s->str waits on
+ * (vmaf_hip_picture_upload()); no host staging. */
+static int ss2h_copy_device(const Ssimu2StateHip *s, const VmafPicture *const pics[SS2H_IMAGES])
+{
+    VmafHipPlaneUpload planes[SS2H_IMAGES * SS2H_CHANNELS];
+    unsigned n = 0u;
+    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+        for (unsigned p = 0; p < SS2H_CHANNELS; p++) {
+            const VmafHipPlaneUpload plane = {.dst = s->d_raw[img][p],
+                                              .dst_pitch = s->row_bytes[p],
+                                              .pic = pics[img],
+                                              .plane = p,
+                                              .row_bytes = s->row_bytes[p],
+                                              .rows = s->plane_h[p]};
+            planes[n++] = plane;
+        }
+    }
+    return vmaf_hip_picture_upload(planes, n, vmaf_hip_stream_bits(s->str));
+}
+
+/* The frame's planes on their way to the device: host pictures packed into
+ * pinned staging (ss2h_enqueue_frame() copies it up), device pictures copied
+ * on the device. */
+static int ss2h_take_pictures(Ssimu2StateHip *s, const VmafPicture *const pics[SS2H_IMAGES])
+{
+    s->device_input = vmaf_hip_picture_device_stream(pics[0]) != 0u;
+    if (s->device_input)
+        return ss2h_copy_device(s, pics);
+    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+        for (unsigned p = 0; p < SS2H_CHANNELS; p++)
+            ss2h_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
+    }
+    return 0;
+}
+
 #endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
@@ -986,11 +1027,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (!ss2h_picture_matches(s, ref_pic) || !ss2h_picture_matches(s, dist_pic))
         return -EINVAL;
     const VmafPicture *const pics[SS2H_IMAGES] = {ref_pic, dist_pic};
-    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2H_CHANNELS; p++)
-            ss2h_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
-    }
-    const int err = ss2h_enqueue_frame(s);
+    int err = ss2h_take_pictures(s, pics);
+    if (!err)
+        err = ss2h_enqueue_frame(s);
     if (err)
         return err;
     s->pending_index = index;

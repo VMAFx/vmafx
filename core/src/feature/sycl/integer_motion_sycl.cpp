@@ -39,8 +39,9 @@
  * two back, as on the CPU (integer_motion.c, Netflix a2b59b77): d_raw_y[0]
  * holds frame n-2 and d_raw_y[1] frame n-1, advanced by two device copies
  * after each frame's kernel. collect() then stores the SAD scores only, and
- * flush() derives motion2 / motion3 of every frame from them with the CPU's
- * own function, vmaf_motion_window_flush() (motion_window.h, ADR-1478).
+ * advance() and flush() derive motion2 / motion3 of every frame from them,
+ * each once its window is complete (ADR-2090), with the CPU's own functions,
+ * vmaf_motion_window_advance() / _flush() (motion_window.h, ADR-1478).
  *
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
  * TEMPORAL flag: frames must be processed in sequential order.
@@ -102,6 +103,9 @@ struct MotionStateSycl {
     double motion_max_val;
 
     VmafDictionary *feature_name_dict;
+    /* motion2 / motion3 of the five-frame window, derived as the SAD scores
+     * come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 
     // Frame tracking
     unsigned frame_index;
@@ -134,12 +138,15 @@ struct MotionStateSycl {
     unsigned chroma_w, chroma_h; // U/V plane dimensions
     void *h_stage_u;             // packed U staging (pinned host), written in submit
     void *h_stage_v;             // packed V staging (pinned host)
-    void *d_ref_u[2];            // raw U-plane ping-pong (device, void* for bpc agnostic)
-    void *d_ref_v[2];            // raw V-plane ping-pong (device)
-    int64_t *d_sad_u;            // U-plane SAD accumulator (device)
-    int64_t *h_sad_u;            // U-plane SAD readback (host-mapped)
-    int64_t *d_sad_v;            // V-plane SAD accumulator (device)
-    int64_t *h_sad_v;            // V-plane SAD readback (host-mapped)
+    void *d_stage_u;             // the same for VMAFx device frames (device, ADR-2091)
+    void *d_stage_v;
+    bool stage_on_device; // this frame's chroma is in d_stage_u / d_stage_v
+    void *d_ref_u[2];     // raw U-plane ping-pong (device, void* for bpc agnostic)
+    void *d_ref_v[2];     // raw V-plane ping-pong (device)
+    int64_t *d_sad_u;     // U-plane SAD accumulator (device)
+    int64_t *h_sad_u;     // U-plane SAD readback (host-mapped)
+    int64_t *d_sad_v;     // V-plane SAD accumulator (device)
+    int64_t *h_sad_v;     // V-plane SAD readback (host-mapped)
 
     // Deferred state
     unsigned pending_index;
@@ -321,6 +328,9 @@ static void motion_reset_chroma(MotionStateSycl *s)
 {
     s->h_stage_u = nullptr;
     s->h_stage_v = nullptr;
+    s->d_stage_u = nullptr;
+    s->d_stage_v = nullptr;
+    s->stage_on_device = false;
     s->d_ref_u[0] = nullptr;
     s->d_ref_u[1] = nullptr;
     s->d_ref_v[0] = nullptr;
@@ -462,9 +472,9 @@ static int motion_append_sad_score(const MotionStateSycl *s, double sad_score, u
 
 /* One frame under motion_force_zero. The CPU appends a SAD score of 0 on
  * every frame (and repeats it as the motion score under debug), and its
- * flush() derives motion2 = motion3 = 0 from those zeros for every frame
- * (integer_motion.c). All of a frame's outputs are known here, so flush() has
- * nothing to add. */
+ * advance() and flush() derive motion2 = motion3 = 0 from those zeros for
+ * every frame (integer_motion.c). All of a frame's outputs are known here, so
+ * advance_fex_sycl() and flush() have nothing to add. */
 static int motion_append_forced_zero(MotionStateSycl *s, unsigned index,
                                      VmafFeatureCollector *feature_collector)
 {
@@ -517,8 +527,8 @@ static void motion_pre_graph(void *queue_ptr, void *priv)
     auto *s = static_cast<MotionStateSycl *>(priv);
     if (s->motion_add_uv) {
         size_t const bytes = (size_t)s->chroma_w * s->chroma_h * ((s->bpc <= 8) ? 1U : 2U);
-        q.memcpy(s->d_ref_u[s->cur_slot], s->h_stage_u, bytes);
-        q.memcpy(s->d_ref_v[s->cur_slot], s->h_stage_v, bytes);
+        q.memcpy(s->d_ref_u[s->cur_slot], s->stage_on_device ? s->d_stage_u : s->h_stage_u, bytes);
+        q.memcpy(s->d_ref_v[s->cur_slot], s->stage_on_device ? s->d_stage_v : s->h_stage_v, bytes);
     }
     // Five-frame window: the kernel adds into the accumulator on every frame
     // (enqueue_motion_work()), so it is cleared on every frame.
@@ -672,19 +682,45 @@ static void motion_stage_plane(const VmafPicture *pic, unsigned plane, void *dst
     }
 }
 
+/* A frame of the VMAFx API on this device (ADR-2091): its reference U and V
+ * are copied on the device, on the combined queue, into device staging that
+ * motion_pre_graph's copies then read (the frame's planes are never read on
+ * the host). The staging is allocated with the first such frame. */
+static int motion_stage_device_chroma(MotionStateSycl *s, const VmafPicture *ref_pic,
+                                      size_t row_bytes)
+{
+    void *const q = vmaf_sycl_get_combined_queue(s->sycl_state);
+    size_t const bytes = row_bytes * s->chroma_h;
+    if (!s->d_stage_u)
+        s->d_stage_u = vmaf_sycl_malloc_device(s->sycl_state, bytes);
+    if (!s->d_stage_v)
+        s->d_stage_v = vmaf_sycl_malloc_device(s->sycl_state, bytes);
+    if (!q || !s->d_stage_u || !s->d_stage_v)
+        return -ENOMEM;
+    const int err = vmaf_sycl_picture_read_plane(ref_pic, 1U, q, s->d_stage_u, row_bytes, row_bytes,
+                                                 s->chroma_h, nullptr);
+    return err ? err :
+                 vmaf_sycl_picture_read_plane(ref_pic, 2U, q, s->d_stage_v, row_bytes, row_bytes,
+                                              s->chroma_h, nullptr);
+}
+
 /* Stage this frame's reference U and V for motion_pre_graph's H2D copies.
  * Host work only: the graph for this frame is enqueued by the last extractor
  * to submit, so it cannot start before this runs, and this extractor's collect
  * of the previous frame has already drained the copies that read the staging
  * last time. */
-static void motion_stage_chroma(const MotionStateSycl *s, const VmafPicture *ref_pic)
+static int motion_stage_chroma(MotionStateSycl *s, const VmafPicture *ref_pic)
 {
     if (!s->motion_add_uv || ref_pic == nullptr)
-        return;
+        return 0;
 
     size_t const row_bytes = (size_t)s->chroma_w * ((s->bpc <= 8) ? 1U : 2U);
+    s->stage_on_device = vmaf_sycl_picture_on_device(ref_pic);
+    if (s->stage_on_device)
+        return motion_stage_device_chroma(s, ref_pic, row_bytes);
     motion_stage_plane(ref_pic, 1U, s->h_stage_u, row_bytes, s->chroma_h);
     motion_stage_plane(ref_pic, 2U, s->h_stage_v, row_bytes, s->chroma_h);
+    return 0;
 }
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -701,7 +737,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->has_pending = true;
         return 0;
     }
-    motion_stage_chroma(s, ref_pic);
+    int const stage_err = motion_stage_chroma(s, ref_pic);
+    if (stage_err)
+        return stage_err;
 
     // Combined graph submit (once per frame — the last extractor's call
     // enqueues every registered extractor's work)
@@ -791,8 +829,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     double const motion_score = motion_score_from_sad(s);
     int err;
     if (s->motion_five_frame_window) {
-        // The SAD score only (0 for frames 0 and 1); flush() derives motion2
-        // and motion3 of every frame from the stored scores.
+        // The SAD score only (0 for frames 0 and 1); advance_fex_sycl() and
+        // flush() derive motion2 and motion3 from the stored scores.
         err =
             motion_append_sad_score(s, MIN(motion_score * s->motion_fps_weight, s->motion_max_val),
                                     index, feature_collector);
@@ -826,11 +864,9 @@ static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return collect_fex_sycl(fex, index, feature_collector);
 }
 
-/* motion2 and motion3 of every frame with the five-frame window, derived
- * from the stored SAD scores by the CPU extractor's own function
- * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
- * the CPU's whenever the SADs are (ADR-1491). */
-static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature_collector)
+/* The five-frame window of this twin's options, on its state: the CPU
+ * extractor's (integer_motion.c, motion_window.h). */
+static VmafMotionWindow motion_window_of(MotionStateSycl *s)
 {
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
@@ -841,9 +877,32 @@ static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = true,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* motion2 and motion3 of the frames no advance derived, with the five-frame
+ * window, from the stored SAD scores by the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
+ * the CPU's whenever the SADs are (ADR-1491). */
+static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = motion_window_of(s);
     int const err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
+}
+
+/* ADR-2090: motion2 / motion3 of the frames whose five-frame window the SAD
+ * scores collected so far complete (vmaf_motion_window_advance()). The
+ * three-frame path and motion_force_zero emit their own scores in collect(). */
+static int advance_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    auto *s = static_cast<MotionStateSycl *>(fex->priv);
+    if (!s->motion_five_frame_window || s->motion_force_zero || s->feature_name_dict == nullptr)
+        return 0;
+    const VmafMotionWindow window = motion_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
 }
 
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
@@ -910,6 +969,10 @@ static void motion_free_chroma(VmafSyclState *state, MotionStateSycl *s)
         vmaf_sycl_free(state, s->h_stage_u);
     if (s->h_stage_v)
         vmaf_sycl_free(state, s->h_stage_v);
+    if (s->d_stage_u)
+        vmaf_sycl_free(state, s->d_stage_u);
+    if (s->d_stage_v)
+        vmaf_sycl_free(state, s->d_stage_v);
     if (s->d_ref_u[0])
         vmaf_sycl_free(state, s->d_ref_u[0]);
     if (s->d_ref_u[1])
@@ -985,6 +1048,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_sycl = {
     .init = init_fex_sycl,
     .extract = extract_fex_sycl,
     .flush = flush_fex_sycl,
+    .advance = advance_fex_sycl,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

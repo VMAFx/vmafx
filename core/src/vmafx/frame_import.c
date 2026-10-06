@@ -38,9 +38,19 @@
 
 #include "error_internal.h"
 #include "frame_import_hooks.h"
+#include "config.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
+#endif
 #include "internal.h"
 #include "mem.h"
-#include "metal/iosurface_layout.h"
+#include "vmafx/import_convert.h"
 #include "picture.h"
 #include "vmafx/vmafx.h"
 
@@ -55,33 +65,236 @@
 /* Row alignment of the planes an import converts (picture.c DATA_ALIGN). */
 #define VMAFX_IMPORT_ALIGN 64u
 
-/* How a producer lays out one pixel format. */
-typedef struct ImportLayout {
-    uint32_t pix_fmt;    /* VmafxPixelFormat the producer hands over */
-    uint32_t planar_fmt; /* VmafxPixelFormat of the frame it makes */
-    uint32_t n_planes;   /* planes the producer hands over */
-    uint32_t bpc_min;
-    uint32_t bpc_max;
-    uint32_t shift;   /* right shift of every sample (P010: 6) */
-    bool interleaved; /* plane 1 holds Cb / Cr pairs */
-    const char *name; /* FFmpeg's name, for messages */
-} ImportLayout;
+typedef VmafxImportLayout ImportLayout;
 
 static const ImportLayout import_layouts[] = {
-    {VMAFX_PIXEL_FORMAT_YUV420P, VMAFX_PIXEL_FORMAT_YUV420P, 3u, 8u, 16u, 0u, false, "yuv420p"},
-    {VMAFX_PIXEL_FORMAT_YUV422P, VMAFX_PIXEL_FORMAT_YUV422P, 3u, 8u, 16u, 0u, false, "yuv422p"},
-    {VMAFX_PIXEL_FORMAT_YUV444P, VMAFX_PIXEL_FORMAT_YUV444P, 3u, 8u, 16u, 0u, false, "yuv444p"},
-    {VMAFX_PIXEL_FORMAT_YUV400P, VMAFX_PIXEL_FORMAT_YUV400P, 1u, 8u, 16u, 0u, false, "gray"},
-    {VMAFX_PIXEL_FORMAT_NV12, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 8u, 8u, 0u, true, "nv12"},
-    {VMAFX_PIXEL_FORMAT_P010, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 10u, 10u, 6u, true, "p010"},
-    {VMAFX_PIXEL_FORMAT_P016, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 16u, 16u, 0u, true, "p016"},
+    {VMAFX_PIXEL_FORMAT_YUV420P,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv420p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV422P,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv422p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV444P,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv444p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV400P,
+     VMAFX_PIXEL_FORMAT_YUV400P,
+     1u,
+     8u,
+     16u,
+     0u,
+     false,
+     "gray",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV12,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv12",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P010,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p010",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P016,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p016",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV16,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv16",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P210,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p210",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P216,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p216",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV24,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv24",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P410,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p410",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P416,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p416",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y210,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     10u,
+     10u,
+     6u,
+     false,
+     "y210",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y212,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     12u,
+     12u,
+     4u,
+     false,
+     "y212",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUYV422,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     8u,
+     8u,
+     0u,
+     false,
+     "yuyv422",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y410,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     10u,
+     10u,
+     0u,
+     false,
+     "xv30",
+     VMAFX_IMPORT_PACKED_XVYU2101010,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_XV36,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     12u,
+     12u,
+     4u,
+     false,
+     "xv36",
+     VMAFX_IMPORT_PACKED_UYV4,
+     {1u, 0u, 2u},
+     false},
+    {VMAFX_PIXEL_FORMAT_VUYX,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     8u,
+     8u,
+     0u,
+     false,
+     "vuyx",
+     VMAFX_IMPORT_PACKED_UYV4,
+     {2u, 1u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV444P_MSB,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     3u,
+     9u,
+     16u,
+     0u,
+     false,
+     "yuv444p16msb",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     true},
 };
 
 #define N_IMPORT_LAYOUTS (sizeof(import_layouts) / sizeof(import_layouts[0]))
 
-static const char *const memory_names[] = {"NONE",          "HOST",        "DEVICE_POINTER",
-                                           "DEVICE_ARRAY",  "DMABUF",      "METAL_SURFACE",
-                                           "METAL_TEXTURE", "WIN32_SHARED"};
+static const char *const memory_names[] = {
+    "NONE",          "HOST",          "DEVICE_POINTER", "DEVICE_ARRAY", "DMABUF",
+    "METAL_SURFACE", "METAL_TEXTURE", "WIN32_SHARED",   "GL_TEXTURE",   "VULKAN"};
 
 const char *vmafx_memory_kind_name(uint32_t memory)
 {
@@ -115,6 +328,25 @@ static const char *const plane_modifier_names[] = {
     "desc.plane[0].modifier", "desc.plane[1].modifier", "desc.plane[2].modifier"};
 static const char *const plane_size_names[] = {"desc.plane[0].size", "desc.plane[1].size",
                                                "desc.plane[2].size"};
+static const char *const plane_index_names[] = {
+    "desc.plane[0].plane_index", "desc.plane[1].plane_index", "desc.plane[2].plane_index"};
+static const char *const plane_offset_names[] = {"desc.plane[0].offset", "desc.plane[1].offset",
+                                                 "desc.plane[2].offset"};
+static const char *const plane_fd_names[] = {"desc.plane[0].fd", "desc.plane[1].fd",
+                                             "desc.plane[2].fd"};
+
+const char *vmafx_import_plane_field(uint32_t i, const char *field)
+{
+    assert(i < 3u && field != NULL);
+    const char *const *const names = strcmp(field, "handle") == 0   ? plane_handle_names :
+                                     strcmp(field, "pitch") == 0    ? plane_pitch_names :
+                                     strcmp(field, "modifier") == 0 ? plane_modifier_names :
+                                     strcmp(field, "size") == 0     ? plane_size_names :
+                                     strcmp(field, "offset") == 0   ? plane_offset_names :
+                                     strcmp(field, "fd") == 0       ? plane_fd_names :
+                                                                      plane_index_names;
+    return names[i];
+}
 
 static bool dim_ok(uint32_t dim)
 {
@@ -165,21 +397,20 @@ static VmafxStatus check_geometry(const VmafxReport *report, const VmafxFrameImp
     return VMAFX_OK;
 }
 
-/* The device binds the descriptor's memory kind. */
-static VmafxStatus check_memory(const VmafxReport *report, const VmafxDevice *device,
-                                const VmafxFrameImport *d, const ImportLayout *layout)
+/* A value of VmafxMemoryKind other than NONE. */
+static VmafxStatus check_memory_kind(const VmafxReport *report, const VmafxFrameImport *d)
 {
-    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_WIN32_SHARED) {
+    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_KIND_LAST) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "memory kind %u is not a VmafxMemoryKind", (unsigned)d->memory);
     }
-    if (device->backend != VMAFX_BACKEND_CPU) {
-        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
-                          "backend %s, memory %s, pixel format %s: this build imports on the CPU "
-                          "device only",
-                          vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
-                          layout->name);
-    }
+    return VMAFX_OK;
+}
+
+/* The CPU device binds the descriptor's memory kind. */
+static VmafxStatus check_memory(const VmafxReport *report, const VmafxFrameImport *d,
+                                const ImportLayout *layout)
+{
     if (d->memory != VMAFX_MEMORY_HOST) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "backend cpu, memory %s, pixel format %s: the CPU device binds HOST "
@@ -189,15 +420,56 @@ static VmafxStatus check_memory(const VmafxReport *report, const VmafxDevice *de
     return VMAFX_OK;
 }
 
-/* Bytes of one row of producer plane `i` and its rows, for the planar
- * geometry `pw` / `ph` of the frame. */
-static void plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_t i, const unsigned pw[3],
-                         const unsigned ph[3], uint64_t *row, uint64_t *rows)
+void vmafx_import_plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_t i,
+                               const unsigned pw[3], const unsigned ph[3], uint64_t *row,
+                               uint64_t *rows)
 {
     const uint64_t bytes = bpc > 8u ? 2u : 1u;
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        /* YUYV: four elements per chroma column; UYV4: four per pixel;
+         * XV30: a 32-bit word per pixel. */
+        const uint64_t elements =
+            layout->packed == VMAFX_IMPORT_PACKED_YUYV ?
+                4u * pw[1] :
+                (layout->packed == VMAFX_IMPORT_PACKED_UYV4 ? 4u * pw[0] : 0u);
+        *row = layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010 ? 4u * (uint64_t)pw[0] :
+                                                                   elements * bytes;
+        *rows = ph[0];
+        return;
+    }
     const uint64_t pair = layout->interleaved && i == 1u ? 2u : 1u;
     *row = (uint64_t)pw[i] * bytes * pair;
     *rows = ph[i];
+}
+
+void vmafx_import_plane_read(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
+                             VmafxImportRead *out)
+{
+    VmafxImportRead rd = {.src_plane = i,
+                          .step = 1u,
+                          .offset = 0u,
+                          .in_bytes = bpc > 8u ? 2u : 1u,
+                          .shift = vmafx_import_shift(layout, bpc),
+                          .mask = 0u};
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        rd.src_plane = 0u;
+    }
+    if (layout->packed == VMAFX_IMPORT_PACKED_YUYV) {
+        rd.step = i == 0u ? 2u : 4u;
+        rd.offset = layout->elem[i];
+    } else if (layout->packed == VMAFX_IMPORT_PACKED_UYV4) {
+        rd.step = 4u;
+        rd.offset = layout->elem[i];
+    } else if (layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010) {
+        rd.in_bytes = 4u;
+        rd.mask = 0x3ffu;
+        rd.shift = i == 0u ? 10u : (i == 1u ? 0u : 20u);
+    } else if (layout->interleaved && i > 0u) {
+        rd.src_plane = 1u;
+        rd.step = 2u;
+        rd.offset = i - 1u;
+    }
+    *out = rd;
 }
 
 /* The rows of a plane (`rows` >= 1 of `row` bytes, pitch >= row > 0) lie
@@ -215,10 +487,9 @@ static bool plane_fits(const VmafxImportPlane *p, uint64_t row, uint64_t rows)
     return p->size == 0u || (p->offset <= p->size && extent <= p->size - p->offset);
 }
 
-/* One host plane: an address, a linear layout, a pitch that holds a row and
- * rows that lie inside the given size and the address space. */
-static VmafxStatus check_host_plane(const VmafxReport *report, const VmafxImportPlane *p,
-                                    uint32_t i, uint64_t row, uint64_t rows)
+VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const VmafxImportPlane *p,
+                                            uint32_t i, uint64_t row, uint64_t rows,
+                                            const char *memory)
 {
     if (p->handle == 0u) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PLANE, plane_handle_names[i],
@@ -226,9 +497,9 @@ static VmafxStatus check_host_plane(const VmafxReport *report, const VmafxImport
     }
     if (p->modifier != 0u) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PLANE, plane_modifier_names[i],
-                          "plane %u: modifier 0x%llx; host memory is read linearly (modifier 0) "
+                          "plane %u: modifier 0x%llx; %s memory is read linearly (modifier 0) "
                           "and is never de-tiled through a copy",
-                          (unsigned)i, (unsigned long long)p->modifier);
+                          (unsigned)i, (unsigned long long)p->modifier, memory);
     }
     if (p->pitch < row || p->pitch > (uint64_t)PTRDIFF_MAX) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PLANE, plane_pitch_names[i],
@@ -254,8 +525,9 @@ static VmafxStatus check_planes(const VmafxReport *report, const VmafxFrameImpor
     for (uint32_t i = 0; i < layout->n_planes; i++) {
         uint64_t row = 0;
         uint64_t rows = 0;
-        plane_extent(layout, d->bpc, i, pw, ph, &row, &rows);
-        const VmafxStatus status = check_host_plane(report, &d->plane[i], i, row, rows);
+        vmafx_import_plane_extent(layout, d->bpc, i, pw, ph, &row, &rows);
+        const VmafxStatus status =
+            vmafx_import_check_linear_plane(report, &d->plane[i], i, row, rows, "host");
         if (status != VMAFX_OK) {
             return status;
         }
@@ -292,7 +564,7 @@ static VmafxStatus check_acquire(const VmafxReport *report, const VmafxFence *ac
 /* First sample of producer plane `i`. */
 static uint8_t *plane_address(const VmafxImportPlane *p)
 {
-    /* SAFETY: check_host_plane() proved handle + offset + the plane's extent
+    /* SAFETY: vmafx_import_check_linear_plane() proved handle + offset + the plane's extent
      * <= UINTPTR_MAX and, when the producer gave a size, inside it; the
      * producer guarantees the memory is readable until the release fence. */
     /* NOLINTNEXTLINE(performance-no-int-to-ptr): a host plane crosses the ABI as uintptr_t (ADR-1852 design section 2.1 item 6, ADR-1929). */
@@ -317,7 +589,9 @@ static void plan_planes(const VmafxFrameImport *d, const ImportLayout *layout, b
     const uint32_t n_out = layout->planar_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
     *total = 0;
     for (uint32_t i = 0; i < 3u; i++) {
-        const bool converted = copy_all || layout->shift != 0u || (i > 0u && layout->interleaved);
+        const bool converted = copy_all || layout->shift != 0u || layout->msb ||
+                               layout->packed != VMAFX_IMPORT_PACKED_NONE ||
+                               (i > 0u && layout->interleaved);
         offsets[i] = i < n_out && converted ? *total : SIZE_MAX;
         *total += offsets[i] == SIZE_MAX ? 0u : owned_stride(pw[i], d->bpc) * ph[i];
     }
@@ -329,22 +603,18 @@ static void fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, ui
                        const unsigned pw[3], const unsigned ph[3], uint8_t *dst, void *data[3],
                        ptrdiff_t stride[3])
 {
-    const bool pair = layout->interleaved && i > 0u;
-    const VmafxImportPlane *const p = &d->plane[pair ? 1u : i];
+    VmafxImportRead rd;
+    vmafx_import_plane_read(layout, d->bpc, i, &rd);
+    const VmafxImportPlane *const p = &d->plane[rd.src_plane];
     if (!dst) {
         data[i] = plane_address(p);
         stride[i] = (ptrdiff_t)p->pitch;
         return;
     }
-    const VmafMetalPlaneRead rd = {.src_plane = pair ? 1u : i,
-                                   .step = pair ? 2u : 1u,
-                                   .offset = pair ? i - 1u : 0u,
-                                   .bytes = d->bpc > 8u ? 2u : 1u,
-                                   .shift = layout->shift};
     data[i] = dst;
     stride[i] = (ptrdiff_t)owned_stride(pw[i], d->bpc);
-    vmaf_metal_read_plane(dst, (size_t)stride[i], plane_address(p), (size_t)p->pitch, pw[i], ph[i],
-                          &rd);
+    vmafx_import_read_plane(dst, (size_t)stride[i], d->bpc > 8u ? 2u : 1u, plane_address(p),
+                            (size_t)p->pitch, pw[i], ph[i], &rd);
 }
 
 /* Fill data / stride for every plane of the frame, converting into one
@@ -408,9 +678,72 @@ static VmafxStatus bind_frame(const VmafxReport *report, VmafxDevice *device,
     const uint32_t residency = vmafx_test_import_residency();
     frame->residency = residency == VMAFX_TEST_RESIDENCY_OFF ? device->backend : residency;
     frame->owned = owned;
+    frame->release = d->release;
+    frame->user = d->user;
     frame->device = vmafx_device_ref(device);
     *out = frame;
     return VMAFX_OK;
+}
+
+/* The CPU device's checks and binding of a geometry-checked descriptor. */
+static VmafxStatus import_on_cpu(const VmafxReport *report, VmafxDevice *device,
+                                 const VmafxFrameImport *d, const ImportLayout *layout,
+                                 VmafxFrame **out)
+{
+    VmafxStatus status = check_memory(report, d, layout);
+    if (status == VMAFX_OK) {
+        status = check_planes(report, d, layout);
+    }
+    if (status == VMAFX_OK) {
+        status = check_acquire(report, &d->acquire);
+    }
+    return status == VMAFX_OK ? bind_frame(report, device, d, layout, out) : status;
+}
+
+/* The checks of an import every device shares: the further acquire fences,
+ * and a VULKAN descriptor's fields (RC4 WP3 Vulkan lane). */
+static VmafxStatus check_shared(const VmafxReport *report, const VmafxDevice *device,
+                                const VmafxFrameImport *d, const ImportLayout *layout)
+{
+    const VmafxStatus status = vmafx_import_check_acquire_more(report, d, device->backend);
+    if (status != VMAFX_OK || d->memory != VMAFX_MEMORY_VULKAN) {
+        return status;
+    }
+    return device->backend == VMAFX_BACKEND_CPU ? VMAFX_OK :
+                                                  vmafx_import_check_vulkan(report, d, layout);
+}
+
+/* The import on the lane of the device's backend. */
+static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *device,
+                                    const VmafxFrameImport *d, const ImportLayout *layout,
+                                    VmafxFrame **out)
+{
+    const VmafxStatus shared = check_shared(report, device, d, layout);
+    if (shared != VMAFX_OK) {
+        return shared;
+    }
+    switch (device->backend) {
+    case VMAFX_BACKEND_CPU:
+        return import_on_cpu(report, device, d, layout, out);
+#ifdef HAVE_CUDA
+    case VMAFX_BACKEND_CUDA:
+        return vmafx_cuda_frame_import(report, device, d, layout, out);
+#endif
+#ifdef HAVE_SYCL
+    case VMAFX_BACKEND_SYCL:
+        return vmafx_sycl_frame_import(report, device, d, layout, out);
+#endif
+#ifdef HAVE_HIP
+    case VMAFX_BACKEND_HIP:
+        return vmafx_hip_frame_import(report, device, d, layout, out);
+#endif
+    default:
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
+                          "backend %s, memory %s, pixel format %s: this build imports on the "
+                          "devices of the backends it was built with",
+                          vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
+                          layout->name);
+    }
 }
 
 VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc, VmafxFrame **out,
@@ -439,15 +772,9 @@ VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc
         status = check_geometry(&report, &d, &layout);
     }
     if (status == VMAFX_OK) {
-        status = check_memory(&report, dev, &d, layout);
+        status = check_memory_kind(&report, &d);
     }
-    if (status == VMAFX_OK) {
-        status = check_planes(&report, &d, layout);
-    }
-    if (status == VMAFX_OK) {
-        status = check_acquire(&report, &d.acquire);
-    }
-    return status == VMAFX_OK ? bind_frame(&report, dev, &d, layout, out) : status;
+    return status == VMAFX_OK ? import_on_device(&report, dev, &d, layout, out) : status;
 }
 
 /* ---- Release fences ---------------------------------------------------------------- */
@@ -479,11 +806,29 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
                           !frame ? "frame" : "out", "NULL argument");
     }
+#ifdef HAVE_CUDA
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_release_fence(&report, frame, kind, out);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_release_fence(&report, frame, kind, out);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_release_fence(&report, frame, kind, out);
+    }
+#endif
     if (kind != VMAFX_FENCE_HOST) {
         return VMAFX_FAIL(&report, kind == VMAFX_FENCE_NONE ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
                           VMAFX_SUBJECT_FENCE, "kind",
-                          "backend %s: a release fence of kind %u; this build signals HOST "
-                          "release fences",
+                          "backend %s: a release fence of kind %u; the frames of this device "
+                          "signal HOST release fences",
                           vmafx_backend_name(frame->device->backend), (unsigned)kind);
     }
     VmafxHostFence *const fence = release_fence_of(frame);
@@ -500,6 +845,56 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
         vmafx_host_fence_unref(fence);
     }
     return status;
+}
+
+/* ---- Producer fences signalled at release (RC4 WP3 Vulkan lane) ---------------------- */
+
+/* The fence a producer asks to be signalled: a kind the API declares, one the
+ * library signals for producers (VULKAN_SEMAPHORE). */
+static VmafxStatus check_signal(const VmafxReport *report, const VmafxFence *f)
+{
+    if (f->kind == VMAFX_FENCE_NONE || f->kind > VMAFX_FENCE_KIND_LAST) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                          f->kind == VMAFX_FENCE_NONE ? "a NONE fence has nothing to signal" :
+                                                        "kind %u is not a VmafxFenceKind",
+                          (unsigned)f->kind);
+    }
+    if (f->kind != VMAFX_FENCE_VULKAN_SEMAPHORE) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                          "a producer fence of kind %u; the library signals VULKAN_SEMAPHORE "
+                          "fences of producers (its own fences come from "
+                          "vmafx_frame_release_fence())",
+                          (unsigned)f->kind);
+    }
+    return VMAFX_OK;
+}
+
+VmafxStatus vmafx_frame_signal_on_release(VmafxFrame *frame, const VmafxFence *signal,
+                                          VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!frame || !signal) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !frame ? "frame" : "signal", "NULL argument");
+    }
+    VmafxFence f = VMAFX_FENCE_INIT;
+    VmafxStatus status =
+        vmafx_read_sized(&report, &f, (uint32_t)sizeof(f), signal, VMAFX_MIN_FENCE, "signal");
+    if (status == VMAFX_OK) {
+        status = check_signal(&report, &f);
+    }
+    if (status != VMAFX_OK) {
+        return status;
+    }
+#ifdef HAVE_CUDA
+    if (frame->lane && frame->device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_signal_on_release(&report, frame, &f);
+    }
+#endif
+    return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                      "backend %s: this device cannot signal a Vulkan semaphore (a CUDA device "
+                      "can); signal it from the frame's release callback with vkSignalSemaphore()",
+                      vmafx_backend_name(frame->device->backend));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

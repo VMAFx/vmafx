@@ -377,9 +377,12 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigne
 static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned w, unsigned h,
                              int tex_alignment, bool hbd)
 {
+    /* The picture pitches are set per frame (vif_submit_scales()); this is the
+     * pitch of a picture the engine's pool allocates, until the first frame. */
     s->buf.stride =
         (ptrdiff_t)tex_alignment *
         ((w * (1u << (unsigned)hbd) + (unsigned)tex_alignment - 1u) / (unsigned)tex_alignment);
+    s->buf.dis_stride = s->buf.stride;
     {
         const int rd_w_bytes = (int)(((w + 1u) / 2u) * sizeof(uint16_t));
         s->buf.rd_stride =
@@ -778,6 +781,11 @@ static int vif_order_after_scale0(VifStateCuda *s, CudaFunctions *cu_f, VmafPict
 static int vif_submit_scales(VifStateCuda *s, CudaFunctions *cu_f, VmafPicture *ref_pic,
                              VmafPicture *dist_pic, int w, int h)
 {
+    /* Scale 0 reads the pictures with their own pitches: an imported plane
+     * has its producer's, not the texture-aligned pitch init assumed (the
+     * import of an arbitrary pitch read the wrong rows, ADR-2023). */
+    s->buf.stride = ref_pic->stride[0];
+    s->buf.dis_stride = dist_pic->stride[0];
     for (unsigned scale = 0; scale < 4; ++scale) {
         if (scale > 0) {
             w /= 2;

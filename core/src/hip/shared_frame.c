@@ -24,6 +24,7 @@
 #include <hip/hip_runtime_api.h>
 
 #include "common.h"
+#include "hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -71,6 +72,11 @@ struct VmafHipSharedFrame {
      * this frame. */
     bool fenced;
     uint64_t uploads;
+    /* Device pictures (ADR-2092): the announced frame's library stream, 0
+     * for host pictures, and per slot an event recorded there behind the
+     * copies into the slot, which every twin's stream waits on. */
+    uintptr_t library;
+    hipEvent_t copied[SHARED_SLOTS];
 };
 
 static size_t plane_bytes(const VmafHipPlaneUpload *p)
@@ -209,9 +215,42 @@ static int batch_add_expected(VmafHipSharedFrame *f, UploadBatch *b)
     return err;
 }
 
+/* Device pictures (ADR-2092): enqueue the batch's copies on the library
+ * stream and record the slot's event behind them. No host wait: each twin's
+ * stream waits on the event (frame_follow()). */
+static int batch_copy_on_device(VmafHipSharedFrame *f, const UploadBatch *b)
+{
+    if (f->copied[f->slot] == NULL) {
+        const hipError_t rc = hipEventCreateWithFlags(&f->copied[f->slot], hipEventDisableTiming);
+        if (rc != hipSuccess) {
+            f->copied[f->slot] = NULL;
+            return vmaf_hip_rc_to_errno(rc);
+        }
+    }
+    const int err = vmaf_hip_picture_copy_enqueue(b->todo, b->count, f->library);
+    const hipError_t rc = hipEventRecord(f->copied[f->slot], vmaf_hip_stream_of(f->library));
+    return (err != 0) ? err : vmaf_hip_rc_to_errno(rc);
+}
+
+/* Device pictures: the twin's stream waits for the copies into the current
+ * slot, its own and every earlier twin's of this frame. */
+static int frame_follow(const VmafHipSharedFrame *f, uintptr_t stream)
+{
+    if (f->library == 0u || f->copied[f->slot] == NULL)
+        return 0;
+    hipError_t rc = hipStreamWaitEvent(vmaf_hip_stream_of(stream), f->copied[f->slot], 0u);
+    /* The null stream too: integer_adm_hip, psnr_hip and float_vif_hip
+     * launch kernels that read the slot there (their "picture stream"), and
+     * a non-blocking stream's wait does not order the null stream. */
+    if (rc == hipSuccess && stream != 0u)
+        rc = hipStreamWaitEvent(vmaf_hip_stream_of(0u), f->copied[f->slot], 0u);
+    return vmaf_hip_rc_to_errno(rc);
+}
+
 /* Upload the entries the current slot does not hold yet, in one call, and
  * point device[] at the slot's planes. The upload returns once the copies
- * have read the pictures (vmaf_hip_picture_upload()). */
+ * have read the pictures (vmaf_hip_picture_upload()); device pictures are
+ * copied on the device instead (batch_copy_on_device()). */
 static int frame_upload(VmafHipSharedFrame *f, const VmafHipPlaneUpload *planes, unsigned n_planes,
                         uintptr_t stream, void **device)
 {
@@ -231,8 +270,11 @@ static int frame_upload(VmafHipSharedFrame *f, const VmafHipPlaneUpload *planes,
     if (err == 0 && batch.count != 0u)
         err = batch_add_expected(f, &batch);
     if (err != 0 || batch.count == 0u)
-        return err;
-    err = vmaf_hip_picture_upload(batch.todo, batch.count, stream);
+        return (err != 0) ? err : frame_follow(f, stream);
+    err = (f->library != 0u) ? batch_copy_on_device(f, &batch) :
+                               vmaf_hip_picture_upload(batch.todo, batch.count, stream);
+    if (err == 0)
+        err = frame_follow(f, stream);
     if (err != 0)
         return err;
     for (unsigned k = 0u; k < batch.count; k++)
@@ -261,6 +303,8 @@ void vmaf_hip_shared_frame_destroy(VmafHipSharedFrame **frame)
                     (void)hipFree(f->plane[s][i][p].dev);
             }
         }
+        if (f->copied[s] != NULL)
+            (void)hipEventDestroy(f->copied[s]);
     }
     free(f);
     *frame = NULL;
@@ -273,6 +317,11 @@ int vmaf_hip_shared_frame_begin(VmafHipSharedFrame *frame, const VmafPicture *re
         return 0;
     if (ref == NULL || dist == NULL)
         return -EINVAL;
+    /* Both pictures are on one device, or both on the host (admission). */
+    const uintptr_t library = vmaf_hip_picture_device_stream(ref);
+    if (vmaf_hip_picture_device_stream(dist) != library)
+        return -EINVAL;
+    frame->library = library;
     frame->slot = (frame->slot + 1u) % SHARED_SLOTS;
     frame->pic[0] = ref;
     frame->pic[1] = dist;

@@ -10,10 +10,10 @@ existing [`libvmaf.h` API](../index.md) keeps working on the same engine.
 
 This build carries the core of the API: contexts with their own log
 callback, options, models and model sets, devices, host frames, imported
-frames with fences and frame pools, submission and synchronous scores.
-Imports run on the CPU device in this build; the CUDA, SYCL, HIP and Metal
-imports, asynchronous window scores, the full provenance record and reports
-follow in later RC4 work.
+frames with fences and frame pools, submission, synchronous scores and
+[asynchronous window scores](windows.md). Imports run on the CPU device in
+every build and on CUDA, SYCL and HIP devices in builds with those backends;
+the Metal imports follow in later RC4 work.
 
 Every declaration, the Python binding and the
 [reference pages](reference.md) are generated from one definition,
@@ -34,7 +34,7 @@ included on its own and includes what its declarations need:
 | `vmafx/device.h` | `VmafxDevice`, `VmafxDeviceInfo`, enumeration and profiling |
 | `vmafx/frame.h` | Host frames, imported frames (`VmafxFrameImport`), fences (`VmafxFence`), frame pools |
 | `vmafx/model.h` | Models and model sets |
-| `vmafx/score.h` | Per-frame and pooled scores |
+| `vmafx/score.h` | Per-frame and pooled scores, window scores and the window clock |
 | `vmafx/provenance.h` | `VmafxProvenance`, `vmafx_context_provenance` |
 | `vmafx/report.h`, `dnn.h`, `mcp.h` | Nothing yet; later RC4 work fills them |
 | `vmafx/libvmaf_bridge.h` | Optional (not included by `vmafx.h`): the bridge to a `libvmaf.h` handle |
@@ -166,8 +166,10 @@ or `VMAFX_E_NOTSUP` naming the option the twin cannot honour
 ([ADR-1359](../../adr/1359-cli-feature-backend-twin.md)).
 `vmafx_context_frame_retention()` says how many earlier reference frames the
 context keeps after a submit (1, or 2 when an extractor reads frame n-2,
-[ADR-1478](../../adr/1478-motion-five-frame-window-port.md)), so a producer
-can size its frame pool.
+[ADR-1478](../../adr/1478-motion-five-frame-window-port.md)), and
+`vmafx_context_max_in_flight()` how many frames of each input it holds at most
+when a submit returns, worker threads included, so a producer can size its
+frame pool ([frames in flight](windows.md#frames-in-flight-and-backpressure)).
 
 ## Models
 
@@ -208,16 +210,26 @@ refused naming `reference` or `distorted`. One frame can be scored by several
 contexts with different options without a second decode or a copy: take one
 more reference per context with `vmafx_frame_ref()` and submit it to each.
 The same frame as both inputs of one submit needs two references.
-`vmafx_flush()` finishes the stream; the scores of the last frames (motion)
-become final only then.
+`vmafx_flush()` finishes the stream; the scores that read a later frame
+(`motion2` / `motion3` of the last frame) become final only then. Every other
+frame's are final once the frame after it is scored
+([ADR-2090](../../adr/2090-motion-window-incremental.md)).
 
 ## Device frames and fences
 
 A producer that already holds a frame in memory a device can read, a decoder
 for example, hands it over with `vmafx_frame_import()` instead of copying it
 into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
-This build imports host memory on the CPU device; the CUDA, SYCL, HIP and
-Metal imports arrive behind the same calls and types.
+Every build imports host memory on the CPU device; a build with the CUDA
+backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
+devices ([CUDA devices](#cuda-devices) below), a build with the SYCL backend
+imports USM, Linux dma-bufs and OpenGL textures on SYCL devices
+([SYCL devices](#sycl-devices)), and a build with the HIP backend imports HIP
+device memory, dma-bufs, HIP arrays and OpenGL textures (through EGL dma-bufs)
+on HIP devices ([HIP devices](#hip-devices)). Each of these three backends
+also imports frames a Vulkan producer exported
+([Vulkan frames](#vulkan-frames)). The Metal imports arrive behind the same
+calls and types.
 
 ### Devices
 
@@ -240,13 +252,55 @@ layouts each device scores), so pass `VMAFX_DEVICE_INFO_INIT`.
 A `VmafxFrameImport` names the memory kind, the pixel layout and, per plane,
 the handle (for host memory its address), offset, pitch, format modifier and
 optionally the size of the memory object. Planar layouts are used where they
-are; NV12, P010 and P016 become planar frames by a de-interleave and, for
-P010, a shift down by 6, so an imported frame scores bit for bit as the same
-frame created on the host. Nothing is copied through the host: a layout the
+are; the semi-planar and packed layouts below become planar frames by a
+de-interleave, a shift down and, for XV30, a mask, so an imported frame scores
+bit for bit as the same frame created on the host. Nothing is copied through
+the host: a layout the
 device cannot read (a tiled modifier on host memory, a memory kind the
 device does not bind) is refused with `VMAFX_E_NOTSUP` naming the field.
 Setting `VMAFX_IMPORT_ALLOW_COPY` in `flags` allows a copy on the device for
 such a layout; a zeroed `flags` means zero copy only.
+
+The pixel layouts a producer can hand over (`pix_fmt`, with `bpc` the bits
+per sample of the frame the import makes):
+
+| `pix_fmt` | Producer's planes | Frame made | `bpc` |
+| --- | --- | --- | --- |
+| `YUV420P`, `YUV422P`, `YUV444P`, `YUV400P` | Planar, one plane per component | The same | 8 to 16 |
+| `NV12`, `NV16`, `NV24` | Luma, then one plane of interleaved Cb / Cr bytes (a pair per chroma column) | `YUV420P`, `YUV422P`, `YUV444P` | 8 |
+| `P010`, `P210`, `P410` | The same with 16-bit words whose 10 bits are the most significant | The same chroma | 10 |
+| `P016`, `P216`, `P416` | The same with 16-bit words | The same chroma | 16 |
+| `Y210`, `Y212` | One plane of 16-bit words Y0 Cb Y1 Cr per two pixels, the 10 or 12 bits most significant | `YUV422P` | 10, 12 |
+| `YUYV422` | One plane of the bytes Y0 Cb Y1 Cr per two pixels (YUY2) | `YUV422P` | 8 |
+| `Y410` (Intel XV30) | One plane of 32-bit words per pixel: Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29 | `YUV444P` | 10 |
+| `XV36` | One plane of four 16-bit words Cb Y Cr X per pixel, the 12 bits most significant | `YUV444P` | 12 |
+| `VUYX` | One plane of the bytes V Cb Y X per pixel | `YUV444P` | 8 |
+| `YUV444P_MSB` | Three planes of 16-bit words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces) | `YUV444P` | 9 to 16 |
+
+A CUDA, HIP or SYCL device converts every layout above on the device; a packed
+layout or `YUV444P_MSB` in a device array or GL texture is refused naming
+`desc.memory`, and on SYCL a packed or MSB layout in an Intel-tiled dma-buf
+is refused naming the plane's `modifier`. The CPU device (host memory)
+converts them all. The unused element of the packed 4:4:4 layouts and the
+unused bits of `Y410` are never read.
+
+What hardware decoders hand over, measured with FFmpeg 9 (libavcodec 63.1)
+decoding 640x360 H.264 and HEVC streams of each chroma layout and bit depth
+on the project's development host (`AVHWFramesContext.sw_format` of the first
+decoded frame):
+
+| Decoder | 4:2:0 | 4:2:2 | 4:4:4 |
+| --- | --- | --- | --- |
+| NVDEC, RTX 4090 (CUDA) | `NV12`; 10 bits `P010` | none (H.264 and HEVC refused) | HEVC only: 8 bits `yuv444p` (`YUV444P`); 10 and 12 bits `yuv444p10msble` / `yuv444p12msble` (`YUV444P_MSB`); H.264 refused |
+| VAAPI, Intel Arc A380 | `NV12`; 10 bits `P010` | HEVC only: 8 bits `yuyv422` (`YUYV422`), 10 bits `y210le` (`Y210`), 12 bits `y212le` (`Y212`); H.264 refused | HEVC only: 8 bits `vuyx` (`VUYX`), 10 bits `xv30le` (`Y410`), 12 bits `xv36le` (`XV36`); H.264 refused |
+| VAAPI, AMD gfx1036 | `NV12`; 10 bits `P010` | none | none |
+
+None of these decoders emits `NV16`, `P210`, `NV24` or `P410`; they are the
+layouts of other drivers' decoders and encoders (VideoToolbox ProRes, other
+VAAPI drivers), taken from the platforms' format lists and tested through the
+same conversion. The packed Intel layouts are what a VAAPI or QSV frame of
+the Arc is made of, so they are imported from a dma-bufs of the decoder's
+surface; NVDEC's are device pointers.
 
 The producer's memory must stay valid and unchanged until the frame's
 release fence is signalled:
@@ -294,9 +348,24 @@ yours right after. Fences the library returns are yours to release once with
 | `vmafx_fence_wait(&fence, timeout_ns, error)` | `VMAFX_OK` once signalled; `VMAFX_E_TIMEOUT` after `timeout_ns`; a timeout of 0 polls and answers `VMAFX_PENDING`, without an error; `UINT64_MAX` waits without a limit |
 | `vmafx_frame_release_fence(frame, kind, &fence, error)` | A fence signalled when the last reference of the frame is gone, in every context it was submitted to |
 
-The CUDA, HIP and SYCL events, `sync_file` descriptors, Metal shared events
-and Windows shared fences are declared kinds; this build answers them with
-`VMAFX_E_NOTSUP` naming the kind.
+A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
+`VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)); a
+build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT`, and on Linux
+`VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences, for SYCL
+devices ([SYCL devices](#sycl-devices)); a build with the HIP backend
+implements `VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire
+fence, `VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)).
+In every build `vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC`
+(`glClientWaitSync()`, which needs a GL context of the sync's share group
+current on the calling thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE`
+descriptor (`poll()`); `vmafx_fence_destroy()` closes a `SYNC_FILE`
+descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it with
+`glDeleteSync()`). A `VMAFX_FENCE_VULKAN_SEMAPHORE` is waited on and
+signalled by CUDA devices only ([Vulkan frames](#vulkan-frames)); the library
+never returns one, and `vmafx_fence_wait()` and `vmafx_fence_destroy()`
+refuse it (wait with `vkWaitSemaphores()`). The Metal shared events and Windows
+shared fences are declared kinds; until their backends land they are answered
+with `VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 
@@ -336,6 +405,448 @@ its last reference is dropped, and its release fence is signalled then.
 `vmafx_frame_pool_destroy()` drops your reference: frames still in use stay
 valid until they return.
 
+### CUDA devices
+
+In a build with the CUDA backend
+([ADR-2023](../../adr/2023-vmafx-cuda-device-frames.md)):
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_CUDA`, `desc.index = n` (or -1 for the first) | CUDA device `n`; the library retains its primary context and creates the stream it reads frames on |
+| `desc.external[0] = (uintptr_t)cu_context`, `desc.external[1] = (uintptr_t)cu_stream` | Your context, and your stream as the library's stream (0: the library creates one in your context); both stay yours and must outlive the device |
+
+`vmafx_context_use_device(context, device, error)` makes the context score on
+the device: each feature registered afterwards runs on its CUDA twin. A
+feature without a twin, or whose twin cannot honour an option you set, runs on
+the CPU (a warning names it); host frames still score, frames in CUDA memory
+are then refused by admission naming that extractor.
+
+What a CUDA device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address in the device's context; `pitch` in bytes | Planar planes are read where they are, no copy, when each row starts 8-byte aligned and `pitch` is a multiple of 8 and at least the row rounded up to 8 bytes (the CUDA twins load rows 4 or 8 bytes at a time); the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device |
+| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `CUarray` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | The semi-planar layouts are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
+| `VMAFX_MEMORY_GL_TEXTURE` | `handle`: a `GL_TEXTURE_2D` name of the GL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; the textures are registered and mapped for the import and unmapped when the frame is released |
+
+A bound plane that does not meet the alignment is refused with
+`VMAFX_E_NOTSUP` naming its `offset` or `pitch`; with
+`VMAFX_IMPORT_ALLOW_COPY` it is copied on the device instead (logged once).
+No path copies a frame through the host.
+
+| Acquire fence | The CUDA device |
+| --- | --- |
+| `VMAFX_FENCE_CUDA_EVENT` | Makes its stream wait on your event: record it on your stream after the work that writes the planes; nothing waits on the host |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (`vmafx_context_import_frame()` waits and retries once) |
+| `VMAFX_FENCE_GL_SYNC` | GL texture imports: a signalled `GLsync` is taken; an unsignalled one is `VMAFX_E_BUSY` and the import rule waits on it with `glClientWaitSync()` (the GL context current on the thread) |
+
+Release fences of a CUDA frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_CUDA_EVENT`: an event the library records on its stream behind
+  the frame's last reader, at the moment the last reference is dropped. A
+  stream wait on a CUDA event that was not recorded yet does not wait, so make
+  your stream wait on it from the frame's release callback
+  (`VmafxFrameImport.release`, called after the recording) or after
+  `vmafx_fence_wait()` returned `VMAFX_OK`; `vmafx_fence_wait()` itself answers
+  `VMAFX_PENDING` / waits until the event is recorded and complete.
+
+A decoder that reuses its surfaces without a host wait:
+
+```c
+typedef struct Surface {
+    CUstream stream;   /* the decoder's stream */
+    VmafxFence free;   /* the CUDA_EVENT release fence */
+    int in_use;
+} Surface;
+
+static void surface_released(void *user)  /* runs after the event is recorded */
+{
+    Surface *s = user;
+    cuStreamWaitEvent(s->stream, (CUevent)s->free.handle, 0);
+    vmafx_fence_destroy(&s->free, NULL);
+    s->in_use = 0;                         /* the decoder may write into it again */
+}
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DEVICE_POINTER;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = 1920;
+imp.h = 1080;
+imp.n_planes = 2;
+imp.plane[0].handle = (uintptr_t)luma_devptr;
+imp.plane[0].pitch = pitch;
+imp.plane[1].handle = (uintptr_t)chroma_devptr;
+imp.plane[1].pitch = pitch;
+imp.acquire.kind = VMAFX_FENCE_CUDA_EVENT;
+imp.acquire.handle = (uintptr_t)decoded;  /* recorded on the decoder's stream */
+imp.release = surface_released;
+imp.user = surface;
+
+status = vmafx_context_import_frame(context, cuda_device, &imp, "main", &frame, &error);
+if (status == VMAFX_OK)
+    status = vmafx_frame_release_fence(frame, VMAFX_FENCE_CUDA_EVENT, &surface->free, &error);
+```
+
+Ordering. Every frame of a CUDA device is read on the device's one stream, so
+one import scored by several contexts on the device needs nothing more, and
+its release fences are signalled after the last reader of any of them. Frames
+whose acquire fence the device waited on are not synchronised again; frames
+without one (pool frames, host frames uploaded by the engine, `libvmaf.h`
+callers) keep the engine's once-per-frame synchronisation of the context
+([ADR-1199](../../adr/1199-cuda-picture-handover-barrier.md)). A CUDA frame
+pool (`vmafx_frame_pool_create()` with a CUDA device) hands out frames whose
+planes are device memory (`vmafx_frame_planes()` gives the addresses); write
+them on any stream of the device's context and submit, without a fence (the
+engine's synchronisation orders your write). `vmafx_frame_pool_acquire()`
+hands a frame out only once the device has run the readers of its previous
+use, waiting for them on the host when they have not.
+
+`VMAFX_DEVICE_PROFILING` is refused on a CUDA device; profile with the
+vendor's profiler (Nsight Systems: `nsys profile --trace=cuda` shows that an
+import makes no host-to-device or device-to-host copy of the frame; only the
+features' few-byte results come back).
+
+### HIP devices
+
+In a build with the HIP backend
+([ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)):
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_HIP`, `desc.index = n` (or -1 for the first) | HIP device `n`; the library creates the stream it reads frames on |
+| `desc.external[0] = (uintptr_t)hip_stream`, `desc.external[1] = 0` | Your stream as the library's stream, on the stream's device (HIP has no context object); it stays yours and must outlive the device |
+
+`vmafx_context_use_device()` makes the context score on the device, as on
+CUDA: each feature registered afterwards runs on its HIP twin, and a feature
+without one runs on the CPU (a warning names it) and is refused for device
+frames by admission. Every HIP twin reads HIP device frames. A HIP device has
+no frame pools: `vmafx_frame_pool_create()` refuses it with `VMAFX_E_NOTSUP`
+naming `device`.
+
+What a HIP device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address on the device; `pitch` in bytes | Planar planes are read where they are, at any offset and pitch; the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device |
+| `VMAFX_MEMORY_DMABUF` (Linux) | `fd`: a dma-buf descriptor (the library duplicates it; yours stays open and yours); `offset`, `pitch`; `modifier` 0 (linear), `plane_index` 0; `size` 0 or at most the dma-buf's size | The dma-buf is imported as external memory and mapped whole, once per descriptor of the frame; then as device pointers |
+| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `hipArray_t` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | The semi-planar layouts are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture; P010 / P016: `GL_R16` and `GL_RG16`) | Each texture is exported as a dma-buf through EGL and imported as above. A driver that exports its own tiling (radeonsi does) is copied on the GPU into a linear dma-buf, which needs `VMAFX_IMPORT_ALLOW_COPY`; see below |
+
+A tiled dma-buf (a modifier other than linear) is refused with
+`VMAFX_E_NOTSUP` naming the plane's `modifier`, and a `size` larger than the
+dma-buf with `VMAFX_E_RANGE` naming the plane's `size`: the runtime would map
+memory that is not the buffer's.
+
+A GL import reads the textures of the EGL context current on the calling
+thread (a surfaceless, Wayland or X11 context; GLX is not needed). The
+runtime's own GL interop is not used: the project's ROCm 10.1 cannot read a
+mapped GL texture ([ADR-2132](../../adr/2132-hip-gl-textures-through-egl-dmabuf.md)).
+Without a current EGL context the import is `VMAFX_E_INVALID` naming
+`desc.memory`; a context that renders on another GPU than the device
+(`VMAFX_E_NOTSUP`, naming `device`), without EGL's dma-buf export or whose
+display has no DRM device is refused. A texture whose export is tiled needs
+`VMAFX_IMPORT_ALLOW_COPY`; without it the import is `VMAFX_E_NOTSUP` naming
+the flag. The copy is one GPU blit per plane in your GL context, which
+restores the framebuffer bindings, the scissor test and the colour mask it
+touches. `libgbm.so.1` is needed at run time for it. Your GL sync is checked
+on the host first, then the dma-bufs' pending writes are waited for (at most
+1 s). No path copies a frame through the host.
+
+| Acquire fence | The HIP device |
+| --- | --- |
+| `VMAFX_FENCE_HIP_EVENT` | Makes its stream wait on your event: record it on your stream after the work that writes the planes; nothing waits on the host |
+| `VMAFX_FENCE_SYNC_FILE` | A signalled descriptor is taken; an unsignalled one is `VMAFX_E_BUSY`, and `vmafx_context_import_frame()` waits on it with `poll()` and retries once. For a dma-buf, pass the descriptor `DMA_BUF_IOCTL_EXPORT_SYNC_FILE` returns for reading. It stays yours |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (the import rule waits and retries once) |
+| `VMAFX_FENCE_GL_SYNC` | GL texture imports: as on CUDA |
+
+Release fences of a HIP frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_HIP_EVENT`: an event the library records on its stream behind
+  the frame's last reader when the last reference is dropped. Before that,
+  `hipEventQuery()` on it reports it complete (the runtime does so for an
+  event never recorded), so make your stream wait on it from the release
+  callback (`VmafxFrameImport.release`, called after the recording) or after
+  `vmafx_fence_wait()` returned `VMAFX_OK`; `vmafx_fence_wait()` answers
+  `VMAFX_PENDING` until the event is recorded and complete.
+- `VMAFX_FENCE_SYNC_FILE` is refused with `VMAFX_E_NOTSUP`: no HIP operation
+  signals a kernel fence (ROCm 10.1 imports no external semaphore that could
+  carry one). Use `HIP_EVENT` or the release callback.
+
+```c
+/* An NV12 frame a decoder exported linear, as one dma-buf with both planes
+ * (`prime`, a VADRMPRIMESurfaceDescriptor of two layers). */
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DMABUF;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = 1920;
+imp.h = 1080;
+imp.n_planes = 2;
+for (int i = 0; i < 2; i++) {
+    imp.plane[i].fd = prime.objects[0].fd;
+    imp.plane[i].offset = prime.layers[i].offset[0];
+    imp.plane[i].pitch = prime.layers[i].pitch[0];
+    imp.plane[i].modifier = prime.objects[0].drm_format_modifier;  /* 0: linear */
+}
+
+struct dma_buf_export_sync_file sync = {.flags = DMA_BUF_SYNC_READ, .fd = -1};
+ioctl(prime.objects[0].fd, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &sync);
+imp.acquire.kind = VMAFX_FENCE_SYNC_FILE;
+imp.acquire.fd = sync.fd;
+
+status = vmafx_context_import_frame(context, hip_device, &imp, "main", &frame, &error);
+close(sync.fd);  /* the library took what it needs */
+```
+
+Ordering. Every read of a HIP frame's memory is a copy or a conversion on the
+device's one stream, which the twins' own streams wait for, so one import
+scored by several contexts on the device needs nothing more, and its release
+fences are signalled after the last reader of any of them.
+
+`VMAFX_DEVICE_PROFILING` is refused on a HIP device; profile with the
+vendor's tools. The runtime's API log (`AMD_LOG_LEVEL=3`) lists every copy
+with its direction: an import makes device-to-device copies on the library
+stream and no host-to-device or device-to-host copy of the frame.
+
+### SYCL devices
+
+In a build with the SYCL backend
+([ADR-2091](../../adr/2091-vmafx-sycl-device-frames.md)). The devices are the
+Level Zero GPUs; the imports go through Level Zero, so an OpenCL view of the
+same GPU is not counted again.
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_SYCL`, `desc.index = n` (or -1 for the first) | Level Zero GPU `n`; the library creates its own in-order queue on it (with immediate command lists) |
+| `desc.external[0] = (uintptr_t)&queue` (a `sycl::queue *`) | A device in your queue's SYCL context and device (the library creates its own queue in them), so your USM and events are valid in it; the queue stays yours and is read only by `vmafx_device_create()`; `external[1]` must be 0 |
+
+`vmafx_context_use_device(context, device, error)` makes the context score on
+the device: each feature registered afterwards runs on its SYCL twin, in the
+device's SYCL context. A feature without a twin, or whose twin cannot honour
+an option you set, runs on the CPU (a warning names it); host frames still
+score, frames in device memory are then refused by admission naming that
+extractor.
+`VMAFX_DEVICE_PROFILING` is refused; set `VMAF_SYCL_PROFILE=1` or use the
+vendor's profiler.
+
+What a SYCL device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
+| `VMAFX_MEMORY_DMABUF` (Linux) | `fd` + `size` of the dma-buf, `offset`, `pitch` and `modifier` | Linear (modifier 0) planes are bound; Intel Y-tiled and Tile4 planes are de-tiled on the device; another modifier is refused naming the plane. Planes may share one dma-buf |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | Each texture is exported as a dma-buf (`EGL_MESA_image_dma_buf_export`) and imported as above |
+
+Every reader copies the planes it needs on the device, so no layout needs a
+copy and `VMAFX_IMPORT_ALLOW_COPY` changes nothing. `VMAFX_MEMORY_WIN32_SHARED`
+is refused with `VMAFX_E_NOTSUP` naming `desc.memory` until it can be tested
+on a Windows device. No path copies a frame through the host.
+
+| Acquire fence | The SYCL device |
+| --- | --- |
+| `VMAFX_FENCE_SYCL_EVENT` | `handle = (uintptr_t)&event` (a `sycl::event *` of the device's context, after the work that writes the planes): the device's queue waits on it; nothing waits on the host |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (`vmafx_context_import_frame()` waits and retries once) |
+| `VMAFX_FENCE_SYNC_FILE` (Linux) | `fd`: a `sync_file` descriptor, polled on the host: signalled, or `VMAFX_E_BUSY` as for `HOST`; the descriptor stays yours |
+| `VMAFX_FENCE_GL_SYNC` (Linux) | GL texture imports: as on a CUDA device |
+
+A dma-buf's own implicit write fences are honoured too: a dma-buf whose
+writer has not finished is `VMAFX_E_BUSY` and the import rule waits on it
+(a GL import waits up to 1 s for the fences the EGL export itself leaves).
+
+Release fences of a SYCL frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_SYCL_EVENT`: `handle` is a `sycl::event *` the library owns.
+  The event is created when the last reference is dropped, as a barrier over
+  every reader of the frame on any queue, so wait on it from the frame's
+  release callback (`VmafxFrameImport.release`, called after it exists) or
+  after `vmafx_fence_wait()` returned `VMAFX_OK`, for example with
+  `queue.ext_oneapi_submit_barrier({*(sycl::event *)fence.handle})`.
+- `VMAFX_FENCE_SYNC_FILE` release fences are refused: Level Zero gives this
+  build no kernel fence to export.
+
+```c
+/* A producer on its own queue `producer` (C++), writing USM planes. */
+sycl::event written = producer.submit(/* the work that writes the planes */);
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DEVICE_POINTER;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_P010;
+imp.bpc = 10;
+imp.w = 3840;
+imp.h = 2160;
+imp.n_planes = 2;
+imp.plane[0].handle = (uintptr_t)luma_usm;
+imp.plane[0].pitch = pitch;
+imp.plane[1].handle = (uintptr_t)chroma_usm;
+imp.plane[1].pitch = pitch;
+imp.acquire.kind = VMAFX_FENCE_SYCL_EVENT;
+imp.acquire.handle = (uintptr_t)&written;
+imp.release = surface_released;   /* makes `producer` wait on the release event */
+imp.user = surface;
+
+status = vmafx_context_import_frame(context, sycl_device, &imp, "main", &frame, &error);
+if (status == VMAFX_OK)
+    status = vmafx_frame_release_fence(frame, VMAFX_FENCE_SYCL_EVENT, &surface->free, &error);
+```
+
+Ordering. A frame's conversions run on the device's queue behind its acquire
+fence; every reader, on whatever queue of whichever context, waits on their
+last event, and the release waits on every reader. One import scored by
+several contexts on the device therefore needs nothing more. A SYCL frame
+pool hands out frames of device USM (`vmafx_frame_planes()` gives the
+addresses) only after the readers of their previous use ran; a pool frame
+carries no acquire fence, so finish your writes (for example `queue.wait()`)
+before the submit.
+
+To check that an import makes no host copy, trace the runtime with
+`sycl-trace --ur.call <program>` (shipped with the DPC++ compiler): every
+`urEnqueueUSMMemcpy` names its source, destination and size, and every kernel
+argument its pointer. In an import-only session (48 imported 1080p NV12 pairs
+scored with `vmaf_v1.0.16_3d0h` on an Arc A380, DPC++ 2026.1.1) the host sent
+5 copies of 280100 bytes in all to the device (tables at start-up, the largest
+262148 bytes), the device sent 194 copies of 94920 bytes back (feature
+results, the largest 1584 bytes), and all 793 kernel pointer arguments were
+device memory: no pixel crossed to or from the host.
+
+### Vulkan frames
+
+In a build with the CUDA, SYCL or HIP backend
+([ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)), a frame a Vulkan
+producer wrote (FFmpeg's Vulkan decode or filters, libplacebo, a GStreamer
+Vulkan element) is imported as `VMAFX_MEMORY_VULKAN` without a host copy.
+The library never creates a Vulkan object and links no Vulkan loader: your
+producer exports its memory and semaphores, and the device imports them.
+
+What the producer does:
+
+1. Allocate the frame's memory exportable (`VkExportMemoryAllocateInfo`;
+   `OPAQUE_FD`, or `DMA_BUF` for a DRM-modifier image) with one image or
+   buffer per plane. A frame whose planes are planes of one multi-plane image
+   is refused naming `desc.plane[1].plane_index`; in FFmpeg, create the frames
+   context with `AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE`.
+2. Use the GPU of the scoring device: its `VmafxDeviceInfo.pci` is the PCI
+   domain, bus, device and function `VK_EXT_pci_bus_info` reports for the
+   same GPU. Memory of another GPU is refused naming `desc.vulkan_pci`; the
+   library never reads across devices.
+3. After the last write, move each image to `VK_IMAGE_LAYOUT_GENERAL` and
+   release it to `VK_QUEUE_FAMILY_EXTERNAL` (one barrier per image),
+   signalled by the fence you hand over as the acquire fence.
+4. Export each plane's memory with `vkGetMemoryFdKHR()`. The library
+   duplicates the descriptors it keeps: close yours after the import.
+
+The descriptor:
+
+| Field | Value |
+| --- | --- |
+| `memory` | `VMAFX_MEMORY_VULKAN` |
+| `vulkan_handle_type` | `VMAFX_VULKAN_HANDLE_OPAQUE_FD` or `VMAFX_VULKAN_HANDLE_DMA_BUF` (the `VkExternalMemoryHandleTypeFlagBits` value). The Windows handle types are declared and refused until a Windows device runs the tests |
+| `vulkan_tiling` | The images' `VkImageTiling`: `OPTIMAL`, `LINEAR` (also for buffers) or `DRM_FORMAT_MODIFIER` |
+| `vulkan_flags` | `VMAFX_VULKAN_DEDICATED` when each memory object is a dedicated allocation of its image |
+| `vulkan_pci` | The producer's `VkPhysicalDevicePCIBusInfoPropertiesEXT` (domain, bus, device, function) |
+| `plane[i].fd` | The plane's exported memory |
+| `plane[i].size` | The allocation's size (required) |
+| `plane[i].offset` | The plane's first byte in the memory: the image's bind offset, plus the subresource offset for LINEAR images |
+| `plane[i].pitch` | LINEAR and DRM-modifier images: the row pitch from `vkGetImageSubresourceLayout()`; OPTIMAL: 0 |
+| `plane[i].modifier` | DRM-modifier images: the modifier; otherwise 0 |
+| `acquire`, `acquire_more[0..1]` | The fences of the planes' writes (below); `NONE` entries are ignored |
+
+What each backend reads:
+
+| Backend | Memory | Tiling | Acquire fence | Release to the producer |
+| --- | --- | --- | --- | --- |
+| CUDA | `OPAQUE_FD` | `OPTIMAL` (read as CUDA arrays: NV12 / P010 / P016 are planarised on the device, a planar frame needs `VMAFX_IMPORT_ALLOW_COPY`), `LINEAR` (device pointers) | `VMAFX_FENCE_VULKAN_SEMAPHORE` in `acquire` and `acquire_more`, waited on the library stream; or any CUDA acquire kind | `vmafx_frame_signal_on_release()` signals your timeline on the device behind the last reader; or any CUDA release fence |
+| SYCL | `OPAQUE_FD` or `DMA_BUF` memory that is a dma-buf (it is on the Mesa driver) | `LINEAR`; `DRM_FORMAT_MODIFIER` with the modifiers the SYCL device reads (linear, Tile4, Y-tiled) | `VMAFX_FENCE_SYNC_FILE` of the write (export a binary semaphore signalled with it as `SYNC_FD`) or `HOST` | `VMAFX_FENCE_HOST` release fence or the release callback; then signal your timeline from the host (`vkSignalSemaphore()`) |
+| HIP | As SYCL (the RADV descriptors are dma-bufs) | `LINEAR`; `DRM_FORMAT_MODIFIER` linear | As SYCL | As SYCL |
+
+Refused, each naming its field: `OPTIMAL` tiling on SYCL and HIP
+(`desc.vulkan_tiling`), `DMA_BUF` memory and `DRM_FORMAT_MODIFIER` tiling on
+CUDA (the CUDA driver imports dma-bufs on Tegra only), a modifier the device
+does not read (`desc.plane[i].modifier`), a Vulkan semaphore acquire or
+further acquire fences on SYCL and HIP (`desc.acquire.kind`,
+`desc.acquire_more[i]`: ROCm 10.1 imports no Vulkan semaphore, and the SYCL
+lane does not wait on one yet), a `VULKAN_SEMAPHORE` given to
+`vmafx_frame_signal_on_release()` on SYCL and HIP (`signal.kind`). On SYCL
+and HIP an unsignalled sync_file makes the import `VMAFX_E_BUSY`;
+`vmafx_context_import_frame()` waits for it and retries once.
+
+An `AVVkFrame` on a CUDA device, from a frames context created with
+`AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE` (one OPTIMAL image per plane, each with
+its timeline semaphore `sem[i]` at `sem_value[i]`):
+
+```c
+AVVkFrame *f = (AVVkFrame *)frame->data[0];
+vkfc->lock_frame(hwfc, f);
+/* ... record the barrier of step 3 behind sem[i] at sem_value[i], signal
+ * sem_value[i] + 1, store the new layout, queue family and value in f ... */
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_VULKAN;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = frame->width;
+imp.h = frame->height;
+imp.n_planes = 2;
+imp.vulkan_handle_type = VMAFX_VULKAN_HANDLE_OPAQUE_FD;
+imp.vulkan_tiling = VMAFX_VULKAN_TILING_OPTIMAL;
+memcpy(imp.vulkan_pci, device_info.pci, sizeof(imp.vulkan_pci));
+VmafxFence *acquire[2] = {&imp.acquire, &imp.acquire_more[0]};
+for (int i = 0; i < 2; i++) {
+    VkMemoryGetFdInfoKHR mem = {.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+                                .memory = f->mem[i],
+                                .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    vkGetMemoryFdKHR(vk_device, &mem, &imp.plane[i].fd);
+    imp.plane[i].size = f->size[i];
+    imp.plane[i].offset = f->offset[i];
+    VkSemaphoreGetFdInfoKHR sem = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+                                   .semaphore = f->sem[i],
+                                   .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT};
+    acquire[i]->kind = VMAFX_FENCE_VULKAN_SEMAPHORE;
+    vkGetSemaphoreFdKHR(vk_device, &sem, &acquire[i]->fd);
+    acquire[i]->value = f->sem_value[i];
+}
+
+VmafxFrame *vf = NULL;
+status = vmafx_context_import_frame(context, cuda_device, &imp, "main", &vf, &error);
+for (int i = 0; status == VMAFX_OK && i < 2; i++) {
+    VmafxFence release = *acquire[i];
+    release.value = ++f->sem_value[i];   /* FFmpeg's next use of the frame waits for it */
+    status = vmafx_frame_signal_on_release(vf, &release, &error);
+}
+vkfc->unlock_frame(hwfc, f);
+/* close the plane and semaphore descriptors; submit vf */
+```
+
+Call `vmafx_frame_signal_on_release()` before the frame is submitted; up to
+3 fences per frame. The device signals them behind the frame's last reader
+in every context it was submitted to, before the release callback runs. Keep
+your reference to the producer's frame (the `AVFrame`) until the release
+callback ran or a `HOST` release fence is signalled: a write submitted
+earlier that waits on the release value stalls the producer's queue, and
+later submissions on it wait too.
+
+FFmpeg's Vulkan decoder outputs NV12 as one image with two planes (refused
+naming `plane_index`), and on the Mesa drivers its memory cannot be
+exported. Copy the decoded frame on the GPU (`vkCmdCopyImage()` per plane
+aspect) into a frame of a frames context with
+`AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE` (OPTIMAL for CUDA, LINEAR for SYCL and
+HIP), then import that. GStreamer 1.28's Vulkan image allocator allocates
+memory that cannot be exported; allocate exportable images yourself, wrap
+them (`gst_vulkan_image_memory_wrapped()`), and take the timeline from
+`GstVulkanImageMemory.barrier.parent.semaphore` / `semaphore_value`.
+
+To check that an import makes no host copy, trace an import with the
+vendor's tool as for the backend's own memory kinds (Nsight Systems on CUDA,
+`sycl-trace --ur.call` on SYCL, `rocprofv3 --memory-copy-trace` on HIP). On
+every backend the library's stream or queue makes no host-to-device or
+device-to-host copy of an imported Vulkan frame.
+
 ## Scores
 
 | Call | Returns |
@@ -353,12 +864,12 @@ feature and model score of the Netflix golden pair, both checkerboards and a
 `libvmaf.h` call returns `-EAGAIN`: an answer, not a failure, so no error is
 created and the output struct is not written.
 
-A model set's per-frame call and its pooled call each predict the set's
-members and write their scores once per frame, so call one of them per frame
-range in a session; calling the pooled score after the per-frame score of a
-frame in it fails in `libvmaf.h` as well
-(`docs/state.md`, T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05; the fix,
-PR #2206, is in review).
+A model set's frame scores are predicted once and then read back, so its
+per-frame and pooled calls can be mixed in one session and repeated (PR #2206).
+
+[Window scores](windows.md) are the asynchronous form: ask for a pooled score
+over a range of frames before they are final, and poll, wait for or receive
+it when they are, with the same values bit for bit.
 
 ## Rules every call follows
 
