@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync_file checked on the host
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: RC4 work package 3 (HIP lane); maintainer review on the draft PR
+- **Deciders**: maintainer (popup 2026-10-06); RC4 work package 3 (HIP lane)
 - **Tags**: api, rc4, gpu, hip, opengl, zero-copy
 
 ## Context
@@ -26,32 +26,48 @@ more read planes on the host: `psnr_hvs_hip` and `ssimulacra2_hip` stage
 them, and `float_ms_ssim_hip` builds level 0 with `picture_copy()`. There is
 no HIP device picture the twins could be handed.
 
-The platform the lane is measured on (gfx1036 iGPU, ROCm 7.2.4, Linux
-7.2.9-1-cachyos) behaves differently from the CUDA host in ways that ruled
-out the obvious designs; each was measured before it was decided
-([Research-2159](../research/2159-vmafx-hip-device-frames.md)):
+The lane is measured on the project's pinned toolchain, ROCm 10.1.0 (HIP
+runtime 7.16.26385, `build-config.env` `ROCM_BUILDER`,
+`rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf...`), in that image with
+the gfx1036 iGPU of the measuring host passed through (Linux
+7.2.9-1-cachyos). The platform behaves differently from the CUDA host in ways
+that ruled out the obvious designs; each was measured before it was decided
+([Research-2159](../research/2159-vmafx-hip-device-frames.md)). The host's
+own ROCm 7.2.4, on which the lane was first built, differs where a footnote
+says so.
 
 - The runtime has no sync_file semaphore type, and the types that could carry
-  one fail: `hipImportExternalSemaphore()` of an opaque descriptor (a DRM
-  syncobj) aborts the process (`rocdevice.hpp:281`,
-  `NullDevice::importExtSemaphore`, `ShouldNotReachHere()`), and a timeline
-  semaphore descriptor is `hipErrorInvalidValue`. A sync_file can therefore
-  neither become a device-side wait nor be signalled from a stream.
+  one are refused: `hipImportExternalSemaphore()` of an opaque descriptor (a
+  DRM syncobj) is `hipErrorNotSupported`, a timeline semaphore descriptor
+  `hipErrorInvalidValue`. A sync_file can therefore neither become a
+  device-side wait nor be signalled from a stream.[^724-sem]
 - `hipImportExternalMemory()` neither checks the size it is given against the
   dma-buf nor takes ownership of the descriptor.
 - `hipFree()` of a mapping synchronises the device: 200 ms behind a busy
   stream.
-- The HIP-GL interop reads only the current GLX context; after its first
-  setup failed (no GLX context, or a context of another GPU) later calls
-  crash the process, and `hipGLGetDevices()` crashes outright under another
-  vendor's GLX context.
+- The HIP-GL interop registers and maps a texture of a GLX context, but every
+  read of the mapped array fails: `hipMemcpy2DFromArrayAsync()`,
+  `hipMemcpyParam2DAsync()` and `hipMemcpy3DAsync()` return
+  `hipErrorInvalidValue`, and a row-wise copy or a texture-object read of it
+  faults the GPU (page not present), with the image's Mesa 26.0.8 and with
+  the host's Mesa 26.2.4.[^724-gl]
 - `hipEventQuery()` on an event never recorded returns `hipSuccess`.
-- Work left unsubmitted on one stream (an array read-out) was overtaken by
-  copies enqueued later on another stream that waits for it: the last frame
-  of a planar array clip was wrong in 5 of 6 runs.
+- Work left unsubmitted on one stream (an array read-out) is overtaken by
+  copies enqueued later on another stream that waits for it: without a
+  submit, the last frame of a planar array clip is wrong in 8 of 8
+  runs.[^724-order]
 - A run of a stream's commands is sometimes never executed
   (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`), with or without the
-  import path.
+  import path: the reproducer lost 98 to 179 frames of 100000 per run.
+
+[^724-sem]: ROCm 7.2.4 (HIP 7.2.53211) aborts the process on the opaque
+    descriptor instead (`rocdevice.hpp:281`, `NullDevice::importExtSemaphore`,
+    `ShouldNotReachHere()`).
+[^724-gl]: ROCm 7.2.4 reads the mapped array, but after a failed first setup
+    (no GLX context, or a GLX context of another GPU) every later HIP-GL call
+    crashes the process, and `hipGLGetDevices()` crashes outright under
+    another vendor's GLX context; ROCm 10.1 refuses both cleanly.
+[^724-order]: 5 of 6 runs on ROCm 7.2.4.
 
 ## Decision
 
@@ -92,8 +108,9 @@ We implement VMAFx device frames on HIP with these rules.
    unrecorded event as signalled). `HOST`: a host function on the library
    stream. The release callback of `VmafxFrameImport` runs after both were
    enqueued. A `SYNC_FILE` release fence is refused with `VMAFX_E_NOTSUP`
-   naming `release_fence`'s kind: there is no way to make one from a stream
-   point on this runtime.
+   naming `release_fence`'s kind: no external semaphore that could carry a
+   sync_file can be imported on ROCm 10.1 (nor 7.2), so there is no way to
+   make one from a stream point.
 5. **dma-bufs are external memory, imported with their own size.** A
    `VMAFX_MEMORY_DMABUF` plane's descriptor is duplicated
    (`F_DUPFD_CLOEXEC`), imported with `hipImportExternalMemory()` as an
@@ -116,20 +133,27 @@ We implement VMAFx device frames on HIP with these rules.
    device copy and needs `VMAFX_IMPORT_ALLOW_COPY`, as on CUDA.
 7. **The import's work is submitted at import.** Right after enqueuing an
    import's work the library calls `hipStreamQuery()` on the library stream,
-   which submits it. On the gfx1036 this took the array clip from 5 wrong
-   runs in 6 to 0 in 8.
-8. **HIP-GL only from a GLX context of the device's GPU.** Before any call
-   into the HIP-GL interop, the import checks that a GLX context is current
-   and that its renderer is the device's GPU (PCI bus id from the GLX
-   interop query); otherwise the import is refused with `VMAFX_E_NOTSUP`
-   naming `desc.memory`, and the runtime's interop is never touched. GL
+   which submits it. On the gfx1036 without it the array clip is wrong in 8
+   runs of 8 on ROCm 10.1; with it, in none.
+8. **HIP-GL only from a GLX context of the device's GPU, refused where the
+   runtime cannot read it.** Before any call into the HIP-GL interop, the
+   import checks that a GLX context is current and that its renderer is the
+   device's GPU (PCI bus id from the GLX interop query); otherwise the import
+   is refused with `VMAFX_E_NOTSUP` naming `desc.memory`, and the runtime's
+   interop is never touched (ROCm 7.2 crashes after a failed setup). GL
    entry points are resolved at run time; textures are registered read-only,
-   mapped on the library stream and unmapped there at release.
+   mapped on the library stream and unmapped there at release. When the
+   runtime refuses to read the mapped array (`hipErrorInvalidValue`, every
+   read on ROCm 10.1), the import is refused with `VMAFX_E_NOTSUP` naming
+   `desc.memory`, the array's extent and the runtime's version, never
+   reported as a device failure and never retried through another read that
+   faults the GPU (`T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06`).
 9. **`float_vif_hip` is registered by default.** The build option
    `enable_float_vif_hip_autodispatch` gated `float_vif_hip` behind a flag
    until the picture pool reached the twins (ADR-0623, T7-10c); device frames
    are that condition, and a twin without the flag cannot be picked for them.
-   The option stays and now defaults to `true`.
+   The option stays and now defaults to `true` (maintainer popup,
+   2026-10-06).
 10. **The platform's dropped commands are reported, not hidden.** The device
     tests compare every value and repeat a cell or a fence arm that differs,
     up to a bound, and print every repeat; a cell that differs in every
@@ -147,13 +171,14 @@ We implement VMAFx device frames on HIP with these rules.
 | Twins copy device pictures on the library stream; the twin's stream and the null stream wait (chosen) | Every read of producer memory is on one stream, so the release is ordered after it; the twins' kernels are unchanged | A device-to-device copy per frame into the twins' buffers (the shared frame dedups it across twins), where the CUDA twins read the picture | Chosen; reading the producer's memory in each kernel is an RC8 tuning row (`T-HIP-IMPORT-TWIN-DEVICE-COPY-2026-10-06`) |
 | Teach every HIP twin to read a device picture in place | No copy | Every twin's buffers, pitches and streams change in the lane that should only add the import path; the exact-twin contracts of RC3 would be re-proven for all of them | Not chosen now |
 | Copy on the twin's own stream after a wait on the acquire | No library stream | Readers on as many streams as twins, so a release enqueued anywhere is not after all of them | Not chosen |
-| sync_file as an external semaphore (wait and signal on the device, through a DRM syncobj) | No host check; a release fence of the same kind | `hipImportExternalSemaphore()` of the syncobj aborts the process on this runtime, a timeline descriptor is refused (measured) | Rejected after measurement |
+| sync_file as an external semaphore (wait and signal on the device, through a DRM syncobj) | No host check; a release fence of the same kind | ROCm 10.1 refuses the syncobj (`hipErrorNotSupported`) and a timeline descriptor (`hipErrorInvalidValue`); ROCm 7.2 aborts on the syncobj (measured) | Rejected after measurement |
 | sync_file acquire checked with `poll()` on the host, D8 waits (chosen) | Correct for any producer; the same as the GL sync | A host wait when the producer is behind | Chosen |
 | Fake a `SYNC_FILE` release fence (a host fence wrapped in a pipe) | Producers asking for one get one | A descriptor the kernel's sync_file machinery does not know; misleading | Not chosen: refused, named |
 | dma-buf size from the producer | No system call | The runtime does not check it: a size past the buffer maps memory that is not the dma-buf's | Not chosen: the dma-buf's own size, the producer's checked against it |
 | Destroy the external memory at release (`hipFree()`) | Simple | Synchronises the device, 200 ms behind a busy stream (measured), on the producer's thread | Not chosen: deferred behind an event |
 | Leave the import's work for the next synchronisation to submit | No extra call | Later copies on another stream overtook it (5 of 6 runs wrong, measured) | Not chosen |
-| HIP-GL without the GLX check | Any GL context | A failed first setup crashes later calls; another vendor's GLX context crashes the first | Not chosen |
+| HIP-GL without the GLX check | Any GL context | On ROCm 7.2 a failed first setup crashes later calls and another vendor's GLX context crashes the first (ROCm 10.1 refuses both) | Not chosen: the check costs nothing and keeps older runtimes alive |
+| Read the mapped GL array another way on ROCm 10.1 (row copies, a texture object) | GL imports on the pinned toolchain | Both fault the GPU there (measured) | Not chosen: refused, named, reopened by a ROCm update |
 | Keep `float_vif_hip` behind the option's old default | No default change | `float_vif` cannot be scored on HIP device frames in a default build | Not chosen |
 
 ## Consequences
@@ -164,9 +189,11 @@ We implement VMAFx device frames on HIP with these rules.
   odd offsets and pitches, semi-planar from pointers and from dma-bufs
   (`core/test/test_vmafx_import_hip_bitexact.c`); a skipped acquire wait, a
   skipped sync_file check and an early release are seen under device load
-  (`test_vmafx_import_hip_fence.c`); GL textures import from a GLX context
-  (`test_vmafx_import_hip_gl.c`); no plane goes through the host (runtime
-  trace and the host-copy counter); one import is scored by two contexts.
+  (`test_vmafx_import_hip_fence.c`); no plane goes through the host
+  (`rocprofv3`, the runtime's API log and the host-copy counter); one import
+  is scored by two contexts. All of it on ROCm 10.1; GL textures import from
+  a GLX context where the runtime reads them (ROCm 7.2,
+  `test_vmafx_import_hip_gl.c`).
   `psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` no longer read
   device frames on the host.
 - **Negative**: the twins copy each device frame once more on the device
@@ -174,18 +201,22 @@ We implement VMAFx device frames on HIP with these rules.
   sync_file acquire is a host wait when the producer is behind and a
   sync_file release fence is not available; a dma-buf and a GL texture are
   imported and registered per frame (caches are tuning rows); HIP-GL works
-  only from GLX; a HIP device has no frame pools; `VMAFX_DEVICE_PROFILING`
-  stays `VMAFX_E_NOTSUP` on HIP.
+  only from GLX, and not at all on the pinned ROCm 10.1, which refuses to
+  read mapped GL textures; a HIP device has no frame pools;
+  `VMAFX_DEVICE_PROFILING` stays `VMAFX_E_NOTSUP` on HIP.
   On the gfx1036 the platform's dropped commands still give a wrong value
-  about once per 10^4 frames, as before the import path.
+  about once per 10^3 to 10^4 frames, as before the import path.
 - **Neutral / follow-ups**: the FFmpeg filter (WP9) can import VAAPI / DRM
   frames through the dma-buf path; a ROCm update that makes external
-  semaphores work reopens the sync_file release (state row
-  `T-HIP-ROCM-EXTERNAL-SEMAPHORE-ABORT-2026-10-06`).
+  semaphores work reopens the sync_file release
+  (`T-HIP-ROCM-NO-SYNC-FILE-SEMAPHORE-2026-10-06`), one that reads mapped GL
+  textures the GL import (`T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06`).
 
 ## References
 
 - [ADR-1829](1829-rc4-zero-copy-import.md), [ADR-1852](1852-vmafx-api-redesign.md) design section 2.7, [ADR-1929](1929-vmafx-device-frames-fences.md), [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [ADR-1408](1408-hip-shared-frame-planes.md), [ADR-0623](0623-scaffold-audit-p2-half-finished.md), [Research-2159](../research/2159-vmafx-hip-device-frames.md).
 - `req` (RC4 work package 3, HIP lane): "device pointer; dma-buf as external memory (new path) | HIP event; `sync_file` | HIP host device (dropped-dispatch defect: re-run before blaming)".
 - `req` (RC4 work package index, added 2026-10-06, #2238): "OpenGL interop import (CUDA-GL, SYCL via EGL DMA-buf export, HIP-GL) and a GL sync fence kind (additive, ADR-1897)".
+- `Q` (maintainer popup 2026-10-06, ADR-2092 `enable_float_vif_hip_autodispatch`): "Default on (Recommended)".
+- `req` (RC4 coordination, 2026-10-06): evidence on the pinned ROCm 10.1.0 image, `ROCM_BUILDER` `rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce`; the SYNC_FILE release decision follows the 10.1 measurement (`hipImportExternalSemaphore()`: syncobj `hipErrorNotSupported`, timeline `hipErrorInvalidValue`), the host's 7.2.4 numbers stay as footnotes.
 - Tests: `core/test/test_vmafx_import_hip.c`, `test_vmafx_import_hip_bitexact.c`, `test_vmafx_import_hip_fence.c`, `test_vmafx_import_hip_gl.c`, `test_vmafx_import_hip_contract.py`, `test_vmafx_fence_kinds.c`, `test_hip_shared_frame.c`.
