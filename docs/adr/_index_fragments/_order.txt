@@ -1314,3 +1314,4 @@
 1906-vmafx-core-api-semantics
 1929-vmafx-device-frames-fences
 2044-vmafx-option-groups-scoring-contract
+2073-vmafx-provenance-record
