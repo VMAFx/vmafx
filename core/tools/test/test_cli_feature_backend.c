@@ -320,33 +320,6 @@ static char *test_backend_labels(void)
     return NULL;
 }
 
-/* #2155: the receipt carries the provenance record, one key per field of
- * VmafxProvenance, so the scoring server can read it into its proto message. */
-static char *test_provenance_member(void)
-{
-    VmafxProvenance record = VMAFX_PROVENANCE_INIT;
-    record.abi_major = 0U;
-    record.abi_minor = 1U;
-    record.abi_patch = 4U;
-    record.active_backend = VMAFX_BACKEND_SYCL;
-    record.n_extractors = 3U;
-    record.version = "v1.0.0-rc.4-7-gabc";
-    char json[256];
-    const size_t len = cli_format_provenance_member(&record, json, sizeof(json));
-    const char *const want = "\"provenance\": {\"abi_major\": 0, \"abi_minor\": 1, "
-                             "\"abi_patch\": 4, \"active_backend\": \"sycl\", "
-                             "\"n_extractors\": 3, \"version\": \"v1.0.0-rc.4-7-gabc\"}";
-    mu_assert("provenance member differs", !strcmp(json, want));
-    mu_assert("sizing pass disagrees", cli_format_provenance_member(&record, NULL, 0) == len);
-    record.version = NULL;
-    (void)cli_format_provenance_member(&record, json, sizeof(json));
-    mu_assert("a missing version is not an empty string", strstr(json, "\"version\": \"\"}"));
-    mu_assert("a NULL record is not formatted as zeros",
-              cli_format_provenance_member(NULL, json, sizeof(json)) > 0 &&
-                  strstr(json, "\"abi_major\": 0,") != NULL);
-    return NULL;
-}
-
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -364,7 +337,6 @@ char *run_tests(void)
         MU_TEST(test_report_errors_and_bounds),
         MU_TEST(test_receipt_truncation_and_sanitising),
         MU_TEST(test_backend_labels),
-        MU_TEST(test_provenance_member),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

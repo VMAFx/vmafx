@@ -15,7 +15,6 @@
 
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
-#include "vmafx/provenance.h"
 
 /** Upper bound on the extractors one output receipt lists. */
 #define CLI_FEATURE_REPORT_MAX 512U
@@ -79,15 +78,6 @@ const char *cli_report_backend_used(const struct CliExtractorReport *report);
  * excluding the terminating NUL.
  */
 size_t cli_format_backend_members(const struct CliExtractorReport *report, char *buf, size_t sz);
-
-/**
- * Format the JSON member `"provenance": {...}` of a provenance record into
- * @p buf (snprintf semantics): one key per field of VmafxProvenance, named as
- * the field, so the scoring server reads it into its proto `Provenance`
- * message (#2155). `active_backend` is the backend's lower-case name.
- * Returns the length the full text needs, excluding the terminating NUL.
- */
-size_t cli_format_provenance_member(const VmafxProvenance *provenance, char *buf, size_t sz);
 
 #ifdef __cplusplus
 }

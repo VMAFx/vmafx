@@ -64,6 +64,7 @@ vmaf_close_retry_source = files('vmaf_close_retry.c')
 vmaf_cli_sources = [
     'vmaf.cpp',
     'cli_feature_backend.cpp',
+    'cli_provenance.c',
     'cli_parse.cpp',
     'y4m_input.c',
     'vidinput.c',

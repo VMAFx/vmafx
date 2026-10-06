@@ -10,8 +10,7 @@ search:
 ## Option groups generate every scoring surface (2026-10-06)
 
 `rc4/api-wp8-options` (RC4 work package 8, ADR-2044). Fork-only files except
-`core/tools/cli_parse.cpp`, `core/tools/vmaf.cpp` and
-`core/tools/cli_feature_backend.{h,cpp}`:
+`core/tools/cli_parse.cpp` and `core/tools/vmaf.cpp`:
 
 - `core/tools/cli_parse.cpp` no longer holds the short option string, the
   `ARG_*` enum, `long_opts[]` or the usage text: it includes the generated
@@ -22,8 +21,9 @@ search:
   `--check_sample_range` and `--list-backends` join the definition the same
   way, and `core/test/test_cli_option_table.cpp`'s frozen list gains them.
 - `core/tools/vmaf.cpp`'s JSON receipt appends a `provenance` member
-  (`cli_format_provenance_member()`); keep it when the receipt code moves
-  (WP5 moves it into the library's report writer).
+  (`cli_format_provenance_member()` of the C file `core/tools/cli_provenance.c`,
+  so no C++ CLI source includes the generated C headers); keep it when the
+  receipt code moves (WP5 moves it into the library's report writer).
 - Generated files (`*.gen.*`, `proto/vmafx_api.proto`, `gen/go/**`, the
   marked regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`,
   `docs/mcp/tools.md`, `docs/server/api-contract.md` and

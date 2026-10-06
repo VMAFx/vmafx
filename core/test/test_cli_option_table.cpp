@@ -55,65 +55,65 @@ struct OldOption {
 
 /* The 59 long spellings of the hand table (027aebc56). */
 constexpr OldOption old_options[] = {
-    {"reference", 1, 'r'},
-    {"distorted", 1, 'd'},
-    {"width", 1, 'w'},
-    {"height", 1, 'h'},
-    {"pixel_format", 1, 'p'},
-    {"bitdepth", 1, 'b'},
-    {"model", 1, 'm'},
-    {"output", 1, 'o'},
-    {"xml", 0, '\0'},
-    {"json", 0, '\0'},
-    {"csv", 0, '\0'},
-    {"sub", 0, '\0'},
-    {"help", 0, '\0'},
-    {"threads", 1, '\0'},
-    {"feature", 1, '\0'},
-    {"subsample", 1, '\0'},
-    {"cpumask", 1, '\0'},
-    {"gpumask", 1, '\0'},
-    {"aom_ctc", 1, '\0'},
-    {"nflx_ctc", 1, '\0'},
-    {"frame_cnt", 1, '\0'},
-    {"frame_skip_ref", 1, '\0'},
-    {"frame_skip_dist", 1, '\0'},
-    {"no_cuda", 0, '\0'},
-    {"no_sycl", 0, '\0'},
-    {"sycl_device", 1, '\0'},
-    {"no_hip", 0, '\0'},
-    {"hip_device", 1, '\0'},
-    {"no_metal", 0, '\0'},
-    {"metal_device", 1, '\0'},
-    {"backend", 1, '\0'},
-    {"precision", 1, '\0'},
-    {"tiny-model", 1, '\0'},
-    {"tiny_model", 1, '\0'},
-    {"tiny-device", 1, '\0'},
-    {"tiny_device", 1, '\0'},
-    {"tiny-threads", 1, '\0'},
-    {"tiny_threads", 1, '\0'},
-    {"tiny-fp16", 0, '\0'},
-    {"tiny_fp16", 0, '\0'},
-    {"tiny-model-verify", 0, '\0'},
-    {"tiny_model_verify", 0, '\0'},
-    {"tiny-codec", 1, '\0'},
-    {"tiny_codec", 1, '\0'},
-    {"tiny-preset", 1, '\0'},
-    {"tiny_preset", 1, '\0'},
-    {"tiny-crf", 1, '\0'},
-    {"tiny_crf", 1, '\0'},
-    {"no-reference", 0, '\0'},
-    {"no_reference", 0, '\0'},
-    {"tiny-resize", 1, '\0'},
-    {"tiny_resize", 1, '\0'},
-    {"dnn-ep", 1, '\0'},
-    {"dnn_ep", 1, '\0'},
-    {"no_prediction", 0, 'n'},
-    {"netflix-compat", 0, '\0'},
-    {"netflix_compat", 0, '\0'},
-    {"version", 0, 'v'},
-    {"quiet", 0, 'q'},
+    {.name = "reference", .has_arg = 1, .short_letter = 'r'},
+    {.name = "distorted", .has_arg = 1, .short_letter = 'd'},
+    {.name = "width", .has_arg = 1, .short_letter = 'w'},
+    {.name = "height", .has_arg = 1, .short_letter = 'h'},
+    {.name = "pixel_format", .has_arg = 1, .short_letter = 'p'},
+    {.name = "bitdepth", .has_arg = 1, .short_letter = 'b'},
+    {.name = "model", .has_arg = 1, .short_letter = 'm'},
+    {.name = "output", .has_arg = 1, .short_letter = 'o'},
+    {.name = "xml", .has_arg = 0, .short_letter = '\0'},
+    {.name = "json", .has_arg = 0, .short_letter = '\0'},
+    {.name = "csv", .has_arg = 0, .short_letter = '\0'},
+    {.name = "sub", .has_arg = 0, .short_letter = '\0'},
+    {.name = "help", .has_arg = 0, .short_letter = '\0'},
+    {.name = "threads", .has_arg = 1, .short_letter = '\0'},
+    {.name = "feature", .has_arg = 1, .short_letter = '\0'},
+    {.name = "subsample", .has_arg = 1, .short_letter = '\0'},
+    {.name = "cpumask", .has_arg = 1, .short_letter = '\0'},
+    {.name = "gpumask", .has_arg = 1, .short_letter = '\0'},
+    {.name = "aom_ctc", .has_arg = 1, .short_letter = '\0'},
+    {.name = "nflx_ctc", .has_arg = 1, .short_letter = '\0'},
+    {.name = "frame_cnt", .has_arg = 1, .short_letter = '\0'},
+    {.name = "frame_skip_ref", .has_arg = 1, .short_letter = '\0'},
+    {.name = "frame_skip_dist", .has_arg = 1, .short_letter = '\0'},
+    {.name = "no_cuda", .has_arg = 0, .short_letter = '\0'},
+    {.name = "no_sycl", .has_arg = 0, .short_letter = '\0'},
+    {.name = "sycl_device", .has_arg = 1, .short_letter = '\0'},
+    {.name = "no_hip", .has_arg = 0, .short_letter = '\0'},
+    {.name = "hip_device", .has_arg = 1, .short_letter = '\0'},
+    {.name = "no_metal", .has_arg = 0, .short_letter = '\0'},
+    {.name = "metal_device", .has_arg = 1, .short_letter = '\0'},
+    {.name = "backend", .has_arg = 1, .short_letter = '\0'},
+    {.name = "precision", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-model", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_model", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-device", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_device", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-threads", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_threads", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-fp16", .has_arg = 0, .short_letter = '\0'},
+    {.name = "tiny_fp16", .has_arg = 0, .short_letter = '\0'},
+    {.name = "tiny-model-verify", .has_arg = 0, .short_letter = '\0'},
+    {.name = "tiny_model_verify", .has_arg = 0, .short_letter = '\0'},
+    {.name = "tiny-codec", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_codec", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-preset", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_preset", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny-crf", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_crf", .has_arg = 1, .short_letter = '\0'},
+    {.name = "no-reference", .has_arg = 0, .short_letter = '\0'},
+    {.name = "no_reference", .has_arg = 0, .short_letter = '\0'},
+    {.name = "tiny-resize", .has_arg = 1, .short_letter = '\0'},
+    {.name = "tiny_resize", .has_arg = 1, .short_letter = '\0'},
+    {.name = "dnn-ep", .has_arg = 1, .short_letter = '\0'},
+    {.name = "dnn_ep", .has_arg = 1, .short_letter = '\0'},
+    {.name = "no_prediction", .has_arg = 0, .short_letter = 'n'},
+    {.name = "netflix-compat", .has_arg = 0, .short_letter = '\0'},
+    {.name = "netflix_compat", .has_arg = 0, .short_letter = '\0'},
+    {.name = "version", .has_arg = 0, .short_letter = 'v'},
+    {.name = "quiet", .has_arg = 0, .short_letter = 'q'},
 };
 
 /* The hand table's short option string. */
@@ -123,10 +123,9 @@ constexpr std::size_t n_long = sizeof(generated::long_opts) / sizeof(generated::
 
 const struct option *find_long(const char *name)
 {
-    for (std::size_t i = 0; i < n_long; i++) {
-        const char *const candidate = generated::long_opts[i].name;
-        if (candidate != nullptr && std::strcmp(candidate, name) == 0) {
-            return &generated::long_opts[i];
+    for (const struct option &candidate : generated::long_opts) {
+        if (candidate.name != nullptr && std::strcmp(candidate.name, name) == 0) {
+            return &candidate;
         }
     }
     return nullptr;
@@ -182,10 +181,9 @@ mu_message_t test_every_old_short_option_is_accepted()
 
 mu_message_t test_long_spellings_are_unique()
 {
-    for (std::size_t i = 0; i < n_long; i++) {
-        const char *const name = generated::long_opts[i].name;
-        if (name != nullptr && find_long(name) != &generated::long_opts[i]) {
-            (void)fprintf(stderr, "--%s appears twice\n", name);
+    for (const struct option &entry : generated::long_opts) {
+        if (entry.name != nullptr && find_long(entry.name) != &entry) {
+            (void)fprintf(stderr, "--%s appears twice\n", entry.name);
             return "a long spelling appears twice in the generated table";
         }
     }

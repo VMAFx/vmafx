@@ -9,7 +9,6 @@
 #include "cli_feature_backend.h"
 
 #include <cerrno>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -193,44 +192,6 @@ size_t cli_format_backend_members(const CliExtractorReport *report, char *buf, s
         sink_put(&sink, '}');
     }
     sink_put(&sink, ']');
-    if (buf && sz > 0)
-        buf[sink.len < sz ? sink.len : sz - 1] = '\0';
-    return sink.len;
-}
-
-namespace
-{
-
-void sink_put_uint(TextSink *sink, uint32_t value)
-{
-    char digits[16];
-    const int len = snprintf(digits, sizeof(digits), "%u", static_cast<unsigned>(value));
-    if (len > 0)
-        sink_puts(sink, digits);
-}
-
-void sink_put_uint_member(TextSink *sink, const char *key, uint32_t value)
-{
-    sink_puts(sink, key);
-    sink_put_uint(sink, value);
-}
-
-} // namespace
-
-size_t cli_format_provenance_member(const VmafxProvenance *provenance, char *buf, size_t sz)
-{
-    TextSink sink = {.buf = buf, .sz = sz, .len = 0};
-    const VmafxProvenance empty{};
-    const VmafxProvenance *const p = provenance ? provenance : &empty;
-    sink_put_uint_member(&sink, "\"provenance\": {\"abi_major\": ", p->abi_major);
-    sink_put_uint_member(&sink, ", \"abi_minor\": ", p->abi_minor);
-    sink_put_uint_member(&sink, ", \"abi_patch\": ", p->abi_patch);
-    sink_puts(&sink, ", \"active_backend\": ");
-    sink_put_name(&sink, cli_backend_label(static_cast<enum VmafBackend>(p->active_backend)));
-    sink_put_uint_member(&sink, ", \"n_extractors\": ", p->n_extractors);
-    sink_puts(&sink, ", \"version\": ");
-    sink_put_name(&sink, p->version ? p->version : "");
-    sink_put(&sink, '}');
     if (buf && sz > 0)
         buf[sink.len < sz ? sink.len : sz - 1] = '\0';
     return sink.len;
