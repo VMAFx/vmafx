@@ -6690,6 +6690,7 @@
         "core/test/test_vmafx_model.c": 1,
         "core/test/test_vmafx_provenance.c": 1,
         "core/test/test_vmafx_provenance_json.c": 1,
+        "core/test/test_vmafx_provenance_threads.c": 1,
         "core/test/test_vmafx_report.c": 1,
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
@@ -11412,6 +11413,7 @@
     "2073": {
       "sites": {
         "Makefile": 1,
+        "core/src/libvmaf.c": 1,
         "core/src/meson.build": 1,
         "core/src/output.cpp": 2,
         "core/src/vmafx/provenance.c": 1,
@@ -11422,9 +11424,10 @@
         "core/src/vmafx/report.c": 1,
         "core/src/vmafx/report_fragments.h": 1,
         "core/src/vmafx/report_verify.c": 1,
-        "core/test/meson.build": 2,
+        "core/test/meson.build": 3,
         "core/test/test_vmafx_provenance.c": 1,
         "core/test/test_vmafx_provenance_json.c": 1,
+        "core/test/test_vmafx_provenance_threads.c": 1,
         "core/test/test_vmafx_report.c": 1,
         "core/tools/cli_provenance.c": 1,
         "core/tools/cli_provenance.h": 1,

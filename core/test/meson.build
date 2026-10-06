@@ -1363,6 +1363,17 @@ foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx
     test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
 endforeach
 
+# RC4 WP5 (#2142, ADR-2073): a provenance query while another thread submits.
+# The Sanitizers job's TSan build reports a racy read of the record's run
+# fields here; every build checks each record it sees is consistent.
+test_vmafx_provenance_threads = executable('test_vmafx_provenance_threads',
+    ['test.c', 'test_vmafx_provenance_threads.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_provenance_threads', test_vmafx_provenance_threads, suite : ['fast'])
+
 # Linux static-link fault control for output_file_open(). The project's
 # large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
 # and injects EINTR once for the target path.

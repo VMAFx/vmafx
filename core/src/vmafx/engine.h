@@ -101,7 +101,9 @@ int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
  * while it is virtual). */
 uint64_t vmafx_monotonic_ns(void);
 
-/* RC4 WP5 (#2142): the run a context made, for the provenance record. */
+/* RC4 WP5 (#2142): the run a context made, for the provenance record. Safe
+ * to call while another thread submits frames: everything but `cfg` (set at
+ * init) comes from atomics the submitting thread publishes. */
 typedef struct VmafEngineRunInfo {
     VmafConfiguration cfg;
     unsigned w, h, bpc;

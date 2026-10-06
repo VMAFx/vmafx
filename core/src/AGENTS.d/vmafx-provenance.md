@@ -23,6 +23,7 @@ invariant: Record JSON = proto JSON mapping in RFC 8785 form; digest skips diges
 
 - Data read at query time, never cached across queries: build (`provenance_build.c`, `vmafx_build_info.h` + `vmafx_build_commit.h` from `core/src/meson.build`), engine run (`vmaf_engine_run_info()`), device (`vmafx_provenance_device()`), collector (models list, feature vectors, producers), state (annotations, encode record).
 - Queries hold `context->provenance.lock`, then collector `fc->lock` (snapshot). Never reverse order. Record strings point into context (collector, models, state): context lifetime.
+- Query may run while another thread submits (design 2.5). Frame count, geometry, times come only from `VmafContext.run` atomics (`run_note_frame()` after each `pic_cnt++`, release store of `flush_ns`); `vmaf_engine_run_info()` never reads `pic_cnt` / `pic_params`. `test_vmafx_provenance_threads` under TSan (Sanitizers job) reports any plain read.
 - `build_id` = digest of compiler, build_flags, fp_policy, backends, rust_twins. Commit + arch excluded on purpose (own fields). `test_build_id_follows_the_build` plants each part.
 - CPU device: name `cpu`, runtime = `VMAFX_BUILD_ARCH`. Device backends: runtime `unknown` until WP3 lanes fill `vmafx_provenance_device()` (requests/WP3-1).
 - `implementation` = `rust` iff extractor name ends `_rust`; replace with framework flag when #2086 lands.

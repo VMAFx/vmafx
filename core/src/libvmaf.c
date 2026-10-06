@@ -25,6 +25,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -193,10 +195,21 @@ typedef struct VmafContext {
     } pic_params;
     unsigned pic_cnt;
     bool flushed;
-    /* RC4 WP5 (#2142): monotonic time of the first accepted frame and of the
-     * flush, for the provenance record's elapsed_ns; 0 until they happen. */
-    uint64_t first_frame_ns;
-    uint64_t flush_ns;
+    /* RC4 WP5 (#2142, ADR-2073): what the provenance record reads of the
+     * run. The submitting thread writes it and a record query may read it
+     * from any thread while frames are submitted (design section 2.5), so it
+     * is atomic and separate from pic_cnt / pic_params, which stay the
+     * submitting thread's own. `size` (w << 32 | h) and `format`
+     * (bpc << 8 | pix_fmt) are stored before `frames` leaves 0 (release), so
+     * a reader that loads a nonzero count (acquire) sees them; the times are
+     * monotonic nanoseconds, 0 until the first frame / the flush. */
+    struct {
+        _Atomic uint64_t frames;
+        _Atomic uint64_t size;
+        _Atomic uint32_t format;
+        _Atomic uint64_t first_ns;
+        _Atomic uint64_t flush_ns;
+    } run;
     /* Active compute backend — set by vmaf_<backend>_import_state().
      * Zero-initialised (VMAF_BACKEND_UNKNOWN) for CPU-only contexts. */
     enum VmafBackend active_backend;
@@ -279,6 +292,20 @@ typedef struct VmafContext {
      * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
     struct VmafxContext *api_owner;
 } VmafContext;
+
+/* RC4 WP5: count one accepted frame for the provenance record (see `run`). */
+static void run_note_frame(VmafContext *vmaf)
+{
+    if (atomic_load_explicit(&vmaf->run.frames, memory_order_relaxed) == 0u) {
+        const uint64_t size = ((uint64_t)vmaf->pic_params.w << 32) | vmaf->pic_params.h;
+        const uint32_t format =
+            ((uint32_t)vmaf->pic_params.bpc << 8) | ((uint32_t)vmaf->pic_params.pix_fmt & 0xffu);
+        atomic_store_explicit(&vmaf->run.size, size, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.format, format, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.first_ns, vmafx_monotonic_ns(), memory_order_relaxed);
+    }
+    atomic_fetch_add_explicit(&vmaf->run.frames, 1u, memory_order_release);
+}
 
 typedef struct BatchThreadData {
     VmafFeatureExtractorContext **fex_ctx;
@@ -3266,7 +3293,7 @@ static int flush_context(VmafContext *vmaf)
      * NULL) to re-run the flush pass. */
     if (!err) {
         vmaf->flushed = true;
-        vmaf->flush_ns = vmafx_monotonic_ns();
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
     }
     return err;
 }
@@ -4072,8 +4099,7 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
     /* Increment only after successful validation so a retry on transient
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
-    if (!vmaf->first_frame_ns)
-        vmaf->first_frame_ns = vmafx_monotonic_ns();
+    run_note_frame(vmaf);
 
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
@@ -4191,8 +4217,7 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* Increment only after queue_wait succeeds so a retry on error does not
      * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
     vmaf->pic_cnt++;
-    if (!vmaf->first_frame_ns)
-        vmaf->first_frame_ns = vmafx_monotonic_ns();
+    run_note_frame(vmaf);
 
     // Advance double-buffer slot and frame counter for the zero-copy VA import path.
     // Mirrors shared_frame_upload:597-599: cur_compute = cur_upload; cur_upload = 1-cur_upload.
@@ -4252,7 +4277,7 @@ int vmaf_flush_sycl(VmafContext *vmaf)
 
     if (!err) {
         vmaf->flushed = true;
-        vmaf->flush_ns = vmafx_monotonic_ns();
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
     }
     return err;
 }
@@ -4792,16 +4817,22 @@ int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
     if (!vmaf || !out)
         return -EINVAL;
     memset(out, 0, sizeof(*out));
+    /* cfg is set once by vmaf_engine_init(); the rest is `run` (atomic). */
     out->cfg = vmaf->cfg;
-    out->w = vmaf->pic_params.w;
-    out->h = vmaf->pic_params.h;
-    out->bpc = vmaf->pic_params.bpc;
-    out->pix_fmt = vmaf->pic_params.pix_fmt;
-    out->pic_cnt = vmaf->pic_cnt;
-    if (vmaf->first_frame_ns) {
-        const uint64_t end = vmaf->flush_ns ? vmaf->flush_ns : vmafx_monotonic_ns();
-        out->elapsed_ns = end > vmaf->first_frame_ns ? end - vmaf->first_frame_ns : 0u;
-    }
+    const uint64_t frames = atomic_load_explicit(&vmaf->run.frames, memory_order_acquire);
+    if (!frames)
+        return 0;
+    const uint64_t size = atomic_load_explicit(&vmaf->run.size, memory_order_relaxed);
+    const uint32_t format = atomic_load_explicit(&vmaf->run.format, memory_order_relaxed);
+    out->w = (unsigned)(size >> 32);
+    out->h = (unsigned)(size & 0xffffffffu);
+    out->bpc = format >> 8;
+    out->pix_fmt = (enum VmafPixelFormat)(format & 0xffu);
+    out->pic_cnt = frames > UINT_MAX ? UINT_MAX : (unsigned)frames;
+    const uint64_t first = atomic_load_explicit(&vmaf->run.first_ns, memory_order_relaxed);
+    const uint64_t flush = atomic_load_explicit(&vmaf->run.flush_ns, memory_order_acquire);
+    const uint64_t end = flush ? flush : vmafx_monotonic_ns();
+    out->elapsed_ns = end > first ? end - first : 0u;
     return 0;
 }
 
