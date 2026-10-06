@@ -162,6 +162,12 @@ func (h *httpServer) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	scoringservice.HandleReadyz(h.metrics, h.log, h.scorer != nil, w, r)
 }
 
+// scoreLogger is the request-scoped logger for POST /v1/score: it carries the
+// shared request_id and route fields (pkg/observability/logfields.go).
+func (h *httpServer) scoreLogger(r *http.Request) *slog.Logger {
+	return observability.RouteLogger(r.Context(), h.log, http.MethodPost, "/v1/score")
+}
+
 // handleScore handles POST /v1/score.
 func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -218,8 +224,8 @@ func (h *httpServer) acquireScoreSlot(w http.ResponseWriter, r *http.Request) (f
 	}
 	if err := h.limiter.Acquire(r.Context()); err != nil {
 		h.metrics.ScoreErrors.Inc()
-		h.log.Warn("http Score rejected: concurrency cap reached",
-			"max", h.limiter.Max(), "error", err)
+		h.scoreLogger(r).Warn("http Score rejected: concurrency cap reached",
+			"max", h.limiter.Max(), observability.FieldError, err)
 		scoringservice.WriteJSON(h.log, w, http.StatusTooManyRequests, errorResponse{
 			Error: fmt.Sprintf("too many concurrent scoring requests (max %d); try again later", h.limiter.Max()),
 		})
@@ -236,20 +242,23 @@ func (h *httpServer) scoreAndRespond(
 	// subprocess via exec.CommandContext.  Fixes
 	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
 	score, features, err := h.scorer.Score(r.Context(), req.Reference, req.Distorted, req.Model)
-	elapsed := time.Since(start).Seconds()
-	h.metrics.ScoreDuration.Observe(elapsed)
+	took := time.Since(start)
+	h.metrics.ScoreDuration.Observe(took.Seconds())
 
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
-		h.log.Error("http Score failed", "error", err, "duration_s", elapsed)
+		h.scoreLogger(r).Error("http Score failed",
+			observability.FieldModel, req.Model, observability.FieldError, err,
+			observability.Seconds(took))
 		scoringservice.WriteJSON(h.log, w, http.StatusInternalServerError,
 			errorResponse{Error: err.Error()})
 		return
 	}
 
-	h.log.Info("http Score completed",
+	h.scoreLogger(r).Info("http Score completed",
 		"score", fmt.Sprintf("%.4f", score),
-		"duration_s", elapsed,
+		observability.FieldModel, req.Model,
+		observability.Seconds(took),
 	)
 	scoringservice.WriteJSON(h.log, w, http.StatusOK,
 		scoreResponse{Score: score, Features: features})
