@@ -48,6 +48,8 @@ struct VmafxDevice {
     uint32_t backend; /* VmafxBackend */
     int32_t index;
     uint32_t flags; /* VmafxDeviceFlags it was created with */
+    /* The backend lane's device (CUDA: cuda/vmafx_cuda.h), NULL for the CPU. */
+    void *lane;
 };
 
 /* A host fence (fence.c): a reference-counted flag set once. The `handle` of
@@ -91,6 +93,18 @@ struct VmafxFrame {
     void *owned;
     /* The pool the frame returns to instead of being freed, or NULL. */
     VmafxFramePool *pool;
+    /* RC4 WP3 backend lanes: the lane's per-frame state (device memory the
+     * import converted into, gates of release fences, interop handles) and
+     * the lane's release, which vmafx_frame_release() / the pool's release
+     * call in place of vmafx_frame_signal_released(): it signals the release
+     * fences once the device has run the frame's last reader. NULL for host
+     * frames. */
+    void *lane;
+    int (*lane_release)(VmafxFrame *frame, VmafPicture *pic);
+    /* Lane state that lives as long as the frame: a pool frame's (CUDA: the
+     * event its last readers are recorded behind, which an acquire waits
+     * on). */
+    void *lane_persistent;
 };
 
 /* "sha256:" + 64 hex digits + NUL (RC4 WP5 digests). */
@@ -132,6 +146,7 @@ struct VmafxContext {
     VmafxHeld models;                /* VmafxModel * (ADR-1755) */
     VmafxHeld model_sets;            /* VmafxModelSet * */
     VmafxDevice *device;             /* vmafx_context_use_device(); NULL: the CPU, no device held */
+    void *lane_state;                /* engine state the lane imported (CUDA: a VmafCudaState) */
     uint64_t import_retry_wait_ns;   /* the import rule's host wait, resolved (never 0) */
     bool have_frame;                 /* a frame was submitted: the fields below are set */
     uint64_t last_index;             /* indices increase strictly (ADR-0152) */
@@ -171,7 +186,7 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_MODEL_CONFIG ((uint32_t)sizeof(VmafxModelConfig))                     /* 0.1.1 */
 #define VMAFX_MIN_FRAME_DESC ((uint32_t)sizeof(VmafxFrameDesc))                         /* 0.1.1 */
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
-#define VMAFX_MIN_FRAME_IMPORT ((uint32_t)sizeof(VmafxFrameImport))                     /* 0.1.2 */
+#define VMAFX_MIN_FRAME_IMPORT ((uint32_t)offsetof(VmafxFrameImport, release))          /* 0.1.2 */
 #define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
 #define VMAFX_MIN_CONVERT_DESC ((uint32_t)sizeof(VmafxConvertDesc))                     /* 0.1.6 */
 #define VMAFX_MIN_DNN_CONFIG ((uint32_t)sizeof(VmafxDnnConfig))                         /* 0.1.6 */
@@ -204,6 +219,10 @@ void vmafx_held_push(VmafxHeld *held, void *item);
 /* The engine's log level of a VmafxLogLevel (NONE for any other value;
  * values equal). */
 enum VmafLogLevel vmafx_engine_log_level(uint32_t level);
+
+/* After a successful engine close: free the engine state the device's lane
+ * imported and drop the context's device reference (device_context.c). */
+void vmafx_context_release_device(VmafxContext *context);
 
 /* The process CPU device (never freed; ref / unref are no-ops on it). */
 VmafxDevice *vmafx_device_cpu(void);
@@ -258,6 +277,42 @@ bool vmafx_host_fence_signalled(const VmafxHostFence *fence);
  * VMAFX_E_INVALID naming `subject` when its handle is not a live one. */
 VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fence,
                                 const char *subject, VmafxHostFence **out);
+/* Signal `fence` and drop one reference to it (a backend lane's completion
+ * callback; no allocation, no lock). */
+void vmafx_host_fence_signal_unref(VmafxHostFence *fence);
+/* Poll `done(arg)` until it answers 1 or `timeout_ns` passed, sleeping between
+ * looks on the clock host fences wait on (the virtual test clock included):
+ * 1 when done, 0 at the timeout, a negative value as soon as `done` returns
+ * one (a runtime failure). The backend lanes wait on their fences with it. */
+int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t timeout_ns);
+
+/* ---- Imports (frame_import.c) -------------------------------------------- */
+
+/* How a producer lays out one pixel format vmafx_frame_import() takes. */
+typedef struct VmafxImportLayout {
+    uint32_t pix_fmt;    /* VmafxPixelFormat the producer hands over */
+    uint32_t planar_fmt; /* VmafxPixelFormat of the frame it makes */
+    uint32_t n_planes;   /* planes the producer hands over */
+    uint32_t bpc_min;
+    uint32_t bpc_max;
+    uint32_t shift;   /* right shift of every sample (P010: 6) */
+    bool interleaved; /* plane 1 holds Cb / Cr pairs */
+    const char *name; /* FFmpeg's name, for messages */
+} VmafxImportLayout;
+
+/* Bytes of one row of producer plane `i` and its rows, for the planar
+ * geometry `pw` / `ph` of the frame. */
+void vmafx_import_plane_extent(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
+                               const unsigned pw[3], const unsigned ph[3], uint64_t *row,
+                               uint64_t *rows);
+/* One plane of linear memory (`memory` names it in messages): an address, a
+ * linear layout, a pitch that holds a row and rows that lie inside the given
+ * size and the address space. */
+VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const VmafxImportPlane *p,
+                                            uint32_t i, uint64_t row, uint64_t rows,
+                                            const char *memory);
+/* Subject names of the fields of plane `i` (handle, pitch, modifier, size). */
+const char *vmafx_import_plane_field(uint32_t i, const char *field);
 
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */
 

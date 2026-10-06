@@ -22,6 +22,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -29,6 +30,9 @@
 
 #include "error_internal.h"
 #include "internal.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 #include "picture.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
@@ -60,10 +64,18 @@ static void pool_free(VmafxFramePool *pool)
         if (!frame) {
             continue;
         }
-        /* The picture's own release returns the pixel buffer
-         * (vmaf_picture_alloc's buffer pool); it reads data and the cookie. */
-        VmafPicture pic = frame->pic;
-        (void)frame->inner_release(&pic, frame->inner_cookie);
+        if (frame->inner_release) {
+            /* The picture's own release returns the pixel buffer
+             * (vmaf_picture_alloc's buffer pool); it reads data and the
+             * cookie. */
+            VmafPicture pic = frame->pic;
+            (void)frame->inner_release(&pic, frame->inner_cookie);
+        }
+#ifdef HAVE_CUDA
+        if (frame->residency == VMAFX_BACKEND_CUDA) {
+            vmafx_cuda_pool_frame_free(frame);
+        }
+#endif
         free(frame);
     }
     free((void *)pool->frames);
@@ -86,10 +98,16 @@ static void pool_unref(VmafxFramePool *pool)
  * after this returns; the next acquire makes new ones. */
 static int pool_frame_release(VmafPicture *pic, void *cookie)
 {
-    (void)pic;
     VmafxFrame *const frame = cookie;
     VmafxFramePool *const pool = frame->pool;
-    vmafx_frame_signal_released(frame);
+    int err = 0;
+    if (frame->lane_release) {
+        /* A device frame: its fences are signalled after the last reader. */
+        err = frame->lane_release(frame, pic);
+        frame->lane_release = NULL;
+    } else {
+        vmafx_frame_signal_released(frame);
+    }
     /* `pic` is the last holder's copy, whose slot and count the engine frees
      * after this returns; the frame's own picture forgets them now. */
     frame->pic.priv = NULL;
@@ -99,7 +117,23 @@ static int pool_frame_release(VmafPicture *pic, void *cookie)
     pool->free_frames[pool->n_free++] = frame;
     (void)pthread_mutex_unlock(&pool->lock);
     pool_unref(pool);
-    return 0;
+    return err;
+}
+
+/* The pixels of a pool frame on a device: 0, or a negative errno. */
+static int device_planes(VmafxFramePool *pool, const VmafxFrameDesc *d, VmafxFrame *frame)
+{
+#ifdef HAVE_CUDA
+    if (pool->device->backend == VMAFX_BACKEND_CUDA) {
+        frame->device = pool->device;
+        return vmafx_cuda_pool_frame_init(pool->device, d, frame);
+    }
+#else
+    (void)d;
+    (void)frame;
+#endif
+    assert(pool->device->backend != VMAFX_BACKEND_CPU);
+    return -ENOTSUP;
 }
 
 bool vmafx_frame_pool_release_is(int (*release)(VmafPicture *pic, void *cookie))
@@ -113,6 +147,14 @@ static VmafxFrame *pool_frame_new(VmafxFramePool *pool, const VmafxFrameDesc *d)
     VmafxFrame *const frame = calloc(1, sizeof(*frame));
     if (!frame) {
         return NULL;
+    }
+    if (pool->device->backend != VMAFX_BACKEND_CPU) {
+        if (device_planes(pool, d, frame) != 0) {
+            free(frame);
+            return NULL;
+        }
+        frame->pool = pool;
+        return frame;
     }
     if (vmaf_picture_alloc(&frame->pic, vmafx_engine_pixel_format(d->pix_fmt), d->bpc, d->w,
                            d->h) != 0) {
@@ -164,6 +206,20 @@ static VmafxFramePool *pool_new(VmafxDevice *device, const VmafxFrameDesc *d, ui
     return pool;
 }
 
+/* The device a pool allocates on: the CPU (NULL too), or a device whose
+ * backend lane allocates pool frames (CUDA). */
+static VmafxStatus pool_device(const VmafxReport *report, VmafxDevice *device,
+                               VmafxDevice **resolved)
+{
+#ifdef HAVE_CUDA
+    if (device && device->backend == VMAFX_BACKEND_CUDA) {
+        *resolved = device;
+        return VMAFX_OK;
+    }
+#endif
+    return vmafx_frame_host_device(report, device, resolved);
+}
+
 VmafxStatus vmafx_frame_pool_create(VmafxDevice *device, const VmafxFrameDesc *desc, uint32_t count,
                                     VmafxFramePool **out, VmafxError **error)
 {
@@ -181,7 +237,7 @@ VmafxStatus vmafx_frame_pool_create(VmafxDevice *device, const VmafxFrameDesc *d
                             "%u frames; a pool holds 1 to %u", (unsigned)count, VMAFX_POOL_MAX);
     }
     if (status == VMAFX_OK) {
-        status = vmafx_frame_host_device(&report, device, &host);
+        status = pool_device(&report, device, &host);
     }
     if (status != VMAFX_OK) {
         return status;
@@ -208,6 +264,15 @@ static int arm_frame(VmafxFrame *frame)
     if (!err) {
         err = vmaf_ref_init(&pic->ref);
     }
+#ifdef HAVE_CUDA
+    if (!err && frame->residency == VMAFX_BACKEND_CUDA) {
+        err = vmafx_cuda_pool_frame_arm(frame);
+        if (err) {
+            (void)vmaf_ref_close(pic->ref);
+            pic->ref = NULL;
+        }
+    }
+#endif
     if (err) {
         free(pic->priv);
         pic->priv = NULL;

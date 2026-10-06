@@ -178,6 +178,23 @@ software-decoded input the regular `libvmaf` filter accepts a fork-added
 [ADR-0408](../../adr/0408-ffmpeg-libvmaf-cuda-backend-selector.md)); build
 FFmpeg with `--enable-libvmaf-cuda` to enable it.
 
+### Importing frames through the VMAFx API
+
+A program that already holds frames on the GPU (a decoder's surfaces, a
+compositor's GL textures) hands them to a CUDA device of the VMAFx API without
+a copy through the host: device pointers are read where they are, NV12 / P010
+/ P016 are planarised on the device, and CUDA events order the producer's
+writes and its reuse of the memory against the library's reads on the device.
+See [CUDA devices](../../api/vmafx/index.md#cuda-devices) for the calls, the
+layouts a plane must have, and the fences
+([ADR-2023](../../adr/2023-vmafx-cuda-device-frames.md)).
+
+Every CUDA twin reads a picture with that picture's own row pitch, so frames
+whose planes have the producer's pitch (rather than the engine's
+texture-aligned one) score as their host-uploaded copies; `integer_vif` read
+both inputs with the engine's pitch until RC4 work package 3
+(`T-CUDA-VIF-PICTURE-PITCH-2026-10-06` in [docs/state.md](../../state.md)).
+
 ### Dispatch knob (`VMAF_CUDA_DISPATCH`)
 
 `VMAF_CUDA_DISPATCH` selects how a CUDA extractor submits work. libvmaf reads

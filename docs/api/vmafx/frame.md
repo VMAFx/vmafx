@@ -20,6 +20,7 @@ What a VmafxImportPlane handle refers to. Since 0.1.
 | `VMAFX_MEMORY_METAL_SURFACE` | 5 | 0.1 |
 | `VMAFX_MEMORY_METAL_TEXTURE` | 6 | 0.1 |
 | `VMAFX_MEMORY_WIN32_SHARED` | 7 | 0.1 |
+| `VMAFX_MEMORY_GL_TEXTURE` | 8 | 0.1 |
 
 ## `VmafxFenceKind`
 
@@ -35,6 +36,7 @@ What a VmafxFence is. Since 0.1.
 | `VMAFX_FENCE_SYNC_FILE` | 5 | 0.1 |
 | `VMAFX_FENCE_METAL_SHARED_EVENT` | 6 | 0.1 |
 | `VMAFX_FENCE_WIN32_SHARED` | 7 | 0.1 |
+| `VMAFX_FENCE_GL_SYNC` | 8 | 0.1 |
 
 ## `VmafxColorRange`
 
@@ -143,7 +145,7 @@ Where one plane of an imported frame lives. Embedded by value in VmafxFrameImpor
 
 ### `VmafxFrameImport`
 
-A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 216 bytes, alignment 8. Since 0.1.
+A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 232 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
@@ -157,6 +159,8 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 | `plane` | `VmafxImportPlane plane[3]` | 32 | 0.1 | Each plane; entries past `n_planes` are ignored. |
 | `acquire` | `VmafxFence acquire` | 176 | 0.1 | Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written. |
 | `flags` | `uint32_t flags` | 208 | 0.1 | 0: zero copy only. Bits: `VmafxImportFlags`. |
+| `release` | `VmafxFrameReleaseCallback release` | 216 | 0.1 | Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.7. |
+| `user` | `void *user` | 224 | 0.1 | Passed to `release`. Added in ABI 0.1.7. |
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.
 
@@ -247,7 +251,7 @@ Initialise with `VMAFX_CONVERT_DESC_INIT`.
 | `vmafx_frame_ref` | 0.1 | Take one more reference (for example to submit the frame to a second context); returns `frame` (NULL for NULL). |
 | `vmafx_frame_unref` | 0.1 | Drop one reference; the last one, the caller's or a context's, frees the planes or calls the release callback. NULL is a no-op. |
 | `vmafx_frame_import` | 0.1 | A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are; NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and unchanged until the frame's release fence is signalled. The caller holds one reference. |
-| `vmafx_frame_release_fence` | 0.1 | A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it. |
+| `vmafx_frame_release_fence` | 0.1 | A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT: an event the library records on its stream behind the last reader where the last reference is dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means something only from the frame's release callback (VmafxFrameImport.release) or after a host wait returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it. |
 | `vmafx_fence_create` | 0.1 | A new, unsignalled fence of `kind` on `device` (NULL: the CPU) for a producer to signal, for example a HOST fence a producer thread signals with vmafx_fence_signal() after writing a frame. The caller destroys it. |
 | `vmafx_fence_signal` | 0.1 | Signal a fence from the host (HOST; a timeline kind to its `value`). A kind the host cannot signal is VMAFX_E_NOTSUP naming it. |
 | `vmafx_fence_wait` | 0.1 | Wait on the host until the fence is signalled: VMAFX_OK, or VMAFX_E_TIMEOUT naming the fence after `timeout_ns` nanoseconds (UINT64_MAX waits without a limit). `timeout_ns` 0 polls: an unsignalled fence is VMAFX_PENDING, an answer without an error or a log line. NONE is signalled. A kind this build cannot wait on is VMAFX_E_NOTSUP naming it. |

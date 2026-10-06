@@ -65,10 +65,18 @@ int vmafx_frame_release(VmafPicture *pic, void *cookie)
     if (frame->inner_release) {
         err = frame->inner_release(pic, frame->inner_cookie);
     }
+    if (frame->lane_release) {
+        /* The device signals the release fences after the last reader; the
+         * release callback runs after they were enqueued, so it may wait on
+         * a device release fence (VmafxFrameImport.release). */
+        err |= frame->lane_release(frame, pic);
+    }
     if (frame->release) {
         frame->release(frame->user);
     }
-    vmafx_frame_signal_released(frame);
+    if (!frame->lane_release) {
+        vmafx_frame_signal_released(frame);
+    }
     vmafx_device_unref(frame->device);
     aligned_free(frame->owned);
     free(frame);

@@ -40,6 +40,9 @@
 #include "frame_import_hooks.h"
 #include "engine.h"
 #include "internal.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 #include "ref.h"
 #include "vmafx/vmafx.h"
 
@@ -110,6 +113,12 @@ bool vmafx_host_fence_signalled(const VmafxHostFence *fence)
     return atomic_load_explicit(&fence->signalled, memory_order_acquire) != 0;
 }
 
+void vmafx_host_fence_signal_unref(VmafxHostFence *fence)
+{
+    vmafx_host_fence_signal(fence);
+    vmafx_host_fence_unref(fence);
+}
+
 VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fence,
                                 const char *subject, VmafxHostFence **out)
 {
@@ -161,26 +170,33 @@ static void sleep_poll_interval(void)
 #endif
 }
 
-/* Wait until `fence` is signalled or `timeout_ns` passed: true when signalled.
- * Each round sleeps at least VMAFX_FENCE_POLL_NS, so the round count is
- * bounded by the timeout (HISS-02). */
-static bool host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
+int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t timeout_ns)
 {
-    if (vmafx_host_fence_signalled(fence)) {
-        return true;
+    int state = done(arg);
+    if (state != 0) {
+        return state;
     }
     const uint64_t start = vmafx_monotonic_ns();
     const uint64_t rounds = timeout_ns / VMAFX_FENCE_POLL_NS + 1u;
-    for (uint64_t round = 0; round < rounds; round++) {
+    for (uint64_t round = 0; round < rounds && state == 0; round++) {
         if (vmafx_monotonic_ns() - start >= timeout_ns) {
             break;
         }
         sleep_poll_interval();
-        if (vmafx_host_fence_signalled(fence)) {
-            return true;
-        }
+        state = done(arg);
     }
-    return vmafx_host_fence_signalled(fence);
+    return state != 0 ? state : done(arg);
+}
+
+static int host_fence_done(const void *arg)
+{
+    return vmafx_host_fence_signalled(arg) ? 1 : 0;
+}
+
+/* Wait until `fence` is signalled or `timeout_ns` passed: true when signalled. */
+static bool host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
+{
+    return vmafx_fence_poll(host_fence_done, fence, timeout_ns) == 1;
 }
 
 /* ---- Public functions ----------------------------------------------------------- */
@@ -195,6 +211,12 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
     return vmafx_read_sized(report, f, (uint32_t)sizeof(*f), fence, VMAFX_MIN_FENCE, "fence");
 }
 
+#ifdef HAVE_CUDA
+#define VMAFX_LANE_FENCE_KINDS ", CUDA_EVENT and GL_SYNC (CUDA devices)"
+#else
+#define VMAFX_LANE_FENCE_KINDS ""
+#endif
+
 /* A kind this build declares but cannot handle here. */
 static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, const char *what)
 {
@@ -204,9 +226,17 @@ static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, co
     }
     return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                       "this build cannot %s a fence of kind %u; it implements NONE and HOST "
-                      "(the CPU device)",
-                      what, (unsigned)kind);
+                      "(every device)%s",
+                      what, (unsigned)kind, VMAFX_LANE_FENCE_KINDS);
 }
+
+#ifdef HAVE_CUDA
+/* A fence kind of a backend lane this build has (CUDA: CUDA_EVENT, GL_SYNC). */
+static bool lane_kind(uint32_t kind)
+{
+    return kind == VMAFX_FENCE_CUDA_EVENT || kind == VMAFX_FENCE_GL_SYNC;
+}
+#endif
 
 VmafxStatus vmafx_fence_create(VmafxDevice *device, uint32_t kind, VmafxFence *out,
                                VmafxError **error)
@@ -216,7 +246,12 @@ VmafxStatus vmafx_fence_create(VmafxDevice *device, uint32_t kind, VmafxFence *o
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "out",
                           "no place to store the fence");
     }
-    if (device && device->backend != VMAFX_BACKEND_CPU) {
+#ifdef HAVE_CUDA
+    if (device && device->backend == VMAFX_BACKEND_CUDA && kind != VMAFX_FENCE_HOST) {
+        return vmafx_cuda_fence_create(&report, device, kind, out);
+    }
+#endif
+    if (device && device->backend != VMAFX_BACKEND_CPU && kind != VMAFX_FENCE_HOST) {
         return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_DEVICE, "device",
                           "fences of backend %s are not in this build",
                           vmafx_backend_name(device->backend));
@@ -274,6 +309,11 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
     if (status != VMAFX_OK || f.kind == VMAFX_FENCE_NONE) {
         return status;
     }
+#ifdef HAVE_CUDA
+    if (lane_kind(f.kind)) {
+        return vmafx_cuda_fence_wait(&report, &f, timeout_ns);
+    }
+#endif
     if (f.kind != VMAFX_FENCE_HOST) {
         return unsupported_kind(&report, f.kind, "wait on");
     }
@@ -299,9 +339,15 @@ VmafxStatus vmafx_fence_destroy(const VmafxFence *fence, VmafxError **error)
     if (status != VMAFX_OK || f.kind == VMAFX_FENCE_NONE) {
         return status;
     }
+#ifdef HAVE_CUDA
+    if (lane_kind(f.kind)) {
+        return vmafx_cuda_fence_destroy(&report, &f);
+    }
+#endif
     if (f.kind != VMAFX_FENCE_HOST) {
         return unsupported_kind(&report, f.kind, "release");
     }
+    assert(f.kind == VMAFX_FENCE_HOST);
     VmafxHostFence *host = NULL;
     status = vmafx_host_fence_of(&report, &f, "fence.handle", &host);
     if (status == VMAFX_OK) {

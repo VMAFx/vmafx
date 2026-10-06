@@ -52,6 +52,12 @@ typedef enum VmafxMemoryKind {
     VMAFX_MEMORY_METAL_TEXTURE = 6,
     /** A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane. */
     VMAFX_MEMORY_WIN32_SHARED = 7,
+    /**
+     * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
+     * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
+     * texture). Imported on a device of a backend with GL interop (CUDA). Added in ABI 0.1.7.
+     */
+    VMAFX_MEMORY_GL_TEXTURE = 8,
 } VmafxMemoryKind;
 
 /**
@@ -78,6 +84,12 @@ typedef enum VmafxFenceKind {
      * (`value`).
      */
     VMAFX_FENCE_WIN32_SHARED = 7,
+    /**
+     * An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread,
+     * or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports.
+     * Added in ABI 0.1.7.
+     */
+    VMAFX_FENCE_GL_SYNC = 8,
 } VmafxFenceKind;
 
 /**
@@ -293,6 +305,15 @@ struct VmafxFrameImport {
     VmafxFence acquire;
     /** 0: zero copy only. Bits: VmafxImportFlags. */
     uint32_t flags;
+    /**
+     * Called once, on the thread that drops the frame's last reference, after its release fences
+     * were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer
+     * makes its stream wait on it before it reuses the planes, with no host wait); NULL: none.
+     * Added in ABI 0.1.7.
+     */
+    VmafxFrameReleaseCallback release;
+    /** Passed to `release`. Added in ABI 0.1.7. */
+    void *user;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
@@ -479,7 +500,11 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFram
  * A fence of `kind` signalled once the last reference of the frame is gone, in every context it was
  * submitted to: from then on the library reads none of its memory and the producer may reuse it.
  * Call it while holding a reference, before the frame is submitted; each call returns a new fence
- * the caller destroys. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT:
+ * an event the library records on its stream behind the last reader where the last reference is
+ * dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means
+ * something only from the frame's release callback (VmafxFrameImport.release) or after a host wait
+ * returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind,

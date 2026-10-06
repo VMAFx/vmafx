@@ -181,7 +181,7 @@ _Static_assert(offsetof(VmafxImportPlane, offset) == 16, "VmafxImportPlane.offse
 _Static_assert(offsetof(VmafxImportPlane, pitch) == 24, "VmafxImportPlane.pitch offset");
 _Static_assert(offsetof(VmafxImportPlane, modifier) == 32, "VmafxImportPlane.modifier offset");
 _Static_assert(offsetof(VmafxImportPlane, size) == 40, "VmafxImportPlane.size offset");
-_Static_assert(sizeof(VmafxFrameImport) == 216, "VmafxFrameImport size");
+_Static_assert(sizeof(VmafxFrameImport) == 232, "VmafxFrameImport size");
 _Static_assert(_Alignof(VmafxFrameImport) == 8, "VmafxFrameImport alignment");
 _Static_assert(offsetof(VmafxFrameImport, struct_size) == 0, "VmafxFrameImport.struct_size offset");
 _Static_assert(offsetof(VmafxFrameImport, memory) == 4, "VmafxFrameImport.memory offset");
@@ -195,6 +195,8 @@ _Static_assert(sizeof(vmafx_layout_probe_VmafxFrameImport.plane) == 144,
                "VmafxFrameImport.plane holds 3 elements");
 _Static_assert(offsetof(VmafxFrameImport, acquire) == 176, "VmafxFrameImport.acquire offset");
 _Static_assert(offsetof(VmafxFrameImport, flags) == 208, "VmafxFrameImport.flags offset");
+_Static_assert(offsetof(VmafxFrameImport, release) == 216, "VmafxFrameImport.release offset");
+_Static_assert(offsetof(VmafxFrameImport, user) == 224, "VmafxFrameImport.user offset");
 _Static_assert(sizeof(VmafxModelConfig) == 48, "VmafxModelConfig size");
 _Static_assert(_Alignof(VmafxModelConfig) == 8, "VmafxModelConfig alignment");
 _Static_assert(offsetof(VmafxModelConfig, struct_size) == 0, "VmafxModelConfig.struct_size offset");
@@ -386,6 +388,7 @@ _Static_assert(VMAFX_MEMORY_DMABUF == 4, "VMAFX_MEMORY_DMABUF");
 _Static_assert(VMAFX_MEMORY_METAL_SURFACE == 5, "VMAFX_MEMORY_METAL_SURFACE");
 _Static_assert(VMAFX_MEMORY_METAL_TEXTURE == 6, "VMAFX_MEMORY_METAL_TEXTURE");
 _Static_assert(VMAFX_MEMORY_WIN32_SHARED == 7, "VMAFX_MEMORY_WIN32_SHARED");
+_Static_assert(VMAFX_MEMORY_GL_TEXTURE == 8, "VMAFX_MEMORY_GL_TEXTURE");
 _Static_assert(VMAFX_FENCE_NONE == 0, "VMAFX_FENCE_NONE");
 _Static_assert(VMAFX_FENCE_HOST == 1, "VMAFX_FENCE_HOST");
 _Static_assert(VMAFX_FENCE_CUDA_EVENT == 2, "VMAFX_FENCE_CUDA_EVENT");
@@ -394,6 +397,7 @@ _Static_assert(VMAFX_FENCE_SYCL_EVENT == 4, "VMAFX_FENCE_SYCL_EVENT");
 _Static_assert(VMAFX_FENCE_SYNC_FILE == 5, "VMAFX_FENCE_SYNC_FILE");
 _Static_assert(VMAFX_FENCE_METAL_SHARED_EVENT == 6, "VMAFX_FENCE_METAL_SHARED_EVENT");
 _Static_assert(VMAFX_FENCE_WIN32_SHARED == 7, "VMAFX_FENCE_WIN32_SHARED");
+_Static_assert(VMAFX_FENCE_GL_SYNC == 8, "VMAFX_FENCE_GL_SYNC");
 _Static_assert(VMAFX_FEATURE_SOURCE_UNKNOWN == 0, "VMAFX_FEATURE_SOURCE_UNKNOWN");
 _Static_assert(VMAFX_FEATURE_SOURCE_EXTRACTOR == 1, "VMAFX_FEATURE_SOURCE_EXTRACTOR");
 _Static_assert(VMAFX_FEATURE_SOURCE_IMPORTED == 2, "VMAFX_FEATURE_SOURCE_IMPORTED");
@@ -451,6 +455,6 @@ _Static_assert(VMAFX_DNN_FP16_IO == 0x1u, "VMAFX_DNN_FP16_IO");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 28,
-                 191, 123);
+                 193, 125);
     return 0;
 }

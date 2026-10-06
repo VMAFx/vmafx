@@ -216,8 +216,10 @@ become final only then.
 A producer that already holds a frame in memory a device can read, a decoder
 for example, hands it over with `vmafx_frame_import()` instead of copying it
 into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
-This build imports host memory on the CPU device; the CUDA, SYCL, HIP and
-Metal imports arrive behind the same calls and types.
+Every build imports host memory on the CPU device; a build with the CUDA
+backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
+devices ([CUDA devices](#cuda-devices) below). The SYCL, HIP and Metal imports
+arrive behind the same calls and types.
 
 ### Devices
 
@@ -294,9 +296,11 @@ yours right after. Fences the library returns are yours to release once with
 | `vmafx_fence_wait(&fence, timeout_ns, error)` | `VMAFX_OK` once signalled; `VMAFX_E_TIMEOUT` after `timeout_ns`; a timeout of 0 polls and answers `VMAFX_PENDING`, without an error; `UINT64_MAX` waits without a limit |
 | `vmafx_frame_release_fence(frame, kind, &fence, error)` | A fence signalled when the last reference of the frame is gone, in every context it was submitted to |
 
-The CUDA, HIP and SYCL events, `sync_file` descriptors, Metal shared events
-and Windows shared fences are declared kinds; this build answers them with
-`VMAFX_E_NOTSUP` naming the kind.
+A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
+`VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)). The
+HIP and SYCL events, `sync_file` descriptors, Metal shared events and Windows
+shared fences are declared kinds; until their backends land they are answered
+with `VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 
@@ -335,6 +339,110 @@ with `vmafx_context_frame_retention()` plus the frames you hold).
 its last reference is dropped, and its release fence is signalled then.
 `vmafx_frame_pool_destroy()` drops your reference: frames still in use stay
 valid until they return.
+
+### CUDA devices
+
+In a build with the CUDA backend
+([ADR-2023](../../adr/2023-vmafx-cuda-device-frames.md)):
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_CUDA`, `desc.index = n` (or -1 for the first) | CUDA device `n`; the library retains its primary context and creates the stream it reads frames on |
+| `desc.external[0] = (uintptr_t)cu_context`, `desc.external[1] = (uintptr_t)cu_stream` | Your context, and your stream as the library's stream (0: the library creates one in your context); both stay yours and must outlive the device |
+
+`vmafx_context_use_device(context, device, error)` makes the context score on
+the device: each feature registered afterwards runs on its CUDA twin. A
+feature without a twin, or whose twin cannot honour an option you set, runs on
+the CPU (a warning names it); host frames still score, frames in CUDA memory
+are then refused by admission naming that extractor.
+
+What a CUDA device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address in the device's context; `pitch` in bytes | Planar planes are read where they are, no copy, when each row starts 8-byte aligned and `pitch` is a multiple of 8 and at least the row rounded up to 8 bytes (the CUDA twins load rows 4 or 8 bytes at a time); NV12 / P010 / P016 are planarised on the device |
+| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `CUarray` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | NV12 / P010 / P016 are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
+| `VMAFX_MEMORY_GL_TEXTURE` | `handle`: a `GL_TEXTURE_2D` name of the GL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; the textures are registered and mapped for the import and unmapped when the frame is released |
+
+A bound plane that does not meet the alignment is refused with
+`VMAFX_E_NOTSUP` naming its `offset` or `pitch`; with
+`VMAFX_IMPORT_ALLOW_COPY` it is copied on the device instead (logged once).
+No path copies a frame through the host.
+
+| Acquire fence | The CUDA device |
+| --- | --- |
+| `VMAFX_FENCE_CUDA_EVENT` | Makes its stream wait on your event: record it on your stream after the work that writes the planes; nothing waits on the host |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (`vmafx_context_import_frame()` waits and retries once) |
+| `VMAFX_FENCE_GL_SYNC` | GL texture imports: a signalled `GLsync` is taken; an unsignalled one is `VMAFX_E_BUSY` and the import rule waits on it with `glClientWaitSync()` (the GL context current on the thread) |
+
+Release fences of a CUDA frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_CUDA_EVENT`: an event the library records on its stream behind
+  the frame's last reader, at the moment the last reference is dropped. A
+  stream wait on a CUDA event that was not recorded yet does not wait, so make
+  your stream wait on it from the frame's release callback
+  (`VmafxFrameImport.release`, called after the recording) or after
+  `vmafx_fence_wait()` returned `VMAFX_OK`; `vmafx_fence_wait()` itself answers
+  `VMAFX_PENDING` / waits until the event is recorded and complete.
+
+A decoder that reuses its surfaces without a host wait:
+
+```c
+typedef struct Surface {
+    CUstream stream;   /* the decoder's stream */
+    VmafxFence free;   /* the CUDA_EVENT release fence */
+    int in_use;
+} Surface;
+
+static void surface_released(void *user)  /* runs after the event is recorded */
+{
+    Surface *s = user;
+    cuStreamWaitEvent(s->stream, (CUevent)s->free.handle, 0);
+    vmafx_fence_destroy(&s->free, NULL);
+    s->in_use = 0;                         /* the decoder may write into it again */
+}
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DEVICE_POINTER;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = 1920;
+imp.h = 1080;
+imp.n_planes = 2;
+imp.plane[0].handle = (uintptr_t)luma_devptr;
+imp.plane[0].pitch = pitch;
+imp.plane[1].handle = (uintptr_t)chroma_devptr;
+imp.plane[1].pitch = pitch;
+imp.acquire.kind = VMAFX_FENCE_CUDA_EVENT;
+imp.acquire.handle = (uintptr_t)decoded;  /* recorded on the decoder's stream */
+imp.release = surface_released;
+imp.user = surface;
+
+status = vmafx_context_import_frame(context, cuda_device, &imp, "main", &frame, &error);
+if (status == VMAFX_OK)
+    status = vmafx_frame_release_fence(frame, VMAFX_FENCE_CUDA_EVENT, &surface->free, &error);
+```
+
+Ordering. Every frame of a CUDA device is read on the device's one stream, so
+one import scored by several contexts on the device needs nothing more, and
+its release fences are signalled after the last reader of any of them. Frames
+whose acquire fence the device waited on are not synchronised again; frames
+without one (pool frames, host frames uploaded by the engine, `libvmaf.h`
+callers) keep the engine's once-per-frame synchronisation of the context
+([ADR-1199](../../adr/1199-cuda-picture-handover-barrier.md)). A CUDA frame
+pool (`vmafx_frame_pool_create()` with a CUDA device) hands out frames whose
+planes are device memory (`vmafx_frame_planes()` gives the addresses); write
+them on any stream of the device's context and submit, without a fence (the
+engine's synchronisation orders your write). `vmafx_frame_pool_acquire()`
+hands a frame out only once the device has run the readers of its previous
+use, waiting for them on the host when they have not.
+
+`VMAFX_DEVICE_PROFILING` is refused on a CUDA device; profile with the
+vendor's profiler (Nsight Systems: `nsys profile --trace=cuda` shows that an
+import makes no host-to-device or device-to-host copy of the frame; only the
+features' few-byte results come back).
 
 ## Scores
 

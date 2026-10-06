@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1288), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1289), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5151,6 +5151,10 @@ Every ADR, one heading each (1288), so the site search finds an ADR by its title
 ## ADR-1929: VMAFx device frames, fences and the import rule: the shared contract the backend lanes implement
 
 [1929-vmafx-device-frames-fences](1929-vmafx-device-frames-fences.md)
+
+## ADR-2023: VMAFx device frames on CUDA: one library stream per device, fences on it, release events recorded where the frame is released
+
+[2023-vmafx-cuda-device-frames](2023-vmafx-cuda-device-frames.md)
 
 ## ADR-2044: VMAFx option groups generate every scoring surface, and the scoring API is a versioned contract
 

@@ -50,8 +50,8 @@ static char *test_device_count(void)
     VmafxError *error = NULL;
     mu_assert("cpu",
               vmafx_device_count(VMAFX_BACKEND_CPU, &count, NULL) == VMAFX_OK && count == 1u);
-    mu_assert("cuda not in this build",
-              fails(vmafx_device_count(VMAFX_BACKEND_CUDA, &count, &error), VMAFX_E_NOTSUP, &error,
+    mu_assert("a backend not in this build",
+              fails(vmafx_device_count(VT_UNBUILT_BACKEND, &count, &error), VMAFX_E_NOTSUP, &error,
                     "backend", VMAFX_SUBJECT_BACKEND));
     mu_assert("no silent count", count == 0u);
     mu_assert("reserved backend 5", fails(vmafx_device_count(5u, &count, &error), VMAFX_E_INVALID,
@@ -79,8 +79,8 @@ static char *test_device_info(void)
     mu_assert("cpu", is_cpu_info(&info));
     mu_assert("no cpu 1", fails(vmafx_device_info(VMAFX_BACKEND_CPU, 1, &info, &error),
                                 VMAFX_E_NOTFOUND, &error, "index", VMAFX_SUBJECT_DEVICE));
-    mu_assert("hip info", fails(vmafx_device_info(VMAFX_BACKEND_HIP, 0, &info, &error),
-                                VMAFX_E_NOTSUP, &error, "backend", VMAFX_SUBJECT_BACKEND));
+    mu_assert("unbuilt info", fails(vmafx_device_info(VT_UNBUILT_BACKEND, 0, &info, &error),
+                                    VMAFX_E_NOTSUP, &error, "backend", VMAFX_SUBJECT_BACKEND));
     /* An older caller's VmafxDeviceInfo receives the prefix it knows. */
     VmafxDeviceInfo old = VMAFX_DEVICE_INFO_INIT;
     old.struct_size = (uint32_t)offsetof(VmafxDeviceInfo, memory_kinds);
@@ -262,7 +262,7 @@ static char *test_fence_kind_refusals(void)
     mu_assert("device kinds are the backend lanes'",
               fails(vmafx_fence_create(NULL, VMAFX_FENCE_SYNC_FILE, &fence, &error), VMAFX_E_NOTSUP,
                     &error, "fence.kind", VMAFX_SUBJECT_FENCE));
-    fence.kind = VMAFX_FENCE_CUDA_EVENT;
+    fence.kind = VT_UNBUILT_FENCE;
     fence.handle = 1u;
     mu_assert("wait", fails(vmafx_fence_wait(&fence, 0u, &error), VMAFX_E_NOTSUP, &error,
                             "fence.kind", VMAFX_SUBJECT_FENCE));

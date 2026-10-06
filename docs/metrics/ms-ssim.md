@@ -255,6 +255,10 @@ own pyramid and per-window terms.
 
 ## History
 
+- **2026-10-06.** The CUDA twin builds level 0 of its pyramids on the device
+  (`picture_copy()`'s arithmetic, scores unchanged): no picture plane goes to
+  the host and back, and the per-plane pinned staging buffers are gone. The
+  CUDA timings above were measured before this change.
 - **2026-10-03.** CUDA and HIP twins compute `enable_chroma` on the device
   (HIP before this date scored luma only; see the warning above).
 - **2026-10-02, ADR-1466.** The SYCL twin adds every per-scale sum in the

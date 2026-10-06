@@ -79,6 +79,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "cuda/cuda_helper.cuh"
 #include "cuda/drain_batch.h"
 #include "cuda/picture_cuda.h"
+#include "vmafx/frame_import_hooks.h"
 #include "gpu_picture_pool.h"
 #endif
 
@@ -3369,6 +3370,18 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
     if (!(hw_flags & HW_FLAG_HOST))
         return err;
 
+    /* A frame of the VMAFx API (an import or a pool frame) is never copied
+     * to the host (ADR-1929, ADR-2023): admission refuses CPU extractors for
+     * it, and a CPU extractor that appears later (a twin's context fallback
+     * for a tiny frame) fails here instead of reading a silent copy. */
+    const VmafPicturePrivate *const priv = pic->priv;
+    if (priv->cuda.vmafx) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "a CPU extractor would read a frame in CUDA device memory; device frames of "
+                 "the VMAFx API are never copied to the host\n");
+        return -ENOTSUP;
+    }
+
     //device to host
 
     err = vmaf_picture_alloc(pic_host, pic->pix_fmt, pic->bpc, pic->w[0], pic->h[0]);
@@ -3387,6 +3400,9 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "problem moving cuda pic into host buffer\n");
         return err;
     }
+    /* A host copy of device pixels: the VMAFx host-copy counter sees every
+     * one (RC4 WP3, ADR-1929 item 13). */
+    vmafx_count_host_copy((uint64_t)pic->stride[0] * pic->h[0]);
 
     /* Synchronize the per-picture stream so the async D-to-H copy is complete
      * before CPU-side feature extractors read pic_host->data[].  Without this
@@ -3835,9 +3851,20 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
  * through the FFmpeg path is within noise -- 177 ms against 179 ms, median of
  * 7, on an idle host -- because the work being waited for is the data these
  * kernels were about to read. */
-static int cuda_order_pictures_against_producer(VmafContext *vmaf)
+static bool cuda_picture_ordered(const VmafPicture *pic)
+{
+    const VmafPicturePrivate *const priv = pic->priv;
+    return priv && priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE && priv->cuda.ordered;
+}
+
+static int cuda_order_pictures_against_producer(VmafContext *vmaf, const ReadPicturesFrame *fr)
 {
     if (!vmaf->cuda.state.ctx)
+        return 0;
+    /* Imported frames with fences (ADR-2023): the library stream they are
+     * read on waits for the producer already; the barrier stays for frames
+     * without a fence (compat callers, pool frames, host uploads). */
+    if (cuda_picture_ordered(&fr->ref_device) && cuda_picture_ordered(&fr->dist_device))
         return 0;
 
     CudaFunctions *const cu_f = vmaf->cuda.state.f;
@@ -3859,7 +3886,7 @@ static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFram
                                              unsigned index)
 {
 #ifdef HAVE_CUDA
-    const int sync_err = cuda_order_pictures_against_producer(vmaf);
+    const int sync_err = cuda_order_pictures_against_producer(vmaf, fr);
     if (sync_err)
         return sync_err;
 
