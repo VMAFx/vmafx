@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - master
+      - test/salvage-win-hooks-failing
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -137,3 +138,53 @@ jobs:
 
       - name: Replay HISS enforcement evidence
         run: standardsctl hiss coverage --verify
+
+  windows-hooks:
+    name: Windows Lefthook Pre-Commit
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.14.8'
+
+      - name: Install pinned praetorctl
+        run: |
+          go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
+          gobin="$(cygpath -u "$(go env GOPATH)/bin")"
+          cp "$gobin/standardsctl.exe" "$gobin/praetorctl.exe"
+          echo "$gobin" >> "$GITHUB_PATH"
+
+      - name: Install lefthook
+        run: |
+          go install github.com/evilmartians/lefthook/v2@v2.1.14
+          gobin="$(cygpath -u "$(go env GOPATH)/bin")"
+          echo "$gobin" >> "$GITHUB_PATH"
+
+      - name: Test lefthook pre-commit in a scratch clone
+        run: |
+          git clone --shared . "$RUNNER_TEMP/scratch"
+          cd "$RUNNER_TEMP/scratch" || exit 1
+          git config user.name "CI Worker"
+          git config user.email "ci@example.invalid"
+          python -m venv .venv
+          .venv/Scripts/python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
+          lefthook install
+          touch test_scratch.txt
+          git add test_scratch.txt
+          lefthook run pre-commit --no-auto-install
