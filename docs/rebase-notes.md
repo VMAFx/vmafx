@@ -62270,3 +62270,101 @@ amends [ADR-2074](adr/2074-vmafx-window-scores.md) decision 9.
   bit (32 988 per-frame values against master, 0 different; Netflix golden
   gate green); no FFmpeg patch change (`libvmaf.h` unchanged, the scores only
   arrive earlier).
+- `internal/app/bootstrap/bootstrap.go` defines `Core` (config, log, clock, id, validate) and
+  `HTTP` (router, server); `Base` uses `Core`, and `cmd/vmafx-server` / `cmd/vmafx-controller`
+  take `bootstrap.HTTP`. No vmafx file imports the golusoris root package: it imports every
+  golusoris module and brought `x/crypto/md4`, `x/crypto/argon2` and 59 otherwise unused
+  modules into the build. A conflict in `go.mod` / `go.sum` takes this side and reruns
+  `go mod tidy`. No upstream file is involved; no score, public API or FFmpeg patch impact.
+- **HISS native batch 1 (`refactor/hiss-zero-native-1`)**: `niqe_extract_aggd()` in
+  `core/src/feature/niqe_math.h` is now `niqe_aggd_moments()`,
+  `niqe_aggd_gamma_index()` and a short tail. An upstream or fork change to the
+  AGGD fit edits the helper that holds the changed line; the float operations and
+  their order are fixed by the NIQE snapshot. No score, public API or FFmpeg patch
+  impact.
+## The Metal host code at zero clang-tidy findings (RC3 exit, 2026-10-06)
+
+`rc3-tidy-metal-zero`. `core/src/metal/objc_handle.h` (the `vmaf_metal::borrow<>()` / `retain_to_slot()` /
+`transfer()` bridges and `vmaf_metal_library_load()`, implemented in `kernel_template.mm`) is the only place
+a handle slot becomes a Metal object or the embedded metallib is read: a Metal twin that comes from upstream or
+from another branch with its own `libvmaf_metallib_start` / `(__bridge ...)(void *)slot` code takes the helper
+instead. The `.mm` files keep their file-scope helpers and types in anonymous namespaces. The `metal` lane
+reads only `.mm` / `.c` units and `objc_handle.h` (`--header-filter` in `tidy-metal.yml`); the other headers
+are the `cpu` lane's, read as C. A rebase takes master's side of a conflicting `.mm` hunk and re-runs the
+`Tidy Metal` workflow with `fix=true`; `tidy-baseline-metal.json` is generated.
+
+## `vmaf_cuda_picture_get_pix_fmt()` is a fork accessor (PR #1118)
+
+`vmaf_cuda_picture_get_pix_fmt()` (`core/src/cuda/picture_cuda.h`, defined in
+`picture_cuda.c` as `return pic->pix_fmt;`) sits next to
+`vmaf_cuda_picture_get_stream()` and the event accessors. The PR #1067 refactor
+dropped both the definition and the declaration, which broke the link of any CUDA
+extractor that calls it; PR #1118 restored them. Upstream Netflix has no such
+function, so a sync or a rebase of a branch that predates #1118 takes the fork's
+side of both hunks and keeps the accessor. No score, public API or FFmpeg patch
+impact.
+## `float_adm` debug key and `unsuffixed_debug_key` (ADR-2056)
+
+`VmafFeatureExtractor` gains `unsuffixed_debug_key`; `float_adm.c` and the four twins set it to
+`adm`, and the twins list `adm_scale0` where they listed `adm`. `float_adm.c` is a Netflix file:
+the fork adds one line to its extractor table. A sync keeps that line and the
+`refuse_debug_key_collision()` call in `core/src/fex_ctx_vector.cpp`. No score, public API or FFmpeg
+patch impact.
+## x86 AVX2 level requires FMA (ADR-2055)
+
+`core/src/x86/cpu.c` is dav1d's CPU probe with one fork change: the AVX2 flag is set only when
+CPUID leaf 1 ECX bit 12 (FMA) is set as well as BMI1, BMI2 and AVX2, because two AVX2 kernels are
+built with `-mfma`. A sync that takes upstream's `cpu.c` keeps the `has_fma` test before the leaf 7
+read. `core/test/test_x86_cpu_gate.c` compiles the file with a mock CPUID and fails without it.
+No score, public API or FFmpeg patch impact.
+## MATLAB MEX sources are linted and edited (ADR-2062)
+
+The ten MEX sources of `compat/python-vmaf/matlab/` are Netflix training-harness files that the fork now
+edits for lint (braces, `static`, `const`, includes) and one defect (`ical_std.c` destroyed the data
+pointer of a matrix instead of the `mxArray`). An upstream sync takes upstream's text and re-applies
+`clang-tidy -fix` through `make tidy-ratchet LANE=cpu`. `edges-orig.c` also gets `FILTER` renamed to
+`REDUCE` (the name `convolve.h` defines). No score, public API or FFmpeg patch impact.
+
+## `float_ms_ssim_cuda` builds level 0 on the device (`fix/cuda-ms-ssim-device-level0`)
+
+`float_ms_ssim_cuda` converts level 0 of its pyramids on the device
+(`ms_ssim_picture_to_float` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`)
+instead of copying each plane to pinned host memory, running `picture_copy()` there
+and uploading the floats (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). An upstream sync of
+the MS-SSIM CUDA twin keeps the device conversion and must not bring back
+`h_input_uint`, the per-plane `h_ref` / `h_cmp` staging or the
+`#include "picture_copy.h"`; a conflict in `ms_ssim_stage_inputs()` takes this side.
+`test_cuda_float_ms_ssim_exact_contract.py` (device-free) and
+`test_cuda_float_ms_ssim_host_traffic` (on a device) fail on the host staging. No score,
+public API or FFmpeg patch impact.
+
+## `.gitattributes` pins the files praetorctl hashes to LF (`fix/gitattributes-praetor-hashed-lf`)
+
+`.gitattributes` holds a fork block of `eol=lf` rules above the praetor managed block: the
+archetypes `.standards.lock` pins, `.standards.*`, `AGENTS.md`, its six compiled targets, the
+persona sources under `.agents/` and their four projections
+(`T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06`). Upstream's `.gitattributes` has none of these
+paths; a sync keeps the block where it is (the managed block must stay at the tail).
+`scripts/ci/tests/test_praetor_hashed_files_lf.py` fails when a rule is missing. No score, public
+API or FFmpeg patch impact.
+
+## nvcc on Windows uses the build's MSVC (`fix/nvcc-ccbin-build-msvc`)
+
+The Windows discovery block of `core/src/meson.build` (ported from the unmerged Netflix PR #1472, ADR-0150)
+now gives nvcc the build's own `cl.exe` when `cxx` is MSVC (`nvcc_build_msvc`, assigned just before the
+block), otherwise the newest toolset under the latest `vswhere` install, otherwise `cl` on `PATH`
+(`T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`). Upstream master has no such block; a re-port keeps
+this order and `core/test/test_windows_cuda_compiler_discovery.py`. No score, public API or FFmpeg patch
+impact.
+
+## Option numbers parse in the C locale (`fix/numeric-options-c-locale`)
+
+`core/src/opt.cpp` `parse_double()` and `core/src/dict.cpp`
+`dict_normalize_numeric()` read and write option numbers inside a thread C-locale
+scope (`vmaf_thread_locale_push_c()` / `_pop()`; `CLocaleScope` in `dict.cpp`)
+(`T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06`). Upstream's `opt.c` and `dict.c` call
+`strtod()` and `snprintf("%g")` in the caller's locale; a sync that ports a change to
+either function keeps the scope. The test programs that compile `dict.cpp` or `opt.cpp`
+on their own (`test_dict`, `test_opt`, `test_feature`) link `thread_locale.cpp`.
+`test_locale_handling` fails when either scope is missing. No score, public API or
+FFmpeg patch impact.

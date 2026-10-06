@@ -29,7 +29,9 @@
 #include "libvmaf/model.h"
 #include "config.h"
 #include "thread_locale.h"
+#include "dict.h"
 #include "feature/feature_collector.h"
+#include "opt.h"
 #include "output.h"
 #include "read_json_model.h"
 
@@ -361,6 +363,92 @@ static char *test_model_parse_with_comma_locale(void)
     return NULL;
 }
 
+/* A decimal-comma locale, or NULL when the host has none. */
+static const char *comma_locale(void)
+{
+    const char *name = get_available_locale("de_DE.UTF-8", "de_DE.utf8");
+    return name ? name : get_available_locale("fr_FR.UTF-8", "fr_FR.utf8");
+}
+
+typedef struct {
+    double d;
+} DoubleTarget;
+
+/* Feature options read "0.7" as 0.7 whatever the caller's numeric locale:
+ * strtod() of a decimal-comma locale stops at the period, and the option
+ * was refused (-EINVAL), so a model whose features take fractional options
+ * (vmaf_v1.0.16_3d0h) could not be used.
+ * T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06. */
+static char *test_option_double_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    const VmafOption opt = {.name = "x",
+                            .offset = 0,
+                            .type = VMAF_OPT_TYPE_DOUBLE,
+                            .default_val.d = 1.0,
+                            .min = 0.0,
+                            .max = 10.0};
+    DoubleTarget target = {0.0};
+    (void)setlocale(LC_ALL, locale);
+    const int err = vmaf_option_set(&opt, &target, "0.7");
+    char buffer[16];
+    (void)snprintf(buffer, sizeof(buffer), "%.1f", 0.5);
+    (void)setlocale(LC_ALL, "C");
+    mu_assert("the caller's locale stays active", strchr(buffer, ',') != NULL);
+    mu_assert("0.7 is read as 0.7 under a decimal-comma locale", err == 0 && target.d == 0.7);
+    return NULL;
+}
+
+/* The feature dictionary normalises "0.7" to "0.7", not to "0" (strtod()
+ * stopped at the period) or "0,7" (%g of a decimal-comma locale). */
+static char *test_dictionary_number_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    VmafDictionary *dict = NULL;
+    (void)setlocale(LC_ALL, locale);
+    const int err = vmaf_dictionary_set(&dict, "nw", "0.02", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
+    (void)setlocale(LC_ALL, "C");
+    const VmafDictionaryEntry *entry = err ? NULL : vmaf_dictionary_get(&dict, "nw", 0);
+    const int same = entry && strcmp(entry->val, "0.02") == 0;
+    (void)vmaf_dictionary_free(&dict);
+    mu_assert("0.02 stays 0.02 under a decimal-comma locale", same);
+    return NULL;
+}
+
+/* End to end: the features of the default model register under a
+ * decimal-comma locale. */
+static char *test_model_features_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafModel *model = NULL;
+    VmafModelConfig model_cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    (void)setlocale(LC_ALL, locale);
+    int err = vmaf_init(&vmaf, cfg);
+    if (!err)
+        err = vmaf_model_load(&model, &model_cfg, VMAF_DEFAULT_MODEL_VERSION);
+    if (!err)
+        err = vmaf_use_features_from_model(vmaf, model);
+    (void)setlocale(LC_ALL, "C");
+    (void)vmaf_close(vmaf);
+    vmaf_model_destroy(model);
+    mu_assert("the default model's features register under a decimal-comma locale", err == 0);
+    return NULL;
+}
+
 #ifdef HAVE_USELOCALE
 static char *test_uselocale_available(void)
 {
@@ -386,6 +474,9 @@ char *run_tests(void)
     mu_run_test(test_output_json_with_comma_locale);
     mu_run_test(test_output_csv_with_comma_locale);
     mu_run_test(test_model_parse_with_comma_locale);
+    mu_run_test(test_option_double_with_comma_locale);
+    mu_run_test(test_dictionary_number_with_comma_locale);
+    mu_run_test(test_model_features_with_comma_locale);
 
 #ifdef HAVE_USELOCALE
     mu_run_test(test_uselocale_available);

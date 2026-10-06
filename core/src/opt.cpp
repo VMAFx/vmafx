@@ -26,6 +26,7 @@
 #include <string_view>
 
 #include "opt.h"
+#include "thread_locale.h"
 
 // ---------------------------------------------------------------------------
 // Internal helpers returning std::optional<T> — parse failure → nullopt.
@@ -74,11 +75,17 @@ namespace
         return std::nullopt;
 
     char *end = nullptr;
+    /* Option values use the period whatever the caller's numeric locale: a
+     * decimal-comma locale stops strtod() at the period and refused "0.7"
+     * (T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06). */
+    VmafThreadLocaleState *const locale = vmaf_thread_locale_push_c();
     errno = 0;
     const double n = std::strtod(s, &end);
+    const int parse_errno = errno;
+    vmaf_thread_locale_pop(locale);
     if (end == s || *end != '\0')
         return std::nullopt;
-    if (errno == ERANGE)
+    if (parse_errno == ERANGE)
         return std::nullopt;
     /* NaN bypasses ordered comparisons (NaN < x and NaN > x are both false),
      * so reject it explicitly before the bounds check. Infinity is already

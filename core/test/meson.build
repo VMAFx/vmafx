@@ -1970,13 +1970,13 @@ endif
 endif
 
 test_dict = executable('test_dict',
-    ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
+    ['test.c', 'test_dict.cpp', '../src/dict.cpp', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
 test_opt = executable('test_opt',
-    ['test.c', 'test_opt.c'],
+    ['test.c', 'test_opt.c', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [math_lib, pthread_dependency, sycl_dependency],
     # wave8_opt_only_objects: test_opt only exercises opt.cpp (vmaf_option_set);
@@ -2010,7 +2010,7 @@ test_ref = executable('test_ref',
 
 test_feature = executable('test_feature',
     ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp',
-     '../src/feature/feature_name.cpp'],
+     '../src/feature/feature_name.cpp', '../src/thread_locale.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
