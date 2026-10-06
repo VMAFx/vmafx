@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1290), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1291), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5167,6 +5167,10 @@ Every ADR, one heading each (1290), so the site search finds an ADR by its title
 ## ADR-2074: VMAFx window scores: a completion thread per context, one pooling implementation, the window clock and the in-flight bound
 
 [2074-vmafx-window-scores](2074-vmafx-window-scores.md)
+
+## ADR-2090: Derive `motion2` / `motion3` frame by frame: final once the frame after is scored, the same statements as the flush
+
+[2090-motion-window-incremental](2090-motion-window-incremental.md)
 
 ## ADR-2094: libvmaf.so.3 is a compat library on the exported VMAFx API; the engine compiles its libvmaf bodies under engine names, and backends keep theirs until their lanes land
 

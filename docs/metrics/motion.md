@@ -72,6 +72,36 @@ Frame 0 always emits `motion2_score = 0.0`. The output range is
 `[0, motion_max_val]` (default 10 000), with no inherent upper bound; larger
 values indicate more temporal activity.
 
+### When `motion2` and `motion3` are final
+
+`motion2` of a frame reads the SAD of the frame after it, so neither score of
+frame `i` exists when frame `i` is read. The engine writes both as soon as the
+SAD scores of frames `0` to `max(i + 1, min_idx)` are in, where `min_idx` is 1,
+or 2 with `motion_five_frame_window`
+([ADR-2090](../adr/2090-motion-window-incremental.md)):
+
+- without worker threads, by the time `vmaf_read_pictures()` of frame `i + 1`
+  returns;
+- with worker threads, in the first `vmaf_read_pictures()` after the workers
+  finished frame `i + 1`, or in a read of the score
+  (`vmaf_feature_score_at_index()`, `vmaf_score_at_index()`,
+  `vmaf_score_pooled()`), which waits for the workers; a VMAFx context with
+  an open window derives them as soon as the worker finishes the frame
+  ([window scores](../api/vmafx/windows.md));
+- on a device backend, when the twin's SAD of frame `i + 1` is collected: one
+  `vmaf_read_pictures()` later, and for `motion_cuda` at the end of its
+  readback batch of eight frames;
+- the last frame has no frame after it: its scores are written by the flush,
+  `vmaf_read_pictures(vmaf, NULL, NULL, 0)`.
+
+The values are the ones a flush over the whole stream computes, bit for bit:
+the derivation runs upstream's statements frame by frame in index order and
+carries the moving average from one frame to the next. A per-frame model score
+(a metadata callback, a VMAFx window over a VMAF model) is therefore available
+one frame after its frame, not only after the flush. `motion_v2` and every
+GPU twin of `motion` and `motion_v2` follow the same rule; `float_motion`
+always has (it writes frame `i - 1` while it reads frame `i`).
+
 ### Options
 
 | Option                    | Alias    | Type   | Default   | Range         | Effect                                                                 |
@@ -173,9 +203,10 @@ eliminated.
 `motion3_v2_score` is the `motion_v2` analogue of motion v1's `motion3_score`:
 a per-frame `motion_blend(motion2, motion_blend_factor, motion_blend_offset)`
 clipped to `motion_max_val`, optionally smoothed by a two-frame moving average
-(`motion_moving_average=true`). It is emitted host-side in the extractor's
-end-of-stream flush. The output range is `[0, motion_max_val]`, in the same
-units as `motion`.
+(`motion_moving_average=true`). It is written host-side as soon as the frame
+after it is scored, the last frame's at the end-of-stream flush
+([When `motion2` and `motion3` are final](#when-motion2-and-motion3-are-final)).
+The output range is `[0, motion_max_val]`, in the same units as `motion`.
 
 ### Options
 

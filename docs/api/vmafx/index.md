@@ -210,8 +210,10 @@ refused naming `reference` or `distorted`. One frame can be scored by several
 contexts with different options without a second decode or a copy: take one
 more reference per context with `vmafx_frame_ref()` and submit it to each.
 The same frame as both inputs of one submit needs two references.
-`vmafx_flush()` finishes the stream; the scores of the last frames (motion)
-become final only then.
+`vmafx_flush()` finishes the stream; the scores that read a later frame
+(`motion2` / `motion3` of the last frame) become final only then. Every other
+frame's are final once the frame after it is scored
+([ADR-2090](../../adr/2090-motion-window-incremental.md)).
 
 ## Device frames and fences
 

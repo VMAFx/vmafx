@@ -78,6 +78,7 @@ typedef struct MotionV2State {
     bool motion_moving_average;
     bool motion_force_zero;
     VmafDictionary *feature_name_dict;
+    VmafMotionWindowState window_state; /* ADR-2090: derivation of motion2_v2 / motion3_v2 */
 } MotionV2State;
 
 static const VmafOption options[] = {
@@ -393,22 +394,56 @@ static int close_fex(VmafFeatureExtractor *fex)
 /*
  * motion2_v2 and motion3_v2 of every frame come from the stored SAD scores
  * through the window the `motion` extractor defines
- * (integer_motion.c::vmaf_motion_window_flush(), motion_window.h): upstream's
- * last integer_motion_v2.c (Netflix a4a1492d^) and its integer_motion.c
- * derive them with the same arithmetic, the three-frame window or, with
- * motion_five_frame_window, the five-frame one (a2b59b77, ADR-1478).
+ * (integer_motion.c::vmaf_motion_window_advance() / _flush(), motion_window.h):
+ * upstream's last integer_motion_v2.c (Netflix a4a1492d^) and its
+ * integer_motion.c derive them with the same arithmetic, the three-frame
+ * window or, with motion_five_frame_window, the five-frame one (a2b59b77,
+ * ADR-1478), each frame as soon as its window is complete (ADR-2090).
+ */
+static VmafMotionWindow motion_v2_window_of(MotionV2State *s)
+{
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_v2_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = s->motion_five_frame_window,
+        .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
+    };
+    return window;
+}
+
+/* ADR-2090: motion2_v2 / motion3_v2 of the frames whose window the SAD scores
+ * in the collector complete, on the thread that feeds frames. With worker
+ * threads this is the registered extractor, which init() never saw: the
+ * dictionary is built here and freed by close_fex() (the engine marks the
+ * context initialised). */
+static int advance(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2State *s = fex->priv;
+    if (s->feature_name_dict == NULL) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict) {
+            return -ENOMEM;
+        }
+    }
+    const VmafMotionWindow window = motion_v2_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+/*
+ * The frames no advance() derived, the last one included.
  *
  * In the threaded dispatch path flush() is invoked on the *registered*
- * VmafFeatureExtractorContext rather than on any pool instance.  That
- * context is never passed through vmaf_feature_extractor_context_init, so
- * its is_initialized flag is false and vmaf_feature_extractor_context_close
- * returns early without calling close_fex().  If we were to store the dict
- * in s->feature_name_dict here it would never be freed.
- *
- * Track whether the dict existed before this call.  When it did not (the
- * registered-context path) we own it locally and must free it before
- * returning.  When it did (the serial or pool-instance path where extract()
- * already ran) close_fex() will free it as normal.
+ * VmafFeatureExtractorContext rather than on any pool instance; that context
+ * never ran init(). When no advance() built the dictionary either, this call
+ * owns the one it builds and frees it before returning. When it did exist
+ * (the serial or pool-instance path where extract() already ran, or an
+ * advance()), close_fex() frees it as normal.
  */
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
@@ -422,23 +457,13 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
         }
     }
 
-    const VmafMotionWindow window = {
-        .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
-        .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
-        .motion3_feature = "VMAF_integer_feature_motion3_v2_score",
-        .motion_blend_factor = s->motion_blend_factor,
-        .motion_blend_offset = s->motion_blend_offset,
-        .motion_max_val = s->motion_max_val,
-        .motion_five_frame_window = s->motion_five_frame_window,
-        .motion_moving_average = s->motion_moving_average,
-    };
+    const VmafMotionWindow window = motion_v2_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
-
-    if (dict_locally_owned) {
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    const int free_err = dict_locally_owned ? vmaf_dictionary_free(&s->feature_name_dict) : 0;
+    if (err) {
+        return err;
     }
-
-    return err ? err : 1;
+    return free_err ? free_err : 1;
 }
 
 /* ADR-1478: the reference picture of frame n-2 is read, and the context
@@ -460,6 +485,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2 = {
     .init = init,
     .extract = extract,
     .flush = flush,
+    .advance = advance,
     .close = close_fex,
     .priv_size = sizeof(MotionV2State),
     .provided_features = provided_features,

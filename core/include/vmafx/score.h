@@ -397,13 +397,13 @@ VMAFX_EXPORT VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context,
  * `last`, and return at once. The window completes when every scored frame of its range is final,
  * or at vmafx_flush(), which completes it over the frames the stream had and flags it
  * VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's
- * scores one submit later; motion2 / motion3 of the integer motion extractors, and so every VMAF
- * model, are final only at vmafx_flush() in this release. The context's completion thread (started
- * by its first window) finds completion: the worker that finishes a frame, a submit, a flush, an
- * import and this call wake it, so a window completes whether or not the feeding thread calls
- * again; a window already final completes right after this call. At most 1024 windows of a context
- * are open; one more is VMAFX_E_BUSY naming `context`. The caller holds the window until
- * vmafx_window_release(). Added in ABI 0.1.8.
+ * scores one submit later. motion2 / motion3 of a frame, and so every VMAF model, are final once
+ * the frame after it is scored (ADR-2090); the last frame's at vmafx_flush(). The context's
+ * completion thread (started by its first window) finds completion: the worker that finishes a
+ * frame, a submit, a flush, an import and this call wake it, so a window completes whether or not
+ * the feeding thread calls again; a window already final completes right after this call. At most
+ * 1024 windows of a context are open; one more is VMAFX_E_BUSY naming `context`. The caller holds
+ * the window until vmafx_window_release(). Added in ABI 0.1.8.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_window_submit(VmafxContext *context,

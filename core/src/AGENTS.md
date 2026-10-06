@@ -28,7 +28,7 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 | `pdjson.c`, `pdjson.h`, `framesync.c` | [memory-and-concurrency-safety](AGENTS.d/memory-and-concurrency-safety.md) | pdjson enforces 512 container limit; pthread init, malloc, and size bounds checked without leak. |
 | `metadata_handler.cpp`, `metadata_handler.h` | [metadata-handler](AGENTS.d/metadata-handler.md) | C++20 metadata handler preserves extern "C" symbols and unique_ptr lifecycle. |
 | `output.cpp`, `thread_locale.cpp`, `thread_locale.h` | [output-writers-and-locale](AGENTS.d/output-writers-and-locale.md) | Score capacity checks use >=; JSON writers guard delimiters; locale pushes flush before pop. |
-| `libvmaf.c`, `feature/feature_extractor.cpp` | [picture-ownership-and-dispatch](AGENTS.d/picture-ownership-and-dispatch.md) | PREV_REF window uses counted references, n-2 kept only for a reader; vmaf_read_pictures owns both pictures. |
+| `libvmaf.c`, `feature/feature_extractor.cpp` | [picture-ownership-and-dispatch](AGENTS.d/picture-ownership-and-dispatch.md) | PREV_REF counted refs, n-2 only for a reader; read_pictures owns both pictures; advance after each frame. |
 | `libvmaf.c`, `percentile.h`, `bootstrap_names.h` | [pooling-and-bootstrap](AGENTS.d/pooling-and-bootstrap.md) | Pooling accumulators remain O(1) float-exact; bootstrap score names stay centralized. |
 | `read_json_model.c`, `read_json_model.h` | [read-json-model](AGENTS.d/read-json-model.md) | Model feature arrays sync capacity before access and free previous names before strdup. |
 | `predict.c`, `interop/pelorus_interop.c` | [scoring-and-pelorus-interop](AGENTS.d/scoring-and-pelorus-interop.md) | Piecewise linear mapping rejects non-finite scores; Pelorus interop validates framing and QP bounds. |

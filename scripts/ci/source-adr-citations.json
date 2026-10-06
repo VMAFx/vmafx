@@ -4886,8 +4886,9 @@
     },
     "0845": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_cuda.c": 8,
+        "core/src/feature/cuda/integer_motion_cuda.c": 9,
         "core/test/motion_five_frame_twin_parity.h": 1,
+        "core/test/test_cuda_motion_five_frame_window.c": 1,
         "core/test/test_cuda_motion_sad_score.c": 1,
         "core/test/test_cuda_motion_tiny_frames.c": 1
       },
@@ -6603,6 +6604,7 @@
         "core/test/test_motion_neon.c": 1,
         "core/test/test_motion_pipeline_neon.c": 1,
         "core/test/test_motion_v2_simd.c": 1,
+        "core/test/test_motion_window_incremental.c": 1,
         "core/test/test_ms_ssim_decimate.c": 1,
         "core/test/test_ms_ssim_decimate_coverage.c": 1,
         "core/test/test_niqe.c": 1,
@@ -10133,7 +10135,7 @@
         "core/src/feature/hip/integer_motion_v2_hip.c": 2,
         "core/src/feature/integer_motion.c": 2,
         "core/src/feature/integer_motion_v2.c": 2,
-        "core/src/feature/metal/integer_motion_metal.mm": 2,
+        "core/src/feature/metal/integer_motion_metal.mm": 3,
         "core/src/feature/metal/integer_motion_v2_metal.mm": 2,
         "core/src/feature/motion_window.h": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
@@ -10157,7 +10159,6 @@
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_frame.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
-        "core/test/test_vmafx_window.c": 1,
         "core/test/test_vmafx_window_live.c": 1,
         "core/tools/vmaf.cpp": 1
       },
@@ -11604,6 +11605,40 @@
         "core/test/vmafx_window_test_util.h": 2
       },
       "target": "2074-vmafx-window-scores.md"
+    },
+    "2090": {
+      "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/include/vmafx/score.h": 1,
+        "core/src/feature/cuda/integer_motion_cuda.c": 5,
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": 3,
+        "core/src/feature/feature_extractor.h": 1,
+        "core/src/feature/hip/integer_motion_hip.c": 3,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 3,
+        "core/src/feature/integer_motion.c": 6,
+        "core/src/feature/integer_motion_v2.c": 3,
+        "core/src/feature/metal/integer_motion_metal.mm": 3,
+        "core/src/feature/metal/integer_motion_v2_metal.mm": 3,
+        "core/src/feature/motion_window.h": 4,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 3,
+        "core/src/libvmaf.c": 5,
+        "core/src/vmafx/engine.h": 1,
+        "core/src/vmafx/window.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/motion_five_frame_twin_parity.h": 3,
+        "core/test/test_cuda_motion_five_frame_window.c": 1,
+        "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
+        "core/test/test_hip_motion_five_frame_window.c": 1,
+        "core/test/test_metal_integer_motion_parity.c": 1,
+        "core/test/test_metal_motion_v2_parity.c": 1,
+        "core/test/test_motion_window_advance_contract.py": 1,
+        "core/test/test_motion_window_incremental.c": 4,
+        "core/test/test_score_pooled_eagain.c": 2,
+        "core/test/test_sycl_motion_five_frame_window.c": 1,
+        "core/test/test_vmafx_window.c": 4
+      },
+      "target": "2090-motion-window-incremental.md"
     },
     "2094": {
       "sites": {

@@ -617,6 +617,22 @@ static uint32_t snapshot_open(VmafxWindowSet *set, VmafxWindow **out)
     return n;
 }
 
+/* ADR-2090: let the engine append what the scores already in make final
+ * (motion2 / motion3 of the frames whose window a worker's SAD completed)
+ * before the windows are probed, so a window over them completes while the
+ * feeder stalls. Engine lock only; a failure leaves the frames to the next
+ * pass or the flush, and is logged to the context. */
+static void advance_engine(VmafxContext *context)
+{
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_advance(context->engine);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmafx_window: the engine could not derive scores (%d)\n",
+                 err);
+    }
+    vmafx_engine_leave(context, previous);
+}
+
 /* One pass: look at every open window once and complete those whose frames
  * are final. Called and returns with the set lock held; runs the engine
  * work without it. */
@@ -626,6 +642,9 @@ static void evaluate(VmafxWindowSet *set)
     const uint32_t n = snapshot_open(set, snapshot);
     const WindowStream stream = {set->have_scored, set->scored_last, set->flushed};
     (void)pthread_mutex_unlock(&set->lock);
+    if (n > 0u) {
+        advance_engine(set->context);
+    }
     for (uint32_t i = 0; i < n; i++) {
         VmafxWindow *const window = snapshot[i];
         if (try_complete(set->context, window, &stream) == VMAFX_OK) {

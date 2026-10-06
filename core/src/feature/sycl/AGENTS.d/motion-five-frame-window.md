@@ -3,7 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_sycl.cpp
   - core/src/feature/sycl/integer_motion_v2_sycl.cpp
   - core/test/test_sycl_motion_five_frame_window.c
-invariant: SYCL motion twins keep frame n-2 outside the recorded graph and flush with the CPU window function; no new kernel.
+invariant: SYCL motion twins keep n-2 outside the graph; CPU window function per frame (advance) and at flush; no new kernel.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `motion_five_frame_window` on `motion_sycl` / `motion_v2_sycl` (ADR-1491)
@@ -31,10 +31,15 @@ invariant: SYCL motion twins keep frame n-2 outside the recorded graph and flush
 - `motion_sycl`: option + `motion_add_uv` -> `-ENOTSUP` (no CPU reference
   for chroma).
 - Host, `motion_sycl`, option on: `collect()` stores SAD (+ debug `motion`)
-  only; `flush()` -> `motion_flush_window()`. Three-frame path untouched.
-  `motion_v2_sycl`: `flush()` = `vmaf_motion_window_flush()` for both
-  windows; no local copy of the CPU flush.
+  only; `advance_fex_sycl()` (`.advance`, engine calls it per frame) =
+  `vmaf_motion_window_advance()`, `flush()` -> `motion_flush_window()` for the
+  rest, both on `s->window_state` (ADR-2090). Three-frame path and
+  `motion_force_zero`: advance returns 0. `motion_v2_sycl`: `.advance` =
+  `vmaf_motion_window_advance()`, `flush()` = `vmaf_motion_window_flush()`,
+  both windows; no local copy of the CPU derivation.
 - Guards: `test_sycl_motion_five_frame_window` (`==`, six option sets, 11 / 1
   / 2 / 3 frames, 8 / 10 bit; fixture
-  `core/test/motion_five_frame_twin_parity.h`), `test_sycl_twin_option_parity`,
-  gate cells `motion_mffw`, `motion_v2_mffw` (exact).
+  `core/test/motion_five_frame_twin_parity.h`; frame i final before flush by
+  read `max(i + 1, 2) + 1`, `lag_motion*` = 2), `test_sycl_twin_option_parity`,
+  `test_motion_window_advance_contract.py`, gate cells `motion_mffw`,
+  `motion_v2_mffw` (exact).
