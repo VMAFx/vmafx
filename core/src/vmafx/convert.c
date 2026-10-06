@@ -13,6 +13,7 @@
  * call with -ENOTSUP, NULL arguments included, as libvmaf did.
  */
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -110,10 +111,13 @@ VmafxStatus vmafx_frame_convert(VmafxFrameConverter *converter, const VmafxFrame
         *out = NULL;
     }
     VmafPicture dst = {0};
-    const int err = vmaf_engine_picture_convert(engine_converter(converter), out ? &dst : NULL,
-                                                src ? &src->pic : NULL);
+    int err = vmaf_engine_picture_convert(engine_converter(converter), out ? &dst : NULL,
+                                          src ? &src->pic : NULL);
+    if (!err && !out) {
+        err = -EINVAL; /* the engine refuses a NULL destination first */
+    }
     if (err) {
-        return converter_failure(&report, err, !converter ? "converter" : "src",
+        return converter_failure(&report, err, !converter ? "converter" : (!out ? "out" : "src"),
                                  "converting a frame");
     }
     VmafxFrame *frame = NULL;

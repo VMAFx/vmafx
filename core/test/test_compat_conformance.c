@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "compat_conformance_trace.h"
+#include "gpu_dispatch_env.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -39,7 +40,14 @@ void trace(Trace *t, const char *fmt, ...)
 {
     char line[TRACE_LINE_MAX];
     va_list args;
+#if defined(__clang__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+    /* As in core/src/log.c: clang lowers the C23 va_start macro to
+     * __builtin_c23_va_start, which its VAList analyzer does not model yet;
+     * the traditional builtin initialises the list the same way. */
+    __builtin_va_start(args, fmt);
+#else
     va_start(args, fmt);
+#endif
     const int n = vsnprintf(line, sizeof(line) - 1u, fmt, args);
     va_end(args);
     if (n < 0) {
@@ -91,7 +99,8 @@ static int planted_score_at_index(VmafContext *vmaf, VmafModel *model, double *s
 
 static const char *plant(void)
 {
-    const char *const value = getenv("VMAF_COMPAT_PLANT");
+    /* The once-only environment snapshot (ADR-0488), not a getenv of this thread. */
+    const char *const value = vmaf_gpu_dispatch_env_get("VMAF_COMPAT_PLANT");
     return value ? value : "";
 }
 
@@ -191,10 +200,10 @@ static mu_message_t test_conformance(void)
         if (strcmp(plant(), "uncovered") == 0 && strcmp(scenarios[i].name, "pictures") == 0) {
             continue;
         }
-        mu_message_t const message = run_scenario(i, &new_api);
+        mu_message_t message = run_scenario(i, &new_api);
         failure = failure ? failure : message;
     }
-    mu_message_t const coverage = check_coverage();
+    mu_message_t coverage = check_coverage();
     return failure ? failure : coverage;
 }
 

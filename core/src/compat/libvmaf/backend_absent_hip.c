@@ -67,11 +67,11 @@ void vmaf_hip_state_free(VmafHipState **state)
     }
 }
 
+/* libvmaf's stub returned -ENOSYS; this file is built only without the HIP
+ * backend, so the library reports no HIP device to list. */
 int vmaf_hip_list_devices(void)
 {
-    uint32_t count = 0;
-    (void)vmafx_device_count(VMAFX_BACKEND_HIP, &count, NULL);
-    return -ENOSYS;
+    return vmaf_hip_available() ? 0 : -ENOSYS;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -34,7 +34,7 @@ def environment(root: Path, vmaf: str, capi: str, libdir: str) -> dict[str, str]
             "VMAFX_CONTRACT_CAPI": capi,
             "VMAFX_CONTRACT_YUV": str(root / "python" / "test" / "resource" / "yuv"),
             "VMAFX_CONTRACT_MODEL_DIR": str(root / "model"),
-            "CGO_LDFLAGS": f"-L{libdir} -lvmaf -lm",
+            "CGO_LDFLAGS": f"-L{libdir} -lvmaf -lvmafx -lm",
             "LD_LIBRARY_PATH": libdir + os.pathsep + env.get("LD_LIBRARY_PATH", ""),
             "GOFLAGS": "-p=4",
         }

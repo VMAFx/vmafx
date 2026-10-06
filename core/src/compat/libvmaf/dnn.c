@@ -7,15 +7,17 @@
 
 /*
  * libvmaf tiny-AI functions on the VMAFx API (vmafx/dnn.h, ADR-1852 design
- * section 2.11). A VmafDnnSession is a VmafxDnnSession under its old name and
- * VmafDnnInput / VmafDnnOutput are VmafxDnnInput / VmafxDnnOutput: the
- * asserts below pin that the layouts are equal, so arrays pass by pointer.
- * The library validates the arguments; its errno (-ENOSYS in a build without
- * tiny-AI support) is libvmaf's return value.
+ * section 2.11). A VmafDnnSession is a VmafxDnnSession under its old name.
+ * VmafDnnInput / VmafDnnOutput and VmafxDnnInput / VmafxDnnOutput have the
+ * same members but are distinct types, so the tensor records cross as
+ * copies, member by member. The library validates the arguments; its errno
+ * (-ENOSYS in a build without tiny-AI support) is libvmaf's return value.
  */
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "compat_errno.h"
 #include "libvmaf/dnn.h"
@@ -28,18 +30,53 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-_Static_assert(sizeof(VmafDnnInput) == sizeof(VmafxDnnInput), "VmafDnnInput layout");
-_Static_assert(offsetof(VmafDnnInput, data) == offsetof(VmafxDnnInput, data), "VmafDnnInput.data");
-_Static_assert(offsetof(VmafDnnInput, shape) == offsetof(VmafxDnnInput, shape),
-               "VmafDnnInput.shape");
-_Static_assert(offsetof(VmafDnnInput, rank) == offsetof(VmafxDnnInput, rank), "VmafDnnInput.rank");
-_Static_assert(sizeof(VmafDnnOutput) == sizeof(VmafxDnnOutput), "VmafDnnOutput layout");
-_Static_assert(offsetof(VmafDnnOutput, data) == offsetof(VmafxDnnOutput, data),
-               "VmafDnnOutput.data");
-_Static_assert(offsetof(VmafDnnOutput, capacity) == offsetof(VmafxDnnOutput, capacity),
-               "VmafDnnOutput.capacity");
-_Static_assert(offsetof(VmafDnnOutput, written) == offsetof(VmafxDnnOutput, written),
-               "VmafDnnOutput.written");
+/* Up to four records of each kind are copied on the stack, more into the
+ * heap, as the engine keeps its own copies (core/src/dnn/dnn_api.c). */
+#define DNN_STACK_TENSORS 4u
+
+typedef struct DnnCopies {
+    VmafxDnnInput in_stack[DNN_STACK_TENSORS];
+    VmafxDnnOutput out_stack[DNN_STACK_TENSORS];
+    VmafxDnnInput *in;
+    VmafxDnnOutput *out;
+} DnnCopies;
+
+static void dnn_copies_free(DnnCopies *c)
+{
+    if (c->in != c->in_stack) {
+        free(c->in);
+    }
+    if (c->out != c->out_stack) {
+        free(c->out);
+    }
+}
+
+/* 0 or -ENOMEM. A NULL array stays NULL, so the library refuses it. */
+static int dnn_copies_make(DnnCopies *c, const VmafDnnInput *inputs, size_t n_inputs,
+                           const VmafDnnOutput *outputs, size_t n_outputs)
+{
+    c->in =
+        (!inputs || n_inputs <= DNN_STACK_TENSORS) ? c->in_stack : calloc(n_inputs, sizeof(*c->in));
+    c->out = (!outputs || n_outputs <= DNN_STACK_TENSORS) ? c->out_stack :
+                                                            calloc(n_outputs, sizeof(*c->out));
+    if (!c->in || !c->out) {
+        dnn_copies_free(c);
+        return -ENOMEM;
+    }
+    for (size_t i = 0; inputs && i < n_inputs; i++) {
+        c->in[i].name = inputs[i].name;
+        c->in[i].data = inputs[i].data;
+        c->in[i].shape = inputs[i].shape;
+        c->in[i].rank = inputs[i].rank;
+    }
+    for (size_t i = 0; outputs && i < n_outputs; i++) {
+        c->out[i].name = outputs[i].name;
+        c->out[i].data = outputs[i].data;
+        c->out[i].capacity = outputs[i].capacity;
+        c->out[i].written = outputs[i].written;
+    }
+    return 0;
+}
 
 static VmafxDnnConfig dnn_config(const VmafDnnConfig *cfg)
 {
@@ -118,10 +155,19 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
 int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
                          VmafDnnOutput *outputs, size_t n_outputs)
 {
+    DnnCopies copies;
+    const int err = dnn_copies_make(&copies, inputs, n_inputs, outputs, n_outputs);
+    if (err) {
+        return err;
+    }
     VmafxError *error = NULL;
     const VmafxStatus status =
-        vmafx_dnn_session_run(session_of(sess), (const VmafxDnnInput *)(const void *)inputs,
-                              n_inputs, (VmafxDnnOutput *)(void *)outputs, n_outputs, &error);
+        vmafx_dnn_session_run(session_of(sess), inputs ? copies.in : NULL, n_inputs,
+                              outputs ? copies.out : NULL, n_outputs, &error);
+    for (size_t i = 0; outputs && i < n_outputs; i++) {
+        outputs[i].written = copies.out[i].written;
+    }
+    dnn_copies_free(&copies);
     return status == VMAFX_OK ? 0 : compat_errno(status, error);
 }
 

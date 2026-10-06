@@ -33,7 +33,7 @@ from .model import (
     version_text,
 )
 
-RESERVED_STEMS = ("index", "reference")  # hand-written / generated docs index pages
+RESERVED_STEMS = ("index", "reference", "compat")  # hand-written / generated docs pages
 FLAG_WIDTH = {"u32": 32, "u64": 64}
 
 

@@ -15,15 +15,15 @@
   "evidence": [
     "core/tools/cli_parse.cpp:ARG_BACKEND",
     "core/tools/cli_parse.cpp:ARG_NO_CUDA",
-    "core/src/libvmaf.c:vmaf_use_features_from_model",
+    "core/src/libvmaf.c:vmaf_engine_use_features_from_model",
     "core/src/libvmaf.c:vmaf_use_feature",
     "core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_by_feature_name",
     "core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_twin",
-    "core/src/libvmaf.c:vmaf_feature_backend_twin",
+    "core/src/libvmaf.c:vmaf_engine_feature_backend_twin",
     "core/src/feature/feature_extractor.h:VMAF_FEATURE_EXTRACTOR_METAL",
     "core/src/libvmaf.c:vmaf_init_cpu"
   ],
-  "spec_sha256": "881a7ba34fcfac356fd9526a36816b796dd8ae2ed64b51f244380ec6b62ff551",
+  "spec_sha256": "a3e469527cdf95fde32f725fa18fd4607086666b21baf210fdb55b2d24cd89b5",
   "engine": {
     "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
     "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"

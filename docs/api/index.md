@@ -5,6 +5,13 @@ the header map and the rules every call shares. Per-function detail is on
 the topic pages below. Declarations live in
 [`core/include/libvmaf/`](../../core/include/libvmaf/).
 
+This API is the compatibility library `libvmaf.so.3`, built on the
+[VMAFx API](vmafx/index.md) of `libvmafx.so.1`; link it with
+`pkg-config --libs libvmaf`, which adds `-lvmafx`. Its functions are
+deprecated in favour of their VMAFx successors: the warnings are opt-in in
+1.0 (`-DVMAF_ENABLE_DEPRECATION_WARNINGS`), and the
+[migration table](vmafx/compat.md) names the successor of every function.
+
 | Page | Covers |
 | --- | --- |
 | [Lifecycle](lifecycle.md) | `vmaf_init` to `vmaf_close`: configuration, registration, feeding, scoring, pooling, reports, backend introspection, device twins |

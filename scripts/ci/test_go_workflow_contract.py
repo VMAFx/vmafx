@@ -32,11 +32,11 @@ class GoWorkflowContract(unittest.TestCase):
 
         self.assertNotRegex(wrapper, r"(?m)^#cgo\s+LDFLAGS:")
         self.assertIn(
-            "CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lm",
+            "CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lvmafx -lm",
             workflow,
         )
         self.assertIn(
-            'CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm"',
+            'CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm"',
             makefile,
         )
 
@@ -50,7 +50,7 @@ class GoWorkflowContract(unittest.TestCase):
         ):
             with self.subTest(container=container.name):
                 source = container.read_text(encoding="utf-8")
-                self.assertIn('CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm"', source)
+                self.assertIn('CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lvmafx -lm"', source)
 
     def test_ready_pr_and_master_runs_are_routed_inside_the_job(self) -> None:
         workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")

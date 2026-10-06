@@ -857,7 +857,8 @@ jobs:
         # Meson's object directory libvmaf.so.<version>.p/.
         working-directory: core/build-mcp
         run: |
-          find src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) > "${RUNNER_TEMP}/vmaf-cli.list"
+          find src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \( -type f -o -type l \) \
+            > "${RUNNER_TEMP}/vmaf-cli.list"
           tar -cf "${RUNNER_TEMP}/vmaf-cli.tar" tools/vmaf -T "${RUNNER_TEMP}/vmaf-cli.list"
 
       - name: Upload the vmaf CLI for the vmaf-tune suite
@@ -874,10 +875,15 @@ jobs:
         # silently wire a transport without flipping the expectations.
         # The test is registered as `test_mcp_smoke` in core/test/
         # meson.build (no suite tag — it lands in the default suite).
+        # The libvmaf compat checks run here too, because only this build
+        # has the vmaf_mcp_* compat functions (ADR-2094): their conformance
+        # against the engine's bodies and the export list with them.
         working-directory: core
         run: >-
           python3 ../scripts/ci/run_meson_test.py --
-          -C build-mcp test_mcp_smoke --print-errorlogs
+          -C build-mcp test_mcp_smoke test_compat_conformance
+          check_exported_symbols check_exported_symbols_libvmaf
+          --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
         # The pyproject ships a `dev` extras group (pytest +

@@ -45,4 +45,24 @@
 #define VMAF_EXPORT
 #endif
 
+/**
+ * VMAF_DEPRECATED(msg) — marks a libvmaf function that has a VMAFx successor
+ * (ADR-1852 decision D7, docs/api/vmafx/compat.md). In this release the
+ * warning is opt-in: define VMAF_ENABLE_DEPRECATION_WARNINGS before including
+ * a libvmaf header to have the compiler name the vmafx_ replacement of every
+ * call. It becomes the default in 1.1, and the functions go in 2.0. The
+ * library's own translation units (VMAF_BUILDING_LIBVMAF) never warn.
+ */
+#if defined(VMAF_ENABLE_DEPRECATION_WARNINGS) && !defined(VMAF_BUILDING_LIBVMAF)
+#if defined(_MSC_VER)
+#define VMAF_DEPRECATED(msg) __declspec(deprecated(msg))
+#elif defined(__GNUC__) || defined(__clang__)
+#define VMAF_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#else
+#define VMAF_DEPRECATED(msg)
+#endif
+#else
+#define VMAF_DEPRECATED(msg)
+#endif
+
 #endif /* LIBVMAF_MACROS_H */

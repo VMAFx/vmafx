@@ -555,6 +555,20 @@
       "depNameTemplate": "nvidia-cuda-redist",
       "extractVersionTemplate": "^redistrib_(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)\\.json$",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Upstream GStreamer release whose unpatched gst-plugins-bad `vmaf` plugin the consumer-conformance job builds against the libvmaf under test (scripts/ci/upstream-gstreamer-compat.sh). build-config.env owns GST_PLUGINS_BAD_VERSION and the script sparse-clones that tag of the monorepo, so the pin is a plain git tag and needs no archive digest. The versioning regex accepts stable releases only (even minor), never the odd-minor development series. The job also requires the runner's gstreamer-1.0 development packages to share the major.minor, so a minor bump stays red until the runner image carries it. FFMPEG_TAG has no manager here: the scheduled FFmpeg patch refresh owns it.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)GST_PLUGINS_BAD_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
+      ],
+      "datasourceTemplate": "git-tags",
+      "packageNameTemplate": "https://gitlab.freedesktop.org/gstreamer/gstreamer.git",
+      "depNameTemplate": "gstreamer/gstreamer",
+      "versioningTemplate": "regex:^(?<major>[0-9]+)\\.(?<minor>[0-9]*[02468])\\.(?<patch>[0-9]+)$"
     }
   ],
   "vulnerabilityAlerts": {

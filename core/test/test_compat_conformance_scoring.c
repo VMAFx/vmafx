@@ -15,6 +15,7 @@
  * the same input, not a score against a reference value.
  */
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,10 +75,11 @@ static void submit_frames(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
               dist.ref == NULL);
     }
     VmafPicture lone;
-    (void)api->picture_alloc(&lone, VMAF_PIX_FMT_YUV420P, 8, FRAME_W, FRAME_H);
+    trace(t, "alloc one-sided %d",
+          api->picture_alloc(&lone, VMAF_PIX_FMT_YUV420P, 8, FRAME_W, FRAME_H));
     trace(t, "read one-sided %d", api->read_pictures(vmaf, &lone, NULL, N_FRAMES));
     trace(t, "read NULL context %d", api->read_pictures(NULL, NULL, NULL, 0));
-    (void)api->picture_unref(&lone);
+    trace(t, "unref one-sided %d", api->picture_unref(&lone));
     trace(t, "flush %d", api->read_pictures(vmaf, NULL, NULL, 0));
     trace(t, "flush again %d", api->read_pictures(vmaf, NULL, NULL, 0));
 }
@@ -85,10 +87,10 @@ static void submit_frames(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
 static void register_features(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
 {
     VmafFeatureDictionary *opts = NULL;
-    (void)api->feature_dictionary_set(&opts, "enable_chroma", "1");
+    trace(t, "set chroma %d", api->feature_dictionary_set(&opts, "enable_chroma", "1"));
     trace(t, "use psnr %d", api->use_feature(vmaf, "psnr", opts));
     VmafFeatureDictionary *kept = NULL;
-    (void)api->feature_dictionary_set(&kept, "x", "1");
+    trace(t, "set x %d", api->feature_dictionary_set(&kept, "x", "1"));
     trace(t, "use unknown %d", api->use_feature(vmaf, "no_such_extractor", kept));
     trace(t, "unknown kept the options: free %d", api->feature_dictionary_free(&kept));
     trace(t, "use NULL %d", api->use_feature(NULL, "psnr", NULL));
@@ -210,13 +212,16 @@ static void trace_report(Trace *t, const char *format)
         in_record = (in_record || opens) && !closes && !self_closing;
         /* A JSON member before the record gains a comma: compare without it. */
         size_t len = strcspn(line, "\n");
-        len -= len > 0 && line[len - 1u] == ',';
+        if (len > 0u && len < sizeof(line) && line[len - 1u] == ',') {
+            len--;
+        }
         if (!skip) {
             trace(t, "report %s %.*s", format, (int)len, line);
         }
     }
-    (void)fclose(file);
-    (void)remove(REPORT_PATH);
+    if (fclose(file) != 0 || remove(REPORT_PATH) != 0) {
+        trace(t, "report %s not closed and removed", format);
+    }
 }
 
 static void reports(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
@@ -228,7 +233,9 @@ static void reports(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
         /* A refused format: the same -EINVAL, but libvmaf truncated the file
          * first and the compat library does not touch it (documented). */
         if (err) {
-            (void)remove(REPORT_PATH);
+            if (remove(REPORT_PATH) != 0 && errno != ENOENT) {
+                trace(t, "write %s left a file", names[fmt]);
+            }
             continue;
         }
         trace_report(t, names[fmt]);
@@ -296,8 +303,7 @@ void scenario_preallocated(const VmafCompatApi *api, Trace *t)
 {
     VmafContext *vmaf = NULL;
     VmafContext *bare = NULL;
-    (void)api->init(&vmaf, quiet_config());
-    (void)api->init(&bare, quiet_config());
+    trace(t, "init %d %d", api->init(&vmaf, quiet_config()), api->init(&bare, quiet_config()));
     VmafPicture pic;
     trace(t, "fetch without pool %d", api->fetch_preallocated_picture(bare, &pic));
     VmafPictureConfiguration cfg;

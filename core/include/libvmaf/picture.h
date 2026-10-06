@@ -132,6 +132,7 @@ typedef struct VmafPicture {
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_frame_create_host")
 VMAF_EXPORT int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                    unsigned w, unsigned h);
 
@@ -158,6 +159,7 @@ VMAF_EXPORT int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fm
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_frame_unref")
 VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
 
 /**
@@ -285,6 +287,7 @@ typedef struct VmafPictureConvertContext VmafPictureConvertContext;
  *
  * @since libvmaf 3.0.0 (fork addition).
  */
+VMAF_DEPRECATED("use vmafx_frame_converter_create")
 VMAF_EXPORT int
 vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx,
                                              const VmafPicture *src, const VmafColor *src_color,
@@ -305,6 +308,7 @@ vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx,
  *
  * @since libvmaf 3.0.0 (fork addition; same signature as upstream).
  */
+VMAF_DEPRECATED("use vmafx_frame_convert")
 VMAF_EXPORT int vmaf_picture_convert(VmafPictureConvertContext *ctx, VmafPicture *dst,
                                      const VmafPicture *src);
 
@@ -315,6 +319,7 @@ VMAF_EXPORT int vmaf_picture_convert(VmafPictureConvertContext *ctx, VmafPicture
  *
  * @since libvmaf 3.0.0 (fork addition; same signature as upstream).
  */
+VMAF_DEPRECATED("use vmafx_frame_converter_destroy")
 VMAF_EXPORT int vmaf_picture_convert_context_close(VmafPictureConvertContext *ctx);
 
 #ifdef __cplusplus

@@ -793,13 +793,13 @@ node-bpf:
 
 go-build: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build ./...
 
 go-test: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go test ./...
 
@@ -820,7 +820,7 @@ go-fix-check:
 
 go-ort-runner:
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build -o vmafx-ort-runner ./cmd/vmafx-ort-runner
 
