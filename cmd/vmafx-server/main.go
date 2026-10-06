@@ -124,6 +124,7 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 		fx.Invoke(registerScoringService),
 		fx.Invoke(mountHTTPRoutes),
 		fx.Invoke(registerHealthChecks),
+		fx.Invoke(registerBinaryReadiness),
 		fx.Invoke(realiseHTTPServer),
 	}
 }
@@ -219,7 +220,7 @@ func mountHTTPRoutes(
 
 	// Legacy Kubernetes probe aliases — kept for backwards compatibility.
 	r.Get("/healthz", hs.handleHealthz)
-	r.Get("/readyz", hs.handleReadyz)
+	r.Get("/readyz", hs.handleReadyzFromRegistry(reg))
 
 	// k8s canonical probes (/livez, /readyz, /startupz) backed by the registry.
 	// NOTE: /readyz above is the legacy JSON alias; the canonical probe set is
