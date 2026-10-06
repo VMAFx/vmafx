@@ -2656,9 +2656,9 @@ Every research digest, one heading each (792), so the site search finds a digest
 
 [2158-vmafx-api-redesign](2158-vmafx-api-redesign.md)
 
-## Research-2159: SYCL device frames: what the Level Zero runtime does with cross-queue copies, host tasks and event queries, and whether batched command lists drop imports on xe
+## Research-2160: SYCL device frames: what the Level Zero runtime does with cross-queue copies, host tasks and event queries, and whether batched command lists drop imports on xe
 
-[2159-vmafx-sycl-device-frames](2159-vmafx-sycl-device-frames.md)
+[2160-vmafx-sycl-device-frames](2160-vmafx-sycl-device-frames.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

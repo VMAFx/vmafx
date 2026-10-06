@@ -33,7 +33,8 @@
 
 /* `last` is the event of the queue's last command, kept from each submit:
  * sycl::queue::ext_oneapi_get_last_event() waited for that command to
- * complete (DPC++ 2026.0, measured), which would hold the test's thread. */
+ * complete (DPC++ 2026.0 and 2026.1.1, measured), which would hold the test's
+ * thread. */
 struct VsProducer {
     sycl::queue q;
     std::mutex lock;
@@ -229,8 +230,8 @@ extern "C" int vs_copy_2d(VsProducer *p, void *dst, size_t dst_pitch, const void
                           size_t src_pitch, size_t row, size_t rows)
 {
     /* One memcpy per row, or one for packed rows: ext_oneapi_memcpy2d() enqueued
-     * behind a host task lost the device on the Arc A380 (xe, DPC++ 2026.0;
-     * ADR-2091), and the producer holds its queue with host tasks. */
+     * behind a host task lost the device on the Arc A380 (xe, DPC++ 2026.0 and
+     * 2026.1.1; ADR-2091), and the producer holds its queue with host tasks. */
     try {
         auto *out = static_cast<uint8_t *>(dst);
         const auto *in = static_cast<const uint8_t *>(src);

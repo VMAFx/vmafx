@@ -157,7 +157,7 @@ backend within it.
   `vmaf_sycl_picture_read_plane()`, which records the read for the release;
   `core/src/libvmaf.c` skips the upload wait for such pictures and refuses a
   non-SYCL extractor on one. Acquire and release are joins (an empty kernel
-  with `depends_on()`), never `ext_oneapi_submit_barrier()` (Research-2159
+  with `depends_on()`), never `ext_oneapi_submit_barrier()` (Research-2160
   finding 2), and no reader uses `ext_oneapi_memcpy2d()` (finding 1). The
   de-tile math of the VA-surface import and the VMAFx dma-buf import is one
   header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and

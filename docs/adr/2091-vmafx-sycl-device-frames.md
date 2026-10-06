@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2091: VMAFx device frames on SYCL: readers copy on the device behind the frame's ready event, the release waits on every reader
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: RC4 work package 3 (SYCL lane); maintainer acceptance pending
+- **Deciders**: maintainer (popup 2026-10-06); RC4 work package 3 (SYCL lane)
 - **Tags**: api, rc4, gpu, sycl, opengl, zero-copy
 
 ## Context
@@ -25,9 +25,10 @@ no SYCL twin reads a picture where it is. The shared luma and chroma planes
 (ADR-1369) are uploaded into slots the twins read, and every other twin packs
 its own inputs on the host and uploads them. A frame in device memory has to
 reach the same buffers without the host. Measurements on the lane's device
-(an Arc A380 under the xe driver, DPC++ 2026.0, compute-runtime 26.35) also
-ruled out the queue's pitched copy for the readers and barriers for the
-ordering ([Research-2159](../research/2159-vmafx-sycl-device-frames.md)).
+(an Arc A380 under the xe driver, DPC++ 2026.1.1 as `build-config.env` pins
+it, Level Zero GPU driver 26.35; repeated from a first run with DPC++ 2026.0)
+also ruled out the queue's pitched copy for the readers and barriers for the
+ordering ([Research-2160](../research/2160-vmafx-sycl-device-frames.md)).
 
 ## Decision
 
@@ -64,7 +65,7 @@ We implement VMAFx device frames on SYCL with these rules.
    task behind it, a `SYCL_EVENT` release fence is its event. A join is a
    kernel and not `ext_oneapi_submit_barrier()`, because a barrier on the
    event of a command that waits on a host task returns only once that host
-   task ran (Research-2159 finding 2): a producer that holds its queue with a
+   task ran (Research-2160 finding 2): a producer that holds its queue with a
    host task would make the import wait on the host. A SYCL event exists only once its command is submitted, so the
    library hands out a pointer to an event object of its own, kept in a table
    and answered "pending" by `vmafx_fence_wait()` until the release records
@@ -112,9 +113,9 @@ We implement VMAFx device frames on SYCL with these rules.
     command lists unless the queue the imports are made against used
     immediate command lists. This lane's stream test (48 frames through 4
     reused VA surfaces, each imported and freed) scored bit for bit as host
-    frames in 10 of 10 runs in each of three modes on the A380 under xe:
-    default, batched with the library queue's property removed, and batched
-    with it kept. The defect did not reproduce here; the library queue keeps
+    frames in 10 of 10 runs in each of three modes on the A380 under xe, with
+    DPC++ 2026.1.1 and with 2026.0: default, batched with the library queue's
+    property removed, and batched with it kept. The defect did not reproduce here; the library queue keeps
     the property as the cheap precaution #2217 recommends.
 
 ## Alternatives considered
@@ -124,9 +125,9 @@ We implement VMAFx device frames on SYCL with these rules.
 | Readers copy device pictures on the device through one helper (chosen) | Every twin keeps its arithmetic and its own buffers; any producer layout binds; one place orders reads and records them for the release | One device copy per reader of a plane | Chosen |
 | Twins read device pictures in place | No copy | Every twin's staging and its kernels rewritten for strided device inputs, per twin, per depth | Not chosen (a tuning item for RC8 if the copies show) |
 | Copy into the shared slots with the queue's `memcpy()` | No kernel of our own | A plane with padded rows needs one `memcpy()` per row | Not chosen |
-| `ext_oneapi_memcpy2d()` | Pitched copy in one call | Measured: one command per row on Level Zero, and one enqueued behind a host task lost the device (Research-2159 finding 1) | Rejected after measurement |
+| `ext_oneapi_memcpy2d()` | Pitched copy in one call | Measured: one enqueued behind a host task lost the device, with DPC++ 2026.0 and 2026.1.1 (Research-2160 finding 1) | Rejected after measurement |
 | One join over every reader at release (chosen) | Readers on any queue of any context; two contexts need nothing more | A list of events per frame; one empty kernel per acquire and per release | Chosen |
-| `ext_oneapi_submit_barrier()` for the acquire and the release | The extension made for it | Measured: returns only once a host task ran when its wait list holds the event of a command behind that host task (Research-2159 finding 2) | Rejected after measurement |
+| `ext_oneapi_submit_barrier()` for the acquire and the release | The extension made for it | Measured: returns only once a host task ran when its wait list holds the event of a command behind that host task (Research-2160 finding 2) | Rejected after measurement |
 | Read every frame on the library queue (the CUDA lane's rule) | One queue orders everything | The engine's twins run on their own queues; moving them all is a rewrite of the SYCL engine | Not chosen |
 | `SYCL_EVENT` release event handed out at request time from a host task that waits for the release | A device wait is correct at any time | A host task blocked for each frame's lifetime holds a runtime thread per frame in flight | Not chosen |
 | Host checks for `HOST` / `SYNC_FILE` / `GL_SYNC` (chosen) | Same rule on every device (ADR-1929 item 4) | A host wait when the producer is behind | Chosen |
@@ -136,7 +137,8 @@ We implement VMAFx device frames on SYCL with these rules.
 
 ## Consequences
 
-- **Positive**: imported SYCL frames score bit for bit as host-uploaded frames
+- **Positive** (measured with DPC++ 2026.1.1 in the dev image and with 2026.0
+  on the host): imported SYCL frames score bit for bit as host-uploaded frames
   for every SYCL twin declared exact (the Netflix pair, both checkerboards,
   the 10-bit Sparks pair and the 4K pair, planar and semi-planar with padded rows at odd
   starts; `core/test/test_vmafx_import_sycl_bitexact.c`), from USM of every
@@ -161,7 +163,8 @@ We implement VMAFx device frames on SYCL with these rules.
 
 - [ADR-1829](1829-rc4-zero-copy-import.md), [ADR-1852](1852-vmafx-api-redesign.md) design section 2.7, [ADR-1929](1929-vmafx-device-frames-fences.md), [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-1369](1369-sycl-shared-planes-light-twins.md), [ADR-1395](1395-sycl-kernels-no-scratch.md), [ADR-1468](1468-sycl-sub-group-sizes-every-aot-target.md).
 - Draft PR #2217 (Tualua): ADR-1763, "the primary SYCL queue, which runs the VA-surface import, uses immediate command lists".
-- [Research-2159](../research/2159-vmafx-sycl-device-frames.md): the runtime measurements behind items 2, 3 and 10.
+- [Research-2160](../research/2160-vmafx-sycl-device-frames.md): the runtime measurements behind items 2, 3 and 10.
+- `Q` (maintainer popup 2026-10-06, ADR-2091): "Accept as designed (Recommended)", after the exit evidence was repeated with DPC++ 2026.1.1.
 - `req` (RC4 work package 3, SYCL lane): "USM pointer; dma-buf + modifier (de-tile on device, ADR-1121); chroma (#2075); Windows shared texture | SYCL event barrier; `sync_file` export / import on the dma-buf | SYCL host device (scratch-free kernels, ADR-1395; AOT `--suite sycl-aot`)".
 - `req` (RC4 work package index, added 2026-10-06, #2238): "OpenGL interop import (CUDA-GL, SYCL via EGL DMA-buf export, HIP-GL) and a GL sync fence kind (additive, ADR-1897)".
 - Tests: `core/test/test_vmafx_import_sycl.c`, `test_vmafx_import_sycl_bitexact.c`, `test_vmafx_import_sycl_fence.c`, `test_vmafx_import_sycl_gl.c`, `test_vmafx_import_sycl_cells_contract.py`.

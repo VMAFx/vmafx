@@ -159,8 +159,9 @@ sycl/
   `priv->sycl.frame` = `VmafxSyclFrameRt`). Every engine reader copies a
   plane with `vmaf_sycl_picture_read_plane()` (a kernel on the reader's
   queue after the frame's ready event; the read's event is recorded on the
-  frame). Never `ext_oneapi_memcpy2d()` (one command per row; behind a host
-  task it lost the A380, Research-2159 finding 1) and never a host read.
+  frame). Never `ext_oneapi_memcpy2d()` (behind a host task it lost the
+  A380 on DPC++ 2026.0 and 2026.1.1, Research-2160 finding 1) and never a
+  host read.
 - Ordering: `join()` (an empty kernel with `depends_on()`) for the acquire and
   the release, never `ext_oneapi_submit_barrier()`: a barrier on the event of
   a command behind a host task returns only after that host task ran

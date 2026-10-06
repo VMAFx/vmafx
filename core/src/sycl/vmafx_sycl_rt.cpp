@@ -215,13 +215,10 @@ sycl::event launch_shift(sycl::queue &q, const VmafxSyclPlaneOp &op)
 
 /* `rows` rows of `row` bytes from `src` (`src_pitch` apart) to `dst`
  * (`dst_pitch` apart) after `deps`, as one kernel moving a byte per
- * work-item (any address, any pitch). Measured on an Arc A380 under xe with
- * DPC++ 2026.0 (ADR-2091), the queue's own copies do not serve: a memcpy that
- * depends on an event of another queue was appended by the driver only once
- * that event completed (a host spin on the submitting thread, so a submit
- * waited for the producer), ext_oneapi_memcpy2d() ran as one command per row,
- * and a 2-D copy enqueued behind a host task lost the device. A kernel waits
- * for its dependencies on the device. */
+ * work-item (any address, any pitch). Not ext_oneapi_memcpy2d(): one enqueued
+ * behind a host task lost an Arc A380 under xe with DPC++ 2026.0 and 2026.1.1
+ * (ADR-2091, Research-2160 finding 1), and producers hold their queues with
+ * host tasks; and a plane with padded rows would take one memcpy() per row. */
 sycl::event copy_rows(sycl::queue &q, void *dst, size_t dst_pitch, const void *src,
                       size_t src_pitch, size_t row, size_t rows,
                       const std::vector<sycl::event> &deps)
@@ -291,7 +288,7 @@ void note_last(VmafxSyclFrameRt *f, const sycl::event &ev)
  * producer that holds its queue with one) returns only once that host task
  * ran, so the import or the release would wait on the host; a kernel with
  * the same dependencies is enqueued at once and the device waits (DPC++
- * 2026.0, Research-2159 finding 2). */
+ * 2026.0 and 2026.1.1, Research-2160 finding 2). */
 sycl::event join(sycl::queue &q, const std::vector<sycl::event> &deps)
 {
     return q.submit([&](sycl::handler &h) {

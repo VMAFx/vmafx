@@ -52,9 +52,10 @@ int vs_copy_2d(VsProducer *p, void *dst, size_t dst_pitch, const void *src, size
                size_t row, size_t rows);
 /* Enqueue a fill of `bytes` bytes of `value`. */
 int vs_fill(VsProducer *p, void *dst, uint8_t value, size_t bytes);
-/* Hold the queue: a host task that sleeps `us` microseconds. Work that
- * depends on a host task is resolved by the SYCL scheduler on the thread
- * that submits it, which then waits for the host task (DPC++ 2026.0). */
+/* Hold the queue: a host task that sleeps `us` microseconds. A barrier on
+ * work queued behind it returns only once it ran; work that depends on it
+ * through depends_on() is enqueued at once (DPC++ 2026.0 and 2026.1.1,
+ * Research-2160 finding 2). */
 int vs_hold(VsProducer *p, unsigned us);
 /* Hold the queue on the device: one work-item spinning for about `us`
  * microseconds (calibrated once), so work that depends on it is queued

@@ -1120,7 +1120,7 @@ static char *test_host_copy_counter(void)
 /* Every engine read of an imported frame is recorded on the frame, so that
  * its release waits on it. On the A380 the device runs the kernels of every
  * queue in submission order, which hides a missing record from the release
- * tests (Research-2159 finding 4); this test counts the records instead. */
+ * tests (Research-2160 finding 4); this test counts the records instead. */
 static bool reads_session(VmafxContext *context, VsPlanes p[2], VmafxFrame *frames[2],
                           uint32_t reads[2])
 {

@@ -544,11 +544,11 @@ To check that an import makes no host copy, trace the runtime with
 `sycl-trace --ur.call <program>` (shipped with the DPC++ compiler): every
 `urEnqueueUSMMemcpy` names its source, destination and size, and every kernel
 argument its pointer. In an import-only session (48 imported 1080p NV12 pairs
-scored with `vmaf_v1.0.16_3d0h` on an Arc A380) the host sent 5 copies of
-280100 bytes in all to the device (tables at start-up, the largest 262148
-bytes), the device sent 194 copies of 94920 bytes back (feature results, the
-largest 1584 bytes), and all 802 kernel pointer arguments were device memory:
-no pixel crossed to or from the host.
+scored with `vmaf_v1.0.16_3d0h` on an Arc A380, DPC++ 2026.1.1) the host sent
+5 copies of 280100 bytes in all to the device (tables at start-up, the largest
+262148 bytes), the device sent 194 copies of 94920 bytes back (feature
+results, the largest 1584 bytes), and all 793 kernel pointer arguments were
+device memory: no pixel crossed to or from the host.
 
 ## Scores
 
