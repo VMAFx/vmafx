@@ -102,7 +102,7 @@
   HIP twins) and imports frames without a copy through the host
   (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
   dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
-  and OpenGL textures from a GLX context on the device's GPU; NV12, P010 and
+  and OpenGL textures from an EGL context on the device's GPU; NV12, P010 and
   P016 are planarised on the device. Acquire fences of kind
   `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
   `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
@@ -113,9 +113,7 @@
   waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
   build. Imported frames score bit for bit as the same frames uploaded from
   the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
-  release fence is refused (the ROCm runtime cannot signal one). With ROCm
-  10.1, whose runtime maps a GL texture but cannot read it, GL imports are
-  refused with `VMAFX_E_NOTSUP` naming the runtime. See
+  release fence is refused (the ROCm runtime cannot signal one). See
   [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
@@ -1656,6 +1654,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `motion_add_uv`. On a gfx1036 every option is within 1e-5 of the CPU on the
   Netflix 576x324 pair and a 3840x2160 clip, and `motion` / `motion2` with the
   previous options are bit-identical to the previous build.
+
+
+- **HIP imports OpenGL textures through EGL dma-buf export**
+  ([ADR-2132](docs/adr/2132-hip-gl-textures-through-egl-dmabuf.md)): GL
+  texture imports on a HIP device now work on the project's ROCm 10.1 (the
+  runtime's GL interop could not read a mapped texture) and need an EGL
+  context, not GLX. A texture exported in the driver's own tiling is copied
+  on the GPU into a linear dma-buf and needs `VMAFX_IMPORT_ALLOW_COPY`;
+  `libgbm.so.1` is needed for that copy. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
 - **The HIP runtime and four HIP host files are clean under clang-tidy

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1292), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1293), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5179,3 +5179,7 @@ Every ADR, one heading each (1292), so the site search finds an ADR by its title
 ## ADR-2094: libvmaf.so.3 is a compat library on the exported VMAFx API; the engine compiles its libvmaf bodies under engine names, and backends keep theirs until their lanes land
 
 [2094-libvmaf-compat-library-split](2094-libvmaf-compat-library-split.md)
+
+## ADR-2132: HIP imports GL textures through EGL dma-buf export; the runtime's GL interop is not used
+
+[2132-hip-gl-textures-through-egl-dmabuf](2132-hip-gl-textures-through-egl-dmabuf.md)

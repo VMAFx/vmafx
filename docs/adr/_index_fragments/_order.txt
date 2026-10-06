@@ -1291,3 +1291,4 @@
 2074-vmafx-window-scores
 2090-motion-window-incremental
 2092-vmafx-hip-device-frames
+2132-hip-gl-textures-through-egl-dmabuf

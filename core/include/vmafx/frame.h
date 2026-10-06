@@ -55,8 +55,8 @@ typedef enum VmafxMemoryKind {
     /**
      * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
      * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
-     * texture). Imported on a device of a backend with GL interop (CUDA; HIP from a GLX context of
-     * the device's GPU). Added in ABI 0.1.7.
+     * texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf
+     * export from an EGL context of the device's GPU, ADR-2132). Added in ABI 0.1.7.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
 } VmafxMemoryKind;

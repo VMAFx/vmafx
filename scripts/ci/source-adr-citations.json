@@ -588,7 +588,6 @@
         "core/test/test_video_input_odd_dims.c": 1,
         "core/test/test_vmafx_import_cuda_bitexact.c": 1,
         "core/test/test_vmafx_import_hip_bitexact.c": 2,
-        "core/test/test_vmafx_import_hip_gl.c": 2,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/tiny_ai_test_template.h": 2,
@@ -1893,7 +1892,6 @@
         "core/test/test_video_input_odd_dims.c": 1,
         "core/test/test_vmafx_import_cuda_bitexact.c": 1,
         "core/test/test_vmafx_import_hip_bitexact.c": 2,
-        "core/test/test_vmafx_import_hip_gl.c": 2,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/tiny_ai_test_template.h": 2,
@@ -6312,6 +6310,7 @@
         "core/src/vmafx/convert.c": 1,
         "core/src/vmafx/device.c": 1,
         "core/src/vmafx/device_context.c": 1,
+        "core/src/vmafx/egl_export.c": 1,
         "core/src/vmafx/error.c": 1,
         "core/src/vmafx/exactness.c": 1,
         "core/src/vmafx/fence.c": 1,
@@ -6768,6 +6767,7 @@
         "core/test/test_y_funque_plus.c": 1,
         "core/test/vmafx_cuda_test_util.h": 1,
         "core/test/vmafx_device_cells.h": 1,
+        "core/test/vmafx_egl_test_util.h": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_hip_test_util.h": 1,
         "core/test/vmafx_import_test_util.h": 1,
@@ -11582,6 +11582,7 @@
         "core/src/libvmaf.c": 2,
         "core/src/meson.build": 3,
         "core/src/picture.h": 1,
+        "core/src/vmafx/egl_export.c": 1,
         "core/src/vmafx/gl_sync.c": 2,
         "core/src/vmafx/import_convert_kernels.h": 1,
         "core/src/vmafx/internal.h": 1,
@@ -11738,6 +11739,21 @@
         "core/src/meson.build": 2
       },
       "target": "2094-libvmaf-compat-library-split.md"
+    },
+    "2132": {
+      "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/include/vmafx/frame.h": 1,
+        "core/src/hip/import_frame.c": 2,
+        "core/src/hip/import_gl.c": 2,
+        "core/src/hip/vmafx_hip_internal.h": 2,
+        "core/src/vmafx/egl_export.c": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_vmafx_import_hip_contract.py": 1,
+        "core/test/test_vmafx_import_hip_gl.c": 1,
+        "core/test/vmafx_egl_test_util.h": 1
+      },
+      "target": "2132-hip-gl-textures-through-egl-dmabuf.md"
     }
   },
   "retired": {

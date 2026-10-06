@@ -2807,6 +2807,7 @@ libvmafx_sources = [
     src_dir + 'vmafx/device.c',
     # RC4 WP3 common lane: devices, fences, imported frames, pools, admission.
     src_dir + 'vmafx/device_context.c',
+    src_dir + 'vmafx/egl_export.c',
     src_dir + 'vmafx/fence.c',
     src_dir + 'vmafx/frame_import.c',
     src_dir + 'vmafx/frame_import_admit.c',
