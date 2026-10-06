@@ -49,11 +49,22 @@
 
 #include "alias.h"
 #include "dict.h"
+#include "thread_locale.h"
 #include "feature_name.h"
 #include "opt.h"
 
 namespace
 {
+
+/* `%g` with the period whatever the caller's numeric locale: models name the
+ * features of fractional options with it, and a decimal-comma locale wrote
+ * `0,7`, a name no model reads (T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06). */
+static void format_double_c_locale(char *buf, size_t buf_sz, double value)
+{
+    VmafThreadLocaleState *const locale = vmaf_thread_locale_push_c();
+    (void)snprintf(buf, buf_sz, "%g", value);
+    vmaf_thread_locale_pop(locale);
+}
 
 /* Custom deleter for VmafDictionary* owned in this TU. */
 struct DictDeleter {
@@ -211,7 +222,7 @@ void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
             (void)snprintf(buf, buf_sz, "%d", *(static_cast<const int *>(data)));
             break;
         case VMAF_OPT_TYPE_DOUBLE:
-            (void)snprintf(buf, buf_sz, "%g", *(static_cast<const double *>(data)));
+            format_double_c_locale(buf, buf_sz, *(static_cast<const double *>(data)));
             break;
         case VMAF_OPT_TYPE_STRING:
             (void)snprintf(buf, buf_sz, "%s", *(static_cast<const char *const *>(data)));

@@ -92,17 +92,23 @@ namespace
 }
 
 /* The C locale on this thread for as long as the scope lives. */
-struct CLocaleScope {
-    CLocaleScope() : state(vmaf_thread_locale_push_c())
+class CLocaleScope
+{
+  public:
+    CLocaleScope() : state_(vmaf_thread_locale_push_c())
     {
     }
     ~CLocaleScope()
     {
-        vmaf_thread_locale_pop(state);
+        vmaf_thread_locale_pop(state_);
     }
     CLocaleScope(const CLocaleScope &) = delete;
     CLocaleScope &operator=(const CLocaleScope &) = delete;
-    VmafThreadLocaleState *state;
+    CLocaleScope(CLocaleScope &&) = delete;
+    CLocaleScope &operator=(CLocaleScope &&) = delete;
+
+  private:
+    VmafThreadLocaleState *state_;
 };
 
 /*

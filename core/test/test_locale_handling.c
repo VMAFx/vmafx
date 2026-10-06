@@ -24,6 +24,7 @@
 #include <string.h>
 #include <math.h>
 
+#include "mu_table.h"
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
@@ -31,6 +32,7 @@
 #include "thread_locale.h"
 #include "dict.h"
 #include "feature/feature_collector.h"
+#include "feature/feature_name.h"
 #include "opt.h"
 #include "output.h"
 #include "read_json_model.h"
@@ -423,6 +425,39 @@ static char *test_dictionary_number_with_comma_locale(void)
     return NULL;
 }
 
+typedef struct {
+    double strength;
+} NamedTarget;
+
+/* A fractional option names its feature with the period, as the models read
+ * it, also under a decimal-comma locale ("x_strength_0.7", not "0,7"). */
+static char *test_feature_name_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    static const VmafOption opts[] = {
+        {.name = "strength",
+         .offset = 0,
+         .type = VMAF_OPT_TYPE_DOUBLE,
+         .default_val.d = 1.0,
+         .min = 0.0,
+         .max = 10.0,
+         .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+        {0},
+    };
+    const NamedTarget target = {0.7};
+    (void)setlocale(LC_ALL, locale);
+    char *name = vmaf_feature_name_from_options("x", opts, &target);
+    (void)setlocale(LC_ALL, "C");
+    const int same = name && strcmp(name, "x_strength_0.7") == 0;
+    free(name);
+    mu_assert("the feature name carries 0.7 with a period", same);
+    return NULL;
+}
+
 /* End to end: the features of the default model register under a
  * decimal-comma locale. */
 static char *test_model_features_with_comma_locale(void)
@@ -469,22 +504,23 @@ static char *test_windows_locale_handling(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_locale_abstraction_basic);
-    mu_run_test(test_output_xml_with_comma_locale);
-    mu_run_test(test_output_json_with_comma_locale);
-    mu_run_test(test_output_csv_with_comma_locale);
-    mu_run_test(test_model_parse_with_comma_locale);
-    mu_run_test(test_option_double_with_comma_locale);
-    mu_run_test(test_dictionary_number_with_comma_locale);
-    mu_run_test(test_model_features_with_comma_locale);
-
+    static const MuTest tests[] = {
+        MU_TEST(test_locale_abstraction_basic),
+        MU_TEST(test_output_xml_with_comma_locale),
+        MU_TEST(test_output_json_with_comma_locale),
+        MU_TEST(test_output_csv_with_comma_locale),
+        MU_TEST(test_model_parse_with_comma_locale),
+        MU_TEST(test_option_double_with_comma_locale),
+        MU_TEST(test_dictionary_number_with_comma_locale),
+        MU_TEST(test_feature_name_with_comma_locale),
+        MU_TEST(test_model_features_with_comma_locale),
 #ifdef HAVE_USELOCALE
-    mu_run_test(test_uselocale_available);
+        MU_TEST(test_uselocale_available),
 #elif defined(_WIN32)
-    mu_run_test(test_windows_locale_handling);
+        MU_TEST(test_windows_locale_handling),
 #endif
-
-    return NULL;
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

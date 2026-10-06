@@ -4796,7 +4796,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `vmaf_use_features_from_model()` returned `-EINVAL`, because the option
   parser read `0.7` with `strtod()` in the caller's locale and stopped at the
   period. The feature dictionary's number normalisation had the same fault and
-  could store `0.02` as `0` or `0,02`. Both now parse and format option numbers
+  could store `0.02` as `0` or `0,02`, and a feature named after a fractional
+  option came out as `..._0,7`, so a model never found its scores. All three
+  now parse and format option numbers
   in the C locale on the calling thread only, as the model reader and the report
   writers already do; the caller's locale is left as it was.
 
