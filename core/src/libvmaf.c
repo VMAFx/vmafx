@@ -4200,6 +4200,12 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
         return vmaf->flushed ? -EINVAL : flush_context(vmaf);
 
     const int err = read_pictures_frame(vmaf, ref, dist, index);
+    /* The context owns both pictures now, whatever the result. A CUDA build
+     * releases its host translations, struct copies of the caller's pictures,
+     * and would leave the caller's structs pointing at released storage: clear
+     * them, as vmaf_picture_unref() clears the structs of a CPU build. */
+    *ref = (VmafPicture){0};
+    *dist = (VmafPicture){0};
     /* ADR-2090: the scores this frame completes, before the call returns. */
     return err ? err : advance_extractors(vmaf);
 }
