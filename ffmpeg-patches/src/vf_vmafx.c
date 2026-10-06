@@ -336,7 +336,7 @@ static VmafxStatus host_import(VMAFXContext *s, const AVFrame *frame, uint32_t l
     }
     imp.release = box_release;
     imp.user = b;
-    return vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, error);
+    return vmafx_context_import_frame(s->context, NULL, &imp, input, out, error); /* the CPU */
 }
 
 static VmafxStatus host_wrap(VMAFXContext *s, const AVFrame *frame, uint32_t layout, uint32_t bpc,
@@ -354,12 +354,14 @@ static VmafxStatus host_wrap(VMAFXContext *s, const AVFrame *frame, uint32_t lay
     }
     planes.release = box_release;
     planes.user = b;
-    return vmafx_frame_wrap_host(s->vdev, &desc, &planes, out, error);
+    return vmafx_frame_wrap_host(NULL, &desc, &planes, out, error); /* the CPU device */
 }
 
 /* A host frame on the planes of `frame`, without a copy: the library holds a
  * reference to the AVFrame until it reads none of its planes. Planar layouts
- * are wrapped; NV12 / P010 / P016 are imported from host memory. */
+ * are wrapped; NV12 / P010 / P016 are imported from host memory. A host frame
+ * lives on the CPU device whatever device the context scores on; a context on
+ * a GPU uploads it. */
 static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
 {
     VMAFXContext *s = ctx->priv;

@@ -11,7 +11,8 @@ fixture is missing:
   the same double (both written at ``%.17g``). ``--backend cuda`` uploads
   both inputs with ``hwupload`` to one CUDA device and compares with ``vmaf --backend
   cuda`` of the same build: the filter imports the CUDA frames without a
-  copy and scores on the CUDA twins.
+  copy and scores on the CUDA twins. ``--backend cuda-host`` feeds software
+  frames to ``backend=cuda``: the context on the GPU uploads them.
 - ``windows``: ``n_stats`` / ``n_stats_frames`` windows written to
   ``stats_path`` equal the CLI's per-frame scores pooled over the same
   frames with the engine's arithmetic (scripts/ci/vmafx_window_pooling.py);
@@ -117,6 +118,11 @@ def frame_limit(args: argparse.Namespace, pair: Pair) -> int:
     return args.frames_4k if pair.name == "bbb-4k" else pair.frames
 
 
+def cli_backend(args: argparse.Namespace) -> str:
+    """The CLI backend a filter run is compared with (cuda-host scores on CUDA)."""
+    return "cpu" if args.backend == "cpu" else "cuda"
+
+
 def cli_report(args: argparse.Namespace, pair: Pair, out: Path, backend: str) -> dict:
     cmd = [args.vmaf, "-r", str(fixture(args, pair.ref)), "-d", str(fixture(args, pair.dist))]
     cmd += ["-w", str(pair.width), "-h", str(pair.height), "-p", "420", "-b", "8"]
@@ -135,11 +141,13 @@ def ffmpeg_inputs(args: argparse.Namespace, pair: Pair) -> list[str]:
 
 
 def filter_graph(backend: str, options: str, limit: int) -> str:
-    """Both inputs cut to `limit` frames (0: all), uploaded for CUDA."""
+    """Both inputs cut to `limit` frames (0: all), uploaded for CUDA; software
+    frames to a CUDA context for cuda-host."""
     cut = f"trim=end_frame={limit}," if limit else ""
     up = "hwupload," if backend == "cuda" else ""
     chains = f"[0:v]{cut}{up}null[d];[1:v]{cut}{up}null[r]"
-    return f"{chains};[d][r]vmafx={options}"
+    selector = "backend=cuda:" if backend == "cuda-host" else ""
+    return f"{chains};[d][r]vmafx={selector}{options}"
 
 
 def run_filter(
@@ -193,7 +201,7 @@ def cmd_parity(args: argparse.Namespace) -> int:
             print(f"skip {name}: fixtures missing")
             return SKIP
         with tempfile.TemporaryDirectory() as tmp:
-            cli = cli_report(args, pair, Path(tmp) / "cli.json", args.backend)
+            cli = cli_report(args, pair, Path(tmp) / "cli.json", cli_backend(args))
             report = Path(tmp) / "filter.json"
             run_filter(args, pair, args.backend, f"log_path={escape(report)}:score_fmt=%.17g")
             filt = json.loads(report.read_text(encoding="utf-8"))
@@ -236,7 +244,7 @@ def cmd_windows(args: argparse.Namespace) -> int:
     pools = "min+max+mean+harmonic_mean+median+perc5+perc10+perc20"
     failed = False
     with tempfile.TemporaryDirectory() as tmp:
-        cli = cli_report(args, pair, Path(tmp) / "cli.json", args.backend)
+        cli = cli_report(args, pair, Path(tmp) / "cli.json", cli_backend(args))
         for spec, expect_partial in (("n_stats_frames=10", True), ("n_stats=0.5", True)):
             stats = Path(tmp) / "stats.ndjson"
             options = f"{spec}:pool={pools}:stats_out=log+file:stats_path={escape(stats)}"
@@ -483,7 +491,7 @@ def main() -> int:
     parser.add_argument("--libdir", required=True, help="directory of libvmafx.so.1")
     parser.add_argument("--yuv", default=str(ROOT / "python" / "test" / "resource" / "yuv"))
     parser.add_argument("--bbb", default=str(ROOT / "testdata" / "bbb"))
-    parser.add_argument("--backend", default="cpu", choices=("cpu", "cuda"))
+    parser.add_argument("--backend", default="cpu", choices=("cpu", "cuda", "cuda-host"))
     parser.add_argument("--pairs", default="golden,checkerboard-1,checkerboard-10,bbb-4k")
     parser.add_argument("--frames-4k", type=int, default=30)
     parser.add_argument("--model", default="", help="a model spec; empty: the library default")

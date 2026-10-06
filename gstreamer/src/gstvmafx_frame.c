@@ -42,7 +42,7 @@ static VmafxStatus wrap_planar(GstVmafxRt *rt, const GstVmafxFormat *f, GstVideo
     }
     planes.release = host_release;
     planes.user = vf;
-    return vmafx_frame_wrap_host(rt->device, &desc, &planes, out, error);
+    return vmafx_frame_wrap_host(NULL, &desc, &planes, out, error); /* the CPU device */
 }
 
 static VmafxStatus import_semi_planar(GstVmafxRt *rt, const GstVmafxFormat *f, GstVideoFrame *vf,
@@ -61,11 +61,11 @@ static VmafxStatus import_semi_planar(GstVmafxRt *rt, const GstVmafxFormat *f, G
     }
     imp.release = host_release;
     imp.user = vf;
-    return vmafx_context_import_frame(rt->context, rt->device, &imp, gst_vmafx_pad_name(pad), out,
-                                      error);
+    return vmafx_context_import_frame(rt->context, NULL, &imp, gst_vmafx_pad_name(pad), out, error);
 }
 
-/* A frame of system memory, or of device memory the user asked to download (import=host). */
+/* A frame of system memory, or of device memory the user asked to download (import=host). It
+ * lives on the CPU device whatever device the context scores on; a context on a GPU uploads it. */
 static VmafxStatus make_host(GstVmafx *self, GstVmafxRt *rt, GstBuffer *buffer, guint pad,
                              VmafxFrame **out, gchar **error)
 {

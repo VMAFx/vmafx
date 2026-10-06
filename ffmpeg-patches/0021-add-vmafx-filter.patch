@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 +++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 1574 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 1576 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 +++
- 6 files changed, 1886 insertions(+)
+ 6 files changed, 1888 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..9807d51259e48f555a468c1a1e744113718eb816
+index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d885ed774
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,1574 @@
+@@ -0,0 +1,1576 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -592,7 +592,7 @@ index 0000000000000000000000000000000000000000..9807d51259e48f555a468c1a1e744113
 +    }
 +    imp.release = box_release;
 +    imp.user = b;
-+    return vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, error);
++    return vmafx_context_import_frame(s->context, NULL, &imp, input, out, error); /* the CPU */
 +}
 +
 +static VmafxStatus host_wrap(VMAFXContext *s, const AVFrame *frame, uint32_t layout, uint32_t bpc,
@@ -610,12 +610,14 @@ index 0000000000000000000000000000000000000000..9807d51259e48f555a468c1a1e744113
 +    }
 +    planes.release = box_release;
 +    planes.user = b;
-+    return vmafx_frame_wrap_host(s->vdev, &desc, &planes, out, error);
++    return vmafx_frame_wrap_host(NULL, &desc, &planes, out, error); /* the CPU device */
 +}
 +
 +/* A host frame on the planes of `frame`, without a copy: the library holds a
 + * reference to the AVFrame until it reads none of its planes. Planar layouts
-+ * are wrapped; NV12 / P010 / P016 are imported from host memory. */
++ * are wrapped; NV12 / P010 / P016 are imported from host memory. A host frame
++ * lives on the CPU device whatever device the context scores on; a context on
++ * a GPU uploads it. */
 +static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;

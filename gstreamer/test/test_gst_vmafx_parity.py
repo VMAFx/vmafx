@@ -392,6 +392,30 @@ class Cuda(Fixture):
         TABLE.append(f"| golden-nv12 | cuda | 48 | {n} | {'yes' if same else 'NO'} | {worst:.3g} |")
         self.assertTrue(same, f"max abs diff {worst}")
 
+    def test_system_memory_on_cuda_backend(self):
+        """backend=cuda with system-memory frames: the CUDA context uploads them."""
+        r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
+        out = self.dir / "cuda-sysmem.json"
+        pipeline = (
+            f"{raw_branch(r, 576, 324, 'reference')} {raw_branch(d, 576, 324, 'distorted')} "
+            f"vmafx name=v backend=cuda model=version={MODEL} log-path={out} "
+            f"score-fmt=%.17g pool={POOL_CLI} ! fakesink"
+        )
+        done = self.locked(["gst-launch-1.0", "-m", *pipeline.split()], self.env)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        cmd = [self.cli, "-r", r, "-d", d, "-w", 576, "-h", 324, "-p", "420", "-b", "8",
+               "--model", f"version={MODEL}", "--precision", "max", "--json",
+               "-o", self.dir / "clicuda-sysmem.json", "-q", "--backend", "cuda"]  # fmt: skip
+        self.assertEqual(self.locked(cmd).returncode, 0)
+        report = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(report["provenance"]["active_backend"], "cuda")
+        cli = json.loads((self.dir / "clicuda-sysmem.json").read_text(encoding="utf-8"))
+        n, worst, same = compare(report, cli)
+        TABLE.append(
+            f"| golden-sysmem | cuda | 48 | {n} | {'yes' if same else 'NO'} | {worst:.3g} |"
+        )
+        self.assertTrue(same, f"max abs diff {worst}")
+
     def encode_time_pipeline(
         self, ref: Path, out: Path, stats: Path, ref_nv12: Path, dec_nv12: Path
     ):
