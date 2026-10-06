@@ -8088,6 +8088,7 @@
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/tools/vmaf.cpp": 1,
+        "ffmpeg-patches/src/vf_vmafx.c": 1,
         "scripts/codegen/tests/fixtures/schema1.toml": 1
       },
       "target": "1336-cuda-context-owned-resource-teardown.md"
