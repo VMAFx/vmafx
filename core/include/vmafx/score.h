@@ -26,9 +26,87 @@
 extern "C" {
 #endif
 
+/**
+ * What a window pools. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+typedef enum VmafxWindowTarget {
+    /** Not set; refused by vmafx_window_submit(). */
+    VMAFX_WINDOW_TARGET_NONE = 0,
+    /** The scores of `model`, as vmafx_score_pooled() pools them. */
+    VMAFX_WINDOW_TARGET_MODEL = 1,
+    /** The bootstrap scores of `model_set`, as vmafx_score_pooled_model_set() pools them. */
+    VMAFX_WINDOW_TARGET_MODEL_SET = 2,
+    /** The scores of `feature`, as vmafx_feature_score_pooled() pools them. */
+    VMAFX_WINDOW_TARGET_FEATURE = 3,
+} VmafxWindowTarget;
+
+/*
+ * VmafxPoolMask: A set of pooling methods: bit `1 << p` for each VmafxPool `p`. Bit 0
+ * (VMAFX_POOL_NONE) is not a method. Added in ABI 0.1.4. Bits of a u32 field.
+ * @since 0.1
+ */
+/** VMAFX_POOL_MIN. */
+#define VMAFX_POOL_MASK_MIN (UINT32_C(1) << 1U)
+/** VMAFX_POOL_MAX. */
+#define VMAFX_POOL_MASK_MAX (UINT32_C(1) << 2U)
+/** VMAFX_POOL_MEAN. */
+#define VMAFX_POOL_MASK_MEAN (UINT32_C(1) << 3U)
+/** VMAFX_POOL_HARMONIC_MEAN. */
+#define VMAFX_POOL_MASK_HARMONIC_MEAN (UINT32_C(1) << 4U)
+/** VMAFX_POOL_MEDIAN. */
+#define VMAFX_POOL_MASK_MEDIAN (UINT32_C(1) << 5U)
+/** VMAFX_POOL_PERC5. */
+#define VMAFX_POOL_MASK_PERC5 (UINT32_C(1) << 6U)
+/** VMAFX_POOL_PERC10. */
+#define VMAFX_POOL_MASK_PERC10 (UINT32_C(1) << 7U)
+/** VMAFX_POOL_PERC20. */
+#define VMAFX_POOL_MASK_PERC20 (UINT32_C(1) << 8U)
+
+/*
+ * VmafxWindowFlags: What is true of a window result or a window span. Added in ABI 0.1.4. Bits of a
+ * u32 field.
+ * @since 0.1
+ */
+/**
+ * The stream ended inside the window: a result pooled fewer frames than it asked for (the context
+ * was flushed before frame `last`); a span is the last window of the stream, cut off by
+ * vmafx_window_clock_finish().
+ */
+#define VMAFX_WINDOW_PARTIAL (UINT32_C(1) << 0U)
+
+/**
+ * An asynchronous pooled score over a range of frames (vmafx_window_submit()). Owns its result
+ * until released. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+typedef struct VmafxWindow VmafxWindow;
+
+/**
+ * Cuts a stream of frames into windows of `n_stats` seconds or `n_stats_frames` frames (#2138).
+ * Holds no context; one per stream. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+typedef struct VmafxWindowClock VmafxWindowClock;
+
 typedef struct VmafxScore VmafxScore;
 typedef struct VmafxPooledScore VmafxPooledScore;
 typedef struct VmafxModelSetScore VmafxModelSetScore;
+typedef struct VmafxWindowRequest VmafxWindowRequest;
+typedef struct VmafxWindowResult VmafxWindowResult;
+typedef struct VmafxWindowClockConfig VmafxWindowClockConfig;
+typedef struct VmafxWindowSpan VmafxWindowSpan;
+
+/**
+ * Called once when a window completes, on the context's window thread (a library thread, never the
+ * caller's), in completion order. `result` is valid during the call; the same result stays readable
+ * with vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and
+ * vmafx_window_release() (also on its own window) and must not call any other function on the
+ * window's context: no vmafx_submit(), no vmafx_flush(). Added in ABI 0.1.4.
+ * @since 0.1
+ */
+typedef void (*VmafxWindowCallback)(VmafxWindow *window, const VmafxWindowResult *result,
+                                    void *user);
 
 /**
  * One score and the extractor that produced it.
@@ -106,6 +184,163 @@ struct VmafxModelSetScore {
 #define VMAFX_MODEL_SET_SCORE_INIT {.struct_size = sizeof(VmafxModelSetScore)}
 
 /**
+ * A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+struct VmafxWindowRequest {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /**
+     * What to pool; the matching one of `model`, `model_set` and `feature` is set, the other two
+     * are ignored. Values: VmafxWindowTarget.
+     */
+    uint32_t target;
+    /** Pooling methods, at least one. Bits: VmafxPoolMask. */
+    uint32_t pool_mask;
+    /** First frame index (inclusive). */
+    uint64_t first;
+    /** Last frame index (inclusive), at most 4294967295 (the engine's frame index). */
+    uint64_t last;
+    /** The model of a MODEL window; the window holds a reference until it is released. */
+    const VmafxModel *model;
+    /** The model set of a MODEL_SET window; the window holds a reference until it is released. */
+    const VmafxModelSet *model_set;
+    /** The feature of a FEATURE window, as vmafx_feature_score_pooled() names it (copied). */
+    const char *feature;
+    /**
+     * Called once when the window completes; NULL: observe completion with vmafx_window_poll() or
+     * vmafx_window_wait().
+     */
+    VmafxWindowCallback on_complete;
+    /** Passed to `on_complete`. */
+    void *user;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_WINDOW_REQUEST_INIT {.struct_size = sizeof(VmafxWindowRequest)}
+
+/**
+ * The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(),
+ * vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first +
+ * n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with
+ * VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+struct VmafxWindowResult {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /**
+     * VMAFX_OK when every requested method has its value; otherwise why the window has none, for
+     * example VMAFX_E_RANGE when no scored frame of the window was in the stream, VMAFX_E_NOTFOUND
+     * when its feature or a feature its model reads was never scored, VMAFX_E_INVALID when the
+     * context was destroyed first. The failure is also logged to the context.
+     */
+    VmafxStatus status;
+    /** VMAFX_WINDOW_PARTIAL when the stream ended before frame `last`. Bits: VmafxWindowFlags. */
+    uint32_t flags;
+    /** What the window pooled. Values: VmafxWindowTarget. */
+    uint32_t target;
+    /** The requested methods; `value[p]` is set for each bit `1 << p`. Bits: VmafxPoolMask. */
+    uint32_t pool_mask;
+    /** First frame index, as requested. */
+    uint64_t first;
+    /** Last frame index, as requested. */
+    uint64_t last;
+    /** Frames pooled over: `last - first + 1`, fewer for a partial window. */
+    uint64_t n_frames;
+    /**
+     * Frames of those the context scored (every `n_subsample`-th index) and the values summarise.
+     */
+    uint64_t n_scored;
+    /**
+     * Indexed by VmafxPool: the pooled score of each requested method (the bagging score for a
+     * model set); 0 elsewhere.
+     */
+    double value[9];
+    /** MODEL_SET windows: the pooled standard deviation per method; 0 otherwise. */
+    double stddev[9];
+    /**
+     * MODEL_SET windows: the pooled lower bound of the 95% confidence interval per method; 0
+     * otherwise.
+     */
+    double ci95_lo[9];
+    /**
+     * MODEL_SET windows: the pooled upper bound of the 95% confidence interval per method; 0
+     * otherwise.
+     */
+    double ci95_hi[9];
+    /** The model's name, the model set's name or the feature; lives as long as the window. */
+    const char *name;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_WINDOW_RESULT_INIT {.struct_size = sizeof(VmafxWindowResult)}
+
+/**
+ * Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option
+ * group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT.
+ * Added in ABI 0.1.4.
+ * @since 0.1
+ */
+struct VmafxWindowClockConfig {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /**
+     * Window length in seconds, finite and above 0, rounded to whole nanoseconds (at least 1); 0:
+     * windows by frame count. Window `k` holds the frames whose presentation time lies in `[t0 + k
+     * * n_stats, t0 + (k + 1) * n_stats)`, `t0` the first frame's.
+     */
+    double n_stats;
+    /**
+     * Window length in frames; 0: windows by time. Window `k` holds the frames whose index lies in
+     * `[i0 + k * n_stats_frames, i0 + (k + 1) * n_stats_frames)`, `i0` the first frame's.
+     */
+    uint64_t n_stats_frames;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_WINDOW_CLOCK_CONFIG_INIT {.struct_size = sizeof(VmafxWindowClockConfig)}
+
+/**
+ * One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with
+ * vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+struct VmafxWindowSpan {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /**
+     * VMAFX_WINDOW_PARTIAL for the last window of the stream when the stream ended inside it. Bits:
+     * VmafxWindowFlags.
+     */
+    uint32_t flags;
+    /**
+     * Window number `k`. Windows without a frame (a gap in the stream) are skipped, so numbers can
+     * jump.
+     */
+    uint64_t window;
+    /** Index of the window's first frame. */
+    uint64_t first;
+    /** Index of the window's last frame. */
+    uint64_t last;
+    /** Frames the clock saw in the window. */
+    uint64_t n_frames;
+    /**
+     * Windows by time: the window's start, `t0 + k * n_stats`, in the stream's nanoseconds. Windows
+     * by frame count: the presentation time of its first frame.
+     */
+    int64_t start_ns;
+    /**
+     * Windows by time: the window's end, `t0 + (k + 1) * n_stats` (exclusive). Windows by frame
+     * count: the presentation time of its last frame.
+     */
+    int64_t end_ns;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_WINDOW_SPAN_INIT {.struct_size = sizeof(VmafxWindowSpan)}
+
+/**
  * Score of `feature` at frame `index` with its producer; VMAFX_PENDING while the frame is not
  * final.
  * @since 0.1
@@ -155,6 +390,86 @@ VMAFX_EXPORT VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context,
                                                       const VmafxModelSet *set, uint32_t pool,
                                                       uint64_t first, uint64_t last,
                                                       VmafxModelSetScore *out, VmafxError **error);
+
+/**
+ * Ask for `request.target` pooled with every method of `request.pool_mask` over frames `first` to
+ * `last`, and return at once. The window completes when every scored frame of its range is final,
+ * or at vmafx_flush(), which completes it over the frames the stream had and flags it
+ * VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's
+ * scores one submit later; motion2 / motion3 of the integer motion extractors, and so every VMAF
+ * model, are final only at vmafx_flush() in this release. Completion is found in the calls that
+ * change the context's scores (vmafx_submit(), vmafx_flush(), vmafx_context_import_score(),
+ * vmafx_window_submit()), on their thread and without waiting for worker threads; a window already
+ * final completes in this call. At most 1024 windows of a context are open; one more is
+ * VMAFX_E_BUSY naming `context`. The caller holds the window until vmafx_window_release(). Added in
+ * ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_submit(VmafxContext *context,
+                                             const VmafxWindowRequest *request, VmafxWindow **out,
+                                             VmafxError **error);
+
+/**
+ * VMAFX_OK and the result when the window has completed, VMAFX_PENDING (no error, `out` untouched)
+ * while it has not. Thread-safe: may run on any thread while the context is in use. A completed
+ * window's own failure is in `out.status`, not in the return value. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_poll(const VmafxWindow *window, VmafxWindowResult *out,
+                                           VmafxError **error);
+
+/**
+ * vmafx_window_poll() after waiting up to `timeout_ns` nanoseconds for the window to complete
+ * (UINT64_MAX: without a limit); VMAFX_PENDING, without an error, when it has not by then. Thread-
+ * safe. A window completes only in the calls of the thread that feeds its context: waiting on that
+ * thread for a window its frames have not made final waits for nothing new. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_wait(const VmafxWindow *window, uint64_t timeout_ns,
+                                           VmafxWindowResult *out, VmafxError **error);
+
+/**
+ * Release the caller's window, completed or not. An open window is cancelled: its callback never
+ * runs. A callback of the window running on the window thread is waited for, unless this call is
+ * made from that callback. Thread-safe; NULL is a no-op. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_window_release(VmafxWindow *window);
+
+/**
+ * A clock that cuts a stream into windows of `config.n_stats` seconds or `config.n_stats_frames`
+ * frames (#2138). Both set, neither set, or `n_stats` negative, not finite or below 1 ns is
+ * VMAFX_E_INVALID naming the field. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_clock_create(const VmafxWindowClockConfig *config,
+                                                   VmafxWindowClock **out, VmafxError **error);
+
+/**
+ * Tell the clock frame `index` at presentation time `pts_ns`. When the frame lies past the open
+ * window, that window is complete: VMAFX_OK, its span in `out`, and the frame opens the next
+ * window. Otherwise VMAFX_PENDING (no error, `out` untouched). Indices increase strictly and times
+ * never decrease, else VMAFX_E_INVALID naming `index` or `pts_ns`. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_clock_frame(VmafxWindowClock *clock, uint64_t index,
+                                                  int64_t pts_ns, VmafxWindowSpan *out,
+                                                  VmafxError **error);
+
+/**
+ * End of stream: VMAFX_OK and the span of the open window, flagged VMAFX_WINDOW_PARTIAL unless it
+ * is a full window by frame count; VMAFX_PENDING (no error, `out` untouched) when no window is
+ * open. Afterwards the clock takes no more frames. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_window_clock_finish(VmafxWindowClock *clock, VmafxWindowSpan *out,
+                                                   VmafxError **error);
+
+/**
+ * Free the clock. NULL is a no-op. Added in ABI 0.1.4.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_window_clock_destroy(VmafxWindowClock *clock);
 
 #ifdef __cplusplus
 }

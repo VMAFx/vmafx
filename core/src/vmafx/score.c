@@ -14,6 +14,7 @@
  * created and nothing is logged; the output is not written.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -187,6 +188,67 @@ VmafxStatus vmafx_score_frame_model_set(VmafxContext *context, const VmafxModelS
 
 /* ---- Pooled ------------------------------------------------------------------- */
 
+/* The one pooling implementation of the synchronous pooled scores and of the
+ * window scores (HISS-19, ADR-2074): the engine's pooling of the target, run
+ * on the calling thread with the context's log sink installed. Both callers
+ * pass the same arguments for the same request, so their values are equal
+ * bit for bit. */
+int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint32_t pool,
+                      uint64_t first, uint64_t last, VmafxPoolValue *out)
+{
+    assert(context && target && out);
+    assert(first <= last && last <= UINT_MAX);
+    const enum VmafPoolingMethod method = (enum VmafPoolingMethod)pool;
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    int err = -EINVAL;
+    if (target->kind == VMAFX_WINDOW_TARGET_MODEL) {
+        err = vmaf_engine_score_pooled(context->engine, target->model->engine, method, &out->value,
+                                       (unsigned)first, (unsigned)last);
+    } else if (target->kind == VMAFX_WINDOW_TARGET_FEATURE) {
+        err = vmaf_engine_feature_score_pooled(context->engine, target->feature, method,
+                                               &out->value, (unsigned)first, (unsigned)last);
+    } else if (target->kind == VMAFX_WINDOW_TARGET_MODEL_SET) {
+        VmafModelCollectionScore s;
+        err = vmaf_engine_score_pooled_model_collection(context->engine,
+                                                        vmafx_model_set_engine(target->set), method,
+                                                        &s, (unsigned)first, (unsigned)last);
+        out->value = s.bootstrap.bagging_score;
+        out->stddev = s.bootstrap.stddev;
+        out->ci95_lo = s.bootstrap.ci.p95.lo;
+        out->ci95_hi = s.bootstrap.ci.p95.hi;
+    }
+    vmafx_engine_leave(previous);
+    return err;
+}
+
+const char *vmafx_pool_target_name(const VmafxPoolTarget *target)
+{
+    if (target->kind == VMAFX_WINDOW_TARGET_MODEL) {
+        return target->model->engine->name;
+    }
+    if (target->kind == VMAFX_WINDOW_TARGET_MODEL_SET) {
+        return vmafx_model_set_engine(target->set)->name;
+    }
+    return target->feature;
+}
+
+/* A synchronous pooled score: the range checked, then vmafx_pool_engine(). */
+static VmafxStatus pool_sync(const VmafxReport *report, VmafxContext *context,
+                             const VmafxPoolTarget *target, uint32_t pool, uint64_t first,
+                             uint64_t last, VmafxPoolValue *value)
+{
+    VmafxStatus status = check_range(report, pool, first, last);
+    if (status == VMAFX_OK) {
+        const int err = vmafx_pool_engine(context, target, pool, first, last, value);
+        const uint32_t kind = target->kind == VMAFX_WINDOW_TARGET_FEATURE ? VMAFX_SUBJECT_FEATURE :
+                                                                            VMAFX_SUBJECT_MODEL;
+        status = err ?
+                     score_failure(report, err, kind, vmafx_pool_target_name(target), first, last) :
+                     VMAFX_OK;
+    }
+    return status;
+}
+
 static VmafxStatus write_pooled(const VmafxReport *report, VmafxPooledScore *out, uint32_t pool,
                                 uint64_t first, uint64_t last, double value, const char *feature)
 {
@@ -207,21 +269,12 @@ VmafxStatus vmafx_score_pooled(VmafxContext *context, const VmafxModel *model, u
     if (!context || !model || !out) {
         return null_arguments(&report, !context ? "context" : !model ? "model" : "out");
     }
-    VmafxStatus status = check_range(&report, pool, first, last);
-    double value = 0.0;
-    if (status == VMAFX_OK) {
-        const VmafLogSink *const previous = vmafx_engine_enter(context);
-        const int err =
-            vmaf_engine_score_pooled(context->engine, model->engine, (enum VmafPoolingMethod)pool,
-                                     &value, (unsigned)first, (unsigned)last);
-        vmafx_engine_leave(previous);
-        status = err ? score_failure(&report, err, VMAFX_SUBJECT_MODEL, model->engine->name, first,
-                                     last) :
-                       VMAFX_OK;
-    }
+    const VmafxPoolTarget target = {.kind = VMAFX_WINDOW_TARGET_MODEL, .model = model};
+    VmafxPoolValue value = {0};
+    const VmafxStatus status = pool_sync(&report, context, &target, pool, first, last, &value);
     return status != VMAFX_OK ?
                status :
-               write_pooled(&report, out, pool, first, last, value, model->engine->name);
+               write_pooled(&report, out, pool, first, last, value.value, model->engine->name);
 }
 
 VmafxStatus vmafx_feature_score_pooled(VmafxContext *context, const char *feature, uint32_t pool,
@@ -232,19 +285,11 @@ VmafxStatus vmafx_feature_score_pooled(VmafxContext *context, const char *featur
     if (!context || !feature || !out) {
         return null_arguments(&report, !context ? "context" : !feature ? "feature" : "out");
     }
-    VmafxStatus status = check_range(&report, pool, first, last);
-    double value = 0.0;
-    if (status == VMAFX_OK) {
-        const VmafLogSink *const previous = vmafx_engine_enter(context);
-        const int err =
-            vmaf_engine_feature_score_pooled(context->engine, feature, (enum VmafPoolingMethod)pool,
-                                             &value, (unsigned)first, (unsigned)last);
-        vmafx_engine_leave(previous);
-        status = err ? score_failure(&report, err, VMAFX_SUBJECT_FEATURE, feature, first, last) :
-                       VMAFX_OK;
-    }
+    const VmafxPoolTarget target = {.kind = VMAFX_WINDOW_TARGET_FEATURE, .feature = feature};
+    VmafxPoolValue value = {0};
+    const VmafxStatus status = pool_sync(&report, context, &target, pool, first, last, &value);
     return status != VMAFX_OK ? status :
-                                write_pooled(&report, out, pool, first, last, value, feature);
+                                write_pooled(&report, out, pool, first, last, value.value, feature);
 }
 
 VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context, const VmafxModelSet *set,
@@ -255,23 +300,19 @@ VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context, const VmafxModel
     if (!context || !set || !out) {
         return null_arguments(&report, !context ? "context" : !set ? "set" : "out");
     }
-    VmafModelCollection *const collection = vmafx_model_set_engine(set);
-    VmafxStatus status = check_range(&report, pool, first, last);
-    VmafModelCollectionScore s;
-    if (status == VMAFX_OK) {
-        const VmafLogSink *const previous = vmafx_engine_enter(context);
-        const int err = vmaf_engine_score_pooled_model_collection(context->engine, collection,
-                                                                  (enum VmafPoolingMethod)pool, &s,
-                                                                  (unsigned)first, (unsigned)last);
-        vmafx_engine_leave(previous);
-        status =
-            err ? score_failure(&report, err, VMAFX_SUBJECT_MODEL, collection->name, first, last) :
-                  VMAFX_OK;
-    }
+    const VmafxPoolTarget target = {.kind = VMAFX_WINDOW_TARGET_MODEL_SET, .set = set};
+    VmafxPoolValue value = {0};
+    const VmafxStatus status = pool_sync(&report, context, &target, pool, first, last, &value);
     if (status != VMAFX_OK) {
         return status;
     }
-    const VmafxModelSetScore full = set_score(&s, collection->name, pool, first, last);
+    VmafModelCollectionScore s = {0};
+    s.bootstrap.bagging_score = value.value;
+    s.bootstrap.stddev = value.stddev;
+    s.bootstrap.ci.p95.lo = value.ci95_lo;
+    s.bootstrap.ci.p95.hi = value.ci95_hi;
+    const VmafxModelSetScore full =
+        set_score(&s, vmafx_model_set_engine(set)->name, pool, first, last);
     return vmafx_write_sized(&report, out, &full, (uint32_t)sizeof(full), "out");
 }
 

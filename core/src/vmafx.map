@@ -18,6 +18,7 @@ VMAFX_0.1 {
         vmafx_context_import_frame;
         vmafx_context_import_score;
         vmafx_context_libvmaf_handle;
+        vmafx_context_max_in_flight;
         vmafx_context_provenance;
         vmafx_context_set_option;
         vmafx_context_use_device;
@@ -85,4 +86,12 @@ VMAFX_0.1 {
         vmafx_status_name;
         vmafx_submit;
         vmafx_version_string;
+        vmafx_window_clock_create;
+        vmafx_window_clock_destroy;
+        vmafx_window_clock_finish;
+        vmafx_window_clock_frame;
+        vmafx_window_poll;
+        vmafx_window_release;
+        vmafx_window_submit;
+        vmafx_window_wait;
 };

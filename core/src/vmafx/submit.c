@@ -17,6 +17,7 @@
  * (admission, frame_import_admit.c).
  */
 
+#include <assert.h>
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -190,6 +191,7 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
                           "the engine could not score frame %llu (%d)", (unsigned long long)index,
                           err);
     }
+    vmafx_windows_note_index(context, index); /* RC4 WP4: windows this frame made final */
     return VMAFX_OK;
 }
 
@@ -200,6 +202,7 @@ VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "NULL argument");
     }
+    assert(context->engine); /* vmafx_context_create() fails without one */
     if (vmaf_engine_is_flushed(context->engine)) {
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "the context was flushed already");
@@ -211,6 +214,7 @@ VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "context", "flush failed (%d)", err);
     }
+    vmafx_windows_note_flush(context); /* RC4 WP4: every open window completes */
     return VMAFX_OK;
 }
 

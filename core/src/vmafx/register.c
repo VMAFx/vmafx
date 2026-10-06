@@ -151,6 +151,7 @@ VmafxStatus vmafx_context_import_score(VmafxContext *context, const char *featur
                           feature, "cannot record the score of frame %llu (%d)",
                           (unsigned long long)index, err);
     }
+    vmafx_windows_note_index(context, index); /* RC4 WP4: windows this score made final */
     return VMAFX_OK;
 }
 

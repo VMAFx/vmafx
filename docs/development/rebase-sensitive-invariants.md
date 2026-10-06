@@ -141,6 +141,19 @@ backend within it.
   uses the row readers of `core/src/metal/iosurface_layout.h`: a sync that
   changes them keeps `test_vmafx_import_bitexact` and
   `test_metal_iosurface_layout` passing together.
+- **VMAFx window values are the synchronous pooled values ([ADR-2074](../adr/2074-vmafx-window-scores.md))**:
+  `vmafx_score_pooled()`, `vmafx_feature_score_pooled()`,
+  `vmafx_score_pooled_model_set()` and the windows all call
+  `vmafx_pool_engine()` (`core/src/vmafx/score.c`); keep one pooling path.
+  Windows complete only on the thread that feeds the context
+  (`vmafx_windows_note_index()` / `_note_flush()` / `_close()` hooks in
+  `submit.c`, `register.c`, `context.c`) and their probes never fence
+  (`vmaf_engine_try_score_at_index()`, `vmaf_engine_feature_written()`,
+  `vmaf_predict_inputs_written()`). `vmaf_engine_max_in_flight()` mirrors
+  `batch_job_take_pictures()`, the thread pool's enqueue capacity and the
+  device double buffer; a change to one recomputes it.
+  `test_vmafx_window`, `test_vmafx_window_live` and `test_vmafx_window_cli`
+  guard it.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

@@ -62030,3 +62030,34 @@ No score, public API or FFmpeg patch impact.
 - New test `core/test/test_model_collection_score_repeat.c` and its block in
   `core/test/meson.build`. No score or golden impact: a first prediction is
   unchanged and a repeat returns its stored values.
+
+## VMAFx window scores and the window clock
+
+`rc4/api-wp4-windows`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-2074](adr/2074-vmafx-window-scores.md).
+
+- `core/src/vmafx/` gains `window.c` (windows, the window thread, the hooks,
+  `vmafx_context_max_in_flight()`) and `window_clock.c`. `submit.c`,
+  `register.c` and `context.c` call the hooks `vmafx_windows_note_index()`,
+  `vmafx_windows_note_flush()` and `vmafx_windows_close()`; `VmafxContext`
+  (`internal.h`) gains `have_scored`, `scored_last` and `windows`. A rebase
+  that reorders those functions keeps each hook after the engine call it
+  follows (after `vmaf_engine_close()` succeeded, for the close).
+- `score.c`: the three pooled functions call `vmafx_pool_engine()`, which the
+  windows call too; keep one pooling path. `fence.c`'s timed wait is exported
+  as `vmafx_host_fence_wait()` for `vmafx_window_wait()`.
+- `core/src/libvmaf.c`: `vmaf_engine_score_at_index()` is
+  `engine_score_at_index(fence = true)`; new `vmaf_engine_try_score_at_index()`
+  (no fence, inputs checked with `vmaf_predict_inputs_written()`),
+  `vmaf_engine_feature_written()`,
+  `vmaf_engine_try_score_at_index_model_collection()`,
+  `vmaf_engine_thread_count()`, `vmaf_engine_subsample()` and
+  `vmaf_engine_max_in_flight()`. `core/src/predict.c` gains
+  `vmaf_predict_inputs_written()` (collector reads only). An upstream sync of
+  `vmaf_score_at_index()` ports into `engine_score_at_index()`; a change to
+  `batch_job_take_pictures()`, to the thread pool's enqueue capacity or to the
+  device double buffering recomputes `vmaf_engine_max_in_flight()`.
+- The branch carries master's #2206 (`read_predicted_collection_score()`) as
+  a cherry-pick, which a rebase onto master drops as already applied.
+- No score, golden-data or FFmpeg patch impact: a window's values come from
+  the synchronous pooling; `libvmaf.h` behaviour is unchanged.

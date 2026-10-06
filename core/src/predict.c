@@ -477,6 +477,27 @@ static int predict_build_svm_nodes(VmafModel *model, VmafFeatureCollector *featu
     return 0;
 }
 
+int vmaf_predict_inputs_written(VmafModel *model, VmafFeatureCollector *feature_collector,
+                                unsigned index)
+{
+    if (!model)
+        return -EINVAL;
+    if (!feature_collector)
+        return -EINVAL;
+
+    int err = predict_ensure_caches(model, feature_collector);
+    for (unsigned i = 0; i < model->n_features && !err; i++) {
+        double feature_score = 0.0;
+        err = vmaf_feature_collector_get_score(feature_collector, model->predict_feature_names[i],
+                                               &feature_score, index);
+        /* -EINVAL: the feature has no vector yet, or none reaching `index`:
+         * not written yet, as far as the collector can tell. */
+        if (err == -EINVAL)
+            err = -EAGAIN;
+    }
+    return err;
+}
+
 int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_collector,
                                 unsigned index, double *vmaf_score, bool write_prediction,
                                 bool propagate_metadata, enum VmafModelFlags flags)

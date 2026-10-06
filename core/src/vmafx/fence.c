@@ -162,8 +162,9 @@ static void sleep_poll_interval(void)
 
 /* Wait until `fence` is signalled or `timeout_ns` passed: true when signalled.
  * Each round sleeps at least VMAFX_FENCE_POLL_NS, so the round count is
- * bounded by the timeout (HISS-02). */
-static bool host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
+ * bounded by the timeout (HISS-02). Also the wait of vmafx_window_wait()
+ * (window.c, RC4 WP4): one timed wait in the library. */
+bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
 {
     if (vmafx_host_fence_signalled(fence)) {
         return true;
@@ -279,7 +280,7 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
     assert(f.kind == VMAFX_FENCE_HOST);
     VmafxHostFence *host = NULL;
     status = vmafx_host_fence_of(&report, &f, "fence.handle", &host);
-    if (status != VMAFX_OK || host_fence_wait(host, timeout_ns)) {
+    if (status != VMAFX_OK || vmafx_host_fence_wait(host, timeout_ns)) {
         return status;
     }
     if (timeout_ns == 0u) {

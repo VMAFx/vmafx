@@ -73,12 +73,13 @@ Initialise with `VMAFX_FEATURE_RESOLUTION_INIT`.
 | `vmafx_context_import_score` | 0.1 | Record `value` as the score of `feature` at frame `index`, computed outside the library. |
 | `vmafx_context_extractor_count` | 0.1 | Number of registered feature extractors; 0 for NULL. |
 | `vmafx_feature_resolve` | 0.1 | Which extractor would compute the CPU extractor `extractor` with `options` (may be NULL) on this context, for frames of `frame` (may be NULL: no geometry check). On a context without a device backend that is the CPU extractor itself. VMAFX_E_NOTFOUND names an unknown extractor; VMAFX_E_NOTSUP names a device backend without a twin, or the option (and `out.unsupported_option`) the twin cannot honour (ADR-1359). |
-| `vmafx_context_frame_retention` | 0.1 | How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL. |
+| `vmafx_context_frame_retention` | 0.1 | How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads more frames stay in flight until their work finishes: vmafx_context_max_in_flight() gives the bound. 0 for NULL. |
 | `vmafx_submit` | 0.1 | Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry. |
 | `vmafx_flush` | 0.1 | Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID. |
 | `vmafx_context_use_device` | 0.1 | Score on `device`: the context picks each feature's twin on its backend and holds a reference to the device until it is destroyed. Call it once, before any feature, model or frame; a device can serve several contexts. A context without a device scores on the CPU. |
 | `vmafx_context_admit` | 0.1 | Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame. |
 | `vmafx_context_import_frame` | 0.1 | Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import() and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds by default); a second failure or any other one fails naming the backend, device, `input` (for example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors. Never falls back to a host copy. |
+| `vmafx_context_max_in_flight` | 0.1 | The most frames of each input the context holds when vmafx_submit() returns, whatever the producer's rate: with `R` = vmafx_context_frame_retention() and `T` = n_threads, `R + 2 * T * (R + 1)`, plus 1 on a device backend. Without worker threads a submit scores its frame before it returns (`R`). With them a submit waits while `T` frames wait for a worker (backpressure), so at most `2 * T` frames are in flight, each holding itself and its `R` earlier reference frames; a device extractor holds its frame until the next submit collects it. A producer that recycles its frames (a texture ring, a frame pool) needs this many plus the frame it is filling. 0 for NULL. Added in ABI 0.1.4. |
 
 ```c
 VMAFX_EXPORT VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
@@ -116,6 +117,7 @@ VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const 
 VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
+VMAFX_EXPORT uint32_t vmafx_context_max_in_flight(const VmafxContext *context);
 ```
 
 Back to the [reference index](reference.md).

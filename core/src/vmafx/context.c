@@ -232,6 +232,7 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "no context");
     }
+    assert(context->engine); /* vmafx_context_create() fails without one */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_close(context->engine);
     vmafx_engine_leave(previous);
@@ -239,6 +240,9 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "engine", "close failed (%d); the context stays valid for a retry", err);
     }
+    /* RC4 WP4: open windows complete with VMAFX_E_INVALID and every callback
+     * runs before the context goes; window handles stay the caller's. */
+    vmafx_windows_close(context);
     /* The engine released its collector's model owners; drop the context's
      * references (ADR-1755) only now, so a failed close keeps them. */
     release_held(context);

@@ -56,6 +56,9 @@ typedef struct VmafxHostFence VmafxHostFence;
 /* The frame pool a frame returns to (frame_pool.c). */
 typedef struct VmafxFramePool VmafxFramePool;
 
+/* The windows of a context (window.c, RC4 WP4). */
+typedef struct VmafxWindowSet VmafxWindowSet;
+
 struct VmafxModel {
     VmafRef *refs;
     VmafModel *engine; /* this wrapper holds one owner of it (ADR-1755) */
@@ -110,6 +113,12 @@ struct VmafxContext {
     bool have_frame;               /* a frame was submitted: the fields below are set */
     uint64_t last_index;           /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc;     /* every frame keeps the first frame's geometry */
+    /* RC4 WP4 (window.c, ADR-2074): the highest frame index submitted or
+     * imported (valid once have_scored), and the windows, created by the
+     * first vmafx_window_submit() (NULL before). */
+    bool have_scored;
+    uint64_t scored_last;
+    VmafxWindowSet *windows;
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink
@@ -146,6 +155,8 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
 #define VMAFX_MIN_FRAME_IMPORT ((uint32_t)sizeof(VmafxFrameImport))                     /* 0.1.2 */
 #define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
+#define VMAFX_MIN_WINDOW_REQUEST ((uint32_t)sizeof(VmafxWindowRequest))                 /* 0.1.4 */
+#define VMAFX_MIN_WINDOW_CLOCK_CONFIG ((uint32_t)sizeof(VmafxWindowClockConfig))        /* 0.1.4 */
 
 VmafxStatus vmafx_read_sized(const VmafxReport *report, void *local, uint32_t full, const void *in,
                              uint32_t min, const char *subject);
@@ -212,6 +223,49 @@ bool vmafx_host_fence_signalled(const VmafxHostFence *fence);
  * VMAFX_E_INVALID naming `subject` when its handle is not a live one. */
 VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fence,
                                 const char *subject, VmafxHostFence **out);
+
+/* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no
+ * limit): true when signalled. Polls a monotonic clock (fence.c). */
+bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns);
+
+/* ---- Pooling and windows (score.c, window.c; RC4 WP4, ADR-2074) ---------- */
+
+/* What a pooled score pools: `kind` is a VmafxWindowTarget and names the one
+ * of `model`, `set` and `feature` that is set. */
+typedef struct VmafxPoolTarget {
+    uint32_t kind;
+    const VmafxModel *model;
+    const VmafxModelSet *set;
+    const char *feature;
+} VmafxPoolTarget;
+
+/* A pooled score: `value` for a model or a feature, the four bootstrap values
+ * for a model set (`value` is its bagging score). */
+typedef struct VmafxPoolValue {
+    double value;
+    double stddev;
+    double ci95_lo;
+    double ci95_hi;
+} VmafxPoolValue;
+
+/* The one pooling implementation of vmafx_score_pooled(),
+ * vmafx_feature_score_pooled(), vmafx_score_pooled_model_set() and the window
+ * scores (HISS-19): `target` pooled with the VmafxPool `pool` over
+ * [first, last] (first <= last <= UINT_MAX) by the engine, on the calling
+ * thread with the context's log sink installed. Returns the engine's errno
+ * (-EAGAIN: a frame is not final). */
+int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint32_t pool,
+                      uint64_t first, uint64_t last, VmafxPoolValue *out);
+/* The model's, the model set's or the feature's name. */
+const char *vmafx_pool_target_name(const VmafxPoolTarget *target);
+
+/* Window hooks, called on the thread that feeds the context: after a frame
+ * `index` was submitted or a score of frame `index` imported, after a flush,
+ * and from vmafx_context_destroy() once the engine closed (open windows
+ * complete with VMAFX_E_INVALID; every callback runs before it returns). */
+void vmafx_windows_note_index(VmafxContext *context, uint64_t index);
+void vmafx_windows_note_flush(VmafxContext *context);
+void vmafx_windows_close(VmafxContext *context);
 
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */
 

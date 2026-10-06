@@ -55,6 +55,20 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
                                                  VmafFeatureCollector *feature_collector,
                                                  unsigned index, VmafModelCollectionScore *score);
 
+/**
+ * @brief Whether every feature @p model reads is written at @p index.
+ *
+ * Reads the collector only (no prediction, no log line), so a caller can ask
+ * before vmaf_predict_score_at_index() whether a prediction at @p index would
+ * find its inputs, without waiting for work in flight (the window scores of
+ * the VMAFx API, ADR-2074).
+ *
+ * @return 0 when all are written, -EAGAIN when one is not written yet or not
+ *         in the collector yet, another negative errno on failure.
+ */
+int vmaf_predict_inputs_written(VmafModel *model, VmafFeatureCollector *feature_collector,
+                                unsigned index);
+
 struct svm_node;
 
 /**

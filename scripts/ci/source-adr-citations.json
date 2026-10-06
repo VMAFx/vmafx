@@ -674,6 +674,7 @@
         "core/src/feature/feature_collector.h": 1,
         "core/src/libvmaf.c": 1,
         "core/src/predict.c": 1,
+        "core/src/vmafx/window.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_score_pooled_eagain.c": 1
       },
@@ -3119,7 +3120,8 @@
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2,
-        "core/test/test_sycl_kernel_scratch.c": 1
+        "core/test/test_sycl_kernel_scratch.c": 1,
+        "core/test/test_vmafx_window_live.c": 1
       },
       "target": "0488-gpu-dispatch-env-shared-snapshot.md"
     },
@@ -6284,6 +6286,8 @@
         "core/src/vmafx/register.c": 1,
         "core/src/vmafx/score.c": 1,
         "core/src/vmafx/submit.c": 1,
+        "core/src/vmafx/window.c": 1,
+        "core/src/vmafx/window_clock.c": 1,
         "core/src/x86/avx512_warm_up.h": 1,
         "core/src/x86/cpu.h": 1,
         "core/test/ciede_twin_parity.h": 1,
@@ -6686,12 +6690,16 @@
         "core/test/test_vmafx_model.c": 1,
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
+        "core/test/test_vmafx_window.c": 1,
+        "core/test/test_vmafx_window_clock.c": 1,
+        "core/test/test_vmafx_window_live.c": 1,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_import_test_util.h": 1,
         "core/test/vmafx_test_util.h": 1,
+        "core/test/vmafx_window_test_util.h": 1,
         "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_close_retry.c": 1,
         "core/tools/test/test_vmaf_per_shot_input.c": 1,
@@ -10013,6 +10021,8 @@
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_frame.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
+        "core/test/test_vmafx_window.c": 1,
+        "core/test/test_vmafx_window_live.c": 1,
         "core/tools/vmaf.cpp": 1
       },
       "target": "1478-motion-five-frame-window-port.md"
@@ -11287,6 +11297,12 @@
       },
       "target": "1852-vmafx-api-redesign.md"
     },
+    "1897": {
+      "sites": {
+        "core/api/vmafx.toml": 1
+      },
+      "target": "1897-vmafx-abi-0x-numbering.md"
+    },
     "1906": {
       "sites": {
         "core/api/vmafx.toml": 2,
@@ -11312,6 +11328,25 @@
         "core/src/vmafx/internal.h": 1
       },
       "target": "1929-vmafx-device-frames-fences.md"
+    },
+    "2074": {
+      "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/src/libvmaf.c": 1,
+        "core/src/meson.build": 1,
+        "core/src/predict.h": 1,
+        "core/src/vmafx/engine.h": 1,
+        "core/src/vmafx/internal.h": 2,
+        "core/src/vmafx/score.c": 1,
+        "core/src/vmafx/window.c": 1,
+        "core/src/vmafx/window_clock.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_vmafx_window.c": 2,
+        "core/test/test_vmafx_window_clock.c": 1,
+        "core/test/test_vmafx_window_live.c": 1,
+        "core/test/vmafx_window_test_util.h": 1
+      },
+      "target": "2074-vmafx-window-scores.md"
     }
   },
   "retired": {
