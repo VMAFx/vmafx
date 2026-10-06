@@ -86,10 +86,10 @@ VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, Vma
     const char *name = NULL;
     uint64_t memory = 0;
     const int32_t at = index == -1 ? 0 : index;
-    uint32_t pci[4];
+    char bus[VMAFX_SYCL_BUS_ID_SIZE];
     int err = vmafx_sycl_rt_info(at, &name, &memory);
     if (!err) {
-        err = vmafx_sycl_rt_pci(at, pci);
+        err = vmafx_sycl_rt_bus_id(at, bus);
     }
     if (err == -ENOENT) {
         uint32_t n = 0;
@@ -101,6 +101,8 @@ VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, Vma
     if (err) {
         return runtime_failed(report, err, "index", "device query");
     }
+    uint32_t pci[4];
+    vmafx_parse_pci_bus_id(bus[0] != '\0' ? bus : NULL, pci);
     *info = sycl_info(at, 0u, name, memory, pci);
     return VMAFX_OK;
 }
@@ -176,8 +178,10 @@ void vmafx_sycl_device_close(VmafxDevice *device)
 void vmafx_sycl_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info)
 {
     const VmafxSyclDevice *const dev = vmafx_sycl_dev(device);
+    char bus[VMAFX_SYCL_BUS_ID_SIZE];
     uint32_t pci[4];
-    vmafx_sycl_rt_device_pci(dev->rt, pci);
+    vmafx_sycl_rt_device_bus_id(dev->rt, bus);
+    vmafx_parse_pci_bus_id(bus[0] != '\0' ? bus : NULL, pci);
     *info = sycl_info(vmafx_sycl_rt_index(dev->rt), device->flags, vmafx_sycl_rt_name(dev->rt),
                       vmafx_sycl_rt_memory(dev->rt), pci);
 }

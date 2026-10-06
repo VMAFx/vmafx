@@ -637,8 +637,10 @@ static VmafxStatus bind_sycl_frame(const VmafxReport *report, VmafxDevice *devic
 static VmafxStatus vulkan_as_dmabuf(const VmafxReport *report, const VmafxDevice *device,
                                     const VmafxFrameImport *desc, VmafxFrameImport *out)
 {
+    char bus[VMAFX_SYCL_BUS_ID_SIZE];
     uint32_t pci[4];
-    vmafx_sycl_rt_device_pci(vmafx_sycl_dev(device)->rt, pci);
+    vmafx_sycl_rt_device_bus_id(vmafx_sycl_dev(device)->rt, bus);
+    vmafx_parse_pci_bus_id(bus[0] != '\0' ? bus : NULL, pci);
     const VmafxStatus status = vmafx_import_check_vulkan_device(report, desc, pci, "sycl");
     return status == VMAFX_OK ? vmafx_import_vulkan_as_dmabuf(report, desc, "sycl", out) : status;
 }
