@@ -73,7 +73,8 @@ MODE_SPELLING = {
 def param_decl(api: Api, param: Param) -> str:
     base = typesys.base_spelling(param.type)
     if param.mode in MODE_SPELLING:
-        return MODE_SPELLING[param.mode].format(t=base) + param.name
+        # `const char *` + ` *` -> `const char **` (an `out` string).
+        return MODE_SPELLING[param.mode].format(t=base).replace("* *", "**") + param.name
     kind = typesys.kind(api, param.type)
     if kind == "struct":
         return f"const {base} *{param.name}"

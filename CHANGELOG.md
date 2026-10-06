@@ -49,6 +49,30 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
+- **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
+  The VMAFx API gains the shared contract of zero-copy frame import:
+  device enumeration and information (`vmafx_device_count`,
+  `vmafx_device_info`, `vmafx_device_describe`, `vmafx_device_profile`; the
+  size-prefixed `VmafxDeviceInfo` grows by the format envelope later),
+  devices from external handles and profiling flags (`VmafxDeviceDesc`),
+  attaching a device to a context (`vmafx_context_use_device`), fences of
+  every kind (`VmafxFence`; `vmafx_fence_create`, `vmafx_fence_signal`,
+  `vmafx_fence_wait`, `vmafx_fence_destroy`; the new status
+  `VMAFX_E_TIMEOUT`), frame import with an acquire fence
+  (`vmafx_frame_import`, `VmafxFrameImport`; NV12, P010 and P016 converted
+  to planar, never through a host copy), release fences signalled after the
+  last reader of a frame (`vmafx_frame_release_fence`), frame pools
+  (`vmafx_frame_pool_create`, `vmafx_frame_pool_acquire`,
+  `vmafx_frame_pool_destroy`), admission that names every refusing extractor
+  (`vmafx_context_admit`) and the import rule of decision D8
+  (`vmafx_context_import_frame`: one retry after a host wait, then a failure
+  that names the import). This build implements host memory and host fences
+  on the CPU device; the CUDA, SYCL, HIP and Metal imports follow behind the
+  same functions. An imported frame scores bit for bit as the same frame
+  created on the host. ABI 0.1.2. See
+  [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
+
+
 - **vmafx-controller reads and enforces its tenant configuration
   ([ADR-1519](docs/adr/1519-controller-tenant-registry.md)).** With
   `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` the controller lists the
@@ -5927,6 +5951,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   a reader can tell the row belongs to an ABR encode. A missing bit rate fails
   the cell rather than guessing one. The Go `vmafx-tune-go` does the same
   (ADR-1565).
+
+
+- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
+  its subject, so a model file whose path was longer was named by a cut-off
+  path; subjects now keep 1023 bytes and messages 1023.
 
 
 - **`vmafx-tune-go ladder` scores each rung with the VMAF model its height selects.**

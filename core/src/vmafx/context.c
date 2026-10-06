@@ -82,6 +82,7 @@ static void release_held(VmafxContext *context)
     }
     free((void *)context->models.items);
     free((void *)context->model_sets.items);
+    vmafx_device_unref(context->device); /* RC4 WP3: vmafx_context_use_device() */
 }
 
 /* ---- Logging ----------------------------------------------------------------- */

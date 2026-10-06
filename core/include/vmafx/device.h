@@ -24,6 +24,16 @@
 extern "C" {
 #endif
 
+/*
+ * VmafxDeviceFlags: How a device is created. Bits of a u32 field.
+ * @since 0.1
+ */
+/**
+ * Time every kernel the device runs; read with vmafx_device_profile(). Refused by a device without
+ * a kernel profiler (the CPU).
+ */
+#define VMAFX_DEVICE_PROFILING (UINT32_C(1) << 0U)
+
 /**
  * A compute device. Refcounted; frames and contexts hold references.
  * @since 0.1
@@ -31,6 +41,7 @@ extern "C" {
 typedef struct VmafxDevice VmafxDevice;
 
 typedef struct VmafxDeviceDesc VmafxDeviceDesc;
+typedef struct VmafxDeviceInfo VmafxDeviceInfo;
 
 /**
  * Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT.
@@ -41,15 +52,60 @@ struct VmafxDeviceDesc {
     uint32_t struct_size;
     /** Backend of the device; this release creates CPU devices only. Values: VmafxBackend. */
     uint32_t backend;
-    /** Device index within the backend; 0 or -1 (any) for the CPU. */
+    /**
+     * Device index within the backend (see vmafx_device_count()); -1: any device of the backend.
+     * Ignored when `external[0]` is set.
+     */
     int32_t index;
+    /** How to create the device. Added in ABI 0.1.2. Bits: VmafxDeviceFlags. */
+    uint32_t flags;
+    /**
+     * The caller's runtime objects, which stay the caller's and must outlive the device: CUDA
+     * context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue.
+     * 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2.
+     */
+    uintptr_t external[2];
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
 #define VMAFX_DEVICE_DESC_INIT {.struct_size = sizeof(VmafxDeviceDesc)}
 
 /**
- * Create a device. `desc` may be NULL for the CPU. Any other backend is VMAFX_E_NOTSUP naming it.
+ * What a device is and what it imports. Grows at the end: the format envelope of each device
+ * (largest frame, bit depths, chroma layouts; PR #2185) is appended by the generated capability
+ * tables of RC6 / RC7. Strings live for the process lifetime.
+ * @since 0.1
+ */
+struct VmafxDeviceInfo {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Backend of the device. Values: VmafxBackend. */
+    uint32_t backend;
+    /** Device index within the backend; -1 for a device made from external handles. */
+    int32_t index;
+    /** Flags the device was created with; 0 for an enumerated device. Bits: VmafxDeviceFlags. */
+    uint32_t flags;
+    /** Bit `1 << k` set for each VmafxMemoryKind `k` vmafx_frame_import() binds on this device. */
+    uint32_t memory_kinds;
+    /**
+     * Bit `1 << k` set for each VmafxFenceKind `k` the device waits on and returns as a release
+     * fence.
+     */
+    uint32_t fence_kinds;
+    /** Bytes of device memory; 0 when the backend does not report it (the CPU). */
+    uint64_t total_memory;
+    /** Name of the device as its runtime reports it (`cpu` for the CPU). */
+    const char *name;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_DEVICE_INFO_INIT {.struct_size = sizeof(VmafxDeviceInfo)}
+
+/**
+ * Create a device from a backend and an index, or from the caller's runtime objects
+ * (`desc.external`). `desc` may be NULL for the CPU. A backend this build does not create devices
+ * for is VMAFX_E_NOTSUP naming it; an index it does not have is VMAFX_E_NOTFOUND; a flag the device
+ * cannot honour is VMAFX_E_NOTSUP naming `desc.flags`.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out,
@@ -72,6 +128,37 @@ VMAFX_EXPORT void vmafx_device_unref(VmafxDevice *device);
  * @since 0.1
  */
 VMAFX_EXPORT uint32_t vmafx_device_backend(const VmafxDevice *device);
+
+/**
+ * Number of devices of `backend` this build can create. A backend this build has no devices for is
+ * VMAFX_E_NOTSUP naming it (never a silent 0); a value that is not a VmafxBackend is
+ * VMAFX_E_INVALID.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **error);
+
+/**
+ * Describe device `index` of `backend` without creating it (what `vmaf --list-backends` lists).
+ * VMAFX_E_NOTFOUND names an index the backend does not have.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *out,
+                                           VmafxError **error);
+
+/**
+ * Describe a created device, its creation flags included.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *out,
+                                               VmafxError **error);
+
+/**
+ * Kernel timings of a device created with VMAFX_DEVICE_PROFILING, as text. `out` lives until the
+ * next call on the device or its release. A device without profiling is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_device_profile(VmafxDevice *device, const char **out,
+                                              VmafxError **error);
 
 #ifdef __cplusplus
 }

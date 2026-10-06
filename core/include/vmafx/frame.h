@@ -26,11 +26,88 @@ extern "C" {
 #endif
 
 /**
+ * What a VmafxImportPlane handle refers to.
+ * @since 0.1
+ */
+typedef enum VmafxMemoryKind {
+    /** Not set; refused by vmafx_frame_import(). */
+    VMAFX_MEMORY_NONE = 0,
+    /**
+     * Host memory the CPU reads: `handle` is the address of the plane's allocation, `offset` the
+     * bytes to its first sample.
+     */
+    VMAFX_MEMORY_HOST = 1,
+    /** A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context. */
+    VMAFX_MEMORY_DEVICE_POINTER = 2,
+    /** A device array (CUDA array) in the device's context. */
+    VMAFX_MEMORY_DEVICE_ARRAY = 3,
+    /**
+     * A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives
+     * in.
+     */
+    VMAFX_MEMORY_DMABUF = 4,
+    /** A shared surface: `handle` is the surface, `plane_index` its plane. */
+    VMAFX_MEMORY_METAL_SURFACE = 5,
+    /** A Metal texture per plane: `handle` is the texture. */
+    VMAFX_MEMORY_METAL_TEXTURE = 6,
+    /** A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane. */
+    VMAFX_MEMORY_WIN32_SHARED = 7,
+} VmafxMemoryKind;
+
+/**
+ * What a VmafxFence is.
+ * @since 0.1
+ */
+typedef enum VmafxFenceKind {
+    /** No fence: the work it would order is complete. */
+    VMAFX_FENCE_NONE = 0,
+    /** A host fence of the library (vmafx_fence_create()): `handle` is the library's object. */
+    VMAFX_FENCE_HOST = 1,
+    /** A CUDA event (`handle`) of the device's context. */
+    VMAFX_FENCE_CUDA_EVENT = 2,
+    /** A HIP event (`handle`) of the device. */
+    VMAFX_FENCE_HIP_EVENT = 3,
+    /** A pointer to a SYCL event (`handle`) of the device's context. */
+    VMAFX_FENCE_SYCL_EVENT = 4,
+    /** A Linux sync_file descriptor (`fd`). */
+    VMAFX_FENCE_SYNC_FILE = 5,
+    /** A Metal shared event (`handle`) and the value it reaches when signalled (`value`). */
+    VMAFX_FENCE_METAL_SHARED_EVENT = 6,
+    /**
+     * A Windows shared fence (`handle`, an NT handle) and the value it reaches when signalled
+     * (`value`).
+     */
+    VMAFX_FENCE_WIN32_SHARED = 7,
+} VmafxFenceKind;
+
+/*
+ * VmafxImportFlags: How vmafx_frame_import() may bind the producer's memory. 0, the value of a
+ * zeroed descriptor, requires zero copy: a layout the device cannot bind is refused, never copied
+ * (design section 2.7). Bits of a u32 field.
+ * @since 0.1
+ */
+/**
+ * A layout the device cannot bind may be copied on the device; the copy is logged once per context.
+ * Never a host copy of device memory.
+ */
+#define VMAFX_IMPORT_ALLOW_COPY (UINT32_C(1) << 0U)
+
+/**
  * Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts.
  * @since 0.1
  */
 typedef struct VmafxFrame VmafxFrame;
 
+/**
+ * Frames of one geometry allocated once on a device and reused (RC4 WP3). A frame returns to its
+ * pool when its last reference is dropped.
+ * @since 0.1
+ */
+typedef struct VmafxFramePool VmafxFramePool;
+
+typedef struct VmafxFence VmafxFence;
+typedef struct VmafxImportPlane VmafxImportPlane;
+typedef struct VmafxFrameImport VmafxFrameImport;
 typedef struct VmafxFrameDesc VmafxFrameDesc;
 typedef struct VmafxHostPlanes VmafxHostPlanes;
 typedef struct VmafxFramePlanes VmafxFramePlanes;
@@ -41,6 +118,109 @@ typedef struct VmafxFramePlanes VmafxFramePlanes;
  * @since 0.1
  */
 typedef void (*VmafxFrameReleaseCallback)(void *user);
+
+/**
+ * A synchronisation point between the producer of a frame and the library. Passed by pointer;
+ * embedded by value in VmafxFrameImport, so it never grows. A fence the library returns
+ * (vmafx_fence_create(), vmafx_frame_release_fence()) belongs to the caller, who releases it once
+ * with vmafx_fence_destroy(). Initialise with VMAFX_FENCE_INIT.
+ * @since 0.1
+ */
+struct VmafxFence {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** What the fence is; the other fields are read as the kind says. Values: VmafxFenceKind. */
+    uint32_t kind;
+    /** Event, shared-event, shared-fence or host-fence object; 0 when the kind has none. */
+    uintptr_t handle;
+    /**
+     * Value a timeline fence (METAL_SHARED_EVENT, WIN32_SHARED) reaches when signalled; 0
+     * otherwise.
+     */
+    uint64_t value;
+    /** sync_file descriptor for SYNC_FILE; ignored otherwise. */
+    int32_t fd;
+    /** 0. */
+    uint32_t reserved;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FENCE_INIT {.struct_size = sizeof(VmafxFence)}
+
+/**
+ * Where one plane of an imported frame lives. Embedded by value in VmafxFrameImport: never grows.
+ * Fields a memory kind does not use are ignored.
+ * @since 0.1
+ */
+struct VmafxImportPlane {
+    /**
+     * Address, device pointer, array, surface, texture or shared handle, as VmafxMemoryKind says.
+     */
+    uintptr_t handle;
+    /** dma-buf descriptor for DMABUF memory (the library duplicates it); ignored otherwise. */
+    int32_t fd;
+    /** Plane of a multi-plane object (surface, shared texture, dma-buf layer). */
+    uint32_t plane_index;
+    /** Bytes from the start of the memory to the plane's first sample. */
+    uint64_t offset;
+    /** Bytes from one row to the next, at least the bytes of a row. */
+    uint64_t pitch;
+    /**
+     * Format modifier of the memory layout; 0 is linear. A modifier the device cannot read is
+     * refused naming the plane.
+     */
+    uint64_t modifier;
+    /**
+     * Bytes of the memory object the plane lives in; 0: not given (needed by DMABUF imports). When
+     * set, every row of the plane must lie inside it.
+     */
+    uint64_t size;
+};
+
+/**
+ * A frame the producer already holds in memory a device reads (design section 2.7). Initialise with
+ * VMAFX_FRAME_IMPORT_INIT.
+ * @since 0.1
+ */
+struct VmafxFrameImport {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** What each plane's handle refers to. Values: VmafxMemoryKind. */
+    uint32_t memory;
+    /**
+     * Layout of the producer's planes; NV12, P010 and P016 are converted to planar on the device (a
+     * de-interleave, and for P010 a shift), nothing else. Values: VmafxPixelFormat.
+     */
+    uint32_t pix_fmt;
+    /** Bits per component: 8 for NV12, 10 for P010, 16 for P016, 8 to 16 for the planar formats. */
+    uint32_t bpc;
+    /** Luma width in pixels. */
+    uint32_t w;
+    /** Luma height in pixels. */
+    uint32_t h;
+    /**
+     * Planes in `plane`: 1 for YUV400P, 2 for NV12 / P010 / P016 (luma, interleaved chroma), else
+     * 3.
+     */
+    uint32_t n_planes;
+    /** Each plane; entries past `n_planes` are ignored. */
+    VmafxImportPlane plane[3];
+    /**
+     * Signalled when the producer has written the planes. Borrowed for the call: the library takes
+     * what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes
+     * are written.
+     */
+    VmafxFence acquire;
+    /** 0: zero copy only. Bits: VmafxImportFlags. */
+    uint32_t flags;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+/* clang-format off */
+#define VMAFX_FRAME_IMPORT_INIT                                                                    \
+    {.struct_size = sizeof(VmafxFrameImport),                                                      \
+     .acquire = VMAFX_FENCE_INIT}
+/* clang-format on */
 
 /**
  * Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
@@ -149,6 +329,87 @@ VMAFX_EXPORT VmafxFrame *vmafx_frame_ref(VmafxFrame *frame);
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_frame_unref(VmafxFrame *frame);
+
+/**
+ * A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are;
+ * NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is
+ * VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the
+ * device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once).
+ * The producer's memory stays valid and unchanged until the frame's release fence is signalled. The
+ * caller holds one reference.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc,
+                                            VmafxFrame **out, VmafxError **error);
+
+/**
+ * A fence of `kind` signalled once the last reference of the frame is gone, in every context it was
+ * submitted to: from then on the library reads none of its memory and the producer may reuse it.
+ * Call it while holding a reference, before the frame is submitted; each call returns a new fence
+ * the caller destroys. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind,
+                                                   VmafxFence *out, VmafxError **error);
+
+/**
+ * A new, unsignalled fence of `kind` on `device` (NULL: the CPU) for a producer to signal, for
+ * example a HOST fence a producer thread signals with vmafx_fence_signal() after writing a frame.
+ * The caller destroys it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_fence_create(VmafxDevice *device, uint32_t kind, VmafxFence *out,
+                                            VmafxError **error);
+
+/**
+ * Signal a fence from the host (HOST; a timeline kind to its `value`). A kind the host cannot
+ * signal is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_fence_signal(const VmafxFence *fence, VmafxError **error);
+
+/**
+ * Wait on the host until the fence is signalled: VMAFX_OK, or VMAFX_E_TIMEOUT naming the fence
+ * after `timeout_ns` nanoseconds (UINT64_MAX waits without a limit). `timeout_ns` 0 polls: an
+ * unsignalled fence is VMAFX_PENDING, an answer without an error or a log line. NONE is signalled.
+ * A kind this build cannot wait on is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns,
+                                          VmafxError **error);
+
+/**
+ * Release a fence the library returned: drop its reference to a host fence, destroy an event it
+ * created, close a descriptor it opened. Once per fence; NONE is a no-op. A kind this build cannot
+ * release is VMAFX_E_NOTSUP naming it.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_fence_destroy(const VmafxFence *fence, VmafxError **error);
+
+/**
+ * Allocate `count` frames of geometry `desc` on `device` (NULL: the CPU) once (the successor of
+ * vmaf_preallocate_pictures). Size a pool for a context with vmafx_context_frame_retention().
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_pool_create(VmafxDevice *device, const VmafxFrameDesc *desc,
+                                                 uint32_t count, VmafxFramePool **out,
+                                                 VmafxError **error);
+
+/**
+ * A free frame of the pool, with one reference the caller holds; its planes keep their previous
+ * content. VMAFX_E_BUSY when every frame is in use (a transient status: a frame returns when its
+ * last reference is dropped).
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_pool_acquire(VmafxFramePool *pool, VmafxFrame **out,
+                                                  VmafxError **error);
+
+/**
+ * Drop the caller's reference to the pool. Frames still in use stay valid; the pool is freed when
+ * the last of them returns. NULL is a no-op.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_frame_pool_destroy(VmafxFramePool *pool);
 
 #ifdef __cplusplus
 }

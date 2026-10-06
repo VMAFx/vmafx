@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1284), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1285), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5147,3 +5147,7 @@ Every ADR, one heading each (1284), so the site search finds an ADR by its title
 ## ADR-1906: VMAFx core API semantics: per-context logging, size negotiation, frame and model references
 
 [1906-vmafx-core-api-semantics](1906-vmafx-core-api-semantics.md)
+
+## ADR-1929: VMAFx device frames, fences and the import rule: the shared contract the backend lanes implement
+
+[1929-vmafx-device-frames-fences](1929-vmafx-device-frames-fences.md)

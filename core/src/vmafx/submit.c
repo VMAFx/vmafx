@@ -11,6 +11,10 @@
  * consumed on every path) and vmafx_flush() finishes the stream. The checks
  * here name what is wrong with a frame before the engine sees it; the engine
  * keeps its own checks.
+ *
+ * RC4 WP3: before a frame is counted, both inputs must live in the same
+ * memory and every registered extractor must be able to read it there
+ * (admission, frame_import_admit.c).
  */
 
 #include <limits.h>
@@ -19,6 +23,7 @@
 
 #include "engine.h"
 #include "error_internal.h"
+#include "frame_import_hooks.h"
 #include "internal.h"
 #include "ref.h"
 #include "status_gen.h"
@@ -82,6 +87,56 @@ static VmafxStatus check_submit(const VmafxReport *report, const VmafxContext *c
     return VMAFX_OK;
 }
 
+/* Both inputs live in the same memory, and the context's extractors read it
+ * there (RC4 WP3). */
+static VmafxStatus admit_pair(const VmafxReport *report, const VmafxContext *context,
+                              const VmafxFrame *reference, const VmafxFrame *distorted)
+{
+    if (reference->residency != distorted->residency || reference->device != distorted->device) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FRAME, "distorted",
+                          "the distorted frame is in %s memory of another device than the "
+                          "reference frame (%s); both inputs live on one device",
+                          vmafx_backend_name(distorted->residency),
+                          vmafx_backend_name(reference->residency));
+    }
+    return vmafx_admit_frame(report, context, reference);
+}
+
+/* The planted early-release defect (test switch): signal the frames' release
+ * fences when the submit returns, while the engine may still hold them. */
+static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
+{
+    VmafxFrame *const frames[2] = {reference, distorted};
+    for (unsigned i = 0; i < 2u; i++) {
+        VmafxHostFence *const fence = atomic_load(&frames[i]->released);
+        if (fence) {
+            vmafx_host_fence_signal(fence);
+        }
+    }
+}
+
+/* Hand both pictures to the engine, which releases them on every path
+ * (ADR-1431); returns its errno. */
+static int engine_read(VmafxContext *context, VmafxFrame *reference, VmafxFrame *distorted,
+                       VmafPicture *ref, VmafPicture *dist, uint64_t index)
+{
+    const bool early = vmafx_test_switch(VMAFX_TEST_EARLY_RELEASE);
+    if (early) {
+        /* Keep both frames alive across the engine call for the switch. */
+        (void)vmafx_frame_ref(reference);
+        (void)vmafx_frame_ref(distorted);
+    }
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_read_pictures(context->engine, ref, dist, (unsigned)index);
+    vmafx_engine_leave(previous);
+    if (early) {
+        signal_release_early(reference, distorted);
+        vmafx_frame_unref(reference);
+        vmafx_frame_unref(distorted);
+    }
+    return err;
+}
+
 /* Release the pictures a failed submit took, each once. */
 static void drop_pictures(VmafPicture *ref, VmafPicture *dist)
 {
@@ -116,7 +171,10 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
     }
     const VmafxFrameDesc ref_desc = picture_desc(&ref);
     const VmafxFrameDesc dist_desc = picture_desc(&dist);
-    const VmafxStatus status = check_submit(&report, context, &ref_desc, &dist_desc, index);
+    VmafxStatus status = check_submit(&report, context, &ref_desc, &dist_desc, index);
+    if (status == VMAFX_OK) {
+        status = admit_pair(&report, context, reference, distorted);
+    }
     if (status != VMAFX_OK) {
         drop_pictures(&ref, &dist);
         return status;
@@ -126,10 +184,7 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
         context->have_frame = true;
     }
     context->last_index = index;
-    /* The engine releases both pictures on every path (ADR-1431). */
-    const VmafLogSink *const previous = vmafx_engine_enter(context);
-    const int err = vmaf_engine_read_pictures(context->engine, &ref, &dist, (unsigned)index);
-    vmafx_engine_leave(previous);
+    const int err = engine_read(context, reference, distorted, &ref, &dist, index);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_FRAME, "index",
                           "the engine could not score frame %llu (%d)", (unsigned long long)index,

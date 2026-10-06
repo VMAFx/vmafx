@@ -21,6 +21,7 @@ Status codes, shared enumerations and the export macros.
 | `VMAFX_E_IO` | -7 | `-EIO` | 0.1 | File or stream error. |
 | `VMAFX_E_RANGE` | -8 | `-ERANGE` | 0.1 | Value out of range. |
 | `VMAFX_E_INTERNAL` | -9 | `-EIO` | 0.1 | Engine error without a more specific status; the error carries the engine's errno. |
+| `VMAFX_E_TIMEOUT` | -10 | `-ETIMEDOUT` | 0.1 | A fence was not signalled within the time the caller allowed; the error names the fence (RC4 WP3). |
 | `VMAFX_E_ABI` | -11 | `-EINVAL` | 0.1 | A struct_size below the size the struct had when it was introduced; the error names the struct. |
 
 ## `VmafxLogLevel`
@@ -58,6 +59,9 @@ Planar pixel layout of a frame (values equal enum VmafPixelFormat). Since 0.1.
 | `VMAFX_PIXEL_FORMAT_YUV422P` | 2 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_YUV444P` | 3 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_YUV400P` | 4 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_NV12` | 16 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_P010` | 17 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_P016` | 18 | 0.1 |
 
 ## `VmafxPool`
 

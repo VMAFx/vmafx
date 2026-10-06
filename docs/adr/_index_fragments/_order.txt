@@ -1283,3 +1283,4 @@
 1868-candidate-map-2026-10-05
 1897-vmafx-abi-0x-numbering
 1906-vmafx-core-api-semantics
+1929-vmafx-device-frames-fences

@@ -76,6 +76,11 @@ enum VmafxStatusCode {
     /** Engine error without a more specific status; the error carries the engine's errno. */
     VMAFX_E_INTERNAL = -9,
     /**
+     * A fence was not signalled within the time the caller allowed; the error names the fence (RC4
+     * WP3).
+     */
+    VMAFX_E_TIMEOUT = -10,
+    /**
      * A struct_size below the size the struct had when it was introduced; the error names the
      * struct.
      */
@@ -122,6 +127,22 @@ typedef enum VmafxPixelFormat {
     VMAFX_PIXEL_FORMAT_YUV444P = 3,
     /** Luma only. */
     VMAFX_PIXEL_FORMAT_YUV400P = 4,
+    /**
+     * 4:2:0, a luma plane and one plane of interleaved Cb/Cr bytes; vmafx_frame_import() only, the
+     * frame it makes is YUV420P at 8 bits. Added in ABI 0.1.2.
+     */
+    VMAFX_PIXEL_FORMAT_NV12 = 16,
+    /**
+     * NV12 with 16-bit little-endian samples whose 10 bits are the most significant;
+     * vmafx_frame_import() only, the frame it makes is YUV420P at 10 bits (each sample shifted down
+     * by 6, ADR-1679). Added in ABI 0.1.2.
+     */
+    VMAFX_PIXEL_FORMAT_P010 = 17,
+    /**
+     * NV12 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is
+     * YUV420P at 16 bits. Added in ABI 0.1.2.
+     */
+    VMAFX_PIXEL_FORMAT_P016 = 18,
 } VmafxPixelFormat;
 
 /**

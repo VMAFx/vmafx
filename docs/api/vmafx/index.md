@@ -9,10 +9,11 @@ it ([ADR-1897](../../adr/1897-vmafx-abi-0x-numbering.md)). The
 existing [`libvmaf.h` API](../index.md) keeps working on the same engine.
 
 This build carries the core of the API: contexts with their own log
-callback, options, models and model sets, the CPU device, host frames,
-submission and synchronous scores. Device frames and fences, asynchronous
-window scores, the full provenance record and reports follow in later RC4
-work.
+callback, options, models and model sets, devices, host frames, imported
+frames with fences and frame pools, submission and synchronous scores.
+Imports run on the CPU device in this build; the CUDA, SYCL, HIP and Metal
+imports, asynchronous window scores, the full provenance record and reports
+follow in later RC4 work.
 
 Every declaration, the Python binding and the
 [reference pages](reference.md) are generated from one definition,
@@ -30,8 +31,8 @@ included on its own and includes what its declarations need:
 | `vmafx/types.h` | `VmafxStatus` and the status codes, `VmafxBackend`, `VmafxPixelFormat`, `VmafxPool`, `VmafxLogLevel`, `VmafxOptions`, the export macros |
 | `vmafx/error.h` | `VmafxError`, its accessors, `VmafxSubjectKind`, `vmafx_status_name` |
 | `vmafx/context.h` | Contexts, the log callback, options, registration, submission, extractor introspection, feature resolution |
-| `vmafx/device.h` | `VmafxDevice` (the CPU in this build) |
-| `vmafx/frame.h` | Host frames: allocated or borrowed planes |
+| `vmafx/device.h` | `VmafxDevice`, `VmafxDeviceInfo`, enumeration and profiling |
+| `vmafx/frame.h` | Host frames, imported frames (`VmafxFrameImport`), fences (`VmafxFence`), frame pools |
 | `vmafx/model.h` | Models and model sets |
 | `vmafx/score.h` | Per-frame and pooled scores |
 | `vmafx/provenance.h` | `VmafxProvenance`, `vmafx_context_provenance` |
@@ -189,7 +190,7 @@ use is immutable.
 
 ## Frames
 
-Frames are refcounted host frames on the CPU device in this build:
+Frames are refcounted. Host frames live on the CPU device:
 
 - `vmafx_frame_create_host(device, desc, &frame, error)` allocates planes;
   `vmafx_frame_planes()` tells where to write the samples (`device` may be
@@ -208,6 +209,123 @@ more reference per context with `vmafx_frame_ref()` and submit it to each.
 The same frame as both inputs of one submit needs two references.
 `vmafx_flush()` finishes the stream; the scores of the last frames (motion)
 become final only then.
+
+## Device frames and fences
+
+A producer that already holds a frame in memory a device can read, a decoder
+for example, hands it over with `vmafx_frame_import()` instead of copying it
+into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
+This build imports host memory on the CPU device; the CUDA, SYCL, HIP and
+Metal imports arrive behind the same calls and types.
+
+### Devices
+
+| Call | Does |
+| --- | --- |
+| `vmafx_device_count(backend, &count, error)` | Devices of a backend; a backend this build has none for is `VMAFX_E_NOTSUP`, never a silent 0 |
+| `vmafx_device_info(backend, index, &info, error)` | What device `index` is and imports, without creating it |
+| `vmafx_device_create(desc, &device, error)` | A device from a backend and an index, or from your runtime's objects (`desc.external`) |
+| `vmafx_device_describe(device, &info, error)` | The same information for a created device |
+| `vmafx_context_use_device(context, device, error)` | Score a context on the device; call it before registering features or models |
+
+`VmafxDeviceInfo.memory_kinds` and `fence_kinds` have bit `1 << k` set for
+every `VmafxMemoryKind` and `VmafxFenceKind` `k` the device imports (the CPU:
+`VMAFX_MEMORY_HOST`; `VMAFX_FENCE_NONE` and `VMAFX_FENCE_HOST`). The struct
+grows at the end in later releases (the largest frame, bit depths and chroma
+layouts each device scores), so pass `VMAFX_DEVICE_INFO_INIT`.
+
+### Importing a frame
+
+A `VmafxFrameImport` names the memory kind, the pixel layout and, per plane,
+the handle (for host memory its address), offset, pitch, format modifier and
+optionally the size of the memory object. Planar layouts are used where they
+are; NV12, P010 and P016 become planar frames by a de-interleave and, for
+P010, a shift down by 6, so an imported frame scores bit for bit as the same
+frame created on the host. Nothing is copied through the host: a layout the
+device cannot read (a tiled modifier on host memory, a memory kind the
+device does not bind) is refused with `VMAFX_E_NOTSUP` naming the field.
+Setting `VMAFX_IMPORT_ALLOW_COPY` in `flags` allows a copy on the device for
+such a layout; a zeroed `flags` means zero copy only.
+
+The producer's memory must stay valid and unchanged until the frame's
+release fence is signalled:
+
+```c
+/* An NV12 frame the producer wrote on another thread; it signals `written`
+ * when the planes are complete. */
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_HOST;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = 1920;
+imp.h = 1080;
+imp.n_planes = 2;
+imp.plane[0].handle = (uintptr_t)luma;
+imp.plane[0].pitch = luma_pitch;
+imp.plane[1].handle = (uintptr_t)chroma;      /* Cb, Cr, Cb, Cr, ... */
+imp.plane[1].pitch = chroma_pitch;
+imp.acquire = written;                        /* a VMAFX_FENCE_HOST fence */
+
+VmafxFrame *frame = NULL;
+VmafxFence reusable = VMAFX_FENCE_INIT;
+status = vmafx_context_import_frame(context, NULL, &imp, "main", &frame, &error);
+if (status == VMAFX_OK)
+    status = vmafx_frame_release_fence(frame, VMAFX_FENCE_HOST, &reusable, &error);
+if (status == VMAFX_OK)
+    status = vmafx_submit(context, reference, frame, index, &error);
+/* ... later, before the producer writes into luma / chroma again: */
+vmafx_fence_wait(&reusable, UINT64_MAX, NULL);
+vmafx_fence_destroy(&reusable, NULL);
+```
+
+### Fences
+
+A `VmafxFence` is passed by pointer; `kind` says what it holds. The library
+borrows the acquire fence of an import for the call (it takes a reference,
+duplicates a descriptor or queues a device-side wait), so you may destroy
+yours right after. Fences the library returns are yours to release once with
+`vmafx_fence_destroy()`.
+
+| Call | Does |
+| --- | --- |
+| `vmafx_fence_create(device, VMAFX_FENCE_HOST, &fence, error)` | An unsignalled host fence, for a producer to signal |
+| `vmafx_fence_signal(&fence, error)` | Signal it from the host |
+| `vmafx_fence_wait(&fence, timeout_ns, error)` | `VMAFX_OK` once signalled; `VMAFX_E_TIMEOUT` after `timeout_ns`; a timeout of 0 polls and answers `VMAFX_PENDING`, without an error; `UINT64_MAX` waits without a limit |
+| `vmafx_frame_release_fence(frame, kind, &fence, error)` | A fence signalled when the last reference of the frame is gone, in every context it was submitted to |
+
+The CUDA, HIP and SYCL events, `sync_file` descriptors, Metal shared events
+and Windows shared fences are declared kinds; this build answers them with
+`VMAFX_E_NOTSUP` naming the kind.
+
+### Admission and the import rule
+
+Before a frame is counted, every extractor registered on the context must be
+able to read it where it lives without a host copy; `vmafx_context_admit()`
+asks the same question ahead of time. A frame in device memory is refused by
+a CPU extractor and by an extractor of another backend, and the error names
+each refusing extractor and why.
+
+`vmafx_context_import_frame()` is the import rule the FFmpeg filters follow
+(decision D8 of [ADR-1852](../../adr/1852-vmafx-api-redesign.md)): it imports
+and admits the frame; a transient failure (`VMAFX_E_BUSY`, for example a CPU
+import whose acquire fence is not signalled yet, or `VMAFX_E_TIMEOUT`) is
+retried once after a host wait of at most 10 seconds on the acquire fence; a
+second failure, or any other, fails with one message that names the input
+(`main`, `reference`), backend, device, memory kind, pixel format, depth,
+size, every plane's modifier, the cause and the attempts, for example
+`main: backend cpu device 0, memory HOST, nv12 8-bit 176x144, modifiers 0x0
+0x100000000000002: plane 1: modifier ... (1 attempt; no host copy was made)`.
+
+### Frame pools
+
+`vmafx_frame_pool_create(device, desc, count, &pool, error)` allocates
+`count` frames once (the successor of `vmaf_preallocate_pictures()`; size it
+with `vmafx_context_frame_retention()` plus the frames you hold).
+`vmafx_frame_pool_acquire()` hands out a free frame or answers
+`VMAFX_E_BUSY` when every frame is in use; a frame returns to its pool when
+its last reference is dropped, and its release fence is signalled then.
+`vmafx_frame_pool_destroy()` drops your reference: frames still in use stay
+valid until they return.
 
 ## Scores
 
@@ -236,8 +354,9 @@ PR #2206, is in review).
 ## Rules every call follows
 
 - **Status codes** are stable on every platform: `VMAFX_OK` (0), `VMAFX_PENDING`
-  (1, the score is not final yet) and negative errors (`VMAFX_E_INVALID`,
-  `VMAFX_E_NOTFOUND`, `VMAFX_E_BUSY`, `VMAFX_E_RANGE`, `VMAFX_E_ABI`, ...; see
+  (1, the score is not final yet, or a polled fence is not signalled) and
+  negative errors (`VMAFX_E_INVALID`, `VMAFX_E_NOTFOUND`, `VMAFX_E_BUSY`,
+  `VMAFX_E_RANGE`, `VMAFX_E_TIMEOUT`, `VMAFX_E_ABI`, ...; see
   [`vmafx/types.h`](types.md)).
 - **Errors name what failed.** Pass a `VmafxError **` as the last argument to
   receive the status, a message, the subject (the parameter, option, feature,

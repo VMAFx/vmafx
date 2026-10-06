@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 1)
+ABI_VERSION = (0, 1, 2)
 
 
 class Status(enum.IntEnum):
@@ -30,6 +30,7 @@ class Status(enum.IntEnum):
     E_IO = -7
     E_RANGE = -8
     E_INTERNAL = -9
+    E_TIMEOUT = -10
     E_ABI = -11
 
 
@@ -61,6 +62,9 @@ class PixelFormat(enum.IntEnum):
     YUV422P = 2
     YUV444P = 3
     YUV400P = 4
+    NV12 = 16
+    P010 = 17
+    P016 = 18
 
 
 class Pool(enum.IntEnum):
@@ -95,12 +99,50 @@ class SubjectKind(enum.IntEnum):
     FENCE = 12
 
 
+class MemoryKind(enum.IntEnum):
+    """VmafxMemoryKind."""
+
+    NONE = 0
+    HOST = 1
+    DEVICE_POINTER = 2
+    DEVICE_ARRAY = 3
+    DMABUF = 4
+    METAL_SURFACE = 5
+    METAL_TEXTURE = 6
+    WIN32_SHARED = 7
+
+
+class FenceKind(enum.IntEnum):
+    """VmafxFenceKind."""
+
+    NONE = 0
+    HOST = 1
+    CUDA_EVENT = 2
+    HIP_EVENT = 3
+    SYCL_EVENT = 4
+    SYNC_FILE = 5
+    METAL_SHARED_EVENT = 6
+    WIN32_SHARED = 7
+
+
 class ModelFlags(enum.IntFlag):
     """VmafxModelFlags bits."""
 
     DISABLE_CLIP = 1
     ENABLE_TRANSFORM = 2
     DISABLE_TRANSFORM = 4
+
+
+class ImportFlags(enum.IntFlag):
+    """VmafxImportFlags bits."""
+
+    ALLOW_COPY = 1
+
+
+class DeviceFlags(enum.IntFlag):
+    """VmafxDeviceFlags bits."""
+
+    PROFILING = 1
 
 
 class VmafxContextConfig(ctypes.Structure):
@@ -125,6 +167,22 @@ class VmafxFeatureResolution(ctypes.Structure):
 
 class VmafxDeviceDesc(ctypes.Structure):
     """C struct VmafxDeviceDesc."""
+
+
+class VmafxDeviceInfo(ctypes.Structure):
+    """C struct VmafxDeviceInfo."""
+
+
+class VmafxFence(ctypes.Structure):
+    """C struct VmafxFence."""
+
+
+class VmafxImportPlane(ctypes.Structure):
+    """C struct VmafxImportPlane."""
+
+
+class VmafxFrameImport(ctypes.Structure):
+    """C struct VmafxFrameImport."""
 
 
 class VmafxModelConfig(ctypes.Structure):
@@ -204,6 +262,51 @@ VmafxDeviceDesc._fields_ = (
     ("struct_size", ctypes.c_uint32),
     ("backend", ctypes.c_uint32),
     ("index", ctypes.c_int32),
+    ("flags", ctypes.c_uint32),
+    ("external", ctypes.c_size_t * 2),
+)
+
+VmafxDeviceInfo._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("backend", ctypes.c_uint32),
+    ("index", ctypes.c_int32),
+    ("flags", ctypes.c_uint32),
+    ("memory_kinds", ctypes.c_uint32),
+    ("fence_kinds", ctypes.c_uint32),
+    ("total_memory", ctypes.c_uint64),
+    ("name", ctypes.c_char_p),
+)
+
+VmafxFence._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("kind", ctypes.c_uint32),
+    ("handle", ctypes.c_size_t),
+    ("value", ctypes.c_uint64),
+    ("fd", ctypes.c_int32),
+    ("reserved", ctypes.c_uint32),
+)
+
+VmafxImportPlane._fields_ = (
+    ("handle", ctypes.c_size_t),
+    ("fd", ctypes.c_int32),
+    ("plane_index", ctypes.c_uint32),
+    ("offset", ctypes.c_uint64),
+    ("pitch", ctypes.c_uint64),
+    ("modifier", ctypes.c_uint64),
+    ("size", ctypes.c_uint64),
+)
+
+VmafxFrameImport._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("memory", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("w", ctypes.c_uint32),
+    ("h", ctypes.c_uint32),
+    ("n_planes", ctypes.c_uint32),
+    ("plane", VmafxImportPlane * 3),
+    ("acquire", VmafxFence),
+    ("flags", ctypes.c_uint32),
 )
 
 VmafxModelConfig._fields_ = (
@@ -319,11 +422,64 @@ LAYOUT = {
         ),
     ),
     VmafxDeviceDesc: (
-        12,
+        32,
         (
             ("struct_size", 0),
             ("backend", 4),
             ("index", 8),
+            ("flags", 12),
+            ("external", 16),
+        ),
+    ),
+    VmafxDeviceInfo: (
+        40,
+        (
+            ("struct_size", 0),
+            ("backend", 4),
+            ("index", 8),
+            ("flags", 12),
+            ("memory_kinds", 16),
+            ("fence_kinds", 20),
+            ("total_memory", 24),
+            ("name", 32),
+        ),
+    ),
+    VmafxFence: (
+        32,
+        (
+            ("struct_size", 0),
+            ("kind", 4),
+            ("handle", 8),
+            ("value", 16),
+            ("fd", 24),
+            ("reserved", 28),
+        ),
+    ),
+    VmafxImportPlane: (
+        48,
+        (
+            ("handle", 0),
+            ("fd", 8),
+            ("plane_index", 12),
+            ("offset", 16),
+            ("pitch", 24),
+            ("modifier", 32),
+            ("size", 40),
+        ),
+    ),
+    VmafxFrameImport: (
+        216,
+        (
+            ("struct_size", 0),
+            ("memory", 4),
+            ("pix_fmt", 8),
+            ("bpc", 12),
+            ("w", 16),
+            ("h", 20),
+            ("n_planes", 24),
+            ("plane", 32),
+            ("acquire", 176),
+            ("flags", 208),
         ),
     ),
     VmafxModelConfig: (
@@ -598,6 +754,47 @@ SIGNATURES = {
         ctypes.c_uint32,
         (ctypes.c_void_p,),
     ),
+    "vmafx_device_count": (
+        ctypes.c_int32,
+        (
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_device_info": (
+        ctypes.c_int32,
+        (
+            ctypes.c_uint32,
+            ctypes.c_int32,
+            ctypes.POINTER(VmafxDeviceInfo),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_device_describe": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxDeviceInfo),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_device_profile": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_use_device": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_frame_create_host": (
         ctypes.c_int32,
         (
@@ -632,6 +829,96 @@ SIGNATURES = {
     "vmafx_frame_unref": (
         None,
         (ctypes.c_void_p,),
+    ),
+    "vmafx_frame_import": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameImport),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_release_fence": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_fence_create": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_fence_signal": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_fence_wait": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxFence),
+            ctypes.c_uint64,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_fence_destroy": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_pool_create": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameDesc),
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_pool_acquire": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_pool_destroy": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_admit": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_import_frame": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameImport),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
     ),
     "vmafx_model_load": (
         ctypes.c_int32,
@@ -981,20 +1268,138 @@ class DeviceDesc:
 
     backend: int
     index: int
+    flags: int
+    external: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxDeviceDesc) -> DeviceDesc:
         return cls(
             backend=raw.backend,
             index=raw.index,
+            flags=raw.flags,
+            external=tuple(raw.external),
         )
 
-    def to_c(self) -> VmafxDeviceDesc:
-        raw = VmafxDeviceDesc()
+
+@dataclass(frozen=True)
+class DeviceInfo:
+    """What a device is and what it imports. Grows at the end: the format envelope of each device (largest frame, bit depths, chroma layouts; PR #2185) is appended by the generated capability tables of RC6 / RC7. Strings live for the process lifetime."""
+
+    backend: int
+    index: int
+    flags: int
+    memory_kinds: int
+    fence_kinds: int
+    total_memory: int
+    name: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxDeviceInfo) -> DeviceInfo:
+        return cls(
+            backend=raw.backend,
+            index=raw.index,
+            flags=raw.flags,
+            memory_kinds=raw.memory_kinds,
+            fence_kinds=raw.fence_kinds,
+            total_memory=raw.total_memory,
+            name=_text(raw.name),
+        )
+
+
+@dataclass(frozen=True)
+class Fence:
+    """A synchronisation point between the producer of a frame and the library. Passed by pointer; embedded by value in VmafxFrameImport, so it never grows. A fence the library returns (vmafx_fence_create(), vmafx_frame_release_fence()) belongs to the caller, who releases it once with vmafx_fence_destroy(). Initialise with VMAFX_FENCE_INIT."""
+
+    kind: int
+    handle: int
+    value: int
+    fd: int
+    reserved: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxFence) -> Fence:
+        return cls(
+            kind=raw.kind,
+            handle=raw.handle,
+            value=raw.value,
+            fd=raw.fd,
+            reserved=raw.reserved,
+        )
+
+    def to_c(self) -> VmafxFence:
+        raw = VmafxFence()
         raw.struct_size = ctypes.sizeof(raw)
-        raw.backend = self.backend
-        raw.index = self.index
+        raw.kind = self.kind
+        raw.handle = self.handle
+        raw.value = self.value
+        raw.fd = self.fd
+        raw.reserved = self.reserved
         return raw
+
+
+@dataclass(frozen=True)
+class ImportPlane:
+    """Where one plane of an imported frame lives. Embedded by value in VmafxFrameImport: never grows. Fields a memory kind does not use are ignored."""
+
+    handle: int
+    fd: int
+    plane_index: int
+    offset: int
+    pitch: int
+    modifier: int
+    size: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxImportPlane) -> ImportPlane:
+        return cls(
+            handle=raw.handle,
+            fd=raw.fd,
+            plane_index=raw.plane_index,
+            offset=raw.offset,
+            pitch=raw.pitch,
+            modifier=raw.modifier,
+            size=raw.size,
+        )
+
+    def to_c(self) -> VmafxImportPlane:
+        raw = VmafxImportPlane()
+        raw.handle = self.handle
+        raw.fd = self.fd
+        raw.plane_index = self.plane_index
+        raw.offset = self.offset
+        raw.pitch = self.pitch
+        raw.modifier = self.modifier
+        raw.size = self.size
+        return raw
+
+
+@dataclass(frozen=True)
+class FrameImport:
+    """A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT."""
+
+    memory: int
+    pix_fmt: int
+    bpc: int
+    w: int
+    h: int
+    n_planes: int
+    plane: tuple[ImportPlane, ...]
+    acquire: Fence
+    flags: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxFrameImport) -> FrameImport:
+        return cls(
+            memory=raw.memory,
+            pix_fmt=raw.pix_fmt,
+            bpc=raw.bpc,
+            w=raw.w,
+            h=raw.h,
+            n_planes=raw.n_planes,
+            plane=tuple(ImportPlane.from_c(x) for x in raw.plane),
+            acquire=Fence.from_c(raw.acquire),
+            flags=raw.flags,
+        )
 
 
 @dataclass(frozen=True)
