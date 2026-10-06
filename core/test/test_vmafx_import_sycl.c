@@ -551,6 +551,39 @@ static char *test_dmabuf_linear(void)
     return NULL;
 }
 
+/* An import closes only the descriptors it opened. Level Zero's dma-buf
+ * import closes the descriptor it is given on some drivers (measured on the
+ * A380 with compute runtime 26.35); a library that also closed it later
+ * closed whatever descriptor had taken the number in between. A pipe opened
+ * after the import takes the lowest free number, which is the number such a
+ * driver freed; it must survive the frame's release, as must the caller's
+ * dma-buf descriptor. */
+static char *test_import_closes_only_its_own(void)
+{
+    LinearBuf b;
+    memset(&b, 0, sizeof(b));
+    b.fd = -1;
+    mu_assert("dma-buf", linear_frame(&clip8, clip8.ref, VMAFX_PIXEL_FORMAT_NV12, &b));
+    const VmafxFrameImport imp =
+        dmabuf_desc(&clip8, VMAFX_PIXEL_FORMAT_NV12, &b.planes, b.fd, b.size);
+    VmafxFrame *frame = NULL;
+    const bool imported = vmafx_frame_import(gpu.device, &imp, &frame, NULL) == VMAFX_OK;
+    int sentinel[2] = {-1, -1};
+    const bool piped = pipe(sentinel) == 0;
+    vmafx_frame_unref(frame);
+    const bool kept = piped && fcntl(sentinel[0], F_GETFD) >= 0 && fcntl(sentinel[1], F_GETFD) >= 0;
+    const bool caller_kept = fcntl(b.fd, F_GETFD) >= 0;
+    if (piped) {
+        (void)close(sentinel[0]);
+        (void)close(sentinel[1]);
+    }
+    linear_free(&b);
+    mu_assert("imported", imported);
+    mu_assert("a descriptor opened after the import survives the release", kept);
+    mu_assert("the caller's dma-buf descriptor stays open", caller_kept);
+    return NULL;
+}
+
 /* A sync_file acquire fence the producer already signalled (the dma-buf's
  * own fences exported, which a finished writer leaves signalled) is passed;
  * vmafx_fence_wait() polls a sync_file too. The descriptor is borrowed: the
@@ -1195,6 +1228,7 @@ GUARDED(test_host_acquire_busy)
 GUARDED(test_usm_layouts)
 GUARDED(test_dmabuf_linear)
 GUARDED(test_sync_file_acquire)
+GUARDED(test_import_closes_only_its_own)
 GUARDED(test_dmabuf_tiled)
 GUARDED(test_dmabuf_stream)
 GUARDED(test_pool)
@@ -1213,14 +1247,23 @@ char *run_tests(void)
     vmafx_sycl_rt_test_omit_immediate(batched && batched[0] == '1');
     have_gpu = vs_open_gpu(&gpu, false) && clip_make(&clip8, 8u) && clip_make(&clip10, 10u);
     static const MuTest tests[] = {
-        MU_TEST(test_device_info_g),       MU_TEST(test_device_create_refusals_g),
-        MU_TEST(test_device_external_g),   MU_TEST(test_context_device_g),
-        MU_TEST(test_import_refusals_g),   MU_TEST(test_host_acquire_busy_g),
-        MU_TEST(test_usm_layouts_g),       MU_TEST(test_dmabuf_linear_g),
-        MU_TEST(test_sync_file_acquire_g), MU_TEST(test_dmabuf_tiled_g),
-        MU_TEST(test_dmabuf_stream_g),     MU_TEST(test_pool_g),
-        MU_TEST(test_admission_g),         MU_TEST(test_one_import_two_contexts_g),
-        MU_TEST(test_host_copy_counter_g), MU_TEST(test_reads_recorded_g),
+        MU_TEST(test_device_info_g),
+        MU_TEST(test_device_create_refusals_g),
+        MU_TEST(test_device_external_g),
+        MU_TEST(test_context_device_g),
+        MU_TEST(test_import_refusals_g),
+        MU_TEST(test_host_acquire_busy_g),
+        MU_TEST(test_usm_layouts_g),
+        MU_TEST(test_dmabuf_linear_g),
+        MU_TEST(test_sync_file_acquire_g),
+        MU_TEST(test_dmabuf_tiled_g),
+        MU_TEST(test_import_closes_only_its_own_g),
+        MU_TEST(test_dmabuf_stream_g),
+        MU_TEST(test_pool_g),
+        MU_TEST(test_admission_g),
+        MU_TEST(test_one_import_two_contexts_g),
+        MU_TEST(test_host_copy_counter_g),
+        MU_TEST(test_reads_recorded_g),
     };
     char *const msg = mu_run_table(tests, MU_TABLE_LEN(tests));
     clip_free(&clip8);

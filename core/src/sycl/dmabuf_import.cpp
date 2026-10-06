@@ -56,6 +56,10 @@
 #include <cassert>
 #include <cerrno>
 #include <cinttypes>
+
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #include <cstdio>
 #include <cstring>
 
@@ -81,11 +85,44 @@
 /* DMA-BUF → Level Zero → SYCL device pointer                         */
 /* ------------------------------------------------------------------ */
 
+namespace
+{
+
+/* Level Zero's dma-buf import closes the descriptor it is given on some
+ * drivers (compute runtime 26.35 on an Arc A380, measured) and keeps it open
+ * on others; the specification does not say. The caller's descriptor stays
+ * the caller's: the driver gets a private duplicate taken from a high floor,
+ * which this file closes afterwards unless the driver did. The floor makes
+ * that check safe: a descriptor opened meanwhile by another thread takes the
+ * lowest free number, never one above the floor while lower ones are free. */
+int driver_fd(int fd)
+{
+    int floor = 512;
+    struct rlimit lim = {};
+    if (getrlimit(RLIMIT_NOFILE, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY &&
+        lim.rlim_cur / 2u < (rlim_t)floor) {
+        floor = (int)(lim.rlim_cur / 2u);
+    }
+    return fcntl(fd, F_DUPFD_CLOEXEC, floor);
+}
+
+void driver_fd_done(int fd)
+{
+    if (fcntl(fd, F_GETFD) >= 0) {
+        (void)close(fd);
+    }
+}
+
+} // namespace
+
 extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t size, void **ptr)
 {
     if (!queue_ptr || fd < 0 || !size || !ptr)
         return -EINVAL;
     *ptr = nullptr;
+    int own = driver_fd(fd);
+    if (own < 0)
+        return -errno;
 
     try {
         const auto *q = static_cast<const sycl::queue *>(queue_ptr);
@@ -104,7 +141,7 @@ extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t siz
             .stype = ZE_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMPORT_FD,
             .pNext = nullptr,
             .flags = ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF,
-            .fd = fd,
+            .fd = own,
         };
         const ze_device_mem_alloc_desc_t alloc_desc = {
             .stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,
@@ -116,6 +153,8 @@ extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t siz
         void *ze_ptr = nullptr;
         const ze_result_t res =
             zeMemAllocDevice(ze_ctx, &alloc_desc, size, 0 /* alignment */, ze_dev, &ze_ptr);
+        driver_fd_done(own);
+        own = -1;
         if (res != ZE_RESULT_SUCCESS) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "Level Zero DMA-BUF import failed: 0x%x\n", res);
             return -EIO;
@@ -125,9 +164,13 @@ extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t siz
         return 0;
 
     } catch (const sycl::exception &e) {
+        if (own >= 0)
+            driver_fd_done(own);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL DMA-BUF import exception: %s\n", e.what());
         return -EIO;
     } catch (const std::exception &e) {
+        if (own >= 0)
+            driver_fd_done(own);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "DMA-BUF import error: %s\n", e.what());
         return -EIO;
     }
