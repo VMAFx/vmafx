@@ -83,11 +83,9 @@ for input streams only, so the decoder behind `-dec` returns system memory.
 
 ## 3. Open items
 
-- The filter's SYCL, HIP and Metal import slots refuse by name. The SYCL and
-  HIP device lanes are now in `rc4/integration`; filling the two slots (DRM
-  PRIME and VAAPI frames through `hwmap`) and their end-to-end tests on the
-  A380 and the gfx1036 is the next WP9 step. `libvmaf_sycl` and
-  `libvmaf_metal` stay for QSV and VideoToolbox frames until then.
+- The SYCL and HIP slots import DRM PRIME frames (VAAPI frames through
+  `hwmap`); QSV frames and the Metal slot (VideoToolbox) still refuse by name,
+  so `libvmaf_sycl` and `libvmaf_metal` stay for those frames until then.
 - VideoToolbox frames are verified through the tester bundle; no macOS device
   run is part of this measurement.
 - `vmafx_pre` refuses the shipped `learned_filter_v1` model: its ONNX input is

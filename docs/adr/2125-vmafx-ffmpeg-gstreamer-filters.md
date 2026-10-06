@@ -24,8 +24,9 @@ and how an encoder's output reaches the filter as device frames in one command
    frames on the CPU (or on the device `backend=` names, which uploads them)
    and imports device frames without a copy on their device. A table of
    backend slots (`ffmpeg-patches/src/vf_vmafx.c`) maps each hardware pixel
-   format to an import; CUDA is filled, the SYCL, HIP and Metal slots refuse
-   by name until the filter imports their frames. Every hardware format is in
+   format to an import: CUDA frames on CUDA, DRM PRIME frames on SYCL (Intel)
+   or HIP (AMD) as dma-bufs; the Metal slot refuses by name until the filter
+   imports VideoToolbox frames. Every hardware format is in
    the format list, so negotiation never inserts a scale: a frame type
    without an import is refused naming it, or downloaded with `import=host`.
 2. **Host frames live on the CPU device.** Software frames are wrapped (or,
@@ -77,8 +78,7 @@ and how an encoder's output reaches the filter as device frames in one command
   their cause; #2138 runs as one command with no host copy.
 - **Negative**: the fork carries patch `0024` across FFmpeg releases; users of
   fixed-size pools must size them (`-extra_hw_frames`).
-- **Neutral / follow-ups**: fill the SYCL and HIP import slots now that their
-  lanes are in `rc4/integration`; Metal through the tester bundle; retire the
+- **Neutral / follow-ups**: QSV frames on SYCL; Metal through the tester bundle; retire the
   `libvmaf*` filters (WP10); `learned_filter_v1` needs a `[1,1,H,W]` export
   before `vmafx_pre` or `vmaf_pre` can run it.
 

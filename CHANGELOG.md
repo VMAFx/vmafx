@@ -725,9 +725,11 @@
   one or several named models plus extra features in one pass, pools over
   `n_stats` windows, attaches per-frame scores as `lavfi.vmafx.<model>`
   metadata, embeds the provenance record, and follows its frames to their
-  device: CUDA frames are imported without a copy, software frames score on the
-  CPU, and a frame it cannot import fails the graph naming the backend and the
-  extractor instead of passing unscored. `vmafx_tune` (patch `0021`) and
+  device: CUDA frames are imported without a copy on CUDA, VAAPI frames mapped
+  to DRM PRIME on SYCL (Intel) or HIP (AMD), the 4:2:2 / 4:4:4 semi-planar,
+  packed and MSB-aligned layouts are taken as well, software frames score on
+  the CPU, and a frame it cannot import fails the graph naming the backend and
+  the extractor instead of passing unscored. `vmafx_tune` (patch `0021`) and
   `vmafx_pre` (patch `0022`) are the VMAFx names of `libvmaf_tune` and
   `vmaf_pre` and give the same results (`vmafx_tune` defaults to the library's
   default model); `-vmafx-profile` (patch `0023`) is the VMAFx name of

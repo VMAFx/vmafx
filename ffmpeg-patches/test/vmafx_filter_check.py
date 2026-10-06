@@ -494,10 +494,93 @@ def cmd_pool(args: argparse.Namespace) -> int:
     return 0 if refused and named and not bad and total else 1
 
 
-def e2e_command(args: argparse.Namespace, tmp: Path, pair: Pair) -> list[str]:
-    """Encode with NVENC, decode the encoder's output with NVDEC in a loopback
-    decoder (CUDA frames), score them against the uploaded reference, write
-    the decoded frames for the file run (#2138)."""
+@dataclass(frozen=True)
+class Vendor:
+    """How one GPU vendor encodes, decodes in a loopback decoder and hands the
+    frames to vmafx; `backend` is the CLI backend of the file run."""
+
+    name: str
+    backend: str
+    devices: tuple[str, ...]
+    encode: tuple[str, ...]
+    hwaccel: tuple[str, ...]
+    ref_chain: str  # the reference's way to the device
+    dist_chain: str  # the decoded frames' way to the filter
+    raw_chain: str  # the decoded frames' way to the raw file
+    driver: str = ""  # LIBVA_DRIVER_NAME
+
+
+def vendor(args: argparse.Namespace) -> Vendor:
+    node = args.render_node
+    drm = (f"drm=dr:{node}", "vaapi=va@dr")
+    vaapi = ("-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi")
+    to_drm = "hwmap=derive_device=drm,format=drm_prime"
+    profiles = {
+        "nvidia": Vendor(
+            "nvenc->nvdec->vmafx",
+            "cuda",
+            ("cuda=cu:0",),
+            ("-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "32"),
+            ("-hwaccel", "cuda", "-hwaccel_output_format", "cuda"),
+            "hwupload",
+            "null",
+            "hwdownload,format=nv12,",
+        ),
+        "intel": Vendor(
+            "vaapi->vaapi->drm->vmafx",
+            "sycl",
+            drm,
+            ("-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "32"),
+            vaapi,
+            f"format=nv12,hwupload,{to_drm}",
+            to_drm,
+            "hwdownload,format=nv12,",
+            "iHD",
+        ),
+        "amd": Vendor(
+            "vaapi->vaapi->drm->vmafx",
+            "hip",
+            drm,
+            ("-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "32"),
+            vaapi,
+            f"format=nv12,hwupload,{to_drm}",
+            to_drm,
+            "hwdownload,format=nv12,",
+            "radeonsi",
+        ),
+    }
+    return profiles[args.vendor]
+
+
+# --e2e-format: (planar file format, CLI -p, CLI -b, device layout, encoder args).
+# NVDEC returns 4:4:4 at 10 and 12 bits as MSB-aligned planes
+# (yuv444p10msb / yuv444p12msb). NVENC on an RTX 4090 encodes 4:4:4 at 10 bits
+# only (12-bit input comes back as a 10-bit stream, which the filter refuses
+# against a 12-bit reference by name); the 12-bit MSB layout is covered by the
+# `layouts` check on CUDA uploads.
+E2E_FORMATS = {
+    "420p8": ("yuv420p", "420", 8, "nv12", ()),
+    "444p10": (
+        "yuv444p10le", "444", 10, "yuv444p10msble",
+        ("-c:v", "hevc_nvenc", "-profile:v", "rext", "-rc", "constqp", "-qp", "32"),
+    ),
+}  # fmt: skip
+
+
+def e2e_source(args: argparse.Namespace, tmp: Path, pair: Pair) -> Path:
+    """The reference in the planar format of --e2e-format."""
+    planar = E2E_FORMATS[args.e2e_format][0]
+    if planar == "yuv420p":
+        return fixture(args, pair.ref)
+    out = tmp / f"ref.{planar}"
+    planar_file(args, fixture(args, pair.ref), out, planar)
+    return out
+
+
+def e2e_command(args: argparse.Namespace, v: Vendor, tmp: Path, pair: Pair) -> list[str]:
+    """Encode on the GPU, decode the encoder's output on the GPU in a loopback
+    decoder, score it against the reference on the device, and write the
+    decoded frames for the file run (#2138)."""
     report, stats, decoded = tmp / "filter.json", tmp / "stats.ndjson", tmp / "decoded.yuv"
     options = (
         f"log_path={escape(report)}:score_fmt=%.17g:n_stats_frames=10:pool=min+mean:"
@@ -506,19 +589,28 @@ def e2e_command(args: argparse.Namespace, tmp: Path, pair: Pair) -> list[str]:
     # Without -hwaccel before -dec the decoder returns system memory: the
     # reference stays in it too and the filter scores host frames.
     hw = not args.no_loopback_hwaccel
+    planar, _, _, layout, encode = E2E_FORMATS[args.e2e_format]
+    ref_chain = v.ref_chain if planar == "yuv420p" else f"format={layout},hwupload"
+    raw_chain = v.raw_chain.replace("format=nv12", f"format={layout}")
     graph = (
-        f"[0:v]{'hwupload' if hw else 'null'}[r];[dec:0]split=2[d][dd];[d][r]vmafx={options}[o];"
-        f"[dd]{'hwdownload,format=nv12,' if hw else ''}format=yuv420p[raw]"
+        f"[0:v]{ref_chain if hw else 'null'}[r];[dec:0]split=2[dv][dd];"
+        f"[dv]{v.dist_chain if hw else 'null'}[d];[d][r]vmafx={options}[o];"
+        f"[dd]{raw_chain if hw else ''}format={planar}[raw]"
     )
     size = f"{pair.width}x{pair.height}"
     cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info"]
-    cmd += ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
-    cmd += ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", size, "-r", "24"]
-    cmd += ["-i", str(fixture(args, pair.ref))]
-    cmd += ["-map", "0:v", "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "32"]
-    cmd += ["-f", "h264", str(tmp / "encoded.h264")]
-    if not args.no_loopback_hwaccel:
-        cmd += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+    for device in v.devices:
+        cmd += ["-init_hw_device", device]
+    cmd += ["-filter_hw_device", v.devices[-1].split("=", 1)[1].split(":")[0].split("@")[0]]
+    cmd += ["-f", "rawvideo", "-pix_fmt", planar, "-s", size, "-r", "24"]
+    cmd += ["-i", str(e2e_source(args, tmp, pair))]
+    if encode:
+        cmd += ["-map", "0:v", "-vf", f"format={layout}", *encode, "-f", "hevc"]
+        cmd += [str(tmp / "encoded.hevc")]
+    else:
+        cmd += ["-map", "0:v", *v.encode, "-f", "h264", str(tmp / "encoded.h264")]
+    if hw:
+        cmd += list(v.hwaccel)
     cmd += ["-dec", "0:0", "-filter_complex", graph]
     # passthrough: a raw file must hold the decoded frames, none duplicated
     cmd += ["-map", "[o]", "-f", "null", "-", "-map", "[raw]", "-fps_mode", "passthrough"]
@@ -526,40 +618,55 @@ def e2e_command(args: argparse.Namespace, tmp: Path, pair: Pair) -> list[str]:
     return cmd
 
 
-def e2e_file_report(args: argparse.Namespace, tmp: Path, pair: Pair) -> dict:
-    decoded = Pair(pair.name, pair.ref, str(tmp / "decoded.yuv"), pair.width, pair.height, 0)
+def e2e_file_report(args: argparse.Namespace, v: Vendor, tmp: Path, pair: Pair) -> dict:
     out = tmp / "cli.json"
-    cmd = [args.vmaf, "-r", str(fixture(args, pair.ref)), "-d", decoded.dist]
-    cmd += ["-w", str(pair.width), "-h", str(pair.height), "-p", "420", "-b", "8"]
-    cmd += ["--precision", "max", "--json", "-o", str(out), "-q", "--backend", "cuda"]
-    run(cmd, environment(args))
+    _, sub, bpc, _, _ = E2E_FORMATS[args.e2e_format]
+    cmd = [args.vmaf, "-r", str(e2e_source(args, tmp, pair)), "-d", str(tmp / "decoded.yuv")]
+    cmd += ["-w", str(pair.width), "-h", str(pair.height), "-p", sub, "-b", str(bpc)]
+    cmd += ["--precision", "max", "--json", "-o", str(out), "-q", "--backend", v.backend]
+    run(cmd, e2e_environment(args, v))
     return json.loads(out.read_text(encoding="utf-8"))
 
 
+def e2e_environment(args: argparse.Namespace, v: Vendor) -> dict[str, str]:
+    env = environment(args)
+    if v.driver:
+        env["LIBVA_DRIVER_NAME"] = v.driver
+    return env
+
+
 def cmd_e2e(args: argparse.Namespace) -> int:
-    """#2138 on CUDA: NVENC -> loopback NVDEC -> vmafx, against the same frames from files."""
+    """#2138: GPU encode -> loopback GPU decode -> vmafx on the device, against
+    the same frames scored from files by the CLI on the same backend."""
     pair = PAIRS["golden"]
     if not fixture(args, pair.ref).is_file():
         return SKIP
+    v = vendor(args)
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = Path(tmp_name)
-        result = run(e2e_command(args, tmp, pair), environment(args))
+        result = run(e2e_command(args, v, tmp, pair), e2e_environment(args, v))
         paths = [x for x in result.stderr.splitlines() if "vmafx frames:" in x]
         filt = json.loads((tmp / "filter.json").read_text(encoding="utf-8"))
-        cli = e2e_file_report(args, tmp, pair)
+        cli = e2e_file_report(args, v, tmp, pair)
         lines = [json.loads(x) for x in (tmp / "stats.ndjson").read_text().splitlines()]
     total, same, worst, bad = compare(cli, filt)
     checked, wbad = check_windows(lines, cli["frames"], "vmaf")
     path = paths[-1].split("vmafx frames:")[-1].strip() if paths else "(no line)"
-    on_device = f"{len(cli['frames'])} imported on the device, 0 host, 0 downloaded" in path
-    print(f"frame paths: {path}")
+    frames = len(cli["frames"])
+    # both inputs count: the decoded frames and the reference
+    expect = (
+        f"{2 * frames} imported on the device, 0 host, 0 downloaded"
+        if not args.no_loopback_hwaccel
+        else f"0 imported on the device, {2 * frames} host, 0 downloaded"
+    )
+    print(f"frame paths: {path} (expected: {expect})")
     print(
-        f"| e2e nvenc->nvdec->vmafx | cuda | {len(cli['frames'])} | {total} | {same} | {worst:g} |"
+        f"| e2e {v.name} {args.e2e_format} | {v.backend} | {frames} | {total} | {same} | {worst:g} |"
     )
     print(f"windows: {len(lines)}, {checked} pooled values equal the file run ({len(wbad)} differ)")
     for item in (bad + wbad)[:5]:
         print(f"MISMATCH {item}")
-    return 0 if on_device and not bad and not wbad and total else 1
+    return 0 if expect == path and not bad and not wbad and total else 1
 
 
 def main() -> int:
@@ -583,6 +690,11 @@ def main() -> int:
         help="e2e without -hwaccel before -dec (the decoder then returns system memory)",
     )
     parser.add_argument("--vaapi-device", default="/dev/dri/renderD128", help="pool: a VAAPI node")
+    parser.add_argument(
+        "--vendor", default="nvidia", choices=("nvidia", "intel", "amd"), help="e2e"
+    )
+    parser.add_argument("--render-node", default="/dev/dri/renderD128", help="e2e: the GPU's node")
+    parser.add_argument("--e2e-format", default="420p8", choices=("420p8", "444p10"))
     args = parser.parse_args()
     return {
         "parity": cmd_parity,

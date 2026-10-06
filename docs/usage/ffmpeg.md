@@ -307,26 +307,58 @@ filter, or read them from the frames in a library caller.
 
 `backend=auto` follows the frames. Software frames score on the CPU. CUDA
 frames score on CUDA and are imported without a copy, ordered by CUDA event
-fences. `backend=cuda` with software frames makes the CUDA context upload
-them; the result equals `vmaf --backend cuda` (`parity --backend cuda-host`).
+fences. DRM PRIME frames (VAAPI frames mapped with `hwmap`) are imported as
+dma-bufs without a copy on SYCL when the GPU is Intel's and on HIP when it is
+AMD's; the device import waits on the dma-buf's implicit fences, so the
+decoder's writes are complete before a kernel reads them. `backend=cuda` with
+software frames makes the CUDA context upload them; the result equals
+`vmaf --backend cuda` (`parity --backend cuda-host`).
 
 `import` refines the rule: `auto` imports hardware frames and uploads software
 frames, `device` refuses software frames, and `host` downloads hardware frames
 and scores them on the CPU, logging `vmafx: import=host: hardware frames are
 downloaded before scoring` once.
 
-Other hardware frame types (DRM PRIME, VAAPI, QSV, Vulkan, D3D11, D3D12,
+Other hardware frame types (VAAPI without `hwmap`, QSV, Vulkan, D3D11, D3D12,
 VideoToolbox) pass format negotiation and are then refused by name:
 
 ```text
 vmafx: backend auto cannot score vaapi frames; use import=host or hwdownload
 ```
 
-On the `sycl`, `hip` and `metal` slots the message says when the frames will
-be accepted, for example `vmafx: backend sycl: drm_prime frames are imported
-once its WP3 lane lands; use import=host or hwdownload`. The final
-`vmafx frames:` line counts how many frames were imported on the device,
-scored on the host or downloaded.
+The final `vmafx frames:` line counts how many frames were imported on the
+device, scored on the host or downloaded.
+
+VAAPI frames reach the filter as DRM PRIME through a DRM device the VAAPI
+device is derived from (`hwmap=derive_device=drm` cannot derive one from a
+plain VAAPI device):
+
+```bash
+ffmpeg -init_hw_device drm=dr:/dev/dri/renderD129 -init_hw_device vaapi=va@dr -filter_hw_device va \
+  -hwaccel vaapi -hwaccel_device va -hwaccel_output_format vaapi -i distorted.mp4 \
+  -hwaccel vaapi -hwaccel_device va -hwaccel_output_format vaapi -i reference.mp4 \
+  -filter_complex "[0:v]hwmap=derive_device=drm,format=drm_prime[d]; \
+                   [1:v]hwmap=derive_device=drm,format=drm_prime[r]; \
+                   [d][r]vmafx" -f null -
+```
+
+The `format=drm_prime` after each `hwmap` matters: without it `hwmap` passes
+the VAAPI frames on, which `vmafx` refuses by name.
+
+### Layouts
+
+Besides planar YUV and NV12 / P010 / P016, the filter takes the 4:2:2 and
+4:4:4 layouts the library imports
+([ADR-2133](../adr/2133-vmafx-import-422-444-formats.md)), as software frames
+and as device frames: NV16, P210, P216, NV24, P410, P416, Y210, Y212, YUYV422,
+XV30, XV36, VUYX, and the MSB-aligned `yuv444p10msb` / `yuv444p12msb` in
+which NVDEC returns 4:4:4 at 10 and 12 bits. Each scores as its planar
+equivalent; the `layouts` check converts the golden pair to every one of them
+and compares with the CLI on the planar file (all identical on the CPU and on
+CUDA). A format whose samples are shifted, interleaved or packed in a way the
+library has no layout for is refused by name, for example P212, the form
+`hwupload` gives Y212 on CUDA: `vmafx: backend cuda: frames of layout p212le
+cannot be scored`.
 
 ### Frame pools
 
@@ -461,17 +493,24 @@ reads the report and encodes with it; `-vmaf-profile` stays until the
   decision Q-047).
 - `target_width`, `target_height` and `target_scaling` are reserved until RC5
   (device-targeted scoring) and the filter refuses them when set.
-- The filter imports CUDA frames only. SYCL, HIP and Metal device frames
-  (QSV, DRM PRIME, VideoToolbox) are refused by name until the filter's import
-  slots for them are filled; `import=host` or `hwdownload` scores them on
-  the CPU.
+- The filter imports CUDA frames and DRM PRIME frames (on SYCL and HIP). QSV
+  and VideoToolbox frames are refused by name until the filter's import slots
+  for them are filled; `import=host` or `hwdownload` scores them on the CPU.
 - `libvmafx` creates devices of the backends it was built with: the CPU, and
   CUDA, SYCL or HIP. `backend=metal`, or a backend the library was built
   without, fails at configuration and names the backend.
-- The two inputs must match in size and in scored layout. NV12 scores as
-  YUV420P and P010 as 10-bit 4:2:0 (`scored_layout()` in
+- The two inputs must match in size and in scored layout. Every layout scores
+  as its planar equivalent (`scored_layout()` in
   `ffmpeg-patches/src/vf_vmafx.c`), so a decoder's NV12 frames and an uploaded
   YUV420P reference score together; other mixes are refused.
+- NVENC on an RTX 4090 encodes 4:4:4 at 10 bits only, so the 12-bit 4:4:4
+  decode path is checked through uploads (`layouts`), not through an encode.
+- AMD VAAPI surfaces are tiled, and the HIP device reads linear dma-bufs only:
+  on an AMD GPU the DRM PRIME import is refused by name (naming the plane's
+  `modifier`). Give `vmafx` the VAAPI frames themselves (no `hwmap`) with
+  `import=host`: the VAAPI download de-tiles them (golden pair: `76.667831`,
+  the CLI's value). FFmpeg refuses to download a tiled DRM PRIME mapping
+  (`T-HIP-VAAPI-TILED-SURFACES-2026-10-07` in [state.md](../state.md)).
 - `vmafx_pre` refuses the shipped `learned_filter_v1` model: its ONNX input
   is `[batch,1,224,224]` and the pre-filter path takes a static `[1,1,H,W]`
   model (state row `T-VMAFX-PRE-LEARNED-FILTER-V1-REFUSED-2026-10-06` in
@@ -492,7 +531,8 @@ missing.
 | `refusal` | A CPU-only extractor on CUDA frames fails the graph naming the backend, input and extractor, and no score line follows. | CUDA |
 | `pool` | Both inputs in fixed VAAPI pools: a pool one frame short is refused by name, a pool of exactly `N` frames scores as the CLI. | VAAPI device |
 | `legacy` | `vmafx_pre` writes the bytes of `vmaf_pre`, and `vmafx_tune` logs the recommendation of `libvmaf_tune`. | FFmpeg built with `--enable-libvmaf` and `--enable-libvmafx` |
-| `e2e` | The encode-and-score command above equals the same frames scored from files. | NVENC and NVDEC, `--enable-libvmafx` |
+| `layouts` | Every 4:2:2 / 4:4:4 layout scores as the CLI scores the planar file it was converted from; `--backend cuda` imports them on the device. | CPU; CUDA for the device form |
+| `e2e` | The encode-and-score command above equals the same frames scored from files by the CLI on the same backend, windows included, with every frame imported on the device. `--vendor nvidia` (NVENC, NVDEC, CUDA; `--e2e-format 444p10` for HEVC 4:4:4 10-bit), `--vendor intel` (VAAPI encode and decode, DRM PRIME, SYCL) or `--vendor amd` (the same on HIP) with `--render-node`. | The vendor's encoder and decoder, `--enable-libvmafx` (with `--enable-vaapi --enable-libdrm` for Intel and AMD) |
 
 ## `vmafx` filter option table
 
