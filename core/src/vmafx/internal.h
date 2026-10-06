@@ -60,6 +60,9 @@ typedef struct VmafxHostFence VmafxHostFence;
 /* The frame pool a frame returns to (frame_pool.c). */
 typedef struct VmafxFramePool VmafxFramePool;
 
+/* The windows of a context (window.c, RC4 WP4). */
+typedef struct VmafxWindowSet VmafxWindowSet;
+
 struct VmafxModel {
     VmafRef *refs;
     VmafModel *engine; /* this wrapper holds one owner of it (ADR-1755) */
@@ -152,6 +155,10 @@ struct VmafxContext {
     uint64_t last_index;             /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc;       /* every frame keeps the first frame's geometry */
     VmafxProvenanceState provenance; /* RC4 WP5 */
+    /* RC4 WP4 (window.c, ADR-2074): the windows, their completion thread
+     * and the engine lock; created with the context, never NULL after
+     * vmafx_context_create() succeeded. */
+    VmafxWindowSet *windows;
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink
@@ -194,6 +201,8 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_MCP_SSE_CONFIG ((uint32_t)sizeof(VmafxMcpSseConfig))                  /* 0.1.6 */
 #define VMAFX_MIN_MCP_UDS_CONFIG ((uint32_t)sizeof(VmafxMcpUdsConfig))                  /* 0.1.6 */
 #define VMAFX_MIN_MCP_STDIO_CONFIG ((uint32_t)sizeof(VmafxMcpStdioConfig))              /* 0.1.6 */
+#define VMAFX_MIN_WINDOW_REQUEST ((uint32_t)sizeof(VmafxWindowRequest))                 /* 0.1.8 */
+#define VMAFX_MIN_WINDOW_CLOCK_CONFIG ((uint32_t)sizeof(VmafxWindowClockConfig))        /* 0.1.8 */
 
 VmafxStatus vmafx_read_sized(const VmafxReport *report, void *local, uint32_t full, const void *in,
                              uint32_t min, const char *subject);
@@ -204,10 +213,13 @@ void vmafx_store_sized(void *out, const void *record, uint32_t full);
 
 /* ---- Engine access ------------------------------------------------------- */
 
-/* The engine context; the context's log sink is installed on this thread
- * until vmafx_engine_leave(previous). */
+/* Enter the engine of `context`: takes the context's engine lock (the
+ * window completion thread calls the engine too, ADR-2074) and installs the
+ * context's log sink on this thread until vmafx_engine_leave(context,
+ * previous). Never nested: an entered section calls no other VMAFx function
+ * that enters. */
 const VmafLogSink *vmafx_engine_enter(const VmafxContext *context);
-void vmafx_engine_leave(const VmafLogSink *previous);
+void vmafx_engine_leave(const VmafxContext *context, const VmafLogSink *previous);
 VmafContext *vmafx_context_engine(const VmafxContext *context);
 
 /* Make room for one more reference in `held`, so that the push after an
@@ -313,6 +325,64 @@ VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const Vma
                                             const char *memory);
 /* Subject names of the fields of plane `i` (handle, pitch, modifier, size). */
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
+
+/* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no
+ * limit): true when signalled. Polls a monotonic clock (fence.c). */
+bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns);
+
+/* ---- Pooling and windows (score.c, window.c; RC4 WP4, ADR-2074) ---------- */
+
+/* What a pooled score pools: `kind` is a VmafxWindowTarget and names the one
+ * of `model`, `set` and `feature` that is set. */
+typedef struct VmafxPoolTarget {
+    uint32_t kind;
+    const VmafxModel *model;
+    const VmafxModelSet *set;
+    const char *feature;
+} VmafxPoolTarget;
+
+/* A pooled score: `value` for a model or a feature, the four bootstrap values
+ * for a model set (`value` is its bagging score). */
+typedef struct VmafxPoolValue {
+    double value;
+    double stddev;
+    double ci95_lo;
+    double ci95_hi;
+} VmafxPoolValue;
+
+/* The one pooling implementation of vmafx_score_pooled(),
+ * vmafx_feature_score_pooled(), vmafx_score_pooled_model_set() and the window
+ * scores (HISS-19): `target` pooled with the VmafxPool `pool` over
+ * [first, last] (first <= last <= UINT_MAX) by the engine, on the calling
+ * thread with the context's log sink installed. Returns the engine's errno
+ * (-EAGAIN: a frame is not final). */
+int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint32_t pool,
+                      uint64_t first, uint64_t last, VmafxPoolValue *out);
+/* The model's, the model set's or the feature's name. */
+const char *vmafx_pool_target_name(const VmafxPoolTarget *target);
+
+/* The window set of a new context (its engine lock included), and the
+ * frame listener the engine's worker jobs call; false when it cannot be
+ * allocated. Called before the context first enters its engine. */
+bool vmafx_windows_init(VmafxContext *context);
+void vmafx_windows_frame_final(void *user);
+/* The context's engine lock (vmafx_engine_enter() / _leave()). */
+void vmafx_context_lock(const VmafxContext *context);
+void vmafx_context_unlock(const VmafxContext *context);
+
+/* Window hooks, called on the thread that feeds the context after the
+ * engine call: a frame `index` was submitted or a score of frame `index`
+ * imported; the context was flushed. Each wakes the completion thread. */
+void vmafx_windows_note_index(VmafxContext *context, uint64_t index);
+void vmafx_windows_note_flush(VmafxContext *context);
+/* vmafx_context_destroy(): pause stops the completion thread's engine work
+ * before the engine closes (resume undoes it when the close fails and the
+ * context stays valid, ADR-1336); close completes the open windows with
+ * VMAFX_E_INVALID, runs every callback, joins the thread and drops the set;
+ * free drops a set whose context never got an engine. */
+void vmafx_windows_pause(VmafxContext *context);
+void vmafx_windows_resume(VmafxContext *context);
+void vmafx_windows_close(VmafxContext *context);
 
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */
 

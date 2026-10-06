@@ -10,10 +10,10 @@ existing [`libvmaf.h` API](../index.md) keeps working on the same engine.
 
 This build carries the core of the API: contexts with their own log
 callback, options, models and model sets, devices, host frames, imported
-frames with fences and frame pools, submission and synchronous scores.
-Imports run on the CPU device in this build; the CUDA, SYCL, HIP and Metal
-imports, asynchronous window scores, the full provenance record and reports
-follow in later RC4 work.
+frames with fences and frame pools, submission, synchronous scores and
+[asynchronous window scores](windows.md). Imports run on the CPU device in
+this build; the CUDA, SYCL, HIP and Metal imports, the full provenance record
+and reports follow in later RC4 work.
 
 Every declaration, the Python binding and the
 [reference pages](reference.md) are generated from one definition,
@@ -34,7 +34,7 @@ included on its own and includes what its declarations need:
 | `vmafx/device.h` | `VmafxDevice`, `VmafxDeviceInfo`, enumeration and profiling |
 | `vmafx/frame.h` | Host frames, imported frames (`VmafxFrameImport`), fences (`VmafxFence`), frame pools |
 | `vmafx/model.h` | Models and model sets |
-| `vmafx/score.h` | Per-frame and pooled scores |
+| `vmafx/score.h` | Per-frame and pooled scores, window scores and the window clock |
 | `vmafx/provenance.h` | `VmafxProvenance`, `vmafx_context_provenance` |
 | `vmafx/report.h`, `dnn.h`, `mcp.h` | Nothing yet; later RC4 work fills them |
 | `vmafx/libvmaf_bridge.h` | Optional (not included by `vmafx.h`): the bridge to a `libvmaf.h` handle |
@@ -166,8 +166,10 @@ or `VMAFX_E_NOTSUP` naming the option the twin cannot honour
 ([ADR-1359](../../adr/1359-cli-feature-backend-twin.md)).
 `vmafx_context_frame_retention()` says how many earlier reference frames the
 context keeps after a submit (1, or 2 when an extractor reads frame n-2,
-[ADR-1478](../../adr/1478-motion-five-frame-window-port.md)), so a producer
-can size its frame pool.
+[ADR-1478](../../adr/1478-motion-five-frame-window-port.md)), and
+`vmafx_context_max_in_flight()` how many frames of each input it holds at most
+when a submit returns, worker threads included, so a producer can size its
+frame pool ([frames in flight](windows.md#frames-in-flight-and-backpressure)).
 
 ## Models
 
@@ -461,12 +463,12 @@ feature and model score of the Netflix golden pair, both checkerboards and a
 `libvmaf.h` call returns `-EAGAIN`: an answer, not a failure, so no error is
 created and the output struct is not written.
 
-A model set's per-frame call and its pooled call each predict the set's
-members and write their scores once per frame, so call one of them per frame
-range in a session; calling the pooled score after the per-frame score of a
-frame in it fails in `libvmaf.h` as well
-(`docs/state.md`, T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05; the fix,
-PR #2206, is in review).
+A model set's frame scores are predicted once and then read back, so its
+per-frame and pooled calls can be mixed in one session and repeated (PR #2206).
+
+[Window scores](windows.md) are the asynchronous form: ask for a pooled score
+over a range of frames before they are final, and poll, wait for or receive
+it when they are, with the same values bit for bit.
 
 ## Rules every call follows
 

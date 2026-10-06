@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.7"
+abi_version = "0.1.8"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -1141,7 +1141,7 @@ name = "vmafx_context_frame_retention"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "u32"
-doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL."
+doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads more frames stay in flight until their work finishes: vmafx_context_max_in_flight() gives the bound. 0 for NULL."
 params = [
   { name = "context", type = "VmafxContext", pass = "in_const" },
 ]
@@ -1922,6 +1922,249 @@ params = [
   { name = "recorded", type = "VmafxReportFile", pass = "in_const" },
   { name = "rerun", type = "VmafxReportFile", pass = "in_const", nullable = true },
   { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
+# Window scores (RC4 WP4, ADR-2074; design section 2.8, #2138, #2238).
+# Owned by WP4: every entry from here to the libvmaf_bridge.h functions.
+# Added in ABI 0.1.8 (node VMAFX_0.1, ADR-1897).
+
+[[enums]]
+name = "VmafxWindowTarget"
+header = "vmafx/score.h"
+since = "0.1"
+doc = "What a window pools. Added in ABI 0.1.8."
+values = [
+  { name = "VMAFX_WINDOW_TARGET_NONE", value = 0, doc = "Not set; refused by vmafx_window_submit()." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL", value = 1, doc = "The scores of `model`, as vmafx_score_pooled() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL_SET", value = 2, doc = "The bootstrap scores of `model_set`, as vmafx_score_pooled_model_set() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_FEATURE", value = 3, doc = "The scores of `feature`, as vmafx_feature_score_pooled() pools them." },
+]
+
+[[flags]]
+name = "VmafxPoolMask"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "A set of pooling methods: bit `1 << p` for each VmafxPool `p`. Bit 0 (VMAFX_POOL_NONE) is not a method. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_POOL_MASK_MIN", bit = 1, doc = "VMAFX_POOL_MIN." },
+  { name = "VMAFX_POOL_MASK_MAX", bit = 2, doc = "VMAFX_POOL_MAX." },
+  { name = "VMAFX_POOL_MASK_MEAN", bit = 3, doc = "VMAFX_POOL_MEAN." },
+  { name = "VMAFX_POOL_MASK_HARMONIC_MEAN", bit = 4, doc = "VMAFX_POOL_HARMONIC_MEAN." },
+  { name = "VMAFX_POOL_MASK_MEDIAN", bit = 5, doc = "VMAFX_POOL_MEDIAN." },
+  { name = "VMAFX_POOL_MASK_PERC5", bit = 6, doc = "VMAFX_POOL_PERC5." },
+  { name = "VMAFX_POOL_MASK_PERC10", bit = 7, doc = "VMAFX_POOL_PERC10." },
+  { name = "VMAFX_POOL_MASK_PERC20", bit = 8, doc = "VMAFX_POOL_PERC20." },
+]
+
+[[flags]]
+name = "VmafxWindowFlags"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "What is true of a window result or a window span. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_WINDOW_PARTIAL", bit = 0, doc = "The stream ended inside the window: a result pooled fewer frames than it asked for (the context was flushed before frame `last`); a span is the last window of the stream, cut off by vmafx_window_clock_finish()." },
+]
+
+[[handles]]
+name = "VmafxWindow"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_release"
+doc = "An asynchronous pooled score over a range of frames (vmafx_window_submit()). Owns its result until released. Added in ABI 0.1.8."
+
+[[handles]]
+name = "VmafxWindowClock"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_clock_destroy"
+doc = "Cuts a stream of frames into windows of `n_stats` seconds or `n_stats_frames` frames (#2138). Holds no context; one per stream. Added in ABI 0.1.8."
+
+[[callbacks]]
+name = "VmafxWindowCallback"
+header = "vmafx/score.h"
+returns = "void"
+since = "0.1"
+doc = "Called once when a window completes, on the context's callback thread (a library thread, never the caller's, apart from the completion thread so a slow callback holds up no window), in completion order. `result` is valid during the call; the same result stays readable with vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and vmafx_window_release() (also on its own window) and must not call any other function on the window's context: no vmafx_submit(), no vmafx_flush(). Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in" },
+  { name = "result", type = "VmafxWindowResult", pass = "in_const" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[structs]]
+name = "VmafxWindowRequest"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What to pool; the matching one of `model`, `model_set` and `feature` is set, the other two are ignored." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "Pooling methods, at least one." },
+  { name = "first", type = "u64", doc = "First frame index (inclusive)." },
+  { name = "last", type = "u64", doc = "Last frame index (inclusive), at most 4294967295 (the engine's frame index)." },
+  { name = "model", type = "VmafxModel", const = true, doc = "The model of a MODEL window; the window holds a reference until it is released." },
+  { name = "model_set", type = "VmafxModelSet", const = true, doc = "The model set of a MODEL_SET window; the window holds a reference until it is released." },
+  { name = "feature", type = "cstr", doc = "The feature of a FEATURE window, as vmafx_feature_score_pooled() names it (copied)." },
+  { name = "on_complete", type = "VmafxWindowCallback", doc = "Called once when the window completes; NULL: observe completion with vmafx_window_poll() or vmafx_window_wait()." },
+  { name = "user", type = "ptr", doc = "Passed to `on_complete`." },
+]
+
+[[structs]]
+name = "VmafxWindowResult"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(), vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first + n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "status", type = "status", doc = "VMAFX_OK when every requested method has its value; otherwise why the window has none, for example VMAFX_E_RANGE when no scored frame of the window was in the stream, VMAFX_E_NOTFOUND when its feature or a feature its model reads was never scored, VMAFX_E_INVALID when the context was destroyed first. The failure is also logged to the context." },
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL when the stream ended before frame `last`." },
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What the window pooled." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "The requested methods; `value[p]` is set for each bit `1 << p`." },
+  { name = "first", type = "u64", doc = "First frame index, as requested." },
+  { name = "last", type = "u64", doc = "Last frame index, as requested." },
+  { name = "n_frames", type = "u64", doc = "Frames pooled over: `last - first + 1`, fewer for a partial window." },
+  { name = "n_scored", type = "u64", doc = "Frames of those the context scored (every `n_subsample`-th index) and the values summarise." },
+  { name = "value", type = "f64", count = 9, doc = "Indexed by VmafxPool: the pooled score of each requested method (the bagging score for a model set); 0 elsewhere." },
+  { name = "stddev", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled standard deviation per method; 0 otherwise." },
+  { name = "ci95_lo", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled lower bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "ci95_hi", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled upper bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "name", type = "cstr", doc = "The model's name, the model set's name or the feature; lives as long as the window." },
+]
+
+[[structs]]
+name = "VmafxWindowClockConfig"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "n_stats", type = "f64", doc = "Window length in seconds, finite and above 0, rounded to whole nanoseconds (at least 1); 0: windows by frame count. Window `k` holds the frames whose presentation time lies in `[t0 + k * n_stats, t0 + (k + 1) * n_stats)`, `t0` the first frame's." },
+  { name = "n_stats_frames", type = "u64", doc = "Window length in frames; 0: windows by time. Window `k` holds the frames whose index lies in `[i0 + k * n_stats_frames, i0 + (k + 1) * n_stats_frames)`, `i0` the first frame's." },
+]
+
+[[structs]]
+name = "VmafxWindowSpan"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL for the last window of the stream when the stream ended inside it." },
+  { name = "window", type = "u64", doc = "Window number `k`. Windows without a frame (a gap in the stream) are skipped, so numbers can jump." },
+  { name = "first", type = "u64", doc = "Index of the window's first frame." },
+  { name = "last", type = "u64", doc = "Index of the window's last frame." },
+  { name = "n_frames", type = "u64", doc = "Frames the clock saw in the window." },
+  { name = "start_ns", type = "i64", doc = "Windows by time: the window's start, `t0 + k * n_stats`, in the stream's nanoseconds. Windows by frame count: the presentation time of its first frame." },
+  { name = "end_ns", type = "i64", doc = "Windows by time: the window's end, `t0 + (k + 1) * n_stats` (exclusive). Windows by frame count: the presentation time of its last frame." },
+]
+
+[[functions]]
+name = "vmafx_window_submit"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Ask for `request.target` pooled with every method of `request.pool_mask` over frames `first` to `last`, and return at once. The window completes when every scored frame of its range is final, or at vmafx_flush(), which completes it over the frames the stream had and flags it VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's scores one submit later; motion2 / motion3 of the integer motion extractors, and so every VMAF model, are final only at vmafx_flush() in this release. The context's completion thread (started by its first window) finds completion: the worker that finishes a frame, a submit, a flush, an import and this call wake it, so a window completes whether or not the feeding thread calls again; a window already final completes right after this call. At most 1024 windows of a context are open; one more is VMAFX_E_BUSY naming `context`. The caller holds the window until vmafx_window_release(). Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "request", type = "VmafxWindowRequest", pass = "in" },
+  { name = "out", type = "VmafxWindow", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_poll"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "VMAFX_OK and the result when the window has completed, VMAFX_PENDING (no error, `out` untouched) while it has not. Thread-safe: may run on any thread while the context is in use. A completed window's own failure is in `out.status`, not in the return value. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_wait"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "vmafx_window_poll() after waiting up to `timeout_ns` nanoseconds for the window to complete (UINT64_MAX: without a limit); VMAFX_PENDING, without an error, when it has not by then. Thread-safe, also on the thread that feeds the context: the completion thread completes the window. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "timeout_ns", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_release"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Release the caller's window, completed or not. An open window is cancelled: its callback never runs. A callback of the window running on the callback thread is waited for, unless this call is made from that callback. Thread-safe; NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_context_max_in_flight"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "The most frames of each input the context holds when vmafx_submit() returns, whatever the producer's rate: with `R` = vmafx_context_frame_retention() and `T` = n_threads, `R + 2 * T * (R + 1)`, plus 1 on a device backend. Without worker threads a submit scores its frame before it returns (`R`). With them a submit waits while `T` frames wait for a worker (backpressure), so at most `2 * T` frames are in flight, each holding itself and its `R` earlier reference frames; a device extractor holds its frame until the next submit collects it. A producer that recycles its frames (a texture ring, a frame pool) needs this many plus the frame it is filling. 0 for NULL. Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_create"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "A clock that cuts a stream into windows of `config.n_stats` seconds or `config.n_stats_frames` frames (#2138). Both set, neither set, or `n_stats` negative, not finite or below 1 ns is VMAFX_E_INVALID naming the field. Added in ABI 0.1.8."
+params = [
+  { name = "config", type = "VmafxWindowClockConfig", pass = "in" },
+  { name = "out", type = "VmafxWindowClock", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_frame"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Tell the clock frame `index` at presentation time `pts_ns`. When the frame lies past the open window, that window is complete: VMAFX_OK, its span in `out`, and the frame opens the next window. Otherwise VMAFX_PENDING (no error, `out` untouched). Indices increase strictly and times never decrease, else VMAFX_E_INVALID naming `index` or `pts_ns`. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "pts_ns", type = "i64", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_finish"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "End of stream: VMAFX_OK and the span of the open window, flagged VMAFX_WINDOW_PARTIAL unless it is a full window by frame count; VMAFX_PENDING (no error, `out` untouched) when no window is open. Afterwards the clock takes no more frames. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_destroy"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Free the clock. NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in", nullable = true },
 ]
 
 # ---------------------------------------------------------------------------

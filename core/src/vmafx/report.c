@@ -114,7 +114,7 @@ VmafxStatus vmafx_report_write(VmafxContext *context, const char *path, uint32_t
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err =
         vmaf_write_output_with_format(context->engine, path, engine_format(format), score_format);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_PATH, path,
                           "cannot write the report (%d)", err);

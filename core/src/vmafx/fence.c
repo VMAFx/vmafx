@@ -170,6 +170,26 @@ static void sleep_poll_interval(void)
 #endif
 }
 
+/* A timeout from which a wait has no limit: 2^62 ns, 146 years. Below it the
+ * round count `timeout_ns / VMAFX_FENCE_POLL_NS + 1` is far from overflow;
+ * from it on (UINT64_MAX, "without a limit", included) the wait checks no
+ * clock. icx 2026.0 at -O3 ran no round of the former single loop for a
+ * timeout of UINT64_MAX or UINT64_MAX - 1 (it unrolls the loop; gcc and
+ * clang do not; docs/state.md T-VMAFX-WAIT-FOREVER-ICX-ZERO-ROUNDS-2026-10-06),
+ * so the timed loop never sees such a timeout. */
+#define VMAFX_FENCE_WAIT_FOREVER_NS (UINT64_C(1) << 62)
+
+/* The time is up for a wait that started at `start` (never for a wait
+ * without a limit). */
+static bool wait_expired(uint64_t start, uint64_t timeout_ns)
+{
+    return timeout_ns < VMAFX_FENCE_WAIT_FOREVER_NS && vmafx_monotonic_ns() - start >= timeout_ns;
+}
+
+/* Each round sleeps at least VMAFX_FENCE_POLL_NS, so the round count is
+ * bounded by the timeout, or by UINT64_MAX rounds without a limit (HISS-02).
+ * The one timed wait of the library: host fences, the backend lanes' fences
+ * and vmafx_window_wait() (window.c, RC4 WP4) all poll through it. */
 int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t timeout_ns)
 {
     int state = done(arg);
@@ -177,9 +197,11 @@ int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t tim
         return state;
     }
     const uint64_t start = vmafx_monotonic_ns();
-    const uint64_t rounds = timeout_ns / VMAFX_FENCE_POLL_NS + 1u;
+    const uint64_t rounds = timeout_ns < VMAFX_FENCE_WAIT_FOREVER_NS ?
+                                timeout_ns / VMAFX_FENCE_POLL_NS + 1u :
+                                UINT64_MAX;
     for (uint64_t round = 0; round < rounds && state == 0; round++) {
-        if (vmafx_monotonic_ns() - start >= timeout_ns) {
+        if (wait_expired(start, timeout_ns)) {
             break;
         }
         sleep_poll_interval();
@@ -193,8 +215,7 @@ static int host_fence_done(const void *arg)
     return vmafx_host_fence_signalled(arg) ? 1 : 0;
 }
 
-/* Wait until `fence` is signalled or `timeout_ns` passed: true when signalled. */
-static bool host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
+bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
 {
     return vmafx_fence_poll(host_fence_done, fence, timeout_ns) == 1;
 }
@@ -320,7 +341,7 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
     assert(f.kind == VMAFX_FENCE_HOST);
     VmafxHostFence *host = NULL;
     status = vmafx_host_fence_of(&report, &f, "fence.handle", &host);
-    if (status != VMAFX_OK || host_fence_wait(host, timeout_ns)) {
+    if (status != VMAFX_OK || vmafx_host_fence_wait(host, timeout_ns)) {
         return status;
     }
     if (timeout_ns == 0u) {

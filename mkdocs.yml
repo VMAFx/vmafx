@@ -272,6 +272,7 @@ nav:
       - vmaftune.ladder: api/ladder.md
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
+      - VMAFx window scores: api/vmafx/windows.md
       - VMAFx API reference (generated): api/vmafx/reference.md
       - libvmaf migration table (generated): api/vmafx/compat.md
   - Metrics and models:

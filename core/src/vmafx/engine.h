@@ -74,6 +74,28 @@ int vmaf_engine_score_pooled_model_collection(VmafContext *vmaf,
                                               VmafModelCollectionScore *score, unsigned index_low,
                                               unsigned index_high);
 
+/* RC4 WP4 (ADR-2074): whether a frame's score is final, without waiting for
+ * work in flight (no fence) and without a log line. 0 when final; -EAGAIN when
+ * an input is not written yet; -EINVAL when the feature or an input has no
+ * score at `index` in the collector yet; another negative errno on failure.
+ * The model and model-set forms predict the frame when its inputs are
+ * written, as the first synchronous read of it would, so a later read
+ * returns that stored score. */
+int vmaf_engine_feature_written(VmafContext *vmaf, const char *feature_name, unsigned index);
+int vmaf_engine_try_score_at_index(VmafContext *vmaf, VmafModel *model, unsigned index);
+int vmaf_engine_try_score_at_index_model_collection(VmafContext *vmaf,
+                                                    VmafModelCollection *model_collection,
+                                                    unsigned index);
+
+/* The context's worker threads (0: none) and its subsampling (1: every
+ * frame is scored); 0 and 1 for NULL. */
+unsigned vmaf_engine_thread_count(const VmafContext *vmaf);
+/* The most pictures of each input the context holds when
+ * vmaf_engine_read_pictures() returns (vmafx_context_max_in_flight()); 0 for
+ * NULL. */
+unsigned vmaf_engine_max_in_flight(const VmafContext *vmaf);
+unsigned vmaf_engine_subsample(const VmafContext *vmaf);
+
 /* Earlier reference frames the context keeps after a frame was read: 1, or 2
  * once an extractor that reads frame n-2 is registered (ADR-1478); 0 for
  * NULL. */
@@ -89,6 +111,11 @@ bool vmaf_engine_is_flushed(const VmafContext *vmaf);
 /* The VMAFx context an engine context belongs to (NULL for NULL). */
 struct VmafxContext *vmaf_engine_api_owner(const VmafContext *vmaf);
 void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner);
+
+/* ADR-2074: `listener(user)` runs on a worker thread after each frame job
+ * (its features are in the collector). Set before the first frame is read;
+ * NULL turns it off. */
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user);
 
 /* Number of registered feature extractors. */
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);

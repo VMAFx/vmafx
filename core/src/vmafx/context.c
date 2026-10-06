@@ -100,12 +100,14 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context)
 
 const VmafLogSink *vmafx_engine_enter(const VmafxContext *context)
 {
+    vmafx_context_lock(context); /* RC4 WP4: the completion thread enters too */
     return vmaf_log_swap_thread_sink(vmafx_context_log_sink(context));
 }
 
-void vmafx_engine_leave(const VmafLogSink *previous)
+void vmafx_engine_leave(const VmafxContext *context, const VmafLogSink *previous)
 {
     (void)vmaf_log_swap_thread_sink(previous);
+    vmafx_context_unlock(context);
 }
 
 VmafContext *vmafx_context_engine(const VmafxContext *context)
@@ -204,7 +206,11 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
         return status;
     }
     VmafxContext *const context = new_context(&cfg);
-    if (!context) {
+    if (!context || !vmafx_windows_init(context)) {
+        if (context) {
+            vmafx_provenance_release(&context->provenance);
+        }
+        free(context);
         return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "cannot allocate a context");
     }
@@ -215,17 +221,20 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_init(&context->engine, engine_config(&cfg));
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         const VmafxReport own = VMAFX_REPORT(context, error);
         const VmafxStatus failed =
             VMAFX_FAIL(&own, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT, "engine",
                        "engine initialisation failed (%d)", err);
+        vmafx_windows_close(context);
         vmafx_provenance_release(&context->provenance);
         free(context);
         return failed;
     }
     vmaf_engine_set_api_owner(context->engine, context);
+    /* RC4 WP4: worker jobs wake the window completion thread (ADR-2074). */
+    vmaf_engine_set_frame_listener(context->engine, vmafx_windows_frame_final, context->windows);
     *out = context;
     return VMAFX_OK;
 }
@@ -238,13 +247,18 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
                           "no context");
     }
     assert(context->engine != NULL); /* a context exists only with its engine */
+    vmafx_windows_pause(context);    /* RC4 WP4: no window work during the close */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_close(context->engine);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
+        vmafx_windows_resume(context);
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "engine", "close failed (%d); the context stays valid for a retry", err);
     }
+    /* RC4 WP4: open windows complete with VMAFX_E_INVALID and every callback
+     * runs before the context goes; window handles stay the caller's. */
+    vmafx_windows_close(context);
     /* The engine released its collector's model owners; drop the context's
      * references (ADR-1755) only now, so a failed close keeps them. */
     release_held(context);
@@ -293,7 +307,7 @@ static int apply_option(VmafxContext *context, const char *key, int enabled, dou
     const int err = !strcmp(key, "perceptual_weight") ?
                         vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled) :
                         vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     return err;
 }
 
