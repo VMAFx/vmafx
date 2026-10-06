@@ -168,6 +168,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_use_feature(VmafxContext *context, const 
 /**
  * Register the extractors of every feature `model` reads and mount the model. The context takes a
  * reference to the model until it is destroyed (ADR-1755); the caller may release its own at once.
+ * A model whose name another model of the context already has is refused with VMAFX_E_INVALID
+ * naming it: its scores would be the other model's (a model set may share the name).
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model,
@@ -175,7 +177,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxMod
 
 /**
  * Register the extractors of every member of `set` and mount the members. The context takes a
- * reference to the set until it is destroyed.
+ * reference to the set until it is destroyed. A set whose name another set of the context already
+ * has is refused with VMAFX_E_INVALID naming it.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *set,
