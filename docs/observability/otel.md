@@ -86,9 +86,20 @@ them yet (`InitOTelMetrics` has no production caller); the Prometheus
 
 ## Grafana dashboard
 
-Import `deploy/grafana/vmafx-overview.json` into Grafana.  The dashboard
-requires a Prometheus data source configured to scrape `/metrics` on the
-controller (or via the OTel collector's Prometheus exporter).
+Import `deploy/grafana/vmafx-overview.json` into Grafana. The dashboard
+requires a Prometheus data source that scrapes `/metrics` on the controller
+(job and node panels) and on the server (latency panel). Every query names a
+series that `pkg/observability` registers: `vmafx_controller_jobs_pending`,
+`vmafx_controller_jobs_running`, `vmafx_controller_nodes_live`,
+`vmafx_controller_jobs_submitted_total` and
+`vmafx_server_score_duration_seconds_*`. The test
+`TestDashboardQueriesOnlyRegisteredMetrics` fails when a panel names a series
+that is not registered.
+
+The OTel-native instruments above (`vmafx.frames_per_second`,
+`vmafx.gpu_utilization`, `vmafx.jobs.in_flight`) have no producer yet, so the
+dashboard has no panel for them. A panel for each returns together with the
+code that records it.
 
 ## Cardinality budget
 
