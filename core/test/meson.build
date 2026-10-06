@@ -8133,6 +8133,16 @@ test('test_win32_pthread_shim_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# An internal C function named after a C library function becomes the same
+# assembler symbol as the macOS header's labelled declaration in a full-LTO
+# link, and every call of the library function branches to it
+# (T-DARWIN-LTO-STATIC-CLOSE-COLLISION-2026-10-06).
+test('test_libc_named_internal_functions',
+    import('python').find_installation(),
+    args : files('test_libc_named_internal_functions.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])

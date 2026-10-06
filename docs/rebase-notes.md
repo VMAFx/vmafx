@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## CPU extractor close callbacks are `close_fex` (2026-10-06)
+
+`fix/darwin-lto-static-close`. Upstream-mirror files touched: `ciede.c`, `float_adm.c`, `float_moment.c`,
+`float_motion.c`, `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`, `integer_adm.c`,
+`integer_ssim.c`, `integer_vif.c`, `speed.c`, `ssimulacra2.c` (and the fork's `brisque.c`, `delta_e_itp.c`,
+`niqe.c`, `pu21.c`): the `static int close(VmafFeatureExtractor *fex)` callback and its `.close =` initialiser are
+named `close_fex`. A sync that brings an upstream change to one of these functions keeps the fork's name; a
+conflict on the definition line or the initialiser takes the fork's side. Upstream's name collides with the C
+library's labelled `close()` in a macOS full-LTO link. `core/test/test_libc_named_internal_functions.py` fails if
+a `static close` comes back. See `core/src/feature/AGENTS.d/libc-named-statics.md`.
+
 ## SYCL twin option cases proven on a device (2026-10-06)
 
 `test/rc3-sycl-twin-option-regression`. no rebase impact: ledger, changelog fragment and this note only; no source or test file changed.

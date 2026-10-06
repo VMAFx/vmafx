@@ -157,7 +157,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return 0;
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     MomentState *s = fex->priv;
     if (s->ref)
@@ -181,7 +181,7 @@ VmafFeatureExtractor vmaf_fex_float_moment = {
     .name = "float_moment",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(MomentState),
     .provided_features = provided_features,
     /* Two trivial reductions per frame: sum of pixels (1st

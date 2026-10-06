@@ -415,7 +415,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return emit_vif_scores(s, feature_collector, index, score, score_num, score_den, scores);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
     /* Byte-identical to the unwind init() uses, so it is the same function
@@ -447,7 +447,7 @@ VmafFeatureExtractor vmaf_fex_float_vif = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(VifState),
     .provided_features = provided_features,
 };

@@ -3688,6 +3688,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `test_cython_adm_dwt_band_decl_contract` keeps them in step with `adm.c`.
 
 
+- **macOS release builds no longer branch from `close()` into a feature
+  extractor.** macOS declares the C library's `close()` with an assembler
+  label, and in a full-LTO link (the release default) that symbol and the
+  CPU extractors' `static close()` callbacks became the same symbol: the
+  `close()` on the fdopen() failure paths of the output file, the CAMBI
+  heatmap file and the SVM model save called an extractor's close with a
+  file descriptor and crashed, and `test_adm_coverage` crashed on every macOS
+  leg. The callbacks are named `close_fex`, and
+  `test_libc_named_internal_functions` refuses a static C function named
+  after a C library function.
+
+
 - The `vmaf-dev-mcp` container starts again on an image built from the
   current `dev/Containerfile`. Its entrypoint ran `chmod 1777 /tmp` as the
   unprivileged `vmaf` user; uutils coreutils 0.10 in the updated Ubuntu
