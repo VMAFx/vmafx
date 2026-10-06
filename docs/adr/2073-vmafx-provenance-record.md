@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2073: The provenance record is canonical JSON with one digest over the configuration and the scores, the library writes it into every report, and `--verify-provenance` re-runs it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: maintainer (pending); RC4 work package 5
+- **Deciders**: maintainer (popups 2026-10-06); RC4 work package 5
 - **Tags**: api, rc4, provenance, cli, report, server, mcp, abi
 
 ## Context
@@ -131,6 +131,10 @@ and digest, written into every report by the library:
 
 ## References
 
+- `Q` (maintainer popup 2026-10-06, canonical form): "Proto JSON + RFC 8785 (Recommended)".
+- `Q` (maintainer popup 2026-10-06, what the digest covers): "Record + scores, not timing (Recommended)".
+- `Q` (maintainer popup 2026-10-06, CSV and SUB reports): "Opt-in sidecar (Recommended)".
+- `Q` (maintainer popup 2026-10-06, verification): "Re-run and compare (Recommended)".
 - `req` (work package brief, 2026-10-06): "provenance covers library + ABI version, build identity (commit, compiler, flags incl. the strict-FP policy), backend + device + driver, model id + SHA-256, options, input description and timing. It is deterministic and canonicalised, hashable for #2159. `--verify-provenance` re-runs or checks a report and fails on a planted mismatch."
 - Issue #2142 (provenance on every score), issue #2159 (signed assertion, 1.1), VMAFx/pelorus#81 (encode provenance record).
 - [ADR-1852](1852-vmafx-api-redesign.md) design section 2.9; [ADR-1897](1897-vmafx-abi-0x-numbering.md); [ADR-2044](2044-vmafx-option-groups-scoring-contract.md); [ADR-1359](1359-cli-feature-backend-twin.md); [ADR-1461](1461-strict-fp-every-translation-unit.md).
