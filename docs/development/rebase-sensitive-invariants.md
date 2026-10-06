@@ -155,7 +155,7 @@ backend within it.
   stream. The twins copy it there (`vmaf_hip_picture_upload()`, the shared
   frame), and the reading twin's stream and the null stream wait for the
   copies; `bind_hip_frame()` submits each import with `hipStreamQuery()`; a GL
-  import checks for a GLX context of the device's GPU before any HIP-GL call;
+  import exports GL textures as dma-bufs (`core/src/vmafx/egl_export.c`, [ADR-2132](../adr/2132-hip-gl-textures-through-egl-dmabuf.md); the runtime's HIP-GL interop is never called);
   a dma-buf is imported with its own size. Keep these when rebasing
   `core/src/hip/picture_hip.c`, `shared_frame.c` or the three twins that
   stage on the host. `core/test/test_vmafx_import_hip_contract.py`,
