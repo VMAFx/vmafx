@@ -90,12 +90,15 @@ VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
         return engine_failure(&report, err, VMAFX_SUBJECT_CONTEXT, "context",
                               "taking a preallocated frame (none preallocated?)");
     }
+    /* A pooled picture carries the pool's reference count and release hook. */
+    assert(pic.ref != NULL && pic.priv != NULL);
     VmafxFrame *frame = NULL;
     const VmafxStatus status = vmafx_frame_adopt_picture(&report, &pic, &frame);
     if (status != VMAFX_OK) {
         (void)vmaf_engine_picture_unref(&pic);
         return status;
     }
+    assert(frame != NULL);
     *out = frame;
     return VMAFX_OK;
 }

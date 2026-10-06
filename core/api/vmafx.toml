@@ -2914,6 +2914,7 @@ null_checks = ["vmaf", "model", "score"]
 context = "vmaf"
 out_struct = { var = "record", type = "VmafxScore" }
 args = ["context", "vmafx_model_from_libvmaf(model)", "(uint64_t)index", "&record", "&error"]
+post = ["record.index == (uint64_t)index"]
 store = "*score = record.value;"
 
 [[compat]]
@@ -2948,6 +2949,7 @@ null_checks = ["vmaf", "feature_name", "score"]
 context = "vmaf"
 out_struct = { var = "record", type = "VmafxScore" }
 args = ["context", "feature_name", "(uint64_t)index", "&record", "&error"]
+post = ["record.index == (uint64_t)index"]
 store = "*score = record.value;"
 
 [[compat]]

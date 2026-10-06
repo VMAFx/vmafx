@@ -23,6 +23,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 Scores = dict[int, dict[str, str]]
 Pooled = dict[str, dict[str, str]]
@@ -36,7 +37,7 @@ class ScoreFileError(Exception):
     """The file is missing, not JSON, or lacks the expected frame structure."""
 
 
-def _read_document(path: Path) -> dict:
+def _read_document(path: Path) -> dict[str, Any]:
     """Parse ``path`` with every number kept as its literal text."""
     try:
         text = path.read_text(encoding="utf-8")

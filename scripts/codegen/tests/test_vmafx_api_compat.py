@@ -106,6 +106,7 @@ class EmittedCompatTest(unittest.TestCase):
     def test_generated_source_holds_shims_and_glue_only(self) -> None:
         text = emit_compat.compat_source(self.api)
         self.assertIn("int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)", text)
+        self.assertIn("    assert(record.index == (uint64_t)index);\n", text)  # `post`
         self.assertNotIn("int vmaf_read_pictures(", text)  # manual
         self.assertNotIn("vmaf_sycl_state_init", text)  # engine exception
         self.assertIn("#if VMAFX_BUILD_MCP\n", text)

@@ -37,6 +37,9 @@ void trace(Trace *t, const char *fmt, ...) TRACE_FORMAT(2, 3);
 /* A string or "(null)". */
 const char *trace_str(const char *s);
 void trace_free(Trace *t);
+/* The planted defect of this run (VMAF_COMPAT_PLANT), "" for none. The three
+ * meson tests run at once, so each names its scratch files after it. */
+const char *conformance_plant(void);
 
 /* A scenario: calls through `api` only and writes what it saw to `t`. */
 typedef void (*Scenario)(const VmafCompatApi *api, Trace *t);

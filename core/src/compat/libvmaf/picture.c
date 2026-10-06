@@ -14,6 +14,7 @@
  * converters.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -298,6 +299,7 @@ int vmaf_picture_convert(VmafPictureConvertContext *ctx, VmafPicture *dst, const
         vmafx_frame_unref(in);
     }
     if (status == VMAFX_OK) {
+        assert(out != NULL); /* a successful conversion hands back a frame */
         status = vmafx_frame_to_picture(out, dst, &error);
         vmafx_frame_unref(out);
     }
