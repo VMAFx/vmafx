@@ -253,45 +253,53 @@ static double block_partials_score(const float *terms, size_t n_blocks, unsigned
     return (double)total;
 }
 
-/* One plane's score through the twin and the variant; NaN when the term
+/* One plane's 64 terms per block under one masking table, or NULL when the
  * buffer cannot be allocated. */
-static double plane_score(const VmafPicture *ref, const VmafPicture *dis, unsigned plane,
-                          const HvsVariant *v)
+static float *plane_terms(const VmafPicture *ref, const VmafPicture *dis, unsigned plane,
+                          int fp32_mask, size_t *n_blocks)
 {
     float mask[TERMS];
-    mask_table(plane, v->fp32_mask, mask);
+    mask_table(plane, fp32_mask, mask);
     const HvsPlane pl = {ref,
                          dis,
                          plane,
                          ((ref->w[plane] - BLOCK) / STEP) + 1u,
                          ((ref->h[plane] - BLOCK) / STEP) + 1u,
                          mask};
-    const size_t n_blocks = (size_t)pl.blocks_x * pl.blocks_y;
-    float *terms = malloc(n_blocks * (size_t)TERMS * sizeof(float));
+    *n_blocks = (size_t)pl.blocks_x * pl.blocks_y;
+    float *terms = malloc(*n_blocks * (size_t)TERMS * sizeof(float));
     if (!terms)
-        return (double)NAN;
+        return NULL;
     for (unsigned by = 0u; by < pl.blocks_y; by++) {
         for (unsigned bx = 0u; bx < pl.blocks_x; bx++)
             block_terms(&pl, bx, by, terms + (((size_t)by * pl.blocks_x) + bx) * (size_t)TERMS);
     }
-    const double score = v->block_partials ? block_partials_score(terms, n_blocks, ref->bpc) :
-                                             vmaf_psnr_hvs_plane_score(terms, n_blocks, ref->bpc);
-    free(terms);
-    return score;
+    return terms;
 }
 
-/* The four outputs of the twin for one fixture, laid out as hvs_read_scores()
- * lays out the CPU's: the chroma slots stay 0 for luma-only input. */
+/* The four outputs of the twin for one fixture under one masking table, once
+ * per summation (index = HvsVariant.block_partials), laid out as
+ * hvs_read_scores() lays out the CPU's: the chroma slots stay 0 for luma-only
+ * input. The two summations read the same terms, so each table's terms are
+ * formed once; a plane whose buffer cannot be allocated scores NaN. */
 static void twin_scores(const VmafPicture *ref, const VmafPicture *dis, const HvsFixture *fx,
-                        const HvsVariant *v, double scores[HVS_FEATURES])
+                        int fp32_mask, double scores[2][HVS_FEATURES])
 {
     const unsigned n_planes = (fx->fmt == VMAF_PIX_FMT_YUV400P || fx->luma_only) ? 1u : 3u;
-    double planes[3] = {0.0, 0.0, 0.0};
-    for (unsigned p = 0u; p < n_planes; p++)
-        planes[p] = plane_score(ref, dis, p, v);
-    for (unsigned p = 0u; p < 3u; p++)
-        scores[p] = p < n_planes ? vmaf_psnr_hvs_score_db(planes[p]) : 0.0;
-    scores[3] = vmaf_psnr_hvs_score_db(vmaf_psnr_hvs_combined_score(planes, n_planes));
+    double planes[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    for (unsigned p = 0u; p < n_planes; p++) {
+        size_t n_blocks = 0u;
+        float *terms = plane_terms(ref, dis, p, fp32_mask, &n_blocks);
+        planes[0][p] = terms ? vmaf_psnr_hvs_plane_score(terms, n_blocks, ref->bpc) : (double)NAN;
+        planes[1][p] = terms ? block_partials_score(terms, n_blocks, ref->bpc) : (double)NAN;
+        free(terms);
+    }
+    for (unsigned sum = 0u; sum < 2u; sum++) {
+        for (unsigned p = 0u; p < 3u; p++)
+            scores[sum][p] = p < n_planes ? vmaf_psnr_hvs_score_db(planes[sum][p]) : 0.0;
+        scores[sum][3] =
+            vmaf_psnr_hvs_score_db(vmaf_psnr_hvs_combined_score(planes[sum], n_planes));
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -336,12 +344,14 @@ static mu_message_t compare_fixture(size_t f)
         mu_assert("vmaf_picture_unref failed", vmaf_picture_unref(&ref) == 0);
         return "fill distorted failed";
     }
+    double twin[2][2][HVS_FEATURES];
+    for (int fp32_mask = 0; fp32_mask < 2; fp32_mask++)
+        twin_scores(&ref, &dis, fx, fp32_mask, twin[fp32_mask]);
     for (unsigned v = 0u; v < VARIANTS; v++) {
-        double twin[HVS_FEATURES];
-        twin_scores(&ref, &dis, fx, &VARIANT[v], twin);
-        differing[f][v] = count_differing(cpu, twin);
+        const double *out = twin[VARIANT[v].fp32_mask][VARIANT[v].block_partials];
+        differing[f][v] = count_differing(cpu, out);
         if (v == 0u)
-            report_fixture(fx, cpu, twin);
+            report_fixture(fx, cpu, out);
     }
     const int unref_ref = vmaf_picture_unref(&ref);
     const int unref_dis = vmaf_picture_unref(&dis);

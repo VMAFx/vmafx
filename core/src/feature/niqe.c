@@ -585,7 +585,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "niqe", score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     assert(fex != NULL);
     NiqeState *s = fex->priv;
@@ -625,7 +625,7 @@ VmafFeatureExtractor vmaf_fex_niqe = {
     .name = "niqe",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(NiqeState),
     .provided_features = provided_features,
 };

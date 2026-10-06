@@ -1206,7 +1206,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return emit_adm_scores(s, feature_collector, &r, score_adm3, scale_scores, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     AdmState *s = fex->priv;
 
@@ -1244,7 +1244,7 @@ VmafFeatureExtractor vmaf_fex_integer_adm = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(AdmState),
     .provided_features = provided_features,
     /* 16 dispatches per frame (4 scales × 4 stages: DWT + decouple + CSF

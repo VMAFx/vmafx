@@ -29,6 +29,10 @@
 
 #include "test.h"
 
+/* cl.exe has no __builtin_clz; the shim the CPU's own users include gives it
+ * one (`__clz` below maps to it). check-msvc-clz-shim.sh requires the include
+ * (T-ADM-DECOUPLE-RECIP-TEST-WINDOWS-2026-10-06). */
+#include "feature/compat_builtin.h"
 #include "test_adm_decouple_recip_cpu.h"
 
 /* NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): the device header
