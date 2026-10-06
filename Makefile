@@ -204,6 +204,8 @@ docs-fragments-check:
 	@python3 scripts/docs/generate-record-titles.py --check
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
+	@echo "--- scripts/ci/exact_twins.d/ vs core/src/vmafx/exactness_gen.c (ADR-2073) ---"
+	@python3 scripts/codegen/vmafx_exactness.py --check
 	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --check
 	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
@@ -222,6 +224,7 @@ docs-fragments-write:
 	@bash scripts/docs/generate-adr-by-tag.sh --write
 	@python3 scripts/docs/generate-record-titles.py --write
 	@python3 scripts/docs/generate-exact-twins.py --write
+	@python3 scripts/codegen/vmafx_exactness.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
 	@python3 scripts/docs/generate-hardware-reports.py --write

@@ -29,6 +29,7 @@ SCALARS = {
 VERSION_PARTS = 3  # MAJOR.MINOR.PATCH of [api] abi_version
 SINCE_PARTS = 2  # MAJOR.MINOR of `since`, `removal`: one linker version node each
 PASS_MODES = {"in", "in_const", "out", "out_handle", "error"}
+PROTO_REPEATED_MIN = 100  # first field number of a struct's proto-only repeated members
 HEADER_GROUPS = ("umbrella", "core", "optional")
 
 
@@ -137,6 +138,22 @@ class Field:
 
 
 @dataclass(frozen=True)
+class ProtoRepeated:
+    """A proto-only member of a struct's message: `repeated <struct's message> name = number`.
+
+    The C struct reaches these records through indexed functions; the proto
+    message carries them inline (RC4 WP5). Numbers start at
+    PROTO_REPEATED_MIN so the field-order numbers of the scalar fields never
+    reach them.
+    """
+
+    name: str
+    struct: str
+    number: int
+    doc: str
+
+
+@dataclass(frozen=True)
 class Struct:
     name: str
     header: str
@@ -146,6 +163,7 @@ class Struct:
     deprecated: Deprecation | None
     fields: tuple[Field, ...]
     proto: str = ""  # name of the proto message emitted from the struct; "" = none
+    proto_repeated: tuple[ProtoRepeated, ...] = ()
 
     @property
     def init_macro(self) -> str:

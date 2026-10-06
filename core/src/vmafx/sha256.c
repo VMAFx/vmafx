@@ -115,6 +115,63 @@ static void compress_tail(uint32_t state[8], const uint8_t *tail, size_t tail_le
     }
 }
 
+void vmafx_sha256_init(VmafxSha256 *sha)
+{
+    assert(sha);
+    memcpy(sha->state, initial_state, sizeof(sha->state));
+    sha->block_len = 0;
+    sha->total = 0;
+}
+
+void vmafx_sha256_update(VmafxSha256 *sha, const void *data, size_t len)
+{
+    assert(sha && (data || len == 0) && sha->block_len < SHA256_BLOCK);
+    const uint8_t *bytes = data;
+    sha->total += len;
+    if (sha->block_len) {
+        const size_t take =
+            SHA256_BLOCK - sha->block_len < len ? SHA256_BLOCK - sha->block_len : len;
+        memcpy(sha->block + sha->block_len, bytes, take);
+        sha->block_len += take;
+        bytes += take;
+        len -= take;
+        if (sha->block_len < SHA256_BLOCK) {
+            return;
+        }
+        compress(sha->state, sha->block);
+        sha->block_len = 0;
+    }
+    const size_t full = len / SHA256_BLOCK;
+    for (size_t b = 0; b < full; b++) {
+        compress(sha->state, bytes + b * (size_t)SHA256_BLOCK);
+    }
+    sha->block_len = len % SHA256_BLOCK;
+    if (sha->block_len) {
+        memcpy(sha->block, bytes + full * (size_t)SHA256_BLOCK, sha->block_len);
+    }
+}
+
+static void digest_hex(const uint32_t state[8], char hex[VMAFX_SHA256_HEX_CHARS])
+{
+    static const char digits[] = "0123456789abcdef";
+    uint8_t digest[VMAFX_SHA256_DIGEST_SIZE];
+    for (unsigned i = 0; i < 8u; i++) {
+        store_be32(digest + (size_t)4u * i, state[i]);
+    }
+    for (unsigned i = 0; i < VMAFX_SHA256_DIGEST_SIZE; i++) {
+        hex[(size_t)2u * i] = digits[digest[i] >> 4];
+        hex[(size_t)2u * i + 1u] = digits[digest[i] & 0x0fu];
+    }
+    hex[VMAFX_SHA256_HEX_CHARS - 1u] = '\0';
+}
+
+void vmafx_sha256_final_hex(VmafxSha256 *sha, char hex[VMAFX_SHA256_HEX_CHARS])
+{
+    assert(sha && sha->block_len < SHA256_BLOCK);
+    compress_tail(sha->state, sha->block, sha->block_len, (size_t)sha->total);
+    digest_hex(sha->state, hex);
+}
+
 void vmafx_sha256(const void *data, size_t len, uint8_t digest[VMAFX_SHA256_DIGEST_SIZE])
 {
     assert(data || len == 0);
@@ -134,12 +191,8 @@ void vmafx_sha256(const void *data, size_t len, uint8_t digest[VMAFX_SHA256_DIGE
 
 void vmafx_sha256_hex(const void *data, size_t len, char hex[VMAFX_SHA256_HEX_CHARS])
 {
-    static const char digits[] = "0123456789abcdef";
-    uint8_t digest[VMAFX_SHA256_DIGEST_SIZE];
-    vmafx_sha256(data, len, digest);
-    for (unsigned i = 0; i < VMAFX_SHA256_DIGEST_SIZE; i++) {
-        hex[(size_t)2u * i] = digits[digest[i] >> 4];
-        hex[(size_t)2u * i + 1u] = digits[digest[i] & 0x0fu];
-    }
-    hex[VMAFX_SHA256_HEX_CHARS - 1u] = '\0';
+    VmafxSha256 sha;
+    vmafx_sha256_init(&sha);
+    vmafx_sha256_update(&sha, data, len);
+    vmafx_sha256_final_hex(&sha, hex);
 }

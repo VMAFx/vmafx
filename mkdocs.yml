@@ -203,6 +203,7 @@ nav:
       - Context API contract: backends/context-api-contract.md
   - Use VMAFx:
       - CLI reference: usage/cli.md
+      - Score provenance: usage/provenance.md
       - '--precision': usage/precision.md
       - Environment variables: usage/env-vars.md
       - FFmpeg: usage/ffmpeg.md

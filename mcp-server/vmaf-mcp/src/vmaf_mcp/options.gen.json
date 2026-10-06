@@ -2168,10 +2168,12 @@
     "subsample": "--subsample",
     "precision": "--precision",
     "output": "-o",
+    "provenance_sidecar": "--provenance-sidecar",
     "netflix_compat": "--netflix-compat",
     "quiet": "-q",
     "version": "-v",
-    "help": "--help"
+    "help": "--help",
+    "verify_provenance": "--verify-provenance"
   },
   "library_defaults": {
     "VMAF_DEFAULT_MODEL_VERSION": "vmaf_v1.0.16_3d0h"

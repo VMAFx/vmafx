@@ -229,15 +229,18 @@ static VmafxStatus parse_model(const VmafxReport *report, VmafModelConfig *cfg, 
                                size_t len, const char *subject, VmafxModel **out)
 {
     assert(len <= INT_MAX);
-    char hex[VMAFX_SHA256_HEX_CHARS];
-    vmafx_sha256_hex(data, len, hex);
     VmafModel *engine = NULL;
-    const int err = vmaf_read_json_model_from_buffer(&engine, cfg, data, (int)len);
+    int err = vmaf_read_json_model_from_buffer(&engine, cfg, data, (int)len);
     if (err) {
         return parse_failure(report, err, subject,
                              "single model (load a set with vmafx_model_set_*)");
     }
-    return wrap_model(report, engine, hex, out);
+    /* RC4 WP5: the engine model carries its source and digest (provenance). */
+    err = vmaf_model_stamp_loaded(err, &engine, NULL, cfg, subject, data, len);
+    if (err) {
+        return parse_failure(report, err, subject, "model whose provenance can be recorded");
+    }
+    return wrap_model(report, engine, engine->sha256, out);
 }
 
 VmafxStatus vmafx_model_load(const VmafxModelConfig *config, const char *version, VmafxModel **out,
@@ -446,17 +449,19 @@ static VmafxStatus parse_set(const VmafxReport *report, VmafModelConfig *cfg, co
                              size_t len, const char *subject, VmafxModelSet **out)
 {
     assert(len <= INT_MAX);
-    char hex[VMAFX_SHA256_HEX_CHARS];
-    vmafx_sha256_hex(data, len, hex);
     VmafModel *lead = NULL;
     VmafModelCollection *engine = NULL;
-    const int err =
-        vmaf_read_json_model_collection_from_buffer(&lead, &engine, cfg, data, (int)len);
+    int err = vmaf_read_json_model_collection_from_buffer(&lead, &engine, cfg, data, (int)len);
     if (err) {
         return parse_failure(report, err, subject,
                              "model set (load a single model with vmafx_model_load*)");
     }
-    return wrap_set(report, lead, engine, hex, out);
+    /* RC4 WP5: every member carries the set's source and digest. */
+    err = vmaf_model_stamp_loaded(err, &lead, &engine, cfg, subject, data, len);
+    if (err) {
+        return parse_failure(report, err, subject, "model set whose provenance can be recorded");
+    }
+    return wrap_set(report, lead, engine, lead->sha256, out);
 }
 
 VmafxStatus vmafx_model_set_load(const VmafxModelConfig *config, const char *version,

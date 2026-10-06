@@ -20,6 +20,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <pthread.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -228,6 +229,8 @@ void feature_vector_destroy(FeatureVector *feature_vector)
 {
     if (!feature_vector)
         return;
+    free(feature_vector->producer);
+    free(feature_vector->producer_options);
     free(feature_vector->name);
     free(feature_vector->score);
     free(feature_vector);
@@ -551,6 +554,75 @@ int feature_collector_grow_capacity(VmafFeatureCollector *feature_collector)
 namespace
 {
 
+/* RC4 WP5: the producer installed on this thread (vmaf_feature_producer_swap()). */
+thread_local VmafFeatureProducer current_producer = {
+    .source = VMAF_FEATURE_SOURCE_UNKNOWN, .name = nullptr, .options = nullptr};
+
+/* Bound of the options one producer text lists (HISS-02); an extractor has a
+ * handful. */
+constexpr unsigned producer_options_max = 256;
+
+char *copy_text(const char *text)
+{
+    const size_t len = strlen(text);
+    char *const copy = static_cast<char *>(malloc(len + 1));
+    if (copy)
+        memcpy(copy, text, len + 1);
+    return copy;
+}
+
+/* The entries of `dict` in key order (at most producer_options_max). */
+unsigned sorted_entries(const VmafDictionary *dict, const VmafDictionaryEntry **out)
+{
+    const unsigned cnt = dict->cnt < producer_options_max ? dict->cnt : producer_options_max;
+    for (unsigned i = 0; i < cnt; i++) {
+        const VmafDictionaryEntry *const entry = &dict->entry[i];
+        unsigned j = i;
+        for (; j > 0 && strcmp(out[j - 1]->key, entry->key) > 0; j--)
+            out[j] = out[j - 1];
+        out[j] = entry;
+    }
+    return cnt;
+}
+
+/* `key=value` joined by ':' in key order, or nullptr (no memory). */
+char *options_text(const VmafDictionary *dict)
+{
+    const VmafDictionaryEntry *entries[producer_options_max];
+    const unsigned cnt = sorted_entries(dict, entries);
+    size_t len = 1;
+    for (unsigned i = 0; i < cnt; i++)
+        len += strlen(entries[i]->key) + strlen(entries[i]->val) + 2;
+    char *const text = static_cast<char *>(malloc(len));
+    if (!text)
+        return nullptr;
+    size_t at = 0;
+    for (unsigned i = 0; i < cnt; i++) {
+        const int n = snprintf(text + at, len - at, "%s%s=%s", i ? ":" : "", entries[i]->key,
+                               entries[i]->val);
+        at += n > 0 ? static_cast<size_t>(n) : 0u;
+    }
+    text[at < len ? at : len - 1] = '\0';
+    return text;
+}
+
+/* Copy the thread's producer into a vector created for its first score. */
+int feature_vector_record_producer(FeatureVector *fv)
+{
+    fv->source = current_producer.source;
+    if (current_producer.name) {
+        fv->producer = copy_text(current_producer.name);
+        if (!fv->producer)
+            return -ENOMEM;
+    }
+    if (current_producer.options && current_producer.options->cnt) {
+        fv->producer_options = options_text(current_producer.options);
+        if (!fv->producer_options)
+            return -ENOMEM;
+    }
+    return 0;
+}
+
 int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
                                     const char *feature_name, FeatureVector **out)
 {
@@ -561,8 +633,12 @@ int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
     }
 
     int err = feature_vector_init(&feature_vector, feature_name);
-    if (err)
+    if (!err)
+        err = feature_vector_record_producer(feature_vector);
+    if (err) {
+        feature_vector_destroy(feature_vector);
         return err;
+    }
     err = feature_collector_grow_capacity(feature_collector);
     if (err) {
         feature_vector_destroy(feature_vector);
@@ -680,6 +756,24 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
 
     feature_collector->timer.end = clock();
     pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
+}
+
+VmafFeatureProducer vmaf_feature_producer_swap(VmafFeatureProducer producer)
+{
+    const VmafFeatureProducer previous = current_producer;
+    current_producer = producer;
+    return previous;
+}
+
+int vmaf_feature_collector_append_from(VmafFeatureCollector *feature_collector,
+                                       const char *feature_name, double score, unsigned index,
+                                       int source, const char *producer)
+{
+    const VmafFeatureProducer previous = vmaf_feature_producer_swap(
+        VmafFeatureProducer{.source = source, .name = producer, .options = nullptr});
+    const int err = vmaf_feature_collector_append(feature_collector, feature_name, score, index);
+    (void)vmaf_feature_producer_swap(previous);
     return err;
 }
 

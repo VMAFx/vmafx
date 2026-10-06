@@ -1231,6 +1231,22 @@ test_vmafx_sha256 = executable('test_vmafx_sha256',
 )
 test('test_vmafx_sha256', test_vmafx_sha256, suite : ['fast'])
 
+# RC4 WP5 (#2142, ADR-2073): the exactness class of every device twin,
+# generated from scripts/ci/exact_twins.d and the parity gate's tables.
+test_vmafx_exactness = executable('test_vmafx_exactness',
+    ['test.c', 'test_vmafx_exactness.c', '../src/vmafx/exactness.c',
+     '../src/vmafx/exactness_gen.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+)
+test('test_vmafx_exactness', test_vmafx_exactness, suite : ['fast'])
+
+vmafx_exactness_generator = meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'vmafx_exactness.py'
+test('test_vmafx_exactness_table_current',
+    import('python').find_installation(),
+    args : [vmafx_exactness_generator, '--check'],
+    suite : ['fast'],
+)
+
 test_vmafx_context = executable('test_vmafx_context',
     ['test.c', 'test_vmafx_context.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -1239,6 +1255,17 @@ test_vmafx_context = executable('test_vmafx_context',
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_vmafx_context', test_vmafx_context, suite : ['fast'])
+
+# RC4 WP5 (#2142, ADR-2073): the canonical JSON of the provenance record, the
+# build id and the backend receipt (internal functions).
+test_vmafx_provenance_json = executable('test_vmafx_provenance_json',
+    ['test.c', 'test_vmafx_provenance_json.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_provenance_json', test_vmafx_provenance_json, suite : ['fast'])
 
 # VMAFx scores equal libvmaf scores bit for bit on the golden pair, both 1080p
 # checkerboards and the 10-bit sparks pair (fixtures in python/test/resource/yuv;
@@ -1324,7 +1351,8 @@ test('test_engine_log_routing_contract',
     suite : ['fast'],
 )
 
-foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score']
+foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score',
+                             'test_vmafx_provenance', 'test_vmafx_report']
     vmafx_public_exe = executable(vmafx_public_test,
         ['test.c', vmafx_public_test + '.c'],
         include_directories : [libvmaf_inc, test_inc],

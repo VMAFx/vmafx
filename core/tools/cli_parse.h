@@ -91,6 +91,9 @@ typedef struct {
      * (libvmaf default of bilinear applies). Accepted values:
      * "bilinear" (default), "nearest", "bicubic", "disabled". */
     const char *tiny_resize;
+    /* RC4 WP5 (#2142): the JSON report `--verify-provenance` re-runs and
+     * compares; NULL = a scoring run. */
+    const char *verify_provenance;
 
     /* --- Models and features --- */
     CLIModelConfig model_config[CLI_SETTINGS_STATIC_ARRAY_LEN];
@@ -132,7 +135,8 @@ typedef struct {
     bool precision_max;    // --precision=max|full given (selects %.17g)
     bool precision_legacy; // --precision=legacy given (alias for the default)
     bool tiny_fp16;
-    bool no_reference; /* skip reference; only meaningful with NR tiny model */
+    bool no_reference;       /* skip reference; only meaningful with NR tiny model */
+    bool provenance_sidecar; /* RC4 WP5: also write <output>.provenance.json */
     /* T6-9 / ADR-0211 — Sigstore-bundle verification of tiny models. When
      * true, the CLI calls vmaf_dnn_verify_signature() before model load and
      * exits non-zero on any verification failure (missing registry entry,
@@ -155,6 +159,14 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
  * (vmaf_use_feature(), vmaf_model_feature_overload(),
  * vmaf_model_collection_feature_overload()) clears the pointer here first. */
 void cli_free(CLISettings *settings);
+
+/* RC4 WP5: the report of `--verify-provenance <report>` (or
+ * `--verify-provenance=<report>`) in argv, or NULL for a scoring run. */
+const char *cli_verify_provenance_arg(int argc, char *const *argv);
+
+/* Let the next cli_parse() scan a new argv from its start (getopt keeps its
+ * position between scans). */
+void cli_parse_reset(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

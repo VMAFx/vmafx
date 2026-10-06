@@ -983,6 +983,37 @@ void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
 
 } /* anonymous namespace */
 
+namespace
+{
+
+/* RC4 WP5 (#2142): the extractor of `fex_ctx` is the producer of every score
+ * written while the scope lives, so the collector records which extractor
+ * instance (and options) wrote each feature vector. */
+class ProducerScope
+{
+  public:
+    explicit ProducerScope(const VmafFeatureExtractorContext *fex_ctx)
+        : previous_(vmaf_feature_producer_swap(
+              VmafFeatureProducer{.source = VMAF_FEATURE_SOURCE_EXTRACTOR,
+                                  .name = fex_ctx->fex->name,
+                                  .options = fex_ctx->opts_dict}))
+    {
+    }
+    ProducerScope(const ProducerScope &) = delete;
+    ProducerScope &operator=(const ProducerScope &) = delete;
+    ProducerScope(ProducerScope &&) = delete;
+    ProducerScope &operator=(ProducerScope &&) = delete;
+    ~ProducerScope()
+    {
+        (void)vmaf_feature_producer_swap(previous_);
+    }
+
+  private:
+    VmafFeatureProducer previous_;
+};
+
+} // namespace
+
 int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
                                            VmafPicture *ref_90, VmafPicture *dist,
                                            VmafPicture *dist_90, unsigned pic_index,
@@ -1015,6 +1046,7 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
             return err;
     }
 
+    const ProducerScope producer(fex_ctx);
     const int err = fex_ctx->fex->extract(fex_ctx->fex, ref, ref_90, dist, dist_90, pic_index, vfc);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING, "problem with feature extractor \"%s\" at index %d\n",
@@ -1077,6 +1109,7 @@ int vmaf_feature_extractor_context_collect(VmafFeatureExtractorContext *fex_ctx,
     if (!fex_ctx->fex->collect)
         return -EINVAL;
 
+    const ProducerScope producer(fex_ctx);
     return fex_ctx->fex->collect(fex_ctx->fex, pic_index, vfc);
 }
 
@@ -1092,6 +1125,7 @@ int vmaf_feature_extractor_context_flush(VmafFeatureExtractorContext *fex_ctx,
 
     int err = 0;
     if (fex_ctx->fex->flush) {
+        const ProducerScope producer(fex_ctx);
         while (!(err = fex_ctx->fex->flush(fex_ctx->fex, vfc))) {
             /* drain all flush-emitted features */
         }

@@ -246,3 +246,174 @@ components:
         version:
           type: "string"
           description: "Build version (git describe)."
+        commit:
+          type: "string"
+          description: "Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout. Added in ABI 0.1.5."
+        build_id:
+          type: "string"
+          description: "`sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`, `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different ids. Added in ABI 0.1.5."
+        compiler:
+          type: "string"
+          description: "C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5."
+        build_flags:
+          type: "string"
+          description: "Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build. Added in ABI 0.1.5."
+        fp_policy:
+          type: "string"
+          description: "Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI 0.1.5."
+        backends:
+          type: "string"
+          description: "Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`). Added in ABI 0.1.5."
+        rust_twins:
+          type: "integer"
+          format: "int32"
+          description: "1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5."
+        simd:
+          type: "string"
+          description: "Highest instruction-set level the CPU extractors dispatch to under the context's cpumask (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added in ABI 0.1.5."
+        device_index:
+          type: "integer"
+          format: "int32"
+          description: "Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device made from external handles. Added in ABI 0.1.5."
+        device_name:
+          type: "string"
+          description: "Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5."
+        device_runtime:
+          type: "string"
+          description: "Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown` when the backend does not report it yet. Added in ABI 0.1.5."
+        n_threads:
+          type: "integer"
+          format: "int32"
+          description: "Worker threads of the context. Added in ABI 0.1.5."
+        n_subsample:
+          type: "integer"
+          format: "int32"
+          description: "Frame subsampling of the context (1: every frame). Added in ABI 0.1.5."
+        cpumask:
+          type: "integer"
+          format: "int64"
+          description: "CPU instruction-set bits the context disabled. Added in ABI 0.1.5."
+        gpumask:
+          type: "integer"
+          format: "int64"
+          description: "GPU dispatch bits the context disabled. Added in ABI 0.1.5."
+        frame_width:
+          type: "integer"
+          format: "int32"
+          description: "Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5."
+        frame_height:
+          type: "integer"
+          format: "int32"
+          description: "Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5."
+        pix_fmt:
+          type: "string"
+          description: "Pixel layout of the submitted frames. Added in ABI 0.1.5. Value name of VmafxPixelFormat without the VMAFX_PIXEL_FORMAT_ prefix, lower case."
+        bpc:
+          type: "integer"
+          format: "int32"
+          description: "Bits per component of the submitted frames. Added in ABI 0.1.5."
+        n_frames:
+          type: "integer"
+          format: "int64"
+          description: "Frames submitted. Added in ABI 0.1.5."
+        n_models:
+          type: "integer"
+          format: "int32"
+          description: "Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5."
+        n_features:
+          type: "integer"
+          format: "int32"
+          description: "Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5."
+        n_annotations:
+          type: "integer"
+          format: "int32"
+          description: "Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5."
+        encode_record:
+          type: "string"
+          description: "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5."
+        scores_digest:
+          type: "string"
+          description: "`sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5."
+        elapsed_ns:
+          type: "integer"
+          format: "int64"
+          description: "Nanoseconds from the first submitted frame to the flush (to now before it); timing, not covered by `digest`. Added in ABI 0.1.5."
+        digest:
+          type: "string"
+          description: "`sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5."
+        models:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/ModelProvenance"
+          description: "Mounted models."
+        features:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/FeatureProvenance"
+          description: "Features with scores."
+        annotations:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Annotation"
+          description: "Caller annotations, in the order they were added."
+    ModelProvenance:
+      type: "object"
+      description: "One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5. (from VmafxModelProvenance)."
+      properties:
+        name:
+          type: "string"
+          description: "Name of the model's scores."
+        version:
+          type: "string"
+          description: "Built-in model version, or the path of the file it was loaded from."
+        sha256:
+          type: "string"
+          description: "SHA-256 of the model bytes as loaded, 64 lower-case hex digits."
+        flags:
+          type: "integer"
+          format: "int64"
+          description: "Load flags."
+        overrides:
+          type: "string"
+          description: "Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:` in the order applied; empty when none."
+    FeatureProvenance:
+      type: "object"
+      description: "How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI 0.1.5. (from VmafxFeatureProvenance)."
+      properties:
+        feature:
+          type: "string"
+          description: "Feature name as the scores carry it (option-decorated names included)."
+        extractor:
+          type: "string"
+          description: "Extractor that wrote the scores; the model's name for a model score; empty for an imported score."
+        implementation:
+          type: "string"
+          description: "`c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the scores."
+        backend:
+          type: "string"
+          description: "Backend the extractor runs on (CPU for model and imported scores). Value name of VmafxBackend without the VMAFX_BACKEND_ prefix, lower case."
+        device:
+          type: "string"
+          description: "Device that ran the extractor (`cpu` for the CPU)."
+        runtime:
+          type: "string"
+          description: "Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the host architecture for the CPU)."
+        options:
+          type: "string"
+          description: "Options of the extractor instance, `key=value` separated by `:` in key order; empty when none."
+        exactness:
+          type: "string"
+          description: "How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`, or `unclassified` for a device extractor the tables do not list; empty when no extractor wrote the scores."
+        source:
+          type: "string"
+          description: "Where the scores come from. Value name of VmafxFeatureSource without the VMAFX_FEATURE_SOURCE_ prefix, lower case."
+    Annotation:
+      type: "object"
+      description: "One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long as the context. Added in ABI 0.1.5. (from VmafxAnnotation)."
+      properties:
+        key:
+          type: "string"
+          description: "Key: 1 to 64 characters of `a-z`, `0-9` and `_`."
+        value:
+          type: "string"
+          description: "Value as given."

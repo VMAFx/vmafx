@@ -425,7 +425,85 @@ type Provenance struct {
 	// Registered feature extractors; see vmafx_context_extractor_info().
 	NExtractors uint32 `protobuf:"varint,5,opt,name=n_extractors,json=nExtractors,proto3" json:"n_extractors,omitempty"`
 	// Build version (git describe).
-	Version       string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	Version string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	// Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout.
+	// Added in ABI 0.1.5.
+	Commit string `protobuf:"bytes,7,opt,name=commit,proto3" json:"commit,omitempty"`
+	// `sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`,
+	// `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different
+	// ids. Added in ABI 0.1.5.
+	BuildId string `protobuf:"bytes,8,opt,name=build_id,json=buildId,proto3" json:"build_id,omitempty"`
+	// C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5.
+	Compiler string `protobuf:"bytes,9,opt,name=compiler,proto3" json:"compiler,omitempty"`
+	// Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build.
+	// Added in ABI 0.1.5.
+	BuildFlags string `protobuf:"bytes,10,opt,name=build_flags,json=buildFlags,proto3" json:"build_flags,omitempty"`
+	// Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI
+	// 0.1.5.
+	FpPolicy string `protobuf:"bytes,11,opt,name=fp_policy,json=fpPolicy,proto3" json:"fp_policy,omitempty"`
+	// Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`). Added
+	// in ABI 0.1.5.
+	Backends string `protobuf:"bytes,12,opt,name=backends,proto3" json:"backends,omitempty"`
+	// 1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5.
+	RustTwins uint32 `protobuf:"varint,13,opt,name=rust_twins,json=rustTwins,proto3" json:"rust_twins,omitempty"`
+	// Highest instruction-set level the CPU extractors dispatch to under the context's cpumask
+	// (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added in
+	// ABI 0.1.5.
+	Simd string `protobuf:"bytes,14,opt,name=simd,proto3" json:"simd,omitempty"`
+	// Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device
+	// made from external handles. Added in ABI 0.1.5.
+	DeviceIndex int32 `protobuf:"varint,15,opt,name=device_index,json=deviceIndex,proto3" json:"device_index,omitempty"`
+	// Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5.
+	DeviceName string `protobuf:"bytes,16,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	// Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown`
+	// when the backend does not report it yet. Added in ABI 0.1.5.
+	DeviceRuntime string `protobuf:"bytes,17,opt,name=device_runtime,json=deviceRuntime,proto3" json:"device_runtime,omitempty"`
+	// Worker threads of the context. Added in ABI 0.1.5.
+	NThreads uint32 `protobuf:"varint,18,opt,name=n_threads,json=nThreads,proto3" json:"n_threads,omitempty"`
+	// Frame subsampling of the context (1: every frame). Added in ABI 0.1.5.
+	NSubsample uint32 `protobuf:"varint,19,opt,name=n_subsample,json=nSubsample,proto3" json:"n_subsample,omitempty"`
+	// CPU instruction-set bits the context disabled. Added in ABI 0.1.5.
+	Cpumask uint64 `protobuf:"varint,20,opt,name=cpumask,proto3" json:"cpumask,omitempty"`
+	// GPU dispatch bits the context disabled. Added in ABI 0.1.5.
+	Gpumask uint64 `protobuf:"varint,21,opt,name=gpumask,proto3" json:"gpumask,omitempty"`
+	// Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5.
+	FrameWidth uint32 `protobuf:"varint,22,opt,name=frame_width,json=frameWidth,proto3" json:"frame_width,omitempty"`
+	// Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5.
+	FrameHeight uint32 `protobuf:"varint,23,opt,name=frame_height,json=frameHeight,proto3" json:"frame_height,omitempty"`
+	// Pixel layout of the submitted frames. Added in ABI 0.1.5. Value name of VmafxPixelFormat
+	// without the VMAFX_PIXEL_FORMAT_ prefix, lower case.
+	PixFmt string `protobuf:"bytes,24,opt,name=pix_fmt,json=pixFmt,proto3" json:"pix_fmt,omitempty"`
+	// Bits per component of the submitted frames. Added in ABI 0.1.5.
+	Bpc uint32 `protobuf:"varint,25,opt,name=bpc,proto3" json:"bpc,omitempty"`
+	// Frames submitted. Added in ABI 0.1.5.
+	NFrames uint64 `protobuf:"varint,26,opt,name=n_frames,json=nFrames,proto3" json:"n_frames,omitempty"`
+	// Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5.
+	NModels uint32 `protobuf:"varint,27,opt,name=n_models,json=nModels,proto3" json:"n_models,omitempty"`
+	// Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5.
+	NFeatures uint32 `protobuf:"varint,28,opt,name=n_features,json=nFeatures,proto3" json:"n_features,omitempty"`
+	// Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5.
+	NAnnotations uint32 `protobuf:"varint,29,opt,name=n_annotations,json=nAnnotations,proto3" json:"n_annotations,omitempty"`
+	// Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
+	// VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+	// 0.1.5.
+	EncodeRecord string `protobuf:"bytes,30,opt,name=encode_record,json=encodeRecord,proto3" json:"encode_record,omitempty"`
+	// `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index>
+	// <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index
+	// order. Added in ABI 0.1.5.
+	ScoresDigest string `protobuf:"bytes,31,opt,name=scores_digest,json=scoresDigest,proto3" json:"scores_digest,omitempty"`
+	// Nanoseconds from the first submitted frame to the flush (to now before it); timing, not
+	// covered by `digest`. Added in ABI 0.1.5.
+	ElapsedNs uint64 `protobuf:"varint,32,opt,name=elapsed_ns,json=elapsedNs,proto3" json:"elapsed_ns,omitempty"`
+	// `sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and
+	// `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with
+	// VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5.
+	Digest string `protobuf:"bytes,33,opt,name=digest,proto3" json:"digest,omitempty"`
+	// Mounted models.
+	Models []*ModelProvenance `protobuf:"bytes,100,rep,name=models,proto3" json:"models,omitempty"`
+	// Features with scores.
+	Features []*FeatureProvenance `protobuf:"bytes,101,rep,name=features,proto3" json:"features,omitempty"`
+	// Caller annotations, in the order they were added.
+	Annotations   []*Annotation `protobuf:"bytes,102,rep,name=annotations,proto3" json:"annotations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -498,6 +576,483 @@ func (x *Provenance) GetNExtractors() uint32 {
 func (x *Provenance) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *Provenance) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *Provenance) GetBuildId() string {
+	if x != nil {
+		return x.BuildId
+	}
+	return ""
+}
+
+func (x *Provenance) GetCompiler() string {
+	if x != nil {
+		return x.Compiler
+	}
+	return ""
+}
+
+func (x *Provenance) GetBuildFlags() string {
+	if x != nil {
+		return x.BuildFlags
+	}
+	return ""
+}
+
+func (x *Provenance) GetFpPolicy() string {
+	if x != nil {
+		return x.FpPolicy
+	}
+	return ""
+}
+
+func (x *Provenance) GetBackends() string {
+	if x != nil {
+		return x.Backends
+	}
+	return ""
+}
+
+func (x *Provenance) GetRustTwins() uint32 {
+	if x != nil {
+		return x.RustTwins
+	}
+	return 0
+}
+
+func (x *Provenance) GetSimd() string {
+	if x != nil {
+		return x.Simd
+	}
+	return ""
+}
+
+func (x *Provenance) GetDeviceIndex() int32 {
+	if x != nil {
+		return x.DeviceIndex
+	}
+	return 0
+}
+
+func (x *Provenance) GetDeviceName() string {
+	if x != nil {
+		return x.DeviceName
+	}
+	return ""
+}
+
+func (x *Provenance) GetDeviceRuntime() string {
+	if x != nil {
+		return x.DeviceRuntime
+	}
+	return ""
+}
+
+func (x *Provenance) GetNThreads() uint32 {
+	if x != nil {
+		return x.NThreads
+	}
+	return 0
+}
+
+func (x *Provenance) GetNSubsample() uint32 {
+	if x != nil {
+		return x.NSubsample
+	}
+	return 0
+}
+
+func (x *Provenance) GetCpumask() uint64 {
+	if x != nil {
+		return x.Cpumask
+	}
+	return 0
+}
+
+func (x *Provenance) GetGpumask() uint64 {
+	if x != nil {
+		return x.Gpumask
+	}
+	return 0
+}
+
+func (x *Provenance) GetFrameWidth() uint32 {
+	if x != nil {
+		return x.FrameWidth
+	}
+	return 0
+}
+
+func (x *Provenance) GetFrameHeight() uint32 {
+	if x != nil {
+		return x.FrameHeight
+	}
+	return 0
+}
+
+func (x *Provenance) GetPixFmt() string {
+	if x != nil {
+		return x.PixFmt
+	}
+	return ""
+}
+
+func (x *Provenance) GetBpc() uint32 {
+	if x != nil {
+		return x.Bpc
+	}
+	return 0
+}
+
+func (x *Provenance) GetNFrames() uint64 {
+	if x != nil {
+		return x.NFrames
+	}
+	return 0
+}
+
+func (x *Provenance) GetNModels() uint32 {
+	if x != nil {
+		return x.NModels
+	}
+	return 0
+}
+
+func (x *Provenance) GetNFeatures() uint32 {
+	if x != nil {
+		return x.NFeatures
+	}
+	return 0
+}
+
+func (x *Provenance) GetNAnnotations() uint32 {
+	if x != nil {
+		return x.NAnnotations
+	}
+	return 0
+}
+
+func (x *Provenance) GetEncodeRecord() string {
+	if x != nil {
+		return x.EncodeRecord
+	}
+	return ""
+}
+
+func (x *Provenance) GetScoresDigest() string {
+	if x != nil {
+		return x.ScoresDigest
+	}
+	return ""
+}
+
+func (x *Provenance) GetElapsedNs() uint64 {
+	if x != nil {
+		return x.ElapsedNs
+	}
+	return 0
+}
+
+func (x *Provenance) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *Provenance) GetModels() []*ModelProvenance {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+func (x *Provenance) GetFeatures() []*FeatureProvenance {
+	if x != nil {
+		return x.Features
+	}
+	return nil
+}
+
+func (x *Provenance) GetAnnotations() []*Annotation {
+	if x != nil {
+		return x.Annotations
+	}
+	return nil
+}
+
+// ModelProvenance: One mounted model (#2142). Strings live as long as the context. Added in ABI
+// 0.1.5. (from VmafxModelProvenance).
+type ModelProvenance struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the model's scores.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Built-in model version, or the path of the file it was loaded from.
+	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	// SHA-256 of the model bytes as loaded, 64 lower-case hex digits.
+	Sha256 string `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	// Load flags.
+	Flags uint64 `protobuf:"varint,4,opt,name=flags,proto3" json:"flags,omitempty"`
+	// Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:`
+	// in the order applied; empty when none.
+	Overrides     string `protobuf:"bytes,5,opt,name=overrides,proto3" json:"overrides,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelProvenance) Reset() {
+	*x = ModelProvenance{}
+	mi := &file_vmafx_api_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelProvenance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelProvenance) ProtoMessage() {}
+
+func (x *ModelProvenance) ProtoReflect() protoreflect.Message {
+	mi := &file_vmafx_api_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelProvenance.ProtoReflect.Descriptor instead.
+func (*ModelProvenance) Descriptor() ([]byte, []int) {
+	return file_vmafx_api_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ModelProvenance) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ModelProvenance) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ModelProvenance) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *ModelProvenance) GetFlags() uint64 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+func (x *ModelProvenance) GetOverrides() string {
+	if x != nil {
+		return x.Overrides
+	}
+	return ""
+}
+
+// FeatureProvenance: How the scores of one feature are made (#2142). Strings live as long as the
+// context. Added in ABI 0.1.5. (from VmafxFeatureProvenance).
+type FeatureProvenance struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Feature name as the scores carry it (option-decorated names included).
+	Feature string `protobuf:"bytes,1,opt,name=feature,proto3" json:"feature,omitempty"`
+	// Extractor that wrote the scores; the model's name for a model score; empty for an imported
+	// score.
+	Extractor string `protobuf:"bytes,2,opt,name=extractor,proto3" json:"extractor,omitempty"`
+	// `c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the
+	// scores.
+	Implementation string `protobuf:"bytes,3,opt,name=implementation,proto3" json:"implementation,omitempty"`
+	// Backend the extractor runs on (CPU for model and imported scores). Value name of VmafxBackend
+	// without the VMAFX_BACKEND_ prefix, lower case.
+	Backend string `protobuf:"bytes,4,opt,name=backend,proto3" json:"backend,omitempty"`
+	// Device that ran the extractor (`cpu` for the CPU).
+	Device string `protobuf:"bytes,5,opt,name=device,proto3" json:"device,omitempty"`
+	// Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the
+	// host architecture for the CPU).
+	Runtime string `protobuf:"bytes,6,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	// Options of the extractor instance, `key=value` separated by `:` in key order; empty when none.
+	Options string `protobuf:"bytes,7,opt,name=options,proto3" json:"options,omitempty"`
+	// How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the
+	// parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`,
+	// or `unclassified` for a device extractor the tables do not list; empty when no extractor wrote
+	// the scores.
+	Exactness string `protobuf:"bytes,8,opt,name=exactness,proto3" json:"exactness,omitempty"`
+	// Where the scores come from. Value name of VmafxFeatureSource without the VMAFX_FEATURE_SOURCE_
+	// prefix, lower case.
+	Source        string `protobuf:"bytes,9,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeatureProvenance) Reset() {
+	*x = FeatureProvenance{}
+	mi := &file_vmafx_api_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeatureProvenance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeatureProvenance) ProtoMessage() {}
+
+func (x *FeatureProvenance) ProtoReflect() protoreflect.Message {
+	mi := &file_vmafx_api_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeatureProvenance.ProtoReflect.Descriptor instead.
+func (*FeatureProvenance) Descriptor() ([]byte, []int) {
+	return file_vmafx_api_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FeatureProvenance) GetFeature() string {
+	if x != nil {
+		return x.Feature
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetExtractor() string {
+	if x != nil {
+		return x.Extractor
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetImplementation() string {
+	if x != nil {
+		return x.Implementation
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetRuntime() string {
+	if x != nil {
+		return x.Runtime
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetOptions() string {
+	if x != nil {
+		return x.Options
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetExactness() string {
+	if x != nil {
+		return x.Exactness
+	}
+	return ""
+}
+
+func (x *FeatureProvenance) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+// Annotation: One caller annotation of the provenance record (vmafx_context_annotate()). Strings
+// live as long as the context. Added in ABI 0.1.5. (from VmafxAnnotation).
+type Annotation struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Key: 1 to 64 characters of `a-z`, `0-9` and `_`.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// Value as given.
+	Value         string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Annotation) Reset() {
+	*x = Annotation{}
+	mi := &file_vmafx_api_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Annotation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Annotation) ProtoMessage() {}
+
+func (x *Annotation) ProtoReflect() protoreflect.Message {
+	mi := &file_vmafx_api_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Annotation.ProtoReflect.Descriptor instead.
+func (*Annotation) Descriptor() ([]byte, []int) {
+	return file_vmafx_api_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Annotation) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Annotation) GetValue() string {
+	if x != nil {
+		return x.Value
 	}
 	return ""
 }
@@ -592,7 +1147,7 @@ const file_vmafx_api_proto_rawDesc = "" +
 	"\x0f_display_heightB\x0f\n" +
 	"\r_target_widthB\x10\n" +
 	"\x0e_target_heightB\x11\n" +
-	"\x0f_target_scaling\"\xc7\x01\n" +
+	"\x0f_target_scaling\"\x8e\t\n" +
 	"\n" +
 	"Provenance\x12\x1b\n" +
 	"\tabi_major\x18\x01 \x01(\rR\babiMajor\x12\x1b\n" +
@@ -600,7 +1155,65 @@ const file_vmafx_api_proto_rawDesc = "" +
 	"\tabi_patch\x18\x03 \x01(\rR\babiPatch\x12%\n" +
 	"\x0eactive_backend\x18\x04 \x01(\tR\ractiveBackend\x12!\n" +
 	"\fn_extractors\x18\x05 \x01(\rR\vnExtractors\x12\x18\n" +
-	"\aversion\x18\x06 \x01(\tR\aversionB0Z.github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1b\x06proto3"
+	"\aversion\x18\x06 \x01(\tR\aversion\x12\x16\n" +
+	"\x06commit\x18\a \x01(\tR\x06commit\x12\x19\n" +
+	"\bbuild_id\x18\b \x01(\tR\abuildId\x12\x1a\n" +
+	"\bcompiler\x18\t \x01(\tR\bcompiler\x12\x1f\n" +
+	"\vbuild_flags\x18\n" +
+	" \x01(\tR\n" +
+	"buildFlags\x12\x1b\n" +
+	"\tfp_policy\x18\v \x01(\tR\bfpPolicy\x12\x1a\n" +
+	"\bbackends\x18\f \x01(\tR\bbackends\x12\x1d\n" +
+	"\n" +
+	"rust_twins\x18\r \x01(\rR\trustTwins\x12\x12\n" +
+	"\x04simd\x18\x0e \x01(\tR\x04simd\x12!\n" +
+	"\fdevice_index\x18\x0f \x01(\x05R\vdeviceIndex\x12\x1f\n" +
+	"\vdevice_name\x18\x10 \x01(\tR\n" +
+	"deviceName\x12%\n" +
+	"\x0edevice_runtime\x18\x11 \x01(\tR\rdeviceRuntime\x12\x1b\n" +
+	"\tn_threads\x18\x12 \x01(\rR\bnThreads\x12\x1f\n" +
+	"\vn_subsample\x18\x13 \x01(\rR\n" +
+	"nSubsample\x12\x18\n" +
+	"\acpumask\x18\x14 \x01(\x04R\acpumask\x12\x18\n" +
+	"\agpumask\x18\x15 \x01(\x04R\agpumask\x12\x1f\n" +
+	"\vframe_width\x18\x16 \x01(\rR\n" +
+	"frameWidth\x12!\n" +
+	"\fframe_height\x18\x17 \x01(\rR\vframeHeight\x12\x17\n" +
+	"\apix_fmt\x18\x18 \x01(\tR\x06pixFmt\x12\x10\n" +
+	"\x03bpc\x18\x19 \x01(\rR\x03bpc\x12\x19\n" +
+	"\bn_frames\x18\x1a \x01(\x04R\anFrames\x12\x19\n" +
+	"\bn_models\x18\x1b \x01(\rR\anModels\x12\x1d\n" +
+	"\n" +
+	"n_features\x18\x1c \x01(\rR\tnFeatures\x12#\n" +
+	"\rn_annotations\x18\x1d \x01(\rR\fnAnnotations\x12#\n" +
+	"\rencode_record\x18\x1e \x01(\tR\fencodeRecord\x12#\n" +
+	"\rscores_digest\x18\x1f \x01(\tR\fscoresDigest\x12\x1d\n" +
+	"\n" +
+	"elapsed_ns\x18  \x01(\x04R\telapsedNs\x12\x16\n" +
+	"\x06digest\x18! \x01(\tR\x06digest\x121\n" +
+	"\x06models\x18d \x03(\v2\x19.vmafx.v1.ModelProvenanceR\x06models\x127\n" +
+	"\bfeatures\x18e \x03(\v2\x1b.vmafx.v1.FeatureProvenanceR\bfeatures\x126\n" +
+	"\vannotations\x18f \x03(\v2\x14.vmafx.v1.AnnotationR\vannotations\"\x8b\x01\n" +
+	"\x0fModelProvenance\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
+	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12\x14\n" +
+	"\x05flags\x18\x04 \x01(\x04R\x05flags\x12\x1c\n" +
+	"\toverrides\x18\x05 \x01(\tR\toverrides\"\x8f\x02\n" +
+	"\x11FeatureProvenance\x12\x18\n" +
+	"\afeature\x18\x01 \x01(\tR\afeature\x12\x1c\n" +
+	"\textractor\x18\x02 \x01(\tR\textractor\x12&\n" +
+	"\x0eimplementation\x18\x03 \x01(\tR\x0eimplementation\x12\x18\n" +
+	"\abackend\x18\x04 \x01(\tR\abackend\x12\x16\n" +
+	"\x06device\x18\x05 \x01(\tR\x06device\x12\x18\n" +
+	"\aruntime\x18\x06 \x01(\tR\aruntime\x12\x18\n" +
+	"\aoptions\x18\a \x01(\tR\aoptions\x12\x1c\n" +
+	"\texactness\x18\b \x01(\tR\texactness\x12\x16\n" +
+	"\x06source\x18\t \x01(\tR\x06source\"4\n" +
+	"\n" +
+	"Annotation\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05valueB0Z.github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1b\x06proto3"
 
 var (
 	file_vmafx_api_proto_rawDescOnce sync.Once
@@ -618,17 +1231,23 @@ func file_vmafx_api_proto_rawDescGZIP() []byte {
 	return file_vmafx_api_proto_rawDescData
 }
 
-var file_vmafx_api_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_vmafx_api_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_vmafx_api_proto_goTypes = []any{
-	(*ScoreOptions)(nil), // 0: vmafx.v1.ScoreOptions
-	(*Provenance)(nil),   // 1: vmafx.v1.Provenance
+	(*ScoreOptions)(nil),      // 0: vmafx.v1.ScoreOptions
+	(*Provenance)(nil),        // 1: vmafx.v1.Provenance
+	(*ModelProvenance)(nil),   // 2: vmafx.v1.ModelProvenance
+	(*FeatureProvenance)(nil), // 3: vmafx.v1.FeatureProvenance
+	(*Annotation)(nil),        // 4: vmafx.v1.Annotation
 }
 var file_vmafx_api_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: vmafx.v1.Provenance.models:type_name -> vmafx.v1.ModelProvenance
+	3, // 1: vmafx.v1.Provenance.features:type_name -> vmafx.v1.FeatureProvenance
+	4, // 2: vmafx.v1.Provenance.annotations:type_name -> vmafx.v1.Annotation
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_vmafx_api_proto_init() }
@@ -647,7 +1266,7 @@ func file_vmafx_api_proto_init() {
 			// spans the allocation and no more.
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vmafx_api_proto_rawDesc), len(file_vmafx_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -26,6 +26,7 @@
 #else
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
 #endif
 #include <pthread.h>
@@ -123,6 +124,13 @@ struct VmafModel {
      * one owner, the caller). vmaf_model_destroy() drops one owner and frees the
      * model with the last. */
     struct VmafRef *owners;
+    /* RC4 WP5 (#2142): where the model came from, for the provenance record.
+     * Set by the loaders (vmaf_model_load*(), vmaf_model_collection_load*(),
+     * the VMAFx loaders); NULL / empty on a model built otherwise. */
+    char *source;        /* built-in version, or the path of the file */
+    char sha256[65];     /* hex SHA-256 of the bytes as loaded */
+    uint64_t load_flags; /* VmafModelConfig.flags at load */
+    char *overrides;     /* `<extractor>.<key>=<value>` joined by ':' */
 };
 
 struct VmafModelCollection {
@@ -144,6 +152,20 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
  * the bytes vmaf_model_load() parses (ADR-1852: the VMAFx API hashes them).
  * Returns 0, -ENOENT for an unknown version, or -EINVAL. */
 int vmaf_model_builtin_data(const char *version, const char **data, size_t *len);
+
+/* RC4 WP5: record `source` (copied), the SHA-256 of `data[0..len)` (NULL
+ * data: of the file at `source`) and `flags` on `model`. 0, -ENOMEM, or the
+ * negative errno of reading the file. */
+int vmaf_model_stamp(VmafModel *model, const char *source, const void *data, size_t len,
+                     uint64_t flags);
+
+/* After a load that returned `err`: stamp `*model` and every member of
+ * `*collection` (NULL for a single model) with vmaf_model_stamp() and the
+ * load's flags. A stamp failure releases what the load returned, NULLs the
+ * out-parameters and is returned; `err` is returned unchanged. */
+int vmaf_model_stamp_loaded(int err, VmafModel **model, VmafModelCollection **collection,
+                            const VmafModelConfig *cfg, const char *source, const void *data,
+                            size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */

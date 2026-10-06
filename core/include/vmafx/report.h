@@ -17,12 +17,89 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <vmafx/types.h>
+#include <vmafx/error.h>
+#include <vmafx/context.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* No declarations yet: later RC4 work packages fill this header. */
+/**
+ * Format of a report (values equal enum VmafOutputFormat). Added in ABI 0.1.5.
+ * @since 0.1
+ */
+typedef enum VmafxReportFormat {
+    /** XML; carries a `<provenance>` element. */
+    VMAFX_REPORT_FORMAT_XML = 1,
+    /** JSON; carries a `provenance` object. */
+    VMAFX_REPORT_FORMAT_JSON = 2,
+    /** CSV; columns unchanged, provenance in the sidecar when asked. */
+    VMAFX_REPORT_FORMAT_CSV = 3,
+    /** Subtitles; lines unchanged, provenance in the sidecar when asked. */
+    VMAFX_REPORT_FORMAT_SUB = 4,
+} VmafxReportFormat;
+
+/*
+ * VmafxReportFlags: How vmafx_report_write() writes a report. Added in ABI 0.1.5. Bits of a u32
+ * field.
+ * @since 0.1
+ */
+/**
+ * Also write the provenance record to `<path>.provenance.json` (any format; CSV and SUB carry it
+ * nowhere else).
+ */
+#define VMAFX_REPORT_PROVENANCE_SIDECAR (UINT32_C(1) << 0U)
+
+/**
+ * A JSON report read back for verification (vmafx_report_open()). Added in ABI 0.1.5.
+ * @since 0.1
+ */
+typedef struct VmafxReportFile VmafxReportFile;
+
+/**
+ * Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format`
+ * (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and
+ * SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json`
+ * sidecar. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_report_write(VmafxContext *context, const char *path,
+                                            uint32_t format, uint32_t flags,
+                                            const char *score_format, VmafxError **error);
+
+/**
+ * Read the JSON report at `path` for verification; VMAFX_E_IO names an unreadable file,
+ * VMAFX_E_INVALID a report that is not JSON or carries no provenance object. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_report_open(const char *path, VmafxReportFile **out,
+                                           VmafxError **error);
+
+/**
+ * Release a report; NULL is a no-op. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_report_close(VmafxReportFile *file);
+
+/**
+ * Value of the report member at `path` (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`): a
+ * string's characters, or a number, `true`, `false` or `null` as written; NULL when absent or when
+ * the member is an object or array. Lives as long as the report. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT const char *vmafx_report_field(const VmafxReportFile *file, const char *path);
+
+/**
+ * Check `recorded`: its provenance digest and score digest (lossless reports) match its contents;
+ * with `rerun` (a report of the same configuration made again), every configuration field of the
+ * provenance record and every score equal bit for bit. VMAFX_E_MISMATCH names the first field that
+ * differs (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`) with both values; environment
+ * fields (version, build, device, timing) may differ. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_report_verify(const VmafxReportFile *recorded,
+                                             const VmafxReportFile *rerun, VmafxError **error);
 
 #ifdef __cplusplus
 }

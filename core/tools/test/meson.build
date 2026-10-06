@@ -117,10 +117,10 @@ test_vmaf_close_retry = executable(
 )
 test('test_vmaf_close_retry', test_vmaf_close_retry, suite : ['fast'])
 
-# ADR-1359: `--feature` routing under an explicit `--backend` and the JSON
-# backend receipt. The test defines vmaf_feature_backend_twin() and
-# vmaf_registered_feature_extractor() itself instead of linking libvmaf, so
-# every twin-lookup outcome runs without a GPU.
+# ADR-1359: `--feature` routing under an explicit `--backend`. The test
+# defines vmaf_feature_backend_twin() itself instead of linking libvmaf, so
+# every twin-lookup outcome runs without a GPU. The JSON backend receipt is
+# the library's since RC4 WP5 (test_vmafx_provenance).
 test_cli_feature_backend = executable(
     'test_cli_feature_backend',
     ['../../test/test.c', 'test_cli_feature_backend.c', '../cli_feature_backend.cpp'],
@@ -134,14 +134,17 @@ test_cli_feature_backend = executable(
 )
 test('test_cli_feature_backend', test_cli_feature_backend, suite : ['fast'])
 
-# #2155 / ADR-2044: the provenance member of the CLI's JSON report.
+# #2142 / ADR-2073 (RC4 WP5): the CLI's command line in the provenance record,
+# its report through vmafx_report_write(), and `--verify-provenance`.
 test_cli_provenance = executable(
     'test_cli_provenance',
-    ['../../test/test.c', 'test_cli_provenance.c', '../cli_provenance.c', '../cli_feature_backend.cpp'],
+    ['../../test/test.c', 'test_cli_provenance.c', '../cli_provenance.c',
+     '../../src/compat/path_utf8.c'],
     include_directories : [
         include_directories('../../test'),
         include_directories('..'),
         libvmaf_inc,
+        vmaf_include,
     ],
     c_args : vmaf_tool_cflags,
     cpp_args : vmaf_tool_cflags,
@@ -149,6 +152,20 @@ test_cli_provenance = executable(
     dependencies : vmaf_tool_deps,
 )
 test('test_cli_provenance', test_cli_provenance, suite : ['fast'])
+
+# #2142 / ADR-2073 (RC4 WP5): the record in the JSON, XML and CSV reports of the
+# CLI against core/api/vmafx.toml, and `--verify-provenance` on fresh and
+# planted reports. Synthetic frames; no fixture needed.
+foreach provenance_cli_test : ['test_vmaf_provenance_report', 'test_vmaf_verify_provenance']
+    test(provenance_cli_test,
+        import('python').find_installation(),
+        args : [files(provenance_cli_test + '.py'), vmaf.full_path(),
+                meson.project_source_root() / '..'],
+        depends : [vmaf],
+        suite : ['fast'],
+        timeout : 300,
+    )
+endforeach
 
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.

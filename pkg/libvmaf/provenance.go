@@ -6,22 +6,22 @@
 package libvmaf
 
 /*
-#include <string.h>
+#include <stddef.h>
 
 #include <libvmaf/libvmaf.h>
 #include <vmafx/libvmaf_bridge.h>
 #include <vmafx/provenance.h>
 
-// vmafx_go_provenance fills the provenance record of the VMAFx context a
-// libvmaf handle is bound to; -1 when the handle has none.
-static int vmafx_go_provenance(VmafContext *vmaf, VmafxProvenance *out)
+// vmafx_go_provenance_json points *json at the provenance record of the
+// VMAFx context a libvmaf handle is bound to, in the JSON form the vmaf CLI's
+// report carries (RC4 WP5); -1 when the handle has none. The text lives
+// until the next call on the context.
+static int vmafx_go_provenance_json(VmafContext *vmaf, const char **json)
 {
     VmafxContext *context = vmafx_context_from_libvmaf(vmaf);
     if (!context)
         return -1;
-    memset(out, 0, sizeof(*out));
-    out->struct_size = (uint32_t)sizeof(*out);
-    return vmafx_context_provenance(context, out, NULL);
+    return vmafx_context_provenance_json(context, 0u, json, NULL);
 }
 */
 import "C"
@@ -31,30 +31,16 @@ import (
 	"fmt"
 )
 
-// backendNames are the lower-case VmafxBackend value names (the enum of the
-// API definition, values equal to enum VmafBackend), as the CLI report and the
-// proto Provenance message spell them.
-var backendNames = map[uint32]string{0: "cpu", 1: "cuda", 2: "sycl", 3: "metal", 4: "hip"}
-
 // contextProvenance is the provenance record of a libvmaf context as JSON,
-// one key per field of VmafxProvenance (the form the CLI report carries).
+// the same text the CLI report embeds (vmafx_context_provenance_json(), RC4
+// WP5): one key per field of VmafxProvenance and its models, features and
+// annotations, which the server reads into the proto Provenance message.
 func contextProvenance(vmafCtx *C.VmafContext) (json.RawMessage, error) {
-	var record C.VmafxProvenance
-	if rc := C.vmafx_go_provenance(vmafCtx, &record); rc != 0 {
+	var text *C.char
+	if rc := C.vmafx_go_provenance_json(vmafCtx, &text); rc != 0 || text == nil {
 		return nil, fmt.Errorf("libvmaf: read the provenance record: status %d", int(rc))
 	}
-	backend, ok := backendNames[uint32(record.active_backend)]
-	if !ok {
-		backend = fmt.Sprintf("backend-%d", uint32(record.active_backend))
-	}
-	return json.Marshal(map[string]any{
-		"abi_major":      uint32(record.abi_major),
-		"abi_minor":      uint32(record.abi_minor),
-		"abi_patch":      uint32(record.abi_patch),
-		"active_backend": backend,
-		"n_extractors":   uint32(record.n_extractors),
-		"version":        C.GoString(record.version),
-	})
+	return json.RawMessage(C.GoString(text)), nil
 }
 
 // Provenance is the provenance record of the stream's context and the SHA-256

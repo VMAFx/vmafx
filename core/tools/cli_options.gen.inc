@@ -48,8 +48,10 @@ enum : std::uint16_t {
     ARG_OUTPUT_JSON,
     ARG_OUTPUT_CSV,
     ARG_OUTPUT_SUB,
+    ARG_PROVENANCE_SIDECAR,
     ARG_NETFLIX_COMPAT,
     ARG_HELP,
+    ARG_VERIFY_PROVENANCE,
 };
 
 const struct option long_opts[] = {
@@ -107,11 +109,13 @@ const struct option long_opts[] = {
     {.name = "json", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_JSON},
     {.name = "csv", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_CSV},
     {.name = "sub", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_SUB},
+    {.name = "provenance-sidecar", .has_arg = 0, .flag = nullptr, .val = ARG_PROVENANCE_SIDECAR},
     {.name = "netflix-compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
     {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
     {.name = "help", .has_arg = 0, .flag = nullptr, .val = ARG_HELP},
+    {.name = "verify-provenance", .has_arg = 1, .flag = nullptr, .val = ARG_VERIFY_PROVENANCE},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
 };
 
@@ -238,11 +242,18 @@ const char *const usage_lines[] = {
     "                               receipt. csv",
     " --sub:                        Report format; json and xml carry the backend",
     "                               receipt. sub",
+    " --provenance-sidecar:         Also write the provenance record to",
+    "                               <output>.provenance.json; CSV and SUB reports",
+    "                               carry it nowhere else (RC4 WP5).",
     " --netflix-compat, --netflix_compat:",
     "                               Restore the Netflix-upstream defaults: CPU",
     "                               backend, %.6f precision, vmaf_v0.6.1 model.",
     " --quiet/-q:                   Disable the FPS meter when run in a terminal.",
     " --version/-v:                 Print the version and exit.",
     " --help:                       Print this message and exit.",
+    " --verify-provenance $report:  Re-run the configuration a JSON report records",
+    "                               and compare every configuration field and score",
+    "                               bit for bit; exits nonzero naming the first",
+    "                               difference (RC4 WP5).",
 };
 // clang-format on

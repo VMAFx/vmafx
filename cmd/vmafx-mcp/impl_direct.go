@@ -113,6 +113,9 @@ func directScorePayload(
 		"backend_requested": backend,
 		"backend_used":      res.Backend + " (direct cgo)",
 		"frame_count":       res.FrameCount,
+		// RC4 WP5 (#2142): the provenance record, as the subprocess path's
+		// report carries it.
+		"provenance": res.Provenance,
 	}
 	if w := resolutionMismatchWarning(modelArg, width, height); w != "" {
 		payload["mismatched_model_warning"] = w

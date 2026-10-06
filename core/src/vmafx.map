@@ -9,16 +9,22 @@ VMAFX_0.1 {
     global:
         vmafx_abi_version;
         vmafx_context_admit;
+        vmafx_context_annotate;
+        vmafx_context_annotation;
         vmafx_context_create;
         vmafx_context_destroy;
         vmafx_context_extractor_count;
         vmafx_context_extractor_info;
+        vmafx_context_feature_provenance;
         vmafx_context_frame_retention;
         vmafx_context_from_libvmaf;
         vmafx_context_import_frame;
         vmafx_context_import_score;
         vmafx_context_libvmaf_handle;
+        vmafx_context_model_provenance;
         vmafx_context_provenance;
+        vmafx_context_provenance_json;
+        vmafx_context_set_encode_record;
         vmafx_context_set_option;
         vmafx_context_use_device;
         vmafx_context_use_feature;
@@ -39,6 +45,7 @@ VMAFX_0.1 {
         vmafx_error_status;
         vmafx_error_subject;
         vmafx_error_subject_kind;
+        vmafx_feature_provenance;
         vmafx_feature_resolve;
         vmafx_feature_score;
         vmafx_feature_score_pooled;
@@ -78,6 +85,11 @@ VMAFX_0.1 {
         vmafx_model_unref;
         vmafx_options_free;
         vmafx_options_set;
+        vmafx_report_close;
+        vmafx_report_field;
+        vmafx_report_open;
+        vmafx_report_verify;
+        vmafx_report_write;
         vmafx_score_frame;
         vmafx_score_frame_model_set;
         vmafx_score_pooled;

@@ -7,9 +7,9 @@
 
 /*
  * VMAFx contexts (ADR-1852): create / destroy, the per-context log callback,
- * context options, version, provenance and extractor queries, on the scoring
- * engine of core/src/libvmaf.c. libvmaf's vmaf_init(), vmaf_close() and
- * vmaf_version() are generated shims on these
+ * context options, version and extractor queries (provenance: provenance.c,
+ * RC4 WP5), on the scoring engine of core/src/libvmaf.c. libvmaf's
+ * vmaf_init(), vmaf_close() and vmaf_version() are generated shims on these
  * (core/src/vmafx/compat_libvmaf_gen.c).
  *
  * Logging (RC4 WP2): a context with a log callback receives its own messages
@@ -175,6 +175,10 @@ static VmafxContext *new_context(const VmafxContextConfig *cfg)
     if (!context) {
         return NULL;
     }
+    if (vmafx_provenance_init(&context->provenance) != 0) {
+        free(context);
+        return NULL;
+    }
     context->log_callback = cfg->log_callback;
     context->log_user = cfg->log_user;
     context->import_retry_wait_ns =
@@ -217,6 +221,7 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
         const VmafxStatus failed =
             VMAFX_FAIL(&own, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT, "engine",
                        "engine initialisation failed (%d)", err);
+        vmafx_provenance_release(&context->provenance);
         free(context);
         return failed;
     }
@@ -232,6 +237,7 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "no context");
     }
+    assert(context->engine != NULL); /* a context exists only with its engine */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_close(context->engine);
     vmafx_engine_leave(previous);
@@ -242,6 +248,7 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
     /* The engine released its collector's model owners; drop the context's
      * references (ADR-1755) only now, so a failed close keeps them. */
     release_held(context);
+    vmafx_provenance_release(&context->provenance);
     free(context);
     return VMAFX_OK;
 }
@@ -342,30 +349,6 @@ void vmafx_abi_version(uint32_t *major, uint32_t *minor, uint32_t *patch)
     if (patch) {
         *patch = VMAFX_ABI_VERSION_PATCH;
     }
-}
-
-VmafxStatus vmafx_context_provenance(const VmafxContext *context, VmafxProvenance *out,
-                                     VmafxError **error)
-{
-    const VmafxReport report = VMAFX_REPORT(context, error);
-    if (!context || !out) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          context ? "out" : "context", "NULL argument");
-    }
-    enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
-    const int err = vmaf_context_get_backend(context->engine, &backend);
-    if (err) {
-        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
-                          "context", "cannot read the active backend (%d)", err);
-    }
-    VmafxProvenance full = VMAFX_PROVENANCE_INIT;
-    full.abi_major = VMAFX_ABI_VERSION_MAJOR;
-    full.abi_minor = VMAFX_ABI_VERSION_MINOR;
-    full.abi_patch = VMAFX_ABI_VERSION_PATCH;
-    full.active_backend = (uint32_t)backend;
-    full.n_extractors = vmaf_engine_extractor_count(context->engine);
-    full.version = vmaf_engine_version();
-    return vmafx_write_sized(&report, out, &full, (uint32_t)sizeof(full), "out");
 }
 
 VmafxStatus vmafx_context_extractor_info(const VmafxContext *context, uint32_t index,

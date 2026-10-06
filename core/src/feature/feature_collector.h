@@ -58,6 +58,12 @@ typedef struct {
         double value;
     } *score;
     unsigned capacity;
+    /* RC4 WP5 (#2142): who wrote the vector, recorded with its first score
+     * from the producer installed on the writing thread
+     * (vmaf_feature_producer_swap()). */
+    char *producer;         /* extractor or model name; NULL: none recorded */
+    char *producer_options; /* the extractor's options, `key=value` joined by ':' in key order */
+    int source;             /* enum VmafFeatureSource */
 } FeatureVector;
 
 typedef struct {
@@ -92,6 +98,38 @@ typedef struct VmafFeatureCollector {
     bool destroyed;
 } VmafFeatureCollector;
 /* NOLINTEND(modernize-use-using) */
+
+/* RC4 WP5 (#2142): where the scores of a feature vector come from. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafFeatureSource {
+    VMAF_FEATURE_SOURCE_UNKNOWN = 0,
+    VMAF_FEATURE_SOURCE_EXTRACTOR = 1,
+    VMAF_FEATURE_SOURCE_IMPORTED = 2,
+    VMAF_FEATURE_SOURCE_MODEL = 3,
+};
+/* NOLINTEND(performance-enum-size) */
+
+/* What writes scores on the calling thread: the engine installs it around
+ * every extractor call (extract, collect, flush), a model prediction and an
+ * import. `name` and `options` are borrowed for the time it is installed; a
+ * vector created meanwhile copies them. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units. ADR-1138. */
+typedef struct VmafFeatureProducer {
+    int source; /* enum VmafFeatureSource */
+    const char *name;
+    const VmafDictionary *options;
+} VmafFeatureProducer;
+/* NOLINTEND(modernize-use-using) */
+
+/* Install `producer` on the calling thread; returns the one installed before,
+ * which the caller installs again when it is done. */
+VmafFeatureProducer vmaf_feature_producer_swap(VmafFeatureProducer producer);
+
+/* vmaf_feature_collector_append() with `source` / `producer` (no options)
+ * installed for the call: model predictions and imported scores. */
+int vmaf_feature_collector_append_from(VmafFeatureCollector *feature_collector,
+                                       const char *feature_name, double score, unsigned index,
+                                       int source, const char *producer);
 
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector);
 

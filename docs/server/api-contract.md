@@ -68,8 +68,11 @@ build that ran):
   "score": 76.66783149135578,
   "features": {"vmaf": 76.66783149135578, "integer_adm2": 0.9345057762923995, "integer_motion2": 3.894360826611791},
   "provenance": {
-    "library": {"abi_major": 0, "abi_minor": 1, "abi_patch": 4, "active_backend": "cpu",
-                "n_extractors": 3, "version": "v1.0.0-rc.2-529-gb8b3af281"},
+    "library": {"abi_major": 0, "abi_minor": 1, "abi_patch": 5, "active_backend": "cpu",
+                "n_extractors": 3, "version": "v1.0.0-rc.2-529-gb8b3af281",
+                "build_id": "sha256:...", "models": [{"name": "vmaf", "version": "vmaf_v0.6.1",
+                "sha256": "5950d61f...", "flags": "0", "overrides": ""}],
+                "features": [...], "annotations": [...], "digest": "sha256:...", ...},
     "model": "vmaf_v0.6.1",
     "model_sha256": "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3",
     "backend_used": "cpu",
@@ -85,7 +88,7 @@ Every scoring response carries `provenance`: the gRPC `ScoreResponse`, the
 
 | Field | Meaning |
 | --- | --- |
-| `library` | The library's provenance record (`VmafxProvenance`): ABI version, the backend imported into the context, the number of registered extractors and the build version |
+| `library` | The library's provenance record (`Provenance`, from `VmafxProvenance`): library, ABI and build, device, options, frames, the models with their SHA-256, the producer of every feature, the command line, and the digests ([Score provenance](../usage/provenance.md)) |
 | `model` | The model the server resolved the request's `model` to |
 | `model_sha256` | SHA-256 of the model file the server loaded |
 | `backend_used` | The backend the extractors ran on (`cpu` when all ran on the CPU) |
