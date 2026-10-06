@@ -209,6 +209,19 @@ static inline mu_message_t ciede_twin_bit_depth(const CiedeTwin *twin, unsigned 
     return ciede_twin_check(twin, &c);
 }
 
+/* 9, 11, 13, 14 and 15 bits (ADR-2145): the CPU `ciede` scores them now and the twin equals it. */
+static inline mu_message_t ciede_twin_odd_depths(const CiedeTwin *twin)
+{
+    static const unsigned depths[] = {9u, 11u, 13u, 14u, 15u};
+    for (size_t k = 0; k < sizeof(depths) / sizeof(depths[0]); k++) {
+        const mu_message_t msg = ciede_twin_bit_depth(twin, depths[k]);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
 /* Odd in both dimensions: the last column and row have chroma of their own. */
 static inline mu_message_t ciede_twin_odd_frame(const CiedeTwin *twin)
 {

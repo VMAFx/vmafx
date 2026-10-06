@@ -234,12 +234,27 @@ static char *test_ciede_1080p(void)
     return check_case(&c);
 }
 
+/* 9, 11, 13, 14 and 15 bits (ADR-2145). */
+static char *test_ciede_odd_depths(void)
+{
+    static const unsigned depths[] = {9u, 11u, 13u, 14u, 15u};
+    for (size_t k = 0; k < sizeof(depths) / sizeof(depths[0]); k++) {
+        const Case c = {"ciede 4:2:0", FIXTURE_W, FIXTURE_H, depths[k], VMAF_PIX_FMT_YUV420P};
+        char *const msg = check_case(&c);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
 static char *run_bit_depth_cases(void)
 {
     mu_run_test(test_ciede_8bit);
     mu_run_test(test_ciede_10bit);
     mu_run_test(test_ciede_12bit);
     mu_run_test(test_ciede_16bit);
+    mu_run_test(test_ciede_odd_depths);
     return NULL;
 }
 

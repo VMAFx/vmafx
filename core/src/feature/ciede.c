@@ -214,21 +214,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (pix_fmt == VMAF_PIX_FMT_YUV444P)
         return 0;
 
-    switch (bpc) {
-    case 8:
-        s->scale_chroma_planes = scale_chroma_planes;
-        break;
-    case 10:
-    case 12:
-    case 16:
-        s->scale_chroma_planes = scale_chroma_planes_hbd;
-        break;
-    default:
+    if (bpc < 8 || bpc > 16) {
         /* Unsupported bitdepth is a caller error, not OOM: report -EINVAL,
          * exactly as the former `err = -EINVAL;` + jump-to-`fail_tmp` pair did. */
         ciede_release_tmp(s);
         return -EINVAL;
     }
+    /* Every depth the engine reads, 8 to 16 bits (ADR-2164). */
+    s->scale_chroma_planes = bpc == 8 ? scale_chroma_planes : scale_chroma_planes_hbd;
 
     err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
     if (err) {
@@ -542,8 +535,13 @@ static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture 
                 d_u = ((uint8_t *)dist->data[1])[i * dist->stride[1] + j];
                 d_v = ((uint8_t *)dist->data[2])[i * dist->stride[2] + j];
                 break;
+            case 9:
             case 10:
+            case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
             case 16:
                 // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: the `stride / 2` is the byte→element step for a uint16_t array index, not a value flowing into the float `r_*` / `d_*` destinations. clang-tidy flags the integer division because the surrounding subscript result eventually lands in float, but the index arithmetic itself is correct integer math.
                 r_y = ((uint16_t *)ref->data[0])[i * (ref->stride[0] / 2) + j];

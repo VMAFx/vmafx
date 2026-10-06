@@ -101,16 +101,7 @@ namespace
 /* The scaler of picture_copy(): a sample is divided by 2^(bpc - 8). */
 static inline double fpsnr_scaler(unsigned bpc)
 {
-    if (bpc == 10) {
-        return 4.0;
-    }
-    if (bpc == 12) {
-        return 16.0;
-    }
-    if (bpc == 16) {
-        return 256.0;
-    }
-    return 1.0;
+    return bpc > 8 ? (double)(1u << (bpc - 8u)) : 1.0;
 }
 
 } // namespace
@@ -246,21 +237,12 @@ namespace
 
 static int configure_peak(FloatPsnrStateSycl *s, unsigned bpc)
 {
-    if (bpc == 8) {
-        s->peak = 255.0;
-        s->psnr_max = 60.0;
-    } else if (bpc == 10) {
-        s->peak = 255.75;
-        s->psnr_max = 72.0;
-    } else if (bpc == 12) {
-        s->peak = 255.9375;
-        s->psnr_max = 84.0;
-    } else if (bpc == 16) {
-        s->peak = 255.99609375;
-        s->psnr_max = 108.0;
-    } else {
+    if (bpc < 8 || bpc > 16) {
         return -EINVAL;
     }
+    /* The CPU's expression (float_psnr.c), every depth the engine reads. */
+    s->peak = (double)((1u << bpc) - 1u) / (double)(1u << (bpc - 8u));
+    s->psnr_max = 6.0 * (double)bpc + 12.0;
     return 0;
 }
 

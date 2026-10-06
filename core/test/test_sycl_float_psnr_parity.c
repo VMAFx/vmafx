@@ -104,6 +104,11 @@ static char *test_float_psnr_16bit_bright_exact(void)
     return float_psnr_twin_bright_1080p_exact(&twin);
 }
 
+static char *test_float_psnr_odd_depths_exact(void)
+{
+    return float_psnr_twin_odd_depths_exact(&twin);
+}
+
 static char *test_float_psnr_identical_8bit(void)
 {
     return float_psnr_twin_identical_exact(&twin, 8u, 60.0);
@@ -128,6 +133,7 @@ static char *run_noise_cases(void)
     mu_run_test(test_float_psnr_12bit_exact);
     mu_run_test(test_float_psnr_16bit_exact);
     mu_run_test(test_float_psnr_10bit_uncapped_exact);
+    mu_run_test(test_float_psnr_odd_depths_exact);
     return NULL;
 }
 

@@ -101,13 +101,9 @@ typedef struct CiedeStateHip {
 #define CIEDE_HIP_BX 16
 #define CIEDE_HIP_BY 16
 
-/* The bit depths the kernels hold ciede.c's constants for, in the order of
+/* The bit depths the kernels hold ciede.c's constants for: `bpc - 8` indexes
  * `kCiedeConstants` in integer_ciede/ciede_score.hip. */
-#define CIEDE_HIP_DEPTH_8 0u
-#define CIEDE_HIP_DEPTH_10 1u
-#define CIEDE_HIP_DEPTH_12 2u
-#define CIEDE_HIP_DEPTH_16 3u
-#define CIEDE_HIP_DEPTH_NONE 4u
+#define CIEDE_HIP_DEPTH_NONE 9u
 
 /* The planes of one picture as the kernels take them, by value; the layout of
  * `struct CiedeHipPlanes` in integer_ciede/ciede_score.hip. */
@@ -125,18 +121,8 @@ static const VmafOption options[] = {{0}};
  * cannot have. */
 static unsigned ciede_hip_depth_index(unsigned bpc)
 {
-    switch (bpc) {
-    case 8u:
-        return CIEDE_HIP_DEPTH_8;
-    case 10u:
-        return CIEDE_HIP_DEPTH_10;
-    case 12u:
-        return CIEDE_HIP_DEPTH_12;
-    case 16u:
-        return CIEDE_HIP_DEPTH_16;
-    default:
-        return CIEDE_HIP_DEPTH_NONE;
-    }
+    /* One entry per depth the engine reads, 8 to 16: the index is `bpc - 8`. */
+    return bpc >= 8u && bpc <= 16u ? bpc - 8u : CIEDE_HIP_DEPTH_NONE;
 }
 
 #ifdef HAVE_HIPCC
