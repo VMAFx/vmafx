@@ -719,6 +719,49 @@
   [API generation](docs/development/api-generation.md).
 
 
+- **FFmpeg `vmafx` filter (RC4 WP9, ADR-2125).** Patch `0021` adds the `vmafx`
+  filter, the FFmpeg filter of the VMAFx API (`./configure --enable-libvmafx`,
+  `libvmafx >= 1.0.0`; it can be built next to `--enable-libvmaf`). It scores
+  one or several named models plus extra features in one pass, pools over
+  `n_stats` windows, attaches per-frame scores as `lavfi.vmafx.<model>`
+  metadata, embeds the provenance record, and follows its frames to their
+  device: CUDA frames are imported without a copy, software frames score on the
+  CPU, and a frame it cannot import fails the graph naming the backend and the
+  extractor instead of passing unscored. `vmafx_tune` (patch `0021`) and
+  `vmafx_pre` (patch `0022`) are the VMAFx names of `libvmaf_tune` and
+  `vmaf_pre` and give the same results (`vmafx_tune` defaults to the library's
+  default model); `-vmafx-profile` (patch `0023`) is the VMAFx name of
+  `-vmaf-profile`. The `libvmaf*` filters stay until their retirement. See
+  [using VMAF with FFmpeg](docs/usage/ffmpeg.md#the-vmafx-filter).
+- **Hardware decoding for loopback decoders in FFmpeg (RC4 WP9, ADR-2125).**
+  Patch `0024` lets `-hwaccel`, `-hwaccel_device` and `-hwaccel_output_format`
+  precede `-dec`, so an encoder's output decodes on the GPU and reaches the
+  `vmafx` filter as device frames: encode, decode and score in one command
+  (#2138). The patch is carried by the fork only. See
+  [encode and score in one command](docs/usage/ffmpeg.md#encode-and-score-in-one-command).
+- **`vmafx` refuses a frame pool it would exhaust (RC4 WP9, ADR-2125).** A
+  fixed-size hardware frame pool (VAAPI, QSV, D3D11, D3D12, DXVA2) smaller than
+  the frames the filter holds is refused before the first frame with the size
+  it needs and the option that sets it, instead of failing mid-stream after a
+  partial score. See [frame pools](docs/usage/ffmpeg.md#frame-pools).
+
+
+- **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.10).**
+  `vmafx_model_load_spec()` loads the model a string such as
+  `version=vmaf_v0.6.1:name=vmaf:disable_clip` or
+  `path=model.json` names (keys `version`, `path`,
+  `name`, `disable_clip`, `enable_transform` and `<extractor>.<option>=<value>`
+  overrides; a backslash escapes the next `:`, `=`, `.` or backslash; an empty
+  string is the default model), and `vmafx_context_use_feature_spec()`
+  registers the extractor a string such as `psnr` or `cambi=full_ref=true`
+  (or upstream FFmpeg's `name=psnr`) names. An item that is not understood
+  returns `VMAFX_E_INVALID` naming it, and a string over 4096 bytes or more
+  than 64 items `VMAFX_E_RANGE`. The FFmpeg `vmafx` filter and the GStreamer
+  `vmafx` element spell their `model` and `feature` options with them, so one
+  string means the same thing on every surface. See
+  [the model API](docs/api/vmafx/model.md).
+
+
 - **A Windows CUDA tester zip measures every CUDA twin on a tester's Windows PC**
   (ADR-1516, `T-CUDA-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`).
   `vmafx-tester-windows-x64-cuda-<version>.zip` is the Windows tester zip with

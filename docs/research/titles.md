@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (794), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (795), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2667,6 +2667,10 @@ Every research digest, one heading each (794), so the site search finds a digest
 ## Research-2161: What an EGL dma-buf export of a GL texture is on a gfx1036, and how HIP can read it
 
 [2161-hip-gl-egl-dmabuf-tiling](2161-hip-gl-egl-dmabuf-tiling.md)
+
+## Research-2162: the VMAFx FFmpeg filters and GStreamer element (RC4 WP9)
+
+[2162-vmafx-ffmpeg-gstreamer-filters](2162-vmafx-ffmpeg-gstreamer-filters.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
