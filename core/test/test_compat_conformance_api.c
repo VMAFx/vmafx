@@ -326,7 +326,11 @@ static void tiny_runs(const VmafCompatApi *api, Trace *t, VmafDnnSession *sess)
     for (unsigned i = 0; i < 16u; i++) {
         trace(t, "out8 %u %u", i, out8[i]);
     }
-    trace(t, "run8 7x7 %d", api->dnn_session_run_luma8(sess, in8, 7, 7, 7, out8, 7));
+    /* A 7x7 plane the 4x4 model refuses: the planes hold 7x7 bytes, as a
+     * caller's must, since the library reads them before the session runs. */
+    uint8_t in7[49] = {0};
+    uint8_t out7[49] = {0};
+    trace(t, "run8 7x7 %d", api->dnn_session_run_luma8(sess, in7, 7, 7, 7, out7, 7));
     trace(t, "run16 %d", api->dnn_session_run_plane16(sess, in16, 8, 4, 4, 10, out16, 8));
     trace(t, "out16 %u %u", out16[0], out16[15]);
     const int64_t shape[4] = {1, 1, 4, 4};
