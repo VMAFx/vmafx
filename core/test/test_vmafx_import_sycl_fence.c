@@ -122,16 +122,30 @@ static void clip_close(Clip *c)
     free(c->dist);
 }
 
-/* A frame buffer of the producer: zeroed and finished, then written on the
- * producer's queue from `src` behind a host task that holds the queue; the
- * copy's event is the acquire fence (`*event`, freed by the caller). */
-static bool produce(const Clip *c, const VsPlanes *src, VsPlanes *dst, uintptr_t *event)
+/* Every frame buffer of an arm, allocated and zeroed (a reader that skips the
+ * acquire wait reads zeros, not the frame an earlier arm left in reused
+ * memory) and finished before any host task holds the producer: a host wait
+ * on the producer's queue while one of its host tasks completes crashed the
+ * SYCL runtime in about one run in fifteen (Research-2160 finding 8). */
+static bool zero_buffers(const Clip *c, VsPlanes *bufs)
 {
-    *dst = *src;
-    dst->base = vs_alloc(gpu.producer, c->bytes);
-    bool ok = dst->base && vs_fill(gpu.producer, dst->base, 0u, c->bytes) == 0 &&
-              vs_finish(gpu.producer) == 0 && vs_hold(gpu.producer, HOLD_US) == 0 &&
-              vs_copy_2d(gpu.producer, dst->base, c->bytes, src->base, c->bytes, c->bytes, 1u) == 0;
+    bool ok = true;
+    for (unsigned k = 0; k < 2u * N_FRAMES && ok; k++) {
+        bufs[k] = c->src[k];
+        bufs[k].base = vs_alloc(gpu.producer, c->bytes);
+        ok = bufs[k].base && vs_fill(gpu.producer, bufs[k].base, 0u, c->bytes) == 0;
+    }
+    return vs_finish(gpu.producer) == 0 && ok;
+}
+
+/* Frame buffer `dst` (zeroed) written on the producer's queue from `src`
+ * behind a host task that holds the queue; the copy's event is the acquire
+ * fence (`*event`, freed by the caller). */
+static bool produce(const Clip *c, const VsPlanes *src, const VsPlanes *dst, uintptr_t *event)
+{
+    const bool ok =
+        vs_hold(gpu.producer, HOLD_US) == 0 &&
+        vs_copy_2d(gpu.producer, dst->base, c->bytes, src->base, c->bytes, c->bytes, 1u) == 0;
     *event = ok ? vs_last_event(gpu.producer) : 0u;
     return ok && *event != 0u;
 }
@@ -179,7 +193,7 @@ static VmafxContext *run_fenced(const Clip *c, const VcCell *cell, VsPlanes *buf
                                 uintptr_t *events)
 {
     VmafxContext *const context = vc_cell_context(gpu.device, cell);
-    bool ok = context != NULL;
+    bool ok = context != NULL && zero_buffers(c, bufs);
     for (unsigned i = 0; i < N_FRAMES && ok; i++) {
         VmafxFrame *pair[2] = {NULL, NULL};
         for (unsigned s = 0; s < 2u && ok; s++) {

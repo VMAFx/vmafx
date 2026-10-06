@@ -109,9 +109,33 @@ this lane?
    2026.0. PR #2217's defect was measured on i915; this host runs xe, where it
    did not reproduce. The library queue keeps the property, the precaution
    #2217 recommends.
+8. **A host wait on a queue while one of its host tasks completes can crash
+   the runtime.** The acquire test's producer used to zero each frame buffer,
+   wait on its queue (`queue::wait()`), then hold the queue with a host task
+   and copy the frame, while imports on the library queue depended on the
+   copies. In 8 of about 110 runs the process died with `SIGSEGV`, all tests
+   having passed in some of them: 2 of 30 and 2 of 40 runs with DPC++ 2026.0,
+   3 of 30 and 1 of 9 with 2026.1.1. The cores show the runtime's host-task
+   worker thread in `Scheduler::NotifyHostTaskCompletion()` →
+   `cleanupCommands()` → `Command::~Command()` →
+   `event_impl::cleanDepEventsThroughOneLevel()` →
+   `cleanupDependencyEvents()`, with the main thread in
+   `Scheduler::waitForEvent()` under `queue::wait()` of the same producer
+   queue (2026.0); with 2026.1.1 the same `cleanupDependencyEvents()` frame,
+   and once `KernelProgramCache::reset()` doing a `memset()` on a null table at
+   exit. No VMAFx frame is on any of these stacks, and making the acquire a
+   barrier again did not change the rate (2 of 40). At process exit the
+   library holds no release slot and no queue (checked under a debugger).
+   With every buffer zeroed and finished before the first host task, so that
+   the host never waits on the producer while one of its host tasks
+   completes, the test ran 40 of 40 times clean with each toolchain and still
+   sees a skipped acquire wait (16 bad of 16). A plain-SYCL loop of the same
+   shape (memset, wait, host task, copy, a dependent kernel on a second queue,
+   with and without a busy second thread) did not crash in 10 runs of 400
+   iterations each, so no reproducer without VMAFx exists yet.
 
-Findings 1 to 3 by toolchain (plain-SYCL reproducers, no VMAFx code; not
-reported upstream yet):
+The runtime findings by toolchain (1 to 3 from plain-SYCL reproducers without
+VMAFx code, 8 from the fence test); none is reported upstream yet:
 
 | Finding | DPC++ 2026.0 (host) | DPC++ 2026.1.1 (dev image) |
 | --- | --- | --- |
@@ -119,6 +143,7 @@ reported upstream yet):
 | 2. barrier on a command behind a 50 ms host task | returns after 50.2 to 51.6 ms | returns after 50.2 to 51.2 ms |
 | 2. kernel / `memcpy()` with `depends_on()` on the same | returns after 0.03 ms | returns after 0.03 to 0.07 ms |
 | 3. `ext_oneapi_get_last_event()` after a 50 ms kernel | returns after 50.6 to 84.5 ms | returns after 51.7 to 54.2 ms (97.5 ms with the kernel build) |
+| 8. host wait on a queue while its host task completes (in the fence test) | `SIGSEGV` in host-task cleanup, 4 of 70 runs | `SIGSEGV` in host-task cleanup or at exit, 4 of 39 runs |
 
 [^f1]: With DPC++ 2026.0 the 2D copy behind a host task lost the device the
     same way. An earlier version of this digest said that the 2D copy was one
@@ -150,7 +175,13 @@ reported upstream yet):
 
 - Findings 1 to 3 reproduce in plain SYCL with DPC++ 2026.0 and 2026.1.1
   (table above); they are candidates for an upstream report against the
-  DPC++ runtime, not filed for now.
+  DPC++ runtime, not filed for now. Finding 8 has no plain-SYCL reproducer
+  yet.
+- The library signals a `HOST` release fence with a host task on its queue
+  and waits on that queue when a device is closed, the shape of finding 8.
+  No crash was seen there (the fence and import tests ran 40 and 20 times
+  clean); a library thread that waits on the release events would remove
+  host tasks from the library altogether if it ever appears.
 - A `SYNC_FILE` release fence needs a kernel fence for Level Zero work
   (external semaphores); not evaluated.
 - The behaviour under i915, and on Xe2 devices, is unmeasured in this lane.

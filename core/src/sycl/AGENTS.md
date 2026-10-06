@@ -190,6 +190,10 @@ sycl/
   `test_vmafx_import_sycl_gl` (suite `gpu`/`sycl`, Linux, not AdaptiveCpp),
   `test_vmafx_import_sycl_cells_contract.py` (fast: the cell table equals
   `scripts/ci/exact_twins.d/*.sycl`).
+- Tests never wait on the host for a producer queue while one of its host
+  tasks completes: the DPC++ runtime crashed in its host-task cleanup that
+  way (2026.0 and 2026.1.1, Research-2160 finding 8). The fence test zeroes
+  every buffer before its first host task.
 
 ## Rebase-sensitive build invariants
 
