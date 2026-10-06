@@ -237,6 +237,9 @@ offset, so the window times are shifted by it and nothing else differs.
   for its import lane (GL interop on CUDA and SYCL, the Vulkan import memory
   kind). On AMD, negotiate DMABuf instead of GL. VA and DMA-buf, D3D11 and
   Metal-backed memory are not imported yet.
+- Dolby Vision profile 5 sources need converting outside the pipeline before
+  scoring: VMAFx reads and applies no RPU data
+  ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md)).
 - The two inputs must have the same format and size, and the frames must pair
   one to one; a buffer whose partner never comes is dropped with a warning.
 - A window over the default model fails until
