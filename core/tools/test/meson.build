@@ -149,6 +149,22 @@ test_cli_feature_backend = executable(
 )
 test('test_cli_feature_backend', test_cli_feature_backend, suite : ['fast'])
 
+# #2155 / ADR-2044: the provenance member of the CLI's JSON report.
+test_cli_provenance = executable(
+    'test_cli_provenance',
+    ['../../test/test.c', 'test_cli_provenance.c', '../cli_provenance.c', '../cli_feature_backend.cpp'],
+    include_directories : [
+        include_directories('../../test'),
+        include_directories('..'),
+        libvmaf_inc,
+    ],
+    c_args : vmaf_tool_cflags,
+    cpp_args : vmaf_tool_cflags,
+    link_with : vmaf_tool_link_target,
+    dependencies : vmaf_tool_deps,
+)
+test('test_cli_provenance', test_cli_provenance, suite : ['fast'])
+
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.
 test_vmaf_roi_high_bitdepth = find_program('test_vmaf_roi_high_bitdepth.sh')

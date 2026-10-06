@@ -58,6 +58,7 @@
 #include "cli_backends.h"
 #include "cli_exit_status.h"
 #include "cli_feature_backend.h"
+#include "cli_provenance.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
 #include "spinner.h"
@@ -81,8 +82,6 @@
 
 #include "feature/feature_dimensions.h"
 #include "vmaf_close_retry.h"
-#include "vmafx/libvmaf_bridge.h"
-#include "vmafx/provenance.h"
 
 /* ADR-0543 (extends ADR-0498): dedicated exit code for an explicit-
  * backend init failure. Distinguishes a "you asked for SYCL but it
@@ -2388,17 +2387,13 @@ namespace
  * when the record cannot be read; the reason goes to stderr. */
 std::string provenance_receipt_member(VmafContext *vmaf)
 {
-    /* Value-initialised, then sized as VMAFX_PROVENANCE_INIT would; the C
-     * designated-initialiser macro trips -Wmissing-field-initializers in C++. */
-    VmafxProvenance provenance{};
-    provenance.struct_size = static_cast<uint32_t>(sizeof(provenance));
-    VmafxContext *const context = vmafx_context_from_libvmaf(vmaf);
-    if (!context || vmafx_context_provenance(context, &provenance, nullptr) != VMAFX_OK) {
+    const size_t len = cli_format_provenance_member(vmaf, nullptr, 0);
+    if (len == 0) {
         (void)fprintf(stderr, "vmaf: could not read the provenance record\n");
         return {};
     }
-    std::string member(cli_format_provenance_member(&provenance, nullptr, 0), '\0');
-    (void)cli_format_provenance_member(&provenance, member.data(), member.size() + 1);
+    std::string member(len, '\0');
+    (void)cli_format_provenance_member(vmaf, member.data(), member.size() + 1);
     return ", " + member;
 }
 

@@ -65,6 +65,7 @@ vmaf_cli_sources = [
     'vmaf.cpp',
     'cli_backends.cpp',
     'cli_feature_backend.cpp',
+    'cli_provenance.c',
     'cli_parse.cpp',
     'y4m_input.c',
     'vidinput.c',
