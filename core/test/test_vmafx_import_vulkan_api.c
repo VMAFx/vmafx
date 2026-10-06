@@ -306,22 +306,33 @@ static bool pci_is(const char *text, uint32_t a, uint32_t b, uint32_t c, uint32_
     return pci[0] == a && pci[1] == b && pci[2] == c && pci[3] == d;
 }
 
-/* The PCI bus id parser the CUDA and HIP lanes share: the runtimes' form,
- * the largest fields, and every other form refused as unknown. */
+/* The PCI bus id parser the CUDA and HIP lanes share: the runtimes' form
+ * and the largest fields. */
 static char *test_pci_bus_id(void)
 {
-    const uint32_t u = UINT32_MAX;
     mu_assert("CUDA form", pci_is("0000:06:00.0", 0u, 6u, 0u, 0u));
     mu_assert("HIP form, hex digits", pci_is("0000:7d:1f.7", 0u, 0x7du, 0x1fu, 7u));
     mu_assert("largest fields", pci_is("fffffffe:ff:1f.7", 0xfffffffeu, 0xffu, 0x1fu, 7u));
+    return NULL;
+}
+
+/* Every other form is refused as unknown (UINT32_MAX in each field). */
+static char *test_pci_bus_id_refused(void)
+{
+    /* empty, no domain, no function, trailing text, a sign, a blank, past
+     * 32 bits */
+    static const char *const refused[] = {"",
+                                          "06:00.0",
+                                          "0000:06:00",
+                                          "0000:06:00.0x",
+                                          "-001:06:00.0",
+                                          " 0000:06:00.0",
+                                          "100000000:00:00.0"};
+    const uint32_t u = UINT32_MAX;
     mu_assert("NULL", pci_is(NULL, u, u, u, u));
-    mu_assert("empty", pci_is("", u, u, u, u));
-    mu_assert("no domain", pci_is("06:00.0", u, u, u, u));
-    mu_assert("no function", pci_is("0000:06:00", u, u, u, u));
-    mu_assert("trailing text", pci_is("0000:06:00.0x", u, u, u, u));
-    mu_assert("a sign", pci_is("-001:06:00.0", u, u, u, u));
-    mu_assert("a blank", pci_is(" 0000:06:00.0", u, u, u, u));
-    mu_assert("past 32 bits", pci_is("100000000:00:00.0", u, u, u, u));
+    for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        mu_assert("a malformed bus id is refused", pci_is(refused[i], u, u, u, u));
+    }
     return NULL;
 }
 
@@ -338,6 +349,7 @@ char *run_tests(void)
         MU_TEST(test_vulkan_fences),
         MU_TEST(test_signal_on_release_refusals),
         MU_TEST(test_pci_bus_id),
+        MU_TEST(test_pci_bus_id_refused),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

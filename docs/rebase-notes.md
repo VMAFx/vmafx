@@ -62076,7 +62076,8 @@ lanes merged in), [ADR-2152](adr/2152-vmafx-vulkan-frame-import.md),
   `vmafx_vulkan_test_util.h`, `test_vmafx_import_vulkan*.c`; the Vulkan tests
   are built once per device lane when `dependency('vulkan')` is found.
 - Each lane reports its device's PCI location (`cuda/import_device.c`,
-  `sycl/vmafx_sycl_rt.cpp`, `hip/import_device.c`) and translates a VULKAN
+  `sycl/vmafx_sycl_rt.cpp`, `hip/import_device.c`), parsed by the one
+  `vmafx_parse_pci_bus_id()` of `vmafx/frame_import_vulkan.c`, and translates a VULKAN
   descriptor before its own checks (`cuda/import_frame.c`,
   `sycl/import_frame.c`, `hip/import_frame.c`).
 - `vmafx_exact_cells.h` holds `vc_import_only()` (`VMAFX_TEST_IMPORT_ONLY`),

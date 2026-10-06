@@ -205,6 +205,7 @@ static VmafxStatus map_array(const VmafxReport *report, const VmafxCudaDevice *d
                              const VmafxFrameImport *d, const VmafxImportLayout *layout, uint32_t i,
                              VmafxCudaVulkan *vk, CUarray *array)
 {
+    assert(i < 3u && vk->mem_of[i] < 3u);
     unsigned pw[3];
     unsigned ph[3];
     vmaf_picture_plane_extents(vmafx_engine_pixel_format(layout->planar_fmt), d->w, d->h, pw, ph);
@@ -233,6 +234,7 @@ static VmafxStatus map_pointer(const VmafxReport *report, const VmafxCudaDevice 
                                const VmafxFrameImport *d, uint32_t i, VmafxCudaVulkan *vk,
                                VmafxImportPlane *plane)
 {
+    assert(i < 3u);
     const uint32_t m = vk->mem_of[i];
     assert(m < 3u);
     if (!vk->mapped[m]) {
