@@ -62469,9 +62469,10 @@ FFmpeg patch impact.
   export, copy only with `VMAFX_IMPORT_ALLOW_COPY`, writers waited).
 - `core/test/test_vmafx_import_hip_gl.c` is EGL, not GLX, and uses the new
   `core/test/vmafx_egl_test_util.h`, which the SYCL GL test can adopt.
-- The SYCL lane (`rc4/api-wp3-sycl`) has its own EGL export in
-  `core/src/sycl/import_gl.c`: when the lanes merge, fold it onto
-  `egl_export.c` (one implementation, HISS-19).
+- The SYCL lane (`rc4/api-wp3-sycl`) had its own EGL export in
+  `core/src/sycl/import_gl.c`; on `rc4/integration` it is folded onto
+  `egl_export.c` (one implementation, HISS-19; see "The HIP and SYCL lanes
+  meet on the integration branch" below).
 - No `libvmaf.h`, ABI, golden-data or FFmpeg patch impact.
 
 ## Import of 4:2:2 and 4:4:4 layouts (RC4 WP3 formats lane)
@@ -62526,3 +62527,33 @@ ABI 0.1.5 (additive).
   `VfOps` of `vmafx_format_cells.h` with `VF_CELLS_HEADER` set to
   `vmafx_sycl_cells.h`.
 - No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## The HIP and SYCL lanes meet on the integration branch (`rc4/integration`)
+
+The WP3 HIP lane (#2341), its GL follow-up (#2360), the 4:2:2 / 4:4:4 lane
+(#2367), the WP3 SYCL lane (#2342) and its 4:2:2 / 4:4:4 half (#2368) merged
+into `rc4/integration`. What a rebase of either lane onto it must keep:
+
+- One implementation (HISS-19) of the host-checked producer fences:
+  `core/src/vmafx/sync_object.{c,h}` (sync_file poll, dma-buf implicit
+  fences, GL sync). The HIP lane's `gl_sync.c` and `sync_file.c` and their
+  `internal.h` declarations are gone; HIP code includes `vmafx/sync_object.h`.
+  `vmafx_fence_wait()` polls SYNC_FILE and GL_SYNC fences through
+  `vmafx_fence_poll()` (the virtual test clock).
+- One EGL export: `core/src/vmafx/egl_export.c`. `vmafx_egl_export_planes()`
+  takes a `VmafxEglTiled` mode instead of `allow_copy`: the HIP lane passes
+  REFUSE or COPY (from `VMAFX_IMPORT_ALLOW_COPY`), the SYCL lane KEEP (a
+  tiled export stays tiled for its device de-tile; no writers wait, the
+  dma-buf import honours the implicit fences). A target `fourcc` of 0 and a
+  NULL `device_pci` skip those checks. `sycl/import_gl.c` keeps only the
+  translation into a DMABUF descriptor.
+  `core/test/test_vmafx_one_egl_export_contract.py` refuses a lane that loads
+  EGL itself or a second definition of a sync-object function.
+- A SYNC_FILE fence is the caller's (borrowed): `vmafx_fence_destroy()`
+  refuses it with VMAFX_E_NOTSUP, as the HIP lane documents;
+  `test_vmafx_import_sycl`'s sync_file case closes the descriptor itself.
+- The thirteen 4:2:2 / 4:4:4 pixel formats are ABI 0.1.9 here (0.1.5 on the
+  lanes, ADR-1897). The HIP GL digest is Research-2161 here (both lanes added
+  a Research-2160); the SYCL digest keeps 2160.
+- Both lanes' import sources are in `libvmafx_sources` (the WP6 split,
+  ADR-2094).

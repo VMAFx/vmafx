@@ -398,6 +398,15 @@ test('test_vmafx_import_hip_contract',
     timeout : 30,
 )
 
+# HISS-19: one EGL export (vmafx/egl_export.c) and one sync-object
+# implementation (vmafx/sync_object.c) for every lane, with planted copies.
+test('test_vmafx_one_egl_export_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_one_egl_export_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_hip_shared_frame_contract',
     import('python').find_installation(),
     args : files('test_hip_shared_frame_contract.py'),

@@ -156,7 +156,9 @@ sycl/
   `vmafx_sycl_internal.h`, `import_device.c` (Level Zero GPUs, devices,
   engine attach), `import_frame.c` (checks, plan, conversions, picture
   attach), `import_dmabuf.c` (Linux dma-buf planes, implicit fences),
-  `import_gl.c` (EGL dma-buf export of GL textures), `import_fence.c`,
+  `import_gl.c` (GL textures through the shared `vmafx/egl_export.c` in its
+  keep mode: tiled exports stay tiled for the device de-tile; HISS-19),
+  `import_fence.c`,
   `import_pool.c`; the C++ half is `vmafx_sycl_rt.{h,cpp}` (C ABI, catches
   every exception). C files build into the library target; the `.cpp` is in
   `sycl_sources`.

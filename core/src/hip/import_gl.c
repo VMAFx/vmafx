@@ -72,9 +72,10 @@ VmafxStatus vmafx_hip_gl_export(const VmafxReport *report, const VmafxHipDevice 
                                       .h = ph[i]};
     }
     VmafxEglPlane planes[3];
-    const VmafxStatus status =
-        vmafx_egl_export_planes(report, "hip", dev->pci_bus_id, targets, layout->n_planes,
-                                (d->flags & VMAFX_IMPORT_ALLOW_COPY) != 0u, planes, copied);
+    const VmafxStatus status = vmafx_egl_export_planes(
+        report, "hip", dev->pci_bus_id, targets, layout->n_planes,
+        (d->flags & VMAFX_IMPORT_ALLOW_COPY) != 0u ? VMAFX_EGL_TILED_COPY : VMAFX_EGL_TILED_REFUSE,
+        planes, copied);
     if (status != VMAFX_OK) {
         return status;
     }

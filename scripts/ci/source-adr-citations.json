@@ -11630,7 +11630,6 @@
         "core/src/meson.build": 3,
         "core/src/picture.h": 1,
         "core/src/sycl/import_fence.c": 1,
-        "core/src/sycl/import_gl.c": 1,
         "core/src/vmafx/egl_export.c": 1,
         "core/src/vmafx/import_convert_kernels.h": 1,
         "core/src/vmafx/internal.h": 1,
@@ -11773,6 +11772,7 @@
         "core/src/sycl/vmafx_sycl_rt.h": 3,
         "core/src/vmafx/fence.c": 1,
         "core/src/vmafx/frame_import_admit.c": 1,
+        "core/src/vmafx/internal.h": 1,
         "core/src/vmafx/sync_object.c": 1,
         "core/src/vmafx/sync_object.h": 1,
         "core/test/meson.build": 2,
@@ -11784,6 +11784,7 @@
         "core/test/test_vmafx_import_sycl_fence.c": 2,
         "core/test/test_vmafx_import_sycl_formats.c": 1,
         "core/test/test_vmafx_import_sycl_gl.c": 1,
+        "core/test/test_vmafx_one_egl_export_contract.py": 1,
         "core/test/vmafx_exact_cells.h": 1,
         "core/test/vmafx_import_test_util.h": 1,
         "core/test/vmafx_sycl_cells.h": 1,
@@ -11841,7 +11842,8 @@
     "2094": {
       "sites": {
         ".github/workflows/tests-and-quality-gates.yml": 1,
-        "core/src/meson.build": 3
+        "core/src/meson.build": 3,
+        "core/src/sycl/d3d11_import.cpp": 1
       },
       "target": "2094-libvmaf-compat-library-split.md"
     },
@@ -11853,9 +11855,11 @@
         "core/src/hip/import_gl.c": 2,
         "core/src/hip/vmafx_hip_internal.h": 2,
         "core/src/vmafx/egl_export.c": 2,
+        "core/src/vmafx/internal.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_vmafx_import_hip_contract.py": 1,
         "core/test/test_vmafx_import_hip_gl.c": 1,
+        "core/test/test_vmafx_one_egl_export_contract.py": 1,
         "core/test/vmafx_egl_test_util.h": 1
       },
       "target": "2132-hip-gl-textures-through-egl-dmabuf.md"

@@ -361,16 +361,28 @@ typedef struct VmafxEglPlane {
     uint64_t size;
 } VmafxEglPlane;
 
+/* What vmafx_egl_export_planes() does with a texture the driver exports in
+ * its own tiling. One EGL export for every lane (HISS-19): the HIP lane reads
+ * linear rows (refuse, or copy with VMAFX_IMPORT_ALLOW_COPY, ADR-2132), the
+ * SYCL lane de-tiles Intel tilings on the device (keep, ADR-2091). */
+typedef enum VmafxEglTiled {
+    VMAFX_EGL_TILED_REFUSE = 0, /* VMAFX_E_NOTSUP naming VMAFX_IMPORT_ALLOW_COPY */
+    VMAFX_EGL_TILED_COPY = 1,   /* a GPU copy into a linear dma-buf (GBM, one blit) */
+    VMAFX_EGL_TILED_KEEP = 2,   /* as exported, with its modifier; the importer reads it */
+} VmafxEglTiled;
+
 /* The `n` (1 to 3) textures of the EGL context current on the calling thread
- * as linear dma-bufs in `out`. A texture the driver exports linear is
- * exported as it is; one exported tiled is copied on the GPU into a linear
- * dma-bufs (GBM, one blit) when `allow_copy`, and refused (VMAFX_E_NOTSUP)
- * otherwise; `*copied` tells whether any was. `device_pci` ("0000:0e:00.0")
- * is the importing device's GPU, checked against the context's. On a failure
- * every descriptor is closed. */
+ * as dma-bufs in `out`. A texture the driver exports linear is exported as it
+ * is; one exported tiled is handled as `tiled` says; `*copied` tells whether
+ * any was copied. A target's `fourcc` is checked against the export unless 0.
+ * `device_pci` ("0000:0e:00.0") is the importing device's GPU, checked
+ * against the context's; NULL skips the check. With REFUSE and COPY every
+ * export waits (1 s at most) for the producer's writes; with KEEP the importer
+ * honours the dma-buf's implicit fences. On a failure every descriptor is
+ * closed. */
 VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
                                     const char *device_pci, const VmafxEglTarget *targets,
-                                    uint32_t n, bool allow_copy, VmafxEglPlane out[3],
+                                    uint32_t n, VmafxEglTiled tiled, VmafxEglPlane out[3],
                                     bool *copied);
 /* Close the descriptors of `n` exported planes. */
 void vmafx_egl_close_planes(VmafxEglPlane *planes, uint32_t n);
