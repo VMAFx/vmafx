@@ -2319,10 +2319,11 @@ mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
 
 [[option_groups.options]]
 name = "precision"
-type = "string"
+type = "enum"
+enum = ["legacy", "max", "full", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"]
 default = "legacy"
 surface_defaults = { proto = "max" }
-doc = "Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise."
+doc = "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise."
 cli = ["--precision"]
 cli_meta = "$spec"
 mcp = "precision"

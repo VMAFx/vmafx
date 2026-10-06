@@ -106,7 +106,7 @@ list from the same source.
 | `--hip_device` | | uint | | HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given). |
 | `--metal_device` | | uint | | Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given). |
 | `--subsample` | | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
-| `--precision` | | string | `legacy` | Score precision: N (1..17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
+| `--precision` | | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | `legacy` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
 | `--output` | `-o` | string | | Report file. |
 | `--xml`, `--json`, `--csv`, `--sub` | | `json` \| `xml` \| `csv` \| `sub` | `xml` | Report format; json and xml carry the backend receipt. |
 | `--netflix-compat`, `--netflix_compat` | | bool | `false` | Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model. |

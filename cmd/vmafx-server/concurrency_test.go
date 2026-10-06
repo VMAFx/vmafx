@@ -166,7 +166,7 @@ for i in $(seq 1 300); do
 done
 # Emit canned JSON so parseOutput succeeds.
 if [ -n "$outfile" ]; then
-  printf '%%s' '{"pooled_metrics":{"vmaf":{"mean":76.6683}}}' > "$outfile"
+  printf '%%s' '{"pooled_metrics":{"vmaf":{"mean":76.6683}},"provenance":{"abi_major":0,"version":"test"}}' > "$outfile"
 fi
 exit 0
 `, signalDir, signalDir)

@@ -45,6 +45,14 @@ paths:
         (without the `.json` extension) from `VMAFX_MODEL_DIR`.  When
         omitted the server defaults to `vmaf_v1.0.16_3d0h`, the library
         default (`VMAF_DEFAULT_MODEL_VERSION`).
+
+        The optional `options` object carries the scoring options
+        (`ScoreOptions`, generated from the API definition): raw `.yuv`
+        geometry, backend and device, threads, subsample, precision,
+        features, tiny model and more. Scores are lossless (`precision`
+        `max`) unless `options.precision` asks otherwise, and every
+        response carries `provenance`. The same request gives the same
+        score through the `vmaf` CLI and the C API (docs/server/api-contract.md).
       tags: [scoring]
       requestBody:
         required: true
@@ -59,6 +67,11 @@ paths:
                   reference: "/data/src01_hrc00_576x324.yuv"
                   distorted: "/data/src01_hrc01_576x324.yuv"
                   model: "vmaf_v0.6.1"
+                  options:
+                    width: 576
+                    height: 324
+                    pixel_format: "420"
+                    bitdepth: 8
       responses:
         "200":
           description: Scoring completed successfully
@@ -315,7 +328,28 @@ components:
           description: "Score every n-th frame (1: every frame). Unset: 1."
         precision:
           type: "string"
-          description: "Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. Unset: max."
+          enum:
+            - "legacy"
+            - "max"
+            - "full"
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
+            - "6"
+            - "7"
+            - "8"
+            - "9"
+            - "10"
+            - "11"
+            - "12"
+            - "13"
+            - "14"
+            - "15"
+            - "16"
+            - "17"
+          description: "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. Unset: max."
         view_distance:
           type: "number"
           minimum: 0.75
@@ -398,6 +432,8 @@ components:
             extension) in the server's `VMAFX_MODEL_DIR`.  Defaults to
             `vmaf_v1.0.16_3d0h`, the library default, when omitted.
           example: "vmaf_v0.6.1"
+        options:
+          $ref: "#/components/schemas/ScoreOptions"
 
     ScoreResponse:
       type: object
@@ -421,6 +457,44 @@ components:
             adm2: 0.9876
             motion2: 2.3456
             vif_scale0: 0.8912
+        provenance:
+          $ref: "#/components/schemas/ScoreProvenance"
+
+    FeatureBackend:
+      type: object
+      description: One entry of the backend receipt.
+      properties:
+        extractor:
+          type: string
+          description: Extractor name (e.g. `adm`, `motion`).
+        backend:
+          type: string
+          description: Backend it ran on (`cpu`, `cuda`, `sycl`, `hip`, `metal`).
+
+    ScoreProvenance:
+      type: object
+      description: |
+        How a score was made (#2142, #2155): the library record, the model the
+        server loaded and the backend receipt. Every scoring response carries it.
+      properties:
+        library:
+          $ref: "#/components/schemas/Provenance"
+        model:
+          type: string
+          description: Model the server resolved the request's model name to.
+        model_sha256:
+          type: string
+          description: SHA-256 (lower-case hex) of the model file the server loaded.
+        backend_used:
+          type: string
+          description: Backend the extractors ran on (`cpu` when all ran on the CPU).
+        feature_backends:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureBackend"
+        precision:
+          type: string
+          description: Precision the scores were computed with (`max` is lossless).
 
     HealthResponse:
       type: object

@@ -97,7 +97,7 @@ reproduce the numbers of releases before 1.0.0-rc.4.
 | `hip_device` | uint | | | `vmaf_score`, `vmaf_score_encoded` | HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given). |
 | `metal_device` | uint | | | `vmaf_score`, `vmaf_score_encoded` | Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given). |
 | `subsample` | uint >= 1 | | `1` | `vmaf_score`, `vmaf_score_encoded` | Score every n-th frame (1: every frame). |
-| `precision` | string | | `legacy` | `vmaf_score`, `vmaf_score_encoded` | Score precision: N (1..17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
+| `precision` | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | | `legacy` | `vmaf_score`, `vmaf_score_encoded` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
 | `output_fmt` | `json` \| `xml` \| `csv` \| `sub` | | `json` | `vmaf_score`, `vmaf_score_encoded` | Report format; json and xml carry the backend receipt. |
 | `csv` | bool | | `false` | `vmaf_score`, `vmaf_score_encoded` | Write the report as CSV; the same as output_fmt csv. |
 | `sub` | bool | | `false` | `vmaf_score`, `vmaf_score_encoded` | Write per-frame scores as subtitles; the same as output_fmt sub. |

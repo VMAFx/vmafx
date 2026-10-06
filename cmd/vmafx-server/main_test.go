@@ -37,12 +37,17 @@ import (
 // vmafGoldenJSON is a canned vmaf CLI JSON output representing the Netflix
 // golden pair (src01_hrc00_576x324 ↔ src01_hrc01_576x324, VMAF ≈ 76.6683).
 const vmafGoldenJSON = `{
+  "version": "v1.0.0-rc.4-test",
   "pooled_metrics": {
     "vmaf":       {"mean": 76.6683},
     "vif_scale0": {"mean": 0.8912},
     "adm2":       {"mean": 0.9876},
     "motion2":    {"mean": 2.3456}
-  }
+  },
+  "backend_used": "cpu",
+  "feature_backends": [{"extractor": "adm", "backend": "cpu"}],
+  "provenance": {"abi_major": 0, "abi_minor": 1, "abi_patch": 4, "active_backend": "cpu",
+                 "n_extractors": 3, "version": "v1.0.0-rc.4-test"}
 }`
 
 // writeVmafStub writes a shell-script stub that emits a canned JSON payload

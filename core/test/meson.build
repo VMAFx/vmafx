@@ -1274,6 +1274,30 @@ test('test_vmafx_api_generator',
     timeout : 120,
 )
 
+# RC4 WP8 / #2155: the scoring contract. vmafx_score_contract is the C API leg
+# (not a test itself); run_score_contract.py runs the Go contract test of
+# cmd/vmafx-server against this build: the same requests through the CLI, the
+# C API and the server must give the same score bit for bit. Skips (77, reason
+# printed) without Go or without the fixtures; a skipped Go test never passes.
+vmafx_score_contract = executable('vmafx_score_contract',
+    ['vmafx_score_contract.c'],
+    include_directories : [libvmaf_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+)
+if get_option('default_library') != 'static'
+    test('test_vmafx_score_contract',
+        import('python').find_installation(),
+        args : [files('run_score_contract.py'), meson.project_source_root() / '..',
+                vmaf.full_path(), vmafx_score_contract.full_path(),
+                meson.project_build_root() / 'src'],
+        depends : [vmaf, vmafx_score_contract, libvmaf_public_link],
+        suite : ['contract'],
+        is_parallel : false,
+        timeout : 1500,
+    )
+endif
+
 if get_option('default_library') != 'static'
     test('test_vmafx_python_binding',
         import('python').find_installation(),

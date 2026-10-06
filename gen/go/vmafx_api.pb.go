@@ -109,9 +109,10 @@ type ScoreOptions struct {
 	// No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only
 	// the distorted picture is scored. Unset: false.
 	NoReference *bool `protobuf:"varint,39,opt,name=no_reference,json=noReference,proto3,oneof" json:"no_reference,omitempty"`
-	// Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless);
+	// Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless);
 	// legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless
-	// asked otherwise. Unset: max.
+	// asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	// 16, 17. Unset: max.
 	Precision *string `protobuf:"bytes,40,opt,name=precision,proto3,oneof" json:"precision,omitempty"`
 	// Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value.
 	ViewDistance *float64 `protobuf:"fixed64,50,opt,name=view_distance,json=viewDistance,proto3,oneof" json:"view_distance,omitempty"`
