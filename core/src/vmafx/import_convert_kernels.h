@@ -6,14 +6,16 @@
  */
 
 /*
- * Planarisation of imported semi-planar frames on a device (RC4 WP3,
- * ADR-1929 item 6): NV12 / P010 / P016 chroma de-interleaved into two
- * planes, and the P010 luma shifted by 6 into a plane of its own. Nothing
- * else: every output sample is an input sample, right-shifted by `shift`, so
- * an imported frame scores bit for bit as the same frame uploaded from the
- * host. The host reference is the row reader of core/src/metal/
- * iosurface_layout.h (vmaf_metal_read_plane()); a change to either changes
- * both.
+ * Planarisation of imported semi-planar and packed frames on a device (RC4
+ * WP3, ADR-1929 item 6, ADR-2133): the chroma of NV12 / NV16 / NV24 and the
+ * P0xx / P2xx / P4xx family de-interleaved into two planes, the P010-style
+ * luma shifted by 6 into a plane of its own, and the packed layouts (Y210,
+ * Y212, YUYV422, Y410 / XV30, XV36, VUYX) and planar words with the sample
+ * in the top bits (YUV444P_MSB) gathered into planes. Nothing else: every output sample is an input sample, right-shifted
+ * by `shift` and (XV30) masked to 10 bits, so an imported frame scores bit
+ * for bit as the same frame uploaded from the host. The host reference is
+ * vmafx_import_read_plane() (core/src/vmafx/import_convert.h); a change to
+ * either changes both.
  *
  * One definition for the CUDA and HIP lanes (HISS-19): nvcc compiles it
  * through core/src/cuda/import_convert.cu (ADR-2023), hipcc through
@@ -90,6 +92,43 @@ __global__ void vmafx_import_shift_16(const uint8_t *src, size_t src_pitch, uint
         return;
     }
     store16(dst + (size_t)y * dst_pitch, x, load16(src + (size_t)y * src_pitch, x) >> shift);
+}
+
+/* Packed layouts and planar words with the sample in the top bits: one output
+ * plane from the producer's plane by the plan of vmafx_import_plane_read()
+ * (core/src/vmafx/import_convert.h, VmafxImportRead): sample x of row y is the
+ * element x * step + offset of the producer's row (1, 2 or 4 bytes,
+ * little-endian), shifted right by `shift` and masked with `mask` (0: none),
+ * stored as 1 or 2 bytes. One thread per output sample; the host launches it
+ * once per output plane. */
+__global__ void vmafx_import_gather(const uint8_t *src, size_t src_pitch, uint8_t *dst,
+                                    size_t dst_pitch, unsigned w, unsigned h, unsigned step,
+                                    unsigned offset, unsigned in_bytes, unsigned shift,
+                                    unsigned mask, unsigned out_bytes)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) {
+        return;
+    }
+    const uint8_t *const row = src + (size_t)y * src_pitch;
+    const size_t at = ((size_t)x * step + offset) * in_bytes;
+    unsigned v = row[at];
+    if (in_bytes >= 2u) {
+        v |= (unsigned)row[at + 1u] << 8u;
+    }
+    if (in_bytes == 4u) {
+        v |= ((unsigned)row[at + 2u] << 16u) | ((unsigned)row[at + 3u] << 24u);
+    }
+    v >>= shift;
+    if (mask != 0u) {
+        v &= mask;
+    }
+    if (out_bytes == 1u) {
+        dst[(size_t)y * dst_pitch + x] = (uint8_t)v;
+    } else {
+        store16(dst + (size_t)y * dst_pitch, x, v);
+    }
 }
 
 } /* extern "C" */

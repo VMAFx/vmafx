@@ -103,6 +103,14 @@ const char *vmafx_hip_refusal(const char *extractor)
 static VmafxStatus check_hip_memory(const VmafxReport *report, const VmafxFrameImport *d,
                                     const VmafxImportLayout *layout)
 {
+    if ((layout->packed != VMAFX_IMPORT_PACKED_NONE || layout->msb) &&
+        (d->memory == VMAFX_MEMORY_DEVICE_ARRAY || d->memory == VMAFX_MEMORY_GL_TEXTURE)) {
+        return VMAFX_FAIL(
+            report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
+            "backend hip, memory %s, pixel format %s: a packed or MSB layout is linear "
+            "words, not a HIP array or a GL texture of samples",
+            vmafx_memory_kind_name(d->memory), layout->name);
+    }
     switch (d->memory) {
     case VMAFX_MEMORY_DEVICE_POINTER:
     case VMAFX_MEMORY_DMABUF:
@@ -115,7 +123,7 @@ static VmafxStatus check_hip_memory(const VmafxReport *report, const VmafxFrameI
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "backend hip, memory %s, pixel format %s: the twins read linear "
                           "device memory, so a planar frame in HIP arrays is a device copy, made "
-                          "only with VMAFX_IMPORT_ALLOW_COPY (NV12 / P010 / P016 arrays are "
+                          "only with VMAFX_IMPORT_ALLOW_COPY (semi-planar arrays are "
                           "converted without it)",
                           vmafx_memory_kind_name(d->memory), layout->name);
     default:
@@ -237,7 +245,17 @@ static size_t pitch_of(unsigned w, size_t bytes)
 /* Planes of the frame the import converts (semi-planar chroma, P010 luma). */
 static bool converted_plane(const VmafxImportLayout *layout, uint32_t i)
 {
-    return layout->shift != 0u || (i > 0u && layout->interleaved);
+    return layout->shift != 0u || layout->msb || layout->packed != VMAFX_IMPORT_PACKED_NONE ||
+           (i > 0u && layout->interleaved);
+}
+
+/* The producer plane frame plane `i` is read from. */
+static uint32_t source_plane(const VmafxImportLayout *layout, uint32_t i)
+{
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        return 0u;
+    }
+    return layout->interleaved && i > 0u ? 1u : i;
 }
 
 /* Which planes the frame owns: converted (semi-planar chroma, the P010
@@ -311,6 +329,26 @@ static hipError_t shift_luma(const VmafxHipDevice *dev, const HipPlan *plan, uin
     return launch_2d(dev, dev->kernels.shift_16, w, h, args);
 }
 
+/* Plane `i` of a packed layout or of MSB planar words, gathered from the
+ * producer's plane by the plan the host reference uses
+ * (vmafx_import_plane_read(), vmafx_import_read_plane()). */
+static hipError_t gather_plane(const VmafxHipDevice *dev, const HipSource *src, const HipPlan *plan,
+                               uint8_t *base, uint32_t i)
+{
+    VmafxImportRead rd;
+    vmafx_import_plane_read(src->layout, src->d->bpc, i, &rd);
+    const void *in = src->base[rd.src_plane];
+    size_t in_pitch = (size_t)src->d->plane[rd.src_plane].pitch;
+    void *out = base + plan->offset[i];
+    size_t out_pitch = plan->pitch[i];
+    unsigned w = plan->pw[i];
+    unsigned h = plan->ph[i];
+    unsigned out_bytes = plan->bytes;
+    void *args[] = {(void *)&in, &in_pitch,  (void *)&out, &out_pitch, &w,       &h,
+                    &rd.step,    &rd.offset, &rd.in_bytes, &rd.shift,  &rd.mask, &out_bytes};
+    return launch_2d(dev, dev->kernels.gather, w, h, args);
+}
+
 /* The planted host-copy defect (VMAFX_TEST_FORCE_HOST_COPY): a device plane
  * staged through host memory into a plane of the frame's own. Counted, so
  * the tests that assert no host copy fail when it is planted. */
@@ -340,7 +378,7 @@ static hipError_t fill_linear_plane(const VmafxHipDevice *dev, const HipSource *
 {
     const VmafxImportLayout *const layout = src->layout;
     const bool pair = layout->interleaved && i > 0u;
-    const uint32_t from = pair ? 1u : i;
+    const uint32_t from = source_plane(layout, i);
     const size_t pitch = (size_t)src->d->plane[from].pitch;
     if (!plan->owned[i]) {
         data[i] = src->base[from]; /* bound */
@@ -350,6 +388,9 @@ static hipError_t fill_linear_plane(const VmafxHipDevice *dev, const HipSource *
         return hipErrorInvalidValue; /* an owned plane needs the frame's memory */
     }
     data[i] = (void *)(base + plan->offset[i]);
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE || layout->msb) {
+        return gather_plane(dev, src, plan, base, i);
+    }
     if (i == 2u && pair) {
         return hipSuccess; /* written with plane 1 */
     }
@@ -483,7 +524,8 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxHipFrame *hf, con
             status = fill_failed(report, src, i, rc);
         }
     }
-    if (status == VMAFX_OK && src->layout->interleaved) {
+    if (status == VMAFX_OK &&
+        (converted_plane(src->layout, 0u) || converted_plane(src->layout, 1u))) {
         vmafx_count_conversion();
     }
     if (status == VMAFX_OK && src->from_arrays && !src->layout->interleaved) {

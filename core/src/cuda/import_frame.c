@@ -95,6 +95,13 @@ const char *vmafx_cuda_refusal(const char *extractor)
 static VmafxStatus check_cuda_memory(const VmafxReport *report, const VmafxFrameImport *d,
                                      const VmafxImportLayout *layout)
 {
+    if ((layout->packed != VMAFX_IMPORT_PACKED_NONE || layout->msb) &&
+        (d->memory == VMAFX_MEMORY_DEVICE_ARRAY || d->memory == VMAFX_MEMORY_GL_TEXTURE)) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
+                          "backend cuda, memory %s, pixel format %s: a packed or MSB layout is "
+                          "linear words, not a CUDA array or a GL texture of samples",
+                          vmafx_memory_kind_name(d->memory), layout->name);
+    }
     switch (d->memory) {
     case VMAFX_MEMORY_DEVICE_POINTER:
         return VMAFX_OK;
@@ -106,7 +113,7 @@ static VmafxStatus check_cuda_memory(const VmafxReport *report, const VmafxFrame
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "backend cuda, memory %s, pixel format %s: the extractors read linear "
                           "device memory, so a planar frame in CUDA arrays is a device copy, "
-                          "made only with VMAFX_IMPORT_ALLOW_COPY (NV12 / P010 / P016 arrays are "
+                          "made only with VMAFX_IMPORT_ALLOW_COPY (semi-planar arrays are "
                           "converted without it)",
                           vmafx_memory_kind_name(d->memory), layout->name);
     default:
@@ -144,7 +151,8 @@ static bool bindable(const VmafxImportPlane *p, uint64_t row, uint64_t rows)
  * read a byte at a time, so any address and pitch. */
 static bool converted_plane(const VmafxImportLayout *layout, uint32_t i)
 {
-    return layout->shift != 0u || (i > 0u && layout->interleaved);
+    return layout->shift != 0u || layout->msb || layout->packed != VMAFX_IMPORT_PACKED_NONE ||
+           (i > 0u && layout->interleaved);
 }
 
 /* A plane of device pointer memory: linear, inside the address space, and
@@ -338,6 +346,27 @@ static CUresult shift_luma(const VmafxCudaDevice *dev, const CudaPlan *plan, CUd
     return launch_2d(dev, dev->kernels.shift_16, w, h, args);
 }
 
+/* Plane `i` of a packed layout or of MSB planar words, gathered from the
+ * producer's plane by the plan the host reference uses
+ * (vmafx_import_plane_read(), vmafx_import_read_plane()). */
+static CUresult gather_plane(const VmafxCudaDevice *dev, const CudaSource *src,
+                             const CudaPlan *plan, CUdeviceptr base, uint32_t i)
+{
+    VmafxImportRead rd;
+    vmafx_import_plane_read(src->layout, src->d->bpc, i, &rd);
+    const VmafxImportPlane *const from = &src->d->plane[rd.src_plane];
+    CUdeviceptr in = (CUdeviceptr)from->handle + (CUdeviceptr)from->offset;
+    size_t in_pitch = (size_t)src->d->plane[rd.src_plane].pitch;
+    CUdeviceptr out = base + plan->offset[i];
+    size_t out_pitch = plan->pitch[i];
+    unsigned w = plan->pw[i];
+    unsigned h = plan->ph[i];
+    unsigned out_bytes = plan->bytes;
+    void *args[] = {&in,      &in_pitch,  &out,         &out_pitch, &w,       &h,
+                    &rd.step, &rd.offset, &rd.in_bytes, &rd.shift,  &rd.mask, &out_bytes};
+    return launch_2d(dev, dev->kernels.gather, w, h, args);
+}
+
 /* The planted host-copy defect (VMAFX_TEST_FORCE_HOST_COPY): a device plane
  * staged through host memory into a plane of the frame's own. Counted, so
  * the tests that assert no host copy fail when it is planted. */
@@ -402,10 +431,14 @@ static CUresult fill_pointer_plane(const VmafxCudaDevice *dev, const CudaSource 
 {
     const VmafxImportLayout *const layout = src->layout;
     const bool pair = layout->interleaved && i > 0u;
-    const VmafxImportPlane *const p = &src->d->plane[pair ? 1u : i];
+    const VmafxImportPlane *const p =
+        &src->d->plane[layout->packed != VMAFX_IMPORT_PACKED_NONE ? 0u : (pair ? 1u : i)];
     data[i] = plan->owned[i] ? base + plan->offset[i] : plane_pointer(p);
     if (!plan->owned[i] || (i == 2u && pair)) {
         return CUDA_SUCCESS; /* bound, or written with plane 1 */
+    }
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE || layout->msb) {
+        return gather_plane(dev, src, plan, base, i);
     }
     if (pair) {
         return deinterleave(dev, plan, base, plane_pointer(p), (size_t)p->pitch, layout->shift);
@@ -556,7 +589,8 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxCudaFrame *cf, co
                             "backend cuda: cannot enqueue the planes of the import (CUDA error %d)",
                             (int)res);
     }
-    if (status == VMAFX_OK && src->layout->interleaved) {
+    if (status == VMAFX_OK &&
+        (converted_plane(src->layout, 0u) || converted_plane(src->layout, 1u))) {
         vmafx_count_conversion();
     }
     if (status == VMAFX_OK && (plan.copied[0] || plan.copied[1] || plan.copied[2] ||

@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 4)
+ABI_VERSION = (0, 1, 5)
 
 
 class Status(enum.IntEnum):
@@ -65,6 +65,19 @@ class PixelFormat(enum.IntEnum):
     NV12 = 16
     P010 = 17
     P016 = 18
+    NV16 = 19
+    P210 = 20
+    P216 = 21
+    NV24 = 22
+    P410 = 23
+    P416 = 24
+    Y210 = 25
+    Y410 = 26
+    YUYV422 = 27
+    Y212 = 28
+    VUYX = 29
+    XV36 = 30
+    YUV444P_MSB = 31
 
 
 class Pool(enum.IntEnum):

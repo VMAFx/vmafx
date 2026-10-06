@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1288), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5159,3 +5159,7 @@ Every ADR, one heading each (1287), so the site search finds an ADR by its title
 ## ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync\_file checked on the host
 
 [2092-vmafx-hip-device-frames](2092-vmafx-hip-device-frames.md)
+
+## ADR-2133: Device import takes 4:2:2 and 4:4:4: semi-planar NV16 / NV24 family and packed Y210 / Y410, one CPU reference, converted on the device
+
+[2133-vmafx-import-422-444-formats](2133-vmafx-import-422-444-formats.md)

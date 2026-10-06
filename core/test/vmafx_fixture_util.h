@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
@@ -97,6 +98,68 @@ static inline void vt_clip_close(VtClip *clip)
 {
     free(clip->ref);
     free(clip->dist);
+}
+
+/* Chroma plane `c` (1 or 2) of one frame: the 4:2:0 plane `ip` (`sw` x `sh`
+ * samples, `srow` bytes per row) repeated into `dw` x `dh` samples at `op`. */
+static inline void vt_chroma_plane(uint8_t *op, size_t drow, unsigned dw, unsigned dh,
+                                   const uint8_t *ip, size_t srow, unsigned sw, unsigned sh,
+                                   size_t bytes)
+{
+    for (unsigned y = 0; y < dh; y++) {
+        const unsigned sy = y / 2u < sh ? y / 2u : sh - 1u;
+        for (unsigned x = 0; x < dw; x++) {
+            const unsigned sx = dw == sw ? x : x / 2u;
+            memcpy(op + y * drow + (size_t)x * bytes, ip + sy * srow + (size_t)sx * bytes, bytes);
+        }
+    }
+}
+
+/* One frame of `src` widened to the geometry of `dst` (the planes' sizes in
+ * the two clips' descriptors), luma copied. */
+static inline void vt_frame_to_chroma(const VtClip *src, const VtClip *dst, const uint8_t *ip,
+                                      uint8_t *op)
+{
+    unsigned sw[3];
+    unsigned sh[3];
+    size_t srow[3];
+    unsigned dw[3];
+    unsigned dh[3];
+    size_t drow[3];
+    vt_plane_geometry(&src->desc, sw, sh, srow);
+    vt_plane_geometry(&dst->desc, dw, dh, drow);
+    const size_t bytes = src->desc.bpc > 8u ? 2u : 1u;
+    memcpy(op, ip, srow[0] * sh[0]);
+    ip += srow[0] * sh[0];
+    op += drow[0] * dh[0];
+    for (unsigned c = 1; c < 3u; c++) {
+        vt_chroma_plane(op, drow[c], dw[c], dh[c], ip, srow[c], sw[c], sh[c], bytes);
+        ip += srow[c] * sh[c];
+        op += drow[c] * dh[c];
+    }
+}
+
+/* The chroma of `src` (YUV420P frames) as `planar_fmt` (YUV422P or YUV444P):
+ * every chroma sample repeated into the positions it covers, luma and depth
+ * unchanged, so the content is the fixture's (ADR-2133). `dst` owns new
+ * buffers (vt_clip_close()); false without memory or for another format. */
+static inline bool vt_clip_to_chroma(const VtClip *src, uint32_t planar_fmt, VtClip *dst)
+{
+    memset(dst, 0, sizeof(*dst));
+    if (planar_fmt != VMAFX_PIXEL_FORMAT_YUV422P && planar_fmt != VMAFX_PIXEL_FORMAT_YUV444P) {
+        return false;
+    }
+    dst->desc = vt_desc(planar_fmt, src->desc.bpc, src->desc.w, src->desc.h);
+    dst->n_frames = src->n_frames;
+    const size_t in_frame = vt_frame_bytes(&src->desc);
+    const size_t out_frame = vt_frame_bytes(&dst->desc);
+    dst->ref = malloc(out_frame * src->n_frames);
+    dst->dist = malloc(out_frame * src->n_frames);
+    for (unsigned f = 0; f < src->n_frames && dst->ref && dst->dist; f++) {
+        vt_frame_to_chroma(src, dst, src->ref + f * in_frame, dst->ref + f * out_frame);
+        vt_frame_to_chroma(src, dst, src->dist + f * in_frame, dst->dist + f * out_frame);
+    }
+    return dst->ref && dst->dist;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
