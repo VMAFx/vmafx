@@ -33,7 +33,7 @@
 | `gpumask` | 21 | `ScoreOptions` | uint | | Bitmask of GPU operations the extractors must not use. |
 | `device` | 13 | `ScoreOptions` | string | `auto` | GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal). |
 | `subsample` | 15 | `ScoreOptions` | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
-| `precision` | 40 | `ScoreOptions` | string | `max` | Score precision: N (1..17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
+| `precision` | 40 | `ScoreOptions` | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | `max` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
 | `view_distance` | 50 | `ScoreOptions` | float 0.75..24 | | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. |
 | `display_height` | 51 | `ScoreOptions` | uint >= 1 | | Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value. |
 | `target_width` | 52 | `ScoreOptions` | uint | `0` | Width of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |

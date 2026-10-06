@@ -249,7 +249,29 @@
         },
         "precision": {
           "type": "string",
-          "description": "Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. (CLI: --precision)",
+          "enum": [
+            "legacy",
+            "max",
+            "full",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17"
+          ],
+          "description": "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. (CLI: --precision)",
           "default": "legacy"
         },
         "output_fmt": {
@@ -598,7 +620,29 @@
         },
         "precision": {
           "type": "string",
-          "description": "Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. (CLI: --precision)",
+          "enum": [
+            "legacy",
+            "max",
+            "full",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17"
+          ],
+          "description": "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. (CLI: --precision)",
           "default": "legacy"
         },
         "output_fmt": {
@@ -1506,7 +1550,7 @@
     {
       "name": "precision",
       "group": "precision",
-      "type": "string",
+      "type": "enum",
       "surfaces": [
         "cli",
         "mcp",
@@ -1515,7 +1559,29 @@
       "mcp": "precision",
       "proto_field": 40,
       "schema": {
-        "type": "string"
+        "type": "string",
+        "enum": [
+          "legacy",
+          "max",
+          "full",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17"
+        ]
       },
       "repeat": [],
       "default": "legacy",

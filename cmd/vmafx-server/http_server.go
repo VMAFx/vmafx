@@ -21,16 +21,19 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
+	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -45,14 +48,9 @@ import (
 // body would balloon the JSON decoder's read buffer until OOM. ADR-0978.
 const maxScoreRequestBodyBytes = 1 << 20 // 1 MiB
 
-// scoreRequest mirrors the /v1/score JSON body.
-type scoreRequest struct {
-	Reference string `json:"reference"`
-	Distorted string `json:"distorted"`
-	Model     string `json:"model,omitempty"`
-}
-
-// scoreResponse is the /v1/score JSON response body.
+// scoreResponse is the /v1/score JSON response body as legacy clients read it
+// (score, features); the served body is the proto ScoreResponse in JSON, which
+// carries these two fields and the provenance (#2155).
 type scoreResponse struct {
 	Score    float64            `json:"score"`
 	Features map[string]float64 `json:"features"`
@@ -189,31 +187,37 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	h.scoreAndRespond(w, r, req, start)
 }
 
-func (h *httpServer) decodeScoreRequest(w http.ResponseWriter, r *http.Request) (scoreRequest, bool) {
+// decodeScoreRequest reads the body as the contract's ScoreRequest
+// (reference, distorted, model, options; proto field names). A field the
+// contract does not know is refused.
+func (h *httpServer) decodeScoreRequest(w http.ResponseWriter, r *http.Request) (*vmafxv1.ScoreRequest, bool) {
 	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
 	// closes the underlying body when the limit trips and surfaces the cause
-	// to the decoder as `*http.MaxBytesError`, which we map to 413 below.
+	// to the reader as `*http.MaxBytesError`, which we map to 413 below.
 	r.Body = http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes)
-
-	var req scoreRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
 		h.metrics.ScoreErrors.Inc()
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
-				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
-			})
-			return scoreRequest{}, false
-		}
+		scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
+			Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
+		})
+		return nil, false
+	}
+	req := &vmafxv1.ScoreRequest{}
+	if err == nil {
+		err = requestJSONOptions.Unmarshal(body, req)
+	}
+	if err != nil {
+		h.metrics.ScoreErrors.Inc()
 		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
 			errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
-		return scoreRequest{}, false
+		return nil, false
 	}
-
-	if req.Reference == "" || req.Distorted == "" {
+	if req.GetReference() == "" || req.GetDistorted() == "" {
 		h.metrics.ScoreErrors.Inc()
 		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
 			errorResponse{Error: "reference and distorted are required"})
-		return scoreRequest{}, false
+		return nil, false
 	}
 	return req, true
 }
@@ -235,31 +239,44 @@ func (h *httpServer) acquireScoreSlot(w http.ResponseWriter, r *http.Request) (f
 }
 
 func (h *httpServer) scoreAndRespond(
-	w http.ResponseWriter, r *http.Request, req scoreRequest, start time.Time,
+	w http.ResponseWriter, r *http.Request, req *vmafxv1.ScoreRequest, start time.Time,
 ) {
-	// Pass the request-scoped context so a client disconnect (or the
-	// server's read/write timeout) propagates SIGKILL to the vmaf
-	// subprocess via exec.CommandContext.  Fixes
-	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	score, features, err := h.scorer.Score(r.Context(), req.Reference, req.Distorted, req.Model)
+	// The request-scoped context reaches the vmaf subprocess through
+	// runScore, the scoring path gRPC Score uses too.
+	resp, err := runScore(r.Context(), h.scorer, req)
 	took := time.Since(start)
 	h.metrics.ScoreDuration.Observe(took.Seconds())
 
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
 		h.scoreLogger(r).Error("http Score failed",
-			observability.FieldModel, req.Model, observability.FieldError, err,
+			observability.FieldModel, req.GetModel(), observability.FieldError, err,
 			observability.Seconds(took))
-		scoringservice.WriteJSON(h.log, w, http.StatusInternalServerError,
-			errorResponse{Error: err.Error()})
+		scoringservice.WriteJSON(h.log, w, httpStatusOf(err),
+			errorResponse{Error: status.Convert(err).Message()})
 		return
 	}
 
 	h.scoreLogger(r).Info("http Score completed",
-		"score", fmt.Sprintf("%.4f", score),
-		observability.FieldModel, req.Model,
+		"score", fmt.Sprintf("%.4f", resp.GetScore()),
+		observability.FieldModel, resp.GetProvenance().GetModel(),
+		observability.FieldBackend, resp.GetProvenance().GetBackendUsed(),
 		observability.Seconds(took),
 	)
-	scoringservice.WriteJSON(h.log, w, http.StatusOK,
-		scoreResponse{Score: score, Features: features})
+	writeProtoJSON(h.log, w, resp)
+}
+
+// writeProtoJSON writes a response message as JSON with proto field names.
+func writeProtoJSON(log *slog.Logger, w http.ResponseWriter, msg proto.Message) {
+	body, err := responseJSONOptions.Marshal(msg)
+	if err != nil {
+		scoringservice.WriteJSON(log, w, http.StatusInternalServerError,
+			errorResponse{Error: fmt.Sprintf("encode response: %v", err)})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(body); err != nil {
+		log.Warn("write /v1/score response", observability.FieldError, err)
+	}
 }

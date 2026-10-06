@@ -120,9 +120,10 @@ message ScoreOptions {
   // the distorted picture is scored. Unset: false.
   optional bool no_reference = 39;
 
-  // Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless);
+  // Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless);
   // legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless
-  // asked otherwise. Unset: max.
+  // asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+  // 16, 17. Unset: max.
   optional string precision = 40;
 
   // Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value.

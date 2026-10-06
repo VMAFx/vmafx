@@ -6686,6 +6686,7 @@
         "core/test/test_y_funque_plus.c": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_import_test_util.h": 1,
+        "core/test/vmafx_score_contract.c": 1,
         "core/test/vmafx_test_util.h": 1,
         "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_close_retry.c": 1,
@@ -7039,7 +7040,7 @@
         "pkg/cliopt/escape.go": 2,
         "pkg/cliopt/escape_test.go": 1,
         "pkg/corpus/corpus.go": 1,
-        "pkg/libvmaf/libvmaf.go": 1,
+        "pkg/libvmaf/run.go": 1,
         "scripts/dev/relicense_provenance.toml": 1
       },
       "target": "1190-cli-option-string-escape-grammar.md"
@@ -11273,6 +11274,7 @@
         "scripts/codegen/tests/test_vmafx_api_features.py": 1,
         "scripts/codegen/tests/test_vmafx_api_generator.py": 1,
         "scripts/codegen/tests/test_vmafx_api_layout.py": 1,
+        "scripts/codegen/tests/test_vmafx_api_options.py": 1,
         "scripts/codegen/tests/test_vmafx_api_symbols.py": 1,
         "scripts/codegen/vmafx-api.py": 1,
         "scripts/codegen/vmafx_api/__init__.py": 1,
