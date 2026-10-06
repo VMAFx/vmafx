@@ -36,9 +36,13 @@
 #include "error_internal.h"
 #include "frame_import_hooks.h"
 #include "internal.h"
+#include "sync_object.h"
 #include "vmafx/vmafx.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -72,9 +76,13 @@ static const char *refusal(const char *extractor, uint32_t backend, uint32_t res
     if (backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_refusal(extractor);
     }
-#else
-    (void)extractor;
 #endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_refusal(extractor);
+    }
+#endif
+    (void)extractor;
     return "reads no imported frame on this backend in this build";
 }
 
@@ -263,6 +271,10 @@ VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *devic
         vmafx_test_note_retry_wait(context->import_retry_wait_ns);
         (void)vmafx_fence_wait(&d.acquire, context->import_retry_wait_ns, &waited);
         vmafx_error_free(waited);
+        if (d.memory == VMAFX_MEMORY_DMABUF) {
+            /* A dma-buf's implicit write fences (ADR-2091). */
+            vmafx_dmabuf_wait_writers(&d, context->import_retry_wait_ns);
+        }
         vmafx_error_free(last);
         last = NULL;
         status = import_admitted(context, device, desc, out, &last);

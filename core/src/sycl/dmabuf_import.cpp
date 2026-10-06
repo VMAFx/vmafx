@@ -74,22 +74,21 @@
 
 #include "dmabuf_import.h"
 #include "common.h"
+#include "detile.h"
 #include "log.h"
 
 /* ------------------------------------------------------------------ */
 /* DMA-BUF → Level Zero → SYCL device pointer                         */
 /* ------------------------------------------------------------------ */
 
-extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size, void **ptr)
+extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t size, void **ptr)
 {
-    if (!state || fd < 0 || !size || !ptr)
+    if (!queue_ptr || fd < 0 || !size || !ptr)
         return -EINVAL;
     *ptr = nullptr;
 
     try {
-        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
-        if (!q)
-            return -EINVAL;
+        const auto *q = static_cast<const sycl::queue *>(queue_ptr);
 
         /* Extract Level Zero native handles from the SYCL queue */
         ze_context_handle_t ze_ctx =
@@ -134,16 +133,13 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
     }
 }
 
-extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
+extern "C" void vmaf_sycl_dmabuf_free_queue(void *queue_ptr, void *ptr)
 {
-    if (!state || !ptr)
+    if (!queue_ptr || !ptr)
         return;
 
     try {
-        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
-        if (!q)
-            return;
-
+        const auto *q = static_cast<const sycl::queue *>(queue_ptr);
         ze_context_handle_t ze_ctx =
             sycl::get_native<sycl::backend::ext_oneapi_level_zero>(q->get_context());
 
@@ -155,6 +151,22 @@ extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
         vmaf_log(VMAF_LOG_LEVEL_DEBUG,
                  "vmaf_sycl_dmabuf_free: ignoring exception during teardown\n");
     }
+}
+
+extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size, void **ptr)
+{
+    if (!state || fd < 0 || !size || !ptr)
+        return -EINVAL;
+    *ptr = nullptr;
+    void *const q = vmaf_sycl_get_queue_ptr(state);
+    return q ? vmaf_sycl_dmabuf_import_queue(q, fd, size, ptr) : -EINVAL;
+}
+
+extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
+{
+    if (!state || !ptr)
+        return;
+    vmaf_sycl_dmabuf_free_queue(vmaf_sycl_get_queue_ptr(state), ptr);
 }
 
 #if HAVE_SYCL_DMABUF
@@ -372,124 +384,38 @@ sycl::event detile_linear(sycl::queue *q, void *target_buf, const void *imported
     return ev;
 }
 
+/* A tiled Y plane de-tiled into the packed rows of `target_buf`, with the
+ * P010 / P012 MSB-to-LSB shift fused into the store (ADR-1121); the address
+ * math is detile.h's, shared with the VMAFx dma-buf import (ADR-2091). */
+sycl::event detile_tiled(sycl::queue *q, void *target_buf, const void *imported_ptr,
+                         uint32_t y_offset, uint32_t y_pitch, size_t row_bytes, unsigned h,
+                         unsigned bpc, bool tile4)
+{
+    const vmaf_sycl_detile::Plane plane = {
+        .src = static_cast<const uint8_t *>(imported_ptr) + y_offset,
+        .dst = static_cast<uint8_t *>(target_buf),
+        .dst_pitch = row_bytes,
+        .row_bytes = row_bytes,
+        .tiles_per_row = y_pitch / vmaf_sycl_detile::kTileWidth,
+        .rows = h,
+        .shift = bpc > 8 ? 16u - bpc : 0u,
+        .tile4 = tile4,
+    };
+    return vmaf_sycl_detile::launch(*q, plane);
+}
+
 sycl::event detile_tile4(sycl::queue *q, void *target_buf, const void *imported_ptr,
                          uint32_t y_offset, uint32_t y_pitch, size_t row_bytes, unsigned h,
                          unsigned bpc)
 {
-    const auto *src = static_cast<const uint8_t *>(imported_ptr) + y_offset;
-    auto *dst = static_cast<uint8_t *>(target_buf);
-    unsigned const tiles_per_row = y_pitch / 128;
-    unsigned const words_per_tile_row = 128 / 4; /* = 32 */
-    unsigned const words_per_row = tiles_per_row * words_per_tile_row;
-    /* Fuse P010/P012 MSB→LSB normalization (ADR-1121 follow-up). */
-    const bool do_shift = (bpc > 8);
-    const unsigned shift = do_shift ? (16u - bpc) : 0u;
-
-    return q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
-        unsigned const py = id[0];
-        unsigned const word_x = id[1];
-
-        /* Tile address */
-        unsigned const tc = word_x / words_per_tile_row;
-        unsigned const wt = word_x % words_per_tile_row;
-        unsigned const tr = py / 32;
-        unsigned const ity = py % 32;
-
-        /* Tile4 intra-tile swizzle */
-        unsigned const x_byte = wt * 4;
-        unsigned const swizzled = (x_byte & 0x0F)              /* [3:0]  = x[3:0] */
-                                  | ((ity & 3) << 4)           /* [5:4]  = y[1:0] */
-                                  | (((x_byte >> 4) & 3) << 6) /* [7:6]  = x[5:4] */
-                                  | (((ity >> 2) & 1) << 8)    /* [8]    = y[2]   */
-                                  | (((x_byte >> 6) & 1) << 9) /* [9]    = x[6]   */
-                                  | (((ity >> 3) & 1) << 10)   /* [10]   = y[3]   */
-                                  | (((ity >> 4) & 1) << 11);  /* [11]   = y[4]   */
-
-        size_t const src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + swizzled;
-
-        /* Linear destination */
-        size_t const dst_off = (size_t)py * row_bytes + (size_t)tc * 128 + (size_t)wt * 4;
-        size_t const row_end = (size_t)(py + 1) * row_bytes;
-
-        /* Bounds check — last tile column may exceed frame width */
-        if (dst_off + 4 <= row_end) {
-            uint32_t v = *(const uint32_t *)(src + src_off);
-            if (do_shift) {
-                uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
-                uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
-                v = (uint32_t)s0 | ((uint32_t)s1 << 16);
-            }
-            *(uint32_t *)(dst + dst_off) = v;
-        } else if (dst_off < row_end) {
-            size_t const remain = row_end - dst_off;
-            if (do_shift && remain == 2) {
-                uint16_t const raw = (uint16_t)((uint16_t)src[src_off] |
-                                                (uint16_t)((uint16_t)src[src_off + 1] << 8));
-                uint16_t const s = (uint16_t)(raw >> shift);
-                dst[dst_off] = (uint8_t)(s & 0xFFu);
-                dst[dst_off + 1] = (uint8_t)(s >> 8);
-            } else {
-                for (size_t b = 0; b < remain; b++)
-                    dst[dst_off + b] = src[src_off + b];
-            }
-        }
-    });
+    return detile_tiled(q, target_buf, imported_ptr, y_offset, y_pitch, row_bytes, h, bpc, true);
 }
 
 sycl::event detile_y_tiled(sycl::queue *q, void *target_buf, const void *imported_ptr,
                            uint32_t y_offset, uint32_t y_pitch, size_t row_bytes, unsigned h,
                            unsigned bpc)
 {
-    const auto *src = static_cast<const uint8_t *>(imported_ptr) + y_offset;
-    auto *dst = static_cast<uint8_t *>(target_buf);
-    unsigned const tiles_per_row = y_pitch / 128;
-    unsigned const words_per_tile_row = 128 / 4;
-    unsigned const words_per_row = tiles_per_row * words_per_tile_row;
-    const bool do_shift = (bpc > 8);
-    const unsigned shift = do_shift ? (16u - bpc) : 0u;
-
-    return q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
-        unsigned const py = id[0];
-        unsigned const word_x = id[1];
-
-        unsigned const tc = word_x / words_per_tile_row;
-        unsigned const wt = word_x % words_per_tile_row;
-        unsigned const tr = py / 32;
-        unsigned const ity = py % 32;
-
-        /* Y-tiled address: OWord column-major */
-        unsigned const in_tile_byte_x = wt * 4;
-        unsigned const oword_col = in_tile_byte_x / 16;
-        unsigned const oword_byte = in_tile_byte_x % 16;
-
-        size_t const src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + (size_t)oword_col * 512 +
-                               (size_t)ity * 16 + oword_byte;
-
-        size_t const dst_off = (size_t)py * row_bytes + (size_t)tc * 128 + (size_t)wt * 4;
-        size_t const row_end = (size_t)(py + 1) * row_bytes;
-
-        if (dst_off + 4 <= row_end) {
-            uint32_t v = *(const uint32_t *)(src + src_off);
-            if (do_shift) {
-                uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
-                uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
-                v = (uint32_t)s0 | ((uint32_t)s1 << 16);
-            }
-            *(uint32_t *)(dst + dst_off) = v;
-        } else if (dst_off < row_end) {
-            size_t const remain = row_end - dst_off;
-            if (do_shift && remain == 2) {
-                uint16_t const raw = (uint16_t)((uint16_t)src[src_off] |
-                                                (uint16_t)((uint16_t)src[src_off + 1] << 8));
-                uint16_t const s = (uint16_t)(raw >> shift);
-                dst[dst_off] = (uint8_t)(s & 0xFFu);
-                dst[dst_off + 1] = (uint8_t)(s >> 8);
-            } else {
-                for (size_t b = 0; b < remain; b++)
-                    dst[dst_off + b] = src[src_off + b];
-            }
-        }
-    });
+    return detile_tiled(q, target_buf, imported_ptr, y_offset, y_pitch, row_bytes, h, bpc, false);
 }
 
 void log_zero_copy_once(uint64_t modifier, unsigned w, unsigned h, unsigned bpp, uint32_t y_pitch)
@@ -713,6 +639,21 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
 extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
 {
     (void)state;
+    (void)ptr;
+}
+
+extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t size, void **ptr)
+{
+    (void)queue_ptr;
+    (void)fd;
+    (void)size;
+    (void)ptr;
+    return -ENOSYS;
+}
+
+extern "C" void vmaf_sycl_dmabuf_free_queue(void *queue_ptr, void *ptr)
+{
+    (void)queue_ptr;
     (void)ptr;
 }
 

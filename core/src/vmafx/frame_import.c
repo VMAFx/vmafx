@@ -41,6 +41,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #include "internal.h"
 #include "mem.h"
 #include "metal/iosurface_layout.h"
@@ -449,6 +452,10 @@ static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *devi
     case VMAFX_BACKEND_CUDA:
         return vmafx_cuda_frame_import(report, device, d, layout, out);
 #endif
+#ifdef HAVE_SYCL
+    case VMAFX_BACKEND_SYCL:
+        return vmafx_sycl_frame_import(report, device, d, layout, out);
+#endif
     default:
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
                           "backend %s, memory %s, pixel format %s: this build imports on the "
@@ -522,6 +529,12 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
     if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
         frame->device->backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_release_fence(&report, frame, kind, out);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_release_fence(&report, frame, kind, out);
     }
 #endif
     if (kind != VMAFX_FENCE_HOST) {

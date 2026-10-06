@@ -32,9 +32,9 @@ CELLS_H = ROOT / "core" / "test" / "vmafx_cuda_cells.h"
 ROW = re.compile(r'\{\s*"([a-z0-9_]+)",\s*"([a-z0-9_]+)",\s*(NULL|"[^"]*")\s*,\s*(\d+)u\s*\}')
 
 
-def table_rows(text: str) -> dict[str, tuple[str, str | None]]:
-    """Cell -> (extractor, options) of the `vc_cells` table in `text`."""
-    body = text.split("static const VcCell vc_cells[] = {", 1)[1].split("};", 1)[0]
+def table_rows(text: str, table: str = "vc_cells") -> dict[str, tuple[str, str | None]]:
+    """Cell -> (extractor, options) of the `table` cells table in `text`."""
+    body = text.split(f"static const VcCell {table}[] = {{", 1)[1].split("};", 1)[0]
     rows: dict[str, tuple[str, str | None]] = {}
     for name, extractor, options, _ in ROW.findall(body):
         rows[name] = (extractor, None if options == "NULL" else options.strip('"'))
@@ -42,7 +42,7 @@ def table_rows(text: str) -> dict[str, tuple[str, str | None]]:
 
 
 def problems(rows: dict[str, tuple[str, str | None]], exact: set[str]) -> list[str]:
-    """Every way the table disagrees with the declared exact CUDA twins."""
+    """Every way the table disagrees with the declared exact twins of its backend."""
     found = [f"missing cell {cell}" for cell in sorted(exact - rows.keys())]
     found += [f"undeclared cell {cell}" for cell in sorted(rows.keys() - exact)]
     for cell, (extractor, options) in sorted(rows.items()):

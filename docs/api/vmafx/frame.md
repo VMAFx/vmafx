@@ -105,7 +105,7 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 | `plane` | `VmafxImportPlane plane[3]` | 32 | 0.1 | Each plane; entries past `n_planes` are ignored. |
 | `acquire` | `VmafxFence acquire` | 176 | 0.1 | Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written. |
 | `flags` | `uint32_t flags` | 208 | 0.1 | 0: zero copy only. Bits: `VmafxImportFlags`. |
-| `release` | `VmafxFrameReleaseCallback release` | 216 | 0.1 | Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4. |
+| `release` | `VmafxFrameReleaseCallback release` | 216 | 0.1 | Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT or SYCL_EVENT release fence can be waited on from here (a producer makes its stream or queue wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4. |
 | `user` | `void *user` | 224 | 0.1 | Passed to `release`. Added in ABI 0.1.4. |
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.

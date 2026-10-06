@@ -342,7 +342,7 @@ values = [
   { name = "VMAFX_MEMORY_METAL_SURFACE", value = 5, doc = "A shared surface: `handle` is the surface, `plane_index` its plane." },
   { name = "VMAFX_MEMORY_METAL_TEXTURE", value = 6, doc = "A Metal texture per plane: `handle` is the texture." },
   { name = "VMAFX_MEMORY_WIN32_SHARED", value = 7, doc = "A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane." },
-  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA). Added in ABI 0.1.4." },
+  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA; SYCL through an EGL dma-buf export of each texture, Linux). Added in ABI 0.1.4." },
 ]
 
 [[enums]]
@@ -545,7 +545,7 @@ since = "0.1"
 sized = true
 doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
 fields = [
-  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA in a build with the CUDA backend; another backend is VMAFX_E_NOTSUP naming it." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA and SYCL in a build with that backend; another backend is VMAFX_E_NOTSUP naming it." },
   { name = "index", type = "i32", doc = "Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set." },
   { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "How to create the device. Added in ABI 0.1.2." },
   { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
@@ -613,7 +613,7 @@ fields = [
   { name = "plane", type = "VmafxImportPlane", count = 3, doc = "Each plane; entries past `n_planes` are ignored." },
   { name = "acquire", type = "VmafxFence", doc = "Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written." },
   { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "0: zero copy only." },
-  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4." },
+  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT or SYCL_EVENT release fence can be waited on from here (a producer makes its stream or queue wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4." },
   { name = "user", type = "ptr", doc = "Passed to `release`. Added in ABI 0.1.4." },
 ]
 

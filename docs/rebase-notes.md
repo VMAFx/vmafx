@@ -61972,6 +61972,40 @@ No score, public API or FFmpeg patch impact.
   `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
   values are unchanged.
 
+## VMAFx device frames on SYCL (RC4 WP3 SYCL lane)
+
+`rc4/api-wp3-sycl` (on `rc4/api-wp3-cuda`),
+[ADR-2091](adr/2091-vmafx-sycl-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/sycl/vmafx_sycl.h`, `vmafx_sycl_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
+  `import_gl.c`, `import_pool.c` (in `libvmaf_sources` under
+  `is_sycl_enabled`), the C++ half `vmafx_sycl_rt.{h,cpp}` (`sycl_sources`)
+  and `detile.h`. `core/src/vmafx/sync_object.{c,h}` hold the `sync_file`,
+  dma-buf implicit-fence and GL sync helpers the CUDA and SYCL lanes share
+  (the CUDA lane's own GL sync loader moved there; `core/src/cuda/import_gl.c`
+  and `import_fence.c` call it).
+- `core/src/vmafx/*.c` dispatch to the SYCL lane under `#ifdef HAVE_SYCL` as
+  they do to CUDA; `fence.c` handles `SYNC_FILE` and `GL_SYNC` for every lane;
+  `frame_import_admit.c`'s D8 retry also waits on a dma-buf's implicit write
+  fences.
+- `core/src/picture.h`: `VmafPicturePrivate.sycl` gains `frame`.
+  `core/src/sycl/common.cpp`: `sycl_state_create()` (one constructor),
+  `vmaf_sycl_state_init_queue()`, and device branches in the shared luma and
+  chroma uploads. `core/src/libvmaf.c`: `read_pictures_sycl_device_frame()`.
+- Every SYCL twin that stages its own planes has a device branch through
+  `vmaf_sycl_picture_read_plane()` (`float_psnr`, `float_motion`,
+  `float_adm`, `float_vif`, `float_ssim` / `ssim`, `float_ms_ssim`, `ciede`,
+  `ssimulacra2`, the SpEED pair, `motion`'s chroma). An upstream sync that
+  touches a twin's staging keeps the branch (see
+  `core/src/feature/sycl/AGENTS.d/device-pictures.md`).
+- `core/src/sycl/dmabuf_import.cpp`: the Y-tiled and Tile4 de-tile kernels
+  are `detile_tiled()` on `detile.h`; `vmaf_sycl_dmabuf_import_queue()` /
+  `vmaf_sycl_dmabuf_free_queue()` take any queue's context.
+- Definition doc strings only (`VMAFX_MEMORY_GL_TEXTURE`,
+  `VmafxDeviceDesc.backend`, the release callback); no ABI change.
+
 ## VMAFx device frames on CUDA (RC4 WP3 CUDA lane)
 
 `rc4/api-wp3-cuda`, [ADR-2023](adr/2023-vmafx-cuda-device-frames.md),

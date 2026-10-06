@@ -76,6 +76,9 @@ typedef struct VmafPicturePrivate {
     struct {
         void *state;
         void *ready_event;
+        /* RC4 WP3 (ADR-2091): the VMAFx SYCL frame (VmafxSyclFrameRt) of a
+         * picture whose planes are device USM; NULL for every other picture. */
+        void *frame;
     } sycl;
 #endif
     enum VmafPictureBufferType buf_type;

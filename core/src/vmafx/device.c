@@ -27,6 +27,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -56,8 +59,8 @@ static bool is_backend(uint32_t backend)
     return backend <= VMAFX_BACKEND_HIP;
 }
 
-/* A backend this build creates devices for: the CPU, and CUDA in a build
- * with the CUDA backend. */
+/* A backend this build creates devices for: the CPU, CUDA in a build with
+ * the CUDA backend, SYCL in a build with the SYCL backend. */
 static bool built_backend(uint32_t backend)
 {
 #ifdef HAVE_CUDA
@@ -65,11 +68,20 @@ static bool built_backend(uint32_t backend)
         return true;
     }
 #endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
+        return true;
+    }
+#endif
     return backend == VMAFX_BACKEND_CPU;
 }
 
-#ifdef HAVE_CUDA
+#if defined(HAVE_CUDA) && defined(HAVE_SYCL)
+#define VMAFX_BUILT_BACKENDS "CPU, CUDA and SYCL devices"
+#elif defined(HAVE_CUDA)
 #define VMAFX_BUILT_BACKENDS "CPU and CUDA devices"
+#elif defined(HAVE_SYCL)
+#define VMAFX_BUILT_BACKENDS "CPU and SYCL devices"
 #else
 #define VMAFX_BUILT_BACKENDS "CPU devices only"
 #endif
@@ -130,9 +142,13 @@ static VmafxStatus open_lane(const VmafxReport *report, const VmafxDeviceDesc *d
     if (d->backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_device_open(report, d, device);
     }
-#else
-    (void)report;
 #endif
+#ifdef HAVE_SYCL
+    if (d->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_open(report, d, device);
+    }
+#endif
+    (void)report;
     assert(d->backend == VMAFX_BACKEND_CPU);
     device->index = 0;
     return VMAFX_OK;
@@ -144,6 +160,11 @@ static void close_lane(VmafxDevice *device)
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_close(device);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        vmafx_sycl_device_close(device);
     }
 #endif
     device->lane = NULL;
@@ -231,9 +252,15 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
         return vmafx_cuda_device_count(&report, count);
     }
 #endif
+#ifdef HAVE_SYCL
+    if (status == VMAFX_OK && backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_count(&report, count);
+    }
+#endif
     if (status == VMAFX_OK) {
         *count = 1u;
     }
+    assert(status == VMAFX_OK || *count == 0u); /* a refused backend counts nothing */
     return status;
 }
 
@@ -251,6 +278,27 @@ static VmafxDeviceInfo cpu_info(uint32_t flags)
     return info;
 }
 
+/* What device `index` of a backend lane is (a built backend, not the CPU). */
+static VmafxStatus lane_info(const VmafxReport *report, uint32_t backend, int32_t index,
+                             VmafxDeviceInfo *info)
+{
+#ifdef HAVE_CUDA
+    if (backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_device_info(report, index, info);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_info(report, index, info);
+    }
+#endif
+    (void)index;
+    (void)info;
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "backend",
+                      "backend %s: this build creates " VMAFX_BUILT_BACKENDS,
+                      vmafx_backend_name(backend));
+}
+
 VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *out,
                               VmafxError **error)
 {
@@ -263,15 +311,13 @@ VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *
     if (status != VMAFX_OK) {
         return status;
     }
-#ifdef HAVE_CUDA
-    if (backend == VMAFX_BACKEND_CUDA) {
+    if (backend != VMAFX_BACKEND_CPU) {
         VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
-        status = vmafx_cuda_device_info(&report, index, &info);
+        status = lane_info(&report, backend, index, &info);
         return status == VMAFX_OK ?
                    vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out") :
                    status;
     }
-#endif
     if (index != 0) {
         return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "index",
                           "the CPU has device 0 only, not %d", (int)index);
@@ -292,6 +338,11 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_describe(device, &info);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        vmafx_sycl_device_describe(device, &info);
     }
 #endif
     assert(info.backend == device->backend);

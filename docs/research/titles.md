@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (791), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (792), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2655,6 +2655,10 @@ Every research digest, one heading each (791), so the site search finds a digest
 ## Research-2158: VMAFx API redesign, generated surfaces and the VMAFx FFmpeg filters
 
 [2158-vmafx-api-redesign](2158-vmafx-api-redesign.md)
+
+## Research-2159: SYCL device frames: what the Level Zero runtime does with cross-queue copies, host tasks and event queries, and whether batched command lists drop imports on xe
+
+[2159-vmafx-sycl-device-frames](2159-vmafx-sycl-device-frames.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

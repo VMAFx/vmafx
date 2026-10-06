@@ -139,6 +139,57 @@ sycl/
   Public surface change touches patch file too — see CLAUDE.md §12
   r14.
 
+## VMAFx device frames on SYCL (RC4 WP3, ADR-2091)
+
+- Files: `vmafx_sycl.h` (what `core/src/vmafx/` calls),
+  `vmafx_sycl_internal.h`, `import_device.c` (Level Zero GPUs, devices,
+  engine attach), `import_frame.c` (checks, plan, conversions, picture
+  attach), `import_dmabuf.c` (Linux dma-buf planes, implicit fences),
+  `import_gl.c` (EGL dma-buf export of GL textures), `import_fence.c`,
+  `import_pool.c`; the C++ half is `vmafx_sycl_rt.{h,cpp}` (C ABI, catches
+  every exception). C files build into the library target; the `.cpp` is in
+  `sycl_sources`.
+- One in-order library queue per device with `immediate_command_list`
+  (draft PR #2217's ADR-1763 precaution; `vmafx_sycl_rt_test_omit_immediate()`
+  and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
+  states of contexts on the device live in its SYCL context
+  (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` is the one place a
+  `VmafSyclState` is built.
+- A frame is a SYCL device picture (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`,
+  `priv->sycl.frame` = `VmafxSyclFrameRt`). Every engine reader copies a
+  plane with `vmaf_sycl_picture_read_plane()` (a kernel on the reader's
+  queue after the frame's ready event; the read's event is recorded on the
+  frame). Never `ext_oneapi_memcpy2d()` (one command per row; behind a host
+  task it lost the A380, Research-2159 finding 1) and never a host read.
+- Ordering: `join()` (an empty kernel with `depends_on()`) for the acquire and
+  the release, never `ext_oneapi_submit_barrier()`: a barrier on the event of
+  a command behind a host task returns only after that host task ran
+  (finding 2). Release = join over ready + every recorded read; behind it the
+  HOST fence's host task, the SYCL_EVENT slot record and deferred frees
+  (`vmafx_sycl_rt_collect()`). Never `ext_oneapi_get_last_event()` in a hot
+  path: it waits for the queue (finding 3).
+- SYCL_EVENT release fences are slots of the table in `vmafx_sycl_rt.cpp`
+  (4096, refcounted): pending until the release records the join's event; the
+  release callback runs after the record. `vmafx_fence_destroy()` of a
+  caller's own event is `VMAFX_E_INVALID` (the caller's stays the caller's).
+- De-tile address math lives once in `detile.h`, shared with the VA-surface
+  import of `dmabuf_import.cpp` (`detile_tiled()`): a change to Intel Y-tiled
+  / Tile4 handling changes it there and both paths follow. The P010 shift is
+  fused (`shift = 16 - bpc` when bpc > 8). Kernels are byte-wise integer and
+  scratch-free (ADR-1395): `test_sycl_kernel_scratch` audits every kernel of
+  its program, and `vmafx_sycl_rt.o` is linked into it through
+  `vmaf_sycl_picture_read_plane()` (common.cpp); keep that reference or the
+  lane's kernels drop out of the audit.
+- `WIN32_SHARED` refused (`VMAFX_E_NOTSUP` naming `desc.memory`); SYNC_FILE
+  release fences refused. Adding either changes `sycl_info()` in
+  `import_device.c`, the docs table of `docs/api/vmafx/index.md` and the
+  refusal rows of `test_vmafx_import_sycl.c` together.
+- Guards: `test_vmafx_import_sycl`, `test_vmafx_import_sycl_bitexact`
+  (`VMAFX_TEST_ONLY=netflix|bbb`), `test_vmafx_import_sycl_fence`,
+  `test_vmafx_import_sycl_gl` (suite `gpu`/`sycl`, Linux, not AdaptiveCpp),
+  `test_vmafx_import_sycl_cells_contract.py` (fast: the cell table equals
+  `scripts/ci/exact_twins.d/*.sycl`).
+
 ## Rebase-sensitive build invariants
 
 - **`-fsycl` must be present at every link step pulling SYCL `.o`

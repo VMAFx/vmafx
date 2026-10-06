@@ -12,33 +12,18 @@
  * FEATURE_ALIASES), and the sessions the CUDA import tests compare: one
  * context per cell on the CUDA device, fed host frames (uploaded by the
  * engine) or imported device frames. core/test/test_vmafx_import_cuda_cells_contract.py
- * holds the table equal to the fragment files.
+ * holds the table equal to the fragment files; the helpers are
+ * vmafx_exact_cells.h's.
  */
 
 #ifndef VMAFX_CUDA_CELLS_H
 #define VMAFX_CUDA_CELLS_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-
-#include "feature/feature_collector.h"
-#include "libvmaf_priv.h"
-#include "vmafx/libvmaf_bridge.h"
-#include "vmafx/vmafx.h"
-#include "vmafx_test_util.h"
+#include "vmafx_exact_cells.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C header. The fork builds C as C23,
  * where clang-tidy also proposes the `nullptr` keyword, but MSVC's documented
  * /std:clatest C23 feature set does not include `nullptr`. ADR-1138. */
-
-typedef struct VcCell {
-    const char *name;      /* the fragment's cell */
-    const char *extractor; /* the CPU extractor the context registers */
-    const char *options;   /* "key=value:key=value", or NULL */
-    unsigned min_chroma;   /* smallest chroma plane side the cell scores */
-} VcCell;
 
 static const VcCell vc_cells[] = {
     {"adm", "adm", NULL, 0u},
@@ -68,75 +53,6 @@ static const VcCell vc_cells[] = {
 };
 
 #define VC_N_CELLS (sizeof(vc_cells) / sizeof(vc_cells[0]))
-
-/* The options of `spec` ("k=v:k=v"); NULL for none or on a failure. */
-static inline VmafxOptions *vc_options(const char *spec)
-{
-    char buf[160];
-    VmafxOptions *options = NULL;
-    if (!spec || strlen(spec) >= sizeof(buf)) {
-        return NULL;
-    }
-    memcpy(buf, spec, strlen(spec) + 1u);
-    char *item = buf;
-    for (unsigned guard = 0; item && guard < 8u; guard++) {
-        char *const next = strchr(item, ':');
-        if (next) {
-            *next = '\0';
-        }
-        char *const eq = strchr(item, '=');
-        if (!eq) {
-            break;
-        }
-        *eq = '\0';
-        (void)vmafx_options_set(&options, item, eq + 1, NULL);
-        item = next ? next + 1 : NULL;
-    }
-    return options;
-}
-
-/* A context on `device` that registers `cell`, or NULL. */
-static inline VmafxContext *vc_cell_context(VmafxDevice *device, const VcCell *cell)
-{
-    VmafxContext *context = NULL;
-    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK) {
-        return NULL;
-    }
-    VmafxOptions *const options = vc_options(cell->options);
-    const bool ok = vmafx_context_use_device(context, device, NULL) == VMAFX_OK &&
-                    vmafx_context_use_feature(context, cell->extractor, options, NULL) == VMAFX_OK;
-    vmafx_options_free(options);
-    if (!ok) {
-        (void)vmafx_context_destroy(context, NULL);
-        return NULL;
-    }
-    return context;
-}
-
-/* Every feature `a` collected at frames 0 .. n-1 equals `b`'s bit for bit;
- * the values compared are added to `*compared`, the differing ones to
- * `*differing`. */
-static inline bool vc_compare(VmafxContext *a, VmafxContext *b, unsigned n, unsigned long *compared,
-                              unsigned long *differing)
-{
-    const VmafFeatureCollector *fa = vmaf_feature_collector_get(vmafx_context_libvmaf_handle(a));
-    const VmafFeatureCollector *fb = vmaf_feature_collector_get(vmafx_context_libvmaf_handle(b));
-    if (!fa || !fb || fa->cnt != fb->cnt || fa->cnt == 0u) {
-        return false;
-    }
-    for (unsigned f = 0; f < fa->cnt; f++) {
-        const char *name = fa->feature_vector[f]->name;
-        for (unsigned i = 0; i < n; i++) {
-            VmafxScore sa = VMAFX_SCORE_INIT;
-            VmafxScore sb = VMAFX_SCORE_INIT;
-            const VmafxStatus ra = vmafx_feature_score(a, name, i, &sa, NULL);
-            const VmafxStatus rb = vmafx_feature_score(b, name, i, &sb, NULL);
-            *compared += 1u;
-            *differing += ra != rb || (ra == VMAFX_OK && !vt_same_bits(sa.value, sb.value));
-        }
-    }
-    return true;
-}
 
 /* NOLINTEND(modernize-use-nullptr) */
 

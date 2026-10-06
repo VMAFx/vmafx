@@ -307,18 +307,12 @@ VmafxStatus vmafx_cuda_fence_create(const VmafxReport *report, VmafxDevice *devi
     return status;
 }
 
-/* What a poll of a fence looks at. */
-typedef struct PolledFence {
-    CUevent event;
-    uintptr_t sync;
-} PolledFence;
-
 /* A CUDA event as a poll answer: 1 done, 0 pending (a release event not
  * recorded yet, or work the driver has not finished), negative on an
  * error. */
 static int event_done(const void *arg)
 {
-    CUevent event = ((const PolledFence *)arg)->event;
+    CUevent event = (CUevent)arg;
     (void)pthread_mutex_lock(&release_lock);
     const uint32_t slot = release_find_locked(event);
     const bool unrecorded = slot != UINT32_MAX && !release_events[slot].recorded;
@@ -330,12 +324,6 @@ static int event_done(const void *arg)
     return res == CUDA_SUCCESS ? 1 : res == CUDA_ERROR_NOT_READY ? 0 : -(int)res;
 }
 
-/* A GL sync as a poll answer, through glClientWaitSync without a wait. */
-static int gl_sync_done(const void *arg)
-{
-    return vmafx_cuda_gl_sync_wait(((const PolledFence *)arg)->sync, 0u);
-}
-
 VmafxStatus vmafx_cuda_fence_wait(const VmafxReport *report, const VmafxFence *fence,
                                   uint64_t timeout_ns)
 {
@@ -344,34 +332,27 @@ VmafxStatus vmafx_cuda_fence_wait(const VmafxReport *report, const VmafxFence *f
                           fence->handle ? "backend cuda: no CUDA driver" :
                                           "a fence without its handle");
     }
-    const bool event = fence->kind == VMAFX_FENCE_CUDA_EVENT;
-    PolledFence polled = {.event = NULL, .sync = fence->handle};
+    assert(fence->kind == VMAFX_FENCE_CUDA_EVENT);
     /* NOLINTNEXTLINE(performance-no-int-to-ptr): a CUDA event crosses the ABI as uintptr_t (VmafxFence.handle, ADR-1929). */
-    polled.event = (CUevent)fence->handle;
-    const int state = vmafx_fence_poll(event ? event_done : gl_sync_done, &polled, timeout_ns);
+    const void *const event = (const void *)fence->handle;
+    const int state = vmafx_fence_poll(event_done, event, timeout_ns);
     if (state == 1) {
         return VMAFX_OK;
     }
     if (state < 0) {
         return VMAFX_FAIL(report, VMAFX_E_DEVICE, state, VMAFX_SUBJECT_FENCE, "fence",
-                          "backend cuda: waiting on a %s failed (%d)",
-                          event ? "CUDA event" : "GL sync", state);
+                          "backend cuda: waiting on a CUDA event failed (%d)", state);
     }
     if (timeout_ns == 0u) {
         return VMAFX_PENDING;
     }
     return VMAFX_FAIL(report, VMAFX_E_TIMEOUT, 0, VMAFX_SUBJECT_FENCE, "fence",
-                      "%s not signalled within %llu ns", event ? "CUDA event" : "GL sync",
-                      (unsigned long long)timeout_ns);
+                      "CUDA event not signalled within %llu ns", (unsigned long long)timeout_ns);
 }
 
 VmafxStatus vmafx_cuda_fence_destroy(const VmafxReport *report, const VmafxFence *fence)
 {
     const VmafxCudaDriver *const drv = vmafx_cuda_driver();
-    if (fence->kind != VMAFX_FENCE_CUDA_EVENT) {
-        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
-                          "the library returns no GL sync; delete it with glDeleteSync()");
-    }
     assert(fence->kind == VMAFX_FENCE_CUDA_EVENT);
     if (!drv || fence->handle == 0u) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.handle", "%s",

@@ -14,9 +14,11 @@
  * reference, which vmafx_fence_destroy() drops; a frame's release fence is
  * signalled where the frame's last reference goes (frame_host.c).
  *
- * The device kinds (CUDA / HIP / SYCL events, sync_file, Metal shared events,
- * Windows shared fences) are refused naming the kind until a backend lane
- * implements them behind these same functions.
+ * The device kinds are implemented by the backend lanes behind these same
+ * functions (CUDA events: cuda/import_fence.c, SYCL events:
+ * sycl/import_fence.c); sync_file descriptors and GL sync objects belong to
+ * no backend and are waited on here (sync_object.c, ADR-2091). Kinds no
+ * lane of the build implements are refused naming the kind.
  *
  * Waiting polls the flag with short sleeps against a monotonic clock: the
  * portable pthread subset (core/src/compat/win32/pthread.h) has no timed
@@ -34,7 +36,9 @@
 #include <windows.h>
 #else
 #include <time.h>
+#include <unistd.h>
 #endif
+#include <errno.h>
 
 #include "error_internal.h"
 #include "frame_import_hooks.h"
@@ -42,7 +46,11 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #include "ref.h"
+#include "sync_object.h"
 #include "vmafx/vmafx.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -210,8 +218,12 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
     return vmafx_read_sized(report, f, (uint32_t)sizeof(*f), fence, VMAFX_MIN_FENCE, "fence");
 }
 
-#ifdef HAVE_CUDA
-#define VMAFX_LANE_FENCE_KINDS ", CUDA_EVENT and GL_SYNC (CUDA devices)"
+#if defined(HAVE_CUDA) && defined(HAVE_SYCL)
+#define VMAFX_LANE_FENCE_KINDS ", CUDA_EVENT (CUDA devices) and SYCL_EVENT (SYCL devices)"
+#elif defined(HAVE_CUDA)
+#define VMAFX_LANE_FENCE_KINDS ", CUDA_EVENT (CUDA devices)"
+#elif defined(HAVE_SYCL)
+#define VMAFX_LANE_FENCE_KINDS ", SYCL_EVENT (SYCL devices)"
 #else
 #define VMAFX_LANE_FENCE_KINDS ""
 #endif
@@ -219,23 +231,125 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
 /* A kind this build declares but cannot handle here. */
 static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, const char *what)
 {
-    if (kind > VMAFX_FENCE_WIN32_SHARED) {
+    if (kind > VMAFX_FENCE_GL_SYNC) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                           "kind %u is not a VmafxFenceKind", (unsigned)kind);
     }
     return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                       "this build cannot %s a fence of kind %u; it implements NONE and HOST "
-                      "(every device)%s",
+                      "(every device), SYNC_FILE and GL_SYNC (waits)%s",
                       what, (unsigned)kind, VMAFX_LANE_FENCE_KINDS);
 }
 
-#ifdef HAVE_CUDA
-/* A fence kind of a backend lane this build has (CUDA: CUDA_EVENT, GL_SYNC). */
+/* A kind a backend lane of this build implements (CUDA_EVENT, SYCL_EVENT). */
 static bool lane_kind(uint32_t kind)
 {
-    return kind == VMAFX_FENCE_CUDA_EVENT || kind == VMAFX_FENCE_GL_SYNC;
-}
+#ifdef HAVE_CUDA
+    if (kind == VMAFX_FENCE_CUDA_EVENT) {
+        return true;
+    }
 #endif
+#ifdef HAVE_SYCL
+    if (kind == VMAFX_FENCE_SYCL_EVENT) {
+        return true;
+    }
+#endif
+    (void)kind;
+    return false;
+}
+
+/* The lane of a lane kind waits on it. */
+static VmafxStatus lane_wait(const VmafxReport *report, const VmafxFence *f, uint64_t timeout_ns)
+{
+#ifdef HAVE_CUDA
+    if (f->kind == VMAFX_FENCE_CUDA_EVENT) {
+        return vmafx_cuda_fence_wait(report, f, timeout_ns);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (f->kind == VMAFX_FENCE_SYCL_EVENT) {
+        return vmafx_sycl_fence_wait(report, f, timeout_ns);
+    }
+#endif
+    (void)timeout_ns;
+    return unsupported_kind(report, f->kind, "wait on");
+}
+
+/* The lane of a lane kind destroys it. */
+static VmafxStatus lane_destroy(const VmafxReport *report, const VmafxFence *f)
+{
+#ifdef HAVE_CUDA
+    if (f->kind == VMAFX_FENCE_CUDA_EVENT) {
+        return vmafx_cuda_fence_destroy(report, f);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (f->kind == VMAFX_FENCE_SYCL_EVENT) {
+        return vmafx_sycl_fence_destroy(report, f);
+    }
+#endif
+    return unsupported_kind(report, f->kind, "release");
+}
+
+/* A fence of a lane kind on `device`, or NULL's status: VMAFX_PENDING when
+ * no lane of the build creates fences on that device. */
+static VmafxStatus lane_create(const VmafxReport *report, VmafxDevice *device, uint32_t kind,
+                               VmafxFence *out)
+{
+#ifdef HAVE_CUDA
+    if (device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_fence_create(report, device, kind, out);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_fence_create(report, device, kind, out);
+    }
+#endif
+    (void)report;
+    (void)device;
+    (void)kind;
+    (void)out;
+    return VMAFX_PENDING;
+}
+
+/* A sync_file or GL sync as a poll answer (vmafx_fence_poll()). */
+static int sync_file_done(const void *arg)
+{
+    return vmafx_sync_file_wait(*(const int32_t *)arg, 0u);
+}
+
+static int gl_sync_done(const void *arg)
+{
+    return vmafx_gl_sync_wait(*(const uintptr_t *)arg, 0u);
+}
+
+/* Host wait on a SYNC_FILE or GL_SYNC fence. */
+static VmafxStatus shared_wait(const VmafxReport *report, const VmafxFence *f, uint64_t timeout_ns)
+{
+    const bool file = f->kind == VMAFX_FENCE_SYNC_FILE;
+    if (file ? f->fd < 0 : f->handle == 0u) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE,
+                          file ? "fence.fd" : "fence.handle", "a %s fence without its %s",
+                          file ? "SYNC_FILE" : "GL_SYNC", file ? "descriptor" : "sync object");
+    }
+    const int state = file ? vmafx_fence_poll(sync_file_done, &f->fd, timeout_ns) :
+                             vmafx_fence_poll(gl_sync_done, &f->handle, timeout_ns);
+    if (state == 1) {
+        return VMAFX_OK;
+    }
+    if (state < 0) {
+        return VMAFX_FAIL(report, state == -ENOTSUP ? VMAFX_E_NOTSUP : VMAFX_E_INVALID, state,
+                          VMAFX_SUBJECT_FENCE, "fence", "waiting on a %s failed (%d)",
+                          file ? "sync_file" : "GL sync", state);
+    }
+    if (timeout_ns == 0u) {
+        return VMAFX_PENDING;
+    }
+    return VMAFX_FAIL(report, VMAFX_E_TIMEOUT, 0, VMAFX_SUBJECT_FENCE, "fence",
+                      "%s not signalled within %llu ns", file ? "sync_file" : "GL sync",
+                      (unsigned long long)timeout_ns);
+}
 
 VmafxStatus vmafx_fence_create(VmafxDevice *device, uint32_t kind, VmafxFence *out,
                                VmafxError **error)
@@ -245,12 +359,11 @@ VmafxStatus vmafx_fence_create(VmafxDevice *device, uint32_t kind, VmafxFence *o
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "out",
                           "no place to store the fence");
     }
-#ifdef HAVE_CUDA
-    if (device && device->backend == VMAFX_BACKEND_CUDA && kind != VMAFX_FENCE_HOST) {
-        return vmafx_cuda_fence_create(&report, device, kind, out);
-    }
-#endif
     if (device && device->backend != VMAFX_BACKEND_CPU && kind != VMAFX_FENCE_HOST) {
+        const VmafxStatus lane = lane_create(&report, device, kind, out);
+        if (lane != VMAFX_PENDING) {
+            return lane;
+        }
         return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_DEVICE, "device",
                           "fences of backend %s are not in this build",
                           vmafx_backend_name(device->backend));
@@ -308,13 +421,11 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
     if (status != VMAFX_OK || f.kind == VMAFX_FENCE_NONE) {
         return status;
     }
-#ifdef HAVE_CUDA
-    if (lane_kind(f.kind)) {
-        return vmafx_cuda_fence_wait(&report, &f, timeout_ns);
+    if (f.kind == VMAFX_FENCE_SYNC_FILE || f.kind == VMAFX_FENCE_GL_SYNC) {
+        return shared_wait(&report, &f, timeout_ns);
     }
-#endif
     if (f.kind != VMAFX_FENCE_HOST) {
-        return unsupported_kind(&report, f.kind, "wait on");
+        return lane_wait(&report, &f, timeout_ns);
     }
     assert(f.kind == VMAFX_FENCE_HOST);
     VmafxHostFence *host = NULL;
@@ -330,6 +441,22 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
                       "host fence not signalled within %llu ns", (unsigned long long)timeout_ns);
 }
 
+/* A SYNC_FILE fence is destroyed by closing its descriptor. */
+static VmafxStatus close_sync_file(const VmafxReport *report, const VmafxFence *f)
+{
+#ifdef _WIN32
+    (void)f;
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                      "sync_file descriptors are Linux objects");
+#else
+    if (f->fd < 0 || close((int)f->fd) != 0) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.fd",
+                          "cannot close sync_file descriptor %d", (int)f->fd);
+    }
+    return VMAFX_OK;
+#endif
+}
+
 VmafxStatus vmafx_fence_destroy(const VmafxFence *fence, VmafxError **error)
 {
     const VmafxReport report = VMAFX_REPORT(NULL, error);
@@ -338,13 +465,16 @@ VmafxStatus vmafx_fence_destroy(const VmafxFence *fence, VmafxError **error)
     if (status != VMAFX_OK || f.kind == VMAFX_FENCE_NONE) {
         return status;
     }
-#ifdef HAVE_CUDA
-    if (lane_kind(f.kind)) {
-        return vmafx_cuda_fence_destroy(&report, &f);
+    if (f.kind == VMAFX_FENCE_GL_SYNC) {
+        return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                          "the library returns no GL sync; delete it with glDeleteSync()");
     }
-#endif
+    if (f.kind == VMAFX_FENCE_SYNC_FILE) {
+        return close_sync_file(&report, &f);
+    }
     if (f.kind != VMAFX_FENCE_HOST) {
-        return unsupported_kind(&report, f.kind, "release");
+        return lane_kind(f.kind) ? lane_destroy(&report, &f) :
+                                   unsupported_kind(&report, f.kind, "release");
     }
     assert(f.kind == VMAFX_FENCE_HOST);
     VmafxHostFence *host = NULL;

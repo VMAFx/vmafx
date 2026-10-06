@@ -2916,6 +2916,17 @@ static int read_pictures_wait_sycl_upload(VmafContext *vmaf)
     return 0;
 }
 
+/* Whether `pic` is a VMAFx frame in SYCL device memory (ADR-2091). */
+static bool read_pictures_sycl_device_frame(const VmafPicture *pic)
+{
+#ifdef HAVE_SYCL
+    return vmaf_sycl_picture_on_device(pic);
+#else
+    (void)pic;
+    return false;
+#endif
+}
+
 /* Give a worker job references of its own: the frame's pair, and counted
  * snapshots of the context's two previous reference pictures. The job is
  * copied into the queue as bytes, so these references travel with it and
@@ -3582,6 +3593,18 @@ static int init_before_dispatch(VmafFeatureExtractorContext *fex_ctx, const Vmaf
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
                                       VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
+    /* A frame of the VMAFx API in SYCL device memory is never copied to the
+     * host (ADR-1929, ADR-2091): admission refuses CPU extractors for it,
+     * and one that appears later (a twin's context fallback) fails here
+     * instead of reading device memory on the host. */
+    if (read_pictures_sycl_device_frame(ref) &&
+        !(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature extractor \"%s\" would read a frame in SYCL device memory on the host; "
+                 "device frames of the VMAFx API are never copied to the host\n",
+                 fex_ctx->fex->name);
+        return -ENOTSUP;
+    }
     const int init_err = init_before_dispatch(fex_ctx, ref);
     if (init_err)
         return init_err;
@@ -4027,8 +4050,11 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
 {
     /* The CUDA host-cleanup branch below returns early in a combined
      * CUDA+SYCL build. Drain SYCL's final host upload before any branch can
-     * release the caller's picture storage back to its pool. */
-    err |= read_pictures_wait_sycl_upload(vmaf);
+     * release the caller's picture storage back to its pool. A VMAFx device
+     * frame on SYCL needs no host wait: its memory lives until its release
+     * fence, which follows its last reader on the device (ADR-2091). */
+    if (!read_pictures_sycl_device_frame(fr->ref))
+        err |= read_pictures_wait_sycl_upload(vmaf);
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST) {
         return err | read_pictures_cuda_cleanup(vmaf, &fr->ref_host, &fr->ref_device,

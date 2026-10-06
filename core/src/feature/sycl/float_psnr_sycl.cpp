@@ -326,6 +326,32 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* Both luma planes into d_ref / d_dis: packed on the host and uploaded, or,
+ * for frames of the VMAFx API on this device, copied on the device
+ * (ADR-2091; the frame's planes are never read on the host). */
+static int stage_planes(sycl::queue &q, FloatPsnrStateSycl *s, VmafPicture *ref_pic,
+                        VmafPicture *dist_pic)
+{
+    if (vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic)) {
+        const size_t row = (size_t)s->width * (s->bpc <= 8 ? 1u : 2u);
+        const int err =
+            vmaf_sycl_picture_read_plane(ref_pic, 0, &q, s->d_ref, row, row, s->height, nullptr);
+        return err ? err :
+                     vmaf_sycl_picture_read_plane(dist_pic, 0, &q, s->d_dis, row, row, s->height,
+                                                  nullptr);
+    }
+    if (s->bpc <= 8) {
+        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
+        copy_y_plane<uint8_t>(dist_pic, s->h_dis, s->width, s->height);
+    } else {
+        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
+        copy_y_plane<uint16_t>(dist_pic, s->h_dis, s->width, s->height);
+    }
+    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
+    q.memcpy(s->d_dis, s->h_dis, s->plane_bytes);
+    return 0;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -338,15 +364,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     sycl::queue &q = *qptr;
 
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
-        copy_y_plane<uint8_t>(dist_pic, s->h_dis, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
-        copy_y_plane<uint16_t>(dist_pic, s->h_dis, s->width, s->height);
+    const int stage_err = stage_planes(q, s, ref_pic, dist_pic);
+    if (stage_err) {
+        return stage_err;
     }
-    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
-    q.memcpy(s->d_dis, s->h_dis, s->plane_bytes);
 
     launch_float_psnr(q, s->d_ref, s->d_dis, {.partials = s->d_partials}, s->width, s->height,
                       s->bpc, s->wg_count_x);

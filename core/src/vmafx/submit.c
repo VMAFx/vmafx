@@ -28,6 +28,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #include "ref.h"
 #include "status_gen.h"
 #include "vmafx/vmafx.h"
@@ -118,6 +121,11 @@ static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
 #ifdef HAVE_CUDA
         if (frames[i]->residency == VMAFX_BACKEND_CUDA) {
             vmafx_cuda_release_early(frames[i]); /* its CUDA_EVENT release fences */
+        }
+#endif
+#ifdef HAVE_SYCL
+        if (frames[i]->residency == VMAFX_BACKEND_SYCL) {
+            vmafx_sycl_release_early(frames[i]); /* its SYCL_EVENT release fences */
         }
 #endif
     }
