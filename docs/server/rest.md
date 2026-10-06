@@ -66,6 +66,11 @@ deployments that target the bare probe paths:
 | `/healthz` | `/v1/health`       |
 | `/readyz`  | `/v1/ready`        |
 
+`/readyz` is stricter than `/v1/ready`: besides the scorer it also fails (503)
+when the `vmaf` binary has been removed or is no longer executable, or when
+`VMAFX_MODEL_DIR` is not a directory. See
+[Server configuration](configuration.md#readiness).
+
 ## POST /v1/score
 
 **Request body** (`application/json`):

@@ -100,3 +100,22 @@ Go gRPC + HTTP scoring service. See
     code. `app_test.go::TestHTTPRouteEmitsServerSpan` and
     `TestOTelWiredThroughBootstrap` lock this; keep `productionGraph()` in step
     with `main.go` when option lists change.
+
+11. **vmafx limit defaults** (`hardening.go`, issue #1251): two `fx.Decorate`
+    functions raise golusoris defaults that do not fit scoring: gRPC
+    `grpc.max_recv_size` 64 MiB (a 1080p `FramePair` is 6.2 MB; framework cap
+    is 4 MiB) and `http.timeouts.write` 15 min (synchronous `/v1/score`;
+    framework 60 s). Apply only when the key is absent; operator env wins.
+    `hardeningOptions()` stays in `productionOptions`.
+    `TestServerDefaultsFitScoring` pins the effective values.
+
+12. **`/readyz` reads the status registry** (`readiness.go`): legacy `/readyz`
+    is ready only when the scorer exists and every `health.TagReadiness` check
+    passes, including `vmaf-binary` (`registerBinaryReadiness`: binary
+    executable, `model.dir` a directory). Keep `registerBinaryReadiness` in
+    `productionOptions`. `TestReadyzFollowsBinaryAvailability` pins it.
+
+13. **Env contract** (`docs/server/configuration.md`): precedence is env over
+    file over defaults; code reads dotted keys (`max.concurrent.scores`).
+    `config_precedence_test.go` pins it. Tests bind `127.0.0.1:0`, never a
+    fixed port (`fixed_port_guard_test.go`).

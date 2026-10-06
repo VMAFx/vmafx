@@ -120,6 +120,7 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 		golusoris.HTTP,
 		bootstrap.HTTPTracing,
 		grpcmod.Module,
+		hardeningOptions(),
 		serverProviders(),
 		fx.Invoke(realiseScorer),
 		fx.Invoke(registerScoringService),
