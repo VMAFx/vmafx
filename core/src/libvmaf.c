@@ -2909,7 +2909,11 @@ static int advance_extractors(VmafContext *vmaf)
         if (!pooled && !fex_ctx->is_initialized)
             continue;
         fex_ctx->is_initialized = true;
+        /* RC4 WP5: the scores advance() writes are this extractor's. */
+        const VmafFeatureProducer previous = vmaf_feature_producer_swap((VmafFeatureProducer){
+            VMAF_FEATURE_SOURCE_EXTRACTOR, fex_ctx->fex->name, fex_ctx->opts_dict});
         err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
+        (void)vmaf_feature_producer_swap(previous);
     }
     return err;
 }
