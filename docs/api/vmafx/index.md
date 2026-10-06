@@ -477,7 +477,7 @@ What a HIP device imports:
 | `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address on the device; `pitch` in bytes | Planar planes are read where they are, at any offset and pitch; NV12 / P010 / P016 are planarised on the device |
 | `VMAFX_MEMORY_DMABUF` (Linux) | `fd`: a dma-buf descriptor (the library duplicates it; yours stays open and yours); `offset`, `pitch`; `modifier` 0 (linear), `plane_index` 0; `size` 0 or at most the dma-buf's size | The dma-buf is imported as external memory and mapped whole, once per descriptor of the frame; then as device pointers |
 | `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `hipArray_t` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | NV12 / P010 / P016 are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
-| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the GLX context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; registered read-only and mapped for the import, unmapped when the frame is released |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the GLX context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; registered read-only and mapped for the import, unmapped when the frame is released. Not on ROCm 10.1, whose runtime cannot read a mapped GL texture: refused, see below |
 
 A tiled dma-buf (a modifier other than linear) is refused with
 `VMAFX_E_NOTSUP` naming the plane's `modifier`, and a `size` larger than the
@@ -486,7 +486,11 @@ memory that is not the buffer's. A GL import without a GLX context of the
 device's GPU (an EGL context, another GPU's renderer, no context) is refused
 with `VMAFX_E_NOTSUP` naming `desc.memory` before the runtime's GL interop is
 called; on a host with two GPUs, make the GL context on the device's GPU
-(`DRI_PRIME`). No path copies a frame through the host.
+(`DRI_PRIME`). A HIP runtime that maps a texture but refuses to read it (ROCm
+10.1, the version the project's builds use, refuses every read; ROCm 7.2
+reads them) makes the import `VMAFX_E_NOTSUP` naming `desc.memory`, the
+texture's extent and the runtime's version. No path copies a frame through
+the host.
 
 | Acquire fence | The HIP device |
 | --- | --- |
@@ -507,8 +511,8 @@ Release fences of a HIP frame:
   `vmafx_fence_wait()` returned `VMAFX_OK`; `vmafx_fence_wait()` answers
   `VMAFX_PENDING` until the event is recorded and complete.
 - `VMAFX_FENCE_SYNC_FILE` is refused with `VMAFX_E_NOTSUP`: no HIP operation
-  signals a kernel fence on this runtime. Use `HIP_EVENT` or the release
-  callback.
+  signals a kernel fence (ROCm 10.1 imports no external semaphore that could
+  carry one). Use `HIP_EVENT` or the release callback.
 
 ```c
 /* An NV12 frame a decoder exported linear, as one dma-buf with both planes

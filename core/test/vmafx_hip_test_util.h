@@ -34,6 +34,7 @@
 #include "vmafx_test_util.h"
 
 #ifdef VMAFX_TEST_HAVE_GBM
+#include <dirent.h>
 #include <fcntl.h>
 #include <gbm.h>
 #include <linux/dma-buf.h>
@@ -177,6 +178,25 @@ typedef struct VhGbm {
     size_t min_bytes;
 } VhGbm;
 
+/* The render node of the PCI device at `bus_id` from sysfs, for hosts
+ * without udev's /dev/dri/by-path links (a container given /dev/dri). */
+static inline int vh_render_node_from_sysfs(const char *bus_id)
+{
+    char dir_path[96];
+    (void)snprintf(dir_path, sizeof(dir_path), "/sys/bus/pci/devices/%s/drm", bus_id);
+    DIR *const dir = opendir(dir_path);
+    char node[64] = "";
+    for (const struct dirent *e = dir ? readdir(dir) : NULL; e; e = readdir(dir)) {
+        if (strncmp(e->d_name, "renderD", 7) == 0) {
+            (void)snprintf(node, sizeof(node), "/dev/dri/%.32s", e->d_name);
+        }
+    }
+    if (dir) {
+        (void)closedir(dir);
+    }
+    return node[0] ? open(node, O_RDWR | O_CLOEXEC) : -1;
+}
+
 static inline bool vh_gbm_open(const VhGpu *g, VhGbm *m)
 {
     memset(m, 0, sizeof(*m));
@@ -184,6 +204,9 @@ static inline bool vh_gbm_open(const VhGpu *g, VhGbm *m)
     char path[96];
     (void)snprintf(path, sizeof(path), "/dev/dri/by-path/pci-%s-render", g->pci_bus_id);
     m->drm = g->pci_bus_id[0] ? open(path, O_RDWR | O_CLOEXEC) : -1;
+    if (m->drm < 0 && g->pci_bus_id[0]) {
+        m->drm = vh_render_node_from_sysfs(g->pci_bus_id);
+    }
     m->gbm = m->drm >= 0 ? gbm_create_device(m->drm) : NULL;
     return m->gbm != NULL;
 }

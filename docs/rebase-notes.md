@@ -62015,6 +62015,11 @@ No score, public API or FFmpeg patch impact.
 - Tests: `core/test/vmafx_cuda_cells.h` is now `vmafx_device_cells.h`
   (both lanes read `scripts/ci/exact_twins.d/`); the CUDA tests include the
   new name.
+- `core/src/hip/import_frame.c` `fill_failed()`: a GL texture the runtime
+  maps but refuses to read (`hipErrorInvalidValue`, every read on ROCm 10.1)
+  is `VMAFX_E_NOTSUP` naming `desc.memory`, not `VMAFX_E_DEVICE`;
+  `test_vmafx_import_hip_gl` skips on that refusal. Keep both when the GL
+  path changes.
 - No `libvmaf.h`, ABI (0.1.4 unchanged), golden-data or FFmpeg patch
   impact; `--backend hip` now runs `float_vif_hip` for `float_vif` (the CPU's
   scores, ADR-1444).

@@ -429,6 +429,42 @@ static VmafxStatus no_kernels(const VmafxReport *report, const HipSource *src)
                       src->layout->name);
 }
 
+/* A read-out of the producer's plane `i` that failed, named. The HIP runtime
+ * of ROCm 10.1 maps a GL texture but refuses every read of its array with
+ * hipErrorInvalidValue (and a texture-object read of it faults the GPU),
+ * where ROCm 7.2 reads it: the import is refused as unsupported, naming the
+ * memory kind, the array's extent and the runtime
+ * (T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06). */
+static VmafxStatus fill_failed(const VmafxReport *report, const HipSource *src, uint32_t i,
+                               hipError_t rc)
+{
+    if (rc == hipErrorNotSupported) {
+        return no_kernels(report, src);
+    }
+    if (rc != hipErrorInvalidValue || src->d->memory != VMAFX_MEMORY_GL_TEXTURE) {
+        return VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_FRAME, "frame",
+                          "backend hip: cannot enqueue the planes of the import: %s (%d)",
+                          hipGetErrorName(rc), (int)rc);
+    }
+    assert(i < VMAFX_HIP_PLANES);
+    const uint32_t from = (src->layout->interleaved && i > 0u) ? 1u : i;
+    hipChannelFormatDesc channels;
+    hipExtent extent;
+    unsigned int flags = 0;
+    memset(&channels, 0, sizeof(channels));
+    memset(&extent, 0, sizeof(extent));
+    const bool described =
+        hipArrayGetInfo(&channels, &extent, &flags, src->arrays[from]) == hipSuccess;
+    int version = 0;
+    const bool versioned = hipRuntimeGetVersion(&version) == hipSuccess;
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "desc.memory",
+                      "backend hip, memory GL_TEXTURE: the HIP runtime (version %d) maps texture "
+                      "%u (array %zux%zu) but refuses to read it: %s; ROCm 7.2 reads mapped GL "
+                      "textures, ROCm 10.1 does not (T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06)",
+                      versioned ? version : -1, (unsigned)from, described ? extent.width : 0u,
+                      described ? extent.height : 0u, hipGetErrorName(rc));
+}
+
 /* Every plane of the frame into `data` / `stride`, the work on the library
  * stream behind the acquire wait. */
 static VmafxStatus fill_planes(const VmafxReport *report, VmafxHipFrame *hf, const HipSource *src,
@@ -438,19 +474,14 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxHipFrame *hf, con
     const bool force_copy = !src->from_arrays && vmafx_test_switch(VMAFX_TEST_FORCE_HOST_COPY);
     plan_planes(src, force_copy, &plan);
     VmafxStatus status = alloc_owned(report, hf, &plan);
-    hipError_t rc = hipSuccess;
-    for (uint32_t i = 0; i < plan.n_out && status == VMAFX_OK && rc == hipSuccess; i++) {
-        rc = src->from_arrays ? fill_array_plane(hf->dev, src, &plan, hf->owned, i, data) :
-                                fill_linear_plane(hf->dev, src, &plan, hf->owned, i, data);
+    for (uint32_t i = 0; i < plan.n_out && status == VMAFX_OK; i++) {
+        const hipError_t rc = src->from_arrays ?
+                                  fill_array_plane(hf->dev, src, &plan, hf->owned, i, data) :
+                                  fill_linear_plane(hf->dev, src, &plan, hf->owned, i, data);
         stride[i] = (ptrdiff_t)(plan.owned[i] ? plan.pitch[i] : src->d->plane[i].pitch);
-    }
-    if (status == VMAFX_OK && rc == hipErrorNotSupported) {
-        return no_kernels(report, src);
-    }
-    if (status == VMAFX_OK && rc != hipSuccess) {
-        status = VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_FRAME, "frame",
-                            "backend hip: cannot enqueue the planes of the import: %s (%d)",
-                            hipGetErrorName(rc), (int)rc);
+        if (rc != hipSuccess) {
+            status = fill_failed(report, src, i, rc);
+        }
     }
     if (status == VMAFX_OK && src->layout->interleaved) {
         vmafx_count_conversion();

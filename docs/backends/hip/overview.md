@@ -288,13 +288,13 @@ Open items only; the ledger row ids are in
   `T-HIP-IMPORT-TWIN-DEVICE-COPY-2026-10-06`). See
   [picture uploads](uploads.md#zero-copy-import).
 - **Import limits of the runtime.** A sync_file is an acquire fence only,
-  checked on the host: ROCm 7.2.4 aborts the process in
-  `hipImportExternalSemaphore()`, so no HIP stream waits on or signals one
-  (`T-HIP-ROCM-EXTERNAL-SEMAPHORE-ABORT-2026-10-06`). OpenGL textures import
-  only from a GLX context on the device's GPU: the runtime's GL interop reads
-  no other context and crashes the process after a failed first setup
-  (`T-HIP-GL-INTEROP-SETUP-CRASH-2026-10-06`). A HIP device has no frame
-  pools.
+  checked on the host: ROCm 10.1 imports no external semaphore that could
+  carry one (ROCm 7.2.4 aborts the process trying), so no HIP stream waits on
+  or signals one (`T-HIP-ROCM-NO-SYNC-FILE-SEMAPHORE-2026-10-06`). OpenGL
+  textures import only from a GLX context on the device's GPU, and not at all
+  with ROCm 10.1, whose runtime maps a texture but cannot read it: the import
+  is refused naming the runtime (`T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06`;
+  ROCm 7.2.4 reads them). A HIP device has no frame pools.
 - **Six twins stage their own copy of the frame** instead of reading the
   shared planes: `integer_ms_ssim_hip`, `psnr_hvs_hip`, `cambi_hip`,
   `speed_chroma_hip`, `speed_temporal_hip` and `ssimulacra2_hip`

@@ -306,6 +306,36 @@ static char *compare_gl_once(const VmafxFrameDesc *d, uint8_t *ref, uint8_t *dis
     return msg;
 }
 
+/* The HIP runtime of ROCm 10.1 maps a GL texture but refuses every read of
+ * its array (T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06). The library then
+ * refuses the import naming desc.memory and the runtime, which this reports
+ * as a skip with that message, not as a pass. */
+static bool gl_read_refused(const VmafxFrameDesc *d, const uint8_t *ref)
+{
+    GlFrame f;
+    memset(&f, 0, sizeof(f));
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    bool refused = false;
+    if (render(d, ref, &f)) {
+        glFinish(); /* the GL sync is signalled: no VMAFX_E_BUSY here */
+        const VmafxFrameImport imp = gl_import(d, &f);
+        const VmafxStatus status = vmafx_frame_import(gpu.device, &imp, &frame, &error);
+        refused = status == VMAFX_E_NOTSUP && error != NULL &&
+                  strcmp(vmafx_error_subject(error), "desc.memory") == 0 &&
+                  strstr(vmafx_error_message(error), "refuses to read") != NULL;
+    }
+    if (refused) {
+        (void)fprintf(stderr, "[skipped: %s] ", vmafx_error_message(error));
+    }
+    vmafx_error_free(error);
+    if (frame) {
+        vmafx_frame_unref(frame);
+    }
+    free_gl_frame(&f);
+    return refused;
+}
+
 static char *test_gl_textures(void)
 {
     if (!have_gl) {
@@ -322,6 +352,13 @@ static char *test_gl_textures(void)
     for (unsigned i = 0; i < FRAMES && !msg; i++) {
         vt_fill(&d, ref + i * frame, i);
         vt_fill(&d, dist + i * frame, i + 9u);
+    }
+    if (!msg && gl_read_refused(&d, ref)) {
+        vmafx_model_unref(model);
+        free(ref);
+        free(dist);
+        mu_skipped = 1;
+        return NULL;
     }
     unsigned long differing = 1;
     for (unsigned a = 0; a < ATTEMPTS && !msg && differing != 0u; a++) {

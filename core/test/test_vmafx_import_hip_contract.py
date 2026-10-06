@@ -20,7 +20,10 @@ depend on:
   call found no usable context);
 - a dma-buf is imported with its own size, and a larger size from the
   producer is refused (the runtime does not check it);
-- a SYNC_FILE release fence is refused, not faked.
+- a SYNC_FILE release fence is refused, not faked;
+- a GL texture the runtime maps but refuses to read (every read on ROCm
+  10.1) is refused as unsupported naming desc.memory, not reported as a
+  device failure.
 
 Every check has a planted-regression case that must be detected.
 """
@@ -127,6 +130,11 @@ def _import_failures(src: dict[str, str]) -> list[str]:
     extent = _function_body(src[DMABUF], "check_extent")
     if "p->size > actual" not in extent:
         failures.append(f"{DMABUF}: a size past the dma-buf is accepted")
+    failed = _function_body(src[FRAME], "fill_failed")
+    if not _in_order(
+        failed, "hipErrorInvalidValue", "VMAFX_MEMORY_GL_TEXTURE", "VMAFX_E_NOTSUP", '"desc.memory"'
+    ):
+        failures.append(f"{FRAME}: an unreadable GL texture is not refused as unsupported")
     refused = _function_body(src[FENCE], "release_kind_refused")
     if "VMAFX_FENCE_SYNC_FILE" not in refused or "VMAFX_E_NOTSUP" not in refused:
         failures.append(f"{FENCE}: a SYNC_FILE release fence is not refused")
@@ -219,6 +227,15 @@ class HipImportContractTest(unittest.TestCase):
         self.assert_detected(src, "size the runtime does not check")
         src = _replace(_sources(), DMABUF, "    if (p->size > actual) {", "    if (false) {")
         self.assert_detected(src, "past the dma-buf is accepted")
+
+    def test_unreadable_gl_texture_as_device_failure_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FRAME,
+            '    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "desc.memory",',
+            '    return VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "frame",',
+        )
+        self.assert_detected(src, "unreadable GL texture is not refused")
 
     def test_faked_sync_file_release_is_detected(self) -> None:
         src = _replace(

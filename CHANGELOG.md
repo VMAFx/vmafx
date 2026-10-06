@@ -113,7 +113,9 @@
   waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
   build. Imported frames score bit for bit as the same frames uploaded from
   the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
-  release fence is refused (the ROCm runtime cannot signal one). See
+  release fence is refused (the ROCm runtime cannot signal one). With ROCm
+  10.1, whose runtime maps a GL texture but cannot read it, GL imports are
+  refused with `VMAFX_E_NOTSUP` naming the runtime. See
   [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
