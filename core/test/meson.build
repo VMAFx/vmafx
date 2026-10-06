@@ -1305,6 +1305,41 @@ test_vmafx_import_convert = executable('test_vmafx_import_convert',
 )
 test('test_vmafx_import_convert', test_vmafx_import_convert, suite : ['fast'])
 
+# ADR-2145: every input layout FFmpeg writes, imported from host memory, equals
+# the planar frame FFmpeg made it from (vmafx_format_fixtures.h).
+test_vmafx_import_ffmpeg_oracle = executable('test_vmafx_import_ffmpeg_oracle',
+    ['test.c', 'test_vmafx_import_ffmpeg_oracle.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_ffmpeg_oracle', test_vmafx_import_ffmpeg_oracle, suite : ['fast'])
+
+# ADR-2146: the RGB input conversion against an exact-rational oracle, and its
+# refusals (no matrix, range or transfer stated; unsupported values).
+test_vmafx_rgb_convert = executable('test_vmafx_rgb_convert',
+    ['test.c', 'test_vmafx_rgb_convert.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_rgb_convert', test_vmafx_rgb_convert, suite : ['fast'])
+
+# ADR-2145: host input in every layout of the format table (semi-planar, packed,
+# MSB planar words, RGB with a stated matrix) scores bit for bit as the planar
+# frame, through the cells the device lanes use.
+test_vmafx_import_formats_cpu = executable('test_vmafx_import_formats_cpu',
+    ['test.c', 'test_vmafx_import_formats_cpu.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_formats_cpu', test_vmafx_import_formats_cpu, suite : ['fast'],
+     timeout : 300)
+
 test_vmafx_import_bitexact = executable('test_vmafx_import_bitexact',
     ['test.c', 'test_vmafx_import_bitexact.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],

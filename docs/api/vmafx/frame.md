@@ -91,14 +91,14 @@ Where one plane of an imported frame lives. Embedded by value in VmafxFrameImpor
 
 ### `VmafxFrameImport`
 
-A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 232 bytes, alignment 8. Since 0.1.
+A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 248 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
 | `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
 | `memory` | `uint32_t memory` | 4 | 0.1 | What each plane's handle refers to. Values: `VmafxMemoryKind`. |
-| `pix_fmt` | `uint32_t pix_fmt` | 8 | 0.1 | Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing else. Values: `VmafxPixelFormat`. |
-| `bpc` | `uint32_t bpc` | 12 | 0.1 | Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to 16 for the planar formats. |
+| `pix_fmt` | `uint32_t pix_fmt` | 8 | 0.1 | Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, UYVY422, VUYX, AYUV, V210) and YUV444P_MSB are converted to planar (a gather, a shift and a mask), nothing else; RGB, RGBA and BGRA are converted to Y'CbCr with the matrix, range and transfer of `rgb_*` (ADR-2146). Values: `VmafxPixelFormat`. |
+| `bpc` | `uint32_t bpc` | 12 | 0.1 | Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / UYVY422 / VUYX / AYUV, 10 for V210, 9 to 16 for YUV444P_MSB, 8 to 16 for RGB, RGBA, BGRA and the planar formats. |
 | `w` | `uint32_t w` | 16 | 0.1 | Luma width in pixels. |
 | `h` | `uint32_t h` | 20 | 0.1 | Luma height in pixels. |
 | `n_planes` | `uint32_t n_planes` | 24 | 0.1 | Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1 for the packed layouts, else 3. |
@@ -107,6 +107,10 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 | `flags` | `uint32_t flags` | 208 | 0.1 | 0: zero copy only. Bits: `VmafxImportFlags`. |
 | `release` | `VmafxFrameReleaseCallback release` | 216 | 0.1 | Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT or HIP_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4. |
 | `user` | `void *user` | 224 | 0.1 | Passed to `release`. Added in ABI 0.1.4. |
+| `rgb_matrix` | `uint32_t rgb_matrix` | 232 | 0.1 | RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.6. Values: `VmafxColorMatrix`. |
+| `rgb_range` | `uint32_t rgb_range` | 236 | 0.1 | RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.6. Values: `VmafxColorRange`. |
+| `rgb_transfer` | `uint32_t rgb_transfer` | 240 | 0.1 | RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.6. Values: `VmafxColorTransfer`. |
+| `rgb_out_range` | `uint32_t rgb_out_range` | 244 | 0.1 | RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.6. Values: `VmafxColorRange`. |
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.
 

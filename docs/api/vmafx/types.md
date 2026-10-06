@@ -75,6 +75,12 @@ Planar pixel layout of a frame (values equal enum VmafPixelFormat). Since 0.1.
 | `VMAFX_PIXEL_FORMAT_VUYX` | 29 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_XV36` | 30 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_YUV444P_MSB` | 31 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_AYUV` | 32 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_UYVY422` | 33 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_V210` | 34 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_RGB` | 35 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_RGBA` | 36 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_BGRA` | 37 | 0.1 |
 
 ## `VmafxPool`
 
@@ -91,6 +97,42 @@ Pooling method of a pooled score (values equal enum VmafPoolingMethod). Since 0.
 | `VMAFX_POOL_PERC5` | 6 | 0.1 |
 | `VMAFX_POOL_PERC10` | 7 | 0.1 |
 | `VMAFX_POOL_PERC20` | 8 | 0.1 |
+
+## `VmafxColorMatrix`
+
+The Y'CbCr matrix an RGB frame is converted with (ADR-2146). Only the matrices the library converts exactly are accepted; the others are declared so a caller's value is refused by name. Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_MATRIX_UNSPECIFIED` | 0 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT601` | 1 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT709` | 2 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT2020_NCL` | 3 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT2020_CL` | 4 | 0.1 |
+| `VMAFX_COLOR_MATRIX_ICTCP` | 5 | 0.1 |
+
+## `VmafxColorRange`
+
+Code-value range of the samples of a signal (ADR-2146). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_RANGE_UNSPECIFIED` | 0 | 0.1 |
+| `VMAFX_COLOR_RANGE_LIMITED` | 1 | 0.1 |
+| `VMAFX_COLOR_RANGE_FULL` | 2 | 0.1 |
+
+## `VmafxColorTransfer`
+
+Transfer characteristic of the non-linear R'G'B' samples of an RGB frame (ADR-2146). The conversion applies the matrix to the code values as an encoder does; the transfer is part of the statement of what the signal is and is checked, not applied. Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_TRANSFER_UNSPECIFIED` | 0 | 0.1 |
+| `VMAFX_COLOR_TRANSFER_BT709` | 1 | 0.1 |
+| `VMAFX_COLOR_TRANSFER_SRGB` | 2 | 0.1 |
+| `VMAFX_COLOR_TRANSFER_SMPTE2084` | 3 | 0.1 |
+| `VMAFX_COLOR_TRANSFER_HLG` | 4 | 0.1 |
+| `VMAFX_COLOR_TRANSFER_LINEAR` | 5 | 0.1 |
 
 ## Handles and callbacks
 

@@ -220,6 +220,40 @@ class OptionGroup:
 
 
 @dataclass(frozen=True)
+class PixelFormat:
+    """One row of the input format table (ADR-2145)."""
+
+    enum: str
+    name: str
+    layout: str
+    planar: str
+    chroma: str
+    siting: str
+    planes: int
+    bpc: tuple[int, int]
+    shift: int
+    msb: bool
+    interleaved: bool
+    packing: str
+    elem: tuple[int, int, int]
+    rgb_elems: int
+    needs_statement: bool
+    devices: tuple[str, ...]
+    ffmpeg: dict[int, str]
+    gstreamer: dict[int, str]
+
+
+@dataclass(frozen=True)
+class ColorMatrix:
+    """One RGB to Y'CbCr matrix of the conversion table (ADR-2146)."""
+
+    enum: str
+    kr: str
+    kb: str
+    standard: str
+
+
+@dataclass(frozen=True)
 class Api:
     name: str
     abi_version: tuple[int, int, int]
@@ -237,6 +271,8 @@ class Api:
     functions: tuple[Function, ...]
     compats: tuple[Compat, ...]
     option_groups: tuple[OptionGroup, ...] = field(default=())
+    pixel_formats: tuple[PixelFormat, ...] = field(default=())
+    color_matrices: tuple[ColorMatrix, ...] = field(default=())
 
     @property
     def abi_minor_node(self) -> tuple[int, int]:

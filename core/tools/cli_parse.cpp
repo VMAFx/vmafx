@@ -48,6 +48,7 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+#include "vmafx/import_layouts_gen.h"
 
 namespace
 {
@@ -95,6 +96,11 @@ enum : std::uint16_t {
     ARG_TINY_RESIZE,
     /* ADR-0696 — restore Netflix-upstream legacy defaults. */
     ARG_NETFLIX_COMPAT,
+    /* ADR-2146 — the statement of a raw RGB input: matrix, ranges, transfer. */
+    ARG_RGB_MATRIX,
+    ARG_RGB_RANGE,
+    ARG_RGB_TRANSFER,
+    ARG_RGB_OUT_RANGE,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -203,41 +209,58 @@ const struct option long_opts[] = {
     {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
     {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
+    {.name = "rgb_matrix", .has_arg = 1, .flag = nullptr, .val = ARG_RGB_MATRIX},
+    {.name = "rgb_range", .has_arg = 1, .flag = nullptr, .val = ARG_RGB_RANGE},
+    {.name = "rgb_transfer", .has_arg = 1, .flag = nullptr, .val = ARG_RGB_TRANSFER},
+    {.name = "rgb_out_range", .has_arg = 1, .flag = nullptr, .val = ARG_RGB_OUT_RANGE},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
 };
 
 void print_usage_options_part1(FILE *const out, const char *const app)
 {
     (void)fprintf(out, "Usage: %s [options]\n\n", app);
-    (void)fprintf(out, "Supported options:\n"
-                       " --help:                      print this message and exit\n"
-                       " --reference/-r $path:        path to reference .y4m or .yuv\n"
-                       " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-                       " --width/-w $unsigned:        width\n"
-                       " --height/-h $unsigned:       height\n"
-                       " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-                       " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-                       " --model/-m $params:          model parameters, colon \":\" delimited\n"
-                       "                              `path=` path to model file\n"
-                       "                              `version=` built-in model version\n"
-                       "                              `name=` name used in log (optional)\n"
-                       " --output/-o $path:           output file\n"
-                       " --xml:                       write output file as XML (default)\n"
-                       " --json:                      write output file as JSON\n"
-                       " --csv:                       write output file as CSV\n"
-                       " --sub:                       write output file as subtitle\n"
-                       " --threads $unsigned:         number of threads to use\n"
-                       " --feature $string:           additional feature\n"
-                       " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-                       " --gpumask: $bitmask          restrict permitted GPU operations\n"
-                       " --frame_cnt $unsigned:       maximum number of frames to process\n"
-                       " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-                       " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-                       " --subsample: $unsigned       compute scores only every N frames\n"
-                       " --no_cuda:                   disable CUDA backend\n"
-                       " --no_sycl:                    disable SYCL/oneAPI backend\n"
-                       " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-                       "                              [Vulkan backend removed in ADR-0726]\n");
+    (void)fprintf(
+        out, "Supported options:\n"
+             " --help:                      print this message and exit\n"
+             " --reference/-r $path:        path to reference .y4m or .yuv\n"
+             " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
+             " --width/-w $unsigned:        width\n"
+             " --height/-h $unsigned:       height\n"
+             " --pixel_format/-p: $string   pixel format of a raw .yuv: 400/420/422/444, or a\n"
+             "                              layout: nv12 nv16 nv24 p010 p016 p210 p216 p410\n"
+             "                              p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36\n"
+             "                              vuyx ayuv yuv444p16msb, or rgb rgba bgra (needs\n"
+             "                              --rgb_*)\n"
+             " --bitdepth/-b $unsigned:     bitdepth (8 to 16; implied by most layouts)\n"
+             " --rgb_matrix $string:        rgb/rgba/bgra input: Y'CbCr matrix, bt601, bt709\n"
+             "                              or bt2020ncl (no default)\n"
+             " --rgb_range $string:         rgb/rgba/bgra input: range of the R'G'B' samples,\n"
+             "                              limited or full (no default)\n"
+             " --rgb_transfer $string:      rgb/rgba/bgra input: transfer of the R'G'B' samples,\n"
+             "                              bt709, srgb, pq or hlg (no default)\n"
+             " --rgb_out_range $string:     rgb/rgba/bgra input: range of the Y'CbCr frame\n"
+             "                              made, limited or full (no default)\n"
+             " --model/-m $params:          model parameters, colon \":\" delimited\n"
+             "                              `path=` path to model file\n"
+             "                              `version=` built-in model version\n"
+             "                              `name=` name used in log (optional)\n"
+             " --output/-o $path:           output file\n"
+             " --xml:                       write output file as XML (default)\n"
+             " --json:                      write output file as JSON\n"
+             " --csv:                       write output file as CSV\n"
+             " --sub:                       write output file as subtitle\n"
+             " --threads $unsigned:         number of threads to use\n"
+             " --feature $string:           additional feature\n"
+             " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
+             " --gpumask: $bitmask          restrict permitted GPU operations\n"
+             " --frame_cnt $unsigned:       maximum number of frames to process\n"
+             " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
+             " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
+             " --subsample: $unsigned       compute scores only every N frames\n"
+             " --no_cuda:                   disable CUDA backend\n"
+             " --no_sycl:                    disable SYCL/oneAPI backend\n"
+             " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
+             "                              [Vulkan backend removed in ADR-0726]\n");
 }
 
 /* The codec-context and NR flags of tiny models; split out of
@@ -463,32 +486,115 @@ void error(const char *const app, const char *const optarg, const int option,
                                       const char *const app)
 {
     const unsigned bitdepth = parse_unsigned(optarg, option, app);
-    if (!((bitdepth == 8) || (bitdepth == 10) || (bitdepth == 12) || (bitdepth == 16)))
-        error(app, optarg, option, "a valid bitdepth (8/10/12/16)");
+    if (bitdepth < 8 || bitdepth > 16)
+        error(app, optarg, option, "a valid bitdepth (8 to 16)");
     return bitdepth;
 }
 
-[[nodiscard]] enum VmafPixelFormat parse_pix_fmt(const char *const optarg, const int option,
-                                                 const char *const app)
+/* A layout of the import table named on the command line (core/api/vmafx.toml
+ * `[[pixel_formats]]`, ADR-2145): its row, or nullptr. The planar rows (yuv420p ... gray) are
+ * accepted as names too. */
+[[nodiscard]] const VmafxImportLayout *find_layout(const std::string_view name)
 {
-    using sv = std::string_view;
-    const sv arg{optarg};
-    enum VmafPixelFormat pix_fmt = VMAF_PIX_FMT_UNKNOWN;
-
-    if (arg == "420")
-        pix_fmt = VMAF_PIX_FMT_YUV420P;
-    if (arg == "422")
-        pix_fmt = VMAF_PIX_FMT_YUV422P;
-    if (arg == "444")
-        pix_fmt = VMAF_PIX_FMT_YUV444P;
-
-    if (!pix_fmt) {
-        error(app, optarg, option,
-              "a valid pixel format "
-              "(420/422/444)");
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (name == row.name)
+            return &row;
     }
+    return nullptr;
+}
 
-    return pix_fmt;
+/* A plain planar row: the frame is the file's, no conversion. */
+[[nodiscard]] bool is_plain_planar(const VmafxImportLayout &row)
+{
+    return row.packed == VMAFX_IMPORT_PACKED_NONE && !row.interleaved && !row.msb &&
+           row.pix_fmt == row.planar_fmt;
+}
+
+/* `--pixel_format`: 400 / 420 / 422 / 444, or a layout of the import table. Sets the planar frame
+ * (`pix_fmt`), the layout of a raw file that is not planar (`input_layout`) and the bit depth a
+ * layout fixes (a later --bitdepth is checked against it). */
+void parse_pixel_format(const char *const optarg, const int option, const char *const app,
+                        CLISettings *const settings)
+{
+    const std::string_view arg{optarg};
+    settings->input_layout = 0;
+    settings->pix_fmt = VMAF_PIX_FMT_UNKNOWN;
+    if (arg == "400")
+        settings->pix_fmt = VMAF_PIX_FMT_YUV400P;
+    if (arg == "420")
+        settings->pix_fmt = VMAF_PIX_FMT_YUV420P;
+    if (arg == "422")
+        settings->pix_fmt = VMAF_PIX_FMT_YUV422P;
+    if (arg == "444")
+        settings->pix_fmt = VMAF_PIX_FMT_YUV444P;
+    if (const VmafxImportLayout *const row = find_layout(arg); row && !settings->pix_fmt) {
+        settings->pix_fmt = static_cast<enum VmafPixelFormat>(row->planar_fmt);
+        if (!is_plain_planar(*row))
+            settings->input_layout = row->pix_fmt;
+        if (row->bpc_min == row->bpc_max)
+            settings->bitdepth = row->bpc_min;
+    }
+    if (!settings->pix_fmt) {
+        error(app, optarg, option,
+              "a valid pixel format (400/420/422/444, or a layout: nv12 nv16 nv24 p010 p016 p210 "
+              "p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb "
+              "rgb rgba bgra)");
+    }
+}
+
+/* A name and its VmafxColor* value. */
+struct NamedColor {
+    const char *name;
+    unsigned value;
+};
+
+[[nodiscard]] unsigned parse_named_color(const NamedColor *const table, const size_t n,
+                                         const char *const optarg, const int option,
+                                         const char *const app, const char *const expected)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (std::string_view{optarg} == table[i].name)
+            return table[i].value;
+    }
+    error(app, optarg, option, expected);
+    return 0;
+}
+
+/* The statement of a raw RGB input (ADR-2146). Values the integer conversion does not make
+ * (bt2020cl, ictcp, linear) are parsed so that the refusal can name them. */
+void handle_rgb_flag(const int o, const char *const optarg, const char *const app,
+                     CLISettings *const settings)
+{
+    static const NamedColor matrices[] = {{"bt601", VMAFX_COLOR_MATRIX_BT601},
+                                          {"bt709", VMAFX_COLOR_MATRIX_BT709},
+                                          {"bt2020ncl", VMAFX_COLOR_MATRIX_BT2020_NCL},
+                                          {"bt2020cl", VMAFX_COLOR_MATRIX_BT2020_CL},
+                                          {"ictcp", VMAFX_COLOR_MATRIX_ICTCP}};
+    static const NamedColor ranges[] = {{"limited", VMAFX_COLOR_RANGE_LIMITED},
+                                        {"full", VMAFX_COLOR_RANGE_FULL}};
+    static const NamedColor transfers[] = {{"bt709", VMAFX_COLOR_TRANSFER_BT709},
+                                           {"srgb", VMAFX_COLOR_TRANSFER_SRGB},
+                                           {"pq", VMAFX_COLOR_TRANSFER_SMPTE2084},
+                                           {"hlg", VMAFX_COLOR_TRANSFER_HLG},
+                                           {"linear", VMAFX_COLOR_TRANSFER_LINEAR}};
+    switch (o) {
+    case ARG_RGB_MATRIX:
+        settings->rgb_matrix = parse_named_color(matrices, std::size(matrices), optarg, o, app,
+                                                 "a matrix: bt601, bt709 or bt2020ncl");
+        break;
+    case ARG_RGB_RANGE:
+        settings->rgb_range = parse_named_color(ranges, std::size(ranges), optarg, o, app,
+                                                "a range: limited or full");
+        break;
+    case ARG_RGB_TRANSFER:
+        settings->rgb_transfer = parse_named_color(transfers, std::size(transfers), optarg, o, app,
+                                                   "a transfer: bt709, srgb, pq or hlg");
+        break;
+    default:
+        settings->rgb_out_range = parse_named_color(ranges, std::size(ranges), optarg, o, app,
+                                                    "a range: limited or full");
+        break;
+    }
 }
 
 /* ADR-1190 — escape-aware splitting of the `--model` / `--feature` option
@@ -1014,7 +1120,7 @@ void handle_video_input_flag(const int o, const char *const optarg, const char *
         settings->use_yuv = true;
         break;
     case 'p':
-        settings->pix_fmt = parse_pix_fmt(optarg, 'p', app);
+        parse_pixel_format(optarg, 'p', app, settings);
         settings->use_yuv = true;
         break;
     case 'b':
@@ -1214,6 +1320,49 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
     }
 }
 
+/* A layout of the import table holds the bit depths of its row. */
+static void validate_layout_depth(const char *const app, const CLISettings *const settings)
+{
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (row.pix_fmt != settings->input_layout)
+            continue;
+        if (settings->bitdepth >= row.bpc_min && settings->bitdepth <= row.bpc_max)
+            continue;
+        char range[16];
+        (void)snprintf(range, sizeof range, "%u to %u", row.bpc_min, row.bpc_max);
+        usage(app, "--pixel_format %s holds %s bits per component, not --bitdepth %u", row.name,
+              static_cast<const char *>(range), settings->bitdepth);
+    }
+}
+
+/* An RGB layout is converted to Y'CbCr with a matrix, range and transfer the user states
+ * (ADR-2146): each one missing is refused by its flag, a matrix or transfer the integer
+ * conversion does not make is refused by name. Nothing is assumed. */
+static void validate_rgb_statement(const char *const app, const CLISettings *const settings)
+{
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (row.pix_fmt != settings->input_layout || !row.needs_statement)
+            continue;
+        const char *const need = "%s is converted to Y'CbCr with a matrix, range and transfer you "
+                                 "state; none is assumed: --%s is missing";
+        if (!settings->rgb_matrix)
+            usage(app, need, row.name, "rgb_matrix (bt601, bt709 or bt2020ncl)");
+        if (!settings->rgb_range)
+            usage(app, need, row.name, "rgb_range (limited or full)");
+        if (!settings->rgb_transfer)
+            usage(app, need, row.name, "rgb_transfer (bt709, srgb, pq or hlg)");
+        if (!settings->rgb_out_range)
+            usage(app, need, row.name, "rgb_out_range (limited or full)");
+        if (settings->rgb_matrix == VMAFX_COLOR_MATRIX_BT2020_CL ||
+            settings->rgb_matrix == VMAFX_COLOR_MATRIX_ICTCP)
+            usage(app, "--rgb_matrix: the integer conversion covers bt601, bt709 and bt2020ncl; "
+                       "bt2020cl and ictcp need the transfer function in the conversion");
+        if (settings->rgb_transfer == VMAFX_COLOR_TRANSFER_LINEAR)
+            usage(app, "--rgb_transfer linear: the matrix applies to non-linear R'G'B'; encode "
+                       "the samples first");
+    }
+}
+
 static void validate_yuv_settings(const char *const app, const CLISettings *const settings)
 {
     if (!settings->use_yuv) {
@@ -1230,8 +1379,10 @@ static void validate_yuv_settings(const char *const app, const CLISettings *cons
                    "  --width/-w\n"
                    "  --height/-h\n"
                    "  --pixel_format/-p\n"
-                   "  --bitdepth/-b\n");
+                   "  --bitdepth/-b (implied by most layouts)\n");
     }
+    validate_layout_depth(app, settings);
+    validate_rgb_statement(app, settings);
 }
 
 void validate_cli_settings(const char *const app, CLISettings *const settings)
@@ -1439,6 +1590,12 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case ARG_NO_REFERENCE:
     case ARG_TINY_RESIZE:
         handle_tiny_flag(o, optarg, app, settings);
+        break;
+    case ARG_RGB_MATRIX:
+    case ARG_RGB_RANGE:
+    case ARG_RGB_TRANSFER:
+    case ARG_RGB_OUT_RANGE:
+        handle_rgb_flag(o, optarg, app, settings);
         break;
     case ARG_HELP:
     case 'n':

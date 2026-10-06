@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 5)
+ABI_VERSION = (0, 1, 6)
 
 
 class Status(enum.IntEnum):
@@ -78,6 +78,12 @@ class PixelFormat(enum.IntEnum):
     VUYX = 29
     XV36 = 30
     YUV444P_MSB = 31
+    AYUV = 32
+    UYVY422 = 33
+    V210 = 34
+    RGB = 35
+    RGBA = 36
+    BGRA = 37
 
 
 class Pool(enum.IntEnum):
@@ -110,6 +116,36 @@ class SubjectKind(enum.IntEnum):
     BACKEND = 10
     PATH = 11
     FENCE = 12
+
+
+class ColorMatrix(enum.IntEnum):
+    """VmafxColorMatrix."""
+
+    UNSPECIFIED = 0
+    BT601 = 1
+    BT709 = 2
+    BT2020_NCL = 3
+    BT2020_CL = 4
+    ICTCP = 5
+
+
+class ColorRange(enum.IntEnum):
+    """VmafxColorRange."""
+
+    UNSPECIFIED = 0
+    LIMITED = 1
+    FULL = 2
+
+
+class ColorTransfer(enum.IntEnum):
+    """VmafxColorTransfer."""
+
+    UNSPECIFIED = 0
+    BT709 = 1
+    SRGB = 2
+    SMPTE2084 = 3
+    HLG = 4
+    LINEAR = 5
 
 
 class MemoryKind(enum.IntEnum):
@@ -325,6 +361,10 @@ VmafxFrameImport._fields_ = (
     ("flags", ctypes.c_uint32),
     ("release", VmafxFrameReleaseCallback),
     ("user", ctypes.c_void_p),
+    ("rgb_matrix", ctypes.c_uint32),
+    ("rgb_range", ctypes.c_uint32),
+    ("rgb_transfer", ctypes.c_uint32),
+    ("rgb_out_range", ctypes.c_uint32),
 )
 
 VmafxModelConfig._fields_ = (
@@ -487,7 +527,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        232,
+        248,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -501,6 +541,10 @@ LAYOUT = {
             ("flags", 208),
             ("release", 216),
             ("user", 224),
+            ("rgb_matrix", 232),
+            ("rgb_range", 236),
+            ("rgb_transfer", 240),
+            ("rgb_out_range", 244),
         ),
     ),
     VmafxModelConfig: (
@@ -1410,6 +1454,10 @@ class FrameImport:
     plane: tuple[ImportPlane, ...]
     acquire: Fence
     flags: int
+    rgb_matrix: int
+    rgb_range: int
+    rgb_transfer: int
+    rgb_out_range: int
 
     @classmethod
     def from_c(cls, raw: VmafxFrameImport) -> FrameImport:
@@ -1423,6 +1471,10 @@ class FrameImport:
             plane=tuple(ImportPlane.from_c(x) for x in raw.plane),
             acquire=Fence.from_c(raw.acquire),
             flags=raw.flags,
+            rgb_matrix=raw.rgb_matrix,
+            rgb_range=raw.rgb_range,
+            rgb_transfer=raw.rgb_transfer,
+            rgb_out_range=raw.rgb_out_range,
         )
 
 

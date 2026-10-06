@@ -135,6 +135,8 @@ enum VmafPixelFormat pix_fmt_map(int pf)
         return VMAF_PIX_FMT_YUV422P;
     case PF_444:
         return VMAF_PIX_FMT_YUV444P;
+    case PF_400:
+        return VMAF_PIX_FMT_YUV400P;
     default:
         return VMAF_PIX_FMT_UNKNOWN;
     }
@@ -645,6 +647,24 @@ namespace
 namespace
 {
 
+/* Open a raw .yuv input: the planar frame of --pixel_format or its layout (NV12, P010, V210,
+ * RGBA ...), with the statement of an RGB layout (ADR-2145, ADR-2146). On a failure after the
+ * reader opened, it closes the reader and the file (`*file` is null then). */
+[[nodiscard]] int open_raw_input(video_input *vid, FILE **file, const CLISettings *c)
+{
+    const int pix_fmt =
+        c->input_layout ? static_cast<int>(c->input_layout) : static_cast<int>(c->pix_fmt);
+    int err = raw_input_open(vid, *file, c->width, c->height, pix_fmt, c->bitdepth);
+    if (err || !c->input_layout || !c->rgb_matrix)
+        return err;
+    err = raw_input_set_rgb(vid, c->rgb_matrix, c->rgb_range, c->rgb_transfer, c->rgb_out_range);
+    if (err) {
+        video_input_close(vid);
+        *file = nullptr;
+    }
+    return err;
+}
+
 [[nodiscard]] int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_dist,
                                     video_input *vid_ref, video_input *vid_dist, bool *vid_ref_open,
                                     bool *vid_dist_open)
@@ -652,7 +672,7 @@ namespace
     int err;
 
     if (c->use_yuv) {
-        err = raw_input_open(vid_ref, *file_ref, c->width, c->height, c->pix_fmt, c->bitdepth);
+        err = open_raw_input(vid_ref, file_ref, c);
     } else {
         err = video_input_open(vid_ref, *file_ref);
     }
@@ -667,7 +687,7 @@ namespace
     *file_ref = nullptr; /* ownership transferred to vid_ref */
 
     if (c->use_yuv) {
-        err = raw_input_open(vid_dist, *file_dist, c->width, c->height, c->pix_fmt, c->bitdepth);
+        err = open_raw_input(vid_dist, file_dist, c);
     } else {
         err = video_input_open(vid_dist, *file_dist);
     }

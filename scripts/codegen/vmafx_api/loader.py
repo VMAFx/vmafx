@@ -18,6 +18,7 @@ from .model import (
     VERSION_PARTS,
     Api,
     Callback,
+    ColorMatrix,
     Compat,
     DefinitionError,
     Enum,
@@ -29,6 +30,7 @@ from .model import (
     Handle,
     Header,
     Param,
+    PixelFormat,
     Status,
     Struct,
 )
@@ -266,6 +268,66 @@ def _compats(raw: list[Entry]) -> tuple[Compat, ...]:
     return tuple(out)
 
 
+def _names_by_depth(entry: Entry, key: str, where: str) -> dict[int, str]:
+    raw = entry.get(key, {})
+    if not isinstance(raw, dict):
+        raise DefinitionError(f"{where}: `{key}` maps bits per component to a format name")
+    out = {}
+    for depth, name in raw.items():
+        if not str(depth).isdigit() or not isinstance(name, str) or not name:
+            raise DefinitionError(f"{where}: `{key}` entry {depth!r} = {name!r} is not bpc = name")
+        out[int(depth)] = name
+    return out
+
+
+def _pixel_formats(raw: list[Entry]) -> tuple[PixelFormat, ...]:
+    out = []
+    for entry in raw:
+        where = f"pixel_formats[{entry.get('enum', '?')}]"
+        bpc = need(entry, "bpc", where)
+        elem = entry.get("elem", [0, 0, 0])
+        if len(bpc) != 2 or len(elem) != 3:  # noqa: PLR2004 (a range and Y, Cb, Cr)
+            raise DefinitionError(f"{where}: `bpc` is [min, max], `elem` is three positions")
+        out.append(
+            PixelFormat(
+                enum=need(entry, "enum", where),
+                name=need(entry, "name", where),
+                layout=need(entry, "layout", where),
+                planar=need(entry, "planar", where),
+                chroma=need(entry, "chroma", where),
+                siting=need(entry, "siting", where),
+                planes=int(need(entry, "planes", where)),
+                bpc=(int(bpc[0]), int(bpc[1])),
+                shift=int(entry.get("shift", 0)),
+                msb=bool(entry.get("msb", False)),
+                interleaved=bool(entry.get("interleaved", False)),
+                packing=str(entry.get("packing", "none")),
+                elem=(int(elem[0]), int(elem[1]), int(elem[2])),
+                rgb_elems=int(entry.get("rgb_elems", 0)),
+                needs_statement=bool(entry.get("needs_statement", False)),
+                devices=tuple(need(entry, "devices", where)),
+                ffmpeg=_names_by_depth(entry, "ffmpeg", where),
+                gstreamer=_names_by_depth(entry, "gstreamer", where),
+            )
+        )
+    return tuple(out)
+
+
+def _color_matrices(raw: list[Entry]) -> tuple[ColorMatrix, ...]:
+    out = []
+    for entry in raw:
+        where = f"color_matrices[{entry.get('enum', '?')}]"
+        out.append(
+            ColorMatrix(
+                enum=need(entry, "enum", where),
+                kr=str(need(entry, "kr", where)),
+                kb=str(need(entry, "kb", where)),
+                standard=need(entry, "standard", where),
+            )
+        )
+    return tuple(out)
+
+
 def _abi_version(api: Entry) -> tuple[int, int, int]:
     major, minor, patch = version(need(api, "abi_version", "api"), "api.abi_version", VERSION_PARTS)
     return major, minor, patch
@@ -325,6 +387,8 @@ def parse(document: Entry) -> Api:
         functions=_functions(document.get("functions", [])),
         compats=_compats(document.get("compat", [])),
         option_groups=option_groups(document.get("option_groups", [])),
+        pixel_formats=_pixel_formats(document.get("pixel_formats", [])),
+        color_matrices=_color_matrices(document.get("color_matrices", [])),
     )
     validate(result)
     return result

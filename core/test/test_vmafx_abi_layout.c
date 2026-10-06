@@ -110,7 +110,7 @@ _Static_assert(offsetof(VmafxImportPlane, offset) == 16, "VmafxImportPlane.offse
 _Static_assert(offsetof(VmafxImportPlane, pitch) == 24, "VmafxImportPlane.pitch offset");
 _Static_assert(offsetof(VmafxImportPlane, modifier) == 32, "VmafxImportPlane.modifier offset");
 _Static_assert(offsetof(VmafxImportPlane, size) == 40, "VmafxImportPlane.size offset");
-_Static_assert(sizeof(VmafxFrameImport) == 232, "VmafxFrameImport size");
+_Static_assert(sizeof(VmafxFrameImport) == 248, "VmafxFrameImport size");
 _Static_assert(_Alignof(VmafxFrameImport) == 8, "VmafxFrameImport alignment");
 _Static_assert(offsetof(VmafxFrameImport, struct_size) == 0, "VmafxFrameImport.struct_size offset");
 _Static_assert(offsetof(VmafxFrameImport, memory) == 4, "VmafxFrameImport.memory offset");
@@ -126,6 +126,12 @@ _Static_assert(offsetof(VmafxFrameImport, acquire) == 176, "VmafxFrameImport.acq
 _Static_assert(offsetof(VmafxFrameImport, flags) == 208, "VmafxFrameImport.flags offset");
 _Static_assert(offsetof(VmafxFrameImport, release) == 216, "VmafxFrameImport.release offset");
 _Static_assert(offsetof(VmafxFrameImport, user) == 224, "VmafxFrameImport.user offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_matrix) == 232, "VmafxFrameImport.rgb_matrix offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_range) == 236, "VmafxFrameImport.rgb_range offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_transfer) == 240,
+               "VmafxFrameImport.rgb_transfer offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_out_range) == 244,
+               "VmafxFrameImport.rgb_out_range offset");
 _Static_assert(sizeof(VmafxModelConfig) == 48, "VmafxModelConfig size");
 _Static_assert(_Alignof(VmafxModelConfig) == 8, "VmafxModelConfig alignment");
 _Static_assert(offsetof(VmafxModelConfig, struct_size) == 0, "VmafxModelConfig.struct_size offset");
@@ -235,6 +241,12 @@ _Static_assert(VMAFX_PIXEL_FORMAT_Y212 == 28, "VMAFX_PIXEL_FORMAT_Y212");
 _Static_assert(VMAFX_PIXEL_FORMAT_VUYX == 29, "VMAFX_PIXEL_FORMAT_VUYX");
 _Static_assert(VMAFX_PIXEL_FORMAT_XV36 == 30, "VMAFX_PIXEL_FORMAT_XV36");
 _Static_assert(VMAFX_PIXEL_FORMAT_YUV444P_MSB == 31, "VMAFX_PIXEL_FORMAT_YUV444P_MSB");
+_Static_assert(VMAFX_PIXEL_FORMAT_AYUV == 32, "VMAFX_PIXEL_FORMAT_AYUV");
+_Static_assert(VMAFX_PIXEL_FORMAT_UYVY422 == 33, "VMAFX_PIXEL_FORMAT_UYVY422");
+_Static_assert(VMAFX_PIXEL_FORMAT_V210 == 34, "VMAFX_PIXEL_FORMAT_V210");
+_Static_assert(VMAFX_PIXEL_FORMAT_RGB == 35, "VMAFX_PIXEL_FORMAT_RGB");
+_Static_assert(VMAFX_PIXEL_FORMAT_RGBA == 36, "VMAFX_PIXEL_FORMAT_RGBA");
+_Static_assert(VMAFX_PIXEL_FORMAT_BGRA == 37, "VMAFX_PIXEL_FORMAT_BGRA");
 _Static_assert(VMAFX_POOL_NONE == 0, "VMAFX_POOL_NONE");
 _Static_assert(VMAFX_POOL_MIN == 1, "VMAFX_POOL_MIN");
 _Static_assert(VMAFX_POOL_MAX == 2, "VMAFX_POOL_MAX");
@@ -257,6 +269,21 @@ _Static_assert(VMAFX_SUBJECT_DEVICE == 9, "VMAFX_SUBJECT_DEVICE");
 _Static_assert(VMAFX_SUBJECT_BACKEND == 10, "VMAFX_SUBJECT_BACKEND");
 _Static_assert(VMAFX_SUBJECT_PATH == 11, "VMAFX_SUBJECT_PATH");
 _Static_assert(VMAFX_SUBJECT_FENCE == 12, "VMAFX_SUBJECT_FENCE");
+_Static_assert(VMAFX_COLOR_MATRIX_UNSPECIFIED == 0, "VMAFX_COLOR_MATRIX_UNSPECIFIED");
+_Static_assert(VMAFX_COLOR_MATRIX_BT601 == 1, "VMAFX_COLOR_MATRIX_BT601");
+_Static_assert(VMAFX_COLOR_MATRIX_BT709 == 2, "VMAFX_COLOR_MATRIX_BT709");
+_Static_assert(VMAFX_COLOR_MATRIX_BT2020_NCL == 3, "VMAFX_COLOR_MATRIX_BT2020_NCL");
+_Static_assert(VMAFX_COLOR_MATRIX_BT2020_CL == 4, "VMAFX_COLOR_MATRIX_BT2020_CL");
+_Static_assert(VMAFX_COLOR_MATRIX_ICTCP == 5, "VMAFX_COLOR_MATRIX_ICTCP");
+_Static_assert(VMAFX_COLOR_RANGE_UNSPECIFIED == 0, "VMAFX_COLOR_RANGE_UNSPECIFIED");
+_Static_assert(VMAFX_COLOR_RANGE_LIMITED == 1, "VMAFX_COLOR_RANGE_LIMITED");
+_Static_assert(VMAFX_COLOR_RANGE_FULL == 2, "VMAFX_COLOR_RANGE_FULL");
+_Static_assert(VMAFX_COLOR_TRANSFER_UNSPECIFIED == 0, "VMAFX_COLOR_TRANSFER_UNSPECIFIED");
+_Static_assert(VMAFX_COLOR_TRANSFER_BT709 == 1, "VMAFX_COLOR_TRANSFER_BT709");
+_Static_assert(VMAFX_COLOR_TRANSFER_SRGB == 2, "VMAFX_COLOR_TRANSFER_SRGB");
+_Static_assert(VMAFX_COLOR_TRANSFER_SMPTE2084 == 3, "VMAFX_COLOR_TRANSFER_SMPTE2084");
+_Static_assert(VMAFX_COLOR_TRANSFER_HLG == 4, "VMAFX_COLOR_TRANSFER_HLG");
+_Static_assert(VMAFX_COLOR_TRANSFER_LINEAR == 5, "VMAFX_COLOR_TRANSFER_LINEAR");
 _Static_assert(VMAFX_MEMORY_NONE == 0, "VMAFX_MEMORY_NONE");
 _Static_assert(VMAFX_MEMORY_HOST == 1, "VMAFX_MEMORY_HOST");
 _Static_assert(VMAFX_MEMORY_DEVICE_POINTER == 2, "VMAFX_MEMORY_DEVICE_POINTER");
@@ -284,6 +311,6 @@ _Static_assert(VMAFX_DEVICE_PROFILING == 0x1u, "VMAFX_DEVICE_PROFILING");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 16,
-                 106, 89);
+                 110, 110);
     return 0;
 }

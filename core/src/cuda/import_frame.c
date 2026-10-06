@@ -41,6 +41,7 @@
 #include "vmafx/error_internal.h"
 #include "vmafx/frame_import_hooks.h"
 #include "vmafx/internal.h"
+#include "vmafx/rgb_convert.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_cuda.h"
 #include "vmafx_cuda_internal.h"
@@ -362,9 +363,34 @@ static CUresult gather_plane(const VmafxCudaDevice *dev, const CudaSource *src,
     unsigned w = plan->pw[i];
     unsigned h = plan->ph[i];
     unsigned out_bytes = plan->bytes;
-    void *args[] = {&in,      &in_pitch,  &out,         &out_pitch, &w,       &h,
-                    &rd.step, &rd.offset, &rd.in_bytes, &rd.shift,  &rd.mask, &out_bytes};
+    void *args[] = {&in,      &in_pitch,  &out,       &out_pitch,      &w,
+                    &h,       &rd.step,   &rd.offset, &rd.in_bytes,    &rd.shift,
+                    &rd.mask, &out_bytes, &rd.period, &rd.group_elems, &rd.pattern};
     return launch_2d(dev, dev->kernels.gather, w, h, args);
+}
+
+/* Plane `i` of the Y'CbCr frame an RGB layout makes, by the plan the host
+ * reference uses (vmafx_rgb_plan_init(), ADR-2146): the same integer
+ * expression of each pixel's three samples on the device. */
+static CUresult rgb_plane(const VmafxCudaDevice *dev, const CudaSource *src, const CudaPlan *plan,
+                          CUdeviceptr base, uint32_t i)
+{
+    VmafxRgbPlan rgb;
+    const VmafxFrameImport *const d = src->d;
+    /* The statement was checked: the matrix has a conversion. */
+    const bool planned = vmafx_rgb_plan_init(&rgb, src->layout, d->bpc, d->rgb_matrix, d->rgb_range,
+                                             d->rgb_out_range);
+    assert(planned);
+    (void)planned;
+    CUdeviceptr in = (CUdeviceptr)d->plane[0].handle + (CUdeviceptr)d->plane[0].offset;
+    size_t in_pitch = (size_t)d->plane[0].pitch;
+    CUdeviceptr out = base + plan->offset[i];
+    size_t out_pitch = plan->pitch[i];
+    unsigned w = plan->pw[i];
+    unsigned h = plan->ph[i];
+    unsigned plane = i;
+    void *args[] = {&in, &in_pitch, &out, &out_pitch, &w, &h, &plane, &rgb};
+    return launch_2d(dev, dev->kernels.rgb, w, h, args);
 }
 
 /* The planted host-copy defect (VMAFX_TEST_FORCE_HOST_COPY): a device plane
@@ -436,6 +462,9 @@ static CUresult fill_pointer_plane(const VmafxCudaDevice *dev, const CudaSource 
     data[i] = plan->owned[i] ? base + plan->offset[i] : plane_pointer(p);
     if (!plan->owned[i] || (i == 2u && pair)) {
         return CUDA_SUCCESS; /* bound, or written with plane 1 */
+    }
+    if (layout->packed == VMAFX_IMPORT_PACKED_RGB) {
+        return rgb_plane(dev, src, plan, base, i);
     }
     if (layout->packed != VMAFX_IMPORT_PACKED_NONE || layout->msb) {
         return gather_plane(dev, src, plan, base, i);

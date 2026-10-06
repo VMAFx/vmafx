@@ -1287,3 +1287,5 @@
 2023-vmafx-cuda-device-frames
 2092-vmafx-hip-device-frames
 2133-vmafx-import-422-444-formats
+2145-vmafx-input-format-table
+2146-vmafx-rgb-input-explicit-matrix

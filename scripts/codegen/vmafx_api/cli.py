@@ -32,8 +32,10 @@ from . import (
     emit_c,
     emit_compat,
     emit_docs,
+    emit_formats,
     emit_layout_test,
     emit_python,
+    emit_rgb,
     emit_symbols,
     gitref,
 )
@@ -62,6 +64,8 @@ def render(api: Api) -> dict[str, str]:
     files = {f"core/include/{p.header.path}": emit_c.header_text(api, p) for p in plan(api)}
     files.update({path: renderer(api) for path, renderer in FIXED_OUTPUTS})
     files.update(dict(emit_docs.pages(api)))
+    files.update(dict(emit_formats.outputs(api)))
+    files.update(dict(emit_rgb.outputs(api)))
     return files
 
 
