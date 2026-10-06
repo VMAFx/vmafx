@@ -160,19 +160,38 @@ static void sleep_poll_interval(void)
 #endif
 }
 
+/* A timeout from which a wait has no limit: 2^62 ns, 146 years. Below it the
+ * round count `timeout_ns / VMAFX_FENCE_POLL_NS + 1` is far from overflow;
+ * from it on (UINT64_MAX, "without a limit", included) the wait checks no
+ * clock. icx 2026.0 at -O3 ran no round of the former single loop for a
+ * timeout of UINT64_MAX or UINT64_MAX - 1 (it unrolls the loop; gcc and
+ * clang do not; docs/state.md T-VMAFX-WAIT-FOREVER-ICX-ZERO-ROUNDS-2026-10-06),
+ * so the timed loop never sees such a timeout. */
+#define VMAFX_FENCE_WAIT_FOREVER_NS (UINT64_C(1) << 62)
+
+/* The time is up for a wait that started at `start` (never for a wait
+ * without a limit). */
+static bool wait_expired(uint64_t start, uint64_t timeout_ns)
+{
+    return timeout_ns < VMAFX_FENCE_WAIT_FOREVER_NS && monotonic_ns() - start >= timeout_ns;
+}
+
 /* Wait until `fence` is signalled or `timeout_ns` passed: true when signalled.
  * Each round sleeps at least VMAFX_FENCE_POLL_NS, so the round count is
- * bounded by the timeout (HISS-02). Also the wait of vmafx_window_wait()
- * (window.c, RC4 WP4): one timed wait in the library. */
+ * bounded by the timeout, or by UINT64_MAX rounds without a limit (HISS-02).
+ * Also the wait of vmafx_window_wait() (window.c, RC4 WP4): one timed wait in
+ * the library. */
 bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
 {
     if (vmafx_host_fence_signalled(fence)) {
         return true;
     }
     const uint64_t start = monotonic_ns();
-    const uint64_t rounds = timeout_ns / VMAFX_FENCE_POLL_NS + 1u;
+    const uint64_t rounds = timeout_ns < VMAFX_FENCE_WAIT_FOREVER_NS ?
+                                timeout_ns / VMAFX_FENCE_POLL_NS + 1u :
+                                UINT64_MAX;
     for (uint64_t round = 0; round < rounds; round++) {
-        if (monotonic_ns() - start >= timeout_ns) {
+        if (wait_expired(start, timeout_ns)) {
             break;
         }
         sleep_poll_interval();

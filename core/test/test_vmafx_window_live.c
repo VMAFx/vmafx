@@ -923,6 +923,114 @@ static char *test_engine_shared_with_the_completion_thread(void)
     return NULL;
 }
 
+/* ---- Long and unlimited waits -------------------------------------------------------- */
+
+typedef struct LateScore {
+    VmafxContext *context;
+    uint64_t index;
+    int slept;
+    VmafxStatus imported;
+} LateScore;
+
+/* Import the score of `index` 20 ms from now, while the test waits. */
+static void *import_late(void *arg)
+{
+    LateScore *const late = arg;
+    const struct timespec t = {.tv_sec = 0, .tv_nsec = 20000000};
+    late->slept = nanosleep(&t, NULL);
+    late->imported = vmafx_context_import_score(late->context, "late", late->index, 1.0, NULL);
+    return NULL;
+}
+
+/* Wait with `timeout` for a window whose score arrives 20 ms later: the wait
+ * returns when it completes, well before any timeout. */
+static char *wait_with(VmafxContext *context, uint64_t index, uint64_t timeout)
+{
+    VmafxWindow *window = vw_submit(context, vw_feature("late"), index, index);
+    mu_assert("window", window != NULL);
+    LateScore late = {context, index, -1, VMAFX_E_INVALID};
+    pthread_t thread;
+    mu_assert("importer", pthread_create(&thread, NULL, import_late, &late) == 0);
+    VmafxWindowResult r = VMAFX_WINDOW_RESULT_INIT;
+    const uint64_t began = now_ns();
+    const VmafxStatus status = vmafx_window_wait(window, timeout, &r, NULL);
+    const uint64_t waited = now_ns() - began;
+    mu_assert("joined", pthread_join(thread, NULL) == 0);
+    vmafx_window_release(window);
+    mu_assert("the late score was imported", late.slept == 0 && late.imported == VMAFX_OK);
+    mu_assert("the wait returns with the window, not at once and not at a timeout",
+              status == VMAFX_OK && r.status == VMAFX_OK && waited >= 10000000u &&
+                  waited < VW_WAIT_NS);
+    return NULL;
+}
+
+/* Timeouts from "without a limit" (UINT64_MAX) down to 600 s, around the
+ * fence's 2^62 ns cut. icx 2026.0 at -O3 ran no round of the fence's wait
+ * loop for UINT64_MAX and UINT64_MAX - 1 (docs/state.md
+ * T-VMAFX-WAIT-FOREVER-ICX-ZERO-ROUNDS-2026-10-06). */
+static const uint64_t long_timeouts[] = {
+    UINT64_MAX,        UINT64_MAX - 1u,          UINT64_C(1) << 63,      (UINT64_C(1) << 62) + 1u,
+    UINT64_C(1) << 62, (UINT64_C(1) << 62) - 1u, UINT64_C(600000000000),
+};
+
+#define N_LONG_TIMEOUTS (sizeof(long_timeouts) / sizeof(long_timeouts[0]))
+
+/* Each long timeout waits for a window whose score arrives later: none may
+ * return at once. The import happens on another thread, so the feeding
+ * thread's wait is the test. */
+static char *test_wait_forever_and_long_timeouts(void)
+{
+    VmafxContext *context = NULL;
+    mu_assert("context", vmafx_context_create(NULL, &context, NULL) == VMAFX_OK);
+    for (unsigned i = 0; i < N_LONG_TIMEOUTS; i++) {
+        mu_assert_msg(wait_with(context, i, long_timeouts[i]));
+    }
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+typedef struct LateSignal {
+    VmafxFence fence;
+    int slept;
+    VmafxStatus signalled;
+} LateSignal;
+
+/* Signal the fence 20 ms from now, while the test waits. */
+static void *signal_late(void *arg)
+{
+    LateSignal *const late = arg;
+    const struct timespec t = {.tv_sec = 0, .tv_nsec = 20000000};
+    late->slept = nanosleep(&t, NULL);
+    late->signalled = vmafx_fence_signal(&late->fence, NULL);
+    return NULL;
+}
+
+/* vmafx_fence_wait() waits through the same loop as vmafx_window_wait(). */
+static char *fence_wait_with(uint64_t timeout)
+{
+    LateSignal late = {VMAFX_FENCE_INIT, -1, VMAFX_E_INVALID};
+    mu_assert("fence", vmafx_fence_create(NULL, VMAFX_FENCE_HOST, &late.fence, NULL) == VMAFX_OK);
+    pthread_t thread;
+    mu_assert("signaller", pthread_create(&thread, NULL, signal_late, &late) == 0);
+    const uint64_t began = now_ns();
+    const VmafxStatus status = vmafx_fence_wait(&late.fence, timeout, NULL);
+    const uint64_t waited = now_ns() - began;
+    mu_assert("joined", pthread_join(thread, NULL) == 0);
+    mu_assert("destroyed", vmafx_fence_destroy(&late.fence, NULL) == VMAFX_OK);
+    mu_assert("the fence was signalled", late.slept == 0 && late.signalled == VMAFX_OK);
+    mu_assert("the wait returns with the signal, not at once and not at a timeout",
+              status == VMAFX_OK && waited >= 10000000u && waited < VW_WAIT_NS);
+    return NULL;
+}
+
+static char *test_fence_wait_forever_and_long_timeouts(void)
+{
+    for (unsigned i = 0; i < N_LONG_TIMEOUTS; i++) {
+        mu_assert_msg(fence_wait_with(long_timeouts[i]));
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -934,6 +1042,8 @@ char *run_tests(void)
         MU_TEST(test_window_completes_while_the_feeder_stalls),
         MU_TEST(test_destroy_with_a_pending_wake),
         MU_TEST(test_engine_shared_with_the_completion_thread),
+        MU_TEST(test_wait_forever_and_long_timeouts),
+        MU_TEST(test_fence_wait_forever_and_long_timeouts),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
