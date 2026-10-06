@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 +++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 1572 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 1574 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 +++
- 6 files changed, 1884 insertions(+)
+ 6 files changed, 1886 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..364684eaa1553145b4052e6d4f822574768d7026
+index 0000000000000000000000000000000000000000..9807d51259e48f555a468c1a1e744113718eb816
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,1572 @@
+@@ -0,0 +1,1574 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -1499,8 +1499,10 @@ index 0000000000000000000000000000000000000000..364684eaa1553145b4052e6d4f822574
 +        ret = setup_scoring(ctx);
 +    if (ret >= 0 && s->hw)
 +        ret = hw_pool_check(ctx);
-+    if (ret < 0)
++    if (ret < 0) {
++        s->failed = 1; /* nothing scored: uninit flushes, logs and writes nothing */
 +        return ret;
++    }
 +    if (il->hw_frames_ctx) {
 +        av_buffer_unref(&ol->hw_frames_ctx);
 +        ol->hw_frames_ctx = av_buffer_ref(il->hw_frames_ctx);

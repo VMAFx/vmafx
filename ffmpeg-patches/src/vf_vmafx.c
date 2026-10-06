@@ -1243,8 +1243,10 @@ static int config_output(AVFilterLink *outlink)
         ret = setup_scoring(ctx);
     if (ret >= 0 && s->hw)
         ret = hw_pool_check(ctx);
-    if (ret < 0)
+    if (ret < 0) {
+        s->failed = 1; /* nothing scored: uninit flushes, logs and writes nothing */
         return ret;
+    }
     if (il->hw_frames_ctx) {
         av_buffer_unref(&ol->hw_frames_ctx);
         ol->hw_frames_ctx = av_buffer_ref(il->hw_frames_ctx);
