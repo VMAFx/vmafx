@@ -85,11 +85,15 @@ enum { MAX_WINDOWS = 96, MAX_RING = 32, MAX_FRAMES = 64, MAX_FEATURES = 8 };
 #define TIMED 1
 #endif
 
+/* How a window of the harness was submitted. */
+enum { SPAN_CLOCK, SPAN_AHEAD, SPAN_AT_FLUSH };
+
 typedef struct LiveWindow {
     VmafxWindow *window;
     VwTarget target;
     uint64_t last;
     bool at_flush;
+    bool ahead; /* submitted before its frames (not cut by the clock) */
     uint64_t done_ns;
     VmafxWindowResult result;
 } LiveWindow;
@@ -242,7 +246,7 @@ static unsigned textures_held(const Live *live)
 }
 
 static bool open_live_window(Live *live, VwTarget target, const VmafxWindowSpan *span,
-                             bool at_flush)
+                             unsigned kind)
 {
     VmafxWindow *window = vw_submit(live->context, target, span->first, span->last);
     if (!window) {
@@ -256,7 +260,8 @@ static bool open_live_window(Live *live, VwTarget target, const VmafxWindowSpan 
         w->window = window;
         w->target = target;
         w->last = span->last;
-        w->at_flush = at_flush;
+        w->at_flush = kind == SPAN_AT_FLUSH;
+        w->ahead = kind == SPAN_AHEAD;
         live->n_windows++;
     }
     (void)pthread_mutex_unlock(&live->lock);
@@ -267,11 +272,11 @@ static bool open_live_window(Live *live, VwTarget target, const VmafxWindowSpan 
 }
 
 /* One window per target: the model and each of its features. */
-static bool open_span(Live *live, const VmafxWindowSpan *span, bool at_flush)
+static bool open_span(Live *live, const VmafxWindowSpan *span, unsigned kind)
 {
-    bool ok = open_live_window(live, vw_model(live->model), span, at_flush);
+    bool ok = open_live_window(live, vw_model(live->model), span, kind);
     for (unsigned f = 0; f < live->n_features && ok; f++) {
-        ok = open_live_window(live, vw_feature(live->features[f]), span, at_flush);
+        ok = open_live_window(live, vw_feature(live->features[f]), span, kind);
     }
     return ok;
 }
@@ -287,7 +292,7 @@ static bool open_ahead(Live *live, unsigned i)
     VmafxWindowSpan span = VMAFX_WINDOW_SPAN_INIT;
     span.first = i;
     span.last = i + AHEAD - 1u < live->clip.n_frames ? i + AHEAD - 1u : live->clip.n_frames - 1u;
-    return open_span(live, &span, false);
+    return open_span(live, &span, SPAN_AHEAD);
 }
 
 static bool produce_frame(Live *live, unsigned i)
@@ -305,7 +310,8 @@ static bool produce_frame(Live *live, unsigned i)
     VmafxWindowSpan span = VMAFX_WINDOW_SPAN_INIT;
     const int64_t pts = (int64_t)((uint64_t)i * 1000000000u / 60u);
     const VmafxStatus closed = vmafx_window_clock_frame(live->clock, i, pts, &span, NULL);
-    if (!dist || (closed == VMAFX_OK && !open_span(live, &span, false)) || !open_ahead(live, i)) {
+    if (!dist || (closed == VMAFX_OK && !open_span(live, &span, SPAN_CLOCK)) ||
+        !open_ahead(live, i)) {
         vmafx_frame_unref(ref);
         return false;
     }
@@ -327,7 +333,7 @@ static bool produce(Live *live)
     live->flushed_ns = now_ns();
     VmafxWindowSpan span = VMAFX_WINDOW_SPAN_INIT;
     ok = ok && vmafx_window_clock_finish(live->clock, &span, NULL) == VMAFX_OK &&
-         open_span(live, &span, true);
+         open_span(live, &span, SPAN_AT_FLUSH);
     (void)pthread_mutex_lock(&live->lock);
     live->producer_done = true;
     live->failed = !ok;
@@ -406,19 +412,26 @@ static bool final_per_frame(const LiveWindow *w)
     return w->target.kind == VMAFX_WINDOW_TARGET_FEATURE && !strstr(w->target.feature, "motion");
 }
 
+/* The latency of a live window: from the start of the submit of its last
+ * frame to the poller seeing it complete. */
+static uint64_t latency_of(const Live *live, const LiveWindow *lw)
+{
+    const uint64_t began = live->submitted_ns[lw->last];
+    return lw->done_ns > began ? lw->done_ns - began : 0u;
+}
+
 static char *check_windows(const Live *live, VmafxContext *offline)
 {
     unsigned in_budget = 0;
-    uint64_t worst = 0;
+    uint64_t worst[2] = {0, 0}; /* clock windows, windows submitted ahead */
     for (unsigned w = 0; w < live->n_windows; w++) {
         const LiveWindow *const lw = &live->windows[w];
         mu_assert("every window completes", lw->done_ns != 0 && lw->result.status == VMAFX_OK);
         mu_assert("equal to the offline session, every method",
                   vw_same_as_sync(offline, lw->target, &lw->result));
         if (!lw->at_flush && final_per_frame(lw)) {
-            const uint64_t began = live->submitted_ns[lw->last];
-            const uint64_t latency = lw->done_ns > began ? lw->done_ns - began : 0u;
-            worst = latency > worst ? latency : worst;
+            const uint64_t latency = latency_of(live, lw);
+            worst[lw->ahead] = latency > worst[lw->ahead] ? latency : worst[lw->ahead];
             mu_assert("within two frame periods of the submit of its last frame",
                       !TIMED || latency <= BUDGET_NS);
             in_budget++;
@@ -426,10 +439,12 @@ static char *check_windows(const Live *live, VmafxContext *offline)
     }
     mu_assert("live windows were measured", in_budget >= 8u);
     (void)fprintf(stderr,
-                  "  %u threads %s: %u windows, %u live measured (worst %.2f ms), "
-                  "textures held at most %u of %u\n",
+                  "  %u threads %s: %u windows, %u live; worst latency %.2f ms submitted ahead, "
+                  "%.2f ms cut by the clock (one frame later by rule); textures held at most %u of "
+                  "%u\n",
                   live->n_threads, live->paced ? "paced" : "unpaced", live->n_windows, in_budget,
-                  (double)worst / 1e6, live->worst_in_flight, live->max_in_flight);
+                  (double)worst[1] / 1e6, (double)worst[0] / 1e6, live->worst_in_flight,
+                  live->max_in_flight);
     return NULL;
 }
 
@@ -672,7 +687,7 @@ static char *complete_a_then_b(VmafxContext *context, Gate *gate, const VmafxWin
     mu_assert("B completes, queued",
               vmafx_context_import_score(context, "gate", 1, 2.0, NULL) == VMAFX_OK);
     VmafxWindowResult r;
-    mu_assert("B is complete", vw_done(b, &r));
+    mu_assert("B is complete", vw_complete(b, &r));
     return NULL;
 }
 
@@ -696,12 +711,229 @@ static char *test_release_of_a_queued_window(void)
     return NULL;
 }
 
+/* ---- A stalled feeder --------------------------------------------------------------- */
+
+enum { N_STALL = 16 };
+
+/* One frame of 576x324 content, frame `i`; NULL on failure. */
+static bool stall_submit(VmafxContext *context, unsigned i)
+{
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 576, 324);
+    return vw_submit_frames(context, &desc, i, i);
+}
+
+/* Window [i, i] of ADM, then frame i: the feeder makes no further call and
+ * waits; the window completes anyway, within the budget of the submit's
+ * start. Counts the windows still open when the submit returned (their frame
+ * was on a worker): those completed through the frame listener alone. */
+static char *stall_one(VmafxContext *context, unsigned i, unsigned *pending_at_return,
+                       uint64_t *worst)
+{
+    VmafxWindow *window = vw_submit(context, vw_feature("VMAF_integer_feature_adm2_score"), i, i);
+    mu_assert("window", window != NULL);
+    const uint64_t began = now_ns();
+    mu_assert("frame", stall_submit(context, i));
+    VmafxWindowResult r;
+    *pending_at_return += !vw_done(window, &r);
+    /* The feeder stalls: no submit, flush or import until the window is in. */
+    const bool done =
+        vmafx_window_wait(window, TIMED ? BUDGET_NS : VW_WAIT_NS, &r, NULL) == VMAFX_OK;
+    const uint64_t latency = now_ns() - began;
+    *worst = latency > *worst ? latency : *worst;
+    vmafx_window_release(window);
+    mu_assert("complete while the feeder waits, within the budget", done && r.status == VMAFX_OK);
+    return NULL;
+}
+
+/* ADR-2074 (maintainer decision): windows complete independently of the
+ * feeding thread. With worker threads the frame of a window finishes after
+ * the submit returned; the completion thread, woken by the worker, completes
+ * it while the feeder waits instead of feeding. */
+static char *test_window_completes_while_the_feeder_stalls(void)
+{
+    VmafxContextConfig config = VMAFX_CONTEXT_CONFIG_INIT;
+    config.n_threads = 2;
+    VmafxContext *context = NULL;
+    VmafxModel *model = NULL;
+    mu_assert("context", vmafx_context_create(&config, &context, NULL) == VMAFX_OK &&
+                             vmafx_model_load(NULL, MODEL, &model, NULL) == VMAFX_OK &&
+                             vmafx_context_use_model(context, model, NULL) == VMAFX_OK);
+    vmafx_model_unref(model);
+    unsigned pending_at_return = 0;
+    uint64_t worst = 0;
+    for (unsigned i = 0; i < N_STALL; i++) {
+        mu_assert_msg(stall_one(context, i, &pending_at_return, &worst));
+    }
+    (void)fprintf(stderr,
+                  "  %u of %u windows completed after their submit returned, worst %.2f ms\n",
+                  pending_at_return, (unsigned)N_STALL, (double)worst / 1e6);
+    mu_assert("the stall was exercised: a frame finished on a worker", pending_at_return > 0u);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+/* ---- Destroy with a pending wake ---------------------------------------------------- */
+
+enum { N_DESTROY_ROUNDS = 64 };
+
+typedef struct DestroyCalls {
+    atomic_int final_ok;  /* callbacks of windows whose scores were all in */
+    atomic_int destroyed; /* callbacks of windows completed by the destroy */
+    atomic_int other;
+} DestroyCalls;
+
+static void destroy_callback(VmafxWindow *window, const VmafxWindowResult *result, void *user)
+{
+    (void)window;
+    DestroyCalls *const calls = user;
+    if (result->status == VMAFX_OK) {
+        atomic_fetch_add(&calls->final_ok, 1);
+    } else if (result->status == VMAFX_E_INVALID) {
+        atomic_fetch_add(&calls->destroyed, 1);
+    } else {
+        atomic_fetch_add(&calls->other, 1);
+    }
+}
+
+/* One round: a window whose score is imported (a wake the completion thread
+ * may not have looked at yet) and one that can never complete, then the
+ * destroy at once, with frames still on the workers. */
+static char *destroy_round(DestroyCalls *calls)
+{
+    VmafxContextConfig config = VMAFX_CONTEXT_CONFIG_INIT;
+    config.n_threads = 2;
+    VmafxContext *context = NULL;
+    mu_assert("context", vmafx_context_create(&config, &context, NULL) == VMAFX_OK &&
+                             vmafx_context_use_feature(context, "psnr", NULL, NULL) == VMAFX_OK);
+    VmafxWindow *windows[2] = {NULL, NULL};
+    for (unsigned k = 0; k < 2u; k++) {
+        VmafxWindowRequest r =
+            vw_request(vw_feature("pending"), (uint64_t)k * 100u, (uint64_t)k * 100u, VW_ALL_POOLS);
+        r.on_complete = destroy_callback;
+        r.user = calls;
+        mu_assert("window", vmafx_window_submit(context, &r, &windows[k], NULL) == VMAFX_OK);
+    }
+    mu_assert("frames in flight", stall_submit(context, 0) && stall_submit(context, 1));
+    mu_assert("score", vmafx_context_import_score(context, "pending", 0, 1.0, NULL) == VMAFX_OK);
+    mu_assert("destroy right away", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    vmafx_window_release(windows[0]);
+    vmafx_window_release(windows[1]);
+    return NULL;
+}
+
+/* Destroy while a wake is pending and frames are on the workers: no hang;
+ * the window whose score was in before the destroy completes with it, the
+ * other as destroyed; every callback runs once, before the destroy returns
+ * (TSan watches the threads). */
+static char *test_destroy_with_a_pending_wake(void)
+{
+    static DestroyCalls calls;
+    for (unsigned round = 0; round < N_DESTROY_ROUNDS; round++) {
+        mu_assert_msg(destroy_round(&calls));
+    }
+    mu_assert("every final window completed with its scores",
+              atomic_load(&calls.final_ok) == N_DESTROY_ROUNDS);
+    mu_assert("every open window completed as destroyed",
+              atomic_load(&calls.destroyed) == N_DESTROY_ROUNDS && atomic_load(&calls.other) == 0);
+    return NULL;
+}
+
+/* ---- The engine shared with the completion thread ----------------------------------- */
+
+enum { N_SHARED = 24 };
+
+/* Score every frame per frame on the feeding thread while the completion
+ * thread predicts the same frames for the windows. */
+static char *score_frames_meanwhile(VmafxContext *context, const VmafxModel *model,
+                                    VmafxScore *scores)
+{
+    for (unsigned i = 0; i < N_SHARED; i++) {
+        scores[i] = (VmafxScore)VMAFX_SCORE_INIT;
+        mu_assert("per-frame score beside the completion thread",
+                  vmafx_score_frame(context, model, i, &scores[i], NULL) == VMAFX_OK);
+    }
+    return NULL;
+}
+
+/* The completion thread predicts model scores (a write into the engine)
+ * while the feeding thread scores the same frames: the context's engine lock
+ * keeps them apart, so every call succeeds, each frame is predicted once and
+ * both read the same value (TSan watches the engine). */
+/* A context without worker threads using MODEL; NULL on failure. */
+static VmafxContext *model_context(VmafxModel **model)
+{
+    VmafxContext *context = NULL;
+    *model = NULL;
+    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK) {
+        return NULL;
+    }
+    if (vmafx_model_load(NULL, MODEL, model, NULL) != VMAFX_OK ||
+        vmafx_context_use_model(context, *model, NULL) != VMAFX_OK) {
+        vmafx_model_unref(*model);
+        *model = NULL;
+        (void)vmafx_context_destroy(context, NULL);
+        return NULL;
+    }
+    return context;
+}
+
+/* A window [i, i] of the model for every frame. */
+static bool open_shared_windows(VmafxContext *context, const VmafxModel *model,
+                                VmafxWindow **windows)
+{
+    bool opened = true;
+    for (unsigned i = 0; i < N_SHARED; i++) {
+        windows[i] = vw_submit(context, vw_model(model), i, i);
+        opened = opened && windows[i] != NULL;
+    }
+    return opened;
+}
+
+/* Every window holds the per-frame score its frame was given. */
+static char *check_shared(VmafxWindow *const *windows, const VmafxScore *scores)
+{
+    for (unsigned i = 0; i < N_SHARED; i++) {
+        VmafxWindowResult r;
+        mu_assert("window complete", vw_complete(windows[i], &r) && r.status == VMAFX_OK);
+        mu_assert("one prediction per frame",
+                  vt_same_bits(r.value[VMAFX_POOL_MEAN], scores[i].value));
+    }
+    return NULL;
+}
+
+static char *test_engine_shared_with_the_completion_thread(void)
+{
+    static VmafxWindow *windows[N_SHARED];
+    static VmafxScore scores[N_SHARED];
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 176, 144);
+    VmafxModel *model = NULL;
+    VmafxContext *context = model_context(&model);
+    mu_assert("context", context != NULL);
+    mu_assert("windows", open_shared_windows(context, model, windows));
+    mu_assert("frames", vw_submit_frames(context, &desc, 0, N_SHARED - 1));
+    mu_assert("flush", vmafx_flush(context, NULL) == VMAFX_OK); /* motion2: final now */
+    mu_assert_msg(score_frames_meanwhile(context, model, scores));
+    mu_message_t msg = check_shared(windows, scores);
+    for (unsigned i = 0; i < N_SHARED; i++) {
+        vmafx_window_release(windows[i]);
+    }
+    mu_assert_msg(msg);
+    vmafx_model_unref(model);
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_live_without_workers),          MU_TEST(test_live_with_workers),
-        MU_TEST(test_unpaced_producer_is_held_back), MU_TEST(test_release_races_delivery),
+        MU_TEST(test_live_without_workers),
+        MU_TEST(test_live_with_workers),
+        MU_TEST(test_unpaced_producer_is_held_back),
+        MU_TEST(test_release_races_delivery),
         MU_TEST(test_release_of_a_queued_window),
+        MU_TEST(test_window_completes_while_the_feeder_stalls),
+        MU_TEST(test_destroy_with_a_pending_wake),
+        MU_TEST(test_engine_shared_with_the_completion_thread),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

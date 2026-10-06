@@ -71,7 +71,7 @@ static char *check_imported_window(VmafxContext *context, uint64_t first, uint64
 {
     VmafxWindow *window = vw_submit(context, vw_feature(feature), first, last);
     VmafxWindowResult r;
-    mu_assert("complete at once: every frame is final", window && vw_done(window, &r));
+    mu_assert("complete: every frame is final", window && vw_complete(window, &r));
     mu_assert("result fields", r.status == VMAFX_OK && r.flags == 0 && r.first == first &&
                                    r.last == last && r.n_frames == last - first + 1u &&
                                    r.n_scored == r.n_frames &&
@@ -131,7 +131,7 @@ static char *test_window_waits_for_its_last_frame(void)
     /* Out of order: complete only when the last missing frame arrives. */
     mu_assert_msg(import_backwards(context, window, 9, 3));
     mu_assert_msg(check_pending_answers(window));
-    mu_assert("the last missing frame", import_range(context, 2, 2) && vw_done(window, &r));
+    mu_assert("the last missing frame", import_range(context, 2, 2) && vw_complete(window, &r));
     mu_assert("equal", r.n_frames == 8 && vw_same_as_sync(context, vw_feature(feature), &r));
     vmafx_window_release(window);
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
@@ -156,17 +156,17 @@ static char *check_flushed(VmafxContext *context, const VmafxWindow *past,
                            const VmafxWindow *beyond)
 {
     VmafxWindowResult r;
-    mu_assert("partial", vw_done(past, &r) && r.status == VMAFX_OK &&
+    mu_assert("partial", vw_complete(past, &r) && r.status == VMAFX_OK &&
                              r.flags == VMAFX_WINDOW_PARTIAL && r.n_frames == 6 && r.last == 9 &&
                              vw_same_as_sync(context, vw_feature("psnr_y"), &r));
-    mu_assert("no frame of it in the stream", vw_done(beyond, &r) && r.status == VMAFX_E_RANGE &&
-                                                  r.flags == VMAFX_WINDOW_PARTIAL &&
-                                                  r.n_frames == 0 && r.value[3] == 0.0);
+    mu_assert("no frame of it in the stream",
+              vw_complete(beyond, &r) && r.status == VMAFX_E_RANGE &&
+                  r.flags == VMAFX_WINDOW_PARTIAL && r.n_frames == 0 && r.value[3] == 0.0);
     VmafxWindow *after = vw_submit(context, vw_feature("psnr_y"), 1, 2);
     const bool done =
-        after && vw_done(after, &r) && vw_same_as_sync(context, vw_feature("psnr_y"), &r);
+        after && vw_complete(after, &r) && vw_same_as_sync(context, vw_feature("psnr_y"), &r);
     vmafx_window_release(after);
-    mu_assert("after the flush: complete at once", done);
+    mu_assert("after the flush: complete", done);
     return NULL;
 }
 
@@ -176,7 +176,7 @@ static char *check_unflushed(VmafxContext *context, const VmafxWindow *inside,
                              const VmafxWindow *past, const VmafxWindow *beyond)
 {
     VmafxWindowResult r;
-    mu_assert("inside: complete", vw_done(inside, &r) && r.flags == 0 &&
+    mu_assert("inside: complete", vw_complete(inside, &r) && r.flags == 0 &&
                                       vw_same_as_sync(context, vw_feature("psnr_y"), &r));
     mu_assert("past the stream: open", !vw_done(past, &r) && !vw_done(beyond, &r));
     return NULL;
@@ -213,9 +213,10 @@ static char *test_subsampling_counts_scored_frames(void)
     VmafxWindow *none = vw_submit(context, vw_feature("psnr_y"), 1, 2);
     VmafxWindowResult r;
     mu_assert("frames", window && none && vw_submit_frames(context, &desc, 0, 9));
-    mu_assert("frames 3 and 6 scored", vw_done(window, &r) && r.n_frames == 8 && r.n_scored == 2 &&
+    mu_assert("frames 3 and 6 scored", vw_complete(window, &r) && r.n_frames == 8 &&
+                                           r.n_scored == 2 &&
                                            vw_same_as_sync(context, vw_feature("psnr_y"), &r));
-    mu_assert("no scored frame", vw_done(none, &r) && r.status == VMAFX_E_RANGE &&
+    mu_assert("no scored frame", vw_complete(none, &r) && r.status == VMAFX_E_RANGE &&
                                      r.n_frames == 2 && r.n_scored == 0 && r.flags == 0);
     vmafx_window_release(window);
     vmafx_window_release(none);
@@ -249,7 +250,9 @@ static unsigned completing_step(VmafxContext *context, VmafxWindow *window, cons
                                         vmafx_flush(context, NULL) == VMAFX_OK;
         VmafxWindowResult r;
         const bool final = fed && all_final(context, name, 0, last);
-        if (!fed || vw_done(window, &r) != final) {
+        /* Never complete before its frames are final; complete soon after. */
+        const bool done = final ? vw_complete(window, &r) : vw_done(window, &r);
+        if (!fed || done != final) {
             return UINT_MAX; /* early, or late */
         }
         if (final) {
@@ -309,7 +312,7 @@ static char *check_models(VmafxContext *windows, VmafxContext *sync, const Model
         for (unsigned g = 0; g < 3u; g++) {
             VmafxWindow *window = vw_submit(windows, targets[t], ranges[g][0], ranges[g][1]);
             VmafxWindowResult r;
-            mu_assert("model windows complete after the flush", window && vw_done(window, &r));
+            mu_assert("model windows complete after the flush", window && vw_complete(window, &r));
             mu_assert("equal to a separate synchronous session, every method",
                       vw_same_as_sync(sync, targets[t], &r));
             vmafx_window_release(window);
@@ -351,7 +354,7 @@ static char *check_many(VmafxContext *context, VmafxWindow *const *windows)
     mu_assert("scores", import_range(context, 0, 303));
     for (unsigned i = 0; i < N_OPEN; i++) {
         VmafxWindowResult r;
-        mu_assert("every window complete", vw_done(windows[i], &r) && r.status == VMAFX_OK);
+        mu_assert("every window complete", vw_complete(windows[i], &r) && r.status == VMAFX_OK);
         mu_assert("equal", (i % 97u) || vw_same_as_sync(context, vw_feature(feature), &r));
     }
     return NULL;
@@ -442,9 +445,9 @@ static char *test_destroy_completes_open_windows(void)
     mu_assert("open", window && import_range(context, 0, 4));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
     VmafxWindowResult r;
-    mu_assert("completed by the destroy", calls.count == 1 && calls.status == VMAFX_E_INVALID &&
-                                              vw_done(window, &r) && r.status == VMAFX_E_INVALID &&
-                                              r.flags == VMAFX_WINDOW_PARTIAL);
+    mu_assert("completed by the destroy",
+              calls.count == 1 && calls.status == VMAFX_E_INVALID && vw_complete(window, &r) &&
+                  r.status == VMAFX_E_INVALID && r.flags == VMAFX_WINDOW_PARTIAL);
     vmafx_window_release(window); /* outlives its context */
     return NULL;
 }

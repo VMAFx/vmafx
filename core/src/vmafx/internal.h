@@ -113,11 +113,9 @@ struct VmafxContext {
     bool have_frame;               /* a frame was submitted: the fields below are set */
     uint64_t last_index;           /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc;     /* every frame keeps the first frame's geometry */
-    /* RC4 WP4 (window.c, ADR-2074): the highest frame index submitted or
-     * imported (valid once have_scored), and the windows, created by the
-     * first vmafx_window_submit() (NULL before). */
-    bool have_scored;
-    uint64_t scored_last;
+    /* RC4 WP4 (window.c, ADR-2074): the windows, their completion thread
+     * and the engine lock; created with the context, never NULL after
+     * vmafx_context_create() succeeded. */
     VmafxWindowSet *windows;
 };
 
@@ -167,10 +165,13 @@ void vmafx_store_sized(void *out, const void *record, uint32_t full);
 
 /* ---- Engine access ------------------------------------------------------- */
 
-/* The engine context; the context's log sink is installed on this thread
- * until vmafx_engine_leave(previous). */
+/* Enter the engine of `context`: takes the context's engine lock (the
+ * window completion thread calls the engine too, ADR-2074) and installs the
+ * context's log sink on this thread until vmafx_engine_leave(context,
+ * previous). Never nested: an entered section calls no other VMAFx function
+ * that enters. */
 const VmafLogSink *vmafx_engine_enter(const VmafxContext *context);
-void vmafx_engine_leave(const VmafLogSink *previous);
+void vmafx_engine_leave(const VmafxContext *context, const VmafLogSink *previous);
 VmafContext *vmafx_context_engine(const VmafxContext *context);
 
 /* Make room for one more reference in `held`, so that the push after an
@@ -259,12 +260,27 @@ int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint
 /* The model's, the model set's or the feature's name. */
 const char *vmafx_pool_target_name(const VmafxPoolTarget *target);
 
-/* Window hooks, called on the thread that feeds the context: after a frame
- * `index` was submitted or a score of frame `index` imported, after a flush,
- * and from vmafx_context_destroy() once the engine closed (open windows
- * complete with VMAFX_E_INVALID; every callback runs before it returns). */
+/* The window set of a new context (its engine lock included), and the
+ * frame listener the engine's worker jobs call; false when it cannot be
+ * allocated. Called before the context first enters its engine. */
+bool vmafx_windows_init(VmafxContext *context);
+void vmafx_windows_frame_final(void *user);
+/* The context's engine lock (vmafx_engine_enter() / _leave()). */
+void vmafx_context_lock(const VmafxContext *context);
+void vmafx_context_unlock(const VmafxContext *context);
+
+/* Window hooks, called on the thread that feeds the context after the
+ * engine call: a frame `index` was submitted or a score of frame `index`
+ * imported; the context was flushed. Each wakes the completion thread. */
 void vmafx_windows_note_index(VmafxContext *context, uint64_t index);
 void vmafx_windows_note_flush(VmafxContext *context);
+/* vmafx_context_destroy(): pause stops the completion thread's engine work
+ * before the engine closes (resume undoes it when the close fails and the
+ * context stays valid, ADR-1336); close completes the open windows with
+ * VMAFX_E_INVALID, runs every callback, joins the thread and drops the set;
+ * free drops a set whose context never got an engine. */
+void vmafx_windows_pause(VmafxContext *context);
+void vmafx_windows_resume(VmafxContext *context);
 void vmafx_windows_close(VmafxContext *context);
 
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */

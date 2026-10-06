@@ -27,8 +27,8 @@ status = vmafx_window_submit(context, &req, &window, &error);
 
 `vmafx_window_submit()` returns at once. Submit windows before their frames,
 while they arrive, or after the flush; a window whose frames are all final
-completes in the submit itself. At most 1024 windows of one context are open
-at a time; one more is refused with `VMAFX_E_BUSY` naming `context`.
+completes right after the submit. At most 1024 windows of one context are
+open at a time; one more is refused with `VMAFX_E_BUSY` naming `context`.
 
 | Target | Set | Same values as |
 | --- | --- | --- |
@@ -43,18 +43,20 @@ of them.
 ## When a window completes
 
 A window completes when every scored frame of `[first, last]` has its final
-score, and then it is never revised. The library finds that out in the calls
-that change the context's scores: `vmafx_submit()`, `vmafx_flush()`,
-`vmafx_context_import_score()` and `vmafx_window_submit()`. Each of them looks
-only at frames it has not looked at before, and none of them waits for work
-still on a worker thread: a frame that is not final yet is looked at again by
-the next of these calls.
+score, and then it is never revised. Each context has a completion thread,
+started by its first window, that finds this out: the worker thread that
+finishes a frame wakes it, and so do `vmafx_submit()`, `vmafx_flush()`,
+`vmafx_context_import_score()` and `vmafx_window_submit()`. It sleeps until
+woken (no polling), looks only at frames it has not looked at before, and
+never waits for work still on a worker thread. A window therefore completes
+when its last frame is final, whether or not the thread that feeds the
+context calls again.
 
 - **Without worker threads** (`n_threads` 0) a window over frames that are
-  final per frame completes in the submit of its last frame.
-- **With worker threads** it completes in the first of those calls after the
-  workers finished its last frame: for a producer at 60 frames per second,
-  within about one frame period.
+  final per frame completes right after the submit of its last frame.
+- **With worker threads** it completes when the worker finishes its last
+  frame, also while the producer is busy elsewhere or waiting: about 2 ms
+  after the start of that frame's submit on the Netflix 576x324 pair.
 - **On a device backend** a frame's scores are collected when the next frame
   is submitted (the engine double-buffers device extractors), one submit
   later.
@@ -85,7 +87,7 @@ Three ways, all thread-safe, and you may use them together:
 | --- | --- |
 | `vmafx_window_poll(window, &result, &error)` | `VMAFX_OK` and the result once complete, else `VMAFX_PENDING` without an error |
 | `vmafx_window_wait(window, timeout_ns, &result, &error)` | The same after waiting up to `timeout_ns` (`UINT64_MAX`: no limit) |
-| `req.on_complete(window, &result, req.user)` | Called once on the context's window thread |
+| `req.on_complete(window, &result, req.user)` | Called once on the context's callback thread |
 
 ```c
 VmafxWindowResult r = VMAFX_WINDOW_RESULT_INIT;
@@ -117,21 +119,28 @@ value of a poll or a wait is about the call.
 
 - The calls that feed a context (`vmafx_submit()`, `vmafx_flush()`,
   `vmafx_context_import_score()`, `vmafx_window_submit()`) are externally
-  synchronised, as every context call is. A window completes in them, on that
-  thread.
+  synchronised, as every context call is. The completion thread uses the
+  context's engine between them: each call that enters the engine takes the
+  context's engine lock, so the engine sees one caller at a time.
 - `vmafx_window_poll()`, `vmafx_window_wait()` and `vmafx_window_release()`
-  may run on any thread at any time.
-- Callbacks run on one window thread per context, started by the first window
-  that has a callback, in completion order. A callback may poll, wait on and
-  release windows, its own included, and must not call anything else on the
-  window's context: no `vmafx_submit()`, no `vmafx_flush()`. A message the
-  library raises during a callback reaches the context's log callback.
+  may run on any thread at any time, the feeding thread included: waiting
+  there for a window whose frames are on the workers returns when they finish.
+- Callbacks run on one callback thread per context, started by the first
+  window that has a callback, in completion order. It is not the completion
+  thread, so a slow callback delays later callbacks but never the completion
+  of a window. A callback may poll, wait on and release windows, its own
+  included, and must not call anything else on the window's context: no
+  `vmafx_submit()`, no `vmafx_flush()`, no `vmafx_context_destroy()`. A
+  message the library raises during a callback reaches the context's log
+  callback.
 - `vmafx_window_release()` cancels an open window: its callback never runs.
   Released from another thread while its callback runs, the release waits for
   the callback to return; released from that callback, it does not wait.
-- Waiting for a window on the thread that feeds its context waits for nothing
-  new: completion happens in that thread's calls. Wait from another thread, or
-  flush first.
+- `vmafx_context_destroy()` first lets the completion thread finish the changes
+  already signalled, so a window whose frames were final before the destroy
+  completes with its values; then it completes the rest with
+  `VMAFX_E_INVALID`, runs every callback and stops both threads. A destroy
+  that fails (ADR-1336) leaves the threads running and every open window open.
 
 ## Cut a stream into windows: the window clock
 
@@ -208,7 +217,12 @@ submitted ahead; a poller thread polls every window. It holds that
   arithmetic;
 - a window over frames that are final per frame completes within two frame
   periods (33.3 ms) of the start of the submit of its last frame, with 0 and
-  2 worker threads (measured worst: about 17 ms);
+  2 worker threads: measured worst about 2.3 ms for windows submitted ahead
+  and about 19 ms for windows the clock cuts (those are submitted one frame
+  later, with the frame that ends them);
+- a window completes while the producer stalls: with 2 worker threads every
+  window's frame was still on a worker when its submit returned, and the
+  window completed about 2 ms later with no further call;
 - the textures the library holds never exceed the bound, also when the
   producer is not paced;
 - no frame is copied through the host (the host-copy counter stays 0).

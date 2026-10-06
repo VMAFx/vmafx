@@ -110,6 +110,11 @@ bool vmaf_engine_is_flushed(const VmafContext *vmaf);
 struct VmafxContext *vmaf_engine_api_owner(const VmafContext *vmaf);
 void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner);
 
+/* ADR-2074: `listener(user)` runs on a worker thread after each frame job
+ * (its features are in the collector). Set before the first frame is read;
+ * NULL turns it off. */
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user);
+
 /* Number of registered feature extractors. */
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);
 

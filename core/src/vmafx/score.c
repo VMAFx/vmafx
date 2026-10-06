@@ -95,7 +95,7 @@ VmafxStatus vmafx_feature_score(VmafxContext *context, const char *feature, uint
         const VmafLogSink *const previous = vmafx_engine_enter(context);
         const int err =
             vmaf_engine_feature_score_at_index(context->engine, feature, &value, (unsigned)index);
-        vmafx_engine_leave(previous);
+        vmafx_engine_leave(context, previous);
         status = err ? score_failure(&report, err, VMAFX_SUBJECT_FEATURE, feature, index, index) :
                        VMAFX_OK;
     }
@@ -128,7 +128,7 @@ VmafxStatus vmafx_score_frame(VmafxContext *context, const VmafxModel *model, ui
         const VmafLogSink *const previous = vmafx_engine_enter(context);
         const int err =
             vmaf_engine_score_at_index(context->engine, model->engine, &value, (unsigned)index);
-        vmafx_engine_leave(previous);
+        vmafx_engine_leave(context, previous);
         status = err ? score_failure(&report, err, VMAFX_SUBJECT_MODEL, model->engine->name, index,
                                      index) :
                        VMAFX_OK;
@@ -174,7 +174,7 @@ VmafxStatus vmafx_score_frame_model_set(VmafxContext *context, const VmafxModelS
         const VmafLogSink *const previous = vmafx_engine_enter(context);
         const int err = vmaf_engine_score_at_index_model_collection(context->engine, collection, &s,
                                                                     (unsigned)index);
-        vmafx_engine_leave(previous);
+        vmafx_engine_leave(context, previous);
         status =
             err ? score_failure(&report, err, VMAFX_SUBJECT_MODEL, collection->name, index, index) :
                   VMAFX_OK;
@@ -217,7 +217,7 @@ int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint
         out->ci95_lo = s.bootstrap.ci.p95.lo;
         out->ci95_hi = s.bootstrap.ci.p95.hi;
     }
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     return err;
 }
 

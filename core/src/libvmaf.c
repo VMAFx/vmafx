@@ -274,6 +274,11 @@ typedef struct VmafContext {
      * context has one, because libvmaf's vmaf_init() is a compat shim on
      * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
     struct VmafxContext *api_owner;
+    /* ADR-2074 (RC4 WP4): called by a worker thread when its frame's job has
+     * run, so the VMAFx completion thread looks at the windows that frame may
+     * have made final. Set once, before the first frame is read. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
 } VmafContext;
 
 typedef struct BatchThreadData {
@@ -2747,6 +2752,9 @@ struct ThreadDataBatch {
     /* ADR-1906: the log sink of the call that submitted the job (the VMAFx
      * context's, or NULL), installed on the worker while the job runs. */
     const VmafLogSink *log_sink;
+    /* ADR-2074: the context's frame listener, called when the job has run. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
     /* _Atomic int err: the worker thread writes this field multiple times as
      * it iterates over extractors; the thread pool runner reads it once (as
      * the function return value) to accumulate into pool->last_error.  Making
@@ -2896,6 +2904,8 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         (void)vmaf_picture_unref(&f->prev_prev_ref);
     (void)vmaf_picture_unref(&f->ref);
     (void)vmaf_picture_unref(&f->dist);
+    if (f->frame_listener)
+        f->frame_listener(f->frame_listener_user); /* ADR-2074: the frame's scores are in */
     (void)vmaf_log_swap_thread_sink(previous_sink);
     return atomic_load(&f->err);
 }
@@ -2958,6 +2968,8 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .registered_fex = &vmaf->registered_feature_extractors,
         .n_subsample = vmaf->cfg.n_subsample,
         .log_sink = vmaf_log_thread_sink(),
+        .frame_listener = vmaf->frame_listener,
+        .frame_listener_user = vmaf->frame_listener_user,
         .err = 0,
     };
     batch_job_take_pictures(&data, vmaf, ref, dist);
@@ -4788,6 +4800,14 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
 {
     if (vmaf)
         vmaf->api_owner = owner;
+}
+
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user)
+{
+    if (!vmaf)
+        return;
+    vmaf->frame_listener = listener;
+    vmaf->frame_listener_user = user;
 }
 
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf)

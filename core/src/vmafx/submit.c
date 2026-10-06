@@ -129,7 +129,7 @@ static int engine_read(VmafxContext *context, VmafxFrame *reference, VmafxFrame 
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, ref, dist, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (early) {
         signal_release_early(reference, distorted);
         vmafx_frame_unref(reference);
@@ -209,7 +209,7 @@ VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, NULL, NULL, 0);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "context", "flush failed (%d)", err);

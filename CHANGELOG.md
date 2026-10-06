@@ -82,7 +82,10 @@
   `vmafx_window_wait` and the callback deliver a `VmafxWindowResult` (one
   value per method, `n_frames`, `n_scored`, a partial flag) once every frame
   of the window is final, with the values of the synchronous pooled call bit
-  for bit; `vmafx_window_release` cancels or frees it. `vmafx_flush` completes
+  for bit; `vmafx_window_release` cancels or frees it. Each context's
+  completion thread finds completion as worker threads finish frames, so a
+  window completes whether or not the producer calls again; callbacks run on
+  a separate callback thread. `vmafx_flush` completes
   open windows over the frames the stream had. `VmafxWindowClock`
   (`vmafx_window_clock_create`, `_frame`, `_finish`, `_destroy`) cuts a stream
   into windows of `n_stats` seconds or `n_stats_frames` frames (#2138), and

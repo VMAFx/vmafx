@@ -10,16 +10,22 @@
  *
  * A window asks for a target (a model, a model set or a feature) pooled with
  * a set of methods over a range of frames, and completes once every frame of
- * the range is final. Completion is found on the thread that feeds the
- * context, in the calls that change its scores (vmafx_submit(),
- * vmafx_flush(), vmafx_context_import_score(), vmafx_window_submit()). Those
- * calls are externally synchronised with every other engine call of the
- * context (design section 2.4), so finding and computing a window needs no
- * engine lock. A score is written once and then final (ADR-0154), so each
- * window keeps a cursor: the frames before it are known final, a call looks
- * only at frames it has not looked at, and it never waits for work in flight
- * (no fence): a frame still on a worker thread is looked at again by the next
- * call.
+ * the range is final. Each context has one completion thread, started by its
+ * first window: the calls that change the context's scores (vmafx_submit(),
+ * vmafx_flush(), vmafx_context_import_score(), vmafx_window_submit()) and the
+ * engine's worker jobs (the frame listener, vmafx_windows_frame_final())
+ * raise a generation counter and signal it, and it looks at the open windows
+ * once per change. It waits on a condition variable, never polls, so a
+ * window completes when its last frame is final whether or not the feeding
+ * thread calls again.
+ *
+ * The completion thread calls the engine (probes and pooling) through
+ * vmafx_engine_enter(), which takes the context's engine lock (this set's
+ * `engine_lock`); every API call that enters the engine takes it too, so the
+ * engine sees one caller at a time as before. A score is written once and
+ * then final (ADR-0154), so each window keeps a cursor: the frames before it
+ * are known final, a pass looks only at frames it has not looked at, and it
+ * never waits for work in flight (no fence).
  *
  * The values come from vmafx_pool_engine() (score.c), the pooling of the
  * synchronous calls, with the same arguments: equal bit for bit (HISS-19).
@@ -27,12 +33,12 @@
  * Completion is published through a host fence (fence.c): the result is
  * written before the fence is signalled and never after, so
  * vmafx_window_poll() and vmafx_window_wait() read it on any thread without a
- * lock. Callbacks run on one window thread per context, started by the first
- * window that has one, in completion order.
+ * lock. Callbacks run on the completion thread, in completion order.
  *
- * Locking: VmafxWindowSet.lock guards the open list, the callback queue,
- * `released`, `queued` and `delivering`. Nothing is freed while it is held:
- * dropping a window's last reference may drop the set's last one.
+ * Locking: VmafxWindowSet.lock guards the lists, the flags of the windows and
+ * of the thread, the generation and the stream's state. Order: the engine
+ * lock before the set lock, never the other way; nothing is freed while the
+ * set lock is held (a window's last reference may drop the set's last one).
  */
 
 #include <assert.h>
@@ -72,8 +78,8 @@
 #define VMAFX_WINDOW_POOL_SLOTS 9u
 /* Every method bit of VmafxPoolMask (bits 1 to 8). */
 #define VMAFX_WINDOW_POOL_BITS 0x1feu
-/* Bound of the window thread's loop (HISS-02): one round per callback, and a
- * context completes at most one window per frame index and request. */
+/* Bound of the completion thread's loop and of a queue walk (HISS-02): one
+ * round per change, pass or callback of the context's life. */
 #define VMAFX_WINDOW_MAX_DELIVERIES UINT64_MAX
 
 struct VmafxWindow {
@@ -86,7 +92,7 @@ struct VmafxWindow {
     uint64_t last;
     VmafxWindowCallback on_complete;
     void *user;
-    uint64_t cursor;          /* feeding thread: frames [first, cursor) are final */
+    uint64_t cursor;          /* completion thread: frames [first, cursor) are final */
     bool open;                /* lock: on the open list */
     bool queued;              /* lock: on the callback queue */
     bool released;            /* lock: the caller released it */
@@ -97,19 +103,37 @@ struct VmafxWindow {
 
 struct VmafxWindowSet {
     VmafRef *refs; /* the context's, and one per window */
+    /* The context's engine lock (vmafx_engine_enter()); taken before `lock`. */
+    pthread_mutex_t engine_lock;
     pthread_mutex_t lock;
-    pthread_cond_t wake; /* the queue gained a window, or stop */
-    pthread_cond_t idle; /* `delivering` changed */
+    pthread_cond_t wake;     /* work for the completion thread, or stop */
+    pthread_cond_t callback; /* the callback queue gained a window, or stop */
+    pthread_cond_t idle;     /* `delivering` or `paused` changed */
     VmafxWindow *open_head;
     VmafxWindow *open_tail;
     uint32_t n_open;
     VmafxWindow *queue_head;
     VmafxWindow *queue_tail;
     VmafxWindow *delivering; /* the window whose callback runs, or NULL */
+    /* A change the completion thread has not looked at yet: `generation`
+     * moves on every frame, import, flush and window submit; `seen` is the
+     * generation of the thread's last pass. */
+    uint64_t generation;
+    uint64_t seen;
+    /* The stream: the highest frame index submitted or imported (valid once
+     * `have_scored`), and whether the context was flushed. */
+    bool have_scored;
+    uint64_t scored_last;
+    bool flushed;
+    bool pausing; /* vmafx_windows_pause(): no engine work until resumed */
+    bool paused;  /* the thread acknowledged `pausing` */
     bool stop;
-    bool thread_started; /* feeding thread only */
+    bool thread_started;   /* the completion thread */
+    bool callback_started; /* the callback thread */
     pthread_t thread;
-    /* The context's log callback, kept for the window thread: a message
+    pthread_t callback_thread;
+    VmafxContext *context; /* the completion thread's; valid until it is joined */
+    /* The context's log callback, kept for the completion thread: a message
      * raised in a callback reaches the context's callback too. */
     VmafxLogCallback log_callback;
     void *log_user;
@@ -127,29 +151,57 @@ static void set_deliver(enum VmafLogLevel level, const char *message, void *user
     set->log_callback((uint32_t)level, message, set->log_user);
 }
 
-static VmafxWindowSet *set_new(const VmafxContext *context)
+/* Undo the first `stage` steps of set_new(). */
+static void set_teardown(VmafxWindowSet *set, unsigned stage)
+{
+    if (stage > 4u) {
+        (void)pthread_cond_destroy(&set->callback);
+    }
+    if (stage > 3u) {
+        (void)pthread_cond_destroy(&set->idle);
+    }
+    if (stage > 2u) {
+        (void)pthread_cond_destroy(&set->wake);
+    }
+    if (stage > 1u) {
+        (void)pthread_mutex_destroy(&set->lock);
+    }
+    if (stage > 0u) {
+        (void)pthread_mutex_destroy(&set->engine_lock);
+    }
+    if (set->refs) {
+        (void)vmaf_ref_close(set->refs);
+    }
+    free(set);
+}
+
+static VmafxWindowSet *set_new(VmafxContext *context)
 {
     VmafxWindowSet *const set = calloc(1, sizeof(*set));
     if (!set) {
         return NULL;
     }
-    bool ok = vmaf_ref_init(&set->refs) == 0;
-    const bool locked = ok && pthread_mutex_init(&set->lock, NULL) == 0;
-    const bool waked = locked && pthread_cond_init(&set->wake, NULL) == 0;
-    ok = waked && pthread_cond_init(&set->idle, NULL) == 0;
-    if (!ok) {
-        if (waked) {
-            (void)pthread_cond_destroy(&set->wake);
-        }
-        if (locked) {
-            (void)pthread_mutex_destroy(&set->lock);
-        }
-        if (set->refs) {
-            (void)vmaf_ref_close(set->refs);
-        }
-        free(set);
+    unsigned stage = 0;
+    if (vmaf_ref_init(&set->refs) == 0 && pthread_mutex_init(&set->engine_lock, NULL) == 0) {
+        stage = 1u;
+    }
+    if (stage == 1u && pthread_mutex_init(&set->lock, NULL) == 0) {
+        stage = 2u;
+    }
+    if (stage == 2u && pthread_cond_init(&set->wake, NULL) == 0) {
+        stage = 3u;
+    }
+    if (stage == 3u && pthread_cond_init(&set->idle, NULL) == 0) {
+        stage = 4u;
+    }
+    if (stage == 4u && pthread_cond_init(&set->callback, NULL) == 0) {
+        stage = 5u;
+    }
+    if (stage < 5u) {
+        set_teardown(set, stage);
         return NULL;
     }
+    set->context = context;
     set->log_callback = context->log_callback;
     set->log_user = context->log_user;
     set->sink = (VmafLogSink){.deliver = set_deliver, .user = set, .level = context->sink.level};
@@ -162,11 +214,7 @@ static void set_unref(VmafxWindowSet *set)
         return;
     }
     assert(!set->open_head && !set->queue_head && !set->delivering);
-    (void)pthread_cond_destroy(&set->idle);
-    (void)pthread_cond_destroy(&set->wake);
-    (void)pthread_mutex_destroy(&set->lock);
-    (void)vmaf_ref_close(set->refs);
-    free(set);
+    set_teardown(set, 5u);
 }
 
 static void window_unref(VmafxWindow *window)
@@ -364,7 +412,7 @@ static void queue_push(VmafxWindowSet *set, VmafxWindow *window)
     }
     set->queue_tail = window;
     window->queued = true;
-    (void)pthread_cond_signal(&set->wake);
+    (void)pthread_cond_signal(&set->callback);
 }
 
 /* Take `window` off the callback queue; true when it was on it. The queue is
@@ -394,54 +442,14 @@ static bool queue_unlink(VmafxWindowSet *set, VmafxWindow *window)
     return true;
 }
 
-/* ---- The window thread --------------------------------------------------------- */
+/* ---- Completion (completion thread) ----------------------------------------------- */
 
-/* Run the callback of the next queued window; false when the thread stops.
- * Called with the lock held; returns with it held. */
-static bool deliver_next(VmafxWindowSet *set)
-{
-    while (!set->queue_head && !set->stop) {
-        (void)pthread_cond_wait(&set->wake, &set->lock);
-    }
-    VmafxWindow *const window = set->queue_head;
-    if (!window) {
-        return false;
-    }
-    (void)queue_unlink(set, window);
-    set->delivering = window;
-    (void)pthread_mutex_unlock(&set->lock);
-    window->on_complete(window, &window->result, window->user);
-    (void)pthread_mutex_lock(&set->lock);
-    set->delivering = NULL;
-    (void)pthread_cond_broadcast(&set->idle);
-    /* Drop the queue's reference unlocked: it may be the window's last, and
-     * that drops a reference of the set (never its last: the context holds
-     * one until this thread is joined). */
-    (void)pthread_mutex_unlock(&set->lock);
-    window_unref(window);
-    (void)pthread_mutex_lock(&set->lock);
-    return true;
-}
-
-static void *window_thread(void *arg)
-{
-    VmafxWindowSet *const set = arg;
-    vmafx_delivering_set = set;
-    const VmafLogSink *const previous =
-        vmaf_log_swap_thread_sink(set->log_callback ? &set->sink : NULL);
-    (void)pthread_mutex_lock(&set->lock);
-    for (uint64_t n = 0; n < VMAFX_WINDOW_MAX_DELIVERIES; n++) {
-        if (!deliver_next(set)) {
-            break;
-        }
-    }
-    (void)pthread_mutex_unlock(&set->lock);
-    (void)vmaf_log_swap_thread_sink(previous);
-    vmafx_delivering_set = NULL;
-    return NULL;
-}
-
-/* ---- Completion (feeding thread) --------------------------------------------------- */
+/* The stream as a pass sees it, read under the set lock. */
+typedef struct WindowStream {
+    bool have_scored;
+    uint64_t scored_last;
+    bool flushed;
+} WindowStream;
 
 /* Number of indices in [first, last] the context scores. */
 static uint64_t scored_in(uint64_t first, uint64_t last, unsigned subsample)
@@ -451,7 +459,8 @@ static uint64_t scored_in(uint64_t first, uint64_t last, unsigned subsample)
     return last / subsample + 1u - below_first;
 }
 
-/* Whether frame `index` of the window is final: 0, or the engine's errno. */
+/* Whether frame `index` of the window is final: 0, or the engine's errno.
+ * Takes the engine lock (vmafx_engine_enter()). */
 static int probe(VmafxContext *context, const VmafxWindow *window, unsigned index)
 {
     const VmafLogSink *const previous = vmafx_engine_enter(context);
@@ -464,7 +473,7 @@ static int probe(VmafxContext *context, const VmafxWindow *window, unsigned inde
     } else {
         err = vmaf_engine_feature_written(context->engine, window->target.feature, index);
     }
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     return err;
 }
 
@@ -533,35 +542,13 @@ static VmafxStatus compute(VmafxContext *context, VmafxWindow *window, uint64_t 
     return VMAFX_OK;
 }
 
-/* Complete the window when it can be: VMAFX_OK when its result is written
- * (values or a failure), VMAFX_PENDING when it stays open. */
-static VmafxStatus try_complete(VmafxContext *context, VmafxWindow *window)
+/* The frames of a window the stream reaches are final: pool them, unless
+ * frames past the stream's end may still come. */
+static VmafxStatus complete_range(VmafxContext *context, VmafxWindow *window, uint64_t end,
+                                  bool flushed)
 {
-    assert(window->magic == VMAFX_WINDOW_MAGIC);
-    const bool flushed = vmaf_engine_is_flushed(context->engine);
-    if (!context->have_scored || context->scored_last < window->first) {
-        if (!flushed) {
-            return VMAFX_PENDING;
-        }
-        window->result.flags = VMAFX_WINDOW_PARTIAL;
-        fail(context, window, VMAFX_E_RANGE, 0, "the stream ended before its first frame");
-        return VMAFX_OK;
-    }
-    const uint64_t end = context->scored_last < window->last ? context->scored_last : window->last;
-    const int err = advance(context, window, end);
-    if (err == -EAGAIN || err == -EINVAL) {
-        if (!flushed) {
-            return VMAFX_PENDING;
-        }
-        fail(context, window, VMAFX_E_NOTFOUND, err, "a frame has no score after the flush");
-        return VMAFX_OK;
-    }
-    if (err) {
-        fail(context, window, VMAFX_E_INTERNAL, err, "the engine could not score a frame");
-        return VMAFX_OK;
-    }
     if (end < window->last && !flushed) {
-        return VMAFX_PENDING; /* frames past the stream's end may still come */
+        return VMAFX_PENDING;
     }
     VmafxWindowResult *const r = &window->result;
     r->n_frames = end - window->first + 1u;
@@ -572,6 +559,36 @@ static VmafxStatus try_complete(VmafxContext *context, VmafxWindow *window)
         return VMAFX_OK;
     }
     return compute(context, window, end, flushed);
+}
+
+/* Complete the window when it can be: VMAFX_OK when its result is written
+ * (values or a failure), VMAFX_PENDING when it stays open. */
+static VmafxStatus try_complete(VmafxContext *context, VmafxWindow *window,
+                                const WindowStream *stream)
+{
+    assert(window->magic == VMAFX_WINDOW_MAGIC);
+    if (!stream->have_scored || stream->scored_last < window->first) {
+        if (!stream->flushed) {
+            return VMAFX_PENDING;
+        }
+        window->result.flags = VMAFX_WINDOW_PARTIAL;
+        fail(context, window, VMAFX_E_RANGE, 0, "the stream ended before its first frame");
+        return VMAFX_OK;
+    }
+    const uint64_t end = stream->scored_last < window->last ? stream->scored_last : window->last;
+    const int err = advance(context, window, end);
+    if (err == -EAGAIN || err == -EINVAL) {
+        if (!stream->flushed) {
+            return VMAFX_PENDING;
+        }
+        fail(context, window, VMAFX_E_NOTFOUND, err, "a frame has no score after the flush");
+        return VMAFX_OK;
+    }
+    if (err) {
+        fail(context, window, VMAFX_E_INTERNAL, err, "the engine could not score a frame");
+        return VMAFX_OK;
+    }
+    return complete_range(context, window, end, stream->flushed);
 }
 
 /* Publish a completed window (lock held): off the open list, the result
@@ -600,17 +617,18 @@ static uint32_t snapshot_open(VmafxWindowSet *set, VmafxWindow **out)
     return n;
 }
 
-/* Look at every open window once: complete those whose frames are final. */
-static void evaluate(VmafxContext *context)
+/* One pass: look at every open window once and complete those whose frames
+ * are final. Called and returns with the set lock held; runs the engine
+ * work without it. */
+static void evaluate(VmafxWindowSet *set)
 {
-    VmafxWindowSet *const set = context->windows;
     VmafxWindow *snapshot[VMAFX_WINDOW_MAX_OPEN];
-    (void)pthread_mutex_lock(&set->lock);
     const uint32_t n = snapshot_open(set, snapshot);
+    const WindowStream stream = {set->have_scored, set->scored_last, set->flushed};
     (void)pthread_mutex_unlock(&set->lock);
     for (uint32_t i = 0; i < n; i++) {
         VmafxWindow *const window = snapshot[i];
-        if (try_complete(context, window) == VMAFX_OK) {
+        if (try_complete(set->context, window, &stream) == VMAFX_OK) {
             (void)pthread_mutex_lock(&set->lock);
             const bool was_open = publish(set, window);
             (void)pthread_mutex_unlock(&set->lock);
@@ -620,72 +638,285 @@ static void evaluate(VmafxContext *context)
         }
         window_unref(window);
     }
+    (void)pthread_mutex_lock(&set->lock);
+}
+
+/* ---- The completion thread and the callback thread ---------------------------------- */
+
+enum { WORK_NONE, WORK_PAUSE, WORK_EVALUATE, WORK_STOP };
+
+/* What the completion thread does next (set lock held). A pause waits for
+ * the changes already signalled: a window whose frames were final before
+ * vmafx_context_destroy() completes with its values, not as destroyed. */
+static int next_work(const VmafxWindowSet *set)
+{
+    if (!set->paused && set->seen != set->generation) {
+        return WORK_EVALUATE;
+    }
+    if (set->pausing && !set->paused) {
+        return WORK_PAUSE;
+    }
+    return set->stop ? WORK_STOP : WORK_NONE;
+}
+
+/* The completion thread: one pass per change of the context's scores, woken
+ * through `wake`; it never polls. */
+static void *completion_thread(void *arg)
+{
+    VmafxWindowSet *const set = arg;
+    (void)pthread_mutex_lock(&set->lock);
+    for (uint64_t round = 0; round < VMAFX_WINDOW_MAX_DELIVERIES; round++) {
+        int work = next_work(set);
+        while (work == WORK_NONE) {
+            (void)pthread_cond_wait(&set->wake, &set->lock);
+            work = next_work(set);
+        }
+        if (work == WORK_STOP) {
+            break;
+        }
+        if (work == WORK_PAUSE) {
+            set->paused = true;
+            (void)pthread_cond_broadcast(&set->idle);
+        } else {
+            set->seen = set->generation;
+            evaluate(set);
+        }
+    }
+    (void)pthread_mutex_unlock(&set->lock);
+    return NULL;
+}
+
+/* Run the callback of the first queued window. Called and returns with the
+ * set lock held. */
+static void deliver_one(VmafxWindowSet *set)
+{
+    VmafxWindow *const window = set->queue_head;
+    assert(window && window->queued);
+    (void)queue_unlink(set, window);
+    set->delivering = window;
+    (void)pthread_mutex_unlock(&set->lock);
+    window->on_complete(window, &window->result, window->user);
+    (void)pthread_mutex_lock(&set->lock);
+    set->delivering = NULL;
+    (void)pthread_cond_broadcast(&set->idle);
+    /* Drop the queue's reference unlocked: it may be the window's last, and
+     * that drops a reference of the set (never its last: the context holds
+     * one until this thread is joined). */
+    (void)pthread_mutex_unlock(&set->lock);
+    window_unref(window);
+    (void)pthread_mutex_lock(&set->lock);
+}
+
+/* The callback thread: runs callbacks in completion order, apart from the
+ * completion thread so that a slow callback never holds up the completion
+ * of other windows; drains the queue before it stops. */
+static void *callback_thread(void *arg)
+{
+    VmafxWindowSet *const set = arg;
+    vmafx_delivering_set = set;
+    const VmafLogSink *const previous =
+        vmaf_log_swap_thread_sink(set->log_callback ? &set->sink : NULL);
+    (void)pthread_mutex_lock(&set->lock);
+    for (uint64_t round = 0; round < VMAFX_WINDOW_MAX_DELIVERIES; round++) {
+        while (!set->queue_head && !set->stop) {
+            (void)pthread_cond_wait(&set->callback, &set->lock);
+        }
+        if (!set->queue_head) {
+            break;
+        }
+        deliver_one(set);
+    }
+    (void)pthread_mutex_unlock(&set->lock);
+    (void)vmaf_log_swap_thread_sink(previous);
+    vmafx_delivering_set = NULL;
+    return NULL;
+}
+
+/* ---- Hooks ------------------------------------------------------------------------- */
+
+/* A change for the completion thread to look at (set lock held). */
+static void wake_locked(VmafxWindowSet *set)
+{
+    set->generation++;
+    (void)pthread_cond_signal(&set->wake);
+}
+
+bool vmafx_windows_init(VmafxContext *context)
+{
+    assert(context && !context->windows);
+    context->windows = set_new(context);
+    return context->windows != NULL;
+}
+
+void vmafx_windows_frame_final(void *user)
+{
+    VmafxWindowSet *const set = user;
+    (void)pthread_mutex_lock(&set->lock);
+    wake_locked(set);
+    (void)pthread_mutex_unlock(&set->lock);
+}
+
+void vmafx_context_lock(const VmafxContext *context)
+{
+    if (context && context->windows) {
+        (void)pthread_mutex_lock(&context->windows->engine_lock);
+    }
+}
+
+void vmafx_context_unlock(const VmafxContext *context)
+{
+    if (context && context->windows) {
+        (void)pthread_mutex_unlock(&context->windows->engine_lock);
+    }
 }
 
 void vmafx_windows_note_index(VmafxContext *context, uint64_t index)
 {
-    assert(context);
-    if (!context->have_scored || index > context->scored_last) {
-        context->scored_last = index;
+    VmafxWindowSet *const set = context->windows;
+    assert(set);
+    (void)pthread_mutex_lock(&set->lock);
+    if (!set->have_scored || index > set->scored_last) {
+        set->scored_last = index;
     }
-    context->have_scored = true;
-    if (context->windows) {
-        evaluate(context);
-    }
+    set->have_scored = true;
+    wake_locked(set);
+    (void)pthread_mutex_unlock(&set->lock);
 }
 
 void vmafx_windows_note_flush(VmafxContext *context)
 {
-    assert(context && vmaf_engine_is_flushed(context->engine));
-    if (context->windows) {
-        evaluate(context);
+    VmafxWindowSet *const set = context->windows;
+    assert(set && vmaf_engine_is_flushed(context->engine));
+    (void)pthread_mutex_lock(&set->lock);
+    set->flushed = true;
+    wake_locked(set);
+    (void)pthread_mutex_unlock(&set->lock);
+}
+
+/* Stop the completion thread's engine work (set lock held): it acknowledges
+ * once it has looked at every change signalled so far. */
+static void pause_locked(VmafxWindowSet *set)
+{
+    set->pausing = true;
+    if (!set->thread_started) {
+        set->paused = true;
+        return;
     }
+    (void)pthread_cond_signal(&set->wake);
+    while (!set->paused) {
+        (void)pthread_cond_wait(&set->idle, &set->lock);
+    }
+}
+
+void vmafx_windows_pause(VmafxContext *context)
+{
+    VmafxWindowSet *const set = context->windows;
+    assert(set);
+    (void)pthread_mutex_lock(&set->lock);
+    pause_locked(set);
+    (void)pthread_mutex_unlock(&set->lock);
+}
+
+void vmafx_windows_resume(VmafxContext *context)
+{
+    VmafxWindowSet *const set = context->windows;
+    assert(set);
+    (void)pthread_mutex_lock(&set->lock);
+    set->pausing = false;
+    set->paused = false;
+    wake_locked(set);
+    (void)pthread_mutex_unlock(&set->lock);
+}
+
+void vmafx_windows_close(VmafxContext *context)
+{
+    VmafxWindowSet *const set = context->windows;
+    if (!set) {
+        return;
+    }
+    assert(set->context == context);
+    VmafxWindow *open[VMAFX_WINDOW_MAX_OPEN];
+    bool was_open[VMAFX_WINDOW_MAX_OPEN];
+    (void)pthread_mutex_lock(&set->lock);
+    pause_locked(set); /* the thread no longer touches a window or the engine */
+    const uint32_t n = snapshot_open(set, open);
+    (void)pthread_mutex_unlock(&set->lock);
+    for (uint32_t i = 0; i < n; i++) {
+        open[i]->result.flags = VMAFX_WINDOW_PARTIAL;
+        fail(context, open[i], VMAFX_E_INVALID, 0, "the context was destroyed first");
+    }
+    (void)pthread_mutex_lock(&set->lock);
+    for (uint32_t i = 0; i < n; i++) {
+        was_open[i] = publish(set, open[i]);
+    }
+    set->stop = true;
+    (void)pthread_cond_signal(&set->wake);
+    (void)pthread_cond_signal(&set->callback);
+    const bool started = set->thread_started;
+    const bool callbacks = set->callback_started;
+    (void)pthread_mutex_unlock(&set->lock);
+    if (started) {
+        (void)pthread_join(set->thread, NULL);
+    }
+    if (callbacks) {
+        (void)pthread_join(set->callback_thread, NULL); /* runs every queued callback first */
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        if (was_open[i]) {
+            drop_held_ref(open[i]); /* the open list's; the snapshot holds one */
+        }
+        window_unref(open[i]);
+    }
+    context->windows = NULL;
+    set_unref(set);
 }
 
 /* ---- Public functions ------------------------------------------------------------ */
 
-/* The context's window set, created with its first window; the window thread
- * is started by the first window with a callback. */
-static VmafxStatus prepare_set(const VmafxReport *report, VmafxContext *context, bool needs_thread)
+/* Start the context's completion thread with its first window, and its
+ * callback thread with its first window that has a callback. */
+static VmafxStatus start_threads(const VmafxReport *report, VmafxWindowSet *set, bool callback)
 {
-    if (!context->windows) {
-        context->windows = set_new(context);
-        if (!context->windows) {
-            return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
-                              "cannot allocate the window set");
-        }
+    bool ok = true;
+    (void)pthread_mutex_lock(&set->lock);
+    if (!set->thread_started) {
+        ok = pthread_create(&set->thread, NULL, completion_thread, set) == 0;
+        set->thread_started = ok;
     }
-    VmafxWindowSet *const set = context->windows;
-    if (needs_thread && !set->thread_started) {
-        if (pthread_create(&set->thread, NULL, window_thread, set) != 0) {
-            return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
-                              "cannot start the window thread");
-        }
-        set->thread_started = true;
+    if (ok && callback && !set->callback_started) {
+        ok = pthread_create(&set->callback_thread, NULL, callback_thread, set) == 0;
+        set->callback_started = ok;
     }
-    return VMAFX_OK;
+    (void)pthread_mutex_unlock(&set->lock);
+    return ok ? VMAFX_OK :
+                VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
+                           "cannot start the window threads");
 }
 
-/* Put a new window on the open list: VMAFX_E_BUSY when the set is full. */
+/* Put a new window on the open list and wake the completion thread:
+ * VMAFX_E_BUSY when the set is full. */
 static VmafxStatus open_window(const VmafxReport *report, VmafxWindowSet *set,
                                const VmafxWindowRequest *r, VmafxWindow **out)
 {
-    (void)pthread_mutex_lock(&set->lock);
-    const bool full = set->n_open >= VMAFX_WINDOW_MAX_OPEN;
-    (void)pthread_mutex_unlock(&set->lock);
-    if (full) {
-        return VMAFX_FAIL(report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_CONTEXT, "context",
-                          "%u windows are open; complete or release one first",
-                          (unsigned)VMAFX_WINDOW_MAX_OPEN);
-    }
     VmafxWindow *const window = window_new(set, r);
     if (!window) {
         return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "cannot allocate a window");
     }
     (void)pthread_mutex_lock(&set->lock);
-    open_push(set, window);
+    const bool full = set->n_open >= VMAFX_WINDOW_MAX_OPEN;
+    if (!full) {
+        open_push(set, window);
+        wake_locked(set);
+    }
     (void)pthread_mutex_unlock(&set->lock);
+    if (full) {
+        drop_held_ref(window); /* the open list's, never taken */
+        window_unref(window);
+        return VMAFX_FAIL(report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_CONTEXT, "context",
+                          "%u windows are open; complete or release one first",
+                          (unsigned)VMAFX_WINDOW_MAX_OPEN);
+    }
     *out = window;
     return VMAFX_OK;
 }
@@ -704,21 +935,13 @@ VmafxStatus vmafx_window_submit(VmafxContext *context, const VmafxWindowRequest 
                                      "out",
                           "NULL argument");
     }
+    assert(context->windows);
     VmafxWindowRequest r = VMAFX_WINDOW_REQUEST_INIT;
     VmafxStatus status = read_request(&report, request, &r);
     if (status == VMAFX_OK) {
-        status = prepare_set(&report, context, r.on_complete != NULL);
+        status = start_threads(&report, context->windows, r.on_complete != NULL);
     }
-    VmafxWindow *window = NULL;
-    if (status == VMAFX_OK) {
-        status = open_window(&report, context->windows, &r, &window);
-    }
-    if (status != VMAFX_OK) {
-        return status;
-    }
-    evaluate(context); /* a window already final completes here */
-    *out = window;
-    return VMAFX_OK;
+    return status == VMAFX_OK ? open_window(&report, context->windows, &r, out) : status;
 }
 
 VmafxStatus vmafx_window_poll(const VmafxWindow *window, VmafxWindowResult *out, VmafxError **error)
@@ -757,8 +980,8 @@ void vmafx_window_release(VmafxWindow *window)
     window->released = true;
     const bool was_open = open_unlink(set, window);
     const bool was_queued = queue_unlink(set, window);
-    /* A callback of this window running on the window thread finishes first,
-     * unless this is that callback. */
+    /* A callback of this window running on the completion thread finishes
+     * first, unless this is that callback. */
     while (set->delivering == window && vmafx_delivering_set != set) {
         (void)pthread_cond_wait(&set->idle, &set->lock);
     }
@@ -770,42 +993,6 @@ void vmafx_window_release(VmafxWindow *window)
         drop_held_ref(window);
     }
     window_unref(window); /* the caller's */
-}
-
-void vmafx_windows_close(VmafxContext *context)
-{
-    VmafxWindowSet *const set = context->windows;
-    if (!set) {
-        return;
-    }
-    assert(set->refs && context->engine);
-    VmafxWindow *open[VMAFX_WINDOW_MAX_OPEN];
-    bool was_open[VMAFX_WINDOW_MAX_OPEN];
-    (void)pthread_mutex_lock(&set->lock);
-    const uint32_t n = snapshot_open(set, open);
-    (void)pthread_mutex_unlock(&set->lock);
-    for (uint32_t i = 0; i < n; i++) {
-        open[i]->result.flags = VMAFX_WINDOW_PARTIAL;
-        fail(context, open[i], VMAFX_E_INVALID, 0, "the context was destroyed first");
-    }
-    (void)pthread_mutex_lock(&set->lock);
-    for (uint32_t i = 0; i < n; i++) {
-        was_open[i] = publish(set, open[i]);
-    }
-    set->stop = true;
-    (void)pthread_cond_signal(&set->wake);
-    (void)pthread_mutex_unlock(&set->lock);
-    if (set->thread_started) {
-        (void)pthread_join(set->thread, NULL); /* runs every queued callback first */
-    }
-    for (uint32_t i = 0; i < n; i++) {
-        if (was_open[i]) {
-            drop_held_ref(open[i]); /* the open list's; the snapshot holds one */
-        }
-        window_unref(open[i]);
-    }
-    context->windows = NULL;
-    set_unref(set);
 }
 
 uint32_t vmafx_context_max_in_flight(const VmafxContext *context)

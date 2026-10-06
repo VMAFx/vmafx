@@ -5152,6 +5152,6 @@ Every ADR, one heading each (1286), so the site search finds an ADR by its title
 
 [1929-vmafx-device-frames-fences](1929-vmafx-device-frames-fences.md)
 
-## ADR-2074: VMAFx window scores: completion on the feeding thread, one pooling implementation, the window clock and the in-flight bound
+## ADR-2074: VMAFx window scores: a completion thread per context, one pooling implementation, the window clock and the in-flight bound
 
 [2074-vmafx-window-scores](2074-vmafx-window-scores.md)

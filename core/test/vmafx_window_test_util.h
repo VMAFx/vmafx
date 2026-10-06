@@ -88,6 +88,19 @@ static inline bool vw_done(const VmafxWindow *window, VmafxWindowResult *out)
     return vmafx_window_poll(window, out, NULL) == VMAFX_OK;
 }
 
+/* How long a test waits for a window its frames made final: the completion
+ * thread finishes it in milliseconds; the bound only turns a lost window into
+ * a failure instead of a hang. */
+#define VW_WAIT_NS 5000000000ull
+
+/* True when the window completes within VW_WAIT_NS (the completion thread
+ * runs it, ADR-2074). */
+static inline bool vw_complete(const VmafxWindow *window, VmafxWindowResult *out)
+{
+    *out = (VmafxWindowResult)VMAFX_WINDOW_RESULT_INIT;
+    return vmafx_window_wait(window, VW_WAIT_NS, out, NULL) == VMAFX_OK;
+}
+
 /* The synchronous call's value of `pool` over [first, last] matches slot
  * `pool` of `r` bit for bit. */
 static inline bool vw_same_pool(VmafxContext *context, VwTarget t, const VmafxWindowResult *r,

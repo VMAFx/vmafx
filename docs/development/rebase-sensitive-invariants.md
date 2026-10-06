@@ -145,15 +145,17 @@ backend within it.
   `vmafx_score_pooled()`, `vmafx_feature_score_pooled()`,
   `vmafx_score_pooled_model_set()` and the windows all call
   `vmafx_pool_engine()` (`core/src/vmafx/score.c`); keep one pooling path.
-  Windows complete only on the thread that feeds the context
-  (`vmafx_windows_note_index()` / `_note_flush()` / `_close()` hooks in
-  `submit.c`, `register.c`, `context.c`) and their probes never fence
+  Each context's completion thread finds completion; it is woken by the
+  engine's frame listener (end of `threaded_extract_batch_func()`) and by
+  the hooks in `submit.c`, `register.c` and `context.c`, and calls the engine
+  only through `vmafx_engine_enter()` / `vmafx_engine_leave(context, ...)`,
+  which take the context's engine lock. Its probes never fence
   (`vmaf_engine_try_score_at_index()`, `vmaf_engine_feature_written()`,
   `vmaf_predict_inputs_written()`). `vmaf_engine_max_in_flight()` mirrors
   `batch_job_take_pictures()`, the thread pool's enqueue capacity and the
-  device double buffer; a change to one recomputes it.
-  `test_vmafx_window`, `test_vmafx_window_live` and `test_vmafx_window_cli`
-  guard it.
+  device double buffer; a change to one recomputes it. `test_vmafx_window`,
+  `test_vmafx_window_live`, `test_vmafx_window_cli` and
+  `test_vmafx_lifetime` guard it.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

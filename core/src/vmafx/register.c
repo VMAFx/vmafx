@@ -74,7 +74,7 @@ VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extract
     /* Consumes `copy` on every path past its argument checks. */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_feature(context->engine, extractor, copy);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_EXTRACTOR,
                           extractor, "cannot register the extractor (%d)", err);
@@ -96,7 +96,7 @@ VmafxStatus vmafx_context_use_model(VmafxContext *context, VmafxModel *model, Vm
     assert(context->models.count < context->models.capacity);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model(context->engine, model->engine);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_MODEL,
                           model->engine->name, "cannot register the model's extractors (%d)", err);
@@ -121,7 +121,7 @@ VmafxStatus vmafx_context_use_model_set(VmafxContext *context, VmafxModelSet *se
     VmafModelCollection *const collection = vmafx_model_set_engine(set);
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_use_features_from_model_collection(context->engine, collection);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_MODEL,
                           collection->name, "cannot register the set's extractors (%d)", err);
@@ -145,7 +145,7 @@ VmafxStatus vmafx_context_import_score(VmafxContext *context, const char *featur
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err =
         vmaf_engine_import_feature_score(context->engine, feature, value, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_FEATURE,
                           feature, "cannot record the score of frame %llu (%d)",
@@ -236,7 +236,7 @@ VmafxStatus vmafx_feature_resolve(const VmafxContext *context, const char *extra
     const int err = vmaf_engine_feature_backend_twin(
         context->engine, extractor, (const VmafFeatureDictionary *)options, frame ? &pic_cfg : NULL,
         &full.extractor, &full.unsupported_option);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     status = resolve_verdict(&report, err, fex->name, &full);
     if (status == VMAFX_OK || status == VMAFX_E_NOTSUP) {
         vmafx_store_sized(out, &full, (uint32_t)sizeof(full));

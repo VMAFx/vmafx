@@ -8015,6 +8015,7 @@
         "core/src/gpu_picture_pool.cpp": 2,
         "core/src/libvmaf.c": 1,
         "core/src/thread_pool.c": 1,
+        "core/src/vmafx/internal.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
@@ -11332,19 +11333,21 @@
     "2074": {
       "sites": {
         "core/api/vmafx.toml": 1,
-        "core/src/libvmaf.c": 1,
+        "core/src/libvmaf.c": 4,
         "core/src/meson.build": 1,
         "core/src/predict.h": 1,
-        "core/src/vmafx/engine.h": 1,
-        "core/src/vmafx/internal.h": 2,
+        "core/src/vmafx/context.c": 1,
+        "core/src/vmafx/engine.h": 2,
+        "core/src/vmafx/internal.h": 3,
         "core/src/vmafx/score.c": 1,
         "core/src/vmafx/window.c": 1,
         "core/src/vmafx/window_clock.c": 1,
         "core/test/meson.build": 1,
+        "core/test/test_vmafx_lifetime.c": 1,
         "core/test/test_vmafx_window.c": 2,
         "core/test/test_vmafx_window_clock.c": 1,
-        "core/test/test_vmafx_window_live.c": 1,
-        "core/test/vmafx_window_test_util.h": 1
+        "core/test/test_vmafx_window_live.c": 2,
+        "core/test/vmafx_window_test_util.h": 2
       },
       "target": "2074-vmafx-window-scores.md"
     }

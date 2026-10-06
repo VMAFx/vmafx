@@ -98,9 +98,10 @@ typedef struct VmafxWindowClockConfig VmafxWindowClockConfig;
 typedef struct VmafxWindowSpan VmafxWindowSpan;
 
 /**
- * Called once when a window completes, on the context's window thread (a library thread, never the
- * caller's), in completion order. `result` is valid during the call; the same result stays readable
- * with vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and
+ * Called once when a window completes, on the context's callback thread (a library thread, never
+ * the caller's, apart from the completion thread so a slow callback holds up no window), in
+ * completion order. `result` is valid during the call; the same result stays readable with
+ * vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and
  * vmafx_window_release() (also on its own window) and must not call any other function on the
  * window's context: no vmafx_submit(), no vmafx_flush(). Added in ABI 0.1.4.
  * @since 0.1
@@ -397,12 +398,12 @@ VMAFX_EXPORT VmafxStatus vmafx_score_pooled_model_set(VmafxContext *context,
  * or at vmafx_flush(), which completes it over the frames the stream had and flags it
  * VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's
  * scores one submit later; motion2 / motion3 of the integer motion extractors, and so every VMAF
- * model, are final only at vmafx_flush() in this release. Completion is found in the calls that
- * change the context's scores (vmafx_submit(), vmafx_flush(), vmafx_context_import_score(),
- * vmafx_window_submit()), on their thread and without waiting for worker threads; a window already
- * final completes in this call. At most 1024 windows of a context are open; one more is
- * VMAFX_E_BUSY naming `context`. The caller holds the window until vmafx_window_release(). Added in
- * ABI 0.1.4.
+ * model, are final only at vmafx_flush() in this release. The context's completion thread (started
+ * by its first window) finds completion: the worker that finishes a frame, a submit, a flush, an
+ * import and this call wake it, so a window completes whether or not the feeding thread calls
+ * again; a window already final completes right after this call. At most 1024 windows of a context
+ * are open; one more is VMAFX_E_BUSY naming `context`. The caller holds the window until
+ * vmafx_window_release(). Added in ABI 0.1.4.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_window_submit(VmafxContext *context,
@@ -421,8 +422,8 @@ VMAFX_EXPORT VmafxStatus vmafx_window_poll(const VmafxWindow *window, VmafxWindo
 /**
  * vmafx_window_poll() after waiting up to `timeout_ns` nanoseconds for the window to complete
  * (UINT64_MAX: without a limit); VMAFX_PENDING, without an error, when it has not by then. Thread-
- * safe. A window completes only in the calls of the thread that feeds its context: waiting on that
- * thread for a window its frames have not made final waits for nothing new. Added in ABI 0.1.4.
+ * safe, also on the thread that feeds the context: the completion thread completes the window.
+ * Added in ABI 0.1.4.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_window_wait(const VmafxWindow *window, uint64_t timeout_ns,
@@ -430,7 +431,7 @@ VMAFX_EXPORT VmafxStatus vmafx_window_wait(const VmafxWindow *window, uint64_t t
 
 /**
  * Release the caller's window, completed or not. An open window is cancelled: its callback never
- * runs. A callback of the window running on the window thread is waited for, unless this call is
+ * runs. A callback of the window running on the callback thread is waited for, unless this call is
  * made from that callback. Thread-safe; NULL is a no-op. Added in ABI 0.1.4.
  * @since 0.1
  */
