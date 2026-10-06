@@ -400,6 +400,7 @@ nav:
       - Auth gateway: server/auth.md
       - Operator: server/operator.md
       - REST API: server/rest.md
+      - Scoring API contract: server/api-contract.md
       - Operator image and publishing: backends/operator.md
       - Observability (OpenTelemetry): observability/otel.md
       - Kubernetes integration tests: k8s/integration-tests.md

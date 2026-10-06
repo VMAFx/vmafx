@@ -17,6 +17,11 @@ paths:
   - core/test/check_exported_symbols.py
   - scripts/codegen/**
   - bindings/python/vmafx/*
+  - core/tools/cli_options.gen.inc
+  - pkg/scoreopts/*
+  - proto/vmafx_api.proto
+  - api/openapi/components.gen.yaml
+  - ffmpeg-patches/src/vf_vmafx_options.h
 invariant: Generated from vmafx.toml, never hand-edit; engine code calls vmaf_engine_ only; frame ref = picture VmafRef.
 ---
 <!-- markdownlint-disable MD013 -->
@@ -31,6 +36,15 @@ invariant: Generated from vmafx.toml, never hand-edit; engine code calls vmaf_en
 - Addition (ADR-1897): bump `abi_version`. 0.x: `since` = current minor (patch bump) or newer, never older node. From 1.0: shipped node frozen, `since` = newer minor. Members (fields, enum values, bits) inherit parent `since` unless set.
 - Schema-1 definitions (prototype #2173) read through `loader.upgrade()`, for `--abi-check` only; keep while any comparison base predates schema 2.
 - One generator: missing definition feature goes into `scripts/codegen/vmafx_api/`, never worked around by hand-written output.
+
+## Option groups (RC4 WP8, ADR-2044)
+
+- Every scoring option of every surface = one `[[option_groups.options]]` entry. Emitters: `emit_cli` (`core/tools/cli_options.gen.inc`, included by `cli_parse.cpp` in its anon namespace), `emit_mcp` (`options.gen.json` x2: `pkg/scoreopts/`, `mcp-server/vmaf-mcp/src/vmaf_mcp/`), `emit_proto` (`proto/vmafx_api.proto`), `emit_openapi` (`api/openapi/components.gen.yaml` + splice into `vmafx-server-v1.yaml`), `emit_ffmpeg_options` (`ffmpeg-patches/src/vf_vmafx_options.h`, LGPL-2.1-or-later: compiled into FFmpeg), `emit_option_docs` (marker regions of 4 doc pages, `splice.py`).
+- Library default = `default_macro` (C macro name); never a literal default model. `macros.py` reads value from `core/include/libvmaf/*.h` into `library_defaults` (drift check catches header change).
+- Order = usage order + MCP `extra` argv order (parity tests pin it). New CLI spelling additive only; `core/test/test_cli_option_table.cpp` frozen list of 59 old spellings (027aebc56); master's `--check-sample-range` / `--list-backends` join definition on rebase.
+- `reserved` option: every surface accepts only default (device-target size / scaling until RC5). `view_distance` range [3, 24]: default ADM CSF refuses < 3.
+- Struct `proto = "Name"` -> proto message + OpenAPI schema, field number = field order (append-only struct = stable numbers); handle/ptr/callback field = generation error.
+- Proto/OpenAPI regen chain: see `gen/go/AGENTS.md`. Region files: drift check compares whole file; lost marker = generation error.
 
 ## Headers, symbols, link
 

@@ -49,8 +49,11 @@ interface; see [rest.md](rest.md) for the HTTP endpoints (`/v1/score`,
 
 ## Proto definition
 
-The canonical source of truth is `proto/vmafx.proto`. Generated stubs live under
-`gen/go/` and are vendored in-tree.
+The services are defined in `proto/vmafx.proto`. The scoring options
+(`ScoreOptions`) and the provenance record (`Provenance`) come from
+`proto/vmafx_api.proto`, which is generated from `core/api/vmafx.toml`; the
+[scoring API contract](api-contract.md) lists every option and says how the
+API may change. Generated stubs live under `gen/go/` and are vendored in-tree.
 
 ```protobuf
 service VmafxScoring {
@@ -61,41 +64,60 @@ service VmafxScoring {
 }
 
 message ScoreRequest {
-  string reference = 1;  // absolute path to reference YUV/Y4M
-  string distorted = 2;  // absolute path to distorted YUV/Y4M
-  string model     = 3;  // model name, e.g. "vmaf_v0.6.1"; empty defaults to vmaf_v1.0.16_3d0h
+  string reference = 1;          // absolute path to reference YUV/Y4M
+  string distorted = 2;          // absolute path to distorted YUV/Y4M
+  string model     = 3;          // model name, e.g. "vmaf_v0.6.1"; empty defaults to vmaf_v1.0.16_3d0h
+  ScoreOptions options = 4;      // geometry, backend, threads, precision, ... (generated)
 }
 
 message ScoreResponse {
-  double              score    = 1;  // aggregate VMAF score
-  map<string, double> features = 2;  // per-feature pooled-mean values
+  double              score      = 1;  // aggregate VMAF score
+  map<string, double> features   = 2;  // per-feature pooled-mean values
+  ScoreProvenance     provenance = 3;  // how the score was made; in every response
 }
 ```
 
-Regenerate stubs with:
+Scores are lossless (`options.precision` `max`) unless the request names
+another precision. A raw `.yuv` pair needs `width`, `height`, `pixel_format`
+and `bitdepth` in `options`; an option value the contract refuses is
+`INVALID_ARGUMENT`.
+
+Regenerate stubs after changing either proto file (the generated messages come
+from `python3 scripts/codegen/vmafx-api.py --write` first):
 
 ```bash
 buf generate proto   # requires buf ≥ v1.30 and the buf CLI on PATH
+python3 scripts/proto/postprocess_gen_go.py
 ```
 
 ## Example: grpcurl
 
 ```bash
 grpcurl -plaintext \
-    -d '{"reference":"/data/ref.yuv","distorted":"/data/dis.yuv","model":"vmaf_v0.6.1"}' \
+    -d '{"reference":"/data/ref.yuv","distorted":"/data/dis.yuv","model":"vmaf_v0.6.1",
+         "options":{"width":576,"height":324,"pixelFormat":"420","bitdepth":8}}' \
     localhost:9090 vmafx.v1.VmafxScoring/Score
 ```
 
-Expected response (Netflix golden pair):
+Expected response (Netflix golden pair; `grpcurl` prints proto JSON names in
+lowerCamelCase):
 
 ```json
 {
-  "score": 76.6683,
+  "score": 76.66783149135578,
   "features": {
-    "vmaf":       76.6683,
-    "vif_scale0": 0.8912,
-    "adm2":       0.9876,
-    "motion2":    2.3456
+    "vmaf":            76.66783149135578,
+    "integer_adm2":    0.9345057762923995,
+    "integer_motion2": 3.894360826611791
+  },
+  "provenance": {
+    "library": {"abiMinor": 1, "abiPatch": 4, "activeBackend": "cpu", "nExtractors": 3,
+                "version": "v1.0.0-rc.2-529-gb8b3af281"},
+    "model": "vmaf_v0.6.1",
+    "modelSha256": "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3",
+    "backendUsed": "cpu",
+    "featureBackends": [{"extractor": "adm", "backend": "cpu"}],
+    "precision": "max"
   }
 }
 ```

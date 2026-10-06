@@ -352,10 +352,10 @@ components:
           description: "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. Unset: max."
         view_distance:
           type: "number"
-          minimum: 0.75
+          minimum: 3.0
           maximum: 24.0
           format: "double"
-          description: "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value."
+          description: "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set)."
         display_height:
           type: "integer"
           minimum: 1

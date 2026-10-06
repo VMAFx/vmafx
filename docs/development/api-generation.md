@@ -90,7 +90,7 @@ standard library). It never runs during a normal build.
 | `[[structs]]` | Structs, `*_INIT` macros, layout asserts | `sized = true` adds `struct_size` first; fields are fixed-width scalars, `ptr`, `cstr`, `size`, `uptr`, nested structs, handles or callbacks; `count = N` makes a fixed array (1 to 64); `const = true` on a handle field; a sized struct is never embedded in an unsized one; no by-value cycle |
 | `[[functions]]` | Declarations, version-script and export lines, Python signatures, reference rows | Known types and pass modes; the `VmafxError **` parameter is last and the result is a status |
 | `[[compat]]` | `libvmaf.h` function bodies on the new API | The target exists; a `build` field map covers every field of the struct it fills |
-| `[[option_groups]]` | Nothing yet: the CLI, FFmpeg, MCP and proto surfaces are emitted from them in a later work package | `surfaces` is a subset of `cli`, `ffmpeg`, `mcp`, `proto`; every option has a spelling for each, a default inside its `range` or `enum`, and spellings unique per surface |
+| `[[option_groups]]` | Every scoring surface: the `vmaf` option table and usage, the MCP schemas and argument-vector spec, `ScoreOptions`, the OpenAPI components, the `vmafx` filter's AVOption table, the documentation option tables ([Option groups](#option-groups)) | `surfaces` is a subset of `cli`, `ffmpeg`, `mcp`, `proto`; an option's surfaces are a subset of its group's and it has a spelling for each; defaults inside their `range`, `enum` or `choices`; spellings, short letters and proto field numbers (per message) unique; option names unique across groups |
 
 Every top-level entry carries `header` (except status codes and option groups)
 and `since`. Enum values, flag bits, struct fields and options inherit their
@@ -122,6 +122,12 @@ its C output.
 | `core/test/test_vmafx_abi_layout.c` | `_Static_assert` of every struct size, alignment, field offset, array length and constant |
 | `bindings/python/vmafx/_api.py` | ctypes binding; checks its layouts at import |
 | `docs/api/vmafx/reference.md` and one page per header | [Reference index](../api/vmafx/reference.md) |
+| `core/tools/cli_options.gen.inc` | The `vmaf` short option string, long-only identifiers, `long_opts[]` and usage lines |
+| `pkg/scoreopts/options.gen.json`, `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json` | MCP tool input schemas, server-side options, argument-vector spec, command-line flags, library defaults (one text, two packages) |
+| `proto/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
+| `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
+| `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
+| Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
 
 Every generated C file is already in the repository's clang-format style (long
 `*_INIT` macros sit between `clang-format off` / `on` markers) and the Python
@@ -132,6 +138,59 @@ While the VMAFx functions share `libvmaf.so` with the libvmaf API,
 exports: they stay unversioned and only `vmafx_*` symbols get version nodes.
 The library split (ADR-1852 decision D3) sets it to `true`, which hides every
 symbol the script does not list.
+
+## Option groups
+
+Every scoring option of every surface is one entry of an option group
+([ADR-2044](../adr/2044-vmafx-option-groups-scoring-contract.md)). Groups and
+options are TOML array tables:
+
+```toml
+[[option_groups]]
+name = "threads"
+since = "0.1"
+doc = "Worker threads of the feature extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "threads"
+type = "uint"
+doc = "Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread)."
+cli = ["--threads"]
+ffmpeg = "threads"
+aliases = ["n_threads"]
+mcp = "threads"
+proto = { field = 14 }
+```
+
+| Key | Meaning |
+| --- | --- |
+| `type` | `bool`, `int`, `uint`, `float`, `string`, `enum` (`enum = [...]`) or `flags` (several values of `enum = [...]`) |
+| `default` | The value an unset option means; omitted when the consumer's own behaviour applies (documented in `doc`) |
+| `default_macro` | The default is the library's, named by this C macro (`VMAF_DEFAULT_MODEL_VERSION`); never a literal. Surfaces that cannot read a header get its value from the generated file, so the drift check fails when the header moves |
+| `surface_defaults` | Per-surface defaults (`{ mcp = "json" }`) |
+| `range`, `choices` | `[min]` or `[min, max]` of a number; the integers an integer option takes |
+| `surfaces` | The surfaces of this option (default: the group's) |
+| `repeat` | `true` or the surfaces on which the option is given several times |
+| `cli`, `cli_short`, `cli_meta`, `cli_id`, `cli_values` | Long spellings (the first is the usage name), short letter, usage placeholder, getopt identifier (default `'x'` for a short option, `ARG_<NAME>` otherwise), one switch per enum value (`{ xml = "--xml" }`) |
+| `ffmpeg`, `aliases` | Filter option name and upstream aliases |
+| `mcp`, `mcp_required` | MCP argument name; required in the tools of the group's `mcp_tools` |
+| `proto` | `{ field = N }`, unique in the group's `proto_message` (default `ScoreOptions`) |
+| `argv`, `argv_flag`, `model_suffix` | How a server passes it to `vmaf`: `core` (placed by the server), `extra` (appended in definition order) or `none`; the flag when not the first long spelling; a model-spec suffix (`":adm.adm_norm_view_dist={}"`) instead of a flag |
+| `reserved` | Every surface accepts only the default; the text says why |
+
+Order matters: `vmaf --help` lists options in definition order and both MCP
+servers append the `extra` flags in that order. A struct with
+`proto = "Name"` becomes a proto message and an OpenAPI schema with one field
+per struct field (numbers in field order, so they never change); a field
+with no proto form (a handle, a pointer, a callback) stops generation.
+
+The generated proto needs `buf generate proto` afterwards (the template in
+`buf.gen.yaml`, then `python3 scripts/proto/postprocess_gen_go.py`) and the
+OpenAPI change needs the server stubs regenerated
+(`gen/go/AGENTS.md`). `buf breaking proto --against '.git#ref=refs/remotes/origin/master,subdir=proto'`
+must stay clean.
 
 ## Gates
 
@@ -145,6 +204,9 @@ symbol the script does not list.
 | Link of `libvmaf.so` | The version script names a function no source defines (`--no-undefined-version`) | `test_vmafx_api_symbols.py` links without one listed function |
 | Validation (every run) | Any rule in the table above | Planted definitions in the generator tests |
 | `test_vmafx_api_generator` (Meson, `fast`) | Any of the generator tests fails | Runs `scripts/codegen/tests/test_*.py` |
+| `test_cli_option_table` (Meson, `fast`) | A long spelling or short option the hand-written CLI table accepted is gone, takes or drops an argument, or no longer reaches its short option | Removing `--tiny_model` from the definition |
+| `test_vmafx_score_contract` (Meson, `contract`) | The CLI, the C API, gRPC `Score` and `POST /v1/score` disagree on a score or on the library build | A server mapping that drops `subsample` |
+| `TestEmbeddedFileEqualsThePythonServerCopy` (`go test ./pkg/scoreopts`) | The two copies of `options.gen.json` differ | An edited copy |
 
 The compiler, `clang-format` and linker cases of the generator tests skip,
 with the reason, when the tool is not installed.

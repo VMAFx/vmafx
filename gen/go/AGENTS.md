@@ -21,4 +21,8 @@ If future `protoc-gen-go` changes call shape, script `RAW_DESC_CALL` needle stop
 
 ## Rebase-sensitive invariant: OpenAPI stubs follow the contract
 
-`gen/go/oapi/vmafx_server_v1.gen.go` = `oapi-codegen --config api/openapi/oapi-codegen.yaml api/openapi/vmafx-server-v1.yaml` (v2.7.0) + the 8-line SPDX / regenerate header on top. Embedded spec served at `/openapi.json`. Any edit of the YAML regenerates it in the same PR; `cmd/vmafx-server/openapi_spec_drift_test.go::TestEmbeddedSpecMatchesContract` fails otherwise (operationId capitalisation of the generator ignored). Contract texts naming the default model checked by `scripts/ci/check-default-model-single-source.sh`.
+`gen/go/oapi/vmafx_server_v1.gen.go` = `oapi-codegen --config api/openapi/oapi-codegen.yaml api/openapi/vmafx-server-v1.yaml` (v2.7.0) + 8-line SPDX / regenerate header on top. Embedded spec served at `/openapi.json`. Any YAML edit regenerates it in same PR; `cmd/vmafx-server/openapi_spec_drift_test.go::TestEmbeddedSpecMatchesContract` fails otherwise (generator's operationId capitalisation ignored). Contract texts naming default model checked by `scripts/ci/check-default-model-single-source.sh`.
+
+## Rebase-sensitive invariant: generated proto messages
+
+`proto/vmafx_api.proto` (ScoreOptions, Provenance) itself generated: `python3 scripts/codegen/vmafx-api.py --write` from `core/api/vmafx.toml` (ADR-2044). Same dir + package + go_package as `proto/vmafx.proto` -> one Go package `gen/go`. Order: definition -> `vmafx-api.py --write` -> `buf generate proto` -> `postprocess_gen_go.py`. OpenAPI schemas spliced into `api/openapi/vmafx-server-v1.yaml` by same generator -> oapi-codegen + 8-line header. `buf breaking proto --against '.git#ref=refs/remotes/origin/master,subdir=proto'` clean; `buf lint` PACKAGE_DIRECTORY_MATCH on both files pre-existing (moving `vmafx.proto` = FILE break).

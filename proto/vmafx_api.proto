@@ -126,7 +126,9 @@ message ScoreOptions {
   // 16, 17. Unset: max.
   optional string precision = 40;
 
-  // Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value.
+  // Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The
+  // ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes,
+  // which these options do not set).
   optional double view_distance = 50;
 
   // Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's

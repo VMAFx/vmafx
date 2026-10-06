@@ -101,7 +101,7 @@ reproduce the numbers of releases before 1.0.0-rc.4.
 | `output_fmt` | `json` \| `xml` \| `csv` \| `sub` | | `json` | `vmaf_score`, `vmaf_score_encoded` | Report format; json and xml carry the backend receipt. |
 | `csv` | bool | | `false` | `vmaf_score`, `vmaf_score_encoded` | Write the report as CSV; the same as output_fmt csv. |
 | `sub` | bool | | `false` | `vmaf_score`, `vmaf_score_encoded` | Write per-frame scores as subtitles; the same as output_fmt sub. |
-| `view_distance` | float 0.75..24 | | | `vmaf_score`, `vmaf_score_encoded` | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. |
+| `view_distance` | float 3..24 | | | `vmaf_score`, `vmaf_score_encoded` | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set). |
 | `display_height` | uint >= 1 | | | `vmaf_score`, `vmaf_score_encoded` | Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value. |
 | `target_width` | uint | | `0` | `vmaf_score`, `vmaf_score_encoded` | Width of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
 | `target_height` | uint | | `0` | `vmaf_score`, `vmaf_score_encoded` | Height of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
@@ -121,6 +121,10 @@ The server exec's the local `vmaf` binary with, effectively:
 ```bash
 vmaf -r <ref> -d <dis> --width <w> --height <h> -p <pixfmt> -b <bitdepth> \
      -m <model> --precision <precision> -q --json -o <tmp>
+# <model> is the caller's model, or version=<library default> when it is
+# omitted, with :disable_clip / :enable_transform / :adm.* suffixes appended
+# for the model switches; then --subsample when > 1, then the optional
+# arguments' flags in the order of the table above;
 # plus per-backend flags disabling sibling backends:
 #   backend=cpu   → --no_cuda --no_sycl --no_hip --no_metal
 #   backend=cuda  → --no_sycl --no_hip --no_metal
@@ -210,42 +214,38 @@ Response body (abridged):
 
 ### Optional scoring parameters
 
-These optional parameters (ADR-1117) are accepted on **both**
-`vmaf_score` and `vmaf_score_encoded`. Each maps onto a `vmaf` CLI flag
-verified against `core/tools/cli_parse.c`, and is forwarded **only when
-supplied** — omitting them leaves the score identical to a call without
-them, so existing callers are unaffected. The Go (`cmd/vmafx-mcp`) and
-Python (`mcp-server/vmaf-mcp`) servers expose a byte-identical schema for
-all of them.
+The optional arguments of the [input schema](#input-schema) table (ADR-1117)
+are accepted on **both** `vmaf_score` and `vmaf_score_encoded`. Each reaches
+the `vmaf` flag named in its description and is forwarded **only when
+supplied**: omitting them leaves the score identical to a call without them.
+Both servers read their schemas and the flag of every argument from the same
+generated file, so they validate the same values and pass the same flags in
+the same order.
 
-#### Tiny-AI / DNN scoring
+**Input validation.** MCP inputs are untrusted and are checked against the
+generated schema before the CLI is spawned:
 
-This is the fork's ONNX tiny-model surface (previously unreachable over
-MCP).
+- An enumerated argument (`tiny_device`, `dnn_ep`, `tiny_resize`, `aom_ctc`,
+  `nflx_ctc`, `pixfmt`, `backend`, `precision`, `target_scaling`) refuses a
+  value outside its list.
+- A numeric argument refuses a value outside its range (`tiny_crf` 0 to 63,
+  `frame_cnt` and `subsample` at least 1, `view_distance` 3 to 24, the
+  device indices and masks at least 0); `bitdepth` is one of 8, 10, 12, 16.
+  `threads` 0 is accepted and means the CLI's single-threaded scoring.
+- `feature` is a list of non-empty strings; any other entry refuses the call
+  (it used to be dropped silently).
+- Conflicting `tiny_device` and `dnn_ep` values, and `csv` / `sub` that
+  disagree with `output_fmt`, are refused.
+- The reserved device-target arguments (`target_width`, `target_height`,
+  `target_scaling`) accept only their defaults until device-targeted scoring
+  lands in RC5; another value is refused with that reason.
 
-| Field               | Type / values                                                                                                              | CLI flag              | Notes                                                                                              |
-| --- | --- | --- | --- |
-| `tiny_model`        | string (path)                                                                                                              | `--tiny-model`        | Load a tiny ONNX model alongside the classic models.                                               |
-| `tiny_device`       | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--tiny-device` (= `--dnn-ep`) | ONNX Runtime execution provider. Default `auto`.                                       |
-| `dnn_ep`            | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--dnn-ep` (= `--tiny-device`) | Alias for `tiny_device` matching the `--dnn-ep` CLI flag.                                          |
-| `tiny_threads`      | integer `≥ 0`                                                                                                               | `--tiny-threads`      | CPU EP intra-op threads (`0` = ORT default).                                                        |
-| `tiny_fp16`         | boolean                                                                                                                     | `--tiny-fp16`         | Request fp16 IO where the EP supports it.                                                           |
-| `tiny_model_verify` | boolean                                                                                                                     | `--tiny-model-verify` | Require Sigstore-bundle verification before loading the model.                                      |
-| `tiny_codec`        | string                                                                                                                      | `--tiny-codec`        | Encoder name for codec-aware tiny models (e.g. `libx264`).                                          |
-| `tiny_preset`       | string                                                                                                                      | `--tiny-preset`       | Encoder preset string for codec-aware tiny models.                                                  |
-| `tiny_crf`          | integer `0..63`                                                                                                            | `--tiny-crf`          | CRF / QP for codec-aware tiny models (clamped to `0..63`).                                          |
-| `tiny_resize`       | `bilinear \| nearest \| bicubic \| disabled`                                                                                | `--tiny-resize`       | Auto-resize filter for NCHW tiny models on a dimension mismatch. Default `disabled` (hard-errors).  |
-| `no_reference`      | boolean                                                                                                                     | `--no-reference`      | No-reference (NR) mode — see below.                                                                 |
+The error names the argument: `invalid tiny_crf 64: must be <= 63`.
 
-**Input validation.** MCP inputs are untrusted and validated strictly before
-spawning the CLI:
-
-- Enums (`tiny_device`, `dnn_ep`, `tiny_resize`, `aom_ctc`, `nflx_ctc`,
-  `pixfmt`, `backend`) reject unknown values.
-- Conflicting `tiny_device` and `dnn_ep` values are rejected.
-- Numeric bounds are enforced (`tiny_crf` in `0..63`, `tiny_threads ≥ 0`,
-  `threads ≥ 1`, `frame_cnt ≥ 1`, `frame_skip_ref ≥ 0`, `frame_skip_dist ≥ 0`,
-  `subsample ≥ 1`, `bitdepth` in `{8, 10, 12, 16}`).
+**Model switches.** `disable_clip`, `enable_transform`, `view_distance`
+(ADM `adm_norm_view_dist`) and `display_height` (ADM
+`adm_ref_display_height`) are appended to the model specification
+(`version=...:disable_clip:adm.adm_norm_view_dist=4.5`), each once.
 
 **No-reference mode.** When `no_reference` is set, only the distorted
 picture is scored, so `no_reference` **requires** `tiny_model` (an NR
@@ -256,50 +256,15 @@ the `ref` argument becomes optional on `vmaf_score`: omit it, or pass any
 valid YUV of matching geometry (it is not consumed by the scorer). For
 `vmaf_score_encoded` the reference video is still decoded as usual.
 
-#### Feature selection and CTC presets
+**CTC presets.** The `aom_ctc` / `nflx_ctc` presets configure a fixed model
+and feature set and are **mutually exclusive with manual feature / model
+configuration**: combining them with `feature` or a custom `model` stacks both
+configurations (the CLI does not reject it, but the result is rarely what you
+want).
 
-| Field      | Type / values                                            | CLI flag      | Notes                                                                                          |
-| --- | --- | --- | --- |
-| `feature`  | array of strings                                         | `--feature`   | Each entry becomes a repeated `--feature` flag. Use the libvmaf `name[=key=val:...]` grammar.   |
-| `aom_ctc`  | `v1.0 \| v2.0 \| v3.0 \| v4.0 \| v5.0 \| v6.0 \| v7.0`    | `--aom_ctc`   | AOM Common Test Conditions preset.                                                             |
-| `nflx_ctc` | `v1.0`                                                    | `--nflx_ctc`  | Netflix Common Test Conditions preset.                                                         |
-
-The `aom_ctc` / `nflx_ctc` presets configure a fixed model + feature set
-and are **mutually exclusive with manual feature/model configuration** —
-combining them with `feature` or a custom `model` stacks both
-configurations (the CLI does not reject it, but the result is rarely what
-you want).
-
-#### Frame-range and worker controls
-
-| Field             | Type          | CLI flag            | Notes                                                  |
-| --- | --- | --- | --- |
-| `threads`         | integer `≥ 1` | `--threads`         | Worker threads (capped to hardware cores by the CLI).  |
-| `frame_cnt`       | integer `≥ 1` | `--frame_cnt`       | Maximum number of frames to process.                   |
-| `frame_skip_ref`  | integer `≥ 0` | `--frame_skip_ref`  | Skip the first N reference frames.                     |
-| `frame_skip_dist` | integer `≥ 0` | `--frame_skip_dist` | Skip the first N distorted frames.                     |
-| `no_prediction`   | boolean       | `--no_prediction`   | Extract features only; skip VMAF prediction.           |
-
-#### Device selectors
-
-Control hardware device selection and hardware capability masks on
-heterogeneous systems (#1240).
-
-| Field          | Type          | CLI flag         | Notes                                                        |
-| --- | --- | --- | --- |
-| `cpumask`      | integer `≥ 0` | `--cpumask`      | Bitmask restricting permitted CPU SIMD instruction sets.     |
-| `gpumask`      | integer `≥ 0` | `--gpumask`      | Bitmask restricting permitted GPU operations.                |
-| `sycl_device`  | integer `≥ 0` | `--sycl_device`  | Select SYCL GPU device by index.                             |
-| `hip_device`   | integer `≥ 0` | `--hip_device`   | Select HIP GPU device by index.                              |
-| `metal_device` | integer `≥ 0` | `--metal_device` | Select Metal GPU device by index.                            |
-
-#### Output format
-
-Select the serialization format emitted by the underlying `vmaf` engine (#1240).
-
-| Field        | Type / values                       | CLI flag                           | Notes                                                              |
-| --- | --- | --- | --- |
-| `output_fmt` | `json \| xml \| csv \| sub`         | `--json \| --xml \| --csv \| --sub`| Output format. Default `json`. Non-JSON formats return a structured text payload (`{"format": ..., "output": ...}`). |
+**Output format.** `output_fmt` (`json` by default; `csv` and `sub` also as
+boolean shorthands) selects the report format. Non-JSON formats return a
+structured text payload (`{"format": ..., "output": ...}`).
 
 ## `list_models`
 
@@ -606,17 +571,10 @@ took 48 s per frame on four CPU cores and peaked at 8.6 GB of memory.
 
 ### Input schema
 
-| Field      | Type                                                | Required | Default                  |
-| --- | --- | --- | --- |
-| `ref`      | string (path to reference YUV)                      | yes      | —                        |
-| `dis`      | string (path to distorted YUV)                      | yes      | —                        |
-| `width`    | integer                                             | yes      | —                        |
-| `height`   | integer                                             | yes      | —                        |
-| `pixfmt`   | `"420"` / `"422"` / `"444"`                         | yes      | —                        |
-| `bitdepth` | 8 / 10 / 12 / 16                                    | yes      | —                        |
-| `model`    | string                                              | no       | `"version=vmaf_v0.6.1"`  |
-| `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"` / `"hip"` / `"metal"` | no       | `"auto"`                 |
-| `n`        | integer in `[1, 32]`                                | no       | `5`                      |
+The arguments whose **Tools** column names `describe_worst_frames` in the
+[`vmaf_score` input schema](#input-schema) table: `ref`, `dis`, `width`,
+`height`, `pixfmt`, `bitdepth`, `model` (the library default when omitted),
+`backend`, and `n` (1 to 32, default 5).
 
 ### Behaviour
 
@@ -769,19 +727,12 @@ Requires `ffmpeg` and `ffprobe` on `PATH`.
 
 ### Input schema
 
-| Field                | Type                                                            | Required | Default                  | Notes                                          |
-| --- | --- | --- | --- | --- |
-| `reference_encoded`  | string (path)                                                   | yes      | —                        | Reference encoded video; must be under an allowlisted root |
-| `distorted_encoded`  | string (path)                                                   | yes      | —                        | Distorted encoded video; same allowlist        |
-| `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
-| `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
-| `subsample`          | integer `≥ 1`                                                   | no       | `1`                      | Score every Nth frame (1 = every frame)        |
-| `precision`          | string                                                          | no       | `"legacy"`               | Passed to `--precision`                        |
-
-All [optional scoring parameters](#optional-scoring-parameters) accepted
-by `vmaf_score` (the `tiny_*` / `no_reference` tiny-AI surface,
-`feature`, `aom_ctc`/`nflx_ctc`, and the frame-range controls) are also
-accepted here and forwarded to the underlying `vmaf` run (ADR-1117).
+The arguments whose **Tools** column names `vmaf_score_encoded` in the
+[`vmaf_score` input schema](#input-schema) table: `reference_encoded` and
+`distorted_encoded` (required paths under an allowlisted root) and every
+[optional scoring parameter](#optional-scoring-parameters) (`model` is the
+library default when omitted), forwarded to the underlying `vmaf` run
+(ADR-1117).
 
 ### Behaviour
 

@@ -397,15 +397,18 @@ into the report.
 
 ### Backend receipt in JSON output
 
-A JSON report ends with two top-level keys that say where the features were
-computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
+A JSON report ends with three top-level keys that say where the features were
+computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)) and which build
+computed them ([ADR-2044](../adr/2044-vmafx-option-groups-scoring-contract.md)):
 
 ```json
 "backend_used": "sycl",
 "feature_backends": [
   {"extractor": "ciede_sycl", "backend": "sycl"},
   {"extractor": "brisque", "backend": "cpu"}
-]
+],
+"provenance": {"abi_major": 0, "abi_minor": 1, "abi_patch": 4, "active_backend": "sycl",
+               "n_extractors": 2, "version": "v1.0.0-rc.4"}
 ```
 
 - **`backend_used`** is `cuda`, `sycl`, `hip` or `metal` when at least one
@@ -417,9 +420,14 @@ computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
   model needs and reflects the CPU replacements made after the first frame, so
   a model feature that fell back to the CPU appears as a `cpu` entry.
 
+- **`provenance`** is the library's provenance record of the run: the ABI
+  version of the library, the backend imported into the context, the number of
+  registered extractors and the build version. The scoring server copies it
+  into every response ([scoring API contract](../server/api-contract.md)).
+
 A run mixed device twins and CPU extractors when `backend_used` names a device
 and `feature_backends` holds at least one `cpu` entry. XML, CSV and SUB output
-carry neither key.
+carry none of the three keys.
 
 ### Score precision
 
