@@ -3393,6 +3393,18 @@ static int translate_picture(VmafContext *vmaf, VmafPicture *pic, VmafPicture *p
     case VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE:
         *pic_device = *pic;
         return translate_picture_device(vmaf, pic, pic_host, hw_flags);
+    case VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE:
+        /* A frame of the VMAFx API in HIP device memory (ADR-2092) reaches
+         * the HIP twins in the host slot, where they look for their
+         * pictures; a CUDA twin cannot read it, and it is never copied. */
+        *pic_host = *pic;
+        if (hw_flags & HW_FLAG_DEVICE) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "a CUDA extractor would read a frame in HIP device "
+                                           "memory; device frames are read by twins of their "
+                                           "backend only\n");
+            return -ENOTSUP;
+        }
+        return 0;
     default:
         return -EINVAL;
     }
@@ -3842,6 +3854,27 @@ static int cuda_order_pictures_against_producer(VmafContext *vmaf, const ReadPic
 }
 #endif /* HAVE_CUDA */
 
+#ifdef HAVE_HIP
+/* A frame of the VMAFx API in HIP device memory (ADR-2092) is read by HIP
+ * twins only: any other extractor would read device memory as host memory,
+ * and a device frame is never copied to the host. Admission refuses such
+ * extractors before the frame is counted; this refuses one that appears
+ * later (a twin's context fallback to the CPU for a tiny frame). */
+static int hip_refuse_other_reader(const VmafFeatureExtractorContext *fex_ctx,
+                                   const VmafPicture *ref)
+{
+    const VmafPicturePrivate *const priv = ref->priv;
+    if (!priv || priv->buf_type != VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE ||
+        (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_HIP))
+        return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "extractor %s would read a frame in HIP device memory; device frames of the VMAFx "
+             "API are read by HIP twins only and never copied to the host\n",
+             fex_ctx->fex->name);
+    return -ENOTSUP;
+}
+#endif
+
 static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFrame *fr,
                                              unsigned index)
 {
@@ -3881,6 +3914,11 @@ static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFram
 #else
         VmafPicture *ref = fr->ref;
         VmafPicture *dist = fr->dist;
+#endif
+#ifdef HAVE_HIP
+        const int refused = hip_refuse_other_reader(fex_ctx, ref);
+        if (refused)
+            return refused;
 #endif
         const int err_one = read_pictures_dispatch_one(vmaf, fex_ctx, ref, dist, index);
         if (err_one)

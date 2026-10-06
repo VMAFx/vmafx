@@ -5,6 +5,10 @@ paths:
   - core/src/vmafx/frame_import*.c
   - core/src/vmafx/frame_import_hooks.h
   - core/src/vmafx/frame_pool.c
+  - core/src/vmafx/gl_sync.c
+  - core/src/vmafx/sync_file.c
+  - core/src/vmafx/release_events.c
+  - core/src/vmafx/import_convert_kernels.h
   - core/src/compat/gcc/stdatomic.h
   - core/test/test_vmafx_import_*
   - core/test/vmafx_import_test_util.h
@@ -26,4 +30,5 @@ invariant: Import never host-copies; release fence at last picture ref; D8 wait 
 - C11 atomics used here (`atomic_uintptr_t`, `atomic_exchange`, CAS, `_explicit` orders) must exist in fallback `core/src/compat/gcc/stdatomic.h` too; new atomic op -> add it there.
 - Test hooks (hidden symbols, static-lib tests only): counters `vmafx_count_host_copy()` (every host copy site calls it; lanes assert 0), `vmafx_count_conversion()`, import attempts; switches SKIP_ACQUIRE_WAIT, EARLY_RELEASE, FORCE_HOST_COPY; planted import status; residency override; virtual clock (`vmafx_test_set_virtual_clock()`: fence waits read it, each poll advances it by `VMAFX_FENCE_POLL_NS`, no sleep) + `vmafx_test_last_retry_wait_ns()` so a 10 s bound is tested without sleeping. Test that sets one clears it.
 - Tests: `test_vmafx_import_api` (public), `test_vmafx_import_bitexact` (fixtures + synthetic 4K, NV12 / P010 / P016 == host frames, one import two contexts), `test_vmafx_import_fence` (Linux; acquire order, release canary incl. worker threads, host-copy counter, D8, admission). Each planted switch must make its test fail.
-- Backend lanes plug in through `lane` / `lane_release` (`VmafxDevice`, `VmafxFrame`) and `lane_state` (`VmafxContext`); `vmafx_frame_release()` runs the lane's release before the release callback (`VmafxFrameImport.release`, ABI 0.1.4). CUDA lane: `core/src/cuda/vmafx_cuda.h`, invariants in `core/src/cuda/AGENTS.md` (ADR-2023). Feature registration on a device context picks the device twin (`register.c`).
+- Backend lanes plug in through `lane` / `lane_release` (`VmafxDevice`, `VmafxFrame`) and `lane_state` (`VmafxContext`); `vmafx_frame_release()` runs the lane's release before the release callback (`VmafxFrameImport.release`, ABI 0.1.4). CUDA lane: `core/src/cuda/vmafx_cuda.h`, invariants in `core/src/cuda/AGENTS.md` (ADR-2023). HIP lane: `core/src/hip/vmafx_hip.h`, `core/src/hip/AGENTS.d/vmafx-device-frames.md` (ADR-2092). Feature registration on a device context picks the device twin (`register.c`).
+- Shared by lanes, one copy each: GL sync acquire + wait (`gl_sync.c`), sync_file poll (`sync_file.c`, Linux; `vmafx_fence_wait()` uses it for SYNC_FILE fences without a device), release-event table (`release_events.c`: event handed out pending until recorded at last ref; full table refuses), NV12 / P010 / P016 kernels (`import_convert_kernels.h`, compiled by nvcc and hipcc). `test_vmafx_fence_kinds` covers them on the CPU.

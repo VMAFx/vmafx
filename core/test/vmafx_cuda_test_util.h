@@ -102,30 +102,16 @@ typedef struct VcPlanes {
     uint32_t n;
 } VcPlanes;
 
-/* Bytes of the rows of each producer plane of `d` laid out as `pix_fmt`
- * (YUV420P planar, NV12 / P010 / P016 semi-planar), with `pad` bytes after
- * each row. Aligned (`skew` 0): every plane starts 8-byte aligned (not at
- * the allocation's start) with a pitch a multiple of 8, as the CUDA twins
- * read bound planes; `skew` > 0 starts each plane `skew` bytes later and
- * leaves the pitch unrounded. */
+/* The layout of vt_device_layout() in `p` (rows and bytes per row of each
+ * producer plane). */
 static inline void vc_layout(const VmafxFrameDesc *d, uint32_t pix_fmt, size_t pad, size_t skew,
                              VcPlanes *p, size_t rows[3], size_t row_bytes[3])
 {
-    unsigned w[3];
-    unsigned h[3];
-    size_t row[3];
-    vt_plane_geometry(d, w, h, row);
-    const bool semi = pix_fmt != VMAFX_PIXEL_FORMAT_YUV420P;
-    p->n = semi ? 2u : 3u;
-    uint64_t at = 64u;
-    for (uint32_t i = 0; i < 3u; i++) {
-        row_bytes[i] = i < p->n ? row[i] * (semi && i == 1u ? 2u : 1u) : 0u;
-        rows[i] = i < p->n ? h[i] : 0u;
-        const uint64_t pitch = row_bytes[i] ? row_bytes[i] + pad : 0u;
-        p->pitch[i] = skew ? pitch : (pitch + 7u) & ~(uint64_t)7u;
-        p->offset[i] = at + skew;
-        at = (p->offset[i] + p->pitch[i] * rows[i] + 64u) & ~(uint64_t)63u;
-    }
+    VtDeviceLayout layout;
+    (void)vt_device_layout(d, pix_fmt, pad, skew, &layout, rows, row_bytes);
+    memcpy(p->offset, layout.offset, sizeof(p->offset));
+    memcpy(p->pitch, layout.pitch, sizeof(p->pitch));
+    p->n = layout.n;
 }
 
 /* Upload the tightly packed planar frame `planar` into device memory of the

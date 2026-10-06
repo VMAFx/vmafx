@@ -29,6 +29,10 @@
  *  vmaf_hip_picture_upload_staged() reads the picture into an
  *  extractor-owned pinned buffer instead and returns without waiting for the
  *  device copies (ADR-1377, T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19).
+ *
+ *  Both take device pictures of the VMAFx API too (RC4 WP3, ADR-2092): the
+ *  copies are device to device on the picture's library stream and the
+ *  caller's stream waits for them on the device (picture_hip.h).
  */
 
 #include <stddef.h>
@@ -48,6 +52,7 @@
 #include <hip/hip_runtime_api.h>
 
 #include "hip_handle.h"
+#include "picture.h"
 
 /* Translate a HIP error to a negative POSIX errno.  Mirrors the static
  * helper present in every feature/hip/ extractor.  Every other error,
@@ -76,6 +81,88 @@ static bool hip_pic_plane_valid(const VmafHipPlaneUpload *p)
         return false;
     const ptrdiff_t stride = p->pic->stride[p->plane];
     return p->pic->data[p->plane] != NULL && stride > 0 && (size_t)stride >= p->row_bytes;
+}
+
+/* ---- Device pictures (ADR-2092) ---------------------------------------- */
+
+uintptr_t vmaf_hip_picture_device_stream(const VmafPicture *pic)
+{
+    const VmafPicturePrivate *priv = (pic != NULL) ? pic->priv : NULL;
+    if (priv == NULL || priv->buf_type != VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE)
+        return 0u;
+    /* A device picture always carries its library stream (import_frame.c). */
+    assert(priv->hip.str != 0u);
+    return priv->hip.str;
+}
+
+/* The library stream every plane of `planes` shares: 0 when all are host
+ * planes, -EINVAL in `*err` when host and device planes, or the planes of
+ * two devices, are mixed. */
+static uintptr_t hip_pic_common_library(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                        int *err)
+{
+    const uintptr_t library = vmaf_hip_picture_device_stream(planes[0].pic);
+    *err = 0;
+    for (unsigned i = 1u; i < n_planes; i++) {
+        if (vmaf_hip_picture_device_stream(planes[i].pic) != library)
+            *err = -EINVAL;
+    }
+    return library;
+}
+
+int vmaf_hip_picture_copy_enqueue(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                  uintptr_t library)
+{
+    if (planes == NULL || n_planes == 0u || library == 0u)
+        return -EINVAL;
+    hipStream_t lib = vmaf_hip_stream_of(library);
+    hipError_t rc = hipSuccess;
+    for (unsigned i = 0u; i < n_planes && rc == hipSuccess; i++) {
+        const VmafHipPlaneUpload *p = &planes[i];
+        if (!hip_pic_plane_valid(p) || vmaf_hip_picture_device_stream(p->pic) != library)
+            return -EINVAL;
+        rc = hipMemcpy2DAsync(p->dst, p->dst_pitch, p->pic->data[p->plane],
+                              (size_t)p->pic->stride[p->plane], p->row_bytes, p->rows,
+                              hipMemcpyDeviceToDevice, lib);
+    }
+    return hip_pic_rc_to_errno(rc);
+}
+
+int vmaf_hip_stream_wait_library(uintptr_t stream, uintptr_t library)
+{
+    if (library == 0u)
+        return -EINVAL;
+    if (stream == library)
+        return 0;
+    // NOLINTNEXTLINE(modernize-use-nullptr): C translation unit, see the ADR-1138 note above.
+    hipEvent_t read = NULL;
+    hipError_t rc = hipEventCreateWithFlags(&read, hipEventDisableTiming);
+    if (rc != hipSuccess)
+        return hip_pic_rc_to_errno(rc);
+    assert(read != NULL);
+    rc = hipEventRecord(read, vmaf_hip_stream_of(library));
+    if (rc == hipSuccess)
+        rc = hipStreamWaitEvent(vmaf_hip_stream_of(stream), read, 0u);
+    /* The null stream too: integer_adm_hip, psnr_hip and float_vif_hip launch kernels
+     * that read the copies there (their "picture stream"), and a
+     * non-blocking stream's wait does not order the null stream. */
+    if (rc == hipSuccess && stream != 0u)
+        rc = hipStreamWaitEvent(vmaf_hip_stream_of(0u), read, 0u);
+    /* The wait holds what it waits for: destroying the event now is safe
+     * (measured on gfx1036, ROCm 7.2.4: the waiting stream still waited). */
+    (void)hipEventDestroy(read);
+    return hip_pic_rc_to_errno(rc);
+}
+
+/* Device pictures: the copies on the library stream, then `stream` waits for
+ * them; nothing waits on the host. */
+static int hip_pic_device_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                 uintptr_t library, uintptr_t stream)
+{
+    const int err = vmaf_hip_picture_copy_enqueue(planes, n_planes, library);
+    /* Even after a failed enqueue: the copies before it still read. */
+    const int wait = vmaf_hip_stream_wait_library(stream, library);
+    return (err != 0) ? err : wait;
 }
 
 /* Enqueue the copies in order, stopping at the first failure. `*enqueued`
@@ -119,6 +206,12 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
         if (!hip_pic_plane_valid(&planes[i]))
             return -EINVAL;
     }
+    int mixed = 0;
+    const uintptr_t library = hip_pic_common_library(planes, n_planes, &mixed);
+    if (mixed != 0)
+        return mixed;
+    if (library != 0u)
+        return hip_pic_device_upload(planes, n_planes, library, stream);
 
     /* C translation unit, built by cl.exe on Windows, whose C23 has no
      * `nullptr` (ADR-1138). */
@@ -190,6 +283,12 @@ int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_
     const size_t needed = hip_pic_staged_bytes(planes, n_planes);
     if (needed == 0u || needed > staging_bytes)
         return -EINVAL;
+    int mixed = 0;
+    const uintptr_t library = hip_pic_common_library(planes, n_planes, &mixed);
+    if (mixed != 0)
+        return mixed;
+    if (library != 0u)
+        return hip_pic_device_upload(planes, n_planes, library, stream);
 
     hipStream_t str = vmaf_hip_stream_of(stream);
     uint8_t *at = (uint8_t *)staging;
@@ -306,6 +405,28 @@ int vmaf_hip_picture_staging_alloc(void **out, size_t size)
 {
     (void)out;
     (void)size;
+    return -ENOSYS;
+}
+
+uintptr_t vmaf_hip_picture_device_stream(const VmafPicture *pic)
+{
+    (void)pic;
+    return 0u;
+}
+
+int vmaf_hip_picture_copy_enqueue(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                  uintptr_t library)
+{
+    (void)planes;
+    (void)n_planes;
+    (void)library;
+    return -ENOSYS;
+}
+
+int vmaf_hip_stream_wait_library(uintptr_t stream, uintptr_t library)
+{
+    (void)stream;
+    (void)library;
     return -ENOSYS;
 }
 

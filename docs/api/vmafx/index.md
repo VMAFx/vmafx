@@ -11,9 +11,9 @@ existing [`libvmaf.h` API](../index.md) keeps working on the same engine.
 This build carries the core of the API: contexts with their own log
 callback, options, models and model sets, devices, host frames, imported
 frames with fences and frame pools, submission and synchronous scores.
-Imports run on the CPU device in this build; the CUDA, SYCL, HIP and Metal
-imports, asynchronous window scores, the full provenance record and reports
-follow in later RC4 work.
+Imports run on the CPU device in every build and on CUDA and HIP devices in
+builds with those backends; the SYCL and Metal imports, asynchronous window
+scores, the full provenance record and reports follow in later RC4 work.
 
 Every declaration, the Python binding and the
 [reference pages](reference.md) are generated from one definition,
@@ -218,8 +218,10 @@ for example, hands it over with `vmafx_frame_import()` instead of copying it
 into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
 Every build imports host memory on the CPU device; a build with the CUDA
 backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
-devices ([CUDA devices](#cuda-devices) below). The SYCL, HIP and Metal imports
-arrive behind the same calls and types.
+devices ([CUDA devices](#cuda-devices) below), and a build with the HIP
+backend imports HIP device memory, dma-bufs, HIP arrays and OpenGL textures on
+HIP devices ([HIP devices](#hip-devices)). The SYCL and Metal imports arrive
+behind the same calls and types.
 
 ### Devices
 
@@ -297,10 +299,17 @@ yours right after. Fences the library returns are yours to release once with
 | `vmafx_frame_release_fence(frame, kind, &fence, error)` | A fence signalled when the last reference of the frame is gone, in every context it was submitted to |
 
 A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
-`VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)). The
-HIP and SYCL events, `sync_file` descriptors, Metal shared events and Windows
-shared fences are declared kinds; until their backends land they are answered
-with `VMAFX_E_NOTSUP` naming the kind.
+`VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)); a
+build with the HIP backend implements `VMAFX_FENCE_HIP_EVENT`,
+`VMAFX_FENCE_GL_SYNC` and, as an acquire fence, `VMAFX_FENCE_SYNC_FILE` for
+HIP devices ([HIP devices](#hip-devices)). In every build
+`vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC` (`glClientWaitSync()`,
+which needs a GL context of the sync's share group current on the calling
+thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE` descriptor (`poll()`);
+both stay the producer's, so `vmafx_fence_destroy()` refuses them with
+`VMAFX_E_NOTSUP`. The SYCL events, Metal shared events and
+Windows shared fences are declared kinds; until their backends land they are
+answered with `VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 
@@ -443,6 +452,99 @@ use, waiting for them on the host when they have not.
 vendor's profiler (Nsight Systems: `nsys profile --trace=cuda` shows that an
 import makes no host-to-device or device-to-host copy of the frame; only the
 features' few-byte results come back).
+
+### HIP devices
+
+In a build with the HIP backend
+([ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)):
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_HIP`, `desc.index = n` (or -1 for the first) | HIP device `n`; the library creates the stream it reads frames on |
+| `desc.external[0] = (uintptr_t)hip_stream`, `desc.external[1] = 0` | Your stream as the library's stream, on the stream's device (HIP has no context object); it stays yours and must outlive the device |
+
+`vmafx_context_use_device()` makes the context score on the device, as on
+CUDA: each feature registered afterwards runs on its HIP twin, and a feature
+without one runs on the CPU (a warning names it) and is refused for device
+frames by admission. Every HIP twin reads HIP device frames. A HIP device has
+no frame pools: `vmafx_frame_pool_create()` refuses it with `VMAFX_E_NOTSUP`
+naming `device`.
+
+What a HIP device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address on the device; `pitch` in bytes | Planar planes are read where they are, at any offset and pitch; NV12 / P010 / P016 are planarised on the device |
+| `VMAFX_MEMORY_DMABUF` (Linux) | `fd`: a dma-buf descriptor (the library duplicates it; yours stays open and yours); `offset`, `pitch`; `modifier` 0 (linear), `plane_index` 0; `size` 0 or at most the dma-buf's size | The dma-buf is imported as external memory and mapped whole, once per descriptor of the frame; then as device pointers |
+| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `hipArray_t` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | NV12 / P010 / P016 are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the GLX context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; registered read-only and mapped for the import, unmapped when the frame is released |
+
+A tiled dma-buf (a modifier other than linear) is refused with
+`VMAFX_E_NOTSUP` naming the plane's `modifier`, and a `size` larger than the
+dma-buf with `VMAFX_E_RANGE` naming the plane's `size`: the runtime would map
+memory that is not the buffer's. A GL import without a GLX context of the
+device's GPU (an EGL context, another GPU's renderer, no context) is refused
+with `VMAFX_E_NOTSUP` naming `desc.memory` before the runtime's GL interop is
+called; on a host with two GPUs, make the GL context on the device's GPU
+(`DRI_PRIME`). No path copies a frame through the host.
+
+| Acquire fence | The HIP device |
+| --- | --- |
+| `VMAFX_FENCE_HIP_EVENT` | Makes its stream wait on your event: record it on your stream after the work that writes the planes; nothing waits on the host |
+| `VMAFX_FENCE_SYNC_FILE` | A signalled descriptor is taken; an unsignalled one is `VMAFX_E_BUSY`, and `vmafx_context_import_frame()` waits on it with `poll()` and retries once. For a dma-buf, pass the descriptor `DMA_BUF_IOCTL_EXPORT_SYNC_FILE` returns for reading. It stays yours |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (the import rule waits and retries once) |
+| `VMAFX_FENCE_GL_SYNC` | GL texture imports: as on CUDA |
+
+Release fences of a HIP frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_HIP_EVENT`: an event the library records on its stream behind
+  the frame's last reader when the last reference is dropped. Before that,
+  `hipEventQuery()` on it reports it complete (the runtime does so for an
+  event never recorded), so make your stream wait on it from the release
+  callback (`VmafxFrameImport.release`, called after the recording) or after
+  `vmafx_fence_wait()` returned `VMAFX_OK`; `vmafx_fence_wait()` answers
+  `VMAFX_PENDING` until the event is recorded and complete.
+- `VMAFX_FENCE_SYNC_FILE` is refused with `VMAFX_E_NOTSUP`: no HIP operation
+  signals a kernel fence on this runtime. Use `HIP_EVENT` or the release
+  callback.
+
+```c
+/* An NV12 frame a decoder exported linear, as one dma-buf with both planes
+ * (`prime`, a VADRMPRIMESurfaceDescriptor of two layers). */
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DMABUF;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = 1920;
+imp.h = 1080;
+imp.n_planes = 2;
+for (int i = 0; i < 2; i++) {
+    imp.plane[i].fd = prime.objects[0].fd;
+    imp.plane[i].offset = prime.layers[i].offset[0];
+    imp.plane[i].pitch = prime.layers[i].pitch[0];
+    imp.plane[i].modifier = prime.objects[0].drm_format_modifier;  /* 0: linear */
+}
+
+struct dma_buf_export_sync_file sync = {.flags = DMA_BUF_SYNC_READ, .fd = -1};
+ioctl(prime.objects[0].fd, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &sync);
+imp.acquire.kind = VMAFX_FENCE_SYNC_FILE;
+imp.acquire.fd = sync.fd;
+
+status = vmafx_context_import_frame(context, hip_device, &imp, "main", &frame, &error);
+close(sync.fd);  /* the library took what it needs */
+```
+
+Ordering. Every read of a HIP frame's memory is a copy or a conversion on the
+device's one stream, which the twins' own streams wait for, so one import
+scored by several contexts on the device needs nothing more, and its release
+fences are signalled after the last reader of any of them.
+
+`VMAFX_DEVICE_PROFILING` is refused on a HIP device; profile with the
+vendor's tools. The runtime's API log (`AMD_LOG_LEVEL=3`) lists every copy
+with its direction: an import makes device-to-device copies on the library
+stream and no host-to-device or device-to-host copy of the frame.
 
 ## Scores
 

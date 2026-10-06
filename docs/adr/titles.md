@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1286), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5155,3 +5155,7 @@ Every ADR, one heading each (1286), so the site search finds an ADR by its title
 ## ADR-2023: VMAFx device frames on CUDA: one library stream per device, fences on it, release events recorded where the frame is released
 
 [2023-vmafx-cuda-device-frames](2023-vmafx-cuda-device-frames.md)
+
+## ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync\_file checked on the host
+
+[2092-vmafx-hip-device-frames](2092-vmafx-hip-device-frames.md)

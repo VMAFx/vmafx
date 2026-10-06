@@ -337,12 +337,12 @@ values = [
   { name = "VMAFX_MEMORY_NONE", value = 0, doc = "Not set; refused by vmafx_frame_import()." },
   { name = "VMAFX_MEMORY_HOST", value = 1, doc = "Host memory the CPU reads: `handle` is the address of the plane's allocation, `offset` the bytes to its first sample." },
   { name = "VMAFX_MEMORY_DEVICE_POINTER", value = 2, doc = "A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context." },
-  { name = "VMAFX_MEMORY_DEVICE_ARRAY", value = 3, doc = "A device array (CUDA array) in the device's context." },
+  { name = "VMAFX_MEMORY_DEVICE_ARRAY", value = 3, doc = "A device array (CUDA or HIP array) in the device's context." },
   { name = "VMAFX_MEMORY_DMABUF", value = 4, doc = "A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives in." },
   { name = "VMAFX_MEMORY_METAL_SURFACE", value = 5, doc = "A shared surface: `handle` is the surface, `plane_index` its plane." },
   { name = "VMAFX_MEMORY_METAL_TEXTURE", value = 6, doc = "A Metal texture per plane: `handle` is the texture." },
   { name = "VMAFX_MEMORY_WIN32_SHARED", value = 7, doc = "A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane." },
-  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA). Added in ABI 0.1.4." },
+  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA; HIP from a GLX context of the device's GPU). Added in ABI 0.1.4." },
 ]
 
 [[enums]]
@@ -356,7 +356,7 @@ values = [
   { name = "VMAFX_FENCE_CUDA_EVENT", value = 2, doc = "A CUDA event (`handle`) of the device's context." },
   { name = "VMAFX_FENCE_HIP_EVENT", value = 3, doc = "A HIP event (`handle`) of the device." },
   { name = "VMAFX_FENCE_SYCL_EVENT", value = 4, doc = "A pointer to a SYCL event (`handle`) of the device's context." },
-  { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`)." },
+  { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`), borrowed: an acquire fence a device without a kernel-scheduled queue checks on the host (HIP)." },
   { name = "VMAFX_FENCE_METAL_SHARED_EVENT", value = 6, doc = "A Metal shared event (`handle`) and the value it reaches when signalled (`value`)." },
   { name = "VMAFX_FENCE_WIN32_SHARED", value = 7, doc = "A Windows shared fence (`handle`, an NT handle) and the value it reaches when signalled (`value`)." },
   { name = "VMAFX_FENCE_GL_SYNC", value = 8, doc = "An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread, or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports. Added in ABI 0.1.4." },
@@ -545,10 +545,10 @@ since = "0.1"
 sized = true
 doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
 fields = [
-  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA in a build with the CUDA backend; another backend is VMAFX_E_NOTSUP naming it." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it." },
   { name = "index", type = "i32", doc = "Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set." },
   { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "How to create the device. Added in ABI 0.1.2." },
-  { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
+  { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
 ]
 
 [[structs]]
@@ -613,7 +613,7 @@ fields = [
   { name = "plane", type = "VmafxImportPlane", count = 3, doc = "Each plane; entries past `n_planes` are ignored." },
   { name = "acquire", type = "VmafxFence", doc = "Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written." },
   { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "0: zero copy only." },
-  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4." },
+  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT or HIP_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4." },
   { name = "user", type = "ptr", doc = "Passed to `release`. Added in ABI 0.1.4." },
 ]
 
@@ -1218,7 +1218,7 @@ name = "vmafx_frame_release_fence"
 header = "vmafx/frame.h"
 since = "0.1"
 returns = "status"
-doc = "A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT: an event the library records on its stream behind the last reader where the last reference is dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means something only from the frame's release callback (VmafxFrameImport.release) or after a host wait returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it."
+doc = "A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT, HIP_EVENT: an event the library records on its stream behind the last reader where the last reference is dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means something only from the frame's release callback (VmafxFrameImport.release) or after a host wait returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it."
 params = [
   { name = "frame", type = "VmafxFrame", pass = "in" },
   { name = "kind", type = "u32", pass = "in" },

@@ -9,7 +9,7 @@
  * ADR-1829 exit evidence for the CUDA lane (RC4 WP3, ADR-2023): frames
  * imported as CUDA device pointers score bit for bit as the same frames
  * uploaded from the host, for every CUDA twin declared exact
- * (the fragments scripts/ci/exact_twins.d/<cell>.cuda, vmafx_cuda_cells.h), on the Netflix
+ * (the fragments scripts/ci/exact_twins.d/<cell>.cuda, vmafx_device_cells.h), on the Netflix
  * 576x324 pair, both 1080p checkerboards, the 10-bit Sparks pair and frames
  * of the 3840x2160 testdata/bbb pair.
  *
@@ -34,7 +34,7 @@
 #include "test.h"
 #include "vmafx/frame_import_hooks.h"
 #include "vmafx/vmafx.h"
-#include "vmafx_cuda_cells.h"
+#include "vmafx_device_cells.h"
 #include "vmafx_cuda_test_util.h"
 #include "vmafx_fixture_util.h"
 #include "vmafx_test_util.h"

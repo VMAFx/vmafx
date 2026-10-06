@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Device-free contract of the CUDA import bit-exactness cells (ADR-2023).
+"""Device-free contract of the import bit-exactness cells (ADR-2023, ADR-2092).
 
-`core/test/test_vmafx_import_cuda_bitexact.c` compares imported CUDA frames
-with host-uploaded ones for every cell of `core/test/vmafx_cuda_cells.h`. The
-exit evidence of the CUDA lane (ADR-1829) covers every CUDA twin declared
-exact, so the table must name exactly the cells of
-`scripts/ci/exact_twins.d/*.cuda`, each as the extractor and options the
+`core/test/test_vmafx_import_cuda_bitexact.c` and
+`core/test/test_vmafx_import_hip_bitexact.c` compare imported CUDA and HIP
+frames with host-uploaded ones for every cell of
+`core/test/vmafx_device_cells.h`. The exit evidence of each lane (ADR-1829)
+covers every twin of its backend declared exact, so the table must name
+exactly the cells of `scripts/ci/exact_twins.d/*.cuda`, and exactly those of
+`scripts/ci/exact_twins.d/*.hip`, each as the extractor and options the
 parity gate registers for it (`FEATURE_ALIASES` of
 `scripts/ci/cross_backend_parity_gate.py`). A twin declared exact later and
 missing here fails this test; so does a table row naming a cell that is not
@@ -28,8 +30,13 @@ sys.path.insert(0, str(ROOT))
 from scripts.ci.cross_backend_calibration import EXACT_TWINS  # noqa: E402
 from scripts.ci.cross_backend_parity_gate import FEATURE_ALIASES  # noqa: E402
 
-CELLS_H = ROOT / "core" / "test" / "vmafx_cuda_cells.h"
+CELLS_H = ROOT / "core" / "test" / "vmafx_device_cells.h"
 ROW = re.compile(r'\{\s*"([a-z0-9_]+)",\s*"([a-z0-9_]+)",\s*(NULL|"[^"]*")\s*,\s*(\d+)u\s*\}')
+
+
+def exact_twins(backend: str) -> set[str]:
+    """The cells declared exact on `backend` (`scripts/ci/exact_twins.d/*.<backend>`)."""
+    return {feature for feature, backends in EXACT_TWINS.items() if backend in backends}
 
 
 def table_rows(text: str) -> dict[str, tuple[str, str | None]]:
@@ -42,7 +49,7 @@ def table_rows(text: str) -> dict[str, tuple[str, str | None]]:
 
 
 def problems(rows: dict[str, tuple[str, str | None]], exact: set[str]) -> list[str]:
-    """Every way the table disagrees with the declared exact CUDA twins."""
+    """Every way the table disagrees with the declared exact twins `exact`."""
     found = [f"missing cell {cell}" for cell in sorted(exact - rows.keys())]
     found += [f"undeclared cell {cell}" for cell in sorted(rows.keys() - exact)]
     for cell, (extractor, options) in sorted(rows.items()):
@@ -56,11 +63,20 @@ class CellsContract(unittest.TestCase):
     def setUp(self) -> None:
         self.text = CELLS_H.read_text(encoding="utf-8")
         self.rows = table_rows(self.text)
-        self.exact = {feature for feature, backends in EXACT_TWINS.items() if "cuda" in backends}
+        self.exact = exact_twins("cuda")
 
     def test_table_is_every_exact_cuda_twin(self) -> None:
         self.assertGreater(len(self.exact), 0)
         self.assertEqual(problems(self.rows, self.exact), [])
+
+    def test_table_is_every_exact_hip_twin(self) -> None:
+        hip = exact_twins("hip")
+        self.assertGreater(len(hip), 0)
+        self.assertEqual(problems(self.rows, hip), [])
+
+    def test_refuses_a_hip_cell_the_table_lacks(self) -> None:
+        hip = exact_twins("hip") | {"ciede"}
+        self.assertIn("missing cell ciede", problems(self.rows, hip))
 
     def test_refuses_a_missing_cell(self) -> None:
         rows = dict(self.rows)

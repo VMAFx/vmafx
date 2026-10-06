@@ -37,8 +37,12 @@
 #include "frame_import_hooks.h"
 #include "internal.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -72,9 +76,13 @@ static const char *refusal(const char *extractor, uint32_t backend, uint32_t res
     if (backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_refusal(extractor);
     }
-#else
-    (void)extractor;
 #endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_refusal(extractor);
+    }
+#endif
+    (void)extractor;
     return "reads no imported frame on this backend in this build";
 }
 

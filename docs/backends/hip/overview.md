@@ -61,7 +61,7 @@ container image. On a workstation, use your distribution's ROCm packages
 | `enable_hip` | `false` | Compiles the HIP host runtime. With it off, every public `libvmaf_hip.h` entry point returns `-ENOSYS`. |
 | `enable_hipcc` | `false` | Compiles the device kernels with `hipcc` and embeds the HSACO code objects. Without it, every extractor returns `-ENOSYS` at `init()`; `float_ssim_hip`, `integer_ssim_hip` and `vmaf_hip_picture_alloc` log an error that names `-Denable_hipcc=true`. Requires `enable_hip=true`. |
 | `hip_gfx_targets` | empty (auto-detect) | Comma-separated `--offload-arch` list for the HSACO fat binary. See [GFX targets](#gfx-targets). |
-| `enable_float_vif_hip_autodispatch` | `false` | Sets `VMAF_FEATURE_EXTRACTOR_HIP` on `float_vif_hip`, so `--backend hip` selects it for `float_vif` ([ADR-0623](../../adr/0623-scaffold-audit-p2-half-finished.md)). Without it the twin runs only when named. |
+| `enable_float_vif_hip_autodispatch` | `true` | Sets `VMAF_FEATURE_EXTRACTOR_HIP` on `float_vif_hip`, so `--backend hip` and a VMAFx context on a HIP device select it for `float_vif` ([ADR-0623](../../adr/0623-scaffold-audit-p2-half-finished.md); on by default since [ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)). Off: the twin runs only when named. |
 | `compress_device_code` | `true` | Stores each kernel's code object bundle compressed (`hipcc --offload-compress --offload-compression-level=22`, a zstd `CCOB` bundle): 1.09 MB instead of 17.9 MB for the 25 tester targets. The HIP runtime decompresses a bundle when `hipModuleLoadData()` loads it (measured with the ROCm 7.2.4 runtime on a gfx1036: no change in load time); the AMD tester image ships the runtime of the ROCm that compiled its kernels. See [`compress_device_code`](../../development/build-flags.md#compress_device_code). |
 
 Pre-compiled HSACO fat binaries are not bundled without `hipcc`, because ROCm
@@ -135,9 +135,10 @@ The JSON output names the extractor that ran for each feature under
 
 [CLI reference](../../usage/cli.md) | [backend selection](../index.md)
 
-A twin that carries no HIP flag runs only when you name it. One is left,
-`float_vif_hip` (unless the build sets `enable_float_vif_hip_autodispatch`),
-so it needs the `_hip` name:
+A twin that carries no HIP flag runs only when you name it. In a default
+build every twin carries it; a build with
+`-Denable_float_vif_hip_autodispatch=false` leaves `float_vif_hip` without
+it, so it needs the `_hip` name there:
 
 ```bash
 vmaf --reference ref.yuv --distorted dist.yuv \
@@ -151,6 +152,22 @@ with or without `--threads`.
 FFmpeg selects the device with the `hip_device=N` filter option (patch
 `0011-libvmaf-wire-hip-backend-selector.patch` in `ffmpeg-patches/`,
 [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-selector.md)).
+
+A program that already holds its frames on the GPU (a decoder's dma-bufs, a
+renderer's GL textures, HIP device memory) hands them to the VMAFx API
+instead of `vmaf_read_pictures()`: see
+[HIP devices](../../api/vmafx/index.md#hip-devices). On a host with a HIP
+device, the import is checked against host uploads by the `hip` suite:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build --suite hip \
+    test_vmafx_import_hip test_vmafx_import_hip_bitexact \
+    test_vmafx_import_hip_fence test_vmafx_import_hip_gl
+```
+
+The bit-exactness run prints the cells, values and imports it compared and
+the host copies it counted (0), and repeats a cell that differs, printing
+each repeat (see [the gfx1036 loses stream commands](#the-gfx1036-loses-stream-commands)).
 
 The HIP backend reads no dispatch environment variable: every HIP twin
 submits directly, and `--backend hip` picks a twin by its registration flag.
@@ -174,7 +191,7 @@ flag, so `--backend hip` does not pick it for the CPU name.
 | `motion_hip` | `motion` | yes | `motion`, `motion2`, `motion3` | [ADR-0523](../../adr/0523-hip-integer-motion-extractor-registration.md), PR #1004 |
 | `float_motion_hip` | `float_motion` | yes | `motion`, `motion2`, `motion3` | [ADR-0373](../../adr/0373-hip-batch2-float-motion.md) |
 | `float_ssim_hip` | `float_ssim` | yes | `float_ssim` (and L, C, S with `enable_lcs`) | [ADR-0375](../../adr/0375-hip-batch3-float-moment-float-ssim.md) |
-| `float_vif_hip` | `float_vif` | named only, unless `enable_float_vif_hip_autodispatch` | `float_vif_scale0..3` | ADR-0379, [ADR-0592](../../adr/0592-hip-float-vif-stub-removal.md) |
+| `float_vif_hip` | `float_vif` | yes (named only with `-Denable_float_vif_hip_autodispatch=false`) | `float_vif_scale0..3` | ADR-0379, [ADR-0592](../../adr/0592-hip-float-vif-stub-removal.md) |
 | `float_adm_hip` | `float_adm` | yes | `adm2`, `adm_scale0..3`, `aim`, `adm3` | [ADR-0468](../../adr/0468-hip-float-adm-real-kernel.md), PR #1024, [ADR-1458](../../adr/1458-hip-float-adm-cpu-arithmetic.md) |
 | `psnr_hvs_hip` | `psnr_hvs` | yes | `psnr_hvs` and per-channel values | PR #995 |
 | `cambi_hip` | `cambi` | yes | `cambi` | PR #996, [ADR-1378](../../adr/1378-hip-cambi-device-resident.md) |
@@ -263,10 +280,21 @@ Open items only; the ledger row ids are in
   twin does, and is two thirds of that. The default model under
   `--backend hip` goes from 65 to 273 ms per 3840x2160 frame because its ADM
   now runs on that device (`T-HIP-ADM-AIM-INLINE-COST-2026-10-04`, RC8).
-- **No zero-copy import.** Frames arrive as host pictures and the extractors
-  upload them; there is no `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` pool or
-  `hipImportExternalMemory` path (T7-10c). See
+- **Imported frames are copied once more on the device.** The VMAFx API
+  imports device pointers, dma-bufs, arrays and GL textures without a host
+  copy, but the twins copy each imported frame into their own buffers on the
+  device's library stream, where the CUDA twins read the picture itself
+  ([ADR-2092](../../adr/2092-vmafx-hip-device-frames.md); RC8 tuning row
+  `T-HIP-IMPORT-TWIN-DEVICE-COPY-2026-10-06`). See
   [picture uploads](uploads.md#zero-copy-import).
+- **Import limits of the runtime.** A sync_file is an acquire fence only,
+  checked on the host: ROCm 7.2.4 aborts the process in
+  `hipImportExternalSemaphore()`, so no HIP stream waits on or signals one
+  (`T-HIP-ROCM-EXTERNAL-SEMAPHORE-ABORT-2026-10-06`). OpenGL textures import
+  only from a GLX context on the device's GPU: the runtime's GL interop reads
+  no other context and crashes the process after a failed first setup
+  (`T-HIP-GL-INTEROP-SETUP-CRASH-2026-10-06`). A HIP device has no frame
+  pools.
 - **Six twins stage their own copy of the frame** instead of reading the
   shared planes: `integer_ms_ssim_hip`, `psnr_hvs_hip`, `cambi_hip`,
   `speed_chroma_hip`, `speed_temporal_hip` and `ssimulacra2_hip`
@@ -306,9 +334,11 @@ for i in 1 2 3 4 5; do /tmp/probe 100000 12 0; done
 
 Each run prints `bad_frames` and `lost` (dispatches that never ran); both are
 0 on a healthy stack. On the gfx1036 five runs gave 55 bad frames in 500000
-and 382 lost dispatches in 6.0 million. Until a driver update clears it,
-compare HIP scores from this device over repeated runs and treat a
-single-frame mismatch as suspect, not as a code defect.
+and 382 lost dispatches in 6.0 million; on Linux 7.2.9 three runs of 20000
+frames gave 0, 17 and 3 bad frames (2026-10-06, load average 24 to 38).
+Until a driver update clears it, compare HIP scores from this device over
+repeated runs and treat a single-frame mismatch as suspect, not as a code
+defect.
 
 A separate, deferred report (`T-HIP-GFX1036-SDMA-READ-FAULT-2026-10-01`) is
 one `psnr_hvs_hip` run killed by a GPU memory access fault raised by the copy

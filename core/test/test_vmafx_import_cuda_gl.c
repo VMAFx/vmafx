@@ -31,7 +31,7 @@
 #include "test.h"
 #include "vmafx/frame_import_hooks.h"
 #include "vmafx/vmafx.h"
-#include "vmafx_cuda_cells.h"
+#include "vmafx_device_cells.h"
 #include "vmafx_cuda_test_util.h"
 #include "vmafx_test_util.h"
 

@@ -57,6 +57,7 @@
 #include <hip/hip_runtime_api.h>
 
 #include "../../hip/hip_handle.h"
+#include "../../hip/picture_hip.h"
 #endif /* HAVE_HIPCC */
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -110,6 +111,9 @@ typedef struct PsnrHvsStateHip {
     void *d_dist[PSNR_HVS_NUM_PLANES];
     void *h_ref[PSNR_HVS_NUM_PLANES];
     void *h_dist[PSNR_HVS_NUM_PLANES];
+    /* This frame's pictures are device pictures of the VMAFx API, copied
+     * into d_ref / d_dist on the device: no staging (ADR-2092). */
+    bool device_input;
     /* PSNR_HVS_HIP_TERMS masked coefficient errors per block, every plane,
      * and their pinned copy. */
     float *d_terms;
@@ -499,6 +503,45 @@ static int psnr_hvs_enqueue_uploads(const PsnrHvsStateHip *s, hipStream_t str)
     return 0;
 }
 
+/* Device pictures of the VMAFx API (ADR-2092): every plane copied into the
+ * device planes on the pictures' library stream, which the kernel stream
+ * waits on (vmaf_hip_picture_upload()); no host staging. */
+static int psnr_hvs_copy_device(const PsnrHvsStateHip *s, const VmafPicture *ref,
+                                const VmafPicture *dist)
+{
+    VmafHipPlaneUpload planes[2u * PSNR_HVS_NUM_PLANES];
+    unsigned n = 0u;
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
+        const VmafHipPlaneUpload plane = {.dst_pitch = s->row_bytes[p],
+                                          .plane = p,
+                                          .row_bytes = s->row_bytes[p],
+                                          .rows = s->height[p]};
+        planes[n] = plane;
+        planes[n].dst = s->d_ref[p];
+        planes[n++].pic = ref;
+        planes[n] = plane;
+        planes[n].dst = s->d_dist[p];
+        planes[n++].pic = dist;
+    }
+    return vmaf_hip_picture_upload(planes, n, s->lc.str);
+}
+
+/* The frame's planes on their way to the device: host pictures packed into
+ * pinned staging (psnr_hvs_enqueue_uploads() copies it up), device pictures
+ * copied on the device. */
+static int psnr_hvs_take_pictures(PsnrHvsStateHip *s, const VmafPicture *ref,
+                                  const VmafPicture *dist)
+{
+    s->device_input = vmaf_hip_picture_device_stream(ref) != 0u;
+    if (s->device_input)
+        return psnr_hvs_copy_device(s, ref, dist);
+    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
+        psnr_hvs_stage_plane(s, ref, p, s->h_ref[p]);
+        psnr_hvs_stage_plane(s, dist, p, s->h_dist[p]);
+    }
+    return 0;
+}
+
 static int psnr_hvs_enqueue_scan_compact(PsnrHvsStateHip *s, hipStream_t str,
                                          const struct PsnrHvsHipKernelArgs *args,
                                          struct PsnrHvsHipHeader *d_header)
@@ -541,7 +584,7 @@ static int psnr_hvs_enqueue_scan_compact(PsnrHvsStateHip *s, hipStream_t str,
 static int psnr_hvs_enqueue_frame(PsnrHvsStateHip *s)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
-    int err = psnr_hvs_enqueue_uploads(s, str);
+    int err = s->device_input ? 0 : psnr_hvs_enqueue_uploads(s, str);
     if (err != 0)
         return err;
 
@@ -586,11 +629,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #ifdef HAVE_HIPCC
     if (!psnr_hvs_picture_matches(s, ref_pic) || !psnr_hvs_picture_matches(s, dist_pic))
         return -EINVAL;
-    for (unsigned p = 0; p < psnr_hvs_plane_count(s); p++) {
-        psnr_hvs_stage_plane(s, ref_pic, p, s->h_ref[p]);
-        psnr_hvs_stage_plane(s, dist_pic, p, s->h_dist[p]);
-    }
-    const int err = psnr_hvs_enqueue_frame(s);
+    int err = psnr_hvs_take_pictures(s, ref_pic, dist_pic);
+    if (err == 0)
+        err = psnr_hvs_enqueue_frame(s);
     if (err != 0)
         return err;
 
