@@ -161,9 +161,13 @@ def test_extras_from_args_distinguishes_zero_from_unset() -> None:
     assert without.to_argv() == []
 
 
-def test_extras_from_args_filters_non_string_features() -> None:
-    extras = srv._extras_from_args({"feature": ["psnr", "", 123, "ssim"]})
-    assert extras.features == ("psnr", "ssim")
+def test_extras_from_args_refuses_non_string_features() -> None:
+    # Since the generated options (RC4 WP8) a malformed feature list is refused
+    # with the argument named, as the Go server refuses it, instead of being
+    # filtered silently.
+    with pytest.raises(ValueError, match="invalid feature"):
+        srv._extras_from_args({"feature": ["psnr", "", 123, "ssim"]})
+    assert srv._extras_from_args({"feature": ["psnr", "ssim"]}).features == ("psnr", "ssim")
 
 
 def test_no_reference_requires_tiny_model() -> None:
@@ -198,7 +202,7 @@ def test_dnn_ep_alias_supported() -> None:
     [
         ({"output_fmt": "yaml"}, "invalid output_fmt"),
         ({"tiny_device": "invalid_dev"}, "invalid tiny_device"),
-        ({"dnn_ep": "unknown_ep"}, "invalid tiny_device"),
+        ({"dnn_ep": "unknown_ep"}, "invalid dnn_ep"),
         ({"tiny_device": "cpu", "dnn_ep": "cuda"}, "conflicting tiny_device"),
         ({"tiny_resize": "cubic"}, "invalid tiny_resize"),
         ({"tiny_crf": -1}, "invalid tiny_crf"),
@@ -206,7 +210,7 @@ def test_dnn_ep_alias_supported() -> None:
         ({"tiny_threads": -1}, "invalid tiny_threads"),
         ({"aom_ctc": "v8.0"}, "invalid aom_ctc"),
         ({"nflx_ctc": "v2.0"}, "invalid nflx_ctc"),
-        ({"threads": 0}, "invalid threads"),
+        ({"threads": -1}, "invalid threads"),  # 0: score in the calling thread
         ({"frame_cnt": 0}, "invalid frame_cnt"),
         ({"frame_skip_ref": -1}, "invalid frame_skip_ref"),
         ({"frame_skip_dist": -1}, "invalid frame_skip_dist"),

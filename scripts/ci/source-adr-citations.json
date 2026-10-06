@@ -271,16 +271,15 @@
     },
     "0119": {
       "sites": {
-        "cmd/vmafx-mcp/impl.go": 4,
+        "cmd/vmafx-mcp/impl.go": 2,
         "cmd/vmafx-mcp/impl_direct.go": 1,
-        "cmd/vmafx-mcp/tools.go": 2,
         "core/include/libvmaf/pelorus/interop.h": 6,
         "core/src/interop/pelorus_qp_report_csv.c": 1,
         "core/src/output.cpp": 1,
         "core/test/test_output.c": 1,
         "core/tools/cli_parse.cpp": 1,
         "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py": 2,
-        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 5,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 3,
         "mcp-server/vmaf-mcp/tests/test_http_transport.py": 1
       },
       "target": "0119-cli-precision-default-revert.md"
@@ -3406,7 +3405,6 @@
         "core/test/dnn/test_model_loader.c": 8,
         "core/test/test_cli_parse.c": 2,
         "core/test/test_hip_smoke.c": 2,
-        "core/tools/cli_parse.cpp": 2,
         "core/tools/cli_parse.h": 2
       },
       "target": "0519-hip-import-state-implementation.md"
@@ -3700,7 +3698,6 @@
         "core/src/dnn/tensor_io.h": 2,
         "core/src/libvmaf.c": 4,
         "core/test/dnn/test_tensor_io.c": 1,
-        "core/tools/cli_parse.cpp": 2,
         "core/tools/cli_parse.h": 1
       },
       "target": "0550-tiny-model-auto-resize.md"
@@ -4139,7 +4136,7 @@
     "0696": {
       "sites": {
         "core/test/test_cli_parse.c": 15,
-        "core/tools/cli_parse.cpp": 2,
+        "core/tools/cli_parse.cpp": 1,
         "core/tools/cli_parse.h": 1,
         "python/test/vmafx_cli_test.py": 1
       },
@@ -4473,7 +4470,6 @@
         "core/src/feature/feature_extractor.h": 1,
         "core/src/picture.h": 2,
         "core/test/test_cli_parse.c": 2,
-        "core/tools/cli_parse.cpp": 2,
         "deploy/helm/vmafx/values.yaml": 1,
         "dev/docker-compose.yml": 1,
         "dev/scripts/smoke-probe-loop.sh": 1,
@@ -5927,8 +5923,8 @@
       "sites": {
         "cmd/vmafx-mcp/impl.go": 3,
         "cmd/vmafx-mcp/score_extras_test.go": 2,
-        "cmd/vmafx-mcp/tools.go": 2,
-        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 10,
+        "cmd/vmafx-mcp/tools.go": 1,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 8,
         "mcp-server/vmaf-mcp/tests/test_score_extras_adr1117.py": 1
       },
       "target": "1117-mcp-tiny-ai-feature-coverage.md"
@@ -6918,6 +6914,7 @@
         "python/test/gpu_default_model_test.py": 1,
         "python/test/vmafexec_test.py": 1,
         "scripts/ci/test_e2e_runtime_contract.py": 1,
+        "scripts/codegen/vmafx_api/macros.py": 1,
         "test/e2e/fixtures/gen-tiny-yuv.sh": 1,
         "testdata/bench_upstream_ab.py": 1,
         "tools/vmaf-tune/src/vmaftune/resolution.py": 2,
@@ -11196,9 +11193,10 @@
     },
     "1852": {
       "sites": {
+        "api/openapi/components.gen.yaml": 1,
         "bindings/python/vmafx/__init__.py": 1,
         "bindings/python/vmafx/_api.py": 1,
-        "core/api/vmafx.toml": 5,
+        "core/api/vmafx.toml": 6,
         "core/include/meson.build": 1,
         "core/include/vmafx/context.h": 2,
         "core/include/vmafx/device.h": 1,
@@ -11246,7 +11244,8 @@
         "core/src/vmafx/status_gen.h": 1,
         "core/src/vmafx/submit.c": 1,
         "core/test/check_exported_symbols.py": 3,
-        "core/test/meson.build": 4,
+        "core/test/meson.build": 5,
+        "core/test/test_cli_option_table.cpp": 1,
         "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
         "core/test/test_vmafx_abi_layout.c": 1,
         "core/test/test_vmafx_api_slice.c": 1,
@@ -11260,6 +11259,12 @@
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
         "core/test/vmafx_test_util.h": 1,
+        "core/tools/cli_parse.cpp": 1,
+        "ffmpeg-patches/src/vf_vmafx_options.h": 1,
+        "gen/go/vmafx_api.pb.go": 1,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/score_options.py": 1,
+        "pkg/scoreopts/scoreopts.go": 1,
+        "proto/vmafx_api.proto": 1,
         "scripts/codegen/tests/fixtures/full.toml": 1,
         "scripts/codegen/tests/fixtures/schema1.toml": 2,
         "scripts/codegen/tests/support.py": 1,
@@ -11276,7 +11281,12 @@
         "scripts/codegen/vmafx_api/ctext.py": 1,
         "scripts/codegen/vmafx_api/emit_build.py": 1,
         "scripts/codegen/vmafx_api/emit_c.py": 1,
+        "scripts/codegen/vmafx_api/emit_cli.py": 1,
         "scripts/codegen/vmafx_api/emit_docs.py": 1,
+        "scripts/codegen/vmafx_api/emit_ffmpeg_options.py": 1,
+        "scripts/codegen/vmafx_api/emit_mcp.py": 1,
+        "scripts/codegen/vmafx_api/emit_openapi.py": 1,
+        "scripts/codegen/vmafx_api/emit_proto.py": 1,
         "scripts/codegen/vmafx_api/emit_python.py": 1,
         "scripts/codegen/vmafx_api/emit_symbols.py": 3,
         "scripts/codegen/vmafx_api/loader.py": 1,

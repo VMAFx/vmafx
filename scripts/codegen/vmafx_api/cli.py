@@ -30,9 +30,15 @@ from . import (
     changelog,
     emit_build,
     emit_c,
+    emit_cli,
     emit_compat,
     emit_docs,
+    emit_ffmpeg_options,
     emit_layout_test,
+    emit_mcp,
+    emit_openapi,
+    emit_option_docs,
+    emit_proto,
     emit_python,
     emit_symbols,
     gitref,
@@ -40,6 +46,7 @@ from . import (
 from .headers import plan
 from .loader import load
 from .model import Api, DefinitionError
+from .splice import spliced
 
 DEFINITION = Path("core/api/vmafx.toml")
 SKIP = 77  # Meson's "test skipped"
@@ -57,11 +64,36 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
 )
 
 
-def render(api: Api) -> dict[str, str]:
-    """Every generated file: path -> text."""
+OPTION_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
+    ("core/tools/cli_options.gen.inc", emit_cli.include_text),
+    *((path, emit_mcp.options_json) for path in emit_mcp.OUTPUTS),
+    (emit_proto.PATH, emit_proto.proto_text),
+    (emit_openapi.COMPONENTS_PATH, emit_openapi.components_text),
+    (emit_ffmpeg_options.PATH, emit_ffmpeg_options.header_text),
+)
+
+
+def regions(api: Api, root: Path) -> dict[str, str]:
+    """Hand-written files with a generated region (option tables, server schemas)."""
+    files = emit_option_docs.pages(api, root)
+    begin, end = emit_openapi.BEGIN, emit_openapi.END
+    files[emit_openapi.SERVER_SPEC] = spliced(
+        root, emit_openapi.SERVER_SPEC, begin, end, emit_openapi.schema_lines(api)
+    )
+    return files
+
+
+def render(api: Api, root: Path | None = None) -> dict[str, str]:
+    """Every generated file: path -> text. With `root`, also the generated
+    regions of the hand-written files under it; option-group outputs only when
+    the definition has option groups."""
     files = {f"core/include/{p.header.path}": emit_c.header_text(api, p) for p in plan(api)}
     files.update({path: renderer(api) for path, renderer in FIXED_OUTPUTS})
     files.update(dict(emit_docs.pages(api)))
+    if api.option_groups:
+        files.update({path: renderer(api) for path, renderer in OPTION_OUTPUTS})
+        if root is not None:
+            files.update(regions(api, root))
     return files
 
 
@@ -150,7 +182,7 @@ def _run(root: Path, args: argparse.Namespace) -> int:
     if args.changelog:
         print(changelog.draft(_old_definition(root, args)[0], api), end="")
         return 0
-    files = render(api)
+    files = render(api, root)
     return write(root, files) if args.write else check(root, files)
 
 

@@ -145,6 +145,7 @@ class Struct:
     since: tuple[int, int]
     deprecated: Deprecation | None
     fields: tuple[Field, ...]
+    proto: str = ""  # name of the proto message emitted from the struct; "" = none
 
     @property
     def init_macro(self) -> str:
@@ -195,19 +196,53 @@ class Compat:
 
 
 @dataclass(frozen=True)
+class CliSpelling:
+    """How the `vmaf` command line spells one option (emit_cli.py)."""
+
+    flags: tuple[str, ...]  # long spellings, "--name"; the first one is the usage name
+    short: str = ""  # one-letter short option, "" for none
+    meta: str = ""  # usage placeholder of the value ("$path"); "" for a switch
+    ident: str = ""  # getopt value: "'r'" or "ARG_THREADS"
+    values: tuple[tuple[str, str], ...] = ()  # enum value -> switch flag ("--xml")
+
+
+@dataclass(frozen=True)
+class McpArgv:
+    """How the MCP servers and the scoring server turn an argument into `vmaf` flags."""
+
+    stage: str  # "core": placed by the caller; "extra": appended in definition order
+    flag: str  # the flag passed ("-r", "--threads"); "" for model suffixes
+    form: str  # "value", "switch", "repeat", "choice", "suffix"
+    suffix: str = ""  # model-spec suffix; "{}" is replaced by the value
+
+
+@dataclass(frozen=True)
 class Option:
-    """One option of an option group (design section 3.4); WP8 emits the surfaces."""
+    """One option of an option group (design section 3.4); emitted by WP8."""
 
     name: str
     type: str
-    default: object
+    default: object  # None: no default value (the consumer's documented behaviour)
     doc: str
     since: tuple[int, int]
     deprecated: Deprecation | None
-    range: tuple[float, float] | None
-    values: tuple[str, ...]
+    range: tuple[float, float | None] | None  # (minimum, maximum or None)
+    values: tuple[str, ...]  # enum and flags options
     spellings: dict[str, tuple[str, ...]]
     proto_field: int
+    surfaces: tuple[str, ...] = ()  # the surfaces this option is on
+    choices: tuple[int, ...] = ()  # an integer option limited to these values
+    repeat: tuple[str, ...] = ()  # surfaces on which it is given several times (a list)
+    default_macro: str = ""  # the default is the library's, named by this C macro
+    surface_defaults: tuple[tuple[str, object], ...] = ()  # (surface, default) overrides
+    cli: CliSpelling | None = None
+    mcp_required: bool = False
+    argv: McpArgv | None = None
+    reserved: str = ""  # accepted only at its default; the reason names when it lands
+
+    def default_on(self, surface: str) -> object:
+        """The default a surface documents; a surface override wins."""
+        return dict(self.surface_defaults).get(surface, self.default)
 
 
 @dataclass(frozen=True)
@@ -217,6 +252,8 @@ class OptionGroup:
     since: tuple[int, int]
     surfaces: tuple[str, ...]
     options: tuple[Option, ...]
+    mcp_tools: tuple[str, ...] = ()  # MCP tools whose input schema holds the group
+    proto_message: str = "ScoreOptions"  # message the proto fields of the group join
 
 
 @dataclass(frozen=True)

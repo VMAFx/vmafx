@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.3"
+abi_version = "0.1.4"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -489,6 +489,10 @@ name = "VmafxProvenance"
 header = "vmafx/provenance.h"
 since = "0.1"
 sized = true
+# Emitted as the proto message `Provenance` and its OpenAPI schema (#2155):
+# every scoring response carries it. Fields only grow at the end, so the proto
+# field numbers (field order) never change.
+proto = "Provenance"
 doc = "How the scores of a context are made (#2142). Strings live as long as the context."
 fields = [
   { name = "abi_major", type = "u32", doc = "ABI major version of the library that ran." },
@@ -1705,3 +1709,818 @@ target = "vmafx_version_string"
 returns = "const char *"
 params = []
 return_expr = "vmafx_version_string()"
+
+# ---------------------------------------------------------------------------
+# Option groups (design sections 3.4 and 5.2, RC4 WP8, ADR-1852). Every scoring
+# option of every surface: the `vmaf` command line (`cli`), the `vmafx` FFmpeg
+# filter (`ffmpeg`), the MCP scoring tools (`mcp`) and the scoring server's
+# `ScoreOptions` message (`proto`). An option names the surfaces it is on; a
+# surface without a spelling stops generation. Order matters: the usage text
+# lists options in this order, and the MCP servers append the `argv = "extra"`
+# flags in this order. Keep every existing CLI spelling (HISS-14); new names
+# are additive. The default model is the library's (VMAF_DEFAULT_MODEL_VERSION),
+# never a literal here.
+# ---------------------------------------------------------------------------
+
+[[option_groups]]
+name = "input"
+since = "0.1"
+doc = "The reference and distorted videos and the geometry of raw input."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "reference"
+type = "string"
+doc = "Reference video: a .y4m file, or raw planar .yuv together with the width, height, pixel format and bit depth."
+surfaces = ["cli", "mcp"]
+cli = ["--reference"]
+cli_short = "r"
+cli_meta = "$path"
+mcp = "ref"
+mcp_required = true
+argv = "core"
+argv_flag = "-r"
+
+[[option_groups.options]]
+name = "distorted"
+type = "string"
+doc = "Distorted video, in the same form as the reference."
+surfaces = ["cli", "mcp"]
+cli = ["--distorted"]
+cli_short = "d"
+cli_meta = "$path"
+mcp = "dis"
+mcp_required = true
+argv = "core"
+argv_flag = "-d"
+
+[[option_groups.options]]
+name = "width"
+type = "uint"
+range = [1]
+doc = "Width of raw .yuv input in pixels."
+cli = ["--width"]
+cli_short = "w"
+mcp = "width"
+mcp_required = true
+proto = { field = 1 }
+argv = "core"
+
+[[option_groups.options]]
+name = "height"
+type = "uint"
+range = [1]
+doc = "Height of raw .yuv input in pixels."
+cli = ["--height"]
+cli_short = "h"
+mcp = "height"
+mcp_required = true
+proto = { field = 2 }
+argv = "core"
+
+[[option_groups.options]]
+name = "pixel_format"
+type = "enum"
+enum = ["420", "422", "444"]
+doc = "Chroma subsampling of raw .yuv input."
+cli = ["--pixel_format"]
+cli_short = "p"
+mcp = "pixfmt"
+mcp_required = true
+proto = { field = 3 }
+argv = "core"
+argv_flag = "-p"
+
+[[option_groups.options]]
+name = "bitdepth"
+type = "uint"
+choices = [8, 10, 12, 16]
+doc = "Bits per sample of raw .yuv input."
+cli = ["--bitdepth"]
+cli_short = "b"
+mcp = "bitdepth"
+mcp_required = true
+proto = { field = 4 }
+argv = "core"
+argv_flag = "-b"
+
+[[option_groups]]
+name = "encoded_input"
+since = "0.1"
+doc = "Encoded videos the MCP server decodes before scoring."
+surfaces = ["mcp"]
+mcp_tools = ["vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "reference_encoded"
+type = "string"
+doc = "Path to the reference encoded video (MP4/MKV/Y4M/...). Must be under an allowlisted root (VMAF_MCP_ALLOW)."
+mcp = "reference_encoded"
+mcp_required = true
+
+[[option_groups.options]]
+name = "distorted_encoded"
+type = "string"
+doc = "Path to the distorted encoded video."
+mcp = "distorted_encoded"
+mcp_required = true
+
+[[option_groups]]
+name = "model"
+since = "0.1"
+doc = "The model that turns features into a score."
+surfaces = ["cli", "ffmpeg", "mcp"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "model"
+type = "string"
+default_macro = "VMAF_DEFAULT_MODEL_VERSION"
+repeat = ["cli"]
+doc = "Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, <feature>.<option>=<value> overloads. Several models score in one pass (repeat the option; the filter separates them with |)."
+cli = ["--model"]
+cli_short = "m"
+cli_meta = "$params"
+ffmpeg = "model"
+mcp = "model"
+argv = "core"
+argv_flag = "-m"
+
+[[option_groups]]
+name = "model_flags"
+since = "0.1"
+doc = "Switches the servers append to the model specification."
+surfaces = ["mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "disable_clip"
+type = "bool"
+default = false
+doc = "Do not clip the model score to [0, 100] (the model's disable_clip)."
+mcp = "disable_clip"
+proto = { field = 10 }
+model_suffix = ":disable_clip"
+argv = "core"
+
+[[option_groups.options]]
+name = "enable_transform"
+type = "bool"
+default = false
+doc = "Apply the model's score transform (the model's enable_transform)."
+mcp = "enable_transform"
+proto = { field = 11 }
+model_suffix = ":enable_transform"
+argv = "core"
+
+[[option_groups]]
+name = "backend"
+since = "0.1"
+doc = "Which compute backend runs the feature extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "backend"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "sycl", "hip", "metal"]
+default = "auto"
+doc = "Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available."
+cli = ["--backend"]
+cli_meta = "$name"
+ffmpeg = "backend"
+mcp = "backend"
+proto = { field = 12 }
+argv = "none"
+
+[[option_groups.options]]
+name = "no_cuda"
+type = "bool"
+default = false
+doc = "Disable the CUDA backend."
+surfaces = ["cli"]
+cli = ["--no_cuda"]
+
+[[option_groups.options]]
+name = "no_sycl"
+type = "bool"
+default = false
+doc = "Disable the SYCL (oneAPI) backend."
+surfaces = ["cli"]
+cli = ["--no_sycl"]
+
+[[option_groups.options]]
+name = "no_hip"
+type = "bool"
+default = false
+doc = "Disable the HIP (ROCm) backend."
+surfaces = ["cli"]
+cli = ["--no_hip"]
+
+[[option_groups.options]]
+name = "no_metal"
+type = "bool"
+default = false
+doc = "Disable the Metal (Apple silicon) backend."
+surfaces = ["cli"]
+cli = ["--no_metal"]
+
+[[option_groups]]
+name = "feature"
+since = "0.1"
+doc = "Features scored besides the model's, and the common-test-condition presets."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "feature"
+type = "string"
+repeat = ["cli", "mcp", "proto"]
+doc = "Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with |). Mutually exclusive with the CTC presets."
+cli = ["--feature"]
+ffmpeg = "feature"
+mcp = "feature"
+proto = { field = 22 }
+
+[[option_groups.options]]
+name = "aom_ctc"
+type = "enum"
+enum = ["v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"]
+doc = "AOM common test conditions preset: a fixed model and feature set."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--aom_ctc"]
+cli_meta = "$version"
+mcp = "aom_ctc"
+proto = { field = 23 }
+
+[[option_groups.options]]
+name = "nflx_ctc"
+type = "enum"
+enum = ["v1.0"]
+doc = "Netflix common test conditions preset: a fixed model and feature set."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--nflx_ctc"]
+cli_meta = "$version"
+mcp = "nflx_ctc"
+proto = { field = 24 }
+
+[[option_groups]]
+name = "tiny_model"
+since = "0.1"
+doc = "A tiny ONNX model scored alongside the classic models (tiny-AI)."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "tiny_model"
+type = "string"
+doc = "Tiny ONNX model to load alongside the classic models."
+cli = ["--tiny-model", "--tiny_model"]
+cli_meta = "$path"
+ffmpeg = "tiny_model"
+mcp = "tiny_model"
+proto = { field = 30 }
+
+[[option_groups.options]]
+name = "tiny_device"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"]
+default = "auto"
+doc = "ONNX Runtime execution provider of the tiny model."
+cli = ["--tiny-device", "--tiny_device"]
+ffmpeg = "tiny_device"
+mcp = "tiny_device"
+proto = { field = 31 }
+
+[[option_groups.options]]
+name = "dnn_ep"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"]
+doc = "Alias of the tiny-model device under the ONNX Runtime name (execution provider); both set the same setting."
+surfaces = ["cli", "mcp"]
+cli = ["--dnn-ep", "--dnn_ep"]
+cli_id = "ARG_DNN_EP"
+mcp = "dnn_ep"
+argv = "none"
+
+[[option_groups.options]]
+name = "tiny_threads"
+type = "uint"
+doc = "Intra-op threads of the CPU execution provider (0: the runtime's default)."
+cli = ["--tiny-threads", "--tiny_threads"]
+ffmpeg = "tiny_threads"
+mcp = "tiny_threads"
+proto = { field = 32 }
+
+[[option_groups.options]]
+name = "tiny_fp16"
+type = "bool"
+default = false
+doc = "Request fp16 input and output where the execution provider supports it."
+cli = ["--tiny-fp16", "--tiny_fp16"]
+ffmpeg = "tiny_fp16"
+mcp = "tiny_fp16"
+proto = { field = 33 }
+
+[[option_groups.options]]
+name = "tiny_model_verify"
+type = "bool"
+default = false
+doc = "Require a Sigstore bundle verification of the tiny model (cosign verify-blob) before it loads; a missing bundle, a missing cosign or a failed verification refuses the model."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-model-verify", "--tiny_model_verify"]
+mcp = "tiny_model_verify"
+proto = { field = 34 }
+
+[[option_groups.options]]
+name = "tiny_codec"
+type = "string"
+doc = "Encoder of the distorted clip, required by codec-aware tiny models (fr_regressor_v2/v3), which refuse to score without it. Must be in the model sidecar's encoder_vocab; the ffprobe names h264, hevc, av1, vp9 and vvc are accepted."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-codec", "--tiny_codec"]
+cli_meta = "$name"
+mcp = "tiny_codec"
+proto = { field = 35 }
+
+[[option_groups.options]]
+name = "tiny_preset"
+type = "string"
+doc = "Encoder preset (medium, slow, p4, 5, ...), read as the encoder defines it. Unset: ordinal 5 (medium). A model trained with one preset (fr_regressor_v3) ignores it and warns."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-preset", "--tiny_preset"]
+mcp = "tiny_preset"
+proto = { field = 36 }
+
+[[option_groups.options]]
+name = "tiny_crf"
+type = "uint"
+range = [0, 63]
+doc = "CRF or QP used for the encode, normalised as the model sidecar declares. Required with the codec and preset."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-crf", "--tiny_crf"]
+mcp = "tiny_crf"
+proto = { field = 37 }
+
+[[option_groups.options]]
+name = "tiny_resize"
+type = "enum"
+enum = ["bilinear", "nearest", "bicubic", "disabled"]
+default = "disabled"
+doc = "Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-resize", "--tiny_resize"]
+mcp = "tiny_resize"
+proto = { field = 38 }
+
+[[option_groups.options]]
+name = "no_reference"
+type = "bool"
+default = false
+doc = "No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only the distorted picture is scored."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--no-reference", "--no_reference"]
+mcp = "no_reference"
+proto = { field = 39 }
+
+[[option_groups]]
+name = "threads"
+since = "0.1"
+doc = "Worker threads of the feature extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "threads"
+type = "uint"
+doc = "Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread)."
+cli = ["--threads"]
+ffmpeg = "threads"
+aliases = ["n_threads"]
+mcp = "threads"
+proto = { field = 14 }
+
+[[option_groups]]
+name = "frames"
+since = "0.1"
+doc = "Which frames are scored."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "frame_cnt"
+type = "uint"
+range = [1]
+doc = "Score at most this many frames."
+cli = ["--frame_cnt"]
+mcp = "frame_cnt"
+proto = { field = 16 }
+
+[[option_groups.options]]
+name = "frame_skip_ref"
+type = "uint"
+doc = "Skip this many frames at the start of the reference."
+cli = ["--frame_skip_ref"]
+mcp = "frame_skip_ref"
+proto = { field = 17 }
+
+[[option_groups.options]]
+name = "frame_skip_dist"
+type = "uint"
+doc = "Skip this many frames at the start of the distorted video."
+cli = ["--frame_skip_dist"]
+mcp = "frame_skip_dist"
+proto = { field = 18 }
+
+[[option_groups]]
+name = "prediction"
+since = "0.1"
+doc = "Whether a model predicts a score."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "no_prediction"
+type = "bool"
+default = false
+doc = "Extract features only; no model score."
+cli = ["--no_prediction"]
+cli_short = "n"
+mcp = "no_prediction"
+proto = { field = 19 }
+
+[[option_groups]]
+name = "masks"
+since = "0.1"
+doc = "Restrictions of the instruction sets and GPU operations the extractors may use."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "cpumask"
+type = "uint"
+doc = "Bitmask of CPU instruction sets the extractors must not use."
+cli = ["--cpumask"]
+cli_short = "c"
+cli_meta = "$bitmask"
+cli_id = "ARG_CPUMASK"
+ffmpeg = "cpumask"
+mcp = "cpumask"
+proto = { field = 20 }
+
+[[option_groups.options]]
+name = "gpumask"
+type = "uint"
+doc = "Bitmask of GPU operations the extractors must not use."
+cli = ["--gpumask"]
+cli_meta = "$bitmask"
+ffmpeg = "gpumask"
+mcp = "gpumask"
+proto = { field = 21 }
+
+[[option_groups]]
+name = "device"
+since = "0.1"
+doc = "Which GPU of the selected backend runs the extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "device"
+type = "string"
+default = "auto"
+doc = "GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal)."
+surfaces = ["ffmpeg", "proto"]
+ffmpeg = "device"
+proto = { field = 13 }
+
+[[option_groups.options]]
+name = "sycl_device"
+type = "uint"
+doc = "SYCL GPU by index (unset: selected automatically)."
+surfaces = ["cli", "mcp"]
+cli = ["--sycl_device"]
+mcp = "sycl_device"
+
+[[option_groups.options]]
+name = "hip_device"
+type = "uint"
+doc = "HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given)."
+surfaces = ["cli", "mcp"]
+cli = ["--hip_device"]
+mcp = "hip_device"
+
+[[option_groups.options]]
+name = "metal_device"
+type = "uint"
+doc = "Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given)."
+surfaces = ["cli", "mcp"]
+cli = ["--metal_device"]
+mcp = "metal_device"
+
+[[option_groups]]
+name = "subsample"
+since = "0.1"
+doc = "How often a frame is scored."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "subsample"
+type = "uint"
+range = [1]
+default = 1
+doc = "Score every n-th frame (1: every frame)."
+cli = ["--subsample"]
+ffmpeg = "subsample"
+aliases = ["n_subsample"]
+mcp = "subsample"
+proto = { field = 15 }
+argv = "core"
+
+[[option_groups]]
+name = "precision"
+since = "0.1"
+doc = "How many digits a score is written with."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "precision"
+type = "string"
+default = "legacy"
+surface_defaults = { proto = "max" }
+doc = "Score precision: N (1..17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise."
+cli = ["--precision"]
+cli_meta = "$spec"
+mcp = "precision"
+proto = { field = 40 }
+argv = "core"
+
+[[option_groups]]
+name = "output"
+since = "0.1"
+doc = "The report: where it goes and its format."
+surfaces = ["cli", "ffmpeg", "mcp"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "output"
+type = "string"
+doc = "Report file."
+surfaces = ["cli", "ffmpeg"]
+cli = ["--output"]
+cli_short = "o"
+cli_meta = "$path"
+ffmpeg = "log_path"
+
+[[option_groups.options]]
+name = "output_format"
+type = "enum"
+enum = ["json", "xml", "csv", "sub"]
+default = "xml"
+surface_defaults = { mcp = "json", ffmpeg = "json" }
+doc = "Report format; json and xml carry the backend receipt."
+cli_values = { xml = "--xml", json = "--json", csv = "--csv", sub = "--sub" }
+cli_id = "ARG_OUTPUT"
+ffmpeg = "log_fmt"
+mcp = "output_fmt"
+argv = "core"
+
+[[option_groups.options]]
+name = "csv"
+type = "bool"
+default = false
+doc = "Write the report as CSV; the same as output_fmt csv."
+surfaces = ["mcp"]
+mcp = "csv"
+
+[[option_groups.options]]
+name = "sub"
+type = "bool"
+default = false
+doc = "Write per-frame scores as subtitles; the same as output_fmt sub."
+surfaces = ["mcp"]
+mcp = "sub"
+
+[[option_groups]]
+name = "device_target"
+since = "0.1"
+doc = "The display a score is computed for (device-targeted scoring, decided in PR #2185): viewing distance and display height reach the ADM extractor now; target size and scaling are reserved for device-targeted scoring."
+surfaces = ["ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "view_distance"
+type = "float"
+range = [0.75, 24.0]
+doc = "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value."
+ffmpeg = "view_distance"
+mcp = "view_distance"
+proto = { field = 50 }
+model_suffix = ":adm.adm_norm_view_dist={}"
+argv = "core"
+
+[[option_groups.options]]
+name = "display_height"
+type = "uint"
+range = [1]
+doc = "Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value."
+ffmpeg = "display_height"
+mcp = "display_height"
+proto = { field = 51 }
+model_suffix = ":adm.adm_ref_display_height={}"
+argv = "core"
+
+[[option_groups.options]]
+name = "target_width"
+type = "uint"
+default = 0
+doc = "Width of the target display the distorted video is scaled to (0: no scaling)."
+ffmpeg = "target_width"
+mcp = "target_width"
+proto = { field = 52 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups.options]]
+name = "target_height"
+type = "uint"
+default = 0
+doc = "Height of the target display the distorted video is scaled to (0: no scaling)."
+ffmpeg = "target_height"
+mcp = "target_height"
+proto = { field = 53 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups.options]]
+name = "target_scaling"
+type = "enum"
+enum = ["none", "bilinear", "bicubic", "lanczos"]
+default = "none"
+doc = "Scaling filter towards the target display."
+ffmpeg = "target_scaling"
+mcp = "target_scaling"
+proto = { field = 54 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups]]
+name = "worst_frames"
+since = "0.1"
+doc = "How many frames describe_worst_frames inspects."
+surfaces = ["mcp"]
+mcp_tools = ["describe_worst_frames"]
+
+[[option_groups.options]]
+name = "n"
+type = "uint"
+range = [1, 32]
+default = 5
+doc = "How many worst-VMAF frames to describe."
+mcp = "n"
+
+[[option_groups]]
+name = "pool"
+since = "0.1"
+doc = "How per-frame scores are pooled."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "pool"
+type = "flags"
+enum = ["min", "max", "mean", "harmonic_mean", "median", "perc5", "perc10", "perc20"]
+default = ["mean"]
+doc = "Pool methods of the final score and of the windows."
+ffmpeg = "pool"
+
+[[option_groups]]
+name = "window"
+since = "0.1"
+doc = "Window statistics (n_stats, #2138)."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "n_stats"
+type = "float"
+range = [0.0]
+default = 0.0
+doc = "Window length in seconds (0: no windows)."
+ffmpeg = "n_stats"
+
+[[option_groups.options]]
+name = "n_stats_frames"
+type = "uint"
+default = 0
+doc = "Window length in frames (0: no windows); exclusive with n_stats."
+ffmpeg = "n_stats_frames"
+
+[[option_groups.options]]
+name = "stats_out"
+type = "flags"
+enum = ["log", "metadata", "file"]
+default = ["log"]
+doc = "Where window statistics go."
+ffmpeg = "stats_out"
+
+[[option_groups.options]]
+name = "stats_path"
+type = "string"
+doc = "NDJSON file of the window statistics, one object per window."
+ffmpeg = "stats_path"
+
+[[option_groups]]
+name = "report"
+since = "0.1"
+doc = "What the filter reports besides the scores."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "score_fmt"
+type = "string"
+default = "%.6f"
+doc = "printf format of the scores (%.17g is lossless)."
+ffmpeg = "score_fmt"
+
+[[option_groups.options]]
+name = "provenance"
+type = "flags"
+enum = ["log", "report"]
+default = ["log", "report"]
+doc = "Print the provenance record at init (log) and embed it in the report (report)."
+ffmpeg = "provenance"
+
+[[option_groups.options]]
+name = "metadata"
+type = "bool"
+default = false
+doc = "Attach per-frame scores to the frames as lavfi.vmafx.<metric> metadata (delays output by the retention depth)."
+ffmpeg = "metadata"
+
+[[option_groups.options]]
+name = "profile"
+type = "bool"
+default = false
+doc = "Log the device timing breakdown at uninit."
+ffmpeg = "profile"
+
+[[option_groups]]
+name = "frame_import"
+since = "0.1"
+doc = "How the filter hands frames to the library."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "import_mode"
+type = "enum"
+enum = ["auto", "device", "host"]
+default = "auto"
+doc = "auto imports hardware frames without a copy and uploads software frames; device refuses software frames; host downloads hardware frames (logged once with the reason)."
+ffmpeg = "import"
+
+[[option_groups]]
+name = "perceptual_weight"
+since = "0.1"
+doc = "Perceptual weighting from frame side data."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "perceptual_weight"
+type = "bool"
+default = false
+doc = "Weight the scores with the perceptual side data of the frames."
+ffmpeg = "perceptual_weight"
+
+[[option_groups]]
+name = "program"
+since = "0.1"
+doc = "Switches of the command-line program itself."
+surfaces = ["cli"]
+
+[[option_groups.options]]
+name = "netflix_compat"
+type = "bool"
+default = false
+doc = "Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model."
+cli = ["--netflix-compat", "--netflix_compat"]
+
+[[option_groups.options]]
+name = "quiet"
+type = "bool"
+default = false
+doc = "Disable the FPS meter when run in a terminal."
+cli = ["--quiet"]
+cli_short = "q"
+
+[[option_groups.options]]
+name = "version"
+type = "bool"
+default = false
+doc = "Print the version and exit."
+cli = ["--version"]
+cli_short = "v"
+
+[[option_groups.options]]
+name = "help"
+type = "bool"
+default = false
+doc = "Print this message and exit."
+cli = ["--help"]

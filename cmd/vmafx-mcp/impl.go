@@ -29,6 +29,7 @@ import (
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/modeleval"
+	"github.com/VMAFx/vmafx/pkg/scoreopts"
 )
 
 // ---------------------------------------------------------------------------
@@ -154,430 +155,181 @@ func hasArg(args map[string]any, key string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// Optional scoring pass-through flags (ADR-1117)
+// Scoring options (ADR-1117, RC4 WP8)
 //
-// scoreExtras carries the optional tiny-AI/DNN, feature-selection, CTC-preset,
-// and frame-range parameters shared by vmaf_score + vmaf_score_encoded. Each
-// field maps onto a `vmaf` CLI flag verified against core/tools/cli_parse.c.
-// A zero-value scoreExtras adds no flags (backward-compatible).
-//
-// This MUST stay byte-compatible with the Python server's equivalent argv
-// construction in `_run_vmaf_score` (server.py) — same flags, same values.
+// Every scoring argument, its bounds and the `vmaf` flag it becomes come from
+// the option groups of core/api/vmafx.toml through pkg/scoreopts
+// (options.gen.json). The same file drives the Python server, so the two
+// servers validate and pass the same flags in the same order by construction.
+// Only the rules the definition cannot state stay here: tiny_device and dnn_ep
+// must agree, csv / sub / output_fmt must agree, and no_reference needs a
+// tiny model.
 // ---------------------------------------------------------------------------
 
-var (
-	validPixfmts = map[string]bool{
-		"420": true,
-		"422": true,
-		"444": true,
+// scoringOptions returns the generated scoring options; a failure is a build
+// defect (options.gen.json is embedded) and is reported, not defaulted.
+func scoringOptions() (*scoreopts.Document, error) {
+	doc, err := scoreopts.Load()
+	if err != nil {
+		return nil, fmt.Errorf("scoring options: %w", err)
 	}
-	validBackends = map[string]bool{
-		"auto":  true,
-		"cpu":   true,
-		"cuda":  true,
-		"sycl":  true,
-		"hip":   true,
-		"metal": true,
-	}
-	validOutputFmts = map[string]bool{
-		"json": true,
-		"xml":  true,
-		"csv":  true,
-		"sub":  true,
-	}
-	validTinyDevices = map[string]bool{
-		"auto":         true,
-		"cpu":          true,
-		"cuda":         true,
-		"openvino":     true,
-		"openvino-npu": true,
-		"openvino-cpu": true,
-		"openvino-gpu": true,
-		"coreml":       true,
-		"coreml-ane":   true,
-		"coreml-gpu":   true,
-		"coreml-cpu":   true,
-		"rocm":         true,
-	}
-	validTinyResizes = map[string]bool{
-		"bilinear": true,
-		"nearest":  true,
-		"bicubic":  true,
-		"disabled": true,
-	}
-	validAOMCTCs = map[string]bool{
-		"v1.0": true,
-		"v2.0": true,
-		"v3.0": true,
-		"v4.0": true,
-		"v5.0": true,
-		"v6.0": true,
-		"v7.0": true,
-	}
-	validNFLXCTCs = map[string]bool{
-		"v1.0": true,
-	}
-)
+	return doc, nil
+}
 
+// validBackend reports whether name is a value of the generated backend option.
+func validBackend(name string) bool {
+	doc, err := scoringOptions()
+	return err == nil && doc.Allows("backend", name)
+}
+
+// scoreExtras carries the validated scoring options of one call (keyed by
+// option name) and the few decisions the handlers take on them.
 type scoreExtras struct {
-	features        []string // repeated --feature
-	aomCTC          string   // --aom_ctc
-	nflxCTC         string   // --nflx_ctc
-	tinyModel       string   // --tiny-model
-	tinyDevice      string   // --tiny-device (alias --dnn-ep)
-	tinyThreads     *int     // --tiny-threads
-	tinyFP16        bool     // --tiny-fp16
-	tinyModelVerify bool     // --tiny-model-verify
-	tinyCodec       string   // --tiny-codec
-	tinyPreset      string   // --tiny-preset
-	tinyCRF         *int     // --tiny-crf
-	tinyResize      string   // --tiny-resize
-	noReference     bool     // --no-reference
-	threads         *int     // --threads
-	frameCnt        *int     // --frame_cnt
-	frameSkipRef    *int     // --frame_skip_ref
-	frameSkipDist   *int     // --frame_skip_dist
-	noPrediction    bool     // --no_prediction
-	subsample       int      // --subsample (emitted only when > 1; vmaf_score_encoded)
-	cpumask         *int     // --cpumask
-	gpumask         *int     // --gpumask
-	syclDevice      *int     // --sycl_device
-	hipDevice       *int     // --hip_device
-	metalDevice     *int     // --metal_device
-	outputFmt       string   // --json | --xml | --csv | --sub
-	disableClip     bool     // :disable_clip on model
-	enableTransform bool     // :enable_transform on model
+	values      scoreopts.Values
+	noReference bool
+	tinyModel   string
+	subsample   int
+	outputFmt   string
 }
 
 // isZero reports whether no scoring-extra flag is set, i.e. the request is a
 // plain FR score that the cgo direct path can still serve (ADR-1117 / ADR-0931).
 func (ex scoreExtras) isZero() bool {
-	return len(ex.features) == 0 && ex.aomCTC == "" && ex.nflxCTC == "" &&
-		ex.tinyModel == "" && ex.tinyDevice == "" && ex.tinyThreads == nil &&
-		!ex.tinyFP16 && !ex.tinyModelVerify && ex.tinyCodec == "" &&
-		ex.tinyPreset == "" && ex.tinyCRF == nil && ex.tinyResize == "" &&
-		!ex.noReference && ex.threads == nil && ex.frameCnt == nil &&
-		ex.frameSkipRef == nil && ex.frameSkipDist == nil && !ex.noPrediction &&
-		ex.subsample <= 1 &&
-		ex.cpumask == nil && ex.gpumask == nil && ex.syclDevice == nil &&
-		ex.hipDevice == nil && ex.metalDevice == nil &&
-		!ex.disableClip && !ex.enableTransform &&
-		(ex.outputFmt == "" || ex.outputFmt == "json")
-}
-
-// optIntArg returns a pointer to the int value at key, or nil when the key is
-// absent. Used so the handler can distinguish "unset" (omit the flag) from an
-// explicit 0 (which is a valid value for e.g. --tiny-threads / --frame_skip_*).
-func optIntArg(args map[string]any, key string) *int {
-	if !hasArg(args, key) {
-		return nil
+	doc, err := scoringOptions()
+	if err != nil {
+		return false
 	}
-	v := intArg(args, key, 0)
-	return &v
-}
-
-// parseScoreExtras extracts and validates the optional scoring pass-through flags from args.
-//
-// The groups run in the order the flags were validated inline, so the first complaint a
-// caller sees for a request with several bad values is the same one as before.
-func parseScoreExtras(args map[string]any) (scoreExtras, error) {
-	var ex scoreExtras
-	for _, parse := range []func(map[string]any, *scoreExtras) error{
-		parseTinyExtras,
-		parseCTCExtras,
-		parseFrameExtras,
-		parseDeviceExtras,
-		parseOutputExtras,
-	} {
-		if err := parse(args, &ex); err != nil {
-			return scoreExtras{}, err
+	for i := range doc.Argv {
+		entry := &doc.Argv[i]
+		value, set := ex.values[entry.Option]
+		if !set || (entry.Stage != "extra" && entry.Form != "suffix") {
+			continue
+		}
+		if on, isBool := value.(bool); !isBool || on {
+			return false
 		}
 	}
-	ex.features = parseFeatureExtras(args)
+	return ex.subsample <= 1 && (ex.outputFmt == "" || ex.outputFmt == "json")
+}
+
+// parseScoreExtras extracts and validates the scoring options from args.
+func parseScoreExtras(args map[string]any) (scoreExtras, error) {
+	doc, err := scoringOptions()
+	if err != nil {
+		return scoreExtras{}, err
+	}
+	values, err := doc.FromMCP(args)
+	if err != nil {
+		return scoreExtras{}, err
+	}
+	if err := foldTinyDevice(values); err != nil {
+		return scoreExtras{}, err
+	}
+	outputFmt, err := resolveOutputFormat(args)
+	if err != nil {
+		return scoreExtras{}, err
+	}
+	ex := scoreExtras{values: values, outputFmt: outputFmt, subsample: 1}
+	ex.noReference, _ = values["no_reference"].(bool)
+	ex.tinyModel, _ = values["tiny_model"].(string)
+	if subsample, ok := values["subsample"].(float64); ok {
+		ex.subsample = int(subsample)
+	}
 	return ex, nil
 }
 
-// parseTinyExtras validates and stores the tiny-AI / DNN pass-through flags.
-func parseTinyExtras(args map[string]any, ex *scoreExtras) error {
-	tinyDevice := strArg(args, "tiny_device", "")
-	dnnEP := strArg(args, "dnn_ep", "")
-	if tinyDevice != "" && dnnEP != "" && tinyDevice != dnnEP {
-		return fmt.Errorf("conflicting tiny_device (%q) and dnn_ep (%q) values", tinyDevice, dnnEP)
+// foldTinyDevice makes dnn_ep (the ONNX Runtime name) set tiny_device; the two
+// must agree when both are given.
+func foldTinyDevice(values scoreopts.Values) error {
+	device, hasDevice := values["tiny_device"].(string)
+	ep, hasEP := values["dnn_ep"].(string)
+	if hasDevice && hasEP && device != ep {
+		return fmt.Errorf("conflicting tiny_device (%q) and dnn_ep (%q) values", device, ep)
 	}
-	if tinyDevice == "" {
-		tinyDevice = dnnEP
+	if !hasDevice && hasEP {
+		values["tiny_device"] = ep
 	}
-	if tinyDevice != "" && !validTinyDevices[tinyDevice] {
-		return fmt.Errorf("invalid tiny_device %q: must be one of auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm", tinyDevice)
-	}
-
-	tinyResize := strArg(args, "tiny_resize", "")
-	if tinyResize != "" && !validTinyResizes[tinyResize] {
-		return fmt.Errorf("invalid tiny_resize %q: must be one of bilinear|nearest|bicubic|disabled", tinyResize)
-	}
-
-	tinyCRF := optIntArg(args, "tiny_crf")
-	if tinyCRF != nil && (*tinyCRF < 0 || *tinyCRF > 63) {
-		return fmt.Errorf("invalid tiny_crf %d: must be in range [0, 63]", *tinyCRF)
-	}
-
-	tinyThreads := optIntArg(args, "tiny_threads")
-	if tinyThreads != nil && *tinyThreads < 0 {
-		return fmt.Errorf("invalid tiny_threads %d: must be >= 0", *tinyThreads)
-	}
-
-	ex.tinyModel = strArg(args, "tiny_model", "")
-	ex.tinyDevice = tinyDevice
-	ex.tinyThreads = tinyThreads
-	ex.tinyFP16 = boolArg(args, "tiny_fp16", false)
-	ex.tinyModelVerify = boolArg(args, "tiny_model_verify", false)
-	ex.tinyCodec = strArg(args, "tiny_codec", "")
-	ex.tinyPreset = strArg(args, "tiny_preset", "")
-	ex.tinyCRF = tinyCRF
-	ex.tinyResize = tinyResize
-	ex.noReference = boolArg(args, "no_reference", false)
+	delete(values, "dnn_ep")
 	return nil
 }
 
-// parseCTCExtras validates and stores the Common Test Conditions preset selectors.
-func parseCTCExtras(args map[string]any, ex *scoreExtras) error {
-	aomCTC := strArg(args, "aom_ctc", "")
-	if aomCTC != "" && !validAOMCTCs[aomCTC] {
-		return fmt.Errorf("invalid aom_ctc %q: must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0", aomCTC)
-	}
-
-	nflxCTC := strArg(args, "nflx_ctc", "")
-	if nflxCTC != "" && !validNFLXCTCs[nflxCTC] {
-		return fmt.Errorf("invalid nflx_ctc %q: must be v1.0", nflxCTC)
-	}
-
-	ex.aomCTC = aomCTC
-	ex.nflxCTC = nflxCTC
-	return nil
-}
-
-// parseFrameExtras validates and stores the worker-count and frame-range selectors.
-func parseFrameExtras(args map[string]any, ex *scoreExtras) error {
-	threads := optIntArg(args, "threads")
-	if threads != nil && *threads < 1 {
-		return fmt.Errorf("invalid threads %d: must be >= 1", *threads)
-	}
-
-	frameCnt := optIntArg(args, "frame_cnt")
-	if frameCnt != nil && *frameCnt < 1 {
-		return fmt.Errorf("invalid frame_cnt %d: must be >= 1", *frameCnt)
-	}
-
-	frameSkipRef := optIntArg(args, "frame_skip_ref")
-	if frameSkipRef != nil && *frameSkipRef < 0 {
-		return fmt.Errorf("invalid frame_skip_ref %d: must be non-negative", *frameSkipRef)
-	}
-
-	frameSkipDist := optIntArg(args, "frame_skip_dist")
-	if frameSkipDist != nil && *frameSkipDist < 0 {
-		return fmt.Errorf("invalid frame_skip_dist %d: must be non-negative", *frameSkipDist)
-	}
-
-	subsample := intArg(args, "subsample", 1)
-	if subsample < 1 {
-		return fmt.Errorf("invalid subsample %d: must be >= 1", subsample)
-	}
-
-	ex.threads = threads
-	ex.frameCnt = frameCnt
-	ex.frameSkipRef = frameSkipRef
-	ex.frameSkipDist = frameSkipDist
-	ex.noPrediction = boolArg(args, "no_prediction", false)
-	ex.subsample = subsample
-	return nil
-}
-
-// parseDeviceExtras validates and stores the CPU and GPU device selectors.
-func parseDeviceExtras(args map[string]any, ex *scoreExtras) error {
-	cpumask := optIntArg(args, "cpumask")
-	if cpumask != nil && *cpumask < 0 {
-		return fmt.Errorf("invalid cpumask %d: must be non-negative", *cpumask)
-	}
-
-	gpumask := optIntArg(args, "gpumask")
-	if gpumask != nil && *gpumask < 0 {
-		return fmt.Errorf("invalid gpumask %d: must be non-negative", *gpumask)
-	}
-
-	syclDevice := optIntArg(args, "sycl_device")
-	if syclDevice != nil && *syclDevice < 0 {
-		return fmt.Errorf("invalid sycl_device %d: must be non-negative", *syclDevice)
-	}
-
-	hipDevice := optIntArg(args, "hip_device")
-	if hipDevice != nil && *hipDevice < 0 {
-		return fmt.Errorf("invalid hip_device %d: must be non-negative", *hipDevice)
-	}
-
-	metalDevice := optIntArg(args, "metal_device")
-	if metalDevice != nil && *metalDevice < 0 {
-		return fmt.Errorf("invalid metal_device %d: must be non-negative", *metalDevice)
-	}
-
-	ex.cpumask = cpumask
-	ex.gpumask = gpumask
-	ex.syclDevice = syclDevice
-	ex.hipDevice = hipDevice
-	ex.metalDevice = metalDevice
-	return nil
-}
-
-// parseOutputExtras resolves the output format from the csv/sub shorthands and the
+// resolveOutputFormat resolves the output format from the csv/sub shorthands and the
 // output_fmt (or legacy format) key, rejecting combinations that disagree.
-func parseOutputExtras(args map[string]any, ex *scoreExtras) error {
-	csvFlag := boolArg(args, "csv", false)
-	subFlag := boolArg(args, "sub", false)
-	if csvFlag && subFlag {
-		return fmt.Errorf("conflicting csv and sub flags: cannot specify both")
-	}
+func resolveOutputFormat(args map[string]any) (string, error) {
 	rawFmt := strArg(args, "output_fmt", "")
 	if rawFmt == "" {
 		rawFmt = strArg(args, "format", "")
 	}
-	outputFmt := rawFmt
-	if csvFlag {
-		if rawFmt != "" && rawFmt != "csv" {
-			return fmt.Errorf("conflicting output format: csv flag cannot be used with output_fmt %q", rawFmt)
-		}
-		outputFmt = "csv"
-	} else if subFlag {
-		if rawFmt != "" && rawFmt != "sub" {
-			return fmt.Errorf("conflicting output format: sub flag cannot be used with output_fmt %q", rawFmt)
-		}
-		outputFmt = "sub"
-	} else if outputFmt == "" {
-		outputFmt = "json"
+	short, err := shorthandFormat(args, rawFmt)
+	if err != nil || short != "" {
+		return short, err
 	}
-	if !validOutputFmts[outputFmt] {
-		return fmt.Errorf("invalid output_fmt %q: must be one of json|xml|csv|sub", outputFmt)
+	if rawFmt == "" {
+		return "json", nil
 	}
-
-	ex.outputFmt = outputFmt
-	ex.disableClip = boolArg(args, "disable_clip", false)
-	ex.enableTransform = boolArg(args, "enable_transform", false)
-	return nil
+	doc, err := scoringOptions()
+	if err != nil {
+		return "", err
+	}
+	if !doc.Allows("output_format", rawFmt) {
+		return "", fmt.Errorf("invalid output_fmt %q: must be one of json|xml|csv|sub", rawFmt)
+	}
+	return rawFmt, nil
 }
 
-// parseFeatureExtras collects the repeated --feature values, skipping entries that are
-// not non-empty strings. The schema already constrains them; this keeps a malformed
-// client from injecting a blank flag.
-func parseFeatureExtras(args map[string]any) []string {
-	raw, ok := args["feature"].([]any)
-	if !ok {
-		return nil
+// shorthandFormat is the format the csv / sub switches select ("" for neither);
+// both at once, or one that disagrees with output_fmt, is refused.
+func shorthandFormat(args map[string]any, rawFmt string) (string, error) {
+	csvFlag := boolArg(args, "csv", false)
+	subFlag := boolArg(args, "sub", false)
+	if csvFlag && subFlag {
+		return "", fmt.Errorf("conflicting csv and sub flags: cannot specify both")
 	}
-	var features []string
-	for _, f := range raw {
-		if s, isStr := f.(string); isStr && s != "" {
-			features = append(features, s)
+	for _, shorthand := range []struct {
+		on   bool
+		name string
+	}{{csvFlag, "csv"}, {subFlag, "sub"}} {
+		if !shorthand.on {
+			continue
 		}
+		if rawFmt != "" && rawFmt != shorthand.name {
+			return "", fmt.Errorf("conflicting output format: %s flag cannot be used with output_fmt %q",
+				shorthand.name, rawFmt)
+		}
+		return shorthand.name, nil
 	}
-	return features
+	return "", nil
 }
 
-// appendArgs appends every set scoring-extra flag to argv in a fixed,
-// deterministic order (matches the Python server's argv build).
+// appendArgs appends every set scoring-extra flag to argv: --subsample (only
+// when > 1, right after the output format, as the Python server emits it),
+// then the generated "extra" flags in definition order.
 func (ex scoreExtras) appendArgs(argv []string) []string {
-	// --subsample is emitted first (right after --json in runVmafScore) so the
-	// argv order matches the Python server, and only when > 1 (parity with
-	// `if req.subsample > 1` in server.py). Fixes a pre-existing parity bug
-	// where vmaf_score_encoded declared subsample but never forwarded it.
+	doc, err := scoringOptions()
+	if err != nil {
+		return argv
+	}
 	if ex.subsample > 1 {
-		argv = append(argv, "--subsample", strconv.Itoa(ex.subsample))
+		flag, _ := doc.Flag("subsample")
+		argv = append(argv, flag, strconv.Itoa(ex.subsample))
 	}
-	for _, f := range ex.features {
-		argv = append(argv, "--feature", f)
-	}
-	if ex.aomCTC != "" {
-		argv = append(argv, "--aom_ctc", ex.aomCTC)
-	}
-	if ex.nflxCTC != "" {
-		argv = append(argv, "--nflx_ctc", ex.nflxCTC)
-	}
-	argv = ex.appendTinyArgs(argv)
-	argv = ex.appendFrameArgs(argv)
-	return ex.appendDeviceArgs(argv)
+	return append(argv, doc.ExtraArgs(ex.values)...)
 }
 
-// appendTinyArgs appends the tiny-AI / DNN flags, in the order the Python server emits
-// them.
-func (ex scoreExtras) appendTinyArgs(argv []string) []string {
-	if ex.tinyModel != "" {
-		argv = append(argv, "--tiny-model", ex.tinyModel)
+// modelSpec is the model argument with the generated model-spec suffixes
+// (disable_clip, enable_transform, view_distance, display_height); a model the
+// caller did not name is the library default (VMAF_DEFAULT_MODEL_VERSION).
+func (ex scoreExtras) modelSpec(model string) string {
+	doc, err := scoringOptions()
+	if err != nil {
+		return model
 	}
-	if ex.tinyDevice != "" {
-		argv = append(argv, "--tiny-device", ex.tinyDevice)
+	if model == "" {
+		if version, defErr := doc.LibraryDefault("model"); defErr == nil {
+			model = "version=" + version
+		}
 	}
-	if ex.tinyThreads != nil {
-		argv = append(argv, "--tiny-threads", strconv.Itoa(*ex.tinyThreads))
-	}
-	if ex.tinyFP16 {
-		argv = append(argv, "--tiny-fp16")
-	}
-	if ex.tinyModelVerify {
-		argv = append(argv, "--tiny-model-verify")
-	}
-	if ex.tinyCodec != "" {
-		argv = append(argv, "--tiny-codec", ex.tinyCodec)
-	}
-	if ex.tinyPreset != "" {
-		argv = append(argv, "--tiny-preset", ex.tinyPreset)
-	}
-	if ex.tinyCRF != nil {
-		argv = append(argv, "--tiny-crf", strconv.Itoa(*ex.tinyCRF))
-	}
-	if ex.tinyResize != "" {
-		argv = append(argv, "--tiny-resize", ex.tinyResize)
-	}
-	if ex.noReference {
-		argv = append(argv, "--no-reference")
-	}
-	return argv
-}
-
-// appendFrameArgs appends the worker-count and frame-range flags.
-func (ex scoreExtras) appendFrameArgs(argv []string) []string {
-	if ex.threads != nil {
-		argv = append(argv, "--threads", strconv.Itoa(*ex.threads))
-	}
-	if ex.frameCnt != nil {
-		argv = append(argv, "--frame_cnt", strconv.Itoa(*ex.frameCnt))
-	}
-	if ex.frameSkipRef != nil {
-		argv = append(argv, "--frame_skip_ref", strconv.Itoa(*ex.frameSkipRef))
-	}
-	if ex.frameSkipDist != nil {
-		argv = append(argv, "--frame_skip_dist", strconv.Itoa(*ex.frameSkipDist))
-	}
-	if ex.noPrediction {
-		argv = append(argv, "--no_prediction")
-	}
-	return argv
-}
-
-// appendDeviceArgs appends the CPU and GPU device-selector flags.
-func (ex scoreExtras) appendDeviceArgs(argv []string) []string {
-	if ex.cpumask != nil {
-		argv = append(argv, "--cpumask", strconv.Itoa(*ex.cpumask))
-	}
-	if ex.gpumask != nil {
-		argv = append(argv, "--gpumask", strconv.Itoa(*ex.gpumask))
-	}
-	if ex.syclDevice != nil {
-		argv = append(argv, "--sycl_device", strconv.Itoa(*ex.syclDevice))
-	}
-	if ex.hipDevice != nil {
-		argv = append(argv, "--hip_device", strconv.Itoa(*ex.hipDevice))
-	}
-	if ex.metalDevice != nil {
-		argv = append(argv, "--metal_device", strconv.Itoa(*ex.metalDevice))
-	}
-	return argv
+	return doc.ModelSpec(model, ex.values)
 }
 
 // ---------------------------------------------------------------------------
@@ -619,20 +371,13 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("width and height must be positive integers")
 	}
-	pixfmt := strArg(args, "pixfmt", "420")
-	if !validPixfmts[pixfmt] {
-		return nil, fmt.Errorf("invalid pixfmt %q: must be one of 420|422|444", pixfmt)
-	}
+	// pixfmt, bitdepth, backend and precision were checked against their
+	// generated options by parseScoreExtras; the defaults are the schema's.
+	pixfmt := strArg(args, "pixfmt", mcpDefault("pixel_format", "420"))
 	bitdepth := intArg(args, "bitdepth", 8)
-	if bitdepth != 8 && bitdepth != 10 && bitdepth != 12 && bitdepth != 16 {
-		return nil, fmt.Errorf("invalid bitdepth %d: must be one of 8|10|12|16", bitdepth)
-	}
-	backend := strArg(args, "backend", "auto")
-	if !validBackends[backend] {
-		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
-	}
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
-	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
+	backend := strArg(args, "backend", mcpDefault("backend", "auto"))
+	model := strArg(args, "model", "") // "": the library default (buildVmafArgv)
+	precision := strArg(args, "precision", mcpDefault("precision", "legacy"))
 
 	// When VMAFX_MCP_DIRECT=1, attempt the direct cgo path first.  The cgo
 	// path falls back to the subprocess path transparently for backends /
@@ -645,15 +390,39 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend, precision, extras)
 }
 
+// mcpDefault is the default the generated schema documents for an option on
+// the MCP surface, or fallback when it has none.
+func mcpDefault(option, fallback string) string {
+	doc, err := scoringOptions()
+	if err != nil {
+		return fallback
+	}
+	o, ok := doc.Option(option)
+	if !ok {
+		return fallback
+	}
+	if value, isText := o.DefaultOn("mcp").(string); isText {
+		return value
+	}
+	return fallback
+}
+
+// cliFlag is the vmaf flag of an option (generated); "" when the definition
+// has none, which the scoreopts tests rule out for every flag used here.
+func cliFlag(option string) string {
+	doc, err := scoringOptions()
+	if err != nil {
+		return ""
+	}
+	flag, _ := doc.Flag(option)
+	return flag
+}
+
 // buildVmafArgv constructs the complete argv list for invoking the vmaf CLI,
-// maintaining strict byte-parity with the Python vmaf-mcp server.
+// maintaining strict byte-parity with the Python vmaf-mcp server. Every flag
+// comes from the generated options; `model` already carries its suffixes
+// (scoreExtras.modelSpec).
 func buildVmafArgv(vmafBin, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision, outPath string, extras scoreExtras) []string {
-	if extras.disableClip && !strings.Contains(model, ":disable_clip") {
-		model += ":disable_clip"
-	}
-	if extras.enableTransform && !strings.Contains(model, ":enable_transform") {
-		model += ":enable_transform"
-	}
 	argv := []string{}
 	if vmafBin != "" {
 		argv = append(argv, vmafBin)
@@ -662,36 +431,43 @@ func buildVmafArgv(vmafBin, ref, dis string, width, height int, pixfmt string, b
 	// distorted picture is scored by the NR tiny model). When a ref is still
 	// supplied — FR mode, or an NR caller passing one — emit -r as usual.
 	if ref != "" {
-		argv = append(argv, "-r", ref)
+		argv = append(argv, cliFlag("reference"), ref)
 	}
 	argv = append(argv,
-		"-d", dis,
-		"--width", strconv.Itoa(width),
-		"--height", strconv.Itoa(height),
-		"-p", pixfmt,
-		"-b", strconv.Itoa(bitdepth),
-		"-m", model,
-		"--precision", precision,
-		"-q",
-		"-o", outPath,
+		cliFlag("distorted"), dis,
+		cliFlag("width"), strconv.Itoa(width),
+		cliFlag("height"), strconv.Itoa(height),
+		cliFlag("pixel_format"), pixfmt,
+		cliFlag("bitdepth"), strconv.Itoa(bitdepth),
+		cliFlag("model"), extras.modelSpec(model),
+		cliFlag("precision"), precision,
+		cliFlag("quiet"),
+		cliFlag("output"), outPath,
 	)
-	switch extras.outputFmt {
-	case "xml":
-		argv = append(argv, "--xml")
-	case "csv":
-		argv = append(argv, "--csv")
-	case "sub":
-		argv = append(argv, "--sub")
-	default:
-		argv = append(argv, "--json")
-	}
+	argv = append(argv, outputFormatFlag(extras.outputFmt))
 	argv = extras.appendArgs(argv)
 	if siblings, ok := backendDisable[backend]; ok {
 		for _, s := range siblings {
-			argv = append(argv, "--no_"+s)
+			argv = append(argv, cliFlag("no_"+s))
 		}
 	}
 	return argv
+}
+
+// outputFormatFlag is the vmaf switch of a report format (json when unknown).
+func outputFormatFlag(format string) string {
+	doc, err := scoringOptions()
+	if err != nil {
+		return "--json"
+	}
+	entry, ok := doc.Entry("output_format")
+	if !ok {
+		return "--json"
+	}
+	if flag, known := entry.Values[format]; known {
+		return flag
+	}
+	return entry.Values["json"]
 }
 
 func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision string, extras scoreExtras) (map[string]any, error) {
@@ -799,7 +575,7 @@ func inferBackendFromPayload(payload any) string {
 		return "unknown"
 	}
 	backendUsed, ok := m["backend_used"].(string)
-	if !ok || backendUsed == "auto" || !validBackends[backendUsed] {
+	if !ok || backendUsed == "auto" || !validBackend(backendUsed) {
 		return "unknown"
 	}
 	return backendUsed
@@ -1096,8 +872,8 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 	height := intArg(args, "height", 0)
 	pixfmt := strArg(args, "pixfmt", "420")
 	bitdepth := intArg(args, "bitdepth", 8)
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
-	backend := strArg(args, "backend", "auto")
+	model := strArg(args, "model", "") // "": the library default (buildVmafArgv)
+	backend := strArg(args, "backend", mcpDefault("backend", "auto"))
 	n := intArg(args, "n", 5)
 
 	score, err := runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend, "legacy", scoreExtras{}) // %.6f per ADR-0119
@@ -1485,16 +1261,15 @@ func handleVmafScoreEncoded(ctx context.Context, args map[string]any) (any, erro
 	if err != nil {
 		return nil, fmt.Errorf("distorted_encoded: %w", err)
 	}
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
-	backend := strArg(args, "backend", "auto")
-	if !validBackends[backend] {
-		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
-	}
-	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
+	// model, backend and precision were checked against their generated
+	// options by parseScoreExtras; "" model is the library default.
 	extras, err := parseScoreExtras(args)
 	if err != nil {
 		return nil, err
 	}
+	model := strArg(args, "model", "")
+	backend := strArg(args, "backend", mcpDefault("backend", "auto"))
+	precision := strArg(args, "precision", mcpDefault("precision", "legacy"))
 	if extras.noReference && extras.tinyModel == "" {
 		return nil, fmt.Errorf("no_reference requires tiny_model; no classic NR scorer exists")
 	}

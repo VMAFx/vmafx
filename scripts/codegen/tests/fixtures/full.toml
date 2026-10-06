@@ -182,6 +182,7 @@ name = "VmafxWindowResult"
 header = "vmafx/score.h"
 sized = true
 since = "0.2"
+proto = "WindowResult"
 doc = "A finished window."
 fields = [
   { name = "n_frames", type = "u64", doc = "Frames in the window." },
@@ -299,6 +300,7 @@ name = "threads"
 since = "0.1"
 doc = "Worker threads."
 surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["score"]
 options = [
   { name = "threads", type = "uint", default = 0, range = [0, 256], doc = "Worker threads.", cli = ["--threads"], ffmpeg = "threads", aliases = ["n_threads"], mcp = "threads", proto = { field = 7 } },
 ]
@@ -311,4 +313,32 @@ surfaces = ["cli", "ffmpeg"]
 options = [
   { name = "pool", type = "enum", default = "mean", enum = ["mean", "min", "harmonic_mean"], doc = "Pool method.", cli = ["--pool"], ffmpeg = "pool" },
   { name = "subsample", type = "int", default = 1, range = [1, 128], doc = "Every n-th frame.", cli = ["--subsample"], ffmpeg = "n_subsample" },
+]
+
+[[option_groups]]
+name = "input"
+since = "0.2"
+doc = "What is scored."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["score", "inspect"]
+options = [
+  { name = "reference", type = "string", doc = "Reference file.", surfaces = ["cli", "mcp"], cli = ["--reference"], cli_short = "r", cli_meta = "$path", mcp = "ref", mcp_required = true, argv = "core", argv_flag = "-r" },
+  { name = "bitdepth", type = "uint", choices = [8, 10], doc = "Bits per sample.", cli = ["--bitdepth"], cli_short = "b", mcp = "bitdepth", proto = { field = 1 }, argv = "core", argv_flag = "-b" },
+  { name = "model", type = "string", default_macro = "VMAF_DEFAULT_MODEL_VERSION", repeat = ["cli"], doc = "Model.", surfaces = ["cli", "mcp"], cli = ["--model"], cli_short = "m", cli_meta = "$params", mcp = "model", argv = "core", argv_flag = "-m" },
+  { name = "format", type = "enum", default = "xml", surface_defaults = { mcp = "json" }, enum = ["xml", "json"], doc = "Report format.", cli_values = { xml = "--xml", json = "--json" }, cli_id = "ARG_FORMAT", mcp = "output_fmt", proto = { field = 2 }, argv = "core" },
+  { name = "precise", type = "bool", default = false, doc = "Lossless scores.", cli = ["--precise", "--precise-scores"], mcp = "precise", proto = { field = 3 } },
+  { name = "feature", type = "string", repeat = true, doc = "Extra feature.", cli = ["--feature"], mcp = "feature", proto = { field = 4 } },
+  { name = "clip", type = "bool", default = false, doc = "Disable clipping.", surfaces = ["mcp", "proto"], mcp = "disable_clip", proto = { field = 5 }, model_suffix = ":disable_clip" },
+  { name = "target_width", type = "uint", default = 0, range = [0], doc = "Target width.", surfaces = ["mcp", "proto"], mcp = "target_width", proto = { field = 6 }, reserved = "lands with device-targeted scoring" },
+]
+
+[[option_groups]]
+name = "window"
+since = "0.2"
+doc = "Window statistics."
+surfaces = ["ffmpeg", "proto"]
+proto_message = "WindowOptions"
+options = [
+  { name = "n_stats", type = "float", default = 0.0, range = [0.0], doc = "Window length in seconds.", ffmpeg = "n_stats", proto = { field = 1 } },
+  { name = "stats_out", type = "flags", default = ["log"], enum = ["log", "file"], doc = "Where windows go.", ffmpeg = "stats_out", proto = { field = 2 } },
 ]

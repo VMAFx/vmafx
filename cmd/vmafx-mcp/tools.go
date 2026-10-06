@@ -32,232 +32,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/scoreopts"
 )
 
 // schemaObj is a shorthand for a raw JSON object used as inputSchema.
 type schemaObj = map[string]any
-
-// scoringExtraProperties returns the optional pass-through scoring parameters
-// shared by vmaf_score and vmaf_score_encoded. They map onto the `vmaf` CLI
-// flags verified against core/tools/cli_parse.c (ADR-1117). Every property is
-// optional and only forwarded to the CLI when the caller supplies it, so
-// existing callers are unaffected (backward-compatible).
-//
-// This function MUST stay byte-identical to the Python server's
-// `_scoring_extra_properties()` (mcp-server/vmaf-mcp/src/vmaf_mcp/server.py)
-// — same keys, enums, defaults, and descriptions — per cmd/vmafx-mcp/AGENTS.md.
-//
-// The set is assembled from the same groups the Python server lays out in
-// `_scoring_extra_properties()`. Splitting it across those groups changes no key,
-// enum, default or description -- only where each group is written -- so the
-// byte-identical contract above is unaffected.
-func scoringExtraProperties() schemaObj {
-	out := schemaObj{}
-	for _, group := range []schemaObj{
-		scoringFeatureProperties(),
-		scoringTinyModelProperties(),
-		scoringTinyTuningProperties(),
-		scoringFrameRangeProperties(),
-		scoringDeviceProperties(),
-		scoringOutputProperties(),
-	} {
-		maps.Copy(out, group)
-	}
-	return out
-}
-
-// scoringFeatureProperties returns the feature-selection and CTC-preset pass-through properties.
-func scoringFeatureProperties() schemaObj {
-	return schemaObj{
-		"feature": schemaObj{
-			"type":  "array",
-			"items": schemaObj{"type": "string"},
-			"description": "Additional feature extractors, each passed as a repeated " +
-				"--feature flag. Use the libvmaf 'name[=key=val:...]' syntax, e.g. " +
-				"'psnr' or 'cambi=full_ref=true'. Mutually exclusive with aom_ctc/nflx_ctc.",
-		},
-		"aom_ctc": schemaObj{
-			"type": "string",
-			"enum": []string{"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"},
-			"description": "AOM Common Test Conditions preset (--aom_ctc). Configures a fixed " +
-				"model + feature set; mutually exclusive with manual feature/model config.",
-		},
-		"nflx_ctc": schemaObj{
-			"type": "string",
-			"enum": []string{"v1.0"},
-			"description": "Netflix Common Test Conditions preset (--nflx_ctc). Mutually " +
-				"exclusive with manual feature/model config.",
-		},
-	}
-}
-
-// scoringTinyModelProperties returns the tiny-AI model and execution-provider properties.
-func scoringTinyModelProperties() schemaObj {
-	return schemaObj{
-		"tiny_model": schemaObj{
-			"type":        "string",
-			"description": "Path to a tiny ONNX model loaded alongside classic models (--tiny-model).",
-		},
-		"tiny_device": schemaObj{
-			"type": "string",
-			"enum": []string{
-				"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu",
-				"openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm",
-			},
-			"description": "ONNX Runtime execution provider for the tiny model (--tiny-device / " +
-				"--dnn-ep). Default: auto.",
-		},
-		"dnn_ep": schemaObj{
-			"type": "string",
-			"enum": []string{
-				"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu",
-				"openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm",
-			},
-			"description": "Alias for tiny_device: ONNX Runtime execution provider for the " +
-				"tiny model (--dnn-ep / --tiny-device). Default: auto.",
-		},
-	}
-}
-
-// scoringTinyTuningProperties returns the tiny-AI tuning properties, including the no-reference switch.
-func scoringTinyTuningProperties() schemaObj {
-	return schemaObj{
-		"tiny_threads": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "CPU EP intra-op thread count for the tiny model (--tiny-threads; 0 = ORT default).",
-		},
-		"tiny_fp16": schemaObj{
-			"type":        "boolean",
-			"description": "Request fp16 IO where the execution provider supports it (--tiny-fp16).",
-		},
-		"tiny_model_verify": schemaObj{
-			"type":        "boolean",
-			"description": "Require Sigstore-bundle verification of the tiny model before use (--tiny-model-verify).",
-		},
-		"tiny_codec": schemaObj{
-			"type":        "string",
-			"description": "Encoder name for codec-aware tiny models (--tiny-codec), e.g. libx264.",
-		},
-		"tiny_preset": schemaObj{
-			"type":        "string",
-			"description": "Encoder preset string for codec-aware tiny models (--tiny-preset).",
-		},
-		"tiny_crf": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"maximum":     63,
-			"description": "CRF / QP integer for codec-aware tiny models (--tiny-crf; clamped to 0..63).",
-		},
-		"tiny_resize": schemaObj{
-			"type": "string",
-			"enum": []string{"bilinear", "nearest", "bicubic", "disabled"},
-			"description": "Auto-resize filter for NCHW tiny models on dimension mismatch " +
-				"(--tiny-resize). Default: disabled (mismatch hard-errors).",
-		},
-		"no_reference": schemaObj{
-			"type": "boolean",
-			"description": "No-reference (NR) mode (--no-reference). Requires tiny_model (an NR " +
-				"ONNX model); the reference path becomes a formality — pass any valid YUV " +
-				"of matching geometry since only the distorted picture is scored.",
-		},
-	}
-}
-
-// scoringFrameRangeProperties returns the thread-count and frame-range properties.
-func scoringFrameRangeProperties() schemaObj {
-	return schemaObj{
-		"threads": schemaObj{
-			"type":        "integer",
-			"minimum":     1,
-			"description": "Worker thread count (--threads). Capped to hardware cores by the CLI.",
-		},
-		"frame_cnt": schemaObj{
-			"type":        "integer",
-			"minimum":     1,
-			"description": "Maximum number of frames to process (--frame_cnt).",
-		},
-		"frame_skip_ref": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Skip the first N frames of the reference (--frame_skip_ref).",
-		},
-		"frame_skip_dist": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Skip the first N frames of the distorted input (--frame_skip_dist).",
-		},
-		"no_prediction": schemaObj{
-			"type":        "boolean",
-			"description": "Extract features only, skip VMAF prediction (--no_prediction).",
-		},
-	}
-}
-
-// scoringDeviceProperties returns the CPU and GPU device-selector properties.
-func scoringDeviceProperties() schemaObj {
-	return schemaObj{
-		"cpumask": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Bitmask restricting permitted CPU SIMD instruction sets (--cpumask).",
-		},
-		"gpumask": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Bitmask restricting permitted GPU operations (--gpumask).",
-		},
-		"sycl_device": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Select SYCL GPU device by index (--sycl_device).",
-		},
-		"hip_device": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Select HIP GPU device by index (--hip_device).",
-		},
-		"metal_device": schemaObj{
-			"type":        "integer",
-			"minimum":     0,
-			"description": "Select Metal GPU device by index (--metal_device).",
-		},
-	}
-}
-
-// scoringOutputProperties returns the output-format and model-flag properties.
-func scoringOutputProperties() schemaObj {
-	return schemaObj{
-		"output_fmt": schemaObj{
-			"type":        "string",
-			"enum":        []string{"json", "xml", "csv", "sub"},
-			"default":     "json",
-			"description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
-		},
-		// --- Model flags & score-param leftovers ---
-		"disable_clip": schemaObj{
-			"type":        "boolean",
-			"description": "Disable score clipping to [0, 100] on the model (--model ...:disable_clip).",
-		},
-		"enable_transform": schemaObj{
-			"type":        "boolean",
-			"description": "Enable score transform on the model (--model ...:enable_transform).",
-		},
-		"csv": schemaObj{
-			"type":        "boolean",
-			"description": "Write output file as CSV (--csv). Equivalent to output_fmt='csv'.",
-		},
-		"sub": schemaObj{
-			"type":        "boolean",
-			"description": "Write output file as subtitle-style per-frame scores (--sub). Equivalent to output_fmt='sub'.",
-		},
-	}
-}
 
 // registerTools wires every MCP tool into srv. Schema definitions mirror the
 // Python server's _list_tools() output exactly.
@@ -293,41 +76,13 @@ func registerTools(srv *mcp.Server) error {
 
 // registerScoringTools wires the core scoring tool and the model/backend listings.
 func registerScoringTools(reg *toolRegistrar) {
-	reg.add(&mcp.Tool{
+	// The input schema is generated from the option groups of
+	// core/api/vmafx.toml (pkg/scoreopts), as is the Python server's.
+	reg.addGenerated(&mcp.Tool{
 		Name: "vmaf_score",
 		Description: "Compute a VMAF score for a (reference, distorted) YUV pair. " +
 			"Optional tiny-AI/DNN, feature-selection, CTC-preset, and frame-range " +
 			"parameters map onto the corresponding vmaf CLI flags (ADR-1117).",
-	}, schemaObj{
-		"type": "object",
-		"required": []string{
-			"ref", "dis", "width", "height", "pixfmt", "bitdepth",
-		},
-		"properties": mergeSchema(schemaObj{
-			"ref":      schemaObj{"type": "string", "description": "Reference YUV path."},
-			"dis":      schemaObj{"type": "string", "description": "Distorted YUV path."},
-			"width":    schemaObj{"type": "integer", "minimum": 1},
-			"height":   schemaObj{"type": "integer", "minimum": 1},
-			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-			"backend": schemaObj{
-				"type":    "string",
-				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-				"default": "auto",
-			},
-			"subsample": schemaObj{
-				"type":        "integer",
-				"minimum":     1,
-				"default":     1,
-				"description": "Score every Nth frame (1 = every frame).",
-			},
-			"precision": schemaObj{
-				"type":        "string",
-				"default":     "legacy",
-				"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-			},
-		}, scoringExtraProperties()),
 	}, handleVmafScore)
 
 	reg.add(&mcp.Tool{
@@ -394,37 +149,13 @@ func registerModelEvalTools(reg *toolRegistrar) {
 
 // registerFrameInspectionTools wires the worst-frame description and backend probe tools.
 func registerFrameInspectionTools(reg *toolRegistrar) {
-	reg.add(&mcp.Tool{
+	reg.addGenerated(&mcp.Tool{
 		Name: "describe_worst_frames",
 		Description: "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract " +
 			"each as PNG via ffmpeg, and run a vision-language model " +
 			"(SmolVLM -> Moondream2 fallback) to describe the visible " +
 			"artefacts. Falls back to metadata-only output when the [vlm] " +
 			"extras are not installed. ADR-0172 / T6-6.",
-	}, schemaObj{
-		"type":     "object",
-		"required": []string{"ref", "dis", "width", "height", "pixfmt", "bitdepth"},
-		"properties": schemaObj{
-			"ref":      schemaObj{"type": "string"},
-			"dis":      schemaObj{"type": "string"},
-			"width":    schemaObj{"type": "integer", "minimum": 1},
-			"height":   schemaObj{"type": "integer", "minimum": 1},
-			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-			"backend": schemaObj{
-				"type":    "string",
-				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-				"default": "auto",
-			},
-			"n": schemaObj{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     32,
-				"default":     5,
-				"description": "How many worst-VMAF frames to describe.",
-			},
-		},
 	}, handleDescribeWorstFrames)
 
 	reg.add(&mcp.Tool{
@@ -461,7 +192,7 @@ func registerEncodedScoringTools(reg *toolRegistrar) {
 			"ADR-0608.",
 	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleVmafVersion)
 
-	reg.add(&mcp.Tool{
+	reg.addGenerated(&mcp.Tool{
 		Name: "vmaf_score_encoded",
 		Description: "Score a (reference, distorted) pair of encoded video files " +
 			"(MP4, MKV, Y4M, WebM, etc.) by decoding them to raw YUV via " +
@@ -471,37 +202,6 @@ func registerEncodedScoringTools(reg *toolRegistrar) {
 			"same response shape as vmaf_score plus reference_encoded and " +
 			"distorted_encoded fields. Requires ffmpeg + ffprobe on PATH. " +
 			"ADR-0608.",
-	}, schemaObj{
-		"type":     "object",
-		"required": []string{"reference_encoded", "distorted_encoded"},
-		"properties": mergeSchema(schemaObj{
-			"reference_encoded": schemaObj{
-				"type": "string",
-				"description": "Path to the reference encoded video (MP4/MKV/Y4M/...). " +
-					"Must be under an allowlisted root (VMAF_MCP_ALLOW).",
-			},
-			"distorted_encoded": schemaObj{
-				"type":        "string",
-				"description": "Path to the distorted encoded video.",
-			},
-			"model": schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-			"backend": schemaObj{
-				"type":    "string",
-				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-				"default": "auto",
-			},
-			"subsample": schemaObj{
-				"type":        "integer",
-				"minimum":     1,
-				"default":     1,
-				"description": "Score every Nth frame (1 = every frame).",
-			},
-			"precision": schemaObj{
-				"type":        "string",
-				"default":     "legacy",
-				"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-			},
-		}, scoringExtraProperties()),
 	}, handleVmafScoreEncoded)
 }
 
@@ -1036,17 +736,6 @@ func errorResult(msg string) *mcp.CallToolResult {
 	}
 }
 
-// mergeSchema returns a new schemaObj containing all entries from base plus
-// every entry from extra. Keys in extra override base on collision (none are
-// expected). Used to splice the shared scoring-extra properties into the
-// vmaf_score / vmaf_score_encoded property maps without mutating either input.
-func mergeSchema(base, extra schemaObj) schemaObj {
-	out := make(schemaObj, len(base)+len(extra))
-	maps.Copy(out, base)
-	maps.Copy(out, extra)
-	return out
-}
-
 // toolSchema converts a Go map to a json.RawMessage for use as an InputSchema.
 //
 // Every schema passed here is a literal built from strings, numbers, booleans, slices and
@@ -1075,6 +764,28 @@ func toolSchema(v any) (json.RawMessage, error) {
 type toolRegistrar struct {
 	srv *mcp.Server
 	err error
+}
+
+// addGenerated registers tool with the input schema generated for it from the
+// option groups of core/api/vmafx.toml (pkg/scoreopts). A missing schema
+// registers nothing and fails the registration like a schema that did not
+// marshal.
+func (r *toolRegistrar) addGenerated(
+	tool *mcp.Tool,
+	handler func(context.Context, map[string]any) (any, error),
+) {
+	if r.err != nil {
+		return
+	}
+	doc, err := scoreopts.Load()
+	if err == nil {
+		tool.InputSchema, err = doc.ToolSchema(tool.Name)
+	}
+	if err != nil {
+		r.err = fmt.Errorf("tool %q: %w", tool.Name, err)
+		return
+	}
+	addRawTool(r.srv, tool, handler)
 }
 
 // add marshals schema into tool.InputSchema and registers tool with handler.

@@ -3,8 +3,15 @@
 //
 // proto/vmafx.proto — VMAFX gRPC service definition.
 //
-// Generated Go stubs live under gen/go/vmafx/ and are vendored in-tree.
-// Regenerate with:  buf generate   (requires buf ≥ v1.30)
+// Generated Go stubs live in gen/go/ (package vmafxv1) and are vendored
+// in-tree. Regenerate with:  buf generate   (requires buf ≥ v1.30), then
+// python3 scripts/proto/postprocess_gen_go.py (gen/go/AGENTS.md).
+//
+// The services and the request / response envelopes are hand-written here.
+// ScoreOptions and Provenance come from proto/vmafx_api.proto, which
+// scripts/codegen/vmafx-api.py generates from core/api/vmafx.toml (#2155): a
+// scoring option is added there, never here. Compatibility policy (additive
+// within vmafx.v1): docs/server/api-contract.md.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
 // ADR-0933: bidirectional ScoreStream RPC for multi-frame scoring.
@@ -12,6 +19,8 @@
 syntax = "proto3";
 
 package vmafx.v1;
+
+import "vmafx_api.proto";
 
 option go_package = "github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1";
 
@@ -56,6 +65,12 @@ message ScoreRequest {
   // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
   // the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
   string model = 3;
+  // Optional scoring options (raw .yuv geometry, backend, device, threads,
+  // subsample, precision, features, tiny model, ...), generated from the option
+  // groups of core/api/vmafx.toml. Unset fields keep their documented
+  // defaults; the server returns lossless scores (precision "max") unless
+  // options.precision asks otherwise.
+  ScoreOptions options = 4;
 }
 
 // ScoreResponse carries the aggregate VMAF score and per-feature values.
@@ -64,6 +79,35 @@ message ScoreResponse {
   double score = 1;
   // Per-feature scores keyed by feature name.
   map<string, double> features = 2;
+  // How the score was made (#2142, #2155); present in every response.
+  ScoreProvenance provenance = 3;
+}
+
+// FeatureBackend is one entry of the backend receipt: the backend a
+// registered feature extractor ran on.
+message FeatureBackend {
+  // Extractor name (e.g. "adm", "motion").
+  string extractor = 1;
+  // Backend it ran on: "cpu", "cuda", "sycl", "hip" or "metal".
+  string backend = 2;
+}
+
+// ScoreProvenance says how a score was made: which library build and ABI ran,
+// which model (and the SHA-256 of the model file the server loaded), and which
+// backend ran each extractor. Every scoring response carries it (#2155).
+message ScoreProvenance {
+  // The library's provenance record (generated from VmafxProvenance).
+  Provenance library = 1;
+  // Model the server resolved the request's model name to.
+  string model = 2;
+  // SHA-256 (lower-case hex) of the model file the server loaded.
+  string model_sha256 = 3;
+  // Backend the extractors ran on ("cpu" when every extractor ran on the CPU).
+  string backend_used = 4;
+  // Backend of every registered extractor.
+  repeated FeatureBackend feature_backends = 5;
+  // Precision the scores were computed and returned with ("max": lossless).
+  string precision = 6;
 }
 
 // PixelFormat enumerates the supported planar pixel layouts for raw frames
@@ -142,6 +186,8 @@ message AggregateScore {
   map<string, double> features = 3;
   // Aggregate wall-clock processing time in milliseconds.
   uint64 elapsed_ms = 4;
+  // How the scores were made (#2155); present on every aggregate.
+  ScoreProvenance provenance = 5;
 }
 
 // ScoreStreamResponse is the server-to-client message. Exactly one of

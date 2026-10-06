@@ -52,50 +52,11 @@
 namespace
 {
 
-const char short_opts[] = "r:d:w:h:p:b:m:c:o:nvq";
-
-enum : std::uint16_t {
-    ARG_OUTPUT_XML = 256,
-    ARG_OUTPUT_JSON,
-    ARG_OUTPUT_CSV,
-    ARG_OUTPUT_SUB,
-    ARG_THREADS,
-    ARG_FEATURE,
-    ARG_SUBSAMPLE,
-    ARG_HELP,
-    ARG_CPUMASK,
-    ARG_GPUMASK,
-    ARG_AOM_CTC,
-    ARG_NFLX_CTC,
-    ARG_FRAME_CNT,
-    ARG_FRAME_SKIP_REF,
-    ARG_FRAME_SKIP_DIST,
-    ARG_NO_CUDA,
-    ARG_NO_SYCL,
-    ARG_SYCL_DEVICE,
-    ARG_NO_HIP,
-    ARG_HIP_DEVICE,
-    ARG_NO_METAL,
-    ARG_METAL_DEVICE,
-    ARG_BACKEND,
-    ARG_PRECISION,
-    ARG_TINY_MODEL,
-    ARG_TINY_DEVICE,
-    ARG_TINY_THREADS,
-    ARG_TINY_FP16,
-    ARG_TINY_MODEL_VERIFY,
-    /* ADR-0519 — codec context for codec-aware tiny models
-     * (e.g. fr_regressor_v2). All three default unset. */
-    ARG_TINY_CODEC,
-    ARG_TINY_PRESET,
-    ARG_TINY_CRF,
-    ARG_NO_REFERENCE,
-    ARG_DNN_EP,
-    /* ADR-0550 — NCHW tiny-model auto-resize filter. */
-    ARG_TINY_RESIZE,
-    /* ADR-0696 — restore Netflix-upstream legacy defaults. */
-    ARG_NETFLIX_COMPAT,
-};
+/* The getopt short option string (short_opts), the long-only option
+ * identifiers (ARG_*), the long option table (long_opts) and the usage lines
+ * are generated from the option groups of core/api/vmafx.toml (ADR-1852, RC4
+ * WP8): a flag, an alias or a help line is added there, never here. */
+#include "cli_options.gen.inc"
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
  * gate passes without explicit flags (CLAUDE.md §8). Round-trip lossless
@@ -135,185 +96,12 @@ const char *resolve_precision_fmt(const char *optarg, const char *app, CLISettin
     return precision_fmt_buf;
 }
 
-const struct option long_opts[] = {
-    {.name = "reference", .has_arg = 1, .flag = nullptr, .val = 'r'},
-    {.name = "distorted", .has_arg = 1, .flag = nullptr, .val = 'd'},
-    {.name = "width", .has_arg = 1, .flag = nullptr, .val = 'w'},
-    {.name = "height", .has_arg = 1, .flag = nullptr, .val = 'h'},
-    {.name = "pixel_format", .has_arg = 1, .flag = nullptr, .val = 'p'},
-    {.name = "bitdepth", .has_arg = 1, .flag = nullptr, .val = 'b'},
-    {.name = "model", .has_arg = 1, .flag = nullptr, .val = 'm'},
-    {.name = "output", .has_arg = 1, .flag = nullptr, .val = 'o'},
-    {.name = "xml", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_XML},
-    {.name = "json", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_JSON},
-    {.name = "csv", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_CSV},
-    {.name = "sub", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_SUB},
-    {.name = "help", .has_arg = 0, .flag = nullptr, .val = ARG_HELP},
-    {.name = "threads", .has_arg = 1, .flag = nullptr, .val = ARG_THREADS},
-    {.name = "feature", .has_arg = 1, .flag = nullptr, .val = ARG_FEATURE},
-    {.name = "subsample", .has_arg = 1, .flag = nullptr, .val = ARG_SUBSAMPLE},
-    {.name = "cpumask", .has_arg = 1, .flag = nullptr, .val = ARG_CPUMASK},
-    {.name = "gpumask", .has_arg = 1, .flag = nullptr, .val = ARG_GPUMASK},
-    {.name = "aom_ctc", .has_arg = 1, .flag = nullptr, .val = ARG_AOM_CTC},
-    {.name = "nflx_ctc", .has_arg = 1, .flag = nullptr, .val = ARG_NFLX_CTC},
-    {.name = "frame_cnt", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_CNT},
-    {.name = "frame_skip_ref", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_REF},
-    {.name = "frame_skip_dist", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_DIST},
-    {.name = "no_cuda", .has_arg = 0, .flag = nullptr, .val = ARG_NO_CUDA},
-    {.name = "no_sycl", .has_arg = 0, .flag = nullptr, .val = ARG_NO_SYCL},
-    {.name = "sycl_device", .has_arg = 1, .flag = nullptr, .val = ARG_SYCL_DEVICE},
-    {.name = "no_hip", .has_arg = 0, .flag = nullptr, .val = ARG_NO_HIP},
-    {.name = "hip_device", .has_arg = 1, .flag = nullptr, .val = ARG_HIP_DEVICE},
-    {.name = "no_metal", .has_arg = 0, .flag = nullptr, .val = ARG_NO_METAL},
-    {.name = "metal_device", .has_arg = 1, .flag = nullptr, .val = ARG_METAL_DEVICE},
-    {.name = "backend", .has_arg = 1, .flag = nullptr, .val = ARG_BACKEND},
-    {.name = "precision", .has_arg = 1, .flag = nullptr, .val = ARG_PRECISION},
-    {.name = "tiny-model", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_MODEL},
-    {.name = "tiny_model", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_MODEL},
-    {.name = "tiny-device", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_DEVICE},
-    {.name = "tiny_device", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_DEVICE},
-    {.name = "tiny-threads", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_THREADS},
-    {.name = "tiny_threads", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_THREADS},
-    {.name = "tiny-fp16", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_FP16},
-    {.name = "tiny_fp16", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_FP16},
-    {.name = "tiny-model-verify", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_MODEL_VERIFY},
-    {.name = "tiny_model_verify", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_MODEL_VERIFY},
-    /* ADR-0519 — codec context. Underscore aliases match the rest
-     * of the tiny-* family for scripting consistency. */
-    {.name = "tiny-codec", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CODEC},
-    {.name = "tiny_codec", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CODEC},
-    {.name = "tiny-preset", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_PRESET},
-    {.name = "tiny_preset", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_PRESET},
-    {.name = "tiny-crf", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CRF},
-    {.name = "tiny_crf", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CRF},
-    {.name = "no-reference", .has_arg = 0, .flag = nullptr, .val = ARG_NO_REFERENCE},
-    {.name = "no_reference", .has_arg = 0, .flag = nullptr, .val = ARG_NO_REFERENCE},
-    /* ADR-0550 — NCHW tiny-model auto-resize filter selector. */
-    {.name = "tiny-resize", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_RESIZE},
-    {.name = "tiny_resize", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_RESIZE},
-    /* --dnn-ep is the user-facing name for selecting the ONNX Runtime
-     * execution provider. It is an alias for --tiny-device so both flags
-     * write to the same CLISettings.tiny_device field. Accepting both names
-     * lets users follow the ORT "execution provider" terminology directly
-     * without knowing the fork's internal "tiny-device" naming. */
-    {.name = "dnn-ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
-    {.name = "dnn_ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
-    {.name = "no_prediction", .has_arg = 0, .flag = nullptr, .val = 'n'},
-    {.name = "netflix-compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
-    {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
-    {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
-    {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
-    {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
-};
-
-void print_usage_options_part1(FILE *const out, const char *const app)
+void print_usage(FILE *const out, const char *const app)
 {
     (void)fprintf(out, "Usage: %s [options]\n\n", app);
-    (void)fprintf(out, "Supported options:\n"
-                       " --help:                      print this message and exit\n"
-                       " --reference/-r $path:        path to reference .y4m or .yuv\n"
-                       " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-                       " --width/-w $unsigned:        width\n"
-                       " --height/-h $unsigned:       height\n"
-                       " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-                       " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-                       " --model/-m $params:          model parameters, colon \":\" delimited\n"
-                       "                              `path=` path to model file\n"
-                       "                              `version=` built-in model version\n"
-                       "                              `name=` name used in log (optional)\n"
-                       " --output/-o $path:           output file\n"
-                       " --xml:                       write output file as XML (default)\n"
-                       " --json:                      write output file as JSON\n"
-                       " --csv:                       write output file as CSV\n"
-                       " --sub:                       write output file as subtitle\n"
-                       " --threads $unsigned:         number of threads to use\n"
-                       " --feature $string:           additional feature\n"
-                       " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-                       " --gpumask: $bitmask          restrict permitted GPU operations\n"
-                       " --frame_cnt $unsigned:       maximum number of frames to process\n"
-                       " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-                       " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-                       " --subsample: $unsigned       compute scores only every N frames\n"
-                       " --no_cuda:                   disable CUDA backend\n"
-                       " --no_sycl:                    disable SYCL/oneAPI backend\n"
-                       " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-                       "                              [Vulkan backend removed in ADR-0726]\n");
-}
-
-/* The codec-context and NR flags of tiny models; split out of
- * print_usage_options_part2() for the HISS-04 function-size limit. */
-void print_usage_options_tiny_codec(FILE *const out)
-{
-    (void)fprintf(
-        out, " --tiny-codec $name:           encoder of the distorted clip; required by\n"
-             "                               codec-aware tiny models (fr_regressor_v2/v3),\n"
-             "                               which refuse to score without it. Must be an\n"
-             "                               entry of the model sidecar's encoder_vocab\n"
-             "                               (the vocabulary differs per model). Common\n"
-             "                               ffprobe aliases (h264|hevc|av1|vp9|vvc) are\n"
-             "                               accepted. Unknown names are rejected at attach\n"
-             "                               time. No default\n"
-             " --tiny-preset $string:        encoder preset string (medium|slow|p4|5|...);\n"
-             "                               interpretation is encoder-specific and mirrors\n"
-             "                               train_fr_regressor_v2.py::PRESET_ORDINAL.\n"
-             "                               Default: ordinal 5 (medium-equivalent). A model\n"
-             "                               trained with one preset value (fr_regressor_v3)\n"
-             "                               ignores it and warns\n"
-             " --tiny-crf $unsigned:         CRF / QP integer used during encoding, normalised\n"
-             "                               as the model's sidecar declares (default: clamp to\n"
-             "                               [0, 63], divide by 63; fr_regressor_v3: min-max\n"
-             "                               over 19..37). Required with --tiny-codec /\n"
-             "                               --tiny-preset. No default\n"
-             " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
-             " --tiny-resize $string:        enable auto-resize for NCHW tiny models when the\n"
-             "                               input frame dims don't match the model's expected\n"
-             "                               shape (e.g. 576x324 input -> 224x224 nr_metric_v1).\n"
-             "                               One of: bilinear, nearest, bicubic, disabled.\n"
-             "                               Default: disabled (mismatch -> -ERANGE hard-error;\n"
-             "                               operator must opt in to resize explicitly).\n"
-             "                               Warning: bilinear/nearest/bicubic produce scores\n"
-             "                               that differ by ~2%% on the same input -- document\n"
-             "                               the filter alongside your model checkpoint.\n");
-}
-
-void print_usage_options_part2(FILE *const out)
-{
-    (void)fprintf(
-        out,
-        " --no_hip:                     disable HIP (AMD ROCm) backend\n"
-        " --hip_device $unsigned:       select HIP GPU by index (opt-in: HIP is off\n"
-        "                               unless this or --backend hip is given)\n"
-        " --no_metal:                   disable Metal (Apple Silicon) backend\n"
-        " --metal_device $unsigned:     select Metal GPU by index (opt-in: Metal is off\n"
-        "                               unless this or --backend metal is given)\n"
-        " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip|metal.\n"
-        "                               When set to a specific backend, the others are\n"
-        "                               disabled to avoid the dispatcher first-match-wins\n"
-        "                               race. (Vulkan backend was removed in ADR-0726.)\n"
-        " --precision $spec:            score output precision\n"
-        "                                  N (1..17) -> printf \"%%.<N>g\"\n"
-        "                                  max|full  -> \"%%.17g\" (round-trip lossless)\n"
-        "                                  legacy    -> \"%%.6f\" (default; Netflix-compatible)\n"
-        " --tiny-model $path:           load a tiny ONNX model alongside classic models\n"
-        " --tiny-device $string:        auto|cpu|cuda|openvino|openvino-npu|\n"
-        "                                  openvino-cpu|openvino-gpu|coreml|\n"
-        "                                  coreml-ane|coreml-gpu|coreml-cpu|rocm\n"
-        "                                  (default: auto)\n"
-        " --dnn-ep $string:             alias for --tiny-device; selects the ONNX Runtime\n"
-        "                                  execution provider by its ORT name\n"
-        " --tiny-threads $unsigned:     CPU EP intra-op threads (0 = ORT default)\n"
-        " --tiny-fp16:                  request fp16 IO where the EP supports it\n"
-        " --tiny-model-verify:          require Sigstore-bundle verification (cosign verify-blob)\n"
-        "                               of the loaded tiny model before use; refuses to load\n"
-        "                               on missing bundle, missing cosign, or non-zero exit\n");
-    print_usage_options_tiny_codec(out);
-    (void)fprintf(
-        out,
-        " --quiet/-q:                  disable FPS meter when run in a TTY\n"
-        " --no_prediction/-n:          no prediction, extract features only\n"
-        " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"
-        "                                  %%.6f precision, v0.6.1 default model)\n"
-        " --version/-v:                print version and exit\n");
+    for (const char *const line : usage_lines) {
+        (void)fprintf(out, "%s\n", line);
+    }
 }
 
 [[noreturn]] void usage_exit(bool is_error)
@@ -329,8 +117,7 @@ void print_usage_options_part2(FILE *const out)
         (void)fputs(reason, stderr);
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -342,8 +129,7 @@ template <typename Arg>
         (void)fprintf(stderr, reason, std::forward<Arg>(arg));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -355,8 +141,7 @@ template <typename Arg1, typename Arg2>
         (void)fprintf(stderr, reason, std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -370,15 +155,13 @@ template <typename Arg1, typename Arg2, typename Arg3>
                       std::forward<Arg3>(arg3));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
 [[noreturn]] void usage(const char *const app, std::nullptr_t)
 {
-    print_usage_options_part1(stdout, app);
-    print_usage_options_part2(stdout);
+    print_usage(stdout, app);
     usage_exit(false);
 }
 

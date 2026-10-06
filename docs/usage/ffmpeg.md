@@ -165,6 +165,54 @@ more complex filters, and the
 | `libvmaf_tune` | `0008` | `--enable-libvmaf` | CPU; recommends a CRF for the next encode pass |
 | `vmaf_pre` | `0002` | `--enable-libvmaf` (libvmaf 3.0.0+ with DNN) | Learned pre-filter (ONNX) |
 
+## `vmafx` filter option table
+
+The `vmafx` filter replaces the `vmaf`-named filters in the 1.0.0 series
+(RC4, [ADR-1852](../adr/1852-vmafx-api-redesign.md)); its options are
+generated from the option groups of `core/api/vmafx.toml` into
+`ffmpeg-patches/src/vf_vmafx_options.h`, the table the filter compiles. The
+filter itself lands in a later RC4 change; until then this table is the
+contract it implements, and the `libvmaf` filter below is what the patched
+FFmpeg builds today. Upstream option names (`n_threads`, `n_subsample`) stay
+accepted as aliases.
+
+<!-- BEGIN GENERATED: vmafx-api vmafx filter options (scripts/codegen/vmafx-api.py) -->
+
+| Option | Aliases | Value | Default | Description |
+| --- | --- | --- | --- | --- |
+| `model` | | string | library default (`VMAF_DEFAULT_MODEL_VERSION`) | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, &lt;feature&gt;.&lt;option&gt;=&lt;value&gt; overloads. Several models score in one pass (repeat the option; the filter separates them with \|). |
+| `backend` | | `auto` \| `cpu` \| `cuda` \| `sycl` \| `hip` \| `metal` | `auto` | Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. |
+| `feature` | | string | | Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with \|). Mutually exclusive with the CTC presets. |
+| `tiny_model` | | string | | Tiny ONNX model to load alongside the classic models. |
+| `tiny_device` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | `auto` | ONNX Runtime execution provider of the tiny model. |
+| `tiny_threads` | | uint | | Intra-op threads of the CPU execution provider (0: the runtime's default). |
+| `tiny_fp16` | | bool | `false` | Request fp16 input and output where the execution provider supports it. |
+| `threads` | `n_threads` | uint | | Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread). |
+| `cpumask` | | uint | | Bitmask of CPU instruction sets the extractors must not use. |
+| `gpumask` | | uint | | Bitmask of GPU operations the extractors must not use. |
+| `device` | | string | `auto` | GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal). |
+| `subsample` | `n_subsample` | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
+| `log_path` | | string | | Report file. |
+| `log_fmt` | | `json` \| `xml` \| `csv` \| `sub` | `json` | Report format; json and xml carry the backend receipt. |
+| `view_distance` | | float 0.75..24 | | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. |
+| `display_height` | | uint >= 1 | | Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value. |
+| `target_width` | | uint | `0` | Width of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `target_height` | | uint | `0` | Height of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `target_scaling` | | `none` \| `bilinear` \| `bicubic` \| `lanczos` | `none` | Scaling filter towards the target display. Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `pool` | | `min` \| `max` \| `mean` \| `harmonic_mean` \| `median` \| `perc5` \| `perc10` \| `perc20` | `mean` | Pool methods of the final score and of the windows. |
+| `n_stats` | | float >= 0 | `0.0` | Window length in seconds (0: no windows). |
+| `n_stats_frames` | | uint | `0` | Window length in frames (0: no windows); exclusive with n_stats. |
+| `stats_out` | | `log` \| `metadata` \| `file` | `log` | Where window statistics go. |
+| `stats_path` | | string | | NDJSON file of the window statistics, one object per window. |
+| `score_fmt` | | string | `%.6f` | printf format of the scores (%.17g is lossless). |
+| `provenance` | | `log` \| `report` | `log+report` | Print the provenance record at init (log) and embed it in the report (report). |
+| `metadata` | | bool | `false` | Attach per-frame scores to the frames as lavfi.vmafx.&lt;metric&gt; metadata (delays output by the retention depth). |
+| `profile` | | bool | `false` | Log the device timing breakdown at uninit. |
+| `import` | | `auto` \| `device` \| `host` | `auto` | auto imports hardware frames without a copy and uploads software frames; device refuses software frames; host downloads hardware frames (logged once with the reason). |
+| `perceptual_weight` | | bool | `false` | Weight the scores with the perceptual side data of the frames. |
+
+<!-- END GENERATED: vmafx-api vmafx filter options -->
+
 ## `libvmaf` filter option reference
 
 The `libvmaf` filter ships with FFmpeg (source:

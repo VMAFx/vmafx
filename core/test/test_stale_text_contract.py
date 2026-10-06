@@ -33,7 +33,8 @@ class CliHelpDefaults(unittest.TestCase):
     """Defect 9: HIP and Metal are opt-in, so their help must not say `auto`."""
 
     def test_hip_and_metal_device_help_say_opt_in(self) -> None:
-        usage = read("core/tools/cli_parse.cpp")
+        # The usage text is generated from core/api/vmafx.toml (RC4 WP8).
+        usage = read("core/tools/cli_options.gen.inc")
         for backend, flag in (("HIP", "hip"), ("Metal", "metal")):
             line = re.search(rf"--{flag}_device \$unsigned:[^\n]*\n[^\n]*\n", usage)
             self.assertIsNotNone(line, flag)
