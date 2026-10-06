@@ -1490,6 +1490,19 @@ if host_machine.system() == 'linux'
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
     )
     test('test_vmafx_fence_kinds', test_vmafx_fence_kinds, suite : ['fast'], timeout : 60)
+
+    # RC4 WP3 Vulkan import lane: the device-free checks of VMAFX_MEMORY_VULKAN
+    # descriptors, the CPU device's refusals and the VULKAN_SEMAPHORE fence
+    # kind, white-box on the CPU (no Vulkan driver needed).
+    test_vmafx_import_vulkan_api = executable('test_vmafx_import_vulkan_api',
+        ['test.c', 'test_vmafx_import_vulkan_api.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_import_vulkan_api', test_vmafx_import_vulkan_api, suite : ['fast'],
+        timeout : 60)
 endif
 
 # Engine messages go through vmaf_log(), so a context's sink sees them: no
@@ -8911,3 +8924,78 @@ test('test_vmafx_import_sycl_cells_contract',
     suite : ['fast'],
     timeout : 30,
 )
+
+# RC4 WP3 Vulkan import lane: Vulkan frames on a CUDA, SYCL or HIP device,
+# white-box through the static library. Each source is built once per device
+# lane of the build (VMAFX_VK_LANE = the VmafxBackend value); the producer is
+# vmafx_vulkan_producer.c on the Vulkan loader, so the tests are built where
+# the loader and headers are found (dependency('vulkan')). Each needs the
+# lane's device and a Vulkan driver on its GPU (77 without one) and runs alone
+# on it; the bit-exactness run reads the Netflix fixtures and testdata/bbb.
+# Linux: opaque descriptors, dma-bufs and sync_files are Linux objects.
+vmafx_vulkan_dep = dependency('vulkan', required : false)
+vmafx_vulkan_lanes = []
+if host_machine.system() == 'linux' and vmafx_vulkan_dep.found()
+    if get_option('enable_cuda')
+        vmafx_vulkan_lanes += [['cuda', '1', [cuda_dependency], []]]
+    endif
+    if get_option('enable_sycl') and not is_sycl_acpp
+        vmafx_vulkan_lanes += [['sycl', '2', vmafx_sycl_test_deps, [vmafx_sycl_producer]]]
+    endif
+    if get_option('enable_hip')
+        vmafx_vulkan_lanes += [['hip', '4', hip_deps, []]]
+    endif
+endif
+# A real FFmpeg Vulkan decode imported into the lane's device (device
+# evidence: the inputs come from VMAFX_TEST_VULKAN_REF / _DIST), where FFmpeg's
+# libraries and their Vulkan hwcontext header are found.
+vmafx_vulkan_ffmpeg_deps = [
+    dependency('libavcodec', required : false),
+    dependency('libavformat', required : false),
+    dependency('libavutil', required : false),
+]
+vmafx_vulkan_ffmpeg = vmafx_vulkan_ffmpeg_deps[0].found() and vmafx_vulkan_ffmpeg_deps[1].found() \
+    and vmafx_vulkan_ffmpeg_deps[2].found() \
+    and cc.has_header('libavutil/hwcontext_vulkan.h', dependencies : vmafx_vulkan_ffmpeg_deps)
+foreach vmafx_vulkan_lane : vmafx_vulkan_lanes
+    foreach vmafx_vulkan_test : [['', 300], ['_bitexact', 1800], ['_fence', 300]]
+        vmafx_vulkan_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + vmafx_vulkan_test[0]
+        vmafx_vulkan_exe = executable(vmafx_vulkan_name,
+            ['test.c', 'test_vmafx_import_vulkan' + vmafx_vulkan_test[0] + '.c',
+             'vmafx_vulkan_producer.c'] + vmafx_vulkan_lane[3],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmaf_cflags_common + vmafx_test_dirs + [
+                '-DVMAFX_VK_LANE=' + vmafx_vulkan_lane[1],
+                '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+            ],
+            dependencies : [math_lib, pthread_dependency, thread_lib, vmafx_vulkan_dep]
+                           + vmafx_vulkan_lane[2],
+            # libvmaf.a holds C++ objects (and SYCL ones on the SYCL lane).
+            link_language : 'cpp',
+        )
+        test(vmafx_vulkan_name, vmafx_vulkan_exe,
+            suite : ['gpu', vmafx_vulkan_lane[0], 'vulkan'],
+            is_parallel : false,
+            timeout : vmafx_vulkan_test[1])
+    endforeach
+    if vmafx_vulkan_ffmpeg
+        vmafx_vulkan_ffmpeg_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + '_ffmpeg'
+        vmafx_vulkan_ffmpeg_exe = executable(vmafx_vulkan_ffmpeg_name,
+            ['test.c', 'test_vmafx_import_vulkan_ffmpeg.c', 'vmafx_vulkan_producer.c']
+            + vmafx_vulkan_lane[3],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmaf_cflags_common + vmafx_test_dirs + [
+                '-DVMAFX_VK_LANE=' + vmafx_vulkan_lane[1],
+            ],
+            dependencies : [math_lib, pthread_dependency, thread_lib, vmafx_vulkan_dep]
+                           + vmafx_vulkan_lane[2] + vmafx_vulkan_ffmpeg_deps,
+            link_language : 'cpp',
+        )
+        test(vmafx_vulkan_ffmpeg_name, vmafx_vulkan_ffmpeg_exe,
+            suite : ['gpu', vmafx_vulkan_lane[0], 'vulkan'],
+            is_parallel : false,
+            timeout : 300)
+    endif
+endforeach

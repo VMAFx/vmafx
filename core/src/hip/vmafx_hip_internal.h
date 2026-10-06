@@ -68,6 +68,10 @@ typedef struct VmafxHipDevice {
     VmafxHipGrave *graves;
 } VmafxHipDevice;
 
+/* "dddd:bb:dd.f" as PCI domain, bus, device and function (UINT32_MAX in each
+ * when `bus_id` is NULL or not that form). RC4 WP3 Vulkan lane. */
+void vmafx_hip_parse_pci(const char *bus_id, uint32_t pci[4]);
+
 /* The lane's state of one frame, freed by its release. */
 typedef struct VmafxHipFrame {
     VmafxHipDevice *dev;

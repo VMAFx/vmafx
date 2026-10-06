@@ -693,10 +693,30 @@ static VmafxStatus bind_sycl_frame(const VmafxReport *report, VmafxDevice *devic
     return VMAFX_OK;
 }
 
+/* A VULKAN descriptor as the DMABUF one this device imports (RC4 WP3 Vulkan
+ * lane): memory of the device's GPU, LINEAR or DRM_FORMAT_MODIFIER tiling,
+ * exported as a dma-buf; its acquire fence is a sync_file (or HOST). */
+static VmafxStatus vulkan_as_dmabuf(const VmafxReport *report, const VmafxDevice *device,
+                                    const VmafxFrameImport *desc, VmafxFrameImport *out)
+{
+    uint32_t pci[4];
+    vmafx_sycl_rt_device_pci(vmafx_sycl_dev(device)->rt, pci);
+    const VmafxStatus status = vmafx_import_check_vulkan_device(report, desc, pci, "sycl");
+    return status == VMAFX_OK ? vmafx_import_vulkan_as_dmabuf(report, desc, "sycl", out) : status;
+}
+
 VmafxStatus vmafx_sycl_frame_import(const VmafxReport *report, VmafxDevice *device,
                                     const VmafxFrameImport *desc, const VmafxImportLayout *layout,
                                     VmafxFrame **out)
 {
+    VmafxFrameImport dmabuf;
+    if (desc->memory == VMAFX_MEMORY_VULKAN) {
+        const VmafxStatus vk = vulkan_as_dmabuf(report, device, desc, &dmabuf);
+        if (vk != VMAFX_OK) {
+            return vk;
+        }
+        desc = &dmabuf;
+    }
     VmafxStatus status = check_sycl_memory(report, desc, layout);
     if (status == VMAFX_OK && desc->memory == VMAFX_MEMORY_DEVICE_POINTER) {
         status = check_pointer_planes(report, vmafx_sycl_dev(device), desc, layout);

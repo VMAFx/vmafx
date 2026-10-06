@@ -62549,9 +62549,10 @@ into `rc4/integration`. What a rebase of either lane onto it must keep:
   translation into a DMABUF descriptor.
   `core/test/test_vmafx_one_egl_export_contract.py` refuses a lane that loads
   EGL itself or a second definition of a sync-object function.
-- A SYNC_FILE fence is the caller's (borrowed): `vmafx_fence_destroy()`
-  refuses it with VMAFX_E_NOTSUP, as the HIP lane documents;
-  `test_vmafx_import_sycl`'s sync_file case closes the descriptor itself.
+- `vmafx_fence_destroy()` closes a SYNC_FILE fence's descriptor (ADR-2091
+  item 6, as the Vulkan lane #2375 resolves it); a GL_SYNC fence stays the
+  producer's and is refused. `test_vmafx_fence_kinds` and
+  `test_vmafx_import_sycl`'s sync_file case hold it.
 - The thirteen 4:2:2 / 4:4:4 pixel formats are ABI 0.1.9 here (0.1.5 on the
   lanes, ADR-1897). The HIP GL digest is Research-2161 here (both lanes added
   a Research-2160); the SYCL digest keeps 2160.

@@ -500,6 +500,36 @@ void vmafx_windows_pause(VmafxContext *context);
 void vmafx_windows_resume(VmafxContext *context);
 void vmafx_windows_close(VmafxContext *context);
 
+/* The last value of VmafxMemoryKind and VmafxFenceKind this ABI declares. */
+#define VMAFX_MEMORY_KIND_LAST VMAFX_MEMORY_VULKAN
+#define VMAFX_FENCE_KIND_LAST VMAFX_FENCE_VULKAN_SEMAPHORE
+
+/* ---- Vulkan imports (frame_import_vulkan.c, RC4 WP3 Vulkan lane) --------- */
+
+/* Names of VmafxVulkanHandleType / VmafxVulkanTiling values ("unknown"). */
+const char *vmafx_vulkan_handle_name(uint32_t type);
+const char *vmafx_vulkan_tiling_name(uint32_t tiling);
+/* The device-independent checks of a VULKAN descriptor: handle type, tiling,
+ * flags, and each plane's descriptor, allocation size and rows. */
+VmafxStatus vmafx_import_check_vulkan(const VmafxReport *report, const VmafxFrameImport *d,
+                                      const VmafxImportLayout *layout);
+/* The producer's GPU (`d->vulkan_pci`) is the device's (`pci`): else
+ * VMAFX_E_NOTSUP naming desc.vulkan_pci. */
+VmafxStatus vmafx_import_check_vulkan_device(const VmafxReport *report, const VmafxFrameImport *d,
+                                             const uint32_t pci[4], const char *backend);
+/* The further acquire fences: kinds the API declares, and on a device of
+ * `backend` that waits on several (CUDA) only. */
+VmafxStatus vmafx_import_check_acquire_more(const VmafxReport *report, const VmafxFrameImport *d,
+                                            uint32_t backend);
+/* Subject of acquire fence `i` of an import: desc.acquire, then the further
+ * ones (desc.acquire_more[0], [1]). */
+const char *vmafx_import_acquire_name(uint32_t i);
+/* A LINEAR or DRM_FORMAT_MODIFIER VULKAN descriptor as the DMABUF one a
+ * dma-buf lane imports (SYCL, HIP): OPTIMAL tiling and an OPAQUE_FD that is
+ * no dma-buf are refused naming the field. */
+VmafxStatus vmafx_import_vulkan_as_dmabuf(const VmafxReport *report, const VmafxFrameImport *d,
+                                          const char *backend, VmafxFrameImport *out);
+
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */
 
 /* Every extractor registered on `context` can read a frame whose planes are

@@ -348,18 +348,19 @@ yours right after. Fences the library returns are yours to release once with
 
 A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
 `VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)); a
-build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT` for SYCL
-devices ([SYCL devices](#sycl-devices)), and a build with the HIP backend
-`VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire fence,
-`VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)); SYCL
-devices take `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences
-on Linux too. In every build `vmafx_fence_wait()` waits on a
-`VMAFX_FENCE_GL_SYNC` (`glClientWaitSync()`, which needs a GL context of the
-sync's share group current on the calling thread) and, on Linux, on a
-`VMAFX_FENCE_SYNC_FILE` descriptor (`poll()`); both stay the producer's, so
-`vmafx_fence_destroy()` refuses them with `VMAFX_E_NOTSUP`. The Metal shared
-events and Windows shared fences are declared kinds; until their backends land
-they are answered with `VMAFX_E_NOTSUP` naming the kind.
+build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT`, and on Linux
+`VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences, for SYCL
+devices ([SYCL devices](#sycl-devices)); a build with the HIP backend
+implements `VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire
+fence, `VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)).
+In every build `vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC`
+(`glClientWaitSync()`, which needs a GL context of the sync's share group
+current on the calling thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE`
+descriptor (`poll()`); `vmafx_fence_destroy()` closes a `SYNC_FILE`
+descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it with
+`glDeleteSync()`). The Metal shared events and Windows
+shared fences are declared kinds; until their backends land they are answered
+with `VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 

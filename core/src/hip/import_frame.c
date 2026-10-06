@@ -684,10 +684,31 @@ static VmafxStatus import_gl(const VmafxReport *report, VmafxDevice *device,
     return status;
 }
 
+/* A VULKAN descriptor as the DMABUF one this device imports (RC4 WP3 Vulkan
+ * lane): memory of the device's GPU, LINEAR or DRM_FORMAT_MODIFIER tiling
+ * (linear modifier only, as for any dma-buf), exported as a dma-buf (OPAQUE_FD
+ * of a Mesa driver is one); its acquire fence is a sync_file (or HOST). */
+static VmafxStatus vulkan_as_dmabuf(const VmafxReport *report, const VmafxDevice *device,
+                                    const VmafxFrameImport *desc, VmafxFrameImport *out)
+{
+    uint32_t pci[4];
+    vmafx_hip_parse_pci(vmafx_hip_dev(device)->pci_bus_id, pci);
+    const VmafxStatus status = vmafx_import_check_vulkan_device(report, desc, pci, "hip");
+    return status == VMAFX_OK ? vmafx_import_vulkan_as_dmabuf(report, desc, "hip", out) : status;
+}
+
 VmafxStatus vmafx_hip_frame_import(const VmafxReport *report, VmafxDevice *device,
                                    const VmafxFrameImport *desc, const VmafxImportLayout *layout,
                                    VmafxFrame **out)
 {
+    VmafxFrameImport dmabuf;
+    if (desc->memory == VMAFX_MEMORY_VULKAN) {
+        const VmafxStatus vk = vulkan_as_dmabuf(report, device, desc, &dmabuf);
+        if (vk != VMAFX_OK) {
+            return vk;
+        }
+        desc = &dmabuf;
+    }
     VmafxStatus status = check_hip_memory(report, desc, layout);
     if (status == VMAFX_OK) {
         status = check_hip_planes(report, desc, layout);

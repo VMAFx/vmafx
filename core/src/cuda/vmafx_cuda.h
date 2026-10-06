@@ -80,6 +80,10 @@ void vmafx_cuda_pool_frame_free(VmafxFrame *frame);
 /* A release fence of `kind` (CUDA_EVENT) for a frame of a CUDA device. */
 VmafxStatus vmafx_cuda_release_fence(const VmafxReport *report, VmafxFrame *frame, uint32_t kind,
                                      VmafxFence *out);
+/* Signal a producer's VULKAN_SEMAPHORE fence behind the frame's last reader
+ * (vmafx_frame_signal_on_release(); import_vulkan.c). */
+VmafxStatus vmafx_cuda_signal_on_release(const VmafxReport *report, VmafxFrame *frame,
+                                         const VmafxFence *signal);
 /* The planted early-release defect: open the frame's release fences now. */
 void vmafx_cuda_release_early(VmafxFrame *frame);
 /* A new fence of `kind` on a CUDA device (CUDA_EVENT: an unrecorded event). */

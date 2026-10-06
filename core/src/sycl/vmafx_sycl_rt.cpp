@@ -135,6 +135,25 @@ const char *kept_name(int32_t index, const sycl::device &dev)
     return name;
 }
 
+/* PCI domain, bus, device and function of `dev` ("dddd:bb:dd.f", the Intel
+ * device-info extension); UINT32_MAX in each without it. */
+void device_pci(const sycl::device &dev, uint32_t pci[4])
+{
+    for (uint32_t i = 0; i < 4u; i++) {
+        pci[i] = UINT32_MAX;
+    }
+    if (!dev.has(sycl::aspect::ext_intel_pci_address)) {
+        return;
+    }
+    const std::string bus = dev.get_info<sycl::ext::intel::info::device::pci_address>();
+    unsigned v[4] = {0u, 0u, 0u, 0u};
+    if (std::sscanf(bus.c_str(), "%x:%x:%x.%x", &v[0], &v[1], &v[2], &v[3]) == 4) {
+        for (uint32_t i = 0; i < 4u; i++) {
+            pci[i] = v[i];
+        }
+    }
+}
+
 /* Test switch (white-box, vmafx_sycl_rt_test_omit_immediate()): open
  * library queues without the immediate-command-list property. */
 bool &omit_immediate()
@@ -414,6 +433,21 @@ extern "C" int vmafx_sycl_rt_info(int32_t index, const char **name, uint64_t *me
     }
 }
 
+extern "C" int vmafx_sycl_rt_pci(int32_t index, uint32_t pci[4])
+{
+    try {
+        const std::vector<sycl::device> gpus = level_zero_gpus();
+        if (index < 0 ||
+            std::cmp_greater_equal(index, std::min<size_t>(gpus.size(), VMAFX_SYCL_MAX_DEVICES))) {
+            return -ENOENT;
+        }
+        device_pci(gpus[(size_t)index], pci);
+        return 0;
+    } catch (const std::exception &e) {
+        return runtime_failed("device enumeration", e);
+    }
+}
+
 extern "C" int vmafx_sycl_rt_open(int32_t index, uintptr_t external_queue, VmafxSyclRt **out)
 {
     *out = nullptr;
@@ -486,6 +520,17 @@ extern "C" const char *vmafx_sycl_rt_name(const VmafxSyclRt *rt)
 extern "C" uint64_t vmafx_sycl_rt_memory(const VmafxSyclRt *rt)
 {
     return rt->memory;
+}
+
+extern "C" void vmafx_sycl_rt_device_pci(const VmafxSyclRt *rt, uint32_t pci[4])
+{
+    try {
+        device_pci(rt->lib.get_device(), pci);
+    } catch (const std::exception &) {
+        for (uint32_t i = 0; i < 4u; i++) {
+            pci[i] = UINT32_MAX; /* the runtime threw: unknown */
+        }
+    }
 }
 
 extern "C" bool vmafx_sycl_rt_immediate(const VmafxSyclRt *rt)
