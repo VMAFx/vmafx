@@ -56,8 +56,12 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
 | `--distorted` | `-d` | path | **yes** | `.y4m` or `.yuv` path. |
 | `--width` | `-w` | unsigned | **yes for `.yuv`** | Ignored for `.y4m` (embedded). |
 | `--height` | `-h` | unsigned | **yes for `.yuv`** | Ignored for `.y4m`. |
-| `--pixel_format` | `-p` | `420` \| `422` \| `444` | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content. |
-| `--bitdepth` | `-b` | `8` \| `10` \| `12` \| `16` | **yes for `.yuv`** | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). |
+| `--pixel_format` | `-p` | `400` \| `420` \| `422` \| `444`, or a layout name | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content; `400` is luma only. A layout name reads a raw file in that layout, see [Raw input layouts](#raw-input-layouts). |
+| `--bitdepth` | `-b` | `8` to `16` | **yes for `.yuv`**, implied by a layout that fixes it | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). Some extractors take only some depths: `psnr` every depth from 8 to 16, `float_psnr` and `ciede` 8, 10, 12 and 16, `psnr_hvs` up to 12. |
+| `--rgb_matrix` | | `bt601` \| `bt709` \| `bt2020ncl` | **yes for `rgb`, `rgba`, `bgra`** | Y'CbCr matrix of the conversion; no default. |
+| `--rgb_range` | | `limited` \| `full` | **yes for RGB layouts** | Range of the R'G'B' samples; no default. |
+| `--rgb_transfer` | | `bt709` \| `srgb` \| `pq` \| `hlg` | **yes for RGB layouts** | Transfer of the R'G'B' samples; checked, not applied; no default. |
+| `--rgb_out_range` | | `limited` \| `full` | **yes for RGB layouts** | Range of the Y'CbCr frame made; `limited` is what the models were trained on; no default. |
 
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied,
 the input is treated as raw YUV and **all four** become mandatory. `vmaf` reads
@@ -68,6 +72,41 @@ Odd frame dimensions (for example 1921x1081 or 19x19) are accepted for raw
 division (`(dim + 1) / 2`), which matches container layouts and covers the last
 boundary samples
 ([ADR-1398](../adr/1398-cli-accept-odd-dimensions-chroma-subsampled.md)).
+
+### Raw input layouts
+
+`--pixel_format` names the layout of a raw `.yuv`. The planar names are `400`,
+`420`, `422`, `444` (also `gray`, `yuv420p`, `yuv422p`, `yuv444p`); the others
+are read by the code the library's frame import runs, so a raw file scores as
+the same samples in planar form, bit for bit
+([ADR-2145](../adr/2145-vmafx-input-format-table.md)):
+
+| Name | Layout | Bits |
+| --- | --- | --- |
+| `nv12`, `nv16`, `nv24` | luma plane, then one plane of interleaved Cb / Cr bytes | 8 |
+| `p010`, `p210`, `p410` / `p016`, `p216`, `p416` | the same with 16-bit words, 10 bits in the top / all 16 | 10 / 16 |
+| `yuyv422`, `uyvy422` | packed 4:2:2 bytes | 8 |
+| `y210`, `y212`, `v210` | packed 4:2:2, 10 or 12 bits (`v210`: six pixels in four words) | 10, 12, 10 |
+| `xv30`, `xv36`, `vuyx`, `ayuv` | packed 4:4:4 | 10, 12, 8, 8 |
+| `yuv444p16msb` | planar 4:4:4 words with the `--bitdepth` top bits holding the sample | 9 to 16 |
+| `rgb`, `rgba`, `bgra` | packed R'G'B' (and alpha, never read), converted to Y'CbCr | 8 to 16 |
+
+The full table with the FFmpeg and GStreamer names is
+[generated](pixel-formats.md). A layout that fixes its depth implies
+`--bitdepth`; a different value is refused naming the layout. An RGB layout is
+refused unless all four `--rgb_*` flags are given (each missing one is named,
+nothing is assumed); `bt2020cl`, `ictcp` and `linear` are refused by name
+([ADR-2146](../adr/2146-vmafx-rgb-input-explicit-matrix.md)).
+
+```bash
+vmaf -r ref_rgba.yuv -d dis_rgba.yuv -w 1920 -h 1080 -p rgba -b 8 \
+     --rgb_matrix bt709 --rgb_range full --rgb_transfer srgb --rgb_out_range limited
+```
+
+`.y4m` files carry their layout: besides the 8-, 10- and 12-bit tags the reader
+takes `C420p9`, `C420p14`, `C420p16` (and the 4:2:2 and 4:4:4 forms) and
+`Cmono9` to `Cmono16` (read as 4:2:0 with neutral chroma, like `Cmono`), the
+tags FFmpeg's `yuv4mpegpipe` writes with `-strict -1`.
 
 ## Models
 

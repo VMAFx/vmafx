@@ -115,9 +115,50 @@ static char *test_16b_large_diff(void)
     return msg;
 }
 
+/* Every depth from 9 to 15 bits scores: a difference of one code on every sample is an MSE of 1
+ * and a PSNR of 20 log10(2^bpc - 1), at 9, 11, 13, 14 and 15 bits (9 and 14 were refused). */
+static char *test_odd_depths(void)
+{
+    static const unsigned depths[] = {9u, 11u, 13u, 14u, 15u};
+    for (size_t k = 0; k < sizeof(depths) / sizeof(depths[0]); k++) {
+        const unsigned bpc = depths[k];
+        VmafPicture ref;
+        VmafPicture dist;
+        mu_assert("alloc ref", vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, bpc, 4, 4) == 0);
+        mu_assert("alloc dist", vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, bpc, 4, 4) == 0);
+        for (int c = 0; c < 3; c++) {
+            for (unsigned i = 0; i < ref.h[c]; i++) {
+                uint16_t *const r =
+                    (uint16_t *)((uint8_t *)ref.data[c] + (size_t)i * ref.stride[c]);
+                uint16_t *const d =
+                    (uint16_t *)((uint8_t *)dist.data[c] + (size_t)i * dist.stride[c]);
+                for (unsigned j = 0; j < ref.w[c]; j++) {
+                    r[j] = (uint16_t)(100u + j);
+                    d[j] = (uint16_t)(101u + j);
+                }
+            }
+        }
+        VmafFeatureCollector *fc = NULL;
+        mu_assert("collector", vmaf_feature_collector_init(&fc) == 0);
+        PsnrState state = {.enable_chroma = 1, .peak = (1u << bpc) - 1u, .uncapped = true};
+        VmafFeatureExtractor fex = {.priv = &state};
+        const int err = extract(&fex, &ref, NULL, &dist, NULL, 0, fc);
+        double psnr_y = 0.0;
+        const int got = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 0);
+        const double want = 20.0 * log10((double)((1u << bpc) - 1u));
+        vmaf_feature_collector_destroy(fc);
+        vmaf_picture_unref(&ref);
+        vmaf_picture_unref(&dist);
+        mu_assert("the extractor scores this depth", err == 0 && got == 0);
+        mu_assert("psnr of a one-code difference", almost_equal(psnr_y, want));
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_16b_large_diff);
+    mu_run_test(test_odd_depths);
 
     return NULL;
 }

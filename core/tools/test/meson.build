@@ -212,3 +212,16 @@ if host_machine.system() == 'windows'
          depends : [vmaf],
          timeout : 60)
 endif
+
+# ADR-2145 / ADR-2146 — raw files in the layouts of the import table (NV12, P016,
+# YUYV422, UYVY422, AYUV, V210, luma only, RGBA with a stated matrix), y4m
+# C420p9 / C422p14 / C444p16 / Cmono12 tags, and the refusals by name.
+test_vmaf_raw_layouts = find_program('test_vmaf_raw_layouts.sh')
+test('test_vmaf_raw_layouts', test_vmaf_raw_layouts,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])

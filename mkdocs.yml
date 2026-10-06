@@ -206,6 +206,7 @@ nav:
       - '--precision': usage/precision.md
       - Environment variables: usage/env-vars.md
       - FFmpeg: usage/ffmpeg.md
+      - Input pixel formats: usage/pixel-formats.md
       - Python library: usage/python.md
       - MATLAB: usage/matlab.md
       - vmafx CLI: usage/vmafx-cli.md

@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Input format table, RGB conversion and raw CLI layouts (2026-10-07, RC4 WP13)
+
+`rc4/api-wp13-input-formats` ([ADR-2145](adr/2145-vmafx-input-format-table.md), [ADR-2146](adr/2146-vmafx-rgb-input-explicit-matrix.md)). Fork-only: the import layout table is generated (`core/src/vmafx/import_layouts_gen.h`, never edit; on a conflict take either side and run `python3 scripts/codegen/vmafx-api.py --write`), `import_layout.h`, `rgb_math.h`, `rgb_convert.{h,c}`, the generated coefficient table, and the CLI's raw reader. Upstream-mirror files touched: `core/tools/yuv_input.c`, `y4m_input.c`, `vidinput.{c,h}`, `cli_parse.{cpp,h}` and `vmaf.cpp` (the raw layouts, `PF_400`, the `--rgb_*` flags); a sync keeps the fork's `raw_input_open()` meaning of `pix_fmt` (1 to 4 planar, from 16 a `VmafxPixelFormat` layout) and the table-driven y4m `420pN` / `422pN` / `444pN` / `monoN` setup. `core/src/feature/integer_psnr.c`: `extract()` takes every depth 8 to 16. When the stack rebases onto master, `--rgb_*` should be re-pointed at master's `--color_*_ref/_dist` input colorimetry (its `VmafColor` has no BT.601); the statement fields of `VmafxFrameImport` stay.
+
 ## MCP tool contract shared by both servers (2026-10-05)
 
 No rebase impact: both MCP servers are fork-only. Keep `mcp-server/vmaf-mcp/tool-contract.json`

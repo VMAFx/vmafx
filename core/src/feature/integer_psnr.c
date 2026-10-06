@@ -272,16 +272,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    switch (ref_pic->bpc) {
-    case 8:
+    /* Every depth the engine reads (8 to 16): 9, 11, 13, 14 and 15 bits took the default arm and
+     * were refused before ADR-2145 made them reachable from the command line and the import. */
+    if (ref_pic->bpc == 8u) {
         return psnr(ref_pic, dist_pic, index, feature_collector, s);
-    case 10:
-    case 12:
-    case 16:
-        return psnr_hbd(ref_pic, dist_pic, index, feature_collector, s);
-    default:
-        return -EINVAL;
     }
+    if (ref_pic->bpc > 8u && ref_pic->bpc <= 16u) {
+        return psnr_hbd(ref_pic, dist_pic, index, feature_collector, s);
+    }
+    return -EINVAL;
 }
 
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)

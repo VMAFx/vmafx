@@ -652,6 +652,17 @@ test('test_cuda_float_psnr_exact_contract',
     timeout : 30,
 )
 
+# ADR-2146 — the RGB conversion's arithmetic (rgb_math.h) is shared by the CPU
+# reference, nvcc, hipcc and the SYCL kernels: freestanding, integer only, no
+# run-time array index (ADR-1395). Device-free; the device checks are
+# test_vmafx_import_cuda_formats and test_vmafx_import_hip_formats.
+test('test_vmafx_rgb_math_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_rgb_math_contract.py'),
+    suite : ['fast'],
+    timeout : 60,
+)
+
 # ADR-1462 — vif_cuda reads the CPU's log2 table from a global of its kernel
 # module, uploaded at init, and evaluates no logarithm on the device. This is
 # the device-free half: the statistic takes each logarithm from the table,
