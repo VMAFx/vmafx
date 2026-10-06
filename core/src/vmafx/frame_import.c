@@ -38,11 +38,15 @@
 
 #include "error_internal.h"
 #include "frame_import_hooks.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
 #ifdef HAVE_SYCL
 #include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 #include "internal.h"
 #include "mem.h"
@@ -115,6 +119,8 @@ static const char *const plane_index_names[] = {
     "desc.plane[0].plane_index", "desc.plane[1].plane_index", "desc.plane[2].plane_index"};
 static const char *const plane_offset_names[] = {"desc.plane[0].offset", "desc.plane[1].offset",
                                                  "desc.plane[2].offset"};
+static const char *const plane_fd_names[] = {"desc.plane[0].fd", "desc.plane[1].fd",
+                                             "desc.plane[2].fd"};
 
 const char *vmafx_import_plane_field(uint32_t i, const char *field)
 {
@@ -124,6 +130,7 @@ const char *vmafx_import_plane_field(uint32_t i, const char *field)
                                      strcmp(field, "modifier") == 0 ? plane_modifier_names :
                                      strcmp(field, "size") == 0     ? plane_size_names :
                                      strcmp(field, "offset") == 0   ? plane_offset_names :
+                                     strcmp(field, "fd") == 0       ? plane_fd_names :
                                                                       plane_index_names;
     return names[i];
 }
@@ -456,6 +463,10 @@ static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *devi
     case VMAFX_BACKEND_SYCL:
         return vmafx_sycl_frame_import(report, device, d, layout, out);
 #endif
+#ifdef HAVE_HIP
+    case VMAFX_BACKEND_HIP:
+        return vmafx_hip_frame_import(report, device, d, layout, out);
+#endif
     default:
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
                           "backend %s, memory %s, pixel format %s: this build imports on the "
@@ -535,6 +546,12 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
     if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
         frame->device->backend == VMAFX_BACKEND_SYCL) {
         return vmafx_sycl_release_fence(&report, frame, kind, out);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_release_fence(&report, frame, kind, out);
     }
 #endif
     if (kind != VMAFX_FENCE_HOST) {

@@ -24,11 +24,15 @@
 #include "internal.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
 #ifdef HAVE_SYCL
 #include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -59,8 +63,8 @@ static bool is_backend(uint32_t backend)
     return backend <= VMAFX_BACKEND_HIP;
 }
 
-/* A backend this build creates devices for: the CPU, CUDA in a build with
- * the CUDA backend, SYCL in a build with the SYCL backend. */
+/* A backend this build creates devices for: the CPU, and CUDA / SYCL / HIP
+ * in a build with that backend. */
 static bool built_backend(uint32_t backend)
 {
 #ifdef HAVE_CUDA
@@ -73,18 +77,31 @@ static bool built_backend(uint32_t backend)
         return true;
     }
 #endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return true;
+    }
+#endif
     return backend == VMAFX_BACKEND_CPU;
 }
 
-#if defined(HAVE_CUDA) && defined(HAVE_SYCL)
-#define VMAFX_BUILT_BACKENDS "CPU, CUDA and SYCL devices"
-#elif defined(HAVE_CUDA)
-#define VMAFX_BUILT_BACKENDS "CPU and CUDA devices"
-#elif defined(HAVE_SYCL)
-#define VMAFX_BUILT_BACKENDS "CPU and SYCL devices"
+#ifdef HAVE_CUDA
+#define VMAFX_BUILT_CUDA ", CUDA"
 #else
-#define VMAFX_BUILT_BACKENDS "CPU devices only"
+#define VMAFX_BUILT_CUDA ""
 #endif
+#ifdef HAVE_HIP
+#define VMAFX_BUILT_HIP ", HIP"
+#else
+#define VMAFX_BUILT_HIP ""
+#endif
+#ifdef HAVE_SYCL
+#define VMAFX_BUILT_SYCL ", SYCL"
+#else
+#define VMAFX_BUILT_SYCL ""
+#endif
+#define VMAFX_BUILT_BACKENDS                                                                       \
+    "devices of these backends: CPU" VMAFX_BUILT_CUDA VMAFX_BUILT_SYCL VMAFX_BUILT_HIP
 
 /* `backend` is one this build creates devices for. */
 static VmafxStatus check_backend(const VmafxReport *report, uint32_t backend, const char *subject)
@@ -148,6 +165,11 @@ static VmafxStatus open_lane(const VmafxReport *report, const VmafxDeviceDesc *d
         return vmafx_sycl_device_open(report, d, device);
     }
 #endif
+#ifdef HAVE_HIP
+    if (d->backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_open(report, d, device);
+    }
+#endif
     (void)report;
     assert(d->backend == VMAFX_BACKEND_CPU);
     device->index = 0;
@@ -165,6 +187,11 @@ static void close_lane(VmafxDevice *device)
 #ifdef HAVE_SYCL
     if (device->backend == VMAFX_BACKEND_SYCL) {
         vmafx_sycl_device_close(device);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (device->backend == VMAFX_BACKEND_HIP) {
+        vmafx_hip_device_close(device);
     }
 #endif
     device->lane = NULL;
@@ -257,6 +284,13 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
         return vmafx_sycl_device_count(&report, count);
     }
 #endif
+#ifdef HAVE_HIP
+    if (status == VMAFX_OK && backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_count(&report, count);
+    }
+#endif
+    /* Every other backend this build has was answered by its lane above. */
+    assert(status != VMAFX_OK || backend == VMAFX_BACKEND_CPU);
     if (status == VMAFX_OK) {
         *count = 1u;
     }
@@ -278,7 +312,8 @@ static VmafxDeviceInfo cpu_info(uint32_t flags)
     return info;
 }
 
-/* What device `index` of a backend lane is (a built backend, not the CPU). */
+/* What device `index` of a backend lane this build has is
+ * (check_backend() accepted `backend`). */
 static VmafxStatus lane_info(const VmafxReport *report, uint32_t backend, int32_t index,
                              VmafxDeviceInfo *info)
 {
@@ -290,6 +325,11 @@ static VmafxStatus lane_info(const VmafxReport *report, uint32_t backend, int32_
 #ifdef HAVE_SYCL
     if (backend == VMAFX_BACKEND_SYCL) {
         return vmafx_sycl_device_info(report, index, info);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_info(report, index, info);
     }
 #endif
     (void)index;
@@ -343,6 +383,11 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
 #ifdef HAVE_SYCL
     if (device->backend == VMAFX_BACKEND_SYCL) {
         vmafx_sycl_device_describe(device, &info);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (device->backend == VMAFX_BACKEND_HIP) {
+        vmafx_hip_device_describe(device, &info);
     }
 #endif
     assert(info.backend == device->backend);

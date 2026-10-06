@@ -17,8 +17,9 @@
  * - CUDA_EVENT: the frame's release event is recorded there. A CUDA event
  *   cannot be recorded ahead of time, and a stream wait on an event that was
  *   never recorded returns at once; so the library keeps every release event
- *   it handed out in a table until it is recorded, and vmafx_fence_wait()
- *   answers "pending" for such an event instead of asking the driver. A
+ *   it handed out in a table until it is recorded (release_events.c, shared
+ *   with the HIP lane), and vmafx_fence_wait() answers "pending" for such an
+ *   event instead of asking the driver. A
  *   producer waits on the device only once the event is recorded: from the
  *   frame's release callback (VmafxFrameImport.release), which runs after
  *   the recording, or after a host wait returned.
@@ -51,22 +52,16 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-/* Release events handed out and not yet both recorded and destroyed by
- * every holder: frames with a pending CUDA_EVENT release fence (HISS-02
- * bound; a decoder pool holds a few dozen). */
-#define VMAFX_CUDA_RELEASE_EVENTS 4096u
+/* A CUDA release event the table drops last. */
+static void destroy_event(uintptr_t event)
+{
+    /* NOLINTNEXTLINE(performance-no-int-to-ptr): the table holds the CUevent as uintptr_t, as VmafxFence.handle carries it (ADR-1929). */
+    (void)vmafx_cuda_driver()->f->cuEventDestroy((CUevent)event);
+}
 
-/* One release event: the frame holds a reference until it records it, each
- * fence handed out one until the caller destroys it. */
-typedef struct ReleaseEvent {
-    CUevent event; /* NULL: a free slot */
-    uint32_t refs;
-    bool recorded;
-} ReleaseEvent;
-
-static ReleaseEvent release_events[VMAFX_CUDA_RELEASE_EVENTS];
-static uint32_t release_high; /* slots below it were used at least once */
-static pthread_mutex_t release_lock = PTHREAD_MUTEX_INITIALIZER;
+/* The CUDA lane's release events (release_events.c, ADR-2023 item 3). */
+static VmafxReleaseEvents release_events = {
+    .lock = PTHREAD_MUTEX_INITIALIZER, .high = 0u, .destroy = destroy_event};
 
 /* ---- Frame state -------------------------------------------------------------- */
 
@@ -94,40 +89,6 @@ void vmafx_cuda_frame_state_free(VmafxCudaFrame *cf)
 
 /* ---- Release events ------------------------------------------------------------- */
 
-/* Drop one reference of slot `i` (lock held); the last destroys the event. */
-static void release_unref_locked(uint32_t i)
-{
-    ReleaseEvent *const r = &release_events[i];
-    assert(r->event != NULL && r->refs > 0u);
-    if (--r->refs == 0u) {
-        (void)vmafx_cuda_driver()->f->cuEventDestroy(r->event);
-        r->event = NULL;
-        r->recorded = false;
-    }
-}
-
-/* The slot of a free entry for a new event (lock held), or UINT32_MAX. */
-static uint32_t release_free_slot_locked(void)
-{
-    for (uint32_t i = 0; i < release_high; i++) {
-        if (!release_events[i].event) {
-            return i;
-        }
-    }
-    return release_high < VMAFX_CUDA_RELEASE_EVENTS ? release_high++ : UINT32_MAX;
-}
-
-/* The slot holding `event` (lock held), or UINT32_MAX. */
-static uint32_t release_find_locked(CUevent event)
-{
-    for (uint32_t i = 0; i < release_high; i++) {
-        if (release_events[i].event == event) {
-            return i;
-        }
-    }
-    return UINT32_MAX;
-}
-
 /* The frame's release event with one more reference for the caller, created
  * on first use (context pushed, frame locked). */
 static VmafxStatus release_event_take(const VmafxReport *report, VmafxCudaFrame *cf, CUevent *event)
@@ -141,42 +102,34 @@ static VmafxStatus release_event_take(const VmafxReport *report, VmafxCudaFrame 
                               (int)res);
         }
     }
-    (void)pthread_mutex_lock(&release_lock);
-    const uint32_t slot = cf->release_slot ? cf->release_slot - 1u : release_free_slot_locked();
-    if (slot != UINT32_MAX && fresh) {
-        release_events[slot] = (ReleaseEvent){.event = fresh, .refs = 1u, .recorded = false};
-        cf->release_slot = slot + 1u;
-    }
-    if (slot != UINT32_MAX) {
-        release_events[slot].refs++;
-        *event = release_events[slot].event;
-    }
-    (void)pthread_mutex_unlock(&release_lock);
-    if (slot == UINT32_MAX) {
+    uintptr_t taken = 0u;
+    if (vmafx_release_events_take(&release_events, &cf->release_slot, (uintptr_t)fresh, &taken) !=
+        0) {
         (void)cf->dev->state.f->cuEventDestroy(fresh);
         return VMAFX_FAIL(report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_FENCE, "out",
                           "backend cuda: %u frames hold CUDA_EVENT release fences already; one "
                           "is freed when its frame is released and its fences destroyed",
-                          VMAFX_CUDA_RELEASE_EVENTS);
+                          VMAFX_RELEASE_EVENTS);
     }
+    /* NOLINTNEXTLINE(performance-no-int-to-ptr): the table holds the CUevent as uintptr_t, as VmafxFence.handle carries it (ADR-1929). */
+    *event = (CUevent)taken;
     return VMAFX_OK;
+}
+
+/* cuEventRecord() of a release event on the stream `arg`. */
+static int record_on(uintptr_t event, void *arg)
+{
+    /* NOLINTNEXTLINE(performance-no-int-to-ptr): the table holds the CUevent as uintptr_t, as VmafxFence.handle carries it (ADR-1929). */
+    const CUresult res = vmafx_cuda_driver()->f->cuEventRecord((CUevent)event, (CUstream)arg);
+    return res == CUDA_SUCCESS ? 0 : vmaf_cuda_result_to_errno((int)res);
 }
 
 /* Record the frame's release event on `stream` and drop the frame's
  * reference (context pushed). */
 static int release_event_record(VmafxCudaFrame *cf, CUstream stream)
 {
-    if (!cf->release_slot) {
-        return 0;
-    }
-    const uint32_t slot = cf->release_slot - 1u;
-    cf->release_slot = 0;
-    (void)pthread_mutex_lock(&release_lock);
-    const CUresult res = cf->dev->state.f->cuEventRecord(release_events[slot].event, stream);
-    release_events[slot].recorded = true;
-    release_unref_locked(slot);
-    (void)pthread_mutex_unlock(&release_lock);
-    return res == CUDA_SUCCESS ? 0 : vmaf_cuda_result_to_errno((int)res);
+    return vmafx_release_events_record(&release_events, &cf->release_slot, record_on,
+                                       (void *)stream);
 }
 
 /* ---- Completion --------------------------------------------------------------- */
@@ -248,9 +201,7 @@ VmafxStatus vmafx_cuda_release_fence(const VmafxReport *report, VmafxFrame *fram
     full.handle = (uintptr_t)event;
     status = vmafx_write_sized(report, out, &full, (uint32_t)sizeof(full), "out");
     if (status != VMAFX_OK) {
-        (void)pthread_mutex_lock(&release_lock);
-        release_unref_locked(release_find_locked(event));
-        (void)pthread_mutex_unlock(&release_lock);
+        (void)vmafx_release_events_drop(&release_events, (uintptr_t)event);
     }
     return status;
 }
@@ -312,12 +263,8 @@ VmafxStatus vmafx_cuda_fence_create(const VmafxReport *report, VmafxDevice *devi
  * error. */
 static int event_done(const void *arg)
 {
-    CUevent event = (CUevent)arg;
-    (void)pthread_mutex_lock(&release_lock);
-    const uint32_t slot = release_find_locked(event);
-    const bool unrecorded = slot != UINT32_MAX && !release_events[slot].recorded;
-    (void)pthread_mutex_unlock(&release_lock);
-    if (unrecorded) {
+    CUevent event = *(const CUevent *)arg;
+    if (vmafx_release_events_unrecorded(&release_events, (uintptr_t)event)) {
         return 0;
     }
     const CUresult res = vmafx_cuda_driver()->f->cuEventQuery(event);
@@ -334,8 +281,8 @@ VmafxStatus vmafx_cuda_fence_wait(const VmafxReport *report, const VmafxFence *f
     }
     assert(fence->kind == VMAFX_FENCE_CUDA_EVENT);
     /* NOLINTNEXTLINE(performance-no-int-to-ptr): a CUDA event crosses the ABI as uintptr_t (VmafxFence.handle, ADR-1929). */
-    const void *const event = (const void *)fence->handle;
-    const int state = vmafx_fence_poll(event_done, event, timeout_ns);
+    CUevent event = (CUevent)fence->handle;
+    const int state = vmafx_fence_poll(event_done, (const void *)&event, timeout_ns);
     if (state == 1) {
         return VMAFX_OK;
     }
@@ -361,13 +308,9 @@ VmafxStatus vmafx_cuda_fence_destroy(const VmafxReport *report, const VmafxFence
     }
     /* NOLINTNEXTLINE(performance-no-int-to-ptr): a CUDA event crosses the ABI as uintptr_t (VmafxFence.handle, ADR-1929). */
     CUevent event = (CUevent)fence->handle;
-    (void)pthread_mutex_lock(&release_lock);
-    const uint32_t slot = release_find_locked(event);
-    if (slot != UINT32_MAX) {
-        release_unref_locked(slot); /* a release event: the frame may still hold it */
-    }
-    (void)pthread_mutex_unlock(&release_lock);
-    const CUresult res = slot == UINT32_MAX ? drv->f->cuEventDestroy(event) : CUDA_SUCCESS;
+    /* A release event: the frame may still hold it, the table destroys it. */
+    const bool release = vmafx_release_events_drop(&release_events, fence->handle);
+    const CUresult res = release ? CUDA_SUCCESS : drv->f->cuEventDestroy(event);
     if (res != CUDA_SUCCESS) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, (int32_t)res, VMAFX_SUBJECT_FENCE,
                           "fence.handle",

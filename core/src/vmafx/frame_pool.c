@@ -215,7 +215,9 @@ static VmafxFramePool *pool_new(VmafxDevice *device, const VmafxFrameDesc *d, ui
 }
 
 /* The device a pool allocates on: the CPU (NULL too), or a device whose
- * backend lane allocates pool frames (CUDA). */
+ * backend lane allocates pool frames (CUDA). HIP devices import frames only
+ * (ADR-2092): a pool frame written on a stream the library does not know
+ * has no ordering against the library stream's copies without a fence. */
 static VmafxStatus pool_device(const VmafxReport *report, VmafxDevice *device,
                                VmafxDevice **resolved)
 {
@@ -231,6 +233,11 @@ static VmafxStatus pool_device(const VmafxReport *report, VmafxDevice *device,
         return VMAFX_OK;
     }
 #endif
+    if (device && device->backend == VMAFX_BACKEND_HIP) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_DEVICE, "device",
+                          "backend hip: a HIP device has no frame pools; import the frames "
+                          "your producer holds with vmafx_frame_import() and an acquire fence");
+    }
     return vmafx_frame_host_device(report, device, resolved);
 }
 

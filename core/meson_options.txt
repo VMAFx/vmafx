@@ -114,8 +114,8 @@ option('enable_hipcc',
 
 option('enable_float_vif_hip_autodispatch',
     type: 'boolean',
-    value: false,
-    description: 'Enable automatic model-driven dispatch of float_vif_hip by setting VMAF_FEATURE_EXTRACTOR_HIP on its descriptor (ADR-0623). Default OFF pending T7-10c picture-pool plumbing: without the pool, pictures arrive as CPU VmafPictures and the extractor performs explicit HtoD copies rather than zero-copy from the HIP picture pool. Enable only after T7-10c lands.')
+    value: true,
+    description: 'Set VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip, so --backend hip and a VMAFx context on a HIP device pick it for float_vif (ADR-0623, ADR-2092). Default ON since the HIP lane of the VMAFx API reads device frames on the device, the condition ADR-0623 waited for (T7-10c). OFF: the twin runs only when named, and imported HIP frames are refused for float_vif.')
 
 option('nvcc_threads',
     type: 'integer',

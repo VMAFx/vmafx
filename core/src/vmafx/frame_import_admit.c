@@ -38,11 +38,15 @@
 #include "internal.h"
 #include "sync_object.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
 #ifdef HAVE_SYCL
 #include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -80,6 +84,11 @@ static const char *refusal(const char *extractor, uint32_t backend, uint32_t res
 #ifdef HAVE_SYCL
     if (backend == VMAFX_BACKEND_SYCL) {
         return vmafx_sycl_refusal(extractor);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_refusal(extractor);
     }
 #endif
     (void)extractor;

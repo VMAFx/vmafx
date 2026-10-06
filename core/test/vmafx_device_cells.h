@@ -6,18 +6,19 @@
  */
 
 /*
- * The CUDA twins declared exact (scripts/ci/exact_twins.d/<cell>.cuda,
- * ADR-1428), each as the CPU extractor and options a VMAFx context on a CUDA
- * device registers for it (the aliases of scripts/ci/cross_backend_parity_gate.py
- * FEATURE_ALIASES), and the sessions the CUDA import tests compare: one
- * context per cell on the CUDA device, fed host frames (uploaded by the
- * engine) or imported device frames. core/test/test_vmafx_import_cuda_cells_contract.py
- * holds the table equal to the fragment files; the helpers are
- * vmafx_exact_cells.h's.
+ * The device twins declared exact (scripts/ci/exact_twins.d/<cell>.<backend>,
+ * ADR-1428) that the CUDA and HIP import tests compare, each as the CPU
+ * extractor and options a VMAFx context on a device registers for it (the
+ * aliases of scripts/ci/cross_backend_parity_gate.py FEATURE_ALIASES). The
+ * CUDA (ADR-2023) and HIP (ADR-2092) lanes declare the same cells;
+ * core/test/test_vmafx_import_cuda_cells_contract.py holds the table equal to
+ * the .cuda and the .hip fragment files. The helpers (one context per cell,
+ * the bit-for-bit comparison) are vmafx_exact_cells.h's, shared with the SYCL
+ * lane's table (vmafx_sycl_cells.h).
  */
 
-#ifndef VMAFX_CUDA_CELLS_H
-#define VMAFX_CUDA_CELLS_H
+#ifndef VMAFX_DEVICE_CELLS_H
+#define VMAFX_DEVICE_CELLS_H
 
 #include "vmafx_exact_cells.h"
 
@@ -56,4 +57,4 @@ static const VcCell vc_cells[] = {
 
 /* NOLINTEND(modernize-use-nullptr) */
 
-#endif /* VMAFX_CUDA_CELLS_H */
+#endif /* VMAFX_DEVICE_CELLS_H */

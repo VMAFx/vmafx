@@ -12,8 +12,9 @@
  * registers for it (the aliases of scripts/ci/cross_backend_parity_gate.py
  * FEATURE_ALIASES), and the helpers the backend lanes' tests share: one
  * context per cell on the device, and the comparison of two contexts' scores
- * bit for bit. Each lane's table is its own header (vmafx_cuda_cells.h,
- * vmafx_sycl_cells.h), held to the fragments by a contract test.
+ * bit for bit. Each table is its own header (vmafx_device_cells.h for the
+ * CUDA and HIP lanes, vmafx_sycl_cells.h), held to the fragments by a
+ * contract test.
  */
 
 #ifndef VMAFX_EXACT_CELLS_H
@@ -22,6 +23,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "feature/feature_collector.h"
@@ -104,7 +107,13 @@ static inline bool vc_compare(VmafxContext *a, VmafxContext *b, unsigned n, unsi
             const VmafxStatus ra = vmafx_feature_score(a, name, i, &sa, NULL);
             const VmafxStatus rb = vmafx_feature_score(b, name, i, &sb, NULL);
             *compared += 1u;
-            *differing += ra != rb || (ra == VMAFX_OK && !vt_same_bits(sa.value, sb.value));
+            const bool differs = ra != rb || (ra == VMAFX_OK && !vt_same_bits(sa.value, sb.value));
+            *differing += differs;
+            /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test reporting (ADR-0141 / ADR-0278). */
+            if (differs && getenv("VMAFX_TEST_VERBOSE")) {
+                (void)fprintf(stderr, "\n    %s[%u]: %.17g (%d) vs %.17g (%d)", name, i, sa.value,
+                              (int)ra, sb.value, (int)rb);
+            }
         }
     }
     return true;

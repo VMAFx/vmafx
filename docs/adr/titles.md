@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1288), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5159,3 +5159,7 @@ Every ADR, one heading each (1287), so the site search finds an ADR by its title
 ## ADR-2091: VMAFx device frames on SYCL: readers copy on the device behind the frame's ready event, the release waits on every reader
 
 [2091-vmafx-sycl-device-frames](2091-vmafx-sycl-device-frames.md)
+
+## ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync\_file checked on the host
+
+[2092-vmafx-hip-device-frames](2092-vmafx-hip-device-frames.md)

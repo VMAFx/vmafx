@@ -39,7 +39,7 @@ typedef enum VmafxMemoryKind {
     VMAFX_MEMORY_HOST = 1,
     /** A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context. */
     VMAFX_MEMORY_DEVICE_POINTER = 2,
-    /** A device array (CUDA array) in the device's context. */
+    /** A device array (CUDA or HIP array) in the device's context. */
     VMAFX_MEMORY_DEVICE_ARRAY = 3,
     /**
      * A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives
@@ -56,7 +56,8 @@ typedef enum VmafxMemoryKind {
      * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
      * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
      * texture). Imported on a device of a backend with GL interop (CUDA; SYCL through an EGL dma-
-     * buf export of each texture, Linux). Added in ABI 0.1.4.
+     * buf export of each texture, Linux; HIP from a GLX context of the device's GPU). Added in ABI
+     * 0.1.4.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
 } VmafxMemoryKind;
@@ -76,7 +77,10 @@ typedef enum VmafxFenceKind {
     VMAFX_FENCE_HIP_EVENT = 3,
     /** A pointer to a SYCL event (`handle`) of the device's context. */
     VMAFX_FENCE_SYCL_EVENT = 4,
-    /** A Linux sync_file descriptor (`fd`). */
+    /**
+     * A Linux sync_file descriptor (`fd`), borrowed: an acquire fence a device without a kernel-
+     * scheduled queue checks on the host (HIP, SYCL).
+     */
     VMAFX_FENCE_SYNC_FILE = 5,
     /** A Metal shared event (`handle`) and the value it reaches when signalled (`value`). */
     VMAFX_FENCE_METAL_SHARED_EVENT = 6,
@@ -228,9 +232,9 @@ struct VmafxFrameImport {
     uint32_t flags;
     /**
      * Called once, on the thread that drops the frame's last reference, after its release fences
-     * were signalled or recorded: a CUDA_EVENT or SYCL_EVENT release fence can be waited on from
-     * here (a producer makes its stream or queue wait on it before it reuses the planes, with no
-     * host wait); NULL: none. Added in ABI 0.1.4.
+     * were signalled or recorded: a CUDA_EVENT, SYCL_EVENT or HIP_EVENT release fence can be waited
+     * on from here (a producer makes its stream or queue wait on it before it reuses the planes,
+     * with no host wait); NULL: none. Added in ABI 0.1.4.
      */
     VmafxFrameReleaseCallback release;
     /** Passed to `release`. Added in ABI 0.1.4. */
@@ -368,11 +372,12 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFram
  * A fence of `kind` signalled once the last reference of the frame is gone, in every context it was
  * submitted to: from then on the library reads none of its memory and the producer may reuse it.
  * Call it while holding a reference, before the frame is submitted; each call returns a new fence
- * the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT:
- * an event the library records on its stream behind the last reader where the last reference is
- * dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means
- * something only from the frame's release callback (VmafxFrameImport.release) or after a host wait
- * returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT,
+ * HIP_EVENT, SYCL_EVENT: an event the library records on its stream (SYCL: its queue, joining every
+ * reader) behind the last reader where the last reference is dropped; vmafx_fence_wait() waits for
+ * the recording too, while a stream or queue wait on it means something only from the frame's
+ * release callback (VmafxFrameImport.release) or after a host wait returned. A kind the frame's
+ * device cannot signal is VMAFX_E_NOTSUP naming it.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind,

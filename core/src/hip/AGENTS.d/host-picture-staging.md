@@ -34,6 +34,16 @@ twin allocates no picture staging of its own. Two things to get right:
   pointer caller never had to produce. That mismatch is precisely
   how `integer_adm_hip` ended up faulting.
 
+Exception since ADR-2092: a VMAFx import is a device picture
+(`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`, `priv->hip.str` = library stream).
+`vmaf_hip_picture_upload()` / `_upload_staged()` and the shared frame copy it
+device to device on that stream and make the reader's stream and the null
+stream wait (`vmaf_hip_stream_wait_library()`). A twin that reads planes on
+the host checks `vmaf_hip_picture_device_stream()` first and copies on the
+device instead (`psnr_hvs_hip`, `ssimulacra2_hip`, `float_ms_ssim_hip` level
+0). Mixed host / device pair -> `-EINVAL`. See
+[vmafx-device-frames](vmafx-device-frames.md).
+
 When debugging fault here, `AMD_SERIALIZE_KERNEL=3
 HIP_LAUNCH_BLOCKING=1 AMD_LOG_LEVEL=3` names offending kernel.
 Faulting address in host heap range is tell that host pointer

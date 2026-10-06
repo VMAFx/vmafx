@@ -125,6 +125,63 @@ static inline VmafxFrameImport vt_import_semiplanar(const VmafxFrameDesc *d, uin
     return imp;
 }
 
+/* Where the planes of a producer's device frame lie in its memory. */
+typedef struct VtDeviceLayout {
+    uint64_t offset[3];
+    uint64_t pitch[3];
+    uint32_t n;
+} VtDeviceLayout;
+
+/* Lay out the planes of `d` as `pix_fmt` (YUV420P planar, NV12 / P010 / P016
+ * semi-planar) in one buffer, with `pad` bytes after each row. Aligned
+ * (`skew` 0): every plane starts 8-byte aligned (not at the buffer's start)
+ * with a pitch a multiple of 8; `skew` > 0 starts each plane `skew` bytes
+ * later and leaves the pitch unrounded. Fills the rows and bytes per row of
+ * each plane; returns the bytes the buffer needs. Shared by the CUDA and HIP
+ * lane tests (ADR-2023, ADR-2092). */
+static inline size_t vt_device_layout(const VmafxFrameDesc *d, uint32_t pix_fmt, size_t pad,
+                                      size_t skew, VtDeviceLayout *p, size_t rows[3],
+                                      size_t row_bytes[3])
+{
+    unsigned w[3];
+    unsigned h[3];
+    size_t row[3];
+    vt_plane_geometry(d, w, h, row);
+    const bool semi = pix_fmt != VMAFX_PIXEL_FORMAT_YUV420P;
+    p->n = semi ? 2u : 3u;
+    uint64_t at = 64u;
+    for (uint32_t i = 0; i < 3u; i++) {
+        row_bytes[i] = i < p->n ? row[i] * (semi && i == 1u ? 2u : 1u) : 0u;
+        rows[i] = i < p->n ? h[i] : 0u;
+        const uint64_t pitch = row_bytes[i] ? row_bytes[i] + pad : 0u;
+        p->pitch[i] = skew ? pitch : (pitch + 7u) & ~(uint64_t)7u;
+        p->offset[i] = at + skew;
+        at = (p->offset[i] + p->pitch[i] * rows[i] + 64u) & ~(uint64_t)63u;
+    }
+    return (size_t)(p->offset[p->n - 1u] + p->pitch[p->n - 1u] * rows[p->n - 1u]) + 64u;
+}
+
+/* The tightly packed form of the producer's frame: `planar` itself for
+ * YUV420P, else its semi-planar form (vt_to_semiplanar()) in `*staged`,
+ * which the caller frees. NULL when out of memory. */
+static inline const uint8_t *vt_producer_bytes(const VmafxFrameDesc *d, const uint8_t *planar,
+                                               uint32_t pix_fmt, unsigned shift, uint8_t **staged)
+{
+    *staged = NULL;
+    if (pix_fmt == VMAFX_PIXEL_FORMAT_YUV420P) {
+        return planar;
+    }
+    const size_t bytes = vt_frame_bytes(d);
+    if (bytes == 0u) {
+        return NULL;
+    }
+    *staged = malloc(bytes);
+    if (*staged) {
+        vt_to_semiplanar(d, planar, shift, *staged);
+    }
+    return *staged;
+}
+
 /* Shift every sample of a tightly packed 16-bit frame up by `shift`. */
 static inline void vt_shift_up(const VmafxFrameDesc *d, uint8_t *data, unsigned shift)
 {

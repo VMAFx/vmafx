@@ -21,11 +21,15 @@
 #include "error_internal.h"
 #include "internal.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
 #ifdef HAVE_SYCL
 #include "sycl/vmafx_sycl.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -49,6 +53,11 @@ static VmafxStatus attach_lane(const VmafxReport *report, VmafxContext *context,
 #ifdef HAVE_SYCL
     if (device->backend == VMAFX_BACKEND_SYCL) {
         return vmafx_sycl_context_attach(report, context, device);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (device->backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_context_attach(report, context, device);
     }
 #endif
     (void)context;
@@ -95,6 +104,11 @@ void vmafx_context_release_device(VmafxContext *context)
 #ifdef HAVE_SYCL
     if (context->device && context->device->backend == VMAFX_BACKEND_SYCL) {
         vmafx_sycl_context_detach(context);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (context->device && context->device->backend == VMAFX_BACKEND_HIP) {
+        vmafx_hip_context_detach(context);
     }
 #endif
     vmafx_device_unref(context->device);

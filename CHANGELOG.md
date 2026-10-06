@@ -95,6 +95,30 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- **VMAFx device frames on HIP (RC4, ADR-2092).** In a build with the HIP
+  backend the VMAFx API creates HIP devices by index or from your stream
+  (`vmafx_device_create` with `VMAFX_BACKEND_HIP`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  HIP twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
+  dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
+  and OpenGL textures from a GLX context on the device's GPU; NV12, P010 and
+  P016 are planarised on the device. Acquire fences of kind
+  `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
+  `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
+  `VMAFX_FENCE_GL_SYNC` are checked on the host and waited for by
+  `vmafx_context_import_frame`. Release fences (`VMAFX_FENCE_HOST`,
+  `VMAFX_FENCE_HIP_EVENT`) are signalled after the last reader in every
+  context, and the release callback runs after them. `vmafx_fence_wait`
+  waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
+  build. Imported frames score bit for bit as the same frames uploaded from
+  the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
+  release fence is refused (the ROCm runtime cannot signal one). With ROCm
+  10.1, whose runtime maps a GL texture but cannot read it, GL imports are
+  refused with `VMAFX_E_NOTSUP` naming the runtime. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
 - **VMAFx device frames on SYCL (RC4, ADR-1929, ADR-2091).** In a build with
   the SYCL backend the VMAFx API creates SYCL devices on the Level Zero GPUs,
   by index or in the context of your `sycl::queue` (`vmafx_device_create` with
@@ -1394,6 +1418,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `_avx512`) are removed.
 
 
+- **`float_vif_hip` runs for `float_vif` under `--backend hip` by default
+  (ADR-2092).** The build option `enable_float_vif_hip_autodispatch` now
+  defaults to `true`, so `--backend hip --feature float_vif`, models that
+  read `float_vif` and a VMAFx context on a HIP device run the HIP twin, which
+  returns the CPU's scores bit for bit (ADR-1444), instead of the CPU
+  extractor. Build with `-Denable_float_vif_hip_autodispatch=false` for the
+  old behaviour, where the twin runs only as `--feature float_vif_hip`. See
+  [`enable_float_vif_hip_autodispatch`](docs/development/build-flags.md#enable_float_vif_hip_autodispatch).
+
+
 - **The cross-backend parity gate covers every registered CUDA, SYCL and HIP
   twin.** `speed_temporal` was the one feature whose three GPU twins were
   registered and compared by no gate cell. It is now a gate feature, with a
@@ -1594,6 +1628,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   options matches the CPU exactly, `apsnr_*` included, and the parity gate
   passes every HIP cell; see
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **`psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` read device
+  frames on the device (ADR-2092).** Given a frame in HIP device memory, the
+  three twins that staged planes on the host copy or convert them on the
+  device (`float_ms_ssim_hip` builds level 0 with a kernel of the same
+  arithmetic as `picture_copy()`); host frames are read as before.
 
 
 - **The vendored Pelorus interop sources are re-vendored at a pin that carries
