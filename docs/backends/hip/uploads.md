@@ -23,6 +23,14 @@ null stream wait for the copy (`vmaf_hip_picture_upload()`,
 planes below are filled the same way. No plane of an imported frame is copied
 to or from the host.
 
+Vulkan frames on the same GPU (`VMAFX_MEMORY_VULKAN`,
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)) are imported through
+the dma-buf path: RADV exports a buffer's or a LINEAR image's memory as a
+dma-buf. ROCm 10.1 imports no Vulkan semaphore, so the acquire fence is a
+`sync_file` of the producer's write and the release a host fence; OPTIMAL
+images are refused naming `desc.vulkan_tiling`
+([Vulkan frames](../../api/vmafx/index.md#vulkan-frames)).
+
 Frames given to `libvmaf.h` (`vmaf_read_pictures()`) still arrive with
 `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory, and the planes the
 extractors of a run read are copied to the device once per frame; see

@@ -193,18 +193,28 @@ static bool gated_write(VkFrame *f, const uint8_t *planar, uint64_t gate, uint32
     return ok && (VK_DEVICE_SEMAPHORES || f->sync >= 0);
 }
 
-/* Import a frame whose last write signalled `value`. */
-static VmafxFrame *import_at(VmafxContext *context, VkFrame *f, uint64_t value)
+/* Import a frame whose last write signalled `value`. With `further` (CUDA)
+ * the timeline is handed over as the last further acquire fence instead, so
+ * a lane that skips `acquire_more` reads unfinished frames. */
+static VmafxFrame *import_at(VmafxContext *context, VkFrame *f, uint64_t value, bool further)
 {
     VmafxFrameImport imp;
     if (!vk_describe(f, value, &imp)) {
         return NULL;
+    }
+    if (further && VK_DEVICE_SEMAPHORES) {
+        imp.acquire_more[1] = imp.acquire;
+        imp.acquire.kind = VMAFX_FENCE_NONE;
+        imp.acquire.fd = -1;
     }
     VmafxFrame *frame = NULL;
     const VmafxStatus status =
         vmafx_context_import_frame(context, gpu.device, &imp, "main", &frame, NULL);
     if (!VK_DEVICE_SEMAPHORES) {
         imp.acquire.kind = VMAFX_FENCE_NONE;
+    }
+    if (imp.acquire_more[1].kind == VMAFX_FENCE_VULKAN_SEMAPHORE) {
+        (void)close(imp.acquire_more[1].fd);
     }
     vkp_import_close(&imp);
     return status == VMAFX_OK ? frame : NULL;
@@ -296,8 +306,10 @@ static VmafxContext *run_gated(Pairs *p, uint64_t base)
     opener_start(&opener, base, N_FRAMES, NULL);
     for (unsigned i = 0; i < N_FRAMES && ok; i++) {
         ok = VK_DEVICE_SEMAPHORES || write_frame(p, base, i);
-        VmafxFrame *const r = ok ? import_at(context, &p->ref[i], 2u) : NULL;
-        VmafxFrame *const d = r ? import_at(context, &p->dist[i], 2u) : NULL;
+        /* The reference is imported first: its copy is queued before any
+         * wait of the distorted frame could cover it. */
+        VmafxFrame *const r = ok ? import_at(context, &p->ref[i], 2u, true) : NULL;
+        VmafxFrame *const d = r ? import_at(context, &p->dist[i], 2u, false) : NULL;
         imports_ahead += r && vkp_frame_value(p->ref[i].f) < 2u;
         imports_ahead += d && vkp_frame_value(p->dist[i].f) < 2u;
         ok = r && d && vmafx_submit(context, r, d, i, NULL) == VMAFX_OK;

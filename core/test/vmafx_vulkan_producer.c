@@ -122,8 +122,10 @@ static void describe_phys(VkpDevice *d)
 {
     VkPhysicalDevicePCIBusInfoPropertiesEXT pci = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT};
-    VkPhysicalDeviceDriverProperties driver = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES, .pNext = &pci};
+    VkPhysicalDeviceDriverProperties driver;
+    memset(&driver, 0, sizeof(driver)); /* driverID is filled in by the query */
+    driver.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+    driver.pNext = &pci;
     VkPhysicalDeviceProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                                          .pNext = &driver};
     vkGetPhysicalDeviceProperties2(d->phys, &props);

@@ -23,8 +23,11 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "error_internal.h"
@@ -188,6 +191,39 @@ VmafxStatus vmafx_import_check_vulkan(const VmafxReport *report, const VmafxFram
 }
 
 /* ---- The producer's GPU -------------------------------------------------------------- */
+
+/* One hexadecimal field of a PCI bus id, ending at `end` ('\0' for the
+ * last); false when the text is not that. */
+static bool pci_field(const char **text, char end, uint32_t *out)
+{
+    const char *const s = *text;
+    if (!isxdigit((unsigned char)s[0])) {
+        return false; /* strtoul() would take a sign or blanks */
+    }
+    char *stop = NULL;
+    errno = 0;
+    const unsigned long v = strtoul(s, &stop, 16);
+    if (errno != 0 || v > UINT32_MAX || *stop != end) {
+        return false;
+    }
+    *out = (uint32_t)v;
+    *text = end != '\0' ? stop + 1 : stop;
+    return true;
+}
+
+void vmafx_parse_pci_bus_id(const char *bus_id, uint32_t pci[4])
+{
+    static const char ends[4] = {':', ':', '.', '\0'};
+    uint32_t v[4] = {0u, 0u, 0u, 0u};
+    const char *s = bus_id;
+    bool ok = s != NULL;
+    for (uint32_t i = 0; i < 4u && ok; i++) {
+        ok = pci_field(&s, ends[i], &v[i]);
+    }
+    for (uint32_t i = 0; i < 4u; i++) {
+        pci[i] = ok ? v[i] : UINT32_MAX;
+    }
+}
 
 VmafxStatus vmafx_import_check_vulkan_device(const VmafxReport *report, const VmafxFrameImport *d,
                                              const uint32_t pci[4], const char *backend)

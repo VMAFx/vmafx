@@ -124,21 +124,12 @@ static uint64_t device_memory(int32_t index)
     return hipDeviceTotalMem(&bytes, index) == hipSuccess ? (uint64_t)bytes : 0u;
 }
 
-void vmafx_hip_parse_pci(const char *bus_id, uint32_t pci[4])
-{
-    unsigned v[4] = {0u, 0u, 0u, 0u};
-    const bool ok = bus_id && sscanf(bus_id, "%x:%x:%x.%x", &v[0], &v[1], &v[2], &v[3]) == 4;
-    for (uint32_t i = 0; i < 4u; i++) {
-        pci[i] = ok ? v[i] : UINT32_MAX;
-    }
-}
-
 /* PCI location of HIP device `index` (UINT32_MAX in each when unknown). */
 static void device_pci(int32_t index, uint32_t pci[4])
 {
     char bus[32];
     const bool ok = hipDeviceGetPCIBusId(bus, (int)sizeof(bus), index) == hipSuccess;
-    vmafx_hip_parse_pci(ok ? bus : NULL, pci);
+    vmafx_parse_pci_bus_id(ok ? bus : NULL, pci);
 }
 
 /* What a HIP device imports: device pointers and dma-bufs (bound or

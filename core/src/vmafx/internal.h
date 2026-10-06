@@ -513,6 +513,10 @@ const char *vmafx_vulkan_tiling_name(uint32_t tiling);
  * flags, and each plane's descriptor, allocation size and rows. */
 VmafxStatus vmafx_import_check_vulkan(const VmafxReport *report, const VmafxFrameImport *d,
                                       const VmafxImportLayout *layout);
+/* A PCI bus id "dddd:bb:dd.f" (cuDeviceGetPCIBusId(), hipDeviceGetPCIBusId())
+ * as domain, bus, device and function; UINT32_MAX in each for NULL or text
+ * of another form. */
+void vmafx_parse_pci_bus_id(const char *bus_id, uint32_t pci[4]);
 /* The producer's GPU (`d->vulkan_pci`) is the device's (`pci`): else
  * VMAFX_E_NOTSUP naming desc.vulkan_pci. */
 VmafxStatus vmafx_import_check_vulkan_device(const VmafxReport *report, const VmafxFrameImport *d,

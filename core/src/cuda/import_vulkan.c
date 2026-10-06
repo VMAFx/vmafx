@@ -36,7 +36,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -70,24 +69,9 @@
 void vmafx_cuda_device_pci(const VmafxCudaDriver *drv, CUdevice dev, uint32_t pci[4])
 {
     char bus[32];
-    unsigned domain = 0;
-    unsigned b = 0;
-    unsigned d = 0;
-    unsigned fn = 0;
-    for (uint32_t i = 0; i < 4u; i++) {
-        pci[i] = UINT32_MAX;
-    }
-    if (!drv->f->cuDeviceGetPCIBusId ||
-        drv->f->cuDeviceGetPCIBusId(bus, (int)sizeof(bus), dev) != CUDA_SUCCESS) {
-        return;
-    }
-    /* "dddd:bb:dd.f" (cuDeviceGetPCIBusId()). */
-    if (sscanf(bus, "%x:%x:%x.%x", &domain, &b, &d, &fn) == 4) {
-        pci[0] = domain;
-        pci[1] = b;
-        pci[2] = d;
-        pci[3] = fn;
-    }
+    const bool ok = drv->f->cuDeviceGetPCIBusId &&
+                    drv->f->cuDeviceGetPCIBusId(bus, (int)sizeof(bus), dev) == CUDA_SUCCESS;
+    vmafx_parse_pci_bus_id(ok ? bus : NULL, pci);
 }
 
 /* ---- Checks ----------------------------------------------------------------------------- */
@@ -250,6 +234,7 @@ static VmafxStatus map_pointer(const VmafxReport *report, const VmafxCudaDevice 
                                VmafxImportPlane *plane)
 {
     const uint32_t m = vk->mem_of[i];
+    assert(m < 3u);
     if (!vk->mapped[m]) {
         CUDA_EXTERNAL_MEMORY_BUFFER_DESC desc;
         memset(&desc, 0, sizeof(desc));
@@ -356,6 +341,28 @@ VmafxStatus vmafx_cuda_wait_acquires(const VmafxReport *report, VmafxCudaFrame *
 
 /* ---- Release ------------------------------------------------------------------------------ */
 
+/* Add `signal` to the frame's release signals (frame locked). */
+static VmafxStatus add_signal(const VmafxReport *report, VmafxCudaFrame *cf, VmafxCudaVulkan *vk,
+                              const VmafxFence *signal)
+{
+    const uint32_t n = vk->n_signal;
+    if (n >= 3u) {
+        return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_FENCE, "signal",
+                          "a frame signals up to 3 producer fences at release");
+    }
+    if (vmafx_cuda_push(cf->dev) != 0) {
+        return VMAFX_FAIL(report, VMAFX_E_DEVICE, 0, VMAFX_SUBJECT_DEVICE, "frame",
+                          "backend cuda: cannot make the device current");
+    }
+    const VmafxStatus status = import_semaphore(report, cf->dev, signal, "signal", &vk->signal[n]);
+    (void)vmafx_cuda_pop(cf->dev, 0);
+    if (status == VMAFX_OK) {
+        vk->signal_value[n] = signal->value;
+        vk->n_signal = n + 1u;
+    }
+    return status;
+}
+
 VmafxStatus vmafx_cuda_signal_on_release(const VmafxReport *report, VmafxFrame *frame,
                                          const VmafxFence *signal)
 {
@@ -363,21 +370,10 @@ VmafxStatus vmafx_cuda_signal_on_release(const VmafxReport *report, VmafxFrame *
     assert(cf != NULL && signal->kind == VMAFX_FENCE_VULKAN_SEMAPHORE);
     (void)pthread_mutex_lock(&cf->lock);
     VmafxCudaVulkan *const vk = vulkan_of(cf);
-    VmafxStatus status = VMAFX_OK;
-    if (!vk || vk->n_signal >= 3u) {
-        status = VMAFX_FAIL(report, vk ? VMAFX_E_RANGE : VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_FENCE,
-                            "signal", "a frame signals up to 3 producer fences at release");
-    }
-    if (status == VMAFX_OK && vmafx_cuda_push(cf->dev) != 0) {
-        status = VMAFX_FAIL(report, VMAFX_E_DEVICE, 0, VMAFX_SUBJECT_DEVICE, "frame",
-                            "backend cuda: cannot make the device current");
-    } else if (status == VMAFX_OK) {
-        status = import_semaphore(report, cf->dev, signal, "signal", &vk->signal[vk->n_signal]);
-        (void)vmafx_cuda_pop(cf->dev, 0);
-    }
-    if (status == VMAFX_OK) {
-        vk->signal_value[vk->n_signal++] = signal->value;
-    }
+    const VmafxStatus status =
+        vk ? add_signal(report, cf, vk, signal) :
+             VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_FENCE, "signal",
+                        "cannot allocate the frame's Vulkan import state");
     (void)pthread_mutex_unlock(&cf->lock);
     return status;
 }

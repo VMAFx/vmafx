@@ -141,11 +141,15 @@ static bool keep(Decoded *d, const AVFrame *frame, bool vulkan)
         vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8u, (uint32_t)frame->width, (uint32_t)frame->height);
     const int bytes =
         av_image_get_buffer_size((enum AVPixelFormat)frame->format, frame->width, frame->height, 1);
-    d->host[*n] = bytes > 0 ? malloc((size_t)bytes) : NULL;
-    return d->host[*n] &&
-           av_image_copy_to_buffer(d->host[(*n)++], bytes, (const uint8_t *const *)frame->data,
-                                   frame->linesize, (enum AVPixelFormat)frame->format, frame->width,
-                                   frame->height, 1) == bytes;
+    uint8_t *const buf = bytes > 0 ? malloc((size_t)bytes) : NULL;
+    if (!buf) {
+        return false;
+    }
+    d->host[*n] = buf;
+    *n += 1u; /* freed with the others from here on */
+    return av_image_copy_to_buffer(buf, bytes, (const uint8_t *const *)frame->data, frame->linesize,
+                                   (enum AVPixelFormat)frame->format, frame->width, frame->height,
+                                   1) == bytes;
 }
 
 /* Receive every frame the decoder has; false on an error. */
@@ -396,7 +400,7 @@ static AVFrame *device_copy(AVFrame *src)
         return NULL;
     }
     AVVkFrame *const pair[2] = {(AVVkFrame *)src->data[0], (AVVkFrame *)dst->data[0]};
-    const VkCommandBuffer cmd =
+    VkCommandBuffer cmd =
         images_of(pair[0]) == 1u && images_of(pair[1]) == 2u ? begin_cmd() : VK_NULL_HANDLE;
     if (cmd) {
         record_copy(cmd, pair[0], pair[1], src->width, src->height);
@@ -411,7 +415,7 @@ static AVFrame *device_copy(AVFrame *src)
  * timeline semaphores (waited at sem_value, signalled at sem_value + 1). */
 static bool export_transition(AVVkFrame *f)
 {
-    const VkCommandBuffer cmd = begin_cmd();
+    VkCommandBuffer cmd = begin_cmd();
     if (!cmd) {
         return false;
     }
