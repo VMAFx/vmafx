@@ -93,6 +93,9 @@ int vmafx_sycl_rt_count(uint32_t *count);
 /* Name (kept for the process) and global memory of GPU `index`: 0, -ENOENT
  * past the last one, -EIO. */
 int vmafx_sycl_rt_info(int32_t index, const char **name, uint64_t *memory);
+/* PCI domain, bus, device and function of GPU `index` (UINT32_MAX in each
+ * when the runtime reports none): 0, -ENOENT, -EIO. RC4 WP3 Vulkan lane. */
+int vmafx_sycl_rt_pci(int32_t index, uint32_t pci[4]);
 /* The library queue of GPU `index`, or on the context and device of the
  * caller's queue (`external_queue`, a sycl::queue *, when not 0): 0,
  * -ENOENT, -ENOMEM, -EIO. */
@@ -102,6 +105,8 @@ void vmafx_sycl_rt_close(VmafxSyclRt *rt);
 int32_t vmafx_sycl_rt_index(const VmafxSyclRt *rt);
 const char *vmafx_sycl_rt_name(const VmafxSyclRt *rt);
 uint64_t vmafx_sycl_rt_memory(const VmafxSyclRt *rt);
+/* PCI location of the library queue's device (UINT32_MAX when unknown). */
+void vmafx_sycl_rt_device_pci(const VmafxSyclRt *rt, uint32_t pci[4]);
 /* Whether the library queue runs on immediate command lists. */
 bool vmafx_sycl_rt_immediate(const VmafxSyclRt *rt);
 /* Test switch (white-box): library queues opened from now on leave out the

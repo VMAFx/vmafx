@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (793), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (794), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2663,6 +2663,10 @@ Every research digest, one heading each (793), so the site search finds a digest
 ## Research-2160: SYCL device frames: what the Level Zero runtime does with cross-queue copies, host tasks and event queries, and whether batched command lists drop imports on xe
 
 [2160-vmafx-sycl-device-frames](2160-vmafx-sycl-device-frames.md)
+
+## Research-2162: What CUDA, Level Zero and HIP do with memory and semaphores a Vulkan producer exported
+
+[2162-vmafx-vulkan-frame-import](2162-vmafx-vulkan-frame-import.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

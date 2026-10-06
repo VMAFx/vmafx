@@ -100,6 +100,12 @@ struct VmafxDeviceInfo {
     uint64_t total_memory;
     /** Name of the device as its runtime reports it (`cpu` for the CPU). */
     const char *name;
+    /**
+     * PCI domain, bus, device and function of the device (a producer on the same GPU has the same,
+     * VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in
+     * ABI 0.1.5.
+     */
+    uint32_t pci[4];
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */

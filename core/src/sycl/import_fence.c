@@ -58,8 +58,8 @@ VmafxStatus vmafx_sycl_release_fence(const VmafxReport *report, VmafxFrame *fram
                                      VmafxFence *out)
 {
     if (kind != VMAFX_FENCE_SYCL_EVENT) {
-        return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
-                          VMAFX_SUBJECT_FENCE, "kind",
+        return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP,
+                          0, VMAFX_SUBJECT_FENCE, "kind",
                           "backend sycl: a release fence of kind %u; SYCL frames signal HOST and "
                           "SYCL_EVENT release fences",
                           (unsigned)kind);
@@ -110,8 +110,8 @@ VmafxStatus vmafx_sycl_fence_create(const VmafxReport *report, VmafxDevice *devi
 {
     (void)device;
     if (kind != VMAFX_FENCE_SYCL_EVENT) {
-        return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
-                          VMAFX_SUBJECT_FENCE, "kind",
+        return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP,
+                          0, VMAFX_SUBJECT_FENCE, "kind",
                           "backend sycl: a fence of kind %u; a SYCL device creates SYCL_EVENT "
                           "fences (and HOST fences, as every device)",
                           (unsigned)kind);

@@ -38,6 +38,7 @@
 #include <windows.h>
 #else
 #include <time.h>
+#include <unistd.h>
 #endif
 
 #include "config.h"
@@ -244,7 +245,7 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
 /* A kind this build declares but cannot handle here. */
 static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, const char *what)
 {
-    if (kind > VMAFX_FENCE_GL_SYNC) {
+    if (kind > VMAFX_FENCE_KIND_LAST) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                           "kind %u is not a VmafxFenceKind", (unsigned)kind);
     }
@@ -413,6 +414,10 @@ static VmafxStatus other_kind_wait(const VmafxReport *report, const VmafxFence *
     case VMAFX_FENCE_GL_SYNC:
     case VMAFX_FENCE_SYNC_FILE:
         return producer_fence_wait(report, f, timeout_ns);
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                          "the library has no Vulkan device to wait on a Vulkan semaphore; wait "
+                          "with vkWaitSemaphores() (import only, Q-011)");
 #ifdef HAVE_CUDA
     case VMAFX_FENCE_CUDA_EVENT:
         return vmafx_cuda_fence_wait(report, f, timeout_ns);
@@ -455,8 +460,26 @@ VmafxStatus vmafx_fence_wait(const VmafxFence *fence, uint64_t timeout_ns, Vmafx
                       "host fence not signalled within %llu ns", (unsigned long long)timeout_ns);
 }
 
-/* The destroy of a kind other than NONE and HOST: a backend lane's event;
- * the library returns no GL sync and no sync_file. */
+/* A SYNC_FILE fence is destroyed by closing its descriptor (ADR-2091 item
+ * 6). */
+static VmafxStatus close_sync_file(const VmafxReport *report, const VmafxFence *f)
+{
+#ifdef _WIN32
+    (void)f;
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                      "sync_file descriptors are Linux objects");
+#else
+    if (f->fd < 0 || close((int)f->fd) != 0) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.fd",
+                          "cannot close sync_file descriptor %d", (int)f->fd);
+    }
+    return VMAFX_OK;
+#endif
+}
+
+/* The destroy of a kind other than NONE and HOST: a backend lane's event, a
+ * sync_file's descriptor; the library returns no GL sync and no Vulkan
+ * semaphore. */
 static VmafxStatus other_kind_destroy(const VmafxReport *report, const VmafxFence *f)
 {
     switch (f->kind) {
@@ -464,8 +487,10 @@ static VmafxStatus other_kind_destroy(const VmafxReport *report, const VmafxFenc
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                           "the library returns no GL sync; delete it with glDeleteSync()");
     case VMAFX_FENCE_SYNC_FILE:
+        return close_sync_file(report, f);
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
-                          "the library returns no sync_file; close the descriptor");
+                          "the library returns no Vulkan semaphore; close the descriptor");
 #ifdef HAVE_CUDA
     case VMAFX_FENCE_CUDA_EVENT:
         return vmafx_cuda_fence_destroy(report, f);

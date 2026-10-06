@@ -1287,3 +1287,4 @@
 2023-vmafx-cuda-device-frames
 2091-vmafx-sycl-device-frames
 2092-vmafx-hip-device-frames
+2152-vmafx-vulkan-frame-import

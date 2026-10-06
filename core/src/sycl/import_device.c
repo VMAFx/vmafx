@@ -22,6 +22,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 #include "libvmaf/libvmaf_sycl.h"
@@ -55,10 +56,12 @@ VmafxStatus vmafx_sycl_device_count(const VmafxReport *report, uint32_t *count)
 
 /* What a SYCL device imports: USM pointers (bound for any layout: the
  * extractors copy rows on the device), dma-bufs (linear bound, Intel Y and
- * Tile4 de-tiled on the device) and GL textures (as dma-bufs, Linux); it waits
- * on NONE, HOST, SYCL_EVENT, SYNC_FILE and GL_SYNC acquire fences and returns
- * HOST and SYCL_EVENT release fences. */
-static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name, uint64_t memory)
+ * Tile4 de-tiled on the device), GL textures and LINEAR or DRM format
+ * modifier Vulkan memory (as dma-bufs, Linux); it waits on NONE, HOST,
+ * SYCL_EVENT, SYNC_FILE and GL_SYNC acquire fences and returns HOST and
+ * SYCL_EVENT release fences. */
+static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name, uint64_t memory,
+                                 const uint32_t pci[4])
 {
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     info.backend = VMAFX_BACKEND_SYCL;
@@ -68,11 +71,13 @@ static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name
     info.fence_kinds =
         (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST) | (1u << VMAFX_FENCE_SYCL_EVENT);
 #ifdef __linux__
-    info.memory_kinds |= (1u << VMAFX_MEMORY_DMABUF) | (1u << VMAFX_MEMORY_GL_TEXTURE);
+    info.memory_kinds |=
+        (1u << VMAFX_MEMORY_DMABUF) | (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
     info.fence_kinds |= (1u << VMAFX_FENCE_SYNC_FILE) | (1u << VMAFX_FENCE_GL_SYNC);
 #endif
     info.total_memory = memory;
     info.name = name;
+    memcpy(info.pci, pci, sizeof(info.pci));
     return info;
 }
 
@@ -81,7 +86,11 @@ VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, Vma
     const char *name = NULL;
     uint64_t memory = 0;
     const int32_t at = index == -1 ? 0 : index;
-    const int err = vmafx_sycl_rt_info(at, &name, &memory);
+    uint32_t pci[4];
+    int err = vmafx_sycl_rt_info(at, &name, &memory);
+    if (!err) {
+        err = vmafx_sycl_rt_pci(at, pci);
+    }
     if (err == -ENOENT) {
         uint32_t n = 0;
         (void)vmafx_sycl_rt_count(&n);
@@ -92,7 +101,7 @@ VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, Vma
     if (err) {
         return runtime_failed(report, err, "index", "device query");
     }
-    *info = sycl_info(at, 0u, name, memory);
+    *info = sycl_info(at, 0u, name, memory, pci);
     return VMAFX_OK;
 }
 
@@ -167,8 +176,10 @@ void vmafx_sycl_device_close(VmafxDevice *device)
 void vmafx_sycl_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info)
 {
     const VmafxSyclDevice *const dev = vmafx_sycl_dev(device);
+    uint32_t pci[4];
+    vmafx_sycl_rt_device_pci(dev->rt, pci);
     *info = sycl_info(vmafx_sycl_rt_index(dev->rt), device->flags, vmafx_sycl_rt_name(dev->rt),
-                      vmafx_sycl_rt_memory(dev->rt));
+                      vmafx_sycl_rt_memory(dev->rt), pci);
 }
 
 /* ---- Contexts ------------------------------------------------------------------- */

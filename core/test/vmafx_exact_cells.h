@@ -44,6 +44,16 @@ typedef struct VcCell {
     unsigned min_chroma;   /* smallest chroma plane side the cell scores */
 } VcCell;
 
+/* VMAFX_TEST_IMPORT_ONLY=1: import sessions only, nothing compared, for a
+ * profiler trace that shows the import's copies alone (the host sessions
+ * upload every frame by design). */
+static inline bool vc_import_only(void)
+{
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-0141 / ADR-0278). */
+    const char *const v = getenv("VMAFX_TEST_IMPORT_ONLY");
+    return v && v[0] == '1';
+}
+
 /* The options of `spec` ("k=v:k=v"); NULL for none or on a failure. */
 static inline VmafxOptions *vc_options(const char *spec)
 {

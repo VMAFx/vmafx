@@ -310,8 +310,9 @@ fence, `VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)).
 In every build `vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC`
 (`glClientWaitSync()`, which needs a GL context of the sync's share group
 current on the calling thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE`
-descriptor (`poll()`); both stay the producer's, so `vmafx_fence_destroy()`
-refuses them with `VMAFX_E_NOTSUP`. The Metal shared events and Windows
+descriptor (`poll()`); `vmafx_fence_destroy()` closes a `SYNC_FILE`
+descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it with
+`glDeleteSync()`). The Metal shared events and Windows
 shared fences are declared kinds; until their backends land they are answered
 with `VMAFX_E_NOTSUP` naming the kind.
 

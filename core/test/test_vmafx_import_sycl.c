@@ -102,10 +102,11 @@ static char *test_device_info(void)
                             (1u << VMAFX_FENCE_SYCL_EVENT) | (1u << VMAFX_FENCE_SYNC_FILE) |
                             (1u << VMAFX_FENCE_GL_SYNC);
     const uint32_t memory = (1u << VMAFX_MEMORY_DEVICE_POINTER) | (1u << VMAFX_MEMORY_DMABUF) |
-                            (1u << VMAFX_MEMORY_GL_TEXTURE);
+                            (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
     mu_assert("fields", info.backend == VMAFX_BACKEND_SYCL && info.index == 0 && info.flags == 0u &&
                             info.total_memory > 0u && info.name && info.name[0] != '\0' &&
-                            info.fence_kinds == fences && info.memory_kinds == memory);
+                            info.fence_kinds == fences && info.memory_kinds == memory &&
+                            info.pci[1] != UINT32_MAX);
     VmafxError *error = NULL;
     mu_assert("past the last",
               vmafx_device_info(VMAFX_BACKEND_SYCL, (int32_t)count, &info, &error) ==

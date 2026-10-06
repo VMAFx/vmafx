@@ -14,9 +14,11 @@
  * P010 / P016 are planarised on the device into planes of the frame's own
  * (import_convert.cu: a de-interleave and the P010 shift, nothing else), so
  * an imported frame scores bit for bit as the same frame uploaded from the
- * host. CUDA arrays and GL textures (import_gl.c) are not linear memory the
- * extractors read: a semi-planar frame in arrays is converted the same way,
- * a planar one is copied on the device only with VMAFX_IMPORT_ALLOW_COPY.
+ * host. CUDA arrays, GL textures (import_gl.c) and OPTIMAL Vulkan images
+ * (import_vulkan.c) are not linear memory the extractors read: a semi-planar
+ * frame in arrays is converted the same way, a planar one is copied on the
+ * device only with VMAFX_IMPORT_ALLOW_COPY. LINEAR Vulkan images and buffers
+ * are mapped as device pointers and bound as those are.
  * Nothing is ever copied through the host (the planted
  * VMAFX_TEST_FORCE_HOST_COPY defect does, and counts it).
  *
@@ -76,8 +78,9 @@ typedef struct CudaPlan {
 typedef struct CudaSource {
     const VmafxFrameImport *d;
     const VmafxImportLayout *layout;
-    CUarray arrays[3]; /* the planes of an array or GL import, else 0 */
+    CUarray arrays[3]; /* the planes of an array, GL or OPTIMAL Vulkan import, else 0 */
     bool from_arrays;
+    VmafxFrameImport mapped; /* a LINEAR Vulkan import as device pointers */
 } CudaSource;
 
 const char *vmafx_cuda_refusal(const char *extractor)
@@ -92,14 +95,28 @@ const char *vmafx_cuda_refusal(const char *extractor)
 
 /* ---- Checks ------------------------------------------------------------------- */
 
-static VmafxStatus check_cuda_memory(const VmafxReport *report, const VmafxFrameImport *d,
-                                     const VmafxImportLayout *layout)
+/* A VULKAN frame the device takes: LINEAR memory is bound as pointers, an
+ * OPTIMAL one is read out of arrays as DEVICE_ARRAY memory is. */
+static bool vulkan_linear(const VmafxFrameImport *d)
 {
+    return d->memory == VMAFX_MEMORY_VULKAN && d->vulkan_tiling == VMAFX_VULKAN_TILING_LINEAR;
+}
+
+static VmafxStatus check_cuda_memory(const VmafxReport *report, const VmafxCudaDevice *dev,
+                                     const VmafxFrameImport *d, const VmafxImportLayout *layout)
+{
+    if (d->memory == VMAFX_MEMORY_VULKAN) {
+        const VmafxStatus status = vmafx_cuda_vulkan_check(report, dev, d);
+        if (status != VMAFX_OK || vulkan_linear(d)) {
+            return status;
+        }
+    }
     switch (d->memory) {
     case VMAFX_MEMORY_DEVICE_POINTER:
         return VMAFX_OK;
     case VMAFX_MEMORY_DEVICE_ARRAY:
     case VMAFX_MEMORY_GL_TEXTURE:
+    case VMAFX_MEMORY_VULKAN:
         if (layout->interleaved || (d->flags & VMAFX_IMPORT_ALLOW_COPY)) {
             return VMAFX_OK;
         }
@@ -112,8 +129,8 @@ static VmafxStatus check_cuda_memory(const VmafxReport *report, const VmafxFrame
     default:
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "backend cuda, memory %s, pixel format %s: a CUDA device binds "
-                          "DEVICE_POINTER, DEVICE_ARRAY and GL_TEXTURE memory (host frames go "
-                          "to vmafx_frame_wrap_host(); a host copy is never made)",
+                          "DEVICE_POINTER, DEVICE_ARRAY, GL_TEXTURE and VULKAN memory (host "
+                          "frames go to vmafx_frame_wrap_host(); a host copy is never made)",
                           vmafx_memory_kind_name(d->memory), layout->name);
     }
 }
@@ -213,47 +230,82 @@ static VmafxStatus check_cuda_planes(const VmafxReport *report, const VmafxFrame
     return VMAFX_OK;
 }
 
-/* The acquire fence is one the CUDA device honours: a CUDA event (a wait on
- * the library stream), a GL sync of a GL import, a host fence already
- * signalled, or none. */
+/* A further acquire fence (VmafxFrameImport.acquire_more) is one the device
+ * waits on, on the device: a CUDA event or a Vulkan timeline semaphore. */
+static VmafxStatus check_more_acquires(const VmafxReport *report, const VmafxFrameImport *d)
+{
+    for (uint32_t i = 0; i < 2u; i++) {
+        const VmafxFence *const f = &d->acquire_more[i];
+        const bool usable = f->kind == VMAFX_FENCE_NONE ||
+                            (f->kind == VMAFX_FENCE_CUDA_EVENT && f->handle != 0u) ||
+                            (f->kind == VMAFX_FENCE_VULKAN_SEMAPHORE && f->fd >= 0);
+        if (!usable) {
+            return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE,
+                              vmafx_import_acquire_name(i + 1u),
+                              "backend cuda: a further acquire fence of kind %u; the CUDA device "
+                              "waits on further CUDA_EVENT and VULKAN_SEMAPHORE fences (with "
+                              "their handle or descriptor)",
+                              (unsigned)f->kind);
+        }
+    }
+    return VMAFX_OK;
+}
+
+/* A HOST acquire fence: signalled (or the planted skipped wait), else
+ * VMAFX_E_BUSY for the import rule's host wait. */
+static VmafxStatus check_host_acquire(const VmafxReport *report, const VmafxFence *acquire)
+{
+    VmafxHostFence *host = NULL;
+    const VmafxStatus status = vmafx_host_fence_of(report, acquire, "desc.acquire.handle", &host);
+    if (status != VMAFX_OK || vmafx_host_fence_signalled(host) ||
+        vmafx_test_switch(VMAFX_TEST_SKIP_ACQUIRE_WAIT)) {
+        return status;
+    }
+    return VMAFX_FAIL(report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_FENCE, "desc.acquire",
+                      "the producer has not signalled the HOST acquire fence; the CUDA "
+                      "device waits on CUDA_EVENT fences on its stream "
+                      "(vmafx_context_import_frame() waits and retries once)");
+}
+
+/* The acquire fence is one the CUDA device honours: a CUDA event or a Vulkan
+ * timeline semaphore (a wait on the library stream), a GL sync of a GL
+ * import, a host fence already signalled, or none; and so is every further
+ * acquire fence. */
 static VmafxStatus check_cuda_acquire(const VmafxReport *report, const VmafxFrameImport *d)
 {
     const VmafxFence *const acquire = &d->acquire;
+    VmafxStatus status = VMAFX_OK;
     switch (acquire->kind) {
     case VMAFX_FENCE_NONE:
-        return VMAFX_OK;
+        break;
     case VMAFX_FENCE_CUDA_EVENT:
     case VMAFX_FENCE_GL_SYNC:
         if (acquire->handle == 0u ||
             (acquire->kind == VMAFX_FENCE_GL_SYNC && d->memory != VMAFX_MEMORY_GL_TEXTURE)) {
-            return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE,
-                              acquire->handle ? "desc.acquire.kind" : "desc.acquire.handle",
-                              "backend cuda: %s",
-                              acquire->handle ? "a GL sync orders GL_TEXTURE "
-                                                "imports only" :
-                                                "an acquire fence without its "
-                                                "handle");
+            status = VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE,
+                                acquire->handle ? "desc.acquire.kind" : "desc.acquire.handle",
+                                "backend cuda: %s",
+                                acquire->handle ? "a GL sync orders GL_TEXTURE imports only" :
+                                                  "an acquire fence without its handle");
         }
-        return VMAFX_OK;
-    case VMAFX_FENCE_HOST: {
-        VmafxHostFence *host = NULL;
-        const VmafxStatus status =
-            vmafx_host_fence_of(report, acquire, "desc.acquire.handle", &host);
-        if (status != VMAFX_OK || vmafx_host_fence_signalled(host) ||
-            vmafx_test_switch(VMAFX_TEST_SKIP_ACQUIRE_WAIT)) {
-            return status;
+        break;
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
+        if (acquire->fd < 0 && acquire->handle == 0u) {
+            status = VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "desc.acquire.fd",
+                                "backend cuda: a Vulkan semaphore without its descriptor");
         }
-        return VMAFX_FAIL(report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_FENCE, "desc.acquire",
-                          "the producer has not signalled the HOST acquire fence; the CUDA "
-                          "device waits on CUDA_EVENT fences on its stream "
-                          "(vmafx_context_import_frame() waits and retries once)");
-    }
+        break;
+    case VMAFX_FENCE_HOST:
+        status = check_host_acquire(report, acquire);
+        break;
     default:
-        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "desc.acquire.kind",
-                          "backend cuda: an acquire fence of kind %u; the CUDA device waits on "
-                          "NONE, HOST, CUDA_EVENT and GL_SYNC fences",
-                          (unsigned)acquire->kind);
+        status = VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "desc.acquire.kind",
+                            "backend cuda: an acquire fence of kind %u; the CUDA device waits on "
+                            "NONE, HOST, CUDA_EVENT, GL_SYNC and VULKAN_SEMAPHORE fences",
+                            (unsigned)acquire->kind);
+        break;
     }
+    return status == VMAFX_OK ? check_more_acquires(report, d) : status;
 }
 
 /* ---- Planning ----------------------------------------------------------------- */
@@ -621,6 +673,8 @@ int vmafx_cuda_frame_release(VmafxFrame *frame, VmafPicture *pic)
             vmafx_cuda_pool_frame_released(frame, dev->state.str);
         }
         err = vmafx_cuda_gl_release(cf);
+        const int signalled = vmafx_cuda_vulkan_release(cf);
+        err = err ? err : signalled;
         const int freed = vmafx_cuda_release_frame(cf, fence);
         err = err ? err : freed;
         vmafx_cuda_picture_detach(dev, pic);
@@ -630,27 +684,6 @@ int vmafx_cuda_frame_release(VmafxFrame *frame, VmafPicture *pic)
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmafx: backend cuda: cannot release a frame (%d)\n", err);
     }
     return err;
-}
-
-/* The acquire wait on the library stream (none under the planted defect). */
-static VmafxStatus wait_acquire(const VmafxReport *report, const VmafxCudaDevice *dev,
-                                const VmafxFence *acquire)
-{
-    if (acquire->kind != VMAFX_FENCE_CUDA_EVENT ||
-        vmafx_test_switch(VMAFX_TEST_SKIP_ACQUIRE_WAIT)) {
-        return VMAFX_OK;
-    }
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr): the producer's CUevent crosses the ABI as uintptr_t (VmafxFence.handle, ADR-1929). */
-    CUevent event = (CUevent)acquire->handle;
-    const CUresult res = dev->state.f->cuStreamWaitEvent(dev->state.str, event, 0);
-    if (res == CUDA_SUCCESS) {
-        return VMAFX_OK;
-    }
-    return VMAFX_FAIL(report, VMAFX_E_INVALID, (int32_t)res, VMAFX_SUBJECT_FENCE,
-                      "desc.acquire.handle",
-                      "backend cuda: cannot wait on the acquire event 0x%llx (CUDA error %d); is "
-                      "it an event of the device's context?",
-                      (unsigned long long)acquire->handle, (int)res);
 }
 
 /* The planes behind the acquire fence, with the context pushed. */
@@ -666,9 +699,17 @@ static VmafxStatus enqueue_import(const VmafxReport *report, VmafxCudaFrame *cf,
             /* NOLINTNEXTLINE(performance-no-int-to-ptr): the producer's CUarray crosses the ABI as uintptr_t (VmafxImportPlane.handle, ADR-1929). */
             src->arrays[i] = (CUarray)d->plane[i].handle;
         }
+    } else if (d->memory == VMAFX_MEMORY_VULKAN) {
+        status = vmafx_cuda_vulkan_map(report, cf, d, src->layout, src->arrays, &src->mapped);
+        if (status == VMAFX_OK && !src->from_arrays) {
+            /* LINEAR: the mapped planes are device pointers, bound or
+             * refused by the pointer path's rules. */
+            src->d = &src->mapped;
+            status = check_cuda_planes(report, src->d, src->layout);
+        }
     }
     if (status == VMAFX_OK) {
-        status = wait_acquire(report, cf->dev, &d->acquire);
+        status = vmafx_cuda_wait_acquires(report, cf, d);
     }
     return status == VMAFX_OK ? fill_planes(report, cf, src, data, stride) : status;
 }
@@ -722,6 +763,7 @@ static VmafxStatus bind_cuda_frame(const VmafxReport *report, VmafxDevice *devic
     if (status != VMAFX_OK) {
         /* Whatever was enqueued finishes before the stream-ordered free. */
         (void)vmafx_cuda_gl_release(cf);
+        (void)vmafx_cuda_vulkan_release(cf);
         (void)vmafx_cuda_release_frame(cf, NULL);
         (void)vmafx_cuda_pop(dev, 0);
         free(frame);
@@ -743,8 +785,10 @@ VmafxStatus vmafx_cuda_frame_import(const VmafxReport *report, VmafxDevice *devi
                                     const VmafxFrameImport *desc, const VmafxImportLayout *layout,
                                     VmafxFrame **out)
 {
-    VmafxStatus status = check_cuda_memory(report, desc, layout);
-    if (status == VMAFX_OK) {
+    VmafxStatus status = check_cuda_memory(report, vmafx_cuda_dev(device), desc, layout);
+    if (status == VMAFX_OK && desc->memory != VMAFX_MEMORY_VULKAN) {
+        /* VULKAN planes were checked by vmafx_import_check_vulkan(); a LINEAR
+         * one is checked as a pointer once it is mapped. */
         status = check_cuda_planes(report, desc, layout);
     }
     if (status == VMAFX_OK) {
@@ -756,7 +800,8 @@ VmafxStatus vmafx_cuda_frame_import(const VmafxReport *report, VmafxDevice *devi
     CudaSource src = {.d = desc,
                       .layout = layout,
                       .arrays = {NULL, NULL, NULL},
-                      .from_arrays = desc->memory != VMAFX_MEMORY_DEVICE_POINTER};
+                      .from_arrays =
+                          desc->memory != VMAFX_MEMORY_DEVICE_POINTER && !vulkan_linear(desc)};
     return bind_cuda_frame(report, device, &src, out);
 }
 

@@ -279,16 +279,6 @@ static bool cell_applies(const VtClip *clip, const VcCell *cell)
     return cell->min_chroma == 0u || (cw >= cell->min_chroma && ch >= cell->min_chroma);
 }
 
-/* VMAFX_TEST_IMPORT_ONLY=1: import sessions only, nothing compared, for a
- * profiler trace that shows the import's copies alone (the host sessions
- * upload every frame by design). */
-static bool import_only(void)
-{
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-0141 / ADR-0278). */
-    const char *const v = getenv("VMAFX_TEST_IMPORT_ONLY");
-    return v && v[0] == '1';
-}
-
 static char *import_cell_only(const VtClip *clip, const Uploads *u, const VcCell *cell)
 {
     VmafxContext *const imp = run_import(clip, u, cell);
@@ -324,7 +314,7 @@ static int attempt_cell(const VtClip *clip, const Uploads *u, const VcCell *cell
  * fails. */
 static char *compare_cell(const VtClip *clip, const Uploads *u, const VcCell *cell)
 {
-    if (import_only()) {
+    if (vc_import_only()) {
         return import_cell_only(clip, u, cell);
     }
     int verdict = -1;
@@ -434,7 +424,7 @@ static char *test_counters(void)
                   cells_run, compared, differing, retried_attempts, retried_values,
                   (unsigned long long)imports, (unsigned long long)vmafx_test_conversions(),
                   (unsigned long long)vmafx_test_host_copies());
-    mu_assert("cells ran", cells_run > 0u && (compared > 0u || import_only()));
+    mu_assert("cells ran", cells_run > 0u && (compared > 0u || vc_import_only()));
     mu_assert("no host copy of an imported frame", vmafx_test_host_copies() == 0u);
     mu_assert("semi-planar imports converted on the device", vmafx_test_conversions() > 0u);
     return NULL;

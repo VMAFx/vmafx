@@ -179,9 +179,10 @@ static uint64_t device_memory(const VmafxCudaDriver *drv, CUdevice dev)
 }
 
 /* What a CUDA device imports: device pointers, CUDA arrays (copied only
- * when allowed, converted when semi-planar) and GL textures; it waits on
- * NONE, HOST, CUDA_EVENT and GL_SYNC acquire fences and returns HOST and
- * CUDA_EVENT release fences. */
+ * when allowed, converted when semi-planar), GL textures and Vulkan memory;
+ * it waits on NONE, HOST, CUDA_EVENT, GL_SYNC and VULKAN_SEMAPHORE acquire
+ * fences, returns HOST and CUDA_EVENT release fences and signals
+ * VULKAN_SEMAPHORE ones. */
 static VmafxDeviceInfo cuda_info(const VmafxCudaDriver *drv, CUdevice dev, int32_t index,
                                  uint32_t flags)
 {
@@ -190,11 +191,13 @@ static VmafxDeviceInfo cuda_info(const VmafxCudaDriver *drv, CUdevice dev, int32
     info.index = index;
     info.flags = flags;
     info.memory_kinds = (1u << VMAFX_MEMORY_DEVICE_POINTER) | (1u << VMAFX_MEMORY_DEVICE_ARRAY) |
-                        (1u << VMAFX_MEMORY_GL_TEXTURE);
+                        (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
     info.fence_kinds = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST) |
-                       (1u << VMAFX_FENCE_CUDA_EVENT) | (1u << VMAFX_FENCE_GL_SYNC);
+                       (1u << VMAFX_FENCE_CUDA_EVENT) | (1u << VMAFX_FENCE_GL_SYNC) |
+                       (1u << VMAFX_FENCE_VULKAN_SEMAPHORE);
     info.total_memory = device_memory(drv, dev);
     info.name = device_name(drv, dev);
+    vmafx_cuda_device_pci(drv, dev, info.pci);
     return info;
 }
 
@@ -328,6 +331,7 @@ static void free_device(VmafxCudaDevice *dev)
         if (dev->state.str) {
             (void)f->cuStreamSynchronize(dev->state.str);
         }
+        vmafx_cuda_vulkan_drain(dev, true);
         if (dev->kernels.module) {
             (void)f->cuModuleUnload(dev->kernels.module);
         }
@@ -340,6 +344,7 @@ static void free_device(VmafxCudaDevice *dev)
     if (dev->own_context) {
         (void)f->cuDevicePrimaryCtxRelease(dev->state.dev);
     }
+    (void)pthread_mutex_destroy(&dev->vk_lock);
     free(dev);
 }
 
@@ -371,6 +376,10 @@ static VmafxCudaDevice *new_device(const VmafxCudaDriver *drv)
     }
     dev->state.f = drv->f;
     atomic_init(&dev->copy_logged, 0u);
+    if (pthread_mutex_init(&dev->vk_lock, NULL) != 0) {
+        free(dev);
+        return NULL;
+    }
     return dev;
 }
 
@@ -403,6 +412,7 @@ VmafxStatus vmafx_cuda_device_open(const VmafxReport *report, const VmafxDeviceD
     assert(dev->state.ctx != NULL && dev->state.str != NULL);
     dev->total_memory = device_memory(drv, dev->state.dev);
     (void)snprintf(dev->name, sizeof(dev->name), "%s", device_name(drv, dev->state.dev));
+    vmafx_cuda_device_pci(drv, dev->state.dev, dev->pci);
     device->lane = dev;
     device->index = dev->index;
     return VMAFX_OK;
