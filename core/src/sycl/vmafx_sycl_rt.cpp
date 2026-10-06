@@ -29,6 +29,7 @@
 #include <sycl/sycl.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -173,6 +174,7 @@ inline void store16(uint8_t *p, uint16_t v)
  * 16-bit ones shifted, nothing else (bit-exact with the host conversion). */
 sycl::event launch_deinterleave(sycl::queue &q, const VmafxSyclPlaneOp &op)
 {
+    assert(op.bytes == 1u || op.bytes == 2u);
     const auto *src = static_cast<const uint8_t *>(op.src);
     auto *cb = static_cast<uint8_t *>(op.dst0);
     auto *cr = static_cast<uint8_t *>(op.dst1);

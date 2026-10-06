@@ -110,6 +110,7 @@ int vmafx_sycl_pool_frame_arm(VmafxFrame *frame)
      * planes next, on a queue the library does not know, so the readers must
      * be done (ADR-2091). Usually they are. */
     const uint32_t idle = idle_slot(frame);
+    assert(frame->lane == NULL); /* armed once per hand-out, released in between */
     const int state = vmafx_fence_poll(idle_done, &idle, VMAFX_SYCL_IDLE_WAIT_NS);
     if (state != 1) {
         return state < 0 ? state : -ETIMEDOUT;

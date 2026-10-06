@@ -12,6 +12,7 @@
  * lane's.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -56,6 +57,7 @@ int vmafx_sync_file_wait(int fd, uint64_t timeout_ns)
         return -EINVAL;
     }
     struct pollfd p = {.fd = fd, .events = POLLIN, .revents = 0};
+    assert(p.fd >= 0);
     /* A signal interrupting the wait is retried a bounded number of times
      * (HISS-02); the remaining time is not tracked, an interrupted wait
      * waits at most this many times as long. */

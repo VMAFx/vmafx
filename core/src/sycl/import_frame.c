@@ -101,6 +101,7 @@ const char *vmafx_sycl_refusal(const char *extractor)
 
 VmafxSyclFrame *vmafx_sycl_frame_state_new(VmafxSyclDevice *dev)
 {
+    assert(dev != NULL && dev->rt != NULL);
     VmafxSyclFrame *const sf = calloc(1, sizeof(*sf));
     if (!sf) {
         return NULL;
