@@ -6319,6 +6319,7 @@
         "core/src/vmafx/report.c": 1,
         "core/src/vmafx/report_verify.c": 1,
         "core/src/vmafx/score.c": 1,
+        "core/src/vmafx/spec.c": 1,
         "core/src/vmafx/submit.c": 1,
         "core/src/vmafx/tiny_model.c": 1,
         "core/src/vmafx/window.c": 1,
@@ -6741,6 +6742,7 @@
         "core/test/test_vmafx_report.c": 1,
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
+        "core/test/test_vmafx_spec.c": 1,
         "core/test/test_vmafx_window.c": 1,
         "core/test/test_vmafx_window_clock.c": 1,
         "core/test/test_vmafx_window_live.c": 1,
@@ -11355,7 +11357,7 @@
         "api/openapi/components.gen.yaml": 1,
         "bindings/python/vmafx/__init__.py": 1,
         "bindings/python/vmafx/_api.py": 1,
-        "core/api/vmafx.toml": 8,
+        "core/api/vmafx.toml": 9,
         "core/include/libvmaf/macros.h": 1,
         "core/include/meson.build": 1,
         "core/include/vmafx/context.h": 2,
@@ -11419,6 +11421,7 @@
         "core/src/vmafx/score.c": 1,
         "core/src/vmafx/sha256.h": 1,
         "core/src/vmafx/sized.c": 1,
+        "core/src/vmafx/spec.c": 1,
         "core/src/vmafx/status_gen.c": 1,
         "core/src/vmafx/status_gen.h": 1,
         "core/src/vmafx/submit.c": 1,
@@ -11487,7 +11490,7 @@
     },
     "1897": {
       "sites": {
-        "core/api/vmafx.toml": 1
+        "core/api/vmafx.toml": 2
       },
       "target": "1897-vmafx-abi-0x-numbering.md"
     },

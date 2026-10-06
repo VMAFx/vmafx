@@ -1497,7 +1497,7 @@ if host_machine.system() == 'linux'
 endif
 
 foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score',
-                             'test_vmafx_provenance', 'test_vmafx_report']
+                             'test_vmafx_provenance', 'test_vmafx_report', 'test_vmafx_spec']
     vmafx_public_exe = executable(vmafx_public_test,
         ['test.c', vmafx_public_test + '.c'],
         include_directories : [libvmaf_inc, test_inc],
