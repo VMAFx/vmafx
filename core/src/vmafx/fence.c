@@ -20,7 +20,8 @@
  *
  * Waiting polls the flag with short sleeps against a monotonic clock: the
  * portable pthread subset (core/src/compat/win32/pthread.h) has no timed
- * condition wait.
+ * condition wait. Tests can make that clock virtual (frame_import_hooks.h),
+ * so a long wait bound is measured without sleeping through it.
  */
 
 #include <assert.h>
@@ -36,6 +37,7 @@
 #endif
 
 #include "error_internal.h"
+#include "frame_import_hooks.h"
 #include "internal.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
@@ -48,8 +50,6 @@
 /* Marks a live host fence; a stale or foreign handle is refused, not read as
  * one. */
 #define VMAFX_HOST_FENCE_MAGIC 0x76786866u /* "vxhf" */
-/* Sleep between two looks at an unsignalled host fence. */
-#define VMAFX_FENCE_POLL_NS 50000u
 /* Nanoseconds per second. */
 #define VMAFX_NS_PER_S 1000000000u
 
@@ -128,6 +128,9 @@ VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fen
 
 static uint64_t monotonic_ns(void)
 {
+    if (vmafx_test_clock_is_virtual()) {
+        return vmafx_test_clock_now_ns();
+    }
 #ifdef _WIN32
     LARGE_INTEGER count;
     LARGE_INTEGER frequency;
@@ -145,6 +148,10 @@ static uint64_t monotonic_ns(void)
 
 static void sleep_poll_interval(void)
 {
+    if (vmafx_test_clock_is_virtual()) {
+        vmafx_test_clock_advance(VMAFX_FENCE_POLL_NS);
+        return;
+    }
 #ifdef _WIN32
     Sleep(1);
 #else

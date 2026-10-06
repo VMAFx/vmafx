@@ -32,6 +32,12 @@
 #include "ref.h"
 #include "vmafx/vmafx.h"
 
+/* The import rule's host wait on the acquire fence before its one retry
+ * (VmafxContextConfig.import_retry_wait_ns, ADR-1929): the default for 0,
+ * and the largest accepted value (a larger one is refused, not clamped). */
+#define VMAFX_IMPORT_RETRY_WAIT_DEFAULT_NS 10000000000ull
+#define VMAFX_IMPORT_RETRY_WAIT_MAX_NS 600000000000ull
+
 /* Hex SHA-256 plus its terminator. */
 #define VMAFX_SHA256_HEX_SIZE 65u
 
@@ -96,13 +102,14 @@ struct VmafxContext {
     VmafContext *engine;
     VmafxLogCallback log_callback;
     void *log_user;
-    VmafLogSink sink;          /* delivers to log_callback; used when it is set */
-    VmafxHeld models;          /* VmafxModel * (ADR-1755) */
-    VmafxHeld model_sets;      /* VmafxModelSet * */
-    VmafxDevice *device;       /* vmafx_context_use_device(); NULL: the CPU, no device held */
-    bool have_frame;           /* a frame was submitted: the fields below are set */
-    uint64_t last_index;       /* indices increase strictly (ADR-0152) */
-    VmafxFrameDesc first_desc; /* every frame keeps the first frame's geometry */
+    VmafLogSink sink;              /* delivers to log_callback; used when it is set */
+    VmafxHeld models;              /* VmafxModel * (ADR-1755) */
+    VmafxHeld model_sets;          /* VmafxModelSet * */
+    VmafxDevice *device;           /* vmafx_context_use_device(); NULL: the CPU, no device held */
+    uint64_t import_retry_wait_ns; /* the import rule's host wait, resolved (never 0) */
+    bool have_frame;               /* a frame was submitted: the fields below are set */
+    uint64_t last_index;           /* indices increase strictly (ADR-0152) */
+    VmafxFrameDesc first_desc;     /* every frame keeps the first frame's geometry */
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink

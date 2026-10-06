@@ -61988,7 +61988,9 @@ No score, public API or FFmpeg patch impact.
   last read; `vmafx_frame_read_desc()`, `vmafx_frame_host_device()` and
   `vmafx_frame_bind()` are shared with the import and the pool.
   `submit.c` checks admission before the engine counts a frame.
-  `context.c` drops the context's device after a successful close.
+  `context.c` drops the context's device after a successful close, and reads
+  and checks `VmafxContextConfig.import_retry_wait_ns` (ABI 0.1.3; the
+  `vmaf_init` compat glue sets it to 0, the default).
   `error.c` keeps 1023 bytes of subject and message.
 - `frame_import.c` includes `core/src/metal/iosurface_layout.h` for the
   NV12 / P010 / P016 row readers. A change to those readers changes the CPU

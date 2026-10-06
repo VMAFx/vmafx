@@ -29,6 +29,9 @@ static atomic_uint_fast64_t import_attempts;
 static atomic_int planted_status;
 static atomic_uint planted_count;
 static atomic_uint residency_override = VMAFX_TEST_RESIDENCY_OFF;
+static atomic_uint clock_virtual;
+static atomic_uint_fast64_t clock_now;
+static atomic_uint_fast64_t last_retry_wait;
 
 void vmafx_test_set_switches(uint32_t mask)
 {
@@ -112,4 +115,34 @@ void vmafx_test_set_import_residency(uint32_t backend)
 uint32_t vmafx_test_import_residency(void)
 {
     return atomic_load(&residency_override);
+}
+
+void vmafx_test_set_virtual_clock(bool on)
+{
+    atomic_store(&clock_virtual, on ? 1u : 0u);
+}
+
+bool vmafx_test_clock_is_virtual(void)
+{
+    return atomic_load_explicit(&clock_virtual, memory_order_relaxed) != 0u;
+}
+
+uint64_t vmafx_test_clock_now_ns(void)
+{
+    return atomic_load(&clock_now);
+}
+
+void vmafx_test_clock_advance(uint64_t ns)
+{
+    atomic_fetch_add(&clock_now, ns);
+}
+
+void vmafx_test_note_retry_wait(uint64_t ns)
+{
+    atomic_store(&last_retry_wait, ns);
+}
+
+uint64_t vmafx_test_last_retry_wait_ns(void)
+{
+    return atomic_load(&last_retry_wait);
 }

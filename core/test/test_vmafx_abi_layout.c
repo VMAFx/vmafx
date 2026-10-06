@@ -21,7 +21,7 @@ extern const VmafxDeviceDesc vmafx_layout_probe_VmafxDeviceDesc;
 extern const VmafxFrameImport vmafx_layout_probe_VmafxFrameImport;
 extern const VmafxHostPlanes vmafx_layout_probe_VmafxHostPlanes;
 extern const VmafxFramePlanes vmafx_layout_probe_VmafxFramePlanes;
-_Static_assert(sizeof(VmafxContextConfig) == 48, "VmafxContextConfig size");
+_Static_assert(sizeof(VmafxContextConfig) == 56, "VmafxContextConfig size");
 _Static_assert(_Alignof(VmafxContextConfig) == 8, "VmafxContextConfig alignment");
 _Static_assert(offsetof(VmafxContextConfig, struct_size) == 0,
                "VmafxContextConfig.struct_size offset");
@@ -34,6 +34,8 @@ _Static_assert(offsetof(VmafxContextConfig, gpumask) == 24, "VmafxContextConfig.
 _Static_assert(offsetof(VmafxContextConfig, log_callback) == 32,
                "VmafxContextConfig.log_callback offset");
 _Static_assert(offsetof(VmafxContextConfig, log_user) == 40, "VmafxContextConfig.log_user offset");
+_Static_assert(offsetof(VmafxContextConfig, import_retry_wait_ns) == 48,
+               "VmafxContextConfig.import_retry_wait_ns offset");
 _Static_assert(sizeof(VmafxProvenance) == 32, "VmafxProvenance size");
 _Static_assert(_Alignof(VmafxProvenance) == 8, "VmafxProvenance alignment");
 _Static_assert(offsetof(VmafxProvenance, struct_size) == 0, "VmafxProvenance.struct_size offset");
@@ -265,6 +267,6 @@ _Static_assert(VMAFX_DEVICE_PROFILING == 0x1u, "VMAFX_DEVICE_PROFILING");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 16,
-                 103, 74);
+                 104, 74);
     return 0;
 }

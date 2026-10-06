@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "mu_table.h"
 #include "test.h"
@@ -413,6 +414,78 @@ static char *test_import_rule(void)
     return NULL;
 }
 
+/* ---- The import rule's wait (context option) ------------------------------------------- */
+
+static uint64_t real_ns(void)
+{
+    struct timespec now;
+    (void)clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+}
+
+/* What one run of the import rule on a never-signalled acquire fence took. */
+typedef struct WaitRun {
+    VmafxStatus status;
+    uint64_t attempts;
+    uint64_t allowed; /* the wait the rule allowed itself (hook) */
+    uint64_t virtual; /* virtual time it waited */
+    uint64_t real;    /* wall time it took */
+} WaitRun;
+
+/* Run the import rule with `import_retry_wait_ns` = `option` on the
+ * virtual test clock, against an acquire fence nobody signals. */
+static bool run_wait(uint64_t option, WaitRun *run)
+{
+    static uint8_t data[FRAME_BYTES];
+    const VmafxFrameDesc d = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, W, H);
+    VmafxContextConfig config = VMAFX_CONTEXT_CONFIG_INIT;
+    config.import_retry_wait_ns = option;
+    VmafxContext *context = NULL;
+    VmafxFrameImport imp = vt_import_planar(&d, data);
+    if (vmafx_context_create(&config, &context, NULL) != VMAFX_OK ||
+        vmafx_fence_create(NULL, VMAFX_FENCE_HOST, &imp.acquire, NULL) != VMAFX_OK) {
+        return false;
+    }
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    const uint64_t attempts = vmafx_test_import_attempts();
+    const uint64_t virtual = vmafx_test_clock_now_ns();
+    const uint64_t real = real_ns();
+    run->status = vmafx_context_import_frame(context, NULL, &imp, "main", &frame, &error);
+    run->real = real_ns() - real;
+    run->virtual = vmafx_test_clock_now_ns() - virtual;
+    run->attempts = vmafx_test_import_attempts() - attempts;
+    run->allowed = vmafx_test_last_retry_wait_ns();
+    vmafx_error_free(error);
+    return vmafx_fence_destroy(&imp.acquire, NULL) == VMAFX_OK &&
+           vmafx_context_destroy(context, NULL) == VMAFX_OK;
+}
+
+/* The rule waited `expected` (the poll rounds stop within one step after
+ * it), retried once and failed. */
+static bool waited(const WaitRun *run, uint64_t expected)
+{
+    return run->status == VMAFX_E_BUSY && run->attempts == 2u && run->allowed == expected &&
+           run->virtual >= expected && run->virtual <= expected + VMAFX_FENCE_POLL_NS;
+}
+
+static char *test_import_rule_wait_option(void)
+{
+    const uint64_t default_ns = 10000000000ull;
+    WaitRun runs[3];
+    vmafx_test_set_virtual_clock(true);
+    const bool ran =
+        run_wait(0u, &runs[0]) && run_wait(20000000u, &runs[1]) && run_wait(1u, &runs[2]);
+    vmafx_test_set_virtual_clock(false);
+    mu_assert("runs", ran);
+    mu_assert("0: the default holds 10 s", waited(&runs[0], default_ns));
+    mu_assert("20 ms option: fails after 20 ms", waited(&runs[1], 20000000u));
+    mu_assert("shorter fails sooner", runs[1].virtual < runs[0].virtual);
+    mu_assert("1 ns (the smallest): one poll step", waited(&runs[2], 1u));
+    mu_assert("the test clock, not a real 10 s sleep", runs[0].real < 5000000000ull);
+    return NULL;
+}
+
 /* ---- Admission ------------------------------------------------------------------------------------ */
 
 static char *test_admission_names_extractors(void)
@@ -471,9 +544,10 @@ static char *test_admission_device(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_acquire_ordering),           MU_TEST(test_release_canary),
-        MU_TEST(test_host_copy_counter),          MU_TEST(test_import_rule),
-        MU_TEST(test_admission_names_extractors), MU_TEST(test_admission_device),
+        MU_TEST(test_acquire_ordering),        MU_TEST(test_release_canary),
+        MU_TEST(test_host_copy_counter),       MU_TEST(test_import_rule),
+        MU_TEST(test_import_rule_wait_option), MU_TEST(test_admission_names_extractors),
+        MU_TEST(test_admission_device),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

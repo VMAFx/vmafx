@@ -20,7 +20,8 @@
  * The import rule (ADR-1852 decision D8, design section 5.4):
  * vmafx_context_import_frame() imports and admits; a transient failure
  * (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on the
- * acquire fence; a second failure, or any other, fails with one message that
+ * acquire fence of at most the context's import_retry_wait_ns (10 s by
+ * default); a second failure, or any other, fails with one message that
  * names the backend, device, input, memory kind, pixel format, modifiers and
  * the refusing extractors. Nothing falls back to a host copy.
  */
@@ -33,6 +34,7 @@
 
 #include "engine.h"
 #include "error_internal.h"
+#include "frame_import_hooks.h"
 #include "internal.h"
 #include "vmafx/vmafx.h"
 
@@ -41,8 +43,6 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-/* Host wait on the acquire fence before the one retry of the import rule. */
-#define VMAFX_IMPORT_RETRY_WAIT_NS 10000000000ull
 /* Bytes of the list of refusing extractors in one message. */
 #define VMAFX_REFUSAL_TEXT 640u
 /* Bytes of the description of an import in the import rule's message. */
@@ -248,7 +248,8 @@ VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *devic
     unsigned attempts = 1u;
     if (transient(status)) {
         VmafxError *waited = NULL;
-        (void)vmafx_fence_wait(&d.acquire, VMAFX_IMPORT_RETRY_WAIT_NS, &waited);
+        vmafx_test_note_retry_wait(context->import_retry_wait_ns);
+        (void)vmafx_fence_wait(&d.acquire, context->import_retry_wait_ns, &waited);
         vmafx_error_free(waited);
         vmafx_error_free(last);
         last = NULL;
