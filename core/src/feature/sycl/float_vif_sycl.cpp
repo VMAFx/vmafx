@@ -873,10 +873,22 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* Both luma planes into d_ref_raw / d_dis_raw, packed at the returned
+ * stride: packed on the host and uploaded, or, for frames of the VMAFx API
+ * on this device, copied on the device (ADR-2091; the frame's planes are
+ * never read on the host). 0 when a device copy could not be enqueued. */
 static unsigned upload_vif_pictures(FloatVifStateSycl &state, sycl::queue &queue,
                                     VmafPicture *reference, VmafPicture *distorted)
 {
     const size_t bytes_per_pixel = state.bpc <= 8 ? 1u : 2u;
+    const size_t row = (size_t)state.width * bytes_per_pixel;
+    if (vmaf_sycl_picture_on_device(reference) || vmaf_sycl_picture_on_device(distorted)) {
+        const bool copied = vmaf_sycl_picture_read_plane(reference, 0, &queue, state.d_ref_raw, row,
+                                                         row, state.height, nullptr) == 0 &&
+                            vmaf_sycl_picture_read_plane(distorted, 0, &queue, state.d_dis_raw, row,
+                                                         row, state.height, nullptr) == 0;
+        return copied ? (unsigned)row : 0u;
+    }
     if (state.bpc <= 8) {
         copy_y_plane<uint8_t>(reference, state.h_ref_raw, state.width, state.height);
         copy_y_plane<uint8_t>(distorted, state.h_dis_raw, state.width, state.height);
@@ -985,6 +997,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
         return -EINVAL;
     }
     const unsigned raw_stride = upload_vif_pictures(state, *queue, reference, distorted);
+    if (raw_stride == 0u) {
+        return -EIO;
+    }
     const vmaf_sycl_fvif::StatisticParams statistic =
         vmaf_sycl_fvif::make_statistic_params(state.vif_sigma_nsq, state.vif_enhn_gain_limit);
     launch_vif_statistic<0>(state, *queue, raw_stride, nullptr, nullptr, statistic);

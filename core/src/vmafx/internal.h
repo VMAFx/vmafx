@@ -337,23 +337,8 @@ bool vmafx_release_events_unrecorded(VmafxReleaseEvents *t, uintptr_t event);
 /* Drop a fence's reference of `event`: false when it is not in the table. */
 bool vmafx_release_events_drop(VmafxReleaseEvents *t, uintptr_t event);
 
-/* ---- Producer fences checked on the host (gl_sync.c, sync_file.c) -------- */
-
-/* Host check of a GL sync object of the GL context current on the calling
- * thread (or one sharing with it): 1 signalled, 0 not within `timeout_ns`,
- * negative on a GL error or without GL (entry points resolved at run time). */
-int vmafx_gl_sync_wait(uintptr_t sync, uint64_t timeout_ns);
-/* An acquire fence of kind GL_SYNC: VMAFX_OK when signalled (or planted as
- * skipped), VMAFX_E_BUSY when not yet, VMAFX_E_INVALID without GL; any other
- * kind is VMAFX_OK. `backend` names the device's backend in messages. */
-VmafxStatus vmafx_gl_sync_acquire(const VmafxReport *report, const VmafxFence *acquire,
-                                  const char *backend);
-/* Host check of a Linux sync_file: 1 signalled, 0 not within `timeout_ns`, a
- * negative errno for a descriptor that is not one (-ENOSYS off Linux). */
-int vmafx_sync_file_wait(int fd, uint64_t timeout_ns);
-/* An acquire fence of kind SYNC_FILE, as vmafx_gl_sync_acquire(). */
-VmafxStatus vmafx_sync_file_acquire(const VmafxReport *report, const VmafxFence *acquire,
-                                    const char *backend);
+/* Producer fences checked on the host (GL syncs, sync_files, dma-buf implicit
+ * fences): sync_object.h, one implementation for every lane (HISS-19). */
 
 /* ---- GL textures as linear dma-bufs (egl_export.c) ------------------------ */
 

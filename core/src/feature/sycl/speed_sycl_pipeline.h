@@ -110,6 +110,11 @@ int configure(const SpeedInternalDimensions &dim, const SpeedInternalOptions &op
  * `index`, packed. */
 int stage_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic, unsigned plane);
 
+/* Copy plane `plane` of a frame of the VMAFx API on this device (src_w x
+ * src_h samples) into raw plane `index` (< config.raw_planes), packed, on the
+ * device: such a frame's planes are never read on the host (ADR-2091). */
+int read_device_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic, unsigned plane);
+
 } // namespace speed_sycl
 
 #endif /* VMAF_FEATURE_SYCL_SPEED_SYCL_PIPELINE_H_ */

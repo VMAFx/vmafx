@@ -88,6 +88,6 @@ tiling is not de-tiled on the device here.
 
 ## References
 
-- [ADR-2092](2092-vmafx-hip-device-frames.md), ADR-2091 (the SYCL lane), [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1929](1929-vmafx-device-frames-fences.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [Research-2160](../research/2160-hip-gl-egl-dmabuf-tiling.md).
+- [ADR-2092](2092-vmafx-hip-device-frames.md), ADR-2091 (the SYCL lane), [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1929](1929-vmafx-device-frames-fences.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [Research-2161](../research/2161-hip-gl-egl-dmabuf-tiling.md).
 - `req` (RC4 WP3 follow-up, 2026-10-06): "HIP GL import routed through EGL dma-buf export because ROCm 10.1 cannot read GL textures ... GL sync object as the acquire fence ... Evidence on ROCm 10.1 in `vmafx-hip-lane:rocm10.1.0`".
 - Tests: `core/test/test_vmafx_import_hip_gl.c`, `test_vmafx_import_hip_contract.py`.

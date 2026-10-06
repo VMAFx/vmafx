@@ -15,10 +15,11 @@
  * signalled where the frame's last reference goes (frame_host.c).
  *
  * The device kinds are implemented by the backend lanes behind these same
- * functions (CUDA_EVENT: cuda/import_fence.c, HIP_EVENT: hip/import_fence.c);
- * GL_SYNC and SYNC_FILE fences, which a producer signals and the library
- * checks on the host, need no device (gl_sync.c, sync_file.c). A kind this
- * build has no lane for is refused naming it.
+ * functions (CUDA_EVENT: cuda/import_fence.c, SYCL_EVENT: sycl/import_fence.c,
+ * HIP_EVENT: hip/import_fence.c); GL_SYNC and SYNC_FILE fences, which a
+ * producer signals and the library checks on the host, need no device
+ * (sync_object.c, one implementation for every lane, ADR-2091 / ADR-2092). A
+ * kind this build has no lane for is refused naming it.
  *
  * Waiting polls the flag with short sleeps against a monotonic clock: the
  * portable pthread subset (core/src/compat/win32/pthread.h) has no timed
@@ -50,7 +51,11 @@
 #ifdef HAVE_HIP
 #include "hip/vmafx_hip.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #include "ref.h"
+#include "sync_object.h"
 #include "vmafx/vmafx.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -249,8 +254,14 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
 #else
 #define VMAFX_HIP_FENCE_KINDS ""
 #endif
+#ifdef HAVE_SYCL
+#define VMAFX_SYCL_FENCE_KINDS ", SYCL_EVENT (SYCL devices)"
+#else
+#define VMAFX_SYCL_FENCE_KINDS ""
+#endif
 #define VMAFX_LANE_FENCE_KINDS                                                                     \
-    VMAFX_CUDA_FENCE_KINDS VMAFX_HIP_FENCE_KINDS ", GL_SYNC and SYNC_FILE (Linux)"
+    VMAFX_CUDA_FENCE_KINDS VMAFX_HIP_FENCE_KINDS VMAFX_SYCL_FENCE_KINDS                            \
+        ", GL_SYNC and SYNC_FILE (Linux)"
 
 /* A kind this build declares but cannot handle here. */
 static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, const char *what)
@@ -281,6 +292,11 @@ static bool lane_creates(const VmafxDevice *device, uint32_t kind)
         return true;
     }
 #endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        return true;
+    }
+#endif
     return false;
 }
 
@@ -296,6 +312,11 @@ static VmafxStatus lane_create(const VmafxReport *report, VmafxDevice *device, u
 #ifdef HAVE_HIP
     if (device->backend == VMAFX_BACKEND_HIP) {
         return vmafx_hip_fence_create(report, device, kind, out);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_fence_create(report, device, kind, out);
     }
 #endif
     (void)device;
@@ -370,6 +391,13 @@ static int gl_sync_done(const void *arg)
     return vmafx_gl_sync_wait(*(const uintptr_t *)arg, 0u);
 }
 
+/* A sync_file as a poll answer, through poll() without a wait; the waiting
+ * is vmafx_fence_poll()'s, on the clock host fences use (virtual in tests). */
+static int sync_file_done(const void *arg)
+{
+    return vmafx_sync_file_wait(*(const int32_t *)arg, 0u);
+}
+
 /* Host wait on a fence a producer signals outside any device queue of the
  * library: a GL sync or a sync_file. */
 static VmafxStatus producer_fence_wait(const VmafxReport *report, const VmafxFence *f,
@@ -378,13 +406,14 @@ static VmafxStatus producer_fence_wait(const VmafxReport *report, const VmafxFen
     const bool gl = f->kind == VMAFX_FENCE_GL_SYNC;
     const char *const what = gl ? "GL sync" : "sync_file";
     const int state = gl ? vmafx_fence_poll(gl_sync_done, &f->handle, timeout_ns) :
-                           vmafx_sync_file_wait(f->fd, timeout_ns);
+                           vmafx_fence_poll(sync_file_done, &f->fd, timeout_ns);
     if (state == 1) {
         return VMAFX_OK;
     }
     if (state < 0) {
-        return VMAFX_FAIL(report, state == -ENOSYS ? VMAFX_E_NOTSUP : VMAFX_E_INVALID, state,
-                          VMAFX_SUBJECT_FENCE, gl ? "fence.handle" : "fence.fd",
+        return VMAFX_FAIL(report,
+                          state == -ENOSYS || state == -ENOTSUP ? VMAFX_E_NOTSUP : VMAFX_E_INVALID,
+                          state, VMAFX_SUBJECT_FENCE, gl ? "fence.handle" : "fence.fd",
                           "waiting on a %s failed (%d)%s", what, state,
                           gl ? ": is its GL context (or one sharing with it) current on this "
                                "thread?" :
@@ -413,6 +442,10 @@ static VmafxStatus other_kind_wait(const VmafxReport *report, const VmafxFence *
 #ifdef HAVE_HIP
     case VMAFX_FENCE_HIP_EVENT:
         return vmafx_hip_fence_wait(report, f, timeout_ns);
+#endif
+#ifdef HAVE_SYCL
+    case VMAFX_FENCE_SYCL_EVENT:
+        return vmafx_sycl_fence_wait(report, f, timeout_ns);
 #endif
     default:
         return unsupported_kind(report, f->kind, "wait on");
@@ -462,6 +495,10 @@ static VmafxStatus other_kind_destroy(const VmafxReport *report, const VmafxFenc
 #ifdef HAVE_HIP
     case VMAFX_FENCE_HIP_EVENT:
         return vmafx_hip_fence_destroy(report, f);
+#endif
+#ifdef HAVE_SYCL
+    case VMAFX_FENCE_SYCL_EVENT:
+        return vmafx_sycl_fence_destroy(report, f);
 #endif
     default:
         return unsupported_kind(report, f->kind, "release");

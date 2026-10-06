@@ -2100,6 +2100,9 @@ if is_sycl_enabled
         sycl_dir + 'dmabuf_import.cpp',
         sycl_dir + 'd3d11_import.cpp',
         sycl_dir + 'scratch_check.cpp',
+        # RC4 WP3 (ADR-2091): the VMAFx SYCL lane's runtime half (library
+        # queue, conversions, device picture reads, release events).
+        sycl_dir + 'vmafx_sycl_rt.cpp',
     ]
 
     sycl_surface_args = []
@@ -2814,9 +2817,7 @@ libvmafx_sources = [
     src_dir + 'vmafx/frame_import_hooks.c',
     src_dir + 'vmafx/frame_pool.c',
     src_dir + 'vmafx/frame_host.c',
-    src_dir + 'vmafx/gl_sync.c',
     src_dir + 'vmafx/release_events.c',
-    src_dir + 'vmafx/sync_file.c',
     src_dir + 'vmafx/model.c',
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
@@ -2837,6 +2838,9 @@ libvmafx_sources = [
     # RC4 WP4: window scores and the window clock (ADR-2074).
     src_dir + 'vmafx/window.c',
     src_dir + 'vmafx/window_clock.c',
+    # RC4 WP3 (ADR-2091): sync_file, dma-buf implicit fences and GL syncs,
+    # shared by the backend lanes.
+    src_dir + 'vmafx/sync_object.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',
@@ -2905,6 +2909,21 @@ if is_hip_enabled
         src_dir + 'hip/import_fence.c',
         src_dir + 'hip/import_frame.c',
         src_dir + 'hip/import_gl.c',
+    ]
+endif
+
+# RC4 WP3 SYCL lane (ADR-2091): devices, imports, fences, GL interop and pools
+# of the VMAFx API on SYCL. The C half; its SYCL calls are
+# sycl/vmafx_sycl_rt.cpp (a SYCL common object, sycl_sources above). In the
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
+if is_sycl_enabled
+    libvmafx_sources += [
+        sycl_dir + 'import_device.c',
+        sycl_dir + 'import_dmabuf.c',
+        sycl_dir + 'import_fence.c',
+        sycl_dir + 'import_frame.c',
+        sycl_dir + 'import_gl.c',
+        sycl_dir + 'import_pool.c',
     ]
 endif
 

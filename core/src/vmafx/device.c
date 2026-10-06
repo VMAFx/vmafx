@@ -28,6 +28,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #ifdef HAVE_HIP
 #include "hip/vmafx_hip.h"
 #endif
@@ -60,12 +63,17 @@ static bool is_backend(uint32_t backend)
     return backend <= VMAFX_BACKEND_HIP;
 }
 
-/* A backend this build creates devices for: the CPU, and CUDA / HIP in a
- * build with that backend. */
+/* A backend this build creates devices for: the CPU, and CUDA / SYCL / HIP
+ * in a build with that backend. */
 static bool built_backend(uint32_t backend)
 {
 #ifdef HAVE_CUDA
     if (backend == VMAFX_BACKEND_CUDA) {
+        return true;
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
         return true;
     }
 #endif
@@ -87,7 +95,13 @@ static bool built_backend(uint32_t backend)
 #else
 #define VMAFX_BUILT_HIP ""
 #endif
-#define VMAFX_BUILT_BACKENDS "devices of these backends: CPU" VMAFX_BUILT_CUDA VMAFX_BUILT_HIP
+#ifdef HAVE_SYCL
+#define VMAFX_BUILT_SYCL ", SYCL"
+#else
+#define VMAFX_BUILT_SYCL ""
+#endif
+#define VMAFX_BUILT_BACKENDS                                                                       \
+    "devices of these backends: CPU" VMAFX_BUILT_CUDA VMAFX_BUILT_SYCL VMAFX_BUILT_HIP
 
 /* `backend` is one this build creates devices for. */
 static VmafxStatus check_backend(const VmafxReport *report, uint32_t backend, const char *subject)
@@ -146,6 +160,11 @@ static VmafxStatus open_lane(const VmafxReport *report, const VmafxDeviceDesc *d
         return vmafx_cuda_device_open(report, d, device);
     }
 #endif
+#ifdef HAVE_SYCL
+    if (d->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_open(report, d, device);
+    }
+#endif
 #ifdef HAVE_HIP
     if (d->backend == VMAFX_BACKEND_HIP) {
         return vmafx_hip_device_open(report, d, device);
@@ -163,6 +182,11 @@ static void close_lane(VmafxDevice *device)
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_close(device);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        vmafx_sycl_device_close(device);
     }
 #endif
 #ifdef HAVE_HIP
@@ -255,6 +279,11 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
         return vmafx_cuda_device_count(&report, count);
     }
 #endif
+#ifdef HAVE_SYCL
+    if (status == VMAFX_OK && backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_count(&report, count);
+    }
+#endif
 #ifdef HAVE_HIP
     if (status == VMAFX_OK && backend == VMAFX_BACKEND_HIP) {
         return vmafx_hip_device_count(&report, count);
@@ -265,6 +294,7 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
     if (status == VMAFX_OK) {
         *count = 1u;
     }
+    assert(status == VMAFX_OK || *count == 0u); /* a refused backend counts nothing */
     return status;
 }
 
@@ -290,6 +320,11 @@ static VmafxStatus lane_info(const VmafxReport *report, uint32_t backend, int32_
 #ifdef HAVE_CUDA
     if (backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_device_info(report, index, info);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_device_info(report, index, info);
     }
 #endif
 #ifdef HAVE_HIP
@@ -343,6 +378,11 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_describe(device, &info);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        vmafx_sycl_device_describe(device, &info);
     }
 #endif
 #ifdef HAVE_HIP

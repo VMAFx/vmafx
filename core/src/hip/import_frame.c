@@ -48,6 +48,7 @@
 #include "vmafx/error_internal.h"
 #include "vmafx/frame_import_hooks.h"
 #include "vmafx/internal.h"
+#include "vmafx/sync_object.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_hip.h"
 #include "vmafx_hip_internal.h"

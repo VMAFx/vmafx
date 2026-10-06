@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research-2160: What an EGL dma-buf export of a GL texture is on a gfx1036, and how HIP can read it
+# Research-2161: What an EGL dma-buf export of a GL texture is on a gfx1036, and how HIP can read it
 
 - **Status**: Active
 - **Workstream**: [ADR-2132](../adr/2132-hip-gl-textures-through-egl-dmabuf.md), [ADR-2092](../adr/2092-vmafx-hip-device-frames.md)

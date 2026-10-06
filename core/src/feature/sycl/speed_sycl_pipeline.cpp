@@ -43,6 +43,7 @@
 #include <utility>
 
 #include "log.h"
+#include "sycl/common.h"
 #include "sycl_exact_fp.h"
 
 using speed_sycl::ChannelBinding;
@@ -2159,4 +2160,20 @@ int speed_sycl::stage_plane(Pipeline *pipeline, uint32_t index, const VmafPictur
                     src + static_cast<ptrdiff_t>(row) * stride, row_bytes);
     }
     return 0;
+}
+
+int speed_sycl::read_device_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic,
+                                  unsigned plane)
+{
+    if (!pipeline || !pic || plane > 2u || index >= pipeline->config.raw_planes) {
+        return -EINVAL;
+    }
+    const Geometry &g = pipeline->config.geometry;
+    if (pic->w[plane] < g.src_w || pic->h[plane] < g.src_h) {
+        return -EINVAL;
+    }
+    const size_t row_bytes = static_cast<size_t>(g.src_w) * g.bytes_per_sample;
+    void *const dst = pipeline->raw + static_cast<size_t>(index) * pipeline->plane_bytes;
+    return vmaf_sycl_picture_read_plane(pic, plane, pipeline->queue, dst, row_bytes, row_bytes,
+                                        g.src_h, nullptr);
 }

@@ -9,14 +9,14 @@
  * The fence machinery the device lanes share, on the CPU (RC4 WP3,
  * ADR-2023, ADR-2092):
  *
- * - SYNC_FILE fences are checked on the host with poll() (sync_file.c): a
+ * - SYNC_FILE fences are checked on the host with poll() (sync_object.c): a
  *   descriptor that is not readable yet is pending (VMAFX_PENDING for a
  *   poll, VMAFX_E_TIMEOUT for a wait that expires), a readable one is
  *   signalled, a closed one is refused naming fence.fd, and the library
  *   destroys no sync_file. A pipe stands in for the sync_file: poll() treats
  *   both alike.
  * - A GL_SYNC fence without a GL context is refused naming fence.handle, and
- *   the library destroys no GL sync (gl_sync.c).
+ *   the library destroys no GL sync (fence.c).
  * - The release-event table (release_events.c): a release event handed out
  *   is unrecorded until the frame records it, each holder's reference is
  *   dropped once, the last one destroys the event, and a full table refuses
@@ -33,6 +33,7 @@
 #include "mu_table.h"
 #include "test.h"
 #include "vmafx/internal.h"
+#include "vmafx/sync_object.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
 

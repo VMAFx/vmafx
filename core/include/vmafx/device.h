@@ -51,8 +51,8 @@ struct VmafxDeviceDesc {
     /** Size of this struct as the caller compiled it; set by the _INIT macro. */
     uint32_t struct_size;
     /**
-     * Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another
-     * backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
+     * Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend;
+     * another backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
      */
     uint32_t backend;
     /**

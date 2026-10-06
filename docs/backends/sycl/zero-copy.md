@@ -15,6 +15,7 @@ correct, and how the pre-allocated picture pool works. Back to the
 | VA-API dmabuf | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()` | Linux | None (zero-copy) |
 | D3D11 staging | `vmaf_sycl_import_d3d11_surface()` | Windows | Two PCIe copies; not zero-copy |
 | Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy |
+| VMAFx device frames | `vmafx_frame_import()` / `vmafx_context_import_frame()` on a SYCL device | all (USM); Linux (dma-buf, GL texture) | None; every SYCL twin reads the frame, chroma included |
 
 The signatures are in
 [`libvmaf_sycl.h`](../../../core/include/libvmaf/libvmaf_sycl.h) and the
@@ -65,12 +66,29 @@ of the Netflix 576x324 pair as H.264) before the check existed:
 - `feature=name=float_psnr` (the CPU extractor) was skipped on every frame,
   and the result had no `float_psnr` and no error.
 
-Importing the chroma as well would need two pieces of work. The de-tile kernel
-would have to de-interleave the NV12 / P010 UV layer, and every chroma twin
-would need a device chroma path. Neither is implemented. Both belong to the
-post-1.0 zero-copy import
-([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)) and
-need their own ADR.
+This path stays luma-only. Frames imported through the VMAFx API carry the
+chroma as well and every SYCL twin reads them; see
+[VMAFx device frames](#vmafx-device-frames) below.
+
+## VMAFx device frames
+
+The VMAFx API imports a whole frame, luma and chroma, on a SYCL device
+([ADR-2091](../../adr/2091-vmafx-sycl-device-frames.md)): USM of the device's
+SYCL context, and on Linux dma-bufs (linear, Intel Y-tiled or Tile4) and
+OpenGL textures (through an EGL dma-buf export). NV12 / P010 / P016 are
+planarised and tiled planes de-tiled on the device with the same address
+math as `vmaf_sycl_import_va_surface()` (`core/src/sycl/detile.h`); every
+SYCL twin, the chroma twins included, copies the planes it reads on the
+device. Imported frames score bit for bit as the same frames uploaded from
+the host, for every SYCL twin declared exact. SYCL events, `sync_file`
+descriptors and GL syncs order the producer's writes; a release fence (host or
+SYCL event) and a release callback tell the producer when it may write into
+the memory again. The calls, the descriptors and the fences are in
+[SYCL devices](../../api/vmafx/index.md#sycl-devices).
+
+What is not imported yet: Windows shared textures (`VMAFX_MEMORY_WIN32_SHARED`
+is refused, the D3D11 staging path above remains), and a `sync_file` release
+fence (a SYCL event or host fence is returned instead).
 
 ## D3D11 staging-texture import (Windows)
 

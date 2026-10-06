@@ -122,5 +122,4 @@ void vmafx_cuda_picture_detach(VmafxCudaDevice *dev, VmafPicture *pic);
  * GL_SYNC is waited on first. */
 VmafxStatus vmafx_cuda_gl_map(const VmafxReport *report, VmafxCudaFrame *cf,
                               const VmafxFrameImport *d, CUarray arrays[3]);
-
 #endif /* VMAF_SRC_CUDA_VMAFX_CUDA_INTERNAL_H_ */
