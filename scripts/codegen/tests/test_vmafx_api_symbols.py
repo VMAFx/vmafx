@@ -103,6 +103,15 @@ class CheckerLogicTest(unittest.TestCase):
             with self.subTest(finding=finding):
                 self.assertIn(finding, self.module.vmafx_findings(self.symbols, listed))
 
+    def test_versions_seen_on_exports_when_imports_are_plain(self) -> None:
+        # A toolchain that links its imports unversioned (`w __cxa_finalize`,
+        # T-VMAFX-SYMBOL-VERSIONS-UNSEEN-UBUNTU-2026-10-06): nm still prints
+        # the exports' nodes, so a wrong node must be caught.
+        symbols = self.module.parse_nm(NM_SAMPLE.replace("malloc@GLIBC_2.2.5", "malloc"))
+        self.assertTrue(symbols.versions_visible)
+        found = self.module.vmafx_findings(symbols, {**self.listed, "vmafx_b": "VMAFX_0.1"})
+        self.assertEqual(found, ["vmafx_b: exported in VMAFX_0.2, the list names VMAFX_0.1"])
+
     def test_unversioned_export_fails_when_nm_shows_versions(self) -> None:
         symbols = self.module.parse_nm(NM_SAMPLE.replace("vmafx_b@@VMAFX_0.2", "vmafx_b"))
         found = self.module.vmafx_findings(symbols, self.listed)
