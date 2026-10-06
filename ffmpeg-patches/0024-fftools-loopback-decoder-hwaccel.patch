@@ -1,0 +1,254 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Tue, 6 Oct 2026 20:41:25 +0200
+Subject: [PATCH] fftools: decode on the GPU in a loopback decoder
+
+-hwaccel, -hwaccel_device and -hwaccel_output_format may precede -dec and
+set up the loopback decoder's hardware decoding as they do for an input
+stream (fftools/ffmpeg_dec_hwaccel.c). Without them an encoder's output
+always came back through system memory, so a pipeline that encodes and
+scores on the GPU (VMAFx #2138) round-tripped every frame over the bus.
+
+Carried by the VMAFx fork only (decision Q-048): this patch is refreshed
+with every FFmpeg release and is not submitted upstream.
+---
+ doc/ffmpeg.texi              |   6 ++
+ fftools/Makefile             |   1 +
+ fftools/ffmpeg.h             |  12 ++++
+ fftools/ffmpeg_dec.c         |   7 +++
+ fftools/ffmpeg_dec_hwaccel.c | 106 +++++++++++++++++++++++++++++++++++
+ fftools/ffmpeg_opt.c         |   6 +-
+ 6 files changed, 135 insertions(+), 3 deletions(-)
+ create mode 100644 fftools/ffmpeg_dec_hwaccel.c
+
+diff --git a/doc/ffmpeg.texi b/doc/ffmpeg.texi
+index 882503142e22895cda9dd818ea67a0ba9a582130..931cc02a8082912a852b2246a090dc381c33c2bd 100644
+--- a/doc/ffmpeg.texi
++++ b/doc/ffmpeg.texi
+@@ -499,6 +499,12 @@ documentation for @option{-filter_complex}.
+ Decoding AVOptions can be passed to loopback decoders by placing them before
+ @code{-dec}, analogously to input/output options.
+ 
++So can @option{-hwaccel}, @option{-hwaccel_device} and
++@option{-hwaccel_output_format}, which then decode the encoder's output on
++the GPU as they do for an input stream; with
++@code{-hwaccel_output_format cuda}, for example, the loopback decoder's frames
++stay in device memory.
++
+ E.g. the following example:
+ 
+ @example
+diff --git a/fftools/Makefile b/fftools/Makefile
+index 01b16fa8f480efff337f1e2303f901913263f444..96cf291ce0f79201647727167ddd42df063f0334 100644
+--- a/fftools/Makefile
++++ b/fftools/Makefile
+@@ -13,6 +13,7 @@ include $(SRC_PATH)/fftools/resources/Makefile
+ 
+ OBJS-ffmpeg +=                  \
+     fftools/ffmpeg_dec.o        \
++    fftools/ffmpeg_dec_hwaccel.o \
+     fftools/ffmpeg_demux.o      \
+     fftools/ffmpeg_enc.o        \
+     fftools/ffmpeg_filter.o     \
+diff --git a/fftools/ffmpeg.h b/fftools/ffmpeg.h
+index c44aaf6032f91aa3365199d187d695371e33af58..92afbc67b7635edb54c035b332c6bc2ea3dfda20 100644
+--- a/fftools/ffmpeg.h
++++ b/fftools/ffmpeg.h
+@@ -444,6 +444,15 @@ typedef struct DecoderOpts {
+     AVRational                  framerate;
+ } DecoderOpts;
+ 
++/* -hwaccel, -hwaccel_device and -hwaccel_output_format of a loopback
++ * decoder (ffmpeg_dec_hwaccel.c). */
++typedef struct DecoderHwaccelOpts {
++    enum HWAccelID              hwaccel_id;
++    enum AVHWDeviceType         hwaccel_device_type;
++    char                       *hwaccel_device;
++    enum AVPixelFormat          hwaccel_output_format;
++} DecoderHwaccelOpts;
++
+ typedef struct Decoder {
+     const AVClass   *class;
+ 
+@@ -847,6 +856,9 @@ AVBufferRef *hw_device_for_filter(void);
+  * Create a standalone decoder.
+  */
+ int dec_create(const OptionsContext *o, const char *arg, Scheduler *sch);
++int  dec_hwaccel_opts_parse(void *logctx, const OptionsContext *o, DecoderHwaccelOpts *hw);
++void dec_hwaccel_opts_apply(const DecoderHwaccelOpts *hw, DecoderOpts *o);
++void dec_hwaccel_opts_free(DecoderHwaccelOpts *hw);
+ 
+ /**
+  * @param dec_opts Dictionary filled with decoder options. Its ownership
+diff --git a/fftools/ffmpeg_dec.c b/fftools/ffmpeg_dec.c
+index 1b37d39e6dcb606e81bc694df6c058414af8c713..e9b8a05e0d8748782b3ee14b580ca2a98febad3b 100644
+--- a/fftools/ffmpeg_dec.c
++++ b/fftools/ffmpeg_dec.c
+@@ -101,6 +101,7 @@ typedef struct DecoderPriv {
+     struct {
+         AVDictionary       *opts;
+         const AVCodec      *codec;
++        DecoderHwaccelOpts  hw;
+     } standalone_init;
+ } DecoderPriv;
+ 
+@@ -131,6 +132,7 @@ void dec_free(Decoder **pdec)
+     av_packet_free(&dp->pkt);
+ 
+     av_dict_free(&dp->standalone_init.opts);
++    dec_hwaccel_opts_free(&dp->standalone_init.hw);
+ 
+     for (int i = 0; i < FF_ARRAY_ELEMS(dp->sub_prev); i++)
+         av_frame_free(&dp->sub_prev[i]);
+@@ -860,6 +862,7 @@ static int dec_standalone_open(DecoderPriv *dp, const AVPacket *pkt)
+ 
+     snprintf(name, sizeof(name), "dec%d", dp->index);
+     o.name = name;
++    dec_hwaccel_opts_apply(&dp->standalone_init.hw, &o);
+ 
+     return dec_open(dp, &dp->standalone_init.opts, &o, NULL);
+ }
+@@ -1744,6 +1747,10 @@ int dec_create(const OptionsContext *o, const char *arg, Scheduler *sch)
+ 
+     multiview_check_manual(dp, dp->standalone_init.opts);
+ 
++    ret = dec_hwaccel_opts_parse(dp, o, &dp->standalone_init.hw);
++    if (ret < 0)
++        return ret;
++
+     if (o->codec_names.nb_opt) {
+         const char *name = o->codec_names.opt[o->codec_names.nb_opt - 1].u.str;
+         dp->standalone_init.codec = avcodec_find_decoder_by_name(name);
+diff --git a/fftools/ffmpeg_dec_hwaccel.c b/fftools/ffmpeg_dec_hwaccel.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..d58fe0359e6dcff9cf2bff3aa08da94effabc3d2
+--- /dev/null
++++ b/fftools/ffmpeg_dec_hwaccel.c
+@@ -0,0 +1,106 @@
++/*
++ * Copyright 2026 Lusoris
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU Lesser General Public License as published by the
++ * Free Software Foundation; either version 2.1 of the License, or (at
++ * your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public
++ * License for more details.
++ *
++ * SPDX-License-Identifier: LGPL-2.1-or-later
++ */
++
++/**
++ * @file
++ * Hardware decoding for loopback decoders (-dec): the -hwaccel,
++ * -hwaccel_device and -hwaccel_output_format options given before -dec,
++ * read as an input stream's (ffmpeg_demux.c), so an encoder's output can be
++ * decoded on the GPU and reach a filter as hardware frames. Carried by the
++ * VMAFx fork only (decision Q-048); source of truth:
++ * ffmpeg-patches/src/ffmpeg_dec_hwaccel.c in the VMAFx tree.
++ */
++
++#include <string.h>
++
++#include "ffmpeg.h"
++
++#include "libavutil/hwcontext.h"
++#include "libavutil/mem.h"
++#include "libavutil/pixdesc.h"
++
++/* The last value given: a loopback decoder has one stream. */
++static const char *last_str(const SpecifierOptList *list)
++{
++    return list->nb_opt ? list->opt[list->nb_opt - 1].u.str : NULL;
++}
++
++static int parse_hwaccel(void *logctx, const char *hwaccel, DecoderHwaccelOpts *hw)
++{
++    enum AVHWDeviceType type;
++    /* The NVDEC hwaccels use a CUDA device, as for an input stream. */
++    if (!strcmp(hwaccel, "nvdec") || !strcmp(hwaccel, "cuvid"))
++        hwaccel = "cuda";
++    if (!strcmp(hwaccel, "none")) {
++        hw->hwaccel_id = HWACCEL_NONE;
++        return 0;
++    }
++    if (!strcmp(hwaccel, "auto")) {
++        hw->hwaccel_id = HWACCEL_AUTO;
++        return 0;
++    }
++    type = av_hwdevice_find_type_by_name(hwaccel);
++    if (type == AV_HWDEVICE_TYPE_NONE) {
++        av_log(logctx, AV_LOG_FATAL, "Unrecognized hwaccel for a loopback decoder: %s\n", hwaccel);
++        return AVERROR(EINVAL);
++    }
++    hw->hwaccel_id = HWACCEL_GENERIC;
++    hw->hwaccel_device_type = type;
++    return 0;
++}
++
++int dec_hwaccel_opts_parse(void *logctx, const OptionsContext *o, DecoderHwaccelOpts *hw)
++{
++    const char *hwaccel = last_str(&o->hwaccels);
++    const char *device = last_str(&o->hwaccel_devices);
++    const char *format = last_str(&o->hwaccel_output_formats);
++    int ret;
++
++    hw->hwaccel_id = HWACCEL_NONE;
++    hw->hwaccel_device_type = AV_HWDEVICE_TYPE_NONE;
++    hw->hwaccel_device = NULL;
++    hw->hwaccel_output_format = AV_PIX_FMT_NONE;
++    if (format) {
++        hw->hwaccel_output_format = av_get_pix_fmt(format);
++        if (hw->hwaccel_output_format == AV_PIX_FMT_NONE) {
++            av_log(logctx, AV_LOG_FATAL, "Unrecognised hwaccel output format: %s\n", format);
++            return AVERROR(EINVAL);
++        }
++    }
++    if (hwaccel && (ret = parse_hwaccel(logctx, hwaccel, hw)) < 0)
++        return ret;
++    if (device) {
++        hw->hwaccel_device = av_strdup(device);
++        if (!hw->hwaccel_device)
++            return AVERROR(ENOMEM);
++    }
++    return 0;
++}
++
++void dec_hwaccel_opts_apply(const DecoderHwaccelOpts *hw, DecoderOpts *o)
++{
++    o->hwaccel_id = hw->hwaccel_id;
++    o->hwaccel_device_type = hw->hwaccel_device_type;
++    o->hwaccel_device = hw->hwaccel_device;
++    o->hwaccel_output_format = hw->hwaccel_output_format;
++}
++
++void dec_hwaccel_opts_free(DecoderHwaccelOpts *hw)
++{
++    av_freep(&hw->hwaccel_device);
++}
+diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
+index fa3bbd999f47d35f03e68a89ef9fb662b06e82b3..44b84e90927774903c267f3e52948acc21d25a4f 100644
+--- a/fftools/ffmpeg_opt.c
++++ b/fftools/ffmpeg_opt.c
+@@ -1987,13 +1987,13 @@ const OptionDef options[] = {
+     { "b",                          OPT_TYPE_FUNC,   OPT_VIDEO | OPT_FUNC_ARG | OPT_PERFILE | OPT_OUTPUT,
+         { .func_arg = opt_bitrate },
+         "video bitrate (please use -b:v)", "bitrate" },
+-    { "hwaccel",                    OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT,
++    { "hwaccel",                    OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT | OPT_DECODER,
+         { .off = OFFSET(hwaccels) },
+         "use HW accelerated decoding", "hwaccel name" },
+-    { "hwaccel_device",             OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT,
++    { "hwaccel_device",             OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT | OPT_DECODER,
+         { .off = OFFSET(hwaccel_devices) },
+         "select a device for HW acceleration", "devicename" },
+-    { "hwaccel_output_format",      OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT,
++    { "hwaccel_output_format",      OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_INPUT | OPT_DECODER,
+         { .off = OFFSET(hwaccel_output_formats) },
+         "select output format used with HW accelerated decoding", "format" },
+     { "hwaccels",                   OPT_TYPE_FUNC,   OPT_EXIT | OPT_EXPERT,

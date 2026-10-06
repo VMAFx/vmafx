@@ -284,9 +284,77 @@ def cmd_refusal(args: argparse.Namespace) -> int:
     return 0 if result.returncode != 0 and named and no_score else 1
 
 
+def e2e_command(args: argparse.Namespace, tmp: Path, pair: Pair) -> list[str]:
+    """Encode with NVENC, decode the encoder's output with NVDEC in a loopback
+    decoder (CUDA frames), score them against the uploaded reference, write
+    the decoded frames for the file run (#2138)."""
+    report, stats, decoded = tmp / "filter.json", tmp / "stats.ndjson", tmp / "decoded.yuv"
+    options = (
+        f"log_path={escape(report)}:score_fmt=%.17g:n_stats_frames=10:pool=min+mean:"
+        f"stats_out=log+file:stats_path={escape(stats)}"
+    )
+    # Without -hwaccel before -dec the decoder returns system memory: the
+    # reference stays in it too and the filter scores host frames.
+    hw = not args.no_loopback_hwaccel
+    graph = (
+        f"[0:v]{'hwupload' if hw else 'null'}[r];[dec:0]split=2[d][dd];[d][r]vmafx={options}[o];"
+        f"[dd]{'hwdownload,format=nv12,' if hw else ''}format=yuv420p[raw]"
+    )
+    size = f"{pair.width}x{pair.height}"
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info"]
+    cmd += ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
+    cmd += ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", size, "-r", "24"]
+    cmd += ["-i", str(fixture(args, pair.ref))]
+    cmd += ["-map", "0:v", "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "32"]
+    cmd += ["-f", "h264", str(tmp / "encoded.h264")]
+    if not args.no_loopback_hwaccel:
+        cmd += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+    cmd += ["-dec", "0:0", "-filter_complex", graph]
+    # passthrough: a raw file must hold the decoded frames, none duplicated
+    cmd += ["-map", "[o]", "-f", "null", "-", "-map", "[raw]", "-fps_mode", "passthrough"]
+    cmd += ["-f", "rawvideo", str(decoded)]
+    return cmd
+
+
+def e2e_file_report(args: argparse.Namespace, tmp: Path, pair: Pair) -> dict:
+    decoded = Pair(pair.name, pair.ref, str(tmp / "decoded.yuv"), pair.width, pair.height, 0)
+    out = tmp / "cli.json"
+    cmd = [args.vmaf, "-r", str(fixture(args, pair.ref)), "-d", decoded.dist]
+    cmd += ["-w", str(pair.width), "-h", str(pair.height), "-p", "420", "-b", "8"]
+    cmd += ["--precision", "max", "--json", "-o", str(out), "-q", "--backend", "cuda"]
+    run(cmd, environment(args))
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
+def cmd_e2e(args: argparse.Namespace) -> int:
+    """#2138 on CUDA: NVENC -> loopback NVDEC -> vmafx, against the same frames from files."""
+    pair = PAIRS["golden"]
+    if not fixture(args, pair.ref).is_file():
+        return SKIP
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        result = run(e2e_command(args, tmp, pair), environment(args))
+        paths = [x for x in result.stderr.splitlines() if "vmafx frames:" in x]
+        filt = json.loads((tmp / "filter.json").read_text(encoding="utf-8"))
+        cli = e2e_file_report(args, tmp, pair)
+        lines = [json.loads(x) for x in (tmp / "stats.ndjson").read_text().splitlines()]
+    total, same, worst, bad = compare(cli, filt)
+    checked, wbad = check_windows(lines, cli["frames"], "vmaf")
+    path = paths[-1].split("vmafx frames:")[-1].strip() if paths else "(no line)"
+    on_device = f"{len(cli['frames'])} imported on the device, 0 host, 0 downloaded" in path
+    print(f"frame paths: {path}")
+    print(
+        f"| e2e nvenc->nvdec->vmafx | cuda | {len(cli['frames'])} | {total} | {same} | {worst:g} |"
+    )
+    print(f"windows: {len(lines)}, {checked} pooled values equal the file run ({len(wbad)} differ)")
+    for item in (bad + wbad)[:5]:
+        print(f"MISMATCH {item}")
+    return 0 if on_device and not bad and not wbad and total else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("parity", "windows", "provenance", "refusal"))
+    parser.add_argument("command", choices=("parity", "windows", "provenance", "refusal", "e2e"))
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--vmaf", required=True)
     parser.add_argument("--libdir", required=True, help="directory of libvmafx.so.1")
@@ -296,12 +364,18 @@ def main() -> int:
     parser.add_argument("--pairs", default="golden,checkerboard-1,checkerboard-10,bbb-4k")
     parser.add_argument("--frames-4k", type=int, default=30)
     parser.add_argument("--model", default="", help="a model spec; empty: the library default")
+    parser.add_argument(
+        "--no-loopback-hwaccel",
+        action="store_true",
+        help="e2e without -hwaccel before -dec (the decoder then returns system memory)",
+    )
     args = parser.parse_args()
     return {
         "parity": cmd_parity,
         "windows": cmd_windows,
         "provenance": cmd_provenance,
         "refusal": cmd_refusal,
+        "e2e": cmd_e2e,
     }[args.command](args)
 
 

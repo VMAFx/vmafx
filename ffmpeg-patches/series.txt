@@ -30,3 +30,6 @@
 0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch
 0020-libvmaf-honor-retryable-close-ownership.patch
 0021-add-vmafx-filter.patch
+0022-add-vmafx-pre-filter.patch
+0023-add-vmafx-profile-cli-glue.patch
+0024-fftools-loopback-decoder-hwaccel.patch

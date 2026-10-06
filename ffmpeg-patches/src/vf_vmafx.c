@@ -81,6 +81,9 @@ typedef struct VMAFXContext {
     int failed;   /* a frame could not be scored: no score line after it */
     int finished; /* the stream was flushed and every window written */
     int logged_download;
+    /* Frames by path: imported on the device without a copy, host frames
+     * wrapped without a copy, hardware frames downloaded (import=host). */
+    uint64_t n_imported, n_host, n_downloaded;
 
     VmafxWindowClock *clock;
     VMAFXSpan spans[VMAFX_MAX_SPANS]; /* windows submitted, oldest first */
@@ -89,6 +92,12 @@ typedef struct VMAFXContext {
     char *window_meta; /* window metadata for the next output frame */
 
     AVFifo *held; /* output frames waiting for their scores (metadata=1) */
+
+    /* vmafx_tune */
+    double recommend_target_vmaf;
+    double recommend_crf_min;
+    double recommend_crf_max;
+    int recommend_passes;
 } VMAFXContext;
 
 /* ---- Backend slots ----------------------------------------------------------
@@ -198,7 +207,26 @@ static uint32_t layout_of(enum AVPixelFormat fmt, uint32_t *bpc)
     return desc->log2_chroma_h == 0 ? VMAFX_PIXEL_FORMAT_YUV444P : VMAFX_PIXEL_FORMAT_UNKNOWN;
 }
 
+/* The planar layout and depth a frame of `fmt` is scored in, as one number:
+ * NV12 / P010 / P016 are imported as 4:2:0 at 8 / 10 / 16 bits, so a
+ * decoder's NV12 frames and an uploaded YUV420P reference score together. */
+static uint32_t scored_layout(enum AVPixelFormat fmt)
+{
+    uint32_t bpc = 0;
+    uint32_t layout = layout_of(fmt, &bpc);
+    if (layout >= VMAFX_PIXEL_FORMAT_NV12)
+        layout = VMAFX_PIXEL_FORMAT_YUV420P;
+    return layout << 8 | bpc;
+}
+
 /* ---- Frames ---------------------------------------------------------------- */
+
+/* The layout of a hardware frame's planes: its own frames context's (the two
+ * inputs may differ, NV12 from a decoder and YUV420P from an upload). */
+static enum AVPixelFormat frame_sw_format(const AVFrame *frame)
+{
+    return ((const AVHWFramesContext *)frame->hw_frames_ctx->data)->sw_format;
+}
 
 /* What the library holds while it reads a frame: the AVFrame (and, for a
  * CUDA frame, its device and release fence), released by the frame's
@@ -337,7 +365,7 @@ static int download_frame(AVFilterContext *ctx, AVFrame *frame, const char *inpu
     AVFrame *sw = av_frame_alloc();
     if (!sw)
         return AVERROR(ENOMEM);
-    sw->format = s->sw_format;
+    sw->format = frame_sw_format(frame); /* each input keeps its own layout */
     int ret = av_hwframe_transfer_data(sw, frame, 0);
     if (ret >= 0) {
         if (!s->logged_download) {
@@ -356,11 +384,16 @@ static int to_vmafx_frame(AVFilterContext *ctx, AVFrame *frame, const char *inpu
 {
     VMAFXContext *s = ctx->priv;
     *out = NULL;
-    if (!s->hw)
+    if (!s->hw) {
+        s->n_host++;
         return host_frame(ctx, frame, input, out);
-    if (s->import_mode == 2)
+    }
+    if (s->import_mode == 2) {
+        s->n_downloaded++;
         return download_frame(ctx, frame, input, out);
+    }
     av_assert0(s->slot && s->slot->import);
+    s->n_imported++;
     return s->slot->import(ctx, frame, input, out);
 }
 
@@ -427,11 +460,11 @@ static void cuda_event_destroy(AVCUDADeviceContext *hw, CUevent event)
     }
 }
 
-static void cuda_planes(VMAFXContext *s, AVFrame *frame, VmafxFrameImport *imp)
+static void cuda_planes(const AVFrame *frame, VmafxFrameImport *imp)
 {
     uint32_t bpc = 0;
     imp->memory = VMAFX_MEMORY_DEVICE_POINTER;
-    imp->pix_fmt = layout_of(s->sw_format, &bpc);
+    imp->pix_fmt = layout_of(frame_sw_format(frame), &bpc);
     imp->bpc = bpc;
     imp->w = (uint32_t)frame->width;
     imp->h = (uint32_t)frame->height;
@@ -455,7 +488,7 @@ static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, 
         return AVERROR(ENOMEM);
     b->hwdev = av_buffer_ref(fc->device_ref);
     VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
-    cuda_planes(s, frame, &imp);
+    cuda_planes(frame, &imp);
     CUevent event = NULL;
     const int ret = b->hwdev ? cuda_acquire(hw, &imp.acquire, &event) : AVERROR(ENOMEM);
     imp.release = box_release;
@@ -1103,12 +1136,13 @@ static int input_frames(AVFilterContext *ctx, AVBufferRef **frames)
     const AVHWFramesContext *fm = (AVHWFramesContext *)main->hw_frames_ctx->data;
     const AVHWFramesContext *fr = (AVHWFramesContext *)ref->hw_frames_ctx->data;
     s->sw_format = fm->sw_format;
-    if (fm->device_ref->data != fr->device_ref->data || fm->sw_format != fr->sw_format) {
+    const int same_layout = scored_layout(fm->sw_format) == scored_layout(fr->sw_format);
+    if (fm->device_ref->data != fr->device_ref->data || !same_layout) {
         av_log(ctx, AV_LOG_ERROR,
                "vmafx: main (%s) and reference (%s) frames %s; bridge them with hwdownload / "
                "hwupload on one device or import=host\n",
                av_get_pix_fmt_name(fm->sw_format), av_get_pix_fmt_name(fr->sw_format),
-               fm->sw_format != fr->sw_format ? "differ in layout" : "live on different devices");
+               same_layout ? "live on different devices" : "differ in layout");
         return AVERROR(EINVAL);
     }
     uint32_t bpc = 0;
@@ -1203,6 +1237,16 @@ static void log_profile(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_INFO, "vmafx device profile:\n%s\n", text);
 }
 
+/* Where the frames went: a hardware run downloads none (import=auto). */
+static void log_frame_paths(AVFilterContext *ctx)
+{
+    const VMAFXContext *s = ctx->priv;
+    av_log(ctx, AV_LOG_INFO,
+           "vmafx frames: %" PRIu64 " imported on the device, %" PRIu64 " host, %" PRIu64
+           " downloaded\n",
+           s->n_imported, s->n_host, s->n_downloaded);
+}
+
 static void release_windows(VMAFXContext *s)
 {
     for (; s->span_count; s->span_count--, s->span_head = (s->span_head + 1) % VMAFX_MAX_SPANS)
@@ -1212,18 +1256,11 @@ static void release_windows(VMAFXContext *s)
     s->clock = NULL;
 }
 
-static av_cold void uninit(AVFilterContext *ctx)
+/* Everything the filter holds, after its final output. */
+static void release_all(AVFilterContext *ctx)
 {
     VMAFXContext *s = ctx->priv;
     HeldFrame h;
-    ff_framesync_uninit(&s->fs);
-    if (s->context && !s->failed) {
-        if (!s->finished)
-            (void)vmafx_flush(s->context, NULL);
-        log_pooled(ctx); /* predicts every frame: the report then lists the model scores */
-        write_report(ctx);
-        log_profile(ctx);
-    }
     while (s->held && av_fifo_read(s->held, &h, 1) >= 0)
         av_frame_free(&h.frame);
     av_fifo_freep2(&s->held);
@@ -1241,6 +1278,21 @@ static av_cold void uninit(AVFilterContext *ctx)
     s->context = NULL;
     vmafx_device_unref(s->vdev);
     s->vdev = NULL;
+}
+
+static av_cold void uninit(AVFilterContext *ctx)
+{
+    VMAFXContext *s = ctx->priv;
+    ff_framesync_uninit(&s->fs);
+    if (s->context && !s->failed) {
+        if (!s->finished)
+            (void)vmafx_flush(s->context, NULL);
+        log_pooled(ctx); /* predicts every frame: the report then lists the model scores */
+        write_report(ctx);
+        log_profile(ctx);
+        log_frame_paths(ctx);
+    }
+    release_all(ctx);
 }
 
 static const AVFilterPad vmafx_inputs[] = {
@@ -1272,6 +1324,171 @@ const FFFilter ff_vf_vmafx = {
     .preinit = vmafx_framesync_preinit,
     .init = init,
     .uninit = uninit,
+    .activate = activate,
+    .priv_size = sizeof(VMAFXContext),
+    FILTER_INPUTS(vmafx_inputs),
+    FILTER_OUTPUTS(vmafx_outputs),
+    FILTER_PIXFMTS_ARRAY(pix_fmts),
+    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+};
+
+/* ---- vmafx_tune -------------------------------------------------------------
+ * The libvmaf_tune filter's capability on the VMAFx API: score the pass the
+ * graph carries and recommend a CRF for the next one from its mean VMAF. The
+ * same scoring path as vmafx; the default model is the library's. */
+
+static const AVOption vmafx_tune_options[] = {
+    {"model",
+     "Model spec; default: the library's default model.",
+     OFFSET(model),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     0,
+     0,
+     FLAGS},
+    {"feature",
+     "Additional feature extractors, | separated.",
+     OFFSET(feature),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     0,
+     0,
+     FLAGS},
+    {"threads",
+     "Worker threads of the extractors.",
+     OFFSET(threads),
+     AV_OPT_TYPE_INT64,
+     {.i64 = 0},
+     0,
+     1024,
+     FLAGS},
+    {"n_threads",
+     "alias of threads",
+     OFFSET(threads),
+     AV_OPT_TYPE_INT64,
+     {.i64 = 0},
+     0,
+     1024,
+     FLAGS},
+    {"backend",
+     "Backend of software frames.",
+     OFFSET(backend),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     5,
+     FLAGS,
+     "backend"},
+    {"auto", "auto", 0, AV_OPT_TYPE_CONST, {.i64 = 0}, 0, 0, FLAGS, "backend"},
+    {"cpu", "cpu", 0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, FLAGS, "backend"},
+    {"cuda", "cuda", 0, AV_OPT_TYPE_CONST, {.i64 = 2}, 0, 0, FLAGS, "backend"},
+    {"sycl", "sycl", 0, AV_OPT_TYPE_CONST, {.i64 = 3}, 0, 0, FLAGS, "backend"},
+    {"hip", "hip", 0, AV_OPT_TYPE_CONST, {.i64 = 4}, 0, 0, FLAGS, "backend"},
+    {"metal", "metal", 0, AV_OPT_TYPE_CONST, {.i64 = 5}, 0, 0, FLAGS, "backend"},
+    {"device",
+     "GPU of the backend: auto or an index.",
+     OFFSET(device),
+     AV_OPT_TYPE_STRING,
+     {.str = "auto"},
+     0,
+     0,
+     FLAGS},
+    {"recommend_target_vmaf",
+     "Target VMAF score to recommend a CRF for.",
+     OFFSET(recommend_target_vmaf),
+     AV_OPT_TYPE_DOUBLE,
+     {.dbl = 95.0},
+     0.0,
+     100.0,
+     FLAGS},
+    {"recommend_crf_min",
+     "Lower CRF bound considered.",
+     OFFSET(recommend_crf_min),
+     AV_OPT_TYPE_DOUBLE,
+     {.dbl = 18.0},
+     0.0,
+     51.0,
+     FLAGS},
+    {"recommend_crf_max",
+     "Upper CRF bound considered.",
+     OFFSET(recommend_crf_max),
+     AV_OPT_TYPE_DOUBLE,
+     {.dbl = 51.0},
+     0.0,
+     51.0,
+     FLAGS},
+    {"recommend_passes",
+     "Number of probe passes (advisory; one pass is scored).",
+     OFFSET(recommend_passes),
+     AV_OPT_TYPE_INT,
+     {.i64 = 1},
+     1,
+     8,
+     FLAGS},
+    {NULL},
+};
+
+FRAMESYNC_DEFINE_CLASS(vmafx_tune, VMAFXContext, fs);
+
+static av_cold int tune_init(AVFilterContext *ctx)
+{
+    VMAFXContext *s = ctx->priv;
+    s->fs.on_event = do_vmafx;
+    s->subsample = 1;
+    if (s->recommend_crf_min >= s->recommend_crf_max) {
+        av_log(ctx, AV_LOG_ERROR,
+               "vmafx_tune: recommend_crf_min (%.1f) must be < recommend_crf_max (%.1f).\n",
+               s->recommend_crf_min, s->recommend_crf_max);
+        return AVERROR(EINVAL);
+    }
+    av_log(ctx, AV_LOG_INFO, "vmafx_tune: model=%s target_vmaf=%.1f crf_range=[%.1f, %.1f]\n",
+           s->model ? s->model : "(default)", s->recommend_target_vmaf, s->recommend_crf_min,
+           s->recommend_crf_max);
+    return 0;
+}
+
+/* The observed mean VMAF mapped to a CRF in [crf_min, crf_max]: the
+ * libvmaf_tune filter's piece-wise linear curve, 0.40 CRF per VMAF point
+ * around the middle of the range (tools/vmaf-tune sweeps real encodes for
+ * per-clip precision). */
+static double observed_to_crf(double observed, double target, double crf_min, double crf_max)
+{
+    const double crf_per_vmaf_pt = 0.40;
+    const double rec = (crf_min + crf_max) * 0.5 + (observed - target) * crf_per_vmaf_pt;
+    return FFMIN(FFMAX(rec, crf_min), crf_max);
+}
+
+static av_cold void tune_uninit(AVFilterContext *ctx)
+{
+    VMAFXContext *s = ctx->priv;
+    ff_framesync_uninit(&s->fs);
+    if (s->context && !s->failed && s->frame_cnt && s->n_models) {
+        VmafxPooledScore pooled = VMAFX_POOLED_SCORE_INIT;
+        VmafxError *error = NULL;
+        VmafxStatus st = s->finished ? VMAFX_OK : vmafx_flush(s->context, &error);
+        if (st == VMAFX_OK)
+            st = vmafx_score_pooled(s->context, s->models[0], VMAFX_POOL_MEAN, 0, s->frame_cnt - 1,
+                                    &pooled, &error);
+        if (st == VMAFX_OK)
+            av_log(ctx, AV_LOG_INFO,
+                   "recommended_crf=%.1f (target_vmaf=%.1f, observed_vmaf=%.2f, n_frames=%" PRIu64
+                   ")\n",
+                   observed_to_crf(pooled.value, s->recommend_target_vmaf, s->recommend_crf_min,
+                                   s->recommend_crf_max),
+                   s->recommend_target_vmaf, pooled.value, s->frame_cnt);
+        else
+            vmafx_fail(ctx, st, error, "vmafx_tune");
+    }
+    release_all(ctx);
+}
+
+const FFFilter ff_vf_vmafx_tune = {
+    .p.name = "vmafx_tune",
+    .p.description = NULL_IF_CONFIG_SMALL("Recommend a CRF for the next pass from its VMAF."),
+    .p.priv_class = &vmafx_tune_class,
+    .preinit = vmafx_tune_framesync_preinit,
+    .init = tune_init,
+    .uninit = tune_uninit,
     .activate = activate,
     .priv_size = sizeof(VMAFXContext),
     FILTER_INPUTS(vmafx_inputs),
