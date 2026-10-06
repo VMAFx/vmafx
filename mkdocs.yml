@@ -395,6 +395,7 @@ nav:
   - Server:
       - Controller: server/controller.md
       - gRPC service: server/grpc.md
+      - Server configuration: server/configuration.md
       - Worker node: server/node.md
       - Auth gateway: server/auth.md
       - Operator: server/operator.md
