@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2044: VMAFx option groups generate every scoring surface, and the scoring API is a versioned contract
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: maintainer (RC4 work package 8 brief); RC4 work package 8
+- **Deciders**: maintainer (RC4 work package 8 brief; popups 2026-10-06); RC4 work package 8
 - **Tags**: api, rc4, cli, mcp, grpc, openapi, ffmpeg, server, provenance
 
 ## Context
@@ -104,5 +104,7 @@ We extend the option groups and generate every scoring surface from them:
 ## References
 
 - `req` (RC4 work package 8 brief, 2026-10-05): "Option groups in the definition for every scoring option: model, feature, backend, device, threads, subsample, pool, precision / score format, output, window (`n_stats` / `n_stats_frames`), tiny model, masks, perceptual weight, provenance."; "default model = `VMAF_DEFAULT_MODEL_VERSION`, never a literal"; "Keep every existing CLI spelling (HISS-14); new names only additive."; "Device-target options as data (ADR-1880, RC5 fills the profile table): target size and scaling, ADM `nvd` / `rdh` reachable through option groups".
+- `Q` (maintainer popup 2026-10-06, location of the generated proto): "Accept, next to vmafx.proto (Recommended)".
+- `Q` (maintainer popup 2026-10-06, OpenAPI components spliced into the server spec): "Accept the splice (Recommended)".
 - `req` (RC4 work package index, rows added 2026-10-06): "Versioned scoring API contract: proto / OpenAPI from the definition, contract tests CLI = C API = server, provenance in every response; server mode + observability hardening" (#2155, #1251).
 - [ADR-1852](1852-vmafx-api-redesign.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [ADR-1169](1169-default-model-v1-0-16.md), [ADR-1117](1117-mcp-tiny-ai-feature-coverage.md), [Research-2158](../research/2158-vmafx-api-redesign.md) sections 3.4, 3.5, 4 and 5.2; issues #2155, #1251, #2138, #2142; PR #2185.
