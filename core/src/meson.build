@@ -2866,9 +2866,10 @@ libvmafx_sources = [
 
 # RC4 WP3 CUDA lane (ADR-2023): devices, imports, fences, GL interop and pools
 # of the VMAFx API on CUDA. In the library target, not in cuda_static_lib: the
-# CUDA common objects link into test programs without the VMAFx sources.
+# CUDA common objects link into test programs without the VMAFx sources. The
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
 if is_cuda_enabled
-    libvmaf_sources += [
+    libvmafx_sources += [
         cuda_dir + 'import_device.c',
         cuda_dir + 'import_fence.c',
         cuda_dir + 'import_frame.c',
