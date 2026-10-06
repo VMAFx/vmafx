@@ -262,6 +262,16 @@ test('test_metal_shader_build_contract',
     timeout : 30,
 )
 
+# The Objective-C++ Metal host files compile on macOS only: their braces and
+# anonymous namespaces are checked here on every host
+# (T-METAL-FLOAT-MOTION-NAMESPACE-2026-10-06). Device-free and compiler-free.
+test('test_metal_host_source_balance',
+    import('python').find_installation(),
+    args : files('test_metal_host_source_balance.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_cuda_parity_gate_default_run',
     import('python').find_installation(),
     args : files('test_cuda_parity_gate_default_run.py'),

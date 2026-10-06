@@ -136,6 +136,7 @@ typedef struct FloatMotionStateMetal {
 
     VmafDictionary *feature_name_dict;
 } FloatMotionStateMetal;
+} // namespace
 
 namespace {
 

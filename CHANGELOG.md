@@ -4562,6 +4562,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   macOS tester bundle runs `test_metal_iosurface_import_parity` for that.
 
 
+- **The macOS Metal build compiles again.** `float_motion_metal.mm` opened an
+  anonymous namespace it never closed, and every macOS Metal build stopped
+  there. A new device-free test checks the braces and namespaces of every
+  Metal host file on every platform.
+
+
 - **`integer_adm_metal` returns the CPU's `adm` scores again
   ([ADR-1806](docs/adr/1806-metal-kernels-host-replay.md)).** The first
   report of the macOS tester bundle on an Apple M4 Pro (issue #2118) showed

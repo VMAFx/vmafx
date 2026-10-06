@@ -10,6 +10,10 @@ search:
 ## Licence provenance of the Metal integer ADM host files (2026-10-06)
 
 `fix/master-red-licence-provenance`. `scripts/dev/relicense_provenance.toml` gains two `[ports]` entries and one `[not_ports]` line; `integer_adm_metal_host.c` / `.h` take the Netflix notice and the dual tag, `.config/lint-exceptions.d/spdx.toml` its header. An upstream sync that touches `integer_adm.c` keeps the entries. No other rebase impact.
+## Metal host files balance their anonymous namespaces (2026-10-06)
+
+`fix/metal-float-motion-namespace`. no rebase impact: fork-only Metal host code (`core/src/feature/metal/float_motion_metal.mm`)
+and a new device-free test, `core/test/test_metal_host_source_balance.py`.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
