@@ -35,6 +35,23 @@
 /* Host-memory imports copy planar planes instead of binding them. */
 #define VMAFX_TEST_FORCE_HOST_COPY (1u << 2)
 
+/* Sleep between two looks at an unsignalled host fence (fence.c), and the
+ * step of the virtual clock. */
+#define VMAFX_FENCE_POLL_NS 50000u
+
+/* The test clock: while it is virtual, a host fence wait reads this clock
+ * and each poll interval advances it instead of sleeping, so a test sees a
+ * 10 s wait bound hold without waiting 10 s. */
+void vmafx_test_set_virtual_clock(bool on);
+bool vmafx_test_clock_is_virtual(void);
+uint64_t vmafx_test_clock_now_ns(void);
+void vmafx_test_clock_advance(uint64_t ns);
+
+/* The host wait the import rule allowed itself before its retry, last time
+ * it retried (0 before the first). */
+void vmafx_test_note_retry_wait(uint64_t ns);
+uint64_t vmafx_test_last_retry_wait_ns(void);
+
 /* No residency override (vmafx_test_set_import_residency()). */
 #define VMAFX_TEST_RESIDENCY_OFF UINT32_MAX
 

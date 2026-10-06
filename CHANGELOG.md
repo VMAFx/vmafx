@@ -361,11 +361,12 @@ They are recorded in full, unedited, in
   (`vmafx_frame_pool_create`, `vmafx_frame_pool_acquire`,
   `vmafx_frame_pool_destroy`), admission that names every refusing extractor
   (`vmafx_context_admit`) and the import rule of decision D8
-  (`vmafx_context_import_frame`: one retry after a host wait, then a failure
-  that names the import). This build implements host memory and host fences
+  (`vmafx_context_import_frame`: one retry after a host wait of at most
+  `VmafxContextConfig.import_retry_wait_ns`, 10 seconds by default, then a
+  failure that names the import). This build implements host memory and host fences
   on the CPU device; the CUDA, SYCL, HIP and Metal imports follow behind the
   same functions. An imported frame scores bit for bit as the same frame
-  created on the host. ABI 0.1.2. See
+  created on the host. ABI 0.1.3. See
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 

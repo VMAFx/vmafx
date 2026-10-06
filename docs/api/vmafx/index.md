@@ -121,8 +121,9 @@ it as ADR-1852 decides: `libvmafx.so.1` (pkg-config `libvmafx`) with
 ## Contexts and logging
 
 `vmafx_context_create()` takes a `VmafxContextConfig` (or `NULL` for the
-defaults): log level, worker threads, subsampling, CPU and GPU masks, and a
-log callback with its user pointer.
+defaults): log level, worker threads, subsampling, CPU and GPU masks, a log
+callback with its user pointer, and the longest host wait of the import rule
+(`import_retry_wait_ns`, see [the import rule](#admission-and-the-import-rule)).
 
 - **With a log callback** the context receives, as one line each, every
   message the library raises for it at or below its `log_level`: on the
@@ -309,12 +310,20 @@ each refusing extractor and why.
 (decision D8 of [ADR-1852](../../adr/1852-vmafx-api-redesign.md)): it imports
 and admits the frame; a transient failure (`VMAFX_E_BUSY`, for example a CPU
 import whose acquire fence is not signalled yet, or `VMAFX_E_TIMEOUT`) is
-retried once after a host wait of at most 10 seconds on the acquire fence; a
-second failure, or any other, fails with one message that names the input
+retried once after a host wait on the acquire fence; a second failure, or
+any other, fails with one message that names the input
 (`main`, `reference`), backend, device, memory kind, pixel format, depth,
 size, every plane's modifier, the cause and the attempts, for example
 `main: backend cpu device 0, memory HOST, nv12 8-bit 176x144, modifiers 0x0
 0x100000000000002: plane 1: modifier ... (1 attempt; no host copy was made)`.
+
+The host wait lasts at most the context's `VmafxContextConfig.import_retry_wait_ns`:
+0 (what `VMAFX_CONTEXT_CONFIG_INIT` sets, and what an older caller's shorter
+struct gets) means 10 seconds; 1 ns to 600000000000 ns (10 minutes) is used
+as given; a larger value makes `vmafx_context_create()` fail with
+`VMAFX_E_RANGE` naming `config.import_retry_wait_ns`, rather than being
+clamped. Set it lower when a stalled producer should fail the pipeline
+sooner, higher when the producer's frames take longer than that to finish.
 
 ### Frame pools
 

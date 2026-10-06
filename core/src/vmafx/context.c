@@ -129,6 +129,13 @@ static VmafxStatus read_config(const VmafxReport *report, const VmafxContextConf
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "config.log_level",
                           "log level %u is not a VmafxLogLevel", (unsigned)cfg->log_level);
     }
+    if (cfg->import_retry_wait_ns > VMAFX_IMPORT_RETRY_WAIT_MAX_NS) {
+        return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_PARAMETER,
+                          "config.import_retry_wait_ns",
+                          "%llu ns; the import rule waits 1 ns to %llu ns (0: the default, 10 s)",
+                          (unsigned long long)cfg->import_retry_wait_ns,
+                          (unsigned long long)VMAFX_IMPORT_RETRY_WAIT_MAX_NS);
+    }
     return VMAFX_OK;
 }
 
@@ -170,6 +177,8 @@ static VmafxContext *new_context(const VmafxContextConfig *cfg)
     }
     context->log_callback = cfg->log_callback;
     context->log_user = cfg->log_user;
+    context->import_retry_wait_ns =
+        cfg->import_retry_wait_ns ? cfg->import_retry_wait_ns : VMAFX_IMPORT_RETRY_WAIT_DEFAULT_NS;
     context->sink.deliver = deliver_to_callback;
     context->sink.user = context;
     context->sink.level = vmafx_engine_log_level(cfg->log_level);

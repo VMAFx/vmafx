@@ -178,6 +178,42 @@ static char *test_context_use_device_order(void)
     return NULL;
 }
 
+/* Create and destroy a context whose import rule waits `ns`; the status of
+ * the create. */
+static VmafxStatus create_with_wait(uint64_t ns, uint32_t struct_size, VmafxError **error)
+{
+    VmafxContextConfig config = VMAFX_CONTEXT_CONFIG_INIT;
+    config.import_retry_wait_ns = ns;
+    config.struct_size = struct_size;
+    VmafxContext *context = NULL;
+    const VmafxStatus status = vmafx_context_create(&config, &context, error);
+    if (status == VMAFX_OK && vmafx_context_destroy(context, NULL) != VMAFX_OK) {
+        return VMAFX_E_INTERNAL;
+    }
+    return status;
+}
+
+/* The import rule's wait is 1 ns to 10 minutes; above is refused, never
+ * clamped; 0 (the initialiser's value) and a 0.1.1-sized config take the
+ * 10 s default (test_vmafx_import_fence measures the waits). */
+static char *test_import_wait_option_range(void)
+{
+    const uint32_t full = (uint32_t)sizeof(VmafxContextConfig);
+    const uint64_t max = 600000000000ull;
+    VmafxError *error = NULL;
+    mu_assert("1 ns", create_with_wait(1u, full, NULL) == VMAFX_OK);
+    mu_assert("10 minutes", create_with_wait(max, full, NULL) == VMAFX_OK);
+    mu_assert("above: refused",
+              fails(create_with_wait(max + 1u, full, &error), VMAFX_E_RANGE, &error,
+                    "config.import_retry_wait_ns", VMAFX_SUBJECT_PARAMETER));
+    mu_assert("0: the default", create_with_wait(0u, full, NULL) == VMAFX_OK);
+    mu_assert("0.1.1 config: the default",
+              create_with_wait(max + 1u,
+                               (uint32_t)offsetof(VmafxContextConfig, import_retry_wait_ns),
+                               NULL) == VMAFX_OK);
+    return NULL;
+}
+
 /* ---- Fences ------------------------------------------------------------------------------ */
 
 static char *test_host_fence_poll(void)
@@ -664,6 +700,7 @@ char *run_tests(void)
         MU_TEST(test_device_profile),
         MU_TEST(test_context_use_device),
         MU_TEST(test_context_use_device_order),
+        MU_TEST(test_import_wait_option_range),
         MU_TEST(test_host_fence_poll),
         MU_TEST(test_host_fence_signal),
         MU_TEST(test_none_fence),

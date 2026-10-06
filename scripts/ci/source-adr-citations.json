@@ -11529,9 +11529,12 @@
     },
     "1929": {
       "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/include/vmafx/context.h": 1,
         "core/src/compat/gcc/stdatomic.h": 1,
         "core/src/vmafx/fence.c": 1,
-        "core/src/vmafx/frame_import.c": 1
+        "core/src/vmafx/frame_import.c": 1,
+        "core/src/vmafx/internal.h": 1
       },
       "target": "1929-vmafx-device-frames-fences.md"
     },

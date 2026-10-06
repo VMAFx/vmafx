@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1929: VMAFx device frames, fences and the import rule: the shared contract the backend lanes implement
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: RC4 work package 3 (common lane); maintainer review on the draft pull request
+- **Deciders**: maintainer (popups 2026-10-06); RC4 work package 3 (common lane)
 - **Tags**: api, abi, rc4, gpu, cuda, sycl, hip, metal
 
 ## Context
@@ -80,8 +80,11 @@ We implement device frames and fences with these rules.
    lanes enqueue a device-side wait instead.
 8. **The import rule is one helper.** `vmafx_context_import_frame(context,
    device, desc, input, ...)` imports and runs `vmafx_context_admit()`; a
-   `VMAFX_E_BUSY` or `VMAFX_E_TIMEOUT` is retried once after a host wait of
-   at most 10 seconds on the acquire fence; a second failure, or any other,
+   `VMAFX_E_BUSY` or `VMAFX_E_TIMEOUT` is retried once after a host wait on
+   the acquire fence of at most the context's `import_retry_wait_ns`
+   (`VmafxContextConfig`, 1 ns to 10 minutes, a larger value refused with
+   `VMAFX_E_RANGE` rather than clamped; 0, the initialiser's value, is the
+   default of 10 seconds); a second failure, or any other,
    fails with one message naming the input, backend, device, memory kind,
    pixel format, depth, size, every plane's modifier, the cause and the
    number of attempts. It never clears the zero-copy rule.
@@ -123,12 +126,17 @@ We implement device frames and fences with these rules.
 | Poll answers `VMAFX_PENDING` (chosen) | A producer polling release fences gets no ERROR line per poll; matches ADR-1906 item 2 | A wait returns two "not yet" statuses depending on the timeout | Chosen |
 | Poll answers `VMAFX_E_TIMEOUT` | One status for "not signalled" | With a `NULL` error every poll writes an ERROR line (ADR-1906: no failure is silent) | Not chosen |
 | `VMAFX_IMPORT_ALLOW_COPY`, zero means zero copy (chosen) | A zeroed or `*_INIT` descriptor is the safe default without per-field initialisers | Differs in spelling from the design's `VMAFX_IMPORT_REQUIRE_ZERO_COPY` | Chosen: the generator's initialisers set only `struct_size` |
-| `VMAFX_IMPORT_REQUIRE_ZERO_COPY`, set by the initialiser | The design's spelling | Needs a per-field initialiser in the generator; a descriptor zeroed by hand silently allows copies | Not chosen |
+| `VMAFX_IMPORT_REQUIRE_ZERO_COPY` (the design's spelling, Research-2158 section 2.7), set by the initialiser | The design's name | Needs a per-field initialiser in the generator; a descriptor zeroed by hand silently allows copies | Not chosen (maintainer: "ALLOW_COPY opt-in") |
 | CPU import refuses an unsignalled acquire fence with `VMAFX_E_BUSY` (chosen) | The import never blocks; the D8 helper owns the one host wait | A raw import on the CPU needs the caller or the helper to wait | Chosen |
 | CPU import waits on the fence | A raw import just works | A blocking call with no timeout in the descriptor, or an arbitrary internal one | Not chosen |
 | CPU import keeps the fence and waits at submit | The import never blocks | Every reader of every context waits, and a semi-planar conversion at import would read unwritten planes | Not chosen |
 | D8 as one helper on the context (chosen) | One rule for every filter and caller, admission included | The helper needs the context to name refusing extractors | Chosen |
 | D8 left to each filter | No new function | Each filter writes the retry and the message; the rule drifts | Not chosen |
+| D8 wait: a context option, default 10 s (chosen) | A caller with a slow producer or a tight deadline sets it once; the default needs no code | One more config field | Chosen by the maintainer |
+| D8 wait: a library constant of 10 s | No API | A caller whose producer needs longer, or who must fail faster, cannot change it | Not chosen |
+| D8 wait: a parameter of each import call | Per frame | Every call site repeats the value; no caller needs it per frame | Not chosen |
+| D8 wait out of range: refused (chosen) | A typo (seconds for nanoseconds) fails at context creation, naming the field | A caller must know the bound | Chosen |
+| D8 wait out of range: clamped | Never fails | A wrong unit silently becomes 10 minutes | Not chosen |
 | Reuse the Metal row readers for the CPU conversion (chosen) | One reference implementation of de-interleave and shift (HISS-19) | A backend-named header used by the CPU path | Chosen; RC5 deduplication may rename it |
 
 ## Consequences
@@ -138,8 +146,8 @@ We implement device frames and fences with these rules.
   ordering and admission messages; an imported frame scores bit for bit as
   the host frame on the CPU device (fixture and synthetic 4K cases).
 - **Negative**: the CPU fence wait polls (50 microsecond sleeps on POSIX,
-  1 millisecond on Windows); the D8 wait bound (10 seconds) is a constant of
-  the library, not of the call; the test-only switches ship in the library
+  1 millisecond on Windows); the D8 wait bound is per context, not per call;
+  the test-only switches and the virtual test clock ship in the library
   (hidden, process-wide atomics).
 - **Neutral / follow-ups**: the backend lanes add device creation, their
   memory and fence kinds, the per-extractor admission answer and the
@@ -152,6 +160,9 @@ We implement device frames and fences with these rules.
 
 - [ADR-1829](1829-rc4-zero-copy-import.md), [ADR-1852](1852-vmafx-api-redesign.md) decision D8, ADR-1880 (PR #2185), [ADR-1906](1906-vmafx-core-api-semantics.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-1679](1679-metal-iosurface-biplanar-import.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [Research-2158](../research/2158-vmafx-api-redesign.md) section 2.7.
 - `Q` (maintainer popup 2026-10-05, D8): "One retry, then fail named (Recommended)".
+- `Q` (maintainer popup 2026-10-06, zero-copy flag): "ALLOW_COPY opt-in (Recommended)".
+- `Q` (maintainer popup 2026-10-06, D8 wait): "10 s default, per-context option (Recommended)".
+- `Q` (maintainer popup 2026-10-06, poll and CPU acquire statuses): "Accept both (Recommended)".
 - `req` (RC4 work package 3 brief, 2026-10-06): "The D8 rule: one retry after a host wait on the acquire fence, then fail naming backend / input / format / plane / refusing extractors, never a silent host copy. Provide a test-only host-copy counter the backend lanes assert stays 0."
 - `req` (same brief): "Fence kinds cover CUDA/HIP/SYCL events, sync_file, Metal shared event and Win32 shared handles, even though only HOST and NONE are implemented in this CPU lane; backend lanes fill the rest."
 - Tests: `core/test/test_vmafx_import_api.c`, `test_vmafx_import_bitexact.c`, `test_vmafx_import_fence.c`.

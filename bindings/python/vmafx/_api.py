@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 2)
+ABI_VERSION = (0, 1, 3)
 
 
 class Status(enum.IntEnum):
@@ -224,6 +224,7 @@ VmafxContextConfig._fields_ = (
     ("gpumask", ctypes.c_uint64),
     ("log_callback", VmafxLogCallback),
     ("log_user", ctypes.c_void_p),
+    ("import_retry_wait_ns", ctypes.c_uint64),
 )
 
 VmafxProvenance._fields_ = (
@@ -369,7 +370,7 @@ VmafxModelSetScore._fields_ = (
 
 LAYOUT = {
     VmafxContextConfig: (
-        48,
+        56,
         (
             ("struct_size", 0),
             ("log_level", 4),
@@ -379,6 +380,7 @@ LAYOUT = {
             ("gpumask", 24),
             ("log_callback", 32),
             ("log_user", 40),
+            ("import_retry_wait_ns", 48),
         ),
     ),
     VmafxProvenance: (
@@ -1164,6 +1166,7 @@ class ContextConfig:
     n_subsample: int
     cpumask: int
     gpumask: int
+    import_retry_wait_ns: int
 
     @classmethod
     def from_c(cls, raw: VmafxContextConfig) -> ContextConfig:
@@ -1173,6 +1176,7 @@ class ContextConfig:
             n_subsample=raw.n_subsample,
             cpumask=raw.cpumask,
             gpumask=raw.gpumask,
+            import_retry_wait_ns=raw.import_retry_wait_ns,
         )
 
     def to_c(self) -> VmafxContextConfig:
@@ -1183,6 +1187,7 @@ class ContextConfig:
         raw.n_subsample = self.n_subsample
         raw.cpumask = self.cpumask
         raw.gpumask = self.gpumask
+        raw.import_retry_wait_ns = self.import_retry_wait_ns
         return raw
 
 

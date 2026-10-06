@@ -53,7 +53,9 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(caught.exception.errno, -errno.ENOENT)
 
     def test_config_refused(self) -> None:
-        config = vmafx.ContextConfig(log_level=99, n_threads=0, n_subsample=0, cpumask=0, gpumask=0)
+        config = vmafx.ContextConfig(
+            log_level=99, n_threads=0, n_subsample=0, cpumask=0, gpumask=0, import_retry_wait_ns=0
+        )
         with self.assertRaises(vmafx.VmafxError) as caught:
             self.library.context(config)
         self.assertEqual(caught.exception.subject, "config.log_level")
