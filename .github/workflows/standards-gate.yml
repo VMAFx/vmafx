@@ -178,6 +178,11 @@ jobs:
       - name: Test lefthook pre-commit in a scratch clone
         run: |
           git -c core.autocrlf=false clone --shared . "$RUNNER_TEMP/scratch"
+          # A clone maps the checkout's local branches to origin/*. A pull-request
+          # checkout is a detached merge commit with no local master, so the
+          # always-run hooks that resolve origin/master failed on every PR. Copy the
+          # checkout's remote-tracking refs into the scratch clone.
+          git -C "$RUNNER_TEMP/scratch" fetch --no-tags "$PWD" "+refs/remotes/origin/*:refs/remotes/origin/*"
           cd "$RUNNER_TEMP/scratch" || exit 1
           git config user.name "CI Worker"
           git config user.email "ci@example.invalid"

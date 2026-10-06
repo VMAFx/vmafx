@@ -62533,3 +62533,13 @@ either function keeps the scope. The test programs that compile `dict.cpp` or `o
 on their own (`test_dict`, `test_opt`, `test_feature`) link `thread_locale.cpp`.
 `test_locale_handling` fails when either scope is missing. No score, public API or
 FFmpeg patch impact.
+
+## The Windows hooks job copies origin refs into its scratch clone (`fix/windows-hooks-scratch-origin`)
+
+`.github/workflows/standards-gate.yml` `windows-hooks` runs the pre-commit hooks in a
+`git clone --shared` scratch copy and then fetches the checkout's
+`refs/remotes/origin/*` into it, because hooks such as `check-research-digest-ids`
+resolve `origin/master` and a pull-request checkout has no local `master`
+(`T-CI-WINDOWS-HOOKS-SCRATCH-NO-ORIGIN-MASTER-2026-10-07`). Keep the fetch if the
+step is reworked; `scripts/ci/tests/test_windows_hooks_scratch_origin.py` fails
+without it. No score, public API or build change.
