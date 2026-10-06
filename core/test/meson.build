@@ -8958,11 +8958,14 @@ vmafx_vulkan_ffmpeg = vmafx_vulkan_ffmpeg_deps[0].found() and vmafx_vulkan_ffmpe
     and vmafx_vulkan_ffmpeg_deps[2].found() \
     and cc.has_header('libavutil/hwcontext_vulkan.h', dependencies : vmafx_vulkan_ffmpeg_deps)
 foreach vmafx_vulkan_lane : vmafx_vulkan_lanes
-    foreach vmafx_vulkan_test : [['', 300], ['_bitexact', 1800], ['_fence', 300]]
+    foreach vmafx_vulkan_test : [
+        ['', 'test_vmafx_import_vulkan.c', 300],
+        ['_bitexact', 'test_vmafx_import_vulkan_bitexact.c', 1800],
+        ['_fence', 'test_vmafx_import_vulkan_fence.c', 300],
+    ]
         vmafx_vulkan_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + vmafx_vulkan_test[0]
         vmafx_vulkan_exe = executable(vmafx_vulkan_name,
-            ['test.c', 'test_vmafx_import_vulkan' + vmafx_vulkan_test[0] + '.c',
-             'vmafx_vulkan_producer.c'] + vmafx_vulkan_lane[3],
+            ['test.c', vmafx_vulkan_test[1], 'vmafx_vulkan_producer.c'] + vmafx_vulkan_lane[3],
             include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
             link_with : vmafx_static_link,
             c_args : vmaf_cflags_common + vmafx_test_dirs + [
@@ -8977,7 +8980,7 @@ foreach vmafx_vulkan_lane : vmafx_vulkan_lanes
         test(vmafx_vulkan_name, vmafx_vulkan_exe,
             suite : ['gpu', vmafx_vulkan_lane[0], 'vulkan'],
             is_parallel : false,
-            timeout : vmafx_vulkan_test[1])
+            timeout : vmafx_vulkan_test[2])
     endforeach
     if vmafx_vulkan_ffmpeg
         vmafx_vulkan_ffmpeg_name = 'test_vmafx_import_vulkan_' + vmafx_vulkan_lane[0] + '_ffmpeg'

@@ -447,6 +447,7 @@ int vmafx_cuda_vulkan_release(VmafxCudaFrame *cf)
     }
     cf->vk = NULL;
     VmafxCudaDevice *const dev = cf->dev;
+    assert(dev != NULL && vk->n_signal <= 3u && vk->n_mem <= 3u);
     CudaFunctions *const f = dev->state.f;
     int err = signal_semaphores(dev, vk, dev->state.str);
     CUresult res = f->cuEventCreate(&vk->done, CU_EVENT_DISABLE_TIMING);
