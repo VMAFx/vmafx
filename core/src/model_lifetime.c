@@ -45,6 +45,8 @@ void vmaf_model_destroy(VmafModel *model)
         (void)vmaf_ref_close(model->owners);
     free(model->path);
     free(model->name);
+    free(model->source);
+    free(model->overrides);
     svm_free_and_destroy_model(&(model->svm));
     /* Walk the full feature_cap, not min(feature_cap, n_features).
      *

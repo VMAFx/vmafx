@@ -50,6 +50,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string_view>
 
 /* These internal headers have no extern "C" guards of their own; wrap them
@@ -64,6 +65,7 @@ extern "C" {
 
 #include "output.h"
 #include "libvmaf/libvmaf.h"
+#include "vmafx/report_fragments.h"
 
 /* Library default matches Netflix's pre-fork output exactly so consumers of
  * vmaf_write_output_with_format(..., NULL) get golden-compatible numbers
@@ -265,6 +267,18 @@ void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
     xml_write_aggregate_metrics(fc, outfile, sf);
 }
 
+/* RC4 WP5 (#2142, ADR-2073): the provenance record as one element. */
+void xml_write_provenance(VmafContext *vmaf, FILE *outfile)
+{
+    char *const element = vmafx_report_xml_element(vmaf);
+    if (element) {
+        (void)std::fputs(element, outfile);
+    } else {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "the report carries no provenance record\n");
+    }
+    std::free(element);
+}
+
 } // namespace
 
 [[nodiscard]] int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
@@ -289,6 +303,7 @@ void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
 
     xml_write_frames(fc, outfile, subsample, sf);
     xml_write_pooled_and_aggregate(vmaf, fc, outfile, pic_cnt, sf);
+    xml_write_provenance(vmaf, outfile);
 
     (void)std::fprintf(outfile, "</VMAF>\n");
 
@@ -452,7 +467,24 @@ void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *s
         }
         (void)std::fprintf(outfile, "%s", i < fc->aggregate_vector.cnt - 1 ? "," : "");
     }
-    (void)std::fprintf(outfile, "\n  }\n");
+    (void)std::fprintf(outfile, "\n  }");
+}
+
+/* RC4 WP5 (#2142, ADR-2073): the score format and the provenance record, with
+ * the backend receipt (`backend_used`, `feature_backends`, ADR-1359) the CLI
+ * used to splice into the file. The format is printf text without quotes or
+ * backslashes, so it needs no escape. */
+void json_write_provenance(VmafContext *vmaf, FILE *outfile, const char *sf)
+{
+    (void)std::fprintf(outfile, ",\n  \"score_format\": \"%s\"", sf);
+    char *const members = vmafx_report_json_members(vmaf);
+    if (members) {
+        (void)std::fprintf(outfile, ",\n%s", members);
+    } else {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "the report carries no provenance record\n");
+    }
+    std::free(members);
+    (void)std::fprintf(outfile, "\n");
 }
 
 } // namespace
@@ -493,6 +525,7 @@ void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *s
     json_write_frames(fc, outfile, subsample, sf);
     json_write_pooled(vmaf, fc, outfile, pic_cnt, sf);
     json_write_aggregate(fc, outfile, sf);
+    json_write_provenance(vmaf, outfile, sf);
 
     (void)std::fprintf(outfile, "}\n");
 

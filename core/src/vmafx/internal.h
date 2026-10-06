@@ -25,6 +25,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <pthread.h>
+
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 #include "libvmaf/picture.h"
@@ -91,6 +93,30 @@ struct VmafxFrame {
     VmafxFramePool *pool;
 };
 
+/* "sha256:" + 64 hex digits + NUL (RC4 WP5 digests). */
+#define VMAFX_DIGEST_TEXT_SIZE 72u
+
+/* One caller annotation of a provenance record (vmafx_context_annotate()). */
+typedef struct VmafxAnnotationEntry {
+    char *key;
+    char *value;
+} VmafxAnnotationEntry;
+
+/* The provenance state of a context (provenance.c, RC4 WP5): what the caller
+ * added, and the text of the last record query, which the record's strings
+ * point into. `lock` serialises queries, which may run on any thread. */
+typedef struct VmafxProvenanceState {
+    pthread_mutex_t lock;
+    bool lock_ready;
+    VmafxAnnotationEntry *annotations;
+    uint32_t n_annotations;
+    uint32_t annotations_capacity;
+    char encode_record[VMAFX_DIGEST_TEXT_SIZE]; /* "" when none */
+    char digest[VMAFX_DIGEST_TEXT_SIZE];
+    char scores_digest[VMAFX_DIGEST_TEXT_SIZE];
+    char *json; /* last vmafx_context_provenance_json() */
+} VmafxProvenanceState;
+
 /* References a context holds until it is destroyed: one list per handle type. */
 typedef struct VmafxHeld {
     void **items;
@@ -102,14 +128,15 @@ struct VmafxContext {
     VmafContext *engine;
     VmafxLogCallback log_callback;
     void *log_user;
-    VmafLogSink sink;              /* delivers to log_callback; used when it is set */
-    VmafxHeld models;              /* VmafxModel * (ADR-1755) */
-    VmafxHeld model_sets;          /* VmafxModelSet * */
-    VmafxDevice *device;           /* vmafx_context_use_device(); NULL: the CPU, no device held */
-    uint64_t import_retry_wait_ns; /* the import rule's host wait, resolved (never 0) */
-    bool have_frame;               /* a frame was submitted: the fields below are set */
-    uint64_t last_index;           /* indices increase strictly (ADR-0152) */
-    VmafxFrameDesc first_desc;     /* every frame keeps the first frame's geometry */
+    VmafLogSink sink;                /* delivers to log_callback; used when it is set */
+    VmafxHeld models;                /* VmafxModel * (ADR-1755) */
+    VmafxHeld model_sets;            /* VmafxModelSet * */
+    VmafxDevice *device;             /* vmafx_context_use_device(); NULL: the CPU, no device held */
+    uint64_t import_retry_wait_ns;   /* the import rule's host wait, resolved (never 0) */
+    bool have_frame;                 /* a frame was submitted: the fields below are set */
+    uint64_t last_index;             /* indices increase strictly (ADR-0152) */
+    VmafxFrameDesc first_desc;       /* every frame keeps the first frame's geometry */
+    VmafxProvenanceState provenance; /* RC4 WP5 */
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink
@@ -240,5 +267,36 @@ enum VmafPixelFormat vmafx_engine_pixel_format(uint32_t pix_fmt);
 
 /* A model set's engine collection. */
 VmafModelCollection *vmafx_model_set_engine(const VmafxModelSet *set);
+
+/* ---- Provenance (provenance*.c, RC4 WP5) ---------------------------------- */
+
+/* Set up / release a context's provenance state: 0 or a negative errno. */
+int vmafx_provenance_init(VmafxProvenanceState *state);
+void vmafx_provenance_release(VmafxProvenanceState *state);
+
+/* The build description of the library (provenance_build.c). */
+typedef struct VmafxBuildInfo {
+    const char *commit;
+    const char *compiler;
+    const char *flags;
+    const char *fp_policy;
+    const char *backends;
+    const char *arch;
+    uint32_t rust_twins;
+} VmafxBuildInfo;
+
+/* This library's build description; `build_id` its digest (both static). */
+const VmafxBuildInfo *vmafx_build_info(void);
+const char *vmafx_build_id(void);
+/* `sha256:` and the SHA-256 of the canonical JSON of `info` (commit and arch
+ * excluded) into `out`: 0, or -ENOMEM. */
+int vmafx_build_id_of(const VmafxBuildInfo *info, char out[VMAFX_DIGEST_TEXT_SIZE]);
+/* Highest SIMD level of the CPU flags in effect (`avx512`, `neon`, `scalar`). */
+const char *vmafx_simd_level(void);
+
+/* Text of a VmafxPixelFormat / VmafxFeatureSource value as the proto JSON
+ * mapping names it ("yuv420p", "extractor"; "unknown"). */
+const char *vmafx_pixel_format_name(uint32_t pix_fmt);
+const char *vmafx_feature_source_name(uint32_t source);
 
 #endif /* VMAFX_INTERNAL_H */

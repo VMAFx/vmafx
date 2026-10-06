@@ -157,6 +157,18 @@ backend within it.
   uses the row readers of `core/src/metal/iosurface_layout.h`: a sync that
   changes them keeps `test_vmafx_import_bitexact` and
   `test_metal_iosurface_layout` passing together.
+- **Provenance record in the library ([ADR-2073](../adr/2073-vmafx-provenance-record.md))**:
+  the engine's report writers (`core/src/output.cpp`) embed the record and the
+  backend receipt; the CLI no longer edits its report afterwards, so a rebase
+  must not bring back `amend_cli_backend_receipt()`. The feature collector
+  records the producer of every feature vector from the producer the engine
+  installs around each extractor call, prediction and import
+  (`vmaf_feature_producer_swap()`, `vmaf_feature_collector_append_from()`);
+  every engine loader of a model ends in `vmaf_model_stamp_loaded()`. The
+  record's canonical form (RFC 8785 subset) and what `digest` covers are
+  fixed by the ADR. `core/src/vmafx/exactness_gen.c` is generated from
+  `scripts/ci/exact_twins.d` by `make docs-fragments-write`. See
+  [core/src/AGENTS.d/vmafx-provenance.md](../../core/src/AGENTS.d/vmafx-provenance.md).
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

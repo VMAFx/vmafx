@@ -17,6 +17,7 @@
 #define VMAFX_ENGINE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
@@ -95,5 +96,20 @@ unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);
  * 0 and its name and backend, or -ENOENT (name NULL, backend UNKNOWN). */
 int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
                                  const char **extractor, enum VmafBackend *backend);
+
+/* Nanoseconds of a monotonic clock (core/src/vmafx/fence.c; the test clock
+ * while it is virtual). */
+uint64_t vmafx_monotonic_ns(void);
+
+/* RC4 WP5 (#2142): the run a context made, for the provenance record. */
+typedef struct VmafEngineRunInfo {
+    VmafConfiguration cfg;
+    unsigned w, h, bpc;
+    enum VmafPixelFormat pix_fmt;
+    unsigned pic_cnt;    /* frames accepted */
+    uint64_t elapsed_ns; /* first frame to flush (to now before it); 0 without a frame */
+} VmafEngineRunInfo;
+
+int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out);
 
 #endif /* VMAFX_ENGINE_H */

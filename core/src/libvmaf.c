@@ -196,6 +196,10 @@ typedef struct VmafContext {
     } pic_params;
     unsigned pic_cnt;
     bool flushed;
+    /* RC4 WP5 (#2142): monotonic time of the first accepted frame and of the
+     * flush, for the provenance record's elapsed_ns; 0 until they happen. */
+    uint64_t first_frame_ns;
+    uint64_t flush_ns;
     /* Active compute backend — set by vmaf_<backend>_import_state().
      * Zero-initialised (VMAF_BACKEND_UNKNOWN) for CPU-only contexts. */
     enum VmafBackend active_backend;
@@ -1387,9 +1391,9 @@ static int dnn_append_scalar_outputs(VmafContext *vmaf, const VmafOrtTensorOut *
             return -EINVAL;
     }
     for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
-        int rc = vmaf_feature_collector_append(vmaf->feature_collector,
-                                               vmaf->dnn.output_feature_names[i],
-                                               (double)outputs[i].data[0], index);
+        int rc = vmaf_feature_collector_append_from(
+            vmaf->feature_collector, vmaf->dnn.output_feature_names[i], (double)outputs[i].data[0],
+            index, VMAF_FEATURE_SOURCE_MODEL, "tiny_model");
         if (rc < 0)
             return rc;
     }
@@ -2202,7 +2206,8 @@ int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name
     if (!feature_name)
         return -EINVAL;
 
-    return vmaf_feature_collector_append(vmaf->feature_collector, feature_name, value, index);
+    return vmaf_feature_collector_append_from(vmaf->feature_collector, feature_name, value, index,
+                                              VMAF_FEATURE_SOURCE_IMPORTED, NULL);
 }
 
 /* ---- Pelorus perceptual spatial-pooling weighting (ADR-1118) ------------- *
@@ -3071,8 +3076,12 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
          * detect_leaks=1; root cause of ADR-1073 residual failure). */
         fex_ctx->is_initialized = true;
         int flush_err = 0;
+        /* RC4 WP5: scores the flush writes are this extractor's. */
+        const VmafFeatureProducer previous = vmaf_feature_producer_swap(
+            (VmafFeatureProducer){VMAF_FEATURE_SOURCE_EXTRACTOR, fex->name, fex_ctx->opts_dict});
         while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
             ;
+        (void)vmaf_feature_producer_swap(previous);
         if (flush_err < 0)
             err |= flush_err;
     }
@@ -3281,8 +3290,10 @@ static int flush_context(VmafContext *vmaf)
     /* Only mark the context terminally flushed once every backend flush
      * succeeded.  On any error the caller may retry vmaf_read_pictures(NULL,
      * NULL) to re-run the flush pass. */
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        vmaf->flush_ns = vmafx_monotonic_ns();
+    }
     return err;
 }
 
@@ -4099,6 +4110,8 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
     /* Increment only after successful validation so a retry on transient
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
+    if (!vmaf->first_frame_ns)
+        vmaf->first_frame_ns = vmafx_monotonic_ns();
 
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
@@ -4220,6 +4233,8 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* Increment only after queue_wait succeeds so a retry on error does not
      * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
     vmaf->pic_cnt++;
+    if (!vmaf->first_frame_ns)
+        vmaf->first_frame_ns = vmafx_monotonic_ns();
 
     // Advance double-buffer slot and frame counter for the zero-copy VA import path.
     // Mirrors shared_frame_upload:597-599: cur_compute = cur_upload; cur_upload = 1-cur_upload.
@@ -4277,8 +4292,10 @@ int vmaf_flush_sycl(VmafContext *vmaf)
         vmaf_sycl_print_timing(vmaf->sycl.state);
     }
 
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        vmaf->flush_ns = vmafx_monotonic_ns();
+    }
     return err;
 }
 #endif
@@ -4817,6 +4834,16 @@ int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
         return -EINVAL;
     *extractor = NULL;
     *backend = VMAF_BACKEND_UNKNOWN;
+    /* RC4 WP5: the collector recorded who wrote the vector (option-decorated
+     * names included); model and imported scores have no extractor. */
+    const FeatureVector *const fv = vmaf_feature_collector_find(vmaf->feature_collector, feature);
+    if (fv && fv->source == VMAF_FEATURE_SOURCE_EXTRACTOR && fv->producer) {
+        *extractor = fv->producer;
+        *backend = vmaf_engine_extractor_backend(fv->producer);
+        return 0;
+    }
+    if (fv && fv->source != VMAF_FEATURE_SOURCE_UNKNOWN)
+        return -ENOENT;
     const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe->cnt; i++) {
         const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
@@ -4844,6 +4871,24 @@ enum VmafBackend vmaf_engine_extractor_backend(const char *extractor)
     const VmafFeatureExtractor *fex =
         extractor ? vmaf_get_feature_extractor_by_name(extractor) : NULL;
     return fex ? fex_flags_backend(fex->flags) : VMAF_BACKEND_UNKNOWN;
+}
+
+int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
+{
+    if (!vmaf || !out)
+        return -EINVAL;
+    memset(out, 0, sizeof(*out));
+    out->cfg = vmaf->cfg;
+    out->w = vmaf->pic_params.w;
+    out->h = vmaf->pic_params.h;
+    out->bpc = vmaf->pic_params.bpc;
+    out->pix_fmt = vmaf->pic_params.pix_fmt;
+    out->pic_cnt = vmaf->pic_cnt;
+    if (vmaf->first_frame_ns) {
+        const uint64_t end = vmaf->flush_ns ? vmaf->flush_ns : vmafx_monotonic_ns();
+        out->elapsed_ns = end > vmaf->first_frame_ns ? end - vmaf->first_frame_ns : 0u;
+    }
+    return 0;
 }
 
 bool vmaf_engine_is_flushed(const VmafContext *vmaf)

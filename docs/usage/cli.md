@@ -109,11 +109,13 @@ list from the same source.
 | `--precision` | | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | `legacy` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
 | `--output` | `-o` | string | | Report file. |
 | `--xml`, `--json`, `--csv`, `--sub` | | `json` \| `xml` \| `csv` \| `sub` | `xml` | Report format; json and xml carry the backend receipt. |
+| `--provenance-sidecar` | | bool | `false` | Also write the provenance record to &lt;output&gt;.provenance.json; CSV and SUB reports carry it nowhere else (RC4 WP5). |
 | `--netflix-compat`, `--netflix_compat` | | bool | `false` | Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model. |
 | `--quiet` | `-q` | bool | `false` | Disable the FPS meter when run in a terminal. |
 | `--version` | `-v` | bool | `false` | Print the version and exit. |
 | `--list-backends` | | bool | `false` | Print the scoring backends this binary was built with and which of them initialise here, as JSON, and exit (ADR-1874). |
 | `--help` | | bool | `false` | Print this message and exit. |
+| `--verify-provenance` | | string | | Re-run the configuration a JSON report records and compare every configuration field and score bit for bit; exits nonzero naming the first difference (RC4 WP5). |
 
 <!-- END GENERATED: vmafx-api cli options -->
 
@@ -397,18 +399,19 @@ into the report.
 
 ### Backend receipt in JSON output
 
-A JSON report ends with three top-level keys that say where the features were
-computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)) and which build
-computed them ([ADR-2044](../adr/2044-vmafx-option-groups-scoring-contract.md)):
+A JSON report ends with the score format, the provenance record of the run and
+two keys that say where the features were computed
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); the library writes all
+of them ([ADR-2073](../adr/2073-vmafx-provenance-record.md)):
 
 ```json
-"backend_used": "sycl",
+"score_format": "%.17g",
+"provenance": {"abi_major":0,"abi_minor":1,"abi_patch":5,"active_backend":"sycl", ...},
 "feature_backends": [
   {"extractor": "ciede_sycl", "backend": "sycl"},
   {"extractor": "brisque", "backend": "cpu"}
 ],
-"provenance": {"abi_major": 0, "abi_minor": 1, "abi_patch": 4, "active_backend": "sycl",
-               "n_extractors": 2, "version": "v1.0.0-rc.4"}
+"backend_used": "sycl"
 ```
 
 - **`backend_used`** is `cuda`, `sycl`, `hip` or `metal` when at least one
@@ -419,15 +422,30 @@ computed them ([ADR-2044](../adr/2044-vmafx-option-groups-scoring-contract.md)):
   registration order, with the backend it ran on. It includes the extractors a
   model needs and reflects the CPU replacements made after the first frame, so
   a model feature that fell back to the CPU appears as a `cpu` entry.
-
-- **`provenance`** is the library's provenance record of the run: the ABI
-  version of the library, the backend imported into the context, the number of
-  registered extractors and the build version. The scoring server copies it
-  into every response ([scoring API contract](../server/api-contract.md)).
+- **`provenance`** is the library's provenance record of the run: library,
+  ABI and build, device, options, frames, models with their SHA-256, the
+  producer of every feature, the command line, and the digests that let
+  `--verify-provenance` check the report. [Score provenance](provenance.md)
+  documents every field. The scoring server copies it into every response
+  ([scoring API contract](../server/api-contract.md)).
+- **`score_format`** is the printf format the scores were written with.
 
 A run mixed device twins and CPU extractors when `backend_used` names a device
-and `feature_backends` holds at least one `cpu` entry. XML, CSV and SUB output
-carry none of the three keys.
+and `feature_backends` holds at least one `cpu` entry. XML reports carry the
+record as a `<provenance>` element; CSV and SUB reports carry none of these
+keys, and `--provenance-sidecar` writes the record next to them as
+`<output>.provenance.json`.
+
+### Verifying a report
+
+```bash
+vmaf --verify-provenance report.json
+```
+
+re-runs the command line a JSON report recorded and compares every
+configuration field and every score bit for bit; it exits 0 on a match, 1
+naming the first difference, and 2 when the check cannot run. See
+[Score provenance](provenance.md#quick-start).
 
 ### Score precision
 

@@ -19,7 +19,7 @@ One score and the extractor that produced it. Size 40 bytes, alignment 8. Since 
 | `index` | `uint64_t index` | 8 | 0.1 | Frame index. |
 | `value` | `double value` | 16 | 0.1 | Score. |
 | `feature` | `const char *feature` | 24 | 0.1 | Feature name as requested. |
-| `extractor` | `const char *extractor` | 32 | 0.1 | Registered extractor that declares the feature, or NULL (imported scores, option-decorated names until WP5). |
+| `extractor` | `const char *extractor` | 32 | 0.1 | Registered extractor that wrote the feature (option-decorated names included, RC4 WP5), or NULL (imported and model scores); vmafx_feature_provenance() describes it. |
 
 Initialise with `VMAFX_SCORE_INIT`.
 

@@ -25,12 +25,14 @@
 
 #include <libvmaf/model.h>
 
+#include "compat/path_utf8.h"
 #include "config.h"
 #include "feature/feature_extractor.h"
 #include "log.h"
 #include "model.h"
 #include "read_json_model.h"
 #include "svm.h"
+#include "vmafx/sha256.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
@@ -207,6 +209,91 @@ int vmaf_model_builtin_data(const char *version, const char **data, size_t *len)
     return -ENOENT;
 }
 
+/* Bound of a model file hashed by vmaf_model_stamp() (HISS-02): far above any
+ * model the fork ships (the largest is a few MB). */
+#define MODEL_STAMP_MAX_BYTES (1ull << 30)
+#define MODEL_STAMP_CHUNK 65536u
+
+/* SHA-256 of the file at `path` into `hex`: 0 or a negative errno. */
+static int model_hash_file(const char *path, char hex[VMAFX_SHA256_HEX_CHARS])
+{
+    FILE *const file = vmaf_fopen_utf8(path, "rb");
+    if (!file)
+        return -EIO;
+    unsigned char *const chunk = malloc(MODEL_STAMP_CHUNK);
+    if (!chunk) {
+        (void)fclose(file);
+        return -ENOMEM;
+    }
+    VmafxSha256 sha;
+    vmafx_sha256_init(&sha);
+    unsigned long long total = 0;
+    size_t got = 0;
+    do {
+        got = fread(chunk, 1, MODEL_STAMP_CHUNK, file);
+        vmafx_sha256_update(&sha, chunk, got);
+        total += got;
+    } while (got == MODEL_STAMP_CHUNK && total < MODEL_STAMP_MAX_BYTES);
+    const int failed = ferror(file) || total >= MODEL_STAMP_MAX_BYTES;
+    free(chunk);
+    const int closed = fclose(file);
+    if (failed || closed != 0)
+        return -EIO;
+    vmafx_sha256_final_hex(&sha, hex);
+    return 0;
+}
+
+int vmaf_model_stamp(VmafModel *model, const char *source, const void *data, size_t len,
+                     uint64_t flags)
+{
+    if (!model || !source)
+        return -EINVAL;
+    char hex[VMAFX_SHA256_HEX_CHARS];
+    if (data) {
+        vmafx_sha256_hex(data, len, hex);
+    } else {
+        const int err = model_hash_file(source, hex);
+        if (err)
+            return err;
+    }
+    const size_t source_len = strlen(source);
+    char *const copy = malloc(source_len + 1);
+    if (!copy)
+        return -ENOMEM;
+    memcpy(copy, source, source_len + 1);
+    free(model->source);
+    model->source = copy;
+    memcpy(model->sha256, hex, sizeof(model->sha256));
+    model->load_flags = flags;
+    return 0;
+}
+
+int vmaf_model_stamp_loaded(int err, VmafModel **model, VmafModelCollection **collection,
+                            const VmafModelConfig *cfg, const char *source, const void *data,
+                            size_t len)
+{
+    if (err)
+        return err;
+    const uint64_t flags = cfg ? (uint64_t)cfg->flags : 0u;
+    err = vmaf_model_stamp(*model, source, data, len, flags);
+    const unsigned members = collection && *collection ? (*collection)->cnt : 0u;
+    for (unsigned i = 0; !err && i < members; i++) {
+        VmafModel *const member = (*collection)->model[i];
+        err = member == *model ? 0 : vmaf_model_stamp(member, source, data, len, flags);
+    }
+    if (!err)
+        return 0;
+    /* The lead model is not a member of the collection (read_json_model.cpp,
+     * model_collection_read_one()): release both. */
+    if (collection && *collection) {
+        vmaf_model_collection_destroy(*collection);
+        *collection = NULL;
+    }
+    vmaf_model_destroy(*model);
+    *model = NULL;
+    return err;
+}
+
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
     /* `version` reaches strcmp unprotected; a NULL caller would dereference
@@ -229,8 +316,10 @@ int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version
         return -EINVAL;
     }
 
-    return vmaf_read_json_model_from_buffer(model, cfg, built_in_model->data,
-                                            *built_in_model->data_len);
+    const int err = vmaf_read_json_model_from_buffer(model, cfg, built_in_model->data,
+                                                     *built_in_model->data_len);
+    return vmaf_model_stamp_loaded(err, model, NULL, cfg, version, built_in_model->data,
+                                   *built_in_model->data_len);
 }
 
 char *vmaf_model_generate_name(VmafModelConfig *cfg)
@@ -251,6 +340,7 @@ char *vmaf_model_generate_name(VmafModelConfig *cfg)
 int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg, const char *path)
 {
     int err = vmaf_read_json_model_from_path(model, cfg, path);
+    err = vmaf_model_stamp_loaded(err, model, NULL, cfg, path, NULL, 0);
     if (err) {
         /* Demote to WARNING: the CLI falls back to vmaf_model_collection_load_from_path
          * when this call fails, so a bootstrap/collection JSON (e.g. vmaf_b_v0.6.3.json)
@@ -265,6 +355,29 @@ int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg, const cha
         }
     }
     return err;
+}
+
+/* RC4 WP5: append `<feature_name>.<key>=<value>` of every entry of `dict` to
+ * model->overrides (':'-joined, in the order applied). */
+static int model_record_overrides(VmafModel *model, const char *feature_name,
+                                  const VmafDictionary *dict)
+{
+    size_t len = model->overrides ? strlen(model->overrides) : 0u;
+    size_t add = 0;
+    for (unsigned i = 0; i < dict->cnt; i++)
+        add += strlen(feature_name) + strlen(dict->entry[i].key) + strlen(dict->entry[i].val) + 3;
+    const size_t cap = len + add + 1;
+    char *const text = realloc(model->overrides, cap);
+    if (!text)
+        return -ENOMEM;
+    text[len] = '\0';
+    for (unsigned i = 0; i < dict->cnt && len < cap; i++) {
+        const int n = snprintf(text + len, cap - len, "%s%s.%s=%s", len ? ":" : "", feature_name,
+                               dict->entry[i].key, dict->entry[i].val);
+        len += n > 0 ? (size_t)n : 0u;
+    }
+    model->overrides = text;
+    return 0;
 }
 
 int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
@@ -305,6 +418,8 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
         model->feature[i].opts_dict = d;
     }
 
+    if (!err)
+        err = model_record_overrides(model, feature_name, (const VmafDictionary *)opts_dict);
     err |= vmaf_dictionary_free((VmafDictionary **)&opts_dict);
     return err;
 }
@@ -447,14 +562,17 @@ int vmaf_model_collection_load(VmafModel **model, VmafModelCollection **model_co
         return -EINVAL;
     }
 
-    return vmaf_read_json_model_collection_from_buffer(
+    const int err = vmaf_read_json_model_collection_from_buffer(
         model, model_collection, cfg, built_in_model->data, *built_in_model->data_len);
+    return vmaf_model_stamp_loaded(err, model, model_collection, cfg, version, built_in_model->data,
+                                   *built_in_model->data_len);
 }
 
 int vmaf_model_collection_load_from_path(VmafModel **model, VmafModelCollection **model_collection,
                                          VmafModelConfig *cfg, const char *path)
 {
     int err = vmaf_read_json_model_collection_from_path(model, model_collection, cfg, path);
+    err = vmaf_model_stamp_loaded(err, model, model_collection, cfg, path, NULL, 0);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not read model collection from path: \"%s\"\n", path);
         const char *ext = strrchr(path, '.');

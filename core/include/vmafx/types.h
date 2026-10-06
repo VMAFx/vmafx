@@ -85,6 +85,12 @@ enum VmafxStatusCode {
      * struct.
      */
     VMAFX_E_ABI = -11,
+    /**
+     * A report does not match its provenance digest or its re-run; the error's subject names the
+     * first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added
+     * in ABI 0.1.5.
+     */
+    VMAFX_E_MISMATCH = -12,
 };
 
 /**

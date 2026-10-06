@@ -36,7 +36,7 @@ _Static_assert(offsetof(VmafxContextConfig, log_callback) == 32,
 _Static_assert(offsetof(VmafxContextConfig, log_user) == 40, "VmafxContextConfig.log_user offset");
 _Static_assert(offsetof(VmafxContextConfig, import_retry_wait_ns) == 48,
                "VmafxContextConfig.import_retry_wait_ns offset");
-_Static_assert(sizeof(VmafxProvenance) == 32, "VmafxProvenance size");
+_Static_assert(sizeof(VmafxProvenance) == 216, "VmafxProvenance size");
 _Static_assert(_Alignof(VmafxProvenance) == 8, "VmafxProvenance alignment");
 _Static_assert(offsetof(VmafxProvenance, struct_size) == 0, "VmafxProvenance.struct_size offset");
 _Static_assert(offsetof(VmafxProvenance, abi_major) == 4, "VmafxProvenance.abi_major offset");
@@ -47,6 +47,77 @@ _Static_assert(offsetof(VmafxProvenance, active_backend) == 16,
 _Static_assert(offsetof(VmafxProvenance, n_extractors) == 20,
                "VmafxProvenance.n_extractors offset");
 _Static_assert(offsetof(VmafxProvenance, version) == 24, "VmafxProvenance.version offset");
+_Static_assert(offsetof(VmafxProvenance, commit) == 32, "VmafxProvenance.commit offset");
+_Static_assert(offsetof(VmafxProvenance, build_id) == 40, "VmafxProvenance.build_id offset");
+_Static_assert(offsetof(VmafxProvenance, compiler) == 48, "VmafxProvenance.compiler offset");
+_Static_assert(offsetof(VmafxProvenance, build_flags) == 56, "VmafxProvenance.build_flags offset");
+_Static_assert(offsetof(VmafxProvenance, fp_policy) == 64, "VmafxProvenance.fp_policy offset");
+_Static_assert(offsetof(VmafxProvenance, backends) == 72, "VmafxProvenance.backends offset");
+_Static_assert(offsetof(VmafxProvenance, rust_twins) == 80, "VmafxProvenance.rust_twins offset");
+_Static_assert(offsetof(VmafxProvenance, simd) == 88, "VmafxProvenance.simd offset");
+_Static_assert(offsetof(VmafxProvenance, device_index) == 96,
+               "VmafxProvenance.device_index offset");
+_Static_assert(offsetof(VmafxProvenance, device_name) == 104, "VmafxProvenance.device_name offset");
+_Static_assert(offsetof(VmafxProvenance, device_runtime) == 112,
+               "VmafxProvenance.device_runtime offset");
+_Static_assert(offsetof(VmafxProvenance, n_threads) == 120, "VmafxProvenance.n_threads offset");
+_Static_assert(offsetof(VmafxProvenance, n_subsample) == 124, "VmafxProvenance.n_subsample offset");
+_Static_assert(offsetof(VmafxProvenance, cpumask) == 128, "VmafxProvenance.cpumask offset");
+_Static_assert(offsetof(VmafxProvenance, gpumask) == 136, "VmafxProvenance.gpumask offset");
+_Static_assert(offsetof(VmafxProvenance, frame_width) == 144, "VmafxProvenance.frame_width offset");
+_Static_assert(offsetof(VmafxProvenance, frame_height) == 148,
+               "VmafxProvenance.frame_height offset");
+_Static_assert(offsetof(VmafxProvenance, pix_fmt) == 152, "VmafxProvenance.pix_fmt offset");
+_Static_assert(offsetof(VmafxProvenance, bpc) == 156, "VmafxProvenance.bpc offset");
+_Static_assert(offsetof(VmafxProvenance, n_frames) == 160, "VmafxProvenance.n_frames offset");
+_Static_assert(offsetof(VmafxProvenance, n_models) == 168, "VmafxProvenance.n_models offset");
+_Static_assert(offsetof(VmafxProvenance, n_features) == 172, "VmafxProvenance.n_features offset");
+_Static_assert(offsetof(VmafxProvenance, n_annotations) == 176,
+               "VmafxProvenance.n_annotations offset");
+_Static_assert(offsetof(VmafxProvenance, encode_record) == 184,
+               "VmafxProvenance.encode_record offset");
+_Static_assert(offsetof(VmafxProvenance, scores_digest) == 192,
+               "VmafxProvenance.scores_digest offset");
+_Static_assert(offsetof(VmafxProvenance, elapsed_ns) == 200, "VmafxProvenance.elapsed_ns offset");
+_Static_assert(offsetof(VmafxProvenance, digest) == 208, "VmafxProvenance.digest offset");
+_Static_assert(sizeof(VmafxModelProvenance) == 48, "VmafxModelProvenance size");
+_Static_assert(_Alignof(VmafxModelProvenance) == 8, "VmafxModelProvenance alignment");
+_Static_assert(offsetof(VmafxModelProvenance, struct_size) == 0,
+               "VmafxModelProvenance.struct_size offset");
+_Static_assert(offsetof(VmafxModelProvenance, name) == 8, "VmafxModelProvenance.name offset");
+_Static_assert(offsetof(VmafxModelProvenance, version) == 16,
+               "VmafxModelProvenance.version offset");
+_Static_assert(offsetof(VmafxModelProvenance, sha256) == 24, "VmafxModelProvenance.sha256 offset");
+_Static_assert(offsetof(VmafxModelProvenance, flags) == 32, "VmafxModelProvenance.flags offset");
+_Static_assert(offsetof(VmafxModelProvenance, overrides) == 40,
+               "VmafxModelProvenance.overrides offset");
+_Static_assert(sizeof(VmafxFeatureProvenance) == 80, "VmafxFeatureProvenance size");
+_Static_assert(_Alignof(VmafxFeatureProvenance) == 8, "VmafxFeatureProvenance alignment");
+_Static_assert(offsetof(VmafxFeatureProvenance, struct_size) == 0,
+               "VmafxFeatureProvenance.struct_size offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, feature) == 8,
+               "VmafxFeatureProvenance.feature offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, extractor) == 16,
+               "VmafxFeatureProvenance.extractor offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, implementation) == 24,
+               "VmafxFeatureProvenance.implementation offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, backend) == 32,
+               "VmafxFeatureProvenance.backend offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, device) == 40,
+               "VmafxFeatureProvenance.device offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, runtime) == 48,
+               "VmafxFeatureProvenance.runtime offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, options) == 56,
+               "VmafxFeatureProvenance.options offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, exactness) == 64,
+               "VmafxFeatureProvenance.exactness offset");
+_Static_assert(offsetof(VmafxFeatureProvenance, source) == 72,
+               "VmafxFeatureProvenance.source offset");
+_Static_assert(sizeof(VmafxAnnotation) == 24, "VmafxAnnotation size");
+_Static_assert(_Alignof(VmafxAnnotation) == 8, "VmafxAnnotation alignment");
+_Static_assert(offsetof(VmafxAnnotation, struct_size) == 0, "VmafxAnnotation.struct_size offset");
+_Static_assert(offsetof(VmafxAnnotation, key) == 8, "VmafxAnnotation.key offset");
+_Static_assert(offsetof(VmafxAnnotation, value) == 16, "VmafxAnnotation.value offset");
 _Static_assert(sizeof(VmafxExtractorInfo) == 16, "VmafxExtractorInfo size");
 _Static_assert(_Alignof(VmafxExtractorInfo) == 8, "VmafxExtractorInfo alignment");
 _Static_assert(offsetof(VmafxExtractorInfo, struct_size) == 0,
@@ -202,6 +273,7 @@ _Static_assert(VMAFX_E_RANGE == -8, "VMAFX_E_RANGE");
 _Static_assert(VMAFX_E_INTERNAL == -9, "VMAFX_E_INTERNAL");
 _Static_assert(VMAFX_E_TIMEOUT == -10, "VMAFX_E_TIMEOUT");
 _Static_assert(VMAFX_E_ABI == -11, "VMAFX_E_ABI");
+_Static_assert(VMAFX_E_MISMATCH == -12, "VMAFX_E_MISMATCH");
 _Static_assert(VMAFX_LOG_LEVEL_NONE == 0, "VMAFX_LOG_LEVEL_NONE");
 _Static_assert(VMAFX_LOG_LEVEL_ERROR == 1, "VMAFX_LOG_LEVEL_ERROR");
 _Static_assert(VMAFX_LOG_LEVEL_WARNING == 2, "VMAFX_LOG_LEVEL_WARNING");
@@ -258,15 +330,25 @@ _Static_assert(VMAFX_FENCE_SYCL_EVENT == 4, "VMAFX_FENCE_SYCL_EVENT");
 _Static_assert(VMAFX_FENCE_SYNC_FILE == 5, "VMAFX_FENCE_SYNC_FILE");
 _Static_assert(VMAFX_FENCE_METAL_SHARED_EVENT == 6, "VMAFX_FENCE_METAL_SHARED_EVENT");
 _Static_assert(VMAFX_FENCE_WIN32_SHARED == 7, "VMAFX_FENCE_WIN32_SHARED");
+_Static_assert(VMAFX_FEATURE_SOURCE_UNKNOWN == 0, "VMAFX_FEATURE_SOURCE_UNKNOWN");
+_Static_assert(VMAFX_FEATURE_SOURCE_EXTRACTOR == 1, "VMAFX_FEATURE_SOURCE_EXTRACTOR");
+_Static_assert(VMAFX_FEATURE_SOURCE_IMPORTED == 2, "VMAFX_FEATURE_SOURCE_IMPORTED");
+_Static_assert(VMAFX_FEATURE_SOURCE_MODEL == 3, "VMAFX_FEATURE_SOURCE_MODEL");
+_Static_assert(VMAFX_REPORT_FORMAT_XML == 1, "VMAFX_REPORT_FORMAT_XML");
+_Static_assert(VMAFX_REPORT_FORMAT_JSON == 2, "VMAFX_REPORT_FORMAT_JSON");
+_Static_assert(VMAFX_REPORT_FORMAT_CSV == 3, "VMAFX_REPORT_FORMAT_CSV");
+_Static_assert(VMAFX_REPORT_FORMAT_SUB == 4, "VMAFX_REPORT_FORMAT_SUB");
 _Static_assert(VMAFX_MODEL_DISABLE_CLIP == 0x1u, "VMAFX_MODEL_DISABLE_CLIP");
 _Static_assert(VMAFX_MODEL_ENABLE_TRANSFORM == 0x2u, "VMAFX_MODEL_ENABLE_TRANSFORM");
 _Static_assert(VMAFX_MODEL_DISABLE_TRANSFORM == 0x4u, "VMAFX_MODEL_DISABLE_TRANSFORM");
 _Static_assert(VMAFX_IMPORT_ALLOW_COPY == 0x1u, "VMAFX_IMPORT_ALLOW_COPY");
 _Static_assert(VMAFX_DEVICE_PROFILING == 0x1u, "VMAFX_DEVICE_PROFILING");
+_Static_assert(VMAFX_REPORT_PROVENANCE_SIDECAR == 0x1u, "VMAFX_REPORT_PROVENANCE_SIDECAR");
+_Static_assert(VMAFX_PROVENANCE_JSON_CANONICAL == 0x1u, "VMAFX_PROVENANCE_JSON_CANONICAL");
 
 int main(void)
 {
-    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 16,
-                 104, 74);
+    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 19,
+                 150, 85);
     return 0;
 }

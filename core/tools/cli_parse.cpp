@@ -1294,6 +1294,9 @@ void handle_misc_flag(const int o, const char *const app, CLISettings *const set
     case ARG_NETFLIX_COMPAT:
         settings->netflix_compat = true;
         break;
+    case ARG_PROVENANCE_SIDECAR:
+        settings->provenance_sidecar = true;
+        break;
     case 'v':
         if (settings->vmafx_mode) {
             (void)fprintf(stderr, "VMAFX %s (auto-backend, precision=max)\n", vmaf_version());
@@ -1389,6 +1392,7 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case 'q':
     case 'v':
     case ARG_NETFLIX_COMPAT:
+    case ARG_PROVENANCE_SIDECAR:
         handle_misc_flag(o, app, settings);
         break;
     case ARG_LIST_BACKENDS:
@@ -1396,6 +1400,9 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
         break;
     case ARG_CHECK_SAMPLE_RANGE:
         settings->check_sample_range = true;
+        break;
+    case ARG_VERIFY_PROVENANCE:
+        settings->verify_provenance = optarg;
         break;
     default:
         break;
@@ -1461,8 +1468,32 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     if (!settings->output_fmt)
         settings->output_fmt = VMAF_OUTPUT_FORMAT_XML;
 
+    /* RC4 WP5: a verification run takes its configuration from the report. */
+    if (settings->verify_provenance)
+        return;
     apply_backend_settings(argv[0], settings);
     validate_cli_settings(argv[0], settings);
+}
+
+const char *cli_verify_provenance_arg(const int argc, char *const *const argv)
+{
+    static constexpr std::string_view option = "--verify-provenance";
+    for (int i = 1; i < argc; i++) {
+        const std::string_view arg{argv[i]};
+        if (arg == option)
+            return i + 1 < argc ? argv[i + 1] : nullptr;
+        if (arg.starts_with(option) && arg.size() > option.size() && arg[option.size()] == '=')
+            return argv[i] + option.size() + 1;
+    }
+    return nullptr;
+}
+
+void cli_parse_reset(void)
+{
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    optreset = 1;
+#endif
+    optind = 1;
 }
 
 /* Release what the settings still own. An option dictionary handed to

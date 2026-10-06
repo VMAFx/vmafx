@@ -25,7 +25,36 @@
 extern "C" {
 #endif
 
+/**
+ * Where the scores of a feature come from. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+typedef enum VmafxFeatureSource {
+    /** Not recorded (a feature written outside an extractor, a model and an import). */
+    VMAFX_FEATURE_SOURCE_UNKNOWN = 0,
+    /** Computed by a registered feature extractor. */
+    VMAFX_FEATURE_SOURCE_EXTRACTOR = 1,
+    /** Computed outside the library and recorded with vmafx_context_import_score(). */
+    VMAFX_FEATURE_SOURCE_IMPORTED = 2,
+    /** Predicted by a mounted model from other features. */
+    VMAFX_FEATURE_SOURCE_MODEL = 3,
+} VmafxFeatureSource;
+
+/*
+ * VmafxProvenanceJsonFlags: Which form of the record vmafx_context_provenance_json() returns. Added
+ * in ABI 0.1.5. Bits of a u32 field.
+ * @since 0.1
+ */
+/**
+ * The bytes the digest covers: the record without `digest` and `elapsed_ns` (RFC 8785 form either
+ * way).
+ */
+#define VMAFX_PROVENANCE_JSON_CANONICAL (UINT32_C(1) << 0U)
+
 typedef struct VmafxProvenance VmafxProvenance;
+typedef struct VmafxModelProvenance VmafxModelProvenance;
+typedef struct VmafxFeatureProvenance VmafxFeatureProvenance;
+typedef struct VmafxAnnotation VmafxAnnotation;
 
 /**
  * How the scores of a context are made (#2142). Strings live as long as the context.
@@ -46,10 +75,195 @@ struct VmafxProvenance {
     uint32_t n_extractors;
     /** Build version (git describe). */
     const char *version;
+    /**
+     * Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout.
+     * Added in ABI 0.1.5.
+     */
+    const char *commit;
+    /**
+     * `sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`,
+     * `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different
+     * ids. Added in ABI 0.1.5.
+     */
+    const char *build_id;
+    /** C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5. */
+    const char *compiler;
+    /**
+     * Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build.
+     * Added in ABI 0.1.5.
+     */
+    const char *build_flags;
+    /**
+     * Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI
+     * 0.1.5.
+     */
+    const char *fp_policy;
+    /**
+     * Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`).
+     * Added in ABI 0.1.5.
+     */
+    const char *backends;
+    /** 1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5. */
+    uint32_t rust_twins;
+    /**
+     * Highest instruction-set level the CPU extractors dispatch to under the context's cpumask
+     * (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added
+     * in ABI 0.1.5.
+     */
+    const char *simd;
+    /**
+     * Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device
+     * made from external handles. Added in ABI 0.1.5.
+     */
+    int32_t device_index;
+    /** Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5. */
+    const char *device_name;
+    /**
+     * Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown`
+     * when the backend does not report it yet. Added in ABI 0.1.5.
+     */
+    const char *device_runtime;
+    /** Worker threads of the context. Added in ABI 0.1.5. */
+    uint32_t n_threads;
+    /** Frame subsampling of the context (1: every frame). Added in ABI 0.1.5. */
+    uint32_t n_subsample;
+    /** CPU instruction-set bits the context disabled. Added in ABI 0.1.5. */
+    uint64_t cpumask;
+    /** GPU dispatch bits the context disabled. Added in ABI 0.1.5. */
+    uint64_t gpumask;
+    /** Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5. */
+    uint32_t frame_width;
+    /** Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5. */
+    uint32_t frame_height;
+    /** Pixel layout of the submitted frames. Added in ABI 0.1.5. Values: VmafxPixelFormat. */
+    uint32_t pix_fmt;
+    /** Bits per component of the submitted frames. Added in ABI 0.1.5. */
+    uint32_t bpc;
+    /** Frames submitted. Added in ABI 0.1.5. */
+    uint64_t n_frames;
+    /** Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5. */
+    uint32_t n_models;
+    /** Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5. */
+    uint32_t n_features;
+    /** Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5. */
+    uint32_t n_annotations;
+    /**
+     * Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
+     * VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+     * 0.1.5.
+     */
+    const char *encode_record;
+    /**
+     * `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature>
+     * <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in
+     * index order. Added in ABI 0.1.5.
+     */
+    const char *scores_digest;
+    /**
+     * Nanoseconds from the first submitted frame to the flush (to now before it); timing, not
+     * covered by `digest`. Added in ABI 0.1.5.
+     */
+    uint64_t elapsed_ns;
+    /**
+     * `sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and
+     * `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with
+     * VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5.
+     */
+    const char *digest;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
 #define VMAFX_PROVENANCE_INIT {.struct_size = sizeof(VmafxProvenance)}
+
+/**
+ * One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+struct VmafxModelProvenance {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Name of the model's scores. */
+    const char *name;
+    /** Built-in model version, or the path of the file it was loaded from. */
+    const char *version;
+    /** SHA-256 of the model bytes as loaded, 64 lower-case hex digits. */
+    const char *sha256;
+    /** Load flags. Bits: VmafxModelFlags. */
+    uint64_t flags;
+    /**
+     * Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:`
+     * in the order applied; empty when none.
+     */
+    const char *overrides;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_MODEL_PROVENANCE_INIT {.struct_size = sizeof(VmafxModelProvenance)}
+
+/**
+ * How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI
+ * 0.1.5.
+ * @since 0.1
+ */
+struct VmafxFeatureProvenance {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Feature name as the scores carry it (option-decorated names included). */
+    const char *feature;
+    /**
+     * Extractor that wrote the scores; the model's name for a model score; empty for an imported
+     * score.
+     */
+    const char *extractor;
+    /**
+     * `c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the
+     * scores.
+     */
+    const char *implementation;
+    /** Backend the extractor runs on (CPU for model and imported scores). Values: VmafxBackend. */
+    uint32_t backend;
+    /** Device that ran the extractor (`cpu` for the CPU). */
+    const char *device;
+    /**
+     * Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the
+     * host architecture for the CPU).
+     */
+    const char *runtime;
+    /**
+     * Options of the extractor instance, `key=value` separated by `:` in key order; empty when
+     * none.
+     */
+    const char *options;
+    /**
+     * How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the
+     * parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`,
+     * or `unclassified` for a device extractor the tables do not list; empty when no extractor
+     * wrote the scores.
+     */
+    const char *exactness;
+    /** Where the scores come from. Values: VmafxFeatureSource. */
+    uint32_t source;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FEATURE_PROVENANCE_INIT {.struct_size = sizeof(VmafxFeatureProvenance)}
+
+/**
+ * One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long
+ * as the context. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+struct VmafxAnnotation {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Key: 1 to 64 characters of `a-z`, `0-9` and `_`. */
+    const char *key;
+    /** Value as given. */
+    const char *value;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_ANNOTATION_INIT {.struct_size = sizeof(VmafxAnnotation)}
 
 /**
  * Fill the provenance record of a context.
@@ -57,6 +271,71 @@ struct VmafxProvenance {
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_provenance(const VmafxContext *context, VmafxProvenance *out,
                                                   VmafxError **error);
+
+/**
+ * Describe mounted model `index` (models of vmafx_context_use_model() and
+ * vmafx_context_use_model_set(), and models mounted through the libvmaf API), in mount order;
+ * VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_model_provenance(const VmafxContext *context, uint32_t index,
+                                                        VmafxModelProvenance *out,
+                                                        VmafxError **error);
+
+/**
+ * Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND
+ * past the last one. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_feature_provenance(const VmafxContext *context,
+                                                          uint32_t index,
+                                                          VmafxFeatureProvenance *out,
+                                                          VmafxError **error);
+
+/**
+ * Describe the feature named `feature` (as the scores carry it, option-decorated names included);
+ * VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_feature_provenance(const VmafxContext *context, const char *feature,
+                                                  VmafxFeatureProvenance *out, VmafxError **error);
+
+/**
+ * Add `key` = `value` (both copied) to the context's provenance record, for what only the caller
+ * knows: the inputs, the command line. A key may repeat; annotations keep their order.
+ * VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a
+ * value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_annotate(VmafxContext *context, const char *key,
+                                                const char *value, VmafxError **error);
+
+/**
+ * Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added
+ * in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_annotation(const VmafxContext *context, uint32_t index,
+                                                  VmafxAnnotation *out, VmafxError **error);
+
+/**
+ * Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and
+ * 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form.
+ * Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_encode_record(VmafxContext *context, const char *record,
+                                                         VmafxError **error);
+
+/**
+ * The provenance record as JSON in RFC 8785 form (keys in byte order, no whitespace; integers as
+ * numbers, 64-bit integers as strings, enums by their lower-case value names, as the proto
+ * Provenance message maps to JSON), with models, features and annotations. `*json` lives until the
+ * next call of this function on the context or its destruction. Added in ABI 0.1.5.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_provenance_json(VmafxContext *context, uint32_t flags,
+                                                       const char **json, VmafxError **error);
 
 #ifdef __cplusplus
 }

@@ -38,6 +38,7 @@
 
 #include "error_internal.h"
 #include "frame_import_hooks.h"
+#include "engine.h"
 #include "internal.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
@@ -126,7 +127,7 @@ VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fen
 
 /* ---- Waiting ------------------------------------------------------------------ */
 
-static uint64_t monotonic_ns(void)
+uint64_t vmafx_monotonic_ns(void)
 {
     if (vmafx_test_clock_is_virtual()) {
         return vmafx_test_clock_now_ns();
@@ -168,10 +169,10 @@ static bool host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
     if (vmafx_host_fence_signalled(fence)) {
         return true;
     }
-    const uint64_t start = monotonic_ns();
+    const uint64_t start = vmafx_monotonic_ns();
     const uint64_t rounds = timeout_ns / VMAFX_FENCE_POLL_NS + 1u;
     for (uint64_t round = 0; round < rounds; round++) {
-        if (monotonic_ns() - start >= timeout_ns) {
+        if (vmafx_monotonic_ns() - start >= timeout_ns) {
             break;
         }
         sleep_poll_interval();

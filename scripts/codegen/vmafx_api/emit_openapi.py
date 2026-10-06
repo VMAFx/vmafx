@@ -17,7 +17,7 @@ import json
 from typing import Any
 
 from .emit_mcp import value_schema
-from .emit_proto import FIELD_TYPES, option_doc
+from .emit_proto import FIELD_TYPES, option_doc, repeated_message
 from .model import Api, Field, Option, Struct, upper_snake
 from .options import all_options
 
@@ -128,16 +128,24 @@ def schemas(api: Api) -> dict[str, dict[str, Any]]:
         message["properties"][option.name] = _option_schema(option)
     for struct in api.structs:
         if struct.proto:
-            out[struct.proto] = _struct_schema(struct)
+            out[struct.proto] = _struct_schema(api, struct)
     return out
 
 
-def _struct_schema(struct: Struct) -> dict[str, Any]:
+def _struct_schema(api: Api, struct: Struct) -> dict[str, Any]:
     fields = [f for f in struct.fields if f.name != "struct_size"]
+    properties = {f.name: _field_schema(f) for f in fields}
+    for member in struct.proto_repeated:
+        message = repeated_message(api, struct, member)
+        properties[member.name] = {
+            "type": "array",
+            "items": {"$ref": f"#/components/schemas/{message}"},
+            "description": member.doc or f"{member.name} ({member.struct}).",
+        }
     return {
         "type": "object",
         "description": f"{struct.doc} (from {struct.name}).",
-        "properties": {f.name: _field_schema(f) for f in fields},
+        "properties": properties,
     }
 
 

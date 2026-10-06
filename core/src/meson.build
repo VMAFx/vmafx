@@ -2854,6 +2854,16 @@ libvmaf_sources = [
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
     src_dir + 'vmafx/score.c',
+    # RC4 WP5 (#2142): provenance records, the generated exactness table,
+    # the report writer and verifier.
+    src_dir + 'vmafx/exactness.c',
+    src_dir + 'vmafx/exactness_gen.c',
+    src_dir + 'vmafx/provenance.c',
+    src_dir + 'vmafx/provenance_build.c',
+    src_dir + 'vmafx/provenance_json.c',
+    src_dir + 'vmafx/provenance_render.c',
+    src_dir + 'vmafx/report.c',
+    src_dir + 'vmafx/report_verify.c',
     src_dir + 'vmafx/sha256.c',
     src_dir + 'vmafx/sized.c',
     src_dir + 'vmafx/submit.c',
@@ -2947,9 +2957,43 @@ if is_sycl_enabled
     endif
 endif
 
+# RC4 WP5 (#2142, ADR-2073): the build description of the provenance record
+# (core/src/vmafx/provenance_build.c): compilers, build options, the strict FP
+# policy of every C / C++ translation unit (ADR-1461), backends in VmafxBackend
+# order, Rust extractors and the commit. A change to any of them changes the
+# record's build_id.
+vmafx_build_backends = ['cpu']
+foreach backend : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
+                   ['metal', is_metal_enabled], ['hip', is_hip_enabled]]
+    if backend[1]
+        vmafx_build_backends += backend[0]
+    endif
+endforeach
+vmafx_build_conf = configuration_data()
+vmafx_build_conf.set_quoted('VMAFX_BUILD_COMPILER',
+    'c=' + cc.get_id() + ' ' + cc.version() + ' cpp=' + cxx.get_id() + ' ' + cxx.version())
+vmafx_build_conf.set_quoted('VMAFX_BUILD_FLAGS',
+    'buildtype=' + get_option('buildtype') + ' optimization=' + get_option('optimization')
+    + ' debug=' + get_option('debug').to_string() + ' b_ndebug=' + get_option('b_ndebug')
+    + ' b_lto=' + get_option('b_lto').to_string()
+    + ' c_args=' + ' '.join(get_option('c_args')) + ' cpp_args=' + ' '.join(get_option('cpp_args')))
+vmafx_build_conf.set_quoted('VMAFX_BUILD_FP_POLICY', ' '.join(vmaf_strict_fp_args))
+vmafx_build_conf.set_quoted('VMAFX_BUILD_BACKENDS', ','.join(vmafx_build_backends))
+vmafx_build_conf.set('VMAFX_BUILD_RUST', is_rust_enabled ? 1 : 0)
+vmafx_build_conf.set_quoted('VMAFX_BUILD_ARCH', host_machine.cpu_family())
+vmafx_build_info_h = configure_file(output : 'vmafx_build_info.h',
+                                    configuration : vmafx_build_conf)
+vmafx_build_commit_h = vcs_tag(
+    command : ['git', '-C', meson.project_source_root() / '..', 'rev-parse', 'HEAD'],
+    fallback : 'unknown',
+    input : 'vmafx/build_commit.h.in',
+    output : 'vmafx_build_commit.h',
+)
+
 libvmaf = library(
     'vmaf',
-    [libvmaf_sources, rev_target, json_model_c_sources, dnn_sources, dnn_libvmaf_only_sources, mcp_sources],
+    [libvmaf_sources, rev_target, vmafx_build_commit_h, json_model_c_sources, dnn_sources,
+     dnn_libvmaf_only_sources, mcp_sources],
     include_directories : [libvmaf_inc, vmaf_include, dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     cpp_args : vmaf_cppflags_common + dnn_defines,

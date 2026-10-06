@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 4)
+ABI_VERSION = (0, 1, 5)
 
 
 class Status(enum.IntEnum):
@@ -32,6 +32,7 @@ class Status(enum.IntEnum):
     E_INTERNAL = -9
     E_TIMEOUT = -10
     E_ABI = -11
+    E_MISMATCH = -12
 
 
 class LogLevel(enum.IntEnum):
@@ -125,6 +126,24 @@ class FenceKind(enum.IntEnum):
     WIN32_SHARED = 7
 
 
+class FeatureSource(enum.IntEnum):
+    """VmafxFeatureSource."""
+
+    UNKNOWN = 0
+    EXTRACTOR = 1
+    IMPORTED = 2
+    MODEL = 3
+
+
+class ReportFormat(enum.IntEnum):
+    """VmafxReportFormat."""
+
+    XML = 1
+    JSON = 2
+    CSV = 3
+    SUB = 4
+
+
 class ModelFlags(enum.IntFlag):
     """VmafxModelFlags bits."""
 
@@ -145,12 +164,36 @@ class DeviceFlags(enum.IntFlag):
     PROFILING = 1
 
 
+class ReportFlags(enum.IntFlag):
+    """VmafxReportFlags bits."""
+
+    PROVENANCE_SIDECAR = 1
+
+
+class ProvenanceJsonFlags(enum.IntFlag):
+    """VmafxProvenanceJsonFlags bits."""
+
+    CANONICAL = 1
+
+
 class VmafxContextConfig(ctypes.Structure):
     """C struct VmafxContextConfig."""
 
 
 class VmafxProvenance(ctypes.Structure):
     """C struct VmafxProvenance."""
+
+
+class VmafxModelProvenance(ctypes.Structure):
+    """C struct VmafxModelProvenance."""
+
+
+class VmafxFeatureProvenance(ctypes.Structure):
+    """C struct VmafxFeatureProvenance."""
+
+
+class VmafxAnnotation(ctypes.Structure):
+    """C struct VmafxAnnotation."""
 
 
 class VmafxExtractorInfo(ctypes.Structure):
@@ -235,6 +278,61 @@ VmafxProvenance._fields_ = (
     ("active_backend", ctypes.c_uint32),
     ("n_extractors", ctypes.c_uint32),
     ("version", ctypes.c_char_p),
+    ("commit", ctypes.c_char_p),
+    ("build_id", ctypes.c_char_p),
+    ("compiler", ctypes.c_char_p),
+    ("build_flags", ctypes.c_char_p),
+    ("fp_policy", ctypes.c_char_p),
+    ("backends", ctypes.c_char_p),
+    ("rust_twins", ctypes.c_uint32),
+    ("simd", ctypes.c_char_p),
+    ("device_index", ctypes.c_int32),
+    ("device_name", ctypes.c_char_p),
+    ("device_runtime", ctypes.c_char_p),
+    ("n_threads", ctypes.c_uint32),
+    ("n_subsample", ctypes.c_uint32),
+    ("cpumask", ctypes.c_uint64),
+    ("gpumask", ctypes.c_uint64),
+    ("frame_width", ctypes.c_uint32),
+    ("frame_height", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("n_frames", ctypes.c_uint64),
+    ("n_models", ctypes.c_uint32),
+    ("n_features", ctypes.c_uint32),
+    ("n_annotations", ctypes.c_uint32),
+    ("encode_record", ctypes.c_char_p),
+    ("scores_digest", ctypes.c_char_p),
+    ("elapsed_ns", ctypes.c_uint64),
+    ("digest", ctypes.c_char_p),
+)
+
+VmafxModelProvenance._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("name", ctypes.c_char_p),
+    ("version", ctypes.c_char_p),
+    ("sha256", ctypes.c_char_p),
+    ("flags", ctypes.c_uint64),
+    ("overrides", ctypes.c_char_p),
+)
+
+VmafxFeatureProvenance._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("feature", ctypes.c_char_p),
+    ("extractor", ctypes.c_char_p),
+    ("implementation", ctypes.c_char_p),
+    ("backend", ctypes.c_uint32),
+    ("device", ctypes.c_char_p),
+    ("runtime", ctypes.c_char_p),
+    ("options", ctypes.c_char_p),
+    ("exactness", ctypes.c_char_p),
+    ("source", ctypes.c_uint32),
+)
+
+VmafxAnnotation._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("key", ctypes.c_char_p),
+    ("value", ctypes.c_char_p),
 )
 
 VmafxExtractorInfo._fields_ = (
@@ -384,7 +482,7 @@ LAYOUT = {
         ),
     ),
     VmafxProvenance: (
-        32,
+        216,
         (
             ("struct_size", 0),
             ("abi_major", 4),
@@ -393,6 +491,67 @@ LAYOUT = {
             ("active_backend", 16),
             ("n_extractors", 20),
             ("version", 24),
+            ("commit", 32),
+            ("build_id", 40),
+            ("compiler", 48),
+            ("build_flags", 56),
+            ("fp_policy", 64),
+            ("backends", 72),
+            ("rust_twins", 80),
+            ("simd", 88),
+            ("device_index", 96),
+            ("device_name", 104),
+            ("device_runtime", 112),
+            ("n_threads", 120),
+            ("n_subsample", 124),
+            ("cpumask", 128),
+            ("gpumask", 136),
+            ("frame_width", 144),
+            ("frame_height", 148),
+            ("pix_fmt", 152),
+            ("bpc", 156),
+            ("n_frames", 160),
+            ("n_models", 168),
+            ("n_features", 172),
+            ("n_annotations", 176),
+            ("encode_record", 184),
+            ("scores_digest", 192),
+            ("elapsed_ns", 200),
+            ("digest", 208),
+        ),
+    ),
+    VmafxModelProvenance: (
+        48,
+        (
+            ("struct_size", 0),
+            ("name", 8),
+            ("version", 16),
+            ("sha256", 24),
+            ("flags", 32),
+            ("overrides", 40),
+        ),
+    ),
+    VmafxFeatureProvenance: (
+        80,
+        (
+            ("struct_size", 0),
+            ("feature", 8),
+            ("extractor", 16),
+            ("implementation", 24),
+            ("backend", 32),
+            ("device", 40),
+            ("runtime", 48),
+            ("options", 56),
+            ("exactness", 64),
+            ("source", 72),
+        ),
+    ),
+    VmafxAnnotation: (
+        24,
+        (
+            ("struct_size", 0),
+            ("key", 8),
+            ("value", 16),
         ),
     ),
     VmafxExtractorInfo: (
@@ -1087,6 +1246,106 @@ SIGNATURES = {
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
+    "vmafx_context_model_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxModelProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_feature_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxFeatureProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_feature_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(VmafxFeatureProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_annotate": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_annotation": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxAnnotation),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_set_encode_record": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_provenance_json": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_write": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_open": (
+        ctypes.c_int32,
+        (
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_close": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_report_field": (
+        ctypes.c_char_p,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+        ),
+    ),
+    "vmafx_report_verify": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_context_from_libvmaf": (
         ctypes.c_void_p,
         (ctypes.c_void_p,),
@@ -1201,6 +1460,33 @@ class Provenance:
     active_backend: int
     n_extractors: int
     version: str | None
+    commit: str | None
+    build_id: str | None
+    compiler: str | None
+    build_flags: str | None
+    fp_policy: str | None
+    backends: str | None
+    rust_twins: int
+    simd: str | None
+    device_index: int
+    device_name: str | None
+    device_runtime: str | None
+    n_threads: int
+    n_subsample: int
+    cpumask: int
+    gpumask: int
+    frame_width: int
+    frame_height: int
+    pix_fmt: int
+    bpc: int
+    n_frames: int
+    n_models: int
+    n_features: int
+    n_annotations: int
+    encode_record: str | None
+    scores_digest: str | None
+    elapsed_ns: int
+    digest: str | None
 
     @classmethod
     def from_c(cls, raw: VmafxProvenance) -> Provenance:
@@ -1211,6 +1497,98 @@ class Provenance:
             active_backend=raw.active_backend,
             n_extractors=raw.n_extractors,
             version=_text(raw.version),
+            commit=_text(raw.commit),
+            build_id=_text(raw.build_id),
+            compiler=_text(raw.compiler),
+            build_flags=_text(raw.build_flags),
+            fp_policy=_text(raw.fp_policy),
+            backends=_text(raw.backends),
+            rust_twins=raw.rust_twins,
+            simd=_text(raw.simd),
+            device_index=raw.device_index,
+            device_name=_text(raw.device_name),
+            device_runtime=_text(raw.device_runtime),
+            n_threads=raw.n_threads,
+            n_subsample=raw.n_subsample,
+            cpumask=raw.cpumask,
+            gpumask=raw.gpumask,
+            frame_width=raw.frame_width,
+            frame_height=raw.frame_height,
+            pix_fmt=raw.pix_fmt,
+            bpc=raw.bpc,
+            n_frames=raw.n_frames,
+            n_models=raw.n_models,
+            n_features=raw.n_features,
+            n_annotations=raw.n_annotations,
+            encode_record=_text(raw.encode_record),
+            scores_digest=_text(raw.scores_digest),
+            elapsed_ns=raw.elapsed_ns,
+            digest=_text(raw.digest),
+        )
+
+
+@dataclass(frozen=True)
+class ModelProvenance:
+    """One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    name: str | None
+    version: str | None
+    sha256: str | None
+    flags: int
+    overrides: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxModelProvenance) -> ModelProvenance:
+        return cls(
+            name=_text(raw.name),
+            version=_text(raw.version),
+            sha256=_text(raw.sha256),
+            flags=raw.flags,
+            overrides=_text(raw.overrides),
+        )
+
+
+@dataclass(frozen=True)
+class FeatureProvenance:
+    """How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    feature: str | None
+    extractor: str | None
+    implementation: str | None
+    backend: int
+    device: str | None
+    runtime: str | None
+    options: str | None
+    exactness: str | None
+    source: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxFeatureProvenance) -> FeatureProvenance:
+        return cls(
+            feature=_text(raw.feature),
+            extractor=_text(raw.extractor),
+            implementation=_text(raw.implementation),
+            backend=raw.backend,
+            device=_text(raw.device),
+            runtime=_text(raw.runtime),
+            options=_text(raw.options),
+            exactness=_text(raw.exactness),
+            source=raw.source,
+        )
+
+
+@dataclass(frozen=True)
+class Annotation:
+    """One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    key: str | None
+    value: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxAnnotation) -> Annotation:
+        return cls(
+            key=_text(raw.key),
+            value=_text(raw.value),
         )
 
 
@@ -1639,6 +2017,77 @@ class Context:
         )
         _raise(self._lib, status, error, "vmafx_feature_score_pooled")
         return PooledScore.from_c(out)
+
+    def model_provenance(self, index: int) -> ModelProvenance:
+        """Describe mounted model `index` (models of vmafx_context_use_model() and vmafx_context_use_model_set(), and models mounted through the libvmaf API), in mount order; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxModelProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_model_provenance(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_model_provenance")
+        return ModelProvenance.from_c(out)
+
+    def feature_provenance(self, index: int) -> FeatureProvenance:
+        """Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxFeatureProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_feature_provenance(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_feature_provenance")
+        return FeatureProvenance.from_c(out)
+
+    def feature_provenance(self, feature: str) -> FeatureProvenance:
+        """Describe the feature named `feature` (as the scores carry it, option-decorated names included); VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5."""
+        out = VmafxFeatureProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_feature_provenance(
+            self._handle, feature.encode(), ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_feature_provenance")
+        return FeatureProvenance.from_c(out)
+
+    def annotate(self, key: str, value: str) -> None:
+        """Add `key` = `value` (both copied) to the context's provenance record, for what only the caller knows: the inputs, the command line. A key may repeat; annotations keep their order. VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_annotate(
+            self._handle, key.encode(), value.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_annotate")
+        return None
+
+    def annotation(self, index: int) -> Annotation:
+        """Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxAnnotation()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_annotation(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_annotation")
+        return Annotation.from_c(out)
+
+    def set_encode_record(self, record: str) -> None:
+        """Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_set_encode_record(
+            self._handle, record.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_set_encode_record")
+        return None
+
+    def report_write(self, path: str, format: int, flags: int, score_format: str) -> None:
+        """Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_report_write(
+            self._handle, path.encode(), format, flags, score_format.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_report_write")
+        return None
 
 
 class Library:

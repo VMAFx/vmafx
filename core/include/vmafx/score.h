@@ -46,8 +46,8 @@ struct VmafxScore {
     /** Feature name as requested. */
     const char *feature;
     /**
-     * Registered extractor that declares the feature, or NULL (imported scores, option-decorated
-     * names until WP5).
+     * Registered extractor that wrote the feature (option-decorated names included, RC4 WP5), or
+     * NULL (imported and model scores); vmafx_feature_provenance() describes it.
      */
     const char *extractor;
 };

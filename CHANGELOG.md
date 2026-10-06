@@ -87,6 +87,31 @@
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
+- Every score now carries a full provenance record (#2142, ADR-2073): library,
+  ABI and build (commit, compilers, build options, the strict floating-point
+  policy, backends, a `build_id` digest), the SIMD level and device, the
+  context options, the frames, every model with the SHA-256 of its bytes and
+  its overrides, the extractor, options, backend and exactness class of every
+  feature (option-decorated names included), the command line, and a digest
+  over the record and every score's bits. The C API reads it with
+  `vmafx_context_provenance()`, `vmafx_context_model_provenance()`,
+  `vmafx_context_feature_provenance()`, `vmafx_feature_provenance()`,
+  `vmafx_context_annotation()` and `vmafx_context_provenance_json()`, and adds
+  to it with `vmafx_context_annotate()` and `vmafx_context_set_encode_record()`
+  (the digest of a VMAFx/pelorus#81 encode record). ABI 0.1.5.
+- `vmafx_report_write()` writes a report with the record: a `provenance`
+  object and `score_format` in JSON, a `<provenance>` element in XML, CSV and
+  SUB unchanged with an optional `<path>.provenance.json` sidecar
+  (`vmaf --provenance-sidecar`). Every `vmaf` report and every report an API
+  user writes through `vmaf_write_output()` carries it; the scoring server and
+  both MCP servers return it.
+- `vmaf --verify-provenance <report>` re-runs the command line a JSON report
+  recorded and compares every configuration field and score bit for bit,
+  naming the first difference (exit 0 match, 1 difference, 2 cannot check);
+  `vmafx_report_open()`, `vmafx_report_field()` and `vmafx_report_verify()`
+  do the same for API users. Documented in `docs/usage/provenance.md`.
+
+
 - `vmafx-server` raises two framework defaults that did not fit scoring: the
   gRPC receive limit is now 64 MiB (a 1080p `ScoreStream` frame pair is 6.2 MB
   and the old 4 MiB limit rejected it) and the HTTP write timeout is 15 minutes
@@ -185,6 +210,14 @@
   value the implicit double-to-float conversion gave), narrowing conversions are
   explicit, and C test cases are declared `(void)`. No test value or tolerance
   changed.
+
+
+- The backend receipt of the JSON report (`backend_used`, `feature_backends`)
+  is written by the library's report writer instead of being spliced into the
+  file by the `vmaf` CLI, so reports written through the API carry it too;
+  `feature_backends` now comes before `backend_used` in the file. The
+  `provenance` object of WP8 keeps its six members and gains the full record
+  (#2142, ADR-2073).
 
 
 - The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
@@ -875,6 +908,31 @@ They are recorded in full, unedited, in
   default, at the cost of one flag test per frame
   ([ADR-1918](docs/adr/1918-sample-range-contract-opt-in-check.md),
   [Sample range](docs/api/sample-range.md)).
+- Every score now carries a full provenance record (#2142, ADR-2073): library,
+  ABI and build (commit, compilers, build options, the strict floating-point
+  policy, backends, a `build_id` digest), the SIMD level and device, the
+  context options, the frames, every model with the SHA-256 of its bytes and
+  its overrides, the extractor, options, backend and exactness class of every
+  feature (option-decorated names included), the command line, and a digest
+  over the record and every score's bits. The C API reads it with
+  `vmafx_context_provenance()`, `vmafx_context_model_provenance()`,
+  `vmafx_context_feature_provenance()`, `vmafx_feature_provenance()`,
+  `vmafx_context_annotation()` and `vmafx_context_provenance_json()`, and adds
+  to it with `vmafx_context_annotate()` and `vmafx_context_set_encode_record()`
+  (the digest of a VMAFx/pelorus#81 encode record). ABI 0.1.5.
+- `vmafx_report_write()` writes a report with the record: a `provenance`
+  object and `score_format` in JSON, a `<provenance>` element in XML, CSV and
+  SUB unchanged with an optional `<path>.provenance.json` sidecar
+  (`vmaf --provenance-sidecar`). Every `vmaf` report and every report an API
+  user writes through `vmaf_write_output()` carries it; the scoring server and
+  both MCP servers return it.
+- `vmaf --verify-provenance <report>` re-runs the command line a JSON report
+  recorded and compares every configuration field and score bit for bit,
+  naming the first difference (exit 0 match, 1 difference, 2 cannot check);
+  `vmafx_report_open()`, `vmafx_report_field()` and `vmafx_report_verify()`
+  do the same for API users. Documented in `docs/usage/provenance.md`.
+
+
 - `vmafx-server` raises two framework defaults that did not fit scoring: the
   gRPC receive limit is now 64 MiB (a 1080p `ScoreStream` frame pair is 6.2 MB
   and the old 4 MiB limit rejected it) and the HTTP write timeout is 15 minutes
@@ -2932,6 +2990,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   changes. The tool's other 31 pending entries are not applied: they are listed
   with what each needs in `T-RELICENSE-CHECK-PENDING-2026-10-02`
   ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
+
+
+- The backend receipt of the JSON report (`backend_used`, `feature_backends`)
+  is written by the library's report writer instead of being spliced into the
+  file by the `vmaf` CLI, so reports written through the API carry it too;
+  `feature_backends` now comes before `backend_used` in the file. The
+  `provenance` object of WP8 keeps its six members and gains the full record
+  (#2142, ADR-2073).
 
 
 - Three pull-request checks now block a merge (ADR-1687): `Tester Image` (the

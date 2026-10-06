@@ -513,7 +513,8 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     clip(model, &prediction, flags);
 
     if (write_prediction) {
-        err = vmaf_feature_collector_append(feature_collector, model->name, prediction, index);
+        err = vmaf_feature_collector_append_from(feature_collector, model->name, prediction, index,
+                                                 VMAF_FEATURE_SOURCE_MODEL, model->name);
         if (err)
             return err;
     }
@@ -628,19 +629,24 @@ static int bootstrap_append_named_scores(const VmafModelCollection *model_collec
 
     int err = 0;
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_BAGGING);
-    err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.bagging_score,
-                                         index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name,
+                                              score->bootstrap.bagging_score, index,
+                                              VMAF_FEATURE_SOURCE_MODEL, model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_STDDEV);
-    err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.stddev, index);
+    err |=
+        vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.stddev, index,
+                                           VMAF_FEATURE_SOURCE_MODEL, model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_LO);
-    err |=
-        vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.lo, index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.ci.p95.lo,
+                                              index, VMAF_FEATURE_SOURCE_MODEL,
+                                              model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_HI);
-    err |=
-        vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.hi, index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.ci.p95.hi,
+                                              index, VMAF_FEATURE_SOURCE_MODEL,
+                                              model_collection->name);
 
     free(name);
     return err;

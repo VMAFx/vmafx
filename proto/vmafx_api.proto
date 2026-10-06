@@ -169,4 +169,181 @@ message Provenance {
 
   // Build version (git describe).
   string version = 6;
+
+  // Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout.
+  // Added in ABI 0.1.5.
+  string commit = 7;
+
+  // `sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`,
+  // `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different
+  // ids. Added in ABI 0.1.5.
+  string build_id = 8;
+
+  // C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5.
+  string compiler = 9;
+
+  // Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build.
+  // Added in ABI 0.1.5.
+  string build_flags = 10;
+
+  // Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI
+  // 0.1.5.
+  string fp_policy = 11;
+
+  // Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`). Added
+  // in ABI 0.1.5.
+  string backends = 12;
+
+  // 1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5.
+  uint32 rust_twins = 13;
+
+  // Highest instruction-set level the CPU extractors dispatch to under the context's cpumask
+  // (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added in
+  // ABI 0.1.5.
+  string simd = 14;
+
+  // Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device
+  // made from external handles. Added in ABI 0.1.5.
+  int32 device_index = 15;
+
+  // Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5.
+  string device_name = 16;
+
+  // Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown`
+  // when the backend does not report it yet. Added in ABI 0.1.5.
+  string device_runtime = 17;
+
+  // Worker threads of the context. Added in ABI 0.1.5.
+  uint32 n_threads = 18;
+
+  // Frame subsampling of the context (1: every frame). Added in ABI 0.1.5.
+  uint32 n_subsample = 19;
+
+  // CPU instruction-set bits the context disabled. Added in ABI 0.1.5.
+  uint64 cpumask = 20;
+
+  // GPU dispatch bits the context disabled. Added in ABI 0.1.5.
+  uint64 gpumask = 21;
+
+  // Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5.
+  uint32 frame_width = 22;
+
+  // Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5.
+  uint32 frame_height = 23;
+
+  // Pixel layout of the submitted frames. Added in ABI 0.1.5. Value name of VmafxPixelFormat
+  // without the VMAFX_PIXEL_FORMAT_ prefix, lower case.
+  string pix_fmt = 24;
+
+  // Bits per component of the submitted frames. Added in ABI 0.1.5.
+  uint32 bpc = 25;
+
+  // Frames submitted. Added in ABI 0.1.5.
+  uint64 n_frames = 26;
+
+  // Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5.
+  uint32 n_models = 27;
+
+  // Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5.
+  uint32 n_features = 28;
+
+  // Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5.
+  uint32 n_annotations = 29;
+
+  // Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
+  // VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+  // 0.1.5.
+  string encode_record = 30;
+
+  // `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index>
+  // <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index
+  // order. Added in ABI 0.1.5.
+  string scores_digest = 31;
+
+  // Nanoseconds from the first submitted frame to the flush (to now before it); timing, not
+  // covered by `digest`. Added in ABI 0.1.5.
+  uint64 elapsed_ns = 32;
+
+  // `sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and
+  // `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with
+  // VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5.
+  string digest = 33;
+
+  // Mounted models.
+  repeated ModelProvenance models = 100;
+
+  // Features with scores.
+  repeated FeatureProvenance features = 101;
+
+  // Caller annotations, in the order they were added.
+  repeated Annotation annotations = 102;
+}
+
+// ModelProvenance: One mounted model (#2142). Strings live as long as the context. Added in ABI
+// 0.1.5. (from VmafxModelProvenance).
+message ModelProvenance {
+  // Name of the model's scores.
+  string name = 1;
+
+  // Built-in model version, or the path of the file it was loaded from.
+  string version = 2;
+
+  // SHA-256 of the model bytes as loaded, 64 lower-case hex digits.
+  string sha256 = 3;
+
+  // Load flags.
+  uint64 flags = 4;
+
+  // Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:`
+  // in the order applied; empty when none.
+  string overrides = 5;
+}
+
+// FeatureProvenance: How the scores of one feature are made (#2142). Strings live as long as the
+// context. Added in ABI 0.1.5. (from VmafxFeatureProvenance).
+message FeatureProvenance {
+  // Feature name as the scores carry it (option-decorated names included).
+  string feature = 1;
+
+  // Extractor that wrote the scores; the model's name for a model score; empty for an imported
+  // score.
+  string extractor = 2;
+
+  // `c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the
+  // scores.
+  string implementation = 3;
+
+  // Backend the extractor runs on (CPU for model and imported scores). Value name of VmafxBackend
+  // without the VMAFX_BACKEND_ prefix, lower case.
+  string backend = 4;
+
+  // Device that ran the extractor (`cpu` for the CPU).
+  string device = 5;
+
+  // Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the
+  // host architecture for the CPU).
+  string runtime = 6;
+
+  // Options of the extractor instance, `key=value` separated by `:` in key order; empty when none.
+  string options = 7;
+
+  // How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the
+  // parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`,
+  // or `unclassified` for a device extractor the tables do not list; empty when no extractor wrote
+  // the scores.
+  string exactness = 8;
+
+  // Where the scores come from. Value name of VmafxFeatureSource without the VMAFX_FEATURE_SOURCE_
+  // prefix, lower case.
+  string source = 9;
+}
+
+// Annotation: One caller annotation of the provenance record (vmafx_context_annotate()). Strings
+// live as long as the context. Added in ABI 0.1.5. (from VmafxAnnotation).
+message Annotation {
+  // Key: 1 to 64 characters of `a-z`, `0-9` and `_`.
+  string key = 1;
+
+  // Value as given.
+  string value = 2;
 }

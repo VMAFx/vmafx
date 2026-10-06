@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.4"
+abi_version = "0.1.5"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -228,6 +228,13 @@ errno = "EINVAL"
 reverse = false
 doc = "A struct_size below the size the struct had when it was introduced; the error names the struct."
 
+[[status]]
+name = "VMAFX_E_MISMATCH"
+since = "0.1"
+value = -12
+errno = "EBADMSG"
+doc = "A report does not match its provenance digest or its re-run; the error's subject names the first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added in ABI 0.1.5."
+
 # ---------------------------------------------------------------------------
 # Enumerations (values equal the libvmaf ones where libvmaf has the concept).
 
@@ -380,6 +387,52 @@ bits = [
   { name = "VMAFX_DEVICE_PROFILING", bit = 0, doc = "Time every kernel the device runs; read with vmafx_device_profile(). Refused by a device without a kernel profiler (the CPU)." },
 ]
 
+# Provenance and reports (RC4 WP5, #2142).
+
+[[enums]]
+name = "VmafxFeatureSource"
+header = "vmafx/provenance.h"
+since = "0.1"
+doc = "Where the scores of a feature come from. Added in ABI 0.1.5."
+values = [
+  { name = "VMAFX_FEATURE_SOURCE_UNKNOWN", value = 0, doc = "Not recorded (a feature written outside an extractor, a model and an import)." },
+  { name = "VMAFX_FEATURE_SOURCE_EXTRACTOR", value = 1, doc = "Computed by a registered feature extractor." },
+  { name = "VMAFX_FEATURE_SOURCE_IMPORTED", value = 2, doc = "Computed outside the library and recorded with vmafx_context_import_score()." },
+  { name = "VMAFX_FEATURE_SOURCE_MODEL", value = 3, doc = "Predicted by a mounted model from other features." },
+]
+
+[[enums]]
+name = "VmafxReportFormat"
+header = "vmafx/report.h"
+since = "0.1"
+doc = "Format of a report (values equal enum VmafOutputFormat). Added in ABI 0.1.5."
+values = [
+  { name = "VMAFX_REPORT_FORMAT_XML", value = 1, doc = "XML; carries a `<provenance>` element." },
+  { name = "VMAFX_REPORT_FORMAT_JSON", value = 2, doc = "JSON; carries a `provenance` object." },
+  { name = "VMAFX_REPORT_FORMAT_CSV", value = 3, doc = "CSV; columns unchanged, provenance in the sidecar when asked." },
+  { name = "VMAFX_REPORT_FORMAT_SUB", value = 4, doc = "Subtitles; lines unchanged, provenance in the sidecar when asked." },
+]
+
+[[flags]]
+name = "VmafxReportFlags"
+header = "vmafx/report.h"
+type = "u32"
+since = "0.1"
+doc = "How vmafx_report_write() writes a report. Added in ABI 0.1.5."
+bits = [
+  { name = "VMAFX_REPORT_PROVENANCE_SIDECAR", bit = 0, doc = "Also write the provenance record to `<path>.provenance.json` (any format; CSV and SUB carry it nowhere else)." },
+]
+
+[[flags]]
+name = "VmafxProvenanceJsonFlags"
+header = "vmafx/provenance.h"
+type = "u32"
+since = "0.1"
+doc = "Which form of the record vmafx_context_provenance_json() returns. Added in ABI 0.1.5."
+bits = [
+  { name = "VMAFX_PROVENANCE_JSON_CANONICAL", bit = 0, doc = "The bytes the digest covers: the record without `digest` and `elapsed_ns` (RFC 8785 form either way)." },
+]
+
 # ---------------------------------------------------------------------------
 # Handles (opaque).
 
@@ -438,6 +491,13 @@ header = "vmafx/frame.h"
 since = "0.1"
 release = "vmafx_frame_pool_destroy"
 doc = "Frames of one geometry allocated once on a device and reused (RC4 WP3). A frame returns to its pool when its last reference is dropped."
+
+[[handles]]
+name = "VmafxReportFile"
+header = "vmafx/report.h"
+since = "0.1"
+release = "vmafx_report_close"
+doc = "A JSON report read back for verification (vmafx_report_open()). Added in ABI 0.1.5."
 
 # ---------------------------------------------------------------------------
 # Callbacks.
@@ -501,6 +561,87 @@ fields = [
   { name = "active_backend", type = "u32", enum = "VmafxBackend", doc = "Backend imported into the context." },
   { name = "n_extractors", type = "u32", doc = "Registered feature extractors; see vmafx_context_extractor_info()." },
   { name = "version", type = "cstr", doc = "Build version (git describe)." },
+  { name = "commit", type = "cstr", doc = "Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout. Added in ABI 0.1.5." },
+  { name = "build_id", type = "cstr", doc = "`sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`, `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different ids. Added in ABI 0.1.5." },
+  { name = "compiler", type = "cstr", doc = "C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5." },
+  { name = "build_flags", type = "cstr", doc = "Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build. Added in ABI 0.1.5." },
+  { name = "fp_policy", type = "cstr", doc = "Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI 0.1.5." },
+  { name = "backends", type = "cstr", doc = "Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`). Added in ABI 0.1.5." },
+  { name = "rust_twins", type = "u32", doc = "1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5." },
+  { name = "simd", type = "cstr", doc = "Highest instruction-set level the CPU extractors dispatch to under the context's cpumask (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added in ABI 0.1.5." },
+  { name = "device_index", type = "i32", doc = "Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device made from external handles. Added in ABI 0.1.5." },
+  { name = "device_name", type = "cstr", doc = "Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5." },
+  { name = "device_runtime", type = "cstr", doc = "Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown` when the backend does not report it yet. Added in ABI 0.1.5." },
+  { name = "n_threads", type = "u32", doc = "Worker threads of the context. Added in ABI 0.1.5." },
+  { name = "n_subsample", type = "u32", doc = "Frame subsampling of the context (1: every frame). Added in ABI 0.1.5." },
+  { name = "cpumask", type = "u64", doc = "CPU instruction-set bits the context disabled. Added in ABI 0.1.5." },
+  { name = "gpumask", type = "u64", doc = "GPU dispatch bits the context disabled. Added in ABI 0.1.5." },
+  { name = "frame_width", type = "u32", doc = "Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5." },
+  { name = "frame_height", type = "u32", doc = "Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5." },
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout of the submitted frames. Added in ABI 0.1.5." },
+  { name = "bpc", type = "u32", doc = "Bits per component of the submitted frames. Added in ABI 0.1.5." },
+  { name = "n_frames", type = "u64", doc = "Frames submitted. Added in ABI 0.1.5." },
+  { name = "n_models", type = "u32", doc = "Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5." },
+  { name = "n_features", type = "u32", doc = "Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5." },
+  { name = "n_annotations", type = "u32", doc = "Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5." },
+  { name = "encode_record", type = "cstr", doc = "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5." },
+  { name = "scores_digest", type = "cstr", doc = "`sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5." },
+  { name = "elapsed_ns", type = "u64", doc = "Nanoseconds from the first submitted frame to the flush (to now before it); timing, not covered by `digest`. Added in ABI 0.1.5." },
+  { name = "digest", type = "cstr", doc = "`sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5." },
+]
+# Proto-only members (RC4 WP5): the repeated records of the context, numbered
+# from 100 so the field-order numbers of the scalar fields above never meet
+# them.
+proto_repeated = [
+  { name = "models", struct = "VmafxModelProvenance", number = 100, doc = "Mounted models." },
+  { name = "features", struct = "VmafxFeatureProvenance", number = 101, doc = "Features with scores." },
+  { name = "annotations", struct = "VmafxAnnotation", number = 102, doc = "Caller annotations, in the order they were added." },
+]
+
+[[structs]]
+name = "VmafxModelProvenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "ModelProvenance"
+doc = "One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "name", type = "cstr", doc = "Name of the model's scores." },
+  { name = "version", type = "cstr", doc = "Built-in model version, or the path of the file it was loaded from." },
+  { name = "sha256", type = "cstr", doc = "SHA-256 of the model bytes as loaded, 64 lower-case hex digits." },
+  { name = "flags", type = "u64", flags = "VmafxModelFlags", doc = "Load flags." },
+  { name = "overrides", type = "cstr", doc = "Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:` in the order applied; empty when none." },
+]
+
+[[structs]]
+name = "VmafxFeatureProvenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "FeatureProvenance"
+doc = "How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "feature", type = "cstr", doc = "Feature name as the scores carry it (option-decorated names included)." },
+  { name = "extractor", type = "cstr", doc = "Extractor that wrote the scores; the model's name for a model score; empty for an imported score." },
+  { name = "implementation", type = "cstr", doc = "`c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the scores." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend the extractor runs on (CPU for model and imported scores)." },
+  { name = "device", type = "cstr", doc = "Device that ran the extractor (`cpu` for the CPU)." },
+  { name = "runtime", type = "cstr", doc = "Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the host architecture for the CPU)." },
+  { name = "options", type = "cstr", doc = "Options of the extractor instance, `key=value` separated by `:` in key order; empty when none." },
+  { name = "exactness", type = "cstr", doc = "How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`, or `unclassified` for a device extractor the tables do not list; empty when no extractor wrote the scores." },
+  { name = "source", type = "u32", enum = "VmafxFeatureSource", doc = "Where the scores come from." },
+]
+
+[[structs]]
+name = "VmafxAnnotation"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "Annotation"
+doc = "One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "key", type = "cstr", doc = "Key: 1 to 64 characters of `a-z`, `0-9` and `_`." },
+  { name = "value", type = "cstr", doc = "Value as given." },
 ]
 
 [[structs]]
@@ -525,7 +666,7 @@ fields = [
   { name = "index", type = "u64", doc = "Frame index." },
   { name = "value", type = "f64", doc = "Score." },
   { name = "feature", type = "cstr", doc = "Feature name as requested." },
-  { name = "extractor", type = "cstr", doc = "Registered extractor that declares the feature, or NULL (imported scores, option-decorated names until WP5)." },
+  { name = "extractor", type = "cstr", doc = "Registered extractor that wrote the feature (option-decorated names included, RC4 WP5), or NULL (imported and model scores); vmafx_feature_provenance() describes it." },
 ]
 
 [[structs]]
@@ -1626,6 +1767,159 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
+# Provenance records and reports (RC4 WP5, #2142).
+
+[[functions]]
+name = "vmafx_context_model_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Describe mounted model `index` (models of vmafx_context_use_model() and vmafx_context_use_model_set(), and models mounted through the libvmaf API), in mount order; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxModelProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_feature_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxFeatureProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_feature_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Describe the feature named `feature` (as the scores carry it, option-decorated names included); VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "feature", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxFeatureProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_annotate"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Add `key` = `value` (both copied) to the context's provenance record, for what only the caller knows: the inputs, the command line. A key may repeat; annotations keep their order. VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "key", type = "cstr", pass = "in" },
+  { name = "value", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_annotation"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxAnnotation", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_set_encode_record"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "record", type = "cstr", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_provenance_json"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "The provenance record as JSON in RFC 8785 form (keys in byte order, no whitespace; integers as numbers, 64-bit integers as strings, enums by their lower-case value names, as the proto Provenance message maps to JSON), with models, features and annotations. `*json` lives until the next call of this function on the context or its destruction. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "flags", type = "u32", pass = "in" },
+  { name = "json", type = "cstr", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_write"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "format", type = "u32", pass = "in" },
+  { name = "flags", type = "u32", pass = "in" },
+  { name = "score_format", type = "cstr", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_open"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Read the JSON report at `path` for verification; VMAFX_E_IO names an unreadable file, VMAFX_E_INVALID a report that is not JSON or carries no provenance object. Added in ABI 0.1.5."
+params = [
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxReportFile", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_close"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "void"
+doc = "Release a report; NULL is a no-op. Added in ABI 0.1.5."
+params = [
+  { name = "file", type = "VmafxReportFile", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_report_field"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "cstr"
+doc = "Value of the report member at `path` (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`): a string's characters, or a number, `true`, `false` or `null` as written; NULL when absent or when the member is an object or array. Lives as long as the report. Added in ABI 0.1.5."
+params = [
+  { name = "file", type = "VmafxReportFile", pass = "in_const" },
+  { name = "path", type = "cstr", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_report_verify"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Check `recorded`: its provenance digest and score digest (lossless reports) match its contents; with `rerun` (a report of the same configuration made again), every configuration field of the provenance record and every score equal bit for bit. VMAFX_E_MISMATCH names the first field that differs (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`) with both values; environment fields (version, build, device, timing) may differ. Added in ABI 0.1.5."
+params = [
+  { name = "recorded", type = "VmafxReportFile", pass = "in_const" },
+  { name = "rerun", type = "VmafxReportFile", pass = "in_const", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
 # Functions of vmafx/libvmaf_bridge.h.
 
 [[functions]]
@@ -2376,6 +2670,14 @@ doc = "Write per-frame scores as subtitles; the same as output_fmt sub."
 surfaces = ["mcp"]
 mcp = "sub"
 
+[[option_groups.options]]
+name = "provenance_sidecar"
+type = "bool"
+default = false
+doc = "Also write the provenance record to <output>.provenance.json; CSV and SUB reports carry it nowhere else (RC4 WP5)."
+surfaces = ["cli"]
+cli = ["--provenance-sidecar"]
+
 [[option_groups]]
 name = "device_target"
 since = "0.1"
@@ -2604,3 +2906,10 @@ type = "bool"
 default = false
 doc = "Print this message and exit."
 cli = ["--help"]
+
+[[option_groups.options]]
+name = "verify_provenance"
+type = "string"
+doc = "Re-run the configuration a JSON report records and compare every configuration field and score bit for bit; exits nonzero naming the first difference (RC4 WP5)."
+cli = ["--verify-provenance"]
+cli_meta = "$report"

@@ -23,6 +23,7 @@ Status codes, shared enumerations and the export macros.
 | `VMAFX_E_INTERNAL` | -9 | `-EIO` | 0.1 | Engine error without a more specific status; the error carries the engine's errno. |
 | `VMAFX_E_TIMEOUT` | -10 | `-ETIMEDOUT` | 0.1 | A fence was not signalled within the time the caller allowed; the error names the fence (RC4 WP3). |
 | `VMAFX_E_ABI` | -11 | `-EINVAL` | 0.1 | A struct_size below the size the struct had when it was introduced; the error names the struct. |
+| `VMAFX_E_MISMATCH` | -12 | `-EBADMSG` | 0.1 | A report does not match its provenance digest or its re-run; the error's subject names the first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added in ABI 0.1.5. |
 
 ## `VmafxLogLevel`
 
