@@ -68,6 +68,45 @@ check "healthy payload" kept "${root}/yuv/healthy.yuv"
 check "short but binary" kept "${root}/yuv/short_binary.yuv"
 check "legitimate json fixture" kept "${root}/scores.json"
 
+# A restored cache holds the tree of the run that saved it, tracked files
+# included. A tracked fixture a later commit changed comes back in its old
+# revision and must be put back to the checkout's; an untracked download next
+# to it stays.
+repo="${tmp}/repo"
+mkdir -p "${repo}/resource"
+git -C "${repo}" init -q
+printf 'enc_width = 1920\n' >"${repo}/resource/dataset.py"
+: >"${repo}/resource/__init__.py"
+git -C "${repo}" add resource
+git -C "${repo}" -c user.name=t -c user.email=t@t commit -q -m fixture
+printf 'old = True\n' >"${repo}/resource/dataset.py"
+head -c 4096 /dev/urandom >"${repo}/resource/download.yuv"
+
+# Without --restore-tracked a modified tracked file is left alone (a
+# developer's uncommitted edit).
+"${GATE}" "${repo}/resource" >/dev/null
+if [ "$(cat "${repo}/resource/dataset.py")" = "old = True" ]; then
+  ok=$((ok + 1))
+  printf '  ok    %-34s %s\n' "edit kept without the flag" "kept"
+else
+  ng=$((ng + 1))
+  printf '  FAIL  %-34s the edit was discarded\n' "edit kept without the flag"
+fi
+git -C "${repo}" checkout -q -- resource/__init__.py
+
+"${GATE}" --restore-tracked "${repo}/resource" >/dev/null
+
+if [ "$(cat "${repo}/resource/dataset.py")" = "enc_width = 1920" ]; then
+  ok=$((ok + 1))
+  printf '  ok    %-34s %s\n' "stale tracked file" "restored"
+else
+  ng=$((ng + 1))
+  printf '  FAIL  %-34s want the committed content, got: %s\n' "stale tracked file" \
+    "$(head -c 60 "${repo}/resource/dataset.py")"
+fi
+check "empty tracked file" kept "${repo}/resource/__init__.py"
+check "untracked download beside it" kept "${repo}/resource/download.yuv"
+
 # A missing root is a no-op, not an error: the cache may simply not have been
 # restored on a leg that does not run the Python harness.
 if "${GATE}" "${tmp}/does-not-exist" >/dev/null 2>&1; then

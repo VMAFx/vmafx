@@ -1170,7 +1170,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return append_score(feature_collector, index, score);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     Ssimu2State *s = fex->priv;
     if (!s)
@@ -1189,7 +1189,7 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(Ssimu2State),
     .provided_features = provided_features,
     /* Explicit zero-init so GCC LTO sees the full struct layout

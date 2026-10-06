@@ -699,7 +699,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return write_scores(feature_collector, index, &vif_score, s);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
     if (s->public.buf.data)
@@ -731,7 +731,7 @@ VmafFeatureExtractor vmaf_fex_integer_vif = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(VifState),
     .provided_features = provided_features,
     /* 4 scales × 1 dispatch per scale on GPU backends (see ADR-0181). */

@@ -73,13 +73,22 @@ static int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t by
 
 static char *test_context_new_returns_zeroed_struct(void)
 {
-    /* The scaffold's calloc + struct initialisation succeeds even
-     * before a real device is selected. The opaque pointer is
-     * non-NULL on success. */
+    /* vmaf_hip_context_new() selects the device it is given before it
+     * allocates (#1987): with no visible HIP device it reports -ENODEV and
+     * leaves the out-pointer NULL, the contract state_init has; with one it
+     * returns a populated context (T-HIP-SMOKE-CONTEXT-NO-DEVICE-2026-10-06). */
     VmafHipContext *ctx = NULL;
     int rc = vmaf_hip_context_new(&ctx, 0);
-    mu_assert("scaffold context_new must succeed", rc == 0);
-    mu_assert("scaffold context must be populated", ctx != NULL);
+    const int n = vmaf_hip_device_count();
+    if (n <= 0) {
+        /* A runtime that cannot be asked reports its error, never a context. */
+        mu_assert("context_new reports -ENODEV (or the runtime's error) without a device",
+                  rc == (n < 0 ? n : -ENODEV));
+        mu_assert("context_new leaves out-pointer NULL without a device", ctx == NULL);
+        return NULL;
+    }
+    mu_assert("context_new returns 0 with a real HIP device", rc == 0);
+    mu_assert("context_new populates out-pointer on success", ctx != NULL);
     vmaf_hip_context_destroy(ctx);
     return NULL;
 }

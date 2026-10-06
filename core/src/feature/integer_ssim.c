@@ -424,7 +424,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                                       s->enable_db, s->max_db, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     (void)fex;
     return 0;
@@ -444,7 +444,7 @@ VmafFeatureExtractor vmaf_fex_ssim = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(IntegerSsimState),
     .provided_features = provided_features,
 };

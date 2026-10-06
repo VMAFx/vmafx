@@ -17,10 +17,26 @@
 # already out there. Deleting a fixture is always safe — the worst case is one
 # extra download.
 #
-# Usage: prune-corrupt-fixtures.sh [ROOT]   (default: python/test/resource)
+# The cache also holds the files of ROOT that git tracks, in the revision of
+# the run that saved it, and actions/cache/restore writes them over the
+# checkout. A restore-keys hit (any run whose test files differ) therefore
+# brings back the old revision of a tracked fixture a later commit changed,
+# and the tests read it instead of the commit's: a dataset file without the
+# fields its test asserts, and the run fails, so the success()-gated save of
+# a fresh key never happens either. After pruning, every tracked file under
+# ROOT is put back to the checked-out revision; untracked downloads stay.
+#
+# Usage: prune-corrupt-fixtures.sh [--restore-tracked] [ROOT]
+#        (default ROOT: python/test/resource; the CI workflows pass
+#        --restore-tracked right after restoring the fixture cache)
 set -euo pipefail
 export LC_ALL=C
 
+restore_tracked=0
+if [ "${1:-}" = "--restore-tracked" ]; then
+  restore_tracked=1
+  shift
+fi
 root="${1:-python/test/resource}"
 
 if [ ! -d "${root}" ]; then
@@ -64,3 +80,17 @@ while IFS= read -r -d '' f; do
 done < <(find "${root}" -type f -print0)
 
 printf 'prune-corrupt-fixtures: scanned %d file(s), removed %d\n' "${scanned}" "${pruned}"
+
+# Tracked files are the checkout's, never the cache's (see the header). Only
+# with --restore-tracked: on a developer's checkout the same command would
+# discard uncommitted edits. Outside a work tree there is nothing to restore.
+if [ "${restore_tracked}" -eq 1 ] && git -C "${root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  mapfile -t stale < <(git -C "${root}" ls-files --deleted --modified -- . | sort -u)
+  for f in "${stale[@]}"; do
+    printf 'prune-corrupt-fixtures: restoring tracked file %s from the checkout\n' "${root}/${f}"
+  done
+  if [ "${#stale[@]}" -gt 0 ]; then
+    git -C "${root}" checkout -- "${stale[@]}"
+  fi
+  printf 'prune-corrupt-fixtures: restored %d tracked file(s)\n' "${#stale[@]}"
+fi

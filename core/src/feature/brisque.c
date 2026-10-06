@@ -513,7 +513,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "brisque", score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     assert(fex != NULL);
     BrisqueState *s = fex->priv;
@@ -547,7 +547,7 @@ VmafFeatureExtractor vmaf_fex_brisque = {
     .name = "brisque",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .options = options,
     .priv_size = sizeof(BrisqueState),
     .provided_features = provided_features,

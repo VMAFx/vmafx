@@ -311,7 +311,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return err;
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     MsSsimState *s = fex->priv;
     if (s->ref)
@@ -335,7 +335,7 @@ VmafFeatureExtractor vmaf_fex_float_ms_ssim = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(MsSsimState),
     .provided_features = provided_features,
 };

@@ -1888,7 +1888,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return append_temporal_score(s, feature_collector, score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     SpeedTemporalState *s = fex->priv;
     speed_close(&s->speed_state);
@@ -1915,7 +1915,7 @@ VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(SpeedTemporalState),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,

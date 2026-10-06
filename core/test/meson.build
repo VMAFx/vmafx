@@ -262,6 +262,16 @@ test('test_metal_shader_build_contract',
     timeout : 30,
 )
 
+# The Objective-C++ Metal host files compile on macOS only: their braces and
+# anonymous namespaces are checked here on every host
+# (T-METAL-FLOAT-MOTION-NAMESPACE-2026-10-06). Device-free and compiler-free.
+test('test_metal_host_source_balance',
+    import('python').find_installation(),
+    args : files('test_metal_host_source_balance.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_cuda_parity_gate_default_run',
     import('python').find_installation(),
     args : files('test_cuda_parity_gate_default_run.py'),
@@ -8133,6 +8143,16 @@ test('test_win32_pthread_shim_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# An internal C function named after a C library function becomes the same
+# assembler symbol as the macOS header's labelled declaration in a full-LTO
+# link, and every call of the library function branches to it
+# (T-DARWIN-LTO-STATIC-CLOSE-COLLISION-2026-10-06).
+test('test_libc_named_internal_functions',
+    import('python').find_installation(),
+    args : files('test_libc_named_internal_functions.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
@@ -8206,7 +8226,14 @@ if host_machine.system() != 'windows'
     test('test_y4m_alloc_failure', test_y4m_alloc_failure, suite : ['fast'])
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
-test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
+# test_psnr_apsnr_clip_sse_past_two_pow_64 scores 300 frames of 4096x4096
+# 16-bit samples (5.0e9 samples): a clip SSE past 2^64 needs 4.3e9 at the
+# maximum difference, whatever the frame size. Release builds take 1 to 5 s;
+# the sanitizer jobs' debug builds took 18 s (ASan) and passed 30 s (UBSan,
+# TSan), 57 s under TSan on ryzen-4090-arc, where hosted runners are about
+# 3x slower (T-SANITIZER-HEAVY-TEST-TIMEOUTS-2026-10-06).
+test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'],
+    timeout : 480)
 test('test_psnr_uncapped', test_psnr_uncapped, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])

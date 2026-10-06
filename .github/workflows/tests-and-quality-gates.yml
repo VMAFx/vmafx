@@ -137,8 +137,12 @@ jobs:
         # never repaired and the test fails with "no frames decoded". The
         # success()-gated save below stops new poisoning; this heals caches
         # already poisoned, which otherwise need a manual cache deletion.
+        # --restore-tracked: the cache also carries the files git tracks under
+        # python/test/resource in the revision of the run that saved it; a
+        # restore-keys hit writes them over this checkout, so they are put
+        # back to the commit's (T-CI-FIXTURE-CACHE-STALE-TRACKED-2026-10-06).
         if: steps.impact.outputs.golden_harness == 'true'
-        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
+        run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'

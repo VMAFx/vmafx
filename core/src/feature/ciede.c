@@ -604,7 +604,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "ciede2000", score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     CiedeState *s = fex->priv;
     /* Independent guards: on a partial-init failure (ref allocated, dist
@@ -633,7 +633,7 @@ VmafFeatureExtractor vmaf_fex_ciede = {
     .name = "ciede",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(CiedeState),
     .provided_features = provided_features,
     /* Single per-pixel ΔE2000 kernel + double-precision sum
