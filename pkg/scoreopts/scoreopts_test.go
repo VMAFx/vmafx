@@ -83,7 +83,7 @@ func TestCheckRefusesValuesTheDefinitionRefuses(t *testing.T) {
 		{"feature", "mcp", []string{"psnr", ""}, "invalid feature"},
 		{"target_width", "proto", uint64(1920), "lands in RC5"},
 		{"backend", "proto", "vulkan", "must be one of auto|cpu|cuda|sycl|hip|metal"},
-		{"view_distance", "mcp", float64(0.5), "must be >= 0.75"},
+		{"view_distance", "mcp", float64(1.5), "must be >= 3"},
 	}
 	for _, tc := range cases {
 		option, ok := doc.Option(tc.option)

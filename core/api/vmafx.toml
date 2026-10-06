@@ -2314,8 +2314,8 @@ mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
 [[option_groups.options]]
 name = "view_distance"
 type = "float"
-range = [0.75, 24.0]
-doc = "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value."
+range = [3.0, 24.0]
+doc = "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set)."
 ffmpeg = "view_distance"
 mcp = "view_distance"
 proto = { field = 50 }

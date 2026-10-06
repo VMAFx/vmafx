@@ -297,9 +297,9 @@
         },
         "view_distance": {
           "type": "number",
-          "minimum": 0.75,
+          "minimum": 3.0,
           "maximum": 24.0,
-          "description": "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value."
+          "description": "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set)."
         },
         "display_height": {
           "type": "integer",
@@ -668,9 +668,9 @@
         },
         "view_distance": {
           "type": "number",
-          "minimum": 0.75,
+          "minimum": 3.0,
           "maximum": 24.0,
-          "description": "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value."
+          "description": "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set)."
         },
         "display_height": {
           "type": "integer",
@@ -1669,7 +1669,7 @@
       "proto_field": 50,
       "schema": {
         "type": "number",
-        "minimum": 0.75,
+        "minimum": 3.0,
         "maximum": 24.0
       },
       "repeat": [],

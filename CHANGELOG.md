@@ -74,6 +74,23 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- Every scoring option is now defined once, in the option groups of
+  `core/api/vmafx.toml`, and generated into each surface: the `vmaf`
+  option table and `--help` text, the input schemas both MCP servers serve,
+  the `ScoreOptions` proto message and its OpenAPI schema, the AVOption table
+  of the coming `vmafx` FFmpeg filter (`ffmpeg-patches/src/vf_vmafx_options.h`)
+  and the option tables of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`,
+  `docs/mcp/tools.md` and `docs/server/api-contract.md`. Every command-line
+  spelling `vmaf` accepted before is still accepted (ADR-2044).
+- The `vmaf` JSON report carries a `provenance` object (ABI version, active
+  backend, extractor count, build version) next to `backend_used` (#2142).
+- MCP scoring tools accept `view_distance` and `display_height` (the ADM
+  extractor's viewing distance and display height) and declare the
+  device-target arguments `target_width`, `target_height` and
+  `target_scaling`, which accept only their defaults until device-targeted
+  scoring lands.
+
+
 - **vmafx-controller reads and enforces its tenant configuration
   ([ADR-1519](docs/adr/1519-controller-tenant-registry.md)).** With
   `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` the controller lists the
@@ -445,6 +462,17 @@
 - Server log lines share one field set (`request_id`, `rpc`, `route`, `model`,
   `backend`, `duration_s`, `error`) defined in `pkg/observability`; the legacy
   `POST /v1/score` path logs it today (#1251).
+
+
+- The scoring server's `ScoreRequest` (gRPC and `POST /v1/score`) takes
+  `options`: raw `.yuv` geometry, backend and device, threads, subsample,
+  precision, features, tiny model and more, so the server can score raw
+  `.yuv` pairs. Every scoring response, the `ScoreStream` aggregate included,
+  carries `provenance`: the library record, the model the server loaded with
+  its SHA-256, the backend receipt and the precision. The versioned contract
+  and its compatibility policy are on `docs/server/api-contract.md`; a
+  contract test (`meson test test_vmafx_score_contract`) checks that the CLI,
+  the C API, gRPC and REST give the same score bit for bit (#2155).
 
 
 - **actionlint pre-commit hook and Makefile target**: Wired `actionlint`
@@ -2306,6 +2334,22 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - Rust CI now runs `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
   Until now only `vmafx-sys` was linted; `vmafx`, `vmafx-tad` and any crate added to the
   workspace are covered without a workflow edit (`docs/development/rust.md`, "Linting").
+
+
+- The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
+  `describe_worst_frames`) use the library default model when `model` is
+  omitted (`vmaf_v1.0.16_3d0h` in this release) instead of `vmaf_v0.6.1`;
+  pass `model="version=vmaf_v0.6.1"` to reproduce earlier numbers. Their
+  validation follows the generated schema: `threads` 0 (single-threaded) is
+  accepted, a `feature` list with a non-string or empty entry is refused
+  instead of filtered, and errors name the argument (`invalid tiny_crf 64:
+  must be <= 63`).
+- The scoring server returns lossless scores (`precision` `max`) by default,
+  so its scores equal the CLI's and the C API's bit for bit; a request may
+  still ask for another precision. A request body with a field the contract
+  does not know is refused with 400.
+- `vmaf --help` lists every option with its values and default, generated
+  from the API definition.
 
 
 - The copyright and SPDX hook now reads `.hip`, `.metal`, `.mm`, `.pyx`, `.rs` and `.sh` as well,
@@ -4866,6 +4910,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   default-model gate now checks these contracts, and a test fails when the
   embedded document drifts from `api/openapi/vmafx-server-v1.yaml`. See
   [the REST page](docs/server/rest.md).
+
+
+- `vmafx-server` no longer cuts a `Score` or `ScoreStream` RPC that runs
+  longer than about two minutes: the gRPC framework rotates connections after
+  2 minutes with a 5 s grace for running RPCs, and the server now gives them
+  30 minutes, the bound of one vmaf run (#1251).
 
 
 - `vmafx-server` `GET /readyz` now returns 503 when the vmaf binary the scorer

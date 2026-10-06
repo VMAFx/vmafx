@@ -194,7 +194,7 @@ accepted as aliases.
 | `subsample` | `n_subsample` | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
 | `log_path` | | string | | Report file. |
 | `log_fmt` | | `json` \| `xml` \| `csv` \| `sub` | `json` | Report format; json and xml carry the backend receipt. |
-| `view_distance` | | float 0.75..24 | | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. |
+| `view_distance` | | float 3..24 | | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set). |
 | `display_height` | | uint >= 1 | | Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value. |
 | `target_width` | | uint | `0` | Width of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
 | `target_height` | | uint | `0` | Height of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |

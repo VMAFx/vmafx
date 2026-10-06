@@ -67,3 +67,17 @@ Facts:
 19. **Every tool reaches server through `registerTools` grouped helpers** (`tools.go`). `registerTools` list of `registerXTools(srv)` calls; tool registrations live in helpers in original order. New tool must go into one (or new helper called by `registerTools`). A `register*` function nothing calls registers nothing. Invariant #1 parity test catches dropped Python or declared Go-only tool. Schema literals marshalled by `toolRegistrar.add`, not tool literal; schema failing marshal cannot reach registered tool: `add` retains error, registers nothing, skips later registrations; `registerTools` returns error, `buildServer` fails. Never substitute default schema for failed marshal: permissive `{"type":"object"}` accepts every argument map, tool stays reachable with declared contract silently disabled, parity tests miss because they compare registered tools only. `cmd/vmafx-mcp/tool_schema_test.go` pins outcome.
 
 20. **Auto-dispatch backend identity comes from CLI receipt, never metric counts.** `decodeVmafOutput` accepts concrete top-level `backend_used` value (`cpu`, `cuda`, `sycl`, `hip`, or `metal`) when request used `auto`; missing, generic `gpu`, `auto`, non-string, and unknown receipts become `unknown`. Metric-key counts are run observations and move as extractors change. Keep non-object JSON rejection before response annotation. Explicit subprocess requests echo requested backend; direct-cgo path remains separate, keeps `cpu (direct cgo)`.
+
+21. **Scoring schemas + argv from generated options** (RC4 WP8, ADR-2044).
+    `vmaf_score`, `vmaf_score_encoded`, `describe_worst_frames` registered via
+    `toolRegistrar.addGenerated`: schema = `pkg/scoreopts` `options.gen.json`
+    (generated from `core/api/vmafx.toml`, byte-identical to Python copy
+    `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json`). Validation =
+    `doc.FromMCP` (bounds, enums, reserved); flags = `cliFlag()` /
+    `doc.ExtraArgs` / `scoreExtras.modelSpec`. Hand-written only: tiny_device
+    vs dnn_ep fold, csv/sub/output_fmt agreement, no_reference needs
+    tiny_model, backend -> `--no_<sibling>`. Do not bring back
+    `scoringExtraProperties` or hand flag lists. Omitted `model` =
+    `version=` + `library_defaults[VMAF_DEFAULT_MODEL_VERSION]`, never a
+    literal. New scoring argument = definition entry + regenerate + both
+    servers unchanged unless it needs a hand rule.

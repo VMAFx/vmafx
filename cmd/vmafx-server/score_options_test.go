@@ -67,13 +67,13 @@ func TestScoreRunMapsOptionsToGeneratedFlags(t *testing.T) {
 func TestScoreRunRefusesOptionsTheDefinitionRefuses(t *testing.T) {
 	t.Parallel()
 	cases := map[string]*vmafxv1.ScoreOptions{
-		"invalid bitdepth 14":     {Bitdepth: proto.Uint32(14)},
-		"invalid backend vulkan":  {Backend: proto.String("vulkan")},
-		"invalid target_width":    {TargetWidth: proto.Uint32(1920)},
-		"needs a backend that":    {Backend: proto.String("cuda"), Device: proto.String("0")},
-		"neither auto nor":        {Backend: proto.String("hip"), Device: proto.String("first")},
-		"invalid precision":       {Precision: proto.String("18")},
-		"invalid view_distance 0": {ViewDistance: proto.Float64(0)},
+		"invalid bitdepth 14":       {Bitdepth: proto.Uint32(14)},
+		"invalid backend vulkan":    {Backend: proto.String("vulkan")},
+		"invalid target_width":      {TargetWidth: proto.Uint32(1920)},
+		"needs a backend that":      {Backend: proto.String("cuda"), Device: proto.String("0")},
+		"neither auto nor":          {Backend: proto.String("hip"), Device: proto.String("first")},
+		"invalid precision":         {Precision: proto.String("18")},
+		"invalid view_distance 1.5": {ViewDistance: proto.Float64(1.5)},
 	}
 	for want, options := range cases {
 		_, err := runScore(context.Background(), nil, &vmafxv1.ScoreRequest{

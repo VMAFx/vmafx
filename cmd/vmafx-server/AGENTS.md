@@ -107,7 +107,12 @@ Go gRPC + HTTP scoring service. See
     is 4 MiB) and `http.timeouts.write` 15 min (synchronous `/v1/score`;
     framework 60 s). Apply only when the key is absent; operator env wins.
     `hardeningOptions()` stays in `productionOptions`.
-    `TestServerDefaultsFitScoring` pins the effective values.
+    `TestServerDefaultsFitScoring` pins the effective values. Also
+    `scoringKeepalive()`: app gRPC server option (golusoris appends app options
+    after its hard-coded keepalive: 2 min age, 5 s grace) -> grace 30 min =
+    vmaf run bound, else long `Score` / `ScoreStream` cut.
+    `TestScoringKeepaliveOutlastsFrameworkGrace`,
+    `TestProductionGraphCarriesTheKeepalive` pin it.
 
 12. **`/readyz` reads the status registry** (`readiness.go`): legacy `/readyz`
     is ready only when the scorer exists and every `health.TagReadiness` check
@@ -119,3 +124,19 @@ Go gRPC + HTTP scoring service. See
     file over defaults; code reads dotted keys (`max.concurrent.scores`).
     `config_precedence_test.go` pins it. Tests bind `127.0.0.1:0`, never a
     fixed port (`fixed_port_guard_test.go`).
+
+14. **One scoring path, options generated, provenance mandatory** (`score_options.go`,
+    #2155, ADR-2044): gRPC `Score`, served `POST /v1/score` (`http_server.go`)
+    and `restAdapter.ScoreVideoPair` all reach `runScore()`; no second
+    `scorer.Score` call. `ScoreRequest.options` -> vmaf flags only through
+    `pkg/scoreopts` (`scoreRun`, `optionArgs`, `backendDeviceArgs`); never
+    spell a scoring flag here. Device flag = `<backend>_device` from the
+    definition (no hand backend list). Unset precision = proto surface
+    default `max` (lossless) -> server score == CLI == C API bit for bit.
+    HTTP bodies read with `protojson` (`requestJSONOptions`,
+    DiscardUnknown false: unknown field = 400), written with proto names.
+    Report without `provenance` = Internal error, never a response without
+    it; stream aggregate gets it from `StreamScorer.Provenance()`
+    (`harvestStream`). Contract: `score_contract_test.go`, run by meson
+    `test_vmafx_score_contract` (env set by `core/test/run_score_contract.py`;
+    skip without env). Test stubs must print a `provenance` object.

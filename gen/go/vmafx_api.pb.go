@@ -114,7 +114,9 @@ type ScoreOptions struct {
 	// asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 	// 16, 17. Unset: max.
 	Precision *string `protobuf:"bytes,40,opt,name=precision,proto3,oneof" json:"precision,omitempty"`
-	// Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value.
+	// Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The
+	// ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes,
+	// which these options do not set).
 	ViewDistance *float64 `protobuf:"fixed64,50,opt,name=view_distance,json=viewDistance,proto3,oneof" json:"view_distance,omitempty"`
 	// Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's
 	// value.
