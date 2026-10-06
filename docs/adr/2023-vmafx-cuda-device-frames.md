@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2023: VMAFx device frames on CUDA: one library stream per device, fences on it, release events recorded where the frame is released
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: RC4 work package 3 (CUDA lane); maintainer review on the draft PR
+- **Deciders**: maintainer (popup 2026-10-06); RC4 work package 3 (CUDA lane)
 - **Tags**: api, abi, rc4, gpu, cuda, opengl
 
 ## Context
@@ -120,7 +120,7 @@ We implement VMAFx device frames on CUDA with these rules.
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| One library stream per device (chosen) | Every reader of a frame is on one stream, so a release enqueued there is after the last reader; two contexts scoring one import need nothing more | No overlap of two frames' kernels across streams (a tuning item for RC7) | Chosen |
+| One library stream per device (chosen) | Every reader of a frame is on one stream, so a release enqueued there is after the last reader; two contexts scoring one import need nothing more | No overlap of two frames' kernels across streams (an RC8 tuning row: measured, and held to the same fence tests) | Chosen |
 | A stream per imported frame | Overlap across frames | The twins read the distorted picture on the reference picture's stream: a frame's readers are on another frame's stream, which the release cannot know | Not chosen |
 | Release event recorded at release, with a pending table and a release callback (chosen) | No stream waits on anything the device cannot see; a device wait from the callback is ordered; a host wait is correct at any time | A table of handed-out events (4096 slots); a device wait before the callback is the caller's error | Chosen |
 | Release event recorded at request time behind a gate stream (`cuStreamWaitValue32` on a word the library stream writes at release) | A device wait is correct at any time | Measured: a stream blocked on a gate holds up every `cuCtxSynchronize()` in the context (the engine's flush, the ADR-1199 barrier), which deadlocked a second context still reading the frame; the write also needs an explicit flush of the library stream | Rejected after measurement |
@@ -144,7 +144,10 @@ We implement VMAFx device frames on CUDA with these rules.
   GL textures import with a GL sync (`test_vmafx_import_cuda_gl.c`); the
   `integer_vif` twin no longer assumes the pitch of its pictures, and
   `float_ms_ssim_cuda` no longer round-trips frames through the host.
-- **Negative**: frames of one device are read on one stream; the release
+- **Negative**: frames of one device are read on one stream, so two frames'
+  kernels do not overlap; multi-stream overlap is an RC8 tuning row, measured
+  and held to the same fence tests (`test_vmafx_import_cuda_fence.c`: acquire
+  under load, release canary, pool frames without a fence); the release
   event table bounds frames with a pending `CUDA_EVENT` release fence at 4096;
   a GL texture is registered and unregistered per import (a registration cache
   is a tuning item); `VMAFX_DEVICE_PROFILING` stays `VMAFX_E_NOTSUP` on CUDA
@@ -157,6 +160,7 @@ We implement VMAFx device frames on CUDA with these rules.
 ## References
 
 - [ADR-1829](1829-rc4-zero-copy-import.md), [ADR-1852](1852-vmafx-api-redesign.md) design sections 2.7 and 5.3, [ADR-1929](1929-vmafx-device-frames-fences.md), [ADR-1199](1199-cuda-picture-handover-barrier.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md), [ADR-1223](1223-cuda-ampere-architecture-floor.md), [ADR-1462](1462-cuda-vif-reads-host-log2-table.md).
+- `Q` (maintainer popup 2026-10-06, ADR-2023): "Accept, overlap as tuning later (Recommended)": multi-stream overlap becomes an RC8 tuning row, measured, with the same fence tests.
 - `req` (RC4 work package 3, CUDA lane): "device pointer / array in the device's context; no device-to-device copy into the pool | event wait on the library stream; release event recorded after last reader; ADR-1199 barrier stays only for compat callers without fences".
 - `req` (RC4 work package index, added 2026-10-06, #2238): "OpenGL interop import (CUDA-GL, SYCL via EGL DMA-buf export, HIP-GL) and a GL sync fence kind (additive, ADR-1897)".
 - Tests: `core/test/test_vmafx_import_cuda.c`, `test_vmafx_import_cuda_bitexact.c`, `test_vmafx_import_cuda_fence.c`, `test_vmafx_import_cuda_gl.c`, `test_vmafx_import_cuda_cells_contract.py`.
