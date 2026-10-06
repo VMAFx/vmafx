@@ -60,7 +60,7 @@ static uint64_t imported;
 
 /* How the import session lays out the frames. */
 typedef struct Form {
-    uint32_t pix_fmt; /* NV12, P010, P016 */
+    uint32_t pix_fmt; /* NV12 .. P416, Y210, Y410 */
     uint32_t bpc;
     unsigned shift; /* left shift of the samples in the semi-planar buffer */
 } Form;
@@ -118,8 +118,18 @@ static VmafxContext *run_host(const VtClip *clip, VmafxModel *model)
 static VmafxFrame *import_frame(const VtClip *clip, const Form *form, const uint8_t *planar,
                                 uint8_t *buf)
 {
-    vt_to_semiplanar(&clip->desc, planar, form->shift, buf);
-    const VmafxFrameImport imp = vt_import_semiplanar(&clip->desc, form->pix_fmt, form->bpc, buf);
+    VmafxFrameImport imp;
+    if (vt_is_msb(form->pix_fmt)) {
+        memcpy(buf, planar, vt_frame_bytes(&clip->desc));
+        vt_shift_up(&clip->desc, buf, 16u - clip->desc.bpc);
+        imp = vt_import_planar_words(&clip->desc, form->pix_fmt, buf);
+    } else if (vt_is_packed(form->pix_fmt)) {
+        vt_to_packed(&clip->desc, planar, form->pix_fmt, buf);
+        imp = vt_import_packed(&clip->desc, form->pix_fmt, buf);
+    } else {
+        vt_to_semiplanar(&clip->desc, planar, form->shift, buf);
+        imp = vt_import_semiplanar(&clip->desc, form->pix_fmt, form->bpc, buf);
+    }
     VmafxFrame *frame = NULL;
     if (vmafx_frame_import(NULL, &imp, &frame, NULL) != VMAFX_OK) {
         return NULL;
@@ -133,12 +143,13 @@ static VmafxContext *run_import(const VtClip *clip, const Form *form, VmafxModel
                                 uint8_t *bufs)
 {
     VmafxContext *const context = model_context(model);
-    const size_t frame = vt_frame_bytes(&clip->desc);
+    const size_t frame = vt_import_bytes(&clip->desc);
+    const size_t planar = vt_frame_bytes(&clip->desc);
     bool ok = context != NULL;
     for (unsigned i = 0; i < clip->n_frames && ok; i++) {
         uint8_t *const buf = bufs + 2u * (size_t)i * frame;
-        VmafxFrame *ref = import_frame(clip, form, clip->ref + (size_t)i * frame, buf);
-        VmafxFrame *dist = import_frame(clip, form, clip->dist + (size_t)i * frame, buf + frame);
+        VmafxFrame *ref = import_frame(clip, form, clip->ref + (size_t)i * planar, buf);
+        VmafxFrame *dist = import_frame(clip, form, clip->dist + (size_t)i * planar, buf + frame);
         ok = ref && dist && vmafx_submit(context, ref, dist, i, NULL) == VMAFX_OK;
     }
     return ok && vmafx_flush(context, NULL) == VMAFX_OK ? context : NULL;
@@ -194,7 +205,7 @@ static char *compare_case(const VtClip *clip, const VtClip *host_clip, const For
 {
     VmafxModel *model = NULL;
     mu_assert("model", vmafx_model_load(NULL, MODEL, &model, NULL) == VMAFX_OK);
-    uint8_t *const bufs = malloc(2u * (size_t)clip->n_frames * vt_frame_bytes(&clip->desc));
+    uint8_t *const bufs = malloc(2u * (size_t)clip->n_frames * vt_import_bytes(&clip->desc));
     char *const msg = bufs ? compare_sessions(clip, host_clip, form, model, bufs) : "buffers";
     free(bufs);
     vmafx_model_unref(model);
@@ -239,6 +250,165 @@ static char *test_fixture_p016(void)
     clip.desc = d16;
     char *const msg = compare_case(&clip, &clip, &p016);
     vt_clip_close(&clip);
+    return msg;
+}
+
+/* 4:2:2 and 4:4:4 imports (ADR-2133): a fixture's chroma repeated into the
+ * wider layouts, imported semi-planar (NVxx at 8 bits, Pxxx at 10 and 16) and
+ * packed (Y210 as 4:2:2, Y410 as 4:4:4 at 10 bits), against the same planes
+ * created on the host. */
+static char *chroma_case(const VtClip *base, uint32_t planar_fmt, const Form *form)
+{
+    VtClip clip;
+    char *msg = vt_clip_to_chroma(base, planar_fmt, &clip) ? NULL : "chroma clip";
+    msg = msg ? msg : compare_case(&clip, &clip, form);
+    vt_clip_close(&clip);
+    return msg;
+}
+
+static char *test_fixture_wide_chroma(void)
+{
+    static const Form nv16 = {VMAFX_PIXEL_FORMAT_NV16, 8u, 0u};
+    static const Form nv24 = {VMAFX_PIXEL_FORMAT_NV24, 8u, 0u};
+    static const Form p210 = {VMAFX_PIXEL_FORMAT_P210, 10u, 6u};
+    static const Form p410 = {VMAFX_PIXEL_FORMAT_P410, 10u, 6u};
+    static const Form y210 = {VMAFX_PIXEL_FORMAT_Y210, 10u, 6u};
+    static const Form y410 = {VMAFX_PIXEL_FORMAT_Y410, 10u, 0u};
+    VtClip nv;
+    VtClip sp;
+    const bool have_nv = vt_clip_open(&nv, &vt_inputs[0]);
+    const bool have_sp = vt_clip_open(&sp, &vt_inputs[3]);
+    char *msg = NULL;
+    if (have_nv && have_sp) {
+        msg = chroma_case(&nv, VMAFX_PIXEL_FORMAT_YUV422P, &nv16);
+        msg = msg ? msg : chroma_case(&nv, VMAFX_PIXEL_FORMAT_YUV444P, &nv24);
+        msg = msg ? msg : chroma_case(&sp, VMAFX_PIXEL_FORMAT_YUV422P, &p210);
+        msg = msg ? msg : chroma_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, &p410);
+        msg = msg ? msg : chroma_case(&sp, VMAFX_PIXEL_FORMAT_YUV422P, &y210);
+        msg = msg ? msg : chroma_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, &y410);
+    }
+    vt_clip_close(&nv);
+    vt_clip_close(&sp);
+    mu_assert_msg(msg);
+    mu_assert("every input present or none", have_nv == have_sp);
+    return NULL;
+}
+
+/* A clip scaled up to `bpc` bits (its samples shifted left by the difference),
+ * for the 12- and 16-bit formats. */
+static void clip_scale_up(VtClip *clip, uint32_t planar_fmt, uint32_t bpc)
+{
+    const unsigned shift = bpc - clip->desc.bpc;
+    const VmafxFrameDesc scaled = vt_desc(planar_fmt, bpc, clip->desc.w, clip->desc.h);
+    const size_t frame = vt_frame_bytes(&clip->desc);
+    for (unsigned i = 0; i < clip->n_frames; i++) {
+        vt_shift_up(&scaled, clip->ref + (size_t)i * frame, shift);
+        vt_shift_up(&scaled, clip->dist + (size_t)i * frame, shift);
+    }
+    clip->desc = scaled;
+}
+
+/* The formats decoders were measured to emit beyond the 10-bit ones
+ * (ADR-2133): YUYV422 and VUYX at 8 bits, Y212 and XV36 at 12 bits, and the
+ * MSB-aligned planar 4:4:4 words at 10 and 12 bits. */
+static char *scaled_case(const VtClip *base, uint32_t planar_fmt, uint32_t bpc, const Form *form)
+{
+    VtClip clip;
+    if (!vt_clip_to_chroma(base, planar_fmt, &clip)) {
+        vt_clip_close(&clip);
+        return "chroma clip";
+    }
+    if (bpc != clip.desc.bpc) {
+        clip_scale_up(&clip, planar_fmt, bpc);
+    }
+    char *const msg = compare_case(&clip, &clip, form);
+    vt_clip_close(&clip);
+    return msg;
+}
+
+static char *test_fixture_other_layouts(void)
+{
+    static const Form yuy2 = {VMAFX_PIXEL_FORMAT_YUYV422, 8u, 0u};
+    static const Form vuyx = {VMAFX_PIXEL_FORMAT_VUYX, 8u, 0u};
+    static const Form y212 = {VMAFX_PIXEL_FORMAT_Y212, 12u, 4u};
+    static const Form xv36 = {VMAFX_PIXEL_FORMAT_XV36, 12u, 4u};
+    static const Form msb10 = {VMAFX_PIXEL_FORMAT_YUV444P_MSB, 10u, 0u};
+    static const Form msb12 = {VMAFX_PIXEL_FORMAT_YUV444P_MSB, 12u, 0u};
+    VtClip nv;
+    VtClip sp;
+    const bool have_nv = vt_clip_open(&nv, &vt_inputs[0]);
+    const bool have_sp = vt_clip_open(&sp, &vt_inputs[3]);
+    char *msg = NULL;
+    if (have_nv && have_sp) {
+        msg = scaled_case(&nv, VMAFX_PIXEL_FORMAT_YUV422P, 8u, &yuy2);
+        msg = msg ? msg : scaled_case(&nv, VMAFX_PIXEL_FORMAT_YUV444P, 8u, &vuyx);
+        msg = msg ? msg : scaled_case(&sp, VMAFX_PIXEL_FORMAT_YUV422P, 12u, &y212);
+        msg = msg ? msg : scaled_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, 12u, &xv36);
+        msg = msg ? msg : scaled_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, 10u, &msb10);
+        msg = msg ? msg : scaled_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, 12u, &msb12);
+    }
+    vt_clip_close(&nv);
+    vt_clip_close(&sp);
+    mu_assert_msg(msg);
+    mu_assert("every input present or none", have_nv == have_sp);
+    return NULL;
+}
+
+/* P216 and P416: the sparks chroma-widened pair scaled to 16 bits. */
+static char *wide_16_case(const VtClip *base, uint32_t planar_fmt, const Form *form)
+{
+    VtClip clip;
+    if (!vt_clip_to_chroma(base, planar_fmt, &clip)) {
+        vt_clip_close(&clip);
+        return "chroma clip";
+    }
+    const VmafxFrameDesc d16 = vt_desc(planar_fmt, 16, clip.desc.w, clip.desc.h);
+    const size_t frame = vt_frame_bytes(&clip.desc);
+    for (unsigned i = 0; i < clip.n_frames; i++) {
+        vt_shift_up(&d16, clip.ref + (size_t)i * frame, 6u);
+        vt_shift_up(&d16, clip.dist + (size_t)i * frame, 6u);
+    }
+    clip.desc = d16;
+    char *const msg = compare_case(&clip, &clip, form);
+    vt_clip_close(&clip);
+    return msg;
+}
+
+static char *test_fixture_wide_chroma_16(void)
+{
+    static const Form p216 = {VMAFX_PIXEL_FORMAT_P216, 16u, 0u};
+    static const Form p416 = {VMAFX_PIXEL_FORMAT_P416, 16u, 0u};
+    VtClip sp;
+    if (!vt_clip_open(&sp, &vt_inputs[3])) {
+        vt_clip_close(&sp);
+        return NULL;
+    }
+    char *msg = wide_16_case(&sp, VMAFX_PIXEL_FORMAT_YUV422P, &p216);
+    msg = msg ? msg : wide_16_case(&sp, VMAFX_PIXEL_FORMAT_YUV444P, &p416);
+    vt_clip_close(&sp);
+    return msg;
+}
+
+/* One synthetic clip of `w` x `h` at `bpc` bits with its chroma widened to
+ * `planar_fmt`, imported as `form`. */
+static char *odd_case(uint32_t bpc, uint32_t planar_fmt, const Form *form)
+{
+    VtClip base;
+    const bool made = clip_synthetic(&base, 321u, 243u, bpc);
+    char *const msg = made ? chroma_case(&base, planar_fmt, form) : "synthetic clip";
+    vt_clip_close(&base);
+    return msg;
+}
+
+/* Odd sizes: the 4:2:2 chroma width rounds up (Y210's last group). */
+static char *test_synthetic_wide_odd(void)
+{
+    static const Form y210 = {VMAFX_PIXEL_FORMAT_Y210, 10u, 6u};
+    static const Form nv16 = {VMAFX_PIXEL_FORMAT_NV16, 8u, 0u};
+    static const Form y410 = {VMAFX_PIXEL_FORMAT_Y410, 10u, 0u};
+    char *msg = odd_case(10u, VMAFX_PIXEL_FORMAT_YUV422P, &y210);
+    msg = msg ? msg : odd_case(10u, VMAFX_PIXEL_FORMAT_YUV444P, &y410);
+    msg = msg ? msg : odd_case(8u, VMAFX_PIXEL_FORMAT_YUV422P, &nv16);
     return msg;
 }
 
@@ -402,6 +572,10 @@ char *run_tests(void)
         MU_TEST(test_fixture_imports),
         MU_TEST(test_fixture_p016),
         MU_TEST(test_synthetic_4k),
+        MU_TEST(test_fixture_wide_chroma),
+        MU_TEST(test_fixture_wide_chroma_16),
+        MU_TEST(test_fixture_other_layouts),
+        MU_TEST(test_synthetic_wide_odd),
         MU_TEST(test_no_host_copy),
         MU_TEST(test_one_import_two_contexts),
     };

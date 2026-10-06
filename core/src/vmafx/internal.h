@@ -21,6 +21,7 @@
 #ifndef VMAFX_INTERNAL_H
 #define VMAFX_INTERNAL_H
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,7 @@
 #include "libvmaf/picture.h"
 #include "log.h"
 #include "ref.h"
+#include "vmafx/import_convert.h"
 #include "vmafx/vmafx.h"
 
 /* The import rule's host wait on the acquire fence before its one retry
@@ -298,6 +300,93 @@ void vmafx_host_fence_signal_unref(VmafxHostFence *fence);
  * one (a runtime failure). The backend lanes wait on their fences with it. */
 int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t timeout_ns);
 
+/* ---- Release events of the device lanes (release_events.c) --------------- */
+
+/* Release events handed out and not yet both recorded and destroyed by
+ * every holder: frames with a pending device-event release fence, per
+ * backend (HISS-02 bound; a decoder pool holds a few dozen). */
+#define VMAFX_RELEASE_EVENTS 4096u
+
+typedef struct VmafxReleaseEvent {
+    uintptr_t event; /* the runtime's event; 0: a free slot */
+    uint32_t refs;   /* the frame's until it records it, one per fence handed out */
+    bool recorded;
+} VmafxReleaseEvent;
+
+/* One backend's table (a static object of the lane, ADR-2023 item 3). */
+typedef struct VmafxReleaseEvents {
+    pthread_mutex_t lock;
+    uint32_t high; /* slots below it were used at least once */
+    void (*destroy)(uintptr_t event);
+    VmafxReleaseEvent slot[VMAFX_RELEASE_EVENTS];
+} VmafxReleaseEvents;
+
+/* A frame's release event with one more reference for the caller: `fresh`
+ * (an unrecorded event the lane just created, holding the frame's reference
+ * too) when `*slot1` is 0, else the event of slot `*slot1 - 1`. 0, or -EBUSY
+ * when the table is full (`fresh` is then not taken). */
+int vmafx_release_events_take(VmafxReleaseEvents *t, uint32_t *slot1, uintptr_t fresh,
+                              uintptr_t *event);
+/* Record the frame's release event with `record(event, arg)` (under the
+ * table's lock, so a wait never sees it half recorded), mark it recorded and
+ * drop the frame's reference; `*slot1` becomes 0. Nothing for slot 0. */
+int vmafx_release_events_record(VmafxReleaseEvents *t, uint32_t *slot1,
+                                int (*record)(uintptr_t event, void *arg), void *arg);
+/* `event` is a release event handed out and not recorded yet. */
+bool vmafx_release_events_unrecorded(VmafxReleaseEvents *t, uintptr_t event);
+/* Drop a fence's reference of `event`: false when it is not in the table. */
+bool vmafx_release_events_drop(VmafxReleaseEvents *t, uintptr_t event);
+
+/* Producer fences checked on the host (GL syncs, sync_files, dma-buf implicit
+ * fences): sync_object.h, one implementation for every lane (HISS-19). */
+
+/* ---- GL textures as linear dma-bufs (egl_export.c) ------------------------ */
+
+/* One plane to export: GL texture name, DRM fourcc of its format (R8, GR88,
+ * R16, GR1616) and its size in samples. */
+typedef struct VmafxEglTarget {
+    uintptr_t texture;
+    uint32_t fourcc;
+    uint32_t w;
+    uint32_t h;
+} VmafxEglTarget;
+
+/* One exported plane: a dma-buf descriptor the caller closes
+ * (vmafx_egl_close_planes()), its layout and size. */
+typedef struct VmafxEglPlane {
+    int fd;
+    uint64_t offset;
+    uint64_t pitch;
+    uint64_t modifier;
+    uint64_t size;
+} VmafxEglPlane;
+
+/* What vmafx_egl_export_planes() does with a texture the driver exports in
+ * its own tiling. One EGL export for every lane (HISS-19): the HIP lane reads
+ * linear rows (refuse, or copy with VMAFX_IMPORT_ALLOW_COPY, ADR-2132), the
+ * SYCL lane de-tiles Intel tilings on the device (keep, ADR-2091). */
+typedef enum VmafxEglTiled {
+    VMAFX_EGL_TILED_REFUSE = 0, /* VMAFX_E_NOTSUP naming VMAFX_IMPORT_ALLOW_COPY */
+    VMAFX_EGL_TILED_COPY = 1,   /* a GPU copy into a linear dma-buf (GBM, one blit) */
+    VMAFX_EGL_TILED_KEEP = 2,   /* as exported, with its modifier; the importer reads it */
+} VmafxEglTiled;
+
+/* The `n` (1 to 3) textures of the EGL context current on the calling thread
+ * as dma-bufs in `out`. A texture the driver exports linear is exported as it
+ * is; one exported tiled is handled as `tiled` says; `*copied` tells whether
+ * any was copied. A target's `fourcc` is checked against the export unless 0.
+ * `device_pci` ("0000:0e:00.0") is the importing device's GPU, checked
+ * against the context's; NULL skips the check. With REFUSE and COPY every
+ * export waits (1 s at most) for the producer's writes; with KEEP the importer
+ * honours the dma-buf's implicit fences. On a failure every descriptor is
+ * closed. */
+VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
+                                    const char *device_pci, const VmafxEglTarget *targets,
+                                    uint32_t n, VmafxEglTiled tiled, VmafxEglPlane out[3],
+                                    bool *copied);
+/* Close the descriptors of `n` exported planes. */
+void vmafx_egl_close_planes(VmafxEglPlane *planes, uint32_t n);
+
 /* ---- Imports (frame_import.c) -------------------------------------------- */
 
 /* How a producer lays out one pixel format vmafx_frame_import() takes. */
@@ -310,20 +399,47 @@ typedef struct VmafxImportLayout {
     uint32_t shift;   /* right shift of every sample (P010: 6) */
     bool interleaved; /* plane 1 holds Cb / Cr pairs */
     const char *name; /* FFmpeg's name, for messages */
+    uint32_t packed;  /* VmafxImportPacked: one plane of packed Y, Cb, Cr */
+    uint8_t elem[3];  /* packed: element of a group that holds Y, Cb, Cr */
+    bool msb;         /* the `bpc` most significant bits of 16-bit words (shift 16 - bpc) */
 } VmafxImportLayout;
+
+/* Packed layouts (one producer plane, ADR-2133): 0 is none. */
+typedef enum VmafxImportPacked {
+    VMAFX_IMPORT_PACKED_NONE = 0,
+    /* Y0 Cb Y1 Cr elements (bytes at 8 bits, else 16-bit words) per two pixels:
+     * elem = Y0, Cb, Cr (0, 1, 3). */
+    VMAFX_IMPORT_PACKED_YUYV = 1,
+    /* Four elements per pixel (bytes at 8 bits, else 16-bit words); elem
+     * gives the position of Y, Cb and Cr. */
+    VMAFX_IMPORT_PACKED_UYV4 = 2,
+    /* One 32-bit word per pixel: Cb | Y << 10 | Cr << 20 (Y410, XV30). */
+    VMAFX_IMPORT_PACKED_XVYU2101010 = 3
+} VmafxImportPacked;
+
+/* The right shift of every sample of a frame of `bpc` bits in `layout`. */
+static inline uint32_t vmafx_import_shift(const VmafxImportLayout *layout, uint32_t bpc)
+{
+    return layout->msb ? 16u - bpc : layout->shift;
+}
 
 /* Bytes of one row of producer plane `i` and its rows, for the planar
  * geometry `pw` / `ph` of the frame. */
 void vmafx_import_plane_extent(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
                                const unsigned pw[3], const unsigned ph[3], uint64_t *row,
                                uint64_t *rows);
+/* How plane `i` of the planar frame a layout makes is read from the
+ * producer's planes (the CPU reference in vmafx/import_convert.h). */
+void vmafx_import_plane_read(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
+                             VmafxImportRead *out);
 /* One plane of linear memory (`memory` names it in messages): an address, a
  * linear layout, a pitch that holds a row and rows that lie inside the given
  * size and the address space. */
 VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const VmafxImportPlane *p,
                                             uint32_t i, uint64_t row, uint64_t rows,
                                             const char *memory);
-/* Subject names of the fields of plane `i` (handle, pitch, modifier, size). */
+/* Subject names of the fields of plane `i` (handle, pitch, modifier, size,
+ * offset, fd, plane_index). */
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
 
 /* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no

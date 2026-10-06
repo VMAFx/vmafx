@@ -513,10 +513,22 @@ static bool fadm_allocations_complete(const FloatAdmStateSycl *s)
     return true;
 }
 
+/* Both luma planes into d_ref_raw / d_dis_raw, packed at the returned
+ * stride: packed on the host and uploaded, or, for frames of the VMAFx API
+ * on this device, copied on the device (ADR-2091; the frame's planes are
+ * never read on the host). 0 when a device copy could not be enqueued. */
 static unsigned fadm_upload_planes(sycl::queue &q, const FloatAdmStateSycl *s,
                                    const VmafPicture *ref_pic, const VmafPicture *dist_pic)
 {
     const size_t bytes_per_pixel = (s->bpc <= 8u) ? 1u : 2u;
+    const size_t row = (size_t)s->width * bytes_per_pixel;
+    if (vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic)) {
+        const bool copied = vmaf_sycl_picture_read_plane(ref_pic, 0, &q, s->d_ref_raw, row, row,
+                                                         s->height, nullptr) == 0 &&
+                            vmaf_sycl_picture_read_plane(dist_pic, 0, &q, s->d_dis_raw, row, row,
+                                                         s->height, nullptr) == 0;
+        return copied ? (unsigned)row : 0u;
+    }
     if (s->bpc <= 8u) {
         copy_y_plane<uint8_t>(ref_pic, s->h_ref_raw, s->width, s->height);
         copy_y_plane<uint8_t>(dist_pic, s->h_dis_raw, s->width, s->height);
@@ -1018,6 +1030,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return -EINVAL;
     sycl::queue &q = *qptr;
     const unsigned raw_stride = fadm_upload_planes(q, s, ref_pic, dist_pic);
+    if (!raw_stride)
+        return -EIO;
     const float scaler = fadm_pixel_scaler(s->bpc);
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {

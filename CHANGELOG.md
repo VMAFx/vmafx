@@ -95,6 +95,40 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- **VMAFx device frames on HIP (RC4, ADR-2092).** In a build with the HIP
+  backend the VMAFx API creates HIP devices by index or from your stream
+  (`vmafx_device_create` with `VMAFX_BACKEND_HIP`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  HIP twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
+  dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
+  and OpenGL textures from an EGL context on the device's GPU; NV12, P010 and
+  P016 are planarised on the device. Acquire fences of kind
+  `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
+  `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
+  `VMAFX_FENCE_GL_SYNC` are checked on the host and waited for by
+  `vmafx_context_import_frame`. Release fences (`VMAFX_FENCE_HOST`,
+  `VMAFX_FENCE_HIP_EVENT`) are signalled after the last reader in every
+  context, and the release callback runs after them. `vmafx_fence_wait`
+  waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
+  build. Imported frames score bit for bit as the same frames uploaded from
+  the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
+  release fence is refused (the ROCm runtime cannot signal one). See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
+- **4:2:2 and 4:4:4 frames import on a device (RC4, ADR-2133, ABI 0.1.9 on the integration branch; 0.1.5 on its lane).**
+  `vmafx_frame_import()` takes semi-planar `VMAFX_PIXEL_FORMAT_NV16`, `P210`,
+  `P216`, `NV24`, `P410`, `P416`, the packed layouts `Y210`, `Y212`,
+  `YUYV422`, `Y410` (Intel XV30), `XV36`, `VUYX`, and `YUV444P_MSB` (NVDEC's
+  10- and 12-bit 4:4:4 words with the sample in the top bits), next to NV12 /
+  P010 / P016. A CUDA, HIP, SYCL or CPU device converts them to planar by a gather,
+  a shift and a mask and nothing else, so an imported frame scores bit for bit
+  as the same frame created on the host. See
+  [Importing a frame](docs/api/vmafx/index.md#importing-a-frame) for the table
+  of layouts and what NVDEC and the Intel and AMD VAAPI decoders emit.
+
+
 - **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
   the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`), which exports
   `vmafx_*` symbols only; `libvmaf.so.3` keeps the libvmaf API and is written
@@ -150,6 +184,26 @@
   device-target arguments `target_width`, `target_height` and
   `target_scaling`, which accept only their defaults until device-targeted
   scoring lands.
+
+
+- **VMAFx device frames on SYCL (RC4, ADR-1929, ADR-2091).** In a build with
+  the SYCL backend the VMAFx API creates SYCL devices on the Level Zero GPUs,
+  by index or in the context of your `sycl::queue` (`vmafx_device_create` with
+  `VMAFX_BACKEND_SYCL`), scores a context on one (`vmafx_context_use_device`;
+  features registered afterwards run on their SYCL twins) and imports frames
+  without a copy through the host (`vmafx_frame_import`): USM planes of any
+  pitch, and on Linux dma-bufs (linear, Intel Y-tiled and Tile4, de-tiled on
+  the device) and OpenGL textures (exported through EGL as dma-bufs). NV12,
+  P010 and P016 are planarised on the device, and every SYCL twin, the chroma
+  twins included, reads imported frames. Acquire fences of kind
+  `VMAFX_FENCE_SYCL_EVENT` are waited on by the device, `VMAFX_FENCE_SYNC_FILE`
+  and `VMAFX_FENCE_GL_SYNC` and a dma-buf's own write fences are checked on
+  the host; release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_SYCL_EVENT`) and
+  the release callback signal after the last reader in every context. SYCL
+  frame pools hand out device frames. Imported frames score bit for bit as
+  the same frames uploaded from the host. Windows shared textures and
+  `sync_file` release fences are refused for now. See
+  [SYCL devices](docs/api/vmafx/index.md#sycl-devices).
 
 
 - **VMAFx window scores and the window clock (RC4, ADR-1852, ADR-2074).**
@@ -1515,6 +1569,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `_avx512`) are removed.
 
 
+- **`float_vif_hip` runs for `float_vif` under `--backend hip` by default
+  (ADR-2092).** The build option `enable_float_vif_hip_autodispatch` now
+  defaults to `true`, so `--backend hip --feature float_vif`, models that
+  read `float_vif` and a VMAFx context on a HIP device run the HIP twin, which
+  returns the CPU's scores bit for bit (ADR-1444), instead of the CPU
+  extractor. Build with `-Denable_float_vif_hip_autodispatch=false` for the
+  old behaviour, where the twin runs only as `--feature float_vif_hip`. See
+  [`enable_float_vif_hip_autodispatch`](docs/development/build-flags.md#enable_float_vif_hip_autodispatch).
+
+
 - **The cross-backend parity gate covers every registered CUDA, SYCL and HIP
   twin.** `speed_temporal` was the one feature whose three GPU twins were
   registered and compared by no gate cell. It is now a gate feature, with a
@@ -1638,6 +1702,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   previous options are bit-identical to the previous build.
 
 
+- **HIP imports OpenGL textures through EGL dma-buf export**
+  ([ADR-2132](docs/adr/2132-hip-gl-textures-through-egl-dmabuf.md)): GL
+  texture imports on a HIP device now work on the project's ROCm 10.1 (the
+  runtime's GL interop could not read a mapped texture) and need an EGL
+  context, not GLX. A texture exported in the driver's own tiling is copied
+  on the GPU into a linear dma-buf and needs `VMAFX_IMPORT_ALLOW_COPY`;
+  `libgbm.so.1` is needed for that copy. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
 - **The HIP runtime and four HIP host files are clean under clang-tidy
   (ADR-1142).** `core/src/hip/kernel_template.c` and `core/src/hip/common.c`
   convert the stream and event handles they keep as `uintptr_t` through
@@ -1715,6 +1789,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   options matches the CPU exactly, `apsnr_*` included, and the parity gate
   passes every HIP cell; see
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **`psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` read device
+  frames on the device (ADR-2092).** Given a frame in HIP device memory, the
+  three twins that staged planes on the host copy or convert them on the
+  device (`float_ms_ssim_hip` builds level 0 with a kernel of the same
+  arithmetic as `picture_copy()`); host frames are read as before.
 
 
 - **The vendored Pelorus interop sources are re-vendored at a pin that carries

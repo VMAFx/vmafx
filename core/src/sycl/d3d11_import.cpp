@@ -162,4 +162,28 @@ extern "C" int vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_
     return rc;
 }
 
+#else /* !_WIN32 */
+
+#include <cerrno>
+
+#include <libvmaf/libvmaf_sycl.h>
+
+/* libvmaf_sycl.h declares the import on every platform and the library's
+ * version script lists it (vmafx_legacy_sycl.map, ADR-2094): off Windows it
+ * is defined and refuses, as a D3D11 texture cannot exist there. */
+extern "C" int vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_device_ptr,
+                                              void *d3d11_texture_ptr, unsigned subresource,
+                                              int is_ref, unsigned w, unsigned h, unsigned bpc)
+{
+    (void)state;
+    (void)d3d11_device_ptr;
+    (void)d3d11_texture_ptr;
+    (void)subresource;
+    (void)is_ref;
+    (void)w;
+    (void)h;
+    (void)bpc;
+    return -ENOSYS;
+}
+
 #endif /* _WIN32 */

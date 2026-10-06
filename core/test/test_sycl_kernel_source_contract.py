@@ -250,7 +250,12 @@ MOTION_TUS = ("integer_motion_sycl.cpp", "integer_motion_v2_sycl.cpp")
 MOTION_DIFF_FIRST = re.compile(
     r"read_sample\(args\.prev[^;]*?\)\s*-\s*read_sample\(args\.cur", re.S
 )
-MOTION_SUBMIT_FNS = ("submit_fex_sycl", "motion_stage_chroma", "motion_stage_plane")
+MOTION_SUBMIT_FNS = (
+    "submit_fex_sycl",
+    "motion_stage_chroma",
+    "motion_stage_plane",
+    "motion_stage_device_chroma",
+)
 # ADR-1478 / ADR-1491: one derivation of motion2 / motion3 from the stored
 # SADs, integer_motion.c::vmaf_motion_window_flush(). motion_v2_sycl calls it
 # for both windows and reads no stored score back; motion_sycl calls it for
@@ -749,12 +754,25 @@ class SyclKernelSourceContractTest(unittest.TestCase):
 
     def test_motion_submit_wait_is_detected(self) -> None:
         sources = _motion_sources()
+        anchor = "    int const stage_err = motion_stage_chroma(s, ref_pic);\n"
+        self.assertIn(anchor, sources["integer_motion_sycl.cpp"])
         sources["integer_motion_sycl.cpp"] = sources["integer_motion_sycl.cpp"].replace(
-            "    motion_stage_chroma(s, ref_pic);\n",
-            "    motion_stage_chroma(s, ref_pic);\n    (void)vmaf_sycl_queue_wait(fex->sycl_state);\n",
-            1,
+            anchor, anchor + "    (void)vmaf_sycl_queue_wait(fex->sycl_state);\n", 1
         )
         self.assertTrue(any("primary queue" in item for item in _motion_failures(sources)))
+
+    def test_motion_device_chroma_wait_is_detected(self) -> None:
+        # ADR-2091: the device staging of a VMAFx frame's chroma enqueues its
+        # copies and returns; a wait there stalls every frame.
+        sources = _motion_sources()
+        anchor = "    void *const q = vmaf_sycl_get_combined_queue(s->sycl_state);\n"
+        self.assertIn(anchor, sources["integer_motion_sycl.cpp"])
+        sources["integer_motion_sycl.cpp"] = sources["integer_motion_sycl.cpp"].replace(
+            anchor, anchor + "    (void)vmaf_sycl_queue_wait(s->sycl_state);\n", 1
+        )
+        self.assertTrue(
+            any("motion_stage_device_chroma" in item for item in _motion_failures(sources))
+        )
 
     def test_motion_own_window_is_detected(self) -> None:
         for name in MOTION_TUS:

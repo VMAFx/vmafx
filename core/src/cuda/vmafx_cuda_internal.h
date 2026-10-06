@@ -46,6 +46,7 @@ typedef struct VmafxCudaKernels {
     CUfunction deint_8;  /* NV12 chroma: one interleaved plane into two */
     CUfunction deint_16; /* P010 / P016 chroma, with a right shift */
     CUfunction shift_16; /* P010 luma: a right shift into a plane of its own */
+    CUfunction gather;   /* packed layouts and MSB planar words: one plane by a VmafxImportRead */
 } VmafxCudaKernels;
 
 typedef struct VmafxCudaDevice {
@@ -121,8 +122,4 @@ void vmafx_cuda_picture_detach(VmafxCudaDevice *dev, VmafPicture *pic);
  * GL_SYNC is waited on first. */
 VmafxStatus vmafx_cuda_gl_map(const VmafxReport *report, VmafxCudaFrame *cf,
                               const VmafxFrameImport *d, CUarray arrays[3]);
-/* Host wait on a GL sync object of the current GL context: 1 signalled, 0 not
- * within `timeout_ns`, negative on a GL error or without GL. */
-int vmafx_cuda_gl_sync_wait(uintptr_t sync, uint64_t timeout_ns);
-
 #endif /* VMAF_SRC_CUDA_VMAFX_CUDA_INTERNAL_H_ */

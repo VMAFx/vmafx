@@ -62,6 +62,27 @@
  */
 
 /*
+ * Device pictures (VMAFx API, RC4 WP3, ADR-2092).
+ *
+ * A frame imported on a HIP device reaches the twins as a picture whose
+ * planes are device memory (buf_type VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE)
+ * and whose `priv->hip.str` is the device's library stream. Every read of
+ * those planes is enqueued on the library stream, behind the producer's
+ * acquire fence and the import's conversions; the reading twin's stream then
+ * waits for the reads (an event recorded behind them), never the host. The
+ * library enqueues the frame's release on the same stream where its last
+ * reference is dropped, so the release runs after every read of every
+ * context.
+ *
+ * vmaf_hip_picture_upload() and vmaf_hip_picture_upload_staged() take device
+ * pictures as they take host pictures: the copies are device to device on
+ * the library stream, `stream` waits for them, and `staging` is not used.
+ * A twin that reads a plane another way (a conversion kernel) launches it on
+ * vmaf_hip_picture_device_stream() and makes its stream wait with
+ * vmaf_hip_stream_wait_library().
+ */
+
+/*
  * One host picture plane to copy into a device buffer with
  * vmaf_hip_picture_upload(): `rows` rows of `row_bytes` bytes, read from
  * `pic->data[plane]` `pic->stride[plane]` bytes apart and written to `dst`
@@ -104,6 +125,24 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
  */
 int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
                                    void *staging, size_t staging_bytes, uintptr_t stream);
+
+/* The library stream of a device picture (a hipStream_t carried as
+ * uintptr_t), or 0 for a host picture. */
+uintptr_t vmaf_hip_picture_device_stream(const VmafPicture *pic);
+
+/*
+ * Enqueue the device-to-device copies of `planes` (planes of device pictures
+ * of one device) on `library`, their pictures' library stream, without
+ * waiting. Returns 0 or a negative errno; a copy that fails to enqueue stops
+ * the loop, and the ones before it stay enqueued.
+ */
+int vmaf_hip_picture_copy_enqueue(const VmafHipPlaneUpload *planes, unsigned n_planes,
+                                  uintptr_t library);
+
+/* Make `stream` wait for everything enqueued on `library` so far: an event
+ * recorded there, waited on by `stream`; no host wait. 0 or a negative
+ * errno. */
+int vmaf_hip_stream_wait_library(uintptr_t stream, uintptr_t library);
 
 /* Pinned host staging for vmaf_hip_picture_upload_staged(), `size` bytes.
  * Free it with vmaf_hip_picture_staging_free() once the stream that copies

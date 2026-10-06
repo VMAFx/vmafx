@@ -276,9 +276,10 @@ if is_hipcc_enabled and not is_hip_enabled
     warning('enable_hipcc=true has no effect when enable_hip=false')
 endif
 # ADR-0623: gate VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip behind a Meson
-# option (default OFF) pending T7-10c picture-pool plumbing. Without this flag,
-# pictures arrive as CPU VmafPictures and float_vif_hip performs explicit HtoD
-# copies rather than zero-copy from the HIP picture pool.
+# option. On by default since ADR-2092: the HIP lane of the VMAFx API hands
+# the twins frames in HIP device memory (the T7-10c condition ADR-0623 waited
+# for), and a twin without the flag cannot read them. Off: float_vif_hip runs
+# only when named.
 if get_option('enable_float_vif_hip_autodispatch')
     vmaf_cflags_common += '-DFLOAT_VIF_HIP_AUTODISPATCH'
 endif
@@ -433,6 +434,10 @@ if is_hipcc_enabled and is_hip_enabled
         # ADR-1384: the device-resident SpEED chain shared by speed_chroma_hip
         # and speed_temporal_hip (host side: feature/hip/speed_hip_pipeline.c).
         'speed_pipeline'  : feature_src_dir + 'hip/speed/speed_pipeline.hip',
+        # RC4 WP3 (ADR-2092): NV12 / P010 / P016 planarisation of imported
+        # VMAFx frames, loaded by hip/import_device.c (`import_convert_hsaco`);
+        # the kernels are vmafx/import_convert_kernels.h, shared with CUDA.
+        'import_convert'  : src_dir + 'hip/import_convert.hip',
     }
     # BEGIN VMAF HIP strict FP policy
     # ADR-1407: every HIP kernel compiles with the CPU reference's arithmetic.
@@ -483,6 +488,7 @@ if is_hipcc_enabled and is_hip_enabled
     # provides declarative dependency tracking across all platforms.
     hip_kernel_shared_headers = files(
         'hip/common.h',
+        'vmafx/import_convert_kernels.h',
         'feature/integer_adm.h',
         'feature/adm_cm_accumulator.h',
         'feature/hip/integer_adm_hip.h',
@@ -1683,6 +1689,10 @@ if is_cuda_enabled
     # repo-local include-closure tracking on Windows, this guarantees that
     # editing a shared kernel header rebuilds the affected fatbins.
     cuda_kernel_shared_headers = files(
+        # RC4 WP3, ADR-2023 and ADR-2092: the import conversion kernels,
+        # shared with the HIP lane. No parentheses in comments of this list:
+        # test_device_target_header_dependencies.py reads it up to the first.
+        'vmafx/import_convert_kernels.h',
         '../include/libvmaf/libvmaf_cuda.h',
         '../include/libvmaf/model.h',
         '../include/libvmaf/picture.h',
@@ -2090,6 +2100,9 @@ if is_sycl_enabled
         sycl_dir + 'dmabuf_import.cpp',
         sycl_dir + 'd3d11_import.cpp',
         sycl_dir + 'scratch_check.cpp',
+        # RC4 WP3 (ADR-2091): the VMAFx SYCL lane's runtime half (library
+        # queue, conversions, device picture reads, release events).
+        sycl_dir + 'vmafx_sycl_rt.cpp',
     ]
 
     sycl_surface_args = []
@@ -2797,12 +2810,14 @@ libvmafx_sources = [
     src_dir + 'vmafx/device.c',
     # RC4 WP3 common lane: devices, fences, imported frames, pools, admission.
     src_dir + 'vmafx/device_context.c',
+    src_dir + 'vmafx/egl_export.c',
     src_dir + 'vmafx/fence.c',
     src_dir + 'vmafx/frame_import.c',
     src_dir + 'vmafx/frame_import_admit.c',
     src_dir + 'vmafx/frame_import_hooks.c',
     src_dir + 'vmafx/frame_pool.c',
     src_dir + 'vmafx/frame_host.c',
+    src_dir + 'vmafx/release_events.c',
     src_dir + 'vmafx/model.c',
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
@@ -2825,6 +2840,9 @@ libvmafx_sources = [
     # RC4 WP4: window scores and the window clock (ADR-2074).
     src_dir + 'vmafx/window.c',
     src_dir + 'vmafx/window_clock.c',
+    # RC4 WP3 (ADR-2091): sync_file, dma-buf implicit fences and GL syncs,
+    # shared by the backend lanes.
+    src_dir + 'vmafx/sync_object.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',
@@ -2877,6 +2895,37 @@ if is_cuda_enabled
         cuda_dir + 'import_frame.c',
         cuda_dir + 'import_gl.c',
         cuda_dir + 'import_pool.c',
+    ]
+endif
+
+# RC4 WP3 HIP lane (ADR-2092): devices, imports of device pointers, dma-bufs,
+# arrays and GL textures, and the HIP event / GL sync / sync_file fences of
+# the VMAFx API on HIP (hip/vmafx_hip.h is its interface). In the library
+# target, not in hip_sources: the HIP runtime objects link into test
+# programs without the VMAFx sources, as the CUDA lane's do. The engine
+# library since the WP6 split (ADR-2094): libvmafx_sources.
+if is_hip_enabled
+    libvmafx_sources += [
+        src_dir + 'hip/import_device.c',
+        src_dir + 'hip/import_dmabuf.c',
+        src_dir + 'hip/import_fence.c',
+        src_dir + 'hip/import_frame.c',
+        src_dir + 'hip/import_gl.c',
+    ]
+endif
+
+# RC4 WP3 SYCL lane (ADR-2091): devices, imports, fences, GL interop and pools
+# of the VMAFx API on SYCL. The C half; its SYCL calls are
+# sycl/vmafx_sycl_rt.cpp (a SYCL common object, sycl_sources above). In the
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
+if is_sycl_enabled
+    libvmafx_sources += [
+        sycl_dir + 'import_device.c',
+        sycl_dir + 'import_dmabuf.c',
+        sycl_dir + 'import_fence.c',
+        sycl_dir + 'import_frame.c',
+        sycl_dir + 'import_gl.c',
+        sycl_dir + 'import_pool.c',
     ]
 endif
 

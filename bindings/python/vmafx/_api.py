@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 9)
+ABI_VERSION = (0, 1, 10)
 
 
 class Status(enum.IntEnum):
@@ -66,6 +66,19 @@ class PixelFormat(enum.IntEnum):
     NV12 = 16
     P010 = 17
     P016 = 18
+    NV16 = 19
+    P210 = 20
+    P216 = 21
+    NV24 = 22
+    P410 = 23
+    P416 = 24
+    Y210 = 25
+    Y410 = 26
+    YUYV422 = 27
+    Y212 = 28
+    VUYX = 29
+    XV36 = 30
+    YUV444P_MSB = 31
 
 
 class Pool(enum.IntEnum):
@@ -3150,7 +3163,7 @@ class Context:
         return None
 
     def use_feature_spec(self, spec: str) -> None:
-        """Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.9."""
+        """Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.10."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_use_feature_spec(
             self._handle, spec.encode(), ctypes.byref(error)

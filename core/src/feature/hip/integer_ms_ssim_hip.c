@@ -78,6 +78,7 @@
 #include "../../hip/kernel_template.h"
 #ifdef HAVE_HIPCC
 #include "../../hip/hip_handle.h"
+#include "../../hip/picture_hip.h"
 #endif /* HAVE_HIPCC */
 #include "integer_ms_ssim/ms_ssim_arith.h"
 #include "integer_ms_ssim_hip.h"
@@ -196,8 +197,9 @@ typedef struct MsSsimStateHip {
     void *d_cmp_sq;
     void *d_refcmp;
 
-    /* HIP module + three kernel handles. */
+    /* HIP module + four kernel handles. */
     hipModule_t module;
+    hipFunction_t func_to_float; /* device pictures' level 0 (ADR-2092) */
     hipFunction_t func_decimate;
     hipFunction_t func_horiz;
     hipFunction_t func_vert_lcs;
@@ -356,6 +358,9 @@ static int ms_ssim_hip_module_load(MsSsimStateHip *s)
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
+    hip_rc = hipModuleGetFunction(&s->func_to_float, s->module, "ms_ssim_picture_to_float");
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unload_module(s, hip_rc);
     hip_rc = hipModuleGetFunction(&s->func_decimate, s->module, "ms_ssim_decimate");
     if (hip_rc != hipSuccess)
         return ms_ssim_unload_module(s, hip_rc);
@@ -487,10 +492,37 @@ static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
  * width*height raw uint bytes into a width*height*sizeof(float) allocation
  * and left the remaining 3/4 uninitialized, producing garbage in the
  * decimate + horiz kernels. */
+/* A device picture of the VMAFx API (ADR-2092): level 0 converted on the
+ * device by ms_ssim_picture_to_float, launched on the picture's library
+ * stream (every read of an imported plane is enqueued there), which `str`
+ * then waits on. The arithmetic of picture_copy(); no host copy. */
+static int ms_ssim_hip_convert_device(const MsSsimStateHip *s, hipStream_t str,
+                                      const VmafPicture *pic, unsigned plane, void *d_dst)
+{
+    const MsSsimPlaneHip *pl = &s->planes[plane];
+    const uintptr_t library = vmaf_hip_picture_device_stream(pic);
+    const void *src = pic->data[plane];
+    size_t pitch = (size_t)pic->stride[plane];
+    unsigned w = pl->width;
+    unsigned h = pl->height;
+    unsigned two_byte = (s->bpc == 10u || s->bpc == 12u || s->bpc == 16u) ? 1u : 0u;
+    float scaler = (s->bpc == 10u) ? 4.0f : (s->bpc == 12u) ? 16.0f : 256.0f;
+    void *args[] = {(void *)&src, &pitch, (void *)&d_dst, &w, &h, &two_byte, &scaler};
+    const unsigned gx = (w + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
+    const unsigned gy = (h + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
+    const int err = ms_ssim_hip_rc(hipModuleLaunchKernel(s->func_to_float, gx, gy, 1u,
+                                                         MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1u, 0,
+                                                         vmaf_hip_stream_of(library), args, NULL));
+    const int wait = vmaf_hip_stream_wait_library(vmaf_hip_stream_bits(str), library);
+    return (err != 0) ? err : wait;
+}
+
 static int ms_ssim_hip_upload_plane(const MsSsimStateHip *s, hipStream_t str,
                                     const VmafPicture *pic, unsigned plane, float *h_staging,
                                     void *d_dst)
 {
+    if (vmaf_hip_picture_device_stream(pic) != 0u)
+        return ms_ssim_hip_convert_device(s, str, pic, plane, d_dst);
     const MsSsimPlaneHip *pl = &s->planes[plane];
     /* Stride is width * sizeof(float) (contiguous, no padding). */
     picture_copy(h_staging, (ptrdiff_t)((size_t)pl->width * sizeof(float)), (VmafPicture *)pic, 0,

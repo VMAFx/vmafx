@@ -5,7 +5,13 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  HIP compute kernels for the float_ms_ssim feature extractor
- *  (integer_ms_ssim_hip, ADR-0285). Three kernels:
+ *  (integer_ms_ssim_hip, ADR-0285). Four kernels:
+ *
+ *    0. ms_ssim_picture_to_float — level 0 of a pyramid from a plane in HIP
+ *       device memory (a frame imported through the VMAFx API, ADR-2092):
+ *       float_ms_ssim.c's picture_copy() of the plane on the device, so the
+ *       plane never goes through the host. Host pictures are still converted
+ *       by picture_copy() on the host and uploaded.
  *
  *    1. ms_ssim_decimate — 9-tap 9/7 biorthogonal LPF + 2x downsample,
  *       period-2n mirror boundary. One thread per output sample.
@@ -42,6 +48,30 @@
 #include "ms_ssim_arith.h"
 
 extern "C" {
+
+/* picture_copy() (core/src/feature/picture_copy.cpp) of one plane, offset 0:
+ * a 16-bit sample divided by `scaler` (4, 16 or 256 at 10, 12 and 16 bits),
+ * any other depth read a byte at a time as the reference does. A division by
+ * a power of two and a conversion: exact, so bit for bit the host's value.
+ * `src` is the plane (`pitch` bytes per row), `dst` the packed level 0. */
+__global__ void ms_ssim_picture_to_float(const unsigned char *__restrict__ src, size_t pitch,
+                                         float *__restrict__ dst, unsigned w, unsigned h,
+                                         unsigned two_byte, float scaler)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h)
+        return;
+    const unsigned char *const row = src + (size_t)y * pitch;
+    float *const out = dst + (size_t)y * w;
+    if (two_byte) {
+        const size_t at = (size_t)2u * x;
+        const unsigned v = (unsigned)row[at] | ((unsigned)row[at + 1u] << 8u);
+        out[x] = (float)v / scaler;
+    } else {
+        out[x] = (float)row[x];
+    }
+}
 
 /* Decimate: one thread per output sample of ms_ssim_decimate().
  * src: float input (w x h), dst: float output (w_out x h_out). */

@@ -6,17 +6,18 @@
  */
 
 /*
- * The CUDA twins declared exact (scripts/ci/exact_twins.d/<cell>.cuda,
- * ADR-1428), each as the CPU extractor and options a VMAFx context on a CUDA
- * device registers for it (the aliases of scripts/ci/cross_backend_parity_gate.py
- * FEATURE_ALIASES), and the sessions the CUDA import tests compare: one
- * context per cell on the CUDA device, fed host frames (uploaded by the
- * engine) or imported device frames. core/test/test_vmafx_import_cuda_cells_contract.py
- * holds the table equal to the fragment files.
+ * The cells of the VMAFx import bit-exactness tests (RC4 WP3, ADR-2023,
+ * ADR-2091): a twin declared exact (scripts/ci/exact_twins.d/<cell>.<backend>,
+ * ADR-1428) as the CPU extractor and options a VMAFx context on a device
+ * registers for it (the aliases of scripts/ci/cross_backend_parity_gate.py
+ * FEATURE_ALIASES), and the helpers the backend lanes' tests share: one
+ * context per cell on the device, and the comparison of two contexts' scores
+ * bit for bit. Each lane's table is its own header (vmafx_cuda_cells.h,
+ * vmafx_sycl_cells.h), held to the fragments by a contract test.
  */
 
-#ifndef VMAFX_CUDA_CELLS_H
-#define VMAFX_CUDA_CELLS_H
+#ifndef VMAFX_EXACT_CELLS_H
+#define VMAFX_EXACT_CELLS_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -39,35 +40,6 @@ typedef struct VcCell {
     const char *options;   /* "key=value:key=value", or NULL */
     unsigned min_chroma;   /* smallest chroma plane side the cell scores */
 } VcCell;
-
-static const VcCell vc_cells[] = {
-    {"adm", "adm", NULL, 0u},
-    {"cambi", "cambi", NULL, 0u},
-    {"float_adm", "float_adm", NULL, 0u},
-    {"float_moment", "float_moment", NULL, 0u},
-    {"float_motion", "float_motion", NULL, 0u},
-    {"float_ms_ssim", "float_ms_ssim", NULL, 0u},
-    {"float_ms_ssim_chroma", "float_ms_ssim", "enable_chroma=true", 176u},
-    {"float_ms_ssim_lcs", "float_ms_ssim", "enable_lcs=true", 0u},
-    {"float_psnr", "float_psnr", NULL, 0u},
-    {"float_ssim", "float_ssim", NULL, 0u},
-    {"float_ssim_lcs", "float_ssim", "enable_lcs=true", 0u},
-    {"float_vif", "float_vif", NULL, 0u},
-    {"motion", "motion", NULL, 0u},
-    {"motion_debug", "motion", "debug=true", 0u},
-    {"motion_mffw", "motion", "motion_five_frame_window=true:motion_moving_average=true", 0u},
-    {"motion_v2", "motion_v2", NULL, 0u},
-    {"motion_v2_mffw", "motion_v2", "motion_five_frame_window=true:motion_moving_average=true", 0u},
-    {"psnr", "psnr", NULL, 0u},
-    {"psnr_hvs", "psnr_hvs", NULL, 0u},
-    {"speed_chroma", "speed_chroma", NULL, 0u},
-    {"speed_temporal", "speed_temporal", NULL, 0u},
-    {"ssim", "ssim", NULL, 0u},
-    {"ssimulacra2", "ssimulacra2", NULL, 0u},
-    {"vif", "vif", NULL, 0u},
-};
-
-#define VC_N_CELLS (sizeof(vc_cells) / sizeof(vc_cells[0]))
 
 /* The options of `spec` ("k=v:k=v"); NULL for none or on a failure. */
 static inline VmafxOptions *vc_options(const char *spec)
@@ -140,4 +112,4 @@ static inline bool vc_compare(VmafxContext *a, VmafxContext *b, unsigned n, unsi
 
 /* NOLINTEND(modernize-use-nullptr) */
 
-#endif /* VMAFX_CUDA_CELLS_H */
+#endif /* VMAFX_EXACT_CELLS_H */

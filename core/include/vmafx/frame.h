@@ -39,7 +39,7 @@ typedef enum VmafxMemoryKind {
     VMAFX_MEMORY_HOST = 1,
     /** A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context. */
     VMAFX_MEMORY_DEVICE_POINTER = 2,
-    /** A device array (CUDA array) in the device's context. */
+    /** A device array (CUDA or HIP array) in the device's context. */
     VMAFX_MEMORY_DEVICE_ARRAY = 3,
     /**
      * A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives
@@ -55,7 +55,9 @@ typedef enum VmafxMemoryKind {
     /**
      * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
      * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
-     * texture). Imported on a device of a backend with GL interop (CUDA). Added in ABI 0.1.7.
+     * texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf
+     * export from an EGL context of the device's GPU, ADR-2132; SYCL through an EGL dma-buf export
+     * of each texture, Linux). Added in ABI 0.1.7.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
 } VmafxMemoryKind;
@@ -75,7 +77,10 @@ typedef enum VmafxFenceKind {
     VMAFX_FENCE_HIP_EVENT = 3,
     /** A pointer to a SYCL event (`handle`) of the device's context. */
     VMAFX_FENCE_SYCL_EVENT = 4,
-    /** A Linux sync_file descriptor (`fd`). */
+    /**
+     * A Linux sync_file descriptor (`fd`), borrowed: an acquire fence a device without a kernel-
+     * scheduled queue checks on the host (HIP).
+     */
     VMAFX_FENCE_SYNC_FILE = 5,
     /** A Metal shared event (`handle`) and the value it reaches when signalled (`value`). */
     VMAFX_FENCE_METAL_SHARED_EVENT = 6,
@@ -280,19 +285,25 @@ struct VmafxFrameImport {
     /** What each plane's handle refers to. Values: VmafxMemoryKind. */
     uint32_t memory;
     /**
-     * Layout of the producer's planes; NV12, P010 and P016 are converted to planar on the device (a
-     * de-interleave, and for P010 a shift), nothing else. Values: VmafxPixelFormat.
+     * Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 /
+     * P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and
+     * YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing
+     * else. Values: VmafxPixelFormat.
      */
     uint32_t pix_fmt;
-    /** Bits per component: 8 for NV12, 10 for P010, 16 for P016, 8 to 16 for the planar formats. */
+    /**
+     * Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for
+     * Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to
+     * 16 for the planar formats.
+     */
     uint32_t bpc;
     /** Luma width in pixels. */
     uint32_t w;
     /** Luma height in pixels. */
     uint32_t h;
     /**
-     * Planes in `plane`: 1 for YUV400P, 2 for NV12 / P010 / P016 (luma, interleaved chroma), else
-     * 3.
+     * Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1
+     * for the packed layouts, else 3.
      */
     uint32_t n_planes;
     /** Each plane; entries past `n_planes` are ignored. */
@@ -307,9 +318,9 @@ struct VmafxFrameImport {
     uint32_t flags;
     /**
      * Called once, on the thread that drops the frame's last reference, after its release fences
-     * were signalled or recorded: a CUDA_EVENT release fence can be waited on from here (a producer
-     * makes its stream wait on it before it reuses the planes, with no host wait); NULL: none.
-     * Added in ABI 0.1.7.
+     * were signalled or recorded: a CUDA_EVENT, HIP_EVENT or SYCL_EVENT release fence can be waited
+     * on from here (a producer makes its stream or queue wait on it before it reuses the planes,
+     * with no host wait); NULL: none. Added in ABI 0.1.7.
      */
     VmafxFrameReleaseCallback release;
     /** Passed to `release`. Added in ABI 0.1.7. */
@@ -486,11 +497,12 @@ VMAFX_EXPORT void vmafx_frame_unref(VmafxFrame *frame);
 
 /**
  * A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are;
- * NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is
- * VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the
- * device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once).
- * The producer's memory stays valid and unchanged until the frame's release fence is signalled. The
- * caller holds one reference.
+ * the semi-planar (NV12, NV16, NV24, P010, P016, P210, P216, P410, P416) and packed (Y210, Y212,
+ * Y410, XV36, YUYV422, VUYX) layouts and YUV444P_MSB are converted to planar on the device. A
+ * layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier
+ * and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY
+ * (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and
+ * unchanged until the frame's release fence is signalled. The caller holds one reference.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc,
@@ -500,11 +512,11 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFram
  * A fence of `kind` signalled once the last reference of the frame is gone, in every context it was
  * submitted to: from then on the library reads none of its memory and the producer may reuse it.
  * Call it while holding a reference, before the frame is submitted; each call returns a new fence
- * the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT:
- * an event the library records on its stream behind the last reader where the last reference is
- * dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it means
- * something only from the frame's release callback (VmafxFrameImport.release) or after a host wait
- * returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * the caller destroys. HOST: signalled when the device has run the frame's last reader. CUDA_EVENT,
+ * HIP_EVENT: an event the library records on its stream behind the last reader where the last
+ * reference is dropped; vmafx_fence_wait() waits for the recording too, while a stream wait on it
+ * means something only from the frame's release callback (VmafxFrameImport.release) or after a host
+ * wait returned. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind,

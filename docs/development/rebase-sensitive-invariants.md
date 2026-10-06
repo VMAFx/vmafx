@@ -138,8 +138,9 @@ backend within it.
   every compat function with its engine body (traces, `%a`). See
   [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **VMAFx imported frames never take a host copy ([ADR-1929](../adr/1929-vmafx-device-frames-fences.md))**:
-  `vmafx_frame_import()` binds the producer's planes or converts NV12 /
-  P010 / P016 on the device (de-interleave, P010 shift 6) and nothing else;
+  `vmafx_frame_import()` binds the producer's planes or converts the semi-planar,
+  packed and MSB layouts on the device (de-interleave, shift, mask: one CPU
+  reference, `core/src/vmafx/import_convert.h`, [ADR-2133](../adr/2133-vmafx-import-422-444-formats.md)) and nothing else;
   every place that copies imported pixels through host memory calls
   `vmafx_count_host_copy()` (`core/src/vmafx/frame_import_hooks.h`), and the
   import tests assert the count stays 0. A frame's release fence is signalled
@@ -183,6 +184,31 @@ backend within it.
   device double buffer; a change to one recomputes it. `test_vmafx_window`,
   `test_vmafx_window_live`, `test_vmafx_window_cli` and
   `test_vmafx_lifetime` guard it.
+- **VMAFx HIP frames are read on one stream per device ([ADR-2092](../adr/2092-vmafx-hip-device-frames.md))**:
+  every frame a HIP device of the VMAFx API imports is a
+  `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture on the device's library
+  stream. The twins copy it there (`vmaf_hip_picture_upload()`, the shared
+  frame), and the reading twin's stream and the null stream wait for the
+  copies; `bind_hip_frame()` submits each import with `hipStreamQuery()`; a GL
+  import exports GL textures as dma-bufs (`core/src/vmafx/egl_export.c`, [ADR-2132](../adr/2132-hip-gl-textures-through-egl-dmabuf.md); the runtime's HIP-GL interop is never called);
+  a dma-buf is imported with its own size. Keep these when rebasing
+  `core/src/hip/picture_hip.c`, `shared_frame.c` or the three twins that
+  stage on the host. `core/test/test_vmafx_import_hip_contract.py`,
+  `test_hip_shared_frame` and `test_vmafx_import_hip*` (on a device) guard
+  them together.
+- **VMAFx SYCL frames are copied by their readers on the device ([ADR-2091](../adr/2091-vmafx-sycl-device-frames.md))**:
+  every frame of a SYCL device of the VMAFx API is a SYCL device picture
+  (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`, `VmafPicturePrivate.sycl.frame`).
+  The shared luma / chroma uploads in `core/src/sycl/common.cpp` and every SYCL
+  twin that stages its own planes copy it with
+  `vmaf_sycl_picture_read_plane()`, which records the read for the release;
+  `core/src/libvmaf.c` skips the upload wait for such pictures and refuses a
+  non-SYCL extractor on one. Acquire and release are joins (an empty kernel
+  with `depends_on()`), never `ext_oneapi_submit_barrier()` (Research-2160
+  finding 2), and no reader uses `ext_oneapi_memcpy2d()` (finding 1). The
+  de-tile math of the VA-surface import and the VMAFx dma-buf import is one
+  header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and
+  `core/test/vmafx_sycl_cells.h` together.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

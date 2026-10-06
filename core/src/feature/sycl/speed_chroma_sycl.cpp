@@ -223,6 +223,27 @@ int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, uns
     return 0;
 }
 
+/* The chroma planes into raw planes 0 to 3 in the channel pairs' order
+ * (U ref, U dis), (V ref, V dis): staged on the host and uploaded, or, for
+ * frames of the VMAFx API on this device, copied on the device (ADR-2091). */
+int upload_chroma(SpeedChromaSyclState *s, const VmafPicture *reference,
+                  const VmafPicture *distorted)
+{
+    const VmafPicture *const order[kChromaChannels] = {reference, distorted, reference, distorted};
+    const bool device =
+        vmaf_sycl_picture_on_device(reference) || vmaf_sycl_picture_on_device(distorted);
+    int err = 0;
+    for (uint32_t i = 0; i < kChromaChannels; i++) {
+        const unsigned plane = 1u + i / 2u;
+        err |= device ? speed_sycl::read_device_plane(s->pipeline, i, order[i], plane) :
+                        speed_sycl::stage_plane(s->pipeline, i, order[i], plane);
+    }
+    if (err) {
+        return -EINVAL;
+    }
+    return device ? 0 : speed_sycl::pipeline_upload(s->pipeline, 0u, kChromaChannels);
+}
+
 int submit_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference, VmafPicture *reference_90,
                        VmafPicture *distorted, VmafPicture *distorted_90, unsigned index)
 {
@@ -230,15 +251,7 @@ int submit_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference, VmafPi
     (void)distorted_90;
     (void)index;
     auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
-    /* Staging order matches the channel pairs: (U ref, U dis), (V ref, V dis). */
-    int err = speed_sycl::stage_plane(s->pipeline, 0u, reference, 1u);
-    err |= speed_sycl::stage_plane(s->pipeline, 1u, distorted, 1u);
-    err |= speed_sycl::stage_plane(s->pipeline, 2u, reference, 2u);
-    err |= speed_sycl::stage_plane(s->pipeline, 3u, distorted, 2u);
-    if (err) {
-        return -EINVAL;
-    }
-    err = speed_sycl::pipeline_upload(s->pipeline, 0u, kChromaChannels);
+    const int err = upload_chroma(s, reference, distorted);
     if (err) {
         return err;
     }

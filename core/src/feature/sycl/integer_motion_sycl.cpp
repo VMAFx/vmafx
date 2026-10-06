@@ -138,12 +138,15 @@ struct MotionStateSycl {
     unsigned chroma_w, chroma_h; // U/V plane dimensions
     void *h_stage_u;             // packed U staging (pinned host), written in submit
     void *h_stage_v;             // packed V staging (pinned host)
-    void *d_ref_u[2];            // raw U-plane ping-pong (device, void* for bpc agnostic)
-    void *d_ref_v[2];            // raw V-plane ping-pong (device)
-    int64_t *d_sad_u;            // U-plane SAD accumulator (device)
-    int64_t *h_sad_u;            // U-plane SAD readback (host-mapped)
-    int64_t *d_sad_v;            // V-plane SAD accumulator (device)
-    int64_t *h_sad_v;            // V-plane SAD readback (host-mapped)
+    void *d_stage_u;             // the same for VMAFx device frames (device, ADR-2091)
+    void *d_stage_v;
+    bool stage_on_device; // this frame's chroma is in d_stage_u / d_stage_v
+    void *d_ref_u[2];     // raw U-plane ping-pong (device, void* for bpc agnostic)
+    void *d_ref_v[2];     // raw V-plane ping-pong (device)
+    int64_t *d_sad_u;     // U-plane SAD accumulator (device)
+    int64_t *h_sad_u;     // U-plane SAD readback (host-mapped)
+    int64_t *d_sad_v;     // V-plane SAD accumulator (device)
+    int64_t *h_sad_v;     // V-plane SAD readback (host-mapped)
 
     // Deferred state
     unsigned pending_index;
@@ -325,6 +328,9 @@ static void motion_reset_chroma(MotionStateSycl *s)
 {
     s->h_stage_u = nullptr;
     s->h_stage_v = nullptr;
+    s->d_stage_u = nullptr;
+    s->d_stage_v = nullptr;
+    s->stage_on_device = false;
     s->d_ref_u[0] = nullptr;
     s->d_ref_u[1] = nullptr;
     s->d_ref_v[0] = nullptr;
@@ -521,8 +527,8 @@ static void motion_pre_graph(void *queue_ptr, void *priv)
     auto *s = static_cast<MotionStateSycl *>(priv);
     if (s->motion_add_uv) {
         size_t const bytes = (size_t)s->chroma_w * s->chroma_h * ((s->bpc <= 8) ? 1U : 2U);
-        q.memcpy(s->d_ref_u[s->cur_slot], s->h_stage_u, bytes);
-        q.memcpy(s->d_ref_v[s->cur_slot], s->h_stage_v, bytes);
+        q.memcpy(s->d_ref_u[s->cur_slot], s->stage_on_device ? s->d_stage_u : s->h_stage_u, bytes);
+        q.memcpy(s->d_ref_v[s->cur_slot], s->stage_on_device ? s->d_stage_v : s->h_stage_v, bytes);
     }
     // Five-frame window: the kernel adds into the accumulator on every frame
     // (enqueue_motion_work()), so it is cleared on every frame.
@@ -676,19 +682,45 @@ static void motion_stage_plane(const VmafPicture *pic, unsigned plane, void *dst
     }
 }
 
+/* A frame of the VMAFx API on this device (ADR-2091): its reference U and V
+ * are copied on the device, on the combined queue, into device staging that
+ * motion_pre_graph's copies then read (the frame's planes are never read on
+ * the host). The staging is allocated with the first such frame. */
+static int motion_stage_device_chroma(MotionStateSycl *s, const VmafPicture *ref_pic,
+                                      size_t row_bytes)
+{
+    void *const q = vmaf_sycl_get_combined_queue(s->sycl_state);
+    size_t const bytes = row_bytes * s->chroma_h;
+    if (!s->d_stage_u)
+        s->d_stage_u = vmaf_sycl_malloc_device(s->sycl_state, bytes);
+    if (!s->d_stage_v)
+        s->d_stage_v = vmaf_sycl_malloc_device(s->sycl_state, bytes);
+    if (!q || !s->d_stage_u || !s->d_stage_v)
+        return -ENOMEM;
+    const int err = vmaf_sycl_picture_read_plane(ref_pic, 1U, q, s->d_stage_u, row_bytes, row_bytes,
+                                                 s->chroma_h, nullptr);
+    return err ? err :
+                 vmaf_sycl_picture_read_plane(ref_pic, 2U, q, s->d_stage_v, row_bytes, row_bytes,
+                                              s->chroma_h, nullptr);
+}
+
 /* Stage this frame's reference U and V for motion_pre_graph's H2D copies.
  * Host work only: the graph for this frame is enqueued by the last extractor
  * to submit, so it cannot start before this runs, and this extractor's collect
  * of the previous frame has already drained the copies that read the staging
  * last time. */
-static void motion_stage_chroma(const MotionStateSycl *s, const VmafPicture *ref_pic)
+static int motion_stage_chroma(MotionStateSycl *s, const VmafPicture *ref_pic)
 {
     if (!s->motion_add_uv || ref_pic == nullptr)
-        return;
+        return 0;
 
     size_t const row_bytes = (size_t)s->chroma_w * ((s->bpc <= 8) ? 1U : 2U);
+    s->stage_on_device = vmaf_sycl_picture_on_device(ref_pic);
+    if (s->stage_on_device)
+        return motion_stage_device_chroma(s, ref_pic, row_bytes);
     motion_stage_plane(ref_pic, 1U, s->h_stage_u, row_bytes, s->chroma_h);
     motion_stage_plane(ref_pic, 2U, s->h_stage_v, row_bytes, s->chroma_h);
+    return 0;
 }
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -705,7 +737,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->has_pending = true;
         return 0;
     }
-    motion_stage_chroma(s, ref_pic);
+    int const stage_err = motion_stage_chroma(s, ref_pic);
+    if (stage_err)
+        return stage_err;
 
     // Combined graph submit (once per frame — the last extractor's call
     // enqueues every registered extractor's work)
@@ -935,6 +969,10 @@ static void motion_free_chroma(VmafSyclState *state, MotionStateSycl *s)
         vmaf_sycl_free(state, s->h_stage_u);
     if (s->h_stage_v)
         vmaf_sycl_free(state, s->h_stage_v);
+    if (s->d_stage_u)
+        vmaf_sycl_free(state, s->d_stage_u);
+    if (s->d_stage_v)
+        vmaf_sycl_free(state, s->d_stage_v);
     if (s->d_ref_u[0])
         vmaf_sycl_free(state, s->d_ref_u[0]);
     if (s->d_ref_u[1])

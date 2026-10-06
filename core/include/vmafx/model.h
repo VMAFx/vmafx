@@ -216,7 +216,7 @@ VMAFX_EXPORT const char *vmafx_model_set_hash(const VmafxModelSet *set);
  * overrides. VMAFX_E_INVALID names the item that is not understood (both `version` and `path`, a
  * key without a value, an override without an option), VMAFX_E_RANGE a string over 4096 bytes or
  * more than 64 items; a load failure is vmafx_model_load()'s or vmafx_model_load_file()'s. Added in
- * ABI 0.1.9.
+ * ABI 0.1.10.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_model_load_spec(const VmafxModelConfig *config, const char *spec,

@@ -62043,6 +62043,91 @@ No score, public API or FFmpeg patch impact.
   `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
   values are unchanged.
 
+## VMAFx device frames on HIP (RC4 WP3 HIP lane)
+
+`rc4/api-wp3-hip`, [ADR-2092](adr/2092-vmafx-hip-device-frames.md),
+[ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/hip/vmafx_hip.h`, `vmafx_hip_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
+  `import_gl.c` (in `libvmaf_sources` under `if is_hip_enabled`, not in
+  `hip_sources`, for the reason the CUDA lane gives) and the kernel module
+  `import_convert.hip` (`hip_kernel_sources`, `import_convert_hsaco`).
+- Moved out of the CUDA lane into shared files, one copy each:
+  `core/src/vmafx/import_convert_kernels.h` (the NV12 / P010 / P016 kernels;
+  `cuda/import_convert.cu` and `hip/import_convert.hip` only include it; it
+  is in both `cuda_kernel_shared_headers` and `hip_kernel_shared_headers`),
+  `core/src/vmafx/gl_sync.c` (the GL loader and `vmafx_gl_sync_acquire()`,
+  formerly in `cuda/import_gl.c`), `core/src/vmafx/release_events.c` (the
+  release-event table, formerly in `cuda/import_fence.c`), and the new
+  `core/src/vmafx/sync_file.c`. A rebase of the CUDA lane that touches the
+  old copies applies the change to the shared file.
+- `core/src/vmafx/*.c` dispatch to the HIP lane next to the CUDA one
+  (`device.c`, `device_context.c`, `frame_import.c`, `fence.c`,
+  `frame_import_admit.c`, `submit.c`); `fence.c` waits on `SYNC_FILE` and
+  `GL_SYNC` fences without a device; `frame_pool.c` refuses HIP devices.
+- `core/src/picture.h`: `VmafPicturePrivate` gains an unconditional
+  `hip.str` (one layout in every translation unit; `HAVE_HIP` reaches only
+  some through `config.h`). `core/src/libvmaf.c`: `translate_picture()`
+  passes a HIP device picture through, and `hip_refuse_other_reader()`
+  refuses it to a non-HIP extractor.
+- `core/src/hip/picture_hip.c` and `shared_frame.c`: a device picture is
+  copied on its library stream and the reader's stream and the null stream
+  wait (`vmaf_hip_stream_wait_library()`); an upstream or fork change to the
+  upload path keeps the device branch first. `integer_psnr_hvs_hip.c`,
+  `ssimulacra2_hip.c` and `integer_ms_ssim_hip.c` (with the new kernel
+  `ms_ssim_picture_to_float` in `integer_ms_ssim/ms_ssim_score.hip`) branch
+  on `vmaf_hip_picture_device_stream()` before their host staging;
+  `core/test/test_vmafx_import_hip_contract.py` holds the order.
+- `core/meson_options.txt`: `enable_float_vif_hip_autodispatch` defaults to
+  `true`; its description and the `core/src/meson.build` comment keep the
+  `ADR-0623` citations `test_stale_text_contract.py` reads.
+- Tests: `core/test/vmafx_cuda_cells.h` is now `vmafx_device_cells.h`
+  (both lanes read `scripts/ci/exact_twins.d/`); the CUDA tests include the
+  new name.
+- `core/src/hip/import_frame.c` `fill_failed()`: a GL texture the runtime
+  maps but refuses to read (`hipErrorInvalidValue`, every read on ROCm 10.1)
+  is `VMAFX_E_NOTSUP` naming `desc.memory`, not `VMAFX_E_DEVICE`;
+  `test_vmafx_import_hip_gl` skips on that refusal. Keep both when the GL
+  path changes.
+- No `libvmaf.h`, ABI (0.1.4 unchanged), golden-data or FFmpeg patch
+  impact; `--backend hip` now runs `float_vif_hip` for `float_vif` (the CPU's
+  scores, ADR-1444).
+## VMAFx device frames on SYCL (RC4 WP3 SYCL lane)
+
+`rc4/api-wp3-sycl` (on `rc4/api-wp3-cuda`),
+[ADR-2091](adr/2091-vmafx-sycl-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/sycl/vmafx_sycl.h`, `vmafx_sycl_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
+  `import_gl.c`, `import_pool.c` (in `libvmaf_sources` under
+  `is_sycl_enabled`), the C++ half `vmafx_sycl_rt.{h,cpp}` (`sycl_sources`)
+  and `detile.h`. `core/src/vmafx/sync_object.{c,h}` hold the `sync_file`,
+  dma-buf implicit-fence and GL sync helpers the CUDA and SYCL lanes share
+  (the CUDA lane's own GL sync loader moved there; `core/src/cuda/import_gl.c`
+  and `import_fence.c` call it).
+- `core/src/vmafx/*.c` dispatch to the SYCL lane under `#ifdef HAVE_SYCL` as
+  they do to CUDA; `fence.c` handles `SYNC_FILE` and `GL_SYNC` for every lane;
+  `frame_import_admit.c`'s D8 retry also waits on a dma-buf's implicit write
+  fences.
+- `core/src/picture.h`: `VmafPicturePrivate.sycl` gains `frame`.
+  `core/src/sycl/common.cpp`: `sycl_state_create()` (one constructor),
+  `vmaf_sycl_state_init_queue()`, and device branches in the shared luma and
+  chroma uploads. `core/src/libvmaf.c`: `read_pictures_sycl_device_frame()`.
+- Every SYCL twin that stages its own planes has a device branch through
+  `vmaf_sycl_picture_read_plane()` (`float_psnr`, `float_motion`,
+  `float_adm`, `float_vif`, `float_ssim` / `ssim`, `float_ms_ssim`, `ciede`,
+  `ssimulacra2`, the SpEED pair, `motion`'s chroma). An upstream sync that
+  touches a twin's staging keeps the branch (see
+  `core/src/feature/sycl/AGENTS.d/device-pictures.md`).
+- `core/src/sycl/dmabuf_import.cpp`: the Y-tiled and Tile4 de-tile kernels
+  are `detile_tiled()` on `detile.h`; `vmaf_sycl_dmabuf_import_queue()` /
+  `vmaf_sycl_dmabuf_free_queue()` take any queue's context.
+- Definition doc strings only (`VMAFX_MEMORY_GL_TEXTURE`,
+  `VmafxDeviceDesc.backend`, the release callback); no ABI change.
+
 ## VMAFx device frames on CUDA (RC4 WP3 CUDA lane)
 
 `rc4/api-wp3-cuda`, [ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
@@ -62369,3 +62454,106 @@ either function keeps the scope. The test programs that compile `dict.cpp` or `o
 on their own (`test_dict`, `test_opt`, `test_feature`) link `thread_locale.cpp`.
 `test_locale_handling` fails when either scope is missing. No score, public API or
 FFmpeg patch impact.
+
+## HIP GL textures through EGL dma-bufs (RC4 WP3 HIP follow-up)
+
+`rc4/api-wp3-hip-gl-dmabuf`, [ADR-2132](adr/2132-hip-gl-textures-through-egl-dmabuf.md).
+
+- `core/src/hip/import_gl.c` no longer calls `hipGraphics*`;
+  `core/src/vmafx/egl_export.c` (shared, `internal.h` declarations) exports
+  the textures and `import_gl()` in `core/src/hip/import_frame.c` imports them
+  as a DMABUF frame. `vmafx_hip_gl_map()` / `vmafx_hip_gl_release()`,
+  `VmafxHipGl` and `fill_failed()`'s GL branch are gone; a rebase that
+  brings them back from ADR-2092 takes this side.
+  `test_vmafx_import_hip_contract.py` holds the order (GL sync, GPU check,
+  export, copy only with `VMAFX_IMPORT_ALLOW_COPY`, writers waited).
+- `core/test/test_vmafx_import_hip_gl.c` is EGL, not GLX, and uses the new
+  `core/test/vmafx_egl_test_util.h`, which the SYCL GL test can adopt.
+- The SYCL lane (`rc4/api-wp3-sycl`) had its own EGL export in
+  `core/src/sycl/import_gl.c`; on `rc4/integration` it is folded onto
+  `egl_export.c` (one implementation, HISS-19; see "The HIP and SYCL lanes
+  meet on the integration branch" below).
+- No `libvmaf.h`, ABI, golden-data or FFmpeg patch impact.
+
+## Import of 4:2:2 and 4:4:4 layouts (RC4 WP3 formats lane)
+
+`rc4/api-wp3-formats-422-444`, [ADR-2133](adr/2133-vmafx-import-422-444-formats.md),
+ABI 0.1.5 (additive) on its lane; `rc4/integration` numbers the same additions
+0.1.9 (ADR-1897: the next free patch when the lanes meet; 0.1.5 is the
+provenance record there).
+ABI 0.1.5 (additive).
+
+- One CPU reference for every import conversion:
+  `core/src/vmafx/import_convert.h` (`vmafx_import_read_plane()`,
+  `VmafxImportRead`) with the per-layout plan `vmafx_import_plane_read()` in
+  `core/src/vmafx/frame_import.c`. `vmaf_metal_read_plane()`
+  (`core/src/metal/iosurface_layout.h`) forwards to it; a rebase that brings
+  the Metal row readers back takes this side. `VmafxImportLayout`
+  (`internal.h`) gained `packed`, `elem` and `msb`: every row of
+  `import_layouts[]` initialises them (no missing-initializer warning).
+- Device kernels: `vmafx_import_gather` in
+  `core/src/vmafx/import_convert_kernels.h` (nvcc and hipcc), launched per
+  output plane from `gather_plane()` of `core/src/cuda/import_frame.c` and
+  `core/src/hip/import_frame.c`; the planes of a packed or MSB layout are
+  `converted_plane()`; a packed or MSB layout in an array or GL texture is
+  refused naming `desc.memory`.
+- `vmafx_count_conversion()` counts every converting import
+  (`converted_plane(layout, 0)` or `(layout, 1)`), not only interleaved ones.
+- Tests: `test_vmafx_import_convert`, `test_vmafx_import_bitexact` (wide
+  chroma, other layouts), `test_vmafx_import_{cuda,hip}_formats` with
+  `core/test/vmafx_format_cells.h` (shared by every backend lane; the SYCL
+  lane's producer plugs in through `VfOps`).
+- The SYCL conversion kernels are a separate commit on the SYCL lane
+  (`rc4/api-wp3-formats-422-444-sycl`); the ABI patch number 0.1.5 is shared
+  with any other branch that adds to the API: renumber on the second to land.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## 4:2:2 and 4:4:4 import on SYCL (RC4 WP3 formats lane)
+
+`rc4/api-wp3-formats-422-444-sycl` (on `rc4/api-wp3-sycl`), [ADR-2133](adr/2133-vmafx-import-422-444-formats.md).
+
+- `core/src/sycl/vmafx_sycl_rt.{h,cpp}`: `VmafxSyclPlaneOp` gained `step`,
+  `offset`, `in_bytes`, `mask` (zero for the other operations) and
+  `vmafx_sycl_rt_frame_gather()` / `launch_gather()` read a packed or MSB
+  plane by the plan of `vmafx_import_plane_read()`.
+  `core/src/sycl/import_frame.c`: `converted_plane()`, `gathered()`,
+  `gather_plane()`; the conversion counter counts every converting import.
+  A rebase keeps all three; the CPU reference
+  (`core/src/vmafx/import_convert.h`) and the CUDA / HIP kernels
+  (`import_convert_kernels.h`, on the other lanes) are the same plan.
+- `core/test/vmafx_sycl_test_util.h`: `vs_layout()` / `vs_write()` go through
+  `vt_device_layout()` / `vt_producer_bytes()` (planar, semi-planar and
+  packed); `test_vmafx_import_sycl_formats` plugs the SYCL producer into
+  `VfOps` of `vmafx_format_cells.h` with `VF_CELLS_HEADER` set to
+  `vmafx_sycl_cells.h`.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## The HIP and SYCL lanes meet on the integration branch (`rc4/integration`)
+
+The WP3 HIP lane (#2341), its GL follow-up (#2360), the 4:2:2 / 4:4:4 lane
+(#2367), the WP3 SYCL lane (#2342) and its 4:2:2 / 4:4:4 half (#2368) merged
+into `rc4/integration`. What a rebase of either lane onto it must keep:
+
+- One implementation (HISS-19) of the host-checked producer fences:
+  `core/src/vmafx/sync_object.{c,h}` (sync_file poll, dma-buf implicit
+  fences, GL sync). The HIP lane's `gl_sync.c` and `sync_file.c` and their
+  `internal.h` declarations are gone; HIP code includes `vmafx/sync_object.h`.
+  `vmafx_fence_wait()` polls SYNC_FILE and GL_SYNC fences through
+  `vmafx_fence_poll()` (the virtual test clock).
+- One EGL export: `core/src/vmafx/egl_export.c`. `vmafx_egl_export_planes()`
+  takes a `VmafxEglTiled` mode instead of `allow_copy`: the HIP lane passes
+  REFUSE or COPY (from `VMAFX_IMPORT_ALLOW_COPY`), the SYCL lane KEEP (a
+  tiled export stays tiled for its device de-tile; no writers wait, the
+  dma-buf import honours the implicit fences). A target `fourcc` of 0 and a
+  NULL `device_pci` skip those checks. `sycl/import_gl.c` keeps only the
+  translation into a DMABUF descriptor.
+  `core/test/test_vmafx_one_egl_export_contract.py` refuses a lane that loads
+  EGL itself or a second definition of a sync-object function.
+- A SYNC_FILE fence is the caller's (borrowed): `vmafx_fence_destroy()`
+  refuses it with VMAFX_E_NOTSUP, as the HIP lane documents;
+  `test_vmafx_import_sycl`'s sync_file case closes the descriptor itself.
+- The thirteen 4:2:2 / 4:4:4 pixel formats are ABI 0.1.9 here (0.1.5 on the
+  lanes, ADR-1897). The HIP GL digest is Research-2161 here (both lanes added
+  a Research-2160); the SYCL digest keeps 2160.
+- Both lanes' import sources are in `libvmafx_sources` (the WP6 split,
+  ADR-2094).
