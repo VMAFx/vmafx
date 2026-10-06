@@ -65,7 +65,7 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
 | Default to BT.709 limited | Convenient | Silent wrong scores for BT.601 or full-range sources | Rejected (maintainer) |
 | zimg for RGB | Existing library | Off by default, unpinned, not exact across devices | Rejected |
 | Floating-point reference | Simple | Twins would need a tolerance | Rejected: integers make the twins exact |
-| One shared `range` for both sides | Fewer fields | Cannot score full-range RGB as a limited-range encode | Rejected: `rgb_out_range` |
+| One shared `range` for both sides | Fewer fields | Cannot score full-range RGB as a limited-range encode (the usual way to score an RGB source against a studio-range encode) | Rejected: `rgb_out_range` stays, kept by maintainer decision |
 
 ## Consequences
 
@@ -73,9 +73,11 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
   twins equal the CPU.
 - **Negative**: ABI 0.1.6 (four appended fields); ICtCp and BT.2020 CL need a
   later decision with their transfer functions.
-- **Neutral / follow-ups**: the VmafColor enums of `libvmaf.h` (ADR-2093) lack
-  BT.601; mapping the RGB statement to `vmaf_set_input_colorimetry()` follows
-  when the stack carries it.
+- **Neutral / follow-ups**: planned convergence (maintainer decision): the
+  `--rgb_*` command line flags exist on this branch only. After the stack
+  restacks onto master, the RGB statement uses master's colorimetry option
+  names and enum (ADR-2093, `vmaf_set_input_colorimetry()`), with BT.601 added
+  to that enum (additive). There is no permanent second flag set.
 
 ## References
 
