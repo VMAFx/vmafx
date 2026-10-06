@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2094: libvmaf.so.3 is a compat library on the exported VMAFx API; the engine compiles its libvmaf bodies under engine names, and backends keep theirs until their lanes land
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-06
-- **Deciders**: RC4 work package 6
+- **Deciders**: maintainer (popup 2026-10-06); RC4 work package 6
 - **Tags**: api, rc4, abi, build, compat, ffmpeg
 
 ## Context
@@ -121,4 +121,5 @@ express fails the link. Design section 2.11 lists every function with its
 ## References
 
 - `req` (work package brief, 2026-10-06): "the 107 `libvmaf` functions on the new API, the library split into libvmafx.so.1 + a thin libvmaf.so.3 on exported vmafx_ symbols only per ADR-1852 D3, conformance tests, the upstream-FFmpeg job"; "SYCL / HIP / Metal compat functions may stay on their current implementations until their WP3 lanes land, but say so"; "WP6 must rename the model.c / dict.cpp bodies the VMAFx API calls before turning them into shims, or calls recurse".
+- `Q` (maintainer popup 2026-10-06, how the engine's libvmaf bodies get engine names): "Forced header (Recommended)".
 - [ADR-1852](1852-vmafx-api-redesign.md) decisions D2, D3, D7 and design section 2.11; [ADR-1897](1897-vmafx-abi-0x-numbering.md); [ADR-1906](1906-vmafx-core-api-semantics.md); [ADR-1929](1929-vmafx-device-frames-fences.md); [ADR-2073](2073-vmafx-provenance-record.md); [ADR-1478](1478-motion-five-frame-window-port.md); [ADR-0121](0121-windows-gpu-build-only-legs.md); issue #2237 (upstream GStreamer element conformance).
