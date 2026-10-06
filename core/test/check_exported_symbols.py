@@ -24,8 +24,8 @@ consumers can start depending on it. The libraries build with
 ``-fvisibility=hidden`` and libvmafx with a version script whose last word is
 ``local: *;``; this test is what notices when that stops holding.
 
-The version-node comparison needs ``nm`` to print symbol versions; the C
-library's own versioned imports show whether it does, and the check says so
+The version-node comparison needs ``nm`` to print symbol versions; any
+versioned symbol, import or export, shows that it does, and the check says so
 when it cannot compare.
 
 Usage:
@@ -109,8 +109,13 @@ def parse_nm(text: str) -> DynamicSymbols:
         if len(parts) < 2:  # noqa: PLR2004 -- "<type> <name>" at least
             continue
         kind, (name, node) = parts[-2], split_version(parts[-1])
+        # Any `name@NODE` shows nm prints versions: an import's or an export's.
+        # A toolchain may link every import unversioned (`w __cxa_finalize`)
+        # while nm prints the exports' nodes (T-VMAFX-SYMBOL-VERSIONS-UNSEEN-
+        # UBUNTU-2026-10-06). A version-definition `A` symbol proves nothing:
+        # an nm without version output lists it too.
+        visible = visible or node is not None
         if kind in UNDEFINED_TYPES:
-            visible = visible or node is not None
             continue
         if kind == "A":
             absolute.add(name)

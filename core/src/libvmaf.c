@@ -4500,6 +4500,14 @@ static int engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *sc
                     vmaf_predict_inputs_written(model, vmaf->feature_collector, index);
         if (fence_err)
             return fence_err;
+        /* ADR-2090: a fed frame whose motion2 / motion3 is not derived yet
+         * (the frame after it is not scored) is not ready, also when an input
+         * vector has not grown to `index` (the collector reads that as
+         * -EINVAL). T-RC4-SCORE-FRAME-INVALID-AT-VECTOR-END-2026-10-06. */
+        const bool fed = vmaf->have_last_index && index <= vmaf->last_index;
+        if (fence && fed &&
+            vmaf_predict_inputs_written(model, vmaf->feature_collector, index) == -EAGAIN)
+            return -EAGAIN;
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }
