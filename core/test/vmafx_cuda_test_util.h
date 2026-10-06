@@ -124,17 +124,12 @@ static inline bool vc_upload_skewed(const VcGpu *g, const VmafxFrameDesc *d, con
     size_t rows[3];
     size_t row_bytes[3];
     vc_layout(d, pix_fmt, pad, skew, p, rows, row_bytes);
-    assert(p->n >= 2u && p->n <= 3u && vt_frame_bytes(d) > 0u);
+    assert(p->n >= 1u && p->n <= 3u && vt_frame_bytes(d) > 0u);
     const size_t bytes =
         (size_t)(p->offset[p->n - 1u] + p->pitch[p->n - 1u] * rows[p->n - 1u]) + 64u;
-    uint8_t *const staged =
-        pix_fmt == VMAFX_PIXEL_FORMAT_YUV420P ? NULL : malloc(vt_frame_bytes(d));
-    const uint8_t *src = planar;
-    if (staged) {
-        vt_to_semiplanar(d, planar, shift, staged);
-        src = staged;
-    }
-    bool ok = vc_push(g) && g->f->cuMemAlloc(&p->base, bytes) == CUDA_SUCCESS;
+    uint8_t *staged = NULL;
+    const uint8_t *src = vt_producer_bytes(d, planar, pix_fmt, shift, &staged);
+    bool ok = src && vc_push(g) && g->f->cuMemAlloc(&p->base, bytes) == CUDA_SUCCESS;
     for (uint32_t i = 0; i < p->n && i < 3u && ok; i++) {
         CUDA_MEMCPY2D m = {.srcMemoryType = CU_MEMORYTYPE_HOST,
                            .srcHost = src,

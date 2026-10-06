@@ -46,6 +46,7 @@ typedef struct VmafxCudaKernels {
     CUfunction deint_8;  /* NV12 chroma: one interleaved plane into two */
     CUfunction deint_16; /* P010 / P016 chroma, with a right shift */
     CUfunction shift_16; /* P010 luma: a right shift into a plane of its own */
+    CUfunction gather;   /* packed layouts and MSB planar words: one plane by a VmafxImportRead */
 } VmafxCudaKernels;
 
 typedef struct VmafxCudaDevice {

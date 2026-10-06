@@ -1292,3 +1292,4 @@
 2090-motion-window-incremental
 2092-vmafx-hip-device-frames
 2132-hip-gl-textures-through-egl-dmabuf
+2133-vmafx-import-422-444-formats

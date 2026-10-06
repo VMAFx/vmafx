@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1293), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1294), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5183,3 +5183,7 @@ Every ADR, one heading each (1293), so the site search finds an ADR by its title
 ## ADR-2132: HIP imports GL textures through EGL dma-buf export; the runtime's GL interop is not used
 
 [2132-hip-gl-textures-through-egl-dmabuf](2132-hip-gl-textures-through-egl-dmabuf.md)
+
+## ADR-2133: Device import takes 4:2:2 and 4:4:4: semi-planar NV16 / NV24 family and packed Y210 / Y410, one CPU reference, converted on the device
+
+[2133-vmafx-import-422-444-formats](2133-vmafx-import-422-444-formats.md)

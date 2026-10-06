@@ -33,6 +33,7 @@
 #include "libvmaf/picture.h"
 #include "log.h"
 #include "ref.h"
+#include "vmafx/import_convert.h"
 #include "vmafx/vmafx.h"
 
 /* The import rule's host wait on the acquire fence before its one retry
@@ -401,13 +402,39 @@ typedef struct VmafxImportLayout {
     uint32_t shift;   /* right shift of every sample (P010: 6) */
     bool interleaved; /* plane 1 holds Cb / Cr pairs */
     const char *name; /* FFmpeg's name, for messages */
+    uint32_t packed;  /* VmafxImportPacked: one plane of packed Y, Cb, Cr */
+    uint8_t elem[3];  /* packed: element of a group that holds Y, Cb, Cr */
+    bool msb;         /* the `bpc` most significant bits of 16-bit words (shift 16 - bpc) */
 } VmafxImportLayout;
+
+/* Packed layouts (one producer plane, ADR-2133): 0 is none. */
+typedef enum VmafxImportPacked {
+    VMAFX_IMPORT_PACKED_NONE = 0,
+    /* Y0 Cb Y1 Cr elements (bytes at 8 bits, else 16-bit words) per two pixels:
+     * elem = Y0, Cb, Cr (0, 1, 3). */
+    VMAFX_IMPORT_PACKED_YUYV = 1,
+    /* Four elements per pixel (bytes at 8 bits, else 16-bit words); elem
+     * gives the position of Y, Cb and Cr. */
+    VMAFX_IMPORT_PACKED_UYV4 = 2,
+    /* One 32-bit word per pixel: Cb | Y << 10 | Cr << 20 (Y410, XV30). */
+    VMAFX_IMPORT_PACKED_XVYU2101010 = 3
+} VmafxImportPacked;
+
+/* The right shift of every sample of a frame of `bpc` bits in `layout`. */
+static inline uint32_t vmafx_import_shift(const VmafxImportLayout *layout, uint32_t bpc)
+{
+    return layout->msb ? 16u - bpc : layout->shift;
+}
 
 /* Bytes of one row of producer plane `i` and its rows, for the planar
  * geometry `pw` / `ph` of the frame. */
 void vmafx_import_plane_extent(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
                                const unsigned pw[3], const unsigned ph[3], uint64_t *row,
                                uint64_t *rows);
+/* How plane `i` of the planar frame a layout makes is read from the
+ * producer's planes (the CPU reference in vmafx/import_convert.h). */
+void vmafx_import_plane_read(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
+                             VmafxImportRead *out);
 /* One plane of linear memory (`memory` names it in messages): an address, a
  * linear layout, a pitch that holds a row and rows that lie inside the given
  * size and the address space. */

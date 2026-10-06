@@ -284,19 +284,25 @@ struct VmafxFrameImport {
     /** What each plane's handle refers to. Values: VmafxMemoryKind. */
     uint32_t memory;
     /**
-     * Layout of the producer's planes; NV12, P010 and P016 are converted to planar on the device (a
-     * de-interleave, and for P010 a shift), nothing else. Values: VmafxPixelFormat.
+     * Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 /
+     * P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and
+     * YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing
+     * else. Values: VmafxPixelFormat.
      */
     uint32_t pix_fmt;
-    /** Bits per component: 8 for NV12, 10 for P010, 16 for P016, 8 to 16 for the planar formats. */
+    /**
+     * Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for
+     * Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to
+     * 16 for the planar formats.
+     */
     uint32_t bpc;
     /** Luma width in pixels. */
     uint32_t w;
     /** Luma height in pixels. */
     uint32_t h;
     /**
-     * Planes in `plane`: 1 for YUV400P, 2 for NV12 / P010 / P016 (luma, interleaved chroma), else
-     * 3.
+     * Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1
+     * for the packed layouts, else 3.
      */
     uint32_t n_planes;
     /** Each plane; entries past `n_planes` are ignored. */
@@ -490,11 +496,12 @@ VMAFX_EXPORT void vmafx_frame_unref(VmafxFrame *frame);
 
 /**
  * A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are;
- * NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is
- * VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the
- * device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once).
- * The producer's memory stays valid and unchanged until the frame's release fence is signalled. The
- * caller holds one reference.
+ * the semi-planar (NV12, NV16, NV24, P010, P016, P210, P216, P410, P416) and packed (Y210, Y212,
+ * Y410, XV36, YUYV422, VUYX) layouts and YUV444P_MSB are converted to planar on the device. A
+ * layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier
+ * and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY
+ * (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and
+ * unchanged until the frame's release fence is signalled. The caller holds one reference.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc,
