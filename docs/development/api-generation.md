@@ -118,7 +118,10 @@ its C output.
 | `core/src/vmafx.def` | Windows export list, for the shared library split |
 | `core/src/vmafx_symbols.txt` | Exported symbols and their version nodes, read by `check_exported_symbols` |
 | `core/src/vmafx/status_gen.c`, `status_gen.h` | Status names and errno maps |
-| `core/src/vmafx/compat_libvmaf_gen.c` | `libvmaf.h` functions implemented on the new API |
+| `core/src/compat/libvmaf/libvmaf_gen.c`, `status_errno_gen.c` | The generated (`shim`, `glue`) libvmaf functions of the compat library `libvmaf.so.3` and its status-to-errno map |
+| `core/src/vmafx/engine_names_gen.h` | Forced on every engine translation unit: the engine's own libvmaf bodies compile as `vmaf_engine_<stem>` |
+| `core/src/vmafx_legacy_<backend>.map`, `core/src/libvmaf_symbols.txt` | Version node of the libvmaf functions a built backend keeps in the engine (declared exceptions), and which library exports each libvmaf function in which build |
+| `core/test/compat_conformance_gen.h`, `compat_conformance_table_gen.c` | The two function tables (old libvmaf, compat library) and the coverage rule of `test_compat_conformance` |
 | `core/test/test_vmafx_abi_layout.c` | `_Static_assert` of every struct size, alignment, field offset, array length and constant |
 | `bindings/python/vmafx/_api.py` | ctypes binding; checks its layouts at import |
 | `docs/api/vmafx/reference.md` and one page per header | [Reference index](../api/vmafx/reference.md) |

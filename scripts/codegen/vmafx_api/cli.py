@@ -32,6 +32,7 @@ from . import (
     emit_c,
     emit_cli,
     emit_compat,
+    emit_conformance,
     emit_docs,
     emit_ffmpeg_options,
     emit_layout_test,
@@ -55,10 +56,15 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("core/include/vmafx/meson.build", emit_build.header_install),
     ("core/src/vmafx/status_gen.h", emit_c.status_header),
     ("core/src/vmafx/status_gen.c", emit_c.status_source),
-    ("core/src/vmafx/compat_libvmaf_gen.c", emit_compat.compat_source),
+    (emit_compat.PATH, emit_compat.compat_source),
+    (emit_compat.ENGINE_NAMES_PATH, emit_compat.engine_names),
+    (emit_c.COMPAT_STATUS_PATH, emit_c.compat_status_source),
+    (emit_conformance.HEADER_PATH, emit_conformance.header_text),
+    (emit_conformance.TABLE_PATH, emit_conformance.table_text),
     ("core/src/vmafx.map", emit_symbols.version_script),
     ("core/src/vmafx.def", emit_symbols.def_file),
     ("core/src/vmafx_symbols.txt", emit_symbols.symbol_list),
+    ("core/src/libvmaf_symbols.txt", emit_symbols.compat_symbol_list),
     ("core/test/test_vmafx_abi_layout.c", emit_layout_test.layout_test_source),
     ("bindings/python/vmafx/_api.py", emit_python.module_text),
 )
@@ -89,6 +95,10 @@ def render(api: Api, root: Path | None = None) -> dict[str, str]:
     the definition has option groups."""
     files = {f"core/include/{p.header.path}": emit_c.header_text(api, p) for p in plan(api)}
     files.update({path: renderer(api) for path, renderer in FIXED_OUTPUTS})
+    for backend in emit_symbols.legacy_backends(api):
+        files[emit_symbols.legacy_map_path(backend)] = emit_symbols.legacy_version_script(
+            api, backend
+        )
     files.update(dict(emit_docs.pages(api)))
     if api.option_groups:
         files.update({path: renderer(api) for path, renderer in OPTION_OUTPUTS})

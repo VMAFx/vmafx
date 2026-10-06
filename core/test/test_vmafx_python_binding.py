@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The generated Python binding against the library Meson built (ADR-1852).
 
-Meson passes the shared library in $VMAFX_LIBRARY and the binding's directory
-in $PYTHONPATH. The cases cover the slice the binding wraps (version, ABI,
+Meson passes the shared library in $VMAFX_LIBRARY (libvmafx), the libvmaf
+compat library in $VMAF_COMPAT_LIBRARY (libvmaf.so.3, ADR-1852 decision D3)
+and the binding's directory in $PYTHONPATH. The cases cover the slice the binding wraps (version, ABI,
 context, provenance, extractor info, feature score) and the two refusals the
 binding owns: no implicit library search, and a struct layout that disagrees
 with the definition.
@@ -71,7 +72,8 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(caught.exception.subject, "config.log_level")
 
     def test_feature_score_of_imported_value(self) -> None:
-        raw = self.library.raw
+        # The libvmaf function lives in the compat library, on the same context.
+        raw = ctypes.CDLL(os.environ["VMAF_COMPAT_LIBRARY"])
         raw.vmaf_import_feature_score.argtypes = (
             ctypes.c_void_p,
             ctypes.c_char_p,

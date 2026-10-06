@@ -296,7 +296,9 @@ typedef struct VmafContext {
     /* ADR-1852: the VMAFx API context this engine context belongs to. Set by
      * vmafx_context_create() right after vmaf_engine_init(); every engine
      * context has one, because libvmaf's vmaf_init() is a compat shim on
-     * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
+     * vmafx_context_create() (core/src/compat/libvmaf/libvmaf_gen.c). A
+     * context the engine made directly (vmaf_engine_init() in a white-box
+     * test) has none. */
     struct VmafxContext *api_owner;
 } VmafContext;
 
@@ -4927,97 +4929,12 @@ bool vmaf_engine_is_flushed(const VmafContext *vmaf)
     return vmaf && vmaf->flushed;
 }
 
-/* ---- libvmaf entry points on the engine (ADR-1852, RC4 WP2) ---------------
- * The bodies above are the engine entry points the VMAFx API calls
- * (core/src/vmafx/engine.h). The libvmaf functions forward to them until the
- * compat layer generates them as shims on the VMAFx API (WP6); engine code
- * calls the vmaf_engine_ names, never these, so that change cannot recurse. */
-
-int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
-                              unsigned index)
-{
-    return vmaf_engine_import_feature_score(vmaf, feature_name, value, index);
-}
-
-int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
-{
-    return vmaf_engine_set_perceptual_weight_enabled(vmaf, enabled);
-}
-
-int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
-{
-    return vmaf_engine_set_perceptual_weight_strength(vmaf, strength);
-}
-
-int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
-{
-    return vmaf_engine_use_feature(vmaf, feature_name, opts_dict);
-}
-
-int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
-{
-    return vmaf_engine_use_features_from_model(vmaf, model);
-}
-
-int vmaf_use_features_from_model_collection(VmafContext *vmaf,
-                                            VmafModelCollection *model_collection)
-{
-    return vmaf_engine_use_features_from_model_collection(vmaf, model_collection);
-}
-
-int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
-                              const VmafFeatureDictionary *opts_dict,
-                              const VmafPictureConfiguration *pic_cfg, const char **twin_name,
-                              const char **unsupported_option)
-{
-    return vmaf_engine_feature_backend_twin(vmaf, feature_name, opts_dict, pic_cfg, twin_name,
-                                            unsupported_option);
-}
-
-int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
-                                      enum VmafBackend *backend)
-{
-    return vmaf_engine_registered_feature_extractor(vmaf, index, name, backend);
-}
-
-int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
-{
-    return vmaf_engine_read_pictures(vmaf, ref, dist, index);
-}
-
-int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
-{
-    return vmaf_engine_score_at_index(vmaf, model, score, index);
-}
-
-int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                         VmafModelCollectionScore *score, unsigned index)
-{
-    return vmaf_engine_score_at_index_model_collection(vmaf, model_collection, score, index);
-}
-
-int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
-                              enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
-                              unsigned index_high)
-{
-    return vmaf_engine_feature_score_pooled(vmaf, feature_name, pool_method, score, index_low,
-                                            index_high);
-}
-
-int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
-                      double *score, unsigned index_low, unsigned index_high)
-{
-    return vmaf_engine_score_pooled(vmaf, model, pool_method, score, index_low, index_high);
-}
-
-int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                       enum VmafPoolingMethod pool_method,
-                                       VmafModelCollectionScore *score, unsigned index_low,
-                                       unsigned index_high)
-{
-    return vmaf_engine_score_pooled_model_collection(vmaf, model_collection, pool_method, score,
-                                                     index_low, index_high);
-}
+/* ---- libvmaf entry points (ADR-1852 decision D3, RC4 WP6) -----------------
+ * The libvmaf functions live in the compat library (libvmaf.so.3,
+ * core/src/compat/libvmaf/) on the VMAFx API. Every function of this file
+ * that keeps a libvmaf name in the source is compiled as vmaf_engine_<stem>
+ * (core/src/vmafx/engine_names_gen.h, forced on every engine translation
+ * unit), so an upstream change to such a function ports here unchanged. */
 
 /* Open `output_path` for writing with mode 0644 so the output file is never
  * world-writable: fopen(3) defaults to 0666 & ~umask, which CodeQL flags as

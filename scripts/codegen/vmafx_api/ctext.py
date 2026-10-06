@@ -112,8 +112,13 @@ def packed(head: str, items: list[str], tail: str) -> str:
     return "\n".join(lines)
 
 
+def _fits(text: str) -> bool:
+    return all(len(line) <= COLUMNS for line in text.split("\n"))
+
+
 def assignment(lhs: str, callee: str, args: list[str]) -> str:
-    """`lhs = callee(args);` as clang-format breaks it: after `=` when the call then fits."""
+    """`lhs = callee(args);` as clang-format breaks it: after `=` when the call then fits
+    on one line, else after `=` with the arguments packed after the parenthesis."""
     single = f"{lhs} = {callee}(" + ", ".join(args) + ");"
     if len(single) <= COLUMNS:
         return single
@@ -121,7 +126,21 @@ def assignment(lhs: str, callee: str, args: list[str]) -> str:
     rest = f"{indent}{callee}(" + ", ".join(args) + ");"
     if len(rest) <= COLUMNS:
         return f"{lhs} =\n{rest}"
-    return packed(f"{lhs} = {callee}", args, ";")
+    broken = f"{lhs} =\n" + packed(f"{indent}{callee}", args, ";")
+    kept = packed(f"{lhs} = {callee}", args, ";")
+    # clang-format's penalties pick the shorter form; on a tie, the break after `=`.
+    if _fits(broken) and broken.count("\n") <= kept.count("\n"):
+        return broken
+    return kept
+
+
+def object_macro(name: str, value: str) -> str:
+    """`#define name value`, continued on the next line past the column limit."""
+    line = f"#define {name} {value}"
+    if len(line) <= COLUMNS:
+        return line + "\n"
+    head = f"#define {name}"
+    return head + " " * (COLUMNS - 1 - len(head)) + "\\\n    " + value + "\n"
 
 
 def deprecation_note(dep: Deprecation) -> str:

@@ -17,12 +17,231 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <vmafx/types.h>
+#include <vmafx/error.h>
+#include <vmafx/context.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* No declarations yet: later RC4 work packages fill this header. */
+/**
+ * Inference device of a tiny-AI session (values equal VmafDnnDevice). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxDnnDevice {
+    /** The best execution provider the runtime offers. */
+    VMAFX_DNN_DEVICE_AUTO = 0,
+    /** The CPU. */
+    VMAFX_DNN_DEVICE_CPU = 1,
+    /** A CUDA GPU. */
+    VMAFX_DNN_DEVICE_CUDA = 2,
+    /** The OpenVINO provider, its default device. */
+    VMAFX_DNN_DEVICE_OPENVINO = 3,
+    /** A ROCm GPU. */
+    VMAFX_DNN_DEVICE_ROCM = 4,
+    /** The Core ML provider, its default unit. */
+    VMAFX_DNN_DEVICE_COREML = 5,
+    /** Core ML on the neural engine. */
+    VMAFX_DNN_DEVICE_COREML_ANE = 6,
+    /** Core ML on the GPU. */
+    VMAFX_DNN_DEVICE_COREML_GPU = 7,
+    /** Core ML on the CPU. */
+    VMAFX_DNN_DEVICE_COREML_CPU = 8,
+    /** OpenVINO on the NPU. */
+    VMAFX_DNN_DEVICE_OPENVINO_NPU = 9,
+    /** OpenVINO on the CPU. */
+    VMAFX_DNN_DEVICE_OPENVINO_CPU = 10,
+    /** OpenVINO on the GPU. */
+    VMAFX_DNN_DEVICE_OPENVINO_GPU = 11,
+} VmafxDnnDevice;
+
+/**
+ * How a tiny model's input is resized to the model's fixed shape (values equal VmafDnnResizeMode).
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxDnnResize {
+    /** No resize: a frame of another size is refused. */
+    VMAFX_DNN_RESIZE_DISABLED = 0,
+    /** Bilinear. */
+    VMAFX_DNN_RESIZE_BILINEAR = 1,
+    /** Nearest neighbour. */
+    VMAFX_DNN_RESIZE_NEAREST = 2,
+    /** Bicubic. */
+    VMAFX_DNN_RESIZE_BICUBIC = 3,
+} VmafxDnnResize;
+
+/*
+ * VmafxDnnFlags: How a tiny-AI session runs. Added in ABI 0.1.6. Bits of a u32 field.
+ * @since 0.1
+ */
+/** Exchange tensors with the runtime in half precision. */
+#define VMAFX_DNN_FP16_IO (UINT32_C(1) << 0U)
+
+/**
+ * An ONNX session of a tiny model run directly (a libvmaf VmafDnnSession under its new name). Added
+ * in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef struct VmafxDnnSession VmafxDnnSession;
+
+typedef struct VmafxDnnConfig VmafxDnnConfig;
+typedef struct VmafxDnnInput VmafxDnnInput;
+typedef struct VmafxDnnOutput VmafxDnnOutput;
+
+/**
+ * How to open a tiny-AI session. Initialise with VMAFX_DNN_CONFIG_INIT. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+struct VmafxDnnConfig {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Inference device. Values: VmafxDnnDevice. */
+    uint32_t device;
+    /** Device index within the provider; 0 is the first. */
+    int32_t device_index;
+    /** Intra-op threads; 0 lets the runtime choose. */
+    int32_t threads;
+    /** Session flags. Bits: VmafxDnnFlags. */
+    uint32_t flags;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_DNN_CONFIG_INIT {.struct_size = sizeof(VmafxDnnConfig)}
+
+/**
+ * One named input tensor of vmafx_dnn_session_run(), float32 in row-major order; the layout of a
+ * libvmaf VmafDnnInput, never grows. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+struct VmafxDnnInput {
+    /** Input name; NULL takes the session's inputs in order. */
+    const char *name;
+    /** The tensor's float32 values. */
+    const void *data;
+    /** `rank` int64 extents. */
+    const void *shape;
+    /** Number of dimensions. */
+    size_t rank;
+};
+
+/**
+ * One named output tensor of vmafx_dnn_session_run(); the layout of a libvmaf VmafDnnOutput, never
+ * grows. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+struct VmafxDnnOutput {
+    /** Output name; NULL takes the session's outputs in order. */
+    const char *name;
+    /** Float32 storage the call fills. */
+    void *data;
+    /** Floats `data` holds. */
+    size_t capacity;
+    /** Floats written (set by the call). */
+    size_t written;
+};
+
+/**
+ * 1 when this build runs tiny-AI models (ONNX Runtime), else 0. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_dnn_available(void);
+
+/**
+ * Attach the tiny model at `onnx_path` (checked against the operator allowlist and size limit; its
+ * sidecar JSON read when present) to the context; it scores every frame as one more feature.
+ * `config` may be NULL. The engine's errno names a model it refuses; -ENOSYS in a build without
+ * tiny-AI support. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_tiny_model(VmafxContext *context, const char *onnx_path,
+                                                      const VmafxDnnConfig *config,
+                                                      VmafxError **error);
+
+/**
+ * The encoder `codec` (may be NULL), its `preset` (may be NULL) and `crf` that a codec-aware tiny
+ * model attached to the context reads. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_codec_context(VmafxContext *context, const char *codec,
+                                                         const char *preset, int32_t crf,
+                                                         VmafxError **error);
+
+/**
+ * 1 when the tiny model attached to the context reads the codec context, else 0 (also for NULL).
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_is_codec_aware(const VmafxContext *context);
+
+/**
+ * How frames are resized to the fixed input shape of the attached tiny model (VmafxDnnResize).
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_tiny_resize(VmafxContext *context, uint32_t mode,
+                                                       VmafxError **error);
+
+/**
+ * Open the ONNX model at `onnx_path` for direct runs (allowlist and size limit as
+ * vmafx_context_use_tiny_model()). `config` may be NULL. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_dnn_session_open(const char *onnx_path, const VmafxDnnConfig *config,
+                                                VmafxDnnSession **out, VmafxError **error);
+
+/**
+ * Run a single-input, single-output session on an 8-bit plane of `w` x `h` (`in`, rows `in_stride`
+ * bytes apart) into `out` (rows `out_stride` bytes apart). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_dnn_session_run_luma8(VmafxDnnSession *session, const void *in,
+                                                     size_t in_stride, uint32_t w, uint32_t h,
+                                                     void *out, size_t out_stride,
+                                                     VmafxError **error);
+
+/**
+ * vmafx_dnn_session_run_luma8() on a plane of `bpc` bits (9 to 16) in 16-bit samples; strides in
+ * bytes. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_dnn_session_run_plane16(VmafxDnnSession *session, const void *in,
+                                                       size_t in_stride, uint32_t w, uint32_t h,
+                                                       uint32_t bpc, void *out, size_t out_stride,
+                                                       VmafxError **error);
+
+/**
+ * Run the session on `n_inputs` named float32 tensors into `n_outputs` caller-sized outputs (each
+ * output's `written` is set). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_dnn_session_run(VmafxDnnSession *session,
+                                               const VmafxDnnInput *inputs, size_t n_inputs,
+                                               VmafxDnnOutput *outputs, size_t n_outputs,
+                                               VmafxError **error);
+
+/**
+ * Close a session; NULL is a no-op. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT void vmafx_dnn_session_close(VmafxDnnSession *session);
+
+/**
+ * Execution provider the runtime attached to the session (`CPU`, `CUDA`, ...); lives as long as the
+ * session; NULL for NULL. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT const char *vmafx_dnn_session_runtime_device(VmafxDnnSession *session);
+
+/**
+ * Verify the signature the model registry at `registry_path` records for the ONNX file at
+ * `onnx_path` (ADR-0211). The engine's errno names the failure; -ENOSYS without tiny-AI support.
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_dnn_verify_signature(const char *onnx_path,
+                                                    const char *registry_path, VmafxError **error);
 
 #ifdef __cplusplus
 }

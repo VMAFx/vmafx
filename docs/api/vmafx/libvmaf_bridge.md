@@ -12,10 +12,24 @@ Bridge between a VmafxContext and the libvmaf handle bound to it, for callers th
 | --- | --- | --- |
 | `vmafx_context_from_libvmaf` | 0.1 | The VmafxContext a libvmaf handle is bound to, or NULL. |
 | `vmafx_context_libvmaf_handle` | 0.1 | The libvmaf handle bound to a context, for libvmaf calls not yet migrated; NULL for NULL. |
+| `vmafx_frame_from_picture` | 0.1 | A frame handle for a libvmaf picture (from vmaf_picture_alloc(), a preallocated pool, a device import), holding one new reference to its memory; the picture keeps its own. Not for the same picture on two threads at once. VMAFX_E_INVALID for a picture without a reference count. Added in ABI 0.1.6. |
+| `vmafx_frame_to_picture` | 0.1 | Fill `picture` with a libvmaf view of `frame` holding one new reference (released with vmaf_picture_unref() or consumed by vmaf_read_pictures()); the caller keeps its frame reference. Added in ABI 0.1.6. |
+| `vmafx_model_from_libvmaf` | 0.1 | The VmafxModel a libvmaf model handle belongs to (borrowed), or NULL. Added in ABI 0.1.6. |
+| `vmafx_model_libvmaf_handle` | 0.1 | The libvmaf handle of a model (borrowed: lives as long as the model), or NULL. Added in ABI 0.1.6. |
+| `vmafx_model_set_from_libvmaf` | 0.1 | The VmafxModelSet a libvmaf model collection belongs to (borrowed), or NULL. Added in ABI 0.1.6. |
+| `vmafx_model_set_libvmaf_handle` | 0.1 | The libvmaf handle of a model set (borrowed: lives as long as the set), or NULL. Added in ABI 0.1.6. |
 
 ```c
 VMAFX_EXPORT VmafxContext *vmafx_context_from_libvmaf(VmafContext *vmaf);
 VMAFX_EXPORT VmafContext *vmafx_context_libvmaf_handle(VmafxContext *context);
+VMAFX_EXPORT VmafxStatus vmafx_frame_from_picture(VmafPicture *picture, VmafxFrame **out,
+                                                  VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_frame_to_picture(VmafxFrame *frame, VmafPicture *picture,
+                                                VmafxError **error);
+VMAFX_EXPORT VmafxModel *vmafx_model_from_libvmaf(VmafModel *model);
+VMAFX_EXPORT VmafModel *vmafx_model_libvmaf_handle(VmafxModel *model);
+VMAFX_EXPORT VmafxModelSet *vmafx_model_set_from_libvmaf(VmafModelCollection *collection);
+VMAFX_EXPORT VmafModelCollection *vmafx_model_set_libvmaf_handle(VmafxModelSet *set);
 ```
 
 Back to the [reference index](reference.md).

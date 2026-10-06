@@ -140,6 +140,11 @@ struct VmafModel {
     char sha256[65];     /* hex SHA-256 of the bytes as loaded */
     uint64_t load_flags; /* VmafModelConfig.flags at load */
     char *overrides;     /* `<extractor>.<key>=<value>` joined by ':' */
+    /* RC4 WP6 (ADR-1852 D3): the VmafxModel that wraps this model, so the
+     * libvmaf compat layer maps the handle it gave out back to the VMAFx
+     * object (vmafx_model_from_libvmaf()); NULL for a model no VmafxModel
+     * wraps. */
+    void *api_owner;
 };
 
 struct VmafModelCollection {
@@ -147,6 +152,7 @@ struct VmafModelCollection {
     unsigned cnt, size;
     enum VmafModelType type;
     const char *name;
+    void *api_owner; /* the VmafxModelSet that wraps it (RC4 WP6), or NULL */
 };
 
 char *vmaf_model_generate_name(VmafModelConfig *cfg);

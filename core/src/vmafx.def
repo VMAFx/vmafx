@@ -6,9 +6,13 @@
 ; `python3 scripts/codegen/vmafx-api.py --write`.
 EXPORTS
     vmafx_abi_version
+    vmafx_backend_name
+    vmafx_context_acquire_frame
     vmafx_context_admit
     vmafx_context_annotate
     vmafx_context_annotation
+    vmafx_context_attach_sidedata
+    vmafx_context_backend
     vmafx_context_create
     vmafx_context_destroy
     vmafx_context_extractor_count
@@ -18,16 +22,21 @@ EXPORTS
     vmafx_context_from_libvmaf
     vmafx_context_import_frame
     vmafx_context_import_score
+    vmafx_context_is_codec_aware
     vmafx_context_libvmaf_handle
     vmafx_context_model_provenance
+    vmafx_context_preallocate
     vmafx_context_provenance
     vmafx_context_provenance_json
+    vmafx_context_set_codec_context
     vmafx_context_set_encode_record
     vmafx_context_set_option
+    vmafx_context_set_tiny_resize
     vmafx_context_use_device
     vmafx_context_use_feature
     vmafx_context_use_model
     vmafx_context_use_model_set
+    vmafx_context_use_tiny_model
     vmafx_device_backend
     vmafx_device_count
     vmafx_device_create
@@ -36,6 +45,14 @@ EXPORTS
     vmafx_device_profile
     vmafx_device_ref
     vmafx_device_unref
+    vmafx_dnn_available
+    vmafx_dnn_session_close
+    vmafx_dnn_session_open
+    vmafx_dnn_session_run
+    vmafx_dnn_session_run_luma8
+    vmafx_dnn_session_run_plane16
+    vmafx_dnn_session_runtime_device
+    vmafx_dnn_verify_signature
     vmafx_error_errno
     vmafx_error_free
     vmafx_error_function
@@ -52,7 +69,11 @@ EXPORTS
     vmafx_fence_signal
     vmafx_fence_wait
     vmafx_flush
+    vmafx_frame_convert
+    vmafx_frame_converter_create
+    vmafx_frame_converter_destroy
     vmafx_frame_create_host
+    vmafx_frame_from_picture
     vmafx_frame_import
     vmafx_frame_planes
     vmafx_frame_pool_acquire
@@ -60,20 +81,33 @@ EXPORTS
     vmafx_frame_pool_destroy
     vmafx_frame_ref
     vmafx_frame_release_fence
+    vmafx_frame_to_picture
     vmafx_frame_unref
     vmafx_frame_wrap_host
+    vmafx_mcp_available
+    vmafx_mcp_server_create
+    vmafx_mcp_server_destroy
+    vmafx_mcp_start_sse
+    vmafx_mcp_start_stdio
+    vmafx_mcp_start_uds
+    vmafx_mcp_stop
+    vmafx_mcp_transport_available
     vmafx_model_builtin_next
     vmafx_model_default_version
     vmafx_model_feature_count
     vmafx_model_feature_name
+    vmafx_model_from_libvmaf
     vmafx_model_hash
+    vmafx_model_libvmaf_handle
     vmafx_model_load
     vmafx_model_load_file
     vmafx_model_name
     vmafx_model_override_feature
     vmafx_model_ref
+    vmafx_model_set_from_libvmaf
     vmafx_model_set_hash
     vmafx_model_set_lead
+    vmafx_model_set_libvmaf_handle
     vmafx_model_set_load
     vmafx_model_set_load_file
     vmafx_model_set_override_feature

@@ -186,6 +186,13 @@ typedef struct VmafxOptions VmafxOptions;
  */
 typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
 
+/**
+ * Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another
+ * value; a static string. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT const char *vmafx_backend_name(uint32_t backend);
+
 #ifdef __cplusplus
 }
 #endif

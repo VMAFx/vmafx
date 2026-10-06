@@ -150,16 +150,20 @@ class EndToEndTest(unittest.TestCase):
         )
         return done.returncode, done.stderr
 
-    def check(self, tmp: Path, listed: str) -> tuple[int, str]:
-        (tmp / "include").mkdir(exist_ok=True)
+    def check(self, tmp: Path, listed: str, compat: str = "") -> tuple[int, str]:
         (tmp / "symbols.txt").write_text(listed)
+        (tmp / "compat.txt").write_text(compat)
         done = run(
             [
                 sys.executable,
                 str(CHECKER),
-                str(tmp / "libtest.so"),
-                str(tmp / "include"),
+                "--library",
+                "vmafx",
+                "--vmafx-symbols",
                 str(tmp / "symbols.txt"),
+                "--compat-symbols",
+                str(tmp / "compat.txt"),
+                str(tmp / "libtest.so"),
             ]
         )
         return done.returncode, done.stdout

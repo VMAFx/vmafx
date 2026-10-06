@@ -21,6 +21,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <vmafx/types.h>
+#include <vmafx/error.h>
+#include <vmafx/frame.h>
+#include <vmafx/model.h>
 #include <vmafx/context.h>
 #include <libvmaf/libvmaf.h>
 
@@ -39,6 +42,51 @@ VMAFX_EXPORT VmafxContext *vmafx_context_from_libvmaf(VmafContext *vmaf);
  * @since 0.1
  */
 VMAFX_EXPORT VmafContext *vmafx_context_libvmaf_handle(VmafxContext *context);
+
+/**
+ * A frame handle for a libvmaf picture (from vmaf_picture_alloc(), a preallocated pool, a device
+ * import), holding one new reference to its memory; the picture keeps its own. Not for the same
+ * picture on two threads at once. VMAFX_E_INVALID for a picture without a reference count. Added in
+ * ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_from_picture(VmafPicture *picture, VmafxFrame **out,
+                                                  VmafxError **error);
+
+/**
+ * Fill `picture` with a libvmaf view of `frame` holding one new reference (released with
+ * vmaf_picture_unref() or consumed by vmaf_read_pictures()); the caller keeps its frame reference.
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_to_picture(VmafxFrame *frame, VmafPicture *picture,
+                                                VmafxError **error);
+
+/**
+ * The VmafxModel a libvmaf model handle belongs to (borrowed), or NULL. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxModel *vmafx_model_from_libvmaf(VmafModel *model);
+
+/**
+ * The libvmaf handle of a model (borrowed: lives as long as the model), or NULL. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafModel *vmafx_model_libvmaf_handle(VmafxModel *model);
+
+/**
+ * The VmafxModelSet a libvmaf model collection belongs to (borrowed), or NULL. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxModelSet *vmafx_model_set_from_libvmaf(VmafModelCollection *collection);
+
+/**
+ * The libvmaf handle of a model set (borrowed: lives as long as the set), or NULL. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafModelCollection *vmafx_model_set_libvmaf_handle(VmafxModelSet *set);
 
 #ifdef __cplusplus
 }

@@ -264,6 +264,45 @@ VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, Vmafx
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
 
+/**
+ * Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a
+ * libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_backend(const VmafxContext *context);
+
+/**
+ * Let the context allocate `count` frames of `desc` once, in the memory its device reads fastest
+ * (page-locked host memory for a GPU device state, else host memory), for
+ * vmafx_context_acquire_frame(). Checked against the context's frame retention: a count below the
+ * depth its extractors keep is VMAFX_E_INVALID, now and when such an extractor is registered later.
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_preallocate(VmafxContext *context,
+                                                   const VmafxFrameDesc *desc, uint32_t count,
+                                                   VmafxError **error);
+
+/**
+ * One of the frames vmafx_context_preallocate() made, with one reference the caller holds; waits
+ * until a frame is free (one returns when its last reference is dropped). VMAFX_E_INVALID without
+ * preallocated frames. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
+                                                     VmafxError **error);
+
+/**
+ * Attach the perceptual side data of frame `index` (a pre-processor's interop blob, ADR-1118) to
+ * the context; it weights the frame in pooled scores while the `perceptual_weight` option is on. A
+ * blob of another interop major version is ignored for that frame with a warning and the engine's
+ * errno. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
+                                                       const void *data, size_t size,
+                                                       VmafxError **error);
+
 #ifdef __cplusplus
 }
 #endif
