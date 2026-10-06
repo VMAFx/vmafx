@@ -6547,6 +6547,7 @@
         "core/test/test_model.c": 1,
         "core/test/test_model_collection_api.c": 1,
         "core/test/test_model_collection_growth.c": 1,
+        "core/test/test_model_collection_score_repeat.c": 1,
         "core/test/test_model_feature_overload_ownership.c": 1,
         "core/test/test_model_libsvm_dup_key.c": 1,
         "core/test/test_moment_simd.c": 1,

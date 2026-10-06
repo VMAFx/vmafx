@@ -4363,6 +4363,37 @@ int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *scor
     return err;
 }
 
+/* The bootstrap score of a model collection already predicted at `index`:
+ * the four named scores its first prediction wrote into the collector
+ * (bootstrap_append_named_scores() in predict.c). Returns 0, or the
+ * collector's error for the first one missing. */
+static int read_predicted_collection_score(VmafContext *vmaf,
+                                           const VmafModelCollection *model_collection,
+                                           VmafModelCollectionScore *score, unsigned index)
+{
+    const size_t name_sz = BOOTSTRAP_NAME_BUF_SZ(model_collection->name);
+    char *name = (char *)calloc(1u, name_sz);
+    if (!name)
+        return -ENOMEM;
+    const char *const suffix[] = {BOOTSTRAP_SUFFIX_BAGGING, BOOTSTRAP_SUFFIX_STDDEV,
+                                  BOOTSTRAP_SUFFIX_CI_LO, BOOTSTRAP_SUFFIX_CI_HI};
+    double value[4] = {0.0, 0.0, 0.0, 0.0};
+    int err = 0;
+    for (unsigned i = 0; i < 4u && !err; i++) {
+        (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix[i]);
+        err = vmaf_feature_collector_get_score(vmaf->feature_collector, name, &value[i], index);
+    }
+    free(name);
+    if (err)
+        return err;
+    score->type = VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP;
+    score->bootstrap.bagging_score = value[0];
+    score->bootstrap.stddev = value[1];
+    score->bootstrap.ci.p95.lo = value[2];
+    score->bootstrap.ci.p95.hi = value[3];
+    return 0;
+}
+
 int vmaf_engine_score_at_index_model_collection(VmafContext *vmaf,
                                                 VmafModelCollection *model_collection,
                                                 VmafModelCollectionScore *score, unsigned index)
@@ -4374,6 +4405,14 @@ int vmaf_engine_score_at_index_model_collection(VmafContext *vmaf,
     if (!score)
         return -EINVAL;
 
+    /* T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05: the prediction writes the
+     * members' and the four named scores of this frame into the collector,
+     * which refuses a second write. A frame already predicted (by an earlier
+     * per-frame call, or by the per-frame loop of
+     * vmaf_score_pooled_model_collection()) returns the stored values, as
+     * vmaf_score_at_index() does for a single model. */
+    if (read_predicted_collection_score(vmaf, model_collection, score, index) == 0)
+        return 0;
     return vmaf_predict_score_at_index_model_collection(model_collection, vmaf->feature_collector,
                                                         index, score);
 }

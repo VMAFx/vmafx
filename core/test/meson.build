@@ -953,6 +953,17 @@ test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
 # ADR-1188 — percentile temporal pooling (MEDIAN / PERC5 / PERC10 / PERC20).
 # Pools imported per-frame scores, so it needs no YUV fixture and no model.
+# T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05: a model collection's per-frame
+# score read twice, and its pooled score after a per-frame read of a frame in
+# the range, return the stored values instead of -EINVAL.
+test_model_collection_score_repeat = executable('test_model_collection_score_repeat',
+    ['test.c', 'test_model_collection_score_repeat.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_model_collection_score_repeat', test_model_collection_score_repeat, suite : ['fast'])
+
 test_pool_percentile = executable('test_pool_percentile',
     ['test.c', 'test_pool_percentile.c'],
     include_directories : [libvmaf_inc, test_inc],

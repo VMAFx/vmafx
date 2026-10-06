@@ -62007,3 +62007,26 @@ No score, public API or FFmpeg patch impact.
 - `core/test/vmafx_fixture_util.h` holds the fixture pairs and the reader
   both `test_vmafx_bitexact.c` and `test_vmafx_import_bitexact.c` use.
 - No `libvmaf.h`, score, golden-data or FFmpeg patch impact.
+- `vmaftune.predictor_train` is now `ai/src/vmaf_train/predictor_train.py`, with its tests in
+  `ai/tests/`; an upstream-independent fork file, so no Netflix sync touches it. A change that
+  re-adds the module to vmaf-tune, or torch to any pyproject outside `ai/` and
+  `tools/ensemble-training-kit/`, fails `scripts/ci/check-torch-scope.py`.
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/vlm.py` is the only VLM path of `describe_worst_frames`
+  (ONNX Runtime GenAI, local `VMAF_MCP_VLM_MODEL`); keep the `vlm` extra free of torch and
+  transformers. The `vmaf-tune-train` test suite is removed from `.github/test-suites.json` and
+  `tests-and-quality-gates.yml`; a conflict there takes the side without it. No score, public C
+  API or FFmpeg patch impact.
+
+## A model collection's per-frame score reads its stored values first
+
+`fix/model-set-score-idempotent` (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05).
+
+- `core/src/libvmaf.c` gains `read_predicted_collection_score()`, which
+  `vmaf_score_at_index_model_collection()` calls before
+  `vmaf_predict_score_at_index_model_collection()`: a frame whose four named
+  bootstrap scores are already in the collector returns them. Upstream
+  Netflix/vmaf predicts every time and has the same failure; an upstream
+  sync that touches this function keeps the read.
+- New test `core/test/test_model_collection_score_repeat.c` and its block in
+  `core/test/meson.build`. No score or golden impact: a first prediction is
+  unchanged and a repeat returns its stored values.
