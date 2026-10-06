@@ -26,7 +26,10 @@ hip/
   common.{c,h}          # HIP context + (future) stream management
   picture_hip.{c,h}     # device picture alloc/free, and vmaf_hip_picture_upload():
                         #   the one way a host VmafPicture plane reaches the
-                        #   device (waits for the copy; see ../feature/hip/AGENTS.md)
+                        #   device (waits for the copy; see ../feature/hip/AGENTS.md);
+                        #   a VMAFx device picture is copied on its library stream
+  vmafx_hip{,_internal}.h, import_{device,frame,dmabuf,fence,gl}.c,
+  import_convert.hip    # ADR-2092: VMAFx device frames on HIP (vmafx-device-frames page)
   shared_frame.{c,h}    # ADR-1408: frame planes a VmafContext uploads once,
                         #   every twin reads; vmaf_hip_plane_source_acquire()
   hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
@@ -170,3 +173,4 @@ builds host side without device kernels. Kernel-enabled builds
 | `/core/src/feature/hip/integer_motion_v2_hip.c`, `/core/src/feature/hip/float_motion_hip.c` | [motion](AGENTS.d/motion.md) | Motion HIP extractors mirror CUDA twins with ping-pong buffering and cross-backend motion_fps_weight parity. |
 | `/core/src/feature/hip/integer_psnr_hip.c`, `/core/src/feature/hip/integer_psnr_hip.h` | [psnr](AGENTS.d/psnr.md) | integer_psnr_hip mirrors CUDA call-graph and splits uint64 warp reduction into uint32 shuffles under HAVE_HIPCC. |
 | `/core/src/feature/hip/float_ssim_hip.c`, `/core/src/feature/hip/float_ssim_hip.h` | [ssim](AGENTS.d/ssim.md) | float_ssim_hip mirrors CUDA twin with two dispatches per frame and five intermediate float buffers. |
+| `import_*.c`, `import_convert.hip`, `vmafx_hip.h`, `vmafx_hip_internal.h`, `/core/test/test_vmafx_import_hip*`, `/core/test/vmafx_hip_test_util.h` | [vmafx-device-frames](AGENTS.d/vmafx-device-frames.md) | Imported HIP frames are read only on the library stream; reader and null stream wait; import submits. |

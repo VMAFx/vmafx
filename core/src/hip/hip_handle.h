@@ -40,6 +40,13 @@ static inline hipEvent_t vmaf_hip_event_of(uintptr_t bits)
     return h.event;
 }
 
+/* The bits of `event`, as a VMAFx fence carries it (VmafxFence.handle). */
+static inline uintptr_t vmaf_hip_event_bits(hipEvent_t event)
+{
+    const VmafHipHandle h = {.event = event};
+    return h.bits;
+}
+
 /* The bits of `stream`, for a helper that takes the `uintptr_t` form. */
 static inline uintptr_t vmaf_hip_stream_bits(hipStream_t stream)
 {

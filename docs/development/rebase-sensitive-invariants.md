@@ -183,6 +183,18 @@ backend within it.
   device double buffer; a change to one recomputes it. `test_vmafx_window`,
   `test_vmafx_window_live`, `test_vmafx_window_cli` and
   `test_vmafx_lifetime` guard it.
+- **VMAFx HIP frames are read on one stream per device ([ADR-2092](../adr/2092-vmafx-hip-device-frames.md))**:
+  every frame a HIP device of the VMAFx API imports is a
+  `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture on the device's library
+  stream. The twins copy it there (`vmaf_hip_picture_upload()`, the shared
+  frame), and the reading twin's stream and the null stream wait for the
+  copies; `bind_hip_frame()` submits each import with `hipStreamQuery()`; a GL
+  import checks for a GLX context of the device's GPU before any HIP-GL call;
+  a dma-buf is imported with its own size. Keep these when rebasing
+  `core/src/hip/picture_hip.c`, `shared_frame.c` or the three twins that
+  stage on the host. `core/test/test_vmafx_import_hip_contract.py`,
+  `test_hip_shared_frame` and `test_vmafx_import_hip*` (on a device) guard
+  them together.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

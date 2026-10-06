@@ -133,7 +133,7 @@ under [Option details](#option-details).
 | `enable_hip` | bool | `false` | Compile the HIP backend; 19 extractors are registered; see [`enable_hip` and `enable_hipcc`](#enable_hip-and-enable_hipcc). |
 | `enable_hipcc` | bool | `false` | Compile the real HIP kernels with `hipcc`; pair with `enable_hip=true`. |
 | `hip_gfx_targets` | string | auto-detect | AMD GFX targets for `hipcc --offload-arch`; see [`hip_gfx_targets`](#hip_gfx_targets). |
-| `enable_float_vif_hip_autodispatch` | bool | `false` | Let the model registry pick `float_vif_hip` on its own; see [`enable_float_vif_hip_autodispatch`](#enable_float_vif_hip_autodispatch). |
+| `enable_float_vif_hip_autodispatch` | bool | `true` | Let the model registry pick `float_vif_hip` on its own; see [`enable_float_vif_hip_autodispatch`](#enable_float_vif_hip_autodispatch). |
 
 ### GPU device code (CUDA, HIP, SYCL)
 
@@ -289,13 +289,16 @@ or to shrink the fat binary to one target.
 
 Defines `FLOAT_VIF_HIP_AUTODISPATCH`, which sets
 `VMAF_FEATURE_EXTRACTOR_HIP` on the `float_vif_hip` descriptor so the model
-registry can dispatch it
+registry, `--backend hip` and a VMAFx context on a HIP device pick it for
+`float_vif`
 ([ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md)).
 
-It is off because the HIP picture pool does not exist yet (T7-10c): pictures
-arrive as CPU `VmafPicture`s and the extractor copies them to the device
-itself instead of reading zero-copy from the pool. Enable it only after that
-work lands.
+On by default since [ADR-2092](../adr/2092-vmafx-hip-device-frames.md): the
+option was off until HIP device pictures existed (T7-10c), and the HIP lane
+of the VMAFx API now hands the twins frames in HIP device memory. With
+`-Denable_float_vif_hip_autodispatch=false` the twin runs only when named
+(`--feature float_vif_hip`), and a context on a HIP device refuses imported
+frames for `float_vif` (admission names the CPU extractor).
 
 ### `enable_metal`
 

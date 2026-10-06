@@ -386,6 +386,18 @@ test('test_hip_float_psnr_exact_contract',
 # vmaf_read_pictures() announces and ends the frame around the dispatch loop,
 # the shared upload waits, a slot is fenced before it is written), with a
 # planted regression per check.
+# ADR-2092: device-free source guard for the HIP lane of the VMAFx API (twins
+# read device pictures on the device, the null stream waits for the copies,
+# an import submits its work, the GLX check precedes the runtime's GL interop,
+# dma-bufs are imported with their own size, no faked SYNC_FILE release), with
+# a planted regression per check.
+test('test_vmafx_import_hip_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_hip_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_hip_shared_frame_contract',
     import('python').find_installation(),
     args : files('test_hip_shared_frame_contract.py'),
@@ -1446,6 +1458,18 @@ if host_machine.system() == 'linux'
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
     )
     test('test_vmafx_import_fence', test_vmafx_import_fence, suite : ['fast'], timeout : 120)
+
+    # RC4 WP3 (ADR-2023, ADR-2092): the fence machinery the device lanes share,
+    # on the CPU: SYNC_FILE fences polled on the host (a pipe stands in), a
+    # GL_SYNC fence without a GL context, the release-event table.
+    test_vmafx_fence_kinds = executable('test_vmafx_fence_kinds',
+        ['test.c', 'test_vmafx_fence_kinds.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_fence_kinds', test_vmafx_fence_kinds, suite : ['fast'], timeout : 60)
 endif
 
 # Engine messages go through vmaf_log(), so a context's sink sees them: no
@@ -7485,6 +7509,56 @@ test_hip_shared_frame = executable('test_hip_shared_frame',
 )
 test('test_hip_shared_frame', test_hip_shared_frame, suite : ['fast'])
 
+# RC4 WP3 HIP lane (ADR-2092): the VMAFx device-frame API on a HIP device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). Each needs the device (77 without
+# one) and runs alone on it; the bit-exactness run reads the Netflix fixtures
+# and testdata/bbb. With libgbm the producer side also writes dma-bufs on the
+# device's render node (VMAFX_TEST_HAVE_GBM); the GL test needs a GLX context
+# on the HIP device's GPU (DISPLAY) and skips without one. Linux: the
+# producers use POSIX threads, dma-bufs, sync_files and GLX.
+vmafx_gbm_dep = dependency('gbm', required : false)
+vmafx_hip_test_args = vmaf_cflags_common + vmafx_test_dirs + ['-DHAVE_HIP=1',
+    '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+] + (vmafx_gbm_dep.found() ? ['-DVMAFX_TEST_HAVE_GBM'] : [])
+vmafx_hip_tests = host_machine.system() != 'linux' ? [] : [
+    ['test_vmafx_import_hip', 300],
+    ['test_vmafx_import_hip_bitexact', 1800],
+    ['test_vmafx_import_hip_fence', 300],
+]
+foreach vmafx_hip_test : vmafx_hip_tests
+    vmafx_hip_name = vmafx_hip_test[0]
+    vmafx_hip_exe = executable(vmafx_hip_name,
+        ['test.c', vmafx_hip_name + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_hip_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps, vmafx_gbm_dep],
+    )
+    test(vmafx_hip_name, vmafx_hip_exe,
+        suite : ['gpu', 'hip'],
+        is_parallel : false,
+        timeout : vmafx_hip_test[1])
+endforeach
+# The GL test renders through GLX (the HIP runtime's GL interop reads the
+# current GLX context only): built where libX11 and libGL are found.
+vmafx_x11_dep = dependency('x11', required : false)
+vmafx_gl_dep = dependency('gl', required : false)
+if host_machine.system() == 'linux' and vmafx_x11_dep.found() and vmafx_gl_dep.found()
+    test_vmafx_import_hip_gl = executable('test_vmafx_import_hip_gl',
+        ['test.c', 'test_vmafx_import_hip_gl.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_hip_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps, vmafx_x11_dep,
+                        vmafx_gl_dep],
+    )
+    test('test_vmafx_import_hip_gl', test_vmafx_import_hip_gl,
+        suite : ['gpu', 'hip'],
+        is_parallel : false,
+        timeout : 120)
+endif
+
 # ADR-1407: `hip_strict_fp_args` gives every HIP kernel the CPU reference's
 # fp32 arithmetic. The probe kernel is compiled by hipcc with that list, as
 # the feature kernels in src/meson.build are, and run over a million random
@@ -7564,7 +7638,9 @@ test('test_hip_float_adm_math', test_hip_float_adm_math,
 # an allocator that fails on a chosen call index, so both ss2h_alloc_device()
 # and ss2h_alloc_pinned() can be driven independently.
 test_hip_ssimulacra2_init_unwind = executable('test_hip_ssimulacra2_init_unwind',
-    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c'],
+    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c',
+     # ADR-2092: submit() reads device pictures through picture_hip.c.
+     '../src/hip/picture_hip.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'),
                            include_directories('../src/feature/common/'),
