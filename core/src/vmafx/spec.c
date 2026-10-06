@@ -328,6 +328,9 @@ static VmafxStatus feature_head(const VmafxReport *report, SpecItems *items, con
                                 SpecItem *head)
 {
     SpecItem *const item = &items->item[0];
+    if (items->n == 0u || !item->key) {
+        return spec_bad_item(report, "spec", "the feature has no extractor name");
+    }
     spec_unescape(item->key);
     if (strcmp(item->key, "name") == 0 && item->value && !strchr(item->value, '=')) {
         *name = item->value; /* name=<extractor>: upstream FFmpeg's spelling */
@@ -377,7 +380,7 @@ VmafxStatus vmafx_context_use_feature_spec(VmafxContext *context, const char *sp
     for (unsigned i = 1u; i < items.n && status == VMAFX_OK; i++) {
         status = feature_option(&report, &options, &items.item[i], error);
     }
-    if (status == VMAFX_OK) {
+    if (status == VMAFX_OK && name) { /* feature_head() names it on success */
         status = vmafx_context_use_feature(context, feature_alias(name), options, error);
     }
     vmafx_options_free(options);

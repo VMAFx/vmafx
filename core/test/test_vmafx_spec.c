@@ -108,6 +108,11 @@ static char *test_model_spec_refusals(void)
     mu_assert("both version and path",
               model_refused("version=vmaf_v0.6.1:path=x.json", VMAFX_E_INVALID, "path",
                             VMAFX_SUBJECT_OPTION));
+    return NULL;
+}
+
+static char *test_model_spec_refused_items(void)
+{
     mu_assert("a key without a value",
               model_refused("version", VMAFX_E_INVALID, "version", VMAFX_SUBJECT_OPTION));
     mu_assert("a flag with another value", model_refused("disable_clip=maybe", VMAFX_E_INVALID,
@@ -229,9 +234,10 @@ static char *test_feature_spec_refusals(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_model_spec_forms),    MU_TEST(test_model_spec_escapes),
-        MU_TEST(test_model_spec_refusals), MU_TEST(test_model_spec_bounds),
-        MU_TEST(test_feature_spec_forms),  MU_TEST(test_feature_spec_refusals),
+        MU_TEST(test_model_spec_forms),      MU_TEST(test_model_spec_escapes),
+        MU_TEST(test_model_spec_refusals),   MU_TEST(test_model_spec_refused_items),
+        MU_TEST(test_model_spec_bounds),     MU_TEST(test_feature_spec_forms),
+        MU_TEST(test_feature_spec_refusals),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
