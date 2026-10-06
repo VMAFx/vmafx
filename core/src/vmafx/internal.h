@@ -173,6 +173,12 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
 #define VMAFX_MIN_FRAME_IMPORT ((uint32_t)sizeof(VmafxFrameImport))                     /* 0.1.2 */
 #define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
+#define VMAFX_MIN_CONVERT_DESC ((uint32_t)sizeof(VmafxConvertDesc))                     /* 0.1.6 */
+#define VMAFX_MIN_DNN_CONFIG ((uint32_t)sizeof(VmafxDnnConfig))                         /* 0.1.6 */
+#define VMAFX_MIN_MCP_CONFIG ((uint32_t)sizeof(VmafxMcpConfig))                         /* 0.1.6 */
+#define VMAFX_MIN_MCP_SSE_CONFIG ((uint32_t)sizeof(VmafxMcpSseConfig))                  /* 0.1.6 */
+#define VMAFX_MIN_MCP_UDS_CONFIG ((uint32_t)sizeof(VmafxMcpUdsConfig))                  /* 0.1.6 */
+#define VMAFX_MIN_MCP_STDIO_CONFIG ((uint32_t)sizeof(VmafxMcpStdioConfig))              /* 0.1.6 */
 
 VmafxStatus vmafx_read_sized(const VmafxReport *report, void *local, uint32_t full, const void *in,
                              uint32_t min, const char *subject);
@@ -226,6 +232,19 @@ int vmafx_frame_release(VmafPicture *pic, void *cookie);
 /* Signal the frame's release fence, if one was asked for, and drop the
  * frame's reference to it (the frame's memory is no longer read). */
 void vmafx_frame_signal_released(VmafxFrame *frame);
+
+/* ---- libvmaf pictures as frames (bridge.c, RC4 WP6) ----------------------- */
+
+/* The frame a libvmaf picture is a view of, or NULL when an engine path made
+ * it without one (`pic` has a slot: priv and ref set). */
+VmafxFrame *vmafx_frame_of_picture(const VmafPicture *pic);
+/* The frame of `pic`, adopting a picture the engine made without one: the
+ * frame takes over the picture's release (no reference is added; the count
+ * stays the picture's). VMAFX_E_NOMEM, with the picture unchanged. */
+VmafxStatus vmafx_frame_adopt_picture(const VmafxReport *report, const VmafPicture *pic,
+                                      VmafxFrame **out);
+/* True when `release` is the release of a pool frame (frame_pool.c). */
+bool vmafx_frame_pool_release_is(int (*release)(VmafPicture *pic, void *cookie));
 
 /* ---- Host fences (fence.c) ---------------------------------------------- */
 

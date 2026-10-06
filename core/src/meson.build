@@ -235,6 +235,35 @@ if is_mcp_enabled
     vmaf_cflags_common += mcp_defines
 endif
 
+# RC4 WP6 (ADR-1852 decision D3): libvmafx (the engine and the VMAFx API)
+# defines no libvmaf function; libvmaf.so.3 (core/src/compat/libvmaf/) defines
+# them on exported vmafx_ symbols. Every engine translation unit is compiled
+# with the generated core/src/vmafx/engine_names_gen.h first, which renames
+# the engine's own definition of each libvmaf function to vmaf_engine_<stem>,
+# so a static link of both libraries never binds a libvmaf call to the engine.
+# The switches tell it (and the compat sources) which backends still keep
+# their libvmaf functions in the engine (declared exceptions of [[compat]] in
+# core/api/vmafx.toml). Code that must see the libvmaf names (the compat
+# library, the tools, black-box tests) adds -DVMAF_PUBLIC_NAMES.
+vmaf_engine_name_args = [
+    '-DVMAFX_ENGINE_EXPORTS_CUDA=' + (is_cuda_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_SYCL=' + (is_sycl_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_HIP=' + (is_hip_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_METAL=' + (is_metal_enabled ? '1' : '0'),
+    '-DVMAFX_BUILD_MCP=' + (is_mcp_enabled ? '1' : '0'),
+]
+vmaf_engine_names_header = meson.current_source_dir() / 'vmafx' / 'engine_names_gen.h'
+if cc.get_argument_syntax() == 'msvc'
+    vmaf_engine_name_args += '/FI' + vmaf_engine_names_header
+else
+    vmaf_engine_name_args += '-include' + vmaf_engine_names_header
+endif
+# Project arguments, so every C / C++ target takes them whatever flag list it
+# names (engine static libraries, white-box tests compiling engine sources);
+# the Objective-C++ Metal targets name them through metal_objcpp_args.
+add_project_arguments(vmaf_engine_name_args, language : ['c', 'cpp'])
+vmaf_public_name_args = ['-DVMAF_PUBLIC_NAMES']
+
 # HIP compute backend (ADR-0209 / T7-10 scaffold). Same pattern: empty arrays
 # when the option is off, no-cost
 # on default builds. The dependency() probe inside `subdir('hip')` is
@@ -2742,19 +2771,24 @@ picture_convert_lib = static_library(
     install : false,
 )
 
-libvmaf_sources = [
+# The engine and the VMAFx API: libvmafx (ADR-1852 decision D3, RC4 WP6).
+libvmafx_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
-    # ADR-1852: VMAFx API prototype slice. The *_gen.c files are generated from
-    # core/api/vmafx.toml by scripts/codegen/vmafx-api.py and committed;
-    # compat_libvmaf_gen.c defines vmaf_init / vmaf_close / vmaf_version /
-    # vmaf_feature_score_at_index on the new API.
+    # ADR-1852: the VMAFx API. The *_gen.c files are generated from
+    # core/api/vmafx.toml by scripts/codegen/vmafx-api.py and committed.
     src_dir + 'vmafx/context.c',
     src_dir + 'vmafx/error.c',
     src_dir + 'vmafx/status_gen.c',
-    src_dir + 'vmafx/compat_libvmaf_gen.c',
+    # RC4 WP6: what the libvmaf compat library needs from the public API
+    # (libvmaf bridge, context-owned frames, conversion, tiny AI, MCP).
+    src_dir + 'vmafx/bridge.c',
+    src_dir + 'vmafx/context_frames.c',
+    src_dir + 'vmafx/convert.c',
+    src_dir + 'vmafx/mcp_server.c',
+    src_dir + 'vmafx/tiny_model.c',
     # ADR-1852 RC4 WP2: the core API (devices, host frames, options, models,
     # registration, submission, synchronous scores) on the engine.
     src_dir + 'vmafx/device.c',
@@ -2852,6 +2886,17 @@ if get_option('default_library') != 'static' \
     vmaf_link_args += ['-Wl,--version-script=' + (meson.current_source_dir() / 'vmafx.map'),
                        '-Wl,--no-undefined-version']
     vmafx_link_depends += vmafx_version_script
+    # RC4 WP6: a backend whose libvmaf functions still live in the engine
+    # (declared exceptions, `engine_with` in core/api/vmafx.toml) exports them
+    # from libvmafx in its own version node until its WP3 lane lands.
+    foreach legacy : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
+                      ['hip', is_hip_enabled], ['metal', is_metal_enabled]]
+        if legacy[1]
+            legacy_map = 'vmafx_legacy_' + legacy[0] + '.map'
+            vmaf_link_args += '-Wl,--version-script=' + (meson.current_source_dir() / legacy_map)
+            vmafx_link_depends += files(legacy_map)
+        endif
+    endforeach
 endif
 
 if is_sycl_enabled
@@ -2906,9 +2951,9 @@ vmafx_build_commit_h = vcs_tag(
     output : 'vmafx_build_commit.h',
 )
 
-libvmaf = library(
-    'vmaf',
-    [libvmaf_sources, rev_target, vmafx_build_commit_h, json_model_c_sources, dnn_sources,
+libvmafx = library(
+    'vmafx',
+    [libvmafx_sources, rev_target, vmafx_build_commit_h, json_model_c_sources, dnn_sources,
      dnn_libvmaf_only_sources, mcp_sources],
     include_directories : [libvmaf_inc, vmaf_include, dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -2950,10 +2995,77 @@ libvmaf = library(
         # ADR-1822: zimg picture conversion (or its -ENOTSUP stubs).
         picture_convert_lib.extract_all_objects(recursive: true),
     ],
-    version : vmaf_soname_version,
-    soversion : vmaf_soversion,
+    # ADR-1852 decision D2: libvmafx.so.1; ABI 1.0.0 freezes at the v1.0.0
+    # tag (WP12 owns the packaging around it).
+    version : vmafx_soname_version,
+    soversion : vmafx_soversion,
     install: true,
 )
+
+# The libvmaf compatibility library (ADR-1852 decision D3, RC4 WP6): the 107
+# libvmaf functions on exported vmafx_ symbols only. It links libvmafx and
+# nothing of the engine: shared libraries link with the linker's no-undefined
+# rule (Meson's b_lundef), so a compat source that reaches past the exported
+# API fails the link (test_compat_link_completeness plants one). Each variant
+# links the libvmafx of its kind, so a static link pulls libvmafx.a, whose
+# engine names (vmaf_engine_*) never meet the libvmaf names.
+vmaf_default_library = get_option('default_library')
+libvmafx_shared_lib = vmaf_default_library == 'both' ? libvmafx.get_shared_lib() : libvmafx
+libvmafx_static_lib = vmaf_default_library == 'both' ? libvmafx.get_static_lib() : libvmafx
+libvmaf_compat_sources = files(
+    'compat/libvmaf/context.c',
+    'compat/libvmaf/dnn.c',
+    'compat/libvmaf/libvmaf_gen.c',
+    'compat/libvmaf/model.c',
+    'compat/libvmaf/picture.c',
+    'compat/libvmaf/score.c',
+    'compat/libvmaf/status_errno_gen.c',
+)
+# Build-dependent members, as libvmaf exported them: the MCP functions with
+# the server; the HIP / Metal functions of a build without that backend (with
+# it, the engine keeps its own, a declared exception until its WP3 lane).
+if is_mcp_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/mcp.c')
+endif
+if not is_hip_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/backend_absent_hip.c')
+endif
+if not is_metal_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/backend_absent_metal.c')
+endif
+libvmaf_compat_kwargs = {
+    'include_directories' : [libvmaf_inc, include_directories('compat/libvmaf')],
+    'c_args' : vmaf_cflags_common + vmaf_public_name_args,
+    'dependencies' : [stdatomic_dependency],
+}
+libvmaf_shared_lib = disabler()
+libvmaf_static_lib = disabler()
+if vmaf_default_library != 'static'
+    libvmaf_shared_lib = shared_library('vmaf', libvmaf_compat_sources,
+        kwargs : libvmaf_compat_kwargs,
+        link_with : libvmafx_shared_lib,
+        version : vmaf_soname_version,
+        soversion : vmaf_soversion,
+        install : true,
+    )
+endif
+if vmaf_default_library != 'shared'
+    libvmaf_static_lib = static_library('vmaf', libvmaf_compat_sources,
+        kwargs : libvmaf_compat_kwargs,
+        link_with : libvmafx_static_lib,
+        install : true,
+    )
+endif
+libvmaf = vmaf_default_library == 'static' ? libvmaf_static_lib : libvmaf_shared_lib
+# What a consumer of the libvmaf API links: the shared libraries when built
+# (libvmafx for the vmafx_ functions the tools also call), else libvmaf.a,
+# which carries libvmafx.a.
+libvmaf_public_libs = vmaf_default_library == 'static' ? [libvmaf_static_lib] \
+    : [libvmaf_shared_lib, libvmafx_shared_lib]
+# What a white-box test links: the static libraries when built (libvmafx.a
+# exports the engine's internal symbols), else the shared ones.
+vmaf_test_link = vmaf_default_library == 'shared' ? [libvmaf_shared_lib, libvmafx_shared_lib] \
+    : [libvmaf_static_lib]
 
 # ADR-1360: fail the build, not the first cold start, when AOT goes inert.
 # The check reads the linked libvmaf.so and requires a spir64_gen image with an
@@ -2970,7 +3082,7 @@ if is_sycl_enabled and sycl_icpx_aot_list.length() > 0 \
         sycl_aot_check_args += ['--partial', tu_name + '=' + ','.join(skipped_targets)]
     endforeach
     sycl_aot_image_check = custom_target('sycl_aot_image_check',
-        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        input : libvmafx_shared_lib,
         output : 'sycl_aot_image_check.stamp',
         command : [import('python').find_installation(), files('sycl/check_aot_image.py')]
                   + sycl_aot_check_args + ['--stamp', '@OUTPUT@', '@INPUT@'],
@@ -2983,7 +3095,7 @@ endif
 if is_sycl_enabled and get_option('compress_device_code') \
         and host_machine.system() == 'linux' and get_option('default_library') != 'static'
     sycl_device_compression_check = custom_target('sycl_device_compression_check',
-        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        input : libvmafx_shared_lib,
         output : 'sycl_device_compression_check.stamp',
         command : [import('python').find_installation(), files('check_device_compression.py'),
                    '--stamp', '@OUTPUT@', '--sycl-elf', '@INPUT@'],
@@ -3064,18 +3176,36 @@ endif
 # build failed with "Package 'libvmaf' has version '1.0.0-rc.1', required
 # version is '>= 2.0.0'". Bump this only alongside `vmaf_soname_version`, i.e.
 # when the C API changes. See ADR-1235 (amends ADR-1151).
+# libvmafx.pc (ADR-1852 decision D2): the engine's private dependencies are
+# its own; WP12 owns the rest of the packaging.
+pkg_mod.generate(libraries: vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib,
+    version: vmafx_soname_version,
+    name: 'libvmafx',
+    filebase: 'libvmafx',
+    description: 'VMAFx, the VMAF engine and its C API',
+    subdirs: ['.'],
+    requires_private: libvmaf_private_reqs,
+    libraries_private: libvmaf_private_libs,
+)
+# libvmaf.pc: the compat library on libvmafx (decision D3). `Requires:` (not
+# private) so that a shared and a static consumer both link -lvmafx after
+# -lvmaf; `Version:` keeps the libvmaf interface line (ADR-1235).
 pkg_mod.generate(libraries: libvmaf,
     version: vmaf_soname_version,
     name: 'libvmaf',
     filebase: 'libvmaf',
-    description: 'VMAF, Video Multimethod Assessment Fusion',
+    description: 'VMAF, Video Multimethod Assessment Fusion (libvmaf API on libvmafx)',
     subdirs: [ '.', 'libvmaf'],
-    requires_private: libvmaf_private_reqs,
-    libraries_private: libvmaf_private_libs,
+    requires: ['libvmafx'],
 )
 
-libvmaf_dep = declare_dependency(
-    link_with: libvmaf,
+libvmafx_dep = declare_dependency(
+    link_with: vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib,
     include_directories: [libvmaf_inc],
 )
+libvmaf_dep = declare_dependency(
+    link_with: libvmaf_public_libs,
+    include_directories: [libvmaf_inc],
+)
+meson.override_dependency('libvmafx', libvmafx_dep)
 meson.override_dependency('libvmaf', libvmaf_dep)

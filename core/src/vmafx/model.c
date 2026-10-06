@@ -220,6 +220,7 @@ static VmafxStatus wrap_model(const VmafxReport *report, VmafModel *engine, cons
                           "cannot allocate a model");
     }
     model->engine = engine;
+    engine->api_owner = model;
     memcpy(model->sha256, hex, sizeof(model->sha256));
     *out = model;
     return VMAFX_OK;
@@ -433,6 +434,7 @@ static VmafxStatus wrap_set(const VmafxReport *report, VmafModel *lead, VmafMode
                           "cannot allocate a model set");
     }
     set->engine = engine;
+    engine->api_owner = set;
     memcpy(set->sha256, hex, sizeof(set->sha256));
     const VmafxStatus status = wrap_model(report, lead, hex, &set->lead);
     if (status != VMAFX_OK) {

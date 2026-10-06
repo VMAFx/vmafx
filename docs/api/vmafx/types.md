@@ -91,4 +91,14 @@ Pooling method of a pooled score (values equal enum VmafPoolingMethod). Since 0.
 typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
 ```
 
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_backend_name` | 0.1 | Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another value; a static string. Added in ABI 0.1.6. |
+
+```c
+VMAFX_EXPORT const char *vmafx_backend_name(uint32_t backend);
+```
+
 Back to the [reference index](reference.md).

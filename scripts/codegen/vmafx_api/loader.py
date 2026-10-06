@@ -276,6 +276,12 @@ def _compats(raw: list[Entry]) -> tuple[Compat, ...]:
                 returns=need(entry, "returns", where),
                 params=params,
                 spec=dict(entry),
+                engine_with=str(entry.get("engine_with", "")),
+                until=str(entry.get("until", "")),
+                when=str(entry.get("when", "")),
+                file=str(entry.get("file", "")),
+                calls=tuple(entry.get("calls", [])),
+                note=str(entry.get("note", "")),
             )
         )
     return tuple(out)

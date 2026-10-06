@@ -13,7 +13,9 @@ endif
 # POSIX / MinGW hosts, or a declare_dependency that pulls in the Win32
 # header-only + companion-source shim on MSVC / clang-cl hosts.
 vmaf_tool_deps = [stdatomic_dependency, cuda_dependency, getopt_dependency]
-vmaf_tool_cflags = [vmaf_cflags_common, compat_cflags]
+# RC4 WP6: the tools are libvmaf API consumers, so they see the libvmaf names
+# (not the engine's, core/src/vmafx/engine_names_gen.h) and link libvmaf.so.3.
+vmaf_tool_cflags = [vmaf_cflags_common, compat_cflags, vmaf_public_name_args]
 vmaf_tool_link_args = []
 vmaf_cli_link_args = vmaf_tool_link_args
 if host_machine.system() == 'windows' and cxx.get_argument_syntax() != 'msvc'
@@ -49,10 +51,7 @@ if is_metal_enabled
     vmaf_tool_deps += metal_deps
 endif
 
-vmaf_tool_link_target = libvmaf
-if get_option('default_library') == 'both'
-    vmaf_tool_link_target = libvmaf.get_shared_lib()
-endif
+vmaf_tool_link_target = libvmaf_public_libs
 vmaf_close_retry_source = files('vmaf_close_retry.c')
 
 # ADR-0809: vmaf.c and cli_parse.c converted to C++23 (vmaf.cpp, cli_parse.cpp).
@@ -116,11 +115,8 @@ endif
 # Standalone tool: only links against libvmaf for future transnet_v2
 # integration; v1 itself uses libc-only frame-difference heuristic.
 vmaf_per_shot_deps = [stdatomic_dependency, getopt_dependency]
-vmaf_per_shot_cflags = [vmaf_cflags_common, compat_cflags]
-vmaf_per_shot_link_target = libvmaf
-if get_option('default_library') == 'both'
-    vmaf_per_shot_link_target = libvmaf.get_shared_lib()
-endif
+vmaf_per_shot_cflags = [vmaf_cflags_common, compat_cflags, vmaf_public_name_args]
+vmaf_per_shot_link_target = libvmaf_public_libs
 
 vmaf_per_shot = executable(
     'vmaf-perShot',
@@ -157,7 +153,7 @@ vmaf_roi = executable(
 )
 
 vmaf_bench_deps = [stdatomic_dependency]
-vmaf_bench_cflags = vmaf_cflags_common
+vmaf_bench_cflags = vmaf_cflags_common + vmaf_public_name_args
 vmaf_bench_link_args = []
 if get_option('enable_cuda')
     vmaf_bench_deps += cuda_dependency
@@ -168,7 +164,7 @@ if get_option('enable_sycl')
     vmaf_bench_cflags += ['-DHAVE_SYCL=1']
 endif
 
-vmaf_bench_link_target = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
+vmaf_bench_link_target = libvmaf_public_libs
 
 vmaf_bench = executable(
     'vmaf_bench',
@@ -202,8 +198,8 @@ if get_option('enable_sycl')
             ['vmaf_vpl.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
             include_directories : [libvmaf_inc, vmaf_include],
             dependencies: vmaf_vpl_deps,
-            c_args : vmaf_cflags_common + ['-DHAVE_SYCL=1'],
-            link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+            c_args : vmaf_cflags_common + vmaf_public_name_args + ['-DHAVE_SYCL=1'],
+            link_with : libvmaf_public_libs,
         )
         message('vmaf_vpl tool: enabled (VPL + VA-API + SYCL)')
     else

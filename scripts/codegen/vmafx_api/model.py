@@ -23,6 +23,7 @@ SCALARS = {
     "uptr": "uintptr_t",
     "size": "size_t",
     "ptr": "void *",
+    "cptr": "const void *",
     "status": "VmafxStatus",
     "cstr": "const char *",
 }
@@ -202,6 +203,16 @@ class Function:
     deprecated: Deprecation | None = None
 
 
+# libvmaf compat entries (ADR-1852 design section 2.11). `shim` / `glue`
+# bodies are generated; `manual` ones are hand-written in COMPAT_DIR; `engine`
+# functions keep the engine's own definition in builds with `engine_with`
+# (declared exception, `until` names what ends it) and exist nowhere else.
+COMPAT_KINDS = ("shim", "glue", "manual", "engine")
+COMPAT_BACKENDS = ("cuda", "sycl", "hip", "metal")
+COMPAT_FEATURES = ("mcp",)
+COMPAT_DIR = "core/src/compat/libvmaf/"
+
+
 @dataclass(frozen=True)
 class Compat:
     name: str
@@ -211,6 +222,22 @@ class Compat:
     returns: str
     params: tuple[tuple[str, str], ...]
     spec: dict[str, Any]
+    engine_with: str = ""  # a backend whose builds keep the engine's definition
+    until: str = ""  # what ends that exception
+    when: str = ""  # build feature the function exists in; "" = every build
+    file: str = ""  # manual: the compat source that defines it
+    calls: tuple[str, ...] = ()  # manual: the vmafx_ functions its body calls
+    note: str = ""  # one line for the migration table
+
+    @property
+    def generated(self) -> bool:
+        """The body comes from the generator (shim, glue)."""
+        return self.kind in ("shim", "glue")
+
+    @property
+    def stem(self) -> str:
+        """vmaf_picture_alloc -> picture_alloc: the engine body is vmaf_engine_<stem>."""
+        return self.name.removeprefix("vmaf_")
 
 
 @dataclass(frozen=True)

@@ -79,6 +79,10 @@ Initialise with `VMAFX_FEATURE_RESOLUTION_INIT`.
 | `vmafx_context_use_device` | 0.1 | Score on `device`: the context picks each feature's twin on its backend and holds a reference to the device until it is destroyed. Call it once, before any feature, model or frame; a device can serve several contexts. A context without a device scores on the CPU. |
 | `vmafx_context_admit` | 0.1 | Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame. |
 | `vmafx_context_import_frame` | 0.1 | Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import() and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds by default); a second failure or any other one fails naming the backend, device, `input` (for example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors. Never falls back to a host copy. |
+| `vmafx_context_backend` | 0.1 | Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6. |
+| `vmafx_context_preallocate` | 0.1 | Let the context allocate `count` frames of `desc` once, in the memory its device reads fastest (page-locked host memory for a GPU device state, else host memory), for vmafx_context_acquire_frame(). Checked against the context's frame retention: a count below the depth its extractors keep is VMAFX_E_INVALID, now and when such an extractor is registered later. Added in ABI 0.1.6. |
+| `vmafx_context_acquire_frame` | 0.1 | One of the frames vmafx_context_preallocate() made, with one reference the caller holds; waits until a frame is free (one returns when its last reference is dropped). VMAFX_E_INVALID without preallocated frames. Added in ABI 0.1.6. |
+| `vmafx_context_attach_sidedata` | 0.1 | Attach the perceptual side data of frame `index` (a pre-processor's interop blob, ADR-1118) to the context; it weights the frame in pooled scores while the `perceptual_weight` option is on. A blob of another interop major version is ignored for that frame with a warning and the engine's errno. Added in ABI 0.1.6. |
 
 ```c
 VMAFX_EXPORT VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
@@ -116,6 +120,15 @@ VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const 
 VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
+VMAFX_EXPORT uint32_t vmafx_context_backend(const VmafxContext *context);
+VMAFX_EXPORT VmafxStatus vmafx_context_preallocate(VmafxContext *context,
+                                                   const VmafxFrameDesc *desc, uint32_t count,
+                                                   VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
+                                                     VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
+                                                       const void *data, size_t size,
+                                                       VmafxError **error);
 ```
 
 Back to the [reference index](reference.md).

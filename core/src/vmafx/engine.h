@@ -10,7 +10,8 @@
  * VMAFx API (core/src/vmafx/) is built on (ADR-1852). The libvmaf functions
  * these replace (vmaf_init, vmaf_close, vmaf_feature_score_at_index,
  * vmaf_version) are generated compat shims on the VMAFx API now
- * (core/src/vmafx/compat_libvmaf_gen.c). Nothing here is exported.
+ * (core/src/compat/libvmaf/libvmaf_gen.c, libvmaf.so.3). Nothing here is
+ * exported: libvmafx.so.1's version script hides every engine symbol.
  */
 
 #ifndef VMAFX_ENGINE_H

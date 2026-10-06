@@ -15,6 +15,10 @@ from collections.abc import Iterator
 
 from . import graph, typesys
 from .model import (
+    COMPAT_BACKENDS,
+    COMPAT_DIR,
+    COMPAT_FEATURES,
+    COMPAT_KINDS,
     HEADER_GROUPS,
     PASS_MODES,
     Api,
@@ -231,10 +235,37 @@ def _check_flags(api: Api) -> None:
                 raise DefinitionError(f"flags[{flags.name}].{bit.name}: bit outside 0..{width - 1}")
 
 
+def _check_compat_build(item: Compat, where: str) -> None:
+    """Build conditions: an engine exception names its backend and its end."""
+    if item.kind not in COMPAT_KINDS:
+        raise DefinitionError(f"{where}: kind is one of {', '.join(COMPAT_KINDS)}")
+    if item.engine_with and item.engine_with not in COMPAT_BACKENDS:
+        raise DefinitionError(f"{where}: engine_with is one of {', '.join(COMPAT_BACKENDS)}")
+    if item.when and item.when not in COMPAT_FEATURES:
+        raise DefinitionError(f"{where}: when is one of {', '.join(COMPAT_FEATURES)}")
+    if item.kind == "engine" and not item.engine_with:
+        raise DefinitionError(f"{where}: an engine function names its backend (engine_with)")
+    if item.engine_with and not item.until:
+        raise DefinitionError(f"{where}: an engine exception names what ends it (until)")
+
+
+def _check_compat_manual(api: Api, item: Compat, where: str) -> None:
+    if not (item.file.startswith(COMPAT_DIR) and item.file.endswith(".c")):
+        raise DefinitionError(f"{where}: a manual function names its source under {COMPAT_DIR}")
+    for name in item.calls:
+        api.function(name)
+    if item.target != "compat-internal":
+        api.function(item.target)
+
+
 def _check_compat(api: Api, item: Compat) -> None:
     where = f"compat[{item.name}]"
-    if item.kind not in ("shim", "glue"):
-        raise DefinitionError(f"{where}: generated kinds are shim and glue")
+    _check_compat_build(item, where)
+    if item.kind == "manual":
+        _check_compat_manual(api, item, where)
+        return
+    if not item.generated:
+        return
     api.function(item.target)
     build = item.spec.get("build")
     if not isinstance(build, dict):

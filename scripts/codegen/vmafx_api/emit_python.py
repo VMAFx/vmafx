@@ -27,6 +27,7 @@ CTYPES = {
     "uptr": "ctypes.c_size_t",
     "size": "ctypes.c_size_t",
     "ptr": "ctypes.c_void_p",
+    "cptr": "ctypes.c_void_p",
     "status": "ctypes.c_int32",
     "cstr": "ctypes.c_char_p",
 }
@@ -43,6 +44,7 @@ PYTYPES = {
     "cstr": "str | None",
 }
 CONTEXT = "VmafxContext"
+POINTERS = ("ptr", "cptr")  # untyped memory: no Python value
 LINE_LIMIT = 100  # black line length (pyproject.toml)
 
 
@@ -168,7 +170,7 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
         if fld.count:
             return f"tuple[{record}, ...]", f"tuple({record}.from_c(x) for x in {raw})"
         return record, f"{record}.from_c({raw})"
-    if kind != "scalar" or fld.type == "ptr":
+    if kind != "scalar" or fld.type in POINTERS:
         return None
     value = f"_text({raw})" if fld.type == "cstr" else raw
     if fld.count:
@@ -179,7 +181,7 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
 def _plain(api: Api, fields: list[Field]) -> bool:
     """A record converts back to C when every field is a single non-pointer number."""
     return all(
-        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", "ptr") and not f.count
+        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", *POINTERS) and not f.count
         for f in fields
     )
 
@@ -267,7 +269,7 @@ def _bindable(api: Api, param: Param) -> bool:
     kind = typesys.kind(api, param.type)
     if param.mode == "error" or (param.mode == "out" and kind == "struct"):
         return True
-    return param.mode == "in" and kind == "scalar" and param.type != "ptr"
+    return param.mode == "in" and kind == "scalar" and param.type not in POINTERS
 
 
 def context_methods(api: Api) -> list[Function]:
@@ -305,7 +307,7 @@ def library_functions(api: Api) -> list[Function]:
     out = []
     for fn in api.functions:
         kinds = {typesys.kind(api, p.type) for p in fn.params}
-        if kinds - {"scalar"} or any(p.type == "ptr" for p in fn.params):
+        if kinds - {"scalar"} or any(p.type in POINTERS for p in fn.params):
             continue
         if fn.returns not in ("cstr", "void"):
             continue

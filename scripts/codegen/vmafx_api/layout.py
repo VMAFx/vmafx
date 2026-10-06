@@ -33,6 +33,7 @@ DATA_MODELS: dict[str, dict[str, tuple[int, int]]] = {
         "uptr": (8, 8),
         "size": (8, 8),
         "ptr": POINTER,
+        "cptr": POINTER,
         "cstr": POINTER,
     },
 }

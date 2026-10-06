@@ -40,6 +40,11 @@ vmaf_api_version_array    = vmaf_soname_version.split('.')
 vmaf_api_version_major    = vmaf_api_version_array[0]
 vmaf_api_version_minor    = vmaf_api_version_array[1]
 vmaf_api_version_revision = vmaf_api_version_array[2]
+# libvmafx.so.1 (ADR-1852 decision D2, RC4 WP6): the engine and the VMAFx API,
+# its own number line; the ABI 1.0.0 freezes at the v1.0.0 tag. libvmaf.so.3
+# above is the libvmaf compat library linked against it.
+vmafx_soname_version      = '1.0.0'
+vmafx_soversion           = '1'
 
 libvmaf_src_root = meson.current_source_dir()
 cc = meson.get_compiler('c')

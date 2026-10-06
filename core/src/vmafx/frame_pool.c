@@ -102,6 +102,11 @@ static int pool_frame_release(VmafPicture *pic, void *cookie)
     return 0;
 }
 
+bool vmafx_frame_pool_release_is(int (*release)(VmafPicture *pic, void *cookie))
+{
+    return release == pool_frame_release;
+}
+
 /* One frame of the pool with its pixels; its picture is armed on acquire. */
 static VmafxFrame *pool_frame_new(VmafxFramePool *pool, const VmafxFrameDesc *d)
 {

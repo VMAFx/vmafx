@@ -33,7 +33,10 @@ metal_objcpp_args = [
     '-fobjc-arc',
     '-fno-objc-arc-exceptions',
     '-fobjc-weak',
-] + vmaf_strict_fp_args
+] + vmaf_strict_fp_args + vmaf_engine_name_args
+# vmaf_engine_name_args (RC4 WP6, ADR-1852 D3): the engine's libvmaf names
+# (core/src/vmafx/engine_names_gen.h) for the Obj-C++ TUs too; the project
+# arguments cover only C and C++.
 # vmaf_strict_fp_args (ADR-1461): the project-wide no-contraction argument
 # covers C and C++; the Obj-C++ host wrappers score on the host too, and on
 # Apple Silicon clang would fuse `a * b + c` there.

@@ -10,7 +10,7 @@
  * context options, version and extractor queries (provenance: provenance.c,
  * RC4 WP5), on the scoring engine of core/src/libvmaf.c. libvmaf's
  * vmaf_init(), vmaf_close() and vmaf_version() are generated shims on these
- * (core/src/vmafx/compat_libvmaf_gen.c).
+ * (core/src/compat/libvmaf/libvmaf_gen.c, libvmaf.so.3).
  *
  * Logging (RC4 WP2): a context with a log callback receives its own messages
  * (failures reported without an error out-parameter, and what the engine logs

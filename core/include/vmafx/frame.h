@@ -80,6 +80,77 @@ typedef enum VmafxFenceKind {
     VMAFX_FENCE_WIN32_SHARED = 7,
 } VmafxFenceKind;
 
+/**
+ * Code-value range of a frame (values equal enum VmafColorRange). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorRange {
+    /** Unset. */
+    VMAFX_COLOR_RANGE_UNKNOWN = 0,
+    /** Studio (limited) range. */
+    VMAFX_COLOR_RANGE_LIMITED = 1,
+    /** Full range. */
+    VMAFX_COLOR_RANGE_FULL = 2,
+} VmafxColorRange;
+
+/**
+ * Colour primaries (values equal enum VmafColorPrimaries). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorPrimaries {
+    /** Unset. */
+    VMAFX_COLOR_PRIMARIES_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_PRIMARIES_BT709 = 1,
+    /** ITU-R BT.2020. */
+    VMAFX_COLOR_PRIMARIES_BT2020 = 2,
+    /** SMPTE ST 432-1 (D65). */
+    VMAFX_COLOR_PRIMARIES_SMPTE432 = 3,
+} VmafxColorPrimaries;
+
+/**
+ * Transfer characteristic (values equal enum VmafColorTransferCharacteristic). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorTransfer {
+    /** Unset. */
+    VMAFX_COLOR_TRC_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_TRC_BT709 = 1,
+    /** SMPTE ST 2084 (PQ). */
+    VMAFX_COLOR_TRC_SMPTE2084 = 2,
+} VmafxColorTransfer;
+
+/**
+ * YCbCr matrix coefficients (values equal enum VmafColorMatrixCoefficients). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorMatrix {
+    /** Unset. */
+    VMAFX_COLOR_MATRIX_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_MATRIX_BT709 = 1,
+    /** ITU-R BT.2020 non-constant luminance. */
+    VMAFX_COLOR_MATRIX_BT2020_NCL = 2,
+    /** ICtCp. */
+    VMAFX_COLOR_MATRIX_ICTCP = 3,
+} VmafxColorMatrix;
+
+/**
+ * Scaling filter of a frame conversion (values equal enum VmafResampleFilter). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxResampleFilter {
+    /** The converter's default (bicubic). */
+    VMAFX_RESAMPLE_DEFAULT = 0,
+    /** Bilinear. */
+    VMAFX_RESAMPLE_BILINEAR = 1,
+    /** Bicubic. */
+    VMAFX_RESAMPLE_BICUBIC = 2,
+    /** Lanczos. */
+    VMAFX_RESAMPLE_LANCZOS = 3,
+} VmafxResampleFilter;
+
 /*
  * VmafxImportFlags: How vmafx_frame_import() may bind the producer's memory. 0, the value of a
  * zeroed descriptor, requires zero copy: a layout the device cannot bind is refused, never copied
@@ -105,12 +176,21 @@ typedef struct VmafxFrame VmafxFrame;
  */
 typedef struct VmafxFramePool VmafxFramePool;
 
+/**
+ * Converts frames of one format into another (pixel format, depth, size, colour). Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+typedef struct VmafxFrameConverter VmafxFrameConverter;
+
 typedef struct VmafxFence VmafxFence;
 typedef struct VmafxImportPlane VmafxImportPlane;
 typedef struct VmafxFrameImport VmafxFrameImport;
 typedef struct VmafxFrameDesc VmafxFrameDesc;
 typedef struct VmafxHostPlanes VmafxHostPlanes;
 typedef struct VmafxFramePlanes VmafxFramePlanes;
+typedef struct VmafxColor VmafxColor;
+typedef struct VmafxConvertDesc VmafxConvertDesc;
 
 /**
  * Called once, on any thread, when the library has stopped reading the planes of a wrapped host
@@ -292,6 +372,59 @@ struct VmafxFramePlanes {
 #define VMAFX_FRAME_PLANES_INIT {.struct_size = sizeof(VmafxFramePlanes)}
 
 /**
+ * Colour description of a frame; embedded by value, so it never grows. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+struct VmafxColor {
+    /** Code-value range. Values: VmafxColorRange. */
+    uint32_t range;
+    /** Primaries. Values: VmafxColorPrimaries. */
+    uint32_t primaries;
+    /** Transfer characteristic. Values: VmafxColorTransfer. */
+    uint32_t trc;
+    /** Matrix coefficients. Values: VmafxColorMatrix. */
+    uint32_t matrix;
+};
+
+/**
+ * What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+struct VmafxConvertDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel format of the frames the converter reads. Values: VmafxPixelFormat. */
+    uint32_t src_pix_fmt;
+    /** Bits per component it reads, 8 to 16. */
+    uint32_t src_bpc;
+    /** Luma width it reads. */
+    uint32_t src_w;
+    /** Luma height it reads. */
+    uint32_t src_h;
+    /**
+     * Colour of the frames it reads; an UNKNOWN member takes the converter's default for the frame
+     * size.
+     */
+    VmafxColor src_color;
+    /** Pixel format it writes. Values: VmafxPixelFormat. */
+    uint32_t dst_pix_fmt;
+    /** Bits per component it writes, 8 to 16. */
+    uint32_t dst_bpc;
+    /** Luma width it writes; 0 keeps the source width. */
+    uint32_t dst_w;
+    /** Luma height it writes; 0 keeps the source height. */
+    uint32_t dst_h;
+    /** Colour it writes. */
+    VmafxColor dst_color;
+    /** Scaling filter. Values: VmafxResampleFilter. */
+    uint32_t filter;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_CONVERT_DESC_INIT {.struct_size = sizeof(VmafxConvertDesc)}
+
+/**
  * Allocate a host frame on `device` (NULL: the CPU) with zeroed planes; fill them through
  * vmafx_frame_planes() before the first submit. The caller holds one reference.
  * @since 0.1
@@ -410,6 +543,32 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_pool_acquire(VmafxFramePool *pool, VmafxFra
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_frame_pool_destroy(VmafxFramePool *pool);
+
+/**
+ * A converter for frames of `desc.src`. VMAFX_E_NOTSUP in a build without the conversion library
+ * (zimg); VMAFX_E_INVALID names a format, depth, size or colour it cannot convert. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_create(const VmafxConvertDesc *desc,
+                                                      VmafxFrameConverter **out,
+                                                      VmafxError **error);
+
+/**
+ * Convert host frame `src` (read only, its geometry that of the converter) into a new host frame
+ * with one reference the caller holds. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_convert(VmafxFrameConverter *converter, const VmafxFrame *src,
+                                             VmafxFrame **out, VmafxError **error);
+
+/**
+ * Release a converter; VMAFX_E_INVALID for NULL, VMAFX_E_NOTSUP in a build without the conversion
+ * library. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_destroy(VmafxFrameConverter *converter,
+                                                       VmafxError **error);
 
 #ifdef __cplusplus
 }

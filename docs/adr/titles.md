@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1288), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5159,3 +5159,7 @@ Every ADR, one heading each (1287), so the site search finds an ADR by its title
 ## ADR-2073: The provenance record is canonical JSON with one digest over the configuration and the scores, the library writes it into every report, and `--verify-provenance` re-runs it
 
 [2073-vmafx-provenance-record](2073-vmafx-provenance-record.md)
+
+## ADR-2094: libvmaf.so.3 is a compat library on the exported VMAFx API; the engine compiles its libvmaf bodies under engine names, and backends keep theirs until their lanes land
+
+[2094-libvmaf-compat-library-split](2094-libvmaf-compat-library-split.md)

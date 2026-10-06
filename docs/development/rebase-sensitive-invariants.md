@@ -116,20 +116,27 @@ backend within it.
   `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
-- **VMAFx API compat shims own four libvmaf entry points ([ADR-1852](../adr/1852-vmafx-api-redesign.md))**:
-  `vmaf_init`, `vmaf_close`, `vmaf_version` and `vmaf_feature_score_at_index`
-  are generated from `core/api/vmafx.toml` into
-  `core/src/vmafx/compat_libvmaf_gen.c` on the `vmafx_*` API; their former
-  bodies are `vmaf_engine_*` in `core/src/libvmaf.c`. An upstream sync that
-  changes one of the four ports the change into its `vmaf_engine_*` body and
-  never re-adds the old definition (duplicate symbol). Generated files are
-  never hand-merged: take either side and run
+- **libvmaf is a compat library on libvmafx ([ADR-1852](../adr/1852-vmafx-api-redesign.md) decision D3, RC4 WP6)**:
+  `libvmafx.so.1` (engine + VMAFx API) exports `vmafx_*` only
+  (`core/src/vmafx.map`, `hide_unlisted = true`), plus the libvmaf
+  functions a built backend still keeps (`core/src/vmafx_legacy_<backend>.map`,
+  declared exceptions of `core/api/vmafx.toml`). `libvmaf.so.3`
+  (`core/src/compat/libvmaf/`) defines every other libvmaf function on
+  exported `vmafx_*` symbols and links nothing else. Every engine translation
+  unit compiles with the generated `core/src/vmafx/engine_names_gen.h`
+  forced (`vmaf_engine_name_args`), which renames the engine's own libvmaf
+  bodies to `vmaf_engine_<stem>`: an upstream sync ports a change to such a
+  body into the engine source unchanged and never adds a definition of a
+  libvmaf name to `libvmaf.so.3` by hand (the definition generates it, or a
+  `manual` file of `core/src/compat/libvmaf/` declared there). Generated
+  files are never hand-merged: take either side and run
   `python3 scripts/codegen/vmafx-api.py --write`; the Meson test
-  `test_vmafx_api_generated_current` fails on any difference. `libvmaf`
-  links the generated version script `core/src/vmafx.map` on ELF targets
-  (`-Wl,--no-undefined-version`), and `check_exported_symbols` compares the
-  `vmafx_` exports with `core/src/vmafx_symbols.txt`; keep both when a sync
-  touches the library target. See [core/src/AGENTS.md](../../core/src/AGENTS.md).
+  `test_vmafx_api_generated_current` fails on any difference.
+  `check_exported_symbols` / `check_exported_symbols_libvmaf` compare both
+  libraries with `core/src/vmafx_symbols.txt` and
+  `core/src/libvmaf_symbols.txt`, and `test_compat_conformance` compares
+  every compat function with its engine body (traces, `%a`). See
+  [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **VMAFx imported frames never take a host copy ([ADR-1929](../adr/1929-vmafx-device-frames-fences.md))**:
   `vmafx_frame_import()` binds the producer's planes or converts NV12 /
   P010 / P016 on the device (de-interleave, P010 shift 6) and nothing else;

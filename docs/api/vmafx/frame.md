@@ -36,6 +36,59 @@ What a VmafxFence is. Since 0.1.
 | `VMAFX_FENCE_METAL_SHARED_EVENT` | 6 | 0.1 |
 | `VMAFX_FENCE_WIN32_SHARED` | 7 | 0.1 |
 
+## `VmafxColorRange`
+
+Code-value range of a frame (values equal enum VmafColorRange). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_RANGE_UNKNOWN` | 0 | 0.1 |
+| `VMAFX_COLOR_RANGE_LIMITED` | 1 | 0.1 |
+| `VMAFX_COLOR_RANGE_FULL` | 2 | 0.1 |
+
+## `VmafxColorPrimaries`
+
+Colour primaries (values equal enum VmafColorPrimaries). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_PRIMARIES_UNKNOWN` | 0 | 0.1 |
+| `VMAFX_COLOR_PRIMARIES_BT709` | 1 | 0.1 |
+| `VMAFX_COLOR_PRIMARIES_BT2020` | 2 | 0.1 |
+| `VMAFX_COLOR_PRIMARIES_SMPTE432` | 3 | 0.1 |
+
+## `VmafxColorTransfer`
+
+Transfer characteristic (values equal enum VmafColorTransferCharacteristic). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_TRC_UNKNOWN` | 0 | 0.1 |
+| `VMAFX_COLOR_TRC_BT709` | 1 | 0.1 |
+| `VMAFX_COLOR_TRC_SMPTE2084` | 2 | 0.1 |
+
+## `VmafxColorMatrix`
+
+YCbCr matrix coefficients (values equal enum VmafColorMatrixCoefficients). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_COLOR_MATRIX_UNKNOWN` | 0 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT709` | 1 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT2020_NCL` | 2 | 0.1 |
+| `VMAFX_COLOR_MATRIX_ICTCP` | 3 | 0.1 |
+
+## `VmafxResampleFilter`
+
+Scaling filter of a frame conversion (values equal enum VmafResampleFilter). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_RESAMPLE_DEFAULT` | 0 | 0.1 |
+| `VMAFX_RESAMPLE_BILINEAR` | 1 | 0.1 |
+| `VMAFX_RESAMPLE_BICUBIC` | 2 | 0.1 |
+| `VMAFX_RESAMPLE_LANCZOS` | 3 | 0.1 |
+
 ## `VmafxImportFlags`
 
 How vmafx_frame_import() may bind the producer's memory. 0, the value of a zeroed descriptor, requires zero copy: a layout the device cannot bind is refused, never copied (design section 2.7). Bits of a `u32` field. Since 0.1.
@@ -50,6 +103,7 @@ How vmafx_frame_import() may bind the producer's memory. 0, the value of a zeroe
 | --- | --- | --- |
 | `VmafxFrame` | 0.1 | Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts. Released by `vmafx_frame_unref`. |
 | `VmafxFramePool` | 0.1 | Frames of one geometry allocated once on a device and reused (RC4 WP3). A frame returns to its pool when its last reference is dropped. Released by `vmafx_frame_pool_destroy`. |
+| `VmafxFrameConverter` | 0.1 | Converts frames of one format into another (pixel format, depth, size, colour). Added in ABI 0.1.6. Released by `vmafx_frame_converter_destroy`. |
 | `VmafxFrameReleaseCallback` | 0.1 | Called once, on any thread, when the library has stopped reading the planes of a wrapped host frame. |
 
 ```c
@@ -151,6 +205,38 @@ Where the samples of a frame are. The data pointers live as long as the frame. S
 
 Initialise with `VMAFX_FRAME_PLANES_INIT`.
 
+### `VmafxColor`
+
+Colour description of a frame; embedded by value, so it never grows. Added in ABI 0.1.6. Size 16 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `range` | `uint32_t range` | 0 | 0.1 | Code-value range. Values: `VmafxColorRange`. |
+| `primaries` | `uint32_t primaries` | 4 | 0.1 | Primaries. Values: `VmafxColorPrimaries`. |
+| `trc` | `uint32_t trc` | 8 | 0.1 | Transfer characteristic. Values: `VmafxColorTransfer`. |
+| `matrix` | `uint32_t matrix` | 12 | 0.1 | Matrix coefficients. Values: `VmafxColorMatrix`. |
+
+### `VmafxConvertDesc`
+
+What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI 0.1.6. Size 72 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `src_pix_fmt` | `uint32_t src_pix_fmt` | 4 | 0.1 | Pixel format of the frames the converter reads. Values: `VmafxPixelFormat`. |
+| `src_bpc` | `uint32_t src_bpc` | 8 | 0.1 | Bits per component it reads, 8 to 16. |
+| `src_w` | `uint32_t src_w` | 12 | 0.1 | Luma width it reads. |
+| `src_h` | `uint32_t src_h` | 16 | 0.1 | Luma height it reads. |
+| `src_color` | `VmafxColor src_color` | 20 | 0.1 | Colour of the frames it reads; an UNKNOWN member takes the converter's default for the frame size. |
+| `dst_pix_fmt` | `uint32_t dst_pix_fmt` | 36 | 0.1 | Pixel format it writes. Values: `VmafxPixelFormat`. |
+| `dst_bpc` | `uint32_t dst_bpc` | 40 | 0.1 | Bits per component it writes, 8 to 16. |
+| `dst_w` | `uint32_t dst_w` | 44 | 0.1 | Luma width it writes; 0 keeps the source width. |
+| `dst_h` | `uint32_t dst_h` | 48 | 0.1 | Luma height it writes; 0 keeps the source height. |
+| `dst_color` | `VmafxColor dst_color` | 52 | 0.1 | Colour it writes. |
+| `filter` | `uint32_t filter` | 68 | 0.1 | Scaling filter. Values: `VmafxResampleFilter`. |
+
+Initialise with `VMAFX_CONVERT_DESC_INIT`.
+
 ## Functions
 
 | Function | Since | Description |
@@ -169,6 +255,9 @@ Initialise with `VMAFX_FRAME_PLANES_INIT`.
 | `vmafx_frame_pool_create` | 0.1 | Allocate `count` frames of geometry `desc` on `device` (NULL: the CPU) once (the successor of vmaf_preallocate_pictures). Size a pool for a context with vmafx_context_frame_retention(). |
 | `vmafx_frame_pool_acquire` | 0.1 | A free frame of the pool, with one reference the caller holds; its planes keep their previous content. VMAFX_E_BUSY when every frame is in use (a transient status: a frame returns when its last reference is dropped). |
 | `vmafx_frame_pool_destroy` | 0.1 | Drop the caller's reference to the pool. Frames still in use stay valid; the pool is freed when the last of them returns. NULL is a no-op. |
+| `vmafx_frame_converter_create` | 0.1 | A converter for frames of `desc.src`. VMAFX_E_NOTSUP in a build without the conversion library (zimg); VMAFX_E_INVALID names a format, depth, size or colour it cannot convert. Added in ABI 0.1.6. |
+| `vmafx_frame_convert` | 0.1 | Convert host frame `src` (read only, its geometry that of the converter) into a new host frame with one reference the caller holds. Added in ABI 0.1.6. |
+| `vmafx_frame_converter_destroy` | 0.1 | Release a converter; VMAFX_E_INVALID for NULL, VMAFX_E_NOTSUP in a build without the conversion library. Added in ABI 0.1.6. |
 
 ```c
 VMAFX_EXPORT VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *desc,
@@ -196,6 +285,13 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_pool_create(VmafxDevice *device, const Vmaf
 VMAFX_EXPORT VmafxStatus vmafx_frame_pool_acquire(VmafxFramePool *pool, VmafxFrame **out,
                                                   VmafxError **error);
 VMAFX_EXPORT void vmafx_frame_pool_destroy(VmafxFramePool *pool);
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_create(const VmafxConvertDesc *desc,
+                                                      VmafxFrameConverter **out,
+                                                      VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_frame_convert(VmafxFrameConverter *converter, const VmafxFrame *src,
+                                             VmafxFrame **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_destroy(VmafxFrameConverter *converter,
+                                                       VmafxError **error);
 ```
 
 Back to the [reference index](reference.md).
