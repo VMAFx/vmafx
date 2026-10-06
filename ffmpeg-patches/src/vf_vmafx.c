@@ -174,14 +174,37 @@ static uint32_t library_log_level(void)
 /* ---- Formats -------------------------------------------------------------- */
 
 static const enum AVPixelFormat pix_fmts[] = {
-    AV_PIX_FMT_YUV444P,     AV_PIX_FMT_YUV422P,     AV_PIX_FMT_YUV420P,     AV_PIX_FMT_YUV444P10LE,
-    AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV444P12LE, AV_PIX_FMT_YUV422P12LE,
-    AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV444P16LE, AV_PIX_FMT_YUV422P16LE, AV_PIX_FMT_YUV420P16LE,
-    AV_PIX_FMT_GRAY8,       AV_PIX_FMT_GRAY10LE,    AV_PIX_FMT_GRAY12LE,    AV_PIX_FMT_GRAY16LE,
-    AV_PIX_FMT_NV12,        AV_PIX_FMT_P010LE,      AV_PIX_FMT_P016LE,
+    AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_YUV422P,
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV444P10LE,
+    AV_PIX_FMT_YUV422P10LE,
+    AV_PIX_FMT_YUV420P10LE,
+    AV_PIX_FMT_YUV444P12LE,
+    AV_PIX_FMT_YUV422P12LE,
+    AV_PIX_FMT_YUV420P12LE,
+    AV_PIX_FMT_YUV444P16LE,
+    AV_PIX_FMT_YUV422P16LE,
+    AV_PIX_FMT_YUV420P16LE,
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_GRAY10LE,
+    AV_PIX_FMT_GRAY12LE,
+    AV_PIX_FMT_GRAY16LE,
+    AV_PIX_FMT_NV12,
+    AV_PIX_FMT_P010LE,
+    AV_PIX_FMT_P016LE,
 #if CONFIG_CUDA
     AV_PIX_FMT_CUDA,
 #endif
+    /* Hardware frames without an import here: refused by name, or downloaded
+     * with import=host (pick_slot()), never converted by an inserted scale. */
+    AV_PIX_FMT_DRM_PRIME,
+    AV_PIX_FMT_VAAPI,
+    AV_PIX_FMT_QSV,
+    AV_PIX_FMT_VULKAN,
+    AV_PIX_FMT_D3D11,
+    AV_PIX_FMT_D3D12,
+    AV_PIX_FMT_VIDEOTOOLBOX,
     AV_PIX_FMT_NONE,
 };
 
@@ -1154,6 +1177,55 @@ static int input_frames(AVFilterContext *ctx, AVBufferRef **frames)
     return 0;
 }
 
+/* ---- Frame pools -----------------------------------------------------------
+ * The hardware frames vmafx holds of an input: an imported frame stays with
+ * the context until it releases it, and metadata=1 holds the main frames
+ * until their scores are final; either way at most what the context keeps
+ * (vmafx_context_max_in_flight()) plus the pair being submitted. A frame
+ * downloaded with import=host is let go at once. A pool of fixed size cannot
+ * grow past what its creator asked for: one smaller than that never feeds the
+ * filter and is refused by name. */
+
+static int pool_is_fixed(const AVHWFramesContext *fc)
+{
+    switch (fc->device_ctx->type) {
+    case AV_HWDEVICE_TYPE_VAAPI:
+    case AV_HWDEVICE_TYPE_QSV:
+    case AV_HWDEVICE_TYPE_D3D11VA:
+    case AV_HWDEVICE_TYPE_D3D12VA:
+    case AV_HWDEVICE_TYPE_DXVA2:
+        return fc->initial_pool_size > 0;
+    default:
+        return 0; /* CUDA, Vulkan, OpenCL, VideoToolbox: the pool grows */
+    }
+}
+
+static int hw_pool_check(AVFilterContext *ctx)
+{
+    VMAFXContext *s = ctx->priv;
+    static const char *const names[2] = {"main", "reference"};
+    const uint32_t held = vmafx_context_max_in_flight(s->context) + 1u;
+    av_log(ctx, AV_LOG_VERBOSE,
+           "vmafx: holds up to %u hardware frames of each input "
+           "(vmafx_context_max_in_flight() + 1)\n",
+           held);
+    for (int i = 0; i < 2; i++) {
+        const FilterLink *l = ff_filter_link(ctx->inputs[i]);
+        const AVHWFramesContext *fc = (const AVHWFramesContext *)l->hw_frames_ctx->data;
+        const uint32_t need = s->import_mode != 2 || (i == 0 && s->metadata) ? held : 1u;
+        if (pool_is_fixed(fc) && (uint32_t)fc->initial_pool_size < need) {
+            av_log(ctx, AV_LOG_ERROR,
+                   "vmafx: the %s frame pool of the %s input has %d frames and vmafx holds up to "
+                   "%u of them; give it at least %u (-extra_hw_frames on the decoder, "
+                   "extra_hw_frames on hwupload)\n",
+                   av_hwdevice_get_type_name(fc->device_ctx->type), names[i], fc->initial_pool_size,
+                   need, need);
+            return AVERROR(EINVAL);
+        }
+    }
+    return 0;
+}
+
 static int config_output(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
@@ -1169,6 +1241,8 @@ static int config_output(AVFilterLink *outlink)
         ret = open_device(ctx, frames);
     if (ret >= 0 && !s->context)
         ret = setup_scoring(ctx);
+    if (ret >= 0 && s->hw)
+        ret = hw_pool_check(ctx);
     if (ret < 0)
         return ret;
     if (il->hw_frames_ctx) {

@@ -21,6 +21,11 @@ fixture is missing:
 - ``refusal``: a CPU-only extractor on CUDA frames fails the graph with the
   import rule's message naming the backend, the input and the extractor,
   and no `VMAF score` line follows (D8).
+- ``pool``: both inputs uploaded to a VAAPI device into fixed frame pools;
+  vmafx downloads them (``import=host``) and with ``metadata=1`` holds the
+  main frames until their scores are final. A pool one frame smaller than
+  ``vmafx_context_max_in_flight() + 1`` is refused by name before any frame;
+  a pool of exactly that size scores the pair as the CLI does.
 
 Pairs: the Netflix 576x324 pair, both 1080p checkerboard pairs, the 4K BBB
 pair (first ``--frames-4k`` frames).
@@ -31,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -284,6 +290,60 @@ def cmd_refusal(args: argparse.Namespace) -> int:
     return 0 if result.returncode != 0 and named and no_score else 1
 
 
+def pool_run(
+    args: argparse.Namespace, pair: Pair, report: Path, pool: int, import_mode: str = "host"
+):
+    """Both inputs in VAAPI pools of `pool` frames (hwupload allocates 2 + extra_hw_frames)."""
+    up = f"format=nv12,hwupload=extra_hw_frames={pool - 2}"
+    options = f"import={import_mode}:metadata=1:threads=4:log_path={escape(report)}"
+    options += ":score_fmt=%.17g"
+    graph = f"[0:v]{up}[d];[1:v]{up}[r];[d][r]vmafx={options},hwdownload,format=nv12"
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "verbose"]
+    cmd += ["-init_hw_device", f"vaapi=va:{args.vaapi_device}", "-filter_hw_device", "va"]
+    cmd += [*ffmpeg_inputs(args, pair), "-lavfi", graph, "-f", "null", "-"]
+    return run(cmd, environment(args), check=False)
+
+
+def cmd_pool(args: argparse.Namespace) -> int:
+    pair = PAIRS["golden"]
+    if not fixture(args, pair.ref).is_file():
+        return SKIP
+    if not Path(args.vaapi_device).exists():
+        print(f"skip: {args.vaapi_device} missing")
+        return SKIP
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        probe = pool_run(args, pair, tmp / "probe.json", 2)
+        held = re.search(r"holds up to (\d+) hardware frames", probe.stderr)
+        if held is None:
+            print(probe.stderr[-2000:])
+            return 1
+        need = int(held.group(1))
+        small = pool_run(args, pair, tmp / "small.json", need - 1)
+        refused = small.returncode != 0 and (
+            f"frame pool of the main input has {need - 1} frames" in small.stderr
+            and "VMAF score" not in small.stderr
+        )
+        direct = pool_run(args, pair, tmp / "direct.json", need, "auto")
+        named = direct.returncode != 0 and "cannot score vaapi frames" in direct.stderr
+        enough = pool_run(args, pair, tmp / "filter.json", need)
+        if enough.returncode != 0:
+            print(enough.stderr[-2000:])
+            return 1
+        filt = json.loads((tmp / "filter.json").read_text(encoding="utf-8"))
+        cli = cli_report(args, pair, tmp / "cli.json", "cpu")
+    total, same, worst, bad = compare(cli, filt)
+    print(f"held frames per input: {need}; a pool of {need - 1} refused by name: {refused}")
+    print(f"VAAPI frames without import=host refused by name: {named}")
+    print(
+        f"| pool of {need} (VAAPI, import=host, metadata=1, threads=4) | {len(cli['frames'])} "
+        f"| {total} | {same} | {worst:g} |"
+    )
+    for item in bad[:5]:
+        print(f"MISMATCH {item}")
+    return 0 if refused and named and not bad and total else 1
+
+
 def e2e_command(args: argparse.Namespace, tmp: Path, pair: Pair) -> list[str]:
     """Encode with NVENC, decode the encoder's output with NVDEC in a loopback
     decoder (CUDA frames), score them against the uploaded reference, write
@@ -354,7 +414,9 @@ def cmd_e2e(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("parity", "windows", "provenance", "refusal", "e2e"))
+    parser.add_argument(
+        "command", choices=("parity", "windows", "provenance", "refusal", "pool", "e2e")
+    )
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--vmaf", required=True)
     parser.add_argument("--libdir", required=True, help="directory of libvmafx.so.1")
@@ -369,12 +431,14 @@ def main() -> int:
         action="store_true",
         help="e2e without -hwaccel before -dec (the decoder then returns system memory)",
     )
+    parser.add_argument("--vaapi-device", default="/dev/dri/renderD128", help="pool: a VAAPI node")
     args = parser.parse_args()
     return {
         "parity": cmd_parity,
         "windows": cmd_windows,
         "provenance": cmd_provenance,
         "refusal": cmd_refusal,
+        "pool": cmd_pool,
         "e2e": cmd_e2e,
     }[args.command](args)
 
