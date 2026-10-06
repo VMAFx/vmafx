@@ -68,6 +68,14 @@ typedef struct VmafxSyclPlaneOp {
     unsigned rows;
     unsigned bytes;
     unsigned shift;
+    /* A gather (vmafx_sycl_rt_frame_gather()): the plan of
+     * vmafx_import_plane_read(); sample x of a row is the element
+     * x * step + offset of `in_bytes` bytes, shifted right by `shift` and
+     * masked with `mask` (0: none), stored as `bytes` bytes. Zero otherwise. */
+    unsigned step;
+    unsigned offset;
+    unsigned in_bytes;
+    unsigned mask;
 } VmafxSyclPlaneOp;
 
 /* Where a frame's release is reported. `signal(arg)` runs on a runtime
@@ -136,6 +144,8 @@ int vmafx_sycl_rt_frame_after_event(VmafxSyclFrameRt *f, uintptr_t event);
 /* Conversions on the library queue: 0 or -EIO. */
 int vmafx_sycl_rt_frame_deinterleave(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
 int vmafx_sycl_rt_frame_shift(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
+/* One plane of a packed layout or of MSB planar words (ADR-2133). */
+int vmafx_sycl_rt_frame_gather(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
 /* De-tile a plane of `op->rows` rows of `op->w` samples of `op->bytes` bytes
  * (an interleaved chroma plane: 2 * width samples of one byte, or of two)
  * whose tiled pitch is `op->src_pitch` (a multiple of 128) into linear rows

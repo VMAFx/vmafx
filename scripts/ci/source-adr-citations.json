@@ -6770,6 +6770,7 @@
         "core/test/test_vmafx_import_sycl.c": 1,
         "core/test/test_vmafx_import_sycl_bitexact.c": 1,
         "core/test/test_vmafx_import_sycl_fence.c": 1,
+        "core/test/test_vmafx_import_sycl_formats.c": 1,
         "core/test/test_vmafx_import_sycl_gl.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/test/test_vmafx_log_routing.c": 1,
@@ -8877,6 +8878,7 @@
         "core/src/sycl/detile.h": 1,
         "core/src/sycl/scratch_check.cpp": 2,
         "core/src/sycl/scratch_check.h": 1,
+        "core/src/sycl/vmafx_sycl_rt.cpp": 1,
         "core/test/meson.build": 1,
         "core/test/test_float_moment_sum_contract.py": 1,
         "core/test/test_sycl_ciede_exact_contract.py": 4,
@@ -11780,8 +11782,10 @@
         "core/test/test_vmafx_import_sycl_bitexact.c": 1,
         "core/test/test_vmafx_import_sycl_cells_contract.py": 1,
         "core/test/test_vmafx_import_sycl_fence.c": 2,
+        "core/test/test_vmafx_import_sycl_formats.c": 1,
         "core/test/test_vmafx_import_sycl_gl.c": 1,
         "core/test/vmafx_exact_cells.h": 1,
+        "core/test/vmafx_import_test_util.h": 1,
         "core/test/vmafx_sycl_cells.h": 1,
         "core/test/vmafx_sycl_producer.cpp": 2,
         "core/test/vmafx_sycl_producer.h": 1,
@@ -11859,6 +11863,8 @@
     "2133": {
       "sites": {
         "core/src/metal/iosurface_layout.h": 1,
+        "core/src/sycl/import_frame.c": 1,
+        "core/src/sycl/vmafx_sycl_rt.h": 1,
         "core/src/vmafx/import_convert.h": 1,
         "core/src/vmafx/import_convert_kernels.h": 1,
         "core/src/vmafx/internal.h": 1,
@@ -11867,6 +11873,7 @@
         "core/test/test_vmafx_import_convert.c": 1,
         "core/test/test_vmafx_import_cuda_formats.c": 1,
         "core/test/test_vmafx_import_hip_formats.c": 1,
+        "core/test/test_vmafx_import_sycl_formats.c": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_format_cells.h": 1,
         "core/test/vmafx_import_test_util.h": 1

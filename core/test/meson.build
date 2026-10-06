@@ -8873,6 +8873,7 @@ if get_option('enable_sycl') and host_machine.system() == 'linux' and not is_syc
     vmafx_sycl_tests = [
         ['test_vmafx_import_sycl', 300],
         ['test_vmafx_import_sycl_bitexact', 1800],
+        ['test_vmafx_import_sycl_formats', 1800],
         ['test_vmafx_import_sycl_fence', 300],
         ['test_vmafx_import_sycl_gl', 120],
     ]

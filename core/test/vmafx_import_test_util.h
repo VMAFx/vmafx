@@ -307,7 +307,7 @@ typedef struct VtDeviceLayout {
  * with a pitch a multiple of 8; `skew` > 0 starts each plane `skew` bytes
  * later and leaves the pitch unrounded. Fills the rows and bytes per row of
  * each plane; returns the bytes the buffer needs. Shared by the CUDA and HIP
- * lane tests (ADR-2023, ADR-2092). */
+ * lane tests (ADR-2023, ADR-2091, ADR-2092). */
 static inline size_t vt_device_layout(const VmafxFrameDesc *d, uint32_t pix_fmt, size_t pad,
                                       size_t skew, VtDeviceLayout *p, size_t rows[3],
                                       size_t row_bytes[3])
