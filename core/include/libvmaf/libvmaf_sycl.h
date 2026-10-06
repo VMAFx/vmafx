@@ -57,6 +57,7 @@ typedef struct VmafSyclConfiguration {
  *
  * @note Thread safety: Not thread-safe. Allocate one VmafSyclState per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_device_create (SYCL, by index)")
 VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfiguration cfg);
 
 /**
@@ -74,6 +75,7 @@ VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigu
  * @note Thread safety: Not thread-safe. Call before vmaf_use_features_from_model()
  *               and vmaf_read_pictures() on the same context.
  */
+VMAF_DEPRECATED("use vmafx_context_use_device")
 VMAF_EXPORT int vmaf_sycl_import_state(VmafContext *vmaf, VmafSyclState *sycl_state);
 
 /**
@@ -123,6 +125,7 @@ typedef struct VmafSyclPictureConfiguration {
  * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_create (SYCL device)")
 VMAF_EXPORT int vmaf_sycl_preallocate_pictures(VmafContext *vmaf, VmafSyclPictureConfiguration cfg);
 
 /**
@@ -136,6 +139,7 @@ VMAF_EXPORT int vmaf_sycl_preallocate_pictures(VmafContext *vmaf, VmafSyclPictur
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_acquire + vmafx_frame_to_picture")
 VMAF_EXPORT int vmaf_sycl_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
 
 /* ------------------------------------------------------------------
@@ -168,6 +172,7 @@ VMAF_EXPORT int vmaf_sycl_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
  * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures_sycl() on
  *               the same context.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_create (SYCL device, 2 frames)")
 VMAF_EXPORT int vmaf_sycl_init_frame_buffers(VmafContext *vmaf, unsigned w, unsigned h,
                                              unsigned bpc);
 
@@ -184,6 +189,7 @@ VMAF_EXPORT int vmaf_sycl_init_frame_buffers(VmafContext *vmaf, unsigned w, unsi
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_planes")
 VMAF_EXPORT int vmaf_sycl_get_frame_buffers(VmafContext *vmaf, void **ref, void **dis);
 
 /**
@@ -197,6 +203,7 @@ VMAF_EXPORT int vmaf_sycl_get_frame_buffers(VmafContext *vmaf, void **ref, void 
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_fence_wait (frame release fence)")
 VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
 
 /**
@@ -218,6 +225,7 @@ VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_submit (imported frames)")
 VMAF_EXPORT int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index);
 
 /**
@@ -230,6 +238,7 @@ VMAF_EXPORT int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_flush")
 VMAF_EXPORT int vmaf_flush_sycl(VmafContext *vmaf);
 
 /* ------------------------------------------------------------------
@@ -257,6 +266,7 @@ VMAF_EXPORT int vmaf_flush_sycl(VmafContext *vmaf);
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_frame_import (dma-buf)")
 VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_t size, void **ptr);
 
 /**
@@ -268,6 +278,7 @@ VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_frame_unref")
 VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
 
 /**
@@ -292,6 +303,7 @@ VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_frame_import (dma-buf exported from the surface)")
 VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_display,
                                             unsigned int va_surface, int is_ref, unsigned w,
                                             unsigned h, unsigned bpc);
@@ -314,6 +326,7 @@ VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_frame_import (host plane upload)")
 VMAF_EXPORT int vmaf_sycl_upload_plane(VmafSyclState *sycl_state, const void *src, unsigned pitch,
                                        int is_ref, unsigned w, unsigned h, unsigned bpc);
 
@@ -338,6 +351,7 @@ VMAF_EXPORT int vmaf_sycl_upload_plane(VmafSyclState *sycl_state, const void *sr
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_frame_import (Windows shared texture)")
 VMAF_EXPORT int vmaf_sycl_import_d3d11_surface(VmafSyclState *sycl_state, void *d3d11_device,
                                                void *d3d11_texture, unsigned subresource,
                                                int is_ref, unsigned w, unsigned h, unsigned bpc);
@@ -358,6 +372,7 @@ VMAF_EXPORT int vmaf_sycl_import_d3d11_surface(VmafSyclState *sycl_state, void *
  * @note Thread safety: Not thread-safe. Call before submitting any frames on the
  *               same state.
  */
+VMAF_DEPRECATED("use vmafx_device_create (VMAFX_DEVICE_PROFILING)")
 VMAF_EXPORT int vmaf_sycl_profiling_enable(VmafSyclState *sycl_state);
 
 /**
@@ -368,6 +383,7 @@ VMAF_EXPORT int vmaf_sycl_profiling_enable(VmafSyclState *sycl_state);
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_device_create (VMAFX_DEVICE_PROFILING)")
 VMAF_EXPORT void vmaf_sycl_profiling_disable(VmafSyclState *sycl_state);
 
 /**
@@ -379,6 +395,7 @@ VMAF_EXPORT void vmaf_sycl_profiling_disable(VmafSyclState *sycl_state);
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_device_profile")
 VMAF_EXPORT void vmaf_sycl_profiling_print(VmafSyclState *sycl_state);
 
 /**
@@ -393,6 +410,7 @@ VMAF_EXPORT void vmaf_sycl_profiling_print(VmafSyclState *sycl_state);
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one
  *               thread at a time.
  */
+VMAF_DEPRECATED("use vmafx_device_profile")
 VMAF_EXPORT int vmaf_sycl_profiling_get_string(VmafSyclState *sycl_state, char **output);
 
 /**
@@ -406,6 +424,7 @@ VMAF_EXPORT int vmaf_sycl_profiling_get_string(VmafSyclState *sycl_state, char *
  * @note Thread safety: Not thread-safe. Call only after vmaf_close() returns
  *               0 on every context that imported this state.
  */
+VMAF_DEPRECATED("use vmafx_device_unref")
 VMAF_EXPORT void vmaf_sycl_state_free(VmafSyclState **sycl_state);
 
 /**
@@ -419,6 +438,7 @@ VMAF_EXPORT void vmaf_sycl_state_free(VmafSyclState **sycl_state);
  *
  * @note Thread safety: Safe to call from any thread; does not touch a VmafContext.
  */
+VMAF_DEPRECATED("use vmafx_device_count + vmafx_device_info")
 VMAF_EXPORT int vmaf_sycl_list_devices(void);
 
 #ifdef __cplusplus

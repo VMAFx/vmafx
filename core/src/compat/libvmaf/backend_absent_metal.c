@@ -74,13 +74,11 @@ void vmaf_metal_state_free(VmafMetalState **state)
     }
 }
 
+/* libvmaf's stub returned -ENOSYS; this file is built only without the Metal
+ * backend, so the library reports no Metal device to list. */
 int vmaf_metal_list_devices(void)
 {
-    uint32_t count = 0;
-    VmafxError *error = NULL;
-    (void)vmafx_device_count(VMAFX_BACKEND_METAL, &count, &error);
-    vmafx_error_free(error);
-    return -ENOSYS;
+    return vmaf_metal_available() ? 0 : -ENOSYS;
 }
 
 int vmaf_metal_state_init_external(VmafMetalState **out, VmafMetalExternalHandles handles)

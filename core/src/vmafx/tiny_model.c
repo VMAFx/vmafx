@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "error_internal.h"
 #include "internal.h"
@@ -28,6 +29,56 @@
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+/* VmafxDnnInput / VmafxDnnOutput have the members of the engine's
+ * VmafDnnInput / VmafDnnOutput but are distinct types, so the records cross
+ * as copies, member by member: up to four of each kind on the stack, more in
+ * the heap, as the engine keeps its own copies (core/src/dnn/dnn_api.c). */
+#define DNN_STACK_TENSORS 4u
+
+typedef struct EngineTensors {
+    VmafDnnInput in_stack[DNN_STACK_TENSORS];
+    VmafDnnOutput out_stack[DNN_STACK_TENSORS];
+    VmafDnnInput *in;
+    VmafDnnOutput *out;
+} EngineTensors;
+
+static void engine_tensors_free(EngineTensors *t)
+{
+    if (t->in != t->in_stack) {
+        free(t->in);
+    }
+    if (t->out != t->out_stack) {
+        free(t->out);
+    }
+}
+
+/* 0 or -ENOMEM. A NULL array stays NULL, so the engine refuses it. */
+static int engine_tensors_make(EngineTensors *t, const VmafxDnnInput *inputs, size_t n_inputs,
+                               const VmafxDnnOutput *outputs, size_t n_outputs)
+{
+    t->in =
+        (!inputs || n_inputs <= DNN_STACK_TENSORS) ? t->in_stack : calloc(n_inputs, sizeof(*t->in));
+    t->out = (!outputs || n_outputs <= DNN_STACK_TENSORS) ? t->out_stack :
+                                                            calloc(n_outputs, sizeof(*t->out));
+    if (!t->in || !t->out) {
+        engine_tensors_free(t);
+        return -ENOMEM;
+    }
+    for (size_t i = 0; inputs && i < n_inputs; i++) {
+        t->in[i].name = inputs[i].name;
+        t->in[i].data = inputs[i].data;
+        t->in[i].shape = inputs[i].shape;
+        t->in[i].rank = inputs[i].rank;
+    }
+    for (size_t i = 0; outputs && i < n_outputs; i++) {
+        t->out[i].name = outputs[i].name;
+        t->out[i].data = outputs[i].data;
+        t->out[i].capacity = outputs[i].capacity;
+        t->out[i].written = outputs[i].written;
+    }
+    return 0;
+}
 
 static VmafDnnSession *engine_session(VmafxDnnSession *session)
 {
@@ -175,12 +226,16 @@ VmafxStatus vmafx_dnn_session_run(VmafxDnnSession *session, const VmafxDnnInput 
                                   VmafxError **error)
 {
     const VmafxReport report = VMAFX_REPORT(NULL, error);
-    /* VmafxDnnInput / VmafxDnnOutput are the engine's tensor records under
-     * their new names: same fields, same layout (pinned by the ABI layout test
-     * and test_compat_layout_contract). */
-    const int err = vmaf_engine_dnn_session_run(
-        engine_session(session), (const VmafDnnInput *)(const void *)inputs, n_inputs,
-        (VmafDnnOutput *)(void *)outputs, n_outputs);
+    EngineTensors tensors;
+    int err = engine_tensors_make(&tensors, inputs, n_inputs, outputs, n_outputs);
+    if (!err) {
+        err = vmaf_engine_dnn_session_run(engine_session(session), inputs ? tensors.in : NULL,
+                                          n_inputs, outputs ? tensors.out : NULL, n_outputs);
+        for (size_t i = 0; outputs && i < n_outputs; i++) {
+            outputs[i].written = tensors.out[i].written;
+        }
+        engine_tensors_free(&tensors);
+    }
     if (err) {
         return dnn_failure(&report, err, "session", "running the session");
     }

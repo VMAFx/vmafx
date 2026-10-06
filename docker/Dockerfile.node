@@ -178,9 +178,10 @@ RUN meson setup /build core \
 # The SONAME chain only: the glob would also take Meson's object directory
 # libvmaf.so.3.0.0.p/.
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) \
-        -exec cp -a {} /dist/lib/ \; \
+    && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
+        \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
+    && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && test -f /dist/model/vmaf_v0.6.1.json
@@ -406,7 +407,7 @@ RUN ./scripts/dev/gen-node-bpf.sh --require-pin
 # Keep module download independently cacheable from source compilation.
 # hadolint ignore=DL3059
 RUN CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lvmafx -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \

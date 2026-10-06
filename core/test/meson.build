@@ -1213,6 +1213,18 @@ test('test_vmafx_api_generator',
     timeout : 120,
 )
 
+# RC4 WP6 (ADR-1852 decision D7): every libvmaf declaration names its VMAFx
+# successor through VMAF_DEPRECATED, a warning only with
+# VMAF_ENABLE_DEPRECATION_WARNINGS (opt-in in 1.0; upstream FFmpeg builds clean).
+test('test_libvmaf_deprecation',
+    import('python').find_installation(),
+    args : [files('test_libvmaf_deprecation.py'), cc.cmd_array()[0],
+            meson.project_source_root() / 'include',
+            meson.project_source_root() / 'api' / 'vmafx.toml'],
+    suite : ['fast'],
+    timeout : 120,
+)
+
 # RC4 WP8 / #2155: the scoring contract. vmafx_score_contract is the C API leg
 # (not a test itself); run_score_contract.py runs the Go contract test of
 # cmd/vmafx-server against this build: the same requests through the CLI, the
@@ -1283,7 +1295,7 @@ if vmaf_default_library != 'shared'
     test_compat_conformance = executable('test_compat_conformance',
         ['test.c', 'test_compat_conformance.c', 'test_compat_conformance_api.c',
          'test_compat_conformance_scoring.c'],
-        include_directories : [libvmaf_inc, test_inc],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
         c_args : vmafx_test_dirs + vmaf_public_name_args,
         link_with : [compat_conformance_old, compat_conformance_new, vmaf_test_link],
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],

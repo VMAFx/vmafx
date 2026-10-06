@@ -306,6 +306,10 @@ extern unsigned vmaf_compat_calls_old[VMAF_COMPAT_COUNT];
 extern unsigned vmaf_compat_calls_new[VMAF_COMPAT_COUNT];
 
 #ifdef VMAF_COMPAT_ENTRIES_DEFINE
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 const VmafCompatEntry vmaf_compat_entries[VMAF_COMPAT_COUNT + 1] = {
     VMAF_COMPAT_ENTRY("vmaf_dnn_available", 1),
     VMAF_COMPAT_ENTRY("vmaf_use_tiny_model", 1),
@@ -419,6 +423,7 @@ const VmafCompatEngineOnly vmaf_compat_engine_only[VMAF_COMPAT_ENGINE_ONLY_COUNT
     {"vmaf_sycl_list_devices", "sycl"},
     {NULL, NULL},
 };
+/* NOLINTEND(modernize-use-nullptr) */
 #endif
 
 #endif /* VMAF_COMPAT_CONFORMANCE_GEN_H */

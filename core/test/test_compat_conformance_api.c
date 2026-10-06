@@ -33,7 +33,10 @@
 
 static const char *model_file(char *buf, const char *name)
 {
-    (void)snprintf(buf, PATH_TEXT, "%s/%s", VMAFX_TEST_MODEL_DIR, name);
+    const int n = snprintf(buf, PATH_TEXT, "%s/%s", VMAFX_TEST_MODEL_DIR, name);
+    if (n < 0 || n >= PATH_TEXT) {
+        buf[0] = '\0'; /* no such file: both sides trace the refusal */
+    }
     return buf;
 }
 
@@ -87,12 +90,12 @@ static void trace_features(const VmafCompatApi *api, Trace *t, const VmafModel *
 static void overload(const VmafCompatApi *api, Trace *t, VmafModel *model)
 {
     VmafFeatureDictionary *opts = NULL;
-    (void)api->feature_dictionary_set(&opts, "adm_enhn_gain_limit", "1.2");
+    trace(t, "set adm %d", api->feature_dictionary_set(&opts, "adm_enhn_gain_limit", "1.2"));
     trace(t, "overload adm %d", api->model_feature_overload(model, "adm", opts));
     /* An extractor the model reads no feature of (the vmaf command line passes
      * cambi options to every model). */
     VmafFeatureDictionary *unused = NULL;
-    (void)api->feature_dictionary_set(&unused, "enc_width", "576");
+    trace(t, "set cambi %d", api->feature_dictionary_set(&unused, "enc_width", "576"));
     trace(t, "overload cambi %d", api->model_feature_overload(model, "cambi", unused));
     trace(t, "overload NULL opts %d", api->model_feature_overload(model, "adm", NULL));
     trace(t, "overload NULL model %d", api->model_feature_overload(NULL, "adm", NULL));
@@ -144,11 +147,11 @@ static void trace_collection(const VmafCompatApi *api, Trace *t, VmafModel *mode
     }
     trace_features(api, t, model);
     VmafFeatureDictionary *opts = NULL;
-    (void)api->feature_dictionary_set(&opts, "vif_enhn_gain_limit", "1.1");
+    trace(t, "set vif %d", api->feature_dictionary_set(&opts, "vif_enhn_gain_limit", "1.1"));
     trace(t, "collection overload %d",
           api->model_collection_feature_overload(model, &collection, "vif", opts));
     VmafFeatureDictionary *unused = NULL;
-    (void)api->feature_dictionary_set(&unused, "enc_bitdepth", "8");
+    trace(t, "set cambi %d", api->feature_dictionary_set(&unused, "enc_bitdepth", "8"));
     trace(t, "collection overload cambi %d",
           api->model_collection_feature_overload(model, &collection, "cambi", unused));
     trace(t, "collection overload NULL %d",
@@ -240,7 +243,10 @@ static void picture_v2(const VmafCompatApi *api, Trace *t)
     trace(t, "v2 to v1 NULL %d no ref %d", api->picture_v2_to_v1(NULL, &one),
           api->picture_v2_to_v1(&two, &one));
     for (int b = -1; b < BACKEND_HANDLE_PROBE; b++) {
-        trace(t, "handle name %d %s", b, trace_str(api->backend_handle_name((VmafBackendHandle)b)));
+        /* Values past the enum on purpose: both sides must refuse them alike. */
+        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+        const VmafBackendHandle handle = (VmafBackendHandle)b;
+        trace(t, "handle name %d %s", b, trace_str(api->backend_handle_name(handle)));
     }
 }
 
@@ -257,7 +263,7 @@ void scenario_conversion(const VmafCompatApi *api, Trace *t)
     VmafPicture src;
     VmafPicture dst;
     memset(&dst, 0, sizeof(dst));
-    (void)api->picture_alloc(&src, VMAF_PIX_FMT_YUV420P, 8, 64, 48);
+    trace(t, "alloc %d", api->picture_alloc(&src, VMAF_PIX_FMT_YUV420P, 8, 64, 48));
     const VmafColor color = {VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT709,
                              VMAF_COLOR_TRC_BT709, VMAF_COLOR_MATRIX_BT709};
     const VmafPictureConvertTarget target = {VMAF_PIX_FMT_YUV444P,  10, 32, 24, color,
@@ -275,7 +281,7 @@ void scenario_conversion(const VmafCompatApi *api, Trace *t)
     trace(t, "convert NULL %d", api->picture_convert(NULL, NULL, NULL));
     trace(t, "close %d", api->picture_convert_context_close(err ? NULL : ctx));
     trace(t, "close NULL %d", api->picture_convert_context_close(NULL));
-    (void)api->picture_unref(&src);
+    trace(t, "unref %d", api->picture_unref(&src));
 }
 
 /* ---- Perceptual weighting (ADR-1118) ---------------------------------------------- */
@@ -283,7 +289,7 @@ void scenario_conversion(const VmafCompatApi *api, Trace *t)
 void scenario_perceptual(const VmafCompatApi *api, Trace *t)
 {
     VmafContext *vmaf = NULL;
-    (void)api->init(&vmaf, quiet_config());
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
     static const uint8_t garbage[] = {0x50, 0x4c, 0x52, 0x53, 0, 0, 0, 0};
     trace(t, "enable %d", api->set_perceptual_weight_enabled(vmaf, 1));
     trace(t, "enable NULL %d", api->set_perceptual_weight_enabled(NULL, 1));
@@ -295,10 +301,41 @@ void scenario_perceptual(const VmafCompatApi *api, Trace *t)
     trace(t, "sidedata NULL blob %d", api->set_perceptual_sidedata(vmaf, NULL, 0, 0));
     trace(t, "sidedata NULL %d", api->set_perceptual_sidedata(NULL, garbage, 8, 0));
     trace(t, "disable %d", api->set_perceptual_weight_enabled(vmaf, 0));
-    (void)api->close(vmaf);
+    trace(t, "close %d", api->close(vmaf));
 }
 
 /* ---- Tiny AI ------------------------------------------------------------------------ */
+
+/* A session on the 4x4 smoke model (model/tiny/smoke_v0.onnx, NCHW
+ * [1,1,4,4]): every run form, outputs as %a. Without tiny-AI support every
+ * call is -ENOSYS on both sides. */
+static void tiny_runs(const VmafCompatApi *api, Trace *t, VmafDnnSession *sess)
+{
+    uint8_t in8[16];
+    uint8_t out8[16] = {0};
+    uint16_t in16[16];
+    uint16_t out16[16] = {0};
+    float in_f[16];
+    float out_f[16] = {0};
+    for (unsigned i = 0; i < 16u; i++) {
+        in8[i] = (uint8_t)(i * 13u);
+        in16[i] = (uint16_t)(i * 61u);
+        in_f[i] = (float)i / 16.0f;
+    }
+    trace(t, "run8 %d", api->dnn_session_run_luma8(sess, in8, 4, 4, 4, out8, 4));
+    for (unsigned i = 0; i < 16u; i++) {
+        trace(t, "out8 %u %u", i, out8[i]);
+    }
+    trace(t, "run8 7x7 %d", api->dnn_session_run_luma8(sess, in8, 7, 7, 7, out8, 7));
+    trace(t, "run16 %d", api->dnn_session_run_plane16(sess, in16, 8, 4, 4, 10, out16, 8));
+    trace(t, "out16 %u %u", out16[0], out16[15]);
+    const int64_t shape[4] = {1, 1, 4, 4};
+    const VmafDnnInput input = {NULL, in_f, shape, 4};
+    VmafDnnOutput output = {NULL, out_f, 16, 0};
+    trace(t, "run %d", api->dnn_session_run(sess, &input, 1, &output, 1));
+    trace(t, "written %zu %a %a", output.written, (double)out_f[0], (double)out_f[15]);
+    trace(t, "ep %s", trace_str(api->dnn_session_attached_ep(sess)));
+}
 
 static void tiny_sessions(const VmafCompatApi *api, Trace *t)
 {
@@ -313,6 +350,13 @@ static void tiny_sessions(const VmafCompatApi *api, Trace *t)
     trace(t, "run NULL %d", api->dnn_session_run(NULL, NULL, 0, NULL, 0));
     trace(t, "ep NULL %s", trace_str(api->dnn_session_attached_ep(NULL)));
     api->dnn_session_close(NULL);
+    char path[PATH_TEXT];
+    const int err = api->dnn_session_open(&sess, model_file(path, "tiny/smoke_v0.onnx"), &cfg);
+    trace(t, "open smoke %d session %d", err, sess != NULL);
+    if (!err) {
+        tiny_runs(api, t, sess);
+        api->dnn_session_close(sess);
+    }
     trace(t, "verify NULL %d", api->dnn_verify_signature(NULL, NULL));
     trace(t, "verify missing %d", api->dnn_verify_signature("/nonexistent/model.onnx", NULL));
 }
@@ -320,34 +364,45 @@ static void tiny_sessions(const VmafCompatApi *api, Trace *t)
 void scenario_tiny_ai(const VmafCompatApi *api, Trace *t)
 {
     VmafContext *vmaf = NULL;
-    (void)api->init(&vmaf, quiet_config());
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
     trace(t, "dnn available %d", api->dnn_available());
     trace(t, "use missing %d", api->use_tiny_model(vmaf, "/nonexistent/model.onnx", NULL));
+    char path[PATH_TEXT];
+    trace(t, "use smoke %d",
+          api->use_tiny_model(vmaf, model_file(path, "tiny/smoke_v0.onnx"), NULL));
     trace(t, "use NULL %d", api->use_tiny_model(NULL, NULL, NULL));
     trace(t, "codec %d", api->dnn_set_codec_context(vmaf, "libx264", "medium", 23));
     trace(t, "codec NULL %d", api->dnn_set_codec_context(NULL, NULL, NULL, 0));
     trace(t, "codec aware %d NULL %d", api->dnn_is_codec_aware(vmaf),
           api->dnn_is_codec_aware(NULL));
     trace(t, "resize %d", api->dnn_set_resize_mode(vmaf, VMAF_DNN_RESIZE_BILINEAR));
-    trace(t, "resize bad %d", api->dnn_set_resize_mode(vmaf, (VmafDnnResizeMode)99));
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+    const VmafDnnResizeMode bad_mode = (VmafDnnResizeMode)99;
+    trace(t, "resize bad %d", api->dnn_set_resize_mode(vmaf, bad_mode));
     trace(t, "resize NULL %d", api->dnn_set_resize_mode(NULL, VMAF_DNN_RESIZE_DISABLED));
     tiny_sessions(api, t);
-    (void)api->close(vmaf);
+    trace(t, "close %d", api->close(vmaf));
 }
 
 /* ---- HIP / Metal in a build without them ----------------------------------------------- */
 
+#if !VMAFX_ENGINE_EXPORTS_HIP || !VMAFX_ENGINE_EXPORTS_METAL
+/* A state pointer that is not NULL, to see the absent backend clear it; the
+ * functions never dereference it. */
+static unsigned char not_a_state;
+#endif
+
 #if !VMAFX_ENGINE_EXPORTS_HIP
 static void hip_absent(const VmafCompatApi *api, Trace *t)
 {
-    VmafHipState *state = (VmafHipState *)(uintptr_t)1;
+    VmafHipState *state = (VmafHipState *)&not_a_state;
     const VmafHipConfiguration cfg = {-1, 0};
     trace(t, "hip available %d", api->hip_available());
     const int err = api->hip_state_init(&state, cfg);
     trace(t, "hip init %d cleared %d", err, state == NULL);
     trace(t, "hip init NULL %d", api->hip_state_init(NULL, cfg));
     trace(t, "hip import %d", api->hip_import_state(NULL, NULL));
-    state = (VmafHipState *)(uintptr_t)1;
+    state = (VmafHipState *)&not_a_state;
     api->hip_state_free(&state);
     trace(t, "hip free cleared %d", state == NULL);
     api->hip_state_free(NULL);
@@ -358,7 +413,7 @@ static void hip_absent(const VmafCompatApi *api, Trace *t)
 #if !VMAFX_ENGINE_EXPORTS_METAL
 static void metal_absent(const VmafCompatApi *api, Trace *t)
 {
-    VmafMetalState *state = (VmafMetalState *)(uintptr_t)1;
+    VmafMetalState *state = (VmafMetalState *)&not_a_state;
     VmafMetalConfiguration cfg;
     VmafMetalExternalHandles handles;
     memset(&cfg, 0, sizeof(cfg));
@@ -367,7 +422,7 @@ static void metal_absent(const VmafCompatApi *api, Trace *t)
     const int err = api->metal_state_init(&state, cfg);
     trace(t, "metal init %d cleared %d", err, state == NULL);
     trace(t, "metal import %d", api->metal_import_state(NULL, NULL));
-    state = (VmafMetalState *)(uintptr_t)1;
+    state = (VmafMetalState *)&not_a_state;
     api->metal_state_free(&state);
     trace(t, "metal free cleared %d", state == NULL);
     trace(t, "metal list %d", api->metal_list_devices());
@@ -396,11 +451,13 @@ void scenario_mcp(const VmafCompatApi *api, Trace *t)
 {
 #if VMAFX_BUILD_MCP
     VmafContext *vmaf = NULL;
-    (void)api->init(&vmaf, quiet_config());
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
     trace(t, "mcp available %d", api->mcp_available());
     for (int transport = 0; transport < 4; transport++) {
-        trace(t, "transport %d %d", transport,
-              api->mcp_transport_available((VmafMcpTransport)transport));
+        /* 3 is past the enum on purpose: both sides must report it unavailable. */
+        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+        const VmafMcpTransport which = (VmafMcpTransport)transport;
+        trace(t, "transport %d %d", transport, api->mcp_transport_available(which));
     }
     VmafMcpServer *server = NULL;
     trace(t, "mcp init NULL %d", api->mcp_init(NULL, vmaf, NULL));
@@ -415,7 +472,7 @@ void scenario_mcp(const VmafCompatApi *api, Trace *t)
     api->mcp_close(&server);
     trace(t, "closed %d", server == NULL);
     api->mcp_close(NULL);
-    (void)api->close(vmaf);
+    trace(t, "close %d", api->close(vmaf));
 #else
     (void)api;
     (void)t;

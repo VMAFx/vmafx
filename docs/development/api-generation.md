@@ -136,11 +136,32 @@ Every generated C file is already in the repository's clang-format style (long
 `*_INIT` macros sit between `clang-format off` / `on` markers) and the Python
 file in black's style, so formatter hooks never rewrite them.
 
-While the VMAFx functions share `libvmaf.so` with the libvmaf API,
-`hide_unlisted = false` keeps the version script from touching the `vmaf_*`
-exports: they stay unversioned and only `vmafx_*` symbols get version nodes.
-The library split (ADR-1852 decision D3) sets it to `true`, which hides every
-symbol the script does not list.
+Since the library split (ADR-1852 decision D3,
+[ADR-2094](../adr/2094-libvmaf-compat-library-split.md)), `hide_unlisted = true`:
+`libvmafx.so.1` exports the `vmafx_*` functions and nothing the script does
+not list. The libvmaf functions live in `libvmaf.so.3`, generated (`shim`,
+`glue`) or hand-written (`manual`, in `core/src/compat/libvmaf/`) from the
+`[[compat]]` table; a backend's functions that still live in the engine are
+`engine` entries, exported through `core/src/vmafx_legacy_<backend>.map` in
+builds with that backend.
+
+### The compat table
+
+| Key | Meaning |
+| --- | --- |
+| `kind` | `shim` / `glue` (body generated from `null_checks`, `context`, `build`, `out_handle`, `out_struct`, `args`, `store`, `return_expr` or `body`), `manual` (hand-written), `engine` (no compat definition) |
+| `target`, `calls` | The VMAFx function the entry is built on; for `manual`, every `vmafx_*` function its file calls (a test compares them with the source) |
+| `file` | `manual`: the source under `core/src/compat/libvmaf/` |
+| `engine_with`, `until` | A backend whose builds keep the engine's own definition, and what ends that exception |
+| `when` | A build feature the function exists in (`mcp`) |
+| `note` | One line for the [migration table](../api/vmafx/compat.md) |
+
+Every engine translation unit is compiled with the generated
+`core/src/vmafx/engine_names_gen.h` (`vmaf_engine_name_args`), which names
+the engine's own libvmaf bodies `vmaf_engine_<stem>`; code that uses the
+libvmaf API (the compat library, the tools, black-box tests) defines
+`VMAF_PUBLIC_NAMES`. `test_compat_conformance` compares every compat function
+with its engine body.
 
 ## Option groups
 

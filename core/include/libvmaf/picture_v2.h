@@ -126,6 +126,7 @@ typedef struct VmafPicture2 {
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_create_host")
 VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                     unsigned w, unsigned h);
 
@@ -140,6 +141,7 @@ VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_unref")
 VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
 
 /**
@@ -160,6 +162,7 @@ VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_from_picture")
 VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst);
 
 /**
@@ -180,6 +183,7 @@ VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_from_picture")
 VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst);
 
 /**
@@ -196,6 +200,7 @@ VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
  *
  * @note Thread safety: Safe to call from any thread; reads only static data.
  */
+VMAF_DEPRECATED("use vmafx_backend_name")
 VMAF_EXPORT const char *vmaf_backend_handle_name(VmafBackendHandle backend);
 
 #ifdef __cplusplus

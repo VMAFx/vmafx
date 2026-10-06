@@ -3121,6 +3121,7 @@
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2,
+        "core/test/test_compat_conformance.c": 1,
         "core/test/test_sycl_kernel_scratch.c": 1
       },
       "target": "0488-gpu-dispatch-env-shared-snapshot.md"
@@ -5741,7 +5742,8 @@
       "sites": {
         "core/src/log.cpp": 2,
         "core/src/opt.cpp": 1,
-        "core/test/dnn/test_tensor_io.c": 7
+        "core/test/dnn/test_tensor_io.c": 7,
+        "core/test/test_compat_conformance_api.c": 3
       },
       "target": "1080-ubsan-enum-invalid-value-log-opt.md"
     },
@@ -6312,6 +6314,7 @@
         "core/src/x86/avx512_warm_up.h": 1,
         "core/src/x86/cpu.h": 1,
         "core/test/ciede_twin_parity.h": 1,
+        "core/test/compat_conformance_gen.h": 1,
         "core/test/compat_conformance_table_gen.c": 1,
         "core/test/dnn/test_dnn_session_api.c": 1,
         "core/test/dnn/test_ep_fp16.c": 1,
@@ -11309,10 +11312,12 @@
     },
     "1852": {
       "sites": {
+        ".github/workflows/upstream-consumers.yml": 1,
         "api/openapi/components.gen.yaml": 1,
         "bindings/python/vmafx/__init__.py": 1,
         "bindings/python/vmafx/_api.py": 1,
         "core/api/vmafx.toml": 8,
+        "core/include/libvmaf/macros.h": 1,
         "core/include/meson.build": 1,
         "core/include/vmafx/context.h": 2,
         "core/include/vmafx/device.h": 1,
@@ -11377,11 +11382,13 @@
         "core/test/check_exported_symbols.py": 3,
         "core/test/compat_conformance_gen.h": 1,
         "core/test/compat_conformance_table_gen.c": 1,
-        "core/test/meson.build": 5,
+        "core/test/meson.build": 6,
         "core/test/test_cli_option_table.cpp": 1,
         "core/test/test_compat_conformance.c": 1,
         "core/test/test_compat_library_gates.py": 1,
         "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
+        "core/test/test_gpu_public_header_docs.py": 1,
+        "core/test/test_libvmaf_deprecation.py": 1,
         "core/test/test_vmafx_abi_layout.c": 1,
         "core/test/test_vmafx_api_slice.c": 1,
         "core/test/test_vmafx_bitexact.c": 1,
@@ -11493,6 +11500,12 @@
         "scripts/codegen/tests/test_vmafx_api_proto_repeated.py": 1
       },
       "target": "2073-vmafx-provenance-record.md"
+    },
+    "2094": {
+      "sites": {
+        ".github/workflows/tests-and-quality-gates.yml": 1
+      },
+      "target": "2094-libvmaf-compat-library-split.md"
     }
   },
   "retired": {

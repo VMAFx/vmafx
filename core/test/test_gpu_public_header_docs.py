@@ -10,6 +10,9 @@ import unittest
 from pathlib import Path
 
 INCLUDE_DIR = Path(__file__).resolve().parents[1] / "include" / "libvmaf"
+# Between a block and its declaration only a deprecation marker may stand
+# (VMAF_DEPRECATED, ADR-1852 decision D7).
+ATTACHED_GAP = re.compile(r'\s*(?:VMAF_DEPRECATED\("[^"]*"\)\s*)?')
 
 
 def _doxygen_before(source: str, declaration: str) -> str:
@@ -20,7 +23,7 @@ def _doxygen_before(source: str, declaration: str) -> str:
     comment_end = source.find("*/", comment_start, declaration_start)
     if comment_end < 0:
         raise AssertionError(f"unterminated Doxygen block before {declaration}")
-    if source[comment_end + 2 : declaration_start].strip():
+    if not ATTACHED_GAP.fullmatch(source[comment_end + 2 : declaration_start]):
         raise AssertionError(f"Doxygen block is not attached to {declaration}")
     block = source[comment_start : comment_end + 2]
     block = re.sub(r"^\s*/\*\*\s*$", "", block, flags=re.MULTILINE)

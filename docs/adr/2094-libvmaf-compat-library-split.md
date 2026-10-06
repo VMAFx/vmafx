@@ -92,15 +92,19 @@ express fails the link. Design section 2.11 lists every function with its
   built without the header would define libvmaf names again (the export
   checks and the conformance link catch it). A Windows shared build still
   exports engine names through `__declspec(dllexport)` until WP12 links
-  `vmafx.def`. Deliberate differences of the compat layer from libvmaf are
-  listed in `docs/api/vmafx/compat.md` (an invalid report format no longer
+  `vmafx.def`, and a macOS one through default visibility until WP12 adds
+  the export list. Deliberate differences of the compat layer from libvmaf are
+  listed in `docs/api/vmafx/index.md` (an invalid report format no longer
   truncates the file first; options for an extractor the model does not read
   are accepted but not recorded in provenance; changing a model a context
   holds is refused).
 - **Neutral / follow-ups**: each WP3 lane turns its backend's `engine`
-  entries into `manual` compat functions and deletes its legacy map; WP12
-  packages `libvmafx.pc` / `libvmaf.pc` (`Requires: libvmafx`), the darwin
-  export list and the Windows `.def`; deprecation warnings stay opt-in
+  entries into `manual` compat functions and deletes its legacy map. This
+  change generates `libvmafx.pc` and `libvmaf.pc` (`Requires: libvmafx`) and
+  copies `libvmafx.so*` into the container images; WP12 ships the split in
+  the release artifacts (`scripts/release/build-native-release-artifacts.sh`
+  and `supply-chain.yml` still stage `libvmaf.so*` only), the install tests,
+  the darwin export list and the Windows `.def`; deprecation warnings stay opt-in
   (`VMAF_ENABLE_DEPRECATION_WARNINGS`, D7).
 
 ## References

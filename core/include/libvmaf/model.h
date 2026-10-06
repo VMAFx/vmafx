@@ -150,6 +150,7 @@ typedef struct VmafModelConfig {
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_load")
 VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version);
 
 /**
@@ -178,6 +179,7 @@ VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const c
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_load_file")
 VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg,
                                           const char *path);
 
@@ -222,6 +224,7 @@ VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cf
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_override_feature")
 VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
                                             VmafFeatureDictionary *opts_dict);
 
@@ -248,6 +251,7 @@ VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *featur
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_unref")
 VMAF_EXPORT void vmaf_model_destroy(VmafModel *model);
 
 /**
@@ -261,6 +265,7 @@ VMAF_EXPORT void vmaf_model_destroy(VmafModel *model);
  *
  * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
  */
+VMAF_DEPRECATED("use vmafx_model_feature_count")
 VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
 
 /**
@@ -278,6 +283,7 @@ VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
  *
  * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
  */
+VMAF_DEPRECATED("use vmafx_model_feature_name")
 VMAF_EXPORT const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
 
 /**
@@ -362,6 +368,7 @@ typedef struct VmafModelCollectionScore {
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_set_load")
 VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
                                            VmafModelCollection **model_collection,
                                            VmafModelConfig *cfg, const char *version);
@@ -390,6 +397,7 @@ VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_set_load_file")
 VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
                                                      VmafModelCollection **model_collection,
                                                      VmafModelConfig *cfg, const char *path);
@@ -429,6 +437,7 @@ VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_set_override_feature")
 VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
                                                        VmafModelCollection **model_collection,
                                                        const char *feature_name,
@@ -457,6 +466,7 @@ VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_model_set_unref")
 VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collection);
 
 /**
@@ -475,6 +485,7 @@ VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collec
  * @note Thread safety: Safe to call from any thread; the built-in model table is
  *               read-only after library init.
  */
+VMAF_DEPRECATED("use vmafx_model_builtin_next")
 VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **version);
 
 /**
@@ -493,6 +504,7 @@ VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **v
  * @note Thread safety: Safe to call from any thread; returns a pointer to static
  *                read-only storage.
  */
+VMAF_DEPRECATED("use vmafx_model_default_version")
 VMAF_EXPORT const char *vmaf_default_model_version(void);
 
 #ifdef __cplusplus

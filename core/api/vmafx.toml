@@ -3225,7 +3225,7 @@ params = [
 engine_with = "hip"
 until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
 file = "core/src/compat/libvmaf/backend_absent_hip.c"
-calls = ["vmafx_device_create"]
+calls = ["vmafx_device_create", "vmafx_device_unref"]
 
 [[compat]]
 name = "vmaf_hip_import_state"
@@ -3240,7 +3240,7 @@ params = [
 engine_with = "hip"
 until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
 file = "core/src/compat/libvmaf/backend_absent_hip.c"
-calls = ["vmafx_context_from_libvmaf", "vmafx_context_use_device"]
+calls = []
 
 [[compat]]
 name = "vmaf_hip_state_free"
@@ -3254,7 +3254,7 @@ params = [
 engine_with = "hip"
 until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
 file = "core/src/compat/libvmaf/backend_absent_hip.c"
-calls = ["vmafx_device_unref"]
+calls = []
 
 [[compat]]
 name = "vmaf_hip_list_devices"
@@ -3401,7 +3401,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_device_create"]
+calls = ["vmafx_device_create", "vmafx_device_unref"]
 
 [[compat]]
 name = "vmaf_metal_import_state"
@@ -3416,7 +3416,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_context_from_libvmaf", "vmafx_context_use_device"]
+calls = []
 
 [[compat]]
 name = "vmaf_metal_state_free"
@@ -3430,7 +3430,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_device_unref"]
+calls = []
 
 [[compat]]
 name = "vmaf_metal_list_devices"
@@ -3457,7 +3457,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_device_create"]
+calls = ["vmafx_device_create", "vmafx_device_unref"]
 
 [[compat]]
 name = "vmaf_metal_picture_import"
@@ -3478,7 +3478,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_frame_import"]
+calls = []
 
 [[compat]]
 name = "vmaf_metal_wait_compute"
@@ -3492,7 +3492,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_fence_wait"]
+calls = []
 
 [[compat]]
 name = "vmaf_metal_read_imported_pictures"
@@ -3507,7 +3507,7 @@ params = [
 engine_with = "metal"
 until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
 file = "core/src/compat/libvmaf/backend_absent_metal.c"
-calls = ["vmafx_context_from_libvmaf", "vmafx_submit"]
+calls = []
 
 [[compat]]
 name = "vmaf_sycl_state_init"
@@ -3907,7 +3907,7 @@ params = [
   { name = "opts_dict", c = "VmafFeatureDictionary *" },
 ]
 file = "core/src/compat/libvmaf/model.c"
-calls = ["vmafx_model_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_model_set_override_feature", "vmafx_options_free"]
+calls = ["vmafx_model_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_model_set_lead", "vmafx_model_unref", "vmafx_model_set_override_feature", "vmafx_model_ref", "vmafx_model_override_feature", "vmafx_options_free"]
 
 [[compat]]
 name = "vmaf_model_collection_destroy"
@@ -4044,7 +4044,7 @@ params = [
   { name = "src", c = "const VmafPicture *" },
 ]
 file = "core/src/compat/libvmaf/picture.c"
-calls = ["vmafx_frame_from_picture", "vmafx_frame_convert", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+calls = ["vmafx_frame_from_picture", "vmafx_frame_wrap_host", "vmafx_frame_convert", "vmafx_frame_to_picture", "vmafx_frame_unref"]
 
 [[compat]]
 name = "vmaf_picture_convert_context_close"

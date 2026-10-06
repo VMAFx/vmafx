@@ -76,6 +76,7 @@ typedef struct VmafCudaConfiguration {
  *
  * @note Thread safety: Not thread-safe. Allocate one VmafCudaState per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_device_create (CUDA, external context)")
 VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
 /**
@@ -105,6 +106,7 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  * @note Thread safety: Not thread-safe. Call only after vmaf_close() returns
  *               0 on every context that imported this state.
  */
+VMAF_DEPRECATED("use vmafx_device_unref")
 VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
 /**
@@ -129,6 +131,7 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
  *               and before the first `vmaf_read_pictures()` on the same
  *               context.
  */
+VMAF_DEPRECATED("use vmafx_context_use_device")
 VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 
 /**
@@ -196,6 +199,7 @@ typedef struct VmafCudaPictureConfiguration {
  * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_create (CUDA device)")
 VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
 
 /**
@@ -212,6 +216,7 @@ VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictur
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_acquire + vmafx_frame_to_picture")
 VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
 #ifdef __cplusplus

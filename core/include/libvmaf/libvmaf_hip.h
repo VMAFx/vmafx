@@ -54,6 +54,7 @@ extern "C" {
  *
  * @return 1 if HIP support was compiled in, 0 otherwise.
  */
+VMAF_DEPRECATED("use vmafx_device_count")
 VMAF_EXPORT int vmaf_hip_available(void);
 
 /**
@@ -86,6 +87,7 @@ typedef struct VmafHipConfiguration {
  *         device index the runtime does not have, or another negative errno
  *         when the HIP runtime fails (it is not reported as -ENODEV).
  */
+VMAF_DEPRECATED("use vmafx_device_create")
 VMAF_EXPORT int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg);
 
 /**
@@ -103,6 +105,7 @@ VMAF_EXPORT int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg
  * @return 0 on success, -EINVAL when @p ctx or @p state is NULL,
  *         -ENOSYS when built without HIP.
  */
+VMAF_DEPRECATED("use vmafx_context_use_device")
 VMAF_EXPORT int vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state);
 
 /**
@@ -115,6 +118,7 @@ VMAF_EXPORT int vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state);
  * @param state  pointer to the state handle to release; set to NULL on
  *               return.
  */
+VMAF_DEPRECATED("use vmafx_device_unref")
 VMAF_EXPORT void vmaf_hip_state_free(VmafHipState **state);
 
 /**
@@ -126,6 +130,7 @@ VMAF_EXPORT void vmaf_hip_state_free(VmafHipState **state);
  *         errno when the HIP runtime fails or a device cannot be described,
  *         or -ENOSYS when built without HIP.
  */
+VMAF_DEPRECATED("use vmafx_device_count")
 VMAF_EXPORT int vmaf_hip_list_devices(void);
 
 #ifdef __cplusplus

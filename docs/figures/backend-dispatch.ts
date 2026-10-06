@@ -11,11 +11,11 @@ export default {
   evidence: [
     'core/tools/cli_parse.cpp:ARG_BACKEND',
     'core/tools/cli_parse.cpp:ARG_NO_CUDA',
-    'core/src/libvmaf.c:vmaf_use_features_from_model',
+    'core/src/libvmaf.c:vmaf_engine_use_features_from_model',
     'core/src/libvmaf.c:vmaf_use_feature',
     'core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_by_feature_name',
     'core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_twin',
-    'core/src/libvmaf.c:vmaf_feature_backend_twin',
+    'core/src/libvmaf.c:vmaf_engine_feature_backend_twin',
     'core/src/feature/feature_extractor.h:VMAF_FEATURE_EXTRACTOR_METAL',
     'core/src/libvmaf.c:vmaf_init_cpu',
   ],

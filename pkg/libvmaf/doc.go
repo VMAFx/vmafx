@@ -17,7 +17,7 @@
 //
 // Direct Go commands must select the library explicitly:
 //
-//	export CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm"
+//	export CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lvmafx -lm"
 //	export LD_LIBRARY_PATH="$(pwd)/core/build-cpu/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 //	go test ./pkg/libvmaf
 //

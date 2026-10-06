@@ -102,12 +102,16 @@ def header_text(api: Api) -> str:
         + "extern unsigned vmaf_compat_calls_old[VMAF_COMPAT_COUNT];\n"
         + "extern unsigned vmaf_compat_calls_new[VMAF_COMPAT_COUNT];\n\n"
         + "#ifdef VMAF_COMPAT_ENTRIES_DEFINE\n"
+        + ctext.NULLPTR_BEGIN
+        + "\n"
         + "const VmafCompatEntry vmaf_compat_entries[VMAF_COMPAT_COUNT + 1] = {\n"
         + "".join(_entry_row(i) for i in items)
         + "    {NULL, NULL, 0},\n};\n"
         + "const VmafCompatEngineOnly vmaf_compat_engine_only[VMAF_COMPAT_ENGINE_ONLY_COUNT + 1] = {\n"
         + engine_rows
-        + "    {NULL, NULL},\n};\n#endif\n\n"
+        + "    {NULL, NULL},\n};\n"
+        + ctext.NULLPTR_END
+        + "\n#endif\n\n"
         + "#endif /* VMAF_COMPAT_CONFORMANCE_GEN_H */\n"
     )
 

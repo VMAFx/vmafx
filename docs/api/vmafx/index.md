@@ -410,12 +410,55 @@ binding wraps the calls with plain arguments; the rest are reachable through
 `Library.raw` until the generated language bindings land. The package sits
 in `bindings/python/vmafx/` in the source tree.
 
-## libvmaf functions on this API
+## Migrating from libvmaf.h
 
-`vmaf_init`, `vmaf_close`, `vmaf_version` and `vmaf_feature_score_at_index`
-are generated shims on the VMAFx calls. Their behaviour is unchanged: the
-same `NULL` checks, `*vmaf` cleared on failure, the engine's own negative
-errno on failure, and a failed `vmaf_close()` still leaves the context valid
-for a retry. Every other `libvmaf.h` function is unchanged; a `libvmaf.h`
-handle and a `VmafxContext` convert into each other through
-`vmafx/libvmaf_bridge.h` for callers that migrate one call at a time.
+The engine and the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`,
+headers `vmafx/*.h`). The `libvmaf.h` API is a separate, thin library,
+`libvmaf.so.3` (pkg-config `libvmaf`), written on the exported `vmafx_*`
+functions only ([ADR-2094](../../adr/2094-libvmaf-compat-library-split.md)).
+Programs written for libvmaf keep building and running unchanged:
+`pkg-config --libs libvmaf` gives `-lvmaf -lvmafx`, and a binary linked
+against an earlier `libvmaf.so.3` runs against this one. The
+[migration table](compat.md) lists every libvmaf function with the VMAFx
+calls it is built on.
+
+To migrate one call at a time, keep the libvmaf handles and convert them with
+`vmafx/libvmaf_bridge.h`: `vmafx_context_from_libvmaf()` /
+`vmafx_context_libvmaf_handle()` for contexts, `vmafx_model_from_libvmaf()`
+and `vmafx_model_set_from_libvmaf()` for models and collections, and
+`vmafx_frame_from_picture()` / `vmafx_frame_to_picture()` for pictures (each
+takes a new reference, so the caller keeps its own).
+
+To find the calls to replace, compile with the deprecation warnings on. They
+are opt-in in this release, on by default in 1.1, and the functions go in 2.0
+([ADR-1852](../../adr/1852-vmafx-api-redesign.md) decision D7):
+
+```bash
+cc -DVMAF_ENABLE_DEPRECATION_WARNINGS -c my_program.c $(pkg-config --cflags libvmaf)
+# my_program.c:12: warning: 'vmaf_init' is deprecated: use vmafx_context_create
+```
+
+### What the compat library does differently
+
+Return values, outputs and scores are libvmaf's: `test_compat_conformance`
+runs every libvmaf function through libvmaf's own code and through the compat
+library and requires the same results, every score bit for bit. A few side
+effects differ on purpose:
+
+| Call | libvmaf | Compat library |
+| --- | --- | --- |
+| `vmaf_write_output()` with an unknown format | `-EINVAL`, after truncating the file | `-EINVAL`; the file is not touched |
+| JSON / XML reports | No provenance record | The provenance record of the context, and the backend receipt (`backend_used`, `feature_backends`) ([ADR-2073](../../adr/2073-vmafx-provenance-record.md)) |
+| `vmaf_model_feature_overload()` naming an extractor the model reads no feature of | 0; listed in the model's overrides | 0; changes nothing and is not listed in the provenance record |
+| Changing a model that a context already uses, or a collection's lead model directly | Allowed | `-EBUSY`: a model a context may use is immutable |
+
+### Backends that still use the engine's functions
+
+The CUDA and SYCL functions (`libvmaf_cuda.h`, `libvmaf_sycl.h`), and the HIP
+and Metal ones in builds with those backends, are still the engine's own
+definitions, exported from `libvmafx.so.1` under a `VMAF_LEGACY_<BACKEND>`
+symbol version, until the matching RC4 device-frame work lands (the
+[migration table](compat.md) names it per function). Programs link them
+through `pkg-config --libs libvmaf` as before. In a build without HIP or
+Metal, their functions are compat functions that report the backend as
+absent, as libvmaf's stubs did.

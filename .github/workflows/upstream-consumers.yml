@@ -1,0 +1,134 @@
+name: Upstream Consumers
+
+# Unpatched upstream FFmpeg and GStreamer built against the freshly installed
+# libvmaf (the compat library libvmaf.so.3 on libvmafx.so.1, ADR-1852 decision
+# D3) must give the same scores as the vmaf CLI and, on a pull request, as the
+# base commit's library. See docs/development/upstream-consumers.md.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "core/**"
+      - "build-config.env"
+      - "scripts/ci/upstream-*.sh"
+      - "scripts/ci/upstream_consumer_scores.py"
+      - ".github/workflows/upstream-consumers.yml"
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "core/**"
+      - "build-config.env"
+      - "scripts/ci/upstream-*.sh"
+      - "scripts/ci/upstream_consumer_scores.py"
+      - ".github/workflows/upstream-consumers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-consumers-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  consumers:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Upstream Consumers
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.8
+
+      - name: Install meson and ninja
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install --no-install-recommends \
+            nasm pkg-config git libglib2.0-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad
+
+      # The 576x324 Netflix pair (D24), fetched the way the Python harness
+      # fetches its fixtures (compat/python-vmaf/config.py, VMAF_RESOURCE_ROOT).
+      - name: Fetch the 576x324 test pair
+        run: |
+          set -euo pipefail
+          root="https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv"
+          mkdir -p python/test/resource/yuv
+          for name in src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv; do
+            curl --fail --location --silent --show-error --max-time 300 \
+              -o "python/test/resource/yuv/$name" "$root/$name"
+          done
+
+      # CPU build, no ONNX Runtime and no LTO: the consumers only need the C API.
+      - name: Build and install libvmaf (this commit)
+        run: |
+          set -euo pipefail
+          meson setup build core --buildtype release --prefix "$RUNNER_TEMP/prefix" \
+            -Denable_dnn=disabled -Db_lto=false -Denable_cuda=false \
+            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled
+          ninja -C build -j"$(nproc)"
+          ninja -C build install
+
+      # A pull request is also scored against the base commit's library by the
+      # same consumer binaries: ABI and score identity across the change.
+      - name: Build and install libvmaf (base commit)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/base-src" "$BASE_SHA"
+          meson setup "$RUNNER_TEMP/base-build" "$RUNNER_TEMP/base-src/core" --buildtype release \
+            --prefix "$RUNNER_TEMP/prefix-base" \
+            -Denable_dnn=disabled -Db_lto=false -Denable_cuda=false \
+            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled
+          ninja -C "$RUNNER_TEMP/base-build" -j"$(nproc)"
+          ninja -C "$RUNNER_TEMP/base-build" install
+
+      - name: Upstream FFmpeg
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          args=(--prefix "$RUNNER_TEMP/prefix" --against-cli --work "$RUNNER_TEMP/consumers")
+          if [ "$EVENT_NAME" = pull_request ]; then
+            args+=(--reference-prefix "$RUNNER_TEMP/prefix-base")
+          fi
+          scripts/ci/upstream-ffmpeg-compat.sh "${args[@]}"
+
+      - name: Upstream GStreamer
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          args=(--prefix "$RUNNER_TEMP/prefix" --against-cli --work "$RUNNER_TEMP/consumers")
+          if [ "$EVENT_NAME" = pull_request ]; then
+            args+=(--reference-prefix "$RUNNER_TEMP/prefix-base")
+          fi
+          scripts/ci/upstream-gstreamer-compat.sh "${args[@]}"
+
+      - name: Upload score files
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: upstream-consumer-scores
+          path: |
+            ${{ runner.temp }}/consumers/*.json
+            ${{ runner.temp }}/consumers/*.log
+          if-no-files-found: ignore

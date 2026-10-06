@@ -273,6 +273,7 @@ nav:
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
       - VMAFx API reference (generated): api/vmafx/reference.md
+      - libvmaf migration table (generated): api/vmafx/compat.md
   - Metrics and models:
       - Feature index: metrics/features.md
       - ADM: metrics/adm.md
@@ -441,6 +442,7 @@ nav:
       - Intel Arc / VAAPI driver priority: development/intel-arc-vaapi-driver-priority.md
       - FFmpeg patches refresh: development/ffmpeg-patches-refresh.md
       - FFmpeg patch automation: development/ffmpeg-patch-automation.md
+      - Upstream consumer conformance: development/upstream-consumers.md
       - API generation: development/api-generation.md
       - GPU backend template: development/gpu-backend-template.md
       - Upstream watchers: development/upstream-watchers.md

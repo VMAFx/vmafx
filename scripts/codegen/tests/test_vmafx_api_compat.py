@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import re
 import sys
 import unittest
+from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
@@ -128,6 +130,43 @@ class EmittedCompatTest(unittest.TestCase):
             self.assertIn(f'VMAF_COMPAT_ENTRY("{item.name}"', header)
             self.assertIn(f"    .{item.stem} = VMAF_COMPAT_THUNK(", table)
         self.assertIn('{"vmaf_cuda_state_init", "cuda"}', header)
+
+
+# Error plumbing every compat source uses through compat_errno.h.
+ERROR_HELPERS = {"vmafx_error_free", "vmafx_error_errno"}
+
+
+def called_in(path: Path) -> set[str]:
+    """vmafx_ functions a C source calls (comments removed)."""
+    text = re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
+    return set(re.findall(r"\b(vmafx_\w+)\s*\(", text)) - ERROR_HELPERS
+
+
+def call_findings(sources: dict[str, set[str]], declared: dict[str, set[str]]) -> list[str]:
+    """A manual compat file calls exactly what its entries declare in `calls`."""
+    out = []
+    for path in sorted(declared):
+        called = sources[path]
+        out += [f"{path}: calls {n}, no entry declares it" for n in sorted(called - declared[path])]
+        out += [f"{path}: declares {n}, never calls it" for n in sorted(declared[path] - called)]
+    return out
+
+
+class ManualCallsTest(unittest.TestCase):
+    def test_manual_sources_call_what_the_definition_declares(self) -> None:
+        declared: dict[str, set[str]] = {}
+        for item in parse(document(DEFINITION)).compats:
+            if item.kind == "manual":
+                declared.setdefault(item.file, set()).update(item.calls)
+        sources = {path: called_in(ROOT / path) for path in declared}
+        self.assertEqual(call_findings(sources, declared), [])
+
+    def test_planted_mismatch_is_found(self) -> None:
+        sources = {"a.c": {"vmafx_x", "vmafx_y"}}
+        self.assertEqual(
+            call_findings(sources, {"a.c": {"vmafx_x", "vmafx_z"}}),
+            ["a.c: calls vmafx_y, no entry declares it", "a.c: declares vmafx_z, never calls it"],
+        )
 
 
 class CheckerTest(unittest.TestCase):

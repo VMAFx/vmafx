@@ -57,6 +57,7 @@ extern "C" {
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_option")
 VMAF_EXPORT int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled);
 
 /**
@@ -75,6 +76,7 @@ VMAF_EXPORT int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enable
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_option")
 VMAF_EXPORT int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength);
 
 /**
@@ -113,6 +115,7 @@ VMAF_EXPORT int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double st
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_attach_sidedata")
 VMAF_EXPORT int vmaf_set_perceptual_sidedata(VmafContext *vmaf, const uint8_t *blob, size_t len,
                                              unsigned pic_index);
 
