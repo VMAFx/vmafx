@@ -22,6 +22,10 @@ fixture is missing:
 - ``refusal``: a CPU-only extractor on CUDA frames fails the graph with the
   import rule's message naming the backend, the input and the extractor,
   and no `VMAF score` line follows (D8).
+- ``layouts``: the 4:2:2 / 4:4:4 semi-planar, packed and MSB-aligned layouts
+  (NV16, P210, Y210, Y212, YUYV422, NV24, P410, XV30, XV36, VUYX, YUV444P10MSB,
+  YUV444P12MSB) score as the CLI scores the planar file they were converted
+  from; ``--backend cuda`` uploads them and imports them on the device.
 - ``legacy``: ``vmafx_pre`` writes the same bytes as ``vmaf_pre`` (8-bit and
   10-bit planes through the blur fixture ``pre_blur_4x4.onnx``, which changes
   every sample) and ``vmafx_tune`` logs the same recommendation as
@@ -303,6 +307,84 @@ def cmd_refusal(args: argparse.Namespace) -> int:
     return 0 if result.returncode != 0 and named and no_score else 1
 
 
+# (FFmpeg layout, planar layout of the CLI file, CLI -p, CLI -b)
+LAYOUTS = (
+    ("nv16", "yuv422p", "422", 8),
+    ("yuyv422", "yuv422p", "422", 8),
+    ("p210le", "yuv422p10le", "422", 10),
+    ("y210le", "yuv422p10le", "422", 10),
+    ("y212le", "yuv422p12le", "422", 12),
+    ("nv24", "yuv444p", "444", 8),
+    ("vuyx", "yuv444p", "444", 8),
+    ("p410le", "yuv444p10le", "444", 10),
+    ("xv30le", "yuv444p10le", "444", 10),
+    ("xv36le", "yuv444p12le", "444", 12),
+    ("yuv444p10msble", "yuv444p10le", "444", 10),
+    ("yuv444p12msble", "yuv444p12le", "444", 12),
+)
+
+
+# hwupload carries Y212 to CUDA as P212, a layout the library does not import
+# (it has P210 and P216): the filter must refuse it by name.
+CUDA_REFUSED = {"y212le": "frames of layout p212le cannot be scored"}
+
+
+def planar_file(args: argparse.Namespace, src: Path, out: Path, fmt: str) -> None:
+    raw = ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "576x324", "-r", "24", "-i", str(src)]
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *raw]
+    run([*cmd, "-vf", f"format={fmt}", "-f", "rawvideo", str(out)], environment(args))
+
+
+def cmd_layouts(args: argparse.Namespace) -> int:
+    pair = PAIRS["golden"]
+    if not fixture(args, pair.ref).is_file():
+        return SKIP
+    up = "hwupload," if args.backend == "cuda" else ""
+    hw = (
+        ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
+        if args.backend == "cuda"
+        else []
+    )
+    failed = False
+    print("| layout | from | backend | values | identical | max abs diff |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        for fmt, planar, sub, bpc in LAYOUTS:
+            ref, dist = tmp / "ref.yuv", tmp / "dist.yuv"
+            planar_file(args, fixture(args, pair.ref), ref, planar)
+            planar_file(args, fixture(args, pair.dist), dist, planar)
+            cli_out = tmp / "cli.json"
+            cmd = [args.vmaf, "-r", str(ref), "-d", str(dist), "-w", "576", "-h", "324"]
+            cmd += ["-p", sub, "-b", str(bpc), "--precision", "max", "--json", "-o", str(cli_out)]
+            run([*cmd, "-q", "--backend", cli_backend(args)], environment(args))
+            report = tmp / "filter.json"
+            raw = ["-f", "rawvideo", "-pix_fmt", planar, "-s", "576x324", "-r", "24", "-i"]
+            graph = (
+                f"[0:v]format={fmt},{up}null[d];[1:v]format={fmt},{up}null[r];"
+                f"[d][r]vmafx=log_path={escape(report)}:score_fmt=%.17g"
+            )
+            ff = [args.ffmpeg, "-hide_banner", "-nostdin", *hw, *raw, str(dist), *raw, str(ref)]
+            result = run([*ff, "-lavfi", graph, "-f", "null", "-"], environment(args), False)
+            refusal = CUDA_REFUSED.get(fmt) if args.backend == "cuda" else None
+            if refusal:
+                named = result.returncode != 0 and refusal in result.stderr
+                failed |= not named
+                print(f"| {fmt} | {planar} | {args.backend} | refused by name: {named} | | |")
+                continue
+            if result.returncode != 0:
+                failed = True
+                print(f"| {fmt} | {planar} | {args.backend} | filter failed | | |")
+                print(result.stderr[-600:])
+                continue
+            cli = json.loads(cli_out.read_text(encoding="utf-8"))
+            filt = json.loads(report.read_text(encoding="utf-8"))
+            total, same, worst, bad = compare(cli, filt)
+            failed |= bool(bad) or total == 0
+            print(f"| {fmt} | {planar} | {args.backend} | {total} | {same} | {worst:g} |")
+    return 1 if failed else 0
+
+
 def has_filter(args: argparse.Namespace, name: str) -> bool:
     out = run([args.ffmpeg, "-hide_banner", "-h", f"filter={name}"], environment(args), False)
     return f"Filter {name}" in out.stdout
@@ -484,7 +566,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "command",
-        choices=("parity", "windows", "provenance", "refusal", "pool", "legacy", "e2e"),
+        choices=("parity", "windows", "provenance", "refusal", "pool", "legacy", "layouts", "e2e"),
     )
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--vmaf", required=True)
@@ -509,6 +591,7 @@ def main() -> int:
         "refusal": cmd_refusal,
         "pool": cmd_pool,
         "legacy": cmd_legacy,
+        "layouts": cmd_layouts,
         "e2e": cmd_e2e,
     }[args.command](args)
 

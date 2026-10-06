@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 +++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 1576 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 1786 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 +++
- 6 files changed, 1888 insertions(+)
+ 6 files changed, 2098 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d885ed774
+index 0000000000000000000000000000000000000000..035f49257c3dc9a8d820a8988cb1cdf75f22c009
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,1576 @@
+@@ -0,0 +1,1786 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -302,6 +302,12 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +#include "libavutil/pixdesc.h"
 +#if CONFIG_CUDA
 +#include "libavutil/hwcontext_cuda_internal.h"
++#endif
++#if CONFIG_LIBDRM
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++
++#include "libavutil/hwcontext_drm.h"
 +#endif
 +#include "avfilter.h"
 +#include "filters.h"
@@ -373,6 +379,15 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +static int cuda_open(AVFilterContext *ctx, AVBufferRef *frames);
 +static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
 +#endif
++#if CONFIG_LIBDRM
++static int drm_open(AVFilterContext *ctx, AVBufferRef *frames);
++static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
++#define VMAFX_DRM_OPEN drm_open
++#define VMAFX_DRM_IMPORT drm_import
++#else
++#define VMAFX_DRM_OPEN NULL
++#define VMAFX_DRM_IMPORT NULL
++#endif
 +
 +/* Indexed by the `backend` option (auto, cpu, cuda, sycl, hip, metal). */
 +static const VMAFXBackendSlot backend_slots[] = {
@@ -383,8 +398,8 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +#else
 +    {VMAFX_BACKEND_CUDA, "cuda", AV_PIX_FMT_CUDA, NULL, NULL},
 +#endif
-+    {VMAFX_BACKEND_SYCL, "sycl", AV_PIX_FMT_DRM_PRIME, NULL, NULL},
-+    {VMAFX_BACKEND_HIP, "hip", AV_PIX_FMT_DRM_PRIME, NULL, NULL},
++    {VMAFX_BACKEND_SYCL, "sycl", AV_PIX_FMT_DRM_PRIME, VMAFX_DRM_OPEN, VMAFX_DRM_IMPORT},
++    {VMAFX_BACKEND_HIP, "hip", AV_PIX_FMT_DRM_PRIME, VMAFX_DRM_OPEN, VMAFX_DRM_IMPORT},
 +    {VMAFX_BACKEND_METAL, "metal", AV_PIX_FMT_VIDEOTOOLBOX, NULL, NULL},
 +};
 +
@@ -449,6 +464,22 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    AV_PIX_FMT_NV12,
 +    AV_PIX_FMT_P010LE,
 +    AV_PIX_FMT_P016LE,
++    /* 4:2:2 and 4:4:4 semi-planar, packed and MSB-aligned layouts: imported
++     * and converted to planar by the library (ADR-2133). */
++    AV_PIX_FMT_NV16,
++    AV_PIX_FMT_P210LE,
++    AV_PIX_FMT_P216LE,
++    AV_PIX_FMT_NV24,
++    AV_PIX_FMT_P410LE,
++    AV_PIX_FMT_P416LE,
++    AV_PIX_FMT_Y210LE,
++    AV_PIX_FMT_Y212LE,
++    AV_PIX_FMT_YUYV422,
++    AV_PIX_FMT_XV30LE,
++    AV_PIX_FMT_XV36LE,
++    AV_PIX_FMT_VUYX,
++    AV_PIX_FMT_YUV444P10MSBLE,
++    AV_PIX_FMT_YUV444P12MSBLE,
 +#if CONFIG_CUDA
 +    AV_PIX_FMT_CUDA,
 +#endif
@@ -465,37 +496,106 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +};
 +
 +/* The VMAFx layout of `fmt` and its bit depth; UNKNOWN for another layout. */
++static const struct {
++    enum AVPixelFormat fmt;
++    uint32_t layout;
++} layouts[] = {
++    {AV_PIX_FMT_NV12, VMAFX_PIXEL_FORMAT_NV12},
++    {AV_PIX_FMT_P010LE, VMAFX_PIXEL_FORMAT_P010},
++    {AV_PIX_FMT_P016LE, VMAFX_PIXEL_FORMAT_P016},
++    {AV_PIX_FMT_NV16, VMAFX_PIXEL_FORMAT_NV16},
++    {AV_PIX_FMT_P210LE, VMAFX_PIXEL_FORMAT_P210},
++    {AV_PIX_FMT_P216LE, VMAFX_PIXEL_FORMAT_P216},
++    {AV_PIX_FMT_NV24, VMAFX_PIXEL_FORMAT_NV24},
++    {AV_PIX_FMT_P410LE, VMAFX_PIXEL_FORMAT_P410},
++    {AV_PIX_FMT_P416LE, VMAFX_PIXEL_FORMAT_P416},
++    {AV_PIX_FMT_Y210LE, VMAFX_PIXEL_FORMAT_Y210},
++    {AV_PIX_FMT_Y212LE, VMAFX_PIXEL_FORMAT_Y212},
++    {AV_PIX_FMT_YUYV422, VMAFX_PIXEL_FORMAT_YUYV422},
++    {AV_PIX_FMT_XV30LE, VMAFX_PIXEL_FORMAT_Y410},
++    {AV_PIX_FMT_XV36LE, VMAFX_PIXEL_FORMAT_XV36},
++    {AV_PIX_FMT_VUYX, VMAFX_PIXEL_FORMAT_VUYX},
++    {AV_PIX_FMT_YUV444P10MSBLE, VMAFX_PIXEL_FORMAT_YUV444P_MSB},
++    {AV_PIX_FMT_YUV444P12MSBLE, VMAFX_PIXEL_FORMAT_YUV444P_MSB},
++};
++
++/* Planar YUV (or gray) with every sample in the low bits of its own plane:
++ * a semi-planar, packed or MSB-aligned layout is not, whatever its
++ * component count says. */
++static int plain_planar(const AVPixFmtDescriptor *desc)
++{
++    for (int c = 0; c < desc->nb_components; c++) {
++        if (desc->comp[c].plane != c || desc->comp[c].shift != 0 || desc->comp[c].offset != 0 ||
++            desc->comp[c].step != (desc->comp[c].depth > 8 ? 2 : 1))
++            return 0;
++    }
++    return 1;
++}
++
 +static uint32_t layout_of(enum AVPixelFormat fmt, uint32_t *bpc)
 +{
 +    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
 +    *bpc = desc ? desc->comp[0].depth : 0;
 +    if (!desc || (desc->flags & (AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_HWACCEL)))
 +        return VMAFX_PIXEL_FORMAT_UNKNOWN;
-+    if (fmt == AV_PIX_FMT_NV12)
-+        return VMAFX_PIXEL_FORMAT_NV12;
-+    if (fmt == AV_PIX_FMT_P010LE)
-+        return VMAFX_PIXEL_FORMAT_P010;
-+    if (fmt == AV_PIX_FMT_P016LE)
-+        return VMAFX_PIXEL_FORMAT_P016;
++    for (size_t i = 0; i < FF_ARRAY_ELEMS(layouts); i++) {
++        if (layouts[i].fmt == fmt)
++            return layouts[i].layout;
++    }
++    if (!plain_planar(desc) || (desc->flags & AV_PIX_FMT_FLAG_RGB))
++        return VMAFX_PIXEL_FORMAT_UNKNOWN;
 +    if (desc->nb_components == 1)
 +        return VMAFX_PIXEL_FORMAT_YUV400P;
-+    if (desc->nb_components != 3 || (desc->flags & AV_PIX_FMT_FLAG_RGB))
++    if (desc->nb_components != 3)
 +        return VMAFX_PIXEL_FORMAT_UNKNOWN;
 +    if (desc->log2_chroma_w == 1)
 +        return desc->log2_chroma_h == 1 ? VMAFX_PIXEL_FORMAT_YUV420P : VMAFX_PIXEL_FORMAT_YUV422P;
 +    return desc->log2_chroma_h == 0 ? VMAFX_PIXEL_FORMAT_YUV444P : VMAFX_PIXEL_FORMAT_UNKNOWN;
 +}
 +
++/* The planar layout the library makes of an imported layout. */
++static uint32_t planar_of(uint32_t layout)
++{
++    switch (layout) {
++    case VMAFX_PIXEL_FORMAT_NV12:
++    case VMAFX_PIXEL_FORMAT_P010:
++    case VMAFX_PIXEL_FORMAT_P016:
++        return VMAFX_PIXEL_FORMAT_YUV420P;
++    case VMAFX_PIXEL_FORMAT_NV16:
++    case VMAFX_PIXEL_FORMAT_P210:
++    case VMAFX_PIXEL_FORMAT_P216:
++    case VMAFX_PIXEL_FORMAT_Y210:
++    case VMAFX_PIXEL_FORMAT_Y212:
++    case VMAFX_PIXEL_FORMAT_YUYV422:
++        return VMAFX_PIXEL_FORMAT_YUV422P;
++    case VMAFX_PIXEL_FORMAT_NV24:
++    case VMAFX_PIXEL_FORMAT_P410:
++    case VMAFX_PIXEL_FORMAT_P416:
++    case VMAFX_PIXEL_FORMAT_Y410:
++    case VMAFX_PIXEL_FORMAT_XV36:
++    case VMAFX_PIXEL_FORMAT_VUYX:
++    case VMAFX_PIXEL_FORMAT_YUV444P_MSB:
++        return VMAFX_PIXEL_FORMAT_YUV444P;
++    default:
++        return layout;
++    }
++}
++
++/* Whether the library wraps `layout` (planar) or imports and converts it. */
++static int converted_layout(uint32_t layout)
++{
++    return planar_of(layout) != layout;
++}
++
 +/* The planar layout and depth a frame of `fmt` is scored in, as one number:
-+ * NV12 / P010 / P016 are imported as 4:2:0 at 8 / 10 / 16 bits, so a
-+ * decoder's NV12 frames and an uploaded YUV420P reference score together. */
++ * the semi-planar, packed and MSB layouts are imported as their planar
++ * equivalent, so a decoder's NV12 frames and an uploaded YUV420P reference
++ * score together. */
 +static uint32_t scored_layout(enum AVPixelFormat fmt)
 +{
 +    uint32_t bpc = 0;
-+    uint32_t layout = layout_of(fmt, &bpc);
-+    if (layout >= VMAFX_PIXEL_FORMAT_NV12)
-+        layout = VMAFX_PIXEL_FORMAT_YUV420P;
-+    return layout << 8 | bpc;
++    const uint32_t layout = layout_of(fmt, &bpc);
++    return planar_of(layout) << 8 | bpc;
 +}
 +
 +/* ---- Frames ---------------------------------------------------------------- */
@@ -585,8 +685,8 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    imp.bpc = bpc;
 +    imp.w = (uint32_t)frame->width;
 +    imp.h = (uint32_t)frame->height;
-+    imp.n_planes = 2;
-+    for (unsigned i = 0; i < 2; i++) {
++    imp.n_planes = (uint32_t)av_pix_fmt_count_planes(frame->format);
++    for (unsigned i = 0; i < imp.n_planes && i < 3; i++) {
 +        imp.plane[i].handle = (uintptr_t)frame->data[i];
 +        imp.plane[i].pitch = (uint64_t)frame->linesize[i];
 +    }
@@ -615,7 +715,8 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +
 +/* A host frame on the planes of `frame`, without a copy: the library holds a
 + * reference to the AVFrame until it reads none of its planes. Planar layouts
-+ * are wrapped; NV12 / P010 / P016 are imported from host memory. A host frame
++ * are wrapped; the semi-planar, packed and MSB layouts are imported from host
++ * memory and converted. A host frame
 + * lives on the CPU device whatever device the context scores on; a context on
 + * a GPU uploads it. */
 +static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
@@ -627,7 +728,7 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    if (!b)
 +        return AVERROR(ENOMEM);
 +    VmafxError *error = NULL;
-+    const VmafxStatus status = layout >= VMAFX_PIXEL_FORMAT_NV12 ?
++    const VmafxStatus status = converted_layout(layout) ?
 +                                   host_import(s, frame, layout, bpc, b, input, out, &error) :
 +                                   host_wrap(s, frame, layout, bpc, b, out, &error);
 +    box_after_import(b, status);
@@ -749,9 +850,7 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    imp->bpc = bpc;
 +    imp->w = (uint32_t)frame->width;
 +    imp->h = (uint32_t)frame->height;
-+    imp->n_planes = imp->pix_fmt >= VMAFX_PIXEL_FORMAT_NV12    ? 2 :
-+                    imp->pix_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1 :
-+                                                                 3;
++    imp->n_planes = (uint32_t)av_pix_fmt_count_planes(frame_sw_format(frame));
 +    for (unsigned i = 0; i < imp->n_planes; i++) {
 +        imp->plane[i].handle = (uintptr_t)frame->data[i];
 +        imp->plane[i].pitch = (uint64_t)frame->linesize[i];
@@ -791,6 +890,98 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    return ret < 0 ? ret : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
 +}
 +#endif /* CONFIG_CUDA */
++
++/* ---- DRM PRIME frames (SYCL, HIP) --------------------------------------------- */
++
++#if CONFIG_LIBDRM
++/* The PCI vendor of the GPU behind the DRM device of `frames`: 0x8086 Intel
++ * (SYCL), 0x1002 AMD (HIP); 0 when it cannot be read. */
++static unsigned drm_vendor(AVBufferRef *frames)
++{
++    const AVHWFramesContext *fc = (const AVHWFramesContext *)frames->data;
++    const AVDRMDeviceContext *drm = fc->device_ctx->hwctx;
++    struct stat st;
++    char path[96];
++    unsigned vendor = 0;
++    if (drm->fd < 0 || fstat(drm->fd, &st) != 0 || !S_ISCHR(st.st_mode))
++        return 0;
++    snprintf(path, sizeof(path), "/sys/dev/char/%u:%u/device/vendor", major(st.st_rdev),
++             minor(st.st_rdev));
++    FILE *f = fopen(path, "r");
++    if (f) {
++        if (fscanf(f, "%x", &vendor) != 1)
++            vendor = 0;
++        fclose(f);
++    }
++    return vendor;
++}
++
++/* The device of the slot's backend that reads the frames: `device` names it
++ * (auto: the backend's first GPU). */
++static int drm_open(AVFilterContext *ctx, AVBufferRef *frames)
++{
++    VMAFXContext *s = ctx->priv;
++    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
++    desc.backend = s->slot->backend;
++    char *end = NULL;
++    const long index = !s->device || !strcmp(s->device, "auto") ? -1 : strtol(s->device, &end, 10);
++    if (end && (*end || index < 0 || index > INT32_MAX)) {
++        av_log(ctx, AV_LOG_ERROR, "vmafx: device=%s is not auto or a device index\n", s->device);
++        return AVERROR(EINVAL);
++    }
++    desc.index = (int32_t)index;
++    desc.flags = s->profile ? VMAFX_DEVICE_PROFILING : 0;
++    (void)frames;
++    VmafxError *error = NULL;
++    const VmafxStatus status = vmafx_device_create(&desc, &s->vdev, &error);
++    return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_device_create(drm)");
++}
++
++/* A DRM PRIME frame imported as dma-bufs without a copy: one plane of the
++ * import per plane of the frame's layers, in layer order. The producer's
++ * writes are ordered by the dma-buf's implicit fences, which the device
++ * import waits for (decision D8 retries a busy one). */
++static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++{
++    VMAFXContext *s = ctx->priv;
++    const AVDRMFrameDescriptor *drm = (const AVDRMFrameDescriptor *)frame->data[0];
++    VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
++    uint32_t bpc = 0;
++    imp.memory = VMAFX_MEMORY_DMABUF;
++    imp.pix_fmt = layout_of(frame_sw_format(frame), &bpc);
++    imp.bpc = bpc;
++    imp.w = (uint32_t)frame->width;
++    imp.h = (uint32_t)frame->height;
++    for (int l = 0; l < drm->nb_layers; l++) {
++        for (int k = 0; k < drm->layers[l].nb_planes && imp.n_planes < 3; k++) {
++            const AVDRMPlaneDescriptor *pl = &drm->layers[l].planes[k];
++            const AVDRMObjectDescriptor *obj = &drm->objects[pl->object_index];
++            VmafxImportPlane *ip = &imp.plane[imp.n_planes++];
++            ip->fd = obj->fd;
++            ip->size = obj->size;
++            ip->offset = (uint64_t)pl->offset;
++            ip->pitch = (uint64_t)pl->pitch;
++            ip->modifier = obj->format_modifier;
++        }
++    }
++    if ((int)imp.n_planes != av_pix_fmt_count_planes(frame_sw_format(frame))) {
++        av_log(ctx, AV_LOG_ERROR, "vmafx: the %s input's DRM frame has %u planes, %s has %d\n",
++               input, imp.n_planes, av_get_pix_fmt_name(frame_sw_format(frame)),
++               av_pix_fmt_count_planes(frame_sw_format(frame)));
++        return AVERROR(EINVAL);
++    }
++    ReleaseBox *b = box_new(frame);
++    if (!b)
++        return AVERROR(ENOMEM);
++    imp.release = box_release;
++    imp.user = b;
++    VmafxError *error = NULL;
++    const VmafxStatus status =
++        vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, &error);
++    box_after_import(b, status);
++    return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
++}
++#endif /* CONFIG_LIBDRM */
 +
 +/* ---- Windows (n_stats, #2138) ------------------------------------------------------ */
 +
@@ -1220,7 +1411,23 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +
 +/* The slot of the backend frames go to: the frames' for hardware frames
 + * (`backend` must agree), the `backend` option's for software frames. */
-+static int pick_slot(AVFilterContext *ctx, enum AVPixelFormat format)
++/* With backend=auto, DRM PRIME frames go to the backend of their GPU's
++ * vendor (SYCL on Intel, HIP on AMD); 0 keeps the first matching slot. */
++static int drm_auto_slot(AVBufferRef *frames)
++{
++#if CONFIG_LIBDRM
++    const unsigned vendor = frames ? drm_vendor(frames) : 0u;
++    if (vendor == 0x8086u)
++        return 3; /* sycl */
++    if (vendor == 0x1002u)
++        return 4; /* hip */
++#else
++    (void)frames;
++#endif
++    return 0;
++}
++
++static int pick_slot(AVFilterContext *ctx, enum AVPixelFormat format, AVBufferRef *frames)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    const VMAFXBackendSlot *opt =
@@ -1235,8 +1442,11 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +        }
 +        return 0;
 +    }
++    const int vendor_slot =
++        s->backend == 0 && format == AV_PIX_FMT_DRM_PRIME ? drm_auto_slot(frames) : 0;
 +    for (unsigned i = 2; i < FF_ARRAY_ELEMS(backend_slots); i++) {
-+        if (backend_slots[i].hw_format == format && (s->backend == 0 || s->backend == (int)i)) {
++        const int wanted = s->backend != 0 ? s->backend : vendor_slot;
++        if (backend_slots[i].hw_format == format && (wanted == 0 || wanted == (int)i)) {
 +            s->slot = &backend_slots[i];
 +            break;
 +        }
@@ -1492,7 +1702,7 @@ index 0000000000000000000000000000000000000000..b07338cc8a291ba2da37671e82147f6d
 +    FilterLink *il = ff_filter_link(mainlink);
 +    FilterLink *ol = ff_filter_link(outlink);
 +    AVBufferRef *frames = NULL;
-+    int ret = pick_slot(ctx, mainlink->format);
++    int ret = pick_slot(ctx, mainlink->format, il->hw_frames_ctx);
 +    if (ret >= 0)
 +        ret = input_frames(ctx, &frames);
 +    if (ret >= 0 && !s->context)
