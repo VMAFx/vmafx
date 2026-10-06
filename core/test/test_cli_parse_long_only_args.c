@@ -271,11 +271,11 @@ static char *test_bad_feature_option_usage_error()
 static char *test_invalid_bitdepth_usage_error()
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-m", "path=version=vmaf_v0.6.1",
-                    "-b",   "9"};
+                    "-b",   "17"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(
         argc, argv,
-        "Invalid argument \"9\" for option -b/--bitdepth; should be a valid bitdepth (8/10/12/16)");
+        "Invalid argument \"17\" for option -b/--bitdepth; should be a valid bitdepth (8 to 16)");
     mu_assert("cli_parse: 3-arg usage() overload must emit formatted error and exit(1)", rc == 0);
     return NULL;
 }
