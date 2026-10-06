@@ -63,8 +63,9 @@ psnr_p = 10 * log10(peak^2 / mse_p)
 
 `peak` is `(1 << bpc) - 1` for the integer extractor (255 at 8 bpc, 1023 at
 10 bpc, and so on). `float_psnr` normalises high bit depths back onto an
-8-bit scale and uses `peak` = 255.0 / 255.75 / 255.9375 / 255.99609375 for
-8 / 10 / 12 / 16 bpc.
+8-bit scale and uses `peak` = `(2^bpc - 1) / 2^(bpc - 8)` (255.0, 255.75, 255.9375,
+255.99609375 at 8, 10, 12, 16 bpc; every depth from 8 to 16 is scored) and the
+ceiling `6 * bpc + 12`.
 
 ## Options
 

@@ -45,12 +45,13 @@
 /* feature/ciede_ff_math.h on a HIP device's primitives. */
 #include "feature/hip/integer_ciede/ciede_hip_math.h"
 
-/* ciede.c's constants for the bit depths a picture can have, in the order of
- * `CIEDE_HIP_DEPTH_*` in ciede_hip.c. */
-static constexpr vmaf_hip_ciede::Constants kCiedeConstants[4] = {
-    vmaf_hip_ciede::make_constants(8u),
-    vmaf_hip_ciede::make_constants(10u),
-    vmaf_hip_ciede::make_constants(12u),
+/* ciede.c's constants for the bit depths a picture can have: entry `bpc - 8`
+ * (ciede_hip_depth_index() in ciede_hip.c). */
+static constexpr vmaf_hip_ciede::Constants kCiedeConstants[9] = {
+    vmaf_hip_ciede::make_constants(8u),  vmaf_hip_ciede::make_constants(9u),
+    vmaf_hip_ciede::make_constants(10u), vmaf_hip_ciede::make_constants(11u),
+    vmaf_hip_ciede::make_constants(12u), vmaf_hip_ciede::make_constants(13u),
+    vmaf_hip_ciede::make_constants(14u), vmaf_hip_ciede::make_constants(15u),
     vmaf_hip_ciede::make_constants(16u),
 };
 
@@ -88,9 +89,9 @@ ciede_store_pixel(const CiedeHipPlanes &ref, const CiedeHipPlanes &dis, float *t
     const unsigned cy = ss_ver ? (y >> 1) : y;
     const vmaf_hip_ffm::Tables tables = {.atan = vmaf_hip_ffm::kAtanTable,
                                          .sin_cos = vmaf_hip_ffm::kSinCosTable};
-    terms[(size_t)y * width + x] = vmaf_hip_ciede::pixel(ciede_samples<Sample>(ref, x, y, cx, cy),
-                                                         ciede_samples<Sample>(dis, x, y, cx, cy),
-                                                         kCiedeConstants[depth & 3u], tables);
+    terms[(size_t)y * width + x] = vmaf_hip_ciede::pixel(
+        ciede_samples<Sample>(ref, x, y, cx, cy), ciede_samples<Sample>(dis, x, y, cx, cy),
+        kCiedeConstants[depth > 8u ? 8u : depth], tables);
 }
 
 extern "C" {

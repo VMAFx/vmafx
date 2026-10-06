@@ -136,21 +136,13 @@ static int float_psnr_init_unwind(VmafFeatureExtractor *fex, FloatPsnrStateCuda 
  */
 static int float_psnr_peak_for_bpc(FloatPsnrStateCuda *s, unsigned bpc)
 {
-    if (bpc == 8u) {
-        s->peak = 255.0;
-        s->psnr_max = 60.0;
-    } else if (bpc == 10u) {
-        s->peak = 255.75;
-        s->psnr_max = 72.0;
-    } else if (bpc == 12u) {
-        s->peak = 255.9375;
-        s->psnr_max = 84.0;
-    } else if (bpc == 16u) {
-        s->peak = 255.99609375;
-        s->psnr_max = 108.0;
-    } else {
+    if (bpc < 8u || bpc > 16u) {
         return -EINVAL;
     }
+    /* The CPU's expression (float_psnr.c): (2^bpc - 1) / 2^(bpc - 8) and 6 * bpc + 12, every depth
+     * the engine reads. The doubles equal the former per-depth literals at 8, 10, 12 and 16. */
+    s->peak = (double)((1u << bpc) - 1u) / (double)(1u << (bpc - 8u));
+    s->psnr_max = 6.0 * (double)bpc + 12.0;
     return 0;
 }
 

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1290), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1291), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5171,3 +5171,7 @@ Every ADR, one heading each (1290), so the site search finds an ADR by its title
 ## ADR-2146: RGB, RGBA and BGRA input is converted to Y'CbCr in integers with a matrix, range and transfer the caller states, and refused by name without them
 
 [2146-vmafx-rgb-input-explicit-matrix](2146-vmafx-rgb-input-explicit-matrix.md)
+
+## ADR-2164: float\_psnr and ciede take every depth the engine reads (8 to 16 bits); psnr\_hvs stays at 12
+
+[2164-vmafx-odd-bit-depths-float-psnr-ciede](2164-vmafx-odd-bit-depths-float-psnr-ciede.md)
