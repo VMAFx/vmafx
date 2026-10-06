@@ -1,0 +1,56 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Temporary diagnosis of the macOS SIGSEGV in test_adm_coverage
+# (test_adm_invalid_view_dist_returns_einval). Runs only on pushes to its
+# own branch; the branch is deleted once the cause is known.
+name: Diag macOS adm coverage
+
+on:
+  push:
+    branches: ["diag/macos-adm-coverage"]
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: macOS test_adm_coverage under lldb
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.8
+      - name: Install meson and ninja
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          python -m pip install --require-hashes -r requirements/locks/build.txt
+          brew install -q ninja nasm pkg-config
+      - name: Release build of test_adm_coverage (as the Builds macOS clang leg)
+        run: |
+          meson setup core core/build --buildtype release -Denable_float=true -Denable_metal=disabled
+          ninja -C core/build test/test_adm_coverage
+      - name: Run it
+        continue-on-error: true
+        run: core/build/test/test_adm_coverage
+      - name: Run it under lldb
+        continue-on-error: true
+        run: |
+          lldb --batch -o run -o "bt all" -o "register read" -o "disassemble --pc --count 60" \
+            -o "image lookup --address \$pc --verbose" -o "frame select 1" -o "disassemble --frame" \
+            core/build/test/test_adm_coverage
+      - name: Debug build without LTO under lldb
+        continue-on-error: true
+        run: |
+          meson setup core core/build-dbg --buildtype debug -Db_lto=false -Denable_float=true -Denable_metal=disabled
+          ninja -C core/build-dbg test/test_adm_coverage
+          core/build-dbg/test/test_adm_coverage
+          lldb --batch -o run -o "bt all" -o "frame variable" -o "frame select 1" -o "frame variable" \
+            core/build-dbg/test/test_adm_coverage
