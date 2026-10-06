@@ -1001,7 +1001,7 @@ test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 test_model_collection_score_repeat = executable('test_model_collection_score_repeat',
     ['test.c', 'test_model_collection_score_repeat.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_model_collection_score_repeat', test_model_collection_score_repeat, suite : ['fast'])
@@ -5243,7 +5243,7 @@ test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
 test_cuda_float_ms_ssim_host_traffic = executable('test_cuda_float_ms_ssim_host_traffic',
     ['test.c', 'test_cuda_float_ms_ssim_host_traffic.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
@@ -5727,7 +5727,7 @@ test_motion_window_incremental = executable('test_motion_window_incremental',
     ['test.c', 'test_motion_window_incremental.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [pthread_dependency, thread_lib],
 )
 test('test_motion_window_incremental', test_motion_window_incremental,
