@@ -83,6 +83,7 @@ static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name
 
 VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, VmafxDeviceInfo *info)
 {
+    assert(info != NULL);
     const char *name = NULL;
     uint64_t memory = 0;
     const int32_t at = index == -1 ? 0 : index;
