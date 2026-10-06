@@ -25,7 +25,8 @@ CORE_SRC = ROOT / "core" / "src"
 MESON_BUILD = CORE_SRC / "meson.build"
 BUILD_DIR = Path(os.environ.get("VMAFX_DEVICE_DEP_BUILD_DIR", ROOT / "build")).resolve()
 
-EXPECTED_CUDA_TARGET_COUNT = 21
+# 22 since the WP3 CUDA lane (ADR-2023) added import_convert.
+EXPECTED_CUDA_TARGET_COUNT = 22
 EXPECTED_HIP_TARGET_COUNT = 20
 # The SYCL custom targets that compile a translation unit, by name prefix.
 SYCL_TU_TARGETS = ("sycl_common_", "sycl_feature_")
@@ -89,8 +90,9 @@ def meson_kernel_sources(content: str, variable: str, suffix: str) -> list[Path]
     match = re.search(rf"{variable} = \{{(.*?)^    \}}", content, re.DOTALL | re.MULTILINE)
     if match is None:
         return []
-    paths = re.findall(rf"feature_src_dir \+ '([^']+\.{suffix})'", match.group(1))
-    return [(CORE_SRC / "feature" / rel_path).resolve() for rel_path in paths]
+    roots = {"feature_src_dir": CORE_SRC / "feature", "cuda_dir": CORE_SRC / "cuda"}
+    paths = re.findall(rf"(feature_src_dir|cuda_dir) \+ '([^']+\.{suffix})'", match.group(1))
+    return [(roots[root] / rel_path).resolve() for root, rel_path in paths]
 
 
 def repo_include_closure(sources: list[Path], include_dirs: list[Path]) -> set[Path]:

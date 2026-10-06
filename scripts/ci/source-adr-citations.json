@@ -11544,6 +11544,7 @@
         "core/src/meson.build": 2,
         "core/src/picture.h": 1,
         "core/test/meson.build": 2,
+        "core/test/test_device_target_header_dependencies.py": 1,
         "core/test/test_vmafx_import_cuda.c": 1,
         "core/test/test_vmafx_import_cuda_bitexact.c": 1,
         "core/test/test_vmafx_import_cuda_cells_contract.py": 1,
