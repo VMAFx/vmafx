@@ -4855,6 +4855,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the REST page](docs/server/rest.md).
 
 
+- `vmafx-server` `GET /readyz` now returns 503 when the vmaf binary the scorer
+  runs has been removed, is no longer executable, or when `model.dir` is not a
+  directory, instead of staying 200 for as long as the process holds a scorer
+  object. The same check is a readiness check (`vmaf-binary`) on the golusoris
+  status registry (#1251).
+
+
 - The platform setup scripts (`scripts/setup/*.sh`, `scripts/setup/windows.ps1`)
   end with a configure command that works: `meson setup build core ...` from
   the repository root. They printed `meson setup build ...`, which Meson refuses
