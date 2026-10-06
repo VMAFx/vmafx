@@ -587,6 +587,7 @@
         "core/test/test_thread_safety_batch.c": 1,
         "core/test/test_transnet_v2.c": 1,
         "core/test/test_video_input_odd_dims.c": 1,
+        "core/test/test_vmafx_import_cuda_bitexact.c": 1,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/tiny_ai_test_template.h": 2,
@@ -1883,6 +1884,7 @@
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_speed_temporal_parity.c": 2,
         "core/test/test_video_input_odd_dims.c": 1,
+        "core/test/test_vmafx_import_cuda_bitexact.c": 1,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/tiny_ai_test_template.h": 2,
@@ -6123,6 +6125,11 @@
         "core/src/cuda/common.c": 1,
         "core/src/cuda/dispatch_strategy.c": 1,
         "core/src/cuda/drain_batch.c": 1,
+        "core/src/cuda/import_device.c": 1,
+        "core/src/cuda/import_fence.c": 1,
+        "core/src/cuda/import_frame.c": 1,
+        "core/src/cuda/import_gl.c": 1,
+        "core/src/cuda/import_pool.c": 1,
         "core/src/cuda/kernel_template.h": 1,
         "core/src/cuda/picture_cuda.c": 1,
         "core/src/dict.h": 3,
@@ -6680,6 +6687,10 @@
         "core/test/test_vmafx_frame.c": 1,
         "core/test/test_vmafx_import_api.c": 1,
         "core/test/test_vmafx_import_bitexact.c": 1,
+        "core/test/test_vmafx_import_cuda.c": 1,
+        "core/test/test_vmafx_import_cuda_bitexact.c": 1,
+        "core/test/test_vmafx_import_cuda_fence.c": 1,
+        "core/test/test_vmafx_import_cuda_gl.c": 1,
         "core/test/test_vmafx_import_fence.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/test/test_vmafx_log_routing.c": 1,
@@ -6689,6 +6700,8 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
+        "core/test/vmafx_cuda_cells.h": 1,
+        "core/test/vmafx_cuda_test_util.h": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_import_test_util.h": 1,
         "core/test/vmafx_test_util.h": 1,
@@ -7115,7 +7128,14 @@
     },
     "1199": {
       "sites": {
-        "core/src/libvmaf.c": 1
+        "core/src/cuda/import_fence.c": 1,
+        "core/src/cuda/import_frame.c": 1,
+        "core/src/cuda/import_pool.c": 1,
+        "core/src/cuda/vmafx_cuda.h": 2,
+        "core/src/cuda/vmafx_cuda_internal.h": 1,
+        "core/src/libvmaf.c": 1,
+        "core/src/picture.h": 1,
+        "core/test/test_vmafx_import_cuda_fence.c": 5
       },
       "target": "1199-cuda-picture-handover-barrier.md"
     },
@@ -7336,6 +7356,7 @@
         ".github/workflows/libvmaf-build-matrix.yml": 3,
         "core/src/cuda/common.c": 4,
         "core/src/cuda/common.h": 1,
+        "core/src/cuda/import_device.c": 2,
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
         "core/test/test_cuda_arch_floor.c": 2,
@@ -9258,6 +9279,7 @@
       "sites": {
         ".pre-commit-config.yaml": 2,
         "Makefile": 1,
+        "core/test/vmafx_cuda_cells.h": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
         "scripts/dev/relicense_fork_files.py": 1,
@@ -11177,7 +11199,9 @@
       "sites": {
         "core/api/vmafx.toml": 1,
         "core/src/vmafx/frame_import.c": 1,
-        "core/test/test_vmafx_import_bitexact.c": 1
+        "core/test/test_vmafx_import_bitexact.c": 1,
+        "core/test/test_vmafx_import_cuda_bitexact.c": 1,
+        "core/test/test_vmafx_import_cuda_cells_contract.py": 1
       },
       "target": "1829-rc4-zero-copy-import.md"
     },
@@ -11217,6 +11241,10 @@
         "core/include/vmafx/types.h": 1,
         "core/include/vmafx/version.h": 2,
         "core/include/vmafx/vmafx.h": 1,
+        "core/src/cuda/import_device.c": 1,
+        "core/src/cuda/import_fence.c": 1,
+        "core/src/cuda/import_frame.c": 1,
+        "core/src/cuda/vmafx_cuda.h": 1,
         "core/src/libvmaf.c": 2,
         "core/src/log.cpp": 1,
         "core/src/log.h": 1,
@@ -11308,11 +11336,46 @@
         "core/api/vmafx.toml": 1,
         "core/include/vmafx/context.h": 1,
         "core/src/compat/gcc/stdatomic.h": 1,
+        "core/src/cuda/import_convert.cu": 1,
+        "core/src/cuda/import_device.c": 2,
+        "core/src/cuda/import_fence.c": 2,
+        "core/src/cuda/import_frame.c": 3,
+        "core/src/cuda/import_pool.c": 1,
+        "core/src/cuda/vmafx_cuda.h": 1,
+        "core/src/libvmaf.c": 2,
         "core/src/vmafx/fence.c": 1,
         "core/src/vmafx/frame_import.c": 1,
-        "core/src/vmafx/internal.h": 1
+        "core/src/vmafx/internal.h": 1,
+        "core/src/vmafx/register.c": 2,
+        "core/test/test_vmafx_import_cuda.c": 1,
+        "core/test/test_vmafx_import_cuda_fence.c": 1
       },
       "target": "1929-vmafx-device-frames-fences.md"
+    },
+    "2023": {
+      "sites": {
+        "core/src/cuda/import_convert.cu": 1,
+        "core/src/cuda/import_device.c": 1,
+        "core/src/cuda/import_fence.c": 1,
+        "core/src/cuda/import_frame.c": 4,
+        "core/src/cuda/import_gl.c": 2,
+        "core/src/cuda/import_pool.c": 3,
+        "core/src/cuda/vmafx_cuda.h": 2,
+        "core/src/cuda/vmafx_cuda_internal.h": 1,
+        "core/src/feature/cuda/integer_vif/filter1d.cu": 1,
+        "core/src/feature/cuda/integer_vif_cuda.c": 1,
+        "core/src/libvmaf.c": 2,
+        "core/src/meson.build": 2,
+        "core/src/picture.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_vmafx_import_cuda.c": 1,
+        "core/test/test_vmafx_import_cuda_bitexact.c": 1,
+        "core/test/test_vmafx_import_cuda_cells_contract.py": 1,
+        "core/test/test_vmafx_import_cuda_fence.c": 1,
+        "core/test/test_vmafx_import_cuda_gl.c": 1,
+        "core/test/vmafx_cuda_test_util.h": 1
+      },
+      "target": "2023-vmafx-cuda-device-frames.md"
     }
   },
   "retired": {

@@ -1284,3 +1284,4 @@
 1897-vmafx-abi-0x-numbering
 1906-vmafx-core-api-semantics
 1929-vmafx-device-frames-fences
+2023-vmafx-cuda-device-frames

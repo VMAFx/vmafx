@@ -223,6 +223,16 @@ if get_option('enable_tools')
     endforeach
 endif
 
+# RC4 WP3 CUDA lane (ADR-2023): the cells of the CUDA import bit-exactness test
+# are every CUDA twin declared exact, each registered as the parity gate does.
+# Device-free.
+test('test_vmafx_import_cuda_cells_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_cuda_cells_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # No CUDA, HIP, SYCL or Metal source advances a pointer to samples wider than
 # a byte by a byte stride (the class of an upstream CUDA 16-bit motion defect):
 # a static scan of core/src with planted upstream forms. Device-free.
@@ -4468,6 +4478,36 @@ test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
     suite : ['fast'])
 
 if get_option('enable_cuda')
+# RC4 WP3 CUDA lane (ADR-2023): the VMAFx device-frame API on a CUDA device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). Each needs the device (77 without
+# one) and runs alone on it; the bit-exactness run reads the Netflix fixtures
+# and testdata/bbb. Linux: the producer side of the fence tests uses POSIX
+# threads and sleeps, the GL test EGL.
+vmafx_cuda_test_args = vmaf_cflags_common + vmafx_test_dirs + [
+    '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+]
+vmafx_cuda_tests = host_machine.system() != 'linux' ? [] : [
+    ['test_vmafx_import_cuda', 300],
+    ['test_vmafx_import_cuda_bitexact', 900],
+    ['test_vmafx_import_cuda_fence', 300],
+    ['test_vmafx_import_cuda_gl', 120],
+]
+foreach vmafx_cuda_test : vmafx_cuda_tests
+    vmafx_cuda_name = vmafx_cuda_test[0]
+    vmafx_cuda_exe = executable(vmafx_cuda_name,
+        ['test.c', vmafx_cuda_name + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmafx_cuda_test_args,
+        dependencies : [math_lib, pthread_dependency, thread_lib, cuda_dependency],
+    )
+    test(vmafx_cuda_name, vmafx_cuda_exe,
+        suite : ['gpu', 'cuda'],
+        is_parallel : false,
+        timeout : vmafx_cuda_test[1])
+endforeach
+
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.cpp', '../src/cuda/picture_cuda.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

@@ -21,11 +21,35 @@
 #include "error_internal.h"
 #include "internal.h"
 #include "vmafx/vmafx.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+/* Import the device into the context's engine: nothing for the CPU, the
+ * backend lane's engine state otherwise. */
+static VmafxStatus attach_lane(const VmafxReport *report, VmafxContext *context,
+                               VmafxDevice *device)
+{
+    if (device->backend == VMAFX_BACKEND_CPU) {
+        return VMAFX_OK;
+    }
+#ifdef HAVE_CUDA
+    if (device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_context_attach(report, context, device);
+    }
+#else
+    (void)context;
+#endif
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
+                      "backend %s: this build scores on the devices of the backends it was "
+                      "built with",
+                      vmafx_backend_name(device->backend));
+}
 
 VmafxStatus vmafx_context_use_device(VmafxContext *context, VmafxDevice *device, VmafxError **error)
 {
@@ -45,14 +69,24 @@ VmafxStatus vmafx_context_use_device(VmafxContext *context, VmafxDevice *device,
                           "picks each feature's twin on the device's backend when it is "
                           "registered");
     }
-    if (device->backend != VMAFX_BACKEND_CPU) {
-        return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
-                          "backend %s: this build scores on the CPU device only",
-                          vmafx_backend_name(device->backend));
+    const VmafxStatus status = attach_lane(&report, context, device);
+    if (status != VMAFX_OK) {
+        return status;
     }
-    assert(context->device == NULL && device->backend == VMAFX_BACKEND_CPU);
+    assert(context->device == NULL);
     context->device = vmafx_device_ref(device);
     return VMAFX_OK;
+}
+
+void vmafx_context_release_device(VmafxContext *context)
+{
+#ifdef HAVE_CUDA
+    if (context->device && context->device->backend == VMAFX_BACKEND_CUDA) {
+        vmafx_cuda_context_detach(context);
+    }
+#endif
+    vmafx_device_unref(context->device);
+    context->device = NULL;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

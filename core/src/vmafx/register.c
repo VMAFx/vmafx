@@ -53,6 +53,37 @@ static VmafxStatus cpu_extractor(const VmafxReport *report, const char *extracto
     return VMAFX_OK;
 }
 
+/* The extractor a context registers for `extractor`: on a context with a
+ * device, the CPU extractor's twin on the device's backend (RC4 WP3: the
+ * context picks twins at registration, ADR-1929 item 10); the CPU extractor
+ * when the backend has none or the twin cannot honour an option (named in
+ * the log; admission then names it for device frames, ADR-1929 item 9). */
+static const char *registered_name(const VmafxContext *context, const char *extractor,
+                                   const VmafxOptions *options)
+{
+    if (!context->device || context->device->backend == VMAFX_BACKEND_CPU) {
+        return extractor;
+    }
+    const char *twin = NULL;
+    const char *unsupported = NULL;
+    const int err = vmaf_engine_feature_backend_twin(context->engine, extractor,
+                                                     (const VmafFeatureDictionary *)options, NULL,
+                                                     &twin, &unsupported);
+    if (err == 0 && twin) {
+        return twin;
+    }
+    if (err == -ENOENT || err == -ENOTSUP) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "vmafx: extractor %s: %s; the CPU extractor computes it on this %s context, and "
+                 "frames in device memory are refused by admission\n",
+                 extractor,
+                 err == -ENOENT ? "the device backend has no twin" :
+                                  "its twin cannot honour an option",
+                 vmafx_backend_name(context->device->backend));
+    }
+    return extractor;
+}
+
 VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extractor,
                                       const VmafxOptions *options, VmafxError **error)
 {
@@ -73,7 +104,8 @@ VmafxStatus vmafx_context_use_feature(VmafxContext *context, const char *extract
     }
     /* Consumes `copy` on every path past its argument checks. */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
-    const int err = vmaf_engine_use_feature(context->engine, extractor, copy);
+    const char *const name = registered_name(context, extractor, options);
+    const int err = vmaf_engine_use_feature(context->engine, name, copy);
     vmafx_engine_leave(previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_EXTRACTOR,

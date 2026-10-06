@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 3)
+ABI_VERSION = (0, 1, 4)
 
 
 class Status(enum.IntEnum):
@@ -110,6 +110,7 @@ class MemoryKind(enum.IntEnum):
     METAL_SURFACE = 5
     METAL_TEXTURE = 6
     WIN32_SHARED = 7
+    GL_TEXTURE = 8
 
 
 class FenceKind(enum.IntEnum):
@@ -123,6 +124,7 @@ class FenceKind(enum.IntEnum):
     SYNC_FILE = 5
     METAL_SHARED_EVENT = 6
     WIN32_SHARED = 7
+    GL_SYNC = 8
 
 
 class ModelFlags(enum.IntFlag):
@@ -308,6 +310,8 @@ VmafxFrameImport._fields_ = (
     ("plane", VmafxImportPlane * 3),
     ("acquire", VmafxFence),
     ("flags", ctypes.c_uint32),
+    ("release", VmafxFrameReleaseCallback),
+    ("user", ctypes.c_void_p),
 )
 
 VmafxModelConfig._fields_ = (
@@ -470,7 +474,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        216,
+        232,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -482,6 +486,8 @@ LAYOUT = {
             ("plane", 32),
             ("acquire", 176),
             ("flags", 208),
+            ("release", 216),
+            ("user", 224),
         ),
     ),
     VmafxModelConfig: (

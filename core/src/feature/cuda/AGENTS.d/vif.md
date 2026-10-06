@@ -3,7 +3,7 @@ paths:
   - core/src/feature/cuda/integer_vif_cuda.c
   - core/src/feature/cuda/integer_vif_cuda.h
   - core/src/feature/cuda/integer_vif/filter1d.cu
-invariant: vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing enable_chroma, picture-stream reset.
+invariant: vif_cuda: 16-px minimum, CPU log2 table, names before clearing enable_chroma, stream reset, per-picture pitch.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer VIF minimum size, log2 table, and stream reset
@@ -79,3 +79,17 @@ invariant: vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing ena
   and refuses the default ones for `enable_chroma=true`),
   `test_cuda_vif_log2_contract.py` (init order ends in
   `return vif_setup_buffers(`).
+
+## `vif_cuda` reads each picture with its own pitch (ADR-2023)
+
+- Scale 0 reads `ref_pic->data[0]` and `dist_pic->data[0]` with
+  `VifBufferCuda.stride` and `.dis_stride`, set per frame from the pictures'
+  `stride[0]` in `vif_submit_scales()`; `vif_vert_load_tiles()` takes both.
+  The init-time value (texture-aligned) is only the engine pool's pitch: an
+  imported VMAFx frame has its producer's, and two inputs may differ
+  (`T-CUDA-VIF-PICTURE-PITCH-2026-10-06`). Never go back to one pitch.
+- The vertical pass loads 4 (8-bit) or 8 (16-bit) bytes per thread: a picture
+  row must start 8-byte aligned with the pitch a multiple of 8, which the
+  CUDA import requires of bound planes (`core/src/cuda/import_frame.c`).
+- Guards: `test_vmafx_import_cuda` (one import, two contexts, luma pitch 368),
+  `test_vmafx_import_cuda_bitexact` (`vif` cell, padded pitches).
