@@ -61,7 +61,9 @@ extern "C" {
 #include "../../metal/objc_handle.h"
 
 
-typedef struct IntegerAdmStateMetal {
+namespace {
+
+using IntegerAdmStateMetal = struct IntegerAdmStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
@@ -99,6 +101,7 @@ typedef struct IntegerAdmStateMetal {
     unsigned index;
     VmafDictionary *feature_name_dict;
 };
+} // namespace
 
 namespace {
 
@@ -320,7 +323,7 @@ int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
 
 int init_device_state(IntegerAdmStateMetal *s)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     int err = alloc_buffers(s, device);
@@ -472,8 +475,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPictur
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 

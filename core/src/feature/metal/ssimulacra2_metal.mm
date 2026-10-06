@@ -747,7 +747,7 @@ int alloc_host_buffers(Ssimu2StateMetal *s)
  * 1 no device, 2 the buffers failed, 3 a pipeline failed. */
 int init_device_resources(Ssimu2StateMetal *s, int *stage)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { *stage = 1; return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     int err = ss2m_alloc_device_buffers(s, device);
@@ -930,8 +930,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)index;
     Ssimu2StateMetal *s = (Ssimu2StateMetal *)fex->priv;
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 

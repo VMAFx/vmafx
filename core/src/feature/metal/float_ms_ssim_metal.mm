@@ -192,7 +192,6 @@ int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
     int load_rc = 0;
     id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
-    NSError *err = nil;
 
     id<MTLComputePipelineState> const pso_dh   = make_pipeline(device, lib, @"ms_ssim_decimate_h");
     id<MTLComputePipelineState> const pso_dv   = make_pipeline(device, lib, @"ms_ssim_decimate_v");
@@ -388,7 +387,7 @@ int init_metal_device_context(FloatMsSsimStateMetal *s)
         return err;
     }
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) {
         (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
         vmaf_metal_context_destroy(s->ctx);
@@ -549,7 +548,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     s->index = index;
 
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
 
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
@@ -632,7 +631,7 @@ int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane, unsigned 
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMsSsimStateMetal *const s = (FloatMsSsimStateMetal *)fex->priv;
+    const FloatMsSsimStateMetal *const s = (FloatMsSsimStateMetal *)fex->priv;
 
     double plane_scores[MS_SSIM_MAX_PLANES] = {0.0};
     double l_means[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};

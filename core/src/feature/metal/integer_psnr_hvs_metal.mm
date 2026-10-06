@@ -254,7 +254,7 @@ int alloc_term_buffers(PsnrHvsStateMetal *s)
  * pipeline failed (the caller unwinds from there). */
 int init_device_resources(PsnrHvsStateMetal *s, int *stage)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { *stage = 1; return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     for (unsigned p = 0; p < s->n_planes; ++p) {
@@ -391,8 +391,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     PsnrHvsStateMetal *s = (PsnrHvsStateMetal *)fex->priv;
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
@@ -411,7 +411,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    PsnrHvsStateMetal *const s = (PsnrHvsStateMetal *)fex->priv;
+    const PsnrHvsStateMetal *const s = (PsnrHvsStateMetal *)fex->priv;
 
     /* calc_psnrhvs()'s running float sum over the stored terms, in its order
      * (vmaf_psnr_hvs_plane_score(), ADR-1397). */

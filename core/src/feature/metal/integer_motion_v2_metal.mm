@@ -209,7 +209,7 @@ int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
 /* The luma planes of the last `depth` frames and the pipelines. */
 int mv2_metal_device_setup(MotionV2StateMetal *s)
 {
-    void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
+    const void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
     if (device_handle == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
     for (unsigned i = 0; i < s->depth; i++) {
@@ -371,8 +371,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
     id<MTLBuffer> const slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
     if (index >= s->depth) {
-        void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
-        void *const queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
+        const void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
+        const void *const queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
         if (device_handle == nullptr || queue_handle == nullptr) { return -ENODEV; }
         id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
         id<MTLBuffer> const cur = [device newBufferWithLength:s->plane_bytes
@@ -405,7 +405,7 @@ int mv2_metal_sad(const MotionV2StateMetal *s, uint64_t *sad)
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
+    const MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
 
     /* motion_force_zero, or no frame `depth` back (the CPU's min_idx): the
      * CPU stores 0. */
@@ -436,7 +436,7 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
  * gets motion2_v2 = motion3_v2 = 0, as on the CPU; an empty run nothing. */
 int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
-    MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
+    const MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
 
     /* No frame reached init(): nothing was stored, nothing to derive. */
     if (s->feature_name_dict == nullptr) { return 1; }

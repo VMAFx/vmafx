@@ -77,7 +77,7 @@ id<MTLDevice> select_device_or_nil(int device_index)
     if (device_index < 0) {
         return nil;
     }
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
     if (all == nil) {
         return nil;
     }
@@ -175,7 +175,7 @@ void *vmaf_metal_context_queue_handle(VmafMetalContext *ctx)
 int vmaf_metal_device_count(void)
 {
 #if !TARGET_OS_IPHONE
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
     NSUInteger const n = (all == nil) ? 0 : all.count;
     NSUInteger family7 = 0;
     for (NSUInteger i = 0; i < n; i++) {
@@ -266,7 +266,7 @@ void vmaf_metal_state_free(VmafMetalState **state)
 int vmaf_metal_list_devices(void)
 {
 #if !TARGET_OS_IPHONE
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
     NSUInteger const n = (all == nil) ? 0 : all.count;
     int printed = 0;
     for (NSUInteger i = 0; i < n; i++) {

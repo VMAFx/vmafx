@@ -77,7 +77,7 @@ int vmaf_metal_kernel_lifecycle_init(VmafMetalKernelLifecycle *lc, VmafMetalCont
         return -EINVAL;
     }
 
-    void *const device_handle = vmaf_metal_context_device_handle(ctx);
+    const void *const device_handle = vmaf_metal_context_device_handle(ctx);
     if (device_handle == nullptr) {
         return -ENODEV;
     }
@@ -118,7 +118,7 @@ int vmaf_metal_kernel_buffer_alloc(VmafMetalKernelBuffer *buf, VmafMetalContext 
         return -EINVAL;
     }
 
-    void *const device_handle = vmaf_metal_context_device_handle(ctx);
+    const void *const device_handle = vmaf_metal_context_device_handle(ctx);
     if (device_handle == nullptr) {
         return -ENODEV;
     }

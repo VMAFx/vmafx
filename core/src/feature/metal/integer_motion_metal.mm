@@ -216,7 +216,7 @@ int release_device_state(IntegerMotionStateMetal *s)
 /* The ring of raw planes and the pipelines, on a context `s->ctx` holds. */
 int alloc_device_state(IntegerMotionStateMetal *s)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     for (unsigned i = 0; i < s->ring; i++) {
@@ -296,7 +296,7 @@ void upload_plane(IntegerMotionStateMetal *s, const VmafPicture *pic, unsigned s
 /* The SAD kernel on ring slots `prev` and `cur`, waited for. */
 int run_sad_kernel(IntegerMotionStateMetal *s, unsigned prev, unsigned cur)
 {
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
     id<MTLCommandBuffer> const cmd = [queue commandBuffer];
@@ -362,7 +362,7 @@ double sad_score(const IntegerMotionStateMetal *s, unsigned index)
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerMotionStateMetal *const s = (IntegerMotionStateMetal *)fex->priv;
+    const IntegerMotionStateMetal *const s = (IntegerMotionStateMetal *)fex->priv;
     const double score = sad_score(s, index);
 
     /* Every frame, as the CPU's three sites write it: before the first SAD,

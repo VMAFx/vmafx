@@ -359,7 +359,6 @@ int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
     int load_rc = 0;
     id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
-    NSError *err = nil;
 
     const NSUInteger block = (NSUInteger)VMAF_MTL_FM_BLOCK * VMAF_MTL_FM_BLOCK;
     int rc = fm_metal_pipeline(device, lib, @"float_motion_blur", block, &s->pso_blur);
@@ -477,7 +476,7 @@ int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
-    FloatMotionStateMetal *const s = (FloatMotionStateMetal *)fex->priv;
+    const FloatMotionStateMetal *const s = (FloatMotionStateMetal *)fex->priv;
 
     /* CPU float_motion.c::motion_append_forced_zero: every output 0. */
     int err = fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
@@ -517,7 +516,7 @@ int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
     if (err != 0) { return err; }
     if (s->rb.host_view == nullptr) { return -ENOMEM; }
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
@@ -706,7 +705,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     int err = fm_metal_upload(s, ref_pic);
     if (err != 0) { return err; }
 
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
     id<MTLCommandBuffer> const cmd = [queue commandBuffer];

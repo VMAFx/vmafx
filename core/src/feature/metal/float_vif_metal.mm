@@ -440,7 +440,7 @@ int alloc_scratch(FloatVifStateMetal *s, id<MTLDevice> device)
 
 int alloc_device_state(FloatVifStateMetal *s)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     int err = alloc_planes(s, device);
@@ -683,7 +683,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     FloatVifStateMetal *s = (FloatVifStateMetal *)fex->priv;
     s->index = index;
 
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 

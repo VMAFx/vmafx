@@ -384,7 +384,7 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     }
-    void *const dh = (err == 0) ? vmaf_metal_context_device_handle(s->ctx) : nullptr;
+    const void *const dh = (err == 0) ? vmaf_metal_context_device_handle(s->ctx) : nullptr;
     if (err == 0 && dh == nullptr) {
         err = -ENODEV;
     }
@@ -583,7 +583,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     IntegerVifStateMetal *s = (IntegerVifStateMetal *)fex->priv;
     s->index = index;
 
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -637,7 +637,7 @@ void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num, double
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerVifStateMetal *const s = (IntegerVifStateMetal *)fex->priv;
+    const IntegerVifStateMetal *const s = (IntegerVifStateMetal *)fex->priv;
 
     double num[IVIF_SCALES];
     double den[IVIF_SCALES];

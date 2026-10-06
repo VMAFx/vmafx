@@ -425,7 +425,6 @@ int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
     int load_rc = 0;
     id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
     if (lib == nil) { return load_rc; }
-    NSError *err = nil;
 
     s->pso_dwt_vert_8 = make_pipeline(device, lib, @"float_adm_dwt_vert_8bpc");
     s->pso_dwt_vert_16 = make_pipeline(device, lib, @"float_adm_dwt_vert_16bpc");
@@ -555,7 +554,7 @@ int alloc_device_buffers(FloatAdmStateMetal *s, id<MTLDevice> device)
 /* The device, its buffers and its pipelines; the caller unwinds on failure. */
 int init_device_resources(FloatAdmStateMetal *s, int *stage)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { *stage = 1; return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     int err = alloc_device_buffers(s, device);
@@ -728,7 +727,7 @@ void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
     a.rfactor_v = s->rfactor[scale][1];
     a.rfactor_d = s->rfactor[scale][2];
 
-    NSArray<id<MTLBuffer>> *buffers = @[
+    NSArray<id<MTLBuffer>> *const buffers = @[
         (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->dis_band[scale],
         (__bridge id<MTLBuffer>)s->csf_a, (__bridge id<MTLBuffer>)s->csf_fa,
         (__bridge id<MTLBuffer>)s->csf_r, (__bridge id<MTLBuffer>)s->csf_fr
@@ -766,7 +765,7 @@ void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int 
     t.rfactor_d = s->rfactor[scale][2];
 
     id<MTLBuffer> const terms = (__bridge id<MTLBuffer>)s->terms;
-    NSArray<id<MTLBuffer>> *term_buffers = @[
+    NSArray<id<MTLBuffer>> *const term_buffers = @[
         (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->csf_a,
         (__bridge id<MTLBuffer>)s->csf_fa, (__bridge id<MTLBuffer>)s->csf_r,
         (__bridge id<MTLBuffer>)s->csf_fr, terms
@@ -801,8 +800,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
@@ -932,7 +931,7 @@ int emit_frame_scores(const FloatAdmStateMetal *s, VmafFeatureCollector *fc, uns
 
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
-    FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
+    const FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
     FadmFrameSums f = pool_frame(s);
 
     /* compute_adm()'s floor of the frame sums, in its expression: 1e-10 of

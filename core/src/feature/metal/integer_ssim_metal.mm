@@ -211,7 +211,7 @@ int allocate(IntegerSsimStateMetal *s)
     int const err = vmaf_metal_kernel_buffer_alloc(&s->terms, s->ctx, pixels * sizeof(uint64_t));
     if (err != 0) { return err; }
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
@@ -316,8 +316,8 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         return -EINVAL;
     }
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
@@ -340,7 +340,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerSsimStateMetal *const s = (IntegerSsimStateMetal *)fex->priv;
+    const IntegerSsimStateMetal *const s = (IntegerSsimStateMetal *)fex->priv;
     const uint64_t *terms = (const uint64_t *)s->terms.host_view;
     if (terms == nullptr) { return -EINVAL; }
 
