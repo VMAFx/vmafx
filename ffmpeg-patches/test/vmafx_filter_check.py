@@ -21,6 +21,11 @@ fixture is missing:
 - ``refusal``: a CPU-only extractor on CUDA frames fails the graph with the
   import rule's message naming the backend, the input and the extractor,
   and no `VMAF score` line follows (D8).
+- ``legacy``: ``vmafx_pre`` writes the same bytes as ``vmaf_pre`` (8-bit and
+  10-bit planes through the blur fixture ``pre_blur_4x4.onnx``, which changes
+  every sample) and ``vmafx_tune`` logs the same recommendation as
+  ``libvmaf_tune`` (model pinned to ``vmaf_v0.6.1``, two targets). Needs an
+  FFmpeg configured with both ``--enable-libvmafx`` and ``--enable-libvmaf``.
 - ``pool``: both inputs uploaded to a VAAPI device into fixed frame pools;
   vmafx downloads them (``import=host``) and with ``metadata=1`` holds the
   main frames until their scores are final. A pool one frame smaller than
@@ -290,6 +295,61 @@ def cmd_refusal(args: argparse.Namespace) -> int:
     return 0 if result.returncode != 0 and named and no_score else 1
 
 
+def has_filter(args: argparse.Namespace, name: str) -> bool:
+    out = run([args.ffmpeg, "-hide_banner", "-h", f"filter={name}"], environment(args), False)
+    return f"Filter {name}" in out.stdout
+
+
+def legacy_pre(args: argparse.Namespace, tmp: Path, name: str, fmt: str) -> bytes:
+    """`name` over the golden distorted video cut to 4x4 planes of `fmt`; "" filters nothing."""
+    model = Path(__file__).resolve().parent / "pre_blur_4x4.onnx"
+    chain = f"scale=4:4:flags=neighbor,format={fmt}" + (f",{name}=model={model}" if name else "")
+    out = tmp / f"{name or 'none'}-{fmt}.yuv"
+    raw = ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "576x324", "-r", "24"]
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *raw]
+    cmd += ["-i", str(fixture(args, PAIRS["golden"].dist)), "-vf", chain, "-f", "rawvideo"]
+    run([*cmd, str(out)], environment(args))
+    return out.read_bytes()
+
+
+def legacy_tune(args: argparse.Namespace, name: str, target: float) -> str:
+    options = f"model=version=vmaf_v0.6.1:recommend_target_vmaf={target}"
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", *ffmpeg_inputs(args, PAIRS["golden"])]
+    cmd += ["-lavfi", f"[0:v][1:v]{name}={options}", "-f", "null", "-"]
+    found = re.search(r"recommended_crf=.*", run(cmd, environment(args)).stderr)
+    return found.group(0) if found else "(no recommendation)"
+
+
+def cmd_legacy(args: argparse.Namespace) -> int:
+    if not fixture(args, PAIRS["golden"].dist).is_file():
+        return SKIP
+    if not all(has_filter(args, f) for f in ("vmaf_pre", "libvmaf_tune")):
+        print("skip: this FFmpeg has no vmaf_pre / libvmaf_tune (configure --enable-libvmaf)")
+        return SKIP
+    ok = True
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        for fmt in ("yuv420p", "yuv420p10le"):
+            old, new = (
+                legacy_pre(args, tmp, "vmaf_pre", fmt),
+                legacy_pre(args, tmp, "vmafx_pre", fmt),
+            )
+            filtered = new != legacy_pre(args, tmp, "", fmt)
+            ok &= old == new and filtered
+            print(
+                f"vmafx_pre {fmt}: {len(new)} bytes, equal to vmaf_pre: {old == new}, "
+                f"differs from the input: {filtered}"
+            )
+    for target in (95.0, 80.0):
+        old, new = (
+            legacy_tune(args, "libvmaf_tune", target),
+            legacy_tune(args, "vmafx_tune", target),
+        )
+        ok &= old == new and old.startswith("recommended_crf=")
+        print(f"target {target}: libvmaf_tune {old} | vmafx_tune {new}")
+    return 0 if ok else 1
+
+
 def pool_run(
     args: argparse.Namespace, pair: Pair, report: Path, pool: int, import_mode: str = "host"
 ):
@@ -415,7 +475,8 @@ def cmd_e2e(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "command", choices=("parity", "windows", "provenance", "refusal", "pool", "e2e")
+        "command",
+        choices=("parity", "windows", "provenance", "refusal", "pool", "legacy", "e2e"),
     )
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--vmaf", required=True)
@@ -439,6 +500,7 @@ def main() -> int:
         "provenance": cmd_provenance,
         "refusal": cmd_refusal,
         "pool": cmd_pool,
+        "legacy": cmd_legacy,
         "e2e": cmd_e2e,
     }[args.command](args)
 
