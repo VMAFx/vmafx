@@ -59,6 +59,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_mobilesal.c`, `/core/test/test_mobilesal.c`, `/core/test/dnn/test_mobilesal_run.c` | [mobilesal](AGENTS.d/mobilesal.md) | MobileSal extractor pads sides to a multiple of 8 for the students and averages only the frame's own area. |
 | `feature_collector.cpp`, `feature_name.cpp` | [model-options](AGENTS.d/model-options.md) | Model options gate GPU twin selection; every option must be parsed or safely rejected. |
 | `integer_motion_v2.c`, `motion_tools.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 option-surface parity, five-frame window on prev_prev_ref, and NEON shift semantics. |
+| `motion_window.h`, `integer_motion.c`, `integer_motion_v2.c`, `feature_extractor.h`, `/core/test/test_motion_window_incremental.c`, `/core/test/test_motion_window_advance_contract.py`, `/core/test/test_score_pooled_eagain.c` | [motion-window-incremental](AGENTS.d/motion-window-incremental.md) | motion2/motion3 of frame i final once SADs 0..max(i+1,min_idx) in; same statements as the flush; state carried. |
 | `motion.c`, `float_motion.c`, `integer_motion.c` | [motion](AGENTS.d/motion.md) | Motion plane structures, upstream options, mirror implementations, and chroma min dims. |
 | `ms_ssim.c`, `ms_ssim.h`, `float_ms_ssim.c` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM decimate LPF coefficients, mirror bounds, -ENOMEM handling, and SIMD parity. |
 | `niqe.c`, `niqe_math.h` | [niqe](AGENTS.d/niqe.md) | NIQE fork-pkl parity, sharpness calculation, and model coefficient loading. |

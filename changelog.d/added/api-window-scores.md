@@ -15,5 +15,5 @@
   into windows of `n_stats` seconds or `n_stats_frames` frames (#2138), and
   `vmafx_context_max_in_flight` reports the most frames a context holds after
   a submit (#2238). Windows over `motion2` / `motion3`, and so over VMAF
-  models, complete at the flush in this release. ABI 0.1.4. See
+  models, complete one frame after their last frame (ADR-2090). ABI 0.1.4. See
   [window scores](docs/api/vmafx/windows.md).

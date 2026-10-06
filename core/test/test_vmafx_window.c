@@ -11,7 +11,8 @@
  * bit for bit, for every pooling method, on sessions of imported scores
  * (deterministic, no video) and of scored frames; a window completes in the
  * call that makes its last frame final (the frame after `last` for motion2 /
- * motion3), partially at the flush, never before; subsampling is counted;
+ * motion3 and every VMAF model, ADR-2090), partially at the flush, never
+ * before; subsampling is counted;
  * many windows stay open; release cancels; callbacks run once; refusals are
  * named.
  *
@@ -263,9 +264,10 @@ static unsigned completing_step(VmafxContext *context, VmafxWindow *window, cons
 }
 
 /* motion2 / motion3 of a frame read the SAD of the frame after it; the
- * integer motion extractors derive both for every frame at the flush
- * (motion_window.h, ADR-1478), so a window over them completes there. The
- * test holds the rule, not the step: complete exactly when final. */
+ * integer motion extractors derive both as soon as that SAD is in
+ * (motion_window.h, ADR-2090), so on a serial context a window over them
+ * completes in the submit of the frame after its last, before the flush. The
+ * test holds the rule (complete exactly when final) and the step. */
 static char *test_motion_window_completes_when_its_frames_are_final(void)
 {
     static const char *const names[] = {"VMAF_integer_feature_motion2_score",
@@ -276,12 +278,107 @@ static char *test_motion_window_completes_when_its_frames_are_final(void)
                   context && vmafx_context_use_feature(context, "motion", NULL, NULL) == VMAFX_OK);
         VmafxWindow *window = vw_submit(context, vw_feature(names[n]), 0, 3);
         const unsigned step = completing_step(context, window, names[n], 3, 8);
-        mu_assert("completes in the step that makes frame 3 final, after frame 4 at the earliest",
-                  step != UINT_MAX && step >= 4u);
+        mu_assert("completes in the submit of frame 4, the frame after its last, before the flush",
+                  step == 4u);
         vmafx_window_release(window);
         mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
     }
     return NULL;
+}
+
+/* A context scoring vmaf_v0.6.1. */
+static VmafxContext *vmaf_model_context(VmafxModel *model, uint32_t n_threads)
+{
+    VmafxContext *context = plain_context(n_threads, 0);
+    if (context && vmafx_context_use_model(context, model, NULL) != VMAFX_OK) {
+        (void)vmafx_context_destroy(context, NULL);
+        return NULL;
+    }
+    return context;
+}
+
+/* Submit frames one by one: the window over [first, last] is open after
+ * each submit up to frame `last`, and complete after the submit of frame
+ * last + 1. Returns NULL or the failure. */
+static char *feed_until_complete(VmafxContext *context, const VmafxWindow *window, uint64_t last,
+                                 VmafxWindowResult *r)
+{
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, W, H);
+    for (unsigned k = 0; k <= (unsigned)last; k++) {
+        mu_assert("frame", vw_submit_frames(context, &desc, k, k));
+        mu_assert("complete before the frame after its last is scored", !vw_done(window, r));
+    }
+    mu_assert("frame after the last",
+              vw_submit_frames(context, &desc, (unsigned)last + 1u, (unsigned)last + 1u));
+    mu_assert("open after the frame after its last is scored", vw_complete(window, r));
+    return NULL;
+}
+
+/* A live session with `n_threads` workers and a window over [2, 5] of
+ * vmaf_v0.6.1, next to a serial reference session. */
+typedef struct VmafWindowRun {
+    VmafxModel *model;
+    VmafxContext *live;
+    VmafxContext *sync;
+    VmafxWindow *window;
+} VmafWindowRun;
+
+static bool vmaf_window_run_open(VmafWindowRun *run, uint32_t n_threads)
+{
+    *run = (VmafWindowRun){NULL, NULL, NULL, NULL};
+    if (vmafx_model_load(NULL, "vmaf_v0.6.1", &run->model, NULL) != VMAFX_OK) {
+        return false;
+    }
+    run->live = vmaf_model_context(run->model, n_threads);
+    run->sync = vmaf_model_context(run->model, 0);
+    run->window = run->live ? vw_submit(run->live, vw_model(run->model), 2, 5) : NULL;
+    return run->live && run->sync && run->window;
+}
+
+/* The completed window `r` against the reference session after its flush,
+ * every method; then everything released. NULL or the failure. */
+static char *vmaf_window_run_close(VmafWindowRun *run, const VmafxWindowResult *r)
+{
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, W, H);
+    mu_assert("result", r->status == VMAFX_OK && r->flags == 0 && r->n_frames == 4u);
+    mu_assert("reference session",
+              vw_submit_frames(run->sync, &desc, 0, 9) && vmafx_flush(run->sync, NULL) == VMAFX_OK);
+    mu_assert("equal to the flushed session, every method",
+              vw_same_as_sync(run->sync, vw_model(run->model), r));
+    vmafx_window_release(run->window);
+    mu_assert("destroy", vmafx_context_destroy(run->live, NULL) == VMAFX_OK &&
+                             vmafx_context_destroy(run->sync, NULL) == VMAFX_OK);
+    vmafx_model_unref(run->model);
+    return NULL;
+}
+
+/* ADR-2090 (#2138, #2238): a window over a VMAF model completes once the frame
+ * after its last is scored, not at the flush, with the values a separate
+ * session computes at its flush. */
+static char *test_vmaf_window_completes_after_the_frame_after_last(void)
+{
+    VmafWindowRun run;
+    VmafxWindowResult r;
+    mu_assert("sessions", vmaf_window_run_open(&run, 0));
+    mu_assert_msg(feed_until_complete(run.live, run.window, 5, &r));
+    return vmaf_window_run_close(&run, &r);
+}
+
+/* ADR-2090 with worker threads: the submit of frame 6 returns while the
+ * workers still hold it; the engine derives motion2 of frame 5 when the
+ * completion thread, woken by the worker that finishes frame 6, advances it.
+ * The window over [2, 5] completes with no further call of the feeder and no
+ * flush, with the values of a flushed session. */
+static char *test_vmaf_window_completes_while_the_feeder_stalls(void)
+{
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, W, H);
+    VmafWindowRun run;
+    VmafxWindowResult r;
+    mu_assert("sessions", vmaf_window_run_open(&run, 2));
+    mu_assert("frames 0 to 6, then nothing", vw_submit_frames(run.live, &desc, 0, 6));
+    mu_assert("open while the feeder stalls: motion2 of frame 5 never derived",
+              vw_complete(run.window, &r));
+    return vmaf_window_run_close(&run, &r);
 }
 
 /* ---- Models and model sets ------------------------------------------------------------------- */
@@ -542,6 +639,8 @@ char *run_tests(void)
         MU_TEST(test_flush_completes_partial_windows),
         MU_TEST(test_subsampling_counts_scored_frames),
         MU_TEST(test_motion_window_completes_when_its_frames_are_final),
+        MU_TEST(test_vmaf_window_completes_after_the_frame_after_last),
+        MU_TEST(test_vmaf_window_completes_while_the_feeder_stalls),
         MU_TEST(test_model_and_set_windows_equal_a_sync_session),
         MU_TEST(test_many_windows_in_flight),
         MU_TEST(test_callbacks_run_once),

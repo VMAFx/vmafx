@@ -2,10 +2,28 @@
 paths:
   - core/src/libvmaf.c
   - core/src/feature/feature_extractor.cpp
-invariant: PREV_REF window uses counted references, n-2 kept only for a reader; vmaf_read_pictures owns both pictures.
+invariant: PREV_REF counted refs, n-2 only for a reader; read_pictures owns both pictures; advance after each frame.
 ---
 <!-- markdownlint-disable MD013 -->
 # Picture ownership, batch dispatch, and SYCL upload synchronization
+
+## Extractor advance after each frame and read fence (ADR-2090)
+
+`advance_extractors()` calls `fex->advance()` (optional; motion window
+extractors) on every registered context at the end of a successful
+`vmaf_engine_read_pictures()` (via `read_pictures_frame()`),
+`vmaf_read_pictures_sycl()`, `fence_for_read()` and `vmaf_engine_advance()`
+(VMAFx completion thread, engine lock held); never after flush, never
+concurrent with that context's extract / collect / flush, never from a worker. Pooled CPU
+extractor (worker pool): advance runs on the registered context (never
+extracts), engine sets `is_initialized` so close frees what advance built, as
+the threaded flush does. Other contexts: only once initialised. Keep the call
+on every frame-feeding entry point; a new entry point without it makes
+motion2 / motion3 final only at flush there. `vmaf_engine_feature_score_at_index()`
+fences on `-EINVAL` too when `index <= last_index` (fed frame without a slot
+yet), then re-reads; unknown name still `-EINVAL`.
+Guards: `test_motion_window_incremental` (threaded runs fail without the
+fence), `test_vmafx_window`, `test_motion_window_advance_contract.py`.
 
 ## PREV_REF window: earlier reference frames, counted references (ADR-1072, ADR-0778, ADR-1478)
 

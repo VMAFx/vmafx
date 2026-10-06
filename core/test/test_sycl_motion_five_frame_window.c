@@ -62,6 +62,9 @@ static const MftBackend backend = {
     .open = sycl_open,
     .import = sycl_import,
     .close = sycl_close,
+    /* ADR-2090: a frame's SAD is collected in the next read. */
+    .lag_motion = 2u,
+    .lag_motion_v2 = 2u,
 };
 
 static unsigned failed_cases_at(unsigned bpc)

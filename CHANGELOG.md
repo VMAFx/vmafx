@@ -91,7 +91,7 @@
   into windows of `n_stats` seconds or `n_stats_frames` frames (#2138), and
   `vmafx_context_max_in_flight` reports the most frames a context holds after
   a submit (#2238). Windows over `motion2` / `motion3`, and so over VMAF
-  models, complete at the flush in this release. ABI 0.1.4. See
+  models, complete one frame after their last frame (ADR-2090). ABI 0.1.4. See
   [window scores](docs/api/vmafx/windows.md).
 
 
@@ -1691,6 +1691,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   them on data cleared for redistribution
   ([ADR-1570](docs/adr/1570-tiny-model-dataset-terms-retrain-rc9.md),
   [dataset terms](docs/ai/training-data.md#dataset-terms)).
+
+
+- **`motion2` / `motion3` are final one frame after their frame, not at the
+  flush (RC4, ADR-2090).** The integer motion extractors (`motion`,
+  `motion_v2`) and every GPU twin that derived `motion2` / `motion3` at the
+  end of the stream now write a frame's scores as soon as the frame after it
+  is scored (frame 2 for frames 0 and 1 with `motion_five_frame_window`); the
+  last frame's scores still come with the flush. The values are unchanged,
+  bit for bit: the derivation runs the same statements in the same order and
+  carries the moving average from frame to frame. A per-frame model score, a
+  metadata callback for a model, `vmaf_score_pooled()` over the frames read
+  so far, and a VMAFx window over a VMAF model are therefore available while
+  the stream runs; on CUDA, `motion_cuda` completes frames per readback
+  batch of eight. See [motion](docs/metrics/motion.md#when-motion2-and-motion3-are-final).
 
 
 - **Building `vmafx-node` now generates its eBPF object; none is committed
@@ -3634,6 +3648,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   compatibility clause (Article 5, GPL v2 and v3 in its Appendix) allows to be
   distributed under the GPL. The object loads as before; only its licence
   section changed.
+
+
+- **A score read of a frame still on a worker thread answered "invalid"
+  (RC4, ADR-2090).** `vmaf_feature_score_at_index()` waited for the worker
+  threads only when the frame's slot existed but was unwritten; for a fed
+  frame whose feature had no slot yet (its first score, or a frame past the
+  first eight) it returned `-EINVAL` at once. It now waits for the frames in
+  flight before it answers, as the documentation of `-EAGAIN` describes; a
+  feature name no extractor writes still returns `-EINVAL`.
 
 
 - **Float extractors report their errors through the log (ADR-1906).** The
