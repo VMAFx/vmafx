@@ -24,17 +24,18 @@ import tempfile
 import unittest
 from fractions import Fraction
 from pathlib import Path
+from typing import Any
 
 from support import ROOT, document, parse, quiet, render_into, run, tool
 from vmafx_api import cli, emit_formats, rgb_coefficients
 from vmafx_api.model import DefinitionError
 
 
-def live_doc() -> dict:
+def live_doc() -> dict[str, Any]:
     return copy.deepcopy(document())
 
 
-def refused(doc: dict) -> str:
+def refused(doc: dict[str, Any]) -> str:
     try:
         parse(doc)
     except DefinitionError as err:

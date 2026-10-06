@@ -25,6 +25,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+Row = tuple[str, str, str, int, int, int, str | None]
+
 WIDTH, HEIGHT = (
     14,
     5,
@@ -37,7 +39,7 @@ OUTPUT = Path("core/test/vmafx_format_fixtures.h")
 #  chroma width divisor, chroma height divisor, FFmpeg encoder or None)
 SINGLE_PLANE = {"YUYV422", "UYVY422", "V210", "Y210", "Y212", "AYUV", "VUYX", "Y410", "XV36"}
 
-FORMATS = [
+FORMATS: list[Row] = [
     ("NV12", "nv12", "yuv420p", 8, 2, 2, None),
     ("P010", "p010le", "yuv420p10le", 10, 2, 2, None),
     ("P016", "p016le", "yuv420p16le", 16, 2, 2, None),
@@ -92,7 +94,7 @@ def ffmpeg(args: list[str], data: bytes) -> bytes:
     return done.stdout
 
 
-def convert(row: tuple, planar: bytes) -> bytes:
+def convert(row: Row, planar: bytes) -> bytes:
     _, packed, planar_fmt, _, _, _, encoder = row
     base = ["-f", "rawvideo", "-pix_fmt", planar_fmt, "-s", f"{WIDTH}x{HEIGHT}", "-i", "-"]
     if encoder:
@@ -100,7 +102,7 @@ def convert(row: tuple, planar: bytes) -> bytes:
     return ffmpeg([*base, "-pix_fmt", packed, "-f", "rawvideo", "-"], planar)
 
 
-def check_roundtrip(row: tuple, packed: bytes, planar: bytes) -> None:
+def check_roundtrip(row: Row, packed: bytes, planar: bytes) -> None:
     """FFmpeg decodes its own bytes to the planar frame: the oracle is self-consistent."""
     _, name, planar_fmt, _, _, _, encoder = row
     size = f"{WIDTH}x{HEIGHT}"

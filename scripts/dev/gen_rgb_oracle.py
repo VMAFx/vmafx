@@ -133,7 +133,7 @@ def case_rows(kr: Fraction, kb: Fraction, rng_in: str, rng_out: str, bpc: int) -
 
 def render() -> str:
     out = header_lines()
-    configs = []
+    configs: list[tuple[str, str, str, int, int, str]] = []
     for matrix, (kr, kb) in MATRICES.items():
         for rng_in, rng_out, bpc in itertools.product(rc.RANGES, rc.RANGES, DEPTHS):
             name = f"vro_{len(configs)}"

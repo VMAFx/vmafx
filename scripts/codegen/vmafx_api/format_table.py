@@ -11,6 +11,7 @@ breaks one stops generation naming the row.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from fractions import Fraction
 
 from .model import Api, DefinitionError, PixelFormat
@@ -78,12 +79,13 @@ def _enum_values(api: Api) -> dict[str, int]:
 
 
 def _check_unique(api: Api) -> None:
-    for what, pick in (
+    pickers: tuple[tuple[str, Callable[[PixelFormat], list[str]]], ...] = (
         ("enum", lambda r: [r.enum]),
         ("name", lambda r: [r.name]),
         ("ffmpeg name", lambda r: list(r.ffmpeg.values())),
         ("gstreamer name", lambda r: list(r.gstreamer.values())),
-    ):
+    )
+    for what, pick in pickers:
         seen: set[str] = set()
         for row in api.pixel_formats:
             for item in pick(row):
