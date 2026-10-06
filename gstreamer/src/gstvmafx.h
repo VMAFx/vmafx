@@ -91,7 +91,6 @@ struct _GstVmafx {
     GstVmafxPad pad_info[2];
     GstVmafxRt *rt;
     gboolean failed;
-    void *c_locale; /* locale_t of the C locale; the library parses numbers in the thread's */
 };
 
 enum { GST_VMAFX_PAD_REFERENCE = 0, GST_VMAFX_PAD_DISTORTED = 1 };

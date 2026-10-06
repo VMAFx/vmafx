@@ -242,12 +242,6 @@ offset, so the window times are shifted by it and nothing else differs.
   ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md)).
 - The two inputs must have the same format and size, and the frames must pair
   one to one; a buffer whose partner never comes is dropped with a warning.
-- A window over the default model fails until
-  `T-VMAFX-WINDOW-3D0H-NOTFOUND-2026-10-06` ([state](../state.md)) is fixed;
-  use `model=version=vmaf_v0.6.1` for windows and `metadata=true`.
-- The element scores in the C locale: GStreamer applications set the
-  user's locale and the library reads numbers with the calling thread's
-  (`T-VMAFX-OPTION-PARSE-LOCALE-2026-10-06`).
 - The plug-in registers the licence string `EUPL-1.2`, which is not in
   GStreamer's list of known licences: it loads, and `GST_DEBUG=GST_PLUGIN_LOADING:2`
   shows one warning.

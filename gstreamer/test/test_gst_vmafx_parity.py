@@ -294,11 +294,13 @@ class Windows(Fixture):
         self.assertAlmostEqual(windows[1]["start"], 0.5)
         self.assertAlmostEqual(windows[1]["end"], 1.0)
 
-    @unittest.expectedFailure
     def test_default_model_windows(self):
-        """T-VMAFX-WINDOW-3D0H-NOTFOUND-2026-10-06: windows over the default model fail."""
+        """Windows over the default model in a decimal-comma locale: its feature names carry a
+        fractional option, which the library formats in the C locale
+        (T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06)."""
         r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
-        done = gst_launch(self.env, r, d, 576, 324, "n-stats-frames=8")
+        env = dict(self.env, LC_ALL="de_DE.UTF-8", LANG="de_DE.UTF-8")
+        done = gst_launch(env, r, d, 576, 324, "n-stats-frames=8")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
 

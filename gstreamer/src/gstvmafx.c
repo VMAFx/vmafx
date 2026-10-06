@@ -14,7 +14,6 @@
 #include "config.h"
 #endif
 
-#include <locale.h>
 #include <string.h>
 
 #include "gstvmafx.h"
@@ -55,11 +54,6 @@ static void gst_vmafx_finalize(GObject *object)
     gst_vmafx_rt_free(self);
     gst_vmafx_opts_clear(&self->opts);
     g_free(self->prop_error);
-#ifdef G_OS_UNIX
-    if (self->c_locale) {
-        freelocale((locale_t)self->c_locale);
-    }
-#endif
     g_mutex_clear(&self->lock);
     G_OBJECT_CLASS(gst_vmafx_parent_class)->finalize(object);
 }
@@ -304,22 +298,10 @@ static GstFlowReturn aggregate_pair(GstVmafx *self)
     return ret;
 }
 
-/* The library reads the numbers of options and model files with the thread's locale, and an
- * application may have set a decimal comma (gst-launch does): score in the C locale. */
 static GstFlowReturn gst_vmafx_aggregate(GstAggregator *agg, gboolean timeout)
 {
-    GstVmafx *self = GST_VMAFX(agg);
     (void)timeout;
-#ifdef G_OS_UNIX
-    const locale_t previous = self->c_locale ? uselocale((locale_t)self->c_locale) : (locale_t)0;
-    const GstFlowReturn ret = aggregate_pair(self);
-    if (self->c_locale) {
-        uselocale(previous);
-    }
-    return ret;
-#else
-    return aggregate_pair(self);
-#endif
+    return aggregate_pair(GST_VMAFX(agg));
 }
 
 static void gst_vmafx_class_init(GstVmafxClass *klass)
@@ -362,9 +344,6 @@ static void gst_vmafx_init(GstVmafx *self)
     GstElementClass *klass = GST_ELEMENT_GET_CLASS(self);
     static const char *const names[2] = {"reference", "distorted"};
     g_mutex_init(&self->lock);
-#ifdef G_OS_UNIX
-    self->c_locale = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
-#endif
     gst_vmafx_opts_init(&self->opts);
     for (guint i = 0; i < 2; i++) {
         GstPadTemplate *templ = gst_element_class_get_pad_template(klass, names[i]);
