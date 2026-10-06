@@ -11889,7 +11889,7 @@
         "core/src/feature/motion_window.h": 4,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 3,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 3,
-        "core/src/libvmaf.c": 4,
+        "core/src/libvmaf.c": 5,
         "core/src/vmafx/engine.h": 1,
         "core/src/vmafx/window.c": 1,
         "core/test/meson.build": 2,
@@ -11902,7 +11902,7 @@
         "core/test/test_motion_window_incremental.c": 4,
         "core/test/test_score_pooled_eagain.c": 2,
         "core/test/test_sycl_motion_five_frame_window.c": 1,
-        "core/test/test_vmafx_window.c": 4
+        "core/test/test_vmafx_window.c": 5
       },
       "target": "2090-motion-window-incremental.md"
     },

@@ -381,6 +381,34 @@ static char *test_vmaf_window_completes_while_the_feeder_stalls(void)
     return vmaf_window_run_close(&run, &r);
 }
 
+/* ADR-2090: a frame whose motion2 / motion3 is not derived yet has a pending
+ * score, never an invalid one: also when its index reaches the end of a
+ * feature vector's storage (8, 16, 32; the collector grows by doubling).
+ * T-RC4-SCORE-FRAME-INVALID-AT-VECTOR-END-2026-10-06. */
+static char *test_vmaf_frame_score_pending_until_final(void)
+{
+    const VmafxFrameDesc desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, W, H);
+    VmafxModel *model = NULL;
+    mu_assert("model", vmafx_model_load(NULL, "vmaf_v0.6.1", &model, NULL) == VMAFX_OK);
+    VmafxContext *const context = vmaf_model_context(model, 0);
+    mu_assert("context", context != NULL);
+    char *failed = NULL;
+    for (unsigned k = 0; k <= 33u && !failed; k++) {
+        VmafxScore score = VMAFX_SCORE_INIT;
+        if (!vw_submit_frames(context, &desc, k, k)) {
+            failed = "frame";
+        } else if (vmafx_score_frame(context, model, k, &score, NULL) != VMAFX_PENDING) {
+            (void)fprintf(stderr, "[frame %u not pending] ", k);
+            failed = "the frame just submitted is pending";
+        } else if (k && vmafx_score_frame(context, model, k - 1u, &score, NULL) != VMAFX_OK) {
+            failed = "the frame before it is final";
+        }
+    }
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    vmafx_model_unref(model);
+    return failed;
+}
+
 /* ---- Models and model sets ------------------------------------------------------------------- */
 
 typedef struct Models {
@@ -641,6 +669,7 @@ char *run_tests(void)
         MU_TEST(test_motion_window_completes_when_its_frames_are_final),
         MU_TEST(test_vmaf_window_completes_after_the_frame_after_last),
         MU_TEST(test_vmaf_window_completes_while_the_feeder_stalls),
+        MU_TEST(test_vmaf_frame_score_pending_until_final),
         MU_TEST(test_model_and_set_windows_equal_a_sync_session),
         MU_TEST(test_many_windows_in_flight),
         MU_TEST(test_callbacks_run_once),
