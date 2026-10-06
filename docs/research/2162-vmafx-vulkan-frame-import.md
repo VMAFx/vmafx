@@ -80,6 +80,15 @@ Two platform behaviours shaped the tests:
   wait too (observed with the NVIDIA driver). The release canary therefore
   signals its own hold from the host, and the documentation tells producers
   to submit a reuse only after the release.
+- A SYCL submit returns only after the frame's reads ran (about the 20 ms
+  the readers were held), so an early release signalled when the submit
+  returns came too late to matter on most frames: one context saw it on 1
+  or 2 of 8. The release arm therefore scores each frame in two contexts
+  and submits the second after the first returned: SYCL and HIP readers
+  copy the producer's memory per context, and the planted early release is
+  seen on 8 of 8 frames (5 of 5 runs each). CUDA copies the memory once, at
+  the import, so there it is seen only on frames whose copy is still held
+  (4 or 5 of 8).
 - The gfx1036 drops a dispatch now and then (the HIP lane's known defect,
   ADR-2092); the bit-exactness and fence tests repeat a failed cell up to
   three times on HIP and print every repeat.

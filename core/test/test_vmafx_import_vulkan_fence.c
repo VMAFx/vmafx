@@ -22,12 +22,20 @@
  *   its own timeline for the release value, and the frame's readers are held
  *   back (CUDA: a further acquire fence on a delay timeline the helper opens
  *   late; SYCL / HIP: an acquire event behind work that holds the producer's
- *   queue or stream). CUDA signals the release value on the device
+ *   queue or stream). Each frame is scored by two contexts, the second
+ *   submitted once the first submit returned and the canary had its chance
+ *   to land: a release is due only after the second context's readers.
+ *   CUDA signals the release value on the device
  *   (vmafx_frame_signal_on_release()); on SYCL and HIP a helper thread waits
  *   on the HOST release fence and signals the value from the host, the
  *   documented pattern for a device that cannot signal a Vulkan semaphore.
- *   With the planted early release (VMAFX_TEST_EARLY_RELEASE) the canary
- *   lands before the readers ran.
+ *   With the planted early release (VMAFX_TEST_EARLY_RELEASE, signalled when
+ *   a submit returns) the canary lands before the second context reads. On
+ *   SYCL and HIP every reader copies the producer's memory, so every frame
+ *   is bad (a SYCL submit returns only after its own reads: one context
+ *   alone saw the planted release on 1 or 2 of 8 frames). CUDA copies the
+ *   memory once, at the import, so only frames whose copy is still held
+ *   behind the delay timeline see it (2 to 5 of 8 measured).
  *
  * Built once per lane (VMAFX_VK_LANE). Needs the lane's device and a Vulkan
  * driver on its GPU (77 without one). On the gfx1036 a real arm that differs
@@ -71,6 +79,11 @@
 #define GATE_MS 8u
 /* How long the readers of a release-arm frame are held back. */
 #define HOLD_US 20000u
+/* How long the release arm waits, between a frame's two submits, for the
+ * canary an early release lets through (the real release never does). */
+#define CANARY_WAIT_NS 100000000ull
+/* Frames the planted early release must make bad (see the release arm). */
+#define RELEASE_PLANTED_MIN (VK_DEVICE_SEMAPHORES ? 1u : N_FRAMES)
 /* The release arm opens frame i's delay GATE_MS after its submission, or
  * this long after the previous one at most. */
 #define OPEN_WAIT_MS 2000u
@@ -530,8 +543,24 @@ static bool write_pairs(Pairs *p)
     return ok;
 }
 
+/* Submit frame pair i to both contexts: the second once the first submit
+ * returned and an early release, if any, let the canaries land. Each submit
+ * takes one reference of each frame (it releases them on every path). */
+static bool submit_twice(VmafxContext *const contexts[2], VmafxFrame *const frames[2],
+                         VkFrame *const fs[2], unsigned i)
+{
+    (void)vmafx_frame_ref(frames[0]);
+    (void)vmafx_frame_ref(frames[1]);
+    const bool first = vmafx_submit(contexts[0], frames[0], frames[1], i, NULL) == VMAFX_OK;
+    if (vkp_frame_wait(fs[0]->f, 4u, CANARY_WAIT_NS) == 1) {
+        (void)vkp_frame_wait(fs[1]->f, 4u, CANARY_WAIT_NS);
+    }
+    return vmafx_submit(contexts[1], frames[0], frames[1], i, NULL) == VMAFX_OK && first;
+}
+
 /* Frame i (written): imported with its readers held, its release armed. */
-static bool release_frame(VmafxContext *context, Pairs *p, VkFrame *delay, Releaser *r, unsigned i)
+static bool release_frame(VmafxContext *const contexts[2], Pairs *p, VkFrame *delay, Releaser *r,
+                          unsigned i)
 {
     VmafxFence *const hold_slot = &r->holds[i];
     VkFrame *const fs[2] = {&p->ref[i], &p->dist[i]};
@@ -553,8 +582,12 @@ static bool release_frame(VmafxContext *context, Pairs *p, VkFrame *delay, Relea
         }
         ok = ok && arm_release(r, frames[s], fs[s]);
     }
-    return ok && hold_readers(i) &&
-           vmafx_submit(context, frames[0], frames[1], i, NULL) == VMAFX_OK;
+    if (!ok || !hold_readers(i)) {
+        vmafx_frame_unref(frames[0]);
+        vmafx_frame_unref(frames[1]);
+        return false;
+    }
+    return submit_twice(contexts, frames, fs, i);
 }
 
 /* CUDA's delay timeline: an exportable timeline the helper signals from the
@@ -581,8 +614,10 @@ static unsigned release_arm(uint32_t switches)
     memset(&r, 0, sizeof(r));
     const uint64_t base = gate_base;
     gate_base += N_FRAMES;
-    VmafxContext *const context = vc_cell_context(gpu.device, &psnr);
-    bool ok = context && make_pairs(&p) && write_pairs(&p) && delay_timeline(&delay);
+    VmafxContext *const contexts[2] = {vc_cell_context(gpu.device, &psnr),
+                                       vc_cell_context(gpu.device, &psnr)};
+    bool ok =
+        contexts[0] && contexts[1] && make_pairs(&p) && write_pairs(&p) && delay_timeline(&delay);
     Opener opener;
     opener_start(&opener, base, N_FRAMES, VK_DEVICE_SEMAPHORES ? delay.f : NULL);
     atomic_init(&r.published, 0u);
@@ -590,17 +625,22 @@ static unsigned release_arm(uint32_t switches)
         ok && !VK_DEVICE_SEMAPHORES && pthread_create(&r.thread, NULL, releaser_main, &r) == 0;
     vmafx_test_set_switches(switches);
     for (unsigned i = 0; i < N_FRAMES && ok; i++) {
-        ok = release_frame(context, &p, &delay, &r, i);
+        ok = release_frame(contexts, &p, &delay, &r, i);
         atomic_store(&opener.submitted, i + 1u);
     }
     atomic_store(&opener.submitted, N_FRAMES);
-    ok = ok && vmafx_flush(context, NULL) == VMAFX_OK;
+    ok = ok && vmafx_flush(contexts[0], NULL) == VMAFX_OK &&
+         vmafx_flush(contexts[1], NULL) == VMAFX_OK;
     vmafx_test_set_switches(0u);
     opener_join(&opener);
     (void)vkp_gate_signal(gpu.vk, gate_base);
-    const unsigned bad = ok ? bad_frames(context) : N_FRAMES + 1u;
-    if (context) {
-        (void)vmafx_context_destroy(context, NULL); /* releases every frame */
+    const unsigned bad_first = ok ? bad_frames(contexts[0]) : N_FRAMES + 1u;
+    const unsigned bad_second = ok ? bad_frames(contexts[1]) : N_FRAMES + 1u;
+    const unsigned bad = bad_first > bad_second ? bad_first : bad_second;
+    for (unsigned c = 0; c < 2u; c++) {
+        if (contexts[c]) {
+            (void)vmafx_context_destroy(contexts[c], NULL); /* releases every frame */
+        }
     }
     if (r.running) {
         (void)pthread_join(r.thread, NULL);
@@ -626,7 +666,7 @@ static char *test_release_canary(void)
     const unsigned planted = release_arm(VMAFX_TEST_EARLY_RELEASE);
     const unsigned real = real_arm(release_arm);
     (void)fprintf(stderr, "[release: early %u bad, real %u bad of %u] ", planted, real, N_FRAMES);
-    mu_assert("the early release is seen", planted > 0u && planted <= N_FRAMES);
+    mu_assert("the early release is seen", planted >= RELEASE_PLANTED_MIN && planted <= N_FRAMES);
     mu_assert("with the real release every frame scores as the host frame", real == 0u);
     mu_assert("no host copy", vmafx_test_host_copies() == 0u);
     return NULL;
