@@ -62007,3 +62007,16 @@ No score, public API or FFmpeg patch impact.
 - `core/test/vmafx_fixture_util.h` holds the fixture pairs and the reader
   both `test_vmafx_bitexact.c` and `test_vmafx_import_bitexact.c` use.
 - No `libvmaf.h`, score, golden-data or FFmpeg patch impact.
+
+## `float_ms_ssim_cuda` builds level 0 on the device (`fix/cuda-ms-ssim-device-level0`)
+
+`float_ms_ssim_cuda` converts level 0 of its pyramids on the device
+(`ms_ssim_picture_to_float` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`)
+instead of copying each plane to pinned host memory, running `picture_copy()` there
+and uploading the floats (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). An upstream sync of
+the MS-SSIM CUDA twin keeps the device conversion and must not bring back
+`h_input_uint`, the per-plane `h_ref` / `h_cmp` staging or the
+`#include "picture_copy.h"`; a conflict in `ms_ssim_stage_inputs()` takes this side.
+`test_cuda_float_ms_ssim_exact_contract.py` (device-free) and
+`test_cuda_float_ms_ssim_host_traffic` (on a device) fail on the host staging. No score,
+public API or FFmpeg patch impact.

@@ -45,9 +45,8 @@ invariant: MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option fl
   `enable_chroma`); `provided_features` = `float_ms_ssim`, `_cb`, `_cr`
   (without `_cb` / `_cr` the ADR-0530 name fallback routes them to the CPU).
   Per plane (`MsSsimPlaneCuda`): own dimensions, scale geometry, pyramid,
-  pinned level 0, term planes and readbacks; shared: raw staging
-  `h_input_uint` (copy synchronous before `picture_copy()`) and the five
-  horizontal planes (luma-sized, in-order stream). Kernels and
+  term planes and readbacks; shared: the five horizontal planes (luma-sized,
+  in-order stream). Kernels and
   `ms_ssim_scale_sums()` = the luma path, no chroma copy of any of them.
   Plane count and chroma size come from
   `../metal/float_ms_ssim_option_semantics.h`
@@ -86,3 +85,19 @@ invariant: MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option fl
   `test_*_ms_ssim_*clip_db_ceiling` variant, which must feed
   IDENTICAL pair — on merely high-similarity fixture ceiling
   never binds, variant passes against unfixed twin.
+
+## Level 0 is converted on the device
+
+- `ms_ssim_picture_to_float` (`integer_ms_ssim/ms_ssim_score.cu`) is
+  `picture_copy()` of each plane, sample for sample: `(float)u16 / scaler`
+  (4, 16, 256 at 10, 12, 16 bits; exact, a power of two), one byte per sample
+  at 8 bits and at the depths `picture_copy()` has no case for. It runs on
+  the reference picture's stream after the distorted picture's ready event and
+  the previous frame's `lc.finished` (the private stream read level 0), and
+  the private stream waits on `lc.submit` behind it. The planes formerly went
+  DtoH to pinned memory with a host wait, through `picture_copy()` on the host
+  and HtoD again (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). Never bring the
+  host staging back. Guards: `test_cuda_float_ms_ssim_host_traffic` (copies
+  with a host side counted on a device: no upload, no plane copy, only the
+  term readback), `test_cuda_float_ms_ssim_exact_contract.py` (device-free),
+  `test_cuda_float_ms_ssim_parity`, the exact-twin matrix.

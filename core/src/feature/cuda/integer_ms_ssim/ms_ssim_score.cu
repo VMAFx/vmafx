@@ -7,7 +7,12 @@
  *  CUDA compute kernels for the float_ms_ssim feature extractor
  *  (T7-23 / batch 2 part 2b / ADR-0190). Mirror of the GLSL
  *  shaders in ms_ssim_decimate.comp + ms_ssim.comp byte-for-byte
- *  modulo language differences. Three kernels:
+ *  modulo language differences. Four kernels:
+ *
+ *    0. ms_ssim_picture_to_float — level 0 of a pyramid from a picture
+ *       plane: float_ms_ssim.c's picture_copy() of the plane, on the
+ *       device, so no plane goes through the host
+ *       (T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06).
  *
  *    1. ms_ssim_decimate — 9-tap 9/7 biorthogonal LPF + 2×
  *       downsample, period-2n mirror boundary. Reads input
@@ -118,6 +123,33 @@ __device__ static __forceinline__ void ms_pair_add(MsPair &sum, float term)
 __device__ static __forceinline__ float ms_pair_round(const MsPair &sum)
 {
     return __fadd_rn(sum.hi, sum.lo);
+}
+
+/* Level 0 of a pyramid from a picture plane: float_ms_ssim.c's
+ * picture_copy() of the plane, sample for sample (offset 0), into `dst`
+ * (w x h floats, rows of w). With `two_byte` a little-endian 16-bit sample
+ * divided by `scaler` (4, 16, 256 at 10, 12, 16 bits; a power of two, so the
+ * quotient is exact); otherwise one byte per sample, as picture_copy() reads
+ * at 8 bits and at the depths it has no case for. Bytes are loaded one at a
+ * time, so a plane may start at any byte. The host passes the level's
+ * CUdeviceptr as `dst`, a kernel parameter of pointer type. */
+__global__ void ms_ssim_picture_to_float(const uint8_t *src, size_t pitch, float *dst, unsigned w,
+                                         unsigned h, unsigned two_byte, float scaler)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) {
+        return;
+    }
+    const uint8_t *const row = src + (size_t)y * pitch;
+    float *const out = dst + (size_t)y * w;
+    if (two_byte) {
+        const size_t at = (size_t)2u * x;
+        const unsigned v = (unsigned)row[at] | ((unsigned)row[at + 1u] << 8u);
+        out[x] = (float)v / scaler;
+    } else {
+        out[x] = (float)row[x];
+    }
 }
 
 /* Decimate: 9-tap 9/7 biorthogonal separable LPF + 2× downsample.

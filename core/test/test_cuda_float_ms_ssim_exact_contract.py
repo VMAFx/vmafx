@@ -17,6 +17,12 @@ same terms rounded ``float_ms_ssim_c_scale1`` of the frame in
 position, the host reads the three planes of a scale back and
 ``ms_ssim_scale_sums()`` adds them in index order.
 
+Level 0 of every pyramid is ``picture_copy()`` of the picture plane, computed
+on the device by ``ms_ssim_picture_to_float`` with ``picture_copy()``'s
+divisors; no picture plane goes to the host and back
+(T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06). ``test_cuda_float_ms_ssim_host_traffic``
+counts the copies on a device.
+
 Device-free: reads the sources only. Every planted regression below is a
 construct the earlier twin had, so the contract fails on that design and passes
 on this one. ``test_cuda_float_ms_ssim_order`` checks the bits on a device.
@@ -142,11 +148,49 @@ def _chroma_failures(host: str) -> list[str]:
     ]
 
 
+# T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06: the twin copied each plane to pinned
+# host memory, waited, ran picture_copy() there and uploaded the floats.
+LEVEL0_HOST = (
+    "CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);",
+    "ms_ssim_launch_to_float(s, cu_f, ref_pic, plane, pl->pyramid_ref, stream)",
+    "ms_ssim_launch_to_float(s, cu_f, dist_pic, plane, pl->pyramid_cmp, stream)",
+    "cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT)",
+    # picture_copy()'s divisors (feature/picture_copy.cpp).
+    "return bpc == 10u ? 4.0f : bpc == 12u ? 16.0f : bpc == 16u ? 256.0f : 0.0f;",
+)
+LEVEL0_KERNEL = (
+    "__global__ void ms_ssim_picture_to_float(",
+    "out[x] = (float)v / scaler;",
+    "out[x] = (float)row[x];",
+)
+HOST_STAGING = re.compile(r"CU_MEMORYTYPE_HOST|cuMemcpyHtoD|picture_copy\s*\(|cuStreamSynchronize")
+
+
+def _level0_failures(sources: dict[str, str]) -> list[str]:
+    host = _flat(sources[HOST])
+    kernel = _flat(sources[KERNEL])
+    failures = [
+        f"{HOST}: level 0 is not converted on the device ({piece})"
+        for piece in LEVEL0_HOST
+        if piece not in host
+    ]
+    failures += [
+        f"{KERNEL}: level 0 is not picture_copy() on the device ({piece})"
+        for piece in LEVEL0_KERNEL
+        if piece not in kernel
+    ]
+    staging = HOST_STAGING.search(_code(sources[HOST]))
+    if staging:
+        failures.append(f"{HOST}: a picture plane goes through the host ({staging.group(0)})")
+    return failures
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
         _kernel_failures(sources[KERNEL])
         + _host_failures(sources[HOST])
         + _chroma_failures(sources[HOST])
+        + _level0_failures(sources)
     )
 
 
@@ -241,6 +285,46 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         sources = _sources()
         sources[HOST] = sources[HOST].replace('"float_ms_ssim_cb", ', "", 1)
         self.assertTrue(any("enable_chroma scores" in item for item in _contract_failures(sources)))
+
+    def test_host_staging_is_detected(self) -> None:
+        # The earlier ms_ssim_copy_plane_to_host() / ms_ssim_upload_level_zero().
+        planted = (
+            "\nstatic int f(void) { CUDA_MEMCPY2D c = {.dstMemoryType = CU_MEMORYTYPE_HOST}; }\n",
+            "\nstatic void f(void) { cuMemcpyHtoDAsync(0, 0, 0, 0); }\n",
+            "\nstatic void f(void) { picture_copy(0, 0, 0, 0, 8, 0); }\n",
+            "\nstatic void f(void) { cuStreamSynchronize(0); }\n",
+        )
+        for code in planted:
+            sources = _sources()
+            sources[HOST] += code
+            self.assertTrue(
+                any("goes through the host" in item for item in _contract_failures(sources)), code
+            )
+
+    def test_unconverted_level0_is_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace(
+            "ms_ssim_launch_to_float(s, cu_f, dist_pic, plane, pl->pyramid_cmp, stream)", "0", 1
+        )
+        self.assertTrue(
+            any("not converted on the device" in item for item in _contract_failures(sources))
+        )
+
+    def test_other_divisor_is_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace("bpc == 10u ? 4.0f", "bpc == 10u ? 1024.0f", 1)
+        self.assertTrue(
+            any("not converted on the device" in item for item in _contract_failures(sources))
+        )
+
+    def test_kernel_without_division_is_detected(self) -> None:
+        sources = _sources()
+        sources[KERNEL] = sources[KERNEL].replace(
+            "out[x] = (float)v / scaler;", "out[x] = (float)v;", 1
+        )
+        self.assertTrue(
+            any("not picture_copy() on the device" in item for item in _contract_failures(sources))
+        )
 
 
 if __name__ == "__main__":

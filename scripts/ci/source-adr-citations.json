@@ -6362,6 +6362,7 @@
         "core/test/test_cuda_float_adm_parity.c": 1,
         "core/test/test_cuda_float_moment_parity.c": 1,
         "core/test/test_cuda_float_motion_parity.c": 1,
+        "core/test/test_cuda_float_ms_ssim_host_traffic.c": 1,
         "core/test/test_cuda_float_ms_ssim_order.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 1,
         "core/test/test_cuda_float_psnr_parity.c": 1,
@@ -9801,6 +9802,7 @@
         "core/src/feature/metal/metal_ssim_terms.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_float_ms_ssim_exact_contract.py": 1,
+        "core/test/test_cuda_float_ms_ssim_host_traffic.c": 2,
         "core/test/test_metal_float_ms_ssim_parity.c": 1
       },
       "target": "1465-cuda-float-ms-ssim-raster-order-sum.md"

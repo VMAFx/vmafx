@@ -4970,6 +4970,23 @@ test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06 — float_ms_ssim_cuda reads its input
+# pictures on the device. Device pictures in, every copy with a host side
+# counted while the frames are scored (wrapped entries of the CUDA state's
+# driver table): no upload, no plane copy, only the per-window term readback;
+# every output the CPU's bits. GPU-gated: exits 77 when no CUDA device is
+# visible.
+test_cuda_float_ms_ssim_host_traffic = executable('test_cuda_float_ms_ssim_host_traffic',
+    ['test.c', 'test_cuda_float_ms_ssim_host_traffic.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ms_ssim_host_traffic', test_cuda_float_ms_ssim_host_traffic,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # The same contract without a device: ms_ssim_vert_lcs stores every window's
 # terms at its raster position and the host adds each scale's three sums in
 # index order.
