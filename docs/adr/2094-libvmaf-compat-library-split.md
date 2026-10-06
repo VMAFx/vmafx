@@ -104,7 +104,18 @@ express fails the link. Design section 2.11 lists every function with its
   copies `libvmafx.so*` into the container images; WP12 ships the split in
   the release artifacts (`scripts/release/build-native-release-artifacts.sh`
   and `supply-chain.yml` still stage `libvmaf.so*` only), the install tests,
-  the darwin export list and the Windows `.def`; deprecation warnings stay opt-in
+  the darwin export list and the Windows `.def`. Two libvmaf functions newer
+  than this branch's base need entries when the RC4 chain moves onto master:
+  `vmaf_set_sample_range_check_enabled()` (#2221, on master) as a context
+  setting of the VMAFx API, and `vmaf_set_input_colorimetry()` (#2300,
+  ADR-2093) on the colour VMAFx frames carry: `VmafxFrameDesc` grows a
+  `VmafxColor` at its end, a context function gives the colour of frames that
+  carry none (the compat function calls it, so it needs no state of its own),
+  and the submit hands each pair's colour to the engine's conversion state,
+  `VMAFX_E_BUSY` for a change after the first converted pair as libvmaf's
+  `-EBUSY`; a conformance scenario with a `conversion_target` model covers it.
+  `test_libvmaf_deprecation` fails on a header function without an entry, so
+  neither can be missed. Deprecation warnings stay opt-in
   (`VMAF_ENABLE_DEPRECATION_WARNINGS`, D7).
 
 ## References

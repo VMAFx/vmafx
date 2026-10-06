@@ -97,7 +97,7 @@ static int planted_score_at_index(VmafContext *vmaf, VmafModel *model, double *s
     return err;
 }
 
-static const char *plant(void)
+const char *conformance_plant(void)
 {
     /* The once-only environment snapshot (ADR-0488), not a getenv of this thread. */
     const char *const value = vmaf_gpu_dispatch_env_get("VMAF_COMPAT_PLANT");
@@ -191,13 +191,14 @@ static mu_message_t check_coverage(void)
 static mu_message_t test_conformance(void)
 {
     VmafCompatApi new_api = vmaf_compat_new;
-    if (strcmp(plant(), "score") == 0) {
+    if (strcmp(conformance_plant(), "score") == 0) {
         real_score_at_index = new_api.score_at_index;
         new_api.score_at_index = planted_score_at_index;
     }
     mu_message_t failure = NULL;
     for (size_t i = 0; i < N_SCENARIOS; i++) {
-        if (strcmp(plant(), "uncovered") == 0 && strcmp(scenarios[i].name, "pictures") == 0) {
+        if (strcmp(conformance_plant(), "uncovered") == 0 &&
+            strcmp(scenarios[i].name, "pictures") == 0) {
             continue;
         }
         mu_message_t message = run_scenario(i, &new_api);

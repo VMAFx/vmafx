@@ -34,7 +34,18 @@
 #define EXTRACTORS_MAX 64u /* HISS-02 bound of the registered-extractor walk */
 #define REPORT_LINE 8192
 #define REPORT_LINES_MAX 4096u
-#define REPORT_PATH "compat_conformance_report.out"
+/* One report file per run: the plain and the planted tests run at once. */
+static const char *report_path(void)
+{
+    const char *const plant = conformance_plant();
+    if (strcmp(plant, "score") == 0) {
+        return "compat_conformance_report_score.out";
+    }
+    if (strcmp(plant, "uncovered") == 0) {
+        return "compat_conformance_report_uncovered.out";
+    }
+    return "compat_conformance_report.out";
+}
 
 static VmafConfiguration quiet_config(void)
 {
@@ -195,7 +206,7 @@ static int additive(const char *line)
  * spreads the record over an element; JSON keeps it on one line. */
 static void trace_report(Trace *t, const char *format)
 {
-    FILE *const file = fopen(REPORT_PATH, "r");
+    FILE *const file = fopen(report_path(), "r");
     if (!file) {
         trace(t, "report %s missing", format);
         return;
@@ -219,7 +230,7 @@ static void trace_report(Trace *t, const char *format)
             trace(t, "report %s %.*s", format, (int)len, line);
         }
     }
-    if (fclose(file) != 0 || remove(REPORT_PATH) != 0) {
+    if (fclose(file) != 0 || remove(report_path()) != 0) {
         trace(t, "report %s not closed and removed", format);
     }
 }
@@ -228,12 +239,12 @@ static void reports(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
 {
     static const char *const names[] = {"none", "xml", "json", "csv", "sub"};
     for (int fmt = VMAF_OUTPUT_FORMAT_NONE; fmt <= VMAF_OUTPUT_FORMAT_SUB; fmt++) {
-        const int err = api->write_output(vmaf, REPORT_PATH, (enum VmafOutputFormat)fmt);
+        const int err = api->write_output(vmaf, report_path(), (enum VmafOutputFormat)fmt);
         trace(t, "write %s %d", names[fmt], err);
         /* A refused format: the same -EINVAL, but libvmaf truncated the file
          * first and the compat library does not touch it (documented). */
         if (err) {
-            if (remove(REPORT_PATH) != 0 && errno != ENOENT) {
+            if (remove(report_path()) != 0 && errno != ENOENT) {
                 trace(t, "write %s left a file", names[fmt]);
             }
             continue;
@@ -241,11 +252,11 @@ static void reports(const VmafCompatApi *api, Trace *t, VmafContext *vmaf)
         trace_report(t, names[fmt]);
     }
     trace(t, "write precise %d",
-          api->write_output_with_format(vmaf, REPORT_PATH, VMAF_OUTPUT_FORMAT_JSON, "%.17g"));
+          api->write_output_with_format(vmaf, report_path(), VMAF_OUTPUT_FORMAT_JSON, "%.17g"));
     trace_report(t, "precise");
     trace(t, "write NULL path %d", api->write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON));
     trace(t, "write NULL %d",
-          api->write_output_with_format(NULL, REPORT_PATH, VMAF_OUTPUT_FORMAT_JSON, NULL));
+          api->write_output_with_format(NULL, report_path(), VMAF_OUTPUT_FORMAT_JSON, NULL));
 }
 
 void scenario_scoring(const VmafCompatApi *api, Trace *t)

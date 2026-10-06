@@ -149,7 +149,7 @@ builds with that backend.
 
 | Key | Meaning |
 | --- | --- |
-| `kind` | `shim` / `glue` (body generated from `null_checks`, `context`, `build`, `out_handle`, `out_struct`, `args`, `store`, `return_expr` or `body`), `manual` (hand-written), `engine` (no compat definition) |
+| `kind` | `shim` / `glue` (body generated from `null_checks`, `context`, `build`, `out_handle`, `out_struct`, `args`, `post` (asserted after success), `store`, `return_expr` or `body`), `manual` (hand-written), `engine` (no compat definition) |
 | `target`, `calls` | The VMAFx function the entry is built on; for `manual`, every `vmafx_*` function its file calls (a test compares them with the source) |
 | `file` | `manual`: the source under `core/src/compat/libvmaf/` |
 | `engine_with`, `until` | A backend whose builds keep the engine's own definition, and what ends that exception |

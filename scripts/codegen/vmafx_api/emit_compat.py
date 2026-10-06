@@ -100,8 +100,10 @@ def _status_body(api: Api, item: Compat) -> str:
     call = ctext.assignment("    const VmafxStatus status", item.target, item.spec["args"])
     store = item.spec.get("store")
     handle = item.spec.get("out_handle")
-    # Power of 10 rule 5: a successful create hands back a handle.
+    # Power of 10 rule 5: a successful create hands back a handle, and `post`
+    # names what a successful call guarantees of its outputs.
     check = f"    assert({handle['var']} != NULL);\n" if handle else ""
+    check += "".join(f"    assert({expr});\n" for expr in item.spec.get("post", []))
     return (
         _prologue(item)
         + _locals(api, item)

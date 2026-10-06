@@ -114,6 +114,7 @@ VmafxStatus vmafx_frame_from_picture(VmafPicture *picture, VmafxFrame **out, Vma
     if (status != VMAFX_OK) {
         return status;
     }
+    assert(frame != NULL && frame->pic.ref == picture->ref);
     vmaf_ref_fetch_increment(picture->ref);
     *out = frame;
     return VMAFX_OK;

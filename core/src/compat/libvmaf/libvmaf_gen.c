@@ -116,6 +116,7 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
     if (status != VMAFX_OK) {
         return compat_errno(status, error);
     }
+    assert(record.index == (uint64_t)index);
     *score = record.value;
     return 0;
 }
@@ -144,6 +145,7 @@ int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, dou
     if (status != VMAFX_OK) {
         return compat_errno(status, error);
     }
+    assert(record.index == (uint64_t)index);
     *score = record.value;
     return 0;
 }
