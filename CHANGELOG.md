@@ -40,6 +40,28 @@
   digests, library versions, lock digest, container id and resource use; a killed run resumes from the
   manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
+- **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
+  The VMAFx API gains the shared contract of zero-copy frame import:
+  device enumeration and information (`vmafx_device_count`,
+  `vmafx_device_info`, `vmafx_device_describe`, `vmafx_device_profile`; the
+  size-prefixed `VmafxDeviceInfo` grows by the format envelope later),
+  devices from external handles and profiling flags (`VmafxDeviceDesc`),
+  attaching a device to a context (`vmafx_context_use_device`), fences of
+  every kind (`VmafxFence`; `vmafx_fence_create`, `vmafx_fence_signal`,
+  `vmafx_fence_wait`, `vmafx_fence_destroy`; the new status
+  `VMAFX_E_TIMEOUT`), frame import with an acquire fence
+  (`vmafx_frame_import`, `VmafxFrameImport`; NV12, P010 and P016 converted
+  to planar, never through a host copy), release fences signalled after the
+  last reader of a frame (`vmafx_frame_release_fence`), frame pools
+  (`vmafx_frame_pool_create`, `vmafx_frame_pool_acquire`,
+  `vmafx_frame_pool_destroy`), admission that names every refusing extractor
+  (`vmafx_context_admit`) and the import rule of decision D8
+  (`vmafx_context_import_frame`: one retry after a host wait, then a failure
+  that names the import). This build implements host memory and host fences
+  on the CPU device; the CUDA, SYCL, HIP and Metal imports follow behind the
+  same functions. An imported frame scores bit for bit as the same frame
+  created on the host. ABI 0.1.2. See
+  [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
@@ -264,6 +286,9 @@
   `_open` to `_wsopen_s` / `_sopen_s` (the CRT's non-deprecated spellings) made the
   CRT reject permission bits other than `_S_IREAD` and `_S_IWRITE` as an invalid
   parameter; the mode is masked to those two bits, as the old calls effectively did.
+- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
+  its subject, so a model file whose path was longer was named by a cut-off
+  path; subjects now keep 1023 bytes and messages 1023.
 
 ## [1.0.0-rc.3] - 2026-10-07
 
@@ -318,6 +343,30 @@ They are recorded in full, unedited, in
   function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
   struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
   [the VMAFx API page](docs/api/vmafx/index.md).
+
+
+- **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
+  The VMAFx API gains the shared contract of zero-copy frame import:
+  device enumeration and information (`vmafx_device_count`,
+  `vmafx_device_info`, `vmafx_device_describe`, `vmafx_device_profile`; the
+  size-prefixed `VmafxDeviceInfo` grows by the format envelope later),
+  devices from external handles and profiling flags (`VmafxDeviceDesc`),
+  attaching a device to a context (`vmafx_context_use_device`), fences of
+  every kind (`VmafxFence`; `vmafx_fence_create`, `vmafx_fence_signal`,
+  `vmafx_fence_wait`, `vmafx_fence_destroy`; the new status
+  `VMAFX_E_TIMEOUT`), frame import with an acquire fence
+  (`vmafx_frame_import`, `VmafxFrameImport`; NV12, P010 and P016 converted
+  to planar, never through a host copy), release fences signalled after the
+  last reader of a frame (`vmafx_frame_release_fence`), frame pools
+  (`vmafx_frame_pool_create`, `vmafx_frame_pool_acquire`,
+  `vmafx_frame_pool_destroy`), admission that names every refusing extractor
+  (`vmafx_context_admit`) and the import rule of decision D8
+  (`vmafx_context_import_frame`: one retry after a host wait, then a failure
+  that names the import). This build implements host memory and host fences
+  on the CPU device; the CUDA, SYCL, HIP and Metal imports follow behind the
+  same functions. An imported frame scores bit for bit as the same frame
+  created on the host. ABI 0.1.2. See
+  [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
 - **vmafx-controller reads and enforces its tenant configuration
@@ -7088,6 +7137,9 @@ The clang-tidy ratchet fails, naming the file, when a translation unit of the ba
 
 
 The vmaf-tune backend probe reads an injected runner's report whether or not the host has a `vmaf` on `PATH`; the test of that seam passes on the hosted runner again.
+- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
+  its subject, so a model file whose path was longer was named by a cut-off
+  path; subjects now keep 1023 bytes and messages 1023.
 
 
 - **`vmafx-tune-go ladder` scores each rung with the VMAF model its height selects.**

@@ -6,21 +6,28 @@
 ; `python3 scripts/codegen/vmafx-api.py --write`.
 EXPORTS
     vmafx_abi_version
+    vmafx_context_admit
     vmafx_context_create
     vmafx_context_destroy
     vmafx_context_extractor_count
     vmafx_context_extractor_info
     vmafx_context_frame_retention
     vmafx_context_from_libvmaf
+    vmafx_context_import_frame
     vmafx_context_import_score
     vmafx_context_libvmaf_handle
     vmafx_context_provenance
     vmafx_context_set_option
+    vmafx_context_use_device
     vmafx_context_use_feature
     vmafx_context_use_model
     vmafx_context_use_model_set
     vmafx_device_backend
+    vmafx_device_count
     vmafx_device_create
+    vmafx_device_describe
+    vmafx_device_info
+    vmafx_device_profile
     vmafx_device_ref
     vmafx_device_unref
     vmafx_error_errno
@@ -33,10 +40,19 @@ EXPORTS
     vmafx_feature_resolve
     vmafx_feature_score
     vmafx_feature_score_pooled
+    vmafx_fence_create
+    vmafx_fence_destroy
+    vmafx_fence_signal
+    vmafx_fence_wait
     vmafx_flush
     vmafx_frame_create_host
+    vmafx_frame_import
     vmafx_frame_planes
+    vmafx_frame_pool_acquire
+    vmafx_frame_pool_create
+    vmafx_frame_pool_destroy
     vmafx_frame_ref
+    vmafx_frame_release_fence
     vmafx_frame_unref
     vmafx_frame_wrap_host
     vmafx_model_builtin_next

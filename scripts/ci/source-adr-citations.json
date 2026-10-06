@@ -6299,8 +6299,13 @@
         "core/src/vmafx/compat_libvmaf_gen.c": 1,
         "core/src/vmafx/context.c": 1,
         "core/src/vmafx/device.c": 1,
+        "core/src/vmafx/device_context.c": 1,
         "core/src/vmafx/error.c": 1,
+        "core/src/vmafx/fence.c": 1,
         "core/src/vmafx/frame_host.c": 1,
+        "core/src/vmafx/frame_import.c": 1,
+        "core/src/vmafx/frame_import_admit.c": 1,
+        "core/src/vmafx/frame_pool.c": 1,
         "core/src/vmafx/model.c": 1,
         "core/src/vmafx/options.c": 1,
         "core/src/vmafx/register.c": 1,
@@ -6717,6 +6722,9 @@
         "core/test/test_vmafx_bitexact.c": 1,
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_frame.c": 1,
+        "core/test/test_vmafx_import_api.c": 1,
+        "core/test/test_vmafx_import_bitexact.c": 1,
+        "core/test/test_vmafx_import_fence.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/test/test_vmafx_log_routing.c": 1,
         "core/test/test_vmafx_model.c": 1,
@@ -6726,6 +6734,8 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
+        "core/test/vmafx_fixture_util.h": 1,
+        "core/test/vmafx_import_test_util.h": 1,
         "core/test/vmafx_test_util.h": 1,
         "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_close_retry.c": 1,
@@ -11115,9 +11125,12 @@
     },
     "1679": {
       "sites": {
+        "core/api/vmafx.toml": 1,
         "core/include/libvmaf/libvmaf_metal.h": 1,
+        "core/include/vmafx/types.h": 1,
         "core/src/metal/iosurface_layout.h": 1,
         "core/src/metal/picture_import.mm": 2,
+        "core/src/vmafx/frame_import.c": 1,
         "core/test/meson.build": 3,
         "core/test/test_metal_iosurface_filter_contract.py": 3,
         "core/test/test_metal_iosurface_import_parity.c": 2,
@@ -11150,7 +11163,9 @@
     },
     "1688": {
       "sites": {
+        "core/api/vmafx.toml": 1,
         "core/include/libvmaf/libvmaf_sycl.h": 2,
+        "core/include/vmafx/context.h": 1,
         "core/src/feature/feature_extractor.h": 2,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
@@ -11161,6 +11176,8 @@
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/integer_vif_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
+        "core/src/vmafx/frame_import_admit.c": 2,
+        "core/src/vmafx/internal.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_zero_copy_admission.c": 2,
         "core/test/test_sycl_zero_copy_model_gate.c": 2
@@ -11300,6 +11317,14 @@
       },
       "target": "1822-additive-picture-convert.md"
     },
+    "1829": {
+      "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/src/vmafx/frame_import.c": 1,
+        "core/test/test_vmafx_import_bitexact.c": 1
+      },
+      "target": "1829-rc4-zero-copy-import.md"
+    },
     "1830": {
       "sites": {
         "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
@@ -11319,9 +11344,9 @@
       "sites": {
         "bindings/python/vmafx/__init__.py": 1,
         "bindings/python/vmafx/_api.py": 1,
-        "core/api/vmafx.toml": 3,
+        "core/api/vmafx.toml": 5,
         "core/include/meson.build": 1,
-        "core/include/vmafx/context.h": 1,
+        "core/include/vmafx/context.h": 2,
         "core/include/vmafx/device.h": 1,
         "core/include/vmafx/dnn.h": 1,
         "core/include/vmafx/error.h": 1,
@@ -11345,10 +11370,16 @@
         "core/src/vmafx/compat_libvmaf_gen.c": 1,
         "core/src/vmafx/context.c": 1,
         "core/src/vmafx/device.c": 1,
+        "core/src/vmafx/device_context.c": 1,
         "core/src/vmafx/engine.h": 2,
         "core/src/vmafx/error.c": 1,
         "core/src/vmafx/error_internal.h": 1,
+        "core/src/vmafx/fence.c": 2,
         "core/src/vmafx/frame_host.c": 1,
+        "core/src/vmafx/frame_import.c": 2,
+        "core/src/vmafx/frame_import_admit.c": 1,
+        "core/src/vmafx/frame_import_hooks.h": 1,
+        "core/src/vmafx/frame_pool.c": 1,
         "core/src/vmafx/internal.h": 1,
         "core/src/vmafx/model.c": 1,
         "core/src/vmafx/options.c": 1,
@@ -11368,6 +11399,7 @@
         "core/test/test_vmafx_bitexact.c": 1,
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_frame.c": 1,
+        "core/test/test_vmafx_import_api.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/test/test_vmafx_model.c": 1,
         "core/test/test_vmafx_python_binding.py": 1,
@@ -11461,10 +11493,13 @@
     },
     "1906": {
       "sites": {
-        "core/api/vmafx.toml": 1,
+        "core/api/vmafx.toml": 2,
         "core/include/vmafx/context.h": 1,
         "core/src/libvmaf.c": 2,
         "core/src/log.h": 2,
+        "core/src/vmafx/fence.c": 1,
+        "core/src/vmafx/frame_import.c": 1,
+        "core/src/vmafx/frame_pool.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_engine_log_routing_contract.py": 1,
         "core/test/test_vmafx_log_routing.c": 1
@@ -11491,6 +11526,14 @@
         "core/tools/cli_parse.h": 1
       },
       "target": "1918-sample-range-contract-opt-in-check.md"
+    },
+    "1929": {
+      "sites": {
+        "core/src/compat/gcc/stdatomic.h": 1,
+        "core/src/vmafx/fence.c": 1,
+        "core/src/vmafx/frame_import.c": 1
+      },
+      "target": "1929-vmafx-device-frames-fences.md"
     },
     "2012": {
       "sites": {

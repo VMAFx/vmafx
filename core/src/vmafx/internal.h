@@ -13,7 +13,9 @@
  * VmafRef. A VmafxFrame has none of its own: one reference is one count of
  * its picture's VmafRef, so a reference the engine keeps (frame n-1 / n-2,
  * ADR-1478) and a reference a caller holds are the same kind, and the frame
- * is released by whichever drops the last one (frame_host.c).
+ * is released by whichever drops the last one (frame_host.c). Imported
+ * frames (frame_import.c, RC4 WP3) follow the same rule: the release fence of
+ * an imported frame is signalled where its last count is dropped.
  */
 
 #ifndef VMAFX_INTERNAL_H
@@ -37,7 +39,16 @@ struct VmafxDevice {
     VmafRef *refs;    /* NULL for the process CPU device, which is never freed */
     uint32_t backend; /* VmafxBackend */
     int32_t index;
+    uint32_t flags; /* VmafxDeviceFlags it was created with */
 };
+
+/* A host fence (fence.c): a reference-counted flag set once. The `handle` of
+ * a VMAFX_FENCE_HOST VmafxFence points to one; each VmafxFence the library
+ * hands out carries one reference. */
+typedef struct VmafxHostFence VmafxHostFence;
+
+/* The frame pool a frame returns to (frame_pool.c). */
+typedef struct VmafxFramePool VmafxFramePool;
 
 struct VmafxModel {
     VmafRef *refs;
@@ -61,6 +72,17 @@ struct VmafxFrame {
     void *inner_cookie;
     VmafxFrameReleaseCallback release;
     void *user;
+    /* RC4 WP3. Backend whose memory holds the planes (VmafxBackend): what
+     * admission checks every registered extractor against. */
+    uint32_t residency;
+    /* VmafxHostFence * signalled when the last reference is dropped; 0 until
+     * vmafx_frame_release_fence() asks for one (set once, atomically). */
+    _Atomic(VmafxHostFence *) released;
+    /* Planes vmafx_frame_import() converted (NV12 / P010 / P016), freed with
+     * the frame; NULL when every plane is the producer's memory. */
+    void *owned;
+    /* The pool the frame returns to instead of being freed, or NULL. */
+    VmafxFramePool *pool;
 };
 
 /* References a context holds until it is destroyed: one list per handle type. */
@@ -77,6 +99,7 @@ struct VmafxContext {
     VmafLogSink sink;          /* delivers to log_callback; used when it is set */
     VmafxHeld models;          /* VmafxModel * (ADR-1755) */
     VmafxHeld model_sets;      /* VmafxModelSet * */
+    VmafxDevice *device;       /* vmafx_context_use_device(); NULL: the CPU, no device held */
     bool have_frame;           /* a frame was submitted: the fields below are set */
     uint64_t last_index;       /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc; /* every frame keeps the first frame's geometry */
@@ -110,10 +133,12 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
  * below it is VMAFX_E_ABI. A struct that grows keeps its entry; a new input
  * struct adds one (sizeof while it is new). */
 #define VMAFX_MIN_CONTEXT_CONFIG ((uint32_t)offsetof(VmafxContextConfig, log_callback)) /* 0.1.0 */
-#define VMAFX_MIN_DEVICE_DESC ((uint32_t)sizeof(VmafxDeviceDesc))                       /* 0.1.1 */
+#define VMAFX_MIN_DEVICE_DESC ((uint32_t)offsetof(VmafxDeviceDesc, flags))              /* 0.1.1 */
 #define VMAFX_MIN_MODEL_CONFIG ((uint32_t)sizeof(VmafxModelConfig))                     /* 0.1.1 */
 #define VMAFX_MIN_FRAME_DESC ((uint32_t)sizeof(VmafxFrameDesc))                         /* 0.1.1 */
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
+#define VMAFX_MIN_FRAME_IMPORT ((uint32_t)sizeof(VmafxFrameImport))                     /* 0.1.2 */
+#define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
 
 VmafxStatus vmafx_read_sized(const VmafxReport *report, void *local, uint32_t full, const void *in,
                              uint32_t min, const char *subject);
@@ -146,6 +171,61 @@ VmafxDevice *vmafx_device_cpu(void);
 /* The engine picture that carries one reference of `frame`: the caller's
  * reference moves into the returned picture, which the engine releases. */
 VmafPicture vmafx_frame_take_picture(VmafxFrame *frame);
+
+/* Read and check a frame descriptor (pixel format, depth, size). */
+VmafxStatus vmafx_frame_read_desc(const VmafxReport *report, const VmafxFrameDesc *desc,
+                                  VmafxFrameDesc *d);
+/* `device`, or the CPU device for NULL; VMAFX_E_NOTSUP naming `device` for a
+ * device whose frames are not host frames. */
+VmafxStatus vmafx_frame_host_device(const VmafxReport *report, VmafxDevice *device,
+                                    VmafxDevice **resolved);
+/* Point the frame's picture at `data` / `stride` (planes of the planar
+ * geometry `d`), with a fresh reference count of 1 and vmafx_frame_release()
+ * as its release: 0, or a negative errno with the picture unchanged. */
+int vmafx_frame_bind(VmafxFrame *frame, const VmafxFrameDesc *d, void *const data[3],
+                     const ptrdiff_t stride[3]);
+
+/* The release of a frame that is not in a pool: runs once, on the thread
+ * that drops the last reference; frees the frame (frame_host.c). */
+int vmafx_frame_release(VmafPicture *pic, void *cookie);
+
+/* Signal the frame's release fence, if one was asked for, and drop the
+ * frame's reference to it (the frame's memory is no longer read). */
+void vmafx_frame_signal_released(VmafxFrame *frame);
+
+/* ---- Host fences (fence.c) ---------------------------------------------- */
+
+/* A new unsignalled host fence with one reference, or NULL (no memory). */
+VmafxHostFence *vmafx_host_fence_new(void);
+VmafxHostFence *vmafx_host_fence_ref(VmafxHostFence *fence);
+void vmafx_host_fence_unref(VmafxHostFence *fence);
+void vmafx_host_fence_signal(VmafxHostFence *fence);
+bool vmafx_host_fence_signalled(const VmafxHostFence *fence);
+/* The host fence a VMAFX_FENCE_HOST VmafxFence names (borrowed), or
+ * VMAFX_E_INVALID naming `subject` when its handle is not a live one. */
+VmafxStatus vmafx_host_fence_of(const VmafxReport *report, const VmafxFence *fence,
+                                const char *subject, VmafxHostFence **out);
+
+/* ---- Admission (frame_import_admit.c) ------------------------------------ */
+
+/* Every extractor registered on `context` can read a frame whose planes are
+ * in the memory of `residency` (a VmafxBackend) without a host copy, or
+ * VMAFX_E_NOTSUP naming each one that cannot and why (ADR-1688
+ * generalised). */
+VmafxStatus vmafx_admit_residency(const VmafxReport *report, const VmafxContext *context,
+                                  uint32_t residency);
+/* vmafx_admit_residency() for `frame`, and a device-resident frame lives on
+ * the context's device. */
+VmafxStatus vmafx_admit_frame(const VmafxReport *report, const VmafxContext *context,
+                              const VmafxFrame *frame);
+
+/* Lower-case name of a VmafxBackend ("cpu", "cuda", ...; "unknown"). */
+const char *vmafx_backend_name(uint32_t backend);
+/* Name of a VmafxMemoryKind ("HOST", ...; "unknown"). */
+const char *vmafx_memory_kind_name(uint32_t memory);
+/* FFmpeg's name of a pixel format vmafx_frame_import() takes ("nv12", ...;
+ * "unknown"). */
+const char *vmafx_import_format_name(uint32_t pix_fmt);
 
 /* The engine's pixel format of a VmafxPixelFormat (UNKNOWN for any other
  * value; values equal). */

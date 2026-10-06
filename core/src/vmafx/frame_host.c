@@ -16,6 +16,10 @@
  * release callback) and the frame itself. So one frame is scored by several
  * contexts without a copy (device-targeted scoring, PR #2185): each submit
  * consumes one reference.
+ *
+ * Imported frames (frame_import.c, RC4 WP3) are released here too: their
+ * converted planes are freed and their release fence is signalled after the
+ * last reader is done, wherever the last reference is dropped.
  */
 
 #include <assert.h>
@@ -26,6 +30,7 @@
 
 #include "error_internal.h"
 #include "internal.h"
+#include "mem.h"
 #include "picture.h"
 #include "ref.h"
 #include "status_gen.h"
@@ -40,11 +45,22 @@
 #define VMAFX_FRAME_BPC_MIN 8u
 #define VMAFX_FRAME_BPC_MAX 16u
 
+void vmafx_frame_signal_released(VmafxFrame *frame)
+{
+    VmafxHostFence *const fence = atomic_exchange(&frame->released, (VmafxHostFence *)NULL);
+    if (fence) {
+        vmafx_host_fence_signal(fence);
+        vmafx_host_fence_unref(fence);
+    }
+}
+
 /* Runs once, on the thread that drops the last reference. `pic` is that
- * holder's copy of the picture; `frame` is freed here. */
-static int frame_release(VmafPicture *pic, void *cookie)
+ * holder's copy of the picture; `frame` is freed here. The release fence is
+ * signalled after the last read of the producer's memory. */
+int vmafx_frame_release(VmafPicture *pic, void *cookie)
 {
     VmafxFrame *const frame = cookie;
+    assert(frame->pool == NULL);
     int err = 0;
     if (frame->inner_release) {
         err = frame->inner_release(pic, frame->inner_cookie);
@@ -52,7 +68,9 @@ static int frame_release(VmafPicture *pic, void *cookie)
     if (frame->release) {
         frame->release(frame->user);
     }
+    vmafx_frame_signal_released(frame);
     vmafx_device_unref(frame->device);
+    aligned_free(frame->owned);
     free(frame);
     return err;
 }
@@ -78,9 +96,8 @@ static uint32_t plane_count(uint32_t pix_fmt)
     return pix_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
 }
 
-/* Read and check a frame descriptor. */
-static VmafxStatus frame_desc(const VmafxReport *report, const VmafxFrameDesc *desc,
-                              VmafxFrameDesc *d)
+VmafxStatus vmafx_frame_read_desc(const VmafxReport *report, const VmafxFrameDesc *desc,
+                                  VmafxFrameDesc *d)
 {
     if (!desc) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc",
@@ -107,8 +124,8 @@ static VmafxStatus frame_desc(const VmafxReport *report, const VmafxFrameDesc *d
     return VMAFX_OK;
 }
 
-static VmafxStatus host_device(const VmafxReport *report, VmafxDevice *device,
-                               VmafxDevice **resolved)
+VmafxStatus vmafx_frame_host_device(const VmafxReport *report, VmafxDevice *device,
+                                    VmafxDevice **resolved)
 {
     VmafxDevice *const d = device ? device : vmafx_device_cpu();
     if (d->backend != VMAFX_BACKEND_CPU) {
@@ -131,9 +148,9 @@ VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *d
     *out = NULL;
     VmafxFrameDesc d = VMAFX_FRAME_DESC_INIT;
     VmafxDevice *host = NULL;
-    VmafxStatus status = frame_desc(&report, desc, &d);
+    VmafxStatus status = vmafx_frame_read_desc(&report, desc, &d);
     if (status == VMAFX_OK) {
-        status = host_device(&report, device, &host);
+        status = vmafx_frame_host_device(&report, device, &host);
     }
     VmafxFrame *const frame = status == VMAFX_OK ? calloc(1, sizeof(*frame)) : NULL;
     if (status != VMAFX_OK || !frame) {
@@ -153,7 +170,7 @@ VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *d
     frame->inner_release = priv->release_picture;
     frame->inner_cookie = priv->cookie;
     /* Cannot fail: the picture and the callback are set. */
-    const int hooked = vmaf_picture_set_release_callback(&frame->pic, frame, frame_release);
+    const int hooked = vmaf_picture_set_release_callback(&frame->pic, frame, vmafx_frame_release);
     assert(hooked == 0);
     (void)hooked;
     frame->device = vmafx_device_ref(host);
@@ -187,28 +204,39 @@ static VmafxStatus check_host_planes(const VmafxReport *report, const VmafxFrame
     return VMAFX_OK;
 }
 
-/* The engine picture over borrowed planes (no allocation of pixels). */
-static int wrap_picture(VmafxFrame *frame, const VmafxFrameDesc *d, const VmafxHostPlanes *p)
+int vmafx_frame_bind(VmafxFrame *frame, const VmafxFrameDesc *d, void *const data[3],
+                     const ptrdiff_t stride[3])
 {
     VmafPicture *const pic = &frame->pic;
     pic->pix_fmt = vmafx_engine_pixel_format(d->pix_fmt);
     pic->bpc = d->bpc;
     vmaf_picture_plane_extents(pic->pix_fmt, d->w, d->h, pic->w, pic->h);
     for (uint32_t i = 0; i < plane_count(d->pix_fmt); i++) {
-        pic->data[i] = p->data[i];
-        pic->stride[i] = (ptrdiff_t)p->stride[i];
+        pic->data[i] = data[i];
+        pic->stride[i] = stride[i];
     }
     int err = vmaf_picture_priv_init(pic);
     if (!err) {
-        err = vmaf_picture_set_release_callback(pic, frame, frame_release);
+        err = vmaf_picture_set_release_callback(pic, frame, vmafx_frame_release);
     }
     if (!err) {
         err = vmaf_ref_init(&pic->ref);
     }
     if (err) {
         free(pic->priv);
+        pic->priv = NULL;
     }
     return err;
+}
+
+/* The engine picture over borrowed planes (no allocation of pixels). */
+static int wrap_picture(VmafxFrame *frame, const VmafxFrameDesc *d, const VmafxHostPlanes *p)
+{
+    ptrdiff_t stride[3] = {0, 0, 0};
+    for (uint32_t i = 0; i < 3u; i++) {
+        stride[i] = (ptrdiff_t)p->stride[i];
+    }
+    return vmafx_frame_bind(frame, d, p->data, stride);
 }
 
 VmafxStatus vmafx_frame_wrap_host(VmafxDevice *device, const VmafxFrameDesc *desc,
@@ -224,7 +252,7 @@ VmafxStatus vmafx_frame_wrap_host(VmafxDevice *device, const VmafxFrameDesc *des
     VmafxFrameDesc d = VMAFX_FRAME_DESC_INIT;
     VmafxHostPlanes p = VMAFX_HOST_PLANES_INIT;
     VmafxDevice *host = NULL;
-    VmafxStatus status = frame_desc(&report, desc, &d);
+    VmafxStatus status = vmafx_frame_read_desc(&report, desc, &d);
     if (status == VMAFX_OK) {
         status = vmafx_read_sized(&report, &p, (uint32_t)sizeof(p), planes, VMAFX_MIN_HOST_PLANES,
                                   "planes");
@@ -233,7 +261,7 @@ VmafxStatus vmafx_frame_wrap_host(VmafxDevice *device, const VmafxFrameDesc *des
         status = check_host_planes(&report, &d, &p);
     }
     if (status == VMAFX_OK) {
-        status = host_device(&report, device, &host);
+        status = vmafx_frame_host_device(&report, device, &host);
     }
     if (status != VMAFX_OK) {
         return status;
