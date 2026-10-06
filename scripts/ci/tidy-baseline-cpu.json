@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 409,
+  "tus": 412,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -267,6 +267,7 @@
     "core/test/test_iqa_ssim_sub_window.c",
     "core/test/test_locale_handling.c",
     "core/test/test_log.c",
+    "core/test/test_log_level_threads.c",
     "core/test/test_lpips.c",
     "core/test/test_luminance_tools.cpp",
     "core/test/test_mcp_compute_vmaf_allowlist.c",
@@ -317,6 +318,7 @@
     "core/test/test_model.c",
     "core/test/test_model_collection_api.c",
     "core/test/test_model_collection_growth.c",
+    "core/test/test_model_collection_score_repeat.c",
     "core/test/test_model_feature_overload_ownership.c",
     "core/test/test_model_libsvm_dup_key.c",
     "core/test/test_model_registration_ownership.cpp",
@@ -346,6 +348,7 @@
     "core/test/test_pixel_format_edge_coverage.c",
     "core/test/test_pool_percentile.c",
     "core/test/test_predict.c",
+    "core/test/test_prescaled_plane_int_index.c",
     "core/test/test_propagate_metadata.c",
     "core/test/test_psnr.c",
     "core/test/test_psnr_hvs_avx2.c",
@@ -533,6 +536,24 @@
         }
       },
       "previous_baseline_sha256": "c7600cc5d8afe33cf8581140b8da54dac5f9b2407193e43b2139674fc3518e4a"
+    },
+    {
+      "sources": [
+        "core/test/test_log_level_threads.c",
+        "core/test/test_model_collection_score_repeat.c",
+        "core/test/test_prescaled_plane_int_index.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_log_level_threads.c",
+            "core/test/test_model_collection_score_repeat.c",
+            "core/test/test_prescaled_plane_int_index.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "68a02c5455e2eaec0daebb96e8202785f3e63eeb13fda4a15609984f89392c85"
     }
   ]
 }
