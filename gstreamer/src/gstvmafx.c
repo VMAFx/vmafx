@@ -113,7 +113,7 @@ static GstFlowReturn gst_vmafx_sink_event_pre_queue(GstAggregator *agg, GstAggre
             return GST_FLOW_NOT_NEGOTIATED;
         }
         info.valid = TRUE;
-        info.mem = gst_vmafx_caps_is_cuda(caps) ? GST_VMAFX_MEM_CUDA : GST_VMAFX_MEM_SYSTEM;
+        info.mem = gst_vmafx_caps_memory(caps);
         g_mutex_lock(&self->lock);
         gchar *why = gst_vmafx_check_caps(&self->opts, idx, &info, &self->pad_info[1 - idx]);
         if (why == NULL) {

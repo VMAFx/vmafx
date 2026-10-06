@@ -322,6 +322,20 @@ class Refusals(Fixture):
         self.assertIn("format I420", text)
         self.assertIn("import=device", text)
 
+    def test_gl_memory_refused_by_name(self):
+        """GLMemory (nvh264dec's second output, VA decoders') fails at caps, never downloads."""
+        branch = (
+            "videotestsrc num-buffers=2 ! video/x-raw,format=NV12,width=320,height=240 "
+            "! glupload ! video/x-raw(memory:GLMemory) ! v.{pad}"
+        )
+        pipeline = f"{branch.format(pad='distorted')} {branch.format(pad='reference')} vmafx name=v ! fakesink"
+        done = run(["gst-launch-1.0", "-q", *pipeline.split()], self.env)
+        text = done.stdout + done.stderr
+        if "no element" in text or "Kein solches" in text:
+            self.skipTest("glupload not available")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("format NV12 in GLMemory", text)
+
     def test_invalid_pool_value(self):
         text = self.launch("backend=cpu pool=nonsense").stderr
         self.assertIn("pool", text)
@@ -375,6 +389,67 @@ class Cuda(Fixture):
         n, worst, same = compare(json.loads(out.read_text(encoding="utf-8")), cli)
         TABLE.append(f"| golden-nv12 | cuda | 48 | {n} | {'yes' if same else 'NO'} | {worst:.3g} |")
         self.assertTrue(same, f"max abs diff {worst}")
+
+    def encode_time_pipeline(
+        self, ref: Path, out: Path, stats: Path, ref_nv12: Path, dec_nv12: Path
+    ):
+        cuda = "video/x-raw(memory:CUDAMemory)"
+        pipeline = (
+            f"filesrc location={ref} ! rawvideoparse format=i420 width=576 height=324 "
+            f"framerate=24/1 ! videoconvert ! video/x-raw,format=NV12 ! tee name=t "
+            f"t. ! queue ! filesink location={ref_nv12} "
+            f"t. ! queue ! cudaupload ! {cuda} ! tee name=u "
+            f"u. ! queue ! v.reference "
+            f"u. ! queue ! nvh264enc bitrate=2000 ! h264parse ! nvh264dec ! {cuda} ! tee name=d "
+            f"d. ! queue ! v.distorted "
+            f"d. ! queue ! cudadownload ! videoconvert ! video/x-raw,format=NV12,width=576,height=324 ! filesink location={dec_nv12} "
+            f"vmafx name=v backend=cuda model=version={MODEL} log-path={out} score-fmt=%.17g "
+            f"pool={POOL_ALL} n-stats-frames=8 stats-out=file stats-path={stats} ! fakesink"
+        )
+        return self.locked(["gst-launch-1.0", "-m", *pipeline.split()], self.env)
+
+    def test_encode_time_scoring_equals_files(self):
+        """tee -> nvh264enc -> nvh264dec (CUDAMemory) -> distorted, reference from the tee."""
+        r, _ = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
+        out, stats = self.dir / "enc.json", self.dir / "enc.ndjson"
+        ref_nv12, dec_nv12 = self.dir / "ref.nv12", self.dir / "dec.nv12"
+        done = self.encode_time_pipeline(r, out, stats, ref_nv12, dec_nv12)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"host-copy-frames=\(guint64\)0")
+        # the same frames scored from files, through the same element and backend
+        out2, stats2 = self.dir / "files.json", self.dir / "files.ndjson"
+        cuda = "video/x-raw(memory:CUDAMemory)"
+
+        def branch(path, pad):
+            return (
+                f"filesrc location={path} ! rawvideoparse format=nv12 width=576 height=324 "
+                f"framerate=24/1 ! cudaupload ! {cuda} ! v.{pad}"
+            )
+
+        pipeline = (
+            f"{branch(ref_nv12, 'reference')} {branch(dec_nv12, 'distorted')} "
+            f"vmafx name=v backend=cuda model=version={MODEL} log-path={out2} score-fmt=%.17g "
+            f"pool={POOL_ALL} n-stats-frames=8 stats-out=file stats-path={stats2} ! fakesink"
+        )
+        done2 = self.locked(["gst-launch-1.0", "-q", *pipeline.split()], self.env)
+        self.assertEqual(done2.returncode, 0, done2.stdout + done2.stderr)
+        live = json.loads(out.read_text(encoding="utf-8"))
+        files = json.loads(out2.read_text(encoding="utf-8"))
+        self.assertEqual(len(live["frames"]), 48)
+        n, worst, same = compare(live, files)
+        TABLE.append(
+            f"| encode-time h264 | cuda vs files | 48 | {n} | {'yes' if same else 'NO'} | {worst:.3g} |"
+        )
+        self.assertTrue(same, f"max abs diff {worst}")
+        # nvh264enc stamps from 1 h: the windows' times differ by that offset, nothing else does
+        win = [json.loads(x) for x in stats.read_text(encoding="utf-8").splitlines()]
+        win2 = [json.loads(x) for x in stats2.read_text(encoding="utf-8").splitlines()]
+        for a, b in zip(win, win2, strict=True):
+            self.assertAlmostEqual(a["end"] - a["start"], b["end"] - b["start"], places=6)
+            for key in ("start", "end"):
+                del a[key], b[key]
+            self.assertEqual(a, b)
+        self.assertEqual(len(stats.read_text(encoding="utf-8").splitlines()), 6)
 
     def test_cuda_memory_equals_cuda_cli(self):
         for name, ref, dist, w, h, frames in PAIRS:

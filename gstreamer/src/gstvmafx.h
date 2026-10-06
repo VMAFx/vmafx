@@ -28,7 +28,12 @@ GST_DEBUG_CATEGORY_EXTERN(gst_vmafx_debug);
 #define GST_VMAFX_MAX_MODELS 16
 
 /* Where a pad's frames live. */
-typedef enum { GST_VMAFX_MEM_SYSTEM = 0, GST_VMAFX_MEM_CUDA = 1 } GstVmafxMem;
+typedef enum {
+    GST_VMAFX_MEM_SYSTEM = 0,
+    GST_VMAFX_MEM_CUDA = 1,
+    GST_VMAFX_MEM_GL = 2,    /* advertised; refused until the GL import lane */
+    GST_VMAFX_MEM_VULKAN = 3 /* advertised; refused until the Vulkan import lane */
+} GstVmafxMem;
 
 /* Values of the `backend` and `import` options (the table's constants). */
 enum {
@@ -112,6 +117,7 @@ typedef struct {
 GstCaps *gst_vmafx_template_caps(void);
 const GstVmafxFormat *gst_vmafx_format_lookup(GstVideoFormat format);
 gboolean gst_vmafx_caps_is_cuda(const GstCaps *caps);
+GstVmafxMem gst_vmafx_caps_memory(const GstCaps *caps);
 gchar *gst_vmafx_check_backend(const GstVmafxOpts *opts);
 gchar *gst_vmafx_check_caps(const GstVmafxOpts *opts, guint pad, const GstVmafxPad *this_pad,
                             const GstVmafxPad *other);

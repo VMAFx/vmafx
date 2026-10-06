@@ -64,11 +64,33 @@ GstCaps *gst_vmafx_template_caps(void)
     append_structure(text, "(memory:CUDAMemory)", TRUE);
     g_string_append(text, "; ");
 #endif
+    /* Offered so that a decoder's GL or Vulkan output negotiates to a refusal that names the
+     * memory, not to a silent download through a converter. */
+    append_structure(text, "(memory:GLMemory)", TRUE);
+    g_string_append(text, "; ");
+    append_structure(text, "(memory:VulkanImage)", TRUE);
+    g_string_append(text, "; ");
     append_structure(text, "", FALSE);
     GstCaps *caps = gst_caps_from_string(text->str);
     g_assert(caps != NULL);
     g_string_free(text, TRUE);
     return caps;
+}
+
+GstVmafxMem gst_vmafx_caps_memory(const GstCaps *caps)
+{
+    const GstCapsFeatures *f = gst_caps_get_features(caps, 0);
+    if (f == NULL) {
+        return GST_VMAFX_MEM_SYSTEM;
+    }
+    if (gst_caps_features_contains(f, "memory:CUDAMemory")) {
+        return GST_VMAFX_MEM_CUDA;
+    }
+    if (gst_caps_features_contains(f, "memory:GLMemory")) {
+        return GST_VMAFX_MEM_GL;
+    }
+    return gst_caps_features_contains(f, "memory:VulkanImage") ? GST_VMAFX_MEM_VULKAN :
+                                                                 GST_VMAFX_MEM_SYSTEM;
 }
 
 gboolean gst_vmafx_caps_is_cuda(const GstCaps *caps)
@@ -104,6 +126,15 @@ static gchar *check_memory(const GstVmafxOpts *opts, guint pad, const GstVmafxPa
                            const GstVmafxFormat *f)
 {
     const char *pname = gst_vmafx_pad_name(pad);
+    if (p->mem == GST_VMAFX_MEM_GL || p->mem == GST_VMAFX_MEM_VULKAN) {
+        return g_strdup_printf(
+            "pad %s: format %s in %s: not imported yet (%s); the element never downloads a frame "
+            "to score it",
+            pname, f->name, p->mem == GST_VMAFX_MEM_GL ? "GLMemory" : "VulkanImage",
+            p->mem == GST_VMAFX_MEM_GL ? "GL import needs the WP3 GL interop lanes; on AMD "
+                                         "negotiate DMABuf" :
+                                         "waits for the Vulkan import lane");
+    }
     if (p->mem == GST_VMAFX_MEM_CUDA && opts->backend == GST_VMAFX_BACKEND_CPU) {
         return g_strdup_printf(
             "pad %s: format %s in CUDAMemory: backend cpu does not read device memory (use "

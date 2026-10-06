@@ -207,12 +207,36 @@ mapping.
 | `conf-interval` | not available in this release |
 | the `samples-selected` signal | none; read the messages |
 
+## Scoring while encoding {#encode-time}
+
+Put the encoder and decoder inside the pipeline and score the decoded frames
+against the source, on the GPU, with no host copy:
+
+```bash
+gst-launch-1.0 -m filesrc location=src.yuv ! rawvideoparse format=i420 width=1920 height=1080 framerate=24/1 \
+  ! videoconvert ! video/x-raw,format=NV12 ! cudaupload ! "video/x-raw(memory:CUDAMemory)" ! tee name=u \
+  u. ! queue ! v.reference \
+  u. ! queue ! nvh264enc ! h264parse ! nvh264dec ! "video/x-raw(memory:CUDAMemory)" ! queue ! v.distorted \
+  vmafx name=v backend=cuda n-stats-frames=24 stats-out=log+metadata ! fakesink
+```
+
+`gstreamer/test/test_gst_vmafx_parity.py` runs this on 48 frames and compares
+the report and the windows with the same decoded frames scored from files:
+bit for bit equal, `host-copy-frames=0`. Encoder timestamps start at a fixed
+offset, so the window times are shifted by it and nothing else differs.
+
 ## Limits {#limits}
 
 - Backends: CPU and CUDA. `backend=sycl`, `hip` and `metal` fail at start
   naming the backend; each comes with its import lane.
-- Memory: system memory and CUDA memory. VA, DMA-buf, D3D11 and Metal memory
-  are not imported yet.
+- Memory: system memory and CUDA memory are imported. `GLMemory` (what
+  `nvh264dec` offers next to CUDA memory, and VA decoders' second output) and
+  `VulkanImage` (`vulkanh264dec`) are in the pad caps so that they negotiate to
+  a refusal that names the memory (`pad distorted: format NV12 in GLMemory: not
+  imported yet`) instead of a silent download through a converter; each waits
+  for its import lane (GL interop on CUDA and SYCL, the Vulkan import memory
+  kind). On AMD, negotiate DMABuf instead of GL. VA and DMA-buf, D3D11 and
+  Metal-backed memory are not imported yet.
 - The two inputs must have the same format and size, and the frames must pair
   one to one; a buffer whose partner never comes is dropped with a warning.
 - A window over the default model fails until
