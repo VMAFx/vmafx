@@ -244,13 +244,55 @@ layouts each device scores), so pass `VMAFX_DEVICE_INFO_INIT`.
 A `VmafxFrameImport` names the memory kind, the pixel layout and, per plane,
 the handle (for host memory its address), offset, pitch, format modifier and
 optionally the size of the memory object. Planar layouts are used where they
-are; NV12, P010 and P016 become planar frames by a de-interleave and, for
-P010, a shift down by 6, so an imported frame scores bit for bit as the same
-frame created on the host. Nothing is copied through the host: a layout the
+are; the semi-planar and packed layouts below become planar frames by a
+de-interleave, a shift down and, for XV30, a mask, so an imported frame scores
+bit for bit as the same frame created on the host. Nothing is copied through
+the host: a layout the
 device cannot read (a tiled modifier on host memory, a memory kind the
 device does not bind) is refused with `VMAFX_E_NOTSUP` naming the field.
 Setting `VMAFX_IMPORT_ALLOW_COPY` in `flags` allows a copy on the device for
 such a layout; a zeroed `flags` means zero copy only.
+
+The pixel layouts a producer can hand over (`pix_fmt`, with `bpc` the bits
+per sample of the frame the import makes):
+
+| `pix_fmt` | Producer's planes | Frame made | `bpc` |
+| --- | --- | --- | --- |
+| `YUV420P`, `YUV422P`, `YUV444P`, `YUV400P` | Planar, one plane per component | The same | 8 to 16 |
+| `NV12`, `NV16`, `NV24` | Luma, then one plane of interleaved Cb / Cr bytes (a pair per chroma column) | `YUV420P`, `YUV422P`, `YUV444P` | 8 |
+| `P010`, `P210`, `P410` | The same with 16-bit words whose 10 bits are the most significant | The same chroma | 10 |
+| `P016`, `P216`, `P416` | The same with 16-bit words | The same chroma | 16 |
+| `Y210`, `Y212` | One plane of 16-bit words Y0 Cb Y1 Cr per two pixels, the 10 or 12 bits most significant | `YUV422P` | 10, 12 |
+| `YUYV422` | One plane of the bytes Y0 Cb Y1 Cr per two pixels (YUY2) | `YUV422P` | 8 |
+| `Y410` (Intel XV30) | One plane of 32-bit words per pixel: Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29 | `YUV444P` | 10 |
+| `XV36` | One plane of four 16-bit words Cb Y Cr X per pixel, the 12 bits most significant | `YUV444P` | 12 |
+| `VUYX` | One plane of the bytes V Cb Y X per pixel | `YUV444P` | 8 |
+| `YUV444P_MSB` | Three planes of 16-bit words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces) | `YUV444P` | 9 to 16 |
+
+A CUDA, HIP or SYCL device converts every layout above on the device; a packed
+layout or `YUV444P_MSB` in a device array or GL texture is refused naming
+`desc.memory`, and on SYCL a packed or MSB layout in an Intel-tiled dma-buf
+is refused naming the plane's `modifier`. The CPU device (host memory)
+converts them all. The unused element of the packed 4:4:4 layouts and the
+unused bits of `Y410` are never read.
+
+What hardware decoders hand over, measured with FFmpeg 9 (libavcodec 63.1)
+decoding 640x360 H.264 and HEVC streams of each chroma layout and bit depth
+on the project's development host (`AVHWFramesContext.sw_format` of the first
+decoded frame):
+
+| Decoder | 4:2:0 | 4:2:2 | 4:4:4 |
+| --- | --- | --- | --- |
+| NVDEC, RTX 4090 (CUDA) | `NV12`; 10 bits `P010` | none (H.264 and HEVC refused) | HEVC only: 8 bits `yuv444p` (`YUV444P`); 10 and 12 bits `yuv444p10msble` / `yuv444p12msble` (`YUV444P_MSB`); H.264 refused |
+| VAAPI, Intel Arc A380 | `NV12`; 10 bits `P010` | HEVC only: 8 bits `yuyv422` (`YUYV422`), 10 bits `y210le` (`Y210`), 12 bits `y212le` (`Y212`); H.264 refused | HEVC only: 8 bits `vuyx` (`VUYX`), 10 bits `xv30le` (`Y410`), 12 bits `xv36le` (`XV36`); H.264 refused |
+| VAAPI, AMD gfx1036 | `NV12`; 10 bits `P010` | none | none |
+
+None of these decoders emits `NV16`, `P210`, `NV24` or `P410`; they are the
+layouts of other drivers' decoders and encoders (VideoToolbox ProRes, other
+VAAPI drivers), taken from the platforms' format lists and tested through the
+same conversion. The packed Intel layouts are what a VAAPI or QSV frame of
+the Arc is made of, so they are imported from a dma-bufs of the decoder's
+surface; NVDEC's are device pointers.
 
 The producer's memory must stay valid and unchanged until the frame's
 release fence is signalled:
@@ -364,8 +406,8 @@ What a CUDA device imports:
 
 | `memory` | Planes | Bound or converted |
 | --- | --- | --- |
-| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address in the device's context; `pitch` in bytes | Planar planes are read where they are, no copy, when each row starts 8-byte aligned and `pitch` is a multiple of 8 and at least the row rounded up to 8 bytes (the CUDA twins load rows 4 or 8 bytes at a time); NV12 / P010 / P016 are planarised on the device |
-| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `CUarray` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | NV12 / P010 / P016 are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address in the device's context; `pitch` in bytes | Planar planes are read where they are, no copy, when each row starts 8-byte aligned and `pitch` is a multiple of 8 and at least the row rounded up to 8 bytes (the CUDA twins load rows 4 or 8 bytes at a time); the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device |
+| `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `CUarray` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | The semi-planar layouts are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
 | `VMAFX_MEMORY_GL_TEXTURE` | `handle`: a `GL_TEXTURE_2D` name of the GL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; the textures are registered and mapped for the import and unmapped when the frame is released |
 
 A bound plane that does not meet the alignment is refused with
@@ -473,7 +515,7 @@ What a SYCL device imports:
 
 | `memory` | Planes | Bound or converted |
 | --- | --- | --- |
-| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; NV12 / P010 / P016 are planarised on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
 | `VMAFX_MEMORY_DMABUF` (Linux) | `fd` + `size` of the dma-buf, `offset`, `pitch` and `modifier` | Linear (modifier 0) planes are bound; Intel Y-tiled and Tile4 planes are de-tiled on the device; another modifier is refused naming the plane. Planes may share one dma-buf |
 | `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | Each texture is exported as a dma-buf (`EGL_MESA_image_dma_buf_export`) and imported as above |
 

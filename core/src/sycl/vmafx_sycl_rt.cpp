@@ -213,6 +213,47 @@ sycl::event launch_shift(sycl::queue &q, const VmafxSyclPlaneOp &op)
     });
 }
 
+/* One plane of a packed layout or of MSB planar words: the samples moved by
+ * the plan of vmafx_import_plane_read() (core/src/vmafx/import_convert.h,
+ * VmafxImportRead), shifted and masked, nothing else (bit-exact with the host
+ * conversion). Scratch-free: every value lives in registers (ADR-1395). */
+sycl::event launch_gather(sycl::queue &q, const VmafxSyclPlaneOp &op)
+{
+    assert(op.bytes == 1u || op.bytes == 2u);
+    assert(op.in_bytes == 1u || op.in_bytes == 2u || op.in_bytes == 4u);
+    const auto *src = static_cast<const uint8_t *>(op.src);
+    auto *dst = static_cast<uint8_t *>(op.dst0);
+    const size_t sp = op.src_pitch;
+    const size_t dp = op.dst_pitch;
+    const unsigned bytes = op.bytes;
+    const unsigned step = op.step;
+    const unsigned offset = op.offset;
+    const unsigned in_bytes = op.in_bytes;
+    const unsigned shift = op.shift;
+    const unsigned mask = op.mask;
+    return q.parallel_for(sycl::range<2>(op.rows, op.w), [=](sycl::id<2> id) {
+        const size_t y = id[0];
+        const size_t x = id[1];
+        const uint8_t *const at = src + y * sp + (x * step + offset) * in_bytes;
+        unsigned v = at[0];
+        if (in_bytes >= 2u) {
+            v |= (unsigned)at[1] << 8;
+        }
+        if (in_bytes == 4u) {
+            v |= ((unsigned)at[2] << 16) | ((unsigned)at[3] << 24);
+        }
+        v >>= shift;
+        if (mask != 0u) {
+            v &= mask;
+        }
+        uint8_t *const out = dst + y * dp + x * bytes;
+        out[0] = (uint8_t)(v & 0xFFu);
+        if (bytes == 2u) {
+            out[1] = (uint8_t)((v >> 8) & 0xFFu);
+        }
+    });
+}
+
 /* `rows` rows of `row` bytes from `src` (`src_pitch` apart) to `dst`
  * (`dst_pitch` apart) after `deps`, as one kernel moving a byte per
  * work-item (any address, any pitch). Not ext_oneapi_memcpy2d(): one enqueued
@@ -570,6 +611,16 @@ extern "C" int vmafx_sycl_rt_frame_shift(VmafxSyclFrameRt *f, const VmafxSyclPla
         return 0;
     } catch (const std::exception &e) {
         return runtime_failed("shift", e);
+    }
+}
+
+extern "C" int vmafx_sycl_rt_frame_gather(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op)
+{
+    try {
+        note_last(f, launch_gather(f->rt->lib, *op));
+        return 0;
+    } catch (const std::exception &e) {
+        return runtime_failed("gather", e);
     }
 }
 

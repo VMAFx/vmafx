@@ -131,8 +131,9 @@ backend within it.
   `vmafx_` exports with `core/src/vmafx_symbols.txt`; keep both when a sync
   touches the library target. See [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **VMAFx imported frames never take a host copy ([ADR-1929](../adr/1929-vmafx-device-frames-fences.md))**:
-  `vmafx_frame_import()` binds the producer's planes or converts NV12 /
-  P010 / P016 on the device (de-interleave, P010 shift 6) and nothing else;
+  `vmafx_frame_import()` binds the producer's planes or converts the semi-planar,
+  packed and MSB layouts on the device (de-interleave, shift, mask: one CPU
+  reference, `core/src/vmafx/import_convert.h`, [ADR-2133](../adr/2133-vmafx-import-422-444-formats.md)) and nothing else;
   every place that copies imported pixels through host memory calls
   `vmafx_count_host_copy()` (`core/src/vmafx/frame_import_hooks.h`), and the
   import tests assert the count stays 0. A frame's release fence is signalled

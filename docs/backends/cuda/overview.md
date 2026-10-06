@@ -182,8 +182,9 @@ FFmpeg with `--enable-libvmaf-cuda` to enable it.
 
 A program that already holds frames on the GPU (a decoder's surfaces, a
 compositor's GL textures) hands them to a CUDA device of the VMAFx API without
-a copy through the host: device pointers are read where they are, NV12 / P010
-/ P016 are planarised on the device, and CUDA events order the producer's
+a copy through the host: device pointers are read where they are, the
+semi-planar (NV12 to P416) and packed (Y210, Y410, ...) layouts are converted
+on the device, and CUDA events order the producer's
 writes and its reuse of the memory against the library's reads on the device.
 See [CUDA devices](../../api/vmafx/index.md#cuda-devices) for the calls, the
 layouts a plane must have, and the fences

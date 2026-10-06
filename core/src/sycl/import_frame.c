@@ -79,6 +79,7 @@ typedef struct SyclPlan {
     unsigned ph[3];
     uint32_t n_out;   /* planes of the frame: 1 (YUV400P) or 3 */
     unsigned bytes;   /* per sample */
+    unsigned bpc;     /* bits per sample of the frame */
     bool owned[3];    /* plane i is in the frame's own allocation */
     bool staged[3];   /* ... the planted host copy of a bound plane */
     size_t offset[3]; /* its offset there */
@@ -202,11 +203,31 @@ int vmafx_sycl_frame_release(VmafxFrame *frame, VmafPicture *pic)
     return err;
 }
 
+/* Planes of the frame the import converts: shifted, de-interleaved, or read
+ * out of a packed plane or of MSB words. */
+static bool converted_plane(const VmafxImportLayout *layout, uint32_t i)
+{
+    return layout->shift != 0u || layout->msb || layout->packed != VMAFX_IMPORT_PACKED_NONE ||
+           (i > 0u && layout->interleaved);
+}
+
+/* A packed or MSB layout is linear words (ADR-2133). */
+static bool gathered(const VmafxImportLayout *layout)
+{
+    return layout->msb || layout->packed != VMAFX_IMPORT_PACKED_NONE;
+}
+
 /* ---- Checks ------------------------------------------------------------------- */
 
 static VmafxStatus check_sycl_memory(const VmafxReport *report, const VmafxFrameImport *d,
                                      const VmafxImportLayout *layout)
 {
+    if (gathered(layout) && d->memory == VMAFX_MEMORY_GL_TEXTURE) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
+                          "backend sycl, memory GL_TEXTURE, pixel format %s: a packed or MSB "
+                          "layout is linear words, not a GL texture of samples",
+                          layout->name);
+    }
     switch (d->memory) {
     case VMAFX_MEMORY_DEVICE_POINTER:
 #ifdef __linux__
@@ -331,6 +352,9 @@ static size_t pitch_of(unsigned samples, unsigned bytes)
 /* Producer plane that frame plane `i` comes from. */
 static uint32_t source_plane(const VmafxImportLayout *layout, uint32_t i)
 {
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        return 0u;
+    }
     return layout->interleaved && i > 0u ? 1u : i;
 }
 
@@ -343,10 +367,11 @@ static void plan_planes(const VmafxFrameImport *d, const VmafxImportLayout *layo
                                plan->ph);
     plan->n_out = layout->planar_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
     plan->bytes = d->bpc > 8u ? 2u : 1u;
+    plan->bpc = d->bpc;
     plan->total = 0;
     for (uint32_t i = 0; i < 3u; i++) {
         const bool out = i < plan->n_out;
-        const bool converted = layout->shift != 0u || (i > 0u && layout->interleaved);
+        const bool converted = converted_plane(layout, i);
         const bool tiled = src[source_plane(layout, i)].tiled;
         plan->staged[i] = out && force_copy && !converted && !tiled;
         plan->owned[i] = out && (converted || tiled || plan->staged[i]);
@@ -444,11 +469,38 @@ static int fill_owned_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
     return err;
 }
 
+/* Plane `i` of a packed layout or of MSB planar words, gathered from the
+ * producer's plane by the plan the host reference uses
+ * (vmafx_import_plane_read(), vmafx_import_read_plane()). */
+static int gather_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
+                        const VmafxSyclSource src[3], const SyclPlan *plan, uint8_t *base,
+                        uint32_t i)
+{
+    VmafxImportRead rd;
+    vmafx_import_plane_read(layout, plan->bpc, i, &rd);
+    const VmafxSyclSource *const s = &src[rd.src_plane];
+    const VmafxSyclPlaneOp op = {.src = source_address(s),
+                                 .src_pitch = (size_t)s->pitch,
+                                 .dst0 = base + plan->offset[i],
+                                 .dst1 = NULL,
+                                 .dst_pitch = plan->pitch[i],
+                                 .w = plan->pw[i],
+                                 .rows = plan->ph[i],
+                                 .bytes = plan->bytes,
+                                 .shift = rd.shift,
+                                 .step = rd.step,
+                                 .offset = rd.offset,
+                                 .in_bytes = rd.in_bytes,
+                                 .mask = rd.mask};
+    return vmafx_sycl_rt_frame_gather(sf->rt, &op);
+}
+
 /* Frame plane `i`: bound, converted, de-tiled or (planted) staged. */
 static int fill_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
                       const VmafxSyclSource src[3], const SyclPlan *plan, uint32_t i, void *data[3],
                       ptrdiff_t stride[3])
 {
+    assert(i < 3u);
     uint8_t *const base = sf->owned;
     const VmafxSyclSource *const s = &src[source_plane(layout, i)];
     const bool pair = layout->interleaved && i > 0u;
@@ -459,6 +511,9 @@ static int fill_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
     }
     data[i] = base + plan->offset[i];
     stride[i] = (ptrdiff_t)plan->pitch[i];
+    if (gathered(layout)) {
+        return gather_plane(sf, layout, src, plan, base, i);
+    }
     if (pair) {
         return i == 1u ? fill_chroma_pair(sf, layout, s, plan, base) : 0;
     }
@@ -471,6 +526,13 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxSyclFrame *sf,
                                const VmafxFrameImport *d, const VmafxImportLayout *layout,
                                const VmafxSyclSource src[3], void *data[3], ptrdiff_t stride[3])
 {
+    if (gathered(layout) && (src[0].tiled || src[1].tiled || src[2].tiled)) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PLANE,
+                          vmafx_import_plane_field(0u, "modifier"),
+                          "backend sycl, pixel format %s: a packed or MSB layout is read from "
+                          "linear words; an Intel-tiled dma-buf of it is not de-tiled",
+                          layout->name);
+    }
     SyclPlan plan;
     plan_planes(d, layout, src, vmafx_test_switch(VMAFX_TEST_FORCE_HOST_COPY), &plan);
     if (plan.total) {
@@ -494,7 +556,7 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxSyclFrame *sf,
                           "backend sycl: cannot enqueue the planes of the import (%d)", err);
     }
     const bool tiled = src[0].tiled || src[1].tiled || src[2].tiled;
-    if (layout->interleaved || layout->shift != 0u || tiled) {
+    if (converted_plane(layout, 0u) || converted_plane(layout, 1u) || tiled) {
         vmafx_count_conversion();
     }
     return VMAFX_OK;

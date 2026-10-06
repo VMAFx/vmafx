@@ -75,16 +75,17 @@ chroma as well and every SYCL twin reads them; see
 The VMAFx API imports a whole frame, luma and chroma, on a SYCL device
 ([ADR-2091](../../adr/2091-vmafx-sycl-device-frames.md)): USM of the device's
 SYCL context, and on Linux dma-bufs (linear, Intel Y-tiled or Tile4) and
-OpenGL textures (through an EGL dma-buf export). NV12 / P010 / P016 are
-planarised and tiled planes de-tiled on the device with the same address
-math as `vmaf_sycl_import_va_surface()` (`core/src/sycl/detile.h`); every
-SYCL twin, the chroma twins included, copies the planes it reads on the
-device. Imported frames score bit for bit as the same frames uploaded from
-the host, for every SYCL twin declared exact. SYCL events, `sync_file`
-descriptors and GL syncs order the producer's writes; a release fence (host or
-SYCL event) and a release callback tell the producer when it may write into
-the memory again. The calls, the descriptors and the fences are in
-[SYCL devices](../../api/vmafx/index.md#sycl-devices).
+OpenGL textures (through an EGL dma-buf export). The semi-planar (NV12 to
+P416), packed (Y210, Y410, ...) and MSB-aligned layouts are converted and
+tiled planes de-tiled on the device with the same address math as
+`vmaf_sycl_import_va_surface()` (`core/src/sycl/detile.h`); every SYCL twin,
+the chroma twins included, copies the planes it reads on the device. Imported
+frames score bit for bit as the same frames uploaded from the host, for every
+SYCL twin declared exact. SYCL events, `sync_file` descriptors and GL syncs
+order the producer's writes; a release fence (host or SYCL event) and a
+release callback tell the producer when it may write into the memory again.
+The calls, the descriptors and the fences are in [SYCL
+devices](../../api/vmafx/index.md#sycl-devices).
 
 What is not imported yet: Windows shared textures (`VMAFX_MEMORY_WIN32_SHARED`
 is refused, the D3D11 staging path above remains), and a `sync_file` release
