@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 412,
+  "tus": 415,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -165,6 +165,7 @@
     "core/test/dnn/test_vmaf_use_tiny_model.c",
     "core/test/metal_integer_adm_host_replay_kernels.cpp",
     "core/test/test.c",
+    "core/test/test_accumulator_bounds_16k.c",
     "core/test/test_adm_angle_flag.c",
     "core/test/test_adm_cm_row_rounding.c",
     "core/test/test_adm_coverage.c",
@@ -409,6 +410,7 @@
     "core/tools/test/test_cli_feature_backend.c",
     "core/tools/test/test_vmaf_close_retry.c",
     "core/tools/test/test_vmaf_per_shot_input.c",
+    "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
     "core/tools/vidinput.c",
     "core/tools/vmaf.cpp",
     "core/tools/vmaf_bench.c",
@@ -416,6 +418,7 @@
     "core/tools/vmaf_per_shot.c",
     "core/tools/vmaf_per_shot_input.c",
     "core/tools/vmaf_roi.c",
+    "core/tools/vmaf_vpl_core.c",
     "core/tools/y4m_input.c",
     "core/tools/yuv_input.c"
   ],
@@ -554,6 +557,24 @@
         }
       },
       "previous_baseline_sha256": "68a02c5455e2eaec0daebb96e8202785f3e63eeb13fda4a15609984f89392c85"
+    },
+    {
+      "sources": [
+        "core/test/test_accumulator_bounds_16k.c",
+        "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
+        "core/tools/vmaf_vpl_core.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_accumulator_bounds_16k.c",
+            "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
+            "core/tools/vmaf_vpl_core.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b9044d6437a18e6c0d14b6500315964984ecca67e725ec7dc8ebb9ff0b2563b5"
     }
   ]
 }
