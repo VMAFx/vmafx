@@ -64,7 +64,7 @@ class DriftCheckTest(unittest.TestCase):
 
     def test_write_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            for path in cli.render(parse(document())):
+            for path in cli.render(parse(document()), ROOT):
                 target = Path(tmp) / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / path, target)

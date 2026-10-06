@@ -70,6 +70,19 @@
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
+- `vmafx-server` raises two framework defaults that did not fit scoring: the
+  gRPC receive limit is now 64 MiB (a 1080p `ScoreStream` frame pair is 6.2 MB
+  and the old 4 MiB limit rejected it) and the HTTP write timeout is 15 minutes
+  (a synchronous `POST /v1/score` that took more than 60 s lost its
+  connection). `VMAFX_GRPC_MAX_RECV_SIZE` and `VMAFX_HTTP_TIMEOUTS_WRITE`
+  still override both. New page `docs/server/configuration.md` documents the
+  source precedence (environment over file over defaults), the underscore rule
+  of the environment transform and every server limit (#1251).
+- Server log lines share one field set (`request_id`, `rpc`, `route`, `model`,
+  `backend`, `duration_s`, `error`) defined in `pkg/observability`; the legacy
+  `POST /v1/score` path logs it today (#1251).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -241,6 +254,13 @@
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+- The Grafana overview dashboard (`deploy/grafana/vmafx-overview.json`) now
+  queries only series the binaries register: jobs queued, jobs in flight and
+  active nodes read `vmafx_controller_jobs_pending`,
+  `vmafx_controller_jobs_running` and `vmafx_controller_nodes_live`. The frame
+  throughput and GPU utilisation panels are removed because no binary records
+  those instruments yet. `TestDashboardQueriesOnlyRegisteredMetrics` fails when
+  a panel names an unregistered series (#1251).
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series
@@ -248,6 +268,13 @@
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
   conversions in `get_noise_constant()`, the scaled frame size passed to
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
+
+
+- `vmafx-server` `GET /readyz` now returns 503 when the vmaf binary the scorer
+  runs has been removed, is no longer executable, or when `model.dir` is not a
+  directory, instead of staying 200 for as long as the process holds a scorer
+  object. The same check is a readiness check (`vmaf-binary`) on the golusoris
+  status registry (#1251).
 
 
 - **The SYCL dma-buf import no longer closes the caller's descriptor.**

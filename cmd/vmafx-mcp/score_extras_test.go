@@ -256,7 +256,7 @@ func TestParseScoreExtrasValidation(t *testing.T) {
 		{"tiny_device": "nonexistent"},
 		{"tiny_resize": "lanczos"},
 		{"subsample": float64(0)},
-		{"threads": float64(0)},
+		{"threads": float64(-1)},
 		{"frame_cnt": float64(0)},
 		{"frame_skip_ref": float64(-1)},
 		{"frame_skip_dist": float64(-1)},
@@ -276,17 +276,20 @@ func TestParseScoreExtrasValidation(t *testing.T) {
 	}
 }
 
-// TestOptIntDistinguishesZeroFromUnset guards the optIntArg helper: an explicit
-// 0 must be forwarded (e.g. --frame_skip_dist 0), an absent key must not be.
-func TestOptIntDistinguishesZeroFromUnset(t *testing.T) {
+// TestExplicitZeroIsForwardedAndAbsentIsNot: an explicit 0 must be forwarded
+// (e.g. --frame_skip_dist 0), an absent key must not be.
+func TestExplicitZeroIsForwardedAndAbsentIsNot(t *testing.T) {
 	t.Parallel()
-	args := map[string]any{"frame_skip_dist": float64(0)}
-	p := optIntArg(args, "frame_skip_dist")
-	if p == nil || *p != 0 {
-		t.Errorf("explicit 0 should yield &0, got %v", p)
+	ex, err := parseScoreExtras(map[string]any{"frame_skip_dist": float64(0)})
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
 	}
-	if p := optIntArg(args, "threads"); p != nil {
-		t.Errorf("absent key should yield nil, got %v", *p)
+	joined := strings.Join(ex.appendArgs(nil), " ")
+	if !strings.Contains(joined, "--frame_skip_dist 0") {
+		t.Errorf("explicit 0 not forwarded: %q", joined)
+	}
+	if strings.Contains(joined, "--threads") {
+		t.Errorf("absent threads forwarded: %q", joined)
 	}
 }
 
@@ -323,7 +326,7 @@ func TestScoreExtrasValidationRejectsBadEnums(t *testing.T) {
 		{
 			name:    "invalid dnn_ep",
 			args:    map[string]any{"dnn_ep": "unknown_ep"},
-			wantErr: "invalid tiny_device",
+			wantErr: "invalid dnn_ep",
 		},
 		{
 			name: "conflicting tiny_device and dnn_ep",
@@ -364,8 +367,10 @@ func TestScoreExtrasValidationRejectsBadEnums(t *testing.T) {
 			wantErr: "invalid nflx_ctc",
 		},
 		{
-			name:    "threads zero",
-			args:    map[string]any{"threads": float64(0)},
+			// 0 is valid since the generated options (the CLI's 0: score in
+			// the calling thread); a negative count is not.
+			name:    "threads negative",
+			args:    map[string]any{"threads": float64(-1)},
 			wantErr: "invalid threads",
 		},
 		{

@@ -176,7 +176,7 @@ class OptionGroupTest(unittest.TestCase):
             (("threads", 0, "cli", ["-t"]), "start with --"),
             (("pool", 0, "default", "median"), "not one of"),
             (("pool", 1, "ffmpeg", "pool"), "also used by"),
-            (("pool", 1, "type", "bool"), "`range` is \\[min, max\\]"),
+            (("pool", 1, "type", "bool"), "`range` is \\[min\\] or \\[min, max\\]"),
         )
         for change, text in cases:
             with self.subTest(change=change):

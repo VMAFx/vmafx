@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 3)
+ABI_VERSION = (0, 1, 4)
 
 
 class Status(enum.IntEnum):

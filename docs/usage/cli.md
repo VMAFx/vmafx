@@ -48,6 +48,75 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
     576x324 test pair the pooled VMAF moves from `76.667831` to `82.816060`.
     See [models/v1.md](../models/v1.md) for the v1 model family.
 
+## Option reference
+
+Every option of `vmaf`, generated from the API definition
+(`core/api/vmafx.toml`, option groups; see
+[API generation](../development/api-generation.md#option-groups)). The
+sections below explain each group in detail. `vmaf --help` prints the same
+list from the same source.
+
+<!-- BEGIN GENERATED: vmafx-api cli options (scripts/codegen/vmafx-api.py) -->
+
+| Option | Short | Value | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--reference` | `-r` | string | | Reference video: a .y4m file, or raw planar .yuv together with the width, height, pixel format and bit depth. |
+| `--distorted` | `-d` | string | | Distorted video, in the same form as the reference. |
+| `--width` | `-w` | uint >= 1 | | Width of raw .yuv input in pixels. |
+| `--height` | `-h` | uint >= 1 | | Height of raw .yuv input in pixels. |
+| `--pixel_format` | `-p` | `420` \| `422` \| `444` | | Chroma subsampling of raw .yuv input. |
+| `--bitdepth` | `-b` | `8` \| `10` \| `12` \| `16` | | Bits per sample of raw .yuv input. |
+| `--check-sample-range`, `--check_sample_range` | | bool | `false` | Refuse a frame with a sample above 2^bpc - 1 and name the plane, row, column and value (ADR-1918). |
+| `--color_range_ref` | | `unknown` \| `limited` \| `full` | | Colour range of the reference input. |
+| `--color_range_dist` | | `unknown` \| `limited` \| `full` | | Colour range of the distorted input. |
+| `--color_primaries_ref` | | `unknown` \| `bt709` \| `bt2020` | | Colour primaries of the reference input. |
+| `--color_primaries_dist` | | `unknown` \| `bt709` \| `bt2020` | | Colour primaries of the distorted input. |
+| `--color_trc_ref` | | `unknown` \| `bt709` \| `smpte2084` \| `pq` | | Transfer characteristic of the reference input. |
+| `--color_trc_dist` | | `unknown` \| `bt709` \| `smpte2084` \| `pq` | | Transfer characteristic of the distorted input. |
+| `--color_matrix_ref` | | `unknown` \| `bt709` \| `bt2020nc` \| `ictcp` | | Matrix coefficients of the reference input. |
+| `--color_matrix_dist` | | `unknown` \| `bt709` \| `bt2020nc` \| `ictcp` | | Matrix coefficients of the distorted input. |
+| `--model` | `-m` | string | library default (`VMAF_DEFAULT_MODEL_VERSION`) | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, &lt;feature&gt;.&lt;option&gt;=&lt;value&gt; overloads. Several models score in one pass (repeat the option; the filter separates them with \|). |
+| `--backend` | | `auto` \| `cpu` \| `cuda` \| `sycl` \| `hip` \| `metal` | `auto` | Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. |
+| `--no_cuda` | | bool | `false` | Disable the CUDA backend. |
+| `--no_sycl` | | bool | `false` | Disable the SYCL (oneAPI) backend. |
+| `--no_hip` | | bool | `false` | Disable the HIP (ROCm) backend. |
+| `--no_metal` | | bool | `false` | Disable the Metal (Apple silicon) backend. |
+| `--feature` | | string | | Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with \|). Mutually exclusive with the CTC presets. |
+| `--aom_ctc` | | `v1.0` \| `v2.0` \| `v3.0` \| `v4.0` \| `v5.0` \| `v6.0` \| `v7.0` | | AOM common test conditions preset: a fixed model and feature set. |
+| `--nflx_ctc` | | `v1.0` | | Netflix common test conditions preset: a fixed model and feature set. |
+| `--tiny-model`, `--tiny_model` | | string | | Tiny ONNX model to load alongside the classic models. |
+| `--tiny-device`, `--tiny_device` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | `auto` | ONNX Runtime execution provider of the tiny model. |
+| `--dnn-ep`, `--dnn_ep` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | | Alias of the tiny-model device under the ONNX Runtime name (execution provider); both set the same setting. |
+| `--tiny-threads`, `--tiny_threads` | | uint | | Intra-op threads of the CPU execution provider (0: the runtime's default). |
+| `--tiny-fp16`, `--tiny_fp16` | | bool | `false` | Request fp16 input and output where the execution provider supports it. |
+| `--tiny-model-verify`, `--tiny_model_verify` | | bool | `false` | Require a Sigstore bundle verification of the tiny model (cosign verify-blob) before it loads; a missing bundle, a missing cosign or a failed verification refuses the model. |
+| `--tiny-codec`, `--tiny_codec` | | string | | Encoder of the distorted clip, required by codec-aware tiny models (fr_regressor_v2/v3), which refuse to score without it. Must be in the model sidecar's encoder_vocab; the ffprobe names h264, hevc, av1, vp9 and vvc are accepted. |
+| `--tiny-preset`, `--tiny_preset` | | string | | Encoder preset (medium, slow, p4, 5, ...), read as the encoder defines it. Unset: ordinal 5 (medium). A model trained with one preset (fr_regressor_v3) ignores it and warns. |
+| `--tiny-crf`, `--tiny_crf` | | uint 0..63 | | CRF or QP used for the encode, normalised as the model sidecar declares. Required with the codec and preset. |
+| `--tiny-resize`, `--tiny_resize` | | `bilinear` \| `nearest` \| `bicubic` \| `disabled` | `disabled` | Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model. |
+| `--no-reference`, `--no_reference` | | bool | `false` | No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only the distorted picture is scored. |
+| `--threads` | | uint | | Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread). |
+| `--frame_cnt` | | uint >= 1 | | Score at most this many frames. |
+| `--frame_skip_ref` | | uint | | Skip this many frames at the start of the reference. |
+| `--frame_skip_dist` | | uint | | Skip this many frames at the start of the distorted video. |
+| `--no_prediction` | `-n` | bool | `false` | Extract features only; no model score. |
+| `--cpumask` | `-c` | uint | | Bitmask of CPU instruction sets the extractors must not use. |
+| `--gpumask` | | uint | | Bitmask of GPU operations the extractors must not use. |
+| `--sycl_device` | | uint | | SYCL GPU by index (unset: selected automatically). |
+| `--hip_device` | | uint | | HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given). |
+| `--metal_device` | | uint | | Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given). |
+| `--subsample` | | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
+| `--precision` | | string | `legacy` | Score precision: N (1..17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
+| `--output` | `-o` | string | | Report file. |
+| `--xml`, `--json`, `--csv`, `--sub` | | `json` \| `xml` \| `csv` \| `sub` | `xml` | Report format; json and xml carry the backend receipt. |
+| `--netflix-compat`, `--netflix_compat` | | bool | `false` | Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model. |
+| `--quiet` | `-q` | bool | `false` | Disable the FPS meter when run in a terminal. |
+| `--version` | `-v` | bool | `false` | Print the version and exit. |
+| `--list-backends` | | bool | `false` | Print the scoring backends this binary was built with and which of them initialise here, as JSON, and exit (ADR-1874). |
+| `--help` | | bool | `false` | Print this message and exit. |
+
+<!-- END GENERATED: vmafx-api cli options -->
+
 ## Input flags
 
 | Flag | Short | Argument | Required | Notes |

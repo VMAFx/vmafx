@@ -219,7 +219,7 @@ func scoringParamsFromArgs(args map[string]any) (*controllerv1.ScoringParams, er
 	if backend == "auto" {
 		backend = ""
 	}
-	if backend != "" && !validBackends[backend] {
+	if backend != "" && !validBackend(backend) {
 		return nil, fmt.Errorf(
 			"invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
 	}

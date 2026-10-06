@@ -3,8 +3,15 @@
 //
 // proto/vmafx.proto — VMAFX gRPC service definition.
 //
-// Generated Go stubs live under gen/go/vmafx/ and are vendored in-tree.
-// Regenerate with:  buf generate   (requires buf ≥ v1.30)
+// Generated Go stubs live in gen/go/ (package vmafxv1) and are vendored
+// in-tree. Regenerate with:  buf generate   (requires buf ≥ v1.30), then
+// python3 scripts/proto/postprocess_gen_go.py (gen/go/AGENTS.md).
+//
+// The services and the request / response envelopes are hand-written here.
+// ScoreOptions and Provenance come from proto/vmafx_api.proto, which
+// scripts/codegen/vmafx-api.py generates from core/api/vmafx.toml (#2155): a
+// scoring option is added there, never here. Compatibility policy (additive
+// within vmafx.v1): docs/server/api-contract.md.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
 // ADR-0933: bidirectional ScoreStream RPC for multi-frame scoring.
@@ -105,7 +112,13 @@ type ScoreRequest struct {
 	Distorted string `protobuf:"bytes,2,opt,name=distorted,proto3" json:"distorted,omitempty"`
 	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
 	// the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
-	Model         string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	// Optional scoring options (raw .yuv geometry, backend, device, threads,
+	// subsample, precision, features, tiny model, ...), generated from the option
+	// groups of core/api/vmafx.toml. Unset fields keep their documented
+	// defaults; the server returns lossless scores (precision "max") unless
+	// options.precision asks otherwise.
+	Options       *ScoreOptions `protobuf:"bytes,4,opt,name=options,proto3" json:"options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,13 +174,22 @@ func (x *ScoreRequest) GetModel() string {
 	return ""
 }
 
+func (x *ScoreRequest) GetOptions() *ScoreOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
 // ScoreResponse carries the aggregate VMAF score and per-feature values.
 type ScoreResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Aggregate VMAF score (e.g. 76.6683).
 	Score float64 `protobuf:"fixed64,1,opt,name=score,proto3" json:"score,omitempty"`
 	// Per-feature scores keyed by feature name.
-	Features      map[string]float64 `protobuf:"bytes,2,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
+	Features map[string]float64 `protobuf:"bytes,2,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
+	// How the score was made (#2142, #2155); present in every response.
+	Provenance    *ScoreProvenance `protobuf:"bytes,3,opt,name=provenance,proto3" json:"provenance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -216,6 +238,162 @@ func (x *ScoreResponse) GetFeatures() map[string]float64 {
 	return nil
 }
 
+func (x *ScoreResponse) GetProvenance() *ScoreProvenance {
+	if x != nil {
+		return x.Provenance
+	}
+	return nil
+}
+
+// FeatureBackend is one entry of the backend receipt: the backend a
+// registered feature extractor ran on.
+type FeatureBackend struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Extractor name (e.g. "adm", "motion").
+	Extractor string `protobuf:"bytes,1,opt,name=extractor,proto3" json:"extractor,omitempty"`
+	// Backend it ran on: "cpu", "cuda", "sycl", "hip" or "metal".
+	Backend       string `protobuf:"bytes,2,opt,name=backend,proto3" json:"backend,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeatureBackend) Reset() {
+	*x = FeatureBackend{}
+	mi := &file_vmafx_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeatureBackend) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeatureBackend) ProtoMessage() {}
+
+func (x *FeatureBackend) ProtoReflect() protoreflect.Message {
+	mi := &file_vmafx_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeatureBackend.ProtoReflect.Descriptor instead.
+func (*FeatureBackend) Descriptor() ([]byte, []int) {
+	return file_vmafx_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *FeatureBackend) GetExtractor() string {
+	if x != nil {
+		return x.Extractor
+	}
+	return ""
+}
+
+func (x *FeatureBackend) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+// ScoreProvenance says how a score was made: which library build and ABI ran,
+// which model (and the SHA-256 of the model file the server loaded), and which
+// backend ran each extractor. Every scoring response carries it (#2155).
+type ScoreProvenance struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The library's provenance record (generated from VmafxProvenance).
+	Library *Provenance `protobuf:"bytes,1,opt,name=library,proto3" json:"library,omitempty"`
+	// Model the server resolved the request's model name to.
+	Model string `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	// SHA-256 (lower-case hex) of the model file the server loaded.
+	ModelSha256 string `protobuf:"bytes,3,opt,name=model_sha256,json=modelSha256,proto3" json:"model_sha256,omitempty"`
+	// Backend the extractors ran on ("cpu" when every extractor ran on the CPU).
+	BackendUsed string `protobuf:"bytes,4,opt,name=backend_used,json=backendUsed,proto3" json:"backend_used,omitempty"`
+	// Backend of every registered extractor.
+	FeatureBackends []*FeatureBackend `protobuf:"bytes,5,rep,name=feature_backends,json=featureBackends,proto3" json:"feature_backends,omitempty"`
+	// Precision the scores were computed and returned with ("max": lossless).
+	Precision     string `protobuf:"bytes,6,opt,name=precision,proto3" json:"precision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScoreProvenance) Reset() {
+	*x = ScoreProvenance{}
+	mi := &file_vmafx_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScoreProvenance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScoreProvenance) ProtoMessage() {}
+
+func (x *ScoreProvenance) ProtoReflect() protoreflect.Message {
+	mi := &file_vmafx_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScoreProvenance.ProtoReflect.Descriptor instead.
+func (*ScoreProvenance) Descriptor() ([]byte, []int) {
+	return file_vmafx_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ScoreProvenance) GetLibrary() *Provenance {
+	if x != nil {
+		return x.Library
+	}
+	return nil
+}
+
+func (x *ScoreProvenance) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *ScoreProvenance) GetModelSha256() string {
+	if x != nil {
+		return x.ModelSha256
+	}
+	return ""
+}
+
+func (x *ScoreProvenance) GetBackendUsed() string {
+	if x != nil {
+		return x.BackendUsed
+	}
+	return ""
+}
+
+func (x *ScoreProvenance) GetFeatureBackends() []*FeatureBackend {
+	if x != nil {
+		return x.FeatureBackends
+	}
+	return nil
+}
+
+func (x *ScoreProvenance) GetPrecision() string {
+	if x != nil {
+		return x.Precision
+	}
+	return ""
+}
+
 // StreamConfig is sent exactly once as the first message on a ScoreStream.
 // All FramePair messages that follow MUST agree with these dimensions.
 type StreamConfig struct {
@@ -238,7 +416,7 @@ type StreamConfig struct {
 
 func (x *StreamConfig) Reset() {
 	*x = StreamConfig{}
-	mi := &file_vmafx_proto_msgTypes[2]
+	mi := &file_vmafx_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +428,7 @@ func (x *StreamConfig) String() string {
 func (*StreamConfig) ProtoMessage() {}
 
 func (x *StreamConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[2]
+	mi := &file_vmafx_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +441,7 @@ func (x *StreamConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamConfig.ProtoReflect.Descriptor instead.
 func (*StreamConfig) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{2}
+	return file_vmafx_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StreamConfig) GetWidth() uint32 {
@@ -321,7 +499,7 @@ type FramePair struct {
 
 func (x *FramePair) Reset() {
 	*x = FramePair{}
-	mi := &file_vmafx_proto_msgTypes[3]
+	mi := &file_vmafx_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +511,7 @@ func (x *FramePair) String() string {
 func (*FramePair) ProtoMessage() {}
 
 func (x *FramePair) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[3]
+	mi := &file_vmafx_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,7 +524,7 @@ func (x *FramePair) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FramePair.ProtoReflect.Descriptor instead.
 func (*FramePair) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{3}
+	return file_vmafx_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FramePair) GetFrameIndex() uint32 {
@@ -386,7 +564,7 @@ type ScoreStreamRequest struct {
 
 func (x *ScoreStreamRequest) Reset() {
 	*x = ScoreStreamRequest{}
-	mi := &file_vmafx_proto_msgTypes[4]
+	mi := &file_vmafx_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -398,7 +576,7 @@ func (x *ScoreStreamRequest) String() string {
 func (*ScoreStreamRequest) ProtoMessage() {}
 
 func (x *ScoreStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[4]
+	mi := &file_vmafx_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -411,7 +589,7 @@ func (x *ScoreStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScoreStreamRequest.ProtoReflect.Descriptor instead.
 func (*ScoreStreamRequest) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{4}
+	return file_vmafx_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ScoreStreamRequest) GetPayload() isScoreStreamRequest_Payload {
@@ -470,7 +648,7 @@ type FrameScore struct {
 
 func (x *FrameScore) Reset() {
 	*x = FrameScore{}
-	mi := &file_vmafx_proto_msgTypes[5]
+	mi := &file_vmafx_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -482,7 +660,7 @@ func (x *FrameScore) String() string {
 func (*FrameScore) ProtoMessage() {}
 
 func (x *FrameScore) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[5]
+	mi := &file_vmafx_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +673,7 @@ func (x *FrameScore) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameScore.ProtoReflect.Descriptor instead.
 func (*FrameScore) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{5}
+	return file_vmafx_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FrameScore) GetFrameIndex() uint32 {
@@ -530,14 +708,16 @@ type AggregateScore struct {
 	// Pooled per-feature scores.
 	Features map[string]float64 `protobuf:"bytes,3,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
 	// Aggregate wall-clock processing time in milliseconds.
-	ElapsedMs     uint64 `protobuf:"varint,4,opt,name=elapsed_ms,json=elapsedMs,proto3" json:"elapsed_ms,omitempty"`
+	ElapsedMs uint64 `protobuf:"varint,4,opt,name=elapsed_ms,json=elapsedMs,proto3" json:"elapsed_ms,omitempty"`
+	// How the scores were made (#2155); present on every aggregate.
+	Provenance    *ScoreProvenance `protobuf:"bytes,5,opt,name=provenance,proto3" json:"provenance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AggregateScore) Reset() {
 	*x = AggregateScore{}
-	mi := &file_vmafx_proto_msgTypes[6]
+	mi := &file_vmafx_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -549,7 +729,7 @@ func (x *AggregateScore) String() string {
 func (*AggregateScore) ProtoMessage() {}
 
 func (x *AggregateScore) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[6]
+	mi := &file_vmafx_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -562,7 +742,7 @@ func (x *AggregateScore) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AggregateScore.ProtoReflect.Descriptor instead.
 func (*AggregateScore) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{6}
+	return file_vmafx_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AggregateScore) GetFramesProcessed() uint32 {
@@ -593,6 +773,13 @@ func (x *AggregateScore) GetElapsedMs() uint64 {
 	return 0
 }
 
+func (x *AggregateScore) GetProvenance() *ScoreProvenance {
+	if x != nil {
+		return x.Provenance
+	}
+	return nil
+}
+
 // ScoreStreamResponse is the server-to-client message. Exactly one of
 // `frame_score` or `aggregate` is set per response.
 type ScoreStreamResponse struct {
@@ -608,7 +795,7 @@ type ScoreStreamResponse struct {
 
 func (x *ScoreStreamResponse) Reset() {
 	*x = ScoreStreamResponse{}
-	mi := &file_vmafx_proto_msgTypes[7]
+	mi := &file_vmafx_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +807,7 @@ func (x *ScoreStreamResponse) String() string {
 func (*ScoreStreamResponse) ProtoMessage() {}
 
 func (x *ScoreStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[7]
+	mi := &file_vmafx_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +820,7 @@ func (x *ScoreStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScoreStreamResponse.ProtoReflect.Descriptor instead.
 func (*ScoreStreamResponse) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{7}
+	return file_vmafx_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ScoreStreamResponse) GetPayload() isScoreStreamResponse_Payload {
@@ -686,7 +873,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_vmafx_proto_msgTypes[8]
+	mi := &file_vmafx_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -698,7 +885,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[8]
+	mi := &file_vmafx_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -711,7 +898,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{8}
+	return file_vmafx_proto_rawDescGZIP(), []int{10}
 }
 
 // HealthResponse indicates liveness and readiness.
@@ -727,7 +914,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_vmafx_proto_msgTypes[9]
+	mi := &file_vmafx_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +926,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vmafx_proto_msgTypes[9]
+	mi := &file_vmafx_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +939,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_vmafx_proto_rawDescGZIP(), []int{9}
+	return file_vmafx_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *HealthResponse) GetOk() bool {
@@ -773,17 +960,31 @@ var File_vmafx_proto protoreflect.FileDescriptor
 
 const file_vmafx_proto_rawDesc = "" +
 	"\n" +
-	"\vvmafx.proto\x12\bvmafx.v1\"`\n" +
+	"\vvmafx.proto\x12\bvmafx.v1\x1a\x0fvmafx_api.proto\"\x92\x01\n" +
 	"\fScoreRequest\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
 	"\tdistorted\x18\x02 \x01(\tR\tdistorted\x12\x14\n" +
-	"\x05model\x18\x03 \x01(\tR\x05model\"\xa5\x01\n" +
+	"\x05model\x18\x03 \x01(\tR\x05model\x120\n" +
+	"\aoptions\x18\x04 \x01(\v2\x16.vmafx.v1.ScoreOptionsR\aoptions\"\xe0\x01\n" +
 	"\rScoreResponse\x12\x14\n" +
 	"\x05score\x18\x01 \x01(\x01R\x05score\x12A\n" +
-	"\bfeatures\x18\x02 \x03(\v2%.vmafx.v1.ScoreResponse.FeaturesEntryR\bfeatures\x1a;\n" +
+	"\bfeatures\x18\x02 \x03(\v2%.vmafx.v1.ScoreResponse.FeaturesEntryR\bfeatures\x129\n" +
+	"\n" +
+	"provenance\x18\x03 \x01(\v2\x19.vmafx.v1.ScoreProvenanceR\n" +
+	"provenance\x1a;\n" +
 	"\rFeaturesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\xb6\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"H\n" +
+	"\x0eFeatureBackend\x12\x1c\n" +
+	"\textractor\x18\x01 \x01(\tR\textractor\x12\x18\n" +
+	"\abackend\x18\x02 \x01(\tR\abackend\"\x80\x02\n" +
+	"\x0fScoreProvenance\x12.\n" +
+	"\alibrary\x18\x01 \x01(\v2\x14.vmafx.v1.ProvenanceR\alibrary\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12!\n" +
+	"\fmodel_sha256\x18\x03 \x01(\tR\vmodelSha256\x12!\n" +
+	"\fbackend_used\x18\x04 \x01(\tR\vbackendUsed\x12C\n" +
+	"\x10feature_backends\x18\x05 \x03(\v2\x18.vmafx.v1.FeatureBackendR\x0ffeatureBackends\x12\x1c\n" +
+	"\tprecision\x18\x06 \x01(\tR\tprecision\"\xb6\x01\n" +
 	"\fStreamConfig\x12\x14\n" +
 	"\x05width\x18\x01 \x01(\rR\x05width\x12\x16\n" +
 	"\x06height\x18\x02 \x01(\rR\x06height\x128\n" +
@@ -808,13 +1009,16 @@ const file_vmafx_proto_rawDesc = "" +
 	"\bfeatures\x18\x03 \x03(\v2\".vmafx.v1.FrameScore.FeaturesEntryR\bfeatures\x1a;\n" +
 	"\rFeaturesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\xf1\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\xac\x02\n" +
 	"\x0eAggregateScore\x12)\n" +
 	"\x10frames_processed\x18\x01 \x01(\rR\x0fframesProcessed\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\x01R\x05score\x12B\n" +
 	"\bfeatures\x18\x03 \x03(\v2&.vmafx.v1.AggregateScore.FeaturesEntryR\bfeatures\x12\x1d\n" +
 	"\n" +
-	"elapsed_ms\x18\x04 \x01(\x04R\telapsedMs\x1a;\n" +
+	"elapsed_ms\x18\x04 \x01(\x04R\telapsedMs\x129\n" +
+	"\n" +
+	"provenance\x18\x05 \x01(\v2\x19.vmafx.v1.ScoreProvenanceR\n" +
+	"provenance\x1a;\n" +
 	"\rFeaturesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\x93\x01\n" +
@@ -857,43 +1061,52 @@ func file_vmafx_proto_rawDescGZIP() []byte {
 }
 
 var file_vmafx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_vmafx_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_vmafx_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_vmafx_proto_goTypes = []any{
 	(PixelFormat)(0),            // 0: vmafx.v1.PixelFormat
 	(*ScoreRequest)(nil),        // 1: vmafx.v1.ScoreRequest
 	(*ScoreResponse)(nil),       // 2: vmafx.v1.ScoreResponse
-	(*StreamConfig)(nil),        // 3: vmafx.v1.StreamConfig
-	(*FramePair)(nil),           // 4: vmafx.v1.FramePair
-	(*ScoreStreamRequest)(nil),  // 5: vmafx.v1.ScoreStreamRequest
-	(*FrameScore)(nil),          // 6: vmafx.v1.FrameScore
-	(*AggregateScore)(nil),      // 7: vmafx.v1.AggregateScore
-	(*ScoreStreamResponse)(nil), // 8: vmafx.v1.ScoreStreamResponse
-	(*HealthRequest)(nil),       // 9: vmafx.v1.HealthRequest
-	(*HealthResponse)(nil),      // 10: vmafx.v1.HealthResponse
-	nil,                         // 11: vmafx.v1.ScoreResponse.FeaturesEntry
-	nil,                         // 12: vmafx.v1.FrameScore.FeaturesEntry
-	nil,                         // 13: vmafx.v1.AggregateScore.FeaturesEntry
+	(*FeatureBackend)(nil),      // 3: vmafx.v1.FeatureBackend
+	(*ScoreProvenance)(nil),     // 4: vmafx.v1.ScoreProvenance
+	(*StreamConfig)(nil),        // 5: vmafx.v1.StreamConfig
+	(*FramePair)(nil),           // 6: vmafx.v1.FramePair
+	(*ScoreStreamRequest)(nil),  // 7: vmafx.v1.ScoreStreamRequest
+	(*FrameScore)(nil),          // 8: vmafx.v1.FrameScore
+	(*AggregateScore)(nil),      // 9: vmafx.v1.AggregateScore
+	(*ScoreStreamResponse)(nil), // 10: vmafx.v1.ScoreStreamResponse
+	(*HealthRequest)(nil),       // 11: vmafx.v1.HealthRequest
+	(*HealthResponse)(nil),      // 12: vmafx.v1.HealthResponse
+	nil,                         // 13: vmafx.v1.ScoreResponse.FeaturesEntry
+	nil,                         // 14: vmafx.v1.FrameScore.FeaturesEntry
+	nil,                         // 15: vmafx.v1.AggregateScore.FeaturesEntry
+	(*ScoreOptions)(nil),        // 16: vmafx.v1.ScoreOptions
+	(*Provenance)(nil),          // 17: vmafx.v1.Provenance
 }
 var file_vmafx_proto_depIdxs = []int32{
-	11, // 0: vmafx.v1.ScoreResponse.features:type_name -> vmafx.v1.ScoreResponse.FeaturesEntry
-	0,  // 1: vmafx.v1.StreamConfig.pixel_format:type_name -> vmafx.v1.PixelFormat
-	3,  // 2: vmafx.v1.ScoreStreamRequest.config:type_name -> vmafx.v1.StreamConfig
-	4,  // 3: vmafx.v1.ScoreStreamRequest.frame_pair:type_name -> vmafx.v1.FramePair
-	12, // 4: vmafx.v1.FrameScore.features:type_name -> vmafx.v1.FrameScore.FeaturesEntry
-	13, // 5: vmafx.v1.AggregateScore.features:type_name -> vmafx.v1.AggregateScore.FeaturesEntry
-	6,  // 6: vmafx.v1.ScoreStreamResponse.frame_score:type_name -> vmafx.v1.FrameScore
-	7,  // 7: vmafx.v1.ScoreStreamResponse.aggregate:type_name -> vmafx.v1.AggregateScore
-	1,  // 8: vmafx.v1.VmafxScoring.Score:input_type -> vmafx.v1.ScoreRequest
-	5,  // 9: vmafx.v1.VmafxScoring.ScoreStream:input_type -> vmafx.v1.ScoreStreamRequest
-	9,  // 10: vmafx.v1.VmafxScoring.Health:input_type -> vmafx.v1.HealthRequest
-	2,  // 11: vmafx.v1.VmafxScoring.Score:output_type -> vmafx.v1.ScoreResponse
-	8,  // 12: vmafx.v1.VmafxScoring.ScoreStream:output_type -> vmafx.v1.ScoreStreamResponse
-	10, // 13: vmafx.v1.VmafxScoring.Health:output_type -> vmafx.v1.HealthResponse
-	11, // [11:14] is the sub-list for method output_type
-	8,  // [8:11] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	16, // 0: vmafx.v1.ScoreRequest.options:type_name -> vmafx.v1.ScoreOptions
+	13, // 1: vmafx.v1.ScoreResponse.features:type_name -> vmafx.v1.ScoreResponse.FeaturesEntry
+	4,  // 2: vmafx.v1.ScoreResponse.provenance:type_name -> vmafx.v1.ScoreProvenance
+	17, // 3: vmafx.v1.ScoreProvenance.library:type_name -> vmafx.v1.Provenance
+	3,  // 4: vmafx.v1.ScoreProvenance.feature_backends:type_name -> vmafx.v1.FeatureBackend
+	0,  // 5: vmafx.v1.StreamConfig.pixel_format:type_name -> vmafx.v1.PixelFormat
+	5,  // 6: vmafx.v1.ScoreStreamRequest.config:type_name -> vmafx.v1.StreamConfig
+	6,  // 7: vmafx.v1.ScoreStreamRequest.frame_pair:type_name -> vmafx.v1.FramePair
+	14, // 8: vmafx.v1.FrameScore.features:type_name -> vmafx.v1.FrameScore.FeaturesEntry
+	15, // 9: vmafx.v1.AggregateScore.features:type_name -> vmafx.v1.AggregateScore.FeaturesEntry
+	4,  // 10: vmafx.v1.AggregateScore.provenance:type_name -> vmafx.v1.ScoreProvenance
+	8,  // 11: vmafx.v1.ScoreStreamResponse.frame_score:type_name -> vmafx.v1.FrameScore
+	9,  // 12: vmafx.v1.ScoreStreamResponse.aggregate:type_name -> vmafx.v1.AggregateScore
+	1,  // 13: vmafx.v1.VmafxScoring.Score:input_type -> vmafx.v1.ScoreRequest
+	7,  // 14: vmafx.v1.VmafxScoring.ScoreStream:input_type -> vmafx.v1.ScoreStreamRequest
+	11, // 15: vmafx.v1.VmafxScoring.Health:input_type -> vmafx.v1.HealthRequest
+	2,  // 16: vmafx.v1.VmafxScoring.Score:output_type -> vmafx.v1.ScoreResponse
+	10, // 17: vmafx.v1.VmafxScoring.ScoreStream:output_type -> vmafx.v1.ScoreStreamResponse
+	12, // 18: vmafx.v1.VmafxScoring.Health:output_type -> vmafx.v1.HealthResponse
+	16, // [16:19] is the sub-list for method output_type
+	13, // [13:16] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_vmafx_proto_init() }
@@ -901,11 +1114,12 @@ func file_vmafx_proto_init() {
 	if File_vmafx_proto != nil {
 		return
 	}
-	file_vmafx_proto_msgTypes[4].OneofWrappers = []any{
+	file_vmafx_api_proto_init()
+	file_vmafx_proto_msgTypes[6].OneofWrappers = []any{
 		(*ScoreStreamRequest_Config)(nil),
 		(*ScoreStreamRequest_FramePair)(nil),
 	}
-	file_vmafx_proto_msgTypes[7].OneofWrappers = []any{
+	file_vmafx_proto_msgTypes[9].OneofWrappers = []any{
 		(*ScoreStreamResponse_FrameScore)(nil),
 		(*ScoreStreamResponse_Aggregate)(nil),
 	}
@@ -919,7 +1133,7 @@ func file_vmafx_proto_init() {
 			// spans the allocation and no more.
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vmafx_proto_rawDesc), len(file_vmafx_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

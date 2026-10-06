@@ -2358,6 +2358,15 @@ test_luminance_tools = executable('test_luminance_tools',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
+# Every spelling of the hand-written CLI option table survives its generation
+# from the option groups of core/api/vmafx.toml (RC4 WP8, ADR-1852, HISS-14).
+test_cli_option_table = executable('test_cli_option_table',
+    ['test.c', 'test_cli_option_table.cpp'],
+    include_directories : [test_inc, include_directories('../tools/'), include_directories('../src/')],
+    dependencies: [getopt_dependency],
+)
+test('test_cli_option_table', test_cli_option_table, suite : ['fast'])
+
 test_cli_parse = executable('test_cli_parse',
     ['test.c', 'test_cli_parse.c', '../tools/cli_parse.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],

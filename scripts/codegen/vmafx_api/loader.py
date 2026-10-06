@@ -192,6 +192,7 @@ def _structs(raw: list[Entry]) -> tuple[Struct, ...]:
                 since=since,
                 deprecated=deprecation(entry, where),
                 fields=tuple(fields),
+                proto=str(entry.get("proto", "")),
             )
         )
     return tuple(out)
