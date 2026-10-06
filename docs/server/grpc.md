@@ -130,6 +130,8 @@ koanf layer reads 12-factor variables under the `VMAFX_` prefix, and `_` in the
 env name maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets
 `http.addr`).
 
+- Source precedence, the underscore rule and the default HTTP and gRPC limits
+  are on [Server configuration](configuration.md).
 - The framework owns the listen sockets, so the HTTP and gRPC settings take
   **full listen addresses** (`:8080`), not bare port numbers.
 - The sole process switch is `--version`. It prints the build-time version and
@@ -180,8 +182,23 @@ The log format follows `VMAFX_LOG_FORMAT` (`auto`, `tint` or `json`; default
 example:
 
 ```json
-{"time":"2026-05-28T12:00:00.000Z","level":"INFO","msg":"grpc Score completed","score":"76.6683","duration_s":0.823}
+{"time":"2026-05-28T12:00:00.000Z","level":"INFO","msg":"http Score completed","request_id":"4bf92f3577b34da6","route":"POST /v1/score","model":"vmaf_v0.6.1","score":"76.6683","duration_s":0.823}
 ```
+
+Request-scoped lines use one set of field names (`pkg/observability/logfields.go`):
+
+| Field | Meaning |
+| --- | --- |
+| `request_id` | The OpenTelemetry trace id when the request is traced, otherwise a random 16-hex-digit id. Every line of one request carries the same value. |
+| `rpc` | gRPC method without the package: `Score`, `ScoreStream`, `Health`. |
+| `route` | HTTP route as `<METHOD> <path>`, for example `POST /v1/score`. |
+| `model` | VMAF model the request named. |
+| `backend` | Compute backend: `cpu`, `cuda`, `sycl`, `hip`, `metal`. |
+| `duration_s` | Elapsed seconds, as a float. |
+| `error` | The error value. |
+
+The legacy `POST /v1/score` path logs this set today; the gRPC and OpenAPI
+REST paths adopt it as their log calls move onto the same helpers.
 
 ## Graceful shutdown
 

@@ -201,6 +201,11 @@ and metrics but no slog → OTel bridge is wired (ADR-0927 Phase 3), so no
 log records are exported; set `VMAFX_OTEL_EXPORT_LOGS=false` to skip the
 exporter entirely if the collector has no logs pipeline.
 
+Request-scoped server log lines share one field set (`request_id`, `rpc`,
+`route`, `model`, `backend`, `duration_s`, `error`); `request_id` is the trace
+id when the request has a span, so a log line and its trace join on one value.
+The field table is in [gRPC service: Logging](../server/grpc.md#logging).
+
 `vmafx-server` and `vmafx-controller` also log `write JSON response` or
 `write probe response` when a client disconnect or socket failure prevents an
 HTTP response from being written. The response status/body contract is
