@@ -3837,6 +3837,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
 
 
+- The Grafana overview dashboard (`deploy/grafana/vmafx-overview.json`) now
+  queries only series the binaries register: jobs queued, jobs in flight and
+  active nodes read `vmafx_controller_jobs_pending`,
+  `vmafx_controller_jobs_running` and `vmafx_controller_nodes_live`. The frame
+  throughput and GPU utilisation panels are removed because no binary records
+  those instruments yet. `TestDashboardQueriesOnlyRegisteredMetrics` fails when
+  a panel names an unregistered series (#1251).
+
+
 - **Hardware we need: a processor row takes the verdict of the report's processor
   checks.** `scripts/docs/generate-hardware-reports.py` gave a CPU family row (for
   example "x86 with AVX2 and no AVX-512") the report's overall verdict, so a report

@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "Prometheus data source — also receives OTLP metrics via the OTel collector.",
+      "description": "Prometheus data source scraping the vmafx /metrics endpoints.",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -17,7 +17,7 @@
     { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "VMAFX platform overview — jobs, scoring latency (p50/p99), frames/sec, GPU utilisation. ADR-0782.",
+  "description": "VMAFX platform overview — jobs, nodes, scoring latency (p50/p99). ADR-0782.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -48,7 +48,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "vmafx_controller_jobs_queued",
+          "expr": "vmafx_controller_jobs_pending",
           "legendFormat": "queued"
         }
       ]
@@ -64,7 +64,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "vmafx_jobs_in_flight",
+          "expr": "vmafx_controller_jobs_running",
           "legendFormat": "in-flight"
         }
       ]
@@ -80,7 +80,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "vmafx_controller_nodes_active",
+          "expr": "vmafx_controller_nodes_live",
           "legendFormat": "nodes"
         }
       ]
@@ -114,7 +114,7 @@
         "defaults": { "unit": "ms", "custom": { "lineWidth": 2 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "id": 5,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
       "title": "Score latency p50 / p99 (ms)",
@@ -131,53 +131,11 @@
           "legendFormat": "p99"
         }
       ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "fps" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "id": 6,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
-      "title": "Frame extraction throughput (fps)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(vmafx_frames_per_second_bucket[5m]))",
-          "legendFormat": "fps p50"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
-      "id": 102,
-      "title": "GPU utilisation",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] } },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
-      "id": 7,
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal", "showThresholdLabels": false, "showThresholdMarkers": true },
-      "title": "GPU utilisation by node",
-      "type": "gauge",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "vmafx_gpu_utilization",
-          "legendFormat": "{{vmafx_node_id}} ({{vmafx_gpu_vendor}})"
-        }
-      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["vmafx", "otel", "adr-0782"],
+  "tags": ["vmafx", "adr-0782"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
