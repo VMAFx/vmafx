@@ -16,7 +16,7 @@ treat frames of a backend they cannot import, how they size the hardware frame
 pools their producers own, where the `model` and `feature` strings are parsed,
 and how an encoder's output reaches the filter as device frames in one command
 (#2138). The measurements behind this record are
-[Research-2162](../research/2162-vmafx-ffmpeg-gstreamer-filters.md).
+[Research-2163](../research/2163-vmafx-ffmpeg-gstreamer-filters.md).
 
 ## Decision
 
@@ -44,7 +44,7 @@ and how an encoder's output reaches the filter as device frames in one command
    refused before the first frame, naming the size and the option that sets it.
    The GStreamer element proposes the same number in its allocation query.
 5. **Specs are parsed in the library.** `vmafx_model_load_spec()` and
-   `vmafx_context_use_feature_spec()` (ABI 0.1.10) parse the `model` and
+   `vmafx_context_use_feature_spec()` (ABI 0.1.11) parse the `model` and
    `feature` strings for the filter, the element and any other surface, with
    upstream FFmpeg's spellings accepted; the option tables are generated from
    `core/api/vmafx.toml` (WP8).
@@ -88,7 +88,7 @@ and how an encoder's output reaches the filter as device frames in one command
   [ADR-2074](2074-vmafx-window-scores.md), [ADR-2090](2090-motion-window-incremental.md),
   [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md),
   [ADR-1685](1685-post-1-0-embedding-zero-copy-milestone.md),
-  [Research-2162](../research/2162-vmafx-ffmpeg-gstreamer-filters.md).
+  [Research-2163](../research/2163-vmafx-ffmpeg-gstreamer-filters.md).
 - `Q-048`: "Our series only" (the loopback-decoder hwaccel patch stays in
   `ffmpeg-patches/`, nothing is submitted upstream).
 - `Q-047`: "Keep DV5 out".

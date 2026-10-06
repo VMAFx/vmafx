@@ -175,8 +175,8 @@ VmafxStatus vmafx_cuda_release_fence(const VmafxReport *report, VmafxFrame *fram
                                      VmafxFence *out)
 {
     if (kind != VMAFX_FENCE_CUDA_EVENT) {
-        return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
-                          VMAFX_SUBJECT_FENCE, "kind",
+        return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP,
+                          0, VMAFX_SUBJECT_FENCE, "kind",
                           "backend cuda: a release fence of kind %u; CUDA frames signal HOST "
                           "and CUDA_EVENT release fences",
                           (unsigned)kind);
@@ -216,6 +216,7 @@ void vmafx_cuda_release_early(VmafxFrame *frame)
         return;
     }
     (void)release_event_record(cf, NULL);
+    vmafx_cuda_vulkan_release_early(cf);
     (void)vmafx_cuda_pop(cf->dev, 0);
     const VmafxFrameReleaseCallback release = frame->release;
     frame->release = NULL;
@@ -228,8 +229,8 @@ VmafxStatus vmafx_cuda_fence_create(const VmafxReport *report, VmafxDevice *devi
                                     VmafxFence *out)
 {
     if (kind != VMAFX_FENCE_CUDA_EVENT) {
-        return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
-                          VMAFX_SUBJECT_FENCE, "kind",
+        return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP,
+                          0, VMAFX_SUBJECT_FENCE, "kind",
                           "backend cuda: a fence of kind %u; a CUDA device creates HOST and "
                           "CUDA_EVENT fences (a GL sync comes from glFenceSync())",
                           (unsigned)kind);

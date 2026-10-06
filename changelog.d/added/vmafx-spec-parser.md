@@ -1,4 +1,4 @@
-- **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.10).**
+- **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.11).**
   `vmafx_model_load_spec()` loads the model a string such as
   `version=vmaf_v0.6.1:name=vmaf:disable_clip` or
   `path=model.json` names (keys `version`, `path`,

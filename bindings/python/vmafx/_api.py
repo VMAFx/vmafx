@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 10)
+ABI_VERSION = (0, 1, 11)
 
 
 class Status(enum.IntEnum):
@@ -125,6 +125,7 @@ class MemoryKind(enum.IntEnum):
     METAL_TEXTURE = 6
     WIN32_SHARED = 7
     GL_TEXTURE = 8
+    VULKAN = 9
 
 
 class FenceKind(enum.IntEnum):
@@ -139,6 +140,25 @@ class FenceKind(enum.IntEnum):
     METAL_SHARED_EVENT = 6
     WIN32_SHARED = 7
     GL_SYNC = 8
+    VULKAN_SEMAPHORE = 9
+
+
+class VulkanHandleType(enum.IntEnum):
+    """VmafxVulkanHandleType."""
+
+    NONE = 0
+    OPAQUE_FD = 1
+    OPAQUE_WIN32 = 2
+    OPAQUE_WIN32_KMT = 4
+    DMA_BUF = 512
+
+
+class VulkanTiling(enum.IntEnum):
+    """VmafxVulkanTiling."""
+
+    OPTIMAL = 0
+    LINEAR = 1
+    DRM_FORMAT_MODIFIER = 1000158000
 
 
 class FeatureSource(enum.IntEnum):
@@ -257,6 +277,12 @@ class ImportFlags(enum.IntFlag):
     """VmafxImportFlags bits."""
 
     ALLOW_COPY = 1
+
+
+class VulkanFlags(enum.IntFlag):
+    """VmafxVulkanFlags bits."""
+
+    DEDICATED = 1
 
 
 class DeviceFlags(enum.IntFlag):
@@ -557,6 +583,7 @@ VmafxDeviceInfo._fields_ = (
     ("fence_kinds", ctypes.c_uint32),
     ("total_memory", ctypes.c_uint64),
     ("name", ctypes.c_char_p),
+    ("pci", ctypes.c_uint32 * 4),
 )
 
 VmafxFence._fields_ = (
@@ -591,6 +618,11 @@ VmafxFrameImport._fields_ = (
     ("flags", ctypes.c_uint32),
     ("release", VmafxFrameReleaseCallback),
     ("user", ctypes.c_void_p),
+    ("acquire_more", VmafxFence * 2),
+    ("vulkan_handle_type", ctypes.c_uint32),
+    ("vulkan_tiling", ctypes.c_uint32),
+    ("vulkan_flags", ctypes.c_uint32),
+    ("vulkan_pci", ctypes.c_uint32 * 4),
 )
 
 VmafxModelConfig._fields_ = (
@@ -893,7 +925,7 @@ LAYOUT = {
         ),
     ),
     VmafxDeviceInfo: (
-        40,
+        56,
         (
             ("struct_size", 0),
             ("backend", 4),
@@ -903,6 +935,7 @@ LAYOUT = {
             ("fence_kinds", 20),
             ("total_memory", 24),
             ("name", 32),
+            ("pci", 40),
         ),
     ),
     VmafxFence: (
@@ -929,7 +962,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        232,
+        328,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -943,6 +976,11 @@ LAYOUT = {
             ("flags", 208),
             ("release", 216),
             ("user", 224),
+            ("acquire_more", 232),
+            ("vulkan_handle_type", 296),
+            ("vulkan_tiling", 300),
+            ("vulkan_flags", 304),
+            ("vulkan_pci", 308),
         ),
     ),
     VmafxModelConfig: (
@@ -1448,6 +1486,14 @@ SIGNATURES = {
         (
             ctypes.c_void_p,
             ctypes.c_uint32,
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_signal_on_release": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
             ctypes.POINTER(VmafxFence),
             ctypes.POINTER(ctypes.c_void_p),
         ),
@@ -2441,6 +2487,7 @@ class DeviceInfo:
     fence_kinds: int
     total_memory: int
     name: str | None
+    pci: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxDeviceInfo) -> DeviceInfo:
@@ -2452,6 +2499,7 @@ class DeviceInfo:
             fence_kinds=raw.fence_kinds,
             total_memory=raw.total_memory,
             name=_text(raw.name),
+            pci=tuple(raw.pci),
         )
 
 
@@ -2535,6 +2583,11 @@ class FrameImport:
     plane: tuple[ImportPlane, ...]
     acquire: Fence
     flags: int
+    acquire_more: tuple[Fence, ...]
+    vulkan_handle_type: int
+    vulkan_tiling: int
+    vulkan_flags: int
+    vulkan_pci: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxFrameImport) -> FrameImport:
@@ -2548,6 +2601,11 @@ class FrameImport:
             plane=tuple(ImportPlane.from_c(x) for x in raw.plane),
             acquire=Fence.from_c(raw.acquire),
             flags=raw.flags,
+            acquire_more=tuple(Fence.from_c(x) for x in raw.acquire_more),
+            vulkan_handle_type=raw.vulkan_handle_type,
+            vulkan_tiling=raw.vulkan_tiling,
+            vulkan_flags=raw.vulkan_flags,
+            vulkan_pci=tuple(raw.vulkan_pci),
         )
 
 
@@ -3163,7 +3221,7 @@ class Context:
         return None
 
     def use_feature_spec(self, spec: str) -> None:
-        """Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.10."""
+        """Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_use_feature_spec(
             self._handle, spec.encode(), ctypes.byref(error)

@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research-2162: the VMAFx FFmpeg filters and GStreamer element (RC4 WP9)
+# Research-2163: the VMAFx FFmpeg filters and GStreamer element (RC4 WP9)
 
 - **Status**: Active
 - **Workstream**: [ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md)

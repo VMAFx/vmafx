@@ -2815,6 +2815,7 @@ libvmafx_sources = [
     src_dir + 'vmafx/frame_import.c',
     src_dir + 'vmafx/frame_import_admit.c',
     src_dir + 'vmafx/frame_import_hooks.c',
+    src_dir + 'vmafx/frame_import_vulkan.c',
     src_dir + 'vmafx/frame_pool.c',
     src_dir + 'vmafx/frame_host.c',
     src_dir + 'vmafx/release_events.c',
@@ -2894,6 +2895,7 @@ if is_cuda_enabled
         cuda_dir + 'import_fence.c',
         cuda_dir + 'import_frame.c',
         cuda_dir + 'import_gl.c',
+        cuda_dir + 'import_vulkan.c',
         cuda_dir + 'import_pool.c',
     ]
 endif

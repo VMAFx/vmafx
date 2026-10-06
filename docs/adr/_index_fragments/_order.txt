@@ -1295,3 +1295,4 @@
 2133-vmafx-import-422-444-formats
 2091-vmafx-sycl-device-frames
 2125-vmafx-ffmpeg-gstreamer-filters
+2152-vmafx-vulkan-frame-import

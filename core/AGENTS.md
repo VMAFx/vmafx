@@ -82,4 +82,5 @@ core/
 | `src/meson.build`, `test/test_strict_fp_compiler_args.py` | [strict-fp-compiler-args](AGENTS.d/strict-fp-compiler-args.md) | Strict FP is a project argument; every C and C++ translation unit builds without contraction. |
 | `test/meson.build`, `test/test_motion_avx512_parity.c` | [test-harnesses-and-parity](AGENTS.d/test-harnesses-and-parity.md) | Fuzz harnesses track coverage; required aggregator rejects removed float_ansnr; AVX-512 verifies parity. |
 | `src/thread_pool.c`, `src/thread_pool.h` | [thread-pool-and-jobs](AGENTS.d/thread-pool-and-jobs.md) | Thread pool enforces bounded admission, job recycling, and inline buffer reuse. |
+| `src/vmafx/frame_import_vulkan.c`, `src/cuda/import_vulkan.c`, `test/vmafx_vulkan_producer.c`, `test/vmafx_vulkan_test_util.h`, `test/test_vmafx_import_vulkan*` | [vmafx-vulkan-frames](AGENTS.d/vmafx-vulkan-frames.md) | Library makes no Vulkan call; CUDA imports opaque memory + timelines, SYCL/HIP take the dma-buf route; refusals named. |
 | `meson.build`, `src/meson.build` | [windows-path-contract](AGENTS.d/windows-path-contract.md) | Windows internal paths enforce UTF-8 normalization and runtime shims. |

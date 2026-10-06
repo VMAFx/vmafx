@@ -287,7 +287,7 @@ VMAFX_EXPORT uint32_t vmafx_context_max_in_flight(const VmafxContext *context);
  * `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors
  * as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is
  * not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration
- * failures are vmafx_context_use_feature()'s. Added in ABI 0.1.10.
+ * failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_use_feature_spec(VmafxContext *context, const char *spec,

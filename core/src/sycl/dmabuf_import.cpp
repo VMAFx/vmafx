@@ -122,7 +122,7 @@ extern "C" int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t siz
     *ptr = nullptr;
     int own = driver_fd(fd);
     if (own < 0)
-        return -errno;
+        return errno ? -errno : -EBADF;
 
     try {
         const auto *q = static_cast<const sycl::queue *>(queue_ptr);

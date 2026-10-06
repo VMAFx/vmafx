@@ -102,10 +102,11 @@ static char *test_device_info(void)
                             (1u << VMAFX_FENCE_SYCL_EVENT) | (1u << VMAFX_FENCE_SYNC_FILE) |
                             (1u << VMAFX_FENCE_GL_SYNC);
     const uint32_t memory = (1u << VMAFX_MEMORY_DEVICE_POINTER) | (1u << VMAFX_MEMORY_DMABUF) |
-                            (1u << VMAFX_MEMORY_GL_TEXTURE);
+                            (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
     mu_assert("fields", info.backend == VMAFX_BACKEND_SYCL && info.index == 0 && info.flags == 0u &&
                             info.total_memory > 0u && info.name && info.name[0] != '\0' &&
-                            info.fence_kinds == fences && info.memory_kinds == memory);
+                            info.fence_kinds == fences && info.memory_kinds == memory &&
+                            info.pci[1] != UINT32_MAX);
     VmafxError *error = NULL;
     mu_assert("past the last",
               vmafx_device_info(VMAFX_BACKEND_SYCL, (int32_t)count, &info, &error) ==
@@ -586,8 +587,7 @@ static char *test_import_closes_only_its_own(void)
 
 /* A sync_file acquire fence the producer already signalled (the dma-buf's
  * own fences exported, which a finished writer leaves signalled) is passed;
- * vmafx_fence_wait() polls a sync_file too. The descriptor is borrowed: the
- * library destroys no sync_file (VMAFX_E_NOTSUP) and the caller closes it. */
+ * vmafx_fence_wait() polls a sync_file too. */
 static char *test_sync_file_acquire(void)
 {
     LinearBuf b;
@@ -603,15 +603,12 @@ static char *test_sync_file_acquire(void)
     const bool imported =
         sync_file >= 0 && vmafx_frame_import(gpu.device, &imp, &frame, NULL) == VMAFX_OK;
     vmafx_frame_unref(frame);
-    const bool borrowed =
-        sync_file >= 0 && vmafx_fence_destroy(&imp.acquire, NULL) == VMAFX_E_NOTSUP;
-    const bool closed = sync_file >= 0 && close(sync_file) == 0;
+    const bool destroyed = sync_file >= 0 && vmafx_fence_destroy(&imp.acquire, NULL) == VMAFX_OK;
     linear_free(&b);
     mu_assert("a sync_file from the dma-buf", sync_file >= 0);
     mu_assert("signalled", waited);
     mu_assert("imported", imported);
-    mu_assert("borrowed: destroy refuses it", borrowed);
-    mu_assert("the caller closes it", closed);
+    mu_assert("destroy closes it", destroyed);
     return NULL;
 }
 

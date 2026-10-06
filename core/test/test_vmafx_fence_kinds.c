@@ -12,9 +12,9 @@
  * - SYNC_FILE fences are checked on the host with poll() (sync_object.c): a
  *   descriptor that is not readable yet is pending (VMAFX_PENDING for a
  *   poll, VMAFX_E_TIMEOUT for a wait that expires), a readable one is
- *   signalled, a closed one is refused naming fence.fd, and the library
- *   destroys no sync_file. A pipe stands in for the sync_file: poll() treats
- *   both alike.
+ *   signalled, a closed one is refused naming fence.fd, and
+ *   vmafx_fence_destroy() closes the descriptor (ADR-2091 item 6). A pipe
+ *   stands in for the sync_file: poll() treats both alike.
  * - A GL_SYNC fence without a GL context is refused naming fence.handle, and
  *   the library destroys no GL sync (fence.c).
  * - The release-event table (release_events.c): a release event handed out
@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include "mu_table.h"
@@ -63,10 +64,8 @@ static char *test_sync_file_states(void)
     mu_assert("signal", write(fds[1], "x", 1) == 1);
     mu_assert("signalled", vmafx_fence_wait(&fence, 0u, NULL) == VMAFX_OK &&
                                vmafx_fence_wait(&fence, UINT64_MAX, NULL) == VMAFX_OK);
-    mu_assert("the library destroys no sync_file",
-              vmafx_fence_destroy(&fence, &error) == VMAFX_E_NOTSUP &&
-                  vt_failed(&error, VMAFX_E_NOTSUP, "fence.kind", VMAFX_SUBJECT_FENCE));
-    (void)close(fds[0]);
+    mu_assert("destroy closes the descriptor",
+              vmafx_fence_destroy(&fence, NULL) == VMAFX_OK && fcntl(fds[0], F_GETFD) == -1);
     (void)close(fds[1]);
     const VmafxFence closed = sync_file_fence(fds[0]);
     mu_assert("a closed descriptor is refused, named",
