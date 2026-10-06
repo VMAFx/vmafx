@@ -189,6 +189,16 @@ See [CUDA devices](../../api/vmafx/index.md#cuda-devices) for the calls, the
 layouts a plane must have, and the fences
 ([ADR-2023](../../adr/2023-vmafx-cuda-device-frames.md)).
 
+Frames a Vulkan producer wrote on the same GPU (FFmpeg's Vulkan decode,
+libplacebo) are imported too: the CUDA device imports the exported memory of
+OPTIMAL images as CUDA arrays and of LINEAR images and buffers as device
+pointers, waits on the producer's timeline semaphores on its stream and
+signals them back behind the last reader
+([Vulkan frames](../../api/vmafx/index.md#vulkan-frames),
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)). The `vulkan` suite
+checks it on a host with a CUDA device and a Vulkan driver:
+`python3 scripts/ci/run_meson_test.py -- -C build --suite vulkan`.
+
 Every CUDA twin reads a picture with that picture's own row pitch, so frames
 whose planes have the producer's pitch (rather than the engine's
 texture-aligned one) score as their host-uploaded copies; `integer_vif` read

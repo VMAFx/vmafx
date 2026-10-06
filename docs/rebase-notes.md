@@ -61972,6 +61972,45 @@ No score, public API or FFmpeg patch impact.
   `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
   values are unchanged.
 
+## VMAFx Vulkan frame import (RC4 WP3 Vulkan lane)
+
+`rc4/api-wp3-vulkan-import` (on `rc4/api-wp3-common`, with the SYCL and HIP
+lanes merged in), [ADR-2152](adr/2152-vmafx-vulkan-frame-import.md),
+[ADR-2091](adr/2091-vmafx-sycl-device-frames.md),
+[ADR-2092](adr/2092-vmafx-hip-device-frames.md).
+
+- The merge commit of the SYCL and HIP lanes keeps one copy of each shared
+  helper: `core/src/vmafx/sync_object.{c,h}` (the SYCL lane's, a superset;
+  the HIP lane's `sync_file.c` and `gl_sync.c` are folded into it and its
+  files include `vmafx/sync_object.h`) and `core/src/vmafx/release_events.c`
+  (the HIP lane's table, which `cuda/import_fence.c` calls). `fence.c` has
+  the HIP lane's switch layout with the SYCL cases added. The test tables
+  are `vmafx_device_cells.h` (CUDA, HIP) and `vmafx_sycl_cells.h` (SYCL) on
+  the shared helpers of `vmafx_exact_cells.h`. When the lanes land on master
+  in another order, resolve to the same single copies.
+- A `SYNC_FILE` fence is destroyed by closing its descriptor (ADR-2091 item
+  6); the HIP lane's refusal is gone. `test_vmafx_fence_kinds` checks it.
+- API (`core/api/vmafx.toml`, ABI 0.1.5): `VMAFX_MEMORY_VULKAN`,
+  `VMAFX_FENCE_VULKAN_SEMAPHORE`, the enums `VmafxVulkanHandleType` and
+  `VmafxVulkanTiling`, the flags `VmafxVulkanFlags`, `VmafxDeviceInfo.pci`,
+  the `VmafxFrameImport` fields `acquire_more`, `vulkan_handle_type`,
+  `vulkan_tiling`, `vulkan_flags`, `vulkan_pci`, and
+  `vmafx_frame_signal_on_release()`. On a conflict in a generated file take
+  either side and run `python3 scripts/codegen/vmafx-api.py --write`.
+- New files: `core/src/vmafx/frame_import_vulkan.c` (the device-independent
+  checks and the dma-buf translation), `core/src/cuda/import_vulkan.c` (the
+  CUDA interop; `VmafxCudaVulkan` in `vmafx_cuda_internal.h`), the producer
+  and tests `core/test/vmafx_vulkan_producer.{c,h}`,
+  `vmafx_vulkan_test_util.h`, `test_vmafx_import_vulkan*.c`; the Vulkan tests
+  are built once per device lane when `dependency('vulkan')` is found.
+- Each lane reports its device's PCI location (`cuda/import_device.c`,
+  `sycl/vmafx_sycl_rt.cpp`, `hip/import_device.c`) and translates a VULKAN
+  descriptor before its own checks (`cuda/import_frame.c`,
+  `sycl/import_frame.c`, `hip/import_frame.c`).
+- `vmafx_exact_cells.h` holds `vc_import_only()` (`VMAFX_TEST_IMPORT_ONLY`),
+  formerly a copy in each of the CUDA and HIP bit-exactness tests.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
 ## VMAFx device frames on SYCL (RC4 WP3 SYCL lane)
 
 `rc4/api-wp3-sycl` (on `rc4/api-wp3-cuda`),

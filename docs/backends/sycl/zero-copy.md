@@ -15,7 +15,7 @@ correct, and how the pre-allocated picture pool works. Back to the
 | VA-API dmabuf | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()` | Linux | None (zero-copy) |
 | D3D11 staging | `vmaf_sycl_import_d3d11_surface()` | Windows | Two PCIe copies; not zero-copy |
 | Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy |
-| VMAFx device frames | `vmafx_frame_import()` / `vmafx_context_import_frame()` on a SYCL device | all (USM); Linux (dma-buf, GL texture) | None; every SYCL twin reads the frame, chroma included |
+| VMAFx device frames | `vmafx_frame_import()` / `vmafx_context_import_frame()` on a SYCL device | all (USM); Linux (dma-buf, GL texture, Vulkan memory) | None; every SYCL twin reads the frame, chroma included |
 
 The signatures are in
 [`libvmaf_sycl.h`](../../../core/include/libvmaf/libvmaf_sycl.h) and the
@@ -85,6 +85,14 @@ descriptors and GL syncs order the producer's writes; a release fence (host or
 SYCL event) and a release callback tell the producer when it may write into
 the memory again. The calls, the descriptors and the fences are in
 [SYCL devices](../../api/vmafx/index.md#sycl-devices).
+
+Vulkan frames on the same GPU (`VMAFX_MEMORY_VULKAN`,
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)) take the dma-buf
+path: the Mesa driver exports a buffer's or a LINEAR or Tile4 image's memory
+as a dma-buf, and the SYCL device imports it as above. The acquire fence is a
+`sync_file` of the producer's write, and the producer reuses the memory after
+a host release fence; OPTIMAL images and Vulkan semaphores are refused by
+name. See [Vulkan frames](../../api/vmafx/index.md#vulkan-frames).
 
 What is not imported yet: Windows shared textures (`VMAFX_MEMORY_WIN32_SHARED`
 is refused, the D3D11 staging path above remains), and a `sync_file` release

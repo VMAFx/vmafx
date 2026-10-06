@@ -648,7 +648,7 @@ static VmafxStatus vulkan_as_dmabuf(const VmafxReport *report, const VmafxDevice
                                     const VmafxFrameImport *desc, VmafxFrameImport *out)
 {
     uint32_t pci[4];
-    vmafx_hip_parse_pci(vmafx_hip_dev(device)->pci_bus_id, pci);
+    vmafx_parse_pci_bus_id(vmafx_hip_dev(device)->pci_bus_id, pci);
     const VmafxStatus status = vmafx_import_check_vulkan_device(report, desc, pci, "hip");
     return status == VMAFX_OK ? vmafx_import_vulkan_as_dmabuf(report, desc, "hip", out) : status;
 }

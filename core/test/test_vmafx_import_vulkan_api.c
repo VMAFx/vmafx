@@ -64,7 +64,7 @@ static VmafxFrameImport nv12_vulkan(int fd)
     memcpy(d.vulkan_pci, pci, sizeof(pci));
     for (uint32_t i = 0; i < 2u; i++) {
         d.plane[i].fd = fd;
-        d.plane[i].size = 4096u * 4u;
+        d.plane[i].size = (uint64_t)4096u * 4u;
         d.plane[i].pitch = 128u;
     }
     return d;
@@ -293,6 +293,33 @@ static char *test_signal_on_release_refusals(void)
     return NULL;
 }
 
+/* `text` parses to `want` (UINT32_MAX x4 for a refusal). */
+static bool pci_is(const char *text, uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+{
+    uint32_t pci[4] = {1u, 1u, 1u, 1u};
+    vmafx_parse_pci_bus_id(text, pci);
+    return pci[0] == a && pci[1] == b && pci[2] == c && pci[3] == d;
+}
+
+/* The PCI bus id parser the CUDA and HIP lanes share: the runtimes' form,
+ * the largest fields, and every other form refused as unknown. */
+static char *test_pci_bus_id(void)
+{
+    const uint32_t u = UINT32_MAX;
+    mu_assert("CUDA form", pci_is("0000:06:00.0", 0u, 6u, 0u, 0u));
+    mu_assert("HIP form, hex digits", pci_is("0000:7d:1f.7", 0u, 0x7du, 0x1fu, 7u));
+    mu_assert("largest fields", pci_is("fffffffe:ff:1f.7", 0xfffffffeu, 0xffu, 0x1fu, 7u));
+    mu_assert("NULL", pci_is(NULL, u, u, u, u));
+    mu_assert("empty", pci_is("", u, u, u, u));
+    mu_assert("no domain", pci_is("06:00.0", u, u, u, u));
+    mu_assert("no function", pci_is("0000:06:00", u, u, u, u));
+    mu_assert("trailing text", pci_is("0000:06:00.0x", u, u, u, u));
+    mu_assert("a sign", pci_is("-001:06:00.0", u, u, u, u));
+    mu_assert("a blank", pci_is(" 0000:06:00.0", u, u, u, u));
+    mu_assert("past 32 bits", pci_is("100000000:00:00.0", u, u, u, u));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -305,6 +332,7 @@ char *run_tests(void)
         MU_TEST(test_cpu_more_acquires),
         MU_TEST(test_vulkan_fences),
         MU_TEST(test_signal_on_release_refusals),
+        MU_TEST(test_pci_bus_id),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
