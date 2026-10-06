@@ -62543,3 +62543,16 @@ resolve `origin/master` and a pull-request checkout has no local `master`
 (`T-CI-WINDOWS-HOOKS-SCRATCH-NO-ORIGIN-MASTER-2026-10-07`). Keep the fetch if the
 step is reworked; `scripts/ci/tests/test_windows_hooks_scratch_origin.py` fails
 without it. No score, public API or build change.
+
+## The float extractors refuse depths they do not scale (`fix/refuse-unsupported-bit-depths`)
+
+`core/src/feature/feature_extractor.cpp` `refuse_unscaled_bpc()`, called first in
+`vmaf_feature_extractor_context_init()`, makes the `float_ssim`, `float_ms_ssim`,
+`float_adm`, `float_vif` and `float_motion` families (every backend's twin, matched
+by name prefix) return `-EINVAL` for `bpc` other than 8, 10, 12 and 16
+(`T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07`): `picture_copy()` and the
+twins that mirror it scale 10, 12 and 16 bits only. When the odd-depth support of
+RC4 (#2378) lands, remove the families it fixes from the list in the same PR, with
+the twin matrix at those depths. `test_read_pictures_bpc` fails without the guard
+and checks that `psnr_hvs` still scores 9 and 11 bits. No score at 8, 10, 12 or
+16 bits changes.

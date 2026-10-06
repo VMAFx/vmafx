@@ -5449,6 +5449,16 @@ test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
 )
 test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fast'])
 
+# T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07 — vmaf_read_pictures() refuses picture
+# depths for the float extractor families that do not scale them (9, 11, 13, 14, 15).
+test_read_pictures_bpc = executable('test_read_pictures_bpc',
+    ['test.c', 'test_read_pictures_bpc.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_read_pictures_bpc', test_read_pictures_bpc, suite : ['fast'])
+
 # ADR-1431 / Netflix#1420 — vmaf_read_pictures() releases the pictures it is
 # given on every return, so a rejected or failed call leaves the picture pool
 # whole (the CLI used to hang in vmaf_close() after an out-of-memory).

@@ -651,6 +651,7 @@ core/test/test_psnr_neon.c
 core/test/test_psnr_uncapped.c
 core/test/test_pu21.c
 core/test/test_public_api_score.c
+core/test/test_read_pictures_bpc.c
 core/test/test_read_pictures_convert.c
 core/test/test_read_pictures_failure_ownership.c
 core/test/test_read_pictures_monotonic.c

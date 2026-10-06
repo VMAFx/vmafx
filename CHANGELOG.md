@@ -5270,6 +5270,16 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   where the fork returns the error instead of asserting).
 
 
+- **The float extractors refuse 9, 11, 13, 14 and 15-bit pictures instead of
+  scoring them wrongly.** `float_ssim`, `float_ms_ssim`, `float_adm`,
+  `float_vif` and `float_motion`, on the CPU and on every GPU backend, scaled
+  10, 12 and 16-bit samples only and read every other depth above 8 as 8-bit
+  bytes, so they returned wrong scores for those depths without an error. They
+  now fail at initialisation with `-EINVAL` and a log line naming the extractor
+  and the depth. Other extractors keep their odd-depth support. The CLI and the
+  FFmpeg filters never passed these depths; programs using the C API could.
+
+
 - **The model-registry schema tests run in the Python harness suite.** `python/test/model_registry_schema_test.py`
   skipped its whole module when `jsonschema` was not installed. `jsonschema` is now in
   `python/requirements-test.in` and its hash lock, and a missing install is an error, not a skip.

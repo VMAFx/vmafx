@@ -887,6 +887,32 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
 #endif
 }
 
+/* The float extractors that normalise samples the way picture_copy() does, on every
+ * backend: picture_copy() and the device twins that mirror it scale 10, 12 and 16-bit
+ * samples only and treat any other depth above 8 as 8-bit bytes, so these extractors
+ * returned wrong scores for 9, 11, 13, 14 and 15-bit pictures without an error. They
+ * refuse those depths by name until the normaliser handles every depth
+ * (T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07). Other extractors keep their
+ * own depth checks; psnr_hvs, for one, scores 9 and 11 bits correctly. */
+int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
+{
+    static const char *const kFamilies[] = {"float_ssim", "float_ms_ssim", "float_adm", "float_vif",
+                                            "float_motion"};
+    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || !fex->name)
+        return 0;
+    for (const char *family : kFamilies) {
+        const size_t n = std::strlen(family);
+        if (std::strncmp(fex->name, family, n) == 0 &&
+            (fex->name[n] == '\0' || fex->name[n] == '_')) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "%s: picture bit depth %u is not supported: use 8, 10, 12 or 16 bits\n",
+                     fex->name, bpc);
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
 } // namespace
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
@@ -902,6 +928,9 @@ int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
     if (!pix_fmt)
         return -EINVAL;
     /* Before the close obligation below: nothing of the extractor runs yet. */
+    const int bpc_err = refuse_unscaled_bpc(fex_ctx->fex, bpc);
+    if (bpc_err)
+        return bpc_err;
     const int dispatch_err = consult_cuda_dispatch(fex_ctx->fex, w, h);
     if (dispatch_err)
         return dispatch_err;
