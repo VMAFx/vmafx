@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1312), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1313), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5195,6 +5195,10 @@ Every ADR, one heading each (1312), so the site search finds an ADR by its title
 ## ADR-1900: Deterministic verification and state contract for VPL decode retry ceiling
 
 [1900-vpl-decode-ceiling-contract](1900-vpl-decode-ceiling-contract.md)
+
+## ADR-1906: VMAFx core API semantics: per-context logging, size negotiation, frame and model references
+
+[1906-vmafx-core-api-semantics](1906-vmafx-core-api-semantics.md)
 
 ## ADR-1917: The integer ADM scale-0 horizontal and vertical weight limit is 43900, set by the CSF stage's 16-bit magnitude
 

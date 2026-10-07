@@ -6,13 +6,6 @@
 ## [Unreleased]
 ### Added
 
-- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
-  `make mini-retrain` runs extraction, feature checks, combination, training and export of
-  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
-  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
-  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
-  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
-  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 - **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
   ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
   contexts with their own log callback (`VmafxContextConfig.log_callback`),
@@ -38,6 +31,15 @@
   function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
   struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
   [the VMAFx API page](docs/api/vmafx/index.md).
+
+
+- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
+  `make mini-retrain` runs extraction, feature checks, combination, training and export of
+  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
+  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
+  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
+  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
+  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
