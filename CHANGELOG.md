@@ -58,13 +58,6 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
-- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
-  `make mini-retrain` runs extraction, feature checks, combination, training and export of
-  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
-  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
-  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
-  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
-  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 - Every scoring option is now defined once, in the option groups of
   `core/api/vmafx.toml`, and generated into each surface: the `vmaf`
   option table and `--help` text, the input schemas both MCP servers serve,
@@ -80,6 +73,15 @@
   device-target arguments `target_width`, `target_height` and
   `target_scaling`, which accept only their defaults until device-targeted
   scoring lands.
+
+
+- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
+  `make mini-retrain` runs extraction, feature checks, combination, training and export of
+  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
+  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
+  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
+  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
+  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
@@ -185,6 +187,22 @@
   changed.
 
 
+- The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
+  `describe_worst_frames`) use the library default model when `model` is
+  omitted (`vmaf_v1.0.16_3d0h` in this release) instead of `vmaf_v0.6.1`;
+  pass `model="version=vmaf_v0.6.1"` to reproduce earlier numbers. Their
+  validation follows the generated schema: `threads` 0 (single-threaded) is
+  accepted, a `feature` list with a non-string or empty entry is refused
+  instead of filtered, and errors name the argument (`invalid tiny_crf 64:
+  must be <= 63`).
+- The scoring server returns lossless scores (`precision` `max`) by default,
+  so its scores equal the CLI's and the C API's bit for bit; a request may
+  still ask for another precision. A request body with a field the contract
+  does not know is refused with 400.
+- `vmaf --help` lists every option with its values and default, generated
+  from the API definition.
+
+
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
   requests #1631 to #1668, whether the fork already carries the fix, covers it
   by another route or is not affected, with the file, test or ADR that shows it,
@@ -244,20 +262,6 @@
   `std::atomic_init()`; the ONNX Runtime headers are `-isystem`; and a test that linked with an
   explicit `link_language : 'cpp'` no longer repeats `-lc++` on macOS. No score, symbol or
   option changes.
-- The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
-  `describe_worst_frames`) use the library default model when `model` is
-  omitted (`vmaf_v1.0.16_3d0h` in this release) instead of `vmaf_v0.6.1`;
-  pass `model="version=vmaf_v0.6.1"` to reproduce earlier numbers. Their
-  validation follows the generated schema: `threads` 0 (single-threaded) is
-  accepted, a `feature` list with a non-string or empty entry is refused
-  instead of filtered, and errors name the argument (`invalid tiny_crf 64:
-  must be <= 63`).
-- The scoring server returns lossless scores (`precision` `max`) by default,
-  so its scores equal the CLI's and the C API's bit for bit; a request may
-  still ask for another precision. A request body with a field the contract
-  does not know is refused with 400.
-- `vmaf --help` lists every option with its values and default, generated
-  from the API definition.
 
 
 ### Fixed
@@ -294,6 +298,8 @@
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+
+
 - The Grafana overview dashboard (`deploy/grafana/vmafx-overview.json`) now
   queries only series the binaries register: jobs queued, jobs in flight and
   active nodes read `vmafx_controller_jobs_pending`,
