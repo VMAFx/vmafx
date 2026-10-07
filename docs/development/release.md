@@ -200,8 +200,10 @@ graphically):
    whether a release is warranted. If so, it opens or updates one release PR
    that bumps the root manifest and every coordinated version marker.
 2. **Finalize the generated release PR.** After all other release changes are
-   merged, regenerate Unreleased and run the fragment rollover with the PR's
-   exact version and UTC date. Commit that result as the release PR's final
+   merged, run `make docs-render` (the rendered changelog, ADR index and
+   rebase notes are written when pull requests land, so this is normally
+   a no-op) and the fragment rollover with the PR's exact version and UTC
+   date. Commit that result as the release PR's final
    change. Any later fragment invalidates the cut and must be rolled again.
 3. **Merging the release PR** creates a draft GitHub release. It does not yet
    create the public release tag.
@@ -573,24 +575,52 @@ a recovery run left `latest` pointing at the broken original digest.)
 
 `docs/adr/README.md` is the rendered index of every ADR in the fork. Its
 "Index" table is generated from per-ADR fragments under
-`docs/adr/_index_fragments/<slug>.md` plus an order manifest at
-`docs/adr/_index_fragments/_order.txt`. The renderer is
+`docs/adr/_index_fragments/<slug>.md`. The renderer is
 [`scripts/docs/concat-adr-index.sh`](../../scripts/docs/concat-adr-index.sh)
 (see [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) for why the
-pattern exists).
+pattern exists and [ADR-2197](../adr/2197-render-generated-docs-at-landing.md)
+for who writes the render).
+
+### Rendered at landing, not in the pull request
+
+A pull request does **not** carry `CHANGELOG.md`, `docs/adr/README.md`,
+`docs/adr/by-tag/`, `docs/adr/titles.md`, `docs/research/titles.md` or the
+fragment block of `docs/rebase-notes.md`
+([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
+`scripts/ci/deliverables-check.sh` refuses a pull request that edits one of
+them. The outputs are written by one command, `make docs-render`:
+
+- **per landing batch:** the merge train runs it at the batch tip and commits
+  the result as `chore(docs): render generated changelog and ADR index`, in the
+  same push as the batch, so every master tip is rendered;
+- **at the release cut:** see
+  [Cutting a release from fragments](#cutting-a-release-from-fragments);
+- **by hand:** to see what the render will write, run it in a scratch
+  worktree; it is safe to run at any time and writes nothing else.
+
+`make docs-render-check` fails when a render is stale. The master push runs it
+(the `Docs` job), so a push that skipped the render turns master red instead of
+passing silently. A pull request does not run it: `make docs-fragments-check`
+checks the fragments themselves (changelog sections, ADR index rows, rebase-note
+headings) and the outputs that stay in the pull request (exact-twin table,
+AGENTS indexes, charts, vendored assets).
+
+The render needs full history: the order of the index rows and of the rebase
+notes is the order the fragments landed on the branch, read by
+`scripts/docs/fragment-order.py`. A shallow clone fails loudly.
 
 ### Adding a new ADR
 
-**When adding a new ADR (the common case)** — write the fragment as part of
-the same PR and append its slug to `_order.txt`. The PR template's
-ADR-index checklist row covers this. Manual append is preferred over
-`--write` because it produces a one-line diff that reviewers can verify by
-eye and avoids touching unrelated rows.
+**When adding a new ADR (the common case)** — write the fragment
+`docs/adr/_index_fragments/<slug>.md` as part of the same PR, and nothing
+else: do not touch `README.md` or `_order.txt`. `_order.txt` is the frozen list
+of the rows that existed when the index moved to fragments; every other
+fragment follows it in landing order.
 
 ### Fixing drift
 
 **When fixing drift between fragments and `README.md` (this sweep's case)**
-— run `scripts/docs/concat-adr-index.sh --check` to capture the full diff,
+— run `make docs-render-check` to capture the full diff,
 then audit each row against the four drift classes:
 
 - **Silent loss** — fragment exists, README is missing the row.
@@ -614,8 +644,10 @@ the rebuilt branch and expect a clean exit.
 
 **Renumbered slugs.** When the dedup sweep referenced in the script's
 header comment renumbers an ADR (e.g. `0270-saliency-…` → `0286-saliency-…`),
-the fragment must be **renamed** to match the new slug — not duplicated. The
-`_order.txt` entry follows the same rename. The fragment body's
+the fragment must be **renamed** to match the new slug — not duplicated. A
+rename of a fragment listed in the frozen `_order.txt` changes that entry too;
+a rename of any other fragment moves its landing position, so rename in the
+commit that adds it. The fragment body's
 `[ADR-NNNN](NNNN-slug.md)` link must match the renumbered slug; mismatches
 silently render rows that point at non-existent ADR files. The
 fragment-vs-ADR-file slug audit is one line:
@@ -819,7 +851,8 @@ fragments so existing release-train history is preserved.
 
 - **Always add a fragment, never edit `CHANGELOG.md` directly.** Drop a single
   Markdown bullet under `changelog.d/<section>/<topic>.md`. The fragment is
-  the source of truth; the rendered `CHANGELOG.md` is a build artefact.
+  the source of truth; the rendered `CHANGELOG.md` is a build artefact that a
+  pull request does not carry ([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
 - **Filename convention:** lowercase kebab-case, optionally prefixed with the
   task ID (`T7-39-foo.md`) or ADR number (`adr-0312-deferral-retired.md`)
   for implicit lexical ordering within the section.
@@ -828,14 +861,15 @@ fragments so existing release-train history is preserved.
 
 ### When to regenerate (`--write`)
 
-Run `scripts/release/concat-changelog-fragments.sh --write` whenever:
+`make docs-render` writes the changelog with the other rendered outputs: the
+merge train runs it once per landing batch and the release cut runs it. You
+need it by hand only to preview a render, or to reconcile a skew:
 
-- The `--check` lane fails on CI (drift between fragments and the rendered
-  `Unreleased` block).
-- A merge has just landed several fragments that are not yet spliced into the
-  rendered block.
-- A drift-sweep PR is reconciling pre-existing skew (see
-  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)).
+- `make docs-render-check` (the master push) fails on a stale render.
+- Pre-existing skew (see
+  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)) is
+  reconciled by rendering on master, not by a feature branch: a pull request
+  that carries a render is refused.
 
 Never edit the rendered "Unreleased" block by hand to add new entries — those
 inline edits will be silently overwritten by the next regen.
@@ -865,7 +899,7 @@ the final manifest and version-marker updates.
 2. Render the final notes:
 
     ```bash
-    scripts/release/concat-changelog-fragments.sh --write
+    make docs-render
     git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
     ```
 

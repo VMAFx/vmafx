@@ -44,7 +44,6 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 10,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
         "scripts/ci/tests/test_upstream_parity_allowlist.py": 15,
-        "scripts/docs/concat-adr-index.sh": 1,
         "scripts/docs/tests/test_agents_index.py": 4,
         "scripts/docs/tests/test_generators.py": 2,
         "scripts/docs/tests/test_search_scope.py": 3
@@ -11449,6 +11448,23 @@
         "scripts/research/tests/test_radar_collect.py": 1
       },
       "target": "2171-research-radar.md"
+    },
+    "2197": {
+      "sites": {
+        ".codex/agents/doc-reviewer.toml": 1,
+        ".github/workflows/lint-and-format.yml": 2,
+        ".github/workflows/rule-enforcement.yml": 1,
+        "Makefile": 2,
+        "scripts/ci/deliverables-check.sh": 6,
+        "scripts/ci/test-validate-pr-body.sh": 1,
+        "scripts/docs/concat-adr-index.sh": 2,
+        "scripts/docs/concat-rebase-notes.sh": 2,
+        "scripts/docs/fragment-order.py": 1,
+        "scripts/docs/tests/test_generators.py": 1,
+        "scripts/docs/tests/test_render_at_landing.py": 1,
+        "scripts/release/concat-changelog-fragments.sh": 2
+      },
+      "target": "2197-render-generated-docs-at-landing.md"
     }
   },
   "retired": {

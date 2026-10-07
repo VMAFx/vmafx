@@ -29,6 +29,7 @@ documentation:
   style_exclude:
     - "docs/adr/README.md"
     - "docs/adr/_index_fragments/[0-9]*.md"
+    - "docs/rebase-notes.d/*.md"
     - "**/testdata/**"
 register:
   surfaces:

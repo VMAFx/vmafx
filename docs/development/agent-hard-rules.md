@@ -44,13 +44,14 @@ line budget. Changing a rule here changes it for every agent.
    ADR file `docs/adr/NNNN-kebab-case.md` following
    [docs/adr/0000-template.md](../adr/0000-template.md) **before** the
    commit that implements it lands. The ADR's index row lives in
-   `docs/adr/_index_fragments/<NNNN-slug>.md` (one fragment file per ADR;
-   the slug is appended to `docs/adr/_index_fragments/_order.txt`).
+   `docs/adr/_index_fragments/<NNNN-slug>.md` (one fragment file per ADR; the
+   frozen `_order.txt` is not edited: fragments follow it in landing order).
    `docs/adr/README.md` (with `docs/adr/by-tag/` and `docs/adr/titles.md`) is
-   generated: run `make docs-fragments-write` (it calls
-   `scripts/docs/concat-adr-index.sh --write` and the other generators) and
-   never edit those files by hand — see
-   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md).
+   rendered when pull requests land (`make docs-render`, run by the merge train
+   per batch and at the release cut), a pull request must not carry it, and
+   `scripts/ci/deliverables-check.sh` refuses one that does — see
+   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) and
+   [ADR-2197](../adr/2197-render-generated-docs-at-landing.md).
    Non-trivial = another engineer could reasonably have chosen differently.
    Bug fixes and implementation details do not need an ADR. Cite `req`
    (direct user quote) or `Q<round>.<q>` (popup answer) in the ADR's
@@ -73,9 +74,11 @@ line budget. Changing a rule here changes it for every agent.
    (d) reproducer / smoke-test command
    in the PR description; (e) CHANGELOG fragment file under
    `changelog.d/<section>/<topic>.md` — `CHANGELOG.md` itself is rendered
-   by `scripts/release/concat-changelog-fragments.sh` per ADR-0221;
-   (f) entry in [`docs/rebase-notes.md`](../rebase-notes.md) (or
-   `no rebase impact: REASON`). *Fork-local* means anything not a verbatim
+   at landing (ADR-0221, ADR-2197) and a PR does not carry it;
+   (f) a rebase note as one fragment file `docs/rebase-notes.d/<slug>.md`
+   (starting with its `## <title> (<date>)` heading; `docs/rebase-notes.md`
+   is rendered from them, ADR-2197) or
+   `no rebase impact: REASON`. *Fork-local* means anything not a verbatim
    port of upstream Netflix/vmaf code; pure upstream syncs and
    `port-upstream-commit` PRs are exempt. The PR template
    ([.github/PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md))

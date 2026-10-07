@@ -761,8 +761,17 @@ jobs:
       # self-tests of the gates below run in Tooling Tests, which also runs on
       # the release PR: a test runs once in CI (ADR-1568). This job keeps the
       # checks that read the live tree.
-      - name: The rendered changelog matches its fragments
-        run: scripts/release/concat-changelog-fragments.sh --check
+      - name: The changelog fragments are well formed (and rendered on the release PR)
+        # A pull request carries fragments and not CHANGELOG.md (ADR-2197);
+        # the generated release pull request carries the render of the cut.
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "${HEAD_REF}" == release-please--* ]]; then
+            scripts/release/concat-changelog-fragments.sh --check
+          else
+            scripts/release/concat-changelog-fragments.sh --lint
+          fi
 
       - name: Check tester versions name the nearest v tag
         # `make lint-sh` runs both; no hosted job did. The check reads the

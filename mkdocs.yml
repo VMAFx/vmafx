@@ -10,7 +10,8 @@ docs_dir: docs
 site_dir: build-docs/site
 
 # ADR-0221 fragment files are concatenation source (assembled into
-# `docs/adr/README.md` by `scripts/docs/concat-adr-index.sh`) — they are
+# `docs/adr/README.md` by `scripts/docs/concat-adr-index.sh`, and the rebase
+# notes of `docs/rebase-notes.d/` into `docs/rebase-notes.md`) — they are
 # never rendered as standalone pages, so exclude them from the site build.
 # Same for changelog fragments under `changelog.d/` (which live in repo
 # root, not docs/, but listed here defensively if a future reorg moves
@@ -20,6 +21,7 @@ site_dir: build-docs/site
 # patterns avoid `**`, which tools/figures/build.mjs sources does not parse.
 exclude_docs: |
   adr/_index_fragments/*
+  rebase-notes.d/*
   /changelog.d/
   /figures/
 

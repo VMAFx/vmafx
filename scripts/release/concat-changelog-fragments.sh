@@ -24,6 +24,8 @@
 #              block; exit non-zero on drift. Used by the docs-fragments
 #              CI lane.
 #   --write    Rewrite CHANGELOG.md in place with the rendered body.
+#   --lint     Check the fragment files only. A pull request runs this; the
+#              rendered CHANGELOG.md is written at landing (ADR-2197).
 #
 # Splice contract (ADR-0913):
 #   The Unreleased block lives between the "## [Unreleased] ..." header
@@ -172,6 +174,21 @@ mode="render"
 case "${1:-}" in
   --check) mode="check" ;;
   --write) mode="write" ;;
+  --lint)
+    # Inputs only (a pull request runs this): the fragments sit in a section the
+    # renderer knows and none is empty. The rendered CHANGELOG.md is not read,
+    # because a pull request does not carry it (ADR-2197).
+    warn_unknown_subdirs || exit 1
+    rc=0
+    while IFS= read -r frag; do
+      if [[ ! -s "$frag" ]] || ! grep -q '[^[:space:]]' "$frag"; then
+        printf 'ERROR: %s is empty.\n' "${frag#"$REPO_ROOT"/}" >&2
+        rc=1
+      fi
+    done < <(find "$FRAG_ROOT" -mindepth 2 -maxdepth 2 -type f -name '*.md' ! -name '.*' \
+      -not -path "$FRAG_ROOT/releases/*" | LC_ALL=C sort)
+    exit "$rc"
+    ;;
   --help | -h)
     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
@@ -212,7 +229,7 @@ if [[ "$mode" == check ]]; then
   fi
   diff -u <(printf '%s' "$current_block") <(printf '%s' "$rendered") || [ "$?" -eq 1 ]
   printf '\nCHANGELOG.md Unreleased block is out of sync with changelog.d/.\n' >&2
-  printf 'Run: scripts/release/concat-changelog-fragments.sh --write\n' >&2
+  printf 'Run: make docs-render (the merge train and the release cut run it; a pull request does not carry it)\n' >&2
   exit 1
 fi
 

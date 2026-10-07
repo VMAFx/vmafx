@@ -55,3 +55,14 @@ different git subcommand to compute diff must update shim.
 Else `validate-pr-body.sh` silently uses real
 git's output — potentially fine, potentially wrong depending on
 local repo state.
+
+**Invariant — rendered files (ADR-2197)**: `deliverables-check.sh` refuses
+PR diff touching `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/titles.md`,
+`docs/research/titles.md`, `docs/adr/by-tag/*`, `_order.txt`,
+`docs/rebase-notes.md`. Those = `make docs-render` output, written by merge
+train per batch and by release cut. PR adds fragments only
+(`changelog.d/`, `docs/adr/_index_fragments/`, `docs/rebase-notes.d/`).
+Ticked CHANGELOG item needs `changelog.d/<section>/*.md`; ticked rebase-note
+item needs `docs/rebase-notes.d/<slug>.md`. Render set lives in `Makefile`
+(`docs-render`, `docs-render-check`) and this gate's `rendered_paths`: change
+both together. `test-validate-pr-body.sh` plants each refused path.
