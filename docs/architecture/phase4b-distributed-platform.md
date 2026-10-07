@@ -10,7 +10,11 @@ implementation-status sections follow.
     The controller, node, operator and server binaries are implemented under
     `cmd/` and documented under [docs/server/](../server/controller.md). The
     umbrella [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
-    itself still carries the status `Proposed`. The
+    is `Accepted` (status update of 2026-10-06).
+    [ADR-2350](../adr/2350-cloud-native-platform.md) replaces the
+    controller's SQLite queue with PostgreSQL and moves the platform core
+    (stateless replicas, queue-driven scaling, generated CRDs and protobuf)
+    into RC4; the pages below change as each part ships. The
     [implementation status](#implementation-status) table lists each sweep
     step.
 

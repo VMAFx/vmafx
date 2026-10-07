@@ -142,10 +142,12 @@ Pod template.
 
 ## Controller workload (ADR-1589)
 
-- `templates/controller.yaml`: replicas fixed 1, strategy `Recreate`
-  (SQLite queue); never add replicaCount or RollingUpdate. `/data` = queue
-  volume (`controller.persistence`). Selector + Service carry
-  `component: controller` (selector isolation check).
+- `templates/controller.yaml`: replicas 1, strategy `Recreate`, `/data` =
+  SQLite queue volume (`controller.persistence`) — transitional. ADR-2350
+  WP17 store moves state to Postgres (CloudNativePG `Cluster` or external
+  DSN), then: 2 replicas, RollingUpdate, PDB, topology spread, no claim.
+  Until then do not raise replicas (two pods = two queues). Selector +
+  Service carry `component: controller` (selector isolation check).
 - Auth env only via `vmafx.controllerAuthEnv`; server `deployment.yaml` gets
   none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
   `*vmafx-controller` `image.repository` refused; `controller.env` auth keys

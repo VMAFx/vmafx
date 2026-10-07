@@ -62776,3 +62776,10 @@ SYCL selector a superset of the x64 one on a sync. No upstream file, score, publ
 (VMAFx/pelorus #89). The second local edit of `core/src/interop/pelorus_qp_report_csv.c` (`_wfsopen`, added by `fix/msvc-zero-warnings-crt`)
 is now pelorus's own code, so the mirror carries only the banner and the include rewrite again and
 `scripts/sync-pelorus-interop.sh` reports no drift. A sync takes pelorus's side of every vendored file. no upstream file.
+
+## Cloud-native platform decision (2026-10-07, ADR-2350)
+
+`rc4/api-wp17-adr`, [ADR-2350](adr/2350-cloud-native-platform.md). Records the decision and marks ADR-1119, ADR-0711,
+ADR-1589, ADR-0719, ADR-1526 and ADR-2001 as partially superseded; comments and AGENTS notes of
+`cmd/vmafx-controller/`, `cmd/vmafx-operator/` and `deploy/helm/vmafx/` now call the SQLite queue transitional. No
+code path changes. no upstream file.

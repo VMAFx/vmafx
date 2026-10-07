@@ -30,7 +30,7 @@
     "controller": {
       "type": "object",
       "additionalProperties": false,
-      "description": "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). One replica (SQLite queue).",
+      "description": "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). One replica while the queue is SQLite; ADR-2350 moves it to PostgreSQL.",
       "properties": {
         "enabled": { "type": "boolean" },
         "image": { "$ref": "#/$defs/imageSpec" },

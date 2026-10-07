@@ -43,11 +43,11 @@
    for stale-threshold detection (ADR-1069). Introducing write to field in
    reconciler defeats staleness guard.
 
-5. **`gen/go/controller/controller.pb.go` has a hand-added `FinalScore` field.**
-   Added in Stage 2 to propagate VMAF score from COMPLETED jobs. When
-   `buf generate` runs to regenerate from proto, ensure field also present in
-   proto source (`cmd/vmafx-controller/proto/controller.proto`) before
-   regenerating; otherwise silently dropped.
+5. **`Job.final_score` = field 9 of `controller.proto`.** Carries VMAF score
+   of COMPLETED jobs to reconciler. `gen/go/controller/controller.pb.go` =
+   protoc output (`cmd/vmafx-controller/proto/generate.sh`); new field ->
+   proto first, regenerate, never hand-add. ADR-2350 D13: proto + CRD types
+   move to generated platform definition (one CRD tree after).
 
 6. **Helm `operator.enabled` defaults to false.** Operator Deployment and RBAC
    gated by `operator.enabled`. Changing default to `true` affects all existing

@@ -17,11 +17,11 @@
 //   - gRPC VmafxController service — job queue + node API
 //   - HTTP /healthz /readyz /metrics /v1/score
 //
-// DELIBERATE DESIGN (ADR-1119): the embedded modernc.org/sqlite job queue is
-// KEPT — the controller is NOT migrated onto golusoris.Jobs (river/Postgres).
-// A single-binary SQLite queue is the whole point of the controller's
-// zero-dependency operability story; only its construction is moved into fx
-// (with an OnStop Close hook).
+// TRANSITIONAL (ADR-2350, which replaces ADR-1119's queue decision): the job
+// queue is still the embedded modernc.org/sqlite queue, constructed in fx with
+// an OnStop Close hook. ADR-2350 moves job state to PostgreSQL (leased node
+// claims, node sessions in the database, River for retries and follow-up
+// steps) and keeps SQLite for the standalone profile behind the same store.
 //
 // #269 (golusoris): the JWT auth interceptors are injected into the golusoris
 // gRPC server via grpc.ProvideServerOptionFn — a constructor that receives the
@@ -230,9 +230,9 @@ func provideScorer(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (*libv
 // provideJobQueue opens (or creates) the embedded modernc.org/sqlite job queue
 // and registers its Close as an OnStop hook.
 //
-// DELIBERATE (ADR-1119): the controller keeps its single-binary SQLite queue
-// rather than adopting golusoris.Jobs (river/Postgres). Only construction +
-// teardown move into fx; the queue logic is untouched.
+// TRANSITIONAL (ADR-2350): the SQLite queue stays until the ADR-2350 store
+// replaces it. Only construction + teardown live in fx; the queue logic is
+// untouched.
 func provideJobQueue(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (queue.Queue, error) {
 	// golusoris env transform: VMAFX_DB_PATH -> "db.path".
 	dbPath := cfg.Get("db.path")

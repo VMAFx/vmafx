@@ -15,6 +15,7 @@ Per-package invariants for subtree.
 | [ADR-0961](../../docs/adr/0961-queue-pullwork-rollback-on-get-failure.md) | PullWork rollback on post-update Get failure | queue package correctness |
 | [ADR-0962](../../docs/adr/0962-controller-streamjobs-and-reaper-stop.md) | StreamJobs snapshot + reaper stop signal | controller / queue / nodes correctness |
 | [ADR-1119](../../docs/adr/1119-golusoris-go-framework-adoption.md) | golusoris fx framework adoption | composition root, env contract, lifecycle ordering, auth injection |
+| [ADR-2350](../../docs/adr/2350-cloud-native-platform.md) | cloud-native platform (replaces ADR-1119 queue decision) | Postgres store, leased node claims, River, stateless replicas, generated proto |
 | [ADR-1518](../../docs/adr/1518-controller-grpc-authorization.md) | gRPC authorisation: per-method role table, deny by default | auth interceptors, `grpc_roles.go` |
 | [ADR-1522](../../docs/adr/1522-controller-tenant-scoped-reads.md) | tenant-scoped job reads, tenant-bound node sessions | queue, nodes, scheduler, gRPC handlers |
 | [ADR-1519](../../docs/adr/1519-controller-tenant-registry.md) | tenant registry from VmafxTenant resources or file | `auth/tenants.go`, `tenants/`, `tenant_config.go` |
@@ -46,9 +47,13 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 1. **`productionOptions(envReplace)` = single graph source.** `main` and
    `app_test.go` build from it. `fx.Replace` parameterised (fx forbids duplicate
    type replacement): binary passes `Watch:true`, tests `Watch:false`.
-2. **SQLite job queue KEPT — do NOT adopt `golusoris.Jobs`.** `provideJobQueue`
-   wraps `modernc.org/sqlite` queue with `OnStop` `Close`. Single-binary
-   queue: ADR-1119 decision; river/Postgres out of scope.
+2. **SQLite job queue = transitional (ADR-2350 replaces ADR-1119 queue
+   decision).** `provideJobQueue` wraps `modernc.org/sqlite` queue with
+   `OnStop` `Close` until WP17 store lands: Postgres job table, leased claims
+   (`SKIP LOCKED`, attempt = fencing token), node sessions in DB, River
+   (golusoris `jobs`) for retries/schedules/follow-ups, no DB credentials on
+   nodes (Q-122). Standalone profile = same store on SQLite + `riversqlite`.
+   No new features on SQLite queue; fixes only.
 3. **JWT auth injected via golusoris#269 (`ProvideServerOptionFn`).** Interceptors
    wired via `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{...})`
    into `group:"grpc.serveropts"`. fx injects `*auth.Middleware`. Do NOT reintroduce
@@ -61,10 +66,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    registered AHEAD of gRPC registration; scorer/queue/registry OnStop hooks
    run in reverse: gRPC `GracefulStop` → queue `Close` + reaper stop → scorer
    `Close`. Guard: `TestStopOrder`.
-6. **gen/go/controller proto hand-written.** `gen/go/controller/*.pb.go`
-   lacks protobuf-v2 reflection interface; `VmafxController` RPCs unmarshaled
-   by standard codec. Wire tests use `VmafxScoring`; in-process handler
-   tests call controller methods directly.
+6. **gen/go/controller = protoc output** (`protoc-gen-go`, `protoimpl`
+   present; `generate.sh`). Never hand-edit. Guard: `wire_test.go`
+   (`TestControllerProtoMarshalsOverWire`, `VmafxController` over `bufconn`).
+   ADR-2350 D13: proto moves to platform definition + one `buf generate`.
 
 ## Invariants
 

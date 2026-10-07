@@ -79,6 +79,19 @@
   still open at any time. See "Which jobs run when" in `docs/development/ci.md`.
 
 
+- **The distributed platform has an architecture for running without local state
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** Job state and node
+  sessions move from the controller's embedded SQLite queue to PostgreSQL, so
+  several controller replicas can serve any node; nodes keep the gRPC protocol
+  and claim work through leases; River runs retries and follow-up steps; node
+  pools scale on queue depth with KEDA; results become signed OCI artifacts; job
+  events go out as CloudEvents; and the protobuf, CRDs, OpenAPI and Helm values
+  schema are generated from a platform definition. A standalone profile keeps
+  SQLite. This change only records the decision: the chart, the controller and
+  the documentation pages say that the single-replica SQLite queue is
+  transitional. Nothing in a running installation changes.
+
+
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
 
 

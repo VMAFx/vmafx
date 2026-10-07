@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # ADR-0711: vmafx-controller Phase 4b.1 — Job Queue, Node Registry, and Scheduler
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for the SQLite job persistence and the in-memory node registry)
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: `architecture`, `go`, `controller`, `grpc`, `sqlite`, `job-queue`, `node-registry`, `scheduler`, `phase4b`, `fork-local`

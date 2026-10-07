@@ -29,7 +29,8 @@
 #   VMAFX_HTTP_ADDR      HTTP listen address (default :8080)
 #   VMAFX_GRPC_LISTEN    gRPC listen address (default :9090)
 #   VMAFX_DB_PATH        SQLite job queue (image default /data/vmafx-controller.db;
-#                        /data belongs to the nonroot user, mount a volume there)
+#                        /data belongs to the nonroot user, mount a volume there);
+#                        transitional: ADR-2350 moves job state to PostgreSQL
 #   VMAFX_VMAF_BINARY    path to vmaf CLI binary
 #   VMAFX_MODEL_DIR      directory containing VMAF .json model files
 #   VMAFX_AUTH_*, VMAFX_JWKS_ENDPOINT, VMAFX_SCORING_ROOTS: docs/server/auth.md

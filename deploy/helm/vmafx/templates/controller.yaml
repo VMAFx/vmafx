@@ -4,10 +4,11 @@ Copyright 2026 Lusoris
 
 deploy/helm/vmafx/templates/controller.yaml
 The vmafx-controller workload (ADR-1589): a one-replica Deployment (the job
-queue is an embedded SQLite database, ADR-1119, so Recreate and a
-ReadWriteOnce volume), its Service with the HTTP and gRPC ports the nodes, the
-operator and the clients use, and the queue's PersistentVolumeClaim. The auth
-settings of auth.* configure this workload only (vmafx.controllerAuthEnv).
+queue is still an embedded SQLite database, so Recreate and a ReadWriteOnce
+volume; ADR-2350 moves it to PostgreSQL and several replicas), its Service
+with the HTTP and gRPC ports the nodes, the operator and the clients use, and
+the queue's PersistentVolumeClaim. The auth settings of auth.* configure this
+workload only (vmafx.controllerAuthEnv).
 
 ADR-0711: vmafx-controller. ADR-0794: auth gateway. ADR-1519: tenant registry.
 */ -}}
@@ -36,7 +37,8 @@ metadata:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 spec:
-  # One replica: two controllers would each own a different SQLite queue.
+  # One replica until ADR-2350's PostgreSQL store lands: two controllers would
+  # each own a different SQLite queue.
   replicas: 1
   strategy:
     type: Recreate

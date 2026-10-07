@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0719: vmafx-node rclone Integration — Remote-Asset Streaming Without Disk Materialisation
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for rclone as the default input path (presigned object URLs by default, rclone opt-in))
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: `architecture`, `go`, `node`, `rclone`, `storage`, `ffmpeg`, `phase4b`, `fork-local`

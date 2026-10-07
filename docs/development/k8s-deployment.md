@@ -184,6 +184,10 @@ What the chart renders:
   `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the
   queue with the pod). Liveness and readiness probe `/healthz` and `/readyz`
   on the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
+  The single replica is transitional:
+  [ADR-2350](../adr/2350-cloud-native-platform.md) moves the job state to
+  PostgreSQL so the controller can run several replicas; this section changes
+  when that store ships.
 - **`<release>-controller` service account**, used only by the controller
   pods and the only account bound to the `VmafxTenant` reader Role
   ([ADR-1592](../adr/1592-helm-split-service-accounts.md)); the server, job

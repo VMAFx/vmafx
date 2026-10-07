@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1589: the Helm chart deploys vmafx-controller as its own one-replica workload, and the release publishes a licence-gated controller image
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for the one-replica controller workload (Recreate strategy, ReadWriteOnce claim))
 - **Date**: 2026-10-04
 - **Deciders**: maintainer, agent
 - **Tags**: helm, controller, node, operator, docker, release, supply-chain, phase4b, fork-local

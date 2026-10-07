@@ -204,6 +204,10 @@ the job.
 ## Job persistence
 
 The controller persists jobs in the SQLite database at `VMAFX_DB_PATH`.
+This is transitional: [ADR-2350](../adr/2350-cloud-native-platform.md) moves
+jobs and node sessions to PostgreSQL, so any controller replica can serve any
+node, and keeps SQLite for a standalone profile. Until that store ships, the
+rules below apply.
 On controller restart:
 
 - `PENDING` jobs are reloaded and re-queued in submission order.

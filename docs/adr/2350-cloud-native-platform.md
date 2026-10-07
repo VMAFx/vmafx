@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
 
-- **Status**: Proposed (open questions Q1 to Q8 below; the recommended options are written into the decision until they are answered)
+- **Status**: Accepted (maintainer answers Q-122 to Q-129, 2026-10-07)
 - **Date**: 2026-10-07
 - **Deciders**: maintainer
 - **Tags**: cloud, k8s, controller, node, operator, helm, codegen, rc4, supply-chain, security
@@ -74,17 +74,17 @@ profile runs the same code on SQLite with an in-process cache.
 
 | Element | Provider | Checked version | Status |
 | --- | --- | --- | --- |
-| State store | PostgreSQL 18 through a CloudNativePG `Cluster`, or an external server; golusoris `db/pgx`, `db/sqlc`, `db/migrate` | CloudNativePG 1.30.1, PostgreSQL 18.6 | D1; packaging Q4 |
+| State store | PostgreSQL 18 through a CloudNativePG `Cluster`, or an external server; golusoris `db/pgx`, `db/sqlc`, `db/migrate` | CloudNativePG 1.30.1, PostgreSQL 18.6 | D1; packaging (Q-125) |
 | Backups, point-in-time recovery | Barman Cloud plugin for CloudNativePG, object storage, workload identity | 0.15.1 | D1 |
-| Node work | Leased claims on the job table | | D2, Q1 |
+| Node work | Leased claims on the job table | | D2 (Q-122) |
 | Asynchronous steps, retries, periodic tasks | River through golusoris `jobs` | River 0.49.0 (golusoris pins 0.47.0) | D2 |
 | Cache | golusoris `cache/twotier`: L1 `cache/memory` (otter v2), L2 Valkey through rueidis; Dragonfly tested as a drop-in | Valkey 9.1.2, rueidis 1.0.78 | D5 (maintainer answer, 2026-10-07) |
-| Object storage | golusoris `storage` (S3 API; GCS and Azure Blob added there) | | D6, Q7 |
-| Score time series | TimescaleDB hypertables, golusoris `db/timescale` | 2.30.2 | D7, Q3 |
-| Artifacts | OCI 1.1 artifacts signed with Sigstore | image-spec 1.1.1, sigstore-go 1.3.0 | D8, Q6 |
-| Events | golusoris `outbox` into River, CloudEvents on golusoris `pubsub/nats` or `pubsub/kafka`; webhooks | CloudEvents 1.0.2, NATS 2.15.0, Kafka 4.3.1 | D9, Q2 |
+| Object storage | golusoris `storage` (S3 API; GCS and Azure Blob added there) | | D6 (Q-128) |
+| Score time series | TimescaleDB hypertables, golusoris `db/timescale` | 2.30.2 | D7 (Q-124) |
+| Artifacts | OCI 1.1 artifacts signed with Sigstore | image-spec 1.1.1, sigstore-go 1.3.0 | D8 (Q-127) |
+| Events | golusoris `outbox` into River, CloudEvents on golusoris `pubsub/nats` or `pubsub/kafka`; webhooks | CloudEvents 1.0.2, NATS 2.15.0, Kafka 4.3.1 | D9 (Q-123) |
 | Scaling | KEDA `ScaledObject` with the PostgreSQL scaler per node pool, scale to zero; KEDA for the scoring server | KEDA 2.21.0 | D10 |
-| Placement | GPU device plugins or DRA `ResourceClaimTemplate`s; Node Feature Discovery labels | Kubernetes 1.37, NFD 0.19.0 | D10, Q5 |
+| Placement | GPU device plugins or DRA `ResourceClaimTemplate`s; Node Feature Discovery labels | Kubernetes 1.37, NFD 0.19.0 | D10 (Q-126) |
 | Idempotency | Per-tenant idempotency key on submission; golusoris `idempotency` for REST | | D11 |
 | Leader election | River's own elector for River maintenance; golusoris `leader/k8s` (Lease) for the outbox drainer | | D11 |
 | mTLS | cert-manager certificates and trust-manager bundles; golusoris `grpc` client-certificate checks and reload | cert-manager 1.21.2, trust-manager 0.25.0 | D12 |
@@ -112,7 +112,7 @@ profile runs the same code on SQLite with an in-process cache.
   servers (TimescaleDB 2.30 supports 16 to 18; PostgreSQL 14 ends on
   2026-11-12).
 
-### D2. Node work: leased claims, River for everything around them (Q1)
+### D2. Node work: leased claims, River for everything around them (Q-122)
 
 - The job row is the record. A node's `PullWork`, on any replica, claims the
   oldest pending job of its tenant that its backends can run with
@@ -139,6 +139,9 @@ profile runs the same code on SQLite with an in-process cache.
   garbage collection.
 - The node protocol keeps its RPCs; the attempt number and lease length are
   added fields within `vmafx.controller.v1`.
+- This departs on purpose from the wording of Q-112, which named River as the
+  job queue: the queue of node work is the leased claim table, and River runs
+  the retries, schedules and follow-up steps around it (Q-122).
 
 ### D3. Data model
 
@@ -186,7 +189,7 @@ REST idempotency responses and short-lived job status for polling clients
 (`GetJob`, `StreamJobs`, the operator). Losing L2 slows reads and loses
 nothing.
 
-### D6. Object storage and inputs (Q7)
+### D6. Object storage and inputs (Q-128)
 
 Inputs and outputs are object references (`s3://bucket/key`; `gs://` and
 `az://` once golusoris `storage` has those backends). The controller resolves
@@ -201,7 +204,7 @@ by default because its FUSE and eBPF modes need privileges
 ([ADR-1593](1593-helm-node-fuse-and-ebpf.md)). The end-to-end suite uses SeaweedFS
 (Apache-2.0); MinIO is archived and AGPL-3.0.
 
-### D7. Score time series (Q3)
+### D7. Score time series (Q-124)
 
 Per-frame and window scores go into `score_frames` and `score_windows`,
 written by a River job from the per-frame report the node uploads. They are
@@ -215,7 +218,7 @@ License and stay opt-in for operators who supply such an image; the
 documentation states the TSL terms. The standalone profile keeps the series in
 SQLite.
 
-### D8. Artifacts (Q6)
+### D8. Artifacts (Q-127)
 
 Each finished job can be exported as an OCI 1.1 artifact: artifact type
 `application/vnd.vmafx.result.v1+json`, the empty config, and layers
@@ -224,7 +227,7 @@ and `application/vnd.vmafx.provenance.v1+json` (the WP5 provenance record).
 A Sigstore bundle (`application/vnd.dev.sigstore.bundle.v0.3+json`) is attached
 as a referrer, signed keyless with the workload's identity where Fulcio can
 verify the cluster's issuer and with a KMS key reached through workload
-identity otherwise. Models are artifacts of type
+identity otherwise; cosign signs the manifest by its digest. Models are artifacts of type
 `application/vnd.vmafx.model.v1+json` and nodes pull them by digest. The
 platform definition lists every media type, so constants and the reference
 page are generated. The client is golusoris `container/registry`
@@ -232,7 +235,7 @@ page are generated. The client is golusoris `container/registry`
 referrers API; its keychains give registry access through workload identity.
 The standalone profile writes an OCI image-layout directory.
 
-### D9. Events (Q2)
+### D9. Events (Q-123)
 
 Every job state change writes an outbox row in its own transaction (golusoris
 `outbox`). The drainer runs on one replica (golusoris `leader/k8s`) and turns
@@ -246,7 +249,7 @@ per-tenant endpoints in the `VmafxTenant` specification, delivered by River
 jobs with retries and an HMAC signature, in the CloudEvents HTTP binding. Event
 types and their data schemas are in the platform definition.
 
-### D10. Scaling and placement (Q5)
+### D10. Scaling and placement (Q-126)
 
 - Each node pool is a Deployment with a KEDA `ScaledObject` whose PostgreSQL
   scaler counts the pending jobs the pool can run, through a read-only role;
@@ -341,7 +344,7 @@ a planted defect (a hand edit of a CRD, of the schema and of a generated
 proto). The platform surfaces version like the scoring contract: additive
 within `v1`, a breaking change as `v2` side by side.
 
-### D14. Cluster prerequisites and what the chart installs (Q4)
+### D14. Cluster prerequisites and what the chart installs (Q-125)
 
 Cluster-scoped operators are documented prerequisites with tested versions:
 CloudNativePG and its Barman Cloud plugin, KEDA, cert-manager and
@@ -355,7 +358,7 @@ optional subcharts (Valkey, NATS) or as external endpoints; every external
 mode (database, cache, bus, object storage, registry) works without them. No
 subchart from the retired public Bitnami catalogue.
 
-### D15. Node pools and the operator
+### D15. Node pools and the operator (Q-129)
 
 Node pools stay Helm-rendered Deployments with their `ScaledObject`s, which
 needs no operator and suits GitOps. The operator stays optional and owns the
@@ -389,48 +392,51 @@ latency, cache hit ratio per tier, artifact exports, series ingest lag. Queue
 gauges come from the store (one query, emitted by one replica); trace context
 travels in River job metadata and in the CloudEvents `traceparent` extension.
 
-## Open questions (each with the recommended option)
+## Maintainer answers
 
-| # | Question | Options | Recommended, and why |
-| --- | --- | --- | --- |
-| Q1 | How do nodes get work, given that River completes a job only inside a River client? | (a) Leased claims on the job table, River for every step around them; (b) nodes as River workers with a database connection; (c) Temporal | (a): nodes keep the authenticated, tenant-bound gRPC protocol and hold no database credential while they decode untrusted media; fencing gives one result per job; River still owns retries, periodic work and every asynchronous step |
-| Q2 | Default event bus | (a) NATS JetStream; (b) Kafka; (c) none by default, webhooks only | (a): one small server, an official chart, scale-to-zero friendly, a CloudEvents binding in sdk-go; Kafka stays supported through the same publisher and is tested |
-| Q3 | TimescaleDB edition and managed databases without it | (a) Apache-2.0 edition by default, plain tables where the extension is missing, TSL features opt-in; (b) require a TSL image; (c) no TimescaleDB | (a): no licence passes to operators by default, and the platform runs on managed PostgreSQL that lacks the extension; compression stays available to those who accept the TSL |
-| Q4 | CloudNativePG as a chart dependency or a prerequisite | (a) Prerequisite, the chart renders the `Cluster`; (b) subchart | (a): an operator is cluster-scoped (CRDs, one per cluster); a subchart conflicts with an existing installation and ties CRD upgrades to our releases. Same for KEDA, cert-manager, ESO, NFD |
-| Q5 | GPU placement | (a) Device plugins by default, DRA per pool as an option; (b) DRA by default; (c) device plugins only | (a): no vendor's DRA driver allocates GPUs as a supported feature today (NVIDIA: not yet officially supported; Intel: beta; AMD: v1.0.1); the DRA path is built and tested so the default can move |
-| Q6 | OCI client and media types | (a) Extend golusoris `container/registry` (go-containerregistry), own `vnd.vmafx` types, models included; (b) oras-go, own types; (c) (a) with the ModelPack types for models | (a): one OCI client in the fleet (HISS-19); the artifacts follow image-spec 1.1, so the oras CLI reads them; ModelPack is at v0.0.7 and built around language-model weights |
-| Q7 | How nodes read inputs | (a) Presigned object URLs by default, rclone opt-in; (b) rclone by default; (c) remove rclone | (a): nodes hold no storage credential and need no FUSE or extra capability; rclone keeps backends without presigned URLs reachable |
-| Q8 | Where node pools are defined | (a) Helm Deployments with `ScaledObject`s; (b) the operator renders pools from `VmafxNode` | (a): works without the optional operator and in plain GitOps; the operator can take pools over later without an API change |
+Each question went to the maintainer with a recommendation; every
+recommendation was taken (ledger Q-122 to Q-129, 2026-10-07).
+
+| Ledger | Question | Answer |
+| --- | --- | --- |
+| Q-122 | How do nodes get work, given that River completes a job only inside a River client? | Leased claims on the job table (`SKIP LOCKED`, attempt number as fencing token, sessions in the database) over the controller's gRPC API; River runs retries, schedules and follow-up steps around them; no database credentials on nodes (D2) |
+| Q-123 | Default event bus | NATS JetStream by default, Kafka supported and tested (D9) |
+| Q-124 | TimescaleDB edition | Apache-2.0 edition by default, plain tables where the extension is missing, TSL features opt-in (D7) |
+| Q-125 | Cluster operators in the chart | Documented prerequisites; the chart renders their custom resources and installs no operator (D14) |
+| Q-126 | GPU placement | Device plugins and Node Feature Discovery labels by default; DRA opt-in per node pool (D10) |
+| Q-127 | OCI client and media types | Extend golusoris `container/registry` upstream (push, pull, referrers); own `application/vnd.vmafx.*` media types including models; cosign signs by digest (D8) |
+| Q-128 | How nodes read inputs | Presigned object URLs by default, no storage credentials on nodes; rclone mounts opt-in (D6) |
+| Q-129 | Where node pools are defined | Helm Deployments per pool with KEDA `ScaledObject`s on queue depth, scale to zero (D15) |
 
 ## Alternatives considered
 
 | Choice | Option | Pros | Cons | Outcome |
 | --- | --- | --- | --- | --- |
-| Node work (Q1) | Leased claims, River around them | Gateway and tenant model unchanged; fencing; no database access on GPU pods | One claim query to own beside River | Recommended |
-| | Nodes as River workers | River's rescuer and retries apply directly | Database credentials on pods that decode untrusted media; no tenant-bound or remote nodes; the gRPC node API goes | Not recommended |
-| | Temporal (golusoris `jobs/workflow`) | Activities with heartbeats on remote workers | A second cluster with its own persistence; Q-112 chose River | Not recommended |
+| Node work (Q-122) | Leased claims, River around them | Gateway and tenant model unchanged; fencing; no database access on GPU pods | One claim query to own beside River | Chosen |
+| | Nodes as River workers | River's rescuer and retries apply directly | Database credentials on pods that decode untrusted media; no tenant-bound or remote nodes; the gRPC node API goes | Not chosen |
+| | Temporal (golusoris `jobs/workflow`) | Activities with heartbeats on remote workers | A second cluster with its own persistence; Q-112 chose River | Not chosen |
 | | River worker on a replica that holds the job while a node runs it | All work is a River job | A job is tied to one replica; another replica cannot complete it (`JobCompleteTx`) | Rejected |
 | State store | PostgreSQL on CloudNativePG | Q-112; backups and recovery by the operator | A database to run | Chosen |
 | | SQLite with a replication tool | No database server | One writer; no horizontal scale | Rejected |
 | | Kubernetes resources as the queue | No new component | The API server is not a queue (object counts, watch fan-out, etcd size) | Rejected |
-| Event bus (Q2) | NATS JetStream | Small, official chart, CloudEvents binding | Fewer enterprise connectors | Recommended |
+| Event bus (Q-123) | NATS JetStream | Small, official chart, CloudEvents binding | Fewer enterprise connectors | Chosen |
 | | Kafka | Where integrations already are | Heavy to run; no franz-go binding in sdk-go | Supported, not default |
 | | Webhooks only | Nothing to run | No fan-out, no replay | Standalone profile |
-| Series (Q3) | Apache edition, plain-table fallback, TSL opt-in | No licence passed on; managed PostgreSQL works | No compression by default | Recommended |
-| | TSL image required | Compression, continuous aggregates | Licence passed to operators; managed PostgreSQL without the extension excluded | Not recommended |
+| Series (Q-124) | Apache edition, plain-table fallback, TSL opt-in | No licence passed on; managed PostgreSQL works | No compression by default | Chosen |
+| | TSL image required | Compression, continuous aggregates | Licence passed to operators; managed PostgreSQL without the extension excluded | Not chosen |
 | | Partitioned tables, no TimescaleDB | Nothing extra | Contradicts Q-112 | Rejected |
-| Cluster operators (Q4) | Prerequisites | One installation per cluster, independent upgrades | One more install step | Recommended |
-| | Subcharts | One `helm install` | CRD and version conflicts with existing installations | Not recommended |
-| Placement (Q5) | Device plugins default, DRA opt-in | Works on every cluster today | Two code paths in the chart | Recommended |
-| | DRA default | Structured device selection | Vendor drivers not supported for GPUs yet | Not recommended now |
-| | Device plugins only | One path | Nothing ready when the drivers are | Not recommended |
-| Artifacts (Q6) | golusoris `container/registry`, own types | One OCI client; keychains exist | Push and referrers to add upstream | Recommended |
-| | oras-go | Artifact-first API | A second OCI client in the fleet | Not recommended |
+| Cluster operators (Q-125) | Prerequisites | One installation per cluster, independent upgrades | One more install step | Chosen |
+| | Subcharts | One `helm install` | CRD and version conflicts with existing installations | Not chosen |
+| Placement (Q-126) | Device plugins default, DRA opt-in | Works on every cluster today | Two code paths in the chart | Chosen |
+| | DRA default | Structured device selection | Vendor drivers not supported for GPUs yet | Not chosen |
+| | Device plugins only | One path | Nothing ready when the drivers are | Not chosen |
+| Artifacts (Q-127) | golusoris `container/registry`, own types | One OCI client; keychains exist | Push and referrers to add upstream | Chosen |
+| | oras-go | Artifact-first API | A second OCI client in the fleet | Not chosen |
 | | ModelPack types for models | A shared standard | Pre-1.0 and language-model oriented | Revisit at its 1.0 |
-| Inputs (Q7) | Presigned URLs, rclone opt-in | No credentials or privileges on nodes | URLs must outlive a long read (expiry set per attempt) | Recommended |
-| | rclone by default | Many backends | Credentials and FUSE privileges on every node | Not recommended |
-| | Remove rclone | Simplest node image | Backends without presigned URLs unreachable | Not recommended |
-| Node pools (Q8) | Helm | No operator needed | Pools change with `helm upgrade` | Recommended |
+| Inputs (Q-128) | Presigned URLs, rclone opt-in | No credentials or privileges on nodes | URLs must outlive a long read (expiry set per attempt) | Chosen |
+| | rclone by default | Many backends | Credentials and FUSE privileges on every node | Not chosen |
+| | Remove rclone | Simplest node image | Backends without presigned URLs unreachable | Not chosen |
+| Node pools (Q-129) | Helm | No operator needed | Pools change with `helm upgrade` | Chosen |
 | | Operator renders pools | Declarative pools as resources | Operator becomes required | Later |
 | Definition | Separate platform definition, same generator | Platform changes never move the C ABI version | Two files | Chosen |
 | | Extend `core/api/vmafx.toml` | One file | Every platform change bumps `abi_version` | Rejected |
@@ -462,10 +468,10 @@ travels in River job metadata and in the CloudEvents `traceparent` extension.
   dialects; golusoris needs the additions listed below before the dependent
   packages land; the environment contract changes (`VMAFX_DB_PATH`).
 - **Follow-ups**:
-  - When this record is accepted: ADR-1119, ADR-0711 and ADR-1589 become
-    "Accepted (partially superseded by ADR-2350 …)" for the queue, the SQLite
-    persistence and the one-replica workload, and ADR-2001 for its RC4 / RC5
-    cloud-native rows; ADR-0719 and ADR-1526 as well if Q7 is answered (a).
+  - With this record, ADR-1119, ADR-0711 and ADR-1589 become "Accepted
+    (partially superseded by ADR-2350)" for the queue, the SQLite persistence
+    and the one-replica workload, ADR-0719 and ADR-1526 for rclone as the
+    default input path, and ADR-2001 for its RC4 / RC5 cloud-native rows.
     The statements of the old decision are rewritten in the same change:
     `cmd/vmafx-controller/AGENTS.md:49-51` (the prohibition to adopt
     golusoris `jobs`), `cmd/vmafx-controller/main.go:20-23,233`,
@@ -504,8 +510,8 @@ platform's behaviour, a kind end-to-end case and a standalone-profile case.
 
 | # | Package | Depends on |
 | --- | --- | --- |
-| 0 | This record accepted, Research-2351, the status lines and the rewrite of the old decision's statements | the answers to Q1 to Q8 |
-| 1 | The three SQLite files committed under `cmd/vmafx-controller/` by #2036 go, and the test that wrote them gets a temporary path (suspect: a test that builds the production graph without `VMAFX_DB_PATH`, so the default relative path lands in the package directory) | none |
+| 0 | This record accepted, Research-2351, the status lines and the rewrite of the old decision's statements | Q-122 to Q-129 (answered) |
+| 1 | The three SQLite files committed under `cmd/vmafx-controller/` by #2036 go and the default path leaves the working directory: done in #2441 (observability lane) | none |
 | 2 | Platform definition and the protobuf emitter: controller and scoring services, one buf configuration, wire-identical output | 0; ADR-2044 emitters (#2258) on master |
 | 3 | CRD emitter and controller-gen: one CRD tree, `VmafxTenant` Go type, generated deepcopy and RBAC, compatibility check | 2 |
 | 4 | Configuration and chart emitters: Helm values schema, values file, environment mapping, `CompoundKeys`, environment tables | 2 |
@@ -515,7 +521,7 @@ platform's behaviour, a kind end-to-end case and a standalone-profile case.
 | 8 | Idempotency keys and attempt fencing on the wire (`SubmitJob`, `ReportResult`, REST) | 2, 6; golusoris `idempotency` store |
 | 9 | Object storage: object references, presigned URLs per attempt, tenant storage scope, uploads, SeaweedFS in the suite, rclone opt-in | 6, 8; golusoris `storage` presigned PUT (GCS and Azure Blob when they land) |
 | 10 | Two-tier cache with Valkey and Dragonfly in the suite | 6; golusoris `cache/twotier` L1-only mode |
-| 11 | Score series: ingestion, query RPCs, retention, edition handling | 9; answer Q3; golusoris `db/timescale` edition detection |
+| 11 | Score series: ingestion, query RPCs, retention, edition handling | 9; golusoris `db/timescale` edition detection |
 | 12 | Artifacts: export, signing, model pull by digest, media types from the definition | 9, 11; golusoris `container/registry` artifacts |
 | 13 | Events and webhooks: outbox, CloudEvents on NATS and Kafka, event definitions | 6, 2; golusoris `pubsub` / `outbox` CloudEvents |
 | 14 | Scaling and placement: KEDA for node pools and server, drain and deletion cost, DRA templates, NFD labels; kind case: scale out from zero and back | 7 |
@@ -549,6 +555,14 @@ TypeScript) belong to the C API and stay with their 1.1 and 1.2 issues.
 ## References
 
 - `Q` (Q-112, 2026-10-07): "Re-plan + build in RC4, all core cloud-native features: state out of the processes (Postgres via CNPG with backups/PITR, River queue, two-tier cache with Valkey/Redis L2, S3-compatible object storage, OCI artifact export via ORAS, TimescaleDB score time series); disposable horizontally scalable services; KEDA queue-driven scaling incl. scale-to-zero GPU nodes, DRA/NFD placement; outbox + CloudEvents on NATS/Kafka; CRDs/proto/OpenAPI/Helm schema generated from the RC4 definition, migrations as jobs; idempotency, retries, PDBs, topology spread; workload identity, mTLS, External Secrets; standalone SQLite profile kept. Supersedes ADR-1119's queue decision."
+- `Q` (Q-122): "Leased claims on the job table (SKIP LOCKED, attempt number as fencing token, sessions in DB) over the controller's gRPC API; River runs retries, schedules and follow-ups around them; no DB credentials on nodes"
+- `Q` (Q-123): "NATS JetStream default, Kafka supported and tested"
+- `Q` (Q-124): "Apache edition by default, plain tables when the extension is missing, TSL features opt-in"
+- `Q` (Q-125): "Documented prerequisites; the chart renders their custom resources; no operator installed by our chart"
+- `Q` (Q-126): "Device plugins + NFD labels by default; DRA opt-in per node pool"
+- `Q` (Q-127): "Extend golusoris container/registry (push/pull, referrers) upstream; own application/vnd.vmafx.* media types incl. models; cosign signs by digest"
+- `Q` (Q-128): "Presigned object URLs by default (no storage credentials on nodes); rclone mounts opt-in"
+- `Q` (Q-129): "Helm Deployments per pool with KEDA ScaledObjects on queue depth (scale to zero)"
 - Maintainer question on the cache tiers (2026-10-07), answered with the recommendation: L1 golusoris `cache/memory` on otter v2; L2 Valkey by default; Dragonfly a tested drop-in, not the default, because of BUSL-1.1; both tested in the end-to-end suite; the documentation states the Dragonfly terms.
 - Issues [#2431](https://github.com/VMAFx/vmafx/issues/2431), [#2430](https://github.com/VMAFx/vmafx/issues/2430), [#2155](https://github.com/VMAFx/vmafx/issues/2155), [#2321](https://github.com/VMAFx/vmafx/issues/2321), [#1251](https://github.com/VMAFx/vmafx/issues/1251), [#1252](https://github.com/VMAFx/vmafx/issues/1252), [#1253](https://github.com/VMAFx/vmafx/issues/1253).
 - [Research-2351](../research/2351-cloud-native-platform-components.md) (versions, licences and limits checked on 2026-10-07).

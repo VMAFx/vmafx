@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2001: Release scope of 1.0.0 and the roadmap to 2.0
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for its RC4 / RC5 cloud-native rows (the platform core moves to RC4; the GPU pool arbiter stays in RC5))
 - **Date**: 2026-10-06
 - **Deciders**: maintainer
 - **Tags**: release, rc, roadmap, process

@@ -50,12 +50,14 @@ operator:
 # ---------------------------------------------------------------------------
 # Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
 # ---------------------------------------------------------------------------
-# One replica: the job queue is an embedded SQLite database (ADR-1119), so the
-# Deployment uses the Recreate strategy and a ReadWriteOnce volume. The node
-# pool (node.enabled) and the operator (operator.enabled) find it through the
-# <fullname>-controller Service. controller.enabled needs auth.enabled (an
-# identity provider, a tenant registry or auth.disabled for dev) and the other
-# way round: the auth settings below configure this workload.
+# One replica for now: the job queue is still an embedded SQLite database, so
+# the Deployment uses the Recreate strategy and a ReadWriteOnce volume (ADR-2350
+# moves the job state to PostgreSQL and the controller to several replicas).
+# The node pool (node.enabled) and the operator (operator.enabled) find it
+# through the <fullname>-controller Service. controller.enabled needs
+# auth.enabled (an identity provider, a tenant registry or auth.disabled for
+# dev) and the other way round: the auth settings below configure this
+# workload.
 controller:
   enabled: false
   image:
@@ -67,7 +69,8 @@ controller:
   httpPort: 8080
   grpcPort: 9090
   # persistence keeps the SQLite job queue (VMAFX_DB_PATH=/data/...) across
-  # restarts. Disabled: an emptyDir, and every job is lost with the pod.
+  # restarts. Disabled: an emptyDir, and every job is lost with the pod. The
+  # claim goes when ADR-2350's PostgreSQL store lands.
   persistence:
     enabled: true
     size: 1Gi
