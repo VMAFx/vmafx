@@ -232,6 +232,14 @@ backend within it.
   `repeatlast=0`, a main frame without a reference frame passes on unscored
   and counted, and nothing is flushed or written when no pair was scored;
   `vmafx_filter_check.py contract` guards it.
+- **The FFmpeg series has no Vulkan patch ([ADR-2166](../adr/2166-ffmpeg-series-drops-vulkan-shims.md))**:
+  `ffmpeg-patches/series.txt` has no `0004` and no `0006` and the other
+  patches keep their numbers; no patch carries a `libvmaf_vulkan` or
+  `vulkan_device` line, a `CONFIG_LIBVMAF_VULKAN*` guard or a
+  `libvmaf_vulkan.h` configure probe. A sync keeps `copy_picture_data(s, ...)`
+  of `vf_libvmaf.c` taking the context (`av_unused`), which the CUDA selector's
+  picture pool reads. `python3 scripts/ci/ffmpeg_patch_stack.py --check` is the
+  replay gate.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

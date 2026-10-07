@@ -17,10 +17,10 @@ frame naming the plane instead of copying the plane through. Built with
  create mode 100644 libavfilter/vf_vmafx_pre.c
 
 diff --git a/configure b/configure
-index 21c55dc213fbb4b449ebd5ed288a6407fac78735..6e793883a6a40c85bdf354205958b6dcd0b0534c 100755
+index 43179d60958ca2993da65e8a8b6a86bafd2535b4..c593250bd4c028bd09e3428a6f68eb850aaf26b0 100755
 --- a/configure
 +++ b/configure
-@@ -4315,6 +4315,7 @@ vmaf_pre_filter_deps="libvmaf"
+@@ -4312,6 +4312,7 @@ vmaf_pre_filter_deps="libvmaf"
  libvmaf_tune_filter_deps="libvmaf"
  vmafx_filter_deps="libvmafx"
  vmafx_tune_filter_deps="libvmafx"
@@ -66,10 +66,10 @@ index 82d6d9955482aa89dc8f9e2649b60f0cfa2aed79..ac1f333e207b42d04a5a14a5ec6f7180
  
  Score a pass with the VMAFx library and recommend a CRF for the next one.
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 497cf229ea466c1a283d7d00114f537c40387bd6..83337a68ac04282911aaba99d9639d75e565b00a 100644
+index 1b7932bbc945112dc31049e90216e0a106b4cb9a..f76c77729e57b2423a7dd06e606a616fbc51d690 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -576,6 +576,7 @@ OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
+@@ -575,6 +575,7 @@ OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
  OBJS-$(CONFIG_VMAFX_FILTER)                  += vf_vmafx.o framesync.o
  OBJS-$(CONFIG_VMAFX_TUNE_FILTER)             += vf_vmafx.o framesync.o
@@ -78,10 +78,10 @@ index 497cf229ea466c1a283d7d00114f537c40387bd6..83337a68ac04282911aaba99d9639d75
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 83727b0c8fd2ac6f3499128b9edf0a20315899f5..432073a6342b5fbe8848b71f40f9a2850159191f 100644
+index 3b647fb95d02ab9eaf4102c0e4b59b236818990a..cd2647e2adb528e0ec397778025adbc13c85d595 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -543,6 +543,7 @@ extern const FFFilter ff_vf_vmafmotion;
+@@ -542,6 +542,7 @@ extern const FFFilter ff_vf_vmafmotion;
  extern const FFFilter ff_vf_vmaf_pre;
  extern const FFFilter ff_vf_vmafx;
  extern const FFFilter ff_vf_vmafx_tune;

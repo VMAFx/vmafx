@@ -35,14 +35,14 @@ the new fields because it shares LIBVMAFContext.
 
 ADR-0576.
 ---
- libavfilter/vf_libvmaf.c | 30 ++++++++++++++++++++++++++++++
- 1 file changed, 30 insertions(+)
+ libavfilter/vf_libvmaf.c | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0a4139f3d 100644
+index 864a197c89e50c8664cac4c57e0c4d765b734901..4be24629127ce569cd5f345ce5b78f23540d620d 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -125,6 +125,12 @@ typedef struct LIBVMAFContext {
+@@ -111,6 +111,12 @@ typedef struct LIBVMAFContext {
  #if CONFIG_LIBVMAF_METAL
      VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
  #endif
@@ -55,7 +55,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
  
      VmafContext *vmaf;
      VmafModel **model;
-@@ -157,6 +163,8 @@ static const AVOption libvmaf_options[] = {
+@@ -142,6 +148,8 @@ static const AVOption libvmaf_options[] = {
      {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
      {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
@@ -64,7 +64,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      { NULL }
  };
  
-@@ -575,6 +583,8 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -537,6 +545,8 @@ static av_cold int init(AVFilterContext *ctx)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -73,7 +73,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1060,6 +1070,8 @@ static int config_props_cuda(AVFilterLink *outlink)
+@@ -986,6 +996,8 @@ static int config_props_cuda(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -82,7 +82,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      };
  
      VmafCudaPictureConfiguration cuda_pic_cfg = {
-@@ -1243,6 +1255,10 @@ static const AVOption libvmaf_sycl_options[] = {
+@@ -1169,6 +1181,10 @@ static const AVOption libvmaf_sycl_options[] = {
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
      {"gpu_profile", "Print per-kernel GPU timing breakdown at end.",
                      OFFSET(sycl_profile), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, SYCL_FLAGS},
@@ -93,7 +93,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      { NULL }
  };
  #undef SYCL_FLAGS
-@@ -1584,6 +1600,8 @@ static int config_props_sycl(AVFilterLink *outlink)
+@@ -1510,6 +1526,8 @@ static int config_props_sycl(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -102,27 +102,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1672,6 +1690,10 @@ static const AVOption libvmaf_vulkan_options[] = {
-                   OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, VK_FLAGS},
-     {"feature",   "Set the feature to be used for computing vmaf.",
-                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
-+    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
-+                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
-+    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
-+                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
-     { NULL }
- };
- #undef VK_FLAGS
-@@ -1886,6 +1908,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
-         .log_level = log_level_map(av_log_get_level()),
-         .n_subsample = s->n_subsample,
-         .n_threads = s->n_threads,
-+        .cpumask = (uint64_t)s->cpumask,
-+        .gpumask = (uint64_t)s->gpumask,
-     };
-     err = vmaf_init(&s->vmaf, cfg);
-     if (err)
-@@ -1951,6 +1975,10 @@ static const AVOption libvmaf_metal_options[] = {
+@@ -1598,6 +1616,10 @@ static const AVOption libvmaf_metal_options[] = {
                    OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
      {"feature",   "Set the feature to be used for computing vmaf.",
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
@@ -133,7 +113,7 @@ index ca3cdc84da773458cb5621201f5b273ac940f278..0ac58efdc27a1d49e567132393516de0
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -2226,6 +2254,8 @@ static int config_props_metal(AVFilterLink *outlink)
+@@ -1873,6 +1895,8 @@ static int config_props_metal(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,

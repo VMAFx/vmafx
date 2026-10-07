@@ -1,0 +1,1 @@
+| [ADR-2166](2166-ffmpeg-series-drops-vulkan-shims.md) | The FFmpeg series drops the Vulkan no-op shims (patches `0004` and `0006` and every Vulkan hunk of nine later patches), replayed by hand-resolved rebase with the other numbers kept; supersedes ADR-0860 |

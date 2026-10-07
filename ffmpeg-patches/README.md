@@ -6,6 +6,11 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
 
 ## Contents
 
+The numbers are identities, not a count: `0004` (Vulkan selector) and `0006`
+(`libvmaf_vulkan`) were removed with the Vulkan backend
+([ADR-2166](../docs/adr/2166-ffmpeg-series-drops-vulkan-shims.md)), and later
+patches keep their number so references to them stay valid.
+
 - **`0001-libvmaf-add-tiny-model-option.patch`** — adds `tiny_model` /
   `tiny_device` / `tiny_threads` / `tiny_fp16` options on the existing
   `libvmaf` filter; calls `vmaf_use_tiny_model()` when set.
@@ -16,18 +21,12 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   / `sycl_profile` options on the `libvmaf` filter; invokes
   `vmaf_sycl_state_init()` + `vmaf_sycl_import_state()` when
   `sycl_device >= 0`.
-- **`0004-libvmaf-wire-vulkan-backend-selector.patch`** — adds
-  `vulkan_device` option on the `libvmaf` filter; wires
-  `vmaf_vulkan_state_init` + the deferred-pool path from ADR-0238.
 - **`0005-libvmaf-add-libvmaf-sycl-filter.patch`** — registers a
   dedicated `libvmaf_sycl` filter for zero-copy VAAPI/QSV import
   (consumes `AVFrame->data[3] -> mfxFrameSurface1*`). Each input's
   surfaces are imported with that input's VA display; a failed import is
   tried three times and then stops the filter with an error naming the
   frame ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
-- **`0006-libvmaf-add-libvmaf-vulkan-filter.patch`** — registers a
-  dedicated `libvmaf_vulkan` filter for zero-copy VkImage import per
-  [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md).
 - **`0010-libvmaf-wire-cuda-backend-selector.patch`** — adds a
   `cuda` boolean option on the `libvmaf` filter and the
   `--enable-libvmaf-cuda` configure flag. When `cuda=1` the filter
@@ -36,7 +35,7 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   and dispenses `VmafPicture`s from a HOST_PINNED preallocation pool
   so software AVFrame input flows into pinned-host memory the CUDA
   feature kernels DMA from without a staging copy. Mirrors the
-  SYCL/Vulkan selector pattern and runs alongside the upstream
+  SYCL selector pattern and runs alongside the upstream
   dedicated `libvmaf_cuda` filter (which keeps its own `cu_state`
   for hwaccel CUDA frames in). See
   [ADR-0350](../docs/adr/0350-ffmpeg-libvmaf-cuda-backend-selector.md).
@@ -46,12 +45,17 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   filter inits a `VmafHipState` on the selected AMD ROCm/HIP device,
   imports it via `vmaf_hip_import_state`, and frees the state only after
   `vmaf_close()` returns exactly zero (enforced cumulatively by patch 0020).
-  Completes the SYCL / Vulkan / CUDA / HIP selector
+  Completes the SYCL / CUDA / HIP selector
   symmetry on the `libvmaf` filter. A dedicated `libvmaf_hip` filter
   for ROCm hwdec zero-copy import is deferred until FFmpeg exposes a
   ROCm/HIP hardware-frame context (no `ffhipcodec` equivalent of
   `ffnvcodec` exists at this time). See
   [ADR-0376](../docs/adr/0376-ffmpeg-patches-hip-backend-selector.md).
+- **`0012-libvmaf-wire-metal-backend-selector.patch`** — adds a
+  `metal_device` option on the `libvmaf` filter (`-1` = system default Metal
+  device, `0+` = `MTLCopyAllDevices` ordinal) for software AVFrame input scored
+  on an Apple-Silicon GPU. A host without an Apple-Family-7 GPU gets `-ENODEV`.
+  See [ADR-0361](../docs/adr/0361-metal-compute-backend.md).
 - **`0013-libvmaf-add-libvmaf-metal-filter.patch`** — registers a
   dedicated `libvmaf_metal` filter for VideoToolbox hwdec zero-copy
   import. Consumes `AVFrame->format == AV_PIX_FMT_VIDEOTOOLBOX`,
@@ -71,10 +75,13 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md). A frame
   that cannot be imported or read stops the filter, which then prints no
   pooled score ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
+- **`0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch`** — wires
+  the `cpumask` / `gpumask` fields of `VmafConfiguration` through every vmaf
+  filter so SIMD ISAs and GPU dispatch can be disabled from FFmpeg
+  ([ADR-0576](../docs/adr/0576-ffmpeg-patches-n811-full-feature-exposure.md)).
 - **`0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`** — adds a
-  `score_fmt` AVOption (string, default `NULL` = `"%.6f"`) to all four
-  vmaf filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`,
-  `libvmaf_metal`). Replaces `vmaf_write_output()` with
+  `score_fmt` AVOption (string, default `NULL` = `"%.6f"`) to the
+  vmaf filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_metal`). Replaces `vmaf_write_output()` with
   `vmaf_write_output_with_format()` so callers can request full-precision
   IEEE-754 lossless output (`score_fmt=%.17g`), equivalent to the
   `--precision=max` CLI flag. Wires the fork-added
@@ -82,6 +89,11 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   Symmetric with the `cpumask`/`gpumask` options added in ADR-0576 (patch
   0014).
 
+- **`0017-libvmaf-read-pelorus-sidedata.patch`** — a `perceptual_weight`
+  option (default off) that hands a Pelorus side-data blob riding the distorted
+  frame (`AV_FRAME_DATA_SEI_UNREGISTERED`) to libvmaf for perceptual pooling
+  ([ADR-1118](../docs/adr/1118-perceptual-sidedata-weighting.md)); a frame without a
+  blob scores unweighted, so the Netflix golden pairs are unaffected.
 - **`0018-libvmaf-map-percentile-pool-methods.patch`** — guards the
   percentile mappings already introduced in patch 0005 with
   `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
@@ -99,17 +111,31 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   FFmpeg `vmaf_close()` owner honor libvmaf's retryable teardown contract.
   Each owner makes at most one immediate retry, treats only an exact zero as
   ownership transfer, and retains all models and imported backend state when
-  both attempts fail. The ordinary filter, dedicated CUDA/SYCL/Vulkan/Metal
+  both attempts fail. The ordinary filter, dedicated CUDA/SYCL/Metal
   filters, and `libvmaf_tune` all share that fail-closed ordering. The dedicated
   CUDA filter also holds an `AVHWFramesContext` reference until close succeeds,
-  keeping its borrowed `CUcontext` alive through retries. The Vulkan hunks
-  remain compatibility-only context for the removed backend, as described in
-  `series.txt`; they do not restore a Vulkan runtime.
+  keeping its borrowed `CUcontext` alive through retries.
+
+- **`0021-add-vmafx-filter.patch`** — the `vmafx` and `vmafx_tune` filters on the
+  VMAFx API (`--enable-libvmafx`): one filter for every backend (the backend
+  follows the frames), options generated from `core/api/vmafx.toml`, `n_stats`
+  windows, provenance, hardware frames without a copy. Sources:
+  `src/vf_vmafx.c`, `src/vf_vmafx_options.h`; the patch is regenerated from them
+  by `scripts/ci/ffmpeg_patch_stack.py --refresh`
+  ([ADR-2125](../docs/adr/2125-vmafx-ffmpeg-gstreamer-filters.md),
+  [ADR-2165](../docs/adr/2165-vmafx-filter-pairing-contract.md)).
+- **`0022-add-vmafx-pre-filter.patch`** — `vmafx_pre`, the `vmaf_pre` filter on
+  the library's `vmafx_dnn_session_*` functions (`src/vf_vmafx_pre.c`).
+- **`0023-add-vmafx-profile-cli-glue.patch`** — `-vmafx-profile`, the VMAFx name
+  of the log-only `-vmaf-profile` hand-off.
+- **`0024-fftools-loopback-decoder-hwaccel.patch`** — `-hwaccel`,
+  `-hwaccel_device` and `-hwaccel_output_format` before `-dec`, so a loopback
+  decoder decodes on the GPU (`src/ffmpeg_dec_hwaccel.c`). Carried by this
+  series only, refreshed with every FFmpeg release.
 
 Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
 gracefully when libvmaf was built without the relevant feature
-(`-Denable_dnn`, `-Denable_sycl`, `-Denable_vulkan`, `-Denable_cuda`,
-`-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself. Patch
+(`-Denable_dnn`, `-Denable_sycl`, `-Denable_cuda`, `-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself. Patch
 0020 hardens the teardown ownership boundary shared by those filters.
 
 ## What works without a patch
@@ -154,25 +180,17 @@ done < /path/to/vmaf/ffmpeg-patches/series.txt
 
 Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 
-> **Verification gate (CLAUDE.md §12 r14)**: patches `0002` through
-> `0006` build on each other (each assumes the cumulative state of
-> every earlier patch). Per
-> [ADR-0118](../docs/adr/0118-ffmpeg-patch-series-application.md) and
-> [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md), the
-> verification gate for any change touching a libvmaf C-API surface
-> the patches consume is a **series replay** against a pristine
-> `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
-> `git apply --check`. The latter rejects `0002+` because they
-> reference cumulative-state hunks that don't exist in pristine
-> `n9.0.2`. All 20 patches replay cumulatively on upstream commit
-> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; patches 0001–0018 remain
-> byte-identical to the n9.0.1 series, while 0019 carries the warning-clean
-> compiler hardening and 0020 carries the retryable teardown contract. The
-> resulting tree is `18f1772438491879abc28028d10bda7ae32cc796`.
-> The same 20-patch series also replays on n9.0.1, producing tree
-> `0918464997239e1ed03a47f334fdae2b1221c71e`. The refresh evidence and
-> earlier replay history live in
-> [`docs/rebase-notes.md`](../docs/rebase-notes.md).
+> **Verification gate (CLAUDE.md §12 r14)**: the patches build on each other
+> (each assumes the cumulative state of every earlier patch). Per
+> [ADR-0118](../docs/adr/0118-ffmpeg-patch-series-application.md), the
+> verification gate for any change touching a libvmaf C-API surface the patches
+> consume is a **series replay** against a pristine `n9.0.2` checkout
+> (cumulative `git am --3way`), NOT a per-patch `git apply --check`: the latter
+> rejects every patch after the first because they reference cumulative-state
+> hunks. `python3 scripts/ci/ffmpeg_patch_stack.py --check` replays the whole
+> series against the release in `build-config.env`; `--refresh` regenerates the
+> patches from `ffmpeg-patches/src/`. The refresh evidence and earlier replay
+> history live in [`docs/rebase-notes.md`](../docs/rebase-notes.md).
 
 The maintained image builders, hosted FFmpeg integration workflow, and
 `test/build-and-run.sh` configure with `--fatal-warnings` and reject compiler

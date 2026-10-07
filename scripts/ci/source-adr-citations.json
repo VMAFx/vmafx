@@ -11918,6 +11918,12 @@
         "ffmpeg-patches/test/vmafx_filter_check.py": 1
       },
       "target": "2152-vmafx-vulkan-frame-import.md"
+    },
+    "2166": {
+      "sites": {
+        ".github/workflows/ffmpeg-integration.yml": 1
+      },
+      "target": "2166-ffmpeg-series-drops-vulkan-shims.md"
     }
   },
   "retired": {

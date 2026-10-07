@@ -43,7 +43,6 @@ path = [
     "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
     "ffmpeg-patches/0002-add-vmaf_pre-filter.patch",
     "ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch",
-    "ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch",
     "ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch",
     "ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch",
     "ffmpeg-patches/0008-add-libvmaf_tune-filter.patch",
@@ -60,16 +59,6 @@ path = [
 ]
 precedence = "override"
 SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
-SPDX-License-Identifier = "LGPL-2.1-or-later"
-
-[[annotations]]
-path = ["ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch"]
-precedence = "override"
-SPDX-FileCopyrightText = [
-    "2000-2026 the FFmpeg developers",
-    "2026 Lawrence Curtis",
-    "2026 Lusoris",
-]
 SPDX-License-Identifier = "LGPL-2.1-or-later"
 
 [[annotations]]

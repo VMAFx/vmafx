@@ -62677,3 +62677,30 @@ Invariants a rebase keeps:
 
 No score, public C API or option change beyond the framesync defaults. No
 rebase impact on the `libvmaf*` patches.
+
+## The FFmpeg series without the Vulkan shims (`rc4/api-wp15-series-hygiene`)
+
+RC4 WP15 ([ADR-2166](adr/2166-ffmpeg-series-drops-vulkan-shims.md)) removes
+`ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch` and
+`0006-libvmaf-add-libvmaf-vulkan-filter.patch` and every Vulkan line of
+`0005`, `0008`, `0010` to `0014`, `0016` and `0020`; fixes four `-Wsign-compare`
+lines of `0019`; and rewrites `ffmpeg-patches/README.md` and the comments of
+`series.txt` and `ffmpeg-integration.yml`.
+
+Invariants a rebase keeps:
+
+- The series has no `0004` and no `0006`; the numbers of the other patches do
+  not change (WP10, the ADRs and the docs cite them). A sync that brings the
+  two files back, or a Vulkan line into `vf_libvmaf.c`, `configure`,
+  `allfilters.c` or `libavfilter/Makefile`, is a regression: nothing builds
+  it, and `CONFIG_LIBVMAF_VULKAN*` is false everywhere.
+- `copy_picture_data()` in `vf_libvmaf.c` takes the filter context (marked
+  `av_unused`): the CUDA selector's picture pool needs it, and a build without
+  CUDA does not read it.
+- `REUSE.toml` lists no `0004` path and has no `0006` annotation.
+- Replaying the series is the check (`ffmpeg_patch_stack.py --check`); the
+  scripts `scripts/ci/test_ffmpeg_patch*.py` guard the replay tool, not the
+  patch contents.
+
+No score, public C API or option change for any build that worked: the CUDA
+selector (`libvmaf=cuda=1`) was built and run (94.323010, the CPU's value).

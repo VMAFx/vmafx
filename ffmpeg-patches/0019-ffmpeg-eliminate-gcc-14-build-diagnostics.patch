@@ -58,7 +58,7 @@ Move oversized production and test buffers to checked heap storage, prove array 
  50 files changed, 1026 insertions(+), 422 deletions(-)
 
 diff --git a/libavcodec/a64multienc.c b/libavcodec/a64multienc.c
-index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da79a6e898 100644
+index d81718dff5f73cc95a751554cab421a5bc5267a7..f245b5053b0940479ead34aad253c3ad97516d76 100644
 --- a/libavcodec/a64multienc.c
 +++ b/libavcodec/a64multienc.c
 @@ -106,7 +106,7 @@ static void render_charset(AVCodecContext *avctx, uint8_t *charset,
@@ -75,7 +75,7 @@ index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da
      int distance;
  
 +    av_assert0(c->mc_pal_size >= 4 &&
-+               c->mc_pal_size <= FF_ARRAY_ELEMS(c->mc_luma_vals));
++               c->mc_pal_size <= (int)FF_ARRAY_ELEMS(c->mc_luma_vals));
 +
      /* Generate lookup-tables for dither and index before looping.
       * This code relies on c->mc_luma_vals[c->mc_pal_size - 1] being
@@ -102,7 +102,7 @@ index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da
 +    for (i = 0; i < c->mc_pal_size - 1; i++) {
 +        const int start = i ? c->mc_luma_vals[i] : 0;
 +        const int end   = c->mc_luma_vals[i + 1];
-+        av_assert0(start < end && end <= FF_ARRAY_ELEMS(index1));
++        av_assert0(start < end && end <= (int)FF_ARRAY_ELEMS(index1));
 +        memset(index1 + start, i,     end - start);
 +        memset(index2 + start, i + 1, end - start);
 +    }
@@ -388,7 +388,7 @@ index 2a7c5c114709fd0319a6647102a0adadf37c2010..555e1b8081cf6d4e9e78de5b38c377af
              filter_bilin32(filtered1 + 64, p->t[32], p->t[64], add_size);
          }
 diff --git a/libavcodec/svq1enc.c b/libavcodec/svq1enc.c
-index 4855bed188c2318a2153c9213be3ec64b9ba85c4..85c5acb356d117083d5f7a518102cede5a61bee9 100644
+index 4855bed188c2318a2153c9213be3ec64b9ba85c4..1d60daabc892a5fc1b53621e4c8513dbaead81ac 100644
 --- a/libavcodec/svq1enc.c
 +++ b/libavcodec/svq1enc.c
 @@ -131,20 +131,27 @@ static void svq1_write_header(SVQ1EncContext *s, PutBitContext *pb, int frame_ty
@@ -414,7 +414,7 @@ index 4855bed188c2318a2153c9213be3ec64b9ba85c4..85c5acb356d117083d5f7a518102cede
      const uint16_t(*mean_vlc)[2];
      const uint8_t(*multistage_vlc)[2];
  
-+    av_assert0(level >= 0 && level < FF_ARRAY_ELEMS(s->reorder_pb));
++    av_assert0(level >= 0 && level < (int)FF_ARRAY_ELEMS(s->reorder_pb));
 +
 +    w = 2 << (level + 2 >> 1);
 +    h = 2 << (level + 1 >> 1);
@@ -660,7 +660,7 @@ index 35feedba06e583c769c58c05d4040815f8d7cfdc..7dd6caf438d9faf5d96b4398d807c88c
      av_free(s.temp_idwt_buffer);
      return ret;
 diff --git a/libavcodec/vlc.c b/libavcodec/vlc.c
-index 93d88714f22d5a64f6bf7ddd65158a9905137d89..ed610a1df94686e1f7dbd387bc1df843dd0d5050 100644
+index 93d88714f22d5a64f6bf7ddd65158a9905137d89..e04ff0a1f74555b9dbc47cf8a4ea540bba7830d2 100644
 --- a/libavcodec/vlc.c
 +++ b/libavcodec/vlc.c
 @@ -426,7 +426,11 @@ static void add_level(VLC_MULTI_ELEM *table, const int is16bit,
@@ -672,7 +672,7 @@ index 93d88714f22d5a64f6bf7ddd65158a9905137d89..ed610a1df94686e1f7dbd387bc1df843
 +
 +    av_assert0(is16bit == 0 || is16bit == 1);
 +    max_symbols = VLC_MULTI_MAX_SYMBOLS >> is16bit;
-+    av_assert0((unsigned)curlevel < max_symbols);
++    av_assert0((unsigned)curlevel < (unsigned)max_symbols);
      for (int i = num-1; i >= max; i--) {
          for (int j = 0; j < 2; j++) {
              int newlimit, sym;

@@ -124,10 +124,6 @@ class ReuseComplianceTests(unittest.TestCase):
                 {"LGPL-2.1-or-later"},
                 {"the FFmpeg developers", "Lusoris"},
             ),
-            "ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch": (
-                {"LGPL-2.1-or-later"},
-                {"the FFmpeg developers", "Lawrence Curtis", "Lusoris"},
-            ),
             "ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch": (
                 {"LGPL-2.1-or-later AND GPL-2.0-or-later"},
                 {"the FFmpeg developers", "Lusoris"},

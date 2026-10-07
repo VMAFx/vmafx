@@ -51,11 +51,11 @@ baseline).
  configure                |   5 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 452 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 459 insertions(+)
+ libavfilter/vf_libvmaf.c | 453 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 460 insertions(+)
 
 diff --git a/configure b/configure
-index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
+index 1f2c0529a66c186e904e1b53488d5c6ea9a6fd4e..ec42bc5b1ce5c729aafefe4f8fe0bbad65398254 100755
 --- a/configure
 +++ b/configure
 @@ -294,6 +294,7 @@ External library support:
@@ -89,8 +89,8 @@ index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc5
 +enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 +                             check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
- enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
+ enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
 index f29e468f82c741fdf9fb0d0b024eff76739f28b4..5e27bfc66c8d4e631964e28bd32f1f7b78bf9e2e 100644
 --- a/libavfilter/Makefile
@@ -116,10 +116,10 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..3cce4ed2b5c44b98cbef1174ef977f34d7ed3557 100644
+index 0bd442b3c92f34f5f2ccca510d77ec2539a4b149..fdc60812f09fd5ba900ef7ff1d2054c39b42a637 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -51,6 +51,12 @@
+@@ -51,6 +51,13 @@
  #include <libvmaf/libvmaf_sycl.h>
  #endif
  
@@ -129,10 +129,11 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..3cce4ed2b5c44b98cbef1174ef977f34
 +#include "libavutil/time.h"
 +#endif
 +
- #if CONFIG_LIBVMAF_VULKAN
- #include <libvmaf/libvmaf_vulkan.h>
- #endif
-@@ -74,6 +80,11 @@ typedef struct LIBVMAFContext {
++
+ typedef struct LIBVMAFContext {
+     const AVClass *class;
+     FFFrameSync fs;
+@@ -70,6 +77,11 @@ typedef struct LIBVMAFContext {
  #if CONFIG_LIBVMAF_SYCL
      VmafSyclState *sycl_state;
  #endif
@@ -141,10 +142,10 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..3cce4ed2b5c44b98cbef1174ef977f34
 +    void *va_display_ref; /* VA display of the reference input */
 +#endif
 +    int   stopped;        /* a frame could not be scored: no pooled score (VMAFx ADR-1761) */
-     int   vulkan_device;
- #if CONFIG_LIBVMAF_VULKAN
-     VmafVulkanState *vulkan_state;
-@@ -717,10 +728,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+ 
+     VmafContext *vmaf;
+     VmafModel **model;
+@@ -650,10 +662,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
      if (pool_method) {
          if (!strcmp(pool_method, "min"))
              return VMAF_POOL_METHOD_MIN;
@@ -165,7 +166,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..3cce4ed2b5c44b98cbef1174ef977f34
      }
  
      return VMAF_POOL_METHOD_MEAN;
-@@ -1015,3 +1036,434 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -941,3 +963,434 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif

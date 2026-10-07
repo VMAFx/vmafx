@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ADR-1297 — both rows are required checks. They build FFmpeg n8.1
+          # ADR-1297 — both rows are required checks. They build FFmpeg n9.0.2
           # --enable-libvmaf against the freshly installed library, which is
           # the consumer contract agent hard rule 11 exists to protect. The
           - os: ubuntu-latest
@@ -336,6 +336,5 @@ jobs:
   # the fork entirely (core/src/vulkan/, feature/vulkan/, libvmaf_vulkan.h all
   # deleted). The meson `enable_vulkan` option no longer exists, so any attempt
   # to pass -Denable_vulkan=enabled to meson setup fails with
-  # "Unknown option: enable_vulkan". The patches 0004 + 0006 remain in the
-  # series.txt chain as no-op compatibility shims (see series.txt comment and
-  # ADR-0860) but produce zero linked code at FFmpeg configure time.
+  # "Unknown option: enable_vulkan". The series carries no Vulkan patch since
+  # ADR-2166 (it kept two no-op shims under ADR-0860).

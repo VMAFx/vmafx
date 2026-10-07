@@ -67,18 +67,18 @@ Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
  4 files changed, 351 insertions(+)
 
 diff --git a/configure b/configure
-index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1 100755
+index 7dae340325b30289ea72c4354c74763602f76a5a..3773a354d3ff946b1661d6ac149df77f2eeb0811 100755
 --- a/configure
 +++ b/configure
-@@ -4306,6 +4306,7 @@ vidstabdetect_filter_deps="libvidstab"
+@@ -4304,6 +4304,7 @@ vidstabdetect_filter_deps="libvidstab"
  vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
 +libvmaf_metal_filter_deps="libvmaf libvmaf_metal metal corevideo videotoolbox"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
- libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
-@@ -7476,6 +7477,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
+ libvmaf_tune_filter_deps="libvmaf"
+@@ -7473,6 +7474,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
  enabled libvmaf_metal     && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
  enabled libvmaf           && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
@@ -88,7 +88,7 @@ index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 3b20788df758b060847768e731718024b4a75a49..9e19069dc9a1fa01fa5d456602dba6cfdba9d7de 100644
+index 741ae52eb4ebf95f9aee2d9227ccb7fba59e1e8b..252248f88e290341c80ff174c9f1cf43b7642557 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
@@ -97,10 +97,10 @@ index 3b20788df758b060847768e731718024b4a75a49..9e19069dc9a1fa01fa5d456602dba6cf
  OBJS-$(CONFIG_LIBVMAF_CUDA_FILTER)           += vf_libvmaf.o framesync.o
 +OBJS-$(CONFIG_LIBVMAF_METAL_FILTER)          += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIBVMAF_SYCL_FILTER)           += vf_libvmaf.o framesync.o
- OBJS-$(CONFIG_LIBVMAF_VULKAN_FILTER)          += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIMITDIFF_FILTER)              += vf_limitdiff.o framesync.o
+ OBJS-$(CONFIG_LIMITER_FILTER)                += vf_limiter.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25ed9fd9513 100644
+index 5ef84f3c27e4e6f798762016120b70547d139fd9..2e5ebfaca347d75b0ee792e84b4d665f83638de8 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
@@ -109,13 +109,13 @@ index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25e
  extern const FFFilter ff_vf_libvmaf_cuda;
 +extern const FFFilter ff_vf_libvmaf_metal;
  extern const FFFilter ff_vf_libvmaf_sycl;
- extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
+ extern const FFFilter ff_vf_limitdiff;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 521d1709c03644e192ddf7a156b4a625db5d0017..ca3cdc84da773458cb5621201f5b273ac940f278 100644
+index 824c8625881791fd813e85a0c1390ac699168b92..864a197c89e50c8664cac4c57e0c4d765b734901 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -77,6 +77,12 @@
+@@ -68,6 +68,12 @@
  #include <libvmaf/libvmaf_metal.h>
  #endif
  
@@ -128,7 +128,7 @@ index 521d1709c03644e192ddf7a156b4a625db5d0017..ca3cdc84da773458cb5621201f5b273a
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1927,3 +1933,343 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+@@ -1574,3 +1580,343 @@ const FFFilter ff_vf_libvmaf_sycl = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif

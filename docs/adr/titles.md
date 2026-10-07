@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1298), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1299), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5203,3 +5203,7 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 ## ADR-2165: The `vmafx` filter scores only frames it can pair, and reports what it cannot
 
 [2165-vmafx-filter-pairing-contract](2165-vmafx-filter-pairing-contract.md)
+
+## ADR-2166: The FFmpeg series drops the Vulkan no-op shims
+
+[2166-ffmpeg-series-drops-vulkan-shims](2166-ffmpeg-series-drops-vulkan-shims.md)

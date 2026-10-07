@@ -24,27 +24,27 @@ the same scoring path, recommends a CRF for the next pass. Built with
  create mode 100644 libavfilter/vf_vmafx_options.h
 
 diff --git a/configure b/configure
-index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407fac78735 100755
+index 3773a354d3ff946b1661d6ac149df77f2eeb0811..43179d60958ca2993da65e8a8b6a86bafd2535b4 100755
 --- a/configure
 +++ b/configure
-@@ -299,6 +299,7 @@ External library support:
+@@ -298,6 +298,7 @@ External library support:
+   --enable-libvmaf-metal   enable Metal-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
-   --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
 +  --enable-libvmafx        enable the vmafx filters via libvmafx [no]
    --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
    --enable-libvorbis       enable Vorbis en/decoding via libvorbis,
                             native implementation exists [no]
-@@ -2148,6 +2149,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2146,6 +2147,7 @@ EXTERNAL_LIBRARY_LIST="
+     libvmaf_metal
      libvmaf_cuda
      libvmaf_sycl
-     libvmaf_vulkan
 +    libvmafx
      libvorbis
      libvpx
      libvvenc
-@@ -4311,6 +4313,8 @@ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
- libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
+@@ -4308,6 +4310,8 @@ libvmaf_metal_filter_deps="libvmaf libvmaf_metal metal corevideo videotoolbox"
+ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  vmaf_pre_filter_deps="libvmaf"
  libvmaf_tune_filter_deps="libvmaf"
 +vmafx_filter_deps="libvmafx"
@@ -52,9 +52,9 @@ index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
-@@ -7489,6 +7493,7 @@ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" li
+@@ -7483,6 +7487,7 @@ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvm
+ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
- enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 +enabled libvmafx          && require_pkg_config libvmafx "libvmafx >= 1.0.0" vmafx/vmafx.h vmafx_context_create
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
@@ -223,10 +223,10 @@ index f3131824804ac8a1b21c864e9d0eca3aecbfb7a4..82d6d9955482aa89dc8f9e2649b60f0c
  
  Scale (resize) and convert colorspace, transfer characteristics or color primaries for the input video, using AMD Advanced Media Framework library for hardware acceleration.
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 9e19069dc9a1fa01fa5d456602dba6cfdba9d7de..497cf229ea466c1a283d7d00114f537c40387bd6 100644
+index 252248f88e290341c80ff174c9f1cf43b7642557..1b7932bbc945112dc31049e90216e0a106b4cb9a 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -574,6 +574,8 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -573,6 +573,8 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
@@ -236,10 +236,10 @@ index 9e19069dc9a1fa01fa5d456602dba6cfdba9d7de..497cf229ea466c1a283d7d00114f537c
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20315899f5 100644
+index 2e5ebfaca347d75b0ee792e84b4d665f83638de8..3b647fb95d02ab9eaf4102c0e4b59b236818990a 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -541,6 +541,8 @@ extern const FFFilter ff_vf_vif;
+@@ -540,6 +540,8 @@ extern const FFFilter ff_vf_vif;
  extern const FFFilter ff_vf_vignette;
  extern const FFFilter ff_vf_vmafmotion;
  extern const FFFilter ff_vf_vmaf_pre;

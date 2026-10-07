@@ -56,7 +56,7 @@ stack applied; applies cleanly.
  2 files changed, 50 insertions(+)
 
 diff --git a/configure b/configure
-index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9ce7a3a71 100755
+index 553e69df8da0feecb7e8352e90bf24e09412b2de..1ad0df0db8052bb074d60e900bb99845058a527d 100755
 --- a/configure
 +++ b/configure
 @@ -294,6 +294,7 @@ External library support:
@@ -66,16 +66,16 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
 +  --enable-libvmaf-hip     enable HIP-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
-   --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
-@@ -2141,6 +2142,7 @@ EXTERNAL_LIBRARY_LIST="
+   --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
+@@ -2140,6 +2141,7 @@ EXTERNAL_LIBRARY_LIST="
      libuavs3d
      libv4l2
      libvmaf
 +    libvmaf_hip
      libvmaf_cuda
      libvmaf_sycl
-     libvmaf_vulkan
-@@ -7466,6 +7468,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+     libvorbis
+@@ -7463,6 +7465,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
  enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
@@ -86,12 +86,12 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca203501d18a6e 100644
+index 457869614254a7046dd017704669828a87baef08..2b5fde0e0c4d0a1eced7d94afd2c86bc6cb1af02 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -69,6 +69,10 @@
- #include <vulkan/vulkan.h>
+@@ -60,6 +60,10 @@
  #endif
+ 
  
 +#if CONFIG_LIBVMAF_HIP
 +#include <libvmaf/libvmaf_hip.h>
@@ -100,7 +100,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -103,6 +107,10 @@ typedef struct LIBVMAFContext {
+@@ -89,6 +93,10 @@ typedef struct LIBVMAFContext {
      VmafCudaState *cu_state;            /* owned by the libvmaf filter when cuda=1 */
      int            cuda_pool_initialised;  /* lazy: geometry isn't known until first frame */
  #endif
@@ -111,15 +111,15 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
  
      VmafContext *vmaf;
      VmafModel **model;
-@@ -133,6 +141,7 @@ static const AVOption libvmaf_options[] = {
+@@ -118,6 +126,7 @@ static const AVOption libvmaf_options[] = {
+     {"sycl_device",  "SYCL device index (-1 = disabled).",                              OFFSET(sycl_device),     AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
-     {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
 +    {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      { NULL }
  };
  
-@@ -653,6 +662,35 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -587,6 +596,35 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
  
@@ -155,7 +155,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -896,6 +934,13 @@ clean_up:
+@@ -822,6 +860,13 @@ clean_up:
          s->cu_state = NULL;
      }
  #endif

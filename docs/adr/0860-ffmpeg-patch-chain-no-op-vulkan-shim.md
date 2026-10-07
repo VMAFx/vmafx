@@ -3,7 +3,7 @@
 
 | Status   | Date       | Supersedes | Superseded by |
 |----------|------------|------------|---------------|
-| Accepted | 2026-05-30 | —          | —             |
+| Superseded | 2026-05-30 | —          | [ADR-2166](2166-ffmpeg-series-drops-vulkan-shims.md) |
 
 ## Context
 

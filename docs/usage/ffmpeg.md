@@ -80,8 +80,8 @@ make -j4
 ```
 
 See [FFmpeg patch automation](../development/ffmpeg-patch-automation.md) for
-how the series tracks the stable release. Patches `0004` and `0006` are
-no-op shims since the Vulkan backend was removed (see
+how the series tracks the stable release. The series has no `0004` and no
+`0006`: they were Vulkan shims, removed with the Vulkan backend (see
 [History](#history)).
 
 To list the options of the locally installed filter, which is useful when this
@@ -1180,11 +1180,10 @@ third-party tools.
   filter, the `vulkan_device=N` option, the `--enable-libvmaf-vulkan` configure
   flag and the `-Denable_vulkan=enabled` build flag no longer exist. Historical
   examples are in git history. Patches `0004` (the selector) and `0006` (the
-  filter) stay in the series as no-op shims
-  ([ADR-0860](../adr/0860-ffmpeg-patch-chain-no-op-vulkan-shim.md)): they
-  compile
-  to zero linked code, but keep the context lines that later patches depend
-  on.
+  filter) stayed in the series as no-op shims
+  ([ADR-0860](../adr/0860-ffmpeg-patch-chain-no-op-vulkan-shim.md)) until
+  [ADR-2166](../adr/2166-ffmpeg-series-drops-vulkan-shims.md) removed them
+  with every Vulkan hunk of the later patches.
 - **`vmafx`, `vmafx_tune`, `vmafx_pre` and `-vmafx-profile` added (RC4 WP9,
   [ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md)).** Patches `0021`
   to `0024` add the filters of the VMAFx API, the `-vmafx-profile` option and
