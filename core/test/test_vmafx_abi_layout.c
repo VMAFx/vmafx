@@ -204,13 +204,14 @@ _Static_assert(offsetof(VmafxModelConfig, log_level) == 24, "VmafxModelConfig.lo
 _Static_assert(offsetof(VmafxModelConfig, log_callback) == 32,
                "VmafxModelConfig.log_callback offset");
 _Static_assert(offsetof(VmafxModelConfig, log_user) == 40, "VmafxModelConfig.log_user offset");
-_Static_assert(sizeof(VmafxFrameDesc) == 20, "VmafxFrameDesc size");
+_Static_assert(sizeof(VmafxFrameDesc) == 36, "VmafxFrameDesc size");
 _Static_assert(_Alignof(VmafxFrameDesc) == 4, "VmafxFrameDesc alignment");
 _Static_assert(offsetof(VmafxFrameDesc, struct_size) == 0, "VmafxFrameDesc.struct_size offset");
 _Static_assert(offsetof(VmafxFrameDesc, pix_fmt) == 4, "VmafxFrameDesc.pix_fmt offset");
 _Static_assert(offsetof(VmafxFrameDesc, bpc) == 8, "VmafxFrameDesc.bpc offset");
 _Static_assert(offsetof(VmafxFrameDesc, w) == 12, "VmafxFrameDesc.w offset");
 _Static_assert(offsetof(VmafxFrameDesc, h) == 16, "VmafxFrameDesc.h offset");
+_Static_assert(offsetof(VmafxFrameDesc, color) == 20, "VmafxFrameDesc.color offset");
 _Static_assert(sizeof(VmafxHostPlanes) == 72, "VmafxHostPlanes size");
 _Static_assert(_Alignof(VmafxHostPlanes) == 8, "VmafxHostPlanes alignment");
 _Static_assert(offsetof(VmafxHostPlanes, struct_size) == 0, "VmafxHostPlanes.struct_size offset");
@@ -451,6 +452,6 @@ _Static_assert(VMAFX_DNN_FP16_IO == 0x1u, "VMAFX_DNN_FP16_IO");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 28,
-                 191, 123);
+                 192, 123);
     return 0;
 }

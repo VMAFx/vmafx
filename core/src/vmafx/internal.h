@@ -91,6 +91,9 @@ struct VmafxFrame {
     void *owned;
     /* The pool the frame returns to instead of being freed, or NULL. */
     VmafxFramePool *pool;
+    /* VmafxFrameDesc.color of the frame (ADR-2094); every member UNKNOWN:
+     * the frame carries none and the context's default applies. */
+    VmafxColor color;
 };
 
 /* "sha256:" + 64 hex digits + NUL (RC4 WP5 digests). */
@@ -137,6 +140,10 @@ struct VmafxContext {
     uint64_t last_index;             /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc;       /* every frame keeps the first frame's geometry */
     VmafxProvenanceState provenance; /* RC4 WP5 */
+    /* ADR-2094: vmafx_context_set_default_color() (reference, distorted), and
+     * the colour of the frames vmafx_context_preallocate() made. */
+    VmafxColor default_color[2];
+    VmafxColor preallocated_color;
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink
@@ -169,7 +176,7 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_CONTEXT_CONFIG ((uint32_t)offsetof(VmafxContextConfig, log_callback)) /* 0.1.0 */
 #define VMAFX_MIN_DEVICE_DESC ((uint32_t)offsetof(VmafxDeviceDesc, flags))              /* 0.1.1 */
 #define VMAFX_MIN_MODEL_CONFIG ((uint32_t)sizeof(VmafxModelConfig))                     /* 0.1.1 */
-#define VMAFX_MIN_FRAME_DESC ((uint32_t)sizeof(VmafxFrameDesc))                         /* 0.1.1 */
+#define VMAFX_MIN_FRAME_DESC ((uint32_t)offsetof(VmafxFrameDesc, color))                /* 0.1.1 */
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
 #define VMAFX_MIN_FRAME_IMPORT ((uint32_t)sizeof(VmafxFrameImport))                     /* 0.1.2 */
 #define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
@@ -211,6 +218,9 @@ VmafxDevice *vmafx_device_cpu(void);
 /* The engine picture that carries one reference of `frame`: the caller's
  * reference moves into the returned picture, which the engine releases. */
 VmafPicture vmafx_frame_take_picture(VmafxFrame *frame);
+
+/* libvmaf's colour of a VMAFx colour (the enum values are equal). */
+VmafColor vmafx_engine_color(const VmafxColor *color);
 
 /* Read and check a frame descriptor (pixel format, depth, size). */
 VmafxStatus vmafx_frame_read_desc(const VmafxReport *report, const VmafxFrameDesc *desc,

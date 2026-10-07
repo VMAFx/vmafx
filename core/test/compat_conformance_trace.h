@@ -51,6 +51,8 @@ void scenario_models(const VmafCompatApi *api, Trace *t);
 void scenario_collections(const VmafCompatApi *api, Trace *t);
 void scenario_scoring(const VmafCompatApi *api, Trace *t);
 void scenario_preallocated(const VmafCompatApi *api, Trace *t);
+void scenario_sample_range(const VmafCompatApi *api, Trace *t);
+void scenario_colorimetry(const VmafCompatApi *api, Trace *t);
 void scenario_pictures(const VmafCompatApi *api, Trace *t);
 void scenario_conversion(const VmafCompatApi *api, Trace *t);
 void scenario_perceptual(const VmafCompatApi *api, Trace *t);

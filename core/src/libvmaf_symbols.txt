@@ -84,9 +84,11 @@ vmaf_score_at_index compat
 vmaf_score_at_index_model_collection compat
 vmaf_score_pooled compat
 vmaf_score_pooled_model_collection compat
+vmaf_set_input_colorimetry compat
 vmaf_set_perceptual_sidedata compat
 vmaf_set_perceptual_weight_enabled compat
 vmaf_set_perceptual_weight_strength compat
+vmaf_set_sample_range_check_enabled compat
 vmaf_sycl_dmabuf_free engine:sycl
 vmaf_sycl_dmabuf_import engine:sycl
 vmaf_sycl_get_frame_buffers engine:sycl

@@ -2262,6 +2262,18 @@ int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref, const Vm
     return vmaf_conversion_state_set_input_color(&vmaf->convert, ref, dist);
 }
 
+/* ADR-2094: vmafx_submit() hands the colour of every pair it submits (each
+ * frame's own, else the context's default) to the conversion state. The same
+ * colour again is 0, also after a conversion; another one is what
+ * vmaf_set_input_colorimetry() would answer: -EBUSY once a picture has been
+ * converted. */
+int vmaf_engine_set_pair_colorimetry(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+{
+    if (!vmaf || !ref || !dist)
+        return -EINVAL;
+    return vmaf_conversion_state_offer_input_color(&vmaf->convert, ref, dist);
+}
+
 int vmaf_engine_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
 {
     if (!vmaf)

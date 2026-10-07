@@ -59,7 +59,7 @@ class DefinitionRulesTest(unittest.TestCase):
         api = parse(self.doc)
         names = [c.name for c in api.compats]
         self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(len(names), 107)
+        self.assertEqual(len(names), 109)
 
     def test_unknown_kind(self) -> None:
         self.refused(lambda d: compat(d, "vmaf_close").update(kind="forward"), "kind is one of")
@@ -120,13 +120,13 @@ class EmittedCompatTest(unittest.TestCase):
         self.assertEqual(rows["vmaf_hip_available"], "compat:!hip")
         self.assertEqual(rows["vmaf_mcp_init"], "compat:mcp")
         self.assertEqual(rows["vmaf_cuda_state_init"], "engine:cuda")
-        self.assertEqual(len(rows), 107)
+        self.assertEqual(len(rows), 109)
 
     def test_conformance_tables_cover_every_compat_definition(self) -> None:
         header = emit_conformance.header_text(self.api)
         table = emit_conformance.table_text(self.api)
         tabled = emit_conformance.tabled(self.api)
-        self.assertEqual(len(tabled), 107 - 25)
+        self.assertEqual(len(tabled), 109 - 25)
         for item in tabled:
             self.assertIn(f'VMAF_COMPAT_ENTRY("{item.name}"', header)
             self.assertIn(f"    .{item.stem} = VMAF_COMPAT_THUNK(", table)

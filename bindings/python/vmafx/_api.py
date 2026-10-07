@@ -536,14 +536,6 @@ VmafxModelConfig._fields_ = (
     ("log_user", ctypes.c_void_p),
 )
 
-VmafxFrameDesc._fields_ = (
-    ("struct_size", ctypes.c_uint32),
-    ("pix_fmt", ctypes.c_uint32),
-    ("bpc", ctypes.c_uint32),
-    ("w", ctypes.c_uint32),
-    ("h", ctypes.c_uint32),
-)
-
 VmafxHostPlanes._fields_ = (
     ("struct_size", ctypes.c_uint32),
     ("data", ctypes.c_void_p * 3),
@@ -589,6 +581,15 @@ VmafxColor._fields_ = (
     ("primaries", ctypes.c_uint32),
     ("trc", ctypes.c_uint32),
     ("matrix", ctypes.c_uint32),
+)
+
+VmafxFrameDesc._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("w", ctypes.c_uint32),
+    ("h", ctypes.c_uint32),
+    ("color", VmafxColor),
 )
 
 VmafxConvertDesc._fields_ = (
@@ -842,13 +843,14 @@ LAYOUT = {
         ),
     ),
     VmafxFrameDesc: (
-        20,
+        36,
         (
             ("struct_size", 0),
             ("pix_fmt", 4),
             ("bpc", 8),
             ("w", 12),
             ("h", 16),
+            ("color", 20),
         ),
     ),
     VmafxHostPlanes: (
@@ -1662,6 +1664,15 @@ SIGNATURES = {
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
+    "vmafx_context_set_default_color": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxColor),
+            ctypes.POINTER(VmafxColor),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_frame_converter_create": (
         ctypes.c_int32,
         (
@@ -2319,12 +2330,13 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class FrameDesc:
-    """Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."""
+    """Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT."""
 
     pix_fmt: int
     bpc: int
     w: int
     h: int
+    color: Color
 
     @classmethod
     def from_c(cls, raw: VmafxFrameDesc) -> FrameDesc:
@@ -2333,6 +2345,7 @@ class FrameDesc:
             bpc=raw.bpc,
             w=raw.w,
             h=raw.h,
+            color=Color.from_c(raw.color),
         )
 
     def to_c(self) -> VmafxFrameDesc:
@@ -2342,6 +2355,7 @@ class FrameDesc:
         raw.bpc = self.bpc
         raw.w = self.w
         raw.h = self.h
+        raw.color = self.color.to_c()
         return raw
 
 
@@ -2487,6 +2501,22 @@ class ConvertDesc:
             dst_color=Color.from_c(raw.dst_color),
             filter=raw.filter,
         )
+
+    def to_c(self) -> VmafxConvertDesc:
+        raw = VmafxConvertDesc()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.src_pix_fmt = self.src_pix_fmt
+        raw.src_bpc = self.src_bpc
+        raw.src_w = self.src_w
+        raw.src_h = self.src_h
+        raw.src_color = self.src_color.to_c()
+        raw.dst_pix_fmt = self.dst_pix_fmt
+        raw.dst_bpc = self.dst_bpc
+        raw.dst_w = self.dst_w
+        raw.dst_h = self.dst_h
+        raw.dst_color = self.dst_color.to_c()
+        raw.filter = self.filter
+        return raw
 
 
 @dataclass(frozen=True)
@@ -2682,7 +2712,7 @@ class Context:
         return Score.from_c(out)
 
     def set_option(self, key: str, value: str) -> None:
-        """Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."""
+        """Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_set_option(
             self._handle, key.encode(), value.encode(), ctypes.byref(error)
@@ -2795,14 +2825,12 @@ class Context:
             self._handle, codec.encode(), preset.encode(), crf, ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_set_codec_context")
-        return None
 
     def set_tiny_resize(self, mode: int) -> None:
         """How frames are resized to the fixed input shape of the attached tiny model (VmafxDnnResize). Added in ABI 0.1.6."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_set_tiny_resize(self._handle, mode, ctypes.byref(error))
         _raise(self._lib, status, error, "vmafx_context_set_tiny_resize")
-        return None
 
 
 class Library:

@@ -11,6 +11,16 @@ compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c
 compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c
 compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/wrap.c
 core/src/arm/cpu.c
+core/src/compat/libvmaf/backend_absent_hip.c
+core/src/compat/libvmaf/backend_absent_metal.c
+core/src/compat/libvmaf/context.c
+core/src/compat/libvmaf/dnn.c
+core/src/compat/libvmaf/libvmaf_gen.c
+core/src/compat/libvmaf/mcp.c
+core/src/compat/libvmaf/model.c
+core/src/compat/libvmaf/picture.c
+core/src/compat/libvmaf/score.c
+core/src/compat/libvmaf/status_errno_gen.c
 core/src/compat/path_utf8.c
 core/src/conversion_context.c
 core/src/conversion_policy.c
@@ -321,8 +331,11 @@ core/src/sycl/picture_sycl.cpp
 core/src/sycl/scratch_check.cpp
 core/src/thread_locale.cpp
 core/src/thread_pool.c
+core/src/vmafx/bridge.c
 core/src/vmafx/compat_libvmaf_gen.c
 core/src/vmafx/context.c
+core/src/vmafx/context_frames.c
+core/src/vmafx/convert.c
 core/src/vmafx/device.c
 core/src/vmafx/device_context.c
 core/src/vmafx/error.c
@@ -334,6 +347,7 @@ core/src/vmafx/frame_import.c
 core/src/vmafx/frame_import_admit.c
 core/src/vmafx/frame_import_hooks.c
 core/src/vmafx/frame_pool.c
+core/src/vmafx/mcp_server.c
 core/src/vmafx/model.c
 core/src/vmafx/options.c
 core/src/vmafx/provenance.c
@@ -348,8 +362,10 @@ core/src/vmafx/sha256.c
 core/src/vmafx/sized.c
 core/src/vmafx/status_gen.c
 core/src/vmafx/submit.c
+core/src/vmafx/tiny_model.c
 core/src/x86/cpu.c
 core/test/barten_csf_cxx.cpp
+core/test/compat_conformance_table_gen.c
 core/test/dnn/test_dnn_session_api.c
 core/test/dnn/test_ep_fp16.c
 core/test/dnn/test_mobilesal_run.c
@@ -407,6 +423,9 @@ core/test/test_cli_parse.c
 core/test/test_cli_parse_long_only_args.c
 core/test/test_collector_owns_mounted_model.c
 core/test/test_compat_clz.c
+core/test/test_compat_conformance.c
+core/test/test_compat_conformance_api.c
+core/test/test_compat_conformance_scoring.c
 core/test/test_context.c
 core/test/test_conversion_policy.c
 core/test/test_convolution_edge_small.c
@@ -783,6 +802,7 @@ core/test/test_vmafx_bitexact.c
 core/test/test_vmafx_context.c
 core/test/test_vmafx_exactness.c
 core/test/test_vmafx_frame.c
+core/test/test_vmafx_frame_input.c
 core/test/test_vmafx_import_api.c
 core/test/test_vmafx_import_bitexact.c
 core/test/test_vmafx_import_fence.c

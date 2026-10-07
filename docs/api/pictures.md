@@ -290,3 +290,8 @@ int err = vmaf_set_input_colorimetry(vmaf, &pq, &pq);   /* ref, dist; NULL = uns
 `vmaf_set_input_colorimetry()` must be called before the first picture that is
 converted, because the zimg context is built from it. As for any error of
 `vmaf_read_pictures()`, the context releases the pictures it was given.
+
+On the VMAFx API a frame carries its own colour in `VmafxFrameDesc.color`, and
+`vmafx_context_set_default_color()`, which `vmaf_set_input_colorimetry()` calls,
+gives the colour of the frames that carry none; see
+[Frame colour](vmafx/index.md#frame-colour).

@@ -49,6 +49,8 @@ enum VmafCompatIndex {
     VMAF_COMPAT_USE_FEATURE,
     VMAF_COMPAT_IMPORT_FEATURE_SCORE,
     VMAF_COMPAT_READ_PICTURES,
+    VMAF_COMPAT_SET_SAMPLE_RANGE_CHECK_ENABLED,
+    VMAF_COMPAT_SET_INPUT_COLORIMETRY,
     VMAF_COMPAT_SCORE_AT_INDEX,
     VMAF_COMPAT_SCORE_AT_INDEX_MODEL_COLLECTION,
     VMAF_COMPAT_FEATURE_SCORE_AT_INDEX,
@@ -144,6 +146,8 @@ typedef struct VmafCompatApi {
     int (*import_feature_score)(VmafContext *vmaf, const char *feature_name, double value,
                                 unsigned index);
     int (*read_pictures)(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index);
+    int (*set_sample_range_check_enabled)(VmafContext *vmaf, int enabled);
+    int (*set_input_colorimetry)(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist);
     int (*score_at_index)(VmafContext *vmaf, VmafModel *model, double *score, unsigned index);
     int (*score_at_index_model_collection)(VmafContext *vmaf, VmafModelCollection *model_collection,
                                            VmafModelCollectionScore *score, unsigned index);
@@ -331,6 +335,8 @@ const VmafCompatEntry vmaf_compat_entries[VMAF_COMPAT_COUNT + 1] = {
     VMAF_COMPAT_ENTRY("vmaf_use_feature", 1),
     VMAF_COMPAT_ENTRY("vmaf_import_feature_score", 1),
     VMAF_COMPAT_ENTRY("vmaf_read_pictures", 1),
+    VMAF_COMPAT_ENTRY("vmaf_set_sample_range_check_enabled", 1),
+    VMAF_COMPAT_ENTRY("vmaf_set_input_colorimetry", 1),
     VMAF_COMPAT_ENTRY("vmaf_score_at_index", 1),
     VMAF_COMPAT_ENTRY("vmaf_score_at_index_model_collection", 1),
     VMAF_COMPAT_ENTRY("vmaf_feature_score_at_index", 1),

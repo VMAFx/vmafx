@@ -26,5 +26,5 @@ or a single header for what it declares; each includes what its declarations use
 
 ## libvmaf functions
 
-The 107 functions of the libvmaf headers and the VMAFx calls each one
+The 109 functions of the libvmaf headers and the VMAFx calls each one
 is written on: [libvmaf migration table](compat.md).

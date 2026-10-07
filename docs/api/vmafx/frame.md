@@ -160,20 +160,6 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.
 
-### `VmafxFrameDesc`
-
-Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT. Size 20 bytes, alignment 4. Since 0.1.
-
-| Field | C declaration | Offset | Since | Description |
-| --- | --- | --- | --- | --- |
-| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
-| `pix_fmt` | `uint32_t pix_fmt` | 4 | 0.1 | Pixel layout. Values: `VmafxPixelFormat`. |
-| `bpc` | `uint32_t bpc` | 8 | 0.1 | Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. |
-| `w` | `uint32_t w` | 12 | 0.1 | Luma width in pixels. |
-| `h` | `uint32_t h` | 16 | 0.1 | Luma height in pixels. |
-
-Initialise with `VMAFX_FRAME_DESC_INIT`.
-
 ### `VmafxHostPlanes`
 
 Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT. Size 72 bytes, alignment 8. Since 0.1.
@@ -215,6 +201,21 @@ Colour description of a frame; embedded by value, so it never grows. Added in AB
 | `primaries` | `uint32_t primaries` | 4 | 0.1 | Primaries. Values: `VmafxColorPrimaries`. |
 | `trc` | `uint32_t trc` | 8 | 0.1 | Transfer characteristic. Values: `VmafxColorTransfer`. |
 | `matrix` | `uint32_t matrix` | 12 | 0.1 | Matrix coefficients. Values: `VmafxColorMatrix`. |
+
+### `VmafxFrameDesc`
+
+Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT. Size 36 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `pix_fmt` | `uint32_t pix_fmt` | 4 | 0.1 | Pixel layout. Values: `VmafxPixelFormat`. |
+| `bpc` | `uint32_t bpc` | 8 | 0.1 | Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. |
+| `w` | `uint32_t w` | 12 | 0.1 | Luma width in pixels. |
+| `h` | `uint32_t h` | 16 | 0.1 | Luma height in pixels. |
+| `color` | `VmafxColor color` | 20 | 0.1 | Colour of the frame, read when a model's `conversion_target` converts it before scoring. Every member UNKNOWN: the frame carries none and takes the context's default (vmafx_context_set_default_color()). Geometry-only uses (vmafx_feature_resolve()) ignore it. Added in ABI 0.1.6. |
+
+Initialise with `VMAFX_FRAME_DESC_INIT`.
 
 ### `VmafxConvertDesc`
 

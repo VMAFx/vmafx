@@ -91,6 +91,16 @@ enum VmafPixelFormat vmafx_engine_pixel_format(uint32_t pix_fmt)
     }
 }
 
+VmafColor vmafx_engine_color(const VmafxColor *color)
+{
+    VmafColor c = {0};
+    c.range = (enum VmafColorRange)color->range;
+    c.primaries = (enum VmafColorPrimaries)color->primaries;
+    c.trc = (enum VmafColorTransferCharacteristic)color->trc;
+    c.matrix = (enum VmafColorMatrixCoefficients)color->matrix;
+    return c;
+}
+
 static uint32_t plane_count(uint32_t pix_fmt)
 {
     return pix_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
@@ -174,6 +184,7 @@ VmafxStatus vmafx_frame_create_host(VmafxDevice *device, const VmafxFrameDesc *d
     assert(hooked == 0);
     (void)hooked;
     frame->device = vmafx_device_ref(host);
+    frame->color = d.color;
     *out = frame;
     return VMAFX_OK;
 }
@@ -208,6 +219,7 @@ int vmafx_frame_bind(VmafxFrame *frame, const VmafxFrameDesc *d, void *const dat
                      const ptrdiff_t stride[3])
 {
     VmafPicture *const pic = &frame->pic;
+    frame->color = d->color;
     pic->pix_fmt = vmafx_engine_pixel_format(d->pix_fmt);
     pic->bpc = d->bpc;
     vmaf_picture_plane_extents(pic->pix_fmt, d->w, d->h, pic->w, pic->h);

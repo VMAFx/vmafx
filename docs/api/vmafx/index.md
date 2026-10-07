@@ -144,7 +144,13 @@ callback with its user pointer, and the longest host wait of the import rule
   process log.
 
 `vmafx_context_set_option()` sets the context options `perceptual_weight`
-(`0` / `1`) and `perceptual_weight_strength` (a finite number >= 0).
+(`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) and
+`check_sample_range` (`0` / `1`, off by default). With `check_sample_range`
+on, `vmafx_submit()` refuses a pair in which a sample of a 9- to 15-bit frame
+is above 2^bpc - 1 with `VMAFX_E_INVALID` and logs its plane, row, column and
+value; a frame in device memory cannot be scanned and is `VMAFX_E_NOTSUP`
+([Sample range](../sample-range.md),
+[ADR-1918](../../adr/1918-sample-range-contract-opt-in-check.md)).
 `vmafx_context_destroy()` keeps the retry contract of ADR-1336: on a nonzero
 status the context and everything it holds stay valid and the destroy can be
 called again.
@@ -210,6 +216,47 @@ more reference per context with `vmafx_frame_ref()` and submit it to each.
 The same frame as both inputs of one submit needs two references.
 `vmafx_flush()` finishes the stream; the scores of the last frames (motion)
 become final only then.
+
+### Frame colour
+
+A model can declare a
+[`conversion_target`](../../models/v1.md#model-declared-conversion-target): the
+colour space its features are defined in. For such a model `vmafx_submit()`
+converts both frames of a pair to that target before anything reads them, and
+needs to know their colour; a model without one ignores frame colour.
+
+- `VmafxFrameDesc.color` (a `VmafxColor`: range, primaries, transfer
+  characteristic, matrix) is the colour of a frame. Frames made by
+  `vmafx_frame_create_host()`, `vmafx_frame_wrap_host()`,
+  `vmafx_frame_pool_create()` and `vmafx_context_preallocate()` carry the
+  colour of their `desc`. Imported and converted frames carry none, and so
+  does a frame `vmafx_frame_from_picture()` makes from a libvmaf picture that
+  is not a view of a frame.
+- A frame carries none when every member of its colour is `UNKNOWN` (the
+  `VMAFX_FRAME_DESC_INIT` value). `vmafx_context_set_default_color(context,
+  reference, distorted, error)` gives the colour of such frames, per input;
+  `NULL` leaves that input's default unset.
+- A pair whose colour (its own, else the default) is not fully specified is
+  refused with `VMAFX_E_INVALID`, and the log names the missing members: a
+  guessed colour would give a plausible but wrong score. A conversion needs a
+  build with zimg (`-Denable_zimg=true`); without it `VMAFX_E_NOTSUP`.
+- The conversion is built from the first pair it converts. From then on a pair
+  of another colour is refused with `VMAFX_E_BUSY` and not counted, and so is
+  `vmafx_context_set_default_color()`.
+
+```c
+const VmafxColor pq = {VMAFX_COLOR_RANGE_LIMITED, VMAFX_COLOR_PRIMARIES_BT2020,
+                       VMAFX_COLOR_TRC_SMPTE2084, VMAFX_COLOR_MATRIX_BT2020_NCL};
+VmafxFrameDesc desc = VMAFX_FRAME_DESC_INIT;
+desc.pix_fmt = VMAFX_PIXEL_FORMAT_YUV420P;
+desc.bpc = 10;
+desc.w = 3840;
+desc.h = 2160;
+desc.color = pq; /* or: vmafx_context_set_default_color(context, &pq, &pq, &error) */
+```
+
+A caller compiled against a header without `VmafxFrameDesc.color` passes a
+shorter `struct_size`; its frames carry no colour.
 
 ## Device frames and fences
 
@@ -437,6 +484,18 @@ are opt-in in this release, on by default in 1.1, and the functions go in 2.0
 cc -DVMAF_ENABLE_DEPRECATION_WARNINGS -c my_program.c $(pkg-config --cflags libvmaf)
 # my_program.c:12: warning: 'vmaf_init' is deprecated: use vmafx_context_create
 ```
+
+Two libvmaf functions newer than the first VMAFx release map onto it as
+follows ([migration table](compat.md)):
+
+- `vmaf_set_sample_range_check_enabled(vmaf, enabled)` is the context option
+  `check_sample_range`: `vmafx_context_set_option(context,
+  "check_sample_range", "1", &error)`.
+- `vmaf_set_input_colorimetry(vmaf, ref, dist)` declares the colour once per
+  input, because a libvmaf picture has no colour member; it is
+  `vmafx_context_set_default_color()`. A VMAFx frame can carry its own colour
+  in `VmafxFrameDesc.color` instead ([Frame colour](#frame-colour)). Both
+  answer `-EBUSY` / `VMAFX_E_BUSY` once a picture has been converted.
 
 ### What the compat library does differently
 

@@ -163,6 +163,15 @@ int vmaf_conversion_state_set_input_color(VmafConversionState *state, const Vmaf
     return 0;
 }
 
+int vmaf_conversion_state_offer_input_color(VmafConversionState *state, const VmafColor *ref,
+                                            const VmafColor *dist)
+{
+    if (vmaf_conversion_policy_color_equal(ref, &state->ref_color) &&
+        vmaf_conversion_policy_color_equal(dist, &state->dist_color))
+        return 0;
+    return vmaf_conversion_state_set_input_color(state, ref, dist);
+}
+
 int vmaf_conversion_state_refuse_zero_copy(const VmafConversionState *state,
                                            const char *entry_point)
 {

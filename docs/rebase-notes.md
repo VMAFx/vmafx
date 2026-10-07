@@ -62929,3 +62929,13 @@ gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep bot
   body; libvmaf return values are unchanged except the differences listed in
   `docs/api/vmafx/index.md`. No FFmpeg patch impact: unpatched FFmpeg n9.0.2
   builds against the split library and scores identically.
+- The two libvmaf functions master gained after this branch's base are
+  compat functions: `vmaf_set_sample_range_check_enabled()` sets the context
+  option `check_sample_range`, `vmaf_set_input_colorimetry()` calls
+  `vmafx_context_set_default_color()`. `vmafx_submit()` hands every pair's
+  colour to the engine (`vmaf_engine_set_pair_colorimetry()`, which compares
+  with `vmaf_conversion_policy_color_equal()` before
+  `vmaf_conversion_state_set_input_color()` in
+  `core/src/conversion_context.c`). An upstream change to the conversion
+  state keeps that comparison: the same colour after the first converted
+  pair is 0, another one `-EBUSY`.

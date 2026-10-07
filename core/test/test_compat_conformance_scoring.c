@@ -10,7 +10,8 @@
  * WP6): models, a model collection, an option-carrying feature and an
  * imported score on three synthetic frames, every per-frame and pooled score
  * as %a, the extractor and backend queries, the four report formats, and the
- * preallocated-picture path. Synthetic frames keep the test free of
+ * preallocated-picture path, the sample range check and the input
+ * colorimetry of a model's conversion_target. Synthetic frames keep the test free of
  * fixtures: the comparison is the old libvmaf against the compat library on
  * the same input, not a score against a reference value.
  */
@@ -22,6 +23,7 @@
 #include <string.h>
 
 #include "compat_conformance_trace.h"
+#include "conversion_target_model.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -34,17 +36,24 @@
 #define EXTRACTORS_MAX 64u /* HISS-02 bound of the registered-extractor walk */
 #define REPORT_LINE 8192
 #define REPORT_LINES_MAX 4096u
-/* One report file per run: the plain and the planted tests run at once. */
-static const char *report_path(void)
+#define SCRATCH_PATH 128
+#define SAMPLE_ROW 3u /* where read_pair() puts its sample */
+#define SAMPLE_COLUMN 5u
+
+/* A scratch file of this run, `compat_conformance_<stem>[_<plant>].<ext>`:
+ * the plain and the planted tests run at once. */
+static const char *scratch_path(char buf[SCRATCH_PATH], const char *stem, const char *ext)
 {
     const char *const plant = conformance_plant();
-    if (strcmp(plant, "score") == 0) {
-        return "compat_conformance_report_score.out";
-    }
-    if (strcmp(plant, "uncovered") == 0) {
-        return "compat_conformance_report_uncovered.out";
-    }
-    return "compat_conformance_report.out";
+    const int n = snprintf(buf, SCRATCH_PATH, "compat_conformance_%s%s%s.%s", stem,
+                           plant[0] ? "_" : "", plant, ext);
+    return n > 0 && n < SCRATCH_PATH ? buf : "compat_conformance_scratch.out";
+}
+
+static const char *report_path(void)
+{
+    static char buf[SCRATCH_PATH];
+    return scratch_path(buf, "report", "out");
 }
 
 static VmafConfiguration quiet_config(void)
@@ -55,18 +64,31 @@ static VmafConfiguration quiet_config(void)
     return cfg;
 }
 
-/* A deterministic textured frame; the distorted one adds bounded noise. */
+/* Store `value` at (x, y) of plane `p`, a 16-bit word above 8 bits. */
+static void put_sample(VmafPicture *pic, unsigned p, unsigned x, unsigned y, unsigned value)
+{
+    uint8_t *const row = (uint8_t *)pic->data[p] + y * (size_t)pic->stride[p];
+    if (pic->bpc > 8u) {
+        const uint16_t word = (uint16_t)value;
+        memcpy(row + 2u * (size_t)x, &word, sizeof(word));
+    } else {
+        row[x] = (uint8_t)value;
+    }
+}
+
+/* A deterministic textured frame; the distorted one adds bounded noise. The
+ * 8-bit texture is scaled to the picture's depth. */
 static void fill(VmafPicture *pic, unsigned frame, int distorted)
 {
     uint32_t state = 0x9e3779b9u * (frame + 1u);
+    const unsigned shift = pic->bpc > 8u ? pic->bpc - 8u : 0u;
     for (unsigned p = 0; p < 3u; p++) {
-        uint8_t *const data = pic->data[p];
         for (unsigned y = 0; y < pic->h[p]; y++) {
             for (unsigned x = 0; x < pic->w[p]; x++) {
                 state = state * 1664525u + 1013904223u;
                 const unsigned base = (x * 3u + y * 5u + frame * 7u + p * 11u) & 0xffu;
                 const unsigned noise = distorted ? (state >> 28) : 0u;
-                data[y * (size_t)pic->stride[p] + x] = (uint8_t)((base + noise) & 0xffu);
+                put_sample(pic, p, x, y, ((base + noise) & 0xffu) << shift);
             }
         }
     }
@@ -330,6 +352,96 @@ void scenario_preallocated(const VmafCompatApi *api, Trace *t)
     trace(t, "preallocate %d", api->preallocate_pictures(vmaf, cfg));
     preallocated_frames(api, t, vmaf);
     trace(t, "close %d %d", api->close(vmaf), api->close(bare));
+}
+
+/* ---- What a submitted pair carries (ADR-2094) ------------------------------------- */
+
+/* Read a 10-bit pair; `sample` (0: none) replaces one distorted sample. */
+static void read_pair(const VmafCompatApi *api, Trace *t, VmafContext *vmaf, unsigned sample,
+                      unsigned index)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    const int a = api->picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 10, FRAME_W, FRAME_H);
+    const int b = api->picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 10, FRAME_W, FRAME_H);
+    if (a || b) {
+        trace(t, "alloc %u %d %d unref %d %d", index, a, b, a ? 0 : api->picture_unref(&ref),
+              b ? 0 : api->picture_unref(&dist));
+        return;
+    }
+    fill(&ref, index, 0);
+    fill(&dist, index, 1);
+    if (sample) {
+        put_sample(&dist, 0, SAMPLE_COLUMN, SAMPLE_ROW, sample);
+    }
+    const int err = api->read_pictures(vmaf, &ref, &dist, index);
+    trace(t, "read %u sample %u: %d consumed %d %d", index, sample, err, ref.ref == NULL,
+          dist.ref == NULL);
+}
+
+static void trace_frames(const VmafCompatApi *api, Trace *t, VmafContext *vmaf, VmafModel *model,
+                         unsigned count)
+{
+    for (unsigned i = 0; i < count; i++) {
+        double score = -1.0;
+        int err = api->feature_score_at_index(vmaf, "psnr_y", &score, i);
+        trace(t, "psnr %u %d %a", i, err, score);
+        score = -1.0;
+        err = model ? api->score_at_index(vmaf, model, &score, i) : 0;
+        trace(t, "score %u %d %a", i, err, score);
+    }
+}
+
+/* vmaf_set_sample_range_check_enabled() (ADR-1918): a 10-bit sample of
+ * 1500 is refused while the check is on and scored while it is off. */
+void scenario_sample_range(const VmafCompatApi *api, Trace *t)
+{
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "use psnr %d", api->use_feature(vmaf, "psnr", NULL));
+    trace(t, "check NULL %d", api->set_sample_range_check_enabled(NULL, 1));
+    trace(t, "check on %d", api->set_sample_range_check_enabled(vmaf, 1));
+    read_pair(api, t, vmaf, 0, 0);
+    read_pair(api, t, vmaf, 1500, 1);
+    read_pair(api, t, vmaf, 1023, 2);
+    trace(t, "check off %d", api->set_sample_range_check_enabled(vmaf, 0));
+    read_pair(api, t, vmaf, 1500, 3);
+    trace(t, "flush %d", api->read_pictures(vmaf, NULL, NULL, 0));
+    trace_frames(api, t, vmaf, NULL, 4);
+    trace(t, "close %d", api->close(vmaf));
+}
+
+/* vmaf_set_input_colorimetry() (ADR-2093) with a model whose features are
+ * defined in ICtCp: a pair without a colour is refused, a declared one
+ * converts (-ENOTSUP without zimg), and a declaration after the first
+ * converted pair is -EBUSY. */
+void scenario_colorimetry(const VmafCompatApi *api, Trace *t)
+{
+    static const VmafColor pq = {VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT2020,
+                                 VMAF_COLOR_TRC_SMPTE2084, VMAF_COLOR_MATRIX_BT2020_NCL};
+    static const VmafColor sdr = {VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT709,
+                                  VMAF_COLOR_TRC_BT709, VMAF_COLOR_MATRIX_BT709};
+    char path[SCRATCH_PATH];
+    const char *const file = scratch_path(path, "model", "json");
+    VmafModelConfig cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    VmafModel *model = NULL;
+    trace(t, "write %d", conversion_target_model_write(file));
+    trace(t, "load %d", api->model_load_from_path(&model, &cfg, file));
+    trace(t, "remove %d", remove(file));
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "use model %d", api->use_features_from_model(vmaf, model));
+    trace(t, "colour NULL %d", api->set_input_colorimetry(NULL, &pq, &pq));
+    read_pair(api, t, vmaf, 0, 0);
+    trace(t, "colour %d", api->set_input_colorimetry(vmaf, &pq, &pq));
+    read_pair(api, t, vmaf, 0, 1);
+    trace(t, "colour change %d", api->set_input_colorimetry(vmaf, &sdr, NULL));
+    trace(t, "colour again %d", api->set_input_colorimetry(vmaf, &pq, &pq));
+    read_pair(api, t, vmaf, 0, 2);
+    trace(t, "flush %d", api->read_pictures(vmaf, NULL, NULL, 0));
+    trace_frames(api, t, vmaf, model, 3);
+    trace(t, "close %d", api->close(vmaf));
+    api->model_destroy(model);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

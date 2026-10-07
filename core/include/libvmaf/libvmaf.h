@@ -460,6 +460,7 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_option")
 VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
 
 /**
@@ -496,6 +497,7 @@ VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabl
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_default_color")
 VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref,
                                            const VmafColor *dist);
 

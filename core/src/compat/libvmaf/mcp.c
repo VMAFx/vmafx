@@ -61,7 +61,11 @@ int vmaf_mcp_start_sse(VmafMcpServer *server, VmafMcpSseConfig *cfg)
     if (status != VMAFX_OK) {
         return compat_errno(status, error);
     }
-    cfg->port = (uint16_t)port;
+    /* A NULL cfg never succeeds (-EINVAL above); the guard keeps the write
+     * provably inside the caller's struct. */
+    if (cfg) {
+        cfg->port = (uint16_t)port;
+    }
     return 0;
 }
 

@@ -778,12 +778,13 @@ name = "VmafxFrameDesc"
 header = "vmafx/frame.h"
 since = "0.1"
 sized = true
-doc = "Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."
+doc = "Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT."
 fields = [
   { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout." },
   { name = "bpc", type = "u32", doc = "Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t." },
   { name = "w", type = "u32", doc = "Luma width in pixels." },
   { name = "h", type = "u32", doc = "Luma height in pixels." },
+  { name = "color", type = "VmafxColor", doc = "Colour of the frame, read when a model's `conversion_target` converts it before scoring. Every member UNKNOWN: the frame carries none and takes the context's default (vmafx_context_set_default_color()). Geometry-only uses (vmafx_feature_resolve()) ignore it. Added in ABI 0.1.6." },
 ]
 
 [[structs]]
@@ -1048,7 +1049,7 @@ name = "vmafx_context_set_option"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."
+doc = "Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "key", type = "cstr", pass = "in" },
@@ -2257,6 +2258,19 @@ params = [
 ]
 
 [[functions]]
+name = "vmafx_context_set_default_color"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "The colour of the submitted frames that carry none (every member of their VmafxFrameDesc.color UNKNOWN), per input; NULL leaves that input's default unset. Only a model with a `conversion_target` reads frame colour: it converts every pair from its colour and refuses a pair whose colour is not fully specified. VMAFX_E_BUSY once a pair has been converted (the conversion is built from the first converted pair's colour), as is a submitted pair whose colour differs from it. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "reference", type = "VmafxColor", pass = "in_const", nullable = true },
+  { name = "distorted", type = "VmafxColor", pass = "in_const", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
 name = "vmafx_frame_converter_create"
 header = "vmafx/frame.h"
 since = "0.1"
@@ -2897,6 +2911,35 @@ params = [
 file = "core/src/compat/libvmaf/context.c"
 calls = ["vmafx_context_from_libvmaf", "vmafx_frame_from_picture", "vmafx_frame_unref", "vmafx_submit", "vmafx_flush"]
 note = "(NULL, NULL) flushes; both pictures consumed on every path past the argument checks"
+
+[[compat]]
+name = "vmaf_set_sample_range_check_enabled"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_set_option"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "enabled", c = "int" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_option"]
+note = "option check_sample_range (ADR-1918)"
+
+[[compat]]
+name = "vmaf_set_input_colorimetry"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_set_default_color"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "ref", c = "const VmafColor *" },
+  { name = "dist", c = "const VmafColor *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_default_color"]
+note = "the colour of frames that carry none; VmafxFrameDesc.color gives a frame its own (ADR-2093)"
 
 [[compat]]
 name = "vmaf_score_at_index"

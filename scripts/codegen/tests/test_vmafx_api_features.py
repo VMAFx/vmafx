@@ -183,6 +183,26 @@ class OptionGroupTest(unittest.TestCase):
                 self.assert_refused(change, text)
 
 
+def python_record(text: str, name: str) -> str:
+    start = text.index(f"class {name}:")
+    return text[start : text.index("\n@dataclass", start)]
+
+
+class PythonRecordToCTest(unittest.TestCase):
+    """A record converts back to C when its fields are numbers or one struct of
+    numbers: VmafxFrameDesc kept to_c() when it gained `color` (ADR-2094)."""
+
+    def test_a_struct_of_numbers_converts_back(self) -> None:
+        record = python_record(emit_python.module_text(parse(document())), "FrameDesc")
+        self.assertIn("    def to_c(self) -> VmafxFrameDesc:\n", record)
+        self.assertIn("        raw.color = self.color.to_c()\n", record)
+
+    def test_a_struct_with_a_pointer_does_not(self) -> None:
+        # VmafxFrameImport embeds VmafxFence, whose handle has no record value.
+        record = python_record(emit_python.module_text(parse(document())), "FrameImport")
+        self.assertNotIn("def to_c", record)
+
+
 if __name__ == "__main__":
     unittest.main()
 

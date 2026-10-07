@@ -116,6 +116,8 @@ static const struct {
     {"collections", scenario_collections},
     {"scoring", scenario_scoring},
     {"preallocated", scenario_preallocated},
+    {"sample_range", scenario_sample_range},
+    {"colorimetry", scenario_colorimetry},
     {"pictures", scenario_pictures},
     {"conversion", scenario_conversion},
     {"perceptual", scenario_perceptual},

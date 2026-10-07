@@ -130,6 +130,7 @@ static VmafxFrame *pool_frame_new(VmafxFramePool *pool, const VmafxFrameDesc *d)
     frame->pool = pool;
     frame->device = pool->device;
     frame->residency = pool->device->backend;
+    frame->color = d->color;
     return frame;
 }
 

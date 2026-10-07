@@ -78,6 +78,20 @@ static inline VmafxContext *vt_logged_context(VtLog *log, uint32_t level)
     return vmafx_context_create(&config, &context, NULL) == VMAFX_OK ? context : NULL;
 }
 
+/* A context scoring PSNR with the default configuration; NULL on failure. */
+static inline VmafxContext *vt_psnr_context(void)
+{
+    VmafxContext *context = NULL;
+    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK) {
+        return NULL;
+    }
+    if (vmafx_context_use_feature(context, "psnr", NULL, NULL) != VMAFX_OK) {
+        (void)vmafx_context_destroy(context, NULL);
+        return NULL;
+    }
+    return context;
+}
+
 /* ---- Frames ------------------------------------------------------------------- */
 
 static inline VmafxFrameDesc vt_desc(uint32_t pix_fmt, uint32_t bpc, uint32_t w, uint32_t h)

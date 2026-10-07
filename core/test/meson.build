@@ -1028,7 +1028,7 @@ test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 test_model_collection_score_repeat = executable('test_model_collection_score_repeat',
     ['test.c', 'test_model_collection_score_repeat.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_model_collection_score_repeat', test_model_collection_score_repeat, suite : ['fast'])
@@ -1039,7 +1039,7 @@ test('test_model_collection_score_repeat', test_model_collection_score_repeat, s
 test_feature_score_fed_frame = executable('test_feature_score_fed_frame',
     ['test.c', 'test_feature_score_fed_frame.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_feature_score_fed_frame', test_feature_score_fed_frame, suite : ['fast'])
@@ -1141,7 +1141,7 @@ test_read_pictures_convert = executable('test_read_pictures_convert',
     ['test.c', 'test_read_pictures_convert.c'],
     include_directories : [libvmaf_inc, test_inc],
     c_args : test_read_pictures_convert_args,
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [pthread_dependency, thread_lib],
 )
 test('test_read_pictures_convert', test_read_pictures_convert, suite : ['fast'])
@@ -1241,7 +1241,7 @@ test_log = executable('test_log',
 test_log_level_threads = executable('test_log_level_threads',
     ['test.c', 'test_log_level_threads.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_log_level_threads', test_log_level_threads, suite : ['fast'])
@@ -1541,6 +1541,19 @@ foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx
     )
     test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
 endforeach
+
+# ADR-2094: what a submitted pair carries (VmafxFrameDesc.color, the
+# context's default colour, VMAFX_E_BUSY after the first converted pair) and
+# the check_sample_range option. The conversions need -Denable_zimg=true;
+# without it a pair that needs one is VMAFX_E_NOTSUP.
+test_vmafx_frame_input = executable('test_vmafx_frame_input',
+    ['test.c', 'test_vmafx_frame_input.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    c_args : vmafx_test_dirs + vmaf_public_name_args + zimg_defines,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_frame_input', test_vmafx_frame_input, suite : ['fast'])
 
 # RC4 WP5 (#2142, ADR-2073): a provenance query while another thread submits.
 # The Sanitizers job's TSan build reports a racy read of the record's run
@@ -4243,7 +4256,7 @@ test('test_feature_isa_invariance', test_feature_isa_invariance,
 test_integer_adm_cm_row_unsigned = executable('test_integer_adm_cm_row_unsigned',
     ['test.c', 'test_integer_adm_cm_row_unsigned.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [pthread_dependency, math_lib],
 )
 test('test_integer_adm_cm_row_unsigned', test_integer_adm_cm_row_unsigned,
@@ -5346,7 +5359,7 @@ test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
 test_cuda_float_ms_ssim_host_traffic = executable('test_cuda_float_ms_ssim_host_traffic',
     ['test.c', 'test_cuda_float_ms_ssim_host_traffic.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
@@ -5800,7 +5813,7 @@ test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fas
 test_read_pictures_bpc = executable('test_read_pictures_bpc',
     ['test.c', 'test_read_pictures_bpc.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [pthread_dependency, thread_lib],
 )
 test('test_read_pictures_bpc', test_read_pictures_bpc, suite : ['fast'])
@@ -5879,7 +5892,7 @@ test('test_perceptual_weight', test_perceptual_weight, suite : ['fast'])
 test_sample_range_check = executable('test_sample_range_check',
     ['test.c', 'test_sample_range_check.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [math_lib, pthread_dependency, thread_lib],
 )
 test('test_sample_range_check', test_sample_range_check, suite : ['fast'])
@@ -6231,7 +6244,7 @@ test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
 test_float_adm_debug_key_refusal = executable('test_float_adm_debug_key_refusal',
     ['test.c', 'test_float_adm_debug_key_refusal.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [stdatomic_dependency, pthread_dependency, gpu_all_deps],
 )
 test('test_float_adm_debug_key_refusal', test_float_adm_debug_key_refusal, suite : ['fast'])
@@ -6398,7 +6411,7 @@ if host_machine.system() == 'linux'
 test_sycl_dmabuf_fd_ownership = executable('test_sycl_dmabuf_fd_ownership',
     ['test.c', 'test_sycl_dmabuf_fd_ownership.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies: [pthread_dependency, sycl_dependency, cc.find_library('dl', required : false)],
     c_args: ['-DHAVE_SYCL=1']
 )

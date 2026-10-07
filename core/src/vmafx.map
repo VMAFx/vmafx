@@ -31,6 +31,7 @@ VMAFX_0.1 {
         vmafx_context_provenance;
         vmafx_context_provenance_json;
         vmafx_context_set_codec_context;
+        vmafx_context_set_default_color;
         vmafx_context_set_encode_record;
         vmafx_context_set_option;
         vmafx_context_set_tiny_resize;

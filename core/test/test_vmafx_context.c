@@ -288,6 +288,9 @@ static const OptionCase option_cases[] = {
     {"perceptual_weight_strength", "nan", VMAFX_E_INVALID},
     {"perceptual_weight_strength", "1x", VMAFX_E_INVALID},
     {"perceptual_weight_strength", "", VMAFX_E_INVALID},
+    {"check_sample_range", "1", VMAFX_OK},
+    {"check_sample_range", "false", VMAFX_OK},
+    {"check_sample_range", "2", VMAFX_E_INVALID},
 };
 
 static char *test_set_option_values(void)

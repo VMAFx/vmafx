@@ -139,6 +139,43 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
     return status == VMAFX_OK ? 0 : compat_errno(status, error);
 }
 
+int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled)
+{
+    if (!vmaf) {
+        return -EINVAL;
+    }
+    VmafxError *error = NULL;
+    const VmafxStatus status = vmafx_context_set_option(
+        vmafx_context_from_libvmaf(vmaf), "check_sample_range", enabled ? "1" : "0", &error);
+    return status == VMAFX_OK ? 0 : compat_errno(status, error);
+}
+
+/* libvmaf's colour as the VMAFx colour (the enum values are equal). */
+static VmafxColor compat_color(const VmafColor *color)
+{
+    VmafxColor c = {0};
+    c.range = (uint32_t)color->range;
+    c.primaries = (uint32_t)color->primaries;
+    c.trc = (uint32_t)color->trc;
+    c.matrix = (uint32_t)color->matrix;
+    return c;
+}
+
+/* The context's default colour: libvmaf's pictures carry none (ADR-2093),
+ * so every frame of a libvmaf caller takes it. */
+int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+{
+    if (!vmaf) {
+        return -EINVAL;
+    }
+    const VmafxColor ref_color = ref ? compat_color(ref) : (VmafxColor){0};
+    const VmafxColor dist_color = dist ? compat_color(dist) : (VmafxColor){0};
+    VmafxError *error = NULL;
+    const VmafxStatus status = vmafx_context_set_default_color(vmafx_context_from_libvmaf(vmaf),
+                                                               &ref_color, &dist_color, &error);
+    return status == VMAFX_OK ? 0 : compat_errno(status, error);
+}
+
 int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg)
 {
     if (!vmaf) {

@@ -180,19 +180,36 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
     return PYTYPES[fld.type], value
 
 
-def _plain(api: Api, fields: list[Field]) -> bool:
-    """A record converts back to C when every field is a single non-pointer number."""
-    return all(
-        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", *POINTERS) and not f.count
-        for f in fields
+def _number(api: Api, fld: Field) -> bool:
+    """A single non-pointer number."""
+    return (
+        typesys.kind(api, fld.type) == "scalar"
+        and fld.type not in ("cstr", *POINTERS)
+        and not fld.count
     )
 
 
-def _to_c(item: Struct, fields: list[Field]) -> list[str]:
+def _nested_numbers(api: Api, fld: Field) -> bool:
+    """A single struct of numbers (VmafxFrameDesc.color): its record converts back."""
+    if typesys.kind(api, fld.type) != "struct" or fld.count:
+        return False
+    inner = [f for f in api.struct(fld.type).fields if f.name != "struct_size"]
+    return all(_number(api, f) for f in inner)
+
+
+def _plain(api: Api, fields: list[Field]) -> bool:
+    """A record converts back to C when every field is a single non-pointer number
+    or a single struct of such numbers."""
+    return all(_number(api, f) or _nested_numbers(api, f) for f in fields)
+
+
+def _to_c(api: Api, item: Struct, fields: list[Field]) -> list[str]:
     lines = [f"\n    def to_c(self) -> {item.name}:\n", f"        raw = {item.name}()\n"]
     if item.sized:
         lines.append("        raw.struct_size = ctypes.sizeof(raw)\n")
-    lines += [f"        raw.{f.name} = self.{f.name}\n" for f in fields]
+    for f in fields:
+        value = f"self.{f.name}.to_c()" if _nested_numbers(api, f) else f"self.{f.name}"
+        lines.append(f"        raw.{f.name} = {value}\n")
     return [*lines, "        return raw\n"]
 
 
@@ -214,7 +231,7 @@ def _record_class(api: Api, item: Struct) -> str:
     # still converts back (VmafxContextConfig and its log callback).
     plain = [f for f, _ in kept]
     if _plain(api, plain):
-        lines += _to_c(item, plain)
+        lines += _to_c(api, item, plain)
     return "".join(lines)
 
 

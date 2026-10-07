@@ -74,6 +74,13 @@ int vmaf_engine_score_pooled_model_collection(VmafContext *vmaf,
                                               VmafModelCollectionScore *score, unsigned index_low,
                                               unsigned index_high);
 
+/* ADR-2094: the colorimetry of the next pair for a model's conversion_target
+ * (the VMAFx frames' colour, else the context's default): 0 when unchanged,
+ * else as vmaf_set_input_colorimetry() (-EBUSY once a picture was
+ * converted); -EINVAL for a NULL argument. */
+int vmaf_engine_set_pair_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                     const VmafColor *dist);
+
 /* Earlier reference frames the context keeps after a frame was read: 1, or 2
  * once an extractor that reads frame n-2 is registered (ADR-1478); 0 for
  * NULL. */

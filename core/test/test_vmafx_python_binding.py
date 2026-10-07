@@ -105,6 +105,30 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(self.library.model_default_version(), "vmaf_v1.0.16_3d0h")
         self.assertTrue(self.library.model_builtin_next(None))
 
+    def test_frame_colour_and_sample_range(self) -> None:
+        """ADR-2094: a frame descriptor carries its colour to C, the context's
+        default colour is a raw call, check_sample_range a context option."""
+        pq = vmafx.Color(
+            range=vmafx.ColorRange.LIMITED,
+            primaries=vmafx.ColorPrimaries.BT2020,
+            trc=vmafx.ColorTransfer.SMPTE2084,
+            matrix=vmafx.ColorMatrix.BT2020_NCL,
+        )
+        desc = vmafx.FrameDesc(pix_fmt=vmafx.PixelFormat.YUV420P, bpc=10, w=64, h=48, color=pq)
+        raw_desc = desc.to_c()
+        self.assertEqual(raw_desc.struct_size, ctypes.sizeof(vmafx.VmafxFrameDesc))
+        self.assertEqual(vmafx.FrameDesc.from_c(raw_desc), desc)
+        with self.library.context() as context:
+            context.set_option("check_sample_range", "1")
+            with self.assertRaises(vmafx.VmafxError) as caught:
+                context.set_option("check_sample_range", "maybe")
+            color = pq.to_c()
+            status = self.library.raw.vmafx_context_set_default_color(
+                context._handle, ctypes.byref(color), None, None
+            )
+        self.assertEqual(caught.exception.status, vmafx.Status.E_INVALID)
+        self.assertEqual(status, vmafx.Status.OK)
+
     def test_layout_check_refuses_drift(self) -> None:
         size, offsets = vmafx.LAYOUT[vmafx.VmafxScore]
         vmafx.LAYOUT[vmafx.VmafxScore] = (size + 8, offsets)

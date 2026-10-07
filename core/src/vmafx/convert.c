@@ -35,16 +35,6 @@ static VmafPictureConvertContext *engine_converter(VmafxFrameConverter *converte
     return (VmafPictureConvertContext *)converter;
 }
 
-static VmafColor engine_color(const VmafxColor *c)
-{
-    VmafColor color = {0};
-    color.range = (enum VmafColorRange)c->range;
-    color.primaries = (enum VmafColorPrimaries)c->primaries;
-    color.trc = (enum VmafColorTransferCharacteristic)c->trc;
-    color.matrix = (enum VmafColorMatrixCoefficients)c->matrix;
-    return color;
-}
-
 /* A picture that carries only the geometry the engine reads at init. */
 static VmafPicture source_template(const VmafxConvertDesc *d)
 {
@@ -62,7 +52,7 @@ static VmafPictureConvertTarget engine_target(const VmafxConvertDesc *d)
     target.bpc = d->dst_bpc;
     target.w = d->dst_w;
     target.h = d->dst_h;
-    target.color = engine_color(&d->dst_color);
+    target.color = vmafx_engine_color(&d->dst_color);
     target.resample_filter = (enum VmafResampleFilter)d->filter;
     return target;
 }
@@ -91,7 +81,7 @@ VmafxStatus vmafx_frame_converter_create(const VmafxConvertDesc *desc, VmafxFram
         return status;
     }
     const VmafPicture src = source_template(&d);
-    const VmafColor src_color = engine_color(&d.src_color);
+    const VmafColor src_color = vmafx_engine_color(&d.src_color);
     const VmafPictureConvertTarget target = engine_target(&d);
     VmafPictureConvertContext *engine = NULL;
     const int err =

@@ -186,10 +186,10 @@ typedef struct VmafxFrameConverter VmafxFrameConverter;
 typedef struct VmafxFence VmafxFence;
 typedef struct VmafxImportPlane VmafxImportPlane;
 typedef struct VmafxFrameImport VmafxFrameImport;
-typedef struct VmafxFrameDesc VmafxFrameDesc;
 typedef struct VmafxHostPlanes VmafxHostPlanes;
 typedef struct VmafxFramePlanes VmafxFramePlanes;
 typedef struct VmafxColor VmafxColor;
+typedef struct VmafxFrameDesc VmafxFrameDesc;
 typedef struct VmafxConvertDesc VmafxConvertDesc;
 
 /**
@@ -303,26 +303,6 @@ struct VmafxFrameImport {
 /* clang-format on */
 
 /**
- * Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
- * @since 0.1
- */
-struct VmafxFrameDesc {
-    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
-    uint32_t struct_size;
-    /** Pixel layout. Values: VmafxPixelFormat. */
-    uint32_t pix_fmt;
-    /** Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. */
-    uint32_t bpc;
-    /** Luma width in pixels. */
-    uint32_t w;
-    /** Luma height in pixels. */
-    uint32_t h;
-};
-
-/** Initialiser that sets `struct_size`; every other field is zero. */
-#define VMAFX_FRAME_DESC_INIT {.struct_size = sizeof(VmafxFrameDesc)}
-
-/**
  * Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT.
  * @since 0.1
  */
@@ -385,6 +365,33 @@ struct VmafxColor {
     /** Matrix coefficients. Values: VmafxColorMatrix. */
     uint32_t matrix;
 };
+
+/**
+ * Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
+ * @since 0.1
+ */
+struct VmafxFrameDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel layout. Values: VmafxPixelFormat. */
+    uint32_t pix_fmt;
+    /** Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. */
+    uint32_t bpc;
+    /** Luma width in pixels. */
+    uint32_t w;
+    /** Luma height in pixels. */
+    uint32_t h;
+    /**
+     * Colour of the frame, read when a model's `conversion_target` converts it before scoring.
+     * Every member UNKNOWN: the frame carries none and takes the context's default
+     * (vmafx_context_set_default_color()). Geometry-only uses (vmafx_feature_resolve()) ignore it.
+     * Added in ABI 0.1.6.
+     */
+    VmafxColor color;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FRAME_DESC_INIT {.struct_size = sizeof(VmafxFrameDesc)}
 
 /**
  * What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI

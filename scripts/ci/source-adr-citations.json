@@ -6755,6 +6755,7 @@
         "core/test/test_vmafx_context.c": 1,
         "core/test/test_vmafx_exactness.c": 1,
         "core/test/test_vmafx_frame.c": 1,
+        "core/test/test_vmafx_frame_input.c": 1,
         "core/test/test_vmafx_import_api.c": 1,
         "core/test/test_vmafx_import_bitexact.c": 1,
         "core/test/test_vmafx_import_fence.c": 1,
@@ -11678,13 +11679,16 @@
     },
     "1918": {
       "sites": {
-        "core/api/vmafx.toml": 1,
+        "core/api/vmafx.toml": 2,
         "core/src/libvmaf.c": 1,
         "core/src/meson.build": 1,
         "core/src/picture_sample_range.h": 1,
+        "core/src/vmafx/context.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_cli_parse.c": 1,
+        "core/test/test_compat_conformance_scoring.c": 1,
         "core/test/test_sample_range_check.c": 1,
+        "core/test/test_vmafx_frame_input.c": 2,
         "core/tools/cli_parse.h": 1
       },
       "target": "1918-sample-range-contract-opt-in-check.md"
@@ -11768,13 +11772,20 @@
     },
     "2093": {
       "sites": {
+        "core/api/vmafx.toml": 1,
+        "core/src/compat/libvmaf/context.c": 1,
         "core/src/conversion_context.h": 1,
         "core/src/libvmaf.c": 2,
         "core/src/meson.build": 1,
+        "core/src/vmafx/context_frames.c": 1,
+        "core/src/vmafx/submit.c": 1,
+        "core/test/conversion_target_model.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_cambi_enc_dimension_minimum_contract.py": 1,
+        "core/test/test_compat_conformance_scoring.c": 1,
         "core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py": 1,
         "core/test/test_read_pictures_convert.c": 1,
+        "core/test/test_vmafx_frame_input.c": 1,
         "core/tools/cli_parse.cpp": 1,
         "core/tools/vmaf.cpp": 1,
         "ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh": 1
@@ -11783,7 +11794,19 @@
     },
     "2094": {
       "sites": {
-        ".github/workflows/tests-and-quality-gates.yml": 1
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "core/src/conversion_context.h": 1,
+        "core/src/libvmaf.c": 1,
+        "core/src/vmafx/context_frames.c": 1,
+        "core/src/vmafx/engine.h": 1,
+        "core/src/vmafx/internal.h": 2,
+        "core/src/vmafx/submit.c": 1,
+        "core/test/conversion_target_model.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_compat_conformance_scoring.c": 1,
+        "core/test/test_vmafx_frame_input.c": 1,
+        "core/test/test_vmafx_python_binding.py": 1,
+        "scripts/codegen/tests/test_vmafx_api_features.py": 1
       },
       "target": "2094-libvmaf-compat-library-split.md"
     },

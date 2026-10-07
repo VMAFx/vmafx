@@ -286,13 +286,39 @@ static VmafxStatus parse_strength(const VmafxReport *report, const char *key, co
     return VMAFX_OK;
 }
 
+/* A switch: `perceptual_weight`, or `check_sample_range` (ADR-1918). */
+static bool switch_option(const char *key)
+{
+    return !strcmp(key, "perceptual_weight") || !strcmp(key, "check_sample_range");
+}
+
+/* Parse `value` for `key`; VMAFX_E_NOTFOUND names a key no option has. */
+static VmafxStatus parse_option(const VmafxReport *report, const char *key, const char *value,
+                                int *enabled, double *strength)
+{
+    if (switch_option(key)) {
+        return parse_switch(report, key, value, enabled);
+    }
+    if (!strcmp(key, "perceptual_weight_strength")) {
+        return parse_strength(report, key, value, strength);
+    }
+    return VMAFX_FAIL(report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_OPTION, key,
+                      "no context option has this name; the context options are "
+                      "perceptual_weight, perceptual_weight_strength and check_sample_range");
+}
+
 /* Apply a parsed option to the engine; returns its errno. */
 static int apply_option(VmafxContext *context, const char *key, int enabled, double strength)
 {
     const VmafLogSink *const previous = vmafx_engine_enter(context);
-    const int err = !strcmp(key, "perceptual_weight") ?
-                        vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled) :
-                        vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
+    int err = 0;
+    if (!strcmp(key, "check_sample_range")) {
+        err = vmaf_engine_set_sample_range_check_enabled(context->engine, enabled);
+    } else if (!strcmp(key, "perceptual_weight")) {
+        err = vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled);
+    } else {
+        err = vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
+    }
     vmafx_engine_leave(previous);
     return err;
 }
@@ -310,16 +336,7 @@ VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key, con
     }
     int enabled = 0;
     double strength = 0.0;
-    VmafxStatus status = VMAFX_OK;
-    if (!strcmp(key, "perceptual_weight")) {
-        status = parse_switch(&report, key, value, &enabled);
-    } else if (!strcmp(key, "perceptual_weight_strength")) {
-        status = parse_strength(&report, key, value, &strength);
-    } else {
-        return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_OPTION, key,
-                          "no context option has this name; the context options are "
-                          "perceptual_weight and perceptual_weight_strength");
-    }
+    const VmafxStatus status = parse_option(&report, key, value, &enabled, &strength);
     if (status != VMAFX_OK) {
         return status;
     }

@@ -17,6 +17,11 @@
  * refused at preallocation and at a later registration). Each frame handed
  * out adopts the pool picture (bridge.c): its last reference returns the
  * picture to the pool.
+ *
+ * Frame colour (ADR-2094, the VMAFx form of ADR-2093): a frame carries the
+ * VmafxFrameDesc.color it was made from; vmafx_context_set_default_color()
+ * gives the colour of the frames that carry none, and vmafx_submit() hands
+ * each pair's colour to the engine's conversion state.
  */
 
 #include <assert.h>
@@ -71,6 +76,7 @@ VmafxStatus vmafx_context_preallocate(VmafxContext *context, const VmafxFrameDes
         return engine_failure(&report, err, VMAFX_SUBJECT_PARAMETER, "count",
                               "preallocating the context's frames");
     }
+    context->preallocated_color = d.color;
     return VMAFX_OK;
 }
 
@@ -99,6 +105,7 @@ VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
         return status;
     }
     assert(frame != NULL);
+    frame->color = context->preallocated_color;
     *out = frame;
     return VMAFX_OK;
 }
@@ -136,6 +143,37 @@ VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
         return engine_failure(&report, err, VMAFX_SUBJECT_PARAMETER, "data",
                               "reading the perceptual side data");
     }
+    return VMAFX_OK;
+}
+
+VmafxStatus vmafx_context_set_default_color(VmafxContext *context, const VmafxColor *reference,
+                                            const VmafxColor *distorted, VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(context, error);
+    if (!context) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
+                          "NULL argument");
+    }
+    const VmafxColor unset = {0};
+    const VmafxColor ref = reference ? *reference : unset;
+    const VmafxColor dist = distorted ? *distorted : unset;
+    const VmafColor ref_color = vmafx_engine_color(&ref);
+    const VmafColor dist_color = vmafx_engine_color(&dist);
+    /* The engine's own answer, libvmaf's: -EBUSY once a pair was converted. */
+    assert(context->engine != NULL);
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_set_input_colorimetry(context->engine, &ref_color, &dist_color);
+    vmafx_engine_leave(previous);
+    if (err) {
+        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
+                          "context",
+                          "a pair was converted already, from the colour it had then; the "
+                          "default colour of a context is set before its first converted "
+                          "pair (%d)",
+                          err);
+    }
+    context->default_color[0] = ref;
+    context->default_color[1] = dist;
     return VMAFX_OK;
 }
 

@@ -44,6 +44,20 @@ libvmaf ERROR vmaf_read_pictures: reference picture, plane 1, row 3, column 7: s
 default, and then `vmaf_read_pictures()` reads no sample for it: the default
 path costs one test of a flag per call.
 
+## VMAFx API
+
+On the [VMAFx API](vmafx/index.md#contexts-and-logging) the check is the
+context option `check_sample_range`, with the same table:
+
+```c
+VmafxStatus status = vmafx_context_set_option(context, "check_sample_range", "1", &error);
+/* vmafx_submit(): VMAFX_E_INVALID for a sample above 2^bpc - 1,
+ * VMAFX_E_NOTSUP for a frame in device memory */
+```
+
+`vmaf_set_sample_range_check_enabled()` sets that option of the context behind
+the libvmaf handle.
+
 ## Command line
 
 `vmaf --check-sample-range` (underscore alias `--check_sample_range`) turns

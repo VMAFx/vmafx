@@ -29,6 +29,7 @@ vmafx_context_preallocate VMAFX_0.1
 vmafx_context_provenance VMAFX_0.1
 vmafx_context_provenance_json VMAFX_0.1
 vmafx_context_set_codec_context VMAFX_0.1
+vmafx_context_set_default_color VMAFX_0.1
 vmafx_context_set_encode_record VMAFX_0.1
 vmafx_context_set_option VMAFX_0.1
 vmafx_context_set_tiny_resize VMAFX_0.1

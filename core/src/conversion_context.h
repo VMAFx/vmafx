@@ -59,6 +59,14 @@ int vmaf_conversion_state_set_input_color(VmafConversionState *state, const Vmaf
                                           const VmafColor *dist);
 
 /**
+ * Offer the colorimetry of the next pair (ADR-2094, the VMAFx submit): 0 when
+ * it equals the colorimetry in use, else as
+ * vmaf_conversion_state_set_input_color().
+ */
+int vmaf_conversion_state_offer_input_color(VmafConversionState *state, const VmafColor *ref,
+                                            const VmafColor *dist);
+
+/**
  * Convert `ref` and `dist` to the registered target. Pass-through when no
  * model declares one; -EINVAL when one does and an input's colorimetry is not
  * fully specified. On success a converted picture replaces its original, which

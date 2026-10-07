@@ -150,8 +150,11 @@ VMAFX_EXPORT VmafxStatus vmafx_options_set(VmafxOptions **options, const char *k
 VMAFX_EXPORT void vmafx_options_free(VmafxOptions *options);
 
 /**
- * Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite
- * number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses.
+ * Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite
+ * number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a
+ * sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by
+ * default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an
+ * unknown key, VMAFX_E_INVALID a value the key refuses.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key,
@@ -302,6 +305,20 @@ VMAFX_EXPORT VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, Vmaf
 VMAFX_EXPORT VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
                                                        const void *data, size_t size,
                                                        VmafxError **error);
+
+/**
+ * The colour of the submitted frames that carry none (every member of their VmafxFrameDesc.color
+ * UNKNOWN), per input; NULL leaves that input's default unset. Only a model with a
+ * `conversion_target` reads frame colour: it converts every pair from its colour and refuses a pair
+ * whose colour is not fully specified. VMAFX_E_BUSY once a pair has been converted (the conversion
+ * is built from the first converted pair's colour), as is a submitted pair whose colour differs
+ * from it. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_default_color(VmafxContext *context,
+                                                         const VmafxColor *reference,
+                                                         const VmafxColor *distorted,
+                                                         VmafxError **error);
 
 #ifdef __cplusplus
 }
