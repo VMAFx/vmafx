@@ -1198,7 +1198,6 @@ class Context:
             self._handle, key.encode(), value.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_set_option")
-        return None
 
     def import_score(self, feature: str, index: int, value: float) -> None:
         """Record `value` as the score of `feature` at frame `index`, computed outside the library."""
@@ -1207,14 +1206,12 @@ class Context:
             self._handle, feature.encode(), index, value, ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_import_score")
-        return None
 
     def flush(self) -> None:
         """Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_flush(self._handle, ctypes.byref(error))
         _raise(self._lib, status, error, "vmafx_flush")
-        return None
 
     def feature_score_pooled(self, feature: str, pool: int, first: int, last: int) -> PooledScore:
         """Scores of `feature` pooled as vmafx_score_pooled() does."""

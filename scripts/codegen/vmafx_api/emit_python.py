@@ -258,7 +258,8 @@ def _method(api: Api, fn: Function) -> str:
     body = "".join(f"        {line}\n" for line in setup)
     body += py_call(f"status = self._lib.{fn.name}", args, "        ") + "\n"
     body += f'        _raise(self._lib, status, error, "{fn.name}")\n'
-    body += f"        return {result}\n"
+    if result != "None":  # ruff (RET501) refuses a bare `return None`
+        body += f"        return {result}\n"
     return f'    def {_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
 
 
