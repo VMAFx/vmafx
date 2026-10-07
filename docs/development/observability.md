@@ -361,6 +361,45 @@ The version and the checksum of its linux_amd64 release live in
 `DASHBOARD_LINTER_LINUX_AMD64_SHA256`); on another platform set
 `DASHBOARD_LINTER` to a binary of that version.
 
+## Alerts and recording rules
+
+`deploy/prometheus/vmafx-rules.yaml` holds the recording rules and alerts,
+generated from the same definitions as the dashboards
+(`go run ./tools/obsgen -write`). Load it into Prometheus as a rule file
+(`rule_files:` in `prometheus.yml`), or let the Helm chart install it as a
+PrometheusRule.
+
+| Alert | Severity | Fires when | Runbook |
+|-------|----------|------------|---------|
+| `VMAFxComponentDown` | critical | a target that served `vmafx_build_info` in the last hour has been unscrapable for 5 minutes | [component down](../observability/runbooks/vmafx-component-down.md) |
+| `VMAFxNoLiveNodes` | critical | jobs are pending and no node is registered, for 10 minutes | [no live nodes](../observability/runbooks/vmafx-no-live-nodes.md) |
+| `VMAFxQueueAging` | warning | a tenant's oldest pending job is older than 30 minutes, for 15 minutes | [queue aging](../observability/runbooks/vmafx-queue-aging.md) |
+| `VMAFxJobErrorBudgetBurn` | critical, warning | controller jobs fail fast enough to burn the 99 % objective's budget (14.4x over 1h and 5m; 6x over 6h and 30m) | [job error budget](../observability/runbooks/vmafx-job-error-budget-burn.md) |
+| `VMAFxScoreErrorBudgetBurn` | critical, warning | the same for Score request errors | [score error budget](../observability/runbooks/vmafx-score-error-budget-burn.md) |
+| `VMAFxScoreLatencyBudgetBurn` | critical, warning | the same for Score requests slower than 30 seconds | [score latency budget](../observability/runbooks/vmafx-score-latency-budget-burn.md) |
+| `VMAFxScoreRegression` | warning | an hour's median score of a tenant and model is 5 points below the previous day's, with at least 20 scores, for an hour | [score regression](../observability/runbooks/vmafx-score-regression.md) |
+| `VMAFxMetricsReadErrors` | warning | an instance fails to read its queue or GPU memory values for 15 minutes | [metrics read errors](../observability/runbooks/vmafx-metrics-read-errors.md) |
+
+Every alert carries a `runbook_url` annotation pointing at its page under
+[alert runbooks](../observability/runbooks/index.md). The recording rules
+(`vmafx:job_failure_ratio:rate<window>`, `vmafx:score_error_ratio:...`,
+`vmafx:score_slow_ratio:...` for 5m, 30m, 1h and 6h;
+`vmafx:quality_score:p50_1h`, `vmafx:quality_score:count_1h`) feed the
+alerts and may be queried like any other series.
+
+`deploy/prometheus/vmafx-rules.test.yaml` is the promtool unit test of the
+rule file, generated next to it: every alert has a case where it fires and
+one where it does not.
+
+```bash
+make check-prometheus-rules   # promtool check rules + promtool test rules, pinned release
+```
+
+The objectives (99 % for jobs, Score errors and Score latency within 30
+seconds) and the thresholds above are constants of
+`pkg/observability/obsgen` (`alerts.go`, `rules.go`); change them there and
+regenerate.
+
 ## Logs
 
 Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,

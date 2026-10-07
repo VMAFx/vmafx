@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
@@ -42,8 +44,9 @@ var ExporterSeries = map[string][]string{
 }
 
 // CheckExpr returns the series expr selects that nothing emits: neither a
-// series of a metricdef family, nor one of ExternalSeries, nor a series of
-// one of the exporters named in exporters.
+// series of a metricdef family, nor one of ExternalSeries, nor a series the
+// generated rule file records, nor a series of one of the exporters named in
+// exporters.
 func CheckExpr(expr string, exporters ...string) []string {
 	var dead []string
 	for _, name := range MetricNames(expr) {
@@ -92,6 +95,9 @@ func emitted(name string, exporters []string) bool {
 	if _, ok := ExternalSeries[name]; ok {
 		return true
 	}
+	if slices.Contains(RecordedSeries(), name) {
+		return true
+	}
 	for _, e := range exporters {
 		if slices.Contains(ExporterSeries[e], name) {
 			return true
@@ -130,6 +136,33 @@ func CheckDashboard(raw []byte) ([]string, error) {
 	}
 	for _, v := range d.Templating.List {
 		report("variable "+v.Name, variableExpr(v.Query))
+	}
+	return problems, nil
+}
+
+// CheckRules returns one problem per rule of a Prometheus rule file whose
+// expression names a series nothing emits.
+func CheckRules(raw []byte) ([]string, error) {
+	var f struct {
+		Groups []struct {
+			Name  string `yaml:"name"`
+			Rules []struct {
+				Record string `yaml:"record"`
+				Alert  string `yaml:"alert"`
+				Expr   string `yaml:"expr"`
+			} `yaml:"rules"`
+		} `yaml:"groups"`
+	}
+	if err := yaml.Unmarshal(raw, &f); err != nil {
+		return nil, fmt.Errorf("obsgen: parse rule file: %w", err)
+	}
+	var problems []string
+	for _, g := range f.Groups {
+		for _, r := range g.Rules {
+			for _, name := range CheckExpr(r.Expr) {
+				problems = append(problems, fmt.Sprintf("%s: rule %s%s queries %s, which nothing emits", g.Name, r.Record, r.Alert, name))
+			}
+		}
 	}
 	return problems, nil
 }

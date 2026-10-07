@@ -235,3 +235,56 @@ func TestExternalSeriesAreServed(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryRuleQueryIsEmitted: no rule of the generated rule file names a
+// series nothing emits, and a planted dead series is reported.
+func TestEveryRuleQueryIsEmitted(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(RulesFile)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	problems, err := CheckRules(raw)
+	if err != nil || len(problems) != 0 {
+		t.Fatalf("CheckRules = %v, %v", problems, err)
+	}
+	planted := []byte("groups:\n- name: g\n  rules:\n  - alert: A\n    expr: vmafx_jobs_in_flight > 0\n")
+	if problems, err := CheckRules(planted); err != nil || len(problems) != 1 {
+		t.Errorf("a dead series in a rule: %v, %v", problems, err)
+	}
+}
+
+// TestEveryAlertHasARunbook: each alert links a runbook page that exists,
+// with one test where it fires and one where it does not, and every runbook
+// page belongs to an alert.
+func TestEveryAlertHasARunbook(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(repoRoot, "docs", "observability", "runbooks")
+	pages := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if name, ok := strings.CutSuffix(e.Name(), ".md"); ok && name != "index" {
+			pages[name] = true
+		}
+	}
+	for _, a := range alerts() {
+		if !pages[a.runbook] {
+			t.Errorf("%s: no runbook page %s.md", a.name, a.runbook)
+		}
+		delete(pages, a.runbook)
+		fires, quiet := false, false
+		for _, c := range a.cases {
+			fires = fires || len(c.firing) > 0
+			quiet = quiet || len(c.firing) == 0
+		}
+		if !fires || !quiet {
+			t.Errorf("%s: needs a firing and a non-firing case (fires %v, quiet %v)", a.name, fires, quiet)
+		}
+	}
+	for page := range pages {
+		t.Errorf("runbook %s.md belongs to no alert", page)
+	}
+}

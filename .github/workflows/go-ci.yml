@@ -170,6 +170,12 @@ jobs:
         if: steps.impact.outputs.go_checks == 'true'
         run: bash scripts/ci/lint-dashboards.sh
 
+      # ADR-2349: promtool checks the generated rule file and runs its unit
+      # tests (a firing and a non-firing case per alert).
+      - name: promtool (generated rules)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/check-prometheus-rules.sh
+
       # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
       # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
       # instead of skipping. Built once here, reused by the smoke below.

@@ -85,6 +85,17 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    exclusions (`scripts/ci/lint-dashboards.sh`, pinned + sha256 in
    `build-config.env`).
 
+9. **Rules generated + tested** (`obsgen/rules.go`, `alerts.go`,
+   `rulesfile.go`): `deploy/prometheus/vmafx-rules.yaml` +
+   `vmafx-rules.test.yaml` from Go. Each alert name: >=1 firing + >=1
+   non-firing promtool case, runbook page
+   `docs/observability/runbooks/<slug>.md` (`TestEveryAlertHasARunbook`).
+   Annotations use only `{{ $labels.x }}` (rendered in Go for
+   `exp_annotations`; promtool compares exactly). Every rule expr
+   passes `CheckRules`. CI: `scripts/ci/check-prometheus-rules.sh` (pinned
+   promtool, `scripts/ci/pinned-tool.sh` shared with dashboard-linter; one
+   fetcher, HISS-19).
+
 ## Test requirements
 
 ```bash

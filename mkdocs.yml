@@ -404,6 +404,16 @@ nav:
       - Operator image and publishing: backends/operator.md
       - Observability (OpenTelemetry): observability/otel.md
       - Metric reference: observability/metrics.md
+      - Alert runbooks:
+          - observability/runbooks/index.md
+          - Component down: observability/runbooks/vmafx-component-down.md
+          - No live nodes: observability/runbooks/vmafx-no-live-nodes.md
+          - Queue aging: observability/runbooks/vmafx-queue-aging.md
+          - Job error budget burn: observability/runbooks/vmafx-job-error-budget-burn.md
+          - Score error budget burn: observability/runbooks/vmafx-score-error-budget-burn.md
+          - Score latency budget burn: observability/runbooks/vmafx-score-latency-budget-burn.md
+          - Score regression: observability/runbooks/vmafx-score-regression.md
+          - Metrics read errors: observability/runbooks/vmafx-metrics-read-errors.md
       - Kubernetes integration tests: k8s/integration-tests.md
   - Architecture:
       - architecture/index.md

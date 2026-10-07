@@ -186,6 +186,12 @@ govulncheck:
 lint-dashboards:
 	bash scripts/ci/lint-dashboards.sh
 
+# promtool check + unit tests of the generated rule file
+# (deploy/prometheus/vmafx-rules.yaml, ADR-2349); pinned release, sha256-checked.
+.PHONY: check-prometheus-rules
+check-prometheus-rules:
+	bash scripts/ci/check-prometheus-rules.sh
+
 # Go security scan (gosec): the one definition of the gate, run by `make lint`
 # and by the gosec step of .github/workflows/go-ci.yml. Every G* finding fails.
 # -exclude-generated: generated protobuf code (gen/) carries G103

@@ -61,7 +61,19 @@ func Generate() ([]File, error) {
 		}
 		out = append(out, File{Path: DashboardDir + "/" + d.file, Content: content})
 	}
-	return append(out, File{Path: MetricsReference, Content: metricsReference()}), nil
+	rules, err := rulesYAML()
+	if err != nil {
+		return nil, err
+	}
+	tests, err := rulesTestYAML()
+	if err != nil {
+		return nil, err
+	}
+	return append(out,
+		File{Path: RulesFile, Content: rules},
+		File{Path: RulesTestFile, Content: tests},
+		File{Path: MetricsReference, Content: metricsReference()},
+	), nil
 }
 
 // renderDashboard builds b and returns its JSON, indented, with a final

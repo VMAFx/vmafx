@@ -11720,9 +11720,12 @@
     },
     "2349": {
       "sites": {
-        ".github/workflows/go-ci.yml": 1,
-        "Makefile": 1,
+        ".github/workflows/go-ci.yml": 2,
+        "Makefile": 2,
+        "scripts/ci/check-prometheus-rules.sh": 1,
         "scripts/ci/lint-dashboards.sh": 1,
+        "scripts/ci/pinned-tool.sh": 1,
+        "scripts/ci/tests/test_check_prometheus_rules.py": 1,
         "scripts/ci/tests/test_lint_dashboards.py": 1
       },
       "target": "2349-observability-package.md"
