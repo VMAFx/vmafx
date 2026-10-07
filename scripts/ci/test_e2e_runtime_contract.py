@@ -119,9 +119,10 @@ def _stage_lineage(dockerfile: str, name: str) -> list[str]:
 # The libvmaf SONAME chain, copied as regular files and symlinks (ADR-1514):
 # `find` keeps Meson's object directory `libvmaf.so.<version>.p/` out, and
 # `cp -a` keeps the symlinks.
+# Both libraries' SONAME chains (libvmafx.so.1 and the compat libvmaf.so.3, ADR-2094).
 SONAME_CHAIN_COPY = (
-    "find /build/src -maxdepth 1 -name 'libvmaf.so*' \\( -type f -o -type l \\) \\\n"
-    "        -exec cp -a {} /dist/lib/ \\;"
+    "find /build/src -maxdepth 1 \\( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \\) \\\n"
+    "        \\( -type f -o -type l \\) -exec cp -a {} /dist/lib/ \\;"
 )
 
 
@@ -299,6 +300,10 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 self.assertIn(SONAME_CHAIN_COPY, builder)
                 self.assertIn(
                     "cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc",
+                    builder,
+                )
+                self.assertIn(
+                    "cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc",
                     builder,
                 )
                 # A glob copies the object directory; a copy without -a turns

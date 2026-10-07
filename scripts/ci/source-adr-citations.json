@@ -11806,6 +11806,7 @@
         "core/test/test_compat_conformance_scoring.c": 1,
         "core/test/test_vmafx_frame_input.c": 1,
         "core/test/test_vmafx_python_binding.py": 1,
+        "scripts/ci/test_e2e_runtime_contract.py": 1,
         "scripts/codegen/tests/test_vmafx_api_features.py": 1
       },
       "target": "2094-libvmaf-compat-library-split.md"
