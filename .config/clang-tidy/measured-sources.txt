@@ -394,6 +394,7 @@ core/test/test_ciede_simd_parity.c
 core/test/test_ciede_upstream_products.c
 core/test/test_cjson.c
 core/test/test_cli_exit_status.c
+core/test/test_cli_option_table.cpp
 core/test/test_cli_parse.c
 core/test/test_cli_parse_long_only_args.c
 core/test/test_collector_owns_mounted_model.c
@@ -785,10 +786,13 @@ core/test/test_x86_cpu_gate.c
 core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c
 core/test/test_y_funque_plus.c
+core/test/vmafx_score_contract.c
 core/tools/cli_backends.cpp
 core/tools/cli_feature_backend.cpp
 core/tools/cli_parse.cpp
+core/tools/cli_provenance.c
 core/tools/test/test_cli_feature_backend.c
+core/tools/test/test_cli_provenance.c
 core/tools/test/test_vmaf_close_retry.c
 core/tools/test/test_vmaf_per_shot_input.c
 core/tools/test/test_vmaf_vpl_decode_ceiling.c
