@@ -1296,3 +1296,4 @@
 2091-vmafx-sycl-device-frames
 2125-vmafx-ffmpeg-gstreamer-filters
 2152-vmafx-vulkan-frame-import
+2165-vmafx-filter-pairing-contract

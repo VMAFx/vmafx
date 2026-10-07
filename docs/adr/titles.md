@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1297), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1298), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5199,3 +5199,7 @@ Every ADR, one heading each (1297), so the site search finds an ADR by its title
 ## ADR-2152: VMAFx imports Vulkan frames on CUDA, SYCL and HIP: one memory kind and one semaphore fence kind, opaque memory on CUDA and the dma-buf route elsewhere
 
 [2152-vmafx-vulkan-frame-import](2152-vmafx-vulkan-frame-import.md)
+
+## ADR-2165: The `vmafx` filter scores only frames it can pair, and reports what it cannot
+
+[2165-vmafx-filter-pairing-contract](2165-vmafx-filter-pairing-contract.md)

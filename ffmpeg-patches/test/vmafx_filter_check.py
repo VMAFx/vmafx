@@ -22,6 +22,12 @@ fixture is missing:
 - ``refusal``: a CPU-only extractor on CUDA frames fails the graph with the
   import rule's message naming the backend, the input and the extractor,
   and no `VMAF score` line follows (D8).
+- ``contract``: the pairing and error contract of the filter on host frames (no
+  device): a main frame without a reference frame passes unscored, is counted and
+  warned about, and the score equals the CLI's over the paired frames; streams of
+  unequal rate or start time are warned about, never scored silently; an empty
+  stream (timeline-disabled filter) is not an error; a ``log_path`` that cannot be
+  written fails at init; the init line names the input order.
 - ``layouts``: the 4:2:2 / 4:4:4 semi-planar, packed and MSB-aligned layouts
   (NV16, P210, Y210, Y212, YUYV422, NV24, P410, XV30, XV36, VUYX, YUV444P10MSB,
   YUV444P12MSB) score as the CLI scores the planar file they were converted
@@ -276,6 +282,140 @@ def cmd_windows(args: argparse.Namespace) -> int:
             )
             for item in bad[:5]:
                 print(f"MISMATCH {item}")
+    return 1 if failed else 0
+
+
+def contract_run(
+    args: argparse.Namespace,
+    ref_options: tuple[str, ...],
+    dist_options: tuple[str, ...],
+    graph: str,
+) -> subprocess.CompletedProcess[str]:
+    """One filter run on the golden pair with inputs `dist` then `ref`; the
+    options precede each input (`-r`, `-ss`), `graph` is the whole filtergraph."""
+    pair = PAIRS["golden"]
+    size = f"{pair.width}x{pair.height}"
+    raw = ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", size]
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info"]
+    cmd += [*raw, *dist_options, "-i", str(fixture(args, pair.dist))]
+    cmd += [*raw, *ref_options, "-i", str(fixture(args, pair.ref))]
+    cmd += ["-lavfi", graph, "-c:v", "rawvideo", "-f", "null", "-"]
+    return run(cmd, environment(args), check=False)
+
+
+def logged_score(text: str) -> float | None:
+    found = re.findall(r"VMAF score: (\S+)", text)
+    return float(found[-1]) if found else None
+
+
+def cli_score_first(args: argparse.Namespace, frames: int, tmp: Path) -> float:
+    pair = PAIRS["golden"]
+    out = tmp / f"cli{frames}.json"
+    cmd = [args.vmaf, "-r", str(fixture(args, pair.ref)), "-d", str(fixture(args, pair.dist))]
+    cmd += ["-w", str(pair.width), "-h", str(pair.height), "-p", "420", "-b", "8"]
+    cmd += ["--precision", "max", "--json", "-o", str(out), "-q", "--backend", "cpu"]
+    cmd += ["--frame_cnt", str(frames)]
+    run(cmd, environment(args))
+    return float(json.loads(out.read_text(encoding="utf-8"))["pooled_metrics"]["vmaf"]["mean"])
+
+
+RATE24 = ("-framerate", "24")
+EXACT = "[0:v][1:v]vmafx=score_fmt=%.17g"
+Check = tuple[str, bool, str]
+
+
+def check_matched(args: argparse.Namespace) -> list[Check]:
+    """A matched pair is silent (the negative control of the rest) and the init
+    line names the input order."""
+    ok = contract_run(args, RATE24, RATE24, EXACT)
+    quiet = "unscored" not in ok.stderr and "paired by timestamp" not in ok.stderr
+    named = "input 0 (main) is the distorted video" in ok.stderr
+    return [
+        ("matched pair is silent", ok.returncode == 0 and quiet, ok.stderr[-200:]),
+        ("init line names the input order", named, ""),
+    ]
+
+
+def check_short_reference(args: argparse.Namespace, tmp: Path) -> list[Check]:
+    """The reference ends at frame 24: 24 pairs scored, 24 main frames unscored."""
+    graph = "[1:v]trim=end_frame=24[r];[0:v][r]vmafx=score_fmt=%.17g"
+    short = contract_run(args, RATE24, RATE24, graph)
+    score = logged_score(short.stderr)
+    want = cli_score_first(args, 24, tmp)
+    warned = "passes unscored" in short.stderr and "24 main frames had no reference" in short.stderr
+    name = "short reference: unscored frames counted, score = CLI over the 24 pairs"
+    passed = short.returncode == 0 and warned and score == want
+    return [(name, passed, f"score {score!r} vs CLI {want!r}; warned {warned}")]
+
+
+def check_rates_and_offset(args: argparse.Namespace) -> list[Check]:
+    """Unequal rates are warned about at configuration; a reference two frames
+    late leaves the two main frames before its first frame unscored."""
+    rates = contract_run(args, ("-framerate", "30"), RATE24, EXACT)
+    graph = "[1:v]setpts=PTS+2/24/TB[r];[0:v][r]vmafx=score_fmt=%.17g"
+    late = contract_run(args, RATE24, RATE24, graph)
+    late_ok = (
+        "passes unscored" in late.stderr
+        and "2 main frames had no reference frame" in late.stderr
+        and "the scores cover 46 pairs" in late.stderr
+    )
+    return [
+        (
+            "unequal frame rates are warned about",
+            "paired by timestamp" in rates.stderr,
+            rates.stderr[-200:],
+        ),
+        (
+            "a reference starting two frames late leaves two main frames unscored, and says so",
+            late_ok,
+            late.stderr[-300:],
+        ),
+    ]
+
+
+def check_errors(args: argparse.Namespace, tmp: Path) -> list[Check]:
+    """No pair scored (timeline off) is not an error; an unwritable report path
+    fails at init, before a frame is scored."""
+    off = contract_run(args, RATE24, RATE24, "[0:v][1:v]vmafx=enable=0")
+    bad = tmp / "missing-dir" / "report.json"
+    rep = contract_run(args, RATE24, RATE24, f"[0:v][1:v]vmafx=log_path={escape(bad)}")
+    rep_ok = rep.returncode != 0 and "cannot be written" in rep.stderr
+    rep_ok = rep_ok and "VMAF score" not in rep.stderr
+    return [
+        (
+            "a timeline-disabled filter is not an error",
+            off.returncode == 0 and "flush failed" not in off.stderr,
+            f"exit {off.returncode}: {off.stderr[-200:]}",
+        ),
+        (
+            "an unwritable log_path fails at init",
+            rep_ok,
+            f"exit {rep.returncode}: {rep.stderr[-200:]}",
+        ),
+    ]
+
+
+def contract_results(args: argparse.Namespace, tmp: Path) -> list[Check]:
+    return [
+        *check_matched(args),
+        *check_short_reference(args, tmp),
+        *check_rates_and_offset(args),
+        *check_errors(args, tmp),
+    ]
+
+
+def cmd_contract(args: argparse.Namespace) -> int:
+    pair = PAIRS["golden"]
+    if not fixture(args, pair.ref).is_file():
+        return SKIP
+    with tempfile.TemporaryDirectory() as tmp:
+        results = contract_results(args, Path(tmp))
+    failed = False
+    for name, passed, detail in results:
+        print(f"{'ok  ' if passed else 'FAIL'} {name}")
+        if not passed:
+            failed = True
+            print(f"     {detail}")
     return 1 if failed else 0
 
 
@@ -761,6 +901,7 @@ def main() -> int:
             "layouts",
             "e2e",
             "vulkan",
+            "contract",
         ),
     )
     parser.add_argument("--ffmpeg", required=True)
@@ -797,6 +938,7 @@ def main() -> int:
         "layouts": cmd_layouts,
         "e2e": cmd_e2e,
         "vulkan": cmd_vulkan,
+        "contract": cmd_contract,
     }[args.command](args)
 
 

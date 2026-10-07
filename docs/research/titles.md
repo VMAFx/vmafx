@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (796), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (797), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2675,6 +2675,10 @@ Every research digest, one heading each (796), so the site search finds a digest
 ## Research-2163: the VMAFx FFmpeg filters and GStreamer element (RC4 WP9)
 
 [2163-vmafx-ffmpeg-gstreamer-filters](2163-vmafx-ffmpeg-gstreamer-filters.md)
+
+## Research-2166: what VMAFx touches in FFmpeg, measured (RC4 WP15)
+
+[2166-ffmpeg-audit-2026-10-07](2166-ffmpeg-audit-2026-10-07.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
