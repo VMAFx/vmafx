@@ -32,7 +32,7 @@ typedef enum {
     GST_VMAFX_MEM_SYSTEM = 0,
     GST_VMAFX_MEM_CUDA = 1,
     GST_VMAFX_MEM_GL = 2,    /* advertised; refused until the GL import lane */
-    GST_VMAFX_MEM_VULKAN = 3 /* advertised; refused until the Vulkan import lane */
+    GST_VMAFX_MEM_VULKAN = 3 /* copied once on the GPU, then imported (gstvmafx_vulkan.c) */
 } GstVmafxMem;
 
 /* Values of the `backend` and `import` options (the table's constants). */
@@ -77,6 +77,9 @@ typedef struct {
     uint64_t next_reported; /* first frame whose scores were not posted yet */
     GstVmafxWindows *windows;
     FILE *stats;
+    void *vk[2];        /* per-pad pools of exportable Vulkan images (gstvmafx_vulkan.c) */
+    uint32_t vk_pci[4]; /* PCI location of the Vulkan device of the frames */
+    uint32_t vk_vendor;
     guint64 host_copy_frames; /* device frames the element downloaded (import=host) */
     gboolean host_copy_logged;
     gboolean flushed;
@@ -91,6 +94,8 @@ struct _GstVmafx {
     GstVmafxPad pad_info[2];
     GstVmafxRt *rt;
     gboolean failed;
+    void *vk_pool[2]; /* per-pad pools of exportable Vulkan images (gstvmafx_vulkan.c) */
+    void *vk_ctx;     /* the Vulkan instance and devices offered upstream (gstvmafx_vulkan.c) */
 };
 
 enum { GST_VMAFX_PAD_REFERENCE = 0, GST_VMAFX_PAD_DISTORTED = 1 };
@@ -130,6 +135,19 @@ gboolean gst_vmafx_cuda_available(void);
 gboolean gst_vmafx_cuda_probe(GstBuffer *buffer, uintptr_t *context, uintptr_t *stream);
 VmafxStatus gst_vmafx_cuda_import(GstVmafx *self, GstVmafxRt *rt, GstBuffer *buffer, guint pad,
                                   VmafxFrame **out, gchar **error);
+
+/* --- gstvmafx_vulkan.c --- */
+/* Whether this build imports VulkanImage memory. */
+gboolean gst_vmafx_vulkan_built(void);
+gboolean gst_vmafx_vulkan_probe(GstBuffer *buffer, uint32_t pci[4], uint32_t *vendor);
+VmafxStatus gst_vmafx_vulkan_import(GstVmafx *self, GstVmafxRt *rt, GstBuffer *buffer, guint pad,
+                                    VmafxFrame **out, gchar **error);
+void gst_vmafx_vulkan_free_pools(GstVmafx *self);
+gboolean gst_vmafx_vulkan_stage(GstVmafx *self, guint pad, GstBuffer **buffer, gchar **error);
+/* The VMAFx backend that reads Vulkan frames of a GPU of PCI `vendor` (run.c). */
+uint32_t gst_vmafx_backend_for_vulkan(const GstVmafxOpts *opts, uint32_t vendor);
+gboolean gst_vmafx_vulkan_context_query(GstVmafx *self, GstAggregatorPad *pad, GstQuery *query);
+void gst_vmafx_vulkan_context_free(GstVmafx *self);
 
 /* --- gstvmafx_run.c --- */
 gboolean gst_vmafx_rt_create(GstVmafx *self, GstBuffer *first_reference, gchar **error);

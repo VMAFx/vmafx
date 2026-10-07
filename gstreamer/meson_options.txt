@@ -4,3 +4,5 @@ option('toolkit_root', type : 'string', value : '',
   description : 'CUDA toolkit root holding include/cuda.h')
 option('plugin_license', type : 'string', value : 'EUPL-1.2',
   description : 'License string registered with GStreamer (outside the list GStreamer knows: it loads and logs a warning at debug level 2; see docs/usage/gstreamer.md)')
+option('vulkan', type : 'feature', value : 'auto',
+  description : 'VulkanImage input through GStreamer Vulkan')

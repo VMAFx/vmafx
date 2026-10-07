@@ -73,6 +73,23 @@ static gboolean parse_device(const char *text, int32_t *index, gchar **error)
     return TRUE;
 }
 
+/* The backend for Vulkan frames of a GPU of PCI vendor `vendor`: the option's, else the vendor's. */
+uint32_t gst_vmafx_backend_for_vulkan(const GstVmafxOpts *opts, uint32_t vendor)
+{
+    switch (opts->backend) {
+    case GST_VMAFX_BACKEND_CUDA:
+        return VMAFX_BACKEND_CUDA;
+    case GST_VMAFX_BACKEND_SYCL:
+        return VMAFX_BACKEND_SYCL;
+    case GST_VMAFX_BACKEND_HIP:
+        return VMAFX_BACKEND_HIP;
+    default:
+        break;
+    }
+    return vendor == 0x10de ? VMAFX_BACKEND_CUDA :
+                              (vendor == 0x1002 ? VMAFX_BACKEND_HIP : VMAFX_BACKEND_SYCL);
+}
+
 /* The backend of the session: one case per backend this element can import for. */
 static gboolean resolve_backend(GstVmafx *self, GstVmafxRt *rt, gchar **error)
 {
@@ -80,6 +97,9 @@ static gboolean resolve_backend(GstVmafx *self, GstVmafxRt *rt, gchar **error)
     switch (o->backend) {
     case GST_VMAFX_BACKEND_AUTO:
         rt->backend = rt->mem == GST_VMAFX_MEM_CUDA ? VMAFX_BACKEND_CUDA : VMAFX_BACKEND_CPU;
+        if (rt->mem == GST_VMAFX_MEM_VULKAN) {
+            rt->backend = gst_vmafx_backend_for_vulkan(o, rt->vk_vendor);
+        }
         return TRUE;
     case GST_VMAFX_BACKEND_CPU:
         rt->backend = VMAFX_BACKEND_CPU;
@@ -87,10 +107,49 @@ static gboolean resolve_backend(GstVmafx *self, GstVmafxRt *rt, gchar **error)
     case GST_VMAFX_BACKEND_CUDA:
         rt->backend = VMAFX_BACKEND_CUDA;
         return TRUE;
+    case GST_VMAFX_BACKEND_SYCL:
+        rt->backend = VMAFX_BACKEND_SYCL;
+        return TRUE;
+    case GST_VMAFX_BACKEND_HIP:
+        rt->backend = VMAFX_BACKEND_HIP;
+        return TRUE;
     default:
         *error = gst_vmafx_check_backend(o);
         return FALSE;
     }
+}
+
+/* Index of the device of `backend` at PCI location `pci`, or -1. */
+static int32_t device_at(uint32_t backend, const uint32_t pci[4])
+{
+    uint32_t n = 0;
+    if (vmafx_device_count(backend, &n, NULL) != VMAFX_OK) {
+        return -1;
+    }
+    for (uint32_t i = 0; i < n && i <= INT32_MAX; i++) {
+        VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
+        if (vmafx_device_info(backend, (int32_t)i, &info, NULL) == VMAFX_OK &&
+            !memcmp(info.pci, pci, sizeof(info.pci))) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+/* Vulkan frames: the device of the backend at the Vulkan device's PCI location; never another. */
+static gboolean pick_vulkan_device(GstVmafxRt *rt, VmafxDeviceDesc *desc, gchar **error)
+{
+    const int32_t index = device_at(rt->backend, rt->vk_pci);
+    if (index < 0) {
+        *error = g_strdup_printf(
+            "backend %s has no device on the Vulkan device's GPU (PCI vendor 0x%04x, location "
+            "%04x:%02x:%02x.%x): Vulkan frames are never read across GPUs",
+            vmafx_backend_name(rt->backend), rt->vk_vendor, rt->vk_pci[0], rt->vk_pci[1],
+            rt->vk_pci[2], rt->vk_pci[3]);
+        return FALSE;
+    }
+    desc->index = index;
+    return TRUE;
 }
 
 static gboolean create_device(GstVmafx *self, GstVmafxRt *rt, GstBuffer *first, gchar **error)
@@ -104,6 +163,9 @@ static gboolean create_device(GstVmafx *self, GstVmafxRt *rt, GstBuffer *first, 
     }
     if (rt->backend == VMAFX_BACKEND_CPU && desc.index != -1) {
         *error = g_strdup("option device: the cpu backend has one device (use auto)");
+        return FALSE;
+    }
+    if (rt->mem == GST_VMAFX_MEM_VULKAN && !pick_vulkan_device(rt, &desc, error)) {
         return FALSE;
     }
     if (rt->mem == GST_VMAFX_MEM_CUDA &&
@@ -322,6 +384,12 @@ void gst_vmafx_rt_free(GstVmafx *self)
 /* The steps that need the options and the first buffer, in order. */
 static gboolean setup(GstVmafx *self, GstVmafxRt *rt, GstBuffer *first, gchar **error)
 {
+    if (rt->mem == GST_VMAFX_MEM_VULKAN &&
+        !gst_vmafx_vulkan_probe(first, rt->vk_pci, &rt->vk_vendor)) {
+        *error = g_strdup("pad reference: the Vulkan device reports no PCI location "
+                          "(VK_EXT_pci_bus_info), so its GPU cannot be matched");
+        return FALSE;
+    }
     if (!resolve_backend(self, rt, error) || !create_device(self, rt, first, error)) {
         return FALSE;
     }
@@ -345,6 +413,8 @@ gboolean gst_vmafx_rt_create(GstVmafx *self, GstBuffer *first_reference, gchar *
     rt->mem = self->pad_info[GST_VMAFX_PAD_REFERENCE].mem;
     rt->pool_mask = (uint32_t)self->opts.pool << 1U;
     self->rt = rt;
+    GST_INFO_OBJECT(self, "first pair: memory kind %d, %s", (int)rt->mem,
+                    gst_video_format_to_string(GST_VIDEO_INFO_FORMAT(&rt->info)));
     if (!setup(self, rt, first_reference, error)) {
         gst_vmafx_rt_free(self);
         return FALSE;
