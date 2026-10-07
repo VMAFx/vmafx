@@ -15,9 +15,10 @@
 #include <stdint.h>
 
 /*
- Version of this ABI. The shim refuses a twin with another value.
+ Version of this ABI. The shim refuses a twin with another value. 2:
+ `VmafxRsTwin.advance` (ADR-2090, lane request MI-1).
  */
-#define VMAFX_RS_ABI_VERSION 1
+#define VMAFX_RS_ABI_VERSION 2
 
 /*
  Success.
@@ -102,7 +103,7 @@
 /*
  Number of `usize` entries `vmafx_rs_abi_layout` writes.
  */
-#define VMAFX_RS_ABI_LAYOUT_LEN 38
+#define VMAFX_RS_ABI_LAYOUT_LEN 39
 
 /*
  One parsed option of the C extractor's table, read back from its priv.
@@ -294,6 +295,13 @@ typedef struct VmafxRsTwin {
    because the collector may be gone when a context closes.
    */
     void (*close)(void *, const struct VmafxRsHost *);
+    /*
+   Append the scores the collector's contents now make final (ADR-2090);
+   the shim calls it only when the C extractor has an `advance`. On the
+   thread that feeds frames, never next to `extract` or `flush` of the
+   same state.
+   */
+    int32_t (*advance)(void *, const struct VmafxRsHost *, const char **);
 } VmafxRsTwin;
 
 #ifdef __cplusplus

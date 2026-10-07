@@ -2904,14 +2904,47 @@ static bool batch_extractor_skip(const VmafFeatureExtractorContext *shared_ctx, 
     return fex_subsample_skip(shared_ctx->fex->flags, index, n_subsample);
 }
 
+/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
+ * creates, but the shared context of a threaded run is never initialised; only
+ * the per-thread copies are. A C extractor's flush needs no init state, so the
+ * C path never noticed. Initialise the shared context of a Rust twin before
+ * its flush, with the run's picture parameters. ADR-2090 (lane request MI-1):
+ * the same before its first advance, which runs on that context too. */
+static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
+        return 0;
+    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
+                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
+                                               vmaf->pic_params.h);
+}
+
+/* advance() of one registered context. A pooled context never extracts and
+ * is marked initialised, as the threaded flush marks it, so close() frees
+ * what advance() built; a pooled Rust twin is initialised first, so the twin
+ * has its instance (MI-1). */
+static int advance_one_extractor(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
+                                 bool pooled)
+{
+    const int init_err = pooled ? init_shared_rust_twin(vmaf, fex_ctx) : 0;
+    if (init_err)
+        return init_err;
+    fex_ctx->is_initialized = true;
+    /* RC4 WP5: the scores advance() writes are this extractor's. */
+    const VmafFeatureProducer previous = vmaf_feature_producer_swap((VmafFeatureProducer){
+        VMAF_FEATURE_SOURCE_EXTRACTOR, fex_ctx->fex->name, fex_ctx->opts_dict});
+    const int err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
+    (void)vmaf_feature_producer_swap(previous);
+    return err;
+}
+
 /* ADR-2090: let every registered extractor with an advance() callback append
  * the scores its collector entries now make final (motion2 / motion3 of the
  * frames whose window is complete), so they need not wait for the flush. Runs
  * on the thread that feeds frames, after a frame is accepted and after a read
  * fence. An extractor the worker pool runs is advanced on its registered
- * context, which never extracts; that context is marked initialised, as the
- * threaded flush marks it, so close() frees what advance() built. Any other
- * context is advanced once it has been initialised by its first frame. */
+ * context, which never extracts (advance_one_extractor()). Any other context
+ * is advanced once it has been initialised by its first frame. */
 static int advance_extractors(VmafContext *vmaf)
 {
     if (vmaf->flushed)
@@ -2925,12 +2958,7 @@ static int advance_extractors(VmafContext *vmaf)
         const bool pooled = vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
         if (!pooled && !fex_ctx->is_initialized)
             continue;
-        fex_ctx->is_initialized = true;
-        /* RC4 WP5: the scores advance() writes are this extractor's. */
-        const VmafFeatureProducer previous = vmaf_feature_producer_swap((VmafFeatureProducer){
-            VMAF_FEATURE_SOURCE_EXTRACTOR, fex_ctx->fex->name, fex_ctx->opts_dict});
-        err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
-        (void)vmaf_feature_producer_swap(previous);
+        err = advance_one_extractor(vmaf, fex_ctx, pooled);
     }
     return err;
 }
@@ -3152,20 +3180,6 @@ static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const 
  * flush_context_threaded() to keep that function inside the ADR-0141
  * function-size budget after the GPU-ownership fix (ADR-1197) added its
  * skip condition. */
-/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
- * creates, but the shared context of a threaded run is never initialised; only
- * the per-thread copies are. A C extractor's flush needs no init state, so the
- * C path never noticed. Initialise the shared context of a Rust twin before
- * its flush, with the run's picture parameters. */
-static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
-{
-    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
-        return 0;
-    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
-                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
-                                               vmaf->pic_params.h);
-}
-
 static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
 {
     int err = 0;
