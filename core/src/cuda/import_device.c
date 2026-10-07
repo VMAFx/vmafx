@@ -440,7 +440,7 @@ VmafxStatus vmafx_cuda_context_attach(const VmafxReport *report, VmafxContext *c
             (void)vmaf_cuda_state_free(state);
         }
     }
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(report, VMAFX_E_DEVICE, err, VMAFX_SUBJECT_DEVICE, "device",
                           "backend cuda device %d: the engine cannot score on it (%d)",

@@ -369,6 +369,8 @@ core/src/vmafx/sized.c
 core/src/vmafx/status_gen.c
 core/src/vmafx/submit.c
 core/src/vmafx/tiny_model.c
+core/src/vmafx/window.c
+core/src/vmafx/window_clock.c
 core/src/x86/cpu.c
 core/test/barten_csf_cxx.cpp
 core/test/compat_conformance_table_gen.c
@@ -825,6 +827,9 @@ core/test/test_vmafx_provenance_threads.c
 core/test/test_vmafx_report.c
 core/test/test_vmafx_score.c
 core/test/test_vmafx_sha256.c
+core/test/test_vmafx_window.c
+core/test/test_vmafx_window_clock.c
+core/test/test_vmafx_window_live.c
 core/test/test_x86_cpu_gate.c
 core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c

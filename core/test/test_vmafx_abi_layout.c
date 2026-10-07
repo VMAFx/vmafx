@@ -21,6 +21,7 @@ extern const VmafxDeviceDesc vmafx_layout_probe_VmafxDeviceDesc;
 extern const VmafxFrameImport vmafx_layout_probe_VmafxFrameImport;
 extern const VmafxHostPlanes vmafx_layout_probe_VmafxHostPlanes;
 extern const VmafxFramePlanes vmafx_layout_probe_VmafxFramePlanes;
+extern const VmafxWindowResult vmafx_layout_probe_VmafxWindowResult;
 _Static_assert(sizeof(VmafxContextConfig) == 56, "VmafxContextConfig size");
 _Static_assert(_Alignof(VmafxContextConfig) == 8, "VmafxContextConfig alignment");
 _Static_assert(offsetof(VmafxContextConfig, struct_size) == 0,
@@ -263,6 +264,64 @@ _Static_assert(offsetof(VmafxModelSetScore, stddev) == 32, "VmafxModelSetScore.s
 _Static_assert(offsetof(VmafxModelSetScore, ci95_lo) == 40, "VmafxModelSetScore.ci95_lo offset");
 _Static_assert(offsetof(VmafxModelSetScore, ci95_hi) == 48, "VmafxModelSetScore.ci95_hi offset");
 _Static_assert(offsetof(VmafxModelSetScore, name) == 56, "VmafxModelSetScore.name offset");
+_Static_assert(sizeof(VmafxWindowRequest) == 72, "VmafxWindowRequest size");
+_Static_assert(_Alignof(VmafxWindowRequest) == 8, "VmafxWindowRequest alignment");
+_Static_assert(offsetof(VmafxWindowRequest, struct_size) == 0,
+               "VmafxWindowRequest.struct_size offset");
+_Static_assert(offsetof(VmafxWindowRequest, target) == 4, "VmafxWindowRequest.target offset");
+_Static_assert(offsetof(VmafxWindowRequest, pool_mask) == 8, "VmafxWindowRequest.pool_mask offset");
+_Static_assert(offsetof(VmafxWindowRequest, first) == 16, "VmafxWindowRequest.first offset");
+_Static_assert(offsetof(VmafxWindowRequest, last) == 24, "VmafxWindowRequest.last offset");
+_Static_assert(offsetof(VmafxWindowRequest, model) == 32, "VmafxWindowRequest.model offset");
+_Static_assert(offsetof(VmafxWindowRequest, model_set) == 40,
+               "VmafxWindowRequest.model_set offset");
+_Static_assert(offsetof(VmafxWindowRequest, feature) == 48, "VmafxWindowRequest.feature offset");
+_Static_assert(offsetof(VmafxWindowRequest, on_complete) == 56,
+               "VmafxWindowRequest.on_complete offset");
+_Static_assert(offsetof(VmafxWindowRequest, user) == 64, "VmafxWindowRequest.user offset");
+_Static_assert(sizeof(VmafxWindowResult) == 352, "VmafxWindowResult size");
+_Static_assert(_Alignof(VmafxWindowResult) == 8, "VmafxWindowResult alignment");
+_Static_assert(offsetof(VmafxWindowResult, struct_size) == 0,
+               "VmafxWindowResult.struct_size offset");
+_Static_assert(offsetof(VmafxWindowResult, status) == 4, "VmafxWindowResult.status offset");
+_Static_assert(offsetof(VmafxWindowResult, flags) == 8, "VmafxWindowResult.flags offset");
+_Static_assert(offsetof(VmafxWindowResult, target) == 12, "VmafxWindowResult.target offset");
+_Static_assert(offsetof(VmafxWindowResult, pool_mask) == 16, "VmafxWindowResult.pool_mask offset");
+_Static_assert(offsetof(VmafxWindowResult, first) == 24, "VmafxWindowResult.first offset");
+_Static_assert(offsetof(VmafxWindowResult, last) == 32, "VmafxWindowResult.last offset");
+_Static_assert(offsetof(VmafxWindowResult, n_frames) == 40, "VmafxWindowResult.n_frames offset");
+_Static_assert(offsetof(VmafxWindowResult, n_scored) == 48, "VmafxWindowResult.n_scored offset");
+_Static_assert(offsetof(VmafxWindowResult, value) == 56, "VmafxWindowResult.value offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxWindowResult.value) == 72,
+               "VmafxWindowResult.value holds 9 elements");
+_Static_assert(offsetof(VmafxWindowResult, stddev) == 128, "VmafxWindowResult.stddev offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxWindowResult.stddev) == 72,
+               "VmafxWindowResult.stddev holds 9 elements");
+_Static_assert(offsetof(VmafxWindowResult, ci95_lo) == 200, "VmafxWindowResult.ci95_lo offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxWindowResult.ci95_lo) == 72,
+               "VmafxWindowResult.ci95_lo holds 9 elements");
+_Static_assert(offsetof(VmafxWindowResult, ci95_hi) == 272, "VmafxWindowResult.ci95_hi offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxWindowResult.ci95_hi) == 72,
+               "VmafxWindowResult.ci95_hi holds 9 elements");
+_Static_assert(offsetof(VmafxWindowResult, name) == 344, "VmafxWindowResult.name offset");
+_Static_assert(sizeof(VmafxWindowClockConfig) == 24, "VmafxWindowClockConfig size");
+_Static_assert(_Alignof(VmafxWindowClockConfig) == 8, "VmafxWindowClockConfig alignment");
+_Static_assert(offsetof(VmafxWindowClockConfig, struct_size) == 0,
+               "VmafxWindowClockConfig.struct_size offset");
+_Static_assert(offsetof(VmafxWindowClockConfig, n_stats) == 8,
+               "VmafxWindowClockConfig.n_stats offset");
+_Static_assert(offsetof(VmafxWindowClockConfig, n_stats_frames) == 16,
+               "VmafxWindowClockConfig.n_stats_frames offset");
+_Static_assert(sizeof(VmafxWindowSpan) == 56, "VmafxWindowSpan size");
+_Static_assert(_Alignof(VmafxWindowSpan) == 8, "VmafxWindowSpan alignment");
+_Static_assert(offsetof(VmafxWindowSpan, struct_size) == 0, "VmafxWindowSpan.struct_size offset");
+_Static_assert(offsetof(VmafxWindowSpan, flags) == 4, "VmafxWindowSpan.flags offset");
+_Static_assert(offsetof(VmafxWindowSpan, window) == 8, "VmafxWindowSpan.window offset");
+_Static_assert(offsetof(VmafxWindowSpan, first) == 16, "VmafxWindowSpan.first offset");
+_Static_assert(offsetof(VmafxWindowSpan, last) == 24, "VmafxWindowSpan.last offset");
+_Static_assert(offsetof(VmafxWindowSpan, n_frames) == 32, "VmafxWindowSpan.n_frames offset");
+_Static_assert(offsetof(VmafxWindowSpan, start_ns) == 40, "VmafxWindowSpan.start_ns offset");
+_Static_assert(offsetof(VmafxWindowSpan, end_ns) == 48, "VmafxWindowSpan.end_ns offset");
 _Static_assert(sizeof(VmafxColor) == 16, "VmafxColor size");
 _Static_assert(_Alignof(VmafxColor) == 4, "VmafxColor alignment");
 _Static_assert(offsetof(VmafxColor, range) == 0, "VmafxColor.range offset");
@@ -407,6 +466,10 @@ _Static_assert(VMAFX_REPORT_FORMAT_XML == 1, "VMAFX_REPORT_FORMAT_XML");
 _Static_assert(VMAFX_REPORT_FORMAT_JSON == 2, "VMAFX_REPORT_FORMAT_JSON");
 _Static_assert(VMAFX_REPORT_FORMAT_CSV == 3, "VMAFX_REPORT_FORMAT_CSV");
 _Static_assert(VMAFX_REPORT_FORMAT_SUB == 4, "VMAFX_REPORT_FORMAT_SUB");
+_Static_assert(VMAFX_WINDOW_TARGET_NONE == 0, "VMAFX_WINDOW_TARGET_NONE");
+_Static_assert(VMAFX_WINDOW_TARGET_MODEL == 1, "VMAFX_WINDOW_TARGET_MODEL");
+_Static_assert(VMAFX_WINDOW_TARGET_MODEL_SET == 2, "VMAFX_WINDOW_TARGET_MODEL_SET");
+_Static_assert(VMAFX_WINDOW_TARGET_FEATURE == 3, "VMAFX_WINDOW_TARGET_FEATURE");
 _Static_assert(VMAFX_COLOR_RANGE_UNKNOWN == 0, "VMAFX_COLOR_RANGE_UNKNOWN");
 _Static_assert(VMAFX_COLOR_RANGE_LIMITED == 1, "VMAFX_COLOR_RANGE_LIMITED");
 _Static_assert(VMAFX_COLOR_RANGE_FULL == 2, "VMAFX_COLOR_RANGE_FULL");
@@ -451,11 +514,20 @@ _Static_assert(VMAFX_IMPORT_ALLOW_COPY == 0x1u, "VMAFX_IMPORT_ALLOW_COPY");
 _Static_assert(VMAFX_DEVICE_PROFILING == 0x1u, "VMAFX_DEVICE_PROFILING");
 _Static_assert(VMAFX_REPORT_PROVENANCE_SIDECAR == 0x1u, "VMAFX_REPORT_PROVENANCE_SIDECAR");
 _Static_assert(VMAFX_PROVENANCE_JSON_CANONICAL == 0x1u, "VMAFX_PROVENANCE_JSON_CANONICAL");
+_Static_assert(VMAFX_POOL_MASK_MIN == 0x2u, "VMAFX_POOL_MASK_MIN");
+_Static_assert(VMAFX_POOL_MASK_MAX == 0x4u, "VMAFX_POOL_MASK_MAX");
+_Static_assert(VMAFX_POOL_MASK_MEAN == 0x8u, "VMAFX_POOL_MASK_MEAN");
+_Static_assert(VMAFX_POOL_MASK_HARMONIC_MEAN == 0x10u, "VMAFX_POOL_MASK_HARMONIC_MEAN");
+_Static_assert(VMAFX_POOL_MASK_MEDIAN == 0x20u, "VMAFX_POOL_MASK_MEDIAN");
+_Static_assert(VMAFX_POOL_MASK_PERC5 == 0x40u, "VMAFX_POOL_MASK_PERC5");
+_Static_assert(VMAFX_POOL_MASK_PERC10 == 0x80u, "VMAFX_POOL_MASK_PERC10");
+_Static_assert(VMAFX_POOL_MASK_PERC20 == 0x100u, "VMAFX_POOL_MASK_PERC20");
+_Static_assert(VMAFX_WINDOW_PARTIAL == 0x1u, "VMAFX_WINDOW_PARTIAL");
 _Static_assert(VMAFX_DNN_FP16_IO == 0x1u, "VMAFX_DNN_FP16_IO");
 
 int main(void)
 {
-    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 28,
-                 194, 125);
+    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 32,
+                 229, 138);
     return 0;
 }

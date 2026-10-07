@@ -301,6 +301,11 @@ typedef struct VmafContext {
      * context the engine made directly (vmaf_engine_init() in a white-box
      * test) has none. */
     struct VmafxContext *api_owner;
+    /* ADR-2074 (RC4 WP4): called by a worker thread when its frame's job has
+     * run, so the VMAFx completion thread looks at the windows that frame may
+     * have made final. Set once, before the first frame is read. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
 } VmafContext;
 
 /* RC4 WP5: count one accepted frame for the provenance record (see `run`). */
@@ -2820,6 +2825,9 @@ struct ThreadDataBatch {
     /* ADR-1906: the log sink of the call that submitted the job (the VMAFx
      * context's, or NULL), installed on the worker while the job runs. */
     const VmafLogSink *log_sink;
+    /* ADR-2074: the context's frame listener, called when the job has run. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
     /* _Atomic int err: the worker thread writes this field multiple times as
      * it iterates over extractors; the thread pool runner reads it once (as
      * the function return value) to accumulate into pool->last_error.  Making
@@ -2969,6 +2977,8 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         (void)vmaf_picture_unref(&f->prev_prev_ref);
     (void)vmaf_picture_unref(&f->ref);
     (void)vmaf_picture_unref(&f->dist);
+    if (f->frame_listener)
+        f->frame_listener(f->frame_listener_user); /* ADR-2074: the frame's scores are in */
     (void)vmaf_log_swap_thread_sink(previous_sink);
     return atomic_load(&f->err);
 }
@@ -3031,6 +3041,8 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .registered_fex = &vmaf->registered_feature_extractors,
         .n_subsample = vmaf->cfg.n_subsample,
         .log_sink = vmaf_log_thread_sink(),
+        .frame_listener = vmaf->frame_listener,
+        .frame_listener_user = vmaf->frame_listener_user,
         .err = 0,
     };
     batch_job_take_pictures(&data, vmaf, ref, dist);
@@ -4470,7 +4482,12 @@ int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_na
     return err;
 }
 
-int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+/* The score of `model` at `index`, predicted on first read. `fence`: wait for
+ * the frame's work in flight first (the synchronous scores); without it a
+ * frame whose inputs are not all written is -EAGAIN, without a wait (the
+ * window scores of RC4 WP4, which check the inputs first, ADR-2074). */
+static int engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index,
+                                 bool fence)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4496,8 +4513,10 @@ int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *scor
         /* Netflix/vmaf#1305: the input features for this index may still be in
          * flight (worker threads, or a CUDA collect that has not run yet), so
          * fence before predicting — otherwise the prediction is computed from
-         * unwritten slots. */
-        const int fence_err = fence_for_read(vmaf, index);
+         * unwritten slots. Without the fence, the inputs must be written. */
+        const int fence_err =
+            fence ? fence_for_read(vmaf, index) :
+                    vmaf_predict_inputs_written(model, vmaf->feature_collector, index);
         if (fence_err)
             return fence_err;
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
@@ -4505,6 +4524,41 @@ int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *scor
     }
 
     return err;
+}
+
+int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+{
+    return engine_score_at_index(vmaf, model, score, index, true);
+}
+
+int vmaf_engine_try_score_at_index(VmafContext *vmaf, VmafModel *model, unsigned index)
+{
+    double score = 0.0;
+    return engine_score_at_index(vmaf, model, &score, index, false);
+}
+
+int vmaf_engine_feature_written(VmafContext *vmaf, const char *feature_name, unsigned index)
+{
+    if (!vmaf || !feature_name)
+        return -EINVAL;
+    double score = 0.0;
+    return vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, &score, index);
+}
+
+int vmaf_engine_try_score_at_index_model_collection(VmafContext *vmaf,
+                                                    VmafModelCollection *model_collection,
+                                                    unsigned index)
+{
+    if (!vmaf || !model_collection)
+        return -EINVAL;
+    for (unsigned i = 0; i < model_collection->cnt; i++) {
+        const int err =
+            vmaf_predict_inputs_written(model_collection->model[i], vmaf->feature_collector, index);
+        if (err)
+            return err;
+    }
+    VmafModelCollectionScore score;
+    return vmaf_engine_score_at_index_model_collection(vmaf, model_collection, &score, index);
 }
 
 /* The bootstrap score of a model collection already predicted at `index`:
@@ -4892,6 +4946,14 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
         vmaf->api_owner = owner;
 }
 
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user)
+{
+    if (!vmaf)
+        return;
+    vmaf->frame_listener = listener;
+    vmaf->frame_listener_user = user;
+}
+
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf)
 {
     return vmaf ? vmaf->registered_feature_extractors.cnt : 0;
@@ -4980,6 +5042,34 @@ int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
 bool vmaf_engine_is_flushed(const VmafContext *vmaf)
 {
     return vmaf && vmaf->flushed;
+}
+
+unsigned vmaf_engine_thread_count(const VmafContext *vmaf)
+{
+    return vmaf ? vmaf->cfg.n_threads : 0u;
+}
+
+unsigned vmaf_engine_max_in_flight(const VmafContext *vmaf)
+{
+    if (!vmaf)
+        return 0;
+    /* The context keeps `retention` reference pictures (frame n, and n-1 for
+     * an extractor that reads n-2). With worker threads, a submit returns
+     * once its job is queued, and enqueue waits while n_threads jobs wait
+     * (thread_pool.c): at most 2 * n_threads jobs are in flight, n_threads
+     * waiting and n_threads running, in any order. Each holds its frame and
+     * the `retention` reference pictures before it (batch_job_take_pictures).
+     * A device extractor holds the frame it submitted, and that frame's
+     * previous reference picture, until the next frame collects it
+     * (dispatch_gpu_double_buffer): one picture beyond the context's. */
+    const unsigned retention = vmaf_engine_frame_retention(vmaf);
+    const unsigned device = vmaf->active_backend != VMAF_BACKEND_UNKNOWN ? 1u : 0u;
+    return retention + 2u * vmaf->cfg.n_threads * (retention + 1u) + device;
+}
+
+unsigned vmaf_engine_subsample(const VmafContext *vmaf)
+{
+    return vmaf && vmaf->cfg.n_subsample > 1u ? vmaf->cfg.n_subsample : 1u;
 }
 
 /* ---- libvmaf entry points (ADR-1852 decision D3, RC4 WP6) -----------------

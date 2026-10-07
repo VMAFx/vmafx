@@ -184,6 +184,21 @@ backend within it.
   ADR-1199 barrier only for a pair of `ordered` pictures and never downloads a
   `vmafx` picture. `integer_vif_cuda` reads each picture with its own pitch
   (`VifBufferCuda.dis_stride`). Preserve `test_vmafx_import_cuda*` together.
+- **VMAFx window values are the synchronous pooled values ([ADR-2074](../adr/2074-vmafx-window-scores.md))**:
+  `vmafx_score_pooled()`, `vmafx_feature_score_pooled()`,
+  `vmafx_score_pooled_model_set()` and the windows all call
+  `vmafx_pool_engine()` (`core/src/vmafx/score.c`); keep one pooling path.
+  Each context's completion thread finds completion; it is woken by the
+  engine's frame listener (end of `threaded_extract_batch_func()`) and by
+  the hooks in `submit.c`, `register.c` and `context.c`, and calls the engine
+  only through `vmafx_engine_enter()` / `vmafx_engine_leave(context, ...)`,
+  which take the context's engine lock. Its probes never fence
+  (`vmaf_engine_try_score_at_index()`, `vmaf_engine_feature_written()`,
+  `vmaf_predict_inputs_written()`). `vmaf_engine_max_in_flight()` mirrors
+  `batch_job_take_pictures()`, the thread pool's enqueue capacity and the
+  device double buffer; a change to one recomputes it. `test_vmafx_window`,
+  `test_vmafx_window_live`, `test_vmafx_window_cli` and
+  `test_vmafx_lifetime` guard it.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

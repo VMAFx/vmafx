@@ -140,7 +140,7 @@ VmafxStatus vmafx_context_use_tiny_model(VmafxContext *context, const char *onnx
     const VmafLogSink *const previous = context ? vmafx_engine_enter(context) : NULL;
     const int err = vmaf_engine_use_tiny_model(engine_context(context), onnx_path, engine_cfg);
     if (context) {
-        vmafx_engine_leave(previous);
+        vmafx_engine_leave(context, previous);
     }
     if (err) {
         return dnn_failure(&report, err, onnx_path ? onnx_path : "onnx_path",

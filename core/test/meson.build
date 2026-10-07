@@ -1540,6 +1540,46 @@ test('test_engine_log_routing_contract',
     suite : ['fast'],
 )
 
+# RC4 WP4 (ADR-2074): window scores against the synchronous pooled calls,
+# completion, flush, subsampling, callbacks and refusals (public headers), and
+# the window clock (#2138 n_stats semantics).
+foreach vmafx_window_test : ['test_vmafx_window', 'test_vmafx_window_clock']
+    vmafx_window_exe = executable(vmafx_window_test,
+        ['test.c', vmafx_window_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : libvmaf_public_link,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test(vmafx_window_test, vmafx_window_exe, suite : ['fast'], timeout : 120)
+endforeach
+
+# RC4 WP4 (#2238): the live-plugin harness: textures imported per frame at
+# 60 fps, windows polled from another thread, latency budget, backpressure,
+# no host copy (the counter of the static library). POSIX clocks and
+# threads: Linux only; the 576x324 fixture pair or exit 77.
+if host_machine.system() == 'linux'
+    test_vmafx_window_live = executable('test_vmafx_window_live',
+        ['test.c', 'test_vmafx_window_live.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    # Timed: run alone, not beside other tests (is_parallel).
+    test('test_vmafx_window_live', test_vmafx_window_live, suite : ['fast'], timeout : 120,
+         is_parallel : false)
+    # The harness's windows against the vmaf CLI's per-frame scores of the
+    # same pair, pooled with the engine's arithmetic (#2238 acceptance).
+    test('test_vmafx_window_cli',
+        import('python').find_installation(),
+        args : [files('test_vmafx_window_cli.py'), test_vmafx_window_live, vmaf,
+                meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv'],
+        suite : ['fast'],
+        timeout : 300,
+        is_parallel : false,
+    )
+endif
+
 foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score',
                              'test_vmafx_provenance', 'test_vmafx_report']
     vmafx_public_exe = executable(vmafx_public_test,

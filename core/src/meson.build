@@ -2904,6 +2904,9 @@ libvmafx_sources = [
     src_dir + 'vmafx/sha256.c',
     src_dir + 'vmafx/sized.c',
     src_dir + 'vmafx/submit.c',
+    # RC4 WP4: window scores and the window clock (ADR-2074).
+    src_dir + 'vmafx/window.c',
+    src_dir + 'vmafx/window_clock.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',

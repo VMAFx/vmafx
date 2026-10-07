@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 512,
+  "tus": 517,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -207,6 +207,8 @@
     "core/src/vmafx/status_gen.c",
     "core/src/vmafx/submit.c",
     "core/src/vmafx/tiny_model.c",
+    "core/src/vmafx/window.c",
+    "core/src/vmafx/window_clock.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
     "core/test/compat_conformance_table_gen.c",
@@ -490,6 +492,9 @@
     "core/test/test_vmafx_report.c",
     "core/test/test_vmafx_score.c",
     "core/test/test_vmafx_sha256.c",
+    "core/test/test_vmafx_window.c",
+    "core/test/test_vmafx_window_clock.c",
+    "core/test/test_vmafx_window_live.c",
     "core/test/test_x86_cpu_gate.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
@@ -1100,6 +1105,40 @@
         }
       },
       "previous_baseline_sha256": "6763c977345ae9e381a70ed3370e721b743d86775acc653d3cf7c7a9e4d08da1"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/predict.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/context_frames.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/register.c",
+        "core/src/vmafx/report.c",
+        "core/src/vmafx/score.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/tiny_model.c",
+        "core/src/vmafx/window.c",
+        "core/src/vmafx/window_clock.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_lifetime.c",
+        "core/test/test_vmafx_window.c",
+        "core/test/test_vmafx_window_clock.c",
+        "core/test/test_vmafx_window_live.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/window.c",
+            "core/src/vmafx/window_clock.c",
+            "core/test/test_vmafx_window.c",
+            "core/test/test_vmafx_window_clock.c",
+            "core/test/test_vmafx_window_live.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e5769f6e8ff5c17bc43935cf46dda95d7cd61373458470db301376b8059ab07a"
     }
   ]
 }
