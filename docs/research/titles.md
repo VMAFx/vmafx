@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (793), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (794), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2663,6 +2663,10 @@ Every research digest, one heading each (793), so the site search finds a digest
 ## Research-2158: VMAFx API redesign, generated surfaces and the VMAFx FFmpeg filters
 
 [2158-vmafx-api-redesign](2158-vmafx-api-redesign.md)
+
+## Research-2351: components of the cloud-native platform, their versions, licences and limits
+
+[2351-cloud-native-platform-components](2351-cloud-native-platform-components.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

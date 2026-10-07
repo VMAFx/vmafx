@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1314), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1315), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5267,3 +5267,7 @@ Every ADR, one heading each (1314), so the site search finds an ADR by its title
 ## ADR-2198: A tester leg builds where its inputs change, and no release is cut on a leg nobody saw green
 
 [2198-windows-sycl-leg-and-cut-check](2198-windows-sycl-leg-and-cut-check.md)
+
+## ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
+
+[2350-cloud-native-platform](2350-cloud-native-platform.md)
