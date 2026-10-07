@@ -36,6 +36,14 @@
   [Rust extractor framework](docs/development/rust-extractor-framework.md).
 
 
+- **The integer `motion` extractor has a Rust twin, `motion_rust`, that returns the C
+  extractor's scores bit for bit.**
+  With `-Denable_rust_features=true`, `VMAF_FEATURE_IMPL=rust` (or
+  `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
+  including the five-frame window and the moving average, in Rust; the default
+  stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -47,12 +55,6 @@
   from `core/api/vmafx.toml`. `libvmaf.h` behaviour is unchanged. ABI 0.1 is a
   preview until `v1.0.0`. See [the VMAFx API page](docs/api/vmafx/index.md)
   and [API generation](docs/development/api-generation.md).
-- **The integer `motion` extractor has a Rust twin, `motion_rust`, that returns the C
-  extractor's scores bit for bit.**
-  With `-Denable_rust_features=true`, `VMAF_FEATURE_IMPL=rust` (or
-  `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
-  including the five-frame window and the moving average, in Rust; the default
-  stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
 
 
 - **VMAFx API generator: header split, symbol versions and ABI gates (RC4,
