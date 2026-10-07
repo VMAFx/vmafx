@@ -52,6 +52,8 @@ static void gst_vmafx_finalize(GObject *object)
 {
     GstVmafx *self = GST_VMAFX(object);
     gst_vmafx_rt_free(self);
+    gst_vmafx_vulkan_free_pools(self);
+    gst_vmafx_vulkan_context_free(self);
     gst_vmafx_opts_clear(&self->opts);
     g_free(self->prop_error);
     g_mutex_clear(&self->lock);
@@ -82,6 +84,7 @@ static gboolean gst_vmafx_stop(GstAggregator *agg)
 {
     GstVmafx *self = GST_VMAFX(agg);
     gst_vmafx_rt_free(self);
+    gst_vmafx_vulkan_free_pools(self);
     g_mutex_lock(&self->lock);
     self->pad_info[0].valid = self->pad_info[1].valid = FALSE;
     g_mutex_unlock(&self->lock);
@@ -123,6 +126,37 @@ static GstFlowReturn gst_vmafx_sink_event_pre_queue(GstAggregator *agg, GstAggre
     }
     return parent->sink_event_pre_queue != NULL ? parent->sink_event_pre_queue(agg, apad, event) :
                                                   (gst_event_unref(event), GST_FLOW_OK);
+}
+
+/* A Vulkan element upstream asks downstream for its instance and device: ours export memory. */
+static gboolean gst_vmafx_sink_query(GstAggregator *agg, GstAggregatorPad *apad, GstQuery *query)
+{
+    if (GST_QUERY_TYPE(query) == GST_QUERY_CONTEXT &&
+        gst_vmafx_vulkan_context_query(GST_VMAFX(agg), apad, query)) {
+        return TRUE;
+    }
+    return GST_AGGREGATOR_CLASS(gst_vmafx_parent_class)->sink_query(agg, apad, query);
+}
+
+/* A Vulkan frame is copied on the GPU on the thread that delivers it (see gstvmafx_vulkan.c). */
+static GstBuffer *gst_vmafx_clip(GstAggregator *agg, GstAggregatorPad *apad, GstBuffer *buffer)
+{
+    GstVmafx *self = GST_VMAFX(agg);
+    GstAggregatorClass *parent = GST_AGGREGATOR_CLASS(gst_vmafx_parent_class);
+    const guint idx = apad == self->pad[GST_VMAFX_PAD_REFERENCE] ? 0 : 1;
+    gchar *why = NULL;
+    if (parent->clip != NULL) {
+        buffer = parent->clip(agg, apad, buffer);
+    }
+    if (buffer != NULL && self->pad_info[idx].mem == GST_VMAFX_MEM_VULKAN && !self->failed &&
+        !gst_vmafx_vulkan_stage(self, idx, &buffer, &why)) {
+        self->failed = TRUE;
+        GST_ELEMENT_ERROR(self, STREAM, FAILED, ("%s", why), (NULL));
+        g_free(why);
+        gst_buffer_unref(buffer);
+        return NULL;
+    }
+    return buffer;
 }
 
 /* The output is the distorted input, as it is. */
@@ -337,6 +371,8 @@ static void gst_vmafx_class_init(GstVmafxClass *klass)
     agg_class->update_src_caps = gst_vmafx_update_src_caps;
     agg_class->propose_allocation = gst_vmafx_propose_allocation;
     agg_class->sink_event_pre_queue = gst_vmafx_sink_event_pre_queue;
+    agg_class->sink_query = gst_vmafx_sink_query;
+    agg_class->clip = gst_vmafx_clip;
 }
 
 static void gst_vmafx_init(GstVmafx *self)

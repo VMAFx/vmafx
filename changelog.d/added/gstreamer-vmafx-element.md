@@ -4,7 +4,7 @@
   passes the distorted frames on. It takes system memory without a copy and
   CUDA memory without a download (device pointers imported on the producer's
   stream, with acquire and release fences); its properties are generated from
-  the option table the FFmpeg `vmafx` filter uses; it reports `n_stats` windows
+  the option table the FFmpeg `vmafx` filter uses; Vulkan images from GStreamer's Vulkan decoders are copied once on the GPU into exportable images and imported on the VMAFx device of the same GPU (CUDA, SYCL or HIP; never across GPUs); it reports `n_stats` windows
   from the library's window clock, per-frame scores, the provenance record and
   an end-of-stream summary as element messages, and writes the CLI's report. On
   the golden pair, both checkerboards and 20 frames of the 4K clip its report

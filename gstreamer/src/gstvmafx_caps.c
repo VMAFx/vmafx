@@ -103,10 +103,10 @@ gboolean gst_vmafx_caps_is_cuda(const GstCaps *caps)
 gchar *gst_vmafx_check_backend(const GstVmafxOpts *opts)
 {
     const char *name = gst_vmafx_opts_const_name("backend", opts->backend);
-    if (opts->backend >= GST_VMAFX_BACKEND_SYCL) {
+    if (opts->backend >= GST_VMAFX_BACKEND_METAL) {
         return g_strdup_printf(
-            "backend %s: this element imports CPU and CUDA memory; SYCL, HIP and Metal come with "
-            "their WP3 lanes",
+            "backend %s: this element imports CPU, CUDA and Vulkan memory; Metal comes with its "
+            "WP3 lane",
             name ? name : "?");
     }
     return NULL;
@@ -122,24 +122,51 @@ static gboolean device_binds_host(uint32_t backend)
     return status == VMAFX_OK && (info.memory_kinds & (1u << VMAFX_MEMORY_HOST)) != 0;
 }
 
+/* Why Vulkan images cannot be taken with these options, or NULL. */
+static gchar *check_vulkan_memory(const GstVmafxOpts *opts, const char *pname,
+                                  const GstVmafxFormat *f)
+{
+    if (gst_vmafx_vulkan_built() && opts->backend != GST_VMAFX_BACKEND_CPU &&
+        opts->import_mode == GST_VMAFX_IMPORT_AUTO) {
+        return NULL;
+    }
+    return g_strdup_printf(
+        "pad %s: format %s in VulkanImage: %s (the element never downloads device memory)", pname,
+        f->name,
+        gst_vmafx_vulkan_built() ? "backend cpu and import=host or device do not take it" :
+                                   "this build has no GStreamer Vulkan support");
+}
+
+/* Why device memory (GL, Vulkan, CUDA) cannot be read with these options, or NULL. */
+static gchar *check_device_memory(const GstVmafxOpts *opts, guint pad, const GstVmafxPad *p,
+                                  const GstVmafxFormat *f)
+{
+    const char *pname = gst_vmafx_pad_name(pad);
+    if (p->mem == GST_VMAFX_MEM_GL) {
+        return g_strdup_printf(
+            "pad %s: format %s in GLMemory: not imported yet (GL import needs the WP3 GL interop "
+            "lanes; on AMD negotiate DMABuf); the element never downloads a frame to score it",
+            pname, f->name);
+    }
+    if (p->mem == GST_VMAFX_MEM_VULKAN) {
+        return check_vulkan_memory(opts, pname, f);
+    }
+    if (p->mem == GST_VMAFX_MEM_CUDA && opts->backend != GST_VMAFX_BACKEND_CUDA &&
+        opts->backend != GST_VMAFX_BACKEND_AUTO) {
+        return g_strdup_printf("pad %s: format %s in CUDAMemory: backend %s does not read it "
+                               "(use backend cuda or auto)",
+                               pname, f->name, gst_vmafx_opts_const_name("backend", opts->backend));
+    }
+    return NULL;
+}
+
 static gchar *check_memory(const GstVmafxOpts *opts, guint pad, const GstVmafxPad *p,
                            const GstVmafxFormat *f)
 {
     const char *pname = gst_vmafx_pad_name(pad);
-    if (p->mem == GST_VMAFX_MEM_GL || p->mem == GST_VMAFX_MEM_VULKAN) {
-        return g_strdup_printf(
-            "pad %s: format %s in %s: not imported yet (%s); the element never downloads a frame "
-            "to score it",
-            pname, f->name, p->mem == GST_VMAFX_MEM_GL ? "GLMemory" : "VulkanImage",
-            p->mem == GST_VMAFX_MEM_GL ? "GL import needs the WP3 GL interop lanes; on AMD "
-                                         "negotiate DMABuf" :
-                                         "waits for the Vulkan import lane");
-    }
-    if (p->mem == GST_VMAFX_MEM_CUDA && opts->backend == GST_VMAFX_BACKEND_CPU) {
-        return g_strdup_printf(
-            "pad %s: format %s in CUDAMemory: backend cpu does not read device memory (use "
-            "backend cuda or auto)",
-            pname, f->name);
+    gchar *why = check_device_memory(opts, pad, p, f);
+    if (why != NULL) {
+        return why;
     }
     if (p->mem == GST_VMAFX_MEM_SYSTEM && opts->import_mode == GST_VMAFX_IMPORT_DEVICE) {
         return g_strdup_printf(
