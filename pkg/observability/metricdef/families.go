@@ -3,15 +3,16 @@
 
 package metricdef
 
-// Cardinality limits of the open labels. A process reports at most this many
-// distinct values of the label; later values are merged under Overflow. The
-// limits keep the largest family (vmafx_quality_score) below 11 000 series per
-// process; docs/observability/metrics.md lists the bound of every family.
+// Cardinality limits of the open labels (maintainer decision Q-121). A
+// process reports at most this many distinct values of the label; later
+// values are merged under Overflow. At these limits the largest family
+// (vmafx_quality_score) is bounded by 634 790 series per process;
+// docs/observability/metrics.md lists the bound of every family.
 const (
 	// TenantLimit bounds the tenant label.
-	TenantLimit = 32
+	TenantLimit = 256
 	// ModelLimit bounds the model label.
-	ModelLimit = 16
+	ModelLimit = 64
 )
 
 // None is the value a label takes when the request or job carried no value
@@ -32,6 +33,14 @@ var (
 		Name:  "model",
 		Limit: ModelLimit,
 		Doc:   "VMAF model name the score came from; the default model when the request named none",
+	}
+	// Profile is the scoring profile of a request (decision Q-119). No request
+	// carries one yet, so every score reports None; the device-targeted
+	// profiles of ADR-1880 add their values here.
+	Profile = Label{
+		Name:   "profile",
+		Values: []string{None},
+		Doc:    "scoring profile of the request; `none` until scoring requests carry a profile (the device profiles of ADR-1880)",
 	}
 	// Backend is the compute backend a job ran on.
 	Backend = Label{
@@ -188,11 +197,11 @@ var (
 )
 
 // QualityScore is the quality family: the distribution of the scores the
-// platform produced, per tenant and model.
+// platform produced, per tenant, model and profile.
 var QualityScore = Family{
 	Name: "vmafx_quality_score", Kind: Histogram, Unit: "score",
 	Help:     "Distribution of the pooled VMAF scores of completed jobs and Score requests.",
-	Labels:   []Label{Tenant, Model},
+	Labels:   []Label{Tenant, Model, Profile},
 	Buckets:  ScoreBuckets,
 	Emitters: []Component{Server, Controller},
 }

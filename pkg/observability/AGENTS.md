@@ -55,8 +55,8 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    `TestNodeServesEveryFamilyItEmits`,
    `TestProvideMetricsServesTheServerFamilies`). Every family registers on
    service's own registry, never `DefaultRegisterer` (ADR-1014). Open label
-   limits (`TenantLimit` 32, `ModelLimit` 16) -> overflow `other`, never
-   drop; raising one moves `seriesBudget` in `metricdef_test.go` and the
+   limits (`TenantLimit` 256, `ModelLimit` 64, Q-121) -> overflow `other`,
+   never drop; raising one moves `seriesBudget` in `metricdef_test.go` and the
    docs.
 
 6. **Generated files never hand-edited.** `deploy/grafana/dashboards/*.json`,

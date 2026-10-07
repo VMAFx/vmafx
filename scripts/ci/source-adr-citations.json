@@ -11490,6 +11490,12 @@
       },
       "target": "1874-vmaf-list-backends.md"
     },
+    "1880": {
+      "sites": {
+        "pkg/observability/metricdef/families.go": 2
+      },
+      "target": "1880-format-envelope-device-targets.md"
+    },
     "1886": {
       "sites": {
         ".pre-commit-config.yaml": 1,

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
-- **Deciders**: maintainer (decisions Q-109, Q-110, Q-111; RC4 work package 16 brief)
+- **Deciders**: maintainer (decisions Q-109, Q-110, Q-111, Q-118 to Q-121; RC4 work package 16 brief)
 - **Tags**: observability, go, grafana, prometheus, helm, rc4, fork-local
 
 ## Context
@@ -38,8 +38,10 @@ cardinality bound, histogram buckets, and the binaries that emit it. The
 services build their collectors only through `pkg/observability`'s handles
 (`NewCounter`, `NewGauge`, `NewHistogram`, `RegisterScraped`), which bound
 every label value: a closed label maps an unknown value to `other`, an open
-label reports at most its limit of distinct values per process (`tenant` 32,
-`model` 16) and merges later ones into `other`, never dropping a series. A
+label reports at most its limit of distinct values per process (`tenant` 256,
+`model` 64, Q-121) and merges later ones into `other`, never dropping a
+series. The quality family carries `tenant`, `model` and `profile`; the
+profile reads `none` until scoring requests carry one (Q-119). A
 test per binary fails when its `/metrics` page and the definition disagree.
 `pkg/observability/obsgen` generates the dashboards with the Grafana
 Foundation SDK (pinned `v0.0.20`) and the metric reference page from the same
@@ -60,12 +62,14 @@ the SLO, usage-and-cost and capacity dashboards.
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| Go data in `metricdef`, read by services and generator (chosen) | Both consumers are Go and import it directly; no generation step between definition and services; compile-time references from dashboards to families | A non-Go consumer would need an export step | Every consumer today is Go or generated from Go |
+| Go data in `metricdef`, read by services and generator (chosen, Q-120) | Both consumers are Go and import it directly; no generation step between definition and services; compile-time references from dashboards to families | A non-Go consumer would need an export step | Every consumer today is Go or generated from Go |
 | TOML definition with a standard-library Python generator, as the RC4 C API does (ADR-1852) | Same tooling as the API definition; language-neutral | Two hops (TOML to Go, Go to dashboards); generated Go committed next to hand-written Go; the dashboard generator must be Go anyway (Q-111) | Adds a generator and a drift surface without a consumer that needs it |
 | Hand-written dashboard JSON plus a lint and a name check | No generator | The dashboards drift from the services again; Q-111 asks for generation | Rejected by Q-111 |
 | Jsonnet / grafonnet | Mature dashboard library | Second language, not the Foundation SDK Q-111 names | Rejected by Q-111 |
 | OpenTelemetry metrics SDK with a Prometheus exporter instead of `client_golang` | One metrics API for OTLP and Prometheus | The production path is the Prometheus scrape; the OTel instruments have had no producer since ADR-0782; a second migration in the same change | Out of scope; the definition can drive either API later |
 | Drop a label past its limit, or reject the value | Simpler | A dropped label loses the data Q-109 asks for; a rejected value hides work | Overflow into `other` keeps every count and bounds the series |
+| Lower limits (`tenant` 32, `model` 16) | Largest family bounded by about 11 000 series | A platform past 32 tenants merges them into `other` | Q-121 sets 256 and 64; a deployment's real series count follows its tenants and models in use |
+| Quality family without a `profile` label until profiles exist | No label that reads one value | Adding the label later changes every series of the family | Q-119 adds it now, reading `none` |
 | Unlabelled controller totals next to per-tenant families | Old queries keep their exact series | Two families for one fact (HISS-19) | `sum()` over the tenant label gives the total |
 | Serve the node's metrics on the gRPC port or push them to the controller | No second listener | Prometheus scrapes HTTP; a push path is a second transport to secure | The chart already reserves `node.metricsPort` |
 
@@ -75,8 +79,9 @@ the SLO, usage-and-cost and capacity dashboards.
   nothing emits; every panel passes dashboard-linter without exclusions; the
   node is observable; label cardinality is bounded and documented per family.
 - **Negative**: the controller's job counters and queue gauges gain a
-  `tenant` label, so a query that read the bare series sees one series per
-  tenant until it is wrapped in `sum()`; `pkg/observability.NewMetrics`
+  `tenant` label (kept by Q-121), so a query that read the bare series sees
+  one series per tenant until it is wrapped in `sum()`; at the limits the
+  quality family is bounded by 634 790 series per process; `pkg/observability.NewMetrics`
   returns an error and `SetControllerSources` is gone (ADR-1014's isolation
   property is kept: every family registers on the service's own registry);
   the queue's `Cancel` and `ReportResult` report whether they moved the job,
@@ -84,7 +89,8 @@ the SLO, usage-and-cost and capacity dashboards.
 - **Neutral / follow-ups**: the remaining work packages of issue #2430
   (dashboard-linter in CI and the other dashboards, rules and runbooks, logs,
   packaging, SLO / cost / capacity) build on this definition. The quality
-  family's `profile` label waits for a scoring profile in the request.
+  family's `profile` label gets its values when scoring requests carry a
+  profile (ADR-1880).
 
 ## Supply-chain impact
 
@@ -97,6 +103,7 @@ the SLO, usage-and-cost and capacity dashboards.
 ## References
 
 - Decisions Q-109, Q-110 and Q-111, maintainer, 2026-10-07; issue #2430.
+- Decisions Q-118 (land through the train now), Q-119 (`profile` label, `none` until requests carry a profile), Q-120 (plain Go data), Q-121 (`tenant` 256, `model` 64, overflow into `other`; the tenant label on the controller job series stays), maintainer, 2026-10-07.
 - [ADR-0782](0782-otel-tracing.md): span, attribute and metric schema.
 - [ADR-0927](0927-opentelemetry-traces-metrics-phase1.md): OpenTelemetry rollout.
 - [ADR-1014](1014-r5-prometheus-registry.md): every family on the service's own registry.

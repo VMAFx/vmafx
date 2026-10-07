@@ -11,8 +11,9 @@ import (
 )
 
 // seriesBudget is the largest number of series one family may put on the
-// /metrics page of one process (docs/observability/metrics.md).
-const seriesBudget = 11000
+// /metrics page of one process (docs/observability/metrics.md). The label
+// limits of decision Q-121 set it: vmafx_quality_score reaches 634 790.
+const seriesBudget = 650000
 
 var nameRe = regexp.MustCompile(`^vmafx_[a-z][a-z0-9_]*[a-z0-9]$`)
 
@@ -96,7 +97,7 @@ func TestRulesRefuseBrokenFamilies(t *testing.T) {
 		"no buckets":    {Name: "vmafx_x_seconds", Kind: Histogram, Unit: "seconds", Help: "h", Emitters: []Component{Node}},
 		"open no limit": {Name: "vmafx_x_total", Kind: Counter, Unit: "jobs", Help: "h", Emitters: []Component{Node}, Labels: []Label{{Name: "a", Doc: "d"}}},
 		"too many series": {Name: "vmafx_x_total", Kind: Counter, Unit: "jobs", Help: "h", Emitters: []Component{Node},
-			Labels: []Label{{Name: "a", Limit: 200, Doc: "d"}, {Name: "b", Limit: 200, Doc: "d"}}},
+			Labels: []Label{{Name: "a", Limit: 2000, Doc: "d"}, {Name: "b", Limit: 2000, Doc: "d"}}},
 	}
 	for name, f := range broken {
 		if len(problems(f)) == 0 {
@@ -148,8 +149,9 @@ func TestByEmitterPartitionsTheFamilies(t *testing.T) {
 
 func TestMaxSeriesOfTheQualityFamily(t *testing.T) {
 	t.Parallel()
-	// (32 tenants + other) x (16 models + other) x (16 buckets + +Inf + _sum + _count)
-	if got, want := QualityScore.MaxSeries(), 33*17*19; got != want {
+	// (256 tenants + other) x (64 models + other) x (none + other)
+	// x (16 buckets + +Inf + _sum + _count)
+	if got, want := QualityScore.MaxSeries(), 257*65*2*19; got != want {
 		t.Errorf("MaxSeries = %d, want %d", got, want)
 	}
 }

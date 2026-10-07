@@ -221,12 +221,15 @@ when its `/metrics` page and the definition disagree.
 ### Label cardinality
 
 Every label is bounded. A label with a closed value set (`backend`,
-`outcome`, `reason`, `vendor`) maps any other value to `other`. An open label
-reports at most a fixed number of distinct values per process, `tenant` 32
-and `model` 16, and merges every later value into `other`: counts add up,
-the age of the oldest job takes the oldest, nothing is dropped. The largest
-family, `vmafx_quality_score`, stays below 11 000 series per process. An
-empty value (a request to `vmafx-server`, which has no tenants) reads `none`.
+`outcome`, `reason`, `vendor`, `profile`) maps any other value to `other`. An
+open label reports at most a fixed number of distinct values per process,
+`tenant` 256 and `model` 64, and merges every later value into `other`:
+counts add up, the age of the oldest job takes the oldest, nothing is
+dropped. An empty value (a request to `vmafx-server`, which has no tenants)
+reads `none`. At these limits the largest family, `vmafx_quality_score`, is
+bounded by 634 790 series per process; a deployment with a few tenants and
+models serves a few hundred. The `profile` label of the quality family reads
+`none` until scoring requests carry a profile.
 
 ### Per-tenant series
 

@@ -125,12 +125,13 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 
 // ObserveScore records one pooled score in the quality family. tenant is
 // empty on vmafx-server, which has no tenants; modelName is the model the
-// request or job named, empty for the default model.
+// request or job named, empty for the default model. The profile label reads
+// metricdef.None until scoring requests carry a profile (decision Q-119).
 func (m *Metrics) ObserveScore(tenant, modelName string, score float64) {
 	if modelName == "" {
 		modelName = model.DefaultVersion
 	}
-	m.quality.Observe(score, tenant, modelName)
+	m.quality.Observe(score, tenant, modelName, metricdef.None)
 }
 
 // WaitForShutdown blocks until SIGTERM or SIGINT is received, then cancels

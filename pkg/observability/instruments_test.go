@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
@@ -199,5 +200,27 @@ func TestRegisterScrapedPassesABoundedContext(t *testing.T) {
 	}
 	if got := seriesOf(t, reg, metricdef.ControllerNodesLive.Name); got[""] != 3 || !hasDeadline {
 		t.Errorf("nodes_live = %v, deadline = %v", got, hasDeadline)
+	}
+}
+
+// TestObserveScoreLabels: a score from vmafx-server (no tenant) and a request
+// without a model land under tenant none, the default model and profile none
+// (decision Q-119: no request carries a profile yet).
+func TestObserveScoreLabels(t *testing.T) {
+	t.Parallel()
+	reg := prometheus.NewRegistry()
+	m, err := NewMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.ObserveScore("", "", 91)
+	m.ObserveScore("acme", "vmaf_v0.6.1", 88)
+	got := seriesOf(t, reg, metricdef.QualityScore.Name)
+	want := map[string]float64{
+		model.DefaultVersion + "|none|none": 1,
+		"vmaf_v0.6.1|none|acme":             1,
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("quality series = %v, want %v", got, want)
 	}
 }

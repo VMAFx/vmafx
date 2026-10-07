@@ -18,3 +18,5 @@
 - `vmafx-node` composes `bootstrap.HTTP` (`nodeServerOptions`), listens on
   `VMAFX_HTTP_ADDR` (default `:9090`) and its Dockerfile stages expose 9090.
 - No score, FFmpeg patch or C API impact.
+
+<!-- markdownlint-disable-file MD013 MD041 -->
