@@ -50,7 +50,7 @@ dependencies = [
   "scikit-learn>=1.9.1",
   "pydantic>=2.13.5",
   "pyyaml>=6.0.3",
-  "typer>=0.27.2",
+  "typer>=0.27.3",
   "rich>=15.0.0",
   "tqdm>=4.70.1",
   # PyTorch deprecated `torch.ao.quantization` wholesale in 2.14 and removes it
