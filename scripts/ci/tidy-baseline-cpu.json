@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 466,
+  "tus": 475,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -168,8 +168,14 @@
     "core/src/vmafx/compat_libvmaf_gen.c",
     "core/src/vmafx/context.c",
     "core/src/vmafx/device.c",
+    "core/src/vmafx/device_context.c",
     "core/src/vmafx/error.c",
+    "core/src/vmafx/fence.c",
     "core/src/vmafx/frame_host.c",
+    "core/src/vmafx/frame_import.c",
+    "core/src/vmafx/frame_import_admit.c",
+    "core/src/vmafx/frame_import_hooks.c",
+    "core/src/vmafx/frame_pool.c",
     "core/src/vmafx/model.c",
     "core/src/vmafx/options.c",
     "core/src/vmafx/register.c",
@@ -442,6 +448,9 @@
     "core/test/test_vmafx_bitexact.c",
     "core/test/test_vmafx_context.c",
     "core/test/test_vmafx_frame.c",
+    "core/test/test_vmafx_import_api.c",
+    "core/test/test_vmafx_import_bitexact.c",
+    "core/test/test_vmafx_import_fence.c",
     "core/test/test_vmafx_lifetime.c",
     "core/test/test_vmafx_log_routing.c",
     "core/test/test_vmafx_model.c",
@@ -873,6 +882,45 @@
         }
       },
       "previous_baseline_sha256": "677a0f69fb04f9af0879a333aec53d1471e7b4dc2378fd668a3d803d7f65cc05"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/compat_libvmaf_gen.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/error.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_host.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_import_hooks.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/status_gen.c",
+        "core/src/vmafx/submit.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_bitexact.c",
+        "core/test/test_vmafx_import_api.c",
+        "core/test/test_vmafx_import_bitexact.c",
+        "core/test/test_vmafx_import_fence.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/device_context.c",
+            "core/src/vmafx/fence.c",
+            "core/src/vmafx/frame_import.c",
+            "core/src/vmafx/frame_import_admit.c",
+            "core/src/vmafx/frame_import_hooks.c",
+            "core/src/vmafx/frame_pool.c",
+            "core/test/test_vmafx_import_api.c",
+            "core/test/test_vmafx_import_bitexact.c",
+            "core/test/test_vmafx_import_fence.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b00a715e504297cb496a6444da752fc5e7bfe4761e1df8f0f527db70a5fb8eaa"
     }
   ]
 }

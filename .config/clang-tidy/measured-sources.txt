@@ -324,8 +324,14 @@ core/src/thread_pool.c
 core/src/vmafx/compat_libvmaf_gen.c
 core/src/vmafx/context.c
 core/src/vmafx/device.c
+core/src/vmafx/device_context.c
 core/src/vmafx/error.c
+core/src/vmafx/fence.c
 core/src/vmafx/frame_host.c
+core/src/vmafx/frame_import.c
+core/src/vmafx/frame_import_admit.c
+core/src/vmafx/frame_import_hooks.c
+core/src/vmafx/frame_pool.c
 core/src/vmafx/model.c
 core/src/vmafx/options.c
 core/src/vmafx/register.c
@@ -767,6 +773,9 @@ core/test/test_vmafx_api_slice.c
 core/test/test_vmafx_bitexact.c
 core/test/test_vmafx_context.c
 core/test/test_vmafx_frame.c
+core/test/test_vmafx_import_api.c
+core/test/test_vmafx_import_bitexact.c
+core/test/test_vmafx_import_fence.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_log_routing.c
 core/test/test_vmafx_model.c
