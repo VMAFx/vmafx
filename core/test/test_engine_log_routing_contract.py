@@ -72,8 +72,8 @@ EXCEPTIONS = {
         "RC4 WP3 CUDA lane",
     ),
     "metal/common.mm": (
-        2,
-        "Metal device listing print API; no VMAFx context attaches a Metal device " "before WP3",
+        1,
+        "Metal device listing print API; no VMAFx context attaches a Metal device before WP3",
         "RC4 WP3 Metal lane",
     ),
 }
