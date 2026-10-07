@@ -139,7 +139,7 @@ static inline __m512i y_conv16_16_avx512(const uint16_t *const pp[5], const uint
     const __m512i g0 = _mm512_set1_epi32(3571);
     const __m512i g1 = _mm512_set1_epi32(16004);
     const __m512i g2 = _mm512_set1_epi32(26386);
-    const __m512i round64 = _mm512_set1_epi64((int64_t)(1 << (bpc - 1)));
+    const __m512i round64 = _mm512_set1_epi64(((int64_t)1 << (bpc - 1)));
     const __m512i bpc_vec = _mm512_set1_epi64(bpc);
 
     __m512i acc_lo = _mm512_setzero_si512();
@@ -182,7 +182,7 @@ static inline int y_conv_row_16_avx512(const uint16_t *const pp[5], const uint16
             int32_t diff = pp[k][j] - cp[k][j];
             accum += (int64_t)filter[k] * diff;
         }
-        y_row[j] = (int32_t)((accum + (int64_t)(1 << (bpc - 1))) >> bpc);
+        y_row[j] = (int32_t)((accum + ((int64_t)1 << (bpc - 1))) >> bpc);
         nz_tail |= y_row[j];
     }
 

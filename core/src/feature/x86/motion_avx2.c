@@ -155,7 +155,7 @@ static inline __m256i y_conv8_16_avx2(const uint16_t *const pp[5], const uint16_
     const __m256i g0 = _mm256_set1_epi32(3571);
     const __m256i g1 = _mm256_set1_epi32(16004);
     const __m256i g2 = _mm256_set1_epi32(26386);
-    const __m256i round64 = _mm256_set1_epi64x((int64_t)(1 << (bpc - 1)));
+    const __m256i round64 = _mm256_set1_epi64x(((int64_t)1 << (bpc - 1)));
     const __m256i bpc_vec = _mm256_set1_epi64x(bpc);
 
     __m256i acc_lo = _mm256_setzero_si256();
@@ -193,7 +193,7 @@ static inline int y_conv_row_16_avx2(const uint16_t *const pp[5], const uint16_t
             int32_t diff = pp[k][j] - cp[k][j];
             accum += (int64_t)filter[k] * diff;
         }
-        y_row[j] = (int32_t)((accum + (int64_t)(1 << (bpc - 1))) >> bpc);
+        y_row[j] = (int32_t)((accum + ((int64_t)1 << (bpc - 1))) >> bpc);
         nz_tail |= y_row[j];
     }
 

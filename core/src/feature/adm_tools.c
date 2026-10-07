@@ -65,7 +65,7 @@ static const double dwt2_db2_coeffs_hi_d[4] = {-0.129409522550921, -0.2241438680
 
 static float get_noise_constant(int w, int h, double weight, double adm_p_norm)
 {
-    return powf(w * h * weight, (float)(1.0f / adm_p_norm));
+    return powf((float)(w * h * weight), (float)(1.0f / adm_p_norm));
 }
 
 /* ------------------------------------------------------------------------- */
