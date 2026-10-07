@@ -6,12 +6,25 @@ This page covers getting started with the VMAFX Rust bindings.
 ## Overview
 
 The repository ships a Rust workspace at the repo root (`Cargo.toml`,
-edition 2024). It has three members:
+edition 2024). Its members fall into two groups.
+
+Bindings that call libvmaf from Rust:
 
 | Crate | Path | Description |
 |-------|------|-------------|
 | `vmafx-sys` | `bindings/rust/vmafx-sys` | Auto-generated raw FFI bindings plus thin safe wrappers. |
 | `vmafx` | [`bindings/rust/vmafx`](../../bindings/rust/vmafx) | Higher-level safe API (`Context`, `Model`, `Picture`, `Score`; ADR-0929) over `vmafx-sys`. |
+
+Rust code linked into libvmaf (`-Denable_rust_features=true`), a separate
+workspace (`core/src/rust/Cargo.toml`, offline build) described in
+[Rust extractor framework](rust-extractor-framework.md):
+
+| Crate | Path | Description |
+|-------|------|-------------|
+| `vmafx-core-rs` | `core/src/rust/staticlib` | The one Rust archive libvmaf links. |
+| `vmafx-fex` | `core/src/rust/fex` | Framework of the Rust twins of C extractors (ADR-1713). |
+| `vmafx-fex-psnr`, `-speed`, `-motion`, `-adm`, `-cambi` | `core/src/rust/feature/*` | One twin per crate (`psnr` is the reference twin). |
+| `vmafx-predict` | `core/src/rust/predict` | Model prediction (RC4). |
 | `vmafx-tad` | `core/src/feature/rust/tad` | Rust pilot of the Temporal Absolute Difference feature extractor (ADR-0707). |
 
 The crates are versioned independently (currently 0.1.0) and are not

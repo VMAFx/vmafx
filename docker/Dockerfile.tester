@@ -89,7 +89,8 @@ WORKDIR /src
 COPY core core
 COPY model model
 COPY REUSE.toml REUSE.toml
-COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/exact_twin_matrix.py scripts/ci/
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
@@ -220,7 +221,8 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr
@@ -470,7 +472,8 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr
@@ -692,7 +695,8 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr

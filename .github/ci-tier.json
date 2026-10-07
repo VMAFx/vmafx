@@ -51,6 +51,17 @@
     "Windows Tester Zip",
     "Release Dry Run"
   ],
+  "own_input_lanes": [
+    {
+      "workflow": "windows-tester-bundle.yml",
+      "context": "Windows Tester Zip",
+      "selectors": [
+        "windows_tester_zip",
+        "windows_tester_zip_sycl"
+      ],
+      "reason": "A full-only context whose lane also runs on a light-tier pull request, but only when the diff touches an input the lane reads (selectors of .github/ci-impact.json, ADR-2198): the Windows zip legs failed on master for two days because a pull request that changed their inputs never built them (ADR-1595 built the x64 zip only, ADR-2169 built nothing)."
+    }
+  ],
   "untiered_jobs": [
     {
       "workflow": "required-aggregator.yml",

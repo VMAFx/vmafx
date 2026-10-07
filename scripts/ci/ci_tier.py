@@ -113,7 +113,33 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
     overlap = set(config["always"]) & set(config["full_only"])
     if overlap:
         raise TierError(f"{path}: names in both always and full_only: {sorted(overlap)}")
+    check_own_input_lanes(path, config)
     return config
+
+
+def check_own_input_lanes(path: Path, config: Mapping[str, Any]) -> None:
+    """Refuse an own-input lane that names a context the tier would not skip (ADR-2198)."""
+    lanes = config.get("own_input_lanes", [])
+    if not isinstance(lanes, list):
+        raise TierError(f"{path}: own_input_lanes must be a list")
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            raise TierError(f"{path}: own_input_lanes entries must be objects")
+        selectors = lane.get("selectors")
+        if not (
+            isinstance(lane.get("workflow"), str)
+            and isinstance(lane.get("context"), str)
+            and isinstance(lane.get("reason"), str)
+            and lane["reason"].strip()
+            and isinstance(selectors, list)
+            and selectors
+            and all(isinstance(name, str) for name in selectors)
+        ):
+            raise TierError(
+                f"{path}: own_input_lanes needs workflow, context, selectors and a reason: {lane}"
+            )
+        if lane["context"] not in config["full_only"]:
+            raise TierError(f"{path}: own_input_lanes context {lane['context']!r} is not full_only")
 
 
 def decide(

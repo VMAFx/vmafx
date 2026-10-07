@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1320), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1322), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5112,6 +5112,10 @@ Every ADR, one heading each (1320), so the site search finds an ADR by its title
 
 [1707-rc3-exit-without-outside-hardware](1707-rc3-exit-without-outside-hardware.md)
 
+## ADR-1713: Rust feature-extractor twins behind the unchanged C ABI (RC4 framework)
+
+[1713-rc4-rust-extractor-framework](1713-rc4-rust-extractor-framework.md)
+
 ## ADR-1755: The feature collector owns the models it mounts
 
 [1755-collector-owns-mounted-model](1755-collector-owns-mounted-model.md)
@@ -5291,3 +5295,7 @@ Every ADR, one heading each (1320), so the site search finds an ADR by its title
 ## ADR-2171: A weekly research radar over public video-quality sources
 
 [2171-research-radar](2171-research-radar.md)
+
+## ADR-2198: A tester leg builds where its inputs change, and no release is cut on a leg nobody saw green
+
+[2198-windows-sycl-leg-and-cut-check](2198-windows-sycl-leg-and-cut-check.md)

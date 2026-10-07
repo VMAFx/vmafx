@@ -3,9 +3,9 @@
 
 **Feature name (CLI):** `tad`
 **Output scores:** `tad`, `tad_sad`
-**Implementation:** Rust (cbindgen pilot — ADR-0707)
+**Implementation:** Rust (pilot, ADR-0707; built through the Rust extractor framework, ADR-1713)
 **Availability:** CPU only. Off by default: configure with
-`-Denable_rust_features=true` (needs `cargo` and `cbindgen`; see [Build
+`-Denable_rust_features=true` (needs `cargo`; see [Build
 requirements](#build-requirements)).
 
 ---
@@ -78,7 +78,9 @@ aggregate (mean, harmonic mean, etc.) in the summary block.
 
 TAD is implemented in Rust and is **off by default**. The Meson build option
 `enable_rust_features` (default `false`) controls whether the Rust crate is
-compiled. Enabling it needs `cargo` and `cbindgen` on `PATH`.
+compiled. Enabling it needs `cargo` on `PATH`; the cargo build runs offline.
+Before ADR-1713 such a build compiled TAD but never registered it, so
+`--feature tad` failed there too; it is registered now.
 
 ```bash
 # Opt in:
@@ -93,8 +95,8 @@ Two cases leave the extractor out of the build:
 - **Option off (the default).** The `tad` extractor is not registered, and
   `--feature tad` fails with `problem loading feature extractor: tad`.
 - **Option on, `cargo` missing.** Meson prints a warning
-  (`enable_rust_features=true but cargo not found; TAD extractor will be
-  skipped`) and configures the build without TAD.
+  (`enable_rust_features=true but cargo was not found: no Rust extractor is
+  built and the C extractors run`) and configures the build without TAD.
 
 ---
 
@@ -117,11 +119,11 @@ Two cases leave the extractor out of the build:
 Source files:
 
 - `core/src/feature/rust/tad/src/lib.rs` — Rust implementation + unit tests
-- `core/src/feature/rust/tad/Cargo.toml` — crate manifest (cbindgen build-dep)
-- `core/src/feature/rust/tad/build.rs` — cbindgen header generation
+- `core/src/feature/rust/tad/Cargo.toml` — crate manifest (an rlib of the
+  `vmafx-core-rs` archive, no external dependency)
 - `core/src/feature/tad_rust.c` — C wrapper adapting the Rust ABI to
-  `VmafFeatureExtractor`
+  `VmafFeatureExtractor`, registered by `core/src/rust/shim/rust_twins.cpp`
 
-Architecture: ADR-0707 documents the cbindgen → Meson integration recipe. Future
-Rust
-feature extractors should follow the same pattern.
+New Rust extractors are twins of C extractors and follow the
+[Rust extractor framework](../development/rust-extractor-framework.md)
+(ADR-1713), not TAD's hand-written wrapper.

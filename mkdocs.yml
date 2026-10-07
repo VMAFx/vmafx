@@ -479,6 +479,7 @@ nav:
       - Languages: development/languages.md
       - Production Docker: development/docker-production.md
       - Rust guide: development/rust.md
+      - Rust extractor framework: development/rust-extractor-framework.md
       - GPU scheduling: development/gpu-scheduling.md
       - Performance benchmarking: development/perf.md
       - Merge train: development/merge-train.md

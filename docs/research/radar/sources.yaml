@@ -49,8 +49,14 @@ sources:
     kind: github_owner
     owner: VQAssessment
     url: https://github.com/VQAssessment
-    why: Deep no-reference video quality models (DOVER, FAST-VQA family) and explainable-quality datasets; the most cited learned no-reference models for the 1.3 no-reference surface (#2166).
-    licence_note: Custom licence (`NOASSERTION`); read the licence file for the commercial-use terms before any use beyond an oracle run.
+    why: Deep no-reference video quality models (DOVER incl. DOVER-Mobile, FAST-VQA / FasterVQA) and explainable-quality datasets; local oracles for the project's own clean-room NR models (#2415) behind the live NR mode (#2413, #2166).
+    licence_note: Code under the S-Lab License 1.0 (non-commercial); the DOVER weights card on Hugging Face says MIT, asked upstream (VQAssessment/DOVER#43). Oracle only until answered.
+  - id: gh-q-future
+    kind: github_owner
+    owner: Q-Future
+    url: https://github.com/Q-Future
+    why: Multimodal (LMM) quality assessment, including VQA2 for video; optional scorers for AI-generated video (#2418).
+    licence_note: Per repository; the VQA2 code and weights are Apache-2.0. Check each before use.
   # --- GitHub repositories ------------------------------------------------------
   - id: gh-netflix-vmaf
     kind: github_repo
@@ -77,6 +83,24 @@ sources:
     url: https://github.com/chaofengc/IQA-PyTorch
     why: A catalogue of image and video quality metrics with licences noted per model; the quickest way to see which metrics have an open reference at all.
     licence_note: Toolbox licence plus per-model terms; check each metric's own licence.
+  - id: gh-fgsvqa
+    kind: github_repo
+    repo: xinyiW915/FGSVQA
+    url: https://github.com/xinyiW915/FGSVQA
+    why: Frequency-guided short-form video quality model (QoMEX 2026); oracle for our own implementation (#2415).
+    licence_note: No licence file; oracle only, implementation from the paper.
+  - id: gh-vqm4has
+    kind: github_repo
+    repo: cd-athena/VQM4HAS
+    url: https://github.com/cd-athena/VQM4HAS
+    why: Real-time VMAF / P.1204.3 predictor for HEVC adaptive streaming (IEEE TMM 2025); the repository is empty today, watched for a code release (#2416).
+    licence_note: No licence file and no code (2026-10-07); implementation from the paper.
+  - id: gh-ugvq
+    kind: github_repo
+    repo: zczhang-sjtu/UGVQ
+    url: https://github.com/zczhang-sjtu/UGVQ
+    why: Multi-dimensional quality model and dataset for AI-generated video (TOMM 2025); oracle for our implementation (#2418).
+    licence_note: No licence file; dataset links only; implementation from the paper.
   # --- arXiv queries ------------------------------------------------------------
   - id: arxiv-vqa
     kind: arxiv_query
@@ -132,6 +156,24 @@ sources:
     url: https://arxiv.org/search/?query=generative+video+quality+assessment&searchtype=abstract
     why: Quality metrics for neural and generative codecs and generated video (research watch #2168).
     licence_note: As above.
+  - id: arxiv-aigc-video-quality
+    kind: arxiv_query
+    query: abs:"video quality" AND (abs:"AI-generated" OR abs:AIGC OR abs:"video generation" OR abs:"reward model")
+    url: https://arxiv.org/search/?query=AI-generated+video+quality&searchtype=abstract
+    why: Quality and reward models for generated video (spatial fidelity, motion, prompt alignment); feed for the generation-loop scorers (#2418).
+    licence_note: Papers carry their own licence; code links in a paper are checked at triage.
+  - id: arxiv-foveated-quality
+    kind: arxiv_query
+    query: abs:foveated AND (abs:"quality assessment" OR abs:"video quality")
+    url: https://arxiv.org/search/?query=foveated+quality+assessment&searchtype=abstract
+    why: Foveated and space-variant quality models for AR / VR; feed for the gaze-weighted extractor maps (#2419).
+    licence_note: As above.
+  - id: arxiv-vmaf-prediction
+    kind: arxiv_query
+    query: abs:VMAF AND (abs:predict OR abs:"low-complexity" OR abs:"real-time")
+    url: https://arxiv.org/search/?query=VMAF+prediction&searchtype=abstract
+    why: Low-cost VMAF predictors that run in or next to the encoder (VQM4HAS, in-loop predictors); feed for #2416.
+    licence_note: As above.
   # --- OpenAlex queries ---------------------------------------------------------
   - id: openalex-vqa
     kind: openalex_query
@@ -178,6 +220,16 @@ sources:
     url: https://www.itu.int/rec/T-REC-P.1204
     why: The P.1204 family of bitstream and hybrid quality models; cross-validation target (#2270).
     licence_note: Recommendation text is copyrighted; reference implementations carry their own licence (see gh-tu-ilmenau-avt).
+  - id: itu-t-p1204-1-2
+    kind: manual
+    url: https://www.itu.int/rec/T-REC-P.1204.2/en
+    why: P.1204.1 (metadata) and P.1204.2 (metadata plus frame size / type) streaming quality models; implemented by the project from the Recommendation texts for the live monitor (#2417). Companion page https://www.itu.int/rec/T-REC-P.1204.1/en.
+    licence_note: Recommendations are copyrighted; no open implementation exists; the ITU-T common patent policy applies, so the patent check comes first.
+  - id: live-fovqa
+    kind: manual
+    url: http://live.ece.utexas.edu/research/Quality/FOVQA.zip
+    why: FOVQA, blind foveated video quality (IEEE TIP 2021), MATLAB release with a centre fixation; oracle for our own FOVQA with gaze input (#2419).
+    licence_note: No licence file in the archive; oracle only, implementation from the paper.
   # --- Manual: conference proceedings ------------------------------------------
   - id: conf-qomex
     kind: manual

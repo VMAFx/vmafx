@@ -27,20 +27,16 @@ readme.workspace = true
 # of crates.io publish AND makes `cargo-deny` treat it as private under
 # `[licenses.private] ignore = true`.
 publish = false
+# Member of the libvmaf-linked workspace, core/src/rust/Cargo.toml (ADR-1713),
+# which lies outside this directory's ancestry.
+workspace = "../../../rust"
 
 [lib]
 name = "vmafx_tad"
-# staticlib: consumed by Meson as a link_with archive.
-# rlib: consumed by Rust unit tests and future intra-workspace dependencies.
-crate-type = ["staticlib", "rlib"]
+# rlib only since ADR-1713: libvmaf links exactly one Rust archive,
+# `vmafx-core-rs` (core/src/rust/staticlib), which re-exports this crate so
+# the `vmafx_tad_*` symbols reach it. The C wrapper tad_rust.c declares them.
+crate-type = ["rlib"]
 
-[build-dependencies]
-cbindgen = "0.29.4"
-
-[package.metadata.cargo-machete]
-# cbindgen is consumed by build.rs to generate the C header that the
-# Meson custom_target copies into the build tree (see core/src/meson.build).
-# cargo-machete's --with-metadata mode does not introspect build.rs
-# symbol usage and flags it as unused; pin the ignore so future audits
-# stay clean. See ADR-0707 (TAD Rust pilot, cbindgen integration).
-ignored = ["cbindgen"]
+[lints]
+workspace = true

@@ -901,6 +901,37 @@ directory are exempt from it
 ([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
 Nothing else in the directory is.
 
+#### Before the cut: every tester leg green on the commit
+
+A pull request builds only the tester legs whose inputs it changed, and a master
+push skips a leg whose inputs did not change, so a leg can be red for days
+unseen (the x64 SYCL Windows zip was, from 2026-10-05 to the rc.3 publish run).
+Before you label the release pull request `autorelease: cut`, dispatch every leg
+at the commit the release is cut on (the release pull request's base, the head
+of `master`) with the **full SHA**, so the run title names its source:
+
+```bash
+SHA=$(git rev-parse origin/master)
+for wf in windows-tester-bundle.yml macos-tester-bundle.yml docker-publish-tester.yml; do
+  gh workflow run "$wf" -R VMAFx/vmafx --ref master -f ref="$SHA"
+done
+```
+
+Then check them (the same script the cut pull request runs, see below):
+
+```bash
+GH_TOKEN=$(gh auth token) python3 scripts/release/check-candidate-legs.py --sha "$SHA"
+```
+
+It lists every leg of `scripts/release/candidate-legs.json` that is not
+`success` on that commit: skipped, absent and red all count as not green, and a
+dispatch titled `master` or a tag proves nothing about a commit. The `Release
+Script Contract` job runs the same check on a release pull request that carries
+the `autorelease: cut` label, against the pull request's base commit, so the cut
+cannot merge on an unseen or red leg
+([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)). When `master` moves
+after the dispatch, dispatch again at the new head.
+
 #### Cutting a release candidate
 
 A release candidate is cut the same way, with its full version, for example

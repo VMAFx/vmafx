@@ -1,0 +1,23 @@
+[package]
+name = "vmafx-predict"
+# Independently versioned (ADR-1127, ADR-1151); not published.
+version = "0.1.0"
+description = "Rust prediction of the vmaf_v1.0.16 models: normalisation, SVM, transform, clip (RC4, ADR-1713)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[lib]
+name = "vmafx_predict"
+crate-type = ["rlib"]
+
+[dependencies]
+vmafx-fex = { path = "../fex" }
+
+[lints]
+workspace = true

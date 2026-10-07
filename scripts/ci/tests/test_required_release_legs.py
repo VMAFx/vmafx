@@ -58,6 +58,12 @@ GATES = {
     "release-dry-run.yml": ("gate", "Release Dry Run", ("tier", "plan", "images", "gpu", "mcp")),
 }
 PULL_REQUEST_ONLY = {"Release Dry Run"}
+OWN_INPUT_LANES = {
+    lane["context"]
+    for lane in json.loads((ROOT / ".github" / "ci-tier.json").read_text("utf-8"))[
+        "own_input_lanes"
+    ]
+}
 
 # The `paths:` lists the two tester workflows carried on their `pull_request` and
 # `push` triggers before ADR-1687, in the planner's spelling (fnmatch `*` crosses
@@ -134,8 +140,10 @@ def _gate_problems(workflow: str, text: str) -> list[str]:
     problems = []
     if gate.get("name") != context:
         problems.append(f"{workflow}: gate {gate_id} is not named {context!r}")
-    if gate.get("if") != "always() && needs.tier.outputs.full == 'true'":
-        problems.append(f"{workflow}: gate {gate_id} does not run always() in the full tier")
+    # ADR-2198: an own-input lane of .github/ci-tier.json runs in the light tier too.
+    tier = "light" if context in OWN_INPUT_LANES else "full"
+    if gate.get("if") != f"always() && needs.tier.outputs.{tier} == 'true'":
+        problems.append(f"{workflow}: gate {gate_id} does not run always() in the {tier} tier")
     if tuple(gate.get("needs") or ()) != needs:
         problems.append(f"{workflow}: gate {gate_id} needs {gate.get('needs')}, not {list(needs)}")
     block = re.search(rf"(?ms)^  {re.escape(gate_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
@@ -325,6 +333,16 @@ def _dry_run_groups(paths: list[str]) -> dict[str, str]:
 
 # Inputs the tester builds gained after ADR-1687: NOTICE holds the
 # BSD-2-Clause-Patent text the image's licence stages bind-mount (ADR-1699).
+# What the x64 SYCL zip reads and the x64 zip does not (ADR-2198), derived from the leg:
+# sycl-rows.json (`stage_sycl`), prepare_build.py (`stage`, `twins`, `intel-runtime`),
+# build-config.env (the oneAPI and Level Zero pins of the install steps) and the scratch
+# ratchet list the scratch audit reads.
+SYCL_ONLY_INPUTS = {
+    "tools/rc1-tester/image/sycl-rows.json",
+    "tools/rc1-tester/image/prepare_build.py",
+    "build-config.env",
+    "core/src/sycl/scratch_ratchet.txt",
+}
 ADDED_TRIGGER_PATHS = {"tester_image": {"NOTICE"}, "windows_tester_zip": set()}
 
 
@@ -337,6 +355,27 @@ class Routing(unittest.TestCase):
                     set(selectors[name]["patterns"]), expected | ADDED_TRIGGER_PATHS[name]
                 )
                 self.assertNotIn("inherits", selectors[name])
+
+    def test_the_sycl_selector_is_the_zip_selector_plus_what_only_the_sycl_leg_reads(self) -> None:
+        """ADR-2198: a change the x64 zip reads also builds the SYCL zip; the extras are SYCL's."""
+        selectors = json.loads(CONFIG.read_text(encoding="utf-8"))["selectors"]
+        zip_patterns = set(selectors["windows_tester_zip"]["patterns"])
+        sycl_patterns = set(selectors["windows_tester_zip_sycl"]["patterns"])
+        self.assertLess(zip_patterns, sycl_patterns)
+        self.assertEqual(sycl_patterns - zip_patterns, SYCL_ONLY_INPUTS)
+        self.assertNotIn("inherits", selectors["windows_tester_zip_sycl"])
+
+    def test_a_change_only_the_sycl_leg_reads_selects_the_sycl_zip_alone(self) -> None:
+        for path in sorted(SYCL_ONLY_INPUTS):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertFalse(plan["windows_tester_zip"])
+                self.assertTrue(plan["windows_tester_zip_sycl"])
+
+    def test_a_shared_input_selects_both_zips(self) -> None:
+        plan = _plan_for(["scripts/ci/check-windows-bundle-imports.py"])
+        self.assertTrue(plan["windows_tester_zip"])
+        self.assertTrue(plan["windows_tester_zip_sycl"])
 
     def test_a_notice_change_runs_the_tester_image(self) -> None:
         """The image reads NOTICE for its BSD-2-Clause-Patent text (ADR-1699)."""

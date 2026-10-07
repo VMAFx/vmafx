@@ -125,7 +125,7 @@ jobs:
           wc -l tidy-metal-fixes.patch
       - name: Upload the autofix patch
         if: ${{ inputs.fix }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: tidy-metal-fixes
           path: |
@@ -170,7 +170,7 @@ jobs:
             --jobs "$(sysctl -n hw.ncpu)" --report tidy-ratchet-metal.json
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
         if: ${{ always() && !inputs.fix }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: tidy-ratchet-metal
           path: tidy-ratchet-metal.json

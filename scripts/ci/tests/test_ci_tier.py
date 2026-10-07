@@ -174,6 +174,33 @@ class Config(unittest.TestCase):
         with self.assertRaises(ci_tier.TierError):
             ci_tier.load_config(self.write('{"labels": {}}'))
 
+    def test_an_own_input_lane_must_name_a_full_only_context(self) -> None:
+        lane = {
+            "workflow": "w.yml",
+            "context": "Not Full Only",
+            "selectors": ["s"],
+            "reason": "r",
+        }
+        config = {**CONFIG, "own_input_lanes": [lane]}
+        with self.assertRaises(ci_tier.TierError):
+            ci_tier.load_config(self.write(json.dumps(config)))
+
+    def test_an_own_input_lane_needs_selectors_and_a_reason(self) -> None:
+        context = CONFIG["full_only"][0]
+        for broken in (
+            {"workflow": "w.yml", "context": context, "selectors": [], "reason": "r"},
+            {"workflow": "w.yml", "context": context, "selectors": ["s"], "reason": " "},
+            {"context": context, "selectors": ["s"], "reason": "r"},
+        ):
+            with self.subTest(lane=broken):
+                config = {**CONFIG, "own_input_lanes": [broken]}
+                with self.assertRaises(ci_tier.TierError):
+                    ci_tier.load_config(self.write(json.dumps(config)))
+
+    def test_the_declared_own_input_lanes_load(self) -> None:
+        loaded = ci_tier.load_config(ci_tier.DEFAULT_CONFIG)
+        self.assertTrue(loaded["own_input_lanes"])
+
 
 class Main(unittest.TestCase):
     def test_a_broken_definition_fails_the_job_loudly(self) -> None:

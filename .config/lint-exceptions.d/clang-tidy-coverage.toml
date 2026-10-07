@@ -154,6 +154,11 @@ reason = "Built only with -Denable_rust_features=true, which needs cargo and cbi
 expires = 2026-12-31
 
 [[exception]]
+path = "core/src/rust/shim/rust_twins.cpp"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
 path = "core/test/test_sycl_cuda_serial_upload_lifetime.c"
 reason = "Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); the cuda lane configures sycl off and the sycl lane configures cuda off, so no lane's compile database has an entry. Needs a lane with both backends."
 expires = 2026-12-31
@@ -161,6 +166,16 @@ expires = 2026-12-31
 [[exception]]
 path = "core/test/test_tad_rust.c"
 reason = "Built only with -Denable_rust_features=true, which needs cargo and cbindgen; the dev image has neither, so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/test/test_rust_abi_layout.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/test/test_rust_twin_registry.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
 expires = 2026-12-31
 
 [[exception]]

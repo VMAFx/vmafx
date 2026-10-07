@@ -1,0 +1,33 @@
+[package]
+name = "vmafx-core-rs"
+# Independently versioned (ADR-1127, ADR-1151); not published.
+version = "0.1.0"
+description = "The one Rust archive libvmaf links: every Rust twin, the Rust predictor and the TAD pilot (ADR-1713)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[lib]
+name = "vmafx_core_rs"
+# staticlib: linked into libvmaf by core/src/meson.build (exactly one Rust
+# archive per link, or the std symbols collide). rlib: lets `cargo test`
+# exercise the registry.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+vmafx-fex = { path = "../fex" }
+vmafx-fex-psnr = { path = "../feature/psnr" }
+vmafx-fex-speed = { path = "../feature/speed" }
+vmafx-fex-motion = { path = "../feature/motion" }
+vmafx-fex-adm = { path = "../feature/adm" }
+vmafx-fex-cambi = { path = "../feature/cambi" }
+vmafx-predict = { path = "../predict" }
+vmafx-tad = { path = "../../feature/rust/tad" }
+
+[lints]
+workspace = true

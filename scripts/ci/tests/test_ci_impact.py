@@ -135,7 +135,7 @@ planner = _load_planner()
 
 
 # ADR-1700: the selectors that the full-mode fallback does not set by itself.
-OWN_PATHS_ONLY = {"tester_image", "windows_tester_zip"}
+OWN_PATHS_ONLY = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -562,9 +562,15 @@ class OwnPathsOnlyContract(unittest.TestCase):
     def test_a_full_plan_still_selects_a_tester_build_on_its_own_paths(self) -> None:
         cases = {
             ".github/workflows/docker-publish-tester.yml": {"tester_image"},
-            ".github/workflows/windows-tester-bundle.yml": {"windows_tester_zip"},
+            ".github/workflows/windows-tester-bundle.yml": {
+                "windows_tester_zip",
+                "windows_tester_zip_sycl",
+            },
             "scripts/ci/install-cuda-toolkit.sh": {"tester_image"},
-            "scripts/ci/build-windows-tester-bundle.py": {"windows_tester_zip"},
+            "scripts/ci/build-windows-tester-bundle.py": {
+                "windows_tester_zip",
+                "windows_tester_zip_sycl",
+            },
         }
         for path, selected in cases.items():
             with self.subTest(path=path):

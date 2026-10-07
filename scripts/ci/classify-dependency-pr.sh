@@ -141,6 +141,7 @@ is_allowed_dependency_path() {
       dev/Containerfile | \
       docker/* | \
       deploy/helm/* | \
+      .github/actions/* | \
       .github/workflows/* | \
       requirements/* | \
       changelog.d/*)

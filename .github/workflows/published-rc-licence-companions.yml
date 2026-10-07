@@ -165,7 +165,7 @@ jobs:
           cp ../sources.list "sources-${ARTIFACT}.list"
           cp ../source-image/sources/SOURCES.txt "SOURCES-${ARTIFACT}.txt"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: published-rc-${{ inputs.release }}-${{ matrix.artifact }}
           path: |
@@ -248,7 +248,7 @@ jobs:
             --release "$RELEASE" --assets "$WORK/assets" --work "$WORK"
           tar -czf "$WORK/licenses-native.tar.gz" -C "$WORK/notices" native models
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: published-rc-${{ inputs.release }}-native
           path: |

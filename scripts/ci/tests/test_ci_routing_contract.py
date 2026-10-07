@@ -110,6 +110,9 @@ class Contract:
         self.full_only = set(self.config["full_only"])
         self.always = set(self.config["always"])
         self.untiered = {(e["workflow"], e["job"]) for e in self.config["untiered_jobs"]}
+        # ADR-2198: full-only contexts whose lane also runs on a light-tier pull request
+        # when its own inputs changed (the planner's selectors decide, not the tier).
+        self.lanes = {lane["context"]: lane for lane in self.config.get("own_input_lanes", [])}
 
     def run(self, event: wr.SyntheticEvent) -> tuple[list[str], list[wr.JobRun]]:
         return wr.simulate(self.workflows, event, CONFIG)
@@ -134,19 +137,49 @@ def expect_light_tier(contract: Contract, event: wr.SyntheticEvent) -> None:
     _, runs = contract.run(event)
     ran = wr.ran_names(runs)
     for name in sorted(contract.reporters(event)):
-        owed = name not in contract.full_only and name not in HARDWARE_LANES
+        owed = (
+            name not in contract.full_only or name in contract.lanes
+        ) and name not in HARDWARE_LANES
         if (name in ran) != owed:
             raise AssertionError(
                 f"{event.head_ref}: {name!r} {'did not run' if owed else 'ran'} "
                 f"on a light-tier pull request"
             )
-    for name in sorted(contract.full_only - HARDWARE_LANES):
+    for name in sorted(contract.full_only - HARDWARE_LANES - set(contract.lanes)):
         if name in ran:
             raise AssertionError(
                 f"{event.head_ref}: full-only {name!r} ran on a light-tier pull request"
             )
     if not any(name.startswith("CI tier (") for name in ran):
         raise AssertionError("the tier decision did not run")
+
+
+def expect_own_input_lanes(contract: Contract, event: wr.SyntheticEvent) -> None:
+    """A light-tier pull request runs each own-input lane's planner and its gate (ADR-2198).
+
+    The simulation reads an unknown planner output as a planner selecting its work, so the
+    legs run too; whether they run for a diff is the planner's and the selectors' contract
+    (test_ci_impact.py, test_required_release_legs.py).
+    """
+    _, runs = contract.run(event)
+    ran = wr.ran_names(runs)
+    ran_job_ids = wr.ran_jobs(runs)
+    if not contract.lanes:
+        raise AssertionError("no own-input lane is declared")
+    for name, lane in sorted(contract.lanes.items()):
+        if name not in ran:
+            raise AssertionError(f"{event.head_ref}: own-input lane {name!r} did not run")
+        if (lane["workflow"], "impact") not in ran_job_ids:
+            raise AssertionError(f"{event.head_ref}: the planner of {name!r} did not run")
+
+
+def expect_own_input_lanes_idle(contract: Contract, event: wr.SyntheticEvent) -> None:
+    """Without the light tier (a release pull request without the cut label) nothing of it runs."""
+    _, runs = contract.run(event)
+    ran = wr.ran_names(runs)
+    for name in sorted(contract.lanes):
+        if name in ran:
+            raise AssertionError(f"release PR: own-input lane {name!r} ran without the cut label")
 
 
 def expect_full_tier(contract: Contract, event: wr.SyntheticEvent) -> None:
@@ -218,6 +251,25 @@ class RoutingContract(unittest.TestCase):
 
     def test_own_pull_request_runs_the_light_tier(self) -> None:
         expect_light_tier(self.contract, OWN)
+
+    def test_own_input_lanes_run_on_a_light_tier_pull_request(self) -> None:
+        expect_own_input_lanes(self.contract, OWN)
+        expect_own_input_lanes(self.contract, RENOVATE)
+
+    def test_own_input_lanes_do_not_run_on_the_release_pull_request(self) -> None:
+        expect_own_input_lanes_idle(self.contract, RELEASE)
+
+    def test_own_input_lanes_name_real_selectors_that_follow_their_own_paths(self) -> None:
+        """The lane's work is selected by ci-impact.json selectors that never fire on a fallback."""
+        selectors = json.loads((ROOT / ".github" / "ci-impact.json").read_text("utf-8"))[
+            "selectors"
+        ]
+        for name, lane in self.contract.lanes.items():
+            workflow = self.contract.workflows[lane["workflow"]]
+            self.assertIn(name, _all_names(workflow))
+            for selector in lane["selectors"]:
+                with self.subTest(lane=name, selector=selector):
+                    self.assertTrue(selectors[selector].get("own_paths_only"), selector)
 
     def test_ready_for_review_runs_the_same_tier(self) -> None:
         expect_light_tier(self.contract, with_(OWN, action="ready_for_review"))
@@ -337,6 +389,25 @@ class PlantedDefects(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             expect_light_tier(contract, OWN)
+
+    def test_an_own_input_lane_gated_on_the_full_tier_is_caught(self) -> None:
+        """Putting the Windows zip lane back behind the full tier is what ADR-2198 undoes."""
+        contract = self.mutated(
+            "windows-tester-bundle.yml",
+            "    if: always() && needs.tier.outputs.light == 'true'\n",
+            "    if: always() && needs.tier.outputs.full == 'true'\n",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, OWN)
+
+    def test_an_own_input_planner_gated_on_the_full_tier_is_caught(self) -> None:
+        contract = self.mutated(
+            "windows-tester-bundle.yml",
+            "    needs: tier\n    if: needs.tier.outputs.light == 'true'\n    name: Plan Windows zip impact",
+            "    needs: tier\n    if: needs.tier.outputs.full == 'true'\n    name: Plan Windows zip impact",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, OWN)
 
     def test_a_job_without_the_draft_gate_is_caught(self) -> None:
         contract = self.mutated(

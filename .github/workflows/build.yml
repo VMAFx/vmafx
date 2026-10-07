@@ -599,14 +599,14 @@ jobs:
       # ── Artifact ──────────────────────────────────────────────────────
       - name: Upload vmaf binary (Linux + macOS)
         if: "!matrix.windows"
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.check_name }}-vmaf
           path: ./install/bin/vmaf
 
       - name: Upload vmaf.exe artifact (Windows)
         if: matrix.windows
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-msvc-cuda-vmaf
           path: install/bin/vmaf.exe

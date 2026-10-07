@@ -799,7 +799,7 @@ jobs:
       # ---------- Artifacts ----------
       - name: Upload vmaf binary
         if: ${{ (!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
@@ -907,7 +907,7 @@ jobs:
           echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
 
       - name: Upload vmaf.exe artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.msystem }}-vmaf
           path: ${{ steps.stage.outputs.path }}
@@ -1266,7 +1266,7 @@ jobs:
           -C core\build --suite fast --print-errorlogs
 
       - name: Upload vmaf.exe artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-arm64-msvc-vmaf
           path: install\bin\vmaf.exe

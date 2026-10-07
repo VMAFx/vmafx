@@ -77,7 +77,9 @@ def _scratch_clone(tmp_path: Path, env: dict[str, str]) -> tuple[Path, str]:
     return work, _git(env, work, "rev-parse", "HEAD")
 
 
-def run_validate(name: str, event: str, ref: str) -> tuple[int, dict[str, str], str]:
+def run_validate(
+    name: str, event: str, ref: str, extra_env: dict[str, str] | None = None
+) -> tuple[int, dict[str, str], str]:
     """Run the `validate` job's resolve step in a scratch clone; return its outputs."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -111,6 +113,10 @@ def run_validate(name: str, event: str, ref: str) -> tuple[int, dict[str, str], 
             "TAG": "",
             "REF": "",
             "PUBLISH_INPUT": "",
+            # Planner outputs of the Windows zip workflow (ADR-2198).
+            "SELECTED": "",
+            "SELECTED_SYCL": "",
+            **(extra_env or {}),
         }
         done = subprocess.run(  # noqa: S603 -- bash running the workflow step under test
             [BASH, "-eo", "pipefail", "-c", validate_script(name)],
@@ -236,12 +242,30 @@ class WindowsBundle(unittest.TestCase):
     def test_every_pull_request_starts_and_the_planner_routes_the_build(self) -> None:
         assert_routed_in_job(self, self.NAME, "windows_tester_zip")
 
-    def test_pull_request_builds_the_x64_zip_only_and_never_publishes(self) -> None:
-        rc, out, err = run_validate(self.NAME, "pull_request", "refs/pull/7/merge")
-        self.assertEqual(rc, 0, err)
-        self.assertEqual(out["publish"], "false")
-        self.assertEqual(legs(out["build_matrix"], "name"), ["x64"])
-        self.assertEqual(json.loads(out["verify_matrix"])["name"], ["x64"])
+    def test_pull_request_builds_what_the_planner_selected_and_never_publishes(self) -> None:
+        cases = (
+            ({"SELECTED": "true", "SELECTED_SYCL": "true"}, ["x64", "x64-sycl"]),
+            ({"SELECTED": "false", "SELECTED_SYCL": "true"}, ["x64-sycl"]),
+            ({"SELECTED": "true", "SELECTED_SYCL": "false"}, ["x64"]),
+        )
+        for env, expected in cases:
+            with self.subTest(env=env):
+                rc, out, err = run_validate(self.NAME, "pull_request", "refs/pull/7/merge", env)
+                self.assertEqual(rc, 0, err)
+                self.assertEqual(out["publish"], "false")
+                self.assertEqual(sorted(legs(out["build_matrix"], "name")), expected)
+                self.assertEqual(sorted(json.loads(out["verify_matrix"])["name"]), expected)
+
+    def test_pull_request_never_builds_arm64_or_cuda(self) -> None:
+        env = {"SELECTED": "true", "SELECTED_SYCL": "true"}
+        _, out, _ = run_validate(self.NAME, "pull_request", "refs/pull/7/merge", env)
+        self.assertNotIn("arm64", legs(out["build_matrix"], "name"))
+        self.assertNotIn("x64-cuda", legs(out["build_matrix"], "name"))
+
+    def test_the_validate_job_starts_for_either_selector(self) -> None:
+        condition = load(self.NAME)["jobs"]["validate"]["if"]
+        self.assertIn("needs.impact.outputs.selected == 'true'", condition)
+        self.assertIn("needs.impact.outputs.selected-sycl == 'true'", condition)
 
     def test_push_builds_every_zip(self) -> None:
         rc, out, err = run_validate(self.NAME, "push", "refs/heads/master")

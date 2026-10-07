@@ -246,7 +246,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
 
       - name: Upload the platform digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: operator-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -279,7 +279,7 @@ jobs:
           printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
 
       - name: Upload the source digest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: operator-source-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/source-digests/*
@@ -311,7 +311,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the platform digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: operator-digest-*
           path: ${{ runner.temp }}/digests
@@ -394,14 +394,14 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ steps.index.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-operator
           path: sbom-operator.cdx.json
           retention-days: 90
 
       - name: Download the source digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: operator-source-digest-*
           path: ${{ runner.temp }}/source-digests
@@ -523,7 +523,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
 
       - name: Upload the platform digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: server-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -557,7 +557,7 @@ jobs:
           printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
 
       - name: Upload the source digest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: server-source-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/source-digests/*
@@ -589,7 +589,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the platform digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: server-digest-*
           path: ${{ runner.temp }}/digests
@@ -672,14 +672,14 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ steps.index.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-server
           path: sbom-server.cdx.json
           retention-days: 90
 
       - name: Download the source digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: server-source-digest-*
           path: ${{ runner.temp }}/source-digests
@@ -804,7 +804,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
 
       - name: Upload the platform digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: controller-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -838,7 +838,7 @@ jobs:
           printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
 
       - name: Upload the source digest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: controller-source-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/source-digests/*
@@ -870,7 +870,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the platform digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: controller-digest-*
           path: ${{ runner.temp }}/digests
@@ -953,14 +953,14 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ steps.index.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-controller
           path: sbom-controller.cdx.json
           retention-days: 90
 
       - name: Download the source digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: controller-source-digest-*
           path: ${{ runner.temp }}/source-digests
@@ -1083,7 +1083,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
 
       - name: Upload the platform digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: node-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -1117,7 +1117,7 @@ jobs:
           printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
 
       - name: Upload the source digest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: node-source-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/source-digests/*
@@ -1149,7 +1149,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the platform digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: node-digest-*
           path: ${{ runner.temp }}/digests
@@ -1232,14 +1232,14 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ steps.index.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-node
           path: sbom-node.cdx.json
           retention-days: 90
 
       - name: Download the source digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: node-source-digest-*
           path: ${{ runner.temp }}/source-digests

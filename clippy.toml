@@ -1,0 +1,9 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Thresholds for the workspace lints of core/src/rust/Cargo.toml (ADR-1713):
+# the HISS-04 caps (60 lines per function; complexity 10). It sits at the
+# repository root because clippy reads the nearest clippy.toml above a crate,
+# and the TAD crate lives outside core/src/rust.
+too-many-lines-threshold = 60
+cognitive-complexity-threshold = 10

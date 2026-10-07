@@ -98,6 +98,7 @@
     "SECURITY.md",
     "SUPPORT.md",
     "buf.gen.yaml",
+    "clippy.toml",
     "deny.toml",
     "go.mod",
     "go.sum",
@@ -254,7 +255,17 @@
         "core/src/feature/rust/**",
         "Cargo.toml",
         "Cargo.lock",
-        "deny.toml"
+        "deny.toml",
+        "core/src/rust/*",
+        "core/src/rust/**",
+        "clippy.toml",
+        "scripts/ci/rust_twin_diff.py",
+        "scripts/dev/rust-abi-header.sh",
+        "core/src/feature/feature_extractor.h",
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/tad_rust.c",
+        "core/src/feature/integer_psnr.c",
+        "core/src/feature/psnr_score.h"
       ]
     },
     "docs": {
@@ -375,6 +386,25 @@
         "tools/rc1-tester/image/cuda-tests.txt",
         "tools/rc1-tester/image/sycl-tests.txt",
         "tools/rc1-tester/image/sycl-runtime-windows.json"
+      ]
+    },
+    "windows_tester_zip_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        ".github/workflows/windows-tester-bundle.yml",
+        "scripts/ci/build-windows-tester-bundle.py",
+        "requirements/locks/windows-tester-zip.txt",
+        "scripts/ci/check-windows-bundle-imports.py",
+        "tools/rc1-tester/image/windows/*",
+        "tools/rc1-tester/image/windows/**",
+        "tools/rc1-tester/image/unit-tests-windows.txt",
+        "tools/rc1-tester/image/cuda-tests.txt",
+        "tools/rc1-tester/image/sycl-tests.txt",
+        "tools/rc1-tester/image/sycl-runtime-windows.json",
+        "tools/rc1-tester/image/sycl-rows.json",
+        "tools/rc1-tester/image/prepare_build.py",
+        "build-config.env",
+        "core/src/sycl/scratch_ratchet.txt"
       ]
     },
     "golden_harness": {

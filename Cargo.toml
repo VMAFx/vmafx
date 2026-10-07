@@ -10,6 +10,15 @@
 members = [
     "bindings/rust/vmafx-sys",
     "bindings/rust/vmafx",
+]
+# ADR-1713: the Rust code libvmaf links (the extractor framework, the twins,
+# the predictor and the TAD pilot) is its own workspace,
+# core/src/rust/Cargo.toml, with a lockfile that holds no external crate, so
+# Meson's `cargo build --offline --locked` never needs the registry. Cargo
+# resolves a whole workspace even for `-p`, and the bindings above pull in
+# bindgen.
+exclude = [
+    "core/src/rust",
     "core/src/feature/rust/tad",
 ]
 resolver = "2"

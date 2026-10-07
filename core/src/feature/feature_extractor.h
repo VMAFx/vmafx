@@ -87,6 +87,11 @@ enum VmafFeatureExtractorFlags {
      * flush path drains their final-frame collect() — mirrors the
      * HIP / SYCL drain branches in flush_context_serial. */
     VMAF_FEATURE_EXTRACTOR_METAL = 1 << 7,
+    /* Rust twin of a CPU extractor (ADR-1713), registered by
+     * core/src/rust/shim/rust_twins.cpp as `<c name>_rust`. Lookup by feature
+     * name skips it unless this flag is requested, so the C extractor stays
+     * the default; vmaf_feature_extractor_impl_select() swaps it in. */
+    VMAF_FEATURE_EXTRACTOR_RUST = 1 << 8,
 };
 
 typedef struct VmafFeatureExtractor {
@@ -284,6 +289,46 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor
  *         CPU extractor; 0 when every twin is reachable.
  */
 int vmaf_feature_extractor_twin_audit(void);
+
+/**
+ * @brief Extractor at index @p i of the Rust registry, or NULL past its end.
+ */
+typedef VmafFeatureExtractor *(*VmafRustExtractorAtFn)(unsigned i);
+
+/**
+ * @brief Make the Rust extractors part of the registry (ADR-1713).
+ *
+ * Called by vmaf_rust_twins_install() (core/src/rust/shim/rust_twins.cpp,
+ * built with enable_rust_features only). Every registry walk in this file then
+ * visits the static list and then @p rust_at(0), @p rust_at(1), ... until it
+ * returns NULL. A build without Rust never calls it, and nothing in this file
+ * refers to a Rust symbol.
+ */
+void vmaf_feature_extractor_install_rust_registry(VmafRustExtractorAtFn rust_at);
+
+/**
+ * @brief Apply VMAF_FEATURE_IMPL to an extractor chosen for registration.
+ *
+ * `VMAF_FEATURE_IMPL` unset or `c`: @p *selected = @p fex. `rust`: a CPU
+ * extractor (no device or Rust flag) is replaced by its Rust twin
+ * (vmaf_get_feature_extractor_twin(fex, VMAF_FEATURE_EXTRACTOR_RUST)), logged
+ * at INFO; without a twin the C extractor stays and a WARNING names it.
+ * Device twins and explicitly named Rust twins are kept. The variable is read
+ * once per process (vmaf_gpu_dispatch_env_get()).
+ *
+ * @return 0, or -EINVAL for NULL arguments or another value of the variable.
+ */
+int vmaf_feature_extractor_impl_select(VmafFeatureExtractor *fex, VmafFeatureExtractor **selected);
+
+/**
+ * @brief The implementation VMAF_FEATURE_IMPL asks for (ADR-1713).
+ *
+ * One reader of the variable for every Rust path (extractors, prediction).
+ *
+ * @return 0 when it is unset, empty or `c`; 1 when it is `rust`; -EINVAL
+ *         (logged) for another value.
+ */
+int vmaf_feature_impl_rust_requested(void);
 
 /* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
  * registrations (same `name` string registered more than once).

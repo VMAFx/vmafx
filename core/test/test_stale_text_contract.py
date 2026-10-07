@@ -178,14 +178,18 @@ class TadDisabledText(unittest.TestCase):
         self.assertIn("problem loading feature extractor: tad", tad)
 
     def test_the_build_graph_really_omits_the_tu_and_the_registration(self) -> None:
+        # ADR-1713: tad_rust.c is a direct libvmaf source only inside the Rust
+        # block, and only the Rust shim (built in that block) registers it.
         meson = read("core/src/meson.build")
-        self.assertRegex(
-            meson,
-            r"rust_tad_direct_sources = \[\]\nif is_rust_enabled\n"
-            r"\s+rust_tad_direct_sources = \[feature_src_dir \+ 'tad_rust.c'\]",
-        )
+        source = "feature_src_dir + 'tad_rust.c'"
+        self.assertEqual(meson.count(source), 1, "tad_rust.c is listed once")
+        start = meson.index("rust_shim_sources = []\nif is_rust_enabled\n")
+        end = meson.index("\nendif\n", start)
+        self.assertIn(source, meson[start:end], "tad_rust.c is inside the Rust block")
+        shim = read("core/src/rust/shim/rust_twins.cpp")
+        self.assertIn("g_slots[g_count].fex = vmaf_fex_tad;", shim)
         registry = read("core/src/feature/feature_extractor.cpp")
-        self.assertIn("#if HAVE_RUST_TAD\n    /* ADR-0707: TAD Rust pilot", registry)
+        self.assertNotIn("&vmaf_fex_tad", registry)
 
 
 class MesonOptionDescriptions(unittest.TestCase):

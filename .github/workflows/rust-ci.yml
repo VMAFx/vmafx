@@ -114,15 +114,21 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
 
-      - name: Cargo fmt check (every workspace crate)
-        run: cargo fmt --all --check
+      - name: Cargo fmt check (both workspaces)
+        run: |
+          cargo fmt --all --check
+          cargo fmt --manifest-path core/src/rust/Cargo.toml --all --check
 
-      - name: Cargo clippy (every workspace crate)
-        # --workspace: a crate added to Cargo.toml `members` is linted without
-        # a workflow edit (RC3 hygiene; was `-p vmafx-sys` only).
+      - name: Cargo clippy (every crate of both workspaces, ADR-1713)
+        # --workspace: a crate added to a workspace's `members` is linted
+        # without a workflow edit (RC3 hygiene; was `-p vmafx-sys` only). The
+        # libvmaf-linked workspace (core/src/rust) sets [workspace.lints] (no
+        # unwrap, no expect, SAFETY proofs, length and complexity caps).
         env:
           LIBVMAF_PREFIX: /usr/local
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy --manifest-path core/src/rust/Cargo.toml --workspace --all-targets -- -D warnings
 
       - name: Cargo build
         env:
@@ -136,15 +142,18 @@ jobs:
           LIBVMAF_PREFIX: /usr/local
           VMAFX_REPO: ${{ github.workspace }}
           LD_LIBRARY_PATH: /usr/local/lib
-        run: cargo test --workspace --all-features
-
-      - name: Rebuild vmafx-tad after a source edit
-        # build.rs reruns on a src/lib.rs change; an unchanged cbindgen header
-        # must not fail the rebuild (T-RUST-TAD-REBUILD-UNCHANGED-HEADER-2026-10-04).
         run: |
-          cargo build -p vmafx-tad
-          touch core/src/feature/rust/tad/src/lib.rs
-          cargo build -p vmafx-tad
+          cargo test --workspace --all-features
+          cargo test --manifest-path core/src/rust/Cargo.toml --workspace
+
+      - name: The libvmaf-linked workspace builds offline (ADR-1713)
+        # Meson's build is `cargo build --offline --locked`: with an empty
+        # CARGO_HOME it only succeeds while no crate of core/src/rust pulls
+        # an external dependency.
+        run: |
+          CARGO_HOME="$RUNNER_TEMP/empty-cargo-home" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+            cargo build --release --locked --offline -p vmafx-core-rs \
+            --manifest-path core/src/rust/Cargo.toml
 
       - name: Run score example (Netflix golden smoke test)
         env:
@@ -152,6 +161,33 @@ jobs:
           VMAFX_REPO: ${{ github.workspace }}
           LD_LIBRARY_PATH: /usr/local/lib
         run: cargo run --example score
+
+      - name: Rust ABI header is current (cbindgen, ADR-1713)
+        run: |
+          cargo install cbindgen --version 0.29.4 --locked
+          VMAFX_REQUIRE_CBINDGEN=1 scripts/dev/rust-abi-header.sh --check
+
+      - name: Build libvmaf with the Rust extractors (ADR-1713)
+        run: |
+          meson setup build-rust core \
+            -Denable_rust_features=true \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            -Denable_hip=false \
+            -Denable_avx512=false
+          ninja -C build-rust
+
+      - name: Fetch the Netflix and checkerboard fixtures
+        run: bash scripts/test/fetch-test-yuvs.sh
+
+      - name: Rust suite and Rust twin harness (ADR-1713)
+        # Every registered Rust twin against its C extractor in the same
+        # binary: equal doubles on every metric of every frame. The 4K and
+        # 10-bit fixtures are not in CI; lanes attach that evidence locally.
+        run: |
+          python3 scripts/ci/run_meson_test.py -- -C build-rust --suite rust
+          python3 scripts/ci/rust_twin_diff.py --vmaf build-rust/tools/vmaf \
+            --all-twins --fixtures netflix,checker1,checker10
 
   cargo-deny-work:
     needs: impact

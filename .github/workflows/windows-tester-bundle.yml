@@ -6,11 +6,17 @@
 #     .github/ci-impact.json is set, that is when the diff touches the zip's own
 #     inputs (the path list this workflow's triggers carried before ADR-1687); the
 #     selector is `own_paths_only`, so a full-mode fallback alone does not set it
-#     (ADR-1700). Then the x64 zip only is built, run and
-#     verified, uploaded as a workflow artifact; nothing is published. The arm64,
-#     x64 CUDA and x64 SYCL zips stay with the push run: three more Windows builds of
-#     up to 150 minutes each are too much runner time per pull request, and the x64
-#     zip exercises every script and the licence gate they share (ADR-1595)
+#     (ADR-1700). Then the x64 zip is built, run and verified, uploaded as a
+#     workflow artifact; nothing is published. The x64 SYCL zip is added when
+#     selector `windows_tester_zip_sycl` is set, that is when the diff touches
+#     something the SYCL leg reads (ADR-2198). The arm64 and x64 CUDA zips stay with
+#     the push run: two more Windows builds of up to 150 minutes each are too much
+#     runner time per pull request, and the x64 zip exercises every script and the
+#     licence gate they share (ADR-1595)
+#   - this lane runs in the light CI tier too (ADR-2198, `own_input_lanes` of
+#     .github/ci-tier.json): a pull request from this repository gets the selected
+#     legs, and none when nothing they read changed; the other full-tier lanes stay
+#     with the master push
 #   - every push to master, routed the same way: build and verify every zip and
 #     upload them as workflow artifacts; nothing is published
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
@@ -34,6 +40,10 @@
 # ADR-1515: Windows tester zip (an exception to ADR-1102 with the bounds of ADR-1493).
 
 name: Publish Windows Tester Bundle
+# A dispatch names the source it builds in the run's title (ADR-2198): the cut check
+# (scripts/release/check-candidate-legs.py) accepts a dispatched run for a candidate only when
+# the title carries the candidate's full SHA. Other events keep GitHub's usual title.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Windows tester zips, source {0}', github.event.inputs.ref || github.event.inputs.tag) || github.event.pull_request.title || github.event.head_commit.message || github.workflow }}
 
 on:
   # No paths filter: `Windows Tester Zip` is a required context (ADR-1687), so the
@@ -99,7 +109,7 @@ jobs:
 
   impact:
     needs: tier
-    if: needs.tier.outputs.full == 'true'
+    if: needs.tier.outputs.light == 'true'
     name: Plan Windows zip impact
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -107,6 +117,7 @@ jobs:
       contents: read
     outputs:
       selected: ${{ steps.impact.outputs.windows_tester_zip }}
+      selected-sycl: ${{ steps.impact.outputs.windows_tester_zip_sycl }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -130,7 +141,7 @@ jobs:
     # registered, and it keeps only the newest check run per name.
     name: Validate Windows zip source
     needs: impact
-    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: (needs.impact.outputs.selected == 'true' || needs.impact.outputs.selected-sycl == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -153,6 +164,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           PUBLISH_INPUT: ${{ github.event.inputs.publish }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          SELECTED_SYCL: ${{ needs.impact.outputs.selected-sycl }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" != pull_request && \
                 "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
@@ -198,7 +211,8 @@ jobs:
             exit 1
           fi
           # The zips the build and verify jobs cover: all four on a push or a dispatch,
-          # the x64 CPU zip alone on a pull request (ADR-1595). arm64 is the native
+          # on a pull request the x64 CPU zip when the planner selected it (ADR-1595)
+          # and the x64 SYCL zip when it selected that one (ADR-2198). arm64 is the native
           # ARM64 MSVC runner of the `Windows ARM64 MSVC` lane (libvmaf-build-matrix.yml,
           # ADR-1260 / ADR-1297). x64-cuda is the CUDA zip (ADR-1516): the CPU zip's
           # build with the CUDA backend and its device tests; the runner has no GPU, so
@@ -208,8 +222,11 @@ jobs:
           build_matrix='{"include":[{"name":"x64","arch":"x64","gpu":"","runner":"windows-2025"},{"name":"arm64","arch":"arm64","gpu":"","runner":"windows-11-vs2026-arm"},{"name":"x64-cuda","arch":"x64","gpu":"cuda","runner":"windows-2025"},{"name":"x64-sycl","arch":"x64","gpu":"sycl","runner":"windows-2025"}]}'
           verify_matrix='{"name":["x64","arm64","x64-cuda","x64-sycl"]}'
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            build_matrix="$(jq -c '{include: [.include[] | select(.name == "x64")]}' <<<"$build_matrix")"
-            verify_matrix='{"name":["x64"]}'
+            names='[]'
+            [[ "$SELECTED" == true ]] && names="$(jq -c '. + ["x64"]' <<<"$names")"
+            [[ "$SELECTED_SYCL" == true ]] && names="$(jq -c '. + ["x64-sycl"]' <<<"$names")"
+            build_matrix="$(jq -c --argjson names "$names" '{include: [.include[] | select(.name as $n | $names | index($n))]}' <<<"$build_matrix")"
+            verify_matrix="$(jq -c '{name: .}' <<<"$names")"
           fi
           {
             echo "build_matrix=$build_matrix"
@@ -410,7 +427,7 @@ jobs:
           set "PBS_FULL_URL=%PBS_X64_FULL_URL%"
           set "PBS_FULL_SHA256=%PBS_X64_FULL_SHA256%"
           python scripts\ci\build-windows-tester-bundle.py "%RUNNER_TEMP%\out" || exit /b 1
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-tester-bundle-${{ matrix.name }}
           path: |
@@ -439,7 +456,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: windows-tester-bundle-${{ matrix.name }}
           path: bundle
@@ -507,7 +524,7 @@ jobs:
           print(f"- failures: {', '.join(r['unit_tests']['failures']) or 'none'}")
           print(f"- unpacked: {len(sizes)} files, {sum(sizes) / 1e6:.1f} MB")
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-tester-sbom-${{ matrix.name }}
           path: sbom/*.spdx.json
@@ -522,7 +539,7 @@ jobs:
   # not part of it.
   windows-tester-zip:
     needs: [tier, impact, verify]
-    if: always() && needs.tier.outputs.full == 'true'
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Windows Tester Zip
     runs-on: ubuntu-26.04
@@ -533,7 +550,9 @@ jobs:
       - name: Require selected Windows zip work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
-          SELECTED: ${{ needs.impact.outputs.selected }}
+          # The SYCL selector holds every pattern of the x64 one (a test pins it), so
+          # either selected means work.
+          SELECTED: ${{ (needs.impact.outputs.selected == 'true' || needs.impact.outputs.selected-sycl == 'true') && 'true' || 'false' }}
           WORK_RESULT: ${{ needs.verify.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
@@ -557,7 +576,7 @@ jobs:
       id-token: write      # keyless signing and attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: windows-tester-*
           path: bundle

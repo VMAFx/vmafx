@@ -29,6 +29,12 @@ Five per-feature `VMAF_*_MODEL_PATH` variables exist (the five above). Each
 works independently of `VMAF_TINY_MODEL_DIR`, and the per-feature variable takes
 precedence.
 
+### Feature implementation
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_FEATURE_IMPL` | `c` or `rust` | `c` | Which implementation runs a CPU feature extractor. `rust` replaces each extractor that has a Rust twin by it (logged at INFO) and keeps the C extractor, with a WARNING, where none exists; device twins are not affected. Any other value makes feature registration fail. Read once per process. Has an effect only in a build configured with `-Denable_rust_features=true`. The JSON report's `feature_backends` names the extractor that ran (`psnr_rust` for a twin). See [Rust extractor framework](../development/rust-extractor-framework.md) ([ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)). |
+
 ### GPU dispatch
 
 | Name | Type | Default | Description |

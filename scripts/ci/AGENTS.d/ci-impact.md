@@ -75,3 +75,14 @@ invariant: Planner fails closed to `mode=full`; planner/work/gate; one tier file
   `&&`/`||` return operands); unsupported syntax raises. `workflow_router.py` simulates routing
   only, not steps. `CI_ROUTING_WORKFLOWS_DIR` points contract at another tree (proof vs master).
 - ci-tier.json = CI-authority file: planner plans `mode=full` on change.
+- **Own-input lanes (ADR-2198).** `ci-tier.json` `own_input_lanes` names a full-only
+  context whose lane still plans and gates in the light tier (`needs.tier.outputs.light`).
+  Today that is `Windows Tester Zip`: selector `windows_tester_zip_sycl` must stay a
+  superset of `windows_tester_zip` (the gate reads either), and
+  `test_ci_routing_contract.py` plants the old full-tier gate as a defect. Do not move
+  the lane's `impact` or gate back to `outputs.full`.
+- **Cut check (ADR-2198).** `scripts/release/candidate-legs.json` lists the tester legs
+  a cut needs green on the exact commit; a leg added to the Windows matrix, the tester
+  image or the macOS bundle goes in the list (`test_check_candidate_legs.py` pins the
+  names). The three tester workflows keep a `run-name` that carries the dispatched
+  source: the check accepts a dispatch only when the title holds the full SHA.

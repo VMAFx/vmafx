@@ -74,6 +74,9 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "thread_pool.h"
 #include "vcs_version.h"
 #include "vmafx/engine.h"
+#if HAVE_RUST_FEATURES
+#include "rust/shim/rust_twins.h"
+#endif
 
 #ifdef HAVE_CUDA
 #include "libvmaf/libvmaf_cuda.h"
@@ -393,7 +396,11 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
      * fast.  The static `feature_extractor_list[]` should hold each
      * extractor exactly once; a duplicate doubles ctx-pool entries and
      * runs init/extract/flush twice per pic.  Run the audit before any
-     * other state is touched. */
+     * other state is touched. ADR-1713: the Rust extractors join the
+     * registry first, so the audit covers them too. */
+#if HAVE_RUST_FEATURES
+    vmaf_rust_twins_install();
+#endif
     int err = vmaf_feature_extractor_list_audit();
     if (err)
         return err;
@@ -2351,9 +2358,12 @@ static int create_context_fallback(VmafContext *vmaf, const VmafFeatureExtractor
         vmaf_get_feature_extractor_by_name(ctx->fex->context_fallback_name);
     if (!fallback)
         return -EINVAL;
+    /* ADR-1713: the CPU fallback honours VMAF_FEATURE_IMPL like any CPU choice. */
+    int err = vmaf_feature_extractor_impl_select(fallback, &fallback);
+    if (err)
+        return err;
 
     VmafDictionary *options = NULL;
-    int err = 0;
     if (ctx->opts_dict) {
         err = fex_options_copy(ctx->opts_dict, &options);
         if (err)
@@ -2434,9 +2444,13 @@ int vmaf_engine_use_feature(VmafContext *vmaf, const char *feature_name,
 
     int err = 0;
 
-    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
     if (!fex)
         return -EINVAL;
+    /* ADR-1713: VMAF_FEATURE_IMPL=rust swaps a CPU extractor for its Rust twin. */
+    err = vmaf_feature_extractor_impl_select(fex, &fex);
+    if (err)
+        return err;
 
     /* Netflix/vmaf#1242 ownership contract: past the argument guards above, this
      * call consumes `opts_dict` on every path. Both failure paths below used to
@@ -2576,6 +2590,9 @@ int vmaf_engine_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         fex = fex_honouring_model_options(fex, &model->feature[i]);
         if (!fex)
             return -EINVAL;
+        err = vmaf_feature_extractor_impl_select(fex, &fex);
+        if (err)
+            return err;
 
         VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
@@ -3135,6 +3152,20 @@ static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const 
  * flush_context_threaded() to keep that function inside the ADR-0141
  * function-size budget after the GPU-ownership fix (ADR-1197) added its
  * skip condition. */
+/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
+ * creates, but the shared context of a threaded run is never initialised; only
+ * the per-thread copies are. A C extractor's flush needs no init state, so the
+ * C path never noticed. Initialise the shared context of a Rust twin before
+ * its flush, with the run's picture parameters. */
+static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
+        return 0;
+    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
+                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
+                                               vmaf->pic_params.h);
+}
+
 static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
 {
     int err = 0;
@@ -3159,6 +3190,11 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
          * is_initialized == false causes close to return -EINVAL early,
          * leaking the dict (detected as a memory leak by ASan with
          * detect_leaks=1; root cause of ADR-1073 residual failure). */
+        const int init_err = init_shared_rust_twin(vmaf, fex_ctx);
+        if (init_err) {
+            err |= init_err;
+            continue;
+        }
         fex_ctx->is_initialized = true;
         int flush_err = 0;
         /* RC4 WP5: scores the flush writes are this extractor's. */

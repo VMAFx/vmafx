@@ -2,10 +2,9 @@ if not get_option('enable_tests')
     subdir_done()
 endif
 
-# ADR-0707: rust_tad_dep is available here (defined in src/meson.build via
-# subdir('src') before subdir('test')). Only test_tad_rust uses it directly —
-# other tests link against libvmaf.so (shared) which already carries the Rust
-# archive, so no further propagation is needed.
+# ADR-1713: is_rust_enabled and rust_core_dep come from src/meson.build
+# (subdir('src') runs first). Only the suite `rust` block at the end of this
+# file uses them; every other test is unaffected by the Rust build.
 
 test_inc = include_directories('.')
 
@@ -9104,4 +9103,45 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
 # exhaustive comparison is the bit-exactness guarantee itself.
 test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages,
     suite : ['fast', 'simd'], timeout : 180)
+endif
+
+# ADR-1713: suite `rust` - the Rust extractor framework. The ABI layout test
+# needs only the archive; the registry test links the static libvmaf (shim and
+# TAD wrapper included) and the archive; the harness runs every registered
+# Rust twin against its C extractor on the Netflix pair (exit 77 = skipped when
+# the gitignored fixture is absent).
+if is_rust_enabled
+    test_rust_abi_layout = executable('test_rust_abi_layout',
+        ['test.c', 'test_rust_abi_layout.c'],
+        include_directories : [test_inc, include_directories('../src')],
+        c_args : vmaf_cflags_common,
+        dependencies : [rust_core_dep, thread_lib, math_lib],
+    )
+    test('test_rust_abi_layout', test_rust_abi_layout, suite : ['rust', 'fast'])
+
+    test_rust_twin_registry = executable('test_rust_twin_registry',
+        ['test.c', 'test_rust_twin_registry.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf],
+        c_args : vmaf_cflags_common,
+        dependencies : [pthread_dependency, rust_core_dep],
+    )
+    test('test_rust_twin_registry', test_rust_twin_registry, suite : ['rust', 'fast'])
+
+    test('test_rust_twin_harness_netflix',
+        import('python').find_installation(),
+        args : [
+            files('../../scripts/ci/rust_twin_diff.py'),
+            '--vmaf', vmaf,
+            '--repo-root', meson.project_source_root() / '..',
+            '--all-twins',
+            '--fixtures', 'netflix',
+            # Serial and two thread-pool sizes: with a pool, the flush of a
+            # non-temporal twin runs on the shared context (lane request M-1).
+            '--threads', '0,1,4',
+            '--skip-missing-exit', '77',
+        ],
+        suite : ['rust'],
+        timeout : 600,
+    )
 endif

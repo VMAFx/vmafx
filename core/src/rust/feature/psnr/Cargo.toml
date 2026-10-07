@@ -1,0 +1,23 @@
+[package]
+name = "vmafx-fex-psnr"
+# Independently versioned (ADR-1127, ADR-1151); not published.
+version = "0.1.0"
+description = "Rust twin of the integer `psnr` feature extractor: the reference twin of the RC4 framework (ADR-1713)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[lib]
+name = "vmafx_fex_psnr"
+crate-type = ["rlib"]
+
+[dependencies]
+vmafx-fex = { path = "../../fex" }
+
+[lints]
+workspace = true

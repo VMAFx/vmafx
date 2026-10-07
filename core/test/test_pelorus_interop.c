@@ -18,7 +18,7 @@
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1
+ * conformance fixture (VMAFx/pelorus@4aae30711c655510305e9c14b403f991d342f760
  * test/interop_test.c, ABI 1.3).
  *
  * Both repos run byte-for-byte the same checks against their own copy of

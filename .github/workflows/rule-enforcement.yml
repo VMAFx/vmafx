@@ -751,11 +751,32 @@ jobs:
     name: Release Script Contract
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read  # the cut check reads the runs of the tester workflows (ADR-2198)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # ADR-2198: the cut is the pull request carrying the cut label. Its base is the
+      # master commit the release is cut on, and the cut commits touch only the
+      # changelog and the manifest, so every tester leg (Windows zips, macOS bundle,
+      # tester images) must be green on that commit before the release can merge.
+      - name: Every tester leg is green on the commit the release is cut on (ADR-2198)
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+          contains(github.event.pull_request.labels.*.name, 'autorelease: cut')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/release/check-candidate-legs.py \
+            --repo "$GITHUB_REPOSITORY" --sha "$CANDIDATE_SHA"
 
       # The release scripts' tests (scripts/release/tests/) and the
       # self-tests of the gates below run in Tooling Tests, which also runs on

@@ -1319,3 +1319,5 @@
 2023-vmafx-cuda-device-frames
 2074-vmafx-window-scores
 2090-motion-window-incremental
+2198-windows-sycl-leg-and-cut-check
+1713-rc4-rust-extractor-framework

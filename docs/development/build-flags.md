@@ -98,7 +98,7 @@ under [Option details](#option-details).
 | `built_in_models` | bool | `true` | Compile the default `.json` VMAF models into the library, so `version=vmaf_v0.6.1` and the like resolve without disk I/O. |
 | `enable_float` | bool | `true` | Compile the `float_*` extractors; see [`enable_float`](#enable_float). |
 | `fuzz` | bool | `false` | Build the libFuzzer harnesses under `core/test/fuzz/`; see [`fuzz`](#fuzz). |
-| `enable_rust_features` | bool | `false` | Build the Rust-implemented extractors; see [`enable_rust_features`](#enable_rust_features). |
+| `enable_rust_features` | bool | `false` | Build the Rust extractors (Rust twins, TAD); see [`enable_rust_features`](#enable_rust_features). |
 
 ### SIMD
 
@@ -344,11 +344,15 @@ coverage. Opt-in only.
 
 ### `enable_rust_features`
 
-Builds the Rust-implemented extractors through the `cbindgen` pilot
-([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md)). The first migrated
-metric is TAD (Temporal Absolute Difference, `core/src/feature/tad/`). It
-needs `cargo` and `cbindgen` on `PATH`; the build runs `cargo build` and links
-the resulting static library into `libvmaf.so`. CI keeps it off.
+Builds the Rust extractors ([ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)):
+the Rust twins of C extractors, selected at run time with
+`VMAF_FEATURE_IMPL=rust`, and the TAD pilot
+([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md)). It needs `cargo` on
+`PATH` (no network, no cbindgen); the build runs an offline `cargo build -p
+vmafx-core-rs` and links the one archive into `libvmaf`. Without `cargo`,
+configure warns and builds only the C extractors. Off by default; the `Rust`
+workflow builds it. See
+[Rust extractor framework](rust-extractor-framework.md).
 
 ## Flag interactions
 

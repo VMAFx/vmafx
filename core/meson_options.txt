@@ -152,4 +152,4 @@ option('fuzz',
 option('enable_rust_features',
     type: 'boolean',
     value: false,
-    description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')
+    description: 'Build the Rust extractors: the Rust twins of C extractors, selected with VMAF_FEATURE_IMPL=rust, and the TAD pilot (ADR-1713, ADR-0707). Needs cargo in PATH; the cargo build runs offline. Without cargo, configure warns and only the C extractors are built. Default OFF.')

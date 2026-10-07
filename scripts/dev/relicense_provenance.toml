@@ -215,6 +215,11 @@ match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*psnr'
 from = ["netflix-integer-psnr"]
 
 [[families]]
+name = "rust-integer-motion"
+match = '^core/src/rust/feature/motion/src/(extractor|sad|window|lib)\.rs$'
+from = ["netflix-integer-motion"]
+
+[[families]]
 name = "cambi"
 match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*cambi'
 from = ["netflix-cambi"]
@@ -245,6 +250,15 @@ from = ["netflix-speed"]
 name = "iqa-convolve"
 match = '^core/src/feature/(x86|arm64)/convolve_'
 from = ["iqa"]
+
+# ADR-1713: Rust twins port their C extractor statement by statement and keep
+# its terms (ADR-1250 veto 5). One block per twin crate, added by the RC4 lane
+# that writes it; list only the files that port Netflix code (fork-authored
+# helpers such as options.rs stay EUPL-1.2 and are not matched).
+[[families]]
+name = "rust-integer-psnr"
+match = '^core/src/rust/feature/psnr/src/lib\.rs$'
+from = ["netflix-integer-psnr"]
 
 # ---------------------------------------------------------------------------
 # Individually reviewed

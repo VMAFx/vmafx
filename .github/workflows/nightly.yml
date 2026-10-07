@@ -75,7 +75,7 @@ jobs:
           make tidy-ratchet LANE=cpu TIDY_RATCHET_BUILD_DIR=build \
             CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 \
             TIDY_RATCHET_ARGS="--jobs $(nproc) --report clang-tidy-full.log"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: clang-tidy-full-report
@@ -98,7 +98,7 @@ jobs:
         env:
           VMAF_BIN: ${{ github.workspace }}/build/tools/vmaf
         run: bash testdata/bench_all.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: nightly-benchmark-results

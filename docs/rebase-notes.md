@@ -1205,6 +1205,44 @@ Pelorus mirror entries mirror `scripts/ci/pelorus-mirror-paths.txt`
   statistic is ported into the helpers.
 - Source-text contract tests (`test_cuda_*_contract.py`, `test_integer_vif_sv_sq_contract.py`)
   follow the new spelling; their assertions are unchanged.
+## RC4 Rust extractor framework (ADR-1713, 2026-10-05)
+
+`rc4/rust-extractor-framework` (draft, label `rc4`, lands after the
+`v1.0.0-rc.3` tag). Build system, registry, libvmaf registration paths, Rust
+workspace, CI. No score changes; the C extractors stay the default.
+
+- `core/src/meson.build`: `is_rust_enabled` and `cdata.set10('HAVE_RUST_FEATURES', ...)`
+  sit directly above `config_h_target`; the old TAD block
+  (`rust_tad_dep`, `rust_tad_direct_sources`, `HAVE_RUST_TAD`) is replaced by
+  `rust_core_dep` / `rust_shim_sources`. A sync that brings back the TAD block
+  or a `HAVE_RUST_TAD` define reintroduces the unregistered-TAD defect.
+- `core/src/feature/feature_extractor.cpp`: every registry walk goes through
+  `registry_at()`; the `HAVE_RUST_TAD` extern and list entry are gone.
+  `vmaf_get_feature_extractor_by_feature_name()` is split into
+  `first_pass_eligible()` / `fallback_eligible()` / `provides_feature()`; an
+  upstream change to that lookup is re-applied on the helpers, keeping the
+  Rust-twin skip. `device_twin_flags` includes `VMAF_FEATURE_EXTRACTOR_RUST`.
+- `core/src/feature/feature_extractor.h`: flag `VMAF_FEATURE_EXTRACTOR_RUST =
+  1 << 8` and three functions (`vmaf_feature_extractor_install_rust_registry`,
+  `vmaf_feature_extractor_impl_select`, `vmaf_feature_impl_rust_requested`).
+  An upstream flag at bit 8 must move, not this one.
+- `core/src/libvmaf.c`: `vmaf_rust_twins_install()` before the registry audit
+  in `vmaf_ctx_subsystems_init()`, and `vmaf_feature_extractor_impl_select()`
+  in `vmaf_use_feature()`, `vmaf_use_features_from_model()` and
+  `create_context_fallback()`. Keep all four on a conflict.
+- `core/src/feature/tad_rust.c` is gated on `HAVE_RUST_FEATURES`; the TAD crate
+  is an rlib without `build.rs`.
+- Two Cargo workspaces: the root one (bindings) `exclude`s `core/src/rust` and
+  `core/src/feature/rust/tad`; `core/src/rust/Cargo.toml` holds the
+  libvmaf-linked crates and the TAD crate (`package.workspace`). A sync that
+  adds those crates back to the root members breaks the offline build.
+  `rust-ci.yml` lost the "Rebuild vmafx-tad after a source edit" step with
+  TAD's `build.rs` (the code it guarded is gone) and gained the
+  empty-CARGO_HOME offline build.
+- Generated files: `core/src/rust/include/vmafx_rs.h` (take either side, run
+  `scripts/dev/rust-abi-header.sh`). Lockfiles: take master's side, then
+  `cargo metadata --offline --format-version 1` in the affected workspace
+  re-adds its members; no version may move.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
@@ -63069,3 +63107,24 @@ amends [ADR-2074](adr/2074-vmafx-window-scores.md) decision 9.
   bit (32 988 per-frame values against master, 0 different; Netflix golden
   gate green); no FFmpeg patch change (`libvmaf.h` unchanged, the scores only
   arrive earlier).
+## Tester legs build where their inputs change; the cut checks them (2026-10-07, ADR-2198)
+
+Fork-only CI: `windows_tester_zip_sycl` in `.github/ci-impact.json`, `own_input_lanes` in `.github/ci-tier.json`
+(read by `scripts/ci/ci_tier.py`), the `light` gate of `windows-tester-bundle.yml`, `run-name` on the three tester
+workflows and `scripts/release/check-candidate-legs.py`. Keep the lane's `impact` and gate on `outputs.light` and the
+SYCL selector a superset of the x64 one on a sync. No upstream file, score, public API or FFmpeg patch is involved.
+## Pelorus re-vendor at the `_wfsopen` commit (2026-10-07)
+
+`refactor/pelorus-revendor-wfsopen`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to `4aae30711c65`
+(VMAFx/pelorus #89). The second local edit of `core/src/interop/pelorus_qp_report_csv.c` (`_wfsopen`, added by `fix/msvc-zero-warnings-crt`)
+is now pelorus's own code, so the mirror carries only the banner and the include rewrite again and
+`scripts/sync-pelorus-interop.sh` reports no drift. A sync takes pelorus's side of every vendored file. no upstream file.
+## Rust `motion` twin mirrors `integer_motion.c`
+
+- `core/src/rust/feature/motion/src/{sad,window,extractor}.rs` port
+  `motion_score_pipeline_8/16`, `motion_flush_one` / `vmaf_motion_window_flush`
+  and `extract()` of `core/src/feature/integer_motion.c` (and `motion_blend()`)
+  statement by statement. A sync that changes any of them changes the twin in the
+  same PR; `scripts/ci/rust_twin_diff.py --feature motion` and the `sad`
+  table test in `sad.rs` (values from the C pipelines) guard it. No score,
+  public API or FFmpeg patch impact.

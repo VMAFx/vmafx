@@ -75,6 +75,7 @@ Dockerfile
 dev/Containerfile
 docker/dev/ubuntu-26.04.Dockerfile
 .github/workflows/ci.yml
+.github/actions/image-licence-artifacts/action.yml
 changelog.d/dependencies/torch.md
 DIFF
 expect_exit "dependency-only path set is exempt" 0 "renovate[bot]" "renovate/all" "${work}/case1_dep_only.diff"

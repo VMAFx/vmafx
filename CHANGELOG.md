@@ -183,6 +183,32 @@
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
+- **Rust twins of C feature extractors, selectable at run time (RC4
+  framework, [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).**
+  A build with `-Denable_rust_features=true` links one Rust archive into
+  `libvmaf` and registers each Rust twin as `<name>_rust` next to its C
+  extractor, with the C extractor's options, feature names and flags.
+  `VMAF_FEATURE_IMPL=rust` makes every registration path use the twin where
+  one exists and logs the C fallback where none does; `--feature psnr_rust`
+  picks a twin directly; the JSON report's `feature_backends` names the
+  extractor that ran. The C extractors stay the default. The first twin,
+  `psnr_rust`, returns the C scores bit for bit on the Netflix pair, both
+  checkerboard pairs, a 10-bit pair and 200 frames of 4K.
+  `scripts/ci/rust_twin_diff.py` proves a twin equal to its C extractor (same
+  binary, equal doubles on every metric of every frame), the `Rust` workflow
+  runs clippy on every workspace crate, checks the cbindgen header and runs the
+  new `rust` Meson suite. See
+  [Rust extractor framework](docs/development/rust-extractor-framework.md).
+
+
+- **The integer `motion` extractor has a Rust twin, `motion_rust`, that returns the C
+  extractor's scores bit for bit.**
+  With `-Denable_rust_features=true`, `VMAF_FEATURE_IMPL=rust` (or
+  `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
+  including the five-frame window and the moving average, in Rust; the default
+  stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
 - Every score now carries a full provenance record (#2142, ADR-2073): library,
   ABI and build (commit, compilers, build options, the strict floating-point
   policy, backends, a `build_id` digest), the SIMD level and device, the
@@ -322,6 +348,9 @@
   changed.
 
 
+- **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
+
+
 - The backend receipt of the JSON report (`backend_used`, `feature_backends`)
   is written by the library's report writer instead of being spliced into the
   file by the `vmaf` CLI, so reports written through the API carry it too;
@@ -371,6 +400,15 @@
   at zero yet stay as they were and are listed with their cause in
   [the CI overview](docs/development/ci.md#warnings-are-errors-adr-2170). Release builds and container
   images do not use the switch. See [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md).
+
+
+- **A Windows SYCL zip regression is seen before it merges, and a cut needs every tester leg green.**
+  A pull request now builds the x64 SYCL tester zip when it changes anything that leg reads
+  (selector `windows_tester_zip_sycl`), in the light CI tier too (`own_input_lanes` of
+  `.github/ci-tier.json`). `scripts/release/check-candidate-legs.py` requires every Windows
+  zip, macOS bundle and tester-image leg to be green on the exact commit, and the Release
+  Script Contract runs it on the cut pull request; the release guide lists the dispatches
+  to make first. See ADR-2198.
 
 
 - **icx and the clang-cl style drivers stop warning about our own compile flags.** `icx` and `icpx`
@@ -473,6 +511,17 @@
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
   conversions in `get_noise_constant()`, the scaled frame size passed to
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
+
+
+- **A build with `-Denable_rust_features=true` registers TAD and no longer
+  exports the Rust standard library from `libvmaf.so`
+  ([ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).** The TAD
+  pilot was compiled but never registered (`--feature tad` failed with
+  "problem loading feature extractor"), because the define that gated it never
+  reached `feature_extractor.cpp`. The Rust archive's symbols are now kept out
+  of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
+  build also needs no network any more: TAD's unused build-time cbindgen
+  dependency is gone and cargo runs `--offline --locked`.
 
 
 - `vmafx-server` no longer cuts a `Score` or `ScoreStream` RPC that runs
@@ -1161,6 +1210,30 @@ They are recorded in full, unedited, in
   and its compatibility policy are on `docs/server/api-contract.md`; a
   contract test (`meson test test_vmafx_score_contract`) checks that the CLI,
   the C API, gRPC and REST give the same score bit for bit (#2155).
+- **Rust twins of C feature extractors, selectable at run time (RC4
+  framework, [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).**
+  A build with `-Denable_rust_features=true` links one Rust archive into
+  `libvmaf` and registers each Rust twin as `<name>_rust` next to its C
+  extractor, with the C extractor's options, feature names and flags.
+  `VMAF_FEATURE_IMPL=rust` makes every registration path use the twin where
+  one exists and logs the C fallback where none does; `--feature psnr_rust`
+  picks a twin directly; the JSON report's `feature_backends` names the
+  extractor that ran. The C extractors stay the default. The first twin,
+  `psnr_rust`, returns the C scores bit for bit on the Netflix pair, both
+  checkerboard pairs, a 10-bit pair and 200 frames of 4K.
+  `scripts/ci/rust_twin_diff.py` proves a twin equal to its C extractor (same
+  binary, equal doubles on every metric of every frame), the `Rust` workflow
+  runs clippy on every workspace crate, checks the cbindgen header and runs the
+  new `rust` Meson suite. See
+  [Rust extractor framework](docs/development/rust-extractor-framework.md).
+
+
+- **The integer `motion` extractor has a Rust twin, `motion_rust`, that returns the C
+  extractor's scores bit for bit.**
+  With `-Denable_rust_features=true`, `VMAF_FEATURE_IMPL=rust` (or
+  `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
+  including the five-frame window and the moving average, in Rust; the default
+  stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
 
 
 - **actionlint pre-commit hook and Makefile target**: Wired `actionlint`
@@ -6322,6 +6395,17 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   archived repository's path, so the documented install started nothing; it
   names `%h/dev/vmafx/vmafx/...` and the install guide says so. ADR-0931 (MCP
   direct cgo path) is `Accepted` for its implemented Phase 1.
+
+
+- **A build with `-Denable_rust_features=true` registers TAD and no longer
+  exports the Rust standard library from `libvmaf.so`
+  ([ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).** The TAD
+  pilot was compiled but never registered (`--feature tad` failed with
+  "problem loading feature extractor"), because the define that gated it never
+  reached `feature_extractor.cpp`. The Rust archive's symbols are now kept out
+  of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
+  build also needs no network any more: TAD's unused build-time cbindgen
+  dependency is gone and cargo runs `--offline --locked`.
 
 
 - **`--feature mobilesal` scores frames whose sides are not multiples of 8

@@ -21,6 +21,10 @@
 # recorded licence; an SPDX SBOM is attested and published next to it.
 
 name: Publish macOS Tester Bundle
+# A dispatch names the source it builds in the run's title (ADR-2198): the cut check
+# (scripts/release/check-candidate-legs.py) accepts a dispatched run for a candidate only when
+# the title carries the candidate's full SHA. Other events keep GitHub's usual title.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('macOS tester bundle, source {0}', github.event.inputs.ref || github.event.inputs.tag) || github.event.pull_request.title || github.event.head_commit.message || github.workflow }}
 
 on:
   schedule:
@@ -206,7 +210,7 @@ jobs:
           print(f"- metal equivalence: {r['metal_equivalence']['status']}")
           print(f"- unit tests: {r['unit_tests']['passed']} passed, {r['unit_tests']['failed']} failed, {r['unit_tests']['skipped']} skipped")
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: macos-tester-bundle
           path: |
@@ -230,7 +234,7 @@ jobs:
       id-token: write      # keyless signing and attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: macos-tester-bundle
           path: bundle

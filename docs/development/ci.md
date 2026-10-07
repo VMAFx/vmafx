@@ -406,11 +406,23 @@ must report `success`; a missing or skipped one fails the aggregator.
 | `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
 | `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
 
-These are full-tier contexts: a pull request from this repository runs them
-only with the label `ci: full` (see [Which jobs run when](#which-jobs-run-when-adr-2169)),
-and the master push is where they run for every change. An unselected tester
-run passes in about a minute. Which inputs select them and
-how to reproduce a failure: [verifying the release and tester workflows](release-workflow-verification.md).
+These are full-tier contexts, with one declared exception
+([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester
+Zip` is an **own-input lane** (`own_input_lanes` of `.github/ci-tier.json`), so
+a pull request from this repository also runs it, but its planner builds only
+what the diff touches. Selector `windows_tester_zip` builds the x64 zip;
+selector `windows_tester_zip_sycl` (everything the x64 zip reads, plus
+`sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch
+ratchet list) adds the x64 SYCL zip. The arm64 and CUDA zips, `Tester Image`'s
+arm64 leg and the macOS bundle still build on the master push or a dispatch
+only, which is why a cut checks them (`scripts/release/check-candidate-legs.py`,
+see [the release
+guide](release.md#before-the-cut-every-tester-leg-green-on-the-commit)). For the
+other contexts a pull request from this repository runs them only with the label
+`ci: full` (see [Which jobs run when](#which-jobs-run-when-adr-2169)), and the
+master push is where they run for every change. An unselected tester run passes
+in about a minute. Which inputs select them and how to reproduce a failure:
+[verifying the release and tester workflows](release-workflow-verification.md).
 
 On a push to `master` the two tester gates need the whole push run of their
 chain, so when the push touches their inputs the master aggregator waits for both

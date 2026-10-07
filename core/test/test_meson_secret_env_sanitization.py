@@ -119,6 +119,8 @@ EXPECTED_RUNNER_PATHS = {
         r"scripts\ci\run_meson_test.py",
     ),
     Path(".github/workflows/nightly.yml"): ("scripts/ci/run_meson_test.py",),
+    # ADR-1713: the Rust workflow runs the `rust` suite of a Rust build.
+    Path(".github/workflows/rust-ci.yml"): ("scripts/ci/run_meson_test.py",),
     Path(".github/workflows/sanitizers.yml"): ("../scripts/ci/run_meson_test.py",) * 2,
     Path(".github/workflows/sycl-parity.yml"): ("scripts/ci/run_meson_test.py",),
     Path(".github/workflows/tests-and-quality-gates.yml"): ("../scripts/ci/run_meson_test.py",) * 5,

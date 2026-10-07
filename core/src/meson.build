@@ -929,6 +929,22 @@ if built_in_models_enabled
     endif
 endif
 
+# ---------------------------------------------------------------------------
+# ADR-1713: Rust extractor framework. Decided before config.h so every
+# translation unit sees HAVE_RUST_FEATURES; the targets come further below.
+# Without cargo the option degrades with a warning that names the result (the
+# C extractors run, VMAF_FEATURE_IMPL=rust logs a fallback per extractor).
+# ---------------------------------------------------------------------------
+is_rust_enabled = get_option('enable_rust_features')
+if is_rust_enabled
+    cargo_exe = find_program('cargo', required: false)
+    if not cargo_exe.found()
+        warning('enable_rust_features=true but cargo was not found: no Rust extractor is built and the C extractors run')
+        is_rust_enabled = false
+    endif
+endif
+cdata.set10('HAVE_RUST_FEATURES', is_rust_enabled)
+
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
@@ -2313,76 +2329,51 @@ vmaf_include = include_directories(
 )
 
 # ---------------------------------------------------------------------------
-# ADR-0707: Rust/cbindgen pilot — build the TAD feature extractor crate.
+# ADR-1713 (supersedes the build shape of ADR-0707): the one Rust archive.
 #
-# cargo build --release produces libvmafx_tad.a in the crate's
-# target/release/ directory.  We wrap it in a declare_dependency so the
-# archive is linked into libvmaf.so alongside the C sources.
-#
-# The option enable_rust_features (default: false, see meson_options.txt)
-# lets operators enable the Rust build on hosts with a Rust toolchain
-# (cargo + cbindgen).  When disabled, tad_rust.c is not compiled and the tad
-# extractor is not registered, so --feature tad fails with "problem loading
-# feature extractor: tad" (not -ENOSYS).
+# core/src/rust/build_staticlib.py runs `cargo build --release --locked
+# --offline -p vmafx-core-rs` against core/src/rust/Cargo.toml (a workspace
+# with no external crate, so no registry is needed) and writes a depfile
+# from cargo's dep-info, so ninja rebuilds the archive exactly when a Rust
+# source changes. The archive holds every Rust twin, the Rust predictor and
+# the TAD pilot. It links into the libvmaf library target only, with the
+# shim (rust/shim/rust_twins.cpp) and the TAD wrapper as direct sources:
+# feature_extractor.cpp, which test binaries also link, reaches the Rust
+# extractors through the accessor the shim installs at vmaf_init(), never
+# through a symbol. `--exclude-libs` keeps the Rust standard library out of
+# libvmaf.so's dynamic symbol table where the linker supports it.
 # ---------------------------------------------------------------------------
-is_rust_enabled = get_option('enable_rust_features')
-
-rust_tad_objects = []
-rust_tad_dep = []
-
+rust_core_dep = []
+rust_shim_sources = []
 if is_rust_enabled
-    cargo_exe = find_program('cargo', required: false)
-    if not cargo_exe.found()
-        warning('enable_rust_features=true but cargo not found; TAD extractor will be skipped.')
-        is_rust_enabled = false
-    endif
-endif
-
-if is_rust_enabled
-    rust_tad_crate_dir = meson.current_source_dir() / 'feature' / 'rust' / 'tad'
-    rust_tad_target_dir = meson.current_build_dir() / 'rust_tad_target'
-    rust_tad_lib_name = 'libvmafx_tad.a'
-
-    rust_tad_staticlib = custom_target('rust_tad_staticlib',
-        output: rust_tad_lib_name,
-        input: [
-            rust_tad_crate_dir / 'src' / 'lib.rs',
-            rust_tad_crate_dir / 'Cargo.toml',
-        ],
+    rust_core_lib_name = 'libvmafx_core_rs.a'
+    rust_core_staticlib = custom_target('rust_core_staticlib',
+        output: rust_core_lib_name,
+        depfile: 'libvmafx_core_rs.d',
         command: [
-            'sh', '-c',
-            cargo_exe.full_path() + ' build --release' +
-                ' --manifest-path ' + rust_tad_crate_dir / 'Cargo.toml' +
-                ' --target-dir ' + rust_tad_target_dir +
-                ' && cp ' + rust_tad_target_dir / 'release' / rust_tad_lib_name +
-                ' @OUTPUT@',
+            import('python').find_installation(),
+            files('rust/build_staticlib.py'),
+            '--cargo', cargo_exe.full_path(),
+            '--manifest', meson.current_source_dir() / 'rust' / 'Cargo.toml',
+            '--target-dir', meson.current_build_dir() / 'rust_target',
+            '--output', '@OUTPUT@',
+            '--depfile', '@DEPFILE@',
         ],
         build_by_default: true,
-        build_always_stale: false,
+        console: true,
     )
-
-    # -DHAVE_RUST_TAD is emitted as a compile_args so any TU that
-    # depends on this dependency gets the define. In practice only
-    # feature_extractor.cpp and tad_rust.c use it — the define gates the
-    # extern vmafx_tad_* declarations and the extractor's registration; a
-    # build without the archive compiles neither tad_rust.c nor registers
-    # the extractor.
-    rust_tad_dep = declare_dependency(
-        sources: [rust_tad_staticlib],
-        compile_args: ['-DHAVE_RUST_TAD'],
-        link_args: [
-            meson.current_build_dir() / rust_tad_lib_name,
-        ],
+    rust_link_args = [meson.current_build_dir() / rust_core_lib_name]
+    if cc.has_link_argument('-Wl,--exclude-libs,' + rust_core_lib_name)
+        rust_link_args = ['-Wl,--exclude-libs,' + rust_core_lib_name] + rust_link_args
+    endif
+    rust_core_dep = declare_dependency(
+        sources: [rust_core_staticlib],
+        link_args: rust_link_args,
     )
-endif
-
-# tad_rust.c is compiled as a DIRECT source of the libvmaf library() target,
-# not into libvmaf_feature.a. This keeps it out of the static-lib variant that
-# tests link against (avoiding unresolved vmafx_tad_* refs in tests that don't
-# include rust_tad_dep). The shared libvmaf.so picks it up via libvmaf_sources.
-rust_tad_direct_sources = []
-if is_rust_enabled
-    rust_tad_direct_sources = [feature_src_dir + 'tad_rust.c']
+    rust_shim_sources = [
+        src_dir + 'rust/shim/rust_twins.cpp',
+        feature_src_dir + 'tad_rust.c',
+    ]
 endif
 
 libvmaf_feature_sources = [
@@ -2446,10 +2437,10 @@ libvmaf_feature_sources = [
     # decline at runtime on stub builds.
     feature_src_dir + 'transnet_v2.c',
     # Note: tad_rust.c is NOT added here — it is compiled directly into
-    # the libvmaf library() target (see rust_tad_direct_sources) to avoid
+    # the libvmaf library() target (see rust_shim_sources) to avoid
     # pulling vmafx_tad_* undefined references into libvmaf_feature.a, which
     # would break static-lib-linked test executables that don't include
-    # rust_tad_dep. See ADR-0707.
+    # rust_core_dep. See ADR-1713.
 
     # SpEED (speed_chroma, speed_temporal) is built whatever enable_float
     # says, as Netflix/vmaf builds it since 4718b4f5f / 6046b1926: the
@@ -2926,7 +2917,7 @@ libvmafx_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1 (ABI 1.3).
+    # VMAFx/pelorus@4aae30711c655510305e9c14b403f991d342f760 (ABI 1.3).
     # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
@@ -2942,11 +2933,10 @@ libvmafx_sources = [
     # GOLDEN-GATE ISOLATION: inert unless opted in AND side-data present — the
     # Netflix golden pairs carry no side-data and score bit-exact.
     feature_src_dir + 'perceptual_weight.c',
-    # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
-    # the libvmaf library() target so it is not included in the static
-    # intermediate libs (avoids unresolved vmafx_tad_* refs in test
-    # binaries that link against libvmaf.a without rust_tad_dep).
-] + rust_tad_direct_sources
+    # ADR-1713: the Rust shim and the TAD wrapper are compiled directly into
+    # the libvmaf library() target, never into the static intermediate libs
+    # that test binaries extract (they would need the Rust archive).
+] + rust_shim_sources
 
 # RC4 WP3 CUDA lane (ADR-2023): devices, imports, fences, GL interop and pools
 # of the VMAFx API on CUDA. In the library target, not in cuda_static_lib: the
@@ -3074,7 +3064,7 @@ libvmafx = library(
       dnn_deps,
       hip_deps,
       metal_deps,
-      rust_tad_dep,
+      rust_core_dep,
       zimg_dependency,
     ],
     objects : [

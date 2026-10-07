@@ -489,7 +489,7 @@ jobs:
             TIDY_RATCHET_ARGS="--jobs $(nproc) --report tidy-ratchet-cpu.json"
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: tidy-ratchet-cpu
           path: tidy-ratchet-cpu.json
@@ -752,7 +752,7 @@ jobs:
             --project=build/compile_commands.json \
             --error-exitcode=1 \
             --xml --output-file=cppcheck-report.xml 2>&1
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         with:
           name: cppcheck-report

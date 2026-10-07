@@ -59,7 +59,7 @@ static int alloc_8bit_grey(VmafPicture *pic, unsigned w, unsigned h, uint8_t fil
  * file; folding them into a helper keeps each test inside the lint profile's
  * branch budget (ADR-0141 asks for the refactor, not a suppression). */
 static char *expect_score(VmafFeatureCollector *fc, const char *name, unsigned index,
-                          double expected, const char *what)
+                          double expected, char *what)
 {
     double score = -1.0;
     const int err = vmaf_feature_collector_get_score(fc, name, &score, index);

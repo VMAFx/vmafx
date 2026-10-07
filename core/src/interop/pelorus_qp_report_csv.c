@@ -17,17 +17,14 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@4aae30711c655510305e9c14b403f991d342f760 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
  *
  * Local edit vs the pelorus original: the intra-pelorus #include below is
  * rewritten from "pelorus/interop.h" to "libvmaf/pelorus/interop.h" so it resolves
- * under core/include/. The second local edit is the Windows file open in
- * open_utf8(): _wfsopen(..., _SH_DENYNO) replaces the deprecated _wfopen()
- * (same sharing, no C4996). Both edits belong in pelorus; re-vendoring before
- * pelorus carries the second one brings the warning back.
+ * under core/include/. Nothing else is changed.
  */
 
 /*
@@ -47,7 +44,7 @@
  *
  * The CSV path is UTF-8 on every platform (ADR-0149). On Windows the narrow CRT
  * decodes a path through the process ANSI code page, so the one open goes
- * through open_utf8(), which widens to UTF-16 for _wfopen; the only extra
+ * through open_utf8(), which widens to UTF-16 for _wfsopen; the only extra
  * dependency is kernel32 (MultiByteToWideChar), which every Windows link has.
  */
 
@@ -396,7 +393,8 @@ static pel_result utf8_to_wide(const char *path, wchar_t **out)
  * POSIX: a literal fopen(path, mode). The kernel takes a path as bytes, so this
  * is byte-for-byte the pre-ADR-0149 behaviour (a non-UTF-8 byte name still
  * opens). Windows: the narrow CRT would decode the bytes through the ANSI code
- * page, so the path is widened strictly and opened with _wfopen. No \\?\ prefix
+ * page, so the path is widened strictly and opened with _wfsopen (_SH_DENYNO: the
+ * sharing _wfopen gives, without its C4996 deprecation). No \\?\ prefix
  * is added: a caller that needs an extended-length path passes one.
  *
  * Every failure of the open itself maps to PEL_ERR_ABSENT (the pre-ADR-0149
