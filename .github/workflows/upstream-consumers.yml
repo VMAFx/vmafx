@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: upstream-consumers-${{ github.event_name }}-${{ github.ref }}
+  group: upstream-consumers-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
