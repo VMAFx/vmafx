@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
 
-- **Status**: Accepted (maintainer answers Q-122 to Q-129, 2026-10-07)
+- **Status**: Accepted (maintainer answers Q-122 to Q-129 and Q-136, 2026-10-07)
 - **Date**: 2026-10-07
 - **Deciders**: maintainer
 - **Tags**: cloud, k8s, controller, node, operator, helm, codegen, rc4, supply-chain, security
@@ -189,7 +189,7 @@ REST idempotency responses and short-lived job status for polling clients
 (`GetJob`, `StreamJobs`, the operator). Losing L2 slows reads and loses
 nothing.
 
-### D6. Object storage and inputs (Q-128)
+### D6. Object storage, inputs and outputs (Q-128, Q-136)
 
 Inputs and outputs are object references (`s3://bucket/key`; `gs://` and
 `az://` once golusoris `storage` has those backends). The controller resolves
@@ -198,11 +198,20 @@ scoring roots, [ADR-1577](1577-scoring-paths-per-tenant.md)) and gives the node
 presigned URLs per attempt: GET for inputs, PUT for outputs. The node reads
 and writes HTTPS and holds no storage credential; the controller signs with
 workload identity. Large client uploads use presigned PUT or tus (golusoris
-`storage/tus`). Local paths stay for the standalone profile. rclone remotes
-stay as an opt-in node storage mode for backends without presigned URLs, off
-by default because its FUSE and eBPF modes need privileges
-([ADR-1593](1593-helm-node-fuse-and-ebpf.md)). The end-to-end suite uses SeaweedFS
-(Apache-2.0); MinIO is archived and AGPL-3.0.
+`storage/tus`). Local paths stay for the standalone profile.
+
+rclone stays, opt-in, for storage without an S3 API or an OCI registry
+(Q-136). On the input side it is the node storage mode it is today (mount or
+`http-serve`), off by default because its FUSE and eBPF modes need privileges
+([ADR-1593](1593-helm-node-fuse-and-ebpf.md)); a node in that mode writes its
+outputs through the same remote. On the output side an rclone mover copies a
+finished job's outputs and exported artifacts to the tenant's rclone remote as
+a River step on the controller side, with the remote's configuration from a
+Secret; artifacts travel as an OCI image-layout directory, so their digests
+and signatures still verify. Presigned URLs and OCI registries stay the
+defaults, and a tenant names its rclone remote explicitly. The end-to-end
+suite uses SeaweedFS (Apache-2.0) and an rclone local remote; MinIO is
+archived and AGPL-3.0.
 
 ### D7. Score time series (Q-124)
 
@@ -233,7 +242,8 @@ platform definition lists every media type, so constants and the reference
 page are generated. The client is golusoris `container/registry`
 (go-containerregistry), extended upstream with artifact push and pull and the
 referrers API; its keychains give registry access through workload identity.
-The standalone profile writes an OCI image-layout directory.
+The standalone profile writes an OCI image-layout directory; the rclone
+mover of D6 copies the same layout to storage without a registry.
 
 ### D9. Events (Q-123)
 
@@ -395,7 +405,8 @@ travels in River job metadata and in the CloudEvents `traceparent` extension.
 ## Maintainer answers
 
 Each question went to the maintainer with a recommendation; every
-recommendation was taken (ledger Q-122 to Q-129, 2026-10-07).
+recommendation was taken (ledger Q-122 to Q-129, 2026-10-07); Q-136
+extends Q-128 to outputs and artifacts.
 
 | Ledger | Question | Answer |
 | --- | --- | --- |
@@ -406,6 +417,7 @@ recommendation was taken (ledger Q-122 to Q-129, 2026-10-07).
 | Q-126 | GPU placement | Device plugins and Node Feature Discovery labels by default; DRA opt-in per node pool (D10) |
 | Q-127 | OCI client and media types | Extend golusoris `container/registry` upstream (push, pull, referrers); own `application/vnd.vmafx.*` media types including models; cosign signs by digest (D8) |
 | Q-128 | How nodes read inputs | Presigned object URLs by default, no storage credentials on nodes; rclone mounts opt-in (D6) |
+| Q-136 | rclone beyond input mounts | Kept as an opt-in mover for outputs and artifacts too, for backends without S3 or OCI; presigned URLs and OCI stay the defaults (D6, D8) |
 | Q-129 | Where node pools are defined | Helm Deployments per pool with KEDA `ScaledObject`s on queue depth, scale to zero (D15) |
 
 ## Alternatives considered
@@ -436,6 +448,8 @@ recommendation was taken (ledger Q-122 to Q-129, 2026-10-07).
 | Inputs (Q-128) | Presigned URLs, rclone opt-in | No credentials or privileges on nodes | URLs must outlive a long read (expiry set per attempt) | Chosen |
 | | rclone by default | Many backends | Credentials and FUSE privileges on every node | Not chosen |
 | | Remove rclone | Simplest node image | Backends without presigned URLs unreachable | Not chosen |
+| Outputs (Q-136) | Presigned PUT and OCI by default, rclone mover opt-in | One path by default; storage without S3 or a registry still reachable | A second transport to test | Chosen |
+| | Presigned PUT and OCI only | Nothing else to maintain | No output path for SFTP-like storage | Not chosen |
 | Node pools (Q-129) | Helm | No operator needed | Pools change with `helm upgrade` | Chosen |
 | | Operator renders pools | Declarative pools as resources | Operator becomes required | Later |
 | Definition | Separate platform definition, same generator | Platform changes never move the C ABI version | Two files | Chosen |
@@ -519,7 +533,7 @@ platform's behaviour, a kind end-to-end case and a standalone-profile case.
 | 6 | Controller on the store and River: lease sweep, notifications, `import-sqlite`, readiness on schema version, standalone profile | 5; the queue statistics interface of #2430's first package |
 | 7 | Chart for high availability: CloudNativePG `Cluster` and backups or external database, two controller replicas, rolling update, PodDisruptionBudgets, topology spread, no claim; kind case: kill a controller and a node mid-job, the job completes once | 4, 6 |
 | 8 | Idempotency keys and attempt fencing on the wire (`SubmitJob`, `ReportResult`, REST) | 2, 6; golusoris `idempotency` store |
-| 9 | Object storage: object references, presigned URLs per attempt, tenant storage scope, uploads, SeaweedFS in the suite, rclone opt-in | 6, 8; golusoris `storage` presigned PUT (GCS and Azure Blob when they land) |
+| 9 | Object storage: object references, presigned URLs per attempt, tenant storage scope, uploads, SeaweedFS in the suite, rclone opt-in for inputs and as output and artifact mover (Q-136) | 6, 8; golusoris `storage` presigned PUT (GCS and Azure Blob when they land) |
 | 10 | Two-tier cache with Valkey and Dragonfly in the suite | 6; golusoris `cache/twotier` L1-only mode |
 | 11 | Score series: ingestion, query RPCs, retention, edition handling | 9; golusoris `db/timescale` edition detection |
 | 12 | Artifacts: export, signing, model pull by digest, media types from the definition | 9, 11; golusoris `container/registry` artifacts |
@@ -563,6 +577,7 @@ TypeScript) belong to the C API and stay with their 1.1 and 1.2 issues.
 - `Q` (Q-127): "Extend golusoris container/registry (push/pull, referrers) upstream; own application/vnd.vmafx.* media types incl. models; cosign signs by digest"
 - `Q` (Q-128): "Presigned object URLs by default (no storage credentials on nodes); rclone mounts opt-in"
 - `Q` (Q-129): "Helm Deployments per pool with KEDA ScaledObjects on queue depth (scale to zero)"
+- `Q` (Q-136): "Keep rclone as an opt-in mover for outputs and artifacts too (backends without S3 or OCI), besides opt-in input mounts"
 - Maintainer question on the cache tiers (2026-10-07), answered with the recommendation: L1 golusoris `cache/memory` on otter v2; L2 Valkey by default; Dragonfly a tested drop-in, not the default, because of BUSL-1.1; both tested in the end-to-end suite; the documentation states the Dragonfly terms.
 - Issues [#2431](https://github.com/VMAFx/vmafx/issues/2431), [#2430](https://github.com/VMAFx/vmafx/issues/2430), [#2155](https://github.com/VMAFx/vmafx/issues/2155), [#2321](https://github.com/VMAFx/vmafx/issues/2321), [#1251](https://github.com/VMAFx/vmafx/issues/1251), [#1252](https://github.com/VMAFx/vmafx/issues/1252), [#1253](https://github.com/VMAFx/vmafx/issues/1253).
 - [Research-2351](../research/2351-cloud-native-platform-components.md) (versions, licences and limits checked on 2026-10-07).
