@@ -260,6 +260,13 @@ name = "rust-integer-psnr"
 match = '^core/src/rust/feature/psnr/src/lib\.rs$'
 from = ["netflix-integer-psnr"]
 
+# RC4 lane C: every module of the cambi twin except testhook.rs ports cambi.c,
+# cambi.h or luminance_tools.cpp (both Netflix, the cambi.c notice).
+[[families]]
+name = "rust-cambi"
+match = '^core/src/rust/feature/cambi/src/(cvalues|filter|lib|luminance|lut|mask|options|pooling|preprocess)\.rs$'
+from = ["netflix-cambi"]
+
 # ---------------------------------------------------------------------------
 # Individually reviewed
 # ---------------------------------------------------------------------------

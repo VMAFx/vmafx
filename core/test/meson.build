@@ -8870,3 +8870,17 @@ if is_rust_enabled
         timeout : 600,
     )
 endif
+
+# RC4 lane C (ADR-1713): the init-time stages of the Rust cambi twin (reciprocal
+# table, TVI / visibility tables, adjusted window, mask index, resize walk)
+# against the C functions of cambi.c, through the crate's scalar test hooks.
+if is_rust_enabled
+    test_rust_cambi_kernels = executable('test_rust_cambi_kernels',
+        ['test.c', 'test_rust_cambi_kernels.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf],
+        c_args : vmaf_cflags_common,
+        dependencies : [pthread_dependency, rust_core_dep],
+    )
+    test('test_rust_cambi_kernels', test_rust_cambi_kernels, suite : ['rust', 'fast'])
+endif

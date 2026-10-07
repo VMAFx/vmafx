@@ -179,6 +179,11 @@ reason = "Built only with -Denable_rust_features=true, which needs cargo; the de
 expires = 2026-12-31
 
 [[exception]]
+path = "core/test/test_rust_cambi_kernels.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
 path = "core/tools/compat/win32/getopt.c"
 reason = "Windows-only translation unit (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
 expires = 2027-03-31

@@ -77,3 +77,12 @@ invariant: CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit
   `cambi.c::open_heatmaps` must open every `.gray` file through
   `vmaf_open_utf8`. Keep `test_open_heatmaps_utf8_path` as production-seam
   regression; helper-only path test does not protect this call-site wiring.
+- **Rust twin `cambi_rust` mirrors `cambi.c`** (RC4,
+  [ADR-1713](../../../../docs/adr/1713-rc4-rust-extractor-framework.md)):
+  `core/src/rust/feature/cambi/` ports scalar path of `cambi.c`, `cambi.h`
+  and `luminance_tools.cpp` statement by statement; must return C extractor
+  bits. Change to option table, init post-processing, preprocessing, spatial
+  mask, mode filter, c-values walk or quick-select pooling changes matching
+  Rust module in same PR; `reciprocal_lut` copied into `lut.rs` as literal
+  text, never recomputed. `core/test/test_rust_cambi_kernels.c` and
+  `scripts/ci/rust_twin_diff.py --feature cambi` fail when both drift.
