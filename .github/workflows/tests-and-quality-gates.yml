@@ -594,6 +594,11 @@ jobs:
           python -m pip install --no-build-isolation --require-hashes \
             -r requirements/locks/tooling-tests.txt
       - name: Run the tooling suite
+        # The lock installs clang-format at the pre-commit hook's pin; naming it
+        # makes the API generator's format test fail instead of skip when the
+        # installed binary is another major (hosted images ship older ones).
+        env:
+          VMAFX_CLANG_FORMAT: clang-format
         run: python scripts/ci/suite_registry.py run tooling
 
   # ===== Python package suites (ADR-1528) =====

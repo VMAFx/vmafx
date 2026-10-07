@@ -14,6 +14,7 @@ tests skip, with the reason, when the tool is not installed.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -21,7 +22,8 @@ from pathlib import Path
 from types import ModuleType
 from unittest import mock
 
-from support import ROOT, fixture, render_into, run, tool
+import support
+from support import ROOT, fixture, pinned_clang_format, render_into, run, tool
 from vmafx_api import emit_layout_test
 from vmafx_api.layout import DATA_MODELS, layouts, models_agree
 from vmafx_api.loader import parse
@@ -121,17 +123,78 @@ class CxxHeaderTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
 
 
-@unittest.skipIf(tool("clang-format") is None, "no clang-format on PATH")
+CLANG_FORMAT, NO_CLANG_FORMAT = pinned_clang_format()
+
+
+@unittest.skipIf(CLANG_FORMAT is None, NO_CLANG_FORMAT)
 class FormatTest(unittest.TestCase):
     def test_generated_c_is_clang_format_clean(self) -> None:
+        assert CLANG_FORMAT is not None
         style = f"--style=file:{ROOT / '.clang-format'}"
         with tempfile.TemporaryDirectory() as tmp:
             files = render_into(Path(tmp), parse(fixture()))
             for path in files:
                 if not path.endswith((".c", ".h")):
                     continue
-                done = run(["clang-format", style, str(Path(tmp) / path)])
+                done = run([CLANG_FORMAT, style, str(Path(tmp) / path)])
                 self.assertEqual(done.stdout, files[path], path)
+
+
+class ClangFormatPinTest(unittest.TestCase):
+    def test_pin_is_read_from_the_hook_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "c.yaml"
+            config.write_text(
+                "  - repo: https://github.com/pre-commit/mirrors-clang-format\n    rev: v19.1.0\n"
+            )
+            self.assertEqual(support.clang_format_pin(config), 19)
+            config.write_text("repos: []\n")
+            with self.assertRaises(AssertionError):
+                support.clang_format_pin(config)
+
+    def test_the_tooling_lock_installs_the_hook_pin(self) -> None:
+        """The Tooling Tests job runs this test with the lock's clang-format."""
+        lock_input = (ROOT / "requirements" / "locks" / "tooling-tests.in").read_text("utf-8")
+        hook = (ROOT / ".pre-commit-config.yaml").read_text("utf-8")
+        rev = re.search(r"mirrors-clang-format\s*\n\s*rev:\s*v([\d.]+)", hook)
+        assert rev is not None
+        self.assertIn(f"clang-format=={rev.group(1)}\n", lock_input)
+
+    def test_another_major_on_path_is_refused_with_its_version(self) -> None:
+        major = support.clang_format_pin()
+        with (
+            mock.patch.dict("os.environ", {"VMAFX_CLANG_FORMAT": ""}),
+            mock.patch.object(
+                support, "tool", lambda name: "/opt/cf" if name == "clang-format" else None
+            ),
+            mock.patch.object(support, "clang_format_major", lambda _: major - 5),
+        ):
+            found, why = support.pinned_clang_format()
+        self.assertIsNone(found)
+        self.assertIn(f"clang-format {major}", why)
+        self.assertIn(f"/opt/cf is {major - 5}", why)
+
+    def test_the_pinned_major_is_used(self) -> None:
+        major = support.clang_format_pin()
+        with (
+            mock.patch.dict("os.environ", {"VMAFX_CLANG_FORMAT": ""}),
+            mock.patch.object(support, "tool", lambda name: f"/opt/{name}"),
+            mock.patch.object(
+                support,
+                "clang_format_major",
+                lambda path: major if path.endswith(f"-{major}") else 3,
+            ),
+        ):
+            self.assertEqual(support.pinned_clang_format(), (f"/opt/clang-format-{major}", ""))
+
+    def test_an_explicit_binary_of_another_major_fails(self) -> None:
+        major = support.clang_format_pin()
+        with (
+            mock.patch.dict("os.environ", {"VMAFX_CLANG_FORMAT": "/opt/old"}),
+            mock.patch.object(support, "clang_format_major", lambda _: major - 1),
+            self.assertRaises(AssertionError),
+        ):
+            support.pinned_clang_format()
 
 
 class PythonBindingLayoutTest(unittest.TestCase):

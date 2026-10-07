@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Files praetorctl hashes or compares byte for byte check out with LF everywhere.
+"""Files hashed or compared byte for byte check out with LF everywhere.
 
 `* text=auto` in .gitattributes checks a text file out with core.eol, whose
 default is the platform's line ending. On Windows that gave CRLF even with
@@ -11,6 +11,12 @@ found CLAUDE.md out of sync with AGENTS.md
 (T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06). The test checks each file out
 the way a Windows host does (core.eol=crlf) and requires the bytes of the
 commit, so it fails for any such file without an `eol=lf` rule.
+
+The VMAFx model files are the second group: the build embeds each built-in
+model byte for byte (`xxd -i` in core/src/meson.build) and vmafx_model_hash()
+is the SHA-256 of the bytes as loaded (docs/api/vmafx/index.md), so a CRLF checkout gave every
+Windows build and every model file loaded there another hash
+(T-WINDOWS-CRLF-MODEL-HASH-2026-10-08).
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
 TIMEOUT_SECONDS = 120.0
 WINDOWS_CHECKOUT = ("-c", "core.autocrlf=false", "-c", "core.eol=crlf")
+MODEL_DIR = "model/"
 
 # What the pinned engine reads as raw bytes, by its source
 # (cordanaLLM/praetor at the standards-gate.yml PRAETOR_REF):
@@ -93,9 +100,32 @@ def hashed_files() -> list[str]:
     )
 
 
+def model_files() -> list[str]:
+    tracked = git_text("ls-files", "-z").stdout.split("\0")
+    return sorted(path for path in tracked if path.startswith(MODEL_DIR) and path.endswith(".json"))
+
+
+def built_in_models() -> list[str]:
+    """The model file names core/src/meson.build embeds into the library."""
+    build = (ROOT / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+    return sorted(set(re.findall(r"'(vmaf_[^'/]+\.json)'", build)))
+
+
 def windows_checkout(paths: list[str], prefix: Path) -> None:
     """Write paths under prefix with the conversion a Windows host applies."""
     git_text(*WINDOWS_CHECKOUT, "checkout-index", f"--prefix={prefix.as_posix()}/", "--", *paths)
+
+
+def converted_on_windows(paths: list[str]) -> list[str]:
+    """The paths whose Windows checkout differs from the committed blob."""
+    with tempfile.TemporaryDirectory(prefix="lf-") as scratch:
+        prefix = Path(scratch)
+        windows_checkout(paths, prefix)
+        return [
+            path
+            for path in paths
+            if (prefix / path).read_bytes() != git_bytes("cat-file", "blob", f":{path}").stdout
+        ]
 
 
 class PraetorHashedFilesCheckOutLf(unittest.TestCase):
@@ -110,15 +140,7 @@ class PraetorHashedFilesCheckOutLf(unittest.TestCase):
             )
 
     def test_windows_checkout_keeps_the_committed_bytes(self) -> None:
-        files = hashed_files()
-        with tempfile.TemporaryDirectory(prefix="praetor-lf-") as scratch:
-            prefix = Path(scratch)
-            windows_checkout(files, prefix)
-            converted = []
-            for path in files:
-                committed = git_bytes("cat-file", "blob", f":{path}").stdout
-                if (prefix / path).read_bytes() != committed:
-                    converted.append(path)
+        converted = converted_on_windows(hashed_files())
         self.assertEqual(converted, [], "a Windows checkout rewrites these files; add eol=lf")
 
     def test_windows_checkout_of_each_archetype_hashes_to_its_pin(self) -> None:
@@ -142,6 +164,18 @@ class PraetorHashedFilesCheckOutLf(unittest.TestCase):
             prefix = Path(scratch)
             windows_checkout([sample], prefix)
             self.assertIn(b"\r\n", (prefix / sample).read_bytes())
+
+
+class ModelFilesCheckOutLf(unittest.TestCase):
+    def test_every_built_in_model_is_a_tracked_model_file(self) -> None:
+        names = {Path(path).name for path in model_files()}
+        built_in = built_in_models()
+        self.assertGreaterEqual(len(built_in), 9, "the built-in list in core/src/meson.build moved")
+        self.assertEqual([name for name in built_in if name not in names], [])
+
+    def test_windows_checkout_keeps_the_committed_bytes(self) -> None:
+        converted = converted_on_windows(model_files())
+        self.assertEqual(converted, [], "a Windows checkout rewrites these models; add eol=lf")
 
 
 if __name__ == "__main__":

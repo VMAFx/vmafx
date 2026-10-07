@@ -182,6 +182,10 @@ model set (`vmaf_b_v0.6.3`). Models and sets are refcounted
 `vmafx_model_hash()` and `vmafx_model_set_hash()` return the SHA-256 of the
 bytes as loaded, as 64 hex digits: the same value `sha256sum` prints for the
 model file, also for a built-in model (it is that file, embedded).
+The repository checks every model JSON out with LF line endings on every
+platform, so a model file and a build's built-in models hash the same on
+Windows, Linux and macOS. A copy converted to CRLF is different bytes and
+hashes differently.
 
 `vmafx_model_override_feature(model, extractor, options, error)` changes the
 options a model passes to one extractor, for example the normalised viewing

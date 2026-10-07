@@ -4,6 +4,10 @@
 # The model file parser requires LF line endings
 *.pkl text eol=lf
 *.model text eol=lf
+# VMAFx hashes the model JSON bytes as loaded and embeds the built-in models
+# byte for byte, so a CRLF checkout changed every model hash on Windows
+# (scripts/ci/tests/test_praetor_hashed_files_lf.py).
+model/**/*.json text eol=lf
 
 # Tiny-AI model artefacts — stored as inline binary blobs.
 #

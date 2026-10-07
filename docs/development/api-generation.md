@@ -148,3 +148,20 @@ symbol the script does not list.
 
 The compiler, `clang-format` and linker cases of the generator tests skip,
 with the reason, when the tool is not installed.
+
+The format case compares against one clang-format major only: the one the
+`clang-format` hook pins in `.pre-commit-config.yaml`, because other releases
+align macros differently (clang-format 18.1.3, the ubuntu-24.04 runner's, and
+17 reject output that 18.1.8 and 19 to 23 accept). It uses `VMAFX_CLANG_FORMAT`
+when set, which must be that major or the test fails, else
+`clang-format-<major>` or `clang-format` on `PATH`; any other major makes it
+skip and name the version it found. The Tooling Tests job installs the pinned
+release from `requirements/locks/tooling-tests.txt` and sets
+`VMAFX_CLANG_FORMAT`, so the case always runs there. To run it locally with
+another system version:
+
+```bash
+python3 -m venv /var/tmp/cf && /var/tmp/cf/bin/pip install clang-format==23.1.2
+VMAFX_CLANG_FORMAT=/var/tmp/cf/bin/clang-format \
+    python3 -m pytest scripts/codegen/tests/test_vmafx_api_layout.py
+```

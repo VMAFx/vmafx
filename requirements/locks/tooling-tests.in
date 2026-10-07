@@ -3,6 +3,9 @@
 # input of the same lock, so the documentation tests render and build instead
 # of skipping. pre-commit is the hook installer scripts/githooks/tests drive;
 # mypy is what scripts/git-hooks/test-pre-push-mypy.py runs.
+# clang-format is the pre-commit hook's pin (.pre-commit-config.yaml): the
+# API generator's format test compares against that version only.
+clang-format==23.1.2
 mypy==2.4.0
 pre-commit==4.6.2
 pytest-timeout==2.4.0

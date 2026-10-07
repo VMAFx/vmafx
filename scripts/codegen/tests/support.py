@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import io
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +69,50 @@ def render_into(root: Path, api: Api) -> dict[str, str]:
 
 def tool(name: str) -> str | None:
     return shutil.which(name)
+
+
+# clang-format's output differs between major versions (macro and initialiser
+# alignment), so the format test runs only the major the repository pins for
+# its clang-format hook; any other major would compare against another style.
+CLANG_FORMAT_PIN = re.compile(r"mirrors-clang-format\s*\n\s*rev:\s*v(\d+)\.")
+CLANG_FORMAT_VERSION = re.compile(r"clang-format version (\d+)\.")
+
+
+def clang_format_pin(config: Path = ROOT / ".pre-commit-config.yaml") -> int:
+    """The major version of the clang-format hook in .pre-commit-config.yaml."""
+    found = CLANG_FORMAT_PIN.search(config.read_text(encoding="utf-8"))
+    if found is None:
+        raise AssertionError(f"no mirrors-clang-format rev in {config}")
+    return int(found.group(1))
+
+
+def clang_format_major(executable: str) -> int | None:
+    found = CLANG_FORMAT_VERSION.search(run([executable, "--version"]).stdout)
+    return int(found.group(1)) if found else None
+
+
+def pinned_clang_format() -> tuple[str | None, str]:
+    """The clang-format of the pinned major, and why none was found.
+
+    VMAFX_CLANG_FORMAT names one explicitly and must be that major; otherwise
+    clang-format-<major> and clang-format on PATH are tried in that order.
+    """
+    major = clang_format_pin()
+    explicit = os.environ.get("VMAFX_CLANG_FORMAT")
+    if explicit:
+        found = clang_format_major(explicit)
+        if found != major:
+            raise AssertionError(f"VMAFX_CLANG_FORMAT={explicit} is {found}, the pin is {major}")
+        return explicit, ""
+    seen = []
+    for candidate in (tool(f"clang-format-{major}"), tool("clang-format")):
+        if candidate is None:
+            continue
+        found = clang_format_major(candidate)
+        if found == major:
+            return candidate, ""
+        seen.append(f"{candidate} is {found}")
+    return None, f"clang-format {major} (the pre-commit pin) not found: {'; '.join(seen) or 'none'}"
 
 
 def run(argv: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
