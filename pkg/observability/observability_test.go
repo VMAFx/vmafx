@@ -112,7 +112,7 @@ func TestNewMetrics_RegistersAllInstruments(t *testing.T) {
 	// appear in the gathered output.
 	m.ScoreRequests.Inc()
 	m.ScoreErrors.Inc()
-	m.ScoreDuration.Observe(0.5)
+	m.ObserveScoreDuration(context.Background(), 0.5)
 	m.HealthRequests.Inc()
 	m.ReadyRequests.Inc()
 	m.ObserveScore("", "vmaf_v0.6.1", 93.5)

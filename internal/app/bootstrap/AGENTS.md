@@ -7,8 +7,12 @@ Fleet-wide invariants: [cmd/AGENTS.md](../../../cmd/AGENTS.md).
 
 ## Rebase-sensitive invariants
 
-1. **`Base` is `Core + otel.Module + fx.Supply(version.Get()) +
-   fx.Decorate(withServiceIdentity)`, in that shape.** `otel.Module` =
+1. **`Base` = `Core + otel.Module + otel.ModuleWithSlogBridge +
+   fx.Supply(version.Get()) + fx.Decorate(withServiceIdentity)`, in that
+   shape.** Slog bridge = Q-110 log path (OTLP into Loki, trace/span on
+   every record); `logs_test.go` waits on golusoris#617 (bridge for
+   injected `*slog.Logger`) and #618 (`trace_id`/`span_id` on stdout lines);
+   never weaken those tests, bump golusoris. `otel.Module` =
    only OTel initialiser in tree. `withServiceIdentity` = root-scope
    decorator of golusoris's `otel.Options` (service.version from
    `pkg/version`; `OTEL_SERVICE_NAME` honored behind

@@ -96,6 +96,13 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    promtool, `scripts/ci/pinned-tool.sh` shared with dashboard-linter; one
    fetcher, HISS-19).
 
+10. **Exemplars + OpenMetrics** (`instruments.go`): latency observed with
+    request ctx goes through `Histogram.ObserveContext` (sampled span ->
+    exemplar `trace_id`); every `/metrics` mount = `MetricsHandler(reg)`
+    (OpenMetrics on). Never mount `promhttp.HandlerFor` directly (drops
+    exemplars; one handler, HISS-19). Unlabelled families serve series at 0
+    from registration.
+
 ## Test requirements
 
 ```bash

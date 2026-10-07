@@ -73,7 +73,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
@@ -89,6 +88,7 @@ import (
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/observability"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
@@ -279,7 +279,7 @@ func nodeLifecycleOptions() fx.Option {
 // mountNodeHTTP serves the node's /metrics page from its own registry
 // (ADR-1014) and the statuspage probes.
 func mountNodeHTTP(router chi.Router, reg *prometheus.Registry, checks *statuspage.Registry) {
-	router.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	router.Handle("/metrics", observability.MetricsHandler(reg))
 	health.Mount(router, checks)
 }
 

@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
@@ -131,7 +130,7 @@ func (h *httpServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/readyz", h.handleReadyz)
 
 	// Prometheus metrics.
-	mux.Handle("/metrics", promhttp.HandlerFor(h.registry, promhttp.HandlerOpts{}))
+	mux.Handle("/metrics", observability.MetricsHandler(h.registry))
 
 	// Legacy /v1/score — retained for clients predating the OpenAPI contract.
 	mux.HandleFunc("/v1/score", h.handleScore)
@@ -237,7 +236,7 @@ func (h *httpServer) scoreAndRespond(
 	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
 	score, features, err := h.scorer.Score(r.Context(), req.Reference, req.Distorted, req.Model)
 	elapsed := time.Since(start).Seconds()
-	h.metrics.ScoreDuration.Observe(elapsed)
+	h.metrics.ObserveScoreDuration(r.Context(), elapsed)
 
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()

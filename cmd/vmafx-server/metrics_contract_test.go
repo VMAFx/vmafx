@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
@@ -25,9 +26,9 @@ func TestServerServesEveryFamilyItEmits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics.ScoreDuration.Observe(1)
+	metrics.ObserveScoreDuration(context.Background(), 1)
 	metrics.ObserveScore("", "", 93)
-	session := streams.Begin()
+	session := streams.Begin(context.Background())
 	session.Frame()
 	session.End(nil)
 	families, err := registry.Gather()

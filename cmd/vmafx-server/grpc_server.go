@@ -107,7 +107,7 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 	// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
 	score, features, err := s.scorer.Score(ctx, req.GetReference(), req.GetDistorted(), req.GetModel())
 	elapsed := time.Since(start).Seconds()
-	s.metrics.ScoreDuration.Observe(elapsed)
+	s.metrics.ObserveScoreDuration(ctx, elapsed)
 
 	if err != nil {
 		s.metrics.ScoreErrors.Inc()
@@ -161,7 +161,7 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 	ctx := stream.Context()
 	s.metrics.ScoreRequests.Inc()
 	start := time.Now()
-	session := s.streams.Begin()
+	session := s.streams.Begin(ctx)
 	defer func() { session.End(retErr) }()
 	s.log.Info("grpc ScoreStream request received (ADR-0933)")
 
@@ -271,7 +271,7 @@ func (s *grpcServer) sendAggregate(
 	result *libvmaf.StreamResult,
 	elapsed time.Duration,
 ) error {
-	s.metrics.ScoreDuration.Observe(elapsed.Seconds())
+	s.metrics.ObserveScoreDuration(stream.Context(), elapsed.Seconds())
 	if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
 		Payload: &vmafxv1.ScoreStreamResponse_Aggregate{
 			Aggregate: &vmafxv1.AggregateScore{

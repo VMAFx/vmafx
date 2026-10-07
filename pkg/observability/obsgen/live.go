@@ -38,9 +38,9 @@ func live() *dashboard.DashboardBuilder {
 				query(rate(m.StreamFrames, "instance"), "{{instance}}")),
 			timeseriesPanel("Sessions ended per minute by outcome", "Sessions that completed, failed or were cancelled by the client, per minute.", unitPerMin,
 				query(rate(m.StreamSessionsFinished, "outcome")+" * 60", "{{outcome}}")),
-			timeseriesPanel("Session duration", "Duration of the sessions that ended: median and 95th percentile.", unitSeconds,
-				query(quantile(0.5, m.StreamSessionDuration, ""), "p50"),
-				query(quantile(0.95, m.StreamSessionDuration, ""), "p95")),
+			timeseriesPanel("Session duration", "Duration of the sessions that ended: median and 95th percentile. The dots are exemplars: open one for the trace of that session.", unitSeconds,
+				queryExemplars(quantile(0.5, m.StreamSessionDuration, ""), "p50"),
+				queryExemplars(quantile(0.95, m.StreamSessionDuration, ""), "p95")),
 		}},
 	})
 }

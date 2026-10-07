@@ -81,7 +81,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
@@ -365,7 +364,7 @@ func mountControllerHTTP(
 
 	router.Get("/healthz", hs.handleHealthz)
 	router.Get("/readyz", hs.handleReadyz)
-	router.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	router.Handle("/metrics", observability.MetricsHandler(registry))
 
 	// /v1/score requires at least vmafx:writer (or vmafx:admin). When auth is
 	// configured, wrap the handler with the JWT middleware + role gate.
