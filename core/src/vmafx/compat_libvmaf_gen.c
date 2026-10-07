@@ -53,6 +53,7 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
     config.gpumask = cfg.gpumask;
     config.log_callback = NULL;
     config.log_user = NULL;
+    config.import_retry_wait_ns = 0;
     VmafxContext *context = NULL;
     VmafxError *error = NULL;
     const VmafxStatus status = vmafx_context_create(&config, &context, &error);

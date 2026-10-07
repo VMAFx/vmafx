@@ -35,8 +35,8 @@ struct VmafxError {
     int32_t engine_errno;
     uint32_t subject_kind;
     char function[64];
-    char subject[96];
-    char message[384];
+    char subject[1024]; /* a path is a subject: room for one (was 96, truncated long paths) */
+    char message[1024]; /* RC4 WP3: the import rule names an import and its refusals */
 };
 
 /* Copy `text` into `dst` (size `size` > 0), truncating and always terminating. */

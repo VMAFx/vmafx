@@ -6,6 +6,9 @@ paths:
   - core/src/log.h
   - core/test/test_vmafx_*
   - core/test/vmafx_test_util.h
+  - core/test/vmafx_import_test_util.h
+  - core/test/vmafx_fixture_util.h
+  - core/src/compat/gcc/stdatomic.h
   - core/src/vmafx.map
   - core/src/vmafx.def
   - core/src/vmafx_symbols.txt
@@ -47,6 +50,10 @@ invariant: Generated from vmafx.toml, never hand-edit; engine code calls vmaf_en
 - `core/src/model.c` / `dict.cpp` bodies called directly (`vmaf_model_feature_overload`, `vmaf_feature_dictionary_set`, ...). WP6 must rename them `vmaf_engine_*` before generating their libvmaf shims, else recursion.
 - Engine defect: set per-frame + pooled on same frame -> -EINVAL (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05). ADM default CSF refuses `adm_norm_view_dist` < 3 (-EINVAL at first submit).
 - Tests: `test_vmafx_{context,model,frame,score,bitexact,lifetime,sha256,log_routing}`, `test_engine_log_routing_contract.py`; bitexact needs `VMAFX_TEST_YUV_DIR` fixtures (77 without); lifetime Linux static + `--wrap=vmaf_thread_pool_destroy`, meant for `-Db_sanitize=address,undefined`.
+
+## Device frames, fences, pools
+
+- RC4 WP3 rules: [vmafx-device-frames.md](vmafx-device-frames.md).
 
 ## Engine split in `libvmaf.c`
 

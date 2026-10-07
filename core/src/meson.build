@@ -2844,6 +2844,13 @@ libvmaf_sources = [
     # ADR-1852 RC4 WP2: the core API (devices, host frames, options, models,
     # registration, submission, synchronous scores) on the engine.
     src_dir + 'vmafx/device.c',
+    # RC4 WP3 common lane: devices, fences, imported frames, pools, admission.
+    src_dir + 'vmafx/device_context.c',
+    src_dir + 'vmafx/fence.c',
+    src_dir + 'vmafx/frame_import.c',
+    src_dir + 'vmafx/frame_import_admit.c',
+    src_dir + 'vmafx/frame_import_hooks.c',
+    src_dir + 'vmafx/frame_pool.c',
     src_dir + 'vmafx/frame_host.c',
     src_dir + 'vmafx/model.c',
     src_dir + 'vmafx/options.c',

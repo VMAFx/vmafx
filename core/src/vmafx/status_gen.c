@@ -34,6 +34,7 @@ static const struct {
     {VMAFX_E_IO, "VMAFX_E_IO", -EIO, 1},
     {VMAFX_E_RANGE, "VMAFX_E_RANGE", -ERANGE, 1},
     {VMAFX_E_INTERNAL, "VMAFX_E_INTERNAL", -EIO, 0},
+    {VMAFX_E_TIMEOUT, "VMAFX_E_TIMEOUT", -ETIMEDOUT, 1},
     {VMAFX_E_ABI, "VMAFX_E_ABI", -EINVAL, 0},
 };
 

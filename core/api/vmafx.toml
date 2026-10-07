@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.1"
+abi_version = "0.1.3"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -214,6 +214,13 @@ reverse = false
 doc = "Engine error without a more specific status; the error carries the engine's errno."
 
 [[status]]
+name = "VMAFX_E_TIMEOUT"
+since = "0.1"
+value = -10
+errno = "ETIMEDOUT"
+doc = "A fence was not signalled within the time the caller allowed; the error names the fence (RC4 WP3)."
+
+[[status]]
 name = "VMAFX_E_ABI"
 since = "0.1"
 value = -11
@@ -261,6 +268,9 @@ values = [
   { name = "VMAFX_PIXEL_FORMAT_YUV422P", value = 2, doc = "4:2:2, chroma halved horizontally (rounded up)." },
   { name = "VMAFX_PIXEL_FORMAT_YUV444P", value = 3, doc = "4:4:4, no chroma subsampling." },
   { name = "VMAFX_PIXEL_FORMAT_YUV400P", value = 4, doc = "Luma only." },
+  { name = "VMAFX_PIXEL_FORMAT_NV12", value = 16, doc = "4:2:0, a luma plane and one plane of interleaved Cb/Cr bytes; vmafx_frame_import() only, the frame it makes is YUV420P at 8 bits. Added in ABI 0.1.2." },
+  { name = "VMAFX_PIXEL_FORMAT_P010", value = 17, doc = "NV12 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV420P at 10 bits (each sample shifted down by 6, ADR-1679). Added in ABI 0.1.2." },
+  { name = "VMAFX_PIXEL_FORMAT_P016", value = 18, doc = "NV12 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV420P at 16 bits. Added in ABI 0.1.2." },
 ]
 
 [[enums]]
@@ -311,6 +321,63 @@ bits = [
   { name = "VMAFX_MODEL_DISABLE_CLIP", bit = 0, doc = "Do not clip the score to the model's range." },
   { name = "VMAFX_MODEL_ENABLE_TRANSFORM", bit = 1, doc = "Apply the model's score transform." },
   { name = "VMAFX_MODEL_DISABLE_TRANSFORM", bit = 2, doc = "Do not apply the model's score transform." },
+]
+
+# Device frames and fences (RC4 WP3, ADR-1852 design section 2.7). Every
+# kind is declared now so the backend lanes fill in implementations without
+# changing the ABI; the CPU device implements HOST memory and NONE / HOST
+# fences.
+
+[[enums]]
+name = "VmafxMemoryKind"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "What a VmafxImportPlane handle refers to."
+values = [
+  { name = "VMAFX_MEMORY_NONE", value = 0, doc = "Not set; refused by vmafx_frame_import()." },
+  { name = "VMAFX_MEMORY_HOST", value = 1, doc = "Host memory the CPU reads: `handle` is the address of the plane's allocation, `offset` the bytes to its first sample." },
+  { name = "VMAFX_MEMORY_DEVICE_POINTER", value = 2, doc = "A device pointer (CUDA or HIP device pointer, SYCL USM pointer) in the device's context." },
+  { name = "VMAFX_MEMORY_DEVICE_ARRAY", value = 3, doc = "A device array (CUDA array) in the device's context." },
+  { name = "VMAFX_MEMORY_DMABUF", value = 4, doc = "A Linux dma-buf: `fd`, `offset`, `pitch`, `modifier` and `size` of the object the plane lives in." },
+  { name = "VMAFX_MEMORY_METAL_SURFACE", value = 5, doc = "A shared surface: `handle` is the surface, `plane_index` its plane." },
+  { name = "VMAFX_MEMORY_METAL_TEXTURE", value = 6, doc = "A Metal texture per plane: `handle` is the texture." },
+  { name = "VMAFX_MEMORY_WIN32_SHARED", value = 7, doc = "A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane." },
+]
+
+[[enums]]
+name = "VmafxFenceKind"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "What a VmafxFence is."
+values = [
+  { name = "VMAFX_FENCE_NONE", value = 0, doc = "No fence: the work it would order is complete." },
+  { name = "VMAFX_FENCE_HOST", value = 1, doc = "A host fence of the library (vmafx_fence_create()): `handle` is the library's object." },
+  { name = "VMAFX_FENCE_CUDA_EVENT", value = 2, doc = "A CUDA event (`handle`) of the device's context." },
+  { name = "VMAFX_FENCE_HIP_EVENT", value = 3, doc = "A HIP event (`handle`) of the device." },
+  { name = "VMAFX_FENCE_SYCL_EVENT", value = 4, doc = "A pointer to a SYCL event (`handle`) of the device's context." },
+  { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`)." },
+  { name = "VMAFX_FENCE_METAL_SHARED_EVENT", value = 6, doc = "A Metal shared event (`handle`) and the value it reaches when signalled (`value`)." },
+  { name = "VMAFX_FENCE_WIN32_SHARED", value = 7, doc = "A Windows shared fence (`handle`, an NT handle) and the value it reaches when signalled (`value`)." },
+]
+
+[[flags]]
+name = "VmafxImportFlags"
+header = "vmafx/frame.h"
+type = "u32"
+since = "0.1"
+doc = "How vmafx_frame_import() may bind the producer's memory. 0, the value of a zeroed descriptor, requires zero copy: a layout the device cannot bind is refused, never copied (design section 2.7)."
+bits = [
+  { name = "VMAFX_IMPORT_ALLOW_COPY", bit = 0, doc = "A layout the device cannot bind may be copied on the device; the copy is logged once per context. Never a host copy of device memory." },
+]
+
+[[flags]]
+name = "VmafxDeviceFlags"
+header = "vmafx/device.h"
+type = "u32"
+since = "0.1"
+doc = "How a device is created."
+bits = [
+  { name = "VMAFX_DEVICE_PROFILING", bit = 0, doc = "Time every kernel the device runs; read with vmafx_device_profile(). Refused by a device without a kernel profiler (the CPU)." },
 ]
 
 # ---------------------------------------------------------------------------
@@ -365,6 +432,13 @@ since = "0.1"
 release = "vmafx_frame_unref"
 doc = "Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts."
 
+[[handles]]
+name = "VmafxFramePool"
+header = "vmafx/frame.h"
+since = "0.1"
+release = "vmafx_frame_pool_destroy"
+doc = "Frames of one geometry allocated once on a device and reused (RC4 WP3). A frame returns to its pool when its last reference is dropped."
+
 # ---------------------------------------------------------------------------
 # Callbacks.
 
@@ -407,6 +481,7 @@ fields = [
   { name = "gpumask", type = "u64", doc = "GPU dispatch bits to disable." },
   { name = "log_callback", type = "VmafxLogCallback", doc = "Receives every message the library raises for this context at or below `log_level`, on the calling thread and on the context's worker threads, and every failure reported without an error out-parameter; nothing of the context then reaches the process log (ADR-1906). NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1." },
   { name = "log_user", type = "ptr", doc = "Passed to `log_callback`. Added in ABI 0.1.1." },
+  { name = "import_retry_wait_ns", type = "u64", doc = "Longest host wait on the acquire fence before the one retry of vmafx_context_import_frame() (the import rule, ADR-1929), in nanoseconds: 1 to 600000000000 (10 minutes); 0, the value of VMAFX_CONTEXT_CONFIG_INIT, is the default of 10 seconds. A larger value is refused with VMAFX_E_RANGE naming `config.import_retry_wait_ns`, not clamped. Added in ABI 0.1.3." },
 ]
 
 [[structs]]
@@ -469,7 +544,73 @@ sized = true
 doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
 fields = [
   { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device; this release creates CPU devices only." },
-  { name = "index", type = "i32", doc = "Device index within the backend; 0 or -1 (any) for the CPU." },
+  { name = "index", type = "i32", doc = "Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set." },
+  { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "How to create the device. Added in ABI 0.1.2." },
+  { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
+]
+
+[[structs]]
+name = "VmafxDeviceInfo"
+header = "vmafx/device.h"
+since = "0.1"
+sized = true
+doc = "What a device is and what it imports. Grows at the end: the format envelope of each device (largest frame, bit depths, chroma layouts; PR #2185) is appended by the generated capability tables of RC6 / RC7. Strings live for the process lifetime."
+fields = [
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device." },
+  { name = "index", type = "i32", doc = "Device index within the backend; -1 for a device made from external handles." },
+  { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "Flags the device was created with; 0 for an enumerated device." },
+  { name = "memory_kinds", type = "u32", doc = "Bit `1 << k` set for each VmafxMemoryKind `k` vmafx_frame_import() binds on this device." },
+  { name = "fence_kinds", type = "u32", doc = "Bit `1 << k` set for each VmafxFenceKind `k` the device waits on and returns as a release fence." },
+  { name = "total_memory", type = "u64", doc = "Bytes of device memory; 0 when the backend does not report it (the CPU)." },
+  { name = "name", type = "cstr", doc = "Name of the device as its runtime reports it (`cpu` for the CPU)." },
+]
+
+[[structs]]
+name = "VmafxFence"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "A synchronisation point between the producer of a frame and the library. Passed by pointer; embedded by value in VmafxFrameImport, so it never grows. A fence the library returns (vmafx_fence_create(), vmafx_frame_release_fence()) belongs to the caller, who releases it once with vmafx_fence_destroy(). Initialise with VMAFX_FENCE_INIT."
+fields = [
+  { name = "kind", type = "u32", enum = "VmafxFenceKind", doc = "What the fence is; the other fields are read as the kind says." },
+  { name = "handle", type = "uptr", doc = "Event, shared-event, shared-fence or host-fence object; 0 when the kind has none." },
+  { name = "value", type = "u64", doc = "Value a timeline fence (METAL_SHARED_EVENT, WIN32_SHARED) reaches when signalled; 0 otherwise." },
+  { name = "fd", type = "i32", doc = "sync_file descriptor for SYNC_FILE; ignored otherwise." },
+  { name = "reserved", type = "u32", doc = "0." },
+]
+
+[[structs]]
+name = "VmafxImportPlane"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = false
+doc = "Where one plane of an imported frame lives. Embedded by value in VmafxFrameImport: never grows. Fields a memory kind does not use are ignored."
+fields = [
+  { name = "handle", type = "uptr", doc = "Address, device pointer, array, surface, texture or shared handle, as VmafxMemoryKind says." },
+  { name = "fd", type = "i32", doc = "dma-buf descriptor for DMABUF memory (the library duplicates it); ignored otherwise." },
+  { name = "plane_index", type = "u32", doc = "Plane of a multi-plane object (surface, shared texture, dma-buf layer)." },
+  { name = "offset", type = "u64", doc = "Bytes from the start of the memory to the plane's first sample." },
+  { name = "pitch", type = "u64", doc = "Bytes from one row to the next, at least the bytes of a row." },
+  { name = "modifier", type = "u64", doc = "Format modifier of the memory layout; 0 is linear. A modifier the device cannot read is refused naming the plane." },
+  { name = "size", type = "u64", doc = "Bytes of the memory object the plane lives in; 0: not given (needed by DMABUF imports). When set, every row of the plane must lie inside it." },
+]
+
+[[structs]]
+name = "VmafxFrameImport"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT."
+fields = [
+  { name = "memory", type = "u32", enum = "VmafxMemoryKind", doc = "What each plane's handle refers to." },
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Layout of the producer's planes; NV12, P010 and P016 are converted to planar on the device (a de-interleave, and for P010 a shift), nothing else." },
+  { name = "bpc", type = "u32", doc = "Bits per component: 8 for NV12, 10 for P010, 16 for P016, 8 to 16 for the planar formats." },
+  { name = "w", type = "u32", doc = "Luma width in pixels." },
+  { name = "h", type = "u32", doc = "Luma height in pixels." },
+  { name = "n_planes", type = "u32", doc = "Planes in `plane`: 1 for YUV400P, 2 for NV12 / P010 / P016 (luma, interleaved chroma), else 3." },
+  { name = "plane", type = "VmafxImportPlane", count = 3, doc = "Each plane; entries past `n_planes` are ignored." },
+  { name = "acquire", type = "VmafxFence", doc = "Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written." },
+  { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "0: zero copy only." },
 ]
 
 [[structs]]
@@ -881,14 +1022,16 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
-# Devices: the CPU skeleton (WP2; WP3 adds the device backends).
+# Devices (WP2 skeleton; RC4 WP3 common lane: enumeration, information,
+# external handles, profiling, attaching a device to a context; the backend
+# lanes add CUDA, SYCL, HIP and Metal behind the same functions).
 
 [[functions]]
 name = "vmafx_device_create"
 header = "vmafx/device.h"
 since = "0.1"
 returns = "status"
-doc = "Create a device. `desc` may be NULL for the CPU. Any other backend is VMAFX_E_NOTSUP naming it."
+doc = "Create a device from a backend and an index, or from the caller's runtime objects (`desc.external`). `desc` may be NULL for the CPU. A backend this build does not create devices for is VMAFX_E_NOTSUP naming it; an index it does not have is VMAFX_E_NOTFOUND; a flag the device cannot honour is VMAFX_E_NOTSUP naming `desc.flags`."
 params = [
   { name = "desc", type = "VmafxDeviceDesc", pass = "in", nullable = true },
   { name = "out", type = "VmafxDevice", pass = "out_handle" },
@@ -923,6 +1066,67 @@ returns = "u32"
 doc = "Backend of a device (a VmafxBackend); VMAFX_BACKEND_CPU for NULL."
 params = [
   { name = "device", type = "VmafxDevice", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_device_count"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "status"
+doc = "Number of devices of `backend` this build can create. A backend this build has no devices for is VMAFX_E_NOTSUP naming it (never a silent 0); a value that is not a VmafxBackend is VMAFX_E_INVALID."
+params = [
+  { name = "backend", type = "u32", pass = "in" },
+  { name = "count", type = "u32", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_device_info"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "status"
+doc = "Describe device `index` of `backend` without creating it (what `vmaf --list-backends` lists). VMAFX_E_NOTFOUND names an index the backend does not have."
+params = [
+  { name = "backend", type = "u32", pass = "in" },
+  { name = "index", type = "i32", pass = "in" },
+  { name = "out", type = "VmafxDeviceInfo", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_device_describe"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "status"
+doc = "Describe a created device, its creation flags included."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in_const" },
+  { name = "out", type = "VmafxDeviceInfo", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_device_profile"
+header = "vmafx/device.h"
+since = "0.1"
+returns = "status"
+doc = "Kernel timings of a device created with VMAFX_DEVICE_PROFILING, as text. `out` lives until the next call on the device or its release. A device without profiling is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in" },
+  { name = "out", type = "cstr", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_device"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Score on `device`: the context picks each feature's twin on its backend and holds a reference to the device until it is destroyed. Call it once, before any feature, model or frame; a device can serve several contexts. A context without a device scores on the CPU."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "device", type = "VmafxDevice", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
 ]
 
 # ---------------------------------------------------------------------------
@@ -985,6 +1189,147 @@ returns = "void"
 doc = "Drop one reference; the last one, the caller's or a context's, frees the planes or calls the release callback. NULL is a no-op."
 params = [
   { name = "frame", type = "VmafxFrame", pass = "in", nullable = true },
+]
+
+# ---------------------------------------------------------------------------
+# Device frames, fences, pools and admission (RC4 WP3 common lane, design
+# section 2.7, ADR-1829). One frame reference is one count of the engine
+# picture's reference counter for imported frames too (ADR-1906 item 4).
+
+[[functions]]
+name = "vmafx_frame_import"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A frame on memory the producer holds, without a host copy. Planar layouts are bound as they are; NV12 / P010 / P016 are converted to planar on the device. A layout the device cannot bind is VMAFX_E_NOTSUP naming the memory kind, pixel format, modifier and plane; an acquire fence the device cannot wait on yet is VMAFX_E_BUSY (vmafx_context_import_frame() waits and retries once). The producer's memory stays valid and unchanged until the frame's release fence is signalled. The caller holds one reference."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in" },
+  { name = "desc", type = "VmafxFrameImport", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_release_fence"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A fence of `kind` signalled once the last reference of the frame is gone, in every context it was submitted to: from then on the library reads none of its memory and the producer may reuse it. Call it while holding a reference, before the frame is submitted; each call returns a new fence the caller destroys. A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in" },
+  { name = "kind", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxFence", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_fence_create"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A new, unsignalled fence of `kind` on `device` (NULL: the CPU) for a producer to signal, for example a HOST fence a producer thread signals with vmafx_fence_signal() after writing a frame. The caller destroys it."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in", nullable = true },
+  { name = "kind", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxFence", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_fence_signal"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Signal a fence from the host (HOST; a timeline kind to its `value`). A kind the host cannot signal is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "fence", type = "VmafxFence", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_fence_wait"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Wait on the host until the fence is signalled: VMAFX_OK, or VMAFX_E_TIMEOUT naming the fence after `timeout_ns` nanoseconds (UINT64_MAX waits without a limit). `timeout_ns` 0 polls: an unsignalled fence is VMAFX_PENDING, an answer without an error or a log line. NONE is signalled. A kind this build cannot wait on is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "fence", type = "VmafxFence", pass = "in" },
+  { name = "timeout_ns", type = "u64", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_fence_destroy"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Release a fence the library returned: drop its reference to a host fence, destroy an event it created, close a descriptor it opened. Once per fence; NONE is a no-op. A kind this build cannot release is VMAFX_E_NOTSUP naming it."
+params = [
+  { name = "fence", type = "VmafxFence", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_pool_create"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Allocate `count` frames of geometry `desc` on `device` (NULL: the CPU) once (the successor of vmaf_preallocate_pictures). Size a pool for a context with vmafx_context_frame_retention()."
+params = [
+  { name = "device", type = "VmafxDevice", pass = "in", nullable = true },
+  { name = "desc", type = "VmafxFrameDesc", pass = "in" },
+  { name = "count", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxFramePool", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_pool_acquire"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A free frame of the pool, with one reference the caller holds; its planes keep their previous content. VMAFX_E_BUSY when every frame is in use (a transient status: a frame returns when its last reference is dropped)."
+params = [
+  { name = "pool", type = "VmafxFramePool", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_pool_destroy"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "void"
+doc = "Drop the caller's reference to the pool. Frames still in use stay valid; the pool is freed when the last of them returns. NULL is a no-op."
+params = [
+  { name = "pool", type = "VmafxFramePool", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_context_admit"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "frame", type = "VmafxFrame", pass = "in_const" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_import_frame"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import() and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds by default); a second failure or any other one fails naming the backend, device, `input` (for example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors. Never falls back to a host copy."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "device", type = "VmafxDevice", pass = "in" },
+  { name = "desc", type = "VmafxFrameImport", pass = "in" },
+  { name = "input", type = "cstr", pass = "in", nullable = true },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
 ]
 
 # ---------------------------------------------------------------------------
@@ -1316,7 +1661,7 @@ params = [
 ]
 null_checks = ["vmaf"]
 clear = "*vmaf = NULL;"
-build = { var = "config", type = "VmafxContextConfig", from = { log_level = "(uint32_t)cfg.log_level", n_threads = "cfg.n_threads", n_subsample = "cfg.n_subsample", cpumask = "cfg.cpumask", gpumask = "cfg.gpumask", log_callback = "NULL", log_user = "NULL" } }
+build = { var = "config", type = "VmafxContextConfig", from = { log_level = "(uint32_t)cfg.log_level", n_threads = "cfg.n_threads", n_subsample = "cfg.n_subsample", cpumask = "cfg.cpumask", gpumask = "cfg.gpumask", log_callback = "NULL", log_user = "NULL", import_retry_wait_ns = "0" } }
 out_handle = { var = "context", type = "VmafxContext" }
 args = ["&config", "&context", "&error"]
 store = "*vmaf = vmafx_context_libvmaf_handle(context);"

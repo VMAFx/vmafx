@@ -41,25 +41,13 @@
 #include "test.h"
 #include "vmafx/libvmaf_bridge.h"
 #include "vmafx/vmafx.h"
+#include "vmafx_fixture_util.h"
 #include "vmafx_test_util.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
-
-typedef struct Input {
-    const char *ref;
-    const char *dist;
-    uint32_t w, h, bpc;
-} Input;
-
-static const Input inputs[] = {
-    {"src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, 8},
-    {"checkerboard_1920_1080_10_3_0_0.yuv", "checkerboard_1920_1080_10_3_1_0.yuv", 1920, 1080, 8},
-    {"checkerboard_1920_1080_10_3_0_0.yuv", "checkerboard_1920_1080_10_3_10_0.yuv", 1920, 1080, 8},
-    {"sparks_ref_480x270.yuv42010le.yuv", "sparks_dis_480x270.yuv42010le.yuv", 480, 270, 10},
-};
 
 static const char *const models[] = {"vmaf_v1.0.16_3d0h", "vmaf_v0.6.1"};
 
@@ -69,64 +57,12 @@ static const uint32_t all_pools[] = {
 };
 #define N_POOLS (sizeof(all_pools) / sizeof(all_pools[0]))
 
-#ifndef VMAFX_TEST_YUV_DIR
-#error "VMAFX_TEST_YUV_DIR: the fixture directory, set by core/test/meson.build"
-#endif
-
 /* Values compared, over the whole run. */
 static unsigned long compared;
 
-typedef struct Clip {
-    VmafxFrameDesc desc;
-    uint8_t *ref;
-    uint8_t *dist;
-    unsigned n_frames;
-} Clip;
-
-/* The whole file `name` of the fixture directory, or NULL. */
-static uint8_t *read_fixture(const char *name, size_t *size)
-{
-    char path[4096];
-    const int n = snprintf(path, sizeof(path), "%s/%s", VMAFX_TEST_YUV_DIR, name);
-    FILE *file = n > 0 && (size_t)n < sizeof(path) ? fopen(path, "rb") : NULL;
-    if (!file) {
-        return NULL;
-    }
-    uint8_t *data = NULL;
-    if (fseek(file, 0, SEEK_END) == 0) {
-        const long end = ftell(file);
-        *size = end > 0 ? (size_t)end : 0u;
-        data = *size && fseek(file, 0, SEEK_SET) == 0 ? malloc(*size) : NULL;
-    }
-    if (data && fread(data, 1, *size, file) != *size) {
-        free(data);
-        data = NULL;
-    }
-    (void)fclose(file);
-    return data;
-}
-
-static bool clip_open(Clip *clip, const Input *in)
-{
-    clip->desc = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, in->bpc, in->w, in->h);
-    size_t ref_size = 0;
-    size_t dist_size = 0;
-    clip->ref = read_fixture(in->ref, &ref_size);
-    clip->dist = read_fixture(in->dist, &dist_size);
-    const size_t frame = vt_frame_bytes(&clip->desc);
-    clip->n_frames = (unsigned)(ref_size / frame);
-    return clip->ref && clip->dist && ref_size == dist_size && clip->n_frames > 0;
-}
-
-static void clip_close(Clip *clip)
-{
-    free(clip->ref);
-    free(clip->dist);
-}
-
 /* ---- The libvmaf session -------------------------------------------------------- */
 
-static bool read_picture(VmafPicture *pic, const Clip *clip, const uint8_t *src)
+static bool read_picture(VmafPicture *pic, const VtClip *clip, const uint8_t *src)
 {
     if (vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, clip->desc.bpc, clip->desc.w, clip->desc.h)) {
         return false;
@@ -141,7 +77,7 @@ static bool read_picture(VmafPicture *pic, const Clip *clip, const uint8_t *src)
     return true;
 }
 
-static VmafContext *run_libvmaf(const Clip *clip, VmafModel *model)
+static VmafContext *run_libvmaf(const VtClip *clip, VmafModel *model)
 {
     VmafConfiguration cfg;
     memset(&cfg, 0, sizeof(cfg));
@@ -163,7 +99,7 @@ static VmafContext *run_libvmaf(const Clip *clip, VmafModel *model)
 
 /* ---- The VMAFx session ---------------------------------------------------------- */
 
-static VmafxContext *run_vmafx(Clip *clip, VmafxModel *model)
+static VmafxContext *run_vmafx(VtClip *clip, VmafxModel *model)
 {
     VmafxContext *context = NULL;
     if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK ||
@@ -250,7 +186,7 @@ static char *compare_features(VmafContext *vmaf, VmafxContext *context, unsigned
     return NULL;
 }
 
-static char *compare_case(Clip *clip, const char *version)
+static char *compare_case(VtClip *clip, const char *version)
 {
     VmafModelConfig mcfg = {0};
     VmafModel *legacy = NULL;
@@ -271,17 +207,17 @@ static char *compare_case(Clip *clip, const char *version)
 static char *test_vmafx_equals_libvmaf(void)
 {
     unsigned cases = 0;
-    for (size_t i = 0; i < sizeof(inputs) / sizeof(inputs[0]); i++) {
-        Clip clip;
-        if (!clip_open(&clip, &inputs[i])) {
-            clip_close(&clip);
+    for (size_t i = 0; i < VT_N_INPUTS; i++) {
+        VtClip clip;
+        if (!vt_clip_open(&clip, &vt_inputs[i])) {
+            vt_clip_close(&clip);
             continue;
         }
         for (size_t m = 0; m < sizeof(models) / sizeof(models[0]); m++) {
             mu_assert_msg(compare_case(&clip, models[m]));
             cases++;
         }
-        clip_close(&clip);
+        vt_clip_close(&clip);
     }
     (void)fprintf(stderr, "[%u cases, %lu values compared] ", cases, compared);
     mu_skipped = cases == 0;
