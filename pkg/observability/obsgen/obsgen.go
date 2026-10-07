@@ -44,6 +44,7 @@ func dashboards() []generatedDashboard {
 		{"vmafx-quality.json", quality()},
 		{"vmafx-nodes.json", nodes()},
 		{"vmafx-live.json", live()},
+		{"vmafx-logs.json", logsDashboard()},
 	}
 	for _, e := range gpuExporters() {
 		out = append(out, generatedDashboard{"vmafx-gpu-" + e.key + ".json", exporterDashboard(e)})
@@ -69,7 +70,12 @@ func Generate() ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
+	datasources, err := datasourcesYAML()
+	if err != nil {
+		return nil, err
+	}
 	return append(out,
+		File{Path: DatasourcesFile, Content: datasources},
 		File{Path: RulesFile, Content: rules},
 		File{Path: RulesTestFile, Content: tests},
 		File{Path: MetricsReference, Content: metricsReference()},

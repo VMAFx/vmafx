@@ -79,6 +79,9 @@ var HTTP = fx.Module(
 //   - otel.Module — OpenTelemetry tracer/meter/logger over OTLP/gRPC; a silent
 //     no-op when no exporter endpoint is configured (ADR-0782 "best-effort and
 //     non-blocking"). Its otel.Options are completed by withServiceIdentity.
+//   - otel.ModuleWithSlogBridge — every slog record also goes to the OTel
+//     logger provider (OTLP logs, into Loki), carrying the trace and span of
+//     its context (ADR-2349, golusoris#617); nothing without an endpoint.
 //   - the build version (pkg/version.Info), supplied into the graph. golusoris
 //     shipped its own version module in v0.5.0 (golusoris.Version, golusoris#226);
 //     vmafx keeps this local Info because it also carries the VCS revision +
@@ -90,6 +93,7 @@ var HTTP = fx.Module(
 var Base = fx.Options(
 	Core,
 	otel.Module,
+	otel.ModuleWithSlogBridge,
 	fx.Supply(version.Get()),
 	fx.Decorate(withServiceIdentity),
 )

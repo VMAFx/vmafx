@@ -846,6 +846,7 @@
             "type": "prometheus",
             "uid": "${prometheus_datasource}"
           },
+          "exemplar": true,
           "expr": "histogram_quantile(0.5, sum by (le) (rate(vmafx_server_score_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
           "instant": false,
           "legendFormat": "p50",
@@ -856,6 +857,7 @@
             "type": "prometheus",
             "uid": "${prometheus_datasource}"
           },
+          "exemplar": true,
           "expr": "histogram_quantile(0.99, sum by (le) (rate(vmafx_server_score_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
           "instant": false,
           "legendFormat": "p99",
@@ -863,7 +865,7 @@
         }
       ],
       "title": "Score request latency",
-      "description": "Duration of synchronous Score requests: median and 99th percentile.",
+      "description": "Duration of synchronous Score requests: median and 99th percentile. The dots are exemplars: open one for the trace of that request.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",

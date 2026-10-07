@@ -402,11 +402,57 @@ regenerate.
 
 ## Logs
 
-Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
-stdout otherwise). The OTLP log exporter is initialised alongside traces
-and metrics but no slog → OTel bridge is wired (ADR-0927 Phase 3), so no
-log records are exported; set `VMAFX_OTEL_EXPORT_LOGS=false` to skip the
-exporter entirely if the collector has no logs pipeline.
+Logs go to the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
+stdout otherwise) and, with an OTLP endpoint configured, also to the
+collector as OTLP log records: `bootstrap.Base` wires golusoris's slog bridge
+(`otel.ModuleWithSlogBridge`, ADR-2349). Each record carries the trace and
+span of the context it was logged with, so a log line and its trace join on
+one id. Set `VMAFX_OTEL_EXPORT_LOGS=false` to keep logs off OTLP when the
+collector has no logs pipeline.
+
+!!! note "Waiting on golusoris"
+    Two golusoris changes complete this: the bridge must also cover the
+    `*slog.Logger` each service gets from the graph, not only `slog.Default`
+    ([golusoris#617](https://github.com/golusoris/golusoris/issues/617)), and
+    the stdout lines must carry `trace_id` and `span_id`
+    ([golusoris#618](https://github.com/golusoris/golusoris/issues/618)).
+    `internal/app/bootstrap/logs_test.go` holds both; they pass with the
+    golusoris release that ships them.
+
+In Loki (OTLP ingestion), a record's `service.name` resource attribute is the
+index label `service_name`; its severity text, trace id and span id are the
+structured metadata `severity_text`, `trace_id` and `span_id`:
+
+```logql
+{service_name="vmafx-controller"} | severity_text="ERROR"
+{service_name=~"vmafx-.+"} | trace_id="4bf92f3577b34da6a3ce929d0e0e4736"
+```
+
+### Traces, logs and exemplars together
+
+The latency histograms (`vmafx_server_score_duration_seconds`,
+`vmafx_stream_session_duration_seconds`) record the trace id of a sampled
+request as an exemplar, and every `/metrics` page serves the OpenMetrics
+format exemplars need. Prometheus stores them with
+`--enable-feature=exemplar-storage`. The Overview's _Score request latency_
+and Live sessions' _Session duration_ panels show them as dots that open the
+trace.
+
+`deploy/grafana/provisioning/datasources/vmafx.yaml` (generated) provisions
+the Prometheus, Tempo and Loki data sources with the links between them: an
+exemplar opens its trace in Tempo, a span opens the logs of its trace in
+Loki, and a log line's `trace_id` opens its trace. Its URLs are the service
+names of the Compose example; another deployment copies the `jsonData` blocks
+and keeps the uids `vmafx-prometheus`, `vmafx-tempo` and `vmafx-loki`.
+
+### Logs dashboard
+
+`vmafx-logs.json` reads Loki (its **Loki data source** variable) and answers:
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Volume | Log lines per minute by service and level, Errors per minute by service | Is a service logging more warnings or errors than usual? |
+| Lines | Warnings and errors, Lines of one trace (the **Trace ID** box), All lines | What did the services log, and what did they log for one request or job? |
 
 `vmafx-server` and `vmafx-controller` also log `write JSON response` or
 `write probe response` when a client disconnect or socket failure prevents an

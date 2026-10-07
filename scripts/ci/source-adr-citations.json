@@ -5559,6 +5559,7 @@
       "sites": {
         "cmd/vmafx-node/main.go": 1,
         "pkg/observability/coverage_gaps_test.go": 1,
+        "pkg/observability/instruments.go": 1,
         "pkg/observability/observability.go": 3
       },
       "target": "1014-r5-prometheus-registry.md"
@@ -11722,6 +11723,7 @@
       "sites": {
         ".github/workflows/go-ci.yml": 2,
         "Makefile": 2,
+        "internal/app/bootstrap/bootstrap.go": 1,
         "scripts/ci/check-prometheus-rules.sh": 1,
         "scripts/ci/lint-dashboards.sh": 1,
         "scripts/ci/pinned-tool.sh": 1,

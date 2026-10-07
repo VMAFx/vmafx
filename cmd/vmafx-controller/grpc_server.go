@@ -84,7 +84,7 @@ func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*
 	// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
 	score, features, err := s.scorer.Score(ctx, ref, dis, req.GetModel())
 	elapsed := time.Since(start).Seconds()
-	s.metrics.ScoreDuration.Observe(elapsed)
+	s.metrics.ObserveScoreDuration(ctx, elapsed)
 
 	if err != nil {
 		s.metrics.ScoreErrors.Inc()

@@ -126,7 +126,8 @@ func CheckDashboard(raw []byte) ([]string, error) {
 	}
 	for _, p := range flattenPanels(d.Panels) {
 		for _, t := range p.Targets {
-			if t.Expr != "" {
+			// Only Prometheus queries name metric series; a Loki query is LogQL.
+			if t.Expr != "" && t.Datasource.Type != "loki" {
 				report("panel "+p.Title, t.Expr)
 			}
 		}
@@ -135,7 +136,9 @@ func CheckDashboard(raw []byte) ([]string, error) {
 		report("annotation "+a.Name, a.Expr)
 	}
 	for _, v := range d.Templating.List {
-		report("variable "+v.Name, variableExpr(v.Query))
+		if v.Datasource.Type != "loki" {
+			report("variable "+v.Name, variableExpr(v.Query))
+		}
 	}
 	return problems, nil
 }
@@ -183,8 +186,11 @@ type dashboardQueries struct {
 	} `json:"annotations"`
 	Templating struct {
 		List []struct {
-			Name  string          `json:"name"`
-			Query json.RawMessage `json:"query"`
+			Name       string          `json:"name"`
+			Query      json.RawMessage `json:"query"`
+			Datasource struct {
+				Type string `json:"type"`
+			} `json:"datasource"`
 		} `json:"list"`
 	} `json:"templating"`
 }
@@ -203,7 +209,10 @@ func (d dashboardQueries) exporters() []string {
 type panelQuery struct {
 	Title   string `json:"title"`
 	Targets []struct {
-		Expr string `json:"expr"`
+		Expr       string `json:"expr"`
+		Datasource struct {
+			Type string `json:"type"`
+		} `json:"datasource"`
 	} `json:"targets"`
 	Panels []panelQuery `json:"panels"`
 }

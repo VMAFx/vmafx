@@ -50,7 +50,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
@@ -240,7 +239,7 @@ func mountHTTPRoutes(
 	r.Get("/startupz", health.StartupzHandler(reg))
 
 	// Prometheus metrics (golusoris OTel is OTLP; the Prometheus path is ours).
-	r.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	r.Handle("/metrics", observability.MetricsHandler(registry))
 
 	// Legacy /v1/score — retained for clients predating the OpenAPI contract.
 	r.Post("/v1/score", hs.handleScore)

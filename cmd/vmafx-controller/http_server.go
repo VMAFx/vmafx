@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc/status"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
@@ -91,7 +90,7 @@ func newHTTPServer(
 func (h *httpServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", h.handleHealthz)
 	mux.HandleFunc("/readyz", h.handleReadyz)
-	mux.Handle("/metrics", promhttp.HandlerFor(h.registry, promhttp.HandlerOpts{}))
+	mux.Handle("/metrics", observability.MetricsHandler(h.registry))
 
 	// /v1/score requires at least vmafx:writer (or vmafx:admin).
 	scoreHandler := http.HandlerFunc(h.handleScore)
@@ -144,7 +143,7 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
 	score, features, err := h.scorer.Score(r.Context(), ref, dis, req.Model)
 	elapsed := time.Since(start).Seconds()
-	h.metrics.ScoreDuration.Observe(elapsed)
+	h.metrics.ObserveScoreDuration(r.Context(), elapsed)
 
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
