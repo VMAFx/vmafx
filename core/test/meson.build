@@ -3530,6 +3530,17 @@ endif
 
 # (end of ciede / float_adm group)
 
+# ADR-2145 — float_psnr and ciede at 9, 11, 13, 14 and 15 bits (refused before),
+# against the same samples at 16 bits and the peak written out.
+test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede',
+    ['test.c', 'test_odd_depths_float_psnr_ciede.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
+
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and
 # compared bit for bit with the CPU float_psnr extractor on the cases of

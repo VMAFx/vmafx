@@ -365,6 +365,24 @@ static inline mu_message_t float_psnr_twin_identical_exact(const FloatPsnrTwin *
     return NULL;
 }
 
+/* Every depth the engine reads that has no case of its own above: 9, 11, 13, 14 and 15 bits
+ * (ADR-2145), noise and identical frames (the ceiling 6 * bpc + 12), twin equal to the CPU. */
+static inline mu_message_t float_psnr_twin_odd_depths_exact(const FloatPsnrTwin *twin)
+{
+    static const unsigned depths[] = {9u, 11u, 13u, 14u, 15u};
+    for (size_t k = 0; k < sizeof(depths) / sizeof(depths[0]); k++) {
+        mu_message_t msg = float_psnr_twin_noise_exact(twin, depths[k], NULL);
+        if (msg) {
+            return msg;
+        }
+        msg = float_psnr_twin_identical_exact(twin, depths[k], 6.0 * (double)depths[k] + 12.0);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
 /* The 16-bit cases past 2^53 units and at the boundary (see the top of the
  * file). */
 static const FloatPsnrTwinCase FLOAT_PSNR_TWIN_PAST_CASES[] = {

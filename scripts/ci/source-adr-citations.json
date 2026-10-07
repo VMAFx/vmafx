@@ -6645,6 +6645,7 @@
         "core/test/test_ms_ssim_decimate.c": 1,
         "core/test/test_ms_ssim_decimate_coverage.c": 1,
         "core/test/test_niqe.c": 1,
+        "core/test/test_odd_depths_float_psnr_ciede.c": 1,
         "core/test/test_opt.c": 1,
         "core/test/test_ordered_sum.c": 1,
         "core/test/test_output.c": 1,
@@ -11923,12 +11924,19 @@
         "core/api/generated/vmafx_ffmpeg_formats.h": 1,
         "core/api/generated/vmafx_gstreamer_formats.h": 1,
         "core/api/vmafx.toml": 2,
+        "core/src/feature/float_psnr.c": 1,
         "core/src/feature/integer_psnr.c": 1,
+        "core/src/feature/picture_copy.cpp": 1,
         "core/src/vmafx/frame_import.c": 1,
         "core/src/vmafx/import_convert.h": 1,
         "core/src/vmafx/import_layout.h": 2,
         "core/src/vmafx/import_layouts_gen.h": 1,
-        "core/test/meson.build": 2,
+        "core/test/ciede_twin_parity.h": 1,
+        "core/test/float_psnr_twin_parity.h": 1,
+        "core/test/meson.build": 3,
+        "core/test/test_cuda_ciede_parity.c": 1,
+        "core/test/test_hip_ciede_exact_contract.py": 1,
+        "core/test/test_odd_depths_float_psnr_ciede.c": 1,
         "core/test/test_vmafx_import_convert.c": 1,
         "core/test/test_vmafx_import_ffmpeg_oracle.c": 1,
         "core/test/test_vmafx_import_formats_cpu.c": 1,
@@ -11994,6 +12002,12 @@
         "scripts/dev/gen_rgb_oracle.py": 2
       },
       "target": "2146-vmafx-rgb-input-explicit-matrix.md"
+    },
+    "2164": {
+      "sites": {
+        "core/src/feature/ciede.c": 1
+      },
+      "target": "2164-vmafx-odd-bit-depths-float-psnr-ciede.md"
     }
   },
   "retired": {

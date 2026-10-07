@@ -77,6 +77,10 @@ search:
 - Both MCP servers read `options.gen.json`; do not bring back the hand
   schemas (`scoringExtraProperties`, `_scoring_extra_properties`) or the
   hand flag lists of `scoreExtras.appendArgs` / `ScoreExtras.to_argv`.
+## float_psnr and ciede at every depth (2026-10-07, RC4 WP13 follow-up)
+
+`rc4/api-wp13-odd-depths` ([ADR-2164](adr/2164-vmafx-odd-bit-depths-float-psnr-ciede.md)). Upstream-mirror files touched: `core/src/feature/float_psnr.c` (peak and ceiling by formula), `ciede.c` (the depth cases), `picture_copy.cpp` (divisor `2^(bpc - 8)` above 8 bits); a sync keeps the fork's forms. The CUDA, HIP, SYCL `float_psnr` twins and the HIP `ciede` constant table change with them; keep the CPU extractor and its twins in one change.
+
 ## Input format table, RGB conversion and raw CLI layouts (2026-10-07, RC4 WP13)
 
 `rc4/api-wp13-input-formats` ([ADR-2145](adr/2145-vmafx-input-format-table.md), [ADR-2146](adr/2146-vmafx-rgb-input-explicit-matrix.md)). Fork-only: the import layout table is generated (`core/src/vmafx/import_layouts_gen.h`, never edit; on a conflict take either side and run `python3 scripts/codegen/vmafx-api.py --write`), `import_layout.h`, `rgb_math.h`, `rgb_convert.{h,c}`, the generated coefficient table, and the CLI's raw reader. Upstream-mirror files touched: `core/tools/yuv_input.c`, `y4m_input.c`, `vidinput.{c,h}`, `cli_parse.{cpp,h}` and `vmaf.cpp` (the raw layouts, `PF_400`, the `--rgb_*` flags); a sync keeps the fork's `raw_input_open()` meaning of `pix_fmt` (1 to 4 planar, from 16 a `VmafxPixelFormat` layout) and the table-driven y4m `420pN` / `422pN` / `444pN` / `monoN` setup. `core/src/feature/integer_psnr.c`: `extract()` takes every depth 8 to 16. When the stack rebases onto master, `--rgb_*` should be re-pointed at master's `--color_*_ref/_dist` input colorimetry (its `VmafColor` has no BT.601); the statement fields of `VmafxFrameImport` stay.

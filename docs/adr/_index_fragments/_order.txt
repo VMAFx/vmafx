@@ -1297,3 +1297,4 @@
 2152-vmafx-vulkan-frame-import
 2145-vmafx-input-format-table
 2146-vmafx-rgb-input-explicit-matrix
+2164-vmafx-odd-bit-depths-float-psnr-ciede
