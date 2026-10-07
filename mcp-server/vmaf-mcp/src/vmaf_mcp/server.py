@@ -76,8 +76,7 @@ from mcp.types import (
 )
 from pydantic import TypeAdapter
 
-from vmaf_mcp import vlm
-from vmaf_mcp import score_options
+from vmaf_mcp import score_options, vlm
 from vmaf_mcp.http_scoring import HttpScoringRuntime, install_http_scoring_runtime
 
 _logger = logging.getLogger(__name__)
