@@ -156,7 +156,7 @@ tests:
   - name: VMAFxScoreLatencyBudgetBurn case 1
     interval: 1m
     input_series:
-      - series: vmafx_server_score_duration_seconds_bucket{le="30"}
+      - series: vmafx_server_score_duration_seconds_bucket{le="30.0"}
         values: 0+5x60
       - series: vmafx_server_score_duration_seconds_count{}
         values: 0+10x60
@@ -179,7 +179,7 @@ tests:
   - name: VMAFxScoreLatencyBudgetBurn case 2
     interval: 1m
     input_series:
-      - series: vmafx_server_score_duration_seconds_bucket{le="30"}
+      - series: vmafx_server_score_duration_seconds_bucket{le="30.0"}
         values: 0+10x60
       - series: vmafx_server_score_duration_seconds_count{}
         values: 0+10x60
@@ -190,13 +190,13 @@ tests:
   - name: VMAFxScoreRegression case 1
     interval: 10m
     input_series:
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="75"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="75.0"}
         values: "0x157"
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="80"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="80.0"}
         values: 0x143 0+30x13
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="94"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="94.0"}
         values: 0x143 0+30x13
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="96"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="96.0"}
         values: 0+30x157
       - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="+Inf"}
         values: 0+30x157
@@ -217,13 +217,13 @@ tests:
   - name: VMAFxScoreRegression case 2
     interval: 10m
     input_series:
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="75"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="75.0"}
         values: "0x157"
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="80"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="80.0"}
         values: "0x157"
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="94"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="94.0"}
         values: "0x157"
-      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="96"}
+      - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="96.0"}
         values: 0+30x157
       - series: vmafx_quality_score_bucket{tenant="a",model="model-a",profile="none",le="+Inf"}
         values: 0+30x157

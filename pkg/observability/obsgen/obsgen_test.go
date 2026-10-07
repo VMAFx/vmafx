@@ -252,6 +252,10 @@ func TestEveryRuleQueryIsEmitted(t *testing.T) {
 	if problems, err := CheckRules(planted); err != nil || len(problems) != 1 {
 		t.Errorf("a dead series in a rule: %v, %v", problems, err)
 	}
+	planted = []byte("groups:\n- name: g\n  rules:\n  - record: r\n    expr: rate(vmafx_server_score_duration_seconds_bucket{le=\"30\"}[5m])\n")
+	if problems, err := CheckRules(planted); err != nil || len(problems) != 1 {
+		t.Errorf("a whole-number le matcher in a rule: %v, %v", problems, err)
+	}
 }
 
 // TestEveryAlertHasARunbook: each alert links a runbook page that exists,

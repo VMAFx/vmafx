@@ -20,13 +20,13 @@ groups:
       - record: vmafx:score_error_ratio:rate6h
         expr: sum(rate(vmafx_server_score_errors_total[6h])) / sum(rate(vmafx_server_score_requests_total[6h]))
       - record: vmafx:score_slow_ratio:rate5m
-        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le="30"}[5m])) / sum(rate(vmafx_server_score_duration_seconds_count[5m]))
+        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le=~"30(\\.0)?"}[5m])) / sum(rate(vmafx_server_score_duration_seconds_count[5m]))
       - record: vmafx:score_slow_ratio:rate30m
-        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le="30"}[30m])) / sum(rate(vmafx_server_score_duration_seconds_count[30m]))
+        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le=~"30(\\.0)?"}[30m])) / sum(rate(vmafx_server_score_duration_seconds_count[30m]))
       - record: vmafx:score_slow_ratio:rate1h
-        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le="30"}[1h])) / sum(rate(vmafx_server_score_duration_seconds_count[1h]))
+        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le=~"30(\\.0)?"}[1h])) / sum(rate(vmafx_server_score_duration_seconds_count[1h]))
       - record: vmafx:score_slow_ratio:rate6h
-        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le="30"}[6h])) / sum(rate(vmafx_server_score_duration_seconds_count[6h]))
+        expr: 1 - sum(rate(vmafx_server_score_duration_seconds_bucket{le=~"30(\\.0)?"}[6h])) / sum(rate(vmafx_server_score_duration_seconds_count[6h]))
       - record: vmafx:quality_score:p50_1h
         expr: histogram_quantile(0.5, sum by (tenant, model, le) (rate(vmafx_quality_score_bucket[1h])))
       - record: vmafx:quality_score:count_1h

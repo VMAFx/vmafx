@@ -4,6 +4,8 @@
 package obsgen
 
 import (
+	"strings"
+
 	m "github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
@@ -20,6 +22,16 @@ const (
 	// its median is compared.
 	ScoreRegressionMinScores = "20"
 )
+
+// storedBound is a bucket bound as Prometheus 3 stores its le label: a whole
+// number in float form ("30.0"). The promtool input series use it, so the
+// tests read the buckets as a Prometheus 3 server holds them.
+func storedBound(bound string) string {
+	if bound == "+Inf" || strings.ContainsAny(bound, ".e") {
+		return bound
+	}
+	return bound + ".0"
+}
 
 // series names one input series of a promtool case.
 func series(name, labels, values string) inputSeries {
@@ -130,7 +142,7 @@ func errorBudgetCases(errors, requests string) []alertCase {
 func latencyBudgetCases() []alertCase {
 	fast := m.ServerScoreDuration.Name + "_bucket"
 	all := m.ServerScoreDuration.Name + "_count"
-	le := `le="` + ScoreLatencyThreshold + `"`
+	le := `le="` + storedBound(ScoreLatencyThreshold) + `"`
 	return []alertCase{
 		{interval: "1m", evalTime: "1h", firing: bothBurns,
 			series: []inputSeries{series(fast, le, "0+5x60"), series(all, "", "0+10x60")}},
@@ -160,7 +172,9 @@ func scoreRegression() alert {
 // regressionSeries is a day of scores in (94, 96], then two hours in (75, 80]
 // when drop is set (median 95, then 77.5), at 30 scores per 10 minutes.
 func regressionSeries(drop bool) []inputSeries {
-	labels := func(le string) string { return `tenant="a",model="model-a",profile="none",le="` + le + `"` }
+	labels := func(le string) string {
+		return `tenant="a",model="model-a",profile="none",le="` + storedBound(le) + `"`
+	}
 	low := "0x157"
 	if drop {
 		low = "0x143 0+30x13"

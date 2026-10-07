@@ -162,6 +162,9 @@ func CheckRules(raw []byte) ([]string, error) {
 			for _, name := range CheckExpr(r.Expr) {
 				problems = append(problems, fmt.Sprintf("%s: rule %s%s queries %s, which nothing emits", g.Name, r.Record, r.Alert, name))
 			}
+			for _, p := range CheckBucketMatchers(r.Expr) {
+				problems = append(problems, fmt.Sprintf("%s: rule %s%s: %s", g.Name, r.Record, r.Alert, p))
+			}
 		}
 	}
 	return problems, nil

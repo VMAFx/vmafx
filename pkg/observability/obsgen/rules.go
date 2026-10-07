@@ -68,7 +68,7 @@ func sloRatios() []sloRatio {
 			return "sum(rate(" + m.ServerScoreErrors.Name + "[" + w + "])) / sum(rate(" + m.ServerScoreRequests.Name + "[" + w + "]))"
 		}},
 		{"vmafx:score_slow_ratio", ScoreLatencyObjective, func(w string) string {
-			fast := "sum(rate(" + m.ServerScoreDuration.Name + `_bucket{le="` + ScoreLatencyThreshold + `"}[` + w + "]))"
+			fast := "sum(rate(" + m.ServerScoreDuration.Name + "_bucket{" + LeMatcher(ScoreLatencyThreshold) + "}[" + w + "]))"
 			all := "sum(rate(" + m.ServerScoreDuration.Name + "_count[" + w + "]))"
 			return "1 - " + fast + " / " + all
 		}},
