@@ -186,7 +186,7 @@ _Static_assert(offsetof(VmafxImportPlane, offset) == 16, "VmafxImportPlane.offse
 _Static_assert(offsetof(VmafxImportPlane, pitch) == 24, "VmafxImportPlane.pitch offset");
 _Static_assert(offsetof(VmafxImportPlane, modifier) == 32, "VmafxImportPlane.modifier offset");
 _Static_assert(offsetof(VmafxImportPlane, size) == 40, "VmafxImportPlane.size offset");
-_Static_assert(sizeof(VmafxFrameImport) == 328, "VmafxFrameImport size");
+_Static_assert(sizeof(VmafxFrameImport) == 344, "VmafxFrameImport size");
 _Static_assert(_Alignof(VmafxFrameImport) == 8, "VmafxFrameImport alignment");
 _Static_assert(offsetof(VmafxFrameImport, struct_size) == 0, "VmafxFrameImport.struct_size offset");
 _Static_assert(offsetof(VmafxFrameImport, memory) == 4, "VmafxFrameImport.memory offset");
@@ -215,6 +215,12 @@ _Static_assert(offsetof(VmafxFrameImport, vulkan_flags) == 304,
 _Static_assert(offsetof(VmafxFrameImport, vulkan_pci) == 308, "VmafxFrameImport.vulkan_pci offset");
 _Static_assert(sizeof(vmafx_layout_probe_VmafxFrameImport.vulkan_pci) == 16,
                "VmafxFrameImport.vulkan_pci holds 4 elements");
+_Static_assert(offsetof(VmafxFrameImport, rgb_matrix) == 324, "VmafxFrameImport.rgb_matrix offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_range) == 328, "VmafxFrameImport.rgb_range offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_transfer) == 332,
+               "VmafxFrameImport.rgb_transfer offset");
+_Static_assert(offsetof(VmafxFrameImport, rgb_out_range) == 336,
+               "VmafxFrameImport.rgb_out_range offset");
 _Static_assert(sizeof(VmafxModelConfig) == 48, "VmafxModelConfig size");
 _Static_assert(_Alignof(VmafxModelConfig) == 8, "VmafxModelConfig alignment");
 _Static_assert(offsetof(VmafxModelConfig, struct_size) == 0, "VmafxModelConfig.struct_size offset");
@@ -447,6 +453,12 @@ _Static_assert(VMAFX_PIXEL_FORMAT_Y212 == 28, "VMAFX_PIXEL_FORMAT_Y212");
 _Static_assert(VMAFX_PIXEL_FORMAT_VUYX == 29, "VMAFX_PIXEL_FORMAT_VUYX");
 _Static_assert(VMAFX_PIXEL_FORMAT_XV36 == 30, "VMAFX_PIXEL_FORMAT_XV36");
 _Static_assert(VMAFX_PIXEL_FORMAT_YUV444P_MSB == 31, "VMAFX_PIXEL_FORMAT_YUV444P_MSB");
+_Static_assert(VMAFX_PIXEL_FORMAT_AYUV == 32, "VMAFX_PIXEL_FORMAT_AYUV");
+_Static_assert(VMAFX_PIXEL_FORMAT_UYVY422 == 33, "VMAFX_PIXEL_FORMAT_UYVY422");
+_Static_assert(VMAFX_PIXEL_FORMAT_V210 == 34, "VMAFX_PIXEL_FORMAT_V210");
+_Static_assert(VMAFX_PIXEL_FORMAT_RGB == 35, "VMAFX_PIXEL_FORMAT_RGB");
+_Static_assert(VMAFX_PIXEL_FORMAT_RGBA == 36, "VMAFX_PIXEL_FORMAT_RGBA");
+_Static_assert(VMAFX_PIXEL_FORMAT_BGRA == 37, "VMAFX_PIXEL_FORMAT_BGRA");
 _Static_assert(VMAFX_POOL_NONE == 0, "VMAFX_POOL_NONE");
 _Static_assert(VMAFX_POOL_MIN == 1, "VMAFX_POOL_MIN");
 _Static_assert(VMAFX_POOL_MAX == 2, "VMAFX_POOL_MAX");
@@ -520,10 +532,15 @@ _Static_assert(VMAFX_COLOR_PRIMARIES_SMPTE432 == 3, "VMAFX_COLOR_PRIMARIES_SMPTE
 _Static_assert(VMAFX_COLOR_TRC_UNKNOWN == 0, "VMAFX_COLOR_TRC_UNKNOWN");
 _Static_assert(VMAFX_COLOR_TRC_BT709 == 1, "VMAFX_COLOR_TRC_BT709");
 _Static_assert(VMAFX_COLOR_TRC_SMPTE2084 == 2, "VMAFX_COLOR_TRC_SMPTE2084");
+_Static_assert(VMAFX_COLOR_TRC_SRGB == 3, "VMAFX_COLOR_TRC_SRGB");
+_Static_assert(VMAFX_COLOR_TRC_HLG == 4, "VMAFX_COLOR_TRC_HLG");
+_Static_assert(VMAFX_COLOR_TRC_LINEAR == 5, "VMAFX_COLOR_TRC_LINEAR");
 _Static_assert(VMAFX_COLOR_MATRIX_UNKNOWN == 0, "VMAFX_COLOR_MATRIX_UNKNOWN");
 _Static_assert(VMAFX_COLOR_MATRIX_BT709 == 1, "VMAFX_COLOR_MATRIX_BT709");
 _Static_assert(VMAFX_COLOR_MATRIX_BT2020_NCL == 2, "VMAFX_COLOR_MATRIX_BT2020_NCL");
 _Static_assert(VMAFX_COLOR_MATRIX_ICTCP == 3, "VMAFX_COLOR_MATRIX_ICTCP");
+_Static_assert(VMAFX_COLOR_MATRIX_BT601 == 4, "VMAFX_COLOR_MATRIX_BT601");
+_Static_assert(VMAFX_COLOR_MATRIX_BT2020_CL == 5, "VMAFX_COLOR_MATRIX_BT2020_CL");
 _Static_assert(VMAFX_RESAMPLE_DEFAULT == 0, "VMAFX_RESAMPLE_DEFAULT");
 _Static_assert(VMAFX_RESAMPLE_BILINEAR == 1, "VMAFX_RESAMPLE_BILINEAR");
 _Static_assert(VMAFX_RESAMPLE_BICUBIC == 2, "VMAFX_RESAMPLE_BICUBIC");
@@ -569,6 +586,6 @@ _Static_assert(VMAFX_DNN_FP16_IO == 0x1u, "VMAFX_DNN_FP16_IO");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 32,
-                 234, 162);
+                 238, 173);
     return 0;
 }

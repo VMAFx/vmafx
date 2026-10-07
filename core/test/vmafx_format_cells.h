@@ -56,32 +56,185 @@ typedef struct VfFormat {
     const char *name;
     uint32_t planar_fmt; /* YUV422P or YUV444P: the frame the import makes */
     uint32_t bpc;        /* 8, 10 or 16 */
-    uint32_t pix_fmt;    /* what the producer holds: planar_fmt, NVxx, Pxxx, Y210 or Y410 */
+    uint32_t pix_fmt;    /* what the producer holds: planar_fmt, NVxx, Pxxx, Y210, Y410, RGB ... */
     unsigned shift;      /* left shift of the producer's samples */
+    /* RGB layouts (ADR-2146): the statement of the frames. The producer holds
+     * the clip's three planes as R, G, B; the host session scores what the
+     * CPU import makes of the same bytes, the device import is compared to it. */
+    uint32_t matrix;
+    uint32_t range;
+    uint32_t out_range;
 } VfFormat;
 
 static const VfFormat vf_formats[] = {
-    {"yuv422p", VMAFX_PIXEL_FORMAT_YUV422P, 8u, VMAFX_PIXEL_FORMAT_YUV422P, 0u},
-    {"yuv444p", VMAFX_PIXEL_FORMAT_YUV444P, 8u, VMAFX_PIXEL_FORMAT_YUV444P, 0u},
-    {"nv16", VMAFX_PIXEL_FORMAT_YUV422P, 8u, VMAFX_PIXEL_FORMAT_NV16, 0u},
-    {"nv24", VMAFX_PIXEL_FORMAT_YUV444P, 8u, VMAFX_PIXEL_FORMAT_NV24, 0u},
-    {"yuyv422", VMAFX_PIXEL_FORMAT_YUV422P, 8u, VMAFX_PIXEL_FORMAT_YUYV422, 0u},
-    {"vuyx", VMAFX_PIXEL_FORMAT_YUV444P, 8u, VMAFX_PIXEL_FORMAT_VUYX, 0u},
-    {"yuv422p10", VMAFX_PIXEL_FORMAT_YUV422P, 10u, VMAFX_PIXEL_FORMAT_YUV422P, 0u},
-    {"yuv444p10", VMAFX_PIXEL_FORMAT_YUV444P, 10u, VMAFX_PIXEL_FORMAT_YUV444P, 0u},
-    {"p210", VMAFX_PIXEL_FORMAT_YUV422P, 10u, VMAFX_PIXEL_FORMAT_P210, 6u},
-    {"p410", VMAFX_PIXEL_FORMAT_YUV444P, 10u, VMAFX_PIXEL_FORMAT_P410, 6u},
-    {"y210", VMAFX_PIXEL_FORMAT_YUV422P, 10u, VMAFX_PIXEL_FORMAT_Y210, 6u},
-    {"y410", VMAFX_PIXEL_FORMAT_YUV444P, 10u, VMAFX_PIXEL_FORMAT_Y410, 0u},
-    {"yuv444p10msb", VMAFX_PIXEL_FORMAT_YUV444P, 10u, VMAFX_PIXEL_FORMAT_YUV444P_MSB, 0u},
-    {"yuv444p12", VMAFX_PIXEL_FORMAT_YUV444P, 12u, VMAFX_PIXEL_FORMAT_YUV444P, 0u},
-    {"y212", VMAFX_PIXEL_FORMAT_YUV422P, 12u, VMAFX_PIXEL_FORMAT_Y212, 4u},
-    {"xv36", VMAFX_PIXEL_FORMAT_YUV444P, 12u, VMAFX_PIXEL_FORMAT_XV36, 4u},
-    {"yuv444p12msb", VMAFX_PIXEL_FORMAT_YUV444P, 12u, VMAFX_PIXEL_FORMAT_YUV444P_MSB, 0u},
-    {"yuv422p16", VMAFX_PIXEL_FORMAT_YUV422P, 16u, VMAFX_PIXEL_FORMAT_YUV422P, 0u},
-    {"yuv444p16", VMAFX_PIXEL_FORMAT_YUV444P, 16u, VMAFX_PIXEL_FORMAT_YUV444P, 0u},
-    {"p216", VMAFX_PIXEL_FORMAT_YUV422P, 16u, VMAFX_PIXEL_FORMAT_P216, 0u},
-    {"p416", VMAFX_PIXEL_FORMAT_YUV444P, 16u, VMAFX_PIXEL_FORMAT_P416, 0u},
+    {.name = "yuv422p",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .shift = 0u},
+    {.name = "yuv444p",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .shift = 0u},
+    {.name = "nv16",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_NV16,
+     .shift = 0u},
+    {.name = "nv24",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_NV24,
+     .shift = 0u},
+    {.name = "yuyv422",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUYV422,
+     .shift = 0u},
+    {.name = "vuyx",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_VUYX,
+     .shift = 0u},
+    {.name = "yuv422p10",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .shift = 0u},
+    {.name = "yuv444p10",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .shift = 0u},
+    {.name = "p210",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_P210,
+     .shift = 6u},
+    {.name = "p410",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_P410,
+     .shift = 6u},
+    {.name = "y210",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_Y210,
+     .shift = 6u},
+    {.name = "y410",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_Y410,
+     .shift = 0u},
+    {.name = "yuv444p10msb",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P_MSB,
+     .shift = 0u},
+    {.name = "yuv444p12",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 12u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .shift = 0u},
+    {.name = "y212",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 12u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_Y212,
+     .shift = 4u},
+    {.name = "xv36",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 12u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_XV36,
+     .shift = 4u},
+    {.name = "yuv444p12msb",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 12u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P_MSB,
+     .shift = 0u},
+    {.name = "yuv422p16",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .shift = 0u},
+    {.name = "yuv444p16",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .shift = 0u},
+    {.name = "p216",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_P216,
+     .shift = 0u},
+    {.name = "p416",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_P416,
+     .shift = 0u},
+    {.name = "uyvy422",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_UYVY422,
+     .shift = 0u},
+    {.name = "ayuv",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_AYUV,
+     .shift = 0u},
+    {.name = "v210",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV422P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_V210,
+     .shift = 0u},
+    {.name = "rgb24_bt709_full_limited",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_RGB,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT709,
+     .range = VMAFX_COLOR_RANGE_FULL,
+     .out_range = VMAFX_COLOR_RANGE_LIMITED},
+    {.name = "rgba_bt601_limited_full",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 8u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_RGBA,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT601,
+     .range = VMAFX_COLOR_RANGE_LIMITED,
+     .out_range = VMAFX_COLOR_RANGE_FULL},
+    {.name = "bgra10_bt2020_full_full",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 10u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_BGRA,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT2020_NCL,
+     .range = VMAFX_COLOR_RANGE_FULL,
+     .out_range = VMAFX_COLOR_RANGE_FULL},
+    {.name = "rgb12_bt709_limited_limited",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 12u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_RGB,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT709,
+     .range = VMAFX_COLOR_RANGE_LIMITED,
+     .out_range = VMAFX_COLOR_RANGE_LIMITED},
+    {.name = "rgb48_bt601_full_limited",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_RGB,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT601,
+     .range = VMAFX_COLOR_RANGE_FULL,
+     .out_range = VMAFX_COLOR_RANGE_LIMITED},
+    {.name = "rgba64_bt2020_full_limited",
+     .planar_fmt = VMAFX_PIXEL_FORMAT_YUV444P,
+     .bpc = 16u,
+     .pix_fmt = VMAFX_PIXEL_FORMAT_RGBA,
+     .shift = 0u,
+     .matrix = VMAFX_COLOR_MATRIX_BT2020_NCL,
+     .range = VMAFX_COLOR_RANGE_FULL,
+     .out_range = VMAFX_COLOR_RANGE_LIMITED},
 };
 
 #define VF_N_FORMATS (sizeof(vf_formats) / sizeof(vf_formats[0]))
@@ -134,6 +287,67 @@ static inline bool vf_clip(const VfFormat *f, VtClip *out)
     return ok;
 }
 
+/* The frame `data` of `clip` (R, G, B planes) imported by the CPU device as
+ * `f`'s RGB layout, written back as the planar Y'CbCr frame it makes: what a
+ * host session scores. False when the import is refused. */
+static inline bool vf_rgb_frame_to_ycbcr(const VfFormat *f, const VmafxFrameDesc *d,
+                                         const uint8_t *data, uint8_t *out)
+{
+    const size_t bytes = d->bpc > 8u ? 2u : 1u;
+    const size_t pixels = (size_t)d->w * d->h;
+    const size_t elems = f->pix_fmt == VMAFX_PIXEL_FORMAT_RGB ? 3u : 4u;
+    uint8_t *const rgb = malloc(pixels * elems * bytes);
+    if (!rgb) {
+        return false;
+    }
+    VmafxFrameDesc one = *d;
+    one.pix_fmt = f->pix_fmt;
+    vt_to_packed(d, data, f->pix_fmt, rgb);
+    VmafxFrameImport imp = vt_import_packed(&one, f->pix_fmt, rgb);
+    vt_apply_rgb_statement(&imp);
+    VmafxFrame *frame = NULL;
+    VmafxFramePlanes planes = VMAFX_FRAME_PLANES_INIT;
+    bool ok = vmafx_frame_import(NULL, &imp, &frame, NULL) == VMAFX_OK &&
+              vmafx_frame_planes(frame, &planes, NULL) == VMAFX_OK;
+    for (unsigned p = 0; p < 3u && ok; p++) {
+        for (unsigned y = 0; y < planes.h[p]; y++) {
+            memcpy(out, (const uint8_t *)planes.data[p] + (size_t)y * planes.stride[p],
+                   (size_t)planes.w[p] * bytes);
+            out += (size_t)planes.w[p] * bytes;
+        }
+    }
+    vmafx_frame_unref(frame);
+    free(rgb);
+    return ok;
+}
+
+/* The clip the host session scores: `src` itself, or for an RGB layout the
+ * Y'CbCr frames the CPU import makes of it (`*out` owns new buffers). */
+static inline bool vf_scored_clip(const VfFormat *f, const VtClip *src, VtClip *out)
+{
+    *out = *src;
+    if (!vt_is_rgb(f->pix_fmt)) {
+        return true;
+    }
+    const size_t frame = vt_frame_bytes(&src->desc);
+    out->ref = malloc(frame * src->n_frames);
+    out->dist = malloc(frame * src->n_frames);
+    bool ok = out->ref && out->dist;
+    for (unsigned i = 0; i < src->n_frames && ok; i++) {
+        ok = vf_rgb_frame_to_ycbcr(f, &src->desc, src->ref + i * frame, out->ref + i * frame) &&
+             vf_rgb_frame_to_ycbcr(f, &src->desc, src->dist + i * frame, out->dist + i * frame);
+    }
+    return ok;
+}
+
+static inline void vf_scored_close(const VfFormat *f, VtClip *scored)
+{
+    if (vt_is_rgb(f->pix_fmt)) {
+        free(scored->ref);
+        free(scored->dist);
+    }
+}
+
 static inline VmafxContext *vf_host_session(VmafxDevice *device, const VtClip *clip,
                                             const VcCell *cell)
 {
@@ -180,12 +394,12 @@ static inline VmafxContext *vf_import_session(const VfOps *ops, const VtClip *cl
 /* One attempt: 1 bit-identical, 0 values differ, -1 a session failed, -2
  * the extractor refuses the frames on both sides (a feature that does not
  * take the depth or chroma layout; named by the caller, never scored). */
-static inline int vf_attempt(const VfOps *ops, const VtClip *clip, const VfFormat *f,
-                             void *held[][2], const VcCell *cell, VfResult *r)
+static inline int vf_attempt(const VfOps *ops, const VtClip *scored, const VtClip *clip,
+                             const VfFormat *f, void *held[][2], const VcCell *cell, VfResult *r)
 {
     unsigned long compared = 0;
     unsigned long differing = 0;
-    VmafxContext *const host = vf_host_session(ops->device, clip, cell);
+    VmafxContext *const host = vf_host_session(ops->device, scored, cell);
     VmafxContext *const imp = vf_import_session(ops, clip, f, held, cell);
     if (!host && !imp) {
         return -2;
@@ -200,14 +414,74 @@ static inline int vf_attempt(const VfOps *ops, const VtClip *clip, const VfForma
     return differing == 0u ? 1 : 0;
 }
 
+/* One cell over one format: up to VF_ATTEMPTS attempts. 1 bit-identical, 0 values differ in every
+ * attempt, -1 a session failed, -2 refused for both sides. Updates the counters of `r`. */
+static inline int vf_run_cell(const VfOps *ops, const VtClip *scored, const VtClip *clip,
+                              const VfFormat *f, void *held[][2], const VcCell *cell, VfResult *r)
+{
+    int verdict = -1;
+    for (unsigned a = 0; a < VF_ATTEMPTS && verdict != 1; a++) {
+        verdict = vf_attempt(ops, scored, clip, f, held, cell, r);
+        if (verdict == -2) {
+            (void)fprintf(stderr, "\n  %s cell %s: refused for host and imported frames", f->name,
+                          cell->name);
+            r->refused++;
+            break;
+        }
+        if (verdict != 1) {
+            r->reruns++;
+            (void)fprintf(stderr, "\n  %s cell %s attempt %u: %s", f->name, cell->name, a + 1u,
+                          verdict == 0 ? "values differ" : "session failed");
+        }
+        if (verdict < 0) {
+            break;
+        }
+    }
+    return verdict;
+}
+
+/* Every cell of the table over one held clip. NULL when every cell scored the same bits. */
+static inline char *vf_run_cells(const VfOps *ops, const VtClip *scored, const VtClip *clip,
+                                 const VfFormat *f, void *held[][2], VfResult *r)
+{
+    char *msg = NULL;
+    const unsigned cw = (clip->desc.w + 1u) / 2u;
+    for (size_t c = 0; c < VF_N_CELLS && !msg; c++) {
+        const VcCell *const cell = &VF_CELLS[c];
+        const unsigned chroma_w = f->planar_fmt == VMAFX_PIXEL_FORMAT_YUV444P ? clip->desc.w : cw;
+        if (cell->min_chroma != 0u &&
+            (chroma_w < cell->min_chroma || clip->desc.h < cell->min_chroma)) {
+            continue;
+        }
+        const int verdict = vf_run_cell(ops, scored, clip, f, held, cell, r);
+        if (verdict == -2) {
+            continue;
+        }
+        r->cells++;
+        r->differing += verdict == 1 ? 0u : 1u;
+        msg = verdict == 1 ? NULL : (verdict < 0 ? "cell sessions" : "values differ");
+    }
+    return msg;
+}
+
 /* Every cell of the table over one format; fills `r`. NULL when every cell
  * scored the same bits, else a message. */
 static inline char *vf_run_format(const VfOps *ops, const VfFormat *f, VfResult *r)
 {
     VtClip clip;
+    VtClip scored;
     if (!vf_clip(f, &clip)) {
         vt_clip_close(&clip);
         return "format clip";
+    }
+    *vt_rgb_statement() = (VtRgbStatement){.matrix = f->matrix,
+                                           .range = f->range,
+                                           .transfer = VMAFX_COLOR_TRC_SRGB,
+                                           .out_range = f->out_range};
+    if (!vf_scored_clip(f, &clip, &scored)) {
+        vf_scored_close(f, &scored);
+        vt_clip_close(&clip);
+        return "rgb clip";
     }
     void *(*held)[2] = calloc(clip.n_frames, sizeof(*held));
     const size_t frame = vt_frame_bytes(&clip.desc);
@@ -217,49 +491,16 @@ static inline char *vf_run_format(const VfOps *ops, const VfFormat *f, VfResult 
         held[i][1] = ops->hold(ops->self, &clip.desc, clip.dist + i * frame, f->pix_fmt, f->shift);
         ok = held[i][0] && held[i][1];
     }
-    char *msg = ok ? NULL : "hold";
-    const unsigned cw = (clip.desc.w + 1u) / 2u;
-    for (size_t c = 0; c < VF_N_CELLS && !msg; c++) {
-        const VcCell *const cell = &VF_CELLS[c];
-        const unsigned chroma_w = f->planar_fmt == VMAFX_PIXEL_FORMAT_YUV444P ? clip.desc.w : cw;
-        if (cell->min_chroma != 0u &&
-            (chroma_w < cell->min_chroma || clip.desc.h < cell->min_chroma)) {
-            continue;
-        }
-        int verdict = -1;
-        for (unsigned a = 0; a < VF_ATTEMPTS && verdict != 1; a++) {
-            verdict = vf_attempt(ops, &clip, f, held, cell, r);
-            if (verdict == -2) {
-                (void)fprintf(stderr, "\n  %s cell %s: refused for host and imported frames",
-                              f->name, cell->name);
-                r->refused++;
-                break;
-            }
-            if (verdict != 1) {
-                r->reruns++;
-                (void)fprintf(stderr, "\n  %s cell %s attempt %u: %s", f->name, cell->name, a + 1u,
-                              verdict == 0 ? "values differ" : "session failed");
-            }
-            if (verdict < 0) {
-                break;
-            }
-        }
-        if (verdict == -2) {
-            continue;
-        }
-        r->cells++;
-        r->differing += verdict == 1 ? 0u : 1u;
-        msg = verdict == 1 ? NULL : (verdict < 0 ? "cell sessions" : "values differ");
-    }
+    char *const msg = ok ? vf_run_cells(ops, &scored, &clip, f, held, r) : "hold";
     for (unsigned i = 0; i < clip.n_frames && held; i++) {
-        if (held[i][0]) {
-            ops->release(ops->self, held[i][0]);
-        }
-        if (held[i][1]) {
-            ops->release(ops->self, held[i][1]);
+        for (unsigned k = 0; k < 2u; k++) {
+            if (held[i][k]) {
+                ops->release(ops->self, held[i][k]);
+            }
         }
     }
     free(held);
+    vf_scored_close(f, &scored);
     vt_clip_close(&clip);
     return msg;
 }

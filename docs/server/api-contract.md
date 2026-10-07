@@ -137,8 +137,8 @@ and structs of `core/api/vmafx.toml`, and generated into every surface
 | --- | --- | --- | --- | --- | --- |
 | `width` | 1 | `ScoreOptions` | uint >= 1 | | Width of raw .yuv input in pixels. |
 | `height` | 2 | `ScoreOptions` | uint >= 1 | | Height of raw .yuv input in pixels. |
-| `pixel_format` | 3 | `ScoreOptions` | `420` \| `422` \| `444` | | Chroma subsampling of raw .yuv input. |
-| `bitdepth` | 4 | `ScoreOptions` | `8` \| `10` \| `12` \| `16` | | Bits per sample of raw .yuv input. |
+| `pixel_format` | 3 | `ScoreOptions` | `400` \| `420` \| `422` \| `444` \| `nv12` \| `nv16` \| `nv24` \| `p010` \| `p016` \| `p210` \| `p216` \| `p410` \| `p416` \| `yuyv422` \| `uyvy422` \| `v210` \| `y210` \| `y212` \| `xv30` \| `xv36` \| `vuyx` \| `ayuv` \| `yuv444p16msb` \| `rgb` \| `rgba` \| `bgra` | | Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). |
+| `bitdepth` | 4 | `ScoreOptions` | uint 8..16 | | Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). |
 | `disable_clip` | 10 | `ScoreOptions` | bool | `false` | Do not clip the model score to [0, 100] (the model's disable_clip). |
 | `enable_transform` | 11 | `ScoreOptions` | bool | `false` | Apply the model's score transform (the model's enable_transform). |
 | `backend` | 12 | `ScoreOptions` | `auto` \| `cpu` \| `cuda` \| `sycl` \| `hip` \| `metal` | `auto` | Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. |

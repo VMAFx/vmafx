@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1296), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1298), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5191,6 +5191,14 @@ Every ADR, one heading each (1296), so the site search finds an ADR by its title
 ## ADR-2133: Device import takes 4:2:2 and 4:4:4: semi-planar NV16 / NV24 family and packed Y210 / Y410, one CPU reference, converted on the device
 
 [2133-vmafx-import-422-444-formats](2133-vmafx-import-422-444-formats.md)
+
+## ADR-2145: One input format table generates the import layouts, the FFmpeg and GStreamer lists and the CLI names; AYUV, UYVY and V210 join the layouts
+
+[2145-vmafx-input-format-table](2145-vmafx-input-format-table.md)
+
+## ADR-2146: RGB, RGBA and BGRA input is converted to Y'CbCr in integers with a matrix, range and transfer the caller states, and refused by name without them
+
+[2146-vmafx-rgb-input-explicit-matrix](2146-vmafx-rgb-input-explicit-matrix.md)
 
 ## ADR-2152: VMAFx imports Vulkan frames on CUDA, SYCL and HIP: one memory kind and one semaphore fence kind, opaque memory on CUDA and the dma-buf route elsewhere
 

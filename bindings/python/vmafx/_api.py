@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 10)
+ABI_VERSION = (0, 1, 11)
 
 
 class Status(enum.IntEnum):
@@ -79,6 +79,12 @@ class PixelFormat(enum.IntEnum):
     VUYX = 29
     XV36 = 30
     YUV444P_MSB = 31
+    AYUV = 32
+    UYVY422 = 33
+    V210 = 34
+    RGB = 35
+    RGBA = 36
+    BGRA = 37
 
 
 class Pool(enum.IntEnum):
@@ -211,6 +217,9 @@ class ColorTransfer(enum.IntEnum):
     UNKNOWN = 0
     BT709 = 1
     SMPTE2084 = 2
+    SRGB = 3
+    HLG = 4
+    LINEAR = 5
 
 
 class ColorMatrix(enum.IntEnum):
@@ -220,6 +229,8 @@ class ColorMatrix(enum.IntEnum):
     BT709 = 1
     BT2020_NCL = 2
     ICTCP = 3
+    BT601 = 4
+    BT2020_CL = 5
 
 
 class ResampleFilter(enum.IntEnum):
@@ -623,6 +634,10 @@ VmafxFrameImport._fields_ = (
     ("vulkan_tiling", ctypes.c_uint32),
     ("vulkan_flags", ctypes.c_uint32),
     ("vulkan_pci", ctypes.c_uint32 * 4),
+    ("rgb_matrix", ctypes.c_uint32),
+    ("rgb_range", ctypes.c_uint32),
+    ("rgb_transfer", ctypes.c_uint32),
+    ("rgb_out_range", ctypes.c_uint32),
 )
 
 VmafxModelConfig._fields_ = (
@@ -962,7 +977,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        328,
+        344,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -981,6 +996,10 @@ LAYOUT = {
             ("vulkan_tiling", 300),
             ("vulkan_flags", 304),
             ("vulkan_pci", 308),
+            ("rgb_matrix", 324),
+            ("rgb_range", 328),
+            ("rgb_transfer", 332),
+            ("rgb_out_range", 336),
         ),
     ),
     VmafxModelConfig: (
@@ -2571,6 +2590,10 @@ class FrameImport:
     vulkan_tiling: int
     vulkan_flags: int
     vulkan_pci: tuple[int, ...]
+    rgb_matrix: int
+    rgb_range: int
+    rgb_transfer: int
+    rgb_out_range: int
 
     @classmethod
     def from_c(cls, raw: VmafxFrameImport) -> FrameImport:
@@ -2589,6 +2612,10 @@ class FrameImport:
             vulkan_tiling=raw.vulkan_tiling,
             vulkan_flags=raw.vulkan_flags,
             vulkan_pci=tuple(raw.vulkan_pci),
+            rgb_matrix=raw.rgb_matrix,
+            rgb_range=raw.rgb_range,
+            rgb_transfer=raw.rgb_transfer,
+            rgb_out_range=raw.rgb_out_range,
         )
 
 

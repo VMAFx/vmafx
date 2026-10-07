@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from . import graph, typesys
+from . import format_table, graph, typesys
 from .model import (
     COMPAT_BACKENDS,
     COMPAT_DIR,
@@ -325,3 +325,4 @@ def validate(api: Api) -> None:
     for compat in api.compats:
         _check_compat(api, compat)
     _check_versions(api)
+    format_table.check(api)

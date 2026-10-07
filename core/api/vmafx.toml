@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.10"
+abi_version = "0.1.11"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -292,6 +292,12 @@ values = [
   { name = "VMAFX_PIXEL_FORMAT_VUYX", value = 29, doc = "Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
   { name = "VMAFX_PIXEL_FORMAT_XV36", value = 30, doc = "Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it makes is YUV444P at 12 bits. Added in ABI 0.1.9." },
   { name = "VMAFX_PIXEL_FORMAT_YUV444P_MSB", value = 31, doc = "Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample shifted down by 16 - bpc). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_AYUV", value = 32, doc = "Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_UYVY422", value = 33, doc = "Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_V210", value = 34, doc = "Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit words, three 10-bit samples each; the two top bits of a word are not read), rows padded as the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_RGB", value = 35, doc = "Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8 bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits); vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146). Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_RGBA", value = 36, doc = "RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_BGRA", value = 37, doc = "RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
 ]
 
 [[enums]]
@@ -801,8 +807,8 @@ sized = true
 doc = "A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT."
 fields = [
   { name = "memory", type = "u32", enum = "VmafxMemoryKind", doc = "What each plane's handle refers to." },
-  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing else." },
-  { name = "bpc", type = "u32", doc = "Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to 16 for the planar formats." },
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, UYVY422, VUYX, AYUV, V210) and YUV444P_MSB are converted to planar (a gather, a shift and a mask), nothing else; RGB, RGBA and BGRA are converted to Y'CbCr with the matrix, range and transfer of `rgb_*` (ADR-2146)." },
+  { name = "bpc", type = "u32", doc = "Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / UYVY422 / VUYX / AYUV, 10 for V210, 9 to 16 for YUV444P_MSB, 8 to 16 for RGB, RGBA, BGRA and the planar formats." },
   { name = "w", type = "u32", doc = "Luma width in pixels." },
   { name = "h", type = "u32", doc = "Luma height in pixels." },
   { name = "n_planes", type = "u32", doc = "Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1 for the packed layouts, else 3." },
@@ -816,6 +822,10 @@ fields = [
   { name = "vulkan_tiling", type = "u32", enum = "VmafxVulkanTiling", doc = "VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10." },
   { name = "vulkan_flags", type = "u32", flags = "VmafxVulkanFlags", doc = "VULKAN memory: properties of the memory objects. Added in ABI 0.1.10." },
   { name = "vulkan_pci", type = "u32", count = 4, doc = "VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10." },
+  { name = "rgb_matrix", type = "u32", enum = "VmafxColorMatrix", doc = "RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.11." },
+  { name = "rgb_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11." },
+  { name = "rgb_transfer", type = "u32", enum = "VmafxColorTransfer", doc = "RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11." },
+  { name = "rgb_out_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.11." },
 ]
 
 [[structs]]
@@ -2294,6 +2304,9 @@ values = [
   { name = "VMAFX_COLOR_TRC_UNKNOWN", value = 0, doc = "Unset." },
   { name = "VMAFX_COLOR_TRC_BT709", value = 1, doc = "ITU-R BT.709." },
   { name = "VMAFX_COLOR_TRC_SMPTE2084", value = 2, doc = "SMPTE ST 2084 (PQ)." },
+  { name = "VMAFX_COLOR_TRC_SRGB", value = 3, doc = "IEC 61966-2-1 (sRGB). Added in ABI 0.1.11 (ADR-2146)." },
+  { name = "VMAFX_COLOR_TRC_HLG", value = 4, doc = "ARIB STD-B67 (HLG). Added in ABI 0.1.11." },
+  { name = "VMAFX_COLOR_TRC_LINEAR", value = 5, doc = "Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies to non-linear signals). Added in ABI 0.1.11." },
 ]
 
 [[enums]]
@@ -2306,6 +2319,8 @@ values = [
   { name = "VMAFX_COLOR_MATRIX_BT709", value = 1, doc = "ITU-R BT.709." },
   { name = "VMAFX_COLOR_MATRIX_BT2020_NCL", value = 2, doc = "ITU-R BT.2020 non-constant luminance." },
   { name = "VMAFX_COLOR_MATRIX_ICTCP", value = 3, doc = "ICtCp." },
+  { name = "VMAFX_COLOR_MATRIX_BT601", value = 4, doc = "ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.11 (ADR-2146)." },
+  { name = "VMAFX_COLOR_MATRIX_BT2020_CL", value = 5, doc = "ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.11." },
 ]
 
 [[enums]]
@@ -4515,8 +4530,8 @@ argv = "core"
 [[option_groups.options]]
 name = "pixel_format"
 type = "enum"
-enum = ["420", "422", "444"]
-doc = "Chroma subsampling of raw .yuv input."
+enum = ["400", "420", "422", "444", "nv12", "nv16", "nv24", "p010", "p016", "p210", "p216", "p410", "p416", "yuyv422", "uyvy422", "v210", "y210", "y212", "xv30", "xv36", "vuyx", "ayuv", "yuv444p16msb", "rgb", "rgba", "bgra"]
+doc = "Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146)."
 cli = ["--pixel_format"]
 cli_short = "p"
 mcp = "pixfmt"
@@ -4528,8 +4543,8 @@ argv_flag = "-p"
 [[option_groups.options]]
 name = "bitdepth"
 type = "uint"
-choices = [8, 10, 12, 16]
-doc = "Bits per sample of raw .yuv input."
+range = [8, 16]
+doc = "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it)."
 cli = ["--bitdepth"]
 cli_short = "b"
 mcp = "bitdepth"
@@ -4537,6 +4552,38 @@ mcp_required = true
 proto = { field = 4 }
 argv = "core"
 argv_flag = "-b"
+
+[[option_groups.options]]
+name = "rgb_matrix"
+type = "enum"
+enum = ["bt601", "bt709", "bt2020ncl"]
+doc = "Raw rgb, rgba and bgra input: the Y'CbCr matrix of the conversion; no default, the input is refused without it (ADR-2146)."
+surfaces = ["cli"]
+cli = ["--rgb_matrix"]
+
+[[option_groups.options]]
+name = "rgb_range"
+type = "enum"
+enum = ["limited", "full"]
+doc = "Raw RGB input: the range of the R'G'B' samples; no default."
+surfaces = ["cli"]
+cli = ["--rgb_range"]
+
+[[option_groups.options]]
+name = "rgb_transfer"
+type = "enum"
+enum = ["bt709", "srgb", "pq", "hlg"]
+doc = "Raw RGB input: the transfer characteristic of the R'G'B' samples (checked, not applied); no default."
+surfaces = ["cli"]
+cli = ["--rgb_transfer"]
+
+[[option_groups.options]]
+name = "rgb_out_range"
+type = "enum"
+enum = ["limited", "full"]
+doc = "Raw RGB input: the range of the Y'CbCr frame made; limited is the range the VMAF models are trained on; no default."
+surfaces = ["cli"]
+cli = ["--rgb_out_range"]
 
 [[option_groups]]
 name = "encoded_input"
@@ -5273,3 +5320,428 @@ type = "string"
 doc = "Re-run the configuration a JSON report records and compare every configuration field and score bit for bit; exits nonzero naming the first difference (RC4 WP5)."
 cli = ["--verify-provenance"]
 cli_meta = "$report"
+
+# ---------------------------------------------------------------------------
+# Input format table (ADR-2145). One row per VmafxPixelFormat value: how the
+# producer lays the frame out, which planar frame it makes, and what the
+# surfaces call it. The generator checks every row against the enum above and
+# emits the import layout table (core/src/vmafx/import_layouts_gen.h), the
+# FFmpeg and GStreamer format lists (core/api/generated/) and
+# docs/usage/pixel-formats.md, so no list is kept by hand.
+#
+# Keys: `enum` (VmafxPixelFormat value), `name` (FFmpeg's name, for messages),
+# `layout` (planar | semi_planar | packed | rgb), `planar` (the VmafxPixelFormat
+# of the frame it makes), `chroma` (400 | 420 | 422 | 444), `siting` (none |
+# left: chroma sample co-sited horizontally with luma; metadata for the
+# surfaces, the engine does not shift chroma), `planes` (planes the producer
+# hands over), `bpc` ([min, max] bits per component), `shift` (right shift of
+# every sample), `msb` (planar words with the `bpc` top bits), `interleaved`
+# (plane 1 holds Cb / Cr pairs), `packing` (none | yuyv | uyv4 | xvyu2101010 |
+# v210 | rgb), `elem` (element of a group that holds Y, Cb, Cr; R, G, B for
+# rgb), `rgb_elems` (elements per RGB pixel), `needs_statement` (the format
+# is accepted only with matrix, range and transfer stated, ADR-2146),
+# `devices` (backends that import it on the device), `ffmpeg` / `gstreamer`
+# (bits per component -> pixel format name; absent: the surface has none).
+# ---------------------------------------------------------------------------
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUV420P"
+name = "yuv420p"
+layout = "planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV420P"
+chroma = "420"
+siting = "left"
+planes = 3
+bpc = [8, 16]
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 8 = "yuv420p", 9 = "yuv420p9le", 10 = "yuv420p10le", 12 = "yuv420p12le", 14 = "yuv420p14le", 16 = "yuv420p16le" }
+gstreamer = { 8 = "I420", 10 = "I420_10LE", 12 = "I420_12LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUV422P"
+name = "yuv422p"
+layout = "planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 3
+bpc = [8, 16]
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 8 = "yuv422p", 9 = "yuv422p9le", 10 = "yuv422p10le", 12 = "yuv422p12le", 14 = "yuv422p14le", 16 = "yuv422p16le" }
+gstreamer = { 8 = "Y42B", 10 = "I422_10LE", 12 = "I422_12LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUV444P"
+name = "yuv444p"
+layout = "planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 3
+bpc = [8, 16]
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 8 = "yuv444p", 9 = "yuv444p9le", 10 = "yuv444p10le", 12 = "yuv444p12le", 14 = "yuv444p14le", 16 = "yuv444p16le" }
+gstreamer = { 8 = "Y444", 10 = "Y444_10LE", 12 = "Y444_12LE", 16 = "Y444_16LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUV400P"
+name = "gray"
+layout = "planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV400P"
+chroma = "400"
+siting = "none"
+planes = 1
+bpc = [8, 16]
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 8 = "gray", 9 = "gray9le", 10 = "gray10le", 12 = "gray12le", 14 = "gray14le", 16 = "gray16le" }
+gstreamer = { 8 = "GRAY8", 16 = "GRAY16_LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_NV12"
+name = "nv12"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV420P"
+chroma = "420"
+siting = "left"
+planes = 2
+bpc = [8, 8]
+interleaved = true
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 8 = "nv12" }
+gstreamer = { 8 = "NV12" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P010"
+name = "p010"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV420P"
+chroma = "420"
+siting = "left"
+planes = 2
+bpc = [10, 10]
+shift = 6
+interleaved = true
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 10 = "p010le" }
+gstreamer = { 10 = "P010_10LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P016"
+name = "p016"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV420P"
+chroma = "420"
+siting = "left"
+planes = 2
+bpc = [16, 16]
+interleaved = true
+devices = ["cpu", "cuda", "sycl", "hip", "metal"]
+ffmpeg = { 16 = "p016le" }
+gstreamer = { 16 = "P016_LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_NV16"
+name = "nv16"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 2
+bpc = [8, 8]
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "nv16" }
+gstreamer = { 8 = "NV16" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P210"
+name = "p210"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 2
+bpc = [10, 10]
+shift = 6
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 10 = "p210le" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P216"
+name = "p216"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 2
+bpc = [16, 16]
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 16 = "p216le" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_NV24"
+name = "nv24"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 2
+bpc = [8, 8]
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "nv24" }
+gstreamer = { 8 = "NV24" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P410"
+name = "p410"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 2
+bpc = [10, 10]
+shift = 6
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 10 = "p410le" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_P416"
+name = "p416"
+layout = "semi_planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 2
+bpc = [16, 16]
+interleaved = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 16 = "p416le" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_Y210"
+name = "y210"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 1
+bpc = [10, 10]
+shift = 6
+packing = "yuyv"
+elem = [0, 1, 3]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 10 = "y210le" }
+gstreamer = { 10 = "Y210" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_Y212"
+name = "y212"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 1
+bpc = [12, 12]
+shift = 4
+packing = "yuyv"
+elem = [0, 1, 3]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 12 = "y212le" }
+gstreamer = { 12 = "Y212_LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUYV422"
+name = "yuyv422"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 1
+bpc = [8, 8]
+packing = "yuyv"
+elem = [0, 1, 3]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "yuyv422" }
+gstreamer = { 8 = "YUY2" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_UYVY422"
+name = "uyvy422"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 1
+bpc = [8, 8]
+packing = "yuyv"
+elem = [1, 0, 2]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "uyvy422" }
+gstreamer = { 8 = "UYVY" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_V210"
+name = "v210"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV422P"
+chroma = "422"
+siting = "left"
+planes = 1
+bpc = [10, 10]
+packing = "v210"
+devices = ["cpu", "cuda", "hip"]
+gstreamer = { 10 = "v210" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_Y410"
+name = "xv30"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [10, 10]
+packing = "xvyu2101010"
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 10 = "xv30le" }
+gstreamer = { 10 = "Y410" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_XV36"
+name = "xv36"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [12, 12]
+shift = 4
+packing = "uyv4"
+elem = [1, 0, 2]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 12 = "xv36le" }
+gstreamer = { 12 = "Y412_LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_VUYX"
+name = "vuyx"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [8, 8]
+packing = "uyv4"
+elem = [2, 1, 0]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "vuyx" }
+gstreamer = { 8 = "VUYA" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_AYUV"
+name = "ayuv"
+layout = "packed"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [8, 8]
+packing = "uyv4"
+elem = [1, 2, 3]
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "ayuv" }
+gstreamer = { 8 = "AYUV" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_YUV444P_MSB"
+name = "yuv444p16msb"
+layout = "planar"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 3
+bpc = [9, 16]
+msb = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 10 = "yuv444p10msble", 12 = "yuv444p12msble" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_RGB"
+name = "rgb"
+layout = "rgb"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [8, 16]
+packing = "rgb"
+elem = [0, 1, 2]
+rgb_elems = 3
+needs_statement = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "rgb24", 16 = "rgb48le" }
+gstreamer = { 8 = "RGB" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_RGBA"
+name = "rgba"
+layout = "rgb"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [8, 16]
+packing = "rgb"
+elem = [0, 1, 2]
+rgb_elems = 4
+needs_statement = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "rgba", 16 = "rgba64le" }
+gstreamer = { 8 = "RGBA", 16 = "RGBA64_LE" }
+
+[[pixel_formats]]
+enum = "VMAFX_PIXEL_FORMAT_BGRA"
+name = "bgra"
+layout = "rgb"
+planar = "VMAFX_PIXEL_FORMAT_YUV444P"
+chroma = "444"
+siting = "none"
+planes = 1
+bpc = [8, 16]
+packing = "rgb"
+elem = [2, 1, 0]
+rgb_elems = 4
+needs_statement = true
+devices = ["cpu", "cuda", "hip"]
+ffmpeg = { 8 = "bgra", 16 = "bgra64le" }
+gstreamer = { 8 = "BGRA", 16 = "BGRA64_LE" }
+
+# ---------------------------------------------------------------------------
+# RGB to Y'CbCr matrices (ADR-2146). `kr` and `kb` are the luma weights of the
+# standard as exact decimals; the generator derives every coefficient of the
+# integer conversion from them (core/src/vmafx/rgb_coefficients_gen.h), so the
+# CPU reference and the device twins all read one table. A matrix enum value
+# without a row here is declared and refused by name.
+# ---------------------------------------------------------------------------
+
+[[color_matrices]]
+enum = "VMAFX_COLOR_MATRIX_BT601"
+kr = "0.299"
+kb = "0.114"
+standard = "ITU-R BT.601-7"
+
+[[color_matrices]]
+enum = "VMAFX_COLOR_MATRIX_BT709"
+kr = "0.2126"
+kb = "0.0722"
+standard = "ITU-R BT.709-6"
+
+[[color_matrices]]
+enum = "VMAFX_COLOR_MATRIX_BT2020_NCL"
+kr = "0.2627"
+kb = "0.0593"
+standard = "ITU-R BT.2020-2"

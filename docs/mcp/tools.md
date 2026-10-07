@@ -64,8 +64,8 @@ reproduce the numbers of releases before 1.0.0-rc.4.
 | `dis` | string | yes | | `vmaf_score`, `describe_worst_frames` | Distorted video, in the same form as the reference. |
 | `width` | uint >= 1 | yes | | `vmaf_score`, `describe_worst_frames` | Width of raw .yuv input in pixels. |
 | `height` | uint >= 1 | yes | | `vmaf_score`, `describe_worst_frames` | Height of raw .yuv input in pixels. |
-| `pixfmt` | `420` \| `422` \| `444` | yes | | `vmaf_score`, `describe_worst_frames` | Chroma subsampling of raw .yuv input. |
-| `bitdepth` | `8` \| `10` \| `12` \| `16` | yes | | `vmaf_score`, `describe_worst_frames` | Bits per sample of raw .yuv input. |
+| `pixfmt` | `400` \| `420` \| `422` \| `444` \| `nv12` \| `nv16` \| `nv24` \| `p010` \| `p016` \| `p210` \| `p216` \| `p410` \| `p416` \| `yuyv422` \| `uyvy422` \| `v210` \| `y210` \| `y212` \| `xv30` \| `xv36` \| `vuyx` \| `ayuv` \| `yuv444p16msb` \| `rgb` \| `rgba` \| `bgra` | yes | | `vmaf_score`, `describe_worst_frames` | Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). |
+| `bitdepth` | uint 8..16 | yes | | `vmaf_score`, `describe_worst_frames` | Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). |
 | `reference_encoded` | string | yes | | `vmaf_score_encoded` | Path to the reference encoded video (MP4/MKV/Y4M/...). Must be under an allowlisted root (VMAF_MCP_ALLOW). |
 | `distorted_encoded` | string | yes | | `vmaf_score_encoded` | Path to the distorted encoded video. |
 | `model` | string | | library default (`VMAF_DEFAULT_MODEL_VERSION`) | `vmaf_score`, `vmaf_score_encoded`, `describe_worst_frames` | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, &lt;feature&gt;.&lt;option&gt;=&lt;value&gt; overloads. Several models score in one pass (repeat the option; the filter separates them with \|). |

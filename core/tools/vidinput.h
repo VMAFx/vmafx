@@ -74,6 +74,8 @@ typedef void *(*raw_input_open_func)(FILE *_fin, unsigned width, unsigned height
                                      unsigned bitdepth);
 
 typedef int (*video_input_fetch_into_vmaf_picture_func)(void *_ctx, FILE *_fin, VmafPicture *pic);
+typedef int (*raw_input_set_rgb_func)(void *_ctx, unsigned matrix, unsigned range,
+                                      unsigned transfer, unsigned out_range);
 
 /**Pluggable method table for accessing different formats.*/
 struct video_input_vtbl {
@@ -83,6 +85,7 @@ struct video_input_vtbl {
     video_input_fetch_frame_func fetch_frame;
     video_input_close_func close;
     video_input_fetch_into_vmaf_picture_func fetch_into_vmaf_picture;
+    raw_input_set_rgb_func set_rgb; /* NULL: the input has no RGB layout */
 };
 
 struct video_input {
@@ -91,8 +94,20 @@ struct video_input {
     FILE *fin;
 };
 
+/* `pix_fmt` is a VmafPixelFormat (1 to 4: planar 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0) or, from 16
+ * up, a VmafxPixelFormat layout of the import table (NV12, P010, YUYV422, V210, RGBA ...):
+ * the frame the reader makes is the planar frame of that layout (ADR-2145). */
 int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned height, int pix_fmt,
                    unsigned bitdepth);
+
+/* The statement of a raw RGB layout (VmafxColorMatrix, VmafxColorRange,
+ * VmafxColorTransfer values of vmafx/types.h): the matrix, the range of the
+ * R'G'B' samples, their transfer characteristic and the range of the Y'CbCr
+ * frame made (ADR-2146). Call before the first frame is read. 0 on success; -1
+ * when the input is not a raw RGB layout or the statement names a conversion the
+ * reference does not make. A raw RGB input read without it fails to open. */
+int raw_input_set_rgb(video_input *_vid, unsigned matrix, unsigned range, unsigned transfer,
+                      unsigned out_range);
 
 int video_input_open(video_input *_vid, FILE *_fin);
 void video_input_close(video_input *_vid);
@@ -115,6 +130,8 @@ typedef enum {
     /** No chroma decimation (4:4:4).
    *  The Cb and Cr chroma planes are full width and full height. */
     PF_444,
+    /** Luma only (raw .yuv files with --pixel_format 400): no chroma planes. */
+    PF_400,
     /** The total number of currently defined pixel formats. */
     PF_NFORMATS
 } video_input_pixel_format;

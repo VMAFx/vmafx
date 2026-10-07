@@ -51,6 +51,7 @@
 #include "internal.h"
 #include "mem.h"
 #include "vmafx/import_convert.h"
+#include "vmafx/rgb_convert.h"
 #include "picture.h"
 #include "vmafx/vmafx.h"
 
@@ -67,230 +68,9 @@
 
 typedef VmafxImportLayout ImportLayout;
 
-static const ImportLayout import_layouts[] = {
-    {VMAFX_PIXEL_FORMAT_YUV420P,
-     VMAFX_PIXEL_FORMAT_YUV420P,
-     3u,
-     8u,
-     16u,
-     0u,
-     false,
-     "yuv420p",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_YUV422P,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     3u,
-     8u,
-     16u,
-     0u,
-     false,
-     "yuv422p",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_YUV444P,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     3u,
-     8u,
-     16u,
-     0u,
-     false,
-     "yuv444p",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_YUV400P,
-     VMAFX_PIXEL_FORMAT_YUV400P,
-     1u,
-     8u,
-     16u,
-     0u,
-     false,
-     "gray",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_NV12,
-     VMAFX_PIXEL_FORMAT_YUV420P,
-     2u,
-     8u,
-     8u,
-     0u,
-     true,
-     "nv12",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P010,
-     VMAFX_PIXEL_FORMAT_YUV420P,
-     2u,
-     10u,
-     10u,
-     6u,
-     true,
-     "p010",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P016,
-     VMAFX_PIXEL_FORMAT_YUV420P,
-     2u,
-     16u,
-     16u,
-     0u,
-     true,
-     "p016",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_NV16,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     2u,
-     8u,
-     8u,
-     0u,
-     true,
-     "nv16",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P210,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     2u,
-     10u,
-     10u,
-     6u,
-     true,
-     "p210",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P216,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     2u,
-     16u,
-     16u,
-     0u,
-     true,
-     "p216",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_NV24,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     2u,
-     8u,
-     8u,
-     0u,
-     true,
-     "nv24",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P410,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     2u,
-     10u,
-     10u,
-     6u,
-     true,
-     "p410",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_P416,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     2u,
-     16u,
-     16u,
-     0u,
-     true,
-     "p416",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_Y210,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     1u,
-     10u,
-     10u,
-     6u,
-     false,
-     "y210",
-     VMAFX_IMPORT_PACKED_YUYV,
-     {0u, 1u, 3u},
-     false},
-    {VMAFX_PIXEL_FORMAT_Y212,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     1u,
-     12u,
-     12u,
-     4u,
-     false,
-     "y212",
-     VMAFX_IMPORT_PACKED_YUYV,
-     {0u, 1u, 3u},
-     false},
-    {VMAFX_PIXEL_FORMAT_YUYV422,
-     VMAFX_PIXEL_FORMAT_YUV422P,
-     1u,
-     8u,
-     8u,
-     0u,
-     false,
-     "yuyv422",
-     VMAFX_IMPORT_PACKED_YUYV,
-     {0u, 1u, 3u},
-     false},
-    {VMAFX_PIXEL_FORMAT_Y410,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     1u,
-     10u,
-     10u,
-     0u,
-     false,
-     "xv30",
-     VMAFX_IMPORT_PACKED_XVYU2101010,
-     {0u, 0u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_XV36,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     1u,
-     12u,
-     12u,
-     4u,
-     false,
-     "xv36",
-     VMAFX_IMPORT_PACKED_UYV4,
-     {1u, 0u, 2u},
-     false},
-    {VMAFX_PIXEL_FORMAT_VUYX,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     1u,
-     8u,
-     8u,
-     0u,
-     false,
-     "vuyx",
-     VMAFX_IMPORT_PACKED_UYV4,
-     {2u, 1u, 0u},
-     false},
-    {VMAFX_PIXEL_FORMAT_YUV444P_MSB,
-     VMAFX_PIXEL_FORMAT_YUV444P,
-     3u,
-     9u,
-     16u,
-     0u,
-     false,
-     "yuv444p16msb",
-     VMAFX_IMPORT_PACKED_NONE,
-     {0u, 0u, 0u},
-     true},
-};
-
-#define N_IMPORT_LAYOUTS (sizeof(import_layouts) / sizeof(import_layouts[0]))
+/* The layout table is generated from the format table of core/api/vmafx.toml
+ * (ADR-2145): one row per VmafxPixelFormat. */
+#include "import_layouts_gen.h"
 
 static const char *const memory_names[] = {
     "NONE",          "HOST",          "DEVICE_POINTER", "DEVICE_ARRAY", "DMABUF",
@@ -304,9 +84,9 @@ const char *vmafx_memory_kind_name(uint32_t memory)
 
 static const ImportLayout *import_layout(uint32_t pix_fmt)
 {
-    for (size_t i = 0; i < N_IMPORT_LAYOUTS; i++) {
-        if (import_layouts[i].pix_fmt == pix_fmt) {
-            return &import_layouts[i];
+    for (size_t i = 0; i < VMAFX_N_IMPORT_LAYOUTS; i++) {
+        if (vmafx_import_layouts[i].pix_fmt == pix_fmt) {
+            return &vmafx_import_layouts[i];
         }
     }
     return NULL;
@@ -394,7 +174,7 @@ static VmafxStatus check_geometry(const VmafxReport *report, const VmafxFrameImp
                           "unknown flag bits 0x%x",
                           (unsigned)(d->flags & ~VMAFX_IMPORT_ALLOW_COPY));
     }
-    return VMAFX_OK;
+    return vmafx_rgb_check_statement(report, d, *layout);
 }
 
 /* A value of VmafxMemoryKind other than NONE. */
@@ -418,58 +198,6 @@ static VmafxStatus check_memory(const VmafxReport *report, const VmafxFrameImpor
                           vmafx_memory_kind_name(d->memory), layout->name);
     }
     return VMAFX_OK;
-}
-
-void vmafx_import_plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_t i,
-                               const unsigned pw[3], const unsigned ph[3], uint64_t *row,
-                               uint64_t *rows)
-{
-    const uint64_t bytes = bpc > 8u ? 2u : 1u;
-    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
-        /* YUYV: four elements per chroma column; UYV4: four per pixel;
-         * XV30: a 32-bit word per pixel. */
-        const uint64_t elements =
-            layout->packed == VMAFX_IMPORT_PACKED_YUYV ?
-                4u * pw[1] :
-                (layout->packed == VMAFX_IMPORT_PACKED_UYV4 ? 4u * pw[0] : 0u);
-        *row = layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010 ? 4u * (uint64_t)pw[0] :
-                                                                   elements * bytes;
-        *rows = ph[0];
-        return;
-    }
-    const uint64_t pair = layout->interleaved && i == 1u ? 2u : 1u;
-    *row = (uint64_t)pw[i] * bytes * pair;
-    *rows = ph[i];
-}
-
-void vmafx_import_plane_read(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
-                             VmafxImportRead *out)
-{
-    VmafxImportRead rd = {.src_plane = i,
-                          .step = 1u,
-                          .offset = 0u,
-                          .in_bytes = bpc > 8u ? 2u : 1u,
-                          .shift = vmafx_import_shift(layout, bpc),
-                          .mask = 0u};
-    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
-        rd.src_plane = 0u;
-    }
-    if (layout->packed == VMAFX_IMPORT_PACKED_YUYV) {
-        rd.step = i == 0u ? 2u : 4u;
-        rd.offset = layout->elem[i];
-    } else if (layout->packed == VMAFX_IMPORT_PACKED_UYV4) {
-        rd.step = 4u;
-        rd.offset = layout->elem[i];
-    } else if (layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010) {
-        rd.in_bytes = 4u;
-        rd.mask = 0x3ffu;
-        rd.shift = i == 0u ? 10u : (i == 1u ? 0u : 20u);
-    } else if (layout->interleaved && i > 0u) {
-        rd.src_plane = 1u;
-        rd.step = 2u;
-        rd.offset = i - 1u;
-    }
-    *out = rd;
 }
 
 /* The rows of a plane (`rows` >= 1 of `row` bytes, pitch >= row > 0) lie
@@ -603,6 +331,19 @@ static void fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, ui
                        const unsigned pw[3], const unsigned ph[3], uint8_t *dst, void *data[3],
                        ptrdiff_t stride[3])
 {
+    if (layout->packed == VMAFX_IMPORT_PACKED_RGB) {
+        VmafxRgbPlan rgb;
+        /* The statement was checked: the matrix has a conversion. */
+        const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix, d->rgb_range,
+                                                 d->rgb_out_range);
+        assert(planned && dst != NULL);
+        (void)planned;
+        data[i] = dst;
+        stride[i] = (ptrdiff_t)owned_stride(pw[i], d->bpc);
+        vmafx_rgb_read_plane(dst, (size_t)stride[i], plane_address(&d->plane[0]),
+                             (size_t)d->plane[0].pitch, pw[i], ph[i], i, &rgb);
+        return;
+    }
     VmafxImportRead rd;
     vmafx_import_plane_read(layout, d->bpc, i, &rd);
     const VmafxImportPlane *const p = &d->plane[rd.src_plane];

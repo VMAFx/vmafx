@@ -35,21 +35,40 @@
         "pixfmt": {
           "type": "string",
           "enum": [
+            "400",
             "420",
             "422",
-            "444"
+            "444",
+            "nv12",
+            "nv16",
+            "nv24",
+            "p010",
+            "p016",
+            "p210",
+            "p216",
+            "p410",
+            "p416",
+            "yuyv422",
+            "uyvy422",
+            "v210",
+            "y210",
+            "y212",
+            "xv30",
+            "xv36",
+            "vuyx",
+            "ayuv",
+            "yuv444p16msb",
+            "rgb",
+            "rgba",
+            "bgra"
           ],
-          "description": "Chroma subsampling of raw .yuv input. (CLI: --pixel_format)"
+          "description": "Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). (CLI: --pixel_format)"
         },
         "bitdepth": {
           "type": "integer",
-          "enum": [
-            8,
-            10,
-            12,
-            16
-          ],
-          "description": "Bits per sample of raw .yuv input. (CLI: --bitdepth)"
+          "minimum": 8,
+          "maximum": 16,
+          "description": "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). (CLI: --bitdepth)"
         },
         "model": {
           "type": "string",
@@ -364,21 +383,40 @@
         "pixfmt": {
           "type": "string",
           "enum": [
+            "400",
             "420",
             "422",
-            "444"
+            "444",
+            "nv12",
+            "nv16",
+            "nv24",
+            "p010",
+            "p016",
+            "p210",
+            "p216",
+            "p410",
+            "p416",
+            "yuyv422",
+            "uyvy422",
+            "v210",
+            "y210",
+            "y212",
+            "xv30",
+            "xv36",
+            "vuyx",
+            "ayuv",
+            "yuv444p16msb",
+            "rgb",
+            "rgba",
+            "bgra"
           ],
-          "description": "Chroma subsampling of raw .yuv input. (CLI: --pixel_format)"
+          "description": "Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). (CLI: --pixel_format)"
         },
         "bitdepth": {
           "type": "integer",
-          "enum": [
-            8,
-            10,
-            12,
-            16
-          ],
-          "description": "Bits per sample of raw .yuv input. (CLI: --bitdepth)"
+          "minimum": 8,
+          "maximum": 16,
+          "description": "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). (CLI: --bitdepth)"
         },
         "model": {
           "type": "string",
@@ -798,9 +836,32 @@
       "schema": {
         "type": "string",
         "enum": [
+          "400",
           "420",
           "422",
-          "444"
+          "444",
+          "nv12",
+          "nv16",
+          "nv24",
+          "p010",
+          "p016",
+          "p210",
+          "p216",
+          "p410",
+          "p416",
+          "yuyv422",
+          "uyvy422",
+          "v210",
+          "y210",
+          "y212",
+          "xv30",
+          "xv36",
+          "vuyx",
+          "ayuv",
+          "yuv444p16msb",
+          "rgb",
+          "rgba",
+          "bgra"
         ]
       },
       "repeat": [],
@@ -822,12 +883,8 @@
       "proto_field": 4,
       "schema": {
         "type": "integer",
-        "enum": [
-          8,
-          10,
-          12,
-          16
-        ]
+        "minimum": 8,
+        "maximum": 16
       },
       "repeat": [],
       "default": null,
@@ -2135,6 +2192,10 @@
     "height": "-h",
     "pixel_format": "-p",
     "bitdepth": "-b",
+    "rgb_matrix": "--rgb_matrix",
+    "rgb_range": "--rgb_range",
+    "rgb_transfer": "--rgb_transfer",
+    "rgb_out_range": "--rgb_out_range",
     "model": "-m",
     "backend": "--backend",
     "no_cuda": "--no_cuda",

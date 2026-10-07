@@ -23,10 +23,14 @@ message ScoreOptions {
   // Height of raw .yuv input in pixels.
   optional uint32 height = 2;
 
-  // Chroma subsampling of raw .yuv input. One of: 420, 422, 444.
+  // Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input
+  // format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement,
+  // ADR-2145, ADR-2146). One of: 400, 420, 422, 444, nv12, nv16, nv24, p010, p016, p210, p216,
+  // p410, p416, yuyv422, uyvy422, v210, y210, y212, xv30, xv36, vuyx, ayuv, yuv444p16msb, rgb,
+  // rgba, bgra.
   optional string pixel_format = 3;
 
-  // Bits per sample of raw .yuv input. One of: 8, 10, 12, 16.
+  // Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it).
   optional uint32 bitdepth = 4;
 
   // Do not clip the model score to [0, 100] (the model's disable_clip). Unset: false.
