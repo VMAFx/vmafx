@@ -19,11 +19,21 @@ ROOT = Path(__file__).resolve().parents[2]
 VMAF_CPP = ROOT / "core" / "tools" / "vmaf.cpp"
 
 
-def _vmaf_cli_main_body() -> str:
+def _body(signature: str) -> str:
     text = VMAF_CPP.read_text(encoding="utf-8")
-    match = re.search(r"int vmaf_cli_main\(int argc, char \*argv\[\]\)\s*\{(.*?)\n\}\n", text, re.S)
-    assert match is not None, "vmaf_cli_main() not found in core/tools/vmaf.cpp"
+    match = re.search(re.escape(signature) + r"\s*\{(.*?)\n\}\n", text, re.S)
+    assert match is not None, f"{signature} not found in core/tools/vmaf.cpp"
     return match.group(1)
+
+
+def _vmaf_cli_main_body() -> str:
+    return _body("int vmaf_cli_main(int argc, char *argv[])")
+
+
+def _run_path_bodies() -> str:
+    """vmaf_cli_main() and the run it hands a scoring command to (vmaf_cli_run(),
+    split out when --verify-provenance became a second path, RC4 WP5)."""
+    return _vmaf_cli_main_body() + _body("int vmaf_cli_run(int argc, char *argv[], int istty)")
 
 
 class CliExitStatusContract(unittest.TestCase):
@@ -31,7 +41,7 @@ class CliExitStatusContract(unittest.TestCase):
         self.assertIn('#include "cli_exit_status.h"', VMAF_CPP.read_text(encoding="utf-8"))
 
     def test_run_result_goes_through_the_helper(self) -> None:
-        body = _vmaf_cli_main_body()
+        body = _run_path_bodies()
         returns = re.findall(r"return\s+(.*?);", body, re.S)
         self.assertTrue(returns)
         run_returns = [r for r in returns if "run_err" in r]
@@ -43,7 +53,7 @@ class CliExitStatusContract(unittest.TestCase):
             )
 
     def test_no_bare_negative_return(self) -> None:
-        body = _vmaf_cli_main_body()
+        body = _run_path_bodies()
         self.assertIsNone(re.search(r"return\s+-", body))
 
 

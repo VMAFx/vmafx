@@ -47,12 +47,27 @@ static char *test_cpu_is_reference(void)
     return NULL;
 }
 
+/* The first row the table classes by tolerance: picked from the generated
+ * table, not named, because declaring a twin exact (scripts/ci/exact_twins.d)
+ * moves it out of this class (the Metal twins did with ADR-1496 / ADR-1498). */
+static const VmafxExactnessRow *first_tolerance_row(void)
+{
+    for (uint32_t i = 0; i < vmafx_exactness_row_count; i++) {
+        if (vmafx_exactness_rows[i].kind == VMAFX_EXACTNESS_TOLERANCE)
+            return &vmafx_exactness_rows[i];
+    }
+    return NULL;
+}
+
 static char *test_device_classes(void)
 {
     mu_assert("adm_cuda exact", class_is("adm_cuda", VMAFX_BACKEND_CUDA, "exact"));
     mu_assert("ciede_cuda libm", class_is("ciede_cuda", VMAFX_BACKEND_CUDA, "libm-bounded 1e-09"));
-    mu_assert("metal psnr tolerance",
-              class_is("integer_psnr_metal", VMAFX_BACKEND_METAL, "tolerance 5e-05"));
+    const VmafxExactnessRow *tol = first_tolerance_row();
+    mu_assert("a twin is classed by tolerance", tol != NULL);
+    mu_assert("tolerance text names the bound",
+              strncmp(tol->text, "tolerance ", 10) == 0 && strcmp(tol->text + 10, tol->bound) == 0);
+    mu_assert("tolerance class", class_is(tol->extractor, tol->backend, tol->text));
     return NULL;
 }
 
