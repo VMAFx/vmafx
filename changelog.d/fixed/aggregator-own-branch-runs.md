@@ -1,1 +1,0 @@
-The master push `Required Checks Aggregator` reads only its own branch's runs: runs of release-please's release-notes branch or a verification branch on the same commit no longer make it wait or fail.

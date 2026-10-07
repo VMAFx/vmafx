@@ -1,1 +1,0 @@
-- Refactored `ai/src/` and `ai/lpips_export.py` functions to resolve HISS-02 while loops and HISS-04 size violations under ADR-1142.

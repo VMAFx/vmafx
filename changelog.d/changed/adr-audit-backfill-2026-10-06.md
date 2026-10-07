@@ -1,1 +1,0 @@
-- ADR-0643, ADR-0665, ADR-0666 and ADR-0673 lose the unfilled allocator template block that preceded their real text (their first heading read `<fill in title>`); a status update records it. Four ADR numbers that other ADRs cite and that had no file (ADR-0228, 0636, 0867, 0979) get a short record each, written from the commits and ADRs that name them.

@@ -1,1 +1,0 @@
-The oneAPI (icx) build links the Metal host tests again: the double comparison of the Metal headers uses the compiler's builtins instead of `<math.h>` macros that icx turns into calls into a library the build does not link.

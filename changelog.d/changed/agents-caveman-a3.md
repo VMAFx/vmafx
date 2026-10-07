@@ -1,1 +1,0 @@
-- Rewrote agent-facing documentation into caveman internal register across 6 subtree AGENTS.md files: `gen/go/AGENTS.md`, `docs/research/AGENTS.md`, `internal/app/scoringservice/AGENTS.md`, `.zed/AGENTS.md`, `pkg/model/AGENTS.md`, and `api/vmafx/v1/AGENTS.md`. All load-bearing tokens and invariants preserved under determinism and context gates.

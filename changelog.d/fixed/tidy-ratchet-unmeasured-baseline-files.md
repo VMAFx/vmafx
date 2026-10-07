@@ -1,1 +1,0 @@
-The clang-tidy ratchet fails, naming the file, when a translation unit of the baseline was not measured, instead of counting it as clean; the hosted `cpu` lane runs the same Makefile targets as the dev container, so both measure the same translation units.

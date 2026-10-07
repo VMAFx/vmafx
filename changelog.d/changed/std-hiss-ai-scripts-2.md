@@ -1,1 +1,0 @@
-- Refactored 12 `ai/scripts/` training and corpus tools to satisfy HISS-04 complexity/length limits, bounded loops, and proper entrypoint error reporting under ADR-1142.

@@ -1,1 +1,0 @@
-The controller's `--version` test passes on hosts without an installed libvmaf: it runs the binary with the dynamic loader's search path the test itself runs with, instead of failing to load the build tree's library.

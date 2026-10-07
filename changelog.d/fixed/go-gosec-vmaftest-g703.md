@@ -1,1 +1,0 @@
-The required Go job passes its gosec scan again: the `VMAF_BIN` lookup of the Go test helper carries a reasoned G703 exclusion, and `make lint-go` and the Go job now run the same scan, so `make lint` no longer reports the HISS rule fixtures.
