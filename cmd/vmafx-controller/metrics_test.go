@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/observability"
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
@@ -110,7 +111,7 @@ func TestJobLifecycleMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newGRPCFixtureOn(t, reg)
-	if err := registerQueueCollector(reg, f.queue, f.registry); err != nil {
+	if err := registerQueueCollector(reg, backend.NewLegacy(f.queue, f.registry, f.sched)); err != nil {
 		t.Fatal(err)
 	}
 	runLifecycle(t, f)
@@ -151,7 +152,7 @@ func TestControllerServesEveryFamilyItEmits(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newGRPCFixtureOn(t, reg)
-	if err := registerQueueCollector(reg, f.queue, f.registry); err != nil {
+	if err := registerQueueCollector(reg, backend.NewLegacy(f.queue, f.registry, f.sched)); err != nil {
 		t.Fatal(err)
 	}
 	runLifecycle(t, f)

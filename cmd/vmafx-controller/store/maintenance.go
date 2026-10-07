@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/pgdb"
 )
 
@@ -173,4 +175,21 @@ func foldTenantStats(rows []pgdb.TenantStatsRow) []TenantCount {
 		}
 	}
 	return out
+}
+
+// JobExists reports whether a job with this ID exists for any tenant. The
+// controller uses it only to refuse another tenant's job with
+// PermissionDenied rather than NotFound, as the SQLite queue did
+// (ADR-1522); it returns nothing of the job.
+func (s *Postgres) JobExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exists bool
+	err := s.inMaintenance(ctx, func(ctx context.Context, q *pgdb.Queries) error {
+		var qerr error
+		exists, qerr = q.JobExists(ctx, id)
+		if qerr != nil {
+			return fmt.Errorf("store: look up job %s: %w", id, qerr)
+		}
+		return nil
+	})
+	return exists, err
 }

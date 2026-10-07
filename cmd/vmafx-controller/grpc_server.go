@@ -8,7 +8,7 @@
 //   - VmafxController (gen/go/controller/controllerv1) — job queue + node API (Phase 4b.1)
 //
 // The scoring service delegates to pkg/libvmaf.
-// The controller service delegates to cmd/vmafx-controller/{queue,nodes,scheduler}.
+// The controller service delegates to cmd/vmafx-controller/backend (ADR-2350).
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
@@ -32,9 +32,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
@@ -123,39 +121,37 @@ func (s *scoringServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vm
 // VmafxController service (Phase 4b.1)
 // ---------------------------------------------------------------------------
 
-// controllerServer implements controllerv1.VmafxControllerServer.
+// controllerServer implements controllerv1.VmafxControllerServer on a
+// backend.Backend: the embedded SQLite queue (one replica) or the PostgreSQL
+// store (any number of replicas, ADR-2350). Every call reads the tenant of its
+// token once and hands it to the backend (ADR-1522).
 type controllerServer struct {
 	controllerv1.UnimplementedVmafxControllerServer
-	queue    queue.Queue
-	registry *nodes.Registry
-	sched    *scheduler.Scheduler
-	scopes   *scoringScopes
-	metrics  *controllerMetrics
-	log      *slog.Logger
+	backend backend.Backend
+	scopes  *scoringScopes
+	metrics *controllerMetrics
+	log     *slog.Logger
 }
 
 func newControllerServer(
-	q queue.Queue,
-	r *nodes.Registry,
-	s *scheduler.Scheduler,
+	b backend.Backend,
 	scopes *scoringScopes,
 	metrics *controllerMetrics,
 	log *slog.Logger,
 ) *controllerServer {
-	return &controllerServer{queue: q, registry: r, sched: s, scopes: scopes, metrics: metrics, log: log}
+	return &controllerServer{backend: b, scopes: scopes, metrics: metrics, log: log}
 }
 
 // SubmitJob enqueues a new scoring job.
 // ADR-0782: vmafx.job.submit span traces the full enqueue path.
 func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.SubmitJobRequest) (*controllerv1.SubmitJobResponse, error) {
-	if req.GetScoring() == nil {
+	sp := req.GetScoring()
+	if sp == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "scoring params are required")
 	}
-	sp := req.GetScoring()
 	if sp.GetReference() == "" || sp.GetDistorted() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
 	}
-
 	// Extract tenant_id from the auth context (ADR-0794).
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
@@ -174,17 +170,9 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	var spanErr error
 	defer observability.EndSpan(span, &spanErr)
 
-	j := &queue.Job{
-		TenantID: tenantID,
-		Scoring: queue.ScoringParams{
-			Reference: sp.GetReference(),
-			Distorted: sp.GetDistorted(),
-			Model:     sp.GetModel(),
-			Backend:   sp.GetBackend(),
-		},
-	}
-
-	id, err := c.queue.Submit(spanCtx, j)
+	id, err := c.backend.Submit(spanCtx, tenantID, backend.Scoring{
+		Reference: sp.GetReference(), Distorted: sp.GetDistorted(), Model: sp.GetModel(), Backend: sp.GetBackend(),
+	})
 	if err != nil {
 		spanErr = err
 		c.log.Error("SubmitJob failed", "error", err)
@@ -199,89 +187,79 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 
 // GetJob retrieves the current state of a job, scoped to the caller's tenant.
 func (c *controllerServer) GetJob(ctx context.Context, req *controllerv1.GetJobRequest) (*controllerv1.Job, error) {
-	if req.GetJobId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
-	}
-	j, err := c.queue.Get(ctx, req.GetJobId())
+	j, err := c.ownJob(ctx, req.GetJobId())
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "job %q not found: %v", req.GetJobId(), err)
-	}
-	// Enforce tenant isolation: callers may not read jobs from other tenants (ADR-0794).
-	if err := auth.AssertTenantOwns(ctx, j.TenantID); err != nil {
 		return nil, err
 	}
-	return queueJobToProto(j), nil
+	return jobToProto(j), nil
+}
+
+// ownJob reads a job of the caller's tenant. Another tenant's job is
+// PermissionDenied and the refusal names no tenant (ADR-0794, ADR-1522).
+func (c *controllerServer) ownJob(ctx context.Context, jobID string) (*backend.Job, error) {
+	if jobID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
+	}
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j, err := c.backend.Get(ctx, tenantID, jobID)
+	switch {
+	case errors.Is(err, backend.ErrForbidden):
+		return nil, status.Error(codes.PermissionDenied, "resource belongs to another tenant")
+	case errors.Is(err, backend.ErrNotFound):
+		return nil, status.Errorf(codes.NotFound, "job %q not found", jobID)
+	case err != nil:
+		return nil, status.Errorf(codes.Internal, "read job %q: %v", jobID, err)
+	}
+	return j, nil
 }
 
 // CancelJob cancels a pending or running job, scoped to the caller's tenant.
 // A running job's node is told on its next Heartbeat and stops it (ADR-1567).
 func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.CancelJobRequest) (*controllerv1.CancelJobResponse, error) {
-	if req.GetJobId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
-	}
-	// Fetch first so we can enforce tenant ownership before mutation (ADR-0794).
-	j, err := c.queue.Get(ctx, req.GetJobId())
+	j, err := c.ownJob(ctx, req.GetJobId())
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "job %q not found: %v", req.GetJobId(), err)
-	}
-	if err := auth.AssertTenantOwns(ctx, j.TenantID); err != nil {
 		return nil, err
 	}
-	cancelled, err := c.queue.Cancel(ctx, req.GetJobId())
+	cancelled, err := c.backend.Cancel(ctx, j.TenantID, j.ID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cancel job %q: %v", req.GetJobId(), err)
+		return nil, status.Errorf(codes.Internal, "cancel job %q: %v", j.ID, err)
 	}
 	if cancelled {
-		c.metrics.jobFinished(j, queue.StatusCancelled)
+		c.metrics.jobFinished(j, backend.StatusCancelled)
 	}
 	return &controllerv1.CancelJobResponse{Ok: true, Message: "cancellation requested"}, nil
 }
 
-// StreamJobs is a server-streaming RPC that pushes job updates.
-// Phase 4b.1 implementation: streams the current snapshot of the caller's
-// tenant's jobs matching the optional status filter once, then closes.  A
-// persistent push model is a Phase 4b.2 enhancement and must keep the filter.
-//
-// ADR-0962: previously this was a no-op (silent return nil after a log line),
-// causing callers to see an empty stream and incorrectly infer "no jobs queued".
-// Now it performs a real SQLite snapshot via queue.ListByTenant and streams each
-// job.
-//
-// ADR-1522: the tenant is read once from the authenticated context and passed
-// into the SQL WHERE clause; no other tenant's job is read, let alone sent.
+// StreamJobs is a server-streaming RPC that sends the current snapshot of the
+// caller's tenant's jobs matching the optional status filter once, then
+// closes (ADR-0962). The tenant is read once from the authenticated context
+// and handed to the backend; no other tenant's job is read (ADR-1522).
 func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, stream controllerv1.VmafxController_StreamJobsServer) error {
 	tenantID, err := callerTenant(stream.Context())
 	if err != nil {
 		return err
 	}
-
-	// Convert proto status filter values to queue status strings.
-	protoFilter := req.GetStatusFilter()
-	statusFilter := make([]string, 0, len(protoFilter))
-	for _, ps := range protoFilter {
-		statusFilter = append(statusFilter, protoStatusToQueue(ps))
+	statusFilter := make([]string, 0, len(req.GetStatusFilter()))
+	for _, ps := range req.GetStatusFilter() {
+		statusFilter = append(statusFilter, protoStatusToBackend(ps))
 	}
+	c.log.Info("StreamJobs snapshot requested", "tenant_id", tenantID, "filter", statusFilter)
 
-	c.log.Info("StreamJobs snapshot requested",
-		"tenant_id", tenantID,
-		"filter", statusFilter,
-		"filter_len", len(statusFilter),
-	)
-
-	jobs, err := c.queue.ListByTenant(stream.Context(), tenantID, statusFilter)
+	jobs, err := c.backend.List(stream.Context(), tenantID, statusFilter)
 	if err != nil {
-		c.log.Error("StreamJobs: ListByTenant failed", "error", err)
+		c.log.Error("StreamJobs: list jobs failed", "error", err)
 		return status.Errorf(codes.Internal, "StreamJobs: list jobs: %v", err)
 	}
-
 	for _, j := range jobs {
-		if sendErr := stream.Send(queueJobToProto(j)); sendErr != nil {
+		if sendErr := stream.Send(jobToProto(j)); sendErr != nil {
 			// Client disconnected mid-stream — treat as a normal close.
 			c.log.Debug("StreamJobs: Send interrupted", "error", sendErr)
 			return sendErr
 		}
 	}
-
 	c.log.Info("StreamJobs snapshot complete", "sent", len(jobs))
 	return nil
 }
@@ -307,15 +285,12 @@ func (c *controllerServer) RegisterNode(ctx context.Context, req *controllerv1.R
 	if err != nil {
 		return nil, err
 	}
-
-	cap := protoCapToNodes(req.GetCapability())
-	nodeID, token, err := c.registry.Register(req.GetName(), tenantID, cap)
+	sess, err := c.backend.Register(ctx, tenantID, req.GetName(), protoCapToBackend(req.GetCapability()))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "register node: %v", err)
 	}
-
-	c.log.Info("node registered via gRPC", "node_id", nodeID, "name", req.GetName(), "tenant_id", tenantID)
-	return &controllerv1.RegisterNodeResponse{NodeId: nodeID, SessionToken: token}, nil
+	c.log.Info("node registered via gRPC", "node_id", sess.NodeID, "name", req.GetName(), "tenant_id", tenantID)
+	return &controllerv1.RegisterNodeResponse{NodeId: sess.NodeID, SessionToken: sess.Token}, nil
 }
 
 // maxHeartbeatJobs bounds running_job_ids: a node runs at most 64 jobs at
@@ -325,7 +300,7 @@ const maxHeartbeatJobs = 64
 // Heartbeat processes a node keepalive ping. A session registered by another
 // tenant answers ok=false, as an unknown one does. An accepted heartbeat names
 // the node's running jobs that were cancelled, so the node stops them
-// (ADR-1567).
+// (ADR-1567); with the PostgreSQL backend it also renews their leases.
 func (c *controllerServer) Heartbeat(ctx context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
@@ -336,10 +311,11 @@ func (c *controllerServer) Heartbeat(ctx context.Context, req *controllerv1.Hear
 		return nil, status.Errorf(codes.InvalidArgument,
 			"running_job_ids has %d entries, at most %d are accepted", len(running), maxHeartbeatJobs)
 	}
-	if !c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), tenantID, int(req.GetJobsRunning())) {
+	sess := backend.Session{NodeID: req.GetNodeId(), Token: req.GetSessionToken()}
+	cancelled, err := c.backend.Heartbeat(ctx, tenantID, sess, running)
+	if errors.Is(err, backend.ErrInvalidSession) {
 		return &controllerv1.HeartbeatResponse{Ok: false}, nil
 	}
-	cancelled, err := c.queue.CancelledAmong(ctx, tenantID, running)
 	if err != nil {
 		c.log.Error("Heartbeat: look up cancelled jobs", "node_id", req.GetNodeId(), "error", err)
 		return nil, status.Errorf(codes.Internal, "heartbeat: look up cancelled jobs: %v", err)
@@ -357,16 +333,19 @@ func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullW
 	if err != nil {
 		return nil, err
 	}
-	cap := protoCapToNodes(req.GetCapability())
-	job, err := c.sched.Assign(ctx, req.GetNodeId(), req.GetSessionToken(), tenantID, cap)
-	if err != nil {
+	sess := backend.Session{NodeID: req.GetNodeId(), Token: req.GetSessionToken()}
+	job, err := c.backend.Pull(ctx, tenantID, sess, protoCapToBackend(req.GetCapability()))
+	if errors.Is(err, backend.ErrInvalidSession) {
 		return nil, status.Errorf(codes.PermissionDenied, "pull work: %v", err)
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "pull work: %v", err)
 	}
 	if job == nil {
 		return &controllerv1.PullWorkResponse{}, nil
 	}
 	c.metrics.jobAssigned(job)
-	pj := queueJobToProto(job)
+	pj := jobToProto(job)
 	// The node checks the inputs again where it reads them (ADR-1577).
 	if pj.ScoringRoots, err = c.scopes.rootsFor(tenantID); err != nil {
 		c.log.Error("PullWork: scoring roots", "tenant_id", tenantID, "error", err)
@@ -374,38 +353,24 @@ func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullW
 	return &controllerv1.PullWorkResponse{Job: pj}, nil
 }
 
-// ReportResult records the terminal (or partial) outcome of a job. The node's
-// session must belong to the caller's tenant, and the job must be assigned to
-// the node, or be a running job of the same tenant whose node has no live
-// session (a node that registered again reports what it finished under its
-// old session, ADR-1524). A report for any other job is refused and changes
-// nothing (ADR-1522).
+// ReportResult records the final (or acknowledges a partial) outcome of a
+// job. The node's session must belong to the caller's tenant and run the
+// job; with the SQLite backend a new session of the tenant may also report a
+// running job whose node has no live session (ADR-1524). Any other report is
+// refused and changes nothing (ADR-1522).
 func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.ReportResultRequest) (*controllerv1.ReportResultResponse, error) {
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !c.registry.ValidateSession(req.GetNodeId(), req.GetSessionToken(), tenantID) {
-		return nil, status.Errorf(codes.PermissionDenied, "invalid session for node %q", req.GetNodeId())
-	}
-
-	report := queue.Report{
-		NodeID:   req.GetNodeId(),
-		TenantID: tenantID,
-		JobID:    req.GetJobId(),
-		Result:   &queue.JobResult{Score: req.GetScore(), Features: req.GetFeatures(), Err: req.GetError()},
-		Orphaned: c.nodeOrphaned,
-	}
+	sess := backend.Session{NodeID: req.GetNodeId(), Token: req.GetSessionToken()}
 	if !req.GetFinal() {
-		return c.acceptPartialResult(ctx, report)
+		return c.acceptPartialResult(ctx, tenantID, sess, req.GetJobId())
 	}
-	finished, err := c.queue.ReportResult(ctx, report)
-	if err != nil {
-		if errors.Is(err, queue.ErrNotAssigned) {
-			return nil, status.Errorf(codes.PermissionDenied,
-				"job %q is not assigned to node %q", req.GetJobId(), req.GetNodeId())
-		}
-		return nil, status.Errorf(codes.Internal, "report result: %v", err)
+	finished, err := c.backend.Report(ctx, tenantID, sess, req.GetJobId(),
+		backend.Result{Score: req.GetScore(), Features: req.GetFeatures(), Err: req.GetError()})
+	if err := reportStatus(err, req); err != nil {
+		return nil, err
 	}
 	if finished {
 		c.recordFinished(ctx, req.GetJobId(), tenantID, req.GetError() != "")
@@ -413,52 +378,64 @@ func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.R
 	return &controllerv1.ReportResultResponse{Ok: true}, nil
 }
 
+// reportStatus maps a backend refusal of a report onto its gRPC status.
+func reportStatus(err error, req *controllerv1.ReportResultRequest) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, backend.ErrInvalidSession):
+		return status.Errorf(codes.PermissionDenied, "invalid session for node %q", req.GetNodeId())
+	case errors.Is(err, backend.ErrNotAssigned), errors.Is(err, backend.ErrNotFound):
+		return status.Errorf(codes.PermissionDenied, "job %q is not assigned to node %q", req.GetJobId(), req.GetNodeId())
+	default:
+		return status.Errorf(codes.Internal, "report result: %v", err)
+	}
+}
+
 // recordFinished feeds the job metrics with a job this report moved to its
 // terminal state. A repeated report of a finished job never reaches it, so a
 // job is counted once.
 func (c *controllerServer) recordFinished(ctx context.Context, jobID, tenantID string, failed bool) {
-	finishedStatus := queue.StatusCompleted
+	finishedStatus := backend.StatusCompleted
 	if failed {
-		finishedStatus = queue.StatusFailed
+		finishedStatus = backend.StatusFailed
 	}
-	job, err := c.queue.Get(ctx, jobID)
+	job, err := c.backend.Get(ctx, tenantID, jobID)
 	if err != nil {
 		// Counted without its duration or score: the job could not be read back.
 		c.log.Warn("finished job not readable for its metrics", "job_id", jobID, "error", err)
-		job = &queue.Job{ID: jobID, TenantID: tenantID}
+		job = &backend.Job{ID: jobID, TenantID: tenantID}
 	}
 	c.metrics.jobFinished(job, finishedStatus)
 }
 
 // acceptPartialResult acknowledges a partial result of a job the reporting
-// node may report (queue.MayReport). Phase 4b.1 stores no partial state; the
+// session may report (backend.MayReport). No partial state is stored; the
 // check keeps the call from confirming anything about another node's job.
-func (c *controllerServer) acceptPartialResult(ctx context.Context, r queue.Report) (*controllerv1.ReportResultResponse, error) {
-	if !c.queue.MayReport(ctx, r) {
-		return nil, status.Errorf(codes.PermissionDenied,
-			"job %q is not assigned to node %q", r.JobID, r.NodeID)
+func (c *controllerServer) acceptPartialResult(ctx context.Context, tenantID string, sess backend.Session, jobID string) (*controllerv1.ReportResultResponse, error) {
+	ok, err := c.backend.MayReport(ctx, tenantID, sess, jobID)
+	if errors.Is(err, backend.ErrInvalidSession) {
+		return nil, status.Errorf(codes.PermissionDenied, "invalid session for node %q", sess.NodeID)
 	}
-	c.log.Debug("partial result received", "job_id", r.JobID, "node_id", r.NodeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "report result: %v", err)
+	}
+	if !ok {
+		return nil, status.Errorf(codes.PermissionDenied, "job %q is not assigned to node %q", jobID, sess.NodeID)
+	}
+	c.log.Debug("partial result received", "job_id", jobID, "node_id", sess.NodeID)
 	return &controllerv1.ReportResultResponse{Ok: true}, nil
-}
-
-// nodeOrphaned reports whether a node ID has no live session: the controller
-// restarted or evicted it. Node IDs are never reissued, so a node that is
-// orphaned stays orphaned.
-func (c *controllerServer) nodeOrphaned(nodeID string) bool {
-	_, live := c.registry.Get(nodeID)
-	return !live
 }
 
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-// queueJobToProto converts a queue.Job to its proto representation.
-func queueJobToProto(j *queue.Job) *controllerv1.Job {
+// jobToProto converts a backend job to its proto representation.
+func jobToProto(j *backend.Job) *controllerv1.Job {
 	return &controllerv1.Job{
 		Id:     j.ID,
-		Status: queueStatusToProto(j.Status),
+		Status: backendStatusToProto(j.Status),
 		Scoring: &controllerv1.ScoringParams{
 			Reference: j.Scoring.Reference,
 			Distorted: j.Scoring.Distorted,
@@ -476,48 +453,48 @@ func queueJobToProto(j *queue.Job) *controllerv1.Job {
 	}
 }
 
-// queueStatusToProto converts a queue status string to its proto enum value.
-func queueStatusToProto(s string) controllerv1.JobStatus {
+// backendStatusToProto converts a job status string to its proto enum value.
+func backendStatusToProto(s string) controllerv1.JobStatus {
 	switch s {
-	case queue.StatusRunning:
+	case backend.StatusRunning:
 		return controllerv1.JobStatus_RUNNING
-	case queue.StatusCompleted:
+	case backend.StatusCompleted:
 		return controllerv1.JobStatus_COMPLETED
-	case queue.StatusFailed:
+	case backend.StatusFailed:
 		return controllerv1.JobStatus_FAILED
-	case queue.StatusCancelled:
+	case backend.StatusCancelled:
 		return controllerv1.JobStatus_CANCELLED
 	default:
 		return controllerv1.JobStatus_PENDING
 	}
 }
 
-// protoStatusToQueue converts a proto JobStatus enum to its queue status string.
+// protoStatusToBackend converts a proto JobStatus enum to its status string.
 // Used by StreamJobs to translate the caller's status filter.
-func protoStatusToQueue(s controllerv1.JobStatus) string {
+func protoStatusToBackend(s controllerv1.JobStatus) string {
 	switch s {
 	case controllerv1.JobStatus_RUNNING:
-		return queue.StatusRunning
+		return backend.StatusRunning
 	case controllerv1.JobStatus_COMPLETED:
-		return queue.StatusCompleted
+		return backend.StatusCompleted
 	case controllerv1.JobStatus_FAILED:
-		return queue.StatusFailed
+		return backend.StatusFailed
 	case controllerv1.JobStatus_CANCELLED:
-		return queue.StatusCancelled
+		return backend.StatusCancelled
 	default:
-		return queue.StatusPending
+		return backend.StatusPending
 	}
 }
 
-// protoCapToNodes converts a proto NodeCapability to a nodes.Capability.
-func protoCapToNodes(cap *controllerv1.NodeCapability) nodes.Capability {
-	if cap == nil {
-		return nodes.Capability{}
+// protoCapToBackend converts a proto NodeCapability.
+func protoCapToBackend(c *controllerv1.NodeCapability) backend.Capability {
+	if c == nil {
+		return backend.Capability{}
 	}
-	return nodes.Capability{
-		GPUVendor:   cap.GetGpuVendor(),
-		Backends:    cap.GetBackends(),
-		Concurrency: int(cap.GetConcurrency()),
+	return backend.Capability{
+		GPUVendor:   c.GetGpuVendor(),
+		Backends:    c.GetBackends(),
+		Concurrency: int(c.GetConcurrency()),
 	}
 }
 

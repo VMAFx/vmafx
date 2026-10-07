@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,7 +65,13 @@ type httpServer struct {
 	log      *slog.Logger
 	registry *prometheus.Registry
 	authMW   *auth.Middleware
+	// backendReady, when set, must pass for /readyz to answer ready: the
+	// PostgreSQL backend checks its connection and schema (ADR-2350).
+	backendReady func(context.Context) error
 }
+
+// readyTimeout bounds the backend check of one /readyz call (HISS-02).
+const readyTimeout = 2 * time.Second
 
 // newHTTPServer creates an httpServer.
 func newHTTPServer(
@@ -108,9 +115,24 @@ func (h *httpServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	scoringservice.HandleHealthz(h.metrics, h.log, w, r)
 }
 
-// handleReadyz is the readiness probe — returns 503 until the scorer is usable.
+// handleReadyz is the readiness probe — returns 503 until the scorer is
+// usable and the job backend can serve (database reachable, schema current).
 func (h *httpServer) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	scoringservice.HandleReadyz(h.metrics, h.log, h.scorer != nil, w, r)
+	scoringservice.HandleReadyz(h.metrics, h.log, h.scorer != nil && h.backendIsReady(r.Context()), w, r)
+}
+
+// backendIsReady runs the backend's check, logging why it fails.
+func (h *httpServer) backendIsReady(ctx context.Context) bool {
+	if h.backendReady == nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	if err := h.backendReady(ctx); err != nil {
+		h.log.Warn("not ready: job backend", "error", err)
+		return false
+	}
+	return true
 }
 
 // handleScore handles POST /v1/score.

@@ -47,7 +47,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -91,16 +90,9 @@ func writeControllerEnv(t *testing.T) {
 // file-watch disabled (a watcher goroutine would otherwise leak across tests);
 // everything else is identical to the binary's composition.
 func productionGraph() fx.Option {
-	envReplace := fx.Replace(config.Options{
-		EnvPrefix: "VMAFX_",
-		Delimiter: ".",
-		Watch:     false,
-		CompoundKeys: []string{
-			"auth.tenant_claim",
-			"auth.roles_claim",
-		},
-	})
-	return fx.Options(productionOptions(envReplace)...)
+	opts := controllerEnvOptions()
+	opts.Watch = false
+	return fx.Options(productionOptions(fx.Replace(opts))...)
 }
 
 // TestAppGraphValidates asserts the production dependency graph is satisfiable

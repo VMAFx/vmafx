@@ -70,3 +70,6 @@ INSERT INTO jobs (id, tenant_id, status, spec, backend, assigned_node, score, fe
 VALUES (@id, @tenant_id, @status, @spec, @backend, sqlc.narg('assigned_node'), sqlc.narg('score'),
         sqlc.narg('features'), sqlc.narg('error'), @created_at, @updated_at, sqlc.narg('finished_at'))
 ON CONFLICT (id) DO NOTHING;
+
+-- name: JobExists :one
+SELECT EXISTS (SELECT 1 FROM jobs WHERE id = @id)::boolean;

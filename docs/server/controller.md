@@ -62,6 +62,12 @@ flags beyond `--version` since ADR-1119. Listen addresses are full addresses
 | `VMAFX_VMAF_BINARY` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
 | `VMAFX_MODEL_DIR` | _(none)_ | Directory containing VMAF `.json` model files |
 | `VMAFX_DB_PATH` | `vmafx-controller.db` | Path to the SQLite job-persistence database |
+| `VMAFX_STORE_BACKEND` | `sqlite` | Where jobs and node sessions live: `sqlite` or `postgres` ([job persistence](#job-persistence)) |
+| `VMAFX_DB_DSN` | _(none)_ | PostgreSQL connection string; required with `postgres` |
+| `VMAFX_STORE_LEASE_TTL` | `60s` | Lease of a pulled job (`postgres`) |
+| `VMAFX_STORE_SESSION_TTL` | `60s` | Lifetime of a node session without a heartbeat (`postgres`) |
+| `VMAFX_STORE_SWEEP_INTERVAL` | `5s` | Period of the lease sweep (`postgres`) |
+| `VMAFX_STORE_BACKOFF_BASE`, `VMAFX_STORE_BACKOFF_MAX` | `5s`, `5m` | Delay before a job whose lease expired is handed out again, doubling up to the cap (`postgres`) |
 | `VMAFX_SCORING_ROOTS` | _(none: every input refused)_ | Scoring roots of every caller without a tenant registry, comma-separated, `{tenant}` expanded ([scoring roots](auth.md#scoring-roots)) |
 
 The authentication variables (`VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,
@@ -203,12 +209,62 @@ the job.
 
 ## Job persistence
 
-The controller persists jobs in the SQLite database at `VMAFX_DB_PATH`.
-This is transitional: [ADR-2350](../adr/2350-cloud-native-platform.md) moves
-jobs and node sessions to PostgreSQL, so any controller replica can serve any
-node, and keeps SQLite for a standalone profile. Until that store ships, the
-rules below apply.
-On controller restart:
+The controller keeps jobs and node sessions in one of two backends, chosen
+with `VMAFX_STORE_BACKEND`:
+
+| Backend | Where state lives | Replicas | Use |
+| --- | --- | --- | --- |
+| `sqlite` (default) | The embedded SQLite queue at `VMAFX_DB_PATH`; node sessions in memory | one | single host, development; transitional until the SQLite store of the standalone profile replaces it ([ADR-2350](../adr/2350-cloud-native-platform.md)) |
+| `postgres` | PostgreSQL at `VMAFX_DB_DSN` (jobs, attempts, node sessions); River jobs in the same database | any number | clusters |
+
+### PostgreSQL backend
+
+```bash
+export VMAFX_DB_DSN='postgres://vmafx:secret@db.example:5432/vmafx?sslmode=verify-full'
+vmafx-controller migrate                       # schema of the store and of River
+VMAFX_STORE_BACKEND=postgres vmafx-controller  # every replica the same way
+```
+
+- **Schema.** `vmafx-controller migrate` applies the store's migrations and
+  River's, then exits; run it once per release, before the controllers of
+  that release start. A controller whose database is below the schema it
+  needs reports not ready on `/readyz` and logs both versions.
+- **Node work is leased.** `PullWork` gives a node a job with a lease
+  (`VMAFX_STORE_LEASE_TTL`, default 60 s); every `Heartbeat` naming the job
+  renews it. A lease that is not renewed expires: a sweep that runs every
+  `VMAFX_STORE_SWEEP_INTERVAL` (default 5 s) on one replica returns the job to
+  pending after a backoff (`VMAFX_STORE_BACKOFF_BASE` 5 s, doubling up to
+  `VMAFX_STORE_BACKOFF_MAX` 5 min), and fails it after three lost leases.
+- **One result per job.** A result is recorded only for the attempt the
+  reporting session holds; a node that lost its lease and reports late is
+  refused (`PERMISSION_DENIED`), and the job keeps the result of the attempt
+  that replaced it. A retried report of an accepted result succeeds without a
+  second write.
+- **Sessions survive controller restarts.** The node ID returned by
+  `RegisterNode` names a session stored in the database
+  (`VMAFX_STORE_SESSION_TTL`, default 60 s), so a node keeps working through a
+  controller restart or a replica failure without registering again. A node
+  process that restarts registers again; the jobs it was running return to
+  the queue when their leases expire.
+- **Tenants.** Every query names the caller's tenant, and row-level security
+  hides other tenants' rows from the database role the controller uses. That
+  role must not be a superuser (a superuser bypasses row-level security).
+
+### Moving from the SQLite queue
+
+```bash
+VMAFX_DB_DSN=... vmafx-controller import-sqlite --from /data/vmafx-controller.db
+```
+
+`import-sqlite` copies every job of the SQLite queue file (read-only) into
+the PostgreSQL store: pending and running jobs arrive pending, finished jobs
+keep their result, and a second run skips what the first copied. Jobs that
+carry no tenant (a queue run with authentication disabled) are refused unless
+`--empty-tenant <tenant>` names the tenant to give them.
+
+### SQLite backend
+
+On a restart of a controller with the SQLite backend:
 
 - `PENDING` jobs are reloaded and re-queued in submission order.
 - `RUNNING` jobs are reset to `PENDING` (their assigned nodes are gone).

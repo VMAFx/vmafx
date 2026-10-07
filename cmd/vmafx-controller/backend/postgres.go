@@ -76,10 +76,26 @@ func (p *Postgres) Get(ctx context.Context, tenantID, jobID string) (*Job, error
 		return nil, err
 	}
 	j, err := p.store.Get(ctx, tenantID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, p.notOwn(ctx, id)
+	}
 	if err != nil {
 		return nil, mapStoreErr(err)
 	}
 	return fromStoreJob(j)
+}
+
+// notOwn tells a job of another tenant (ErrForbidden) from none
+// (ErrNotFound), as the SQLite backend does (ADR-1522).
+func (p *Postgres) notOwn(ctx context.Context, id uuid.UUID) error {
+	exists, err := p.store.JobExists(ctx, id)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("%w: %s", ErrForbidden, id)
+	}
+	return fmt.Errorf("%w: %s", ErrNotFound, id)
 }
 
 // Cancel implements Backend.
@@ -89,6 +105,9 @@ func (p *Postgres) Cancel(ctx context.Context, tenantID, jobID string) (bool, er
 		return false, err
 	}
 	done, err := p.store.Cancel(ctx, tenantID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, p.notOwn(ctx, id)
+	}
 	return done, mapStoreErr(err)
 }
 

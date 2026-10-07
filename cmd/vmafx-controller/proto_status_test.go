@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-controller/proto_status_test.go — table tests for protoStatusToQueue,
+// cmd/vmafx-controller/proto_status_test.go — table tests for protoStatusToBackend,
 // covering all branches that were previously at 33% coverage.
 
 //go:build cgo
@@ -31,9 +31,9 @@ func TestProtoStatusToQueue_AllBranches(t *testing.T) {
 		{controllerv1.JobStatus(9999), queue.StatusPending},
 	}
 	for _, tc := range cases {
-		got := protoStatusToQueue(tc.in)
+		got := protoStatusToBackend(tc.in)
 		if got != tc.want {
-			t.Errorf("protoStatusToQueue(%v) = %q, want %q", tc.in, got, tc.want)
+			t.Errorf("protoStatusToBackend(%v) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

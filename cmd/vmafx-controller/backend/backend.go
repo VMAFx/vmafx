@@ -32,8 +32,11 @@ const (
 
 // Errors every backend returns (wrapped).
 var (
-	// ErrNotFound is a job that does not exist or belongs to another tenant.
+	// ErrNotFound is a job that does not exist.
 	ErrNotFound = errors.New("backend: job not found")
+	// ErrForbidden is a job that belongs to another tenant (ADR-1522: the
+	// refusal names no tenant).
+	ErrForbidden = errors.New("backend: job belongs to another tenant")
 	// ErrInvalidSession is a node session that is unknown, expired, of
 	// another tenant, or presented with the wrong token.
 	ErrInvalidSession = errors.New("backend: node session unknown, expired or not the caller's")
@@ -114,10 +117,12 @@ type Stats struct {
 type Backend interface {
 	// Submit enqueues a job and returns its ID.
 	Submit(ctx context.Context, tenantID string, s Scoring) (string, error)
-	// Get returns a job, or ErrNotFound.
+	// Get returns a job of the tenant; ErrForbidden for another tenant's
+	// job, ErrNotFound for none.
 	Get(ctx context.Context, tenantID, jobID string) (*Job, error)
 	// Cancel cancels a pending or running job and reports whether it did;
-	// a terminal job is left alone (false, nil); ErrNotFound otherwise.
+	// a terminal job is left alone (false, nil); ErrForbidden or
+	// ErrNotFound as Get.
 	Cancel(ctx context.Context, tenantID, jobID string) (bool, error)
 	// List returns the tenant's jobs, optionally filtered by status.
 	List(ctx context.Context, tenantID string, statuses []string) ([]*Job, error)

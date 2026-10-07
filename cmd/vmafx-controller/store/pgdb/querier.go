@@ -43,6 +43,7 @@ type Querier interface {
 	// Node sessions (sqlc input, ADR-2350 D2). The token is stored as its SHA-256;
 	// a session belongs to one tenant (ADR-1522).
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
+	JobExists(ctx context.Context, id uuid.UUID) (bool, error)
 	LatestAttemptOfSession(ctx context.Context, arg LatestAttemptOfSessionParams) (int32, error)
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
 	LiveSession(ctx context.Context, arg LiveSessionParams) (NodeSession, error)

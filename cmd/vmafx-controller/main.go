@@ -89,6 +89,7 @@ import (
 	grpcmod "github.com/golusoris/golusoris/grpc"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
@@ -122,10 +123,10 @@ func controllerEnvOptions() config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     true,
-		CompoundKeys: []string{
+		CompoundKeys: append([]string{
 			"auth.tenant_claim",
 			"auth.roles_claim",
-		},
+		}, storeConfigKeys...),
 	}
 }
 
@@ -133,6 +134,11 @@ func main() {
 	if isVersionRequest(os.Args) {
 		fmt.Println(version())
 		return
+	}
+	// One-shot commands of the PostgreSQL backend (migrate, import-sqlite)
+	// run before fx, like --version: no listeners, no auth configuration.
+	if handled, code := backend.Command(os.Args, os.Getenv, os.Stdout, slog.Default()); handled {
+		os.Exit(code)
 	}
 	// golusoris v0.5.0 (#234) reads log.level / log.format from the prefixed
 	// config tree directly, so VMAFX_LOG_LEVEL / VMAFX_LOG_FORMAT bind through
@@ -190,9 +196,7 @@ func controllerProviders() fx.Option {
 		provideScorer,
 		scoringservice.ProvideMetrics,
 		newControllerMetrics,
-		provideJobQueue,
-		provideNodeRegistry,
-		provideScheduler,
+		provideBackend,
 		provideTenantRegistry,
 		provideScoringScopes,
 		provideAuthMW,
@@ -203,7 +207,7 @@ func controllerProviders() fx.Option {
 
 // realiseControllerResources preserves R1: domain stop hooks are appended
 // before the gRPC server hook, so reverse-order shutdown drains gRPC first.
-func realiseControllerResources(_ *libvmaf.Scorer, _ queue.Queue, _ *nodes.Registry) {}
+func realiseControllerResources(_ *libvmaf.Scorer, _ backend.Backend) {}
 
 func registerControllerServices(
 	s *googlegrpc.Server, sc *scoringServer, ct *controllerServer,
@@ -341,12 +345,8 @@ func provideAuthMW(cfg *config.Config, tenantRegistry *auth.TenantRegistry, log 
 // (appending their lifecycle hooks) before the listeners bind. (The auth
 // Middleware no longer needs threading here: golusoris#269's
 // ProvideServerOptionFn pulls it directly into the gRPC interceptor options.)
-func wireControllerSources(
-	registry *prometheus.Registry,
-	q queue.Queue,
-	r *nodes.Registry,
-) error {
-	return registerQueueCollector(registry, q, r)
+func wireControllerSources(registry *prometheus.Registry, b backend.Backend) error {
+	return registerQueueCollector(registry, b)
 }
 
 // mountControllerHTTP registers the controller HTTP surface on the golusoris chi
@@ -359,9 +359,11 @@ func mountControllerHTTP(
 	metrics *observability.Metrics,
 	registry *prometheus.Registry,
 	mw *auth.Middleware,
+	b backend.Backend,
 	log *slog.Logger,
 ) {
 	hs := newHTTPServer(scorer, scopes, metrics, registry, mw, log)
+	hs.backendReady = b.Ready
 
 	router.Get("/healthz", hs.handleHealthz)
 	router.Get("/readyz", hs.handleReadyz)

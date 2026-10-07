@@ -281,6 +281,17 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 	return i, err
 }
 
+const jobExists = `-- name: JobExists :one
+SELECT EXISTS (SELECT 1 FROM jobs WHERE id = $1)::boolean
+`
+
+func (q *Queries) JobExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, jobExists, id)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listJobs = `-- name: ListJobs :many
 SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, assigned_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs
 WHERE tenant_id = $1

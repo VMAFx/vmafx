@@ -73,11 +73,14 @@ func TestPostgresBackendKeepsTenantsApart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	if _, err := b.Get(ctx, "t2", id); !errors.Is(err, backend.ErrNotFound) {
+	if _, err := b.Get(ctx, "t2", id); !errors.Is(err, backend.ErrForbidden) {
 		t.Fatalf("get by another tenant: %v", err)
 	}
-	if _, err := b.Cancel(ctx, "t2", id); !errors.Is(err, backend.ErrNotFound) {
+	if _, err := b.Cancel(ctx, "t2", id); !errors.Is(err, backend.ErrForbidden) {
 		t.Fatalf("cancel by another tenant: %v", err)
+	}
+	if _, err := b.Get(ctx, "t2", "0193f2a4-0000-7000-8000-000000000000"); !errors.Is(err, backend.ErrNotFound) {
+		t.Fatalf("get of an unknown job: %v", err)
 	}
 	foreign, err := b.Register(ctx, "t2", "node-b", cpu)
 	if err != nil {
