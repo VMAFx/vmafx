@@ -100,3 +100,10 @@ Go gRPC + HTTP scoring service. See
     code. `app_test.go::TestHTTPRouteEmitsServerSpan` and
     `TestOTelWiredThroughBootstrap` lock this; keep `productionGraph()` in step
     with `main.go` when option lists change.
+
+11. **Metrics contract** (`main.go::provideStreamMetrics`, WP16): server
+    /metrics = `scoringservice.ProvideMetrics` + `NewStreamMetrics`, families
+    = `metricdef.ByEmitter(metricdef.Server)`. `ScoreStream` records
+    session (`streams.Begin` / `End(retErr)`, `Frame` in `ingestFrames`) +
+    aggregate score in quality family. Guard:
+    `metrics_contract_test.go::TestServerServesEveryFamilyItEmits`.

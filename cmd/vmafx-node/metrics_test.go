@@ -33,7 +33,13 @@ func TestNodeServesEveryFamilyItEmits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := provideNodeMetrics(reg, &Executor{backend: "cuda"})
+	m, err := newNodeMetrics(reg, "cuda", func(context.Context) ([]deviceMemory, error) {
+		return []deviceMemory{{device: "0 test GPU", used: 1 << 30, total: 8 << 30}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams, err := provideStreamMetrics(reg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +48,9 @@ func TestNodeServesEveryFamilyItEmits(t *testing.T) {
 		m.jobStarted()
 		m.jobDone("cuda", jobErr, time.Second)
 	}
+	session := streams.Begin()
+	session.Frame()
+	session.End(nil)
 	fams, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +81,7 @@ func TestControllerClientRecordsJobMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := provideNodeMetrics(reg, &Executor{backend: "cpu"})
+	m, err := newNodeMetrics(reg, "cpu", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

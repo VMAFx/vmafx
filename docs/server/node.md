@@ -244,7 +244,7 @@ golusoris runtime, and serves a small HTTP listener on `VMAFX_HTTP_ADDR`
 
 | Path | What it answers |
 | --- | --- |
-| `/metrics` | Prometheus page: `vmafx_node_info` (backend and GPU vendor), `vmafx_node_slots`, `vmafx_node_jobs_running`, `vmafx_node_jobs_total` by backend and outcome, `vmafx_node_job_duration_seconds`, `vmafx_build_info` and the Go runtime and process series. |
+| `/metrics` | Prometheus page: `vmafx_node_info` (backend and GPU vendor), `vmafx_node_slots`, `vmafx_node_jobs_running`, `vmafx_node_jobs_total` by backend and outcome, `vmafx_node_job_duration_seconds`, GPU memory per device (`vmafx_node_device_memory_used_bytes`, `_total_bytes`; CUDA and HIP nodes), the ScoreStream session families, `vmafx_build_info` and the Go runtime and process series. |
 | `/readyz` | 200 when the node can score (a vmaf scorer is configured), 503 otherwise. |
 | `/livez`, `/startupz` | Liveness and startup of the process. |
 

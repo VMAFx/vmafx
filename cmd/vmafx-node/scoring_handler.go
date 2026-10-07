@@ -57,7 +57,10 @@ type scoringHandler struct {
 	vmafxv1.UnimplementedVmafxScoringServer
 	scorer    *libvmaf.Scorer
 	inventory *probe.Inventory
-	log       *slog.Logger
+	// streams records the ScoreStream sessions; nil in tests that build the
+	// handler without it (records nothing).
+	streams *scoringservice.StreamMetrics
+	log     *slog.Logger
 }
 
 // newScoringHandler builds the node's gRPC scoring service implementation. scorer
@@ -106,6 +109,8 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	}
 	ctx := stream.Context()
 	start := time.Now()
+	session := h.streams.Begin()
+	defer func() { session.End(retErr) }()
 
 	scorer, err := h.openStreamScorer(stream)
 	if err != nil {
@@ -113,7 +118,7 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	}
 	defer h.closeStreamScorer(scorer, &retErr)
 
-	if ingestErr := ingestStreamFrames(ctx, stream, scorer); ingestErr != nil {
+	if ingestErr := ingestStreamFrames(ctx, stream, scorer, session); ingestErr != nil {
 		return ingestErr
 	}
 
@@ -220,6 +225,7 @@ func ingestStreamFrames(
 	ctx context.Context,
 	stream vmafxv1.VmafxScoring_ScoreStreamServer,
 	scorer *libvmaf.StreamScorer,
+	session *scoringservice.StreamSession,
 ) error {
 	halfClosed := false
 	for !halfClosed && ctx.Err() == nil {
@@ -242,6 +248,7 @@ func ingestStreamFrames(
 		if pushErr := scorer.PushFrame(int(fp.GetFrameIndex()), fp.GetRawReference(), fp.GetRawDistorted()); pushErr != nil {
 			return streamScorerStatus(pushErr)
 		}
+		session.Frame()
 	}
 	if !halfClosed {
 		return status.FromContextError(ctx.Err()).Err()

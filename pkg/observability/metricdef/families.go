@@ -13,6 +13,8 @@ const (
 	TenantLimit = 256
 	// ModelLimit bounds the model label.
 	ModelLimit = 64
+	// DeviceLimit bounds the device label of one node.
+	DeviceLimit = 8
 )
 
 // None is the value a label takes when the request or job carried no value
@@ -66,6 +68,24 @@ var (
 		Limit: 1,
 		Doc:   "build version the binary reports with `--version`",
 	}
+	// ReadSource is the state a scraped read reads.
+	ReadSource = Label{
+		Name:   "source",
+		Values: []string{"queue", "device_memory"},
+		Doc:    "`queue`: the controller's job queue; `device_memory`: the node's GPU memory (nvidia-smi or the amdgpu sysfs files)",
+	}
+	// StreamOutcome is how a ScoreStream session ended.
+	StreamOutcome = Label{
+		Name:   "outcome",
+		Values: []string{"completed", "failed", "cancelled"},
+		Doc:    "`cancelled`: the client went away or its deadline passed; `failed`: the session ended with an error; `completed`: the aggregate score was sent",
+	}
+	// Device is one GPU of a node.
+	Device = Label{
+		Name:  "device",
+		Limit: DeviceLimit,
+		Doc:   "index and name of a GPU of the node's vendor, e.g. `0 NVIDIA GeForce RTX 4090`",
+	}
 	// Vendor is the GPU vendor behind a node's backend.
 	Vendor = Label{
 		Name:   "vendor",
@@ -92,6 +112,16 @@ var BuildInfo = Family{
 	Help:     "Constant 1, labelled with the build version.",
 	Labels:   []Label{Version},
 	Emitters: []Component{Server, Controller, Node},
+}
+
+// MetricsReadErrors counts the scraped reads that failed. A failed read
+// leaves its families out of that one scrape instead of failing the whole
+// /metrics page.
+var MetricsReadErrors = Family{
+	Name: "vmafx_metrics_read_errors_total", Kind: Counter, Unit: "reads",
+	Help:     "Reads of scraped families that failed, by source; the families of a failed read are absent from that scrape.",
+	Labels:   []Label{ReadSource},
+	Emitters: []Component{Controller, Node},
 }
 
 // Families of the synchronous scoring surface (Score and ScoreStream on gRPC,
@@ -206,6 +236,33 @@ var QualityScore = Family{
 	Emitters: []Component{Server, Controller},
 }
 
+// Families of the live ScoreStream sessions (ADR-0933) of vmafx-server and
+// vmafx-node.
+var (
+	StreamSessions = Family{
+		Name: "vmafx_stream_sessions", Kind: Gauge, Unit: "sessions",
+		Help:     "ScoreStream sessions open now.",
+		Emitters: []Component{Server, Node},
+	}
+	StreamSessionsFinished = Family{
+		Name: "vmafx_stream_sessions_finished_total", Kind: Counter, Unit: "sessions",
+		Help:     "ScoreStream sessions that ended, by outcome.",
+		Labels:   []Label{StreamOutcome},
+		Emitters: []Component{Server, Node},
+	}
+	StreamFrames = Family{
+		Name: "vmafx_stream_frames_total", Kind: Counter, Unit: "frames",
+		Help:     "Frame pairs received on ScoreStream sessions.",
+		Emitters: []Component{Server, Node},
+	}
+	StreamSessionDuration = Family{
+		Name: "vmafx_stream_session_duration_seconds", Kind: Histogram, Unit: "seconds",
+		Help:     "Duration of a ScoreStream session, from its opening message to its end.",
+		Buckets:  RequestSecondsBuckets,
+		Emitters: []Component{Server, Node},
+	}
+)
+
 // Families of the worker node.
 var (
 	NodeInfo = Family{
@@ -237,12 +294,24 @@ var (
 		Buckets:  JobSecondsBuckets,
 		Emitters: []Component{Node},
 	}
+	NodeDeviceMemoryUsed = Family{
+		Name: "vmafx_node_device_memory_used_bytes", Kind: Gauge, Unit: "bytes",
+		Help:     "Device memory in use on each GPU of the node's vendor, read when Prometheus scrapes.",
+		Labels:   []Label{Device},
+		Emitters: []Component{Node}, Scraped: true,
+	}
+	NodeDeviceMemoryTotal = Family{
+		Name: "vmafx_node_device_memory_total_bytes", Kind: Gauge, Unit: "bytes",
+		Help:     "Device memory of each GPU of the node's vendor.",
+		Labels:   []Label{Device},
+		Emitters: []Component{Node}, Scraped: true,
+	}
 )
 
 // All returns every family, in the order of the reference page.
 func All() []Family {
 	return []Family{
-		BuildInfo,
+		BuildInfo, MetricsReadErrors,
 		ServerScoreRequests, ServerScoreErrors, ServerScoreDuration,
 		ServerHealthRequests, ServerReadyRequests,
 		ControllerJobsSubmitted, ControllerJobsCompleted, ControllerJobsFailed,
@@ -250,6 +319,8 @@ func All() []Family {
 		ControllerJobsPending, ControllerJobsRunning, ControllerQueueOldestAge,
 		ControllerNodesLive, ControllerJobQueueWait, ControllerJobDuration,
 		QualityScore,
+		StreamSessions, StreamSessionsFinished, StreamFrames, StreamSessionDuration,
 		NodeInfo, NodeSlots, NodeJobsRunning, NodeJobs, NodeJobDuration,
+		NodeDeviceMemoryUsed, NodeDeviceMemoryTotal,
 	}
 }

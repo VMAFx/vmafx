@@ -178,6 +178,14 @@ python-locks-write:
 govulncheck:
 	python3 scripts/ci/govulncheck-gate.py
 
+# Grafana dashboard-linter --strict over the generated dashboards
+# (deploy/grafana/dashboards, ADR-2349): the pinned release from
+# build-config.env, sha256-checked. Regenerate them first with
+# `go run ./tools/obsgen -write`.
+.PHONY: lint-dashboards
+lint-dashboards:
+	bash scripts/ci/lint-dashboards.sh
+
 # Go security scan (gosec): the one definition of the gate, run by `make lint`
 # and by the gosec step of .github/workflows/go-ci.yml. Every G* finding fails.
 # -exclude-generated: generated protobuf code (gen/) carries G103

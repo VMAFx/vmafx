@@ -5219,6 +5219,8 @@
         "pkg/libvmaf/libvmaf.go": 1,
         "pkg/libvmaf/stream.go": 1,
         "pkg/libvmaf/stream_test.go": 1,
+        "pkg/observability/metricdef/families.go": 1,
+        "pkg/observability/obsgen/live.go": 1,
         "pkg/score/grpc_client.go": 1,
         "pkg/score/grpc_client_test.go": 1,
         "proto/vmafx.proto": 3
@@ -11715,6 +11717,15 @@
         ".config/lint-exceptions.d/HISS-11.toml": 1
       },
       "target": "2321-praetor-pin-afb739ed.md"
+    },
+    "2349": {
+      "sites": {
+        ".github/workflows/go-ci.yml": 1,
+        "Makefile": 1,
+        "scripts/ci/lint-dashboards.sh": 1,
+        "scripts/ci/tests/test_lint_dashboards.py": 1
+      },
+      "target": "2349-observability-package.md"
     },
     "2350": {
       "sites": {

@@ -67,6 +67,20 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    `TestExternalSeriesAreServed`). `obsgen/testdata/overview-before-generation.json`
    = frozen negative fixture (5 dead series), never "fixed".
 
+7. **Scraped reads never fail /metrics** (`scrape.go`): `RegisterScraped`
+   takes `NewReadErrors` counter + `ScrapeGroup{Source, Families, Read}`;
+   failed read -> `errs.Inc(source)`, group's families absent this scrape,
+   rest served. Never `prometheus.NewInvalidMetric` (whole page 500). New
+   source -> value in `metricdef.ReadSource`.
+
+8. **Vendor exporter series only on own dashboard** (`obsgen/exporters.go`,
+   `check.go::ExporterSeries`): exporter dashboards tagged
+   `vmafx-exporter-<key>`; `CheckDashboard` allows that exporter's series
+   only there. Names from exporter's own reference (cite file), never
+   guessed. Every generated dashboard passes `dashboard-linter --strict`, no
+   exclusions (`scripts/ci/lint-dashboards.sh`, pinned + sha256 in
+   `build-config.env`).
+
 ## Test requirements
 
 ```bash

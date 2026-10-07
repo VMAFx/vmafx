@@ -108,13 +108,22 @@ type queueStats interface {
 // registerQueueCollector registers the scraped families: per-tenant pending
 // and running jobs, the age of each tenant's oldest pending job, the requeue
 // totals and the live node count, read from q and r when Prometheus scrapes.
+// A failed read counts in vmafx_metrics_read_errors_total{source="queue"}.
 func registerQueueCollector(reg *prometheus.Registry, q queue.Queue, r *nodes.Registry) error {
-	families := []metricdef.Family{
-		metricdef.ControllerJobsPending, metricdef.ControllerJobsRunning,
-		metricdef.ControllerQueueOldestAge, metricdef.ControllerJobsRequeued,
-		metricdef.ControllerNodesLive,
+	errs, err := observability.NewReadErrors(reg)
+	if err != nil {
+		return fmt.Errorf("controller metrics: %w", err)
 	}
-	if err := observability.RegisterScraped(reg, families, queueScrape(q, r)); err != nil {
+	group := observability.ScrapeGroup{
+		Source: "queue",
+		Families: []metricdef.Family{
+			metricdef.ControllerJobsPending, metricdef.ControllerJobsRunning,
+			metricdef.ControllerQueueOldestAge, metricdef.ControllerJobsRequeued,
+			metricdef.ControllerNodesLive,
+		},
+		Read: queueScrape(q, r),
+	}
+	if err := observability.RegisterScraped(reg, errs, group); err != nil {
 		return fmt.Errorf("controller metrics: %w", err)
 	}
 	return nil

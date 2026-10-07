@@ -208,3 +208,13 @@ ADR-1539), fail closed.
     (`writeNodeEnv`), never bind `:9090`. Guards:
     `metrics_test.go::TestNodeServesEveryFamilyItEmits`,
     `TestControllerClientRecordsJobMetrics`, `TestNodeHTTPServesMetricsAndProbes`.
+
+17. **Device memory + ScoreStream metrics** (`device_memory.go`, `metrics.go`):
+    GPU memory read at scrape time: `cuda` -> `nvidia-smi --query-gpu=...
+    --format=csv,noheader,nounits` (MiB), `hip` -> amdgpu sysfs
+    `mem_info_vram_{used,total}` (bytes), other backends none (families
+    registered, no series). Failed read -> `vmafx_metrics_read_errors_total
+    {source="device_memory"}`, rest of page served; never fail /metrics.
+    Tests inject reader (`newNodeMetrics`); never run real `nvidia-smi` in
+    contract test. Stream sessions via `scoringservice.StreamMetrics`
+    (`provideStreamMetrics`, set on handler in register invoke).

@@ -146,7 +146,8 @@ func TestRegisterScrapedValuesAndMerging(t *testing.T) {
 			Sample{Family: metricdef.ControllerJobsPending, Value: 1, Labels: []string{tenant}},
 			Sample{Family: metricdef.ControllerQueueOldestAge, Value: float64(10 * (i + 1)), Labels: []string{tenant}})
 	}
-	err := RegisterScraped(reg, fams, func(context.Context) ([]Sample, error) { return samples, nil })
+	err := RegisterScraped(reg, readErrors(t, reg), ScrapeGroup{Source: "queue", Families: fams,
+		Read: func(context.Context) ([]Sample, error) { return samples, nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,23 +165,51 @@ func TestRegisterScrapedValuesAndMerging(t *testing.T) {
 
 func TestRegisterScrapedRefusesEventFamilies(t *testing.T) {
 	t.Parallel()
-	err := RegisterScraped(prometheus.NewRegistry(), []metricdef.Family{metricdef.NodeSlots},
-		func(context.Context) ([]Sample, error) { return nil, nil })
+	reg := prometheus.NewRegistry()
+	err := RegisterScraped(reg, readErrors(t, reg), ScrapeGroup{Source: "queue",
+		Families: []metricdef.Family{metricdef.NodeSlots},
+		Read:     func(context.Context) ([]Sample, error) { return nil, nil }})
 	if err == nil {
 		t.Fatal("RegisterScraped accepted an event-driven family")
 	}
 }
 
-func TestRegisterScrapedReportsReadErrors(t *testing.T) {
-	t.Parallel()
-	reg := prometheus.NewRegistry()
-	err := RegisterScraped(reg, []metricdef.Family{metricdef.ControllerNodesLive},
-		func(context.Context) ([]Sample, error) { return nil, errors.New("queue closed") })
+// readErrors registers the read-error family on reg.
+func readErrors(t *testing.T, reg prometheus.Registerer) Counter {
+	t.Helper()
+	errs, err := NewReadErrors(reg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reg.Gather(); err == nil {
-		t.Fatal("a failed read did not surface as a gather error")
+	return errs
+}
+
+// TestRegisterScrapedCountsReadErrors: a failed read counts under its source
+// and leaves only its own families out; the rest of the page is served.
+func TestRegisterScrapedCountsReadErrors(t *testing.T) {
+	t.Parallel()
+	reg := prometheus.NewRegistry()
+	errs := readErrors(t, reg)
+	failing := ScrapeGroup{Source: "device_memory", Families: []metricdef.Family{metricdef.NodeDeviceMemoryUsed},
+		Read: func(context.Context) ([]Sample, error) { return nil, errors.New("nvidia-smi: not found") }}
+	working := ScrapeGroup{Source: "queue", Families: []metricdef.Family{metricdef.ControllerNodesLive},
+		Read: func(context.Context) ([]Sample, error) {
+			return []Sample{{Family: metricdef.ControllerNodesLive, Value: 2}}, nil
+		}}
+	for _, g := range []ScrapeGroup{failing, working} {
+		if err := RegisterScraped(reg, errs, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := seriesOf(t, reg, metricdef.MetricsReadErrors.Name) // Gather must not fail
+	if got["device_memory"] != 1 || got["queue"] != 0 {
+		t.Errorf("read errors = %v, want device_memory 1, queue 0", got)
+	}
+	if nodes := seriesOf(t, reg, metricdef.ControllerNodesLive.Name); nodes[""] != 2 {
+		t.Errorf("the working group was not served: %v", nodes)
+	}
+	if mem := seriesOf(t, reg, metricdef.NodeDeviceMemoryUsed.Name); len(mem) != 0 {
+		t.Errorf("the failed group served %v", mem)
 	}
 }
 
@@ -190,11 +219,12 @@ func TestRegisterScrapedPassesABoundedContext(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
 	hasDeadline := false
-	err := RegisterScraped(reg, []metricdef.Family{metricdef.ControllerNodesLive},
-		func(ctx context.Context) ([]Sample, error) {
+	err := RegisterScraped(reg, readErrors(t, reg), ScrapeGroup{Source: "queue",
+		Families: []metricdef.Family{metricdef.ControllerNodesLive},
+		Read: func(ctx context.Context) ([]Sample, error) {
 			_, hasDeadline = ctx.Deadline()
 			return []Sample{{Family: metricdef.ControllerNodesLive, Value: 3}}, nil
-		})
+		}})
 	if err != nil {
 		t.Fatal(err)
 	}

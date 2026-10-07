@@ -36,11 +36,19 @@ type generatedDashboard struct {
 	builder *dashboard.DashboardBuilder
 }
 
-// dashboards lists every generated dashboard.
+// dashboards lists every generated dashboard: the VMAFx dashboards, then one
+// per vendor GPU exporter.
 func dashboards() []generatedDashboard {
-	return []generatedDashboard{
+	out := []generatedDashboard{
 		{"vmafx-overview.json", overview()},
+		{"vmafx-quality.json", quality()},
+		{"vmafx-nodes.json", nodes()},
+		{"vmafx-live.json", live()},
 	}
+	for _, e := range gpuExporters() {
+		out = append(out, generatedDashboard{"vmafx-gpu-" + e.key + ".json", exporterDashboard(e)})
+	}
+	return out
 }
 
 // Generate returns every generated file, in a stable order.

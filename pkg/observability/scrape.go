@@ -15,8 +15,8 @@ import (
 )
 
 // ScrapeTimeout bounds one read of a service's state for the families
-// metricdef marks Scraped (HISS-02). A read that takes longer fails the
-// families of that read for this scrape; the next scrape tries again.
+// metricdef marks Scraped (HISS-02). A read that takes longer fails; the
+// next scrape tries again.
 const ScrapeTimeout = 2 * time.Second
 
 // Sample is one value of a scraped family: the family, the value and its
@@ -31,15 +31,32 @@ type Sample struct {
 // called once per Prometheus scrape with a context bounded by ScrapeTimeout.
 type ScrapeFunc func(ctx context.Context) ([]Sample, error)
 
-// RegisterScraped registers families, all marked Scraped in metricdef, as one
-// collector on reg whose values come from fn when Prometheus scrapes. Label
-// values are bounded as for the event-driven handles.
-func RegisterScraped(reg prometheus.Registerer, families []metricdef.Family, fn ScrapeFunc) error {
+// ScrapeGroup is one read: the families it fills, its source (a value of
+// metricdef.ReadSource) and the read itself.
+type ScrapeGroup struct {
+	Source   string
+	Families []metricdef.Family
+	Read     ScrapeFunc
+}
+
+// NewReadErrors registers metricdef.MetricsReadErrors on reg; pass it to
+// RegisterScraped.
+func NewReadErrors(reg prometheus.Registerer) (Counter, error) {
+	return NewCounter(reg, metricdef.MetricsReadErrors)
+}
+
+// RegisterScraped registers the group's families, all marked Scraped in
+// metricdef, as one collector on reg whose values come from g.Read when
+// Prometheus scrapes. Label values are bounded as for the event-driven
+// handles. A failed read counts in errs under g.Source and leaves the group's
+// families out of that scrape; the rest of the page is served.
+func RegisterScraped(reg prometheus.Registerer, errs Counter, g ScrapeGroup) error {
 	c := &scrapeCollector{
-		fn: fn, descs: map[string]*prometheus.Desc{}, bounds: map[string]*bounder{},
+		fn: g.Read, source: g.Source, errs: errs,
+		descs: map[string]*prometheus.Desc{}, bounds: map[string]*bounder{},
 		kinds: map[string]prometheus.ValueType{},
 	}
-	for _, f := range families {
+	for _, f := range g.Families {
 		if !f.Scraped {
 			return fmt.Errorf("observability: %s is not a scraped family", f.Name)
 		}
@@ -51,6 +68,7 @@ func RegisterScraped(reg prometheus.Registerer, families []metricdef.Family, fn 
 	if err := reg.Register(c); err != nil {
 		return fmt.Errorf("observability: register scraped families: %w", err)
 	}
+	errs.Add(0, g.Source)
 	return nil
 }
 
@@ -63,6 +81,8 @@ func valueType(k metricdef.Kind) prometheus.ValueType {
 
 type scrapeCollector struct {
 	fn     ScrapeFunc
+	source string
+	errs   Counter
 	order  []string
 	kinds  map[string]prometheus.ValueType
 	descs  map[string]*prometheus.Desc
@@ -80,9 +100,7 @@ func (c *scrapeCollector) Collect(ch chan<- prometheus.Metric) {
 	defer cancel()
 	samples, err := c.fn(ctx)
 	if err != nil {
-		for _, name := range c.order {
-			ch <- prometheus.NewInvalidMetric(c.descs[name], err)
-		}
+		c.errs.Inc(c.source)
 		return
 	}
 	sums := c.merge(samples)

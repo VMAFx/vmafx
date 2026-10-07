@@ -6,11 +6,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/observability"
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
@@ -25,8 +27,18 @@ type nodeMetrics struct {
 }
 
 // provideNodeMetrics registers the node's families on reg and records the
-// backend the executor runs on.
+// backend the executor runs on; device memory is read for that backend.
 func provideNodeMetrics(reg *prometheus.Registry, exec *Executor) (*nodeMetrics, error) {
+	return newNodeMetrics(reg, exec.backend, deviceMemoryFor(exec.backend))
+}
+
+// newNodeMetrics registers the node's families on reg. read is the device
+// memory source of the backend, nil when the backend has none: the families
+// are registered and serve no series.
+func newNodeMetrics(reg *prometheus.Registry, backend string, read deviceMemoryReader) (*nodeMetrics, error) {
+	if err := registerDeviceMemory(reg, read); err != nil {
+		return nil, err
+	}
 	info, err := observability.NewGauge(reg, metricdef.NodeInfo)
 	if err != nil {
 		return nil, err
@@ -44,10 +56,33 @@ func provideNodeMetrics(reg *prometheus.Registry, exec *Executor) (*nodeMetrics,
 	if m.duration, err = observability.NewHistogram(reg, metricdef.NodeJobDuration); err != nil {
 		return nil, err
 	}
-	info.Set(1, exec.backend, backendVendors[exec.backend])
+	info.Set(1, backend, backendVendors[backend])
 	m.slots.Set(0)
 	m.running.Set(0)
 	return m, nil
+}
+
+// registerDeviceMemory registers the scraped device memory families; a
+// failed read counts in vmafx_metrics_read_errors_total{source="device_memory"}.
+func registerDeviceMemory(reg *prometheus.Registry, read deviceMemoryReader) error {
+	errs, err := observability.NewReadErrors(reg)
+	if err != nil {
+		return err
+	}
+	if read == nil {
+		read = func(context.Context) ([]deviceMemory, error) { return nil, nil }
+	}
+	return observability.RegisterScraped(reg, errs, observability.ScrapeGroup{
+		Source:   "device_memory",
+		Families: []metricdef.Family{metricdef.NodeDeviceMemoryUsed, metricdef.NodeDeviceMemoryTotal},
+		Read:     deviceMemoryScrape(read),
+	})
+}
+
+// provideStreamMetrics registers the ScoreStream session families on the
+// node's registry.
+func provideStreamMetrics(reg *prometheus.Registry) (*scoringservice.StreamMetrics, error) {
+	return scoringservice.NewStreamMetrics(reg)
 }
 
 // provideNodeRegistry is the registry the node serves on /metrics.

@@ -39,6 +39,9 @@ type grpcServer struct {
 	vmafxv1.UnimplementedVmafxScoringServer
 	scorer  *libvmaf.Scorer
 	metrics *observability.Metrics
+	// streams records the ScoreStream sessions; nil in tests that build the
+	// server without it (records nothing).
+	streams *scoringservice.StreamMetrics
 	log     *slog.Logger
 	// limiter caps concurrent in-flight Scorer.Score calls to prevent
 	// unbounded subprocess forking under load (unauthenticated DoS fix).
@@ -158,6 +161,8 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 	ctx := stream.Context()
 	s.metrics.ScoreRequests.Inc()
 	start := time.Now()
+	session := s.streams.Begin()
+	defer func() { session.End(retErr) }()
 	s.log.Info("grpc ScoreStream request received (ADR-0933)")
 
 	cfg, scorerCfg, err := s.acceptStreamConfig(stream)
@@ -190,7 +195,7 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 		"frame_size_bytes", scorer.FrameSize(),
 	)
 
-	if ingestErr := s.ingestFrames(ctx, stream, scorer); ingestErr != nil {
+	if ingestErr := s.ingestFrames(ctx, stream, scorer, session); ingestErr != nil {
 		return ingestErr
 	}
 
@@ -201,6 +206,7 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 		s.log.Error("grpc ScoreStream: finish failed", "error", err)
 		return streamScorerStatus(err)
 	}
+	s.metrics.ObserveScore("", cfg.GetModel(), result.Score)
 
 	if sendErr := s.sendFrameScores(ctx, stream, result.Frames); sendErr != nil {
 		return sendErr
@@ -350,6 +356,7 @@ func (s *grpcServer) ingestFrames(
 	ctx context.Context,
 	stream vmafxv1.VmafxScoring_ScoreStreamServer,
 	scorer *libvmaf.StreamScorer,
+	session *scoringservice.StreamSession,
 ) error {
 	halfClosed := false
 	for !halfClosed && ctx.Err() == nil {
@@ -377,6 +384,7 @@ func (s *grpcServer) ingestFrames(
 			s.metrics.ScoreErrors.Inc()
 			return streamScorerStatus(pushErr)
 		}
+		session.Frame()
 	}
 	if !halfClosed {
 		return status.FromContextError(ctx.Err()).Err()

@@ -119,6 +119,21 @@
         "x": 4,
         "y": 1
       },
+      "links": [
+        {
+          "title": "Nodes and devices",
+          "type": "link",
+          "icon": "",
+          "tooltip": "",
+          "url": "/d/vmafx-nodes?${__url_time_range}\u0026${__all_variables}",
+          "tags": [],
+          "asDropdown": false,
+          "placement": "inControlsMenu",
+          "targetBlank": false,
+          "includeVars": false,
+          "keepTime": false
+        }
+      ],
       "repeatDirection": "h",
       "options": {
         "graphMode": "area",
@@ -993,6 +1008,21 @@
         "x": 0,
         "y": 40
       },
+      "links": [
+        {
+          "title": "Quality",
+          "type": "link",
+          "icon": "",
+          "tooltip": "",
+          "url": "/d/vmafx-quality?${__url_time_range}\u0026${__all_variables}",
+          "tags": [],
+          "asDropdown": false,
+          "placement": "inControlsMenu",
+          "targetBlank": false,
+          "includeVars": false,
+          "keepTime": false
+        }
+      ],
       "repeatDirection": "h",
       "options": {
         "legend": {
@@ -1048,6 +1078,21 @@
         "x": 12,
         "y": 40
       },
+      "links": [
+        {
+          "title": "Nodes and devices",
+          "type": "link",
+          "icon": "",
+          "tooltip": "",
+          "url": "/d/vmafx-nodes?${__url_time_range}\u0026${__all_variables}",
+          "tags": [],
+          "asDropdown": false,
+          "placement": "inControlsMenu",
+          "targetBlank": false,
+          "includeVars": false,
+          "keepTime": false
+        }
+      ],
       "repeatDirection": "h",
       "options": {
         "legend": {

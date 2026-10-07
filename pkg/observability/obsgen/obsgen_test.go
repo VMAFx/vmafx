@@ -134,6 +134,27 @@ func TestCheckExprAcceptsDefinedAndExternalSeries(t *testing.T) {
 	}
 }
 
+// TestExporterSeriesOnlyOnTheirDashboard: a vendor exporter's series is dead on
+// a VMAFx dashboard and on another exporter's dashboard, and allowed on its own
+// (tagged) one.
+func TestExporterSeriesOnlyOnTheirDashboard(t *testing.T) {
+	t.Parallel()
+	expr := `avg(DCGM_FI_DEV_GPU_UTIL{job=~"$job"})`
+	if dead := CheckExpr(expr); !slices.Equal(dead, []string{"DCGM_FI_DEV_GPU_UTIL"}) {
+		t.Errorf("untagged: %v", dead)
+	}
+	if dead := CheckExpr(expr, "amd"); len(dead) != 1 {
+		t.Errorf("another exporter's tag allowed it: %v", dead)
+	}
+	if dead := CheckExpr(expr, "dcgm"); len(dead) != 0 {
+		t.Errorf("its own tag refused it: %v", dead)
+	}
+	raw := []byte(`{"title":"x","tags":["vmafx"],"panels":[{"title":"p","targets":[{"expr":"DCGM_FI_DEV_FB_USED"}]}]}`)
+	if problems, err := CheckDashboard(raw); err != nil || len(problems) != 1 {
+		t.Errorf("an exporter series on a VMAFx dashboard: %v, %v", problems, err)
+	}
+}
+
 // TestExternalSeriesAreServed proves the allow-list: every collector series
 // it names is on the registry every component serves.
 func TestExternalSeriesAreServed(t *testing.T) {

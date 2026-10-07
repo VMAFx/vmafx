@@ -87,6 +87,7 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
@@ -207,6 +208,7 @@ func nodeDomainOptions() fx.Option {
 		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
 		provideNodeRegistry,     // -> *prometheus.Registry (Go + process collectors)
 		provideNodeMetrics,      // (*prometheus.Registry, *Executor) -> (*nodeMetrics, error)
+		provideStreamMetrics,    // (*prometheus.Registry) -> (*scoringservice.StreamMetrics, error)
 		newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
 	)
 }
@@ -252,9 +254,7 @@ func nodeLifecycleOptions() fx.Option {
 		// Register the VmafxScoring service on the golusoris gRPC server. The arg
 		// order (scorer-bearing handler first, then the server) also keeps the
 		// Scorer ahead of the server in construction order, reinforcing R-node.
-		fx.Invoke(func(s *googlegrpc.Server, h *scoringHandler) {
-			vmafxv1.RegisterVmafxScoringServer(s, h)
-		}),
+		fx.Invoke(registerScoringService),
 
 		// Lazy-provider guard: fx providers are lazy, so without a consumer of
 		// *grpc.Server the golusoris grpc.Module's OnStart listener never binds and
@@ -281,6 +281,13 @@ func nodeLifecycleOptions() fx.Option {
 func mountNodeHTTP(router chi.Router, reg *prometheus.Registry, checks *statuspage.Registry) {
 	router.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	health.Mount(router, checks)
+}
+
+// registerScoringService registers the VmafxScoring service on the golusoris
+// gRPC server, its handler recording ScoreStream sessions in streams.
+func registerScoringService(s *googlegrpc.Server, h *scoringHandler, streams *scoringservice.StreamMetrics) {
+	h.streams = streams
+	vmafxv1.RegisterVmafxScoringServer(s, h)
 }
 
 // provideStatusRegistry builds the health-check registry that backs the node

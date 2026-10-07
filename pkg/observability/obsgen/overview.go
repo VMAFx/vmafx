@@ -19,7 +19,7 @@ const OverviewUID = "vmafx-overview"
 func overview() *dashboard.DashboardBuilder {
 	b := newDashboard(OverviewUID, "VMAFx Overview",
 		"Platform health at a glance: components, queue, throughput, latency, scores and node load. Generated from pkg/observability/metricdef by tools/obsgen.",
-		tenantVariable())
+		m.BuildInfo, tenantVariable())
 	return withRows(b, []row{
 		{"Health and queue", healthPanels()},
 		{"Throughput", throughputPanels()},
@@ -39,7 +39,7 @@ func healthPanels() []panelBuilder {
 			instant(`sum by (job) (`+sel("up")+`)`, "{{job}}")),
 		statPanel("Live nodes", "Nodes registered with the controller and sending heartbeats. Zero means queued jobs cannot run.",
 			unitCount, steps("red", at(1, "green")),
-			instant(orZero("max("+fam(m.ControllerNodesLive)+")"), "nodes")),
+			instant(orZero("max("+fam(m.ControllerNodesLive)+")"), "nodes")).Links(drillDown("Nodes and devices", NodesUID)),
 		statPanel("Pending jobs", "Jobs waiting in the controller queue for a node.",
 			unitCount, steps("green"),
 			instant(orZero("sum("+fam(m.ControllerJobsPending, tenant)+")"), "pending")),
@@ -109,9 +109,9 @@ func scoreAndNodePanels() []panelBuilder {
 	return []panelBuilder{
 		timeseriesPanel("Median score by model", "Median pooled VMAF score of completed jobs and Score requests, per model. A drop without a change of content points at an encoder or pipeline regression.",
 			unitScore,
-			query(quantile(0.5, m.QualityScore, "model", tenant), "{{model}}")),
+			query(quantile(0.5, m.QualityScore, "model", tenant), "{{model}}")).Links(drillDown("Quality", QualityUID)),
 		timeseriesPanel("Node slot use", "Running jobs over configured slots across the selected nodes. Near 1 the nodes are the bottleneck; low with a growing queue, they cannot take the queued backend.",
 			unitRatio,
-			query("sum("+fam(m.NodeJobsRunning)+") / clamp_min(sum("+fam(m.NodeSlots)+"), 1)", "slots in use")),
+			query("sum("+fam(m.NodeJobsRunning)+") / clamp_min(sum("+fam(m.NodeSlots)+"), 1)", "slots in use")).Links(drillDown("Nodes and devices", NodesUID)),
 	}
 }

@@ -26,20 +26,46 @@ var ExternalSeries = map[string]string{
 	"go_goroutines":                 "client_golang Go collector, every component",
 }
 
+// ExporterSeries are the series of the vendor GPU exporters, by exporter key,
+// as each exporter's reference names them (verified 2026-10-07). They are
+// allowed only on a dashboard tagged exporterTagPrefix+key: a VMAFx dashboard
+// that queried one would show "No data" wherever that exporter is absent.
+var ExporterSeries = map[string][]string{
+	// NVIDIA dcgm-exporter, etc/default-counters.csv.
+	"dcgm": {"DCGM_FI_DEV_GPU_UTIL", "DCGM_FI_DEV_FB_USED", "DCGM_FI_DEV_FB_FREE",
+		"DCGM_FI_DEV_ENC_UTIL", "DCGM_FI_DEV_DEC_UTIL", "DCGM_FI_DEV_POWER_USAGE"},
+	// AMD device-metrics-exporter, grafana/dashboard_gpu.json and docs/configuration/metricslist.md.
+	"amd": {"gpu_gfx_activity", "gpu_used_vram", "gpu_total_vram", "gpu_package_power"},
+	// Intel XPU Manager, doc/Prometheus_Exported_Metrics.csv.
+	"intel": {"xpum_engine_ratio", "xpum_memory_ratio", "xpum_engine_group_ratio", "xpum_power_watts"},
+}
+
 // CheckExpr returns the series expr selects that nothing emits: neither a
-// series of a metricdef family nor one of ExternalSeries.
-func CheckExpr(expr string) []string {
+// series of a metricdef family, nor one of ExternalSeries, nor a series of
+// one of the exporters named in exporters.
+func CheckExpr(expr string, exporters ...string) []string {
 	var dead []string
 	for _, name := range MetricNames(expr) {
-		if _, ok := metricdef.Lookup(name); ok {
-			continue
+		if !emitted(name, exporters) {
+			dead = append(dead, name)
 		}
-		if _, ok := ExternalSeries[name]; ok {
-			continue
-		}
-		dead = append(dead, name)
 	}
 	return dead
+}
+
+func emitted(name string, exporters []string) bool {
+	if _, ok := metricdef.Lookup(name); ok {
+		return true
+	}
+	if _, ok := ExternalSeries[name]; ok {
+		return true
+	}
+	for _, e := range exporters {
+		if slices.Contains(ExporterSeries[e], name) {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckDashboard returns one problem per Prometheus query of a Grafana
@@ -51,8 +77,9 @@ func CheckDashboard(raw []byte) ([]string, error) {
 		return nil, fmt.Errorf("obsgen: parse dashboard: %w", err)
 	}
 	var problems []string
+	exporters := d.exporters()
 	report := func(where, expr string) {
-		for _, name := range CheckExpr(expr) {
+		for _, name := range CheckExpr(expr, exporters...) {
 			problems = append(problems, fmt.Sprintf("%s: %q queries %s, which nothing emits", d.Title, where, name))
 		}
 	}
@@ -75,6 +102,7 @@ func CheckDashboard(raw []byte) ([]string, error) {
 // dashboardQueries is the part of a dashboard's JSON that holds queries.
 type dashboardQueries struct {
 	Title       string       `json:"title"`
+	Tags        []string     `json:"tags"`
 	Panels      []panelQuery `json:"panels"`
 	Annotations struct {
 		List []struct {
@@ -88,6 +116,17 @@ type dashboardQueries struct {
 			Query json.RawMessage `json:"query"`
 		} `json:"list"`
 	} `json:"templating"`
+}
+
+// exporters returns the exporter keys the dashboard's tags name.
+func (d dashboardQueries) exporters() []string {
+	var out []string
+	for _, t := range d.Tags {
+		if key, ok := strings.CutPrefix(t, exporterTagPrefix); ok {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 type panelQuery struct {

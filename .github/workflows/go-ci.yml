@@ -163,6 +163,13 @@ jobs:
         if: steps.impact.outputs.go_checks == 'true'
         run: python3 scripts/ci/govulncheck-gate.py
 
+      # ADR-2349: every generated Grafana dashboard passes Grafana's
+      # dashboard-linter --strict with no exclusions; the release binary is
+      # pinned and sha256-checked from build-config.env.
+      - name: dashboard-linter (generated dashboards)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/lint-dashboards.sh
+
       # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
       # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
       # instead of skipping. Built once here, reused by the smoke below.

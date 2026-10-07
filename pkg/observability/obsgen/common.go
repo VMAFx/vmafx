@@ -28,14 +28,20 @@ func promRef() common.DataSourceRef {
 	return common.DataSourceRef{Type: cog.ToPtr("prometheus"), Uid: cog.ToPtr("${" + promDatasourceVar + "}")}
 }
 
-// newDashboard starts a generated dashboard: read-only, the shared variables
-// (data source, job, instance, then extra), a link to the other VMAFx
-// dashboards, and the deploy annotation.
-func newDashboard(uid, title, description string, extra ...*dashboard.QueryVariableBuilder) *dashboard.DashboardBuilder {
+// newDashboard starts a generated VMAFx dashboard: baseDashboard over the
+// series of scope, plus the deploy annotation.
+func newDashboard(uid, title, description string, scope metricdef.Family, extra ...*dashboard.QueryVariableBuilder) *dashboard.DashboardBuilder {
+	return baseDashboard(uid, title, description, scope.Name, []string{tag}, extra...).Annotation(deployAnnotation())
+}
+
+// baseDashboard is read-only, carries tags, the shared variables (data
+// source, then job and instance over scopeSeries, then extra) and a link to
+// the other VMAFx dashboards.
+func baseDashboard(uid, title, description, scopeSeries string, tags []string, extra ...*dashboard.QueryVariableBuilder) *dashboard.DashboardBuilder {
 	b := dashboard.NewDashboardBuilder(title).
 		Uid(uid).
 		Description(description).
-		Tags([]string{tag}).
+		Tags(tags).
 		Readonly().
 		Tooltip(dashboard.DashboardCursorSyncCrosshair).
 		Refresh("1m").
@@ -44,15 +50,14 @@ func newDashboard(uid, title, description string, extra ...*dashboard.QueryVaria
 		WithVariable(dashboard.NewDatasourceVariableBuilder(promDatasourceVar).
 			Label("Prometheus data source").
 			Type("prometheus")).
-		WithVariable(scopeVariable("job", "label_values("+metricdef.BuildInfo.Name+", job)")).
-		WithVariable(scopeVariable("instance", "label_values("+metricdef.BuildInfo.Name+`{job=~"$job"}, instance)`)).
+		WithVariable(scopeVariable("job", "label_values("+scopeSeries+", job)")).
+		WithVariable(scopeVariable("instance", "label_values("+scopeSeries+`{job=~"$job"}, instance)`)).
 		Link(dashboard.NewDashboardLinkBuilder("VMAFx dashboards").
 			Type(dashboard.DashboardLinkTypeDashboards).
 			Tags([]string{tag}).
 			AsDropdown(true).
 			IncludeVars(true).
-			KeepTime(true)).
-		Annotation(deployAnnotation())
+			KeepTime(true))
 	for _, v := range extra {
 		b = b.WithVariable(v)
 	}
@@ -153,6 +158,16 @@ func timeseriesPanel(title, description, unit string, targets ...cog.Builder[var
 		p = p.WithTarget(t)
 	}
 	return p
+}
+
+// drillDown is a panel link to another generated dashboard that keeps the
+// time range and the variables.
+func drillDown(title, uid string) []cog.Builder[dashboard.DashboardLink] {
+	return []cog.Builder[dashboard.DashboardLink]{
+		dashboard.NewDashboardLinkBuilder(title).
+			Type(dashboard.DashboardLinkTypeLink).
+			Url("/d/" + uid + "?${__url_time_range}&${__all_variables}"),
+	}
 }
 
 // row is a titled group of panels.

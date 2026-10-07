@@ -132,6 +132,7 @@ func serverProviders() fx.Option {
 	return fx.Provide(
 		provideScorer,
 		scoringservice.ProvideMetrics,
+		provideStreamMetrics,
 		provideScoreLimiter,
 		provideStatusRegistry,
 		newGRPCServerImpl,
@@ -195,10 +196,19 @@ func provideStatusRegistry(clk clock.Clock) *statuspage.Registry {
 func newGRPCServerImpl(
 	scorer *libvmaf.Scorer,
 	metrics *observability.Metrics,
+	streams *scoringservice.StreamMetrics,
 	limiter *ScoreLimiter,
 	log *slog.Logger,
 ) *grpcServer {
-	return newGRPCServerWithLimiter(scorer, metrics, log, limiter)
+	s := newGRPCServerWithLimiter(scorer, metrics, log, limiter)
+	s.streams = streams
+	return s
+}
+
+// provideStreamMetrics registers the ScoreStream session families on the
+// registry /metrics serves.
+func provideStreamMetrics(reg *prometheus.Registry) (*scoringservice.StreamMetrics, error) {
+	return scoringservice.NewStreamMetrics(reg)
 }
 
 // mountHTTPRoutes registers the vmafx HTTP surface on the golusoris chi router:

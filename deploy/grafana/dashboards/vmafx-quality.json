@@ -1,0 +1,546 @@
+{
+  "uid": "vmafx-quality",
+  "title": "VMAFx Quality",
+  "description": "Distribution of the pooled VMAF scores of completed jobs and Score requests, per tenant, model and profile. A shift without a change of content points at an encoder, a pipeline or a model regression. Generated from pkg/observability/metricdef by tools/obsgen.",
+  "tags": [
+    "vmafx"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Score levels",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (model, le) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{model}}",
+          "range": true
+        }
+      ],
+      "title": "Median score by model",
+      "description": "Median pooled score per model over the window.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "histogram_quantile(0.1, sum by (model, le) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{model}}",
+          "range": true
+        }
+      ],
+      "title": "10th percentile score by model",
+      "description": "The score 90 percent of the results stay above, per model: the bad tail a median hides.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (tenant, le) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{tenant}}",
+          "range": true
+        }
+      ],
+      "title": "Median score by tenant",
+      "description": "Median pooled score per tenant. A drop for one tenant alone points at its content or its encodes, not at the platform.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (model) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\",le=\"70\"}[$__rate_interval])) / clamp_min(sum by (model) (rate(vmafx_quality_score_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])), 1e-9)",
+          "instant": false,
+          "legendFormat": "{{model}}",
+          "range": true
+        }
+      ],
+      "title": "Share of scores below 70",
+      "description": "Scores below 70 over all scores, per model. 70 is a common floor for acceptable streaming quality; the buckets also hold 60, 75 and 80.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Distribution and volume",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "heatmap",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (le) (increase(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "instant": false,
+          "legendFormat": "{{le}}",
+          "range": true
+        }
+      ],
+      "title": "Score distribution",
+      "description": "Scores per bucket over time for the selection. A band moving down, or a second band appearing, is a regression of part of the work.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "repeatDirection": "h",
+      "options": {
+        "calculate": false,
+        "color": {
+          "mode": "scheme",
+          "scheme": "Oranges",
+          "fill": "",
+          "exponent": 0,
+          "steps": 64,
+          "reverse": false
+        },
+        "filterValues": {
+          "le": 1e-9
+        },
+        "showValue": "auto",
+        "cellGap": 1,
+        "yAxis": {
+          "unit": "none"
+        },
+        "legend": {
+          "show": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "yHistogram": true
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "selectionMode": "x"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (model) (rate(vmafx_quality_score_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])) * 60",
+          "instant": false,
+          "legendFormat": "{{model}}",
+          "range": true
+        }
+      ],
+      "title": "Scores per minute by model",
+      "description": "Number of scores produced per minute, per model: the volume behind the levels above.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "opm",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "prometheus_datasource",
+        "label": "Prometheus data source",
+        "skipUrlSync": false,
+        "query": "prometheus",
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info, job)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info, job)"
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info{job=~\"$job\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info{job=~\"$job\"}, instance)"
+      },
+      {
+        "type": "query",
+        "name": "tenant",
+        "label": "Tenant",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, tenant)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, tenant)"
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_quality_score_count{job=~\"$job\",tenant=~\"$tenant\"}, model)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_quality_score_count{job=~\"$job\",tenant=~\"$tenant\"}, model)"
+      },
+      {
+        "type": "query",
+        "name": "profile",
+        "label": "Profile",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_quality_score_count{job=~\"$job\"}, profile)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_quality_score_count{job=~\"$job\"}, profile)"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deploys and restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "blue",
+        "builtIn": 0,
+        "placement": "inControlsMenu",
+        "expr": "max by (job, instance, version) (vmafx_build_info{job=~\"$job\",instance=~\"$instance\"}) and on (job, instance) changes(process_start_time_seconds{job=~\"$job\",instance=~\"$instance\"}[5m]) \u003e 0",
+        "textFormat": "{{instance}}",
+        "titleFormat": "{{job}} {{version}} started",
+        "step": "1m"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "VMAFx dashboards",
+      "type": "dashboards",
+      "icon": "",
+      "tooltip": "",
+      "tags": [
+        "vmafx"
+      ],
+      "asDropdown": true,
+      "placement": "inControlsMenu",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
+}

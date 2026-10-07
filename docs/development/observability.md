@@ -199,9 +199,9 @@ Three binaries serve a Prometheus `/metrics` page on their HTTP listener:
 
 | Binary | Listener (`VMAFX_HTTP_ADDR`) | Families |
 |--------|------------------------------|----------|
-| `vmafx-server` | `:8080` | Score requests, errors and latency; the quality family; `vmafx_build_info`. |
-| `vmafx-controller` | `:8080` | The server's families, plus the job queue: submitted, completed, failed, cancelled and requeued jobs, pending and running jobs and the age of the oldest pending job per tenant, queue wait and time to result, live nodes. |
-| `vmafx-node` | `:9090` | Backend and vendor, slots, running jobs, jobs by backend and outcome, job run time. |
+| `vmafx-server` | `:8080` | Score requests, errors and latency; the quality family; ScoreStream sessions (open, ended by outcome, frames, duration); `vmafx_build_info`. |
+| `vmafx-controller` | `:8080` | The server's request and quality families, plus the job queue: submitted, completed, failed, cancelled and requeued jobs, pending and running jobs and the age of the oldest pending job per tenant, queue wait and time to result, live nodes. |
+| `vmafx-node` | `:9090` | Backend and vendor, slots, running jobs, jobs by backend and outcome, job run time, GPU memory per device, ScoreStream sessions. |
 
 Each also serves the Go runtime and process series of the Prometheus client
 library. The [metric reference](../observability/metrics.md) lists every
@@ -217,6 +217,18 @@ services build their collectors from it, the dashboards are generated from it
 and the reference page is rendered from it. A family is added there first,
 then registered by the binaries its `Emitters` name; a test per binary fails
 when its `/metrics` page and the definition disagree.
+
+### Values read at scrape time
+
+The controller's queue families and the node's GPU memory are read when
+Prometheus scrapes, within 2 seconds. A read that fails leaves its own
+families out of that scrape, serves the rest of the page, and counts in
+`vmafx_metrics_read_errors_total{source}` (`queue`, `device_memory`). A node
+reads GPU memory from `nvidia-smi` on a CUDA backend and from the amdgpu
+sysfs files (`mem_info_vram_used`, `mem_info_vram_total`) on a HIP backend;
+the CUDA image needs the driver utilities (`NVIDIA_DRIVER_CAPABILITIES`
+including `utility`). The Intel `xe` driver and Metal expose no device memory
+counter an unprivileged process can read: use the vendor exporter dashboards.
 
 ### Label cardinality
 
@@ -275,6 +287,75 @@ kept as its negative fixture.
 A growing _Oldest pending job_ with _Live nodes_ above zero and low _Node
 slot use_ means no node can take the queued work: compare the jobs' backend
 with the nodes' (`vmafx_node_info`).
+
+### Quality
+
+`vmafx-quality.json` follows the scores the platform produced. Its **Tenant**,
+**Model** and **Profile** variables narrow the selection.
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Score levels | Median score by model, 10th percentile score by model, Median score by tenant, Share of scores below 70 | Did the scores move, for everyone or for one tenant or model, and how bad is the tail? |
+| Distribution and volume | Score distribution (heatmap), Scores per minute by model | Did the whole distribution shift or did a second band appear, and how much work is behind the numbers? |
+
+A drop on one model only after a model change points at the model; a drop on
+one tenant only points at its content or encodes.
+
+### Nodes and devices
+
+`vmafx-nodes.json` covers the worker nodes; its **Job** and **Instance**
+variables list the node targets (series `vmafx_node_info`), **Backend** the
+backends.
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Fleet | Nodes by backend, Slots in use, Node job failures | What runs where, is the fleet full, do jobs fail? |
+| Jobs per node | Running jobs and slots by node, Jobs per minute by node and outcome, Job run time by backend, Job run time p95 by node | Which node is busy, idle, failing or slow? |
+| Devices and host | GPU memory in use, Device memory reads failing, Node process memory, Node process CPU | Is a GPU out of memory, and is the node process itself the limit? |
+
+### Live sessions
+
+`vmafx-live.json` covers ScoreStream, the per-frame streaming path of
+`vmafx-server` and `vmafx-node` (ADR-0933).
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Sessions now | Open sessions, Frames per second, Failed sessions, Median session length | How much live scoring runs now, and does it fail? |
+| Over time | Open sessions by instance, Frames per second by instance, Sessions ended per minute by outcome, Session duration | Do sessions spread over the instances, and how do they end? |
+
+A session the client stops (cancelled call or passed deadline) counts as
+`cancelled`, not `failed`.
+
+### GPU exporter dashboards
+
+GPU utilisation, encoder and decoder load and power come from the vendors'
+exporters, not from VMAFx. One dashboard per exporter is generated, each with
+its own **Job** and **Instance** variables over the exporter's targets:
+
+| File | Exporter | Series |
+|------|----------|--------|
+| `vmafx-gpu-dcgm.json` | NVIDIA dcgm-exporter | `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_FB_FREE`, `DCGM_FI_DEV_ENC_UTIL`, `DCGM_FI_DEV_DEC_UTIL`, `DCGM_FI_DEV_POWER_USAGE` |
+| `vmafx-gpu-amd.json` | AMD device-metrics-exporter | `gpu_gfx_activity`, `gpu_used_vram`, `gpu_total_vram`, `gpu_package_power` |
+| `vmafx-gpu-intel.json` | Intel XPU Manager | `xpum_engine_ratio`, `xpum_memory_ratio`, `xpum_engine_group_ratio`, `xpum_power_watts` |
+
+Import one only where its exporter runs. The contract test allows an
+exporter's series only on the dashboard tagged `vmafx-exporter-<name>`, so no
+VMAFx dashboard shows "No data" on a cluster without that exporter.
+
+### Linting
+
+Every generated dashboard passes Grafana's
+[dashboard-linter](https://github.com/grafana/dashboard-linter) with
+`--strict` and no exclusions; the go-ci workflow runs it on each change:
+
+```bash
+make lint-dashboards   # scripts/ci/lint-dashboards.sh: the pinned release, sha256-checked
+```
+
+The version and the checksum of its linux_amd64 release live in
+`build-config.env` (`DASHBOARD_LINTER_VERSION`,
+`DASHBOARD_LINTER_LINUX_AMD64_SHA256`); on another platform set
+`DASHBOARD_LINTER` to a binary of that version.
 
 ## Logs
 

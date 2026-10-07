@@ -15,6 +15,7 @@ Prometheus client library (`go_*`, `process_*`).
 | Family | Type | Unit | Labels | Served by | Max series | Description |
 | --- | --- | --- | --- | --- | --- | --- |
 | `vmafx_build_info` | gauge | info | `version` | vmafx-server, vmafx-controller, vmafx-node | 2 | Constant 1, labelled with the build version. |
+| `vmafx_metrics_read_errors_total` | counter | reads | `source` | vmafx-controller, vmafx-node | 3 | Reads of scraped families that failed, by source; the families of a failed read are absent from that scrape. |
 | `vmafx_server_score_requests_total` | counter | requests | none | vmafx-server, vmafx-controller | 1 | Total number of Score requests (HTTP + gRPC). |
 | `vmafx_server_score_errors_total` | counter | requests | none | vmafx-server, vmafx-controller | 1 | Total number of Score requests that returned an error. |
 | `vmafx_server_score_duration_seconds` | histogram | seconds | none | vmafx-server, vmafx-controller | 17 | End-to-end duration of a Score request in seconds. |
@@ -32,15 +33,21 @@ Prometheus client library (`go_*`, `process_*`).
 | `vmafx_controller_job_queue_wait_seconds` | histogram | seconds | `tenant` | vmafx-controller | 3855 | Time a job waited in the queue, from submission to its assignment to a node. |
 | `vmafx_controller_job_duration_seconds` | histogram | seconds | `tenant`, `outcome` | vmafx-controller | 15420 | Time from a job's submission to its terminal state. |
 | `vmafx_quality_score` | histogram | score | `tenant`, `model`, `profile` | vmafx-server, vmafx-controller | 634790 | Distribution of the pooled VMAF scores of completed jobs and Score requests. |
+| `vmafx_stream_sessions` | gauge | sessions | none | vmafx-server, vmafx-node | 1 | ScoreStream sessions open now. |
+| `vmafx_stream_sessions_finished_total` | counter | sessions | `outcome` | vmafx-server, vmafx-node | 4 | ScoreStream sessions that ended, by outcome. |
+| `vmafx_stream_frames_total` | counter | frames | none | vmafx-server, vmafx-node | 1 | Frame pairs received on ScoreStream sessions. |
+| `vmafx_stream_session_duration_seconds` | histogram | seconds | none | vmafx-server, vmafx-node | 17 | Duration of a ScoreStream session, from its opening message to its end. |
 | `vmafx_node_info` | gauge | info | `backend`, `vendor` | vmafx-node | 42 | Constant 1, labelled with the backend the node runs (VMAFX_BACKEND) and its GPU vendor. |
 | `vmafx_node_slots` | gauge | slots | none | vmafx-node | 1 | Number of controller jobs the node runs at once (VMAFX_NODE_SLOTS); 0 without a controller. |
 | `vmafx_node_jobs_running` | gauge | jobs | none | vmafx-node | 1 | Number of controller jobs the node is running now. |
 | `vmafx_node_jobs_total` | counter | jobs | `backend`, `outcome` | vmafx-node | 28 | Total number of controller jobs the node finished, by backend and outcome. |
 | `vmafx_node_job_duration_seconds` | histogram | seconds | `backend` | vmafx-node | 105 | Time the node spent running one controller job. |
+| `vmafx_node_device_memory_used_bytes` | gauge | bytes | `device` | vmafx-node | 9 | Device memory in use on each GPU of the node's vendor, read when Prometheus scrapes. |
+| `vmafx_node_device_memory_total_bytes` | gauge | bytes | `device` | vmafx-node | 9 | Device memory of each GPU of the node's vendor. |
 
 Max series is the most series one process can serve for the family: the
 product of its label bounds, times the bucket series plus `_sum` and `_count` for a
-histogram. Read at scrape time: `vmafx_controller_jobs_requeued_total`, `vmafx_controller_jobs_pending`, `vmafx_controller_jobs_running`, `vmafx_controller_queue_oldest_job_age_seconds`, `vmafx_controller_nodes_live`.
+histogram. Read at scrape time: `vmafx_controller_jobs_requeued_total`, `vmafx_controller_jobs_pending`, `vmafx_controller_jobs_running`, `vmafx_controller_queue_oldest_job_age_seconds`, `vmafx_controller_nodes_live`, `vmafx_node_device_memory_used_bytes`, `vmafx_node_device_memory_total_bytes`.
 
 ## Labels
 
@@ -52,6 +59,7 @@ never dropped. An empty value is reported as `none`.
 | Label | Values | Source |
 | --- | --- | --- |
 | `version` | open, at most 1 | build version the binary reports with `--version` |
+| `source` | `queue`, `device_memory` | `queue`: the controller's job queue; `device_memory`: the node's GPU memory (nvidia-smi or the amdgpu sysfs files) |
 | `tenant` | open, at most 256 | tenant of the job or request (the JWT `tid` claim); `none` on vmafx-server, which has no tenants |
 | `reason` | `node_lost`, `controller_restart`, `assign_rollback` | `node_lost`: the node missed its heartbeats and was evicted; `controller_restart`: the controller restarted with the job running; `assign_rollback`: an assignment failed after the job left the queue |
 | `outcome` | `completed`, `failed`, `cancelled` | terminal state of the job |
@@ -59,3 +67,4 @@ never dropped. An empty value is reported as `none`.
 | `profile` | `none` | scoring profile of the request; `none` until scoring requests carry a profile (the device profiles of ADR-1880) |
 | `backend` | `cpu`, `cuda`, `sycl`, `hip`, `metal`, `none` | compute backend; `none` when the job named no backend and the node has none configured |
 | `vendor` | `nvidia`, `amd`, `intel`, `apple`, `cpu` | GPU vendor of the node's backend (`cuda` nvidia, `hip` amd, `sycl` intel, `metal` apple) |
+| `device` | open, at most 8 | index and name of a GPU of the node's vendor, e.g. `0 NVIDIA GeForce RTX 4090` |
