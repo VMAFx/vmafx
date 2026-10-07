@@ -62776,3 +62776,12 @@ SYCL selector a superset of the x64 one on a sync. No upstream file, score, publ
 (VMAFx/pelorus #89). The second local edit of `core/src/interop/pelorus_qp_report_csv.c` (`_wfsopen`, added by `fix/msvc-zero-warnings-crt`)
 is now pelorus's own code, so the mirror carries only the banner and the include rewrite again and
 `scripts/sync-pelorus-interop.sh` reports no drift. A sync takes pelorus's side of every vendored file. no upstream file.
+## Rust `motion` twin mirrors `integer_motion.c`
+
+- `core/src/rust/feature/motion/src/{sad,window,extractor}.rs` port
+  `motion_score_pipeline_8/16`, `motion_flush_one` / `vmaf_motion_window_flush`
+  and `extract()` of `core/src/feature/integer_motion.c` (and `motion_blend()`)
+  statement by statement. A sync that changes any of them changes the twin in the
+  same PR; `scripts/ci/rust_twin_diff.py --feature motion` and the `sad`
+  table test in `sad.rs` (values from the C pipelines) guard it. No score,
+  public API or FFmpeg patch impact.

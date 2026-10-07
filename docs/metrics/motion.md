@@ -504,6 +504,25 @@ minimum 3x3; refusing to avoid out-of-bounds mirror reads
 - **ADR-1216.** GPU `motion3_score` carried `motion_fps_weight` squared up to
   and including v3.2.1 (see the warning under [Options](#options)).
 
+## Rust implementation
+
+The integer `motion` extractor has a Rust twin, `motion_rust`
+([`core/src/rust/feature/motion`](https://github.com/VMAFx/vmafx/tree/master/core/src/rust/feature/motion)),
+a port of `integer_motion.c` that returns the C extractor's scores bit for bit:
+`VMAF_integer_feature_motion_sad_score`, `motion2` and `motion3` (and `motion`
+with `debug`), with every option of the table, including
+`motion_five_frame_window` and `motion_moving_average`. It is built with
+`-Denable_rust_features=true` and selected with `VMAF_FEATURE_IMPL=rust` (every
+`motion` of the run, including the one a model asks for) or by name with
+`--feature motion_rust`; without either the C extractor runs. The JSON
+`feature_backends` entry names the twin that ran. Check the twin against the C
+extractor on your own clips with:
+
+```bash
+python3 scripts/ci/rust_twin_diff.py --vmaf build-rs/tools/vmaf \
+  --feature motion --fixtures netflix
+```
+
 ## See also
 
 - [Features](features.md): full feature extractor reference table
