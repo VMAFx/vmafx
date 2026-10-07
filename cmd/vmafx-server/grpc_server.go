@@ -112,6 +112,7 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 		return nil, status.Errorf(codes.Internal, "scoring failed: %v", err)
 	}
 
+	s.metrics.ObserveScore("", req.GetModel(), score)
 	// Convert map[string]float64 → map[string]float64 (proto uses float64 doubles).
 	protoFeatures := make(map[string]float64, len(features))
 	maps.Copy(protoFeatures, features)

@@ -4725,7 +4725,6 @@
         "pkg/ai/infer.go": 1,
         "pkg/ai/infer_otel_test.go": 1,
         "pkg/observability/coverage_gaps_test.go": 4,
-        "pkg/observability/observability.go": 1,
         "pkg/observability/otel_instruments.go": 2,
         "pkg/observability/otel_instruments_test.go": 1
       },
@@ -5136,7 +5135,6 @@
     },
     "0925": {
       "sites": {
-        "pkg/observability/observability.go": 2,
         "pkg/registry/registry.go": 2,
         "pkg/registry/registry_test.go": 1
       },
@@ -5347,7 +5345,9 @@
     "0961": {
       "sites": {
         "cmd/vmafx-controller/queue/queue.go": 6,
-        "cmd/vmafx-controller/queue/queue_test.go": 2
+        "cmd/vmafx-controller/queue/queue_test.go": 2,
+        "cmd/vmafx-controller/queue/stats.go": 1,
+        "cmd/vmafx-controller/queue/stats_test.go": 1
       },
       "target": "0961-queue-pullwork-rollback-on-get-failure.md"
     },
@@ -5555,9 +5555,9 @@
     },
     "1014": {
       "sites": {
+        "cmd/vmafx-node/main.go": 1,
         "pkg/observability/coverage_gaps_test.go": 1,
-        "pkg/observability/observability.go": 4,
-        "pkg/observability/observability_test.go": 2
+        "pkg/observability/observability.go": 3
       },
       "target": "1014-r5-prometheus-registry.md"
     },
@@ -10693,7 +10693,7 @@
         "cmd/vmafx-controller/heartbeat_cancel_test.go": 1,
         "cmd/vmafx-controller/nodes/registry.go": 2,
         "cmd/vmafx-controller/nodes/registry_tenant_test.go": 1,
-        "cmd/vmafx-controller/queue/queue.go": 7,
+        "cmd/vmafx-controller/queue/queue.go": 8,
         "cmd/vmafx-controller/queue/queue_tenant_test.go": 1,
         "cmd/vmafx-controller/scheduler/scheduler.go": 1
       },

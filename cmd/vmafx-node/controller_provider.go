@@ -50,6 +50,7 @@ type controllerClientParams struct {
 	ConnFactory *grpcmod.ConnFactory
 	Scorer      *libvmaf.Scorer
 	Executor    *Executor
+	Metrics     *nodeMetrics
 	Log         *slog.Logger
 }
 
@@ -80,6 +81,8 @@ func provideControllerClient(p controllerClientParams) (*controllerClient, error
 		return nil, err
 	}
 	client := newControllerClient(cc, controllerv1.NewVmafxControllerClient(conn), p.Executor, capability, p.Log)
+	client.metrics = p.Metrics
+	p.Metrics.setSlots(cc.Slots)
 	p.LC.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			client.start()

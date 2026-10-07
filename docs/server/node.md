@@ -199,6 +199,7 @@ Kubernetes: set `node.fuse` in the Helm chart ([Kubernetes deployment](#kubernet
 | Variable | Default | Description |
 | --- | --- | --- |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address for the node's worker service. |
+| `VMAFX_HTTP_ADDR` | `:9090` | HTTP listen address for `/metrics` and the `/livez`, `/readyz`, `/startupz` probes. |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
 | `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
 | `VMAFX_MODEL_DIR` | binary default | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`. |
@@ -238,10 +239,26 @@ libvmaf build and usable on the host.
 ## Observability
 
 The node emits structured logs and OpenTelemetry data through the shared
-golusoris runtime. It is gRPC-only and does not expose a Prometheus HTTP
-listener. The Helm chart probes the TCP listener on the configured gRPC port;
-gRPC clients can use the `VmafxScoring/Health` RPC for an application-level
-health check.
+golusoris runtime, and serves a small HTTP listener on `VMAFX_HTTP_ADDR`
+(default `:9090`, the chart's `node.metricsPort`):
+
+| Path | What it answers |
+| --- | --- |
+| `/metrics` | Prometheus page: `vmafx_node_info` (backend and GPU vendor), `vmafx_node_slots`, `vmafx_node_jobs_running`, `vmafx_node_jobs_total` by backend and outcome, `vmafx_node_job_duration_seconds`, `vmafx_build_info` and the Go runtime and process series. |
+| `/readyz` | 200 when the node can score (a vmaf scorer is configured), 503 otherwise. |
+| `/livez`, `/startupz` | Liveness and startup of the process. |
+
+```bash
+curl -s localhost:9090/metrics | grep '^vmafx_node_'
+# vmafx_node_info{backend="cpu",vendor="cpu"} 1
+# vmafx_node_jobs_running 0
+# vmafx_node_slots 1
+```
+
+Every metric is listed in the [metric reference](../observability/metrics.md).
+The Helm chart still probes the TCP listener on the configured gRPC port; gRPC
+clients can use the `VmafxScoring/Health` RPC for an application-level health
+check.
 
 ## Kubernetes deployment
 

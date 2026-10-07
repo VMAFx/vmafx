@@ -403,6 +403,7 @@ nav:
       - REST API: server/rest.md
       - Operator image and publishing: backends/operator.md
       - Observability (OpenTelemetry): observability/otel.md
+      - Metric reference: observability/metrics.md
       - Kubernetes integration tests: k8s/integration-tests.md
   - Architecture:
       - architecture/index.md

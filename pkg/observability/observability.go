@@ -6,43 +6,36 @@
 //
 // Logging: Go 1.21 stdlib log/slog, JSON handler, emitted to stdout.
 // Metrics: github.com/prometheus/client_golang — per-request counters and
-//          latency histogram for both gRPC and HTTP transports.
+//          latency histogram for both gRPC and HTTP transports, built from
+//          the families of pkg/observability/metricdef.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
-// ADR-1014: Prometheus registry isolation — SetControllerSources must register
-//           against the isolated registry passed to NewMetrics, not the global
-//           DefaultRegisterer.
+// ADR-1014: Prometheus registry isolation — every family registers on the
+//           isolated registry the service serves on /metrics, never on the
+//           global DefaultRegisterer.
 
 package observability
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 
-	"github.com/VMAFx/vmafx/pkg/registry"
+	"github.com/VMAFx/vmafx/pkg/model"
+	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
+	"github.com/VMAFx/vmafx/pkg/version"
 )
 
 // GracefulShutdownTimeout is the maximum time the server waits for in-flight
 // requests to drain after receiving SIGTERM / SIGINT.
 const GracefulShutdownTimeout = 30 * time.Second
-
-// jobQueueSource is the interface that SetControllerSources requires from the
-// job-queue implementation.  PendingCount + RunningCount are queue-specific
-// (terminal-status partitioning), so the narrow interface stays here rather
-// than collapsing into the generic registry.Counter.  See
-// ADR-0925 §Alternatives considered.
-type jobQueueSource interface {
-	PendingCount() int
-	RunningCount() int
-}
 
 // NewLogger creates a JSON-structured slog.Logger writing to stdout.
 // levelStr is a slog.Level string (e.g. "DEBUG", "INFO", "WARN", "ERROR").
@@ -57,146 +50,87 @@ func NewLogger(levelStr string) *slog.Logger {
 	return slog.New(handler)
 }
 
-// Metrics holds all Prometheus instruments registered by the vmafx-server.
+// Metrics holds the Prometheus instruments of the synchronous scoring surface
+// (Score and ScoreStream on gRPC, POST /v1/score on HTTP, the probes) that
+// vmafx-server and vmafx-controller share, and the quality family. Every
+// instrument is built from its family in metricdef; the controller's queue
+// families live with the controller (cmd/vmafx-controller/metrics.go).
 type Metrics struct {
 	// ScoreRequests is the total number of /v1/score / Score RPC calls.
 	ScoreRequests prometheus.Counter
 	// ScoreErrors is the total number of scoring errors.
 	ScoreErrors prometheus.Counter
 	// ScoreDuration tracks scoring latency in seconds.
-	ScoreDuration prometheus.Histogram
+	ScoreDuration prometheus.Observer
 	// HealthRequests counts /healthz + Health RPC calls.
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
 
-	// Controller job lifecycle counters (vmafx-controller only).
-	// Populated by NewMetrics; called via grpc_server.go on submit/complete/fail.
-	// ADR-0782.
-	JobsSubmitted prometheus.Counter
-	JobsCompleted prometheus.Counter
-	JobsFailed    prometheus.Counter
-
-	// reg is the isolated Prometheus registry supplied to NewMetrics.  Stored
-	// here so that SetControllerSources can register the live-gauge GaugeFuncs
-	// against the same registry rather than the global DefaultRegisterer.
-	// Fixes the ADR-1014 isolation bug: metrics were invisible on the /metrics
-	// endpoint (which serves the isolated registry) and would panic on any
-	// second call to SetControllerSources (AlreadyRegistered from the global).
-	reg prometheus.Registerer
-
-	// sourcesOnce ensures SetControllerSources is idempotent: a second call
-	// (e.g. from a test or a supervisor restart) is a no-op rather than a
-	// panic.  ADR-1014.
-	sourcesOnce sync.Once
+	quality Histogram
 }
 
-// NewMetrics registers and returns the vmafx-server Prometheus metrics.
-// reg must be a *prometheus.Registry (use prometheus.NewRegistry() for tests
-// or prometheus.DefaultRegisterer for production).
-func NewMetrics(reg prometheus.Registerer) *Metrics {
-	factory := promauto.With(reg)
-	return &Metrics{
-		reg: reg,
-		ScoreRequests: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "server",
-			Name:      "score_requests_total",
-			Help:      "Total number of Score requests (HTTP + gRPC).",
-		}),
-		ScoreErrors: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "server",
-			Name:      "score_errors_total",
-			Help:      "Total number of Score requests that returned an error.",
-		}),
-		ScoreDuration: factory.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "vmafx",
-			Subsystem: "server",
-			Name:      "score_duration_seconds",
-			Help:      "End-to-end duration of a Score request in seconds.",
-			Buckets:   prometheus.DefBuckets,
-		}),
-		HealthRequests: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "server",
-			Name:      "health_requests_total",
-			Help:      "Total number of Health / healthz requests.",
-		}),
-		ReadyRequests: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "server",
-			Name:      "ready_requests_total",
-			Help:      "Total number of readyz requests.",
-		}),
-		JobsSubmitted: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "jobs_submitted_total",
-			Help:      "Total number of jobs submitted to the controller queue.",
-		}),
-		JobsCompleted: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "jobs_completed_total",
-			Help:      "Total number of jobs that completed successfully.",
-		}),
-		JobsFailed: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "jobs_failed_total",
-			Help:      "Total number of jobs that finished with an error.",
-		}),
+// NewRegistry returns the isolated registry a VMAFx service serves on
+// /metrics (ADR-1014), holding the Go runtime and process collectors and
+// vmafx_build_info until the service registers its own families.
+func NewRegistry() (*prometheus.Registry, error) {
+	reg := prometheus.NewRegistry()
+	for _, c := range []prometheus.Collector{
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	} {
+		if err := reg.Register(c); err != nil {
+			return nil, fmt.Errorf("observability: register runtime collector: %w", err)
+		}
 	}
+	info, err := NewGauge(reg, metricdef.BuildInfo)
+	if err != nil {
+		return nil, err
+	}
+	info.Set(1, version.Version())
+	return reg, nil
 }
 
-// SetControllerSources registers live-gauge Prometheus metrics backed by the
-// job queue and node registry.  It must be called once after NewMetrics and
-// before the Prometheus HTTP handler is registered.
-//
-// The gauges are:
-//
-//	vmafx_controller_jobs_pending  — current number of pending jobs
-//	vmafx_controller_jobs_running  — current number of running jobs
-//	vmafx_controller_nodes_live    — current number of registered nodes
-//
-// SetControllerSources accepts a narrow jobQueueSource interface for queue
-// metrics (PendingCount/RunningCount partition by terminal status) and the
-// generic registry.Counter constraint for the node registry (any
-// Count()-shaped subsystem satisfies it).  This avoids an import cycle
-// between pkg/observability and the cmd/vmafx-controller sub-packages
-// while folding the prior nodeRegistrySource narrow interface into the
-// reusable registry.Counter (ADR-0925).
-//
-// The method is idempotent: a second call is a no-op (ADR-1014).
-func (m *Metrics) SetControllerSources(q jobQueueSource, r registry.Counter) {
-	m.sourcesOnce.Do(func() {
-		factory := promauto.With(m.reg)
-		if q != nil {
-			factory.NewGaugeFunc(prometheus.GaugeOpts{
-				Namespace: "vmafx",
-				Subsystem: "controller",
-				Name:      "jobs_pending",
-				Help:      "Current number of PENDING jobs in the queue.",
-			}, func() float64 { return float64(q.PendingCount()) })
-
-			factory.NewGaugeFunc(prometheus.GaugeOpts{
-				Namespace: "vmafx",
-				Subsystem: "controller",
-				Name:      "jobs_running",
-				Help:      "Current number of RUNNING jobs in the queue.",
-			}, func() float64 { return float64(q.RunningCount()) })
+// NewMetrics registers the scoring and quality families on reg, which is the
+// service's own registry (ADR-1014: never prometheus.DefaultRegisterer).
+func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
+	counters := make([]Counter, 4)
+	for i, f := range []metricdef.Family{
+		metricdef.ServerScoreRequests, metricdef.ServerScoreErrors,
+		metricdef.ServerHealthRequests, metricdef.ServerReadyRequests,
+	} {
+		c, err := NewCounter(reg, f)
+		if err != nil {
+			return nil, err
 		}
+		counters[i] = c
+	}
+	duration, err := NewHistogram(reg, metricdef.ServerScoreDuration)
+	if err != nil {
+		return nil, err
+	}
+	quality, err := NewHistogram(reg, metricdef.QualityScore)
+	if err != nil {
+		return nil, err
+	}
+	return &Metrics{
+		ScoreRequests:  counters[0].vec.WithLabelValues(),
+		ScoreErrors:    counters[1].vec.WithLabelValues(),
+		ScoreDuration:  duration.vec.WithLabelValues(),
+		HealthRequests: counters[2].vec.WithLabelValues(),
+		ReadyRequests:  counters[3].vec.WithLabelValues(),
+		quality:        quality,
+	}, nil
+}
 
-		if r != nil {
-			factory.NewGaugeFunc(prometheus.GaugeOpts{
-				Namespace: "vmafx",
-				Subsystem: "controller",
-				Name:      "nodes_live",
-				Help:      "Current number of registered (live) vmafx-node instances.",
-			}, func() float64 { return float64(r.Count()) })
-		}
-	})
+// ObserveScore records one pooled score in the quality family. tenant is
+// empty on vmafx-server, which has no tenants; modelName is the model the
+// request or job named, empty for the default model.
+func (m *Metrics) ObserveScore(tenant, modelName string, score float64) {
+	if modelName == "" {
+		modelName = model.DefaultVersion
+	}
+	m.quality.Observe(score, tenant, modelName)
 }
 
 // WaitForShutdown blocks until SIGTERM or SIGINT is received, then cancels

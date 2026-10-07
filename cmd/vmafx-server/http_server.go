@@ -247,6 +247,7 @@ func (h *httpServer) scoreAndRespond(
 		return
 	}
 
+	h.metrics.ObserveScore("", req.Model, score)
 	h.log.Info("http Score completed",
 		"score", fmt.Sprintf("%.4f", score),
 		"duration_s", elapsed,

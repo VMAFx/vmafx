@@ -78,21 +78,22 @@ OTel-native instruments (`pkg/observability.OTelMetrics`):
 | `vmafx.gpu_utilization` | Gauge | `%` | Per-node GPU compute utilisation (0–100). |
 
 These instruments are defined and unit-tested but no binary registers
-them yet (`InitOTelMetrics` has no production caller); the Prometheus
-`/metrics` endpoint remains the production metrics path, extended with
-`vmafx_controller_jobs_submitted_total`, `vmafx_controller_jobs_completed_total`,
-`vmafx_controller_jobs_failed_total`, `vmafx_controller_jobs_pending`,
-`vmafx_controller_jobs_running`, and `vmafx_controller_nodes_live`.
+them yet (`InitOTelMetrics` has no production caller). The production
+metrics path is the Prometheus `/metrics` page of `vmafx-server`,
+`vmafx-controller` and `vmafx-node`; every family it serves, with its labels
+and cardinality bound, is in the [metric reference](metrics.md), generated
+from `pkg/observability/metricdef`.
 
-## Grafana dashboard
+## Grafana dashboards
 
-Import `deploy/grafana/vmafx-overview.json` into Grafana.  The dashboard
-requires a Prometheus data source configured to scrape `/metrics` on the
-controller (or via the OTel collector's Prometheus exporter).
+The dashboards under `deploy/grafana/dashboards/` are generated from the same
+metric definition; import them as described in the
+[observability guide](../development/observability.md#dashboards).
 
 ## Cardinality budget
 
-All span attributes and metric labels are bounded-cardinality:
+All span attributes are bounded-cardinality (the Prometheus label bounds are
+in the [metric reference](metrics.md#labels)):
 
 - `vmafx.job_id` — present on spans only (not metrics).
 - `vmafx.model` — at most ~10 VMAF model variants.
@@ -101,4 +102,4 @@ All span attributes and metric labels are bounded-cardinality:
 - `vmafx.mcp.tool` — the registered MCP tool list.
 - `vmafx.tune.command` — the `vmafx-tune` subcommand tree.
 
-No per-file or per-clip attributes are added to metrics.
+No per-file or per-clip attribute is added to a metric.

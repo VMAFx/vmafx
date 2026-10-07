@@ -37,7 +37,7 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
-	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 )
 
 // testTenantCtx returns a context with a "test-tenant" auth context injected.
@@ -113,10 +113,18 @@ func newTestControllerServer(t *testing.T) *controllerServer {
 	t.Cleanup(func() { r.Close() })
 
 	s := scheduler.New(q, r, log)
-	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	return newControllerServer(q, r, s, allowAllScopes(), testControllerMetrics(t, prometheus.NewRegistry()), log)
+}
 
-	return newControllerServer(q, r, s, allowAllScopes(), metrics, log)
+// testControllerMetrics registers the scoring and controller job families on
+// reg, as the production graph does.
+func testControllerMetrics(t *testing.T, reg *prometheus.Registry) *controllerMetrics {
+	t.Helper()
+	m, err := newControllerMetrics(reg, oteltest.Metrics(t, reg))
+	if err != nil {
+		t.Fatalf("newControllerMetrics: %v", err)
+	}
+	return m
 }
 
 func newTestStream(ctx context.Context) *mockStreamJobsServer {
@@ -143,10 +151,17 @@ type grpcFixture struct {
 	queue    *queue.SQLiteQueue
 	registry *nodes.Registry
 	sched    *scheduler.Scheduler
-	metrics  *observability.Metrics
+	metrics  *controllerMetrics
 }
 
 func newGRPCFixture(t *testing.T) *grpcFixture {
+	t.Helper()
+	return newGRPCFixtureOn(t, prometheus.NewRegistry())
+}
+
+// newGRPCFixtureOn is newGRPCFixture with the controller metrics registered on
+// reg, for tests that gather them.
+func newGRPCFixtureOn(t *testing.T, metricsReg *prometheus.Registry) *grpcFixture {
 	t.Helper()
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -159,8 +174,7 @@ func newGRPCFixture(t *testing.T) *grpcFixture {
 	reg := nodes.NewRegistry(log)
 	t.Cleanup(func() { reg.Close() })
 	sch := scheduler.New(q, reg, log)
-	reg2 := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg2)
+	metrics := testControllerMetrics(t, metricsReg)
 
 	return &grpcFixture{
 		srv:      newControllerServer(q, reg, sch, allowAllScopes(), metrics, log),
@@ -751,7 +765,7 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 
 func TestScoringServer_HealthReportsOK(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	s := newScoringServer(nil, allowAllScopes(), metrics, log)
 	// Health does not touch the scorer.

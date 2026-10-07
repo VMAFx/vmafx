@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -91,7 +92,7 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
 	grpc := newGRPCServer(scorer, metrics, log)
 	return newHTTPServer(scorer, metrics, reg, log, grpc), reg
@@ -146,7 +147,7 @@ func TestReadyEndpoint(t *testing.T) {
 // TestReadyEndpointNotReady verifies that /readyz returns 503 when scorer is nil.
 func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	hs := newHTTPServer(nil, metrics, reg, log, nil) // nil scorer + nil grpc → not ready
 	mux := http.NewServeMux()

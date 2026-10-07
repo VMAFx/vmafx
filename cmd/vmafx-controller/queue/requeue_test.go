@@ -43,7 +43,7 @@ func TestRequeueNode(t *testing.T) {
 	ctx := context.Background()
 	ids := submitJobs(t, q, 4)
 	a1, b, a2 := pullJobFor(t, q, "node-a"), pullJobFor(t, q, "node-b"), pullJobFor(t, q, "node-a")
-	if err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: a1.ID, Result: &queue.JobResult{Score: 80}}); err != nil {
+	if _, err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: a1.ID, Result: &queue.JobResult{Score: 80}}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 

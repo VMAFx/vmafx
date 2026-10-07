@@ -550,7 +550,7 @@ FROM node-with-notices AS node-cpu
 
 COPY --from=node-licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -577,7 +577,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=cuda
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -637,7 +637,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=hip
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -661,7 +661,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=sycl
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]

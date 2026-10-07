@@ -92,6 +92,7 @@ func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*
 		return nil, status.Errorf(codes.Internal, "scoring failed: %v", err)
 	}
 
+	s.metrics.ObserveScore(auth.TenantIDFromCtx(ctx), req.GetModel(), score)
 	protoFeatures := make(map[string]float64, len(features))
 	maps.Copy(protoFeatures, features)
 
@@ -129,7 +130,7 @@ type controllerServer struct {
 	registry *nodes.Registry
 	sched    *scheduler.Scheduler
 	scopes   *scoringScopes
-	metrics  *observability.Metrics
+	metrics  *controllerMetrics
 	log      *slog.Logger
 }
 
@@ -138,7 +139,7 @@ func newControllerServer(
 	r *nodes.Registry,
 	s *scheduler.Scheduler,
 	scopes *scoringScopes,
-	metrics *observability.Metrics,
+	metrics *controllerMetrics,
 	log *slog.Logger,
 ) *controllerServer {
 	return &controllerServer{queue: q, registry: r, sched: s, scopes: scopes, metrics: metrics, log: log}
@@ -191,7 +192,7 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	}
 
 	span.SetAttributes(observability.AttrJobID.String(id))
-	c.metrics.JobsSubmitted.Inc()
+	c.metrics.jobSubmitted(tenantID)
 	c.log.Info("job submitted via gRPC", "job_id", id, "tenant_id", tenantID, "reference", sp.GetReference(), "backend", sp.GetBackend())
 	return &controllerv1.SubmitJobResponse{JobId: id}, nil
 }
@@ -226,8 +227,12 @@ func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.Canc
 	if err := auth.AssertTenantOwns(ctx, j.TenantID); err != nil {
 		return nil, err
 	}
-	if err := c.queue.Cancel(ctx, req.GetJobId()); err != nil {
+	cancelled, err := c.queue.Cancel(ctx, req.GetJobId())
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cancel job %q: %v", req.GetJobId(), err)
+	}
+	if cancelled {
+		c.metrics.jobFinished(j, queue.StatusCancelled)
 	}
 	return &controllerv1.CancelJobResponse{Ok: true, Message: "cancellation requested"}, nil
 }
@@ -360,6 +365,7 @@ func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullW
 	if job == nil {
 		return &controllerv1.PullWorkResponse{}, nil
 	}
+	c.metrics.jobAssigned(job)
 	pj := queueJobToProto(job)
 	// The node checks the inputs again where it reads them (ADR-1577).
 	if pj.ScoringRoots, err = c.scopes.rootsFor(tenantID); err != nil {
@@ -393,20 +399,35 @@ func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.R
 	if !req.GetFinal() {
 		return c.acceptPartialResult(ctx, report)
 	}
-	if err := c.queue.ReportResult(ctx, report); err != nil {
+	finished, err := c.queue.ReportResult(ctx, report)
+	if err != nil {
 		if errors.Is(err, queue.ErrNotAssigned) {
 			return nil, status.Errorf(codes.PermissionDenied,
 				"job %q is not assigned to node %q", req.GetJobId(), req.GetNodeId())
 		}
 		return nil, status.Errorf(codes.Internal, "report result: %v", err)
 	}
-
-	if req.GetError() != "" {
-		c.metrics.JobsFailed.Inc()
-	} else {
-		c.metrics.JobsCompleted.Inc()
+	if finished {
+		c.recordFinished(ctx, req.GetJobId(), tenantID, req.GetError() != "")
 	}
 	return &controllerv1.ReportResultResponse{Ok: true}, nil
+}
+
+// recordFinished feeds the job metrics with a job this report moved to its
+// terminal state. A repeated report of a finished job never reaches it, so a
+// job is counted once.
+func (c *controllerServer) recordFinished(ctx context.Context, jobID, tenantID string, failed bool) {
+	finishedStatus := queue.StatusCompleted
+	if failed {
+		finishedStatus = queue.StatusFailed
+	}
+	job, err := c.queue.Get(ctx, jobID)
+	if err != nil {
+		// Counted without its duration or score: the job could not be read back.
+		c.log.Warn("finished job not readable for its metrics", "job_id", jobID, "error", err)
+		job = &queue.Job{ID: jobID, TenantID: tenantID}
+	}
+	c.metrics.jobFinished(job, finishedStatus)
 }
 
 // acceptPartialResult acknowledges a partial result of a job the reporting
