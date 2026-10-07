@@ -224,7 +224,7 @@ addresses are full addresses (`:8080`), not bare ports.
 |---|---|---|---|---|
 | `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | `http.addr` | HTTP listen address (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
 | `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | `grpc.listen` | gRPC listen address (serves both `VmafxScoring` and `VmafxController`). |
-| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Embedded SQLite job and node-persistence database (kept, not migrated to golusoris.Jobs). |
+| `VMAFX_DB_PATH` | path | `vmafx/vmafx-controller.db` under the user's state directory (`$XDG_STATE_HOME` or `~/.local/state`; the user configuration directory on macOS and Windows) | `db.path` | Embedded SQLite job and node-persistence database (kept, not migrated to golusoris.Jobs). Never the working directory; the image and the chart set `/data/vmafx-controller.db`. |
 | `VMAFX_LOG_LEVEL` | string | `INFO` | `log.level` | `DEBUG`, `INFO`, `WARN` or `ERROR`. |
 | `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory of VMAF `.json` model files passed to the libvmaf scorer. |
 | `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. |

@@ -241,6 +241,14 @@ build-upstream-parity/
 /cmd/vmafx-node/bpf/rclonebypass_bpfel.o
 /cmd/vmafx-node/bpf/.rclonebypass.stamp
 
+# The controller's SQLite job queue and its WAL files: runtime state, never
+# committed. The default path is under the user's state directory
+# (cmd/vmafx-controller/db_path.go); these catch a VMAFX_DB_PATH pointed into
+# the tree.
+vmafx-controller.db
+vmafx-controller.db-shm
+vmafx-controller.db-wal
+
 # BEGIN praetor private artifacts (praetorctl adopt)
 /.workingdir/
 /.workingdir2/

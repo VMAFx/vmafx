@@ -61,7 +61,7 @@ flags beyond `--version` since ADR-1119. Listen addresses are full addresses
 | `VMAFX_LOG_LEVEL` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
 | `VMAFX_VMAF_BINARY` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
 | `VMAFX_MODEL_DIR` | _(none)_ | Directory containing VMAF `.json` model files |
-| `VMAFX_DB_PATH` | `vmafx-controller.db` | Path to the SQLite job-persistence database |
+| `VMAFX_DB_PATH` | `vmafx/vmafx-controller.db` under the user's state directory | Path to the SQLite job-persistence database. Unset, the controller uses `$XDG_STATE_HOME` (else `~/.local/state`) on Linux and the BSDs, the user configuration directory on macOS and Windows, and refuses to start when neither is known; it never writes to the working directory. The container image and the Helm chart set `/data/vmafx-controller.db`. |
 | `VMAFX_SCORING_ROOTS` | _(none: every input refused)_ | Scoring roots of every caller without a tenant registry, comma-separated, `{tenant}` expanded ([scoring roots](auth.md#scoring-roots)) |
 
 The authentication variables (`VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,

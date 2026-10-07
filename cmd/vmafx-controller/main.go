@@ -42,7 +42,7 @@
 //	VMAFX_LOG_LEVEL            -> log.level (golusoris v0.5.0 #234) slog level (default "INFO").
 //	VMAFX_VMAF_BINARY           -> vmaf.binary       Path to the vmaf CLI binary (default: PATH lookup).
 //	VMAFX_MODEL_DIR             -> model.dir         Directory containing VMAF .json model files.
-//	VMAFX_DB_PATH               -> db.path           SQLite database path (default "vmafx-controller.db").
+//	VMAFX_DB_PATH               -> db.path           SQLite database path (default: vmafx/vmafx-controller.db under the user's state directory, db_path.go).
 //	VMAFX_AUTH_DISABLED         -> auth.disabled     Disable JWT auth (dev/internal only).
 //	VMAFX_JWKS_ENDPOINT         -> jwks.endpoint     JWKS endpoint URL (OIDC).
 //	VMAFX_AUTH_ISSUER           -> auth.issuer       Expected JWT "iss" claim.
@@ -236,9 +236,9 @@ func provideScorer(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (*libv
 // untouched.
 func provideJobQueue(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (queue.Queue, error) {
 	// golusoris env transform: VMAFX_DB_PATH -> "db.path".
-	dbPath := cfg.Get("db.path")
-	if dbPath == "" {
-		dbPath = "vmafx-controller.db"
+	dbPath, err := resolveDBPath(cfg.Get("db.path"), processStateDirs())
+	if err != nil {
+		return nil, err
 	}
 	q, err := queue.New(dbPath, log)
 	if err != nil {

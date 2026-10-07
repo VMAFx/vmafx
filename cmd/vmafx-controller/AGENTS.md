@@ -227,6 +227,13 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    fx lifecycle. Order: gRPC `GracefulStop` → queue `Close` + node reaper stop
    → scorer `Close`. Replaced `observability.NewShutdownContext()` / `errgroup` /
    `runHTTP`/`runGRPC`. Guard: `TestStopOrder`.
+2. **Default DB path never relative** (`db_path.go`, `provideJobQueue`):
+   `db.path` unset -> `vmafx/vmafx-controller.db` under `$XDG_STATE_HOME` /
+   `~/.local/state` (macOS, Windows: user config dir), dir 0700; unknown ->
+   startup error naming `VMAFX_DB_PATH`. Never fall back to working dir:
+   old relative default committed `vmafx-controller.db{,-shm,-wal}` (#2036).
+   `.gitignore` lists them. Guard:
+   `db_path_test.go::TestJobQueueDefaultIsNotTheWorkingDirectory`.
 
 ### observability
 
