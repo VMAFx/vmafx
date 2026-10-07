@@ -166,6 +166,31 @@ PostgreSQL store replacing SQLite queue. `store/`: migrations
    migrations also on `postgres:16.15-alpine`). No skip-on-missing-Docker
    added here; `-short` skips (testutil).
 
+### backend package (ADR-2350, WP17)
+
+Seam between handlers and state: `backend.Backend`. `Postgres` = on
+`store`; SQLite queue + registry behind same interface until SQLite store
+lands. Wire protocol unchanged.
+
+1. **Node ID = session ID** (Postgres): `Register` returns session UUID as
+   node ID; `Report` / `MayReport` resolve attempt from session
+   (`store.AttemptOf` / `RunningAttempt`), not from wire (wire fencing =
+   WP8). Malformed node ID -> `ErrInvalidSession`; malformed job ID ->
+   `ErrNotFound` (reads) / `ErrNotAssigned` (reports).
+2. **Lease sweep = River periodic job** (`LeaseSweepKind`): leader inserts,
+   any replica works it, `SKIP LOCKED` keeps sweeps apart. No
+   `UniqueOpts.ByPeriod` (River refuses < 1 s; leader-only insert is
+   enough). Requeues counted per process (`RecordSweep`).
+3. **One-shot commands before fx** (`Command`): `migrate` (store + River
+   migrations, then `CheckSchema`), `import-sqlite --from F
+   [--empty-tenant T]` (read-only on F, refuses unmigrated DB, second run
+   skips copied IDs). `VMAFX_DB_DSN` required. Exit 2 = usage.
+4. **Backoff**: `ExponentialBackoff(base, max)`; golusoris `jobs` retry
+   policy replaces it with the golusoris bump (same formula).
+5. **Tests** (`go test ./cmd/vmafx-controller/backend/`, Docker): end to
+   end, tenants apart, refusals, River sweep, import, commands.
+   `store/storetest` = shared DB helper (tests only).
+
 ### grpc server
 
 1. **`protoStatusToQueue` / `queueStatusToProto` sync (ADR-0962)** (`grpc_server.go`):
