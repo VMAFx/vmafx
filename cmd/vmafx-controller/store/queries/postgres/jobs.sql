@@ -40,7 +40,7 @@ WITH prev AS (
     FOR UPDATE
 )
 UPDATE jobs
-SET status = 'cancelled', lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+SET status = 'cancelled', lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 FROM prev
 WHERE jobs.id = prev.id

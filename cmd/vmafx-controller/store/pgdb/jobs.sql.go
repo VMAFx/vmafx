@@ -21,7 +21,7 @@ WITH prev AS (
     FOR UPDATE
 )
 UPDATE jobs
-SET status = 'cancelled', lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+SET status = 'cancelled', lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 FROM prev
 WHERE jobs.id = prev.id
@@ -110,7 +110,7 @@ func (q *Queries) CountActive(ctx context.Context) ([]CountActiveRow, error) {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, lease_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs WHERE id = $1 AND tenant_id = $2
+SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, assigned_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs WHERE id = $1 AND tenant_id = $2
 `
 
 type GetJobParams struct {
@@ -134,7 +134,7 @@ func (q *Queries) GetJob(ctx context.Context, arg GetJobParams) (Job, error) {
 		&i.MaxLostAttempts,
 		&i.AvailableAt,
 		&i.LeaseSession,
-		&i.LeaseNode,
+		&i.AssignedNode,
 		&i.LeaseExpiresAt,
 		&i.Score,
 		&i.Features,
@@ -147,7 +147,7 @@ func (q *Queries) GetJob(ctx context.Context, arg GetJobParams) (Job, error) {
 }
 
 const getJobByIdempotencyKey = `-- name: GetJobByIdempotencyKey :one
-SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, lease_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs WHERE tenant_id = $1 AND idempotency_key = $2
+SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, assigned_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs WHERE tenant_id = $1 AND idempotency_key = $2
 `
 
 type GetJobByIdempotencyKeyParams struct {
@@ -171,7 +171,7 @@ func (q *Queries) GetJobByIdempotencyKey(ctx context.Context, arg GetJobByIdempo
 		&i.MaxLostAttempts,
 		&i.AvailableAt,
 		&i.LeaseSession,
-		&i.LeaseNode,
+		&i.AssignedNode,
 		&i.LeaseExpiresAt,
 		&i.Score,
 		&i.Features,
@@ -187,7 +187,7 @@ const insertJob = `-- name: InsertJob :one
 INSERT INTO jobs (id, tenant_id, idempotency_key, spec, backend, priority, max_lost_attempts)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-RETURNING id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, lease_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at
+RETURNING id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, assigned_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at
 `
 
 type InsertJobParams struct {
@@ -224,7 +224,7 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 		&i.MaxLostAttempts,
 		&i.AvailableAt,
 		&i.LeaseSession,
-		&i.LeaseNode,
+		&i.AssignedNode,
 		&i.LeaseExpiresAt,
 		&i.Score,
 		&i.Features,
@@ -237,7 +237,7 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, lease_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs
+SELECT id, tenant_id, idempotency_key, status, spec, backend, priority, attempt, lost_attempts, max_lost_attempts, available_at, lease_session, assigned_node, lease_expires_at, score, features, error, created_at, updated_at, finished_at FROM jobs
 WHERE tenant_id = $1
   AND (cardinality($2::text[]) = 0 OR status = ANY($2::text[]))
 ORDER BY created_at, id
@@ -272,7 +272,7 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, erro
 			&i.MaxLostAttempts,
 			&i.AvailableAt,
 			&i.LeaseSession,
-			&i.LeaseNode,
+			&i.AssignedNode,
 			&i.LeaseExpiresAt,
 			&i.Score,
 			&i.Features,

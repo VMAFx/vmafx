@@ -179,6 +179,9 @@ func TestFencingGivesOneResultAfterALostLease(t *testing.T) {
 	if job.LostAttempts != 1 || job.Attempt != 2 {
 		t.Fatalf("attempt bookkeeping: lost=%d attempt=%d, want 1 and 2", job.LostAttempts, job.Attempt)
 	}
+	if job.AssignedNode != "n2" {
+		t.Fatalf("a finished job names the node of its last attempt: %q, want n2", job.AssignedNode)
+	}
 }
 
 func TestLostLeasesFailTheJobAtTheLimit(t *testing.T) {
@@ -238,6 +241,9 @@ func TestReleaseReturnsTheJobWithoutCountingIt(t *testing.T) {
 	}
 	if err := db.store.Report(ctx, a, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
 		t.Fatalf("report of a released attempt: err = %v, want ErrFenced", err)
+	}
+	if job, err := db.store.Get(ctx, "t1", id); err != nil || job.AssignedNode != "" || job.Status != store.StatusPending {
+		t.Fatalf("a released job is pending with no node: %+v err=%v", job, err)
 	}
 	c := claim(t, db.store, ref, "cpu")
 	if c == nil || c.Attempt != 2 || c.Job.LostAttempts != 0 {

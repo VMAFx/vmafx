@@ -28,11 +28,11 @@ WITH next AS (
 )
 UPDATE jobs
 SET status = 'running', attempt = jobs.attempt + 1, lease_session = $1::uuid,
-    lease_node = $2::text, lease_expires_at = now() + make_interval(secs => $3::float8),
+    assigned_node = $2::text, lease_expires_at = now() + make_interval(secs => $3::float8),
     updated_at = now()
 FROM next
 WHERE jobs.id = next.id
-RETURNING jobs.id, jobs.tenant_id, jobs.idempotency_key, jobs.status, jobs.spec, jobs.backend, jobs.priority, jobs.attempt, jobs.lost_attempts, jobs.max_lost_attempts, jobs.available_at, jobs.lease_session, jobs.lease_node, jobs.lease_expires_at, jobs.score, jobs.features, jobs.error, jobs.created_at, jobs.updated_at, jobs.finished_at
+RETURNING jobs.id, jobs.tenant_id, jobs.idempotency_key, jobs.status, jobs.spec, jobs.backend, jobs.priority, jobs.attempt, jobs.lost_attempts, jobs.max_lost_attempts, jobs.available_at, jobs.lease_session, jobs.assigned_node, jobs.lease_expires_at, jobs.score, jobs.features, jobs.error, jobs.created_at, jobs.updated_at, jobs.finished_at
 `
 
 type ClaimNextParams struct {
@@ -71,7 +71,7 @@ func (q *Queries) ClaimNext(ctx context.Context, arg ClaimNextParams) (Job, erro
 		&i.MaxLostAttempts,
 		&i.AvailableAt,
 		&i.LeaseSession,
-		&i.LeaseNode,
+		&i.AssignedNode,
 		&i.LeaseExpiresAt,
 		&i.Score,
 		&i.Features,
@@ -178,7 +178,7 @@ func (q *Queries) ExtendLeases(ctx context.Context, arg ExtendLeasesParams) (int
 const failExpired = `-- name: FailExpired :exec
 UPDATE jobs
 SET status = 'failed', lost_attempts = lost_attempts + 1, error = $1::text,
-    lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+    lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 WHERE id = $2 AND attempt = $3 AND status = 'running'
 `
@@ -197,7 +197,7 @@ func (q *Queries) FailExpired(ctx context.Context, arg FailExpiredParams) error 
 const finishAttempt = `-- name: FinishAttempt :execrows
 UPDATE jobs
 SET status = $1, score = $2, features = $3,
-    error = $4, lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+    error = $4, lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 WHERE id = $5 AND tenant_id = $6 AND attempt = $7 AND status = 'running'
   AND lease_session = $8::uuid
@@ -284,7 +284,7 @@ func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) er
 
 const releaseAttempt = `-- name: ReleaseAttempt :execrows
 UPDATE jobs
-SET status = 'pending', lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+SET status = 'pending', lease_session = NULL, assigned_node = NULL, lease_expires_at = NULL,
     available_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND attempt = $3 AND status = 'running'
   AND lease_session = $4::uuid
@@ -314,7 +314,7 @@ const requeueExpired = `-- name: RequeueExpired :exec
 UPDATE jobs
 SET status = 'pending', lost_attempts = lost_attempts + 1,
     available_at = now() + make_interval(secs => $1::float8),
-    lease_session = NULL, lease_node = NULL, lease_expires_at = NULL, updated_at = now()
+    lease_session = NULL, assigned_node = NULL, lease_expires_at = NULL, updated_at = now()
 WHERE id = $2 AND attempt = $3 AND status = 'running'
 `
 

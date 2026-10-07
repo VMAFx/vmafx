@@ -26,7 +26,7 @@ type Job struct {
 	MaxLostAttempts int32      `json:"max_lost_attempts"`
 	AvailableAt     time.Time  `json:"available_at"`
 	LeaseSession    *uuid.UUID `json:"lease_session"`
-	LeaseNode       *string    `json:"lease_node"`
+	AssignedNode    *string    `json:"assigned_node"`
 	LeaseExpiresAt  *time.Time `json:"lease_expires_at"`
 	Score           *float64   `json:"score"`
 	Features        []byte     `json:"features"`

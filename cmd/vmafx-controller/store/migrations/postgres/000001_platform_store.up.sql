@@ -36,7 +36,9 @@ CREATE TABLE jobs (
     max_lost_attempts  integer          NOT NULL DEFAULT 3 CHECK (max_lost_attempts >= 1),
     available_at       timestamptz      NOT NULL DEFAULT now(),
     lease_session      uuid             REFERENCES node_sessions (id) ON DELETE SET NULL,
-    lease_node         text,
+    -- Node of the current or last attempt; cleared when the job returns to
+    -- pending, kept when it ends.
+    assigned_node      text,
     lease_expires_at   timestamptz,
     score              double precision,
     features           jsonb,

@@ -18,7 +18,7 @@ WITH next AS (
 )
 UPDATE jobs
 SET status = 'running', attempt = jobs.attempt + 1, lease_session = @session_id::uuid,
-    lease_node = @node_id::text, lease_expires_at = now() + make_interval(secs => @lease_seconds::float8),
+    assigned_node = @node_id::text, lease_expires_at = now() + make_interval(secs => @lease_seconds::float8),
     updated_at = now()
 FROM next
 WHERE jobs.id = next.id
@@ -45,14 +45,14 @@ WHERE tenant_id = @tenant_id AND lease_session = @session_id::uuid AND status = 
 -- name: FinishAttempt :execrows
 UPDATE jobs
 SET status = @status, score = sqlc.narg('score'), features = sqlc.narg('features'),
-    error = sqlc.narg('error'), lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+    error = sqlc.narg('error'), lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND attempt = @attempt AND status = 'running'
   AND lease_session = @session_id::uuid;
 
 -- name: ReleaseAttempt :execrows
 UPDATE jobs
-SET status = 'pending', lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+SET status = 'pending', lease_session = NULL, assigned_node = NULL, lease_expires_at = NULL,
     available_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND attempt = @attempt AND status = 'running'
   AND lease_session = @session_id::uuid;
@@ -68,12 +68,12 @@ FOR UPDATE SKIP LOCKED;
 UPDATE jobs
 SET status = 'pending', lost_attempts = lost_attempts + 1,
     available_at = now() + make_interval(secs => @delay_seconds::float8),
-    lease_session = NULL, lease_node = NULL, lease_expires_at = NULL, updated_at = now()
+    lease_session = NULL, assigned_node = NULL, lease_expires_at = NULL, updated_at = now()
 WHERE id = @id AND attempt = @attempt AND status = 'running';
 
 -- name: FailExpired :exec
 UPDATE jobs
 SET status = 'failed', lost_attempts = lost_attempts + 1, error = @error::text,
-    lease_session = NULL, lease_node = NULL, lease_expires_at = NULL,
+    lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 WHERE id = @id AND attempt = @attempt AND status = 'running';

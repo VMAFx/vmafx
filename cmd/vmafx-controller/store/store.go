@@ -98,14 +98,15 @@ type Job struct {
 	LostAttempts    int32
 	MaxLostAttempts int32
 	AvailableAt     time.Time
-	LeaseNode       string
-	LeaseExpiresAt  *time.Time
-	Score           *float64
-	Features        map[string]float64
-	Error           string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	FinishedAt      *time.Time
+	// AssignedNode is the node of the current or last attempt.
+	AssignedNode   string
+	LeaseExpiresAt *time.Time
+	Score          *float64
+	Features       map[string]float64
+	Error          string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	FinishedAt     *time.Time
 }
 
 // Postgres is the store on a PostgreSQL pool. It is safe for concurrent use.
@@ -152,7 +153,7 @@ func jobFromRow(r pgdb.Job) (*Job, error) {
 		Backend: r.Backend, Priority: r.Priority, Attempt: r.Attempt, LostAttempts: r.LostAttempts,
 		MaxLostAttempts: r.MaxLostAttempts, AvailableAt: r.AvailableAt, LeaseExpiresAt: r.LeaseExpiresAt,
 		Score: r.Score, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, FinishedAt: r.FinishedAt,
-		IdempotencyKey: deref(r.IdempotencyKey), LeaseNode: deref(r.LeaseNode), Error: deref(r.Error),
+		IdempotencyKey: deref(r.IdempotencyKey), AssignedNode: deref(r.AssignedNode), Error: deref(r.Error),
 	}
 	if len(r.Features) > 0 {
 		if err := json.Unmarshal(r.Features, &j.Features); err != nil {
