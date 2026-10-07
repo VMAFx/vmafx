@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import inspect
 import os
 import unittest
 
@@ -32,6 +33,15 @@ class BindingTest(unittest.TestCase):
                 vmafx.load()
         finally:
             os.environ["VMAFX_LIBRARY"] = saved
+
+    def test_both_feature_provenance_lookups_are_bound(self) -> None:
+        # One Python name for vmafx_context_feature_provenance (by index) and
+        # vmafx_feature_provenance (by name) left only the second reachable
+        # (T-VMAFX-PYTHON-METHOD-SHADOWED-2026-10-07).
+        by_index = inspect.signature(vmafx.Context.feature_provenance_at).parameters
+        by_name = inspect.signature(vmafx.Context.feature_provenance).parameters
+        self.assertIn("index", by_index)
+        self.assertIn("feature", by_name)
 
     def test_version_and_abi(self) -> None:
         self.assertTrue(self.library.version_string())

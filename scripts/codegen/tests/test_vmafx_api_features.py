@@ -14,8 +14,8 @@ import copy
 import unittest
 from typing import Any
 
-from support import entry, fixture
-from vmafx_api import emit_c
+from support import document, entry, fixture
+from vmafx_api import emit_c, emit_python
 from vmafx_api.headers import plan
 from vmafx_api.loader import parse
 from vmafx_api.model import Api, DefinitionError
@@ -185,3 +185,29 @@ class OptionGroupTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PythonMethodNameTest(unittest.TestCase):
+    """Two functions on one Python class with one method name: the later
+    definition hid the earlier one (vmafx_context_feature_provenance behind
+    vmafx_feature_provenance, T-VMAFX-PYTHON-METHOD-SHADOWED-2026-10-07)."""
+
+    NAME = "vmafx_context_feature_provenance"
+
+    def test_the_definition_binds_both_provenance_lookups(self) -> None:
+        text = emit_python.module_text(parse(document()))
+        self.assertIn("    def feature_provenance_at(self, index: int)", text)
+        self.assertIn("    def feature_provenance(self, feature: str)", text)
+
+    def test_a_collision_is_refused(self) -> None:
+        doc = document()
+        del entry(doc["functions"], self.NAME)["python"]
+        with self.assertRaisesRegex(DefinitionError, "Context.feature_provenance would bind both"):
+            emit_python.module_text(parse(doc))
+
+    def test_python_name_must_be_an_identifier(self) -> None:
+        for bad in ("feature-provenance", "class", 7):
+            doc = document()
+            entry(doc["functions"], self.NAME)["python"] = bad
+            with self.assertRaises(DefinitionError):
+                parse(doc)

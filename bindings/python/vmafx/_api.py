@@ -2029,7 +2029,7 @@ class Context:
         _raise(self._lib, status, error, "vmafx_context_model_provenance")
         return ModelProvenance.from_c(out)
 
-    def feature_provenance(self, index: int) -> FeatureProvenance:
+    def feature_provenance_at(self, index: int) -> FeatureProvenance:
         """Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
         out = VmafxFeatureProvenance()
         out.struct_size = ctypes.sizeof(out)
@@ -2058,7 +2058,6 @@ class Context:
             self._handle, key.encode(), value.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_annotate")
-        return None
 
     def annotation(self, index: int) -> Annotation:
         """Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
@@ -2078,7 +2077,6 @@ class Context:
             self._handle, record.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_set_encode_record")
-        return None
 
     def report_write(self, path: str, format: int, flags: int, score_format: str) -> None:
         """Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5."""
@@ -2087,7 +2085,6 @@ class Context:
             self._handle, path.encode(), format, flags, score_format.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_report_write")
-        return None
 
 
 class Library:

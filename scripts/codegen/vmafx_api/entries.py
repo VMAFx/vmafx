@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import keyword
 from typing import Any
 
 from .model import SINCE_PARTS, VERSION_PARTS, DefinitionError, Deprecation
@@ -52,3 +53,13 @@ def deprecation(entry: Entry, where: str) -> Deprecation | None:
     return Deprecation(
         since=(since[0], since[1]), replacement=replacement, removal=(removal[0], removal[1])
     )
+
+
+def python_name(entry: Entry, where: str) -> str:
+    """The optional `python` key: the method name in the Python binding."""
+    value = entry.get("python", "")
+    if not isinstance(value, str) or (value and not value.isidentifier()):
+        raise DefinitionError(f"{where}: `python` is a Python identifier")
+    if value and keyword.iskeyword(value):
+        raise DefinitionError(f"{where}: `python` must not be a Python keyword")
+    return value

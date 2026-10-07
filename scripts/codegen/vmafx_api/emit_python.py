@@ -12,9 +12,11 @@ fails before it touches the library.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from . import typesys
 from .layout import by_value_order, layouts
-from .model import Api, Callback, Field, Function, Param, Struct, upper_snake
+from .model import Api, Callback, DefinitionError, Field, Function, Param, Struct, upper_snake
 from .python_runtime import CONTEXT_CLASS, LIBRARY_CLASS, RUNTIME
 
 CTYPES = {
@@ -215,7 +217,26 @@ def _record_class(api: Api, item: Struct) -> str:
 
 
 def _method_name(fn: Function) -> str:
-    return fn.name.removeprefix("vmafx_context_").removeprefix("vmafx_")
+    """The function's `python` name, else its C name without `vmafx_context_` / `vmafx_`."""
+    return fn.python or fn.name.removeprefix("vmafx_context_").removeprefix("vmafx_")
+
+
+def _library_method_name(fn: Function) -> str:
+    return fn.python or fn.name.removeprefix("vmafx_")
+
+
+def _refuse_collisions(cls: str, fns: list[Function], name_of: Callable[[Function], str]) -> None:
+    """Two functions on one class with one Python name would leave the first
+    unreachable (Python keeps the last definition): refuse the definition."""
+    seen: dict[str, str] = {}
+    for fn in fns:
+        name = name_of(fn)
+        if name in seen:
+            raise DefinitionError(
+                f"Python binding: {cls}.{name} would bind both {seen[name]} and {fn.name}; "
+                "give one of them a `python` name"
+            )
+        seen[name] = fn.name
 
 
 def _call_args(api: Api, fn: Function, first: str) -> tuple[list[str], list[str], str]:
@@ -326,8 +347,10 @@ def _library_method(api: Api, fn: Function) -> str:
     else:
         values = ", ".join(f"{p.name}.value" for p in outs) + ("," if len(outs) == 1 else "")
         ret, body = "tuple[int, ...]", body + f"        {call}\n        return ({values})\n"
-    name = fn.name.removeprefix("vmafx_")
-    return f'    def {name}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
+    return (
+        f'    def {_library_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n'
+        + body
+    )
 
 
 def module_text(api: Api) -> str:
@@ -338,6 +361,8 @@ def module_text(api: Api) -> str:
         parts.append(_struct_fields(api))
     parts += [_layout_table(api), _signature_table(api), RUNTIME]
     parts += [_record_class(api, item) for item in api.structs]
+    _refuse_collisions("Context", context_methods(api), _method_name)
+    _refuse_collisions("Library", library_functions(api), _library_method_name)
     methods = "\n".join(_method(api, fn) for fn in context_methods(api))
     parts.append(CONTEXT_CLASS + "\n" + methods)
     lib_methods = "\n".join(_library_method(api, fn) for fn in library_functions(api))

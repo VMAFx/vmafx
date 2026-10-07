@@ -1787,6 +1787,7 @@ name = "vmafx_context_feature_provenance"
 header = "vmafx/provenance.h"
 since = "0.1"
 returns = "status"
+python = "feature_provenance_at"
 doc = "Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
 params = [
   { name = "context", type = "VmafxContext", pass = "in_const" },

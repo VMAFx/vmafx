@@ -13,7 +13,7 @@ from pathlib import Path
 
 import tomllib
 
-from .entries import Entry, deprecation, need, since_of, version, where_of
+from .entries import Entry, deprecation, need, python_name, since_of, version, where_of
 from .model import (
     VERSION_PARTS,
     Api,
@@ -255,6 +255,7 @@ def _functions(raw: list[Entry]) -> tuple[Function, ...]:
                 doc=need(entry, "doc", where),
                 params=_params(entry, where),
                 deprecated=deprecation(entry, where),
+                python=python_name(entry, where),
             )
         )
     return tuple(out)

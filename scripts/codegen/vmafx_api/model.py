@@ -200,6 +200,7 @@ class Function:
     doc: str
     params: tuple[Param, ...]
     deprecated: Deprecation | None = None
+    python: str = ""  # method name in the Python binding; empty: derived from `name`
 
 
 @dataclass(frozen=True)
