@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 10)
+ABI_VERSION = (0, 1, 11)
 
 
 class Status(enum.IntEnum):
@@ -1899,6 +1899,23 @@ SIGNATURES = {
         None,
         (ctypes.c_void_p,),
     ),
+    "vmafx_model_load_spec": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxModelConfig),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_use_feature_spec": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_context_from_libvmaf": (
         ctypes.c_void_p,
         (ctypes.c_void_p,),
@@ -3201,6 +3218,15 @@ class Context:
             self._handle, path.encode(), format, flags, score_format.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_report_write")
+        return None
+
+    def use_feature_spec(self, spec: str) -> None:
+        """Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_use_feature_spec(
+            self._handle, spec.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_use_feature_spec")
         return None
 
     def set_codec_context(self, codec: str, preset: str, crf: int) -> None:

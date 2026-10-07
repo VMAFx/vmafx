@@ -281,6 +281,19 @@ VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, Vmafx
 VMAFX_EXPORT uint32_t vmafx_context_max_in_flight(const VmafxContext *context);
 
 /**
+ * Register the extractor a specification string names, as the `feature` option of the FFmpeg filter
+ * and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for
+ * example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's
+ * `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors
+ * as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is
+ * not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration
+ * failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_feature_spec(VmafxContext *context, const char *spec,
+                                                        VmafxError **error);
+
+/**
  * Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a
  * libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6.
  * @since 0.1

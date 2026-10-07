@@ -205,6 +205,23 @@ VMAFX_EXPORT uint32_t vmafx_model_set_size(const VmafxModelSet *set);
  */
 VMAFX_EXPORT const char *vmafx_model_set_hash(const VmafxModelSet *set);
 
+/**
+ * Load the model a specification string names, as the `model` option of the FFmpeg filter and the
+ * GStreamer element spells it: `key=value` items separated by `:`, keys `version` (a built-in
+ * model) or `path` (a model file), `name` (the name of its scores), `disable_clip` and
+ * `enable_transform` (`true` when given without a value), and `<extractor>.<option>=<value>`
+ * overrides, applied in order. A backslash escapes the next `:`, `=`, `.` or backslash; any other
+ * backslash is kept (Windows paths). An empty `spec` is the library's default model
+ * (vmafx_model_default_version()). `config.name` and `config.flags` are the defaults the string
+ * overrides. VMAFX_E_INVALID names the item that is not understood (both `version` and `path`, a
+ * key without a value, an override without an option), VMAFX_E_RANGE a string over 4096 bytes or
+ * more than 64 items; a load failure is vmafx_model_load()'s or vmafx_model_load_file()'s. Added in
+ * ABI 0.1.11.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_model_load_spec(const VmafxModelConfig *config, const char *spec,
+                                               VmafxModel **out, VmafxError **error);
+
 #ifdef __cplusplus
 }
 #endif

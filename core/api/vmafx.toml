@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.10"
+abi_version = "0.1.11"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -2232,6 +2232,35 @@ returns = "void"
 doc = "Free the clock. NULL is a no-op. Added in ABI 0.1.8."
 params = [
   { name = "clock", type = "VmafxWindowClock", pass = "in", nullable = true },
+]
+
+# ---------------------------------------------------------------------------
+# Specification strings of the filters (RC4 WP9, ADR-1852 decisions 4-5).
+# Owned by WP9. Added in ABI 0.1.11 (node VMAFX_0.1, ADR-1897).
+
+[[functions]]
+name = "vmafx_model_load_spec"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load the model a specification string names, as the `model` option of the FFmpeg filter and the GStreamer element spells it: `key=value` items separated by `:`, keys `version` (a built-in model) or `path` (a model file), `name` (the name of its scores), `disable_clip` and `enable_transform` (`true` when given without a value), and `<extractor>.<option>=<value>` overrides, applied in order. A backslash escapes the next `:`, `=`, `.` or backslash; any other backslash is kept (Windows paths). An empty `spec` is the library's default model (vmafx_model_default_version()). `config.name` and `config.flags` are the defaults the string overrides. VMAFX_E_INVALID names the item that is not understood (both `version` and `path`, a key without a value, an override without an option), VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; a load failure is vmafx_model_load()'s or vmafx_model_load_file()'s. Added in ABI 0.1.11."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "spec", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModel", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_feature_spec"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "spec", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
 ]
 
 # ---------------------------------------------------------------------------

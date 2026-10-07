@@ -209,6 +209,24 @@ backend within it.
   de-tile math of the VA-surface import and the VMAFx dma-buf import is one
   header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and
   `core/test/vmafx_sycl_cells.h` together.
+- **The `vmafx` FFmpeg filters are generated from their sources ([ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md))**:
+  `ffmpeg-patches/src/vf_vmafx.c`, `vf_vmafx_pre.c`, `vf_vmafx_options.h` and
+  `ffmpeg_dec_hwaccel.c` are the truth for patches `0021` to `0024`;
+  `scripts/ci/ffmpeg_patch_stack.py --refresh` amends the owning patch and
+  refuses a source no patch owns. Host frames are wrapped on the CPU device
+  (`NULL`) whatever device the context scores on, every hardware pixel format
+  stays in the filter's format list (a frame type without an import is refused
+  by name, never converted by an inserted scale), and a fixed-size frame pool
+  smaller than `vmafx_context_max_in_flight() + 1` is refused before the first
+  frame. A device frame goes back to its producer only after its release
+  fence (`box_release_resources()` waits on a HOST fence), and a Vulkan frame
+  is copied on the GPU into the filter's exportable per-plane pool and
+  imported on the VMAFx device at the Vulkan device's PCI location, never
+  imported straight from the producer's pool and never on another GPU
+  (`vk_import()`). `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
+  `refusal`, `legacy`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
+  guard them; patch `0024` is fork-only (Q-048) and is refreshed, not dropped,
+  when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

@@ -2823,6 +2823,8 @@ libvmafx_sources = [
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
     src_dir + 'vmafx/score.c',
+    # RC4 WP9: the specification strings of the filters.
+    src_dir + 'vmafx/spec.c',
     # RC4 WP5 (#2142): provenance records, the generated exactness table,
     # the report writer and verifier.
     src_dir + 'vmafx/exactness.c',

@@ -1,10 +1,13 @@
 <!-- markdownlint-disable MD013 MD046 MD060 -->
 # Using VMAF with FFmpeg
 
-Compute VMAF inside an FFmpeg filter graph with the `libvmaf` filter, or with
-one of the fork's GPU filters. This page covers the input-pad order, the first
-commands to run, every filter option, the per-backend filters and the Windows
-model-path escaping.
+Compute VMAF inside an FFmpeg filter graph with the `vmafx` filter, the filter
+of the VMAFx API (RC4), or with the `libvmaf` filters. The `libvmaf*` filters
+stay until their retirement (WP10) and this page keeps their reference below.
+This page covers the input-pad order, the first commands to run, the `vmafx`
+filter and its options, the migration from the `libvmaf` filters, every
+`libvmaf` filter option, the per-backend filters and the Windows model-path
+escaping.
 
 [FFmpeg](http://ffmpeg.org/) filters can score videos of different encodings
 and resolutions directly. For the best practices of computing VMAF at the right
@@ -63,7 +66,7 @@ make install
 ```
 
 The fork-added options, filters and GPU selectors on this page need FFmpeg
-patched with the fork's series, `ffmpeg-patches/0001` to `0020` listed in
+patched with the fork's series, `ffmpeg-patches/0001` to `0024` listed in
 `ffmpeg-patches/series.txt`, applied in order to a clean `n9.0.2` checkout:
 
 ```bash
@@ -158,6 +161,9 @@ more complex filters, and the
 
 | Filter | Patch | Configure flag | Computes on |
 | --- | --- | --- | --- |
+| `vmafx` | `0021` | `--enable-libvmafx` | CPU, or the frames' device: CUDA frames are imported without a copy |
+| `vmafx_tune` | `0021` | `--enable-libvmafx` | CPU; recommends a CRF for the next encode pass |
+| `vmafx_pre` | `0022` | `--enable-libvmafx` | Learned pre-filter (ONNX) through the VMAFx DNN session |
 | `libvmaf` | upstream + fork options | `--enable-libvmaf` | CPU by default; GPU through selector options |
 | `libvmaf_cuda` | `0010` | `--enable-libvmaf-cuda` | CUDA, device-resident frames |
 | `libvmaf_sycl` | `0005` | `--enable-libvmaf-sycl` | SYCL, QSV / oneVPL frames |
@@ -165,16 +171,428 @@ more complex filters, and the
 | `libvmaf_tune` | `0008` | `--enable-libvmaf` | CPU; recommends a CRF for the next encode pass |
 | `vmaf_pre` | `0002` | `--enable-libvmaf` (libvmaf 3.0.0+ with DNN) | Learned pre-filter (ONNX) |
 
+Two `fftools` patches belong to the `vmafx` filters: `0023` adds
+`-vmafx-profile`, and `0024` lets `-hwaccel`, `-hwaccel_device` and
+`-hwaccel_output_format` precede `-dec`, so loopback decoders decode on the
+GPU (see [Encode and score in one command](#encode-and-score-in-one-command)).
+
+## The vmafx filter
+
+`vmafx` is the FFmpeg filter of the VMAFx API (RC4,
+[ADR-1852](../adr/1852-vmafx-api-redesign.md); the filters themselves are
+[ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md)). It scores a pair
+of videos through `libvmafx` instead of `libvmaf`, follows the frames to the
+device they live on, and reports through one set of options. The same engine
+sits behind the native GStreamer element, which
+[gstreamer.md](gstreamer.md) documents. The `libvmaf*` filters stay in the
+patched FFmpeg until they are retired (WP10) and this page keeps their
+reference below; [Migrating from the libvmaf filters](#migrating-from-the-libvmaf-filters)
+maps every old option to its new spelling.
+
+### Install the vmafx filter
+
+The filter is patch `0021` of the series `ffmpeg-patches/0001` to `0024` in
+`ffmpeg-patches/series.txt`; apply the whole series in order as in
+[Install](#install). It builds against the installed `libvmafx` and needs
+`pkg-config` to find `libvmafx >= 1.0.0`:
+
+```bash
+./configure --enable-libvmafx
+make -j4
+```
+
+`--enable-libvmaf` and `--enable-libvmafx` may be given together; the
+`libvmaf*` filters and `vmafx` then coexist in one binary. The sources of the
+new filters are `ffmpeg-patches/src/vf_vmafx.c`,
+`ffmpeg-patches/src/vf_vmafx_pre.c` and
+`ffmpeg-patches/src/ffmpeg_dec_hwaccel.c`; patches `0021` to `0024` carry
+them.
+
+### Pads
+
+The pads are in the order of `libvmaf`: pad 0 (`main`) is the distorted video
+and pad 1 (`reference`) is the reference. The warning at the top of
+[Input ordering](#input-ordering) applies unchanged. Reversing the pads does
+not fail; it changes the direction of the comparison.
+
+### First vmafx command
+
+With the Netflix pair from [A pair of YUV files](#a-pair-of-yuv-files):
+
+```bash
+ffmpeg -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i src01_hrc01_576x324.yuv \
+    -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i src01_hrc00_576x324.yuv \
+    -lavfi "[0:v][1:v]vmafx" -f null -
+```
+
+Here the first input is the distorted video and the second the reference. The
+filter scores the library's default model (`vmaf_v1.0.16_3d0h`, reported as
+`vmaf`) and logs, on a CPU-only host:
+
+```text
+vmafx provenance: {...}
+vmafx vmaf mean: 82.816060
+VMAF score: 82.816060
+vmafx frames: 0 imported on the device, 96 host, 0 downloaded
+```
+
+The first line is the provenance record of the run (`provenance=log`, the
+default). Each model and pool method then logs one `vmafx <model> <pool>:
+<value>` line at the end, `VMAF score:` repeats the first model's mean, and the
+last line says which path the frames took; both inputs count, so 48 frames of
+each make 96. `model=version=vmaf_v0.6.1` gives `76.667831` on the same pair,
+the value the `vmaf` CLI reports (`vmaf_v0.6.1neg` alone gives `75.073658`).
+`ffmpeg-patches/test/vmafx_filter_check.py parity` checks the filter against
+the CLI value by value ([Checking a build](#checking-a-vmafx-build)).
+
+### Models and features
+
+`model` takes the spec of `vmafx_model_load_spec()` in
+`core/include/vmafx/model.h`: colon-separated `key=value` items, with
+`version=` (a built-in model) or `path=` (a model file), `name=` (the name
+of its scores), `disable_clip`, `enable_transform` and
+`<extractor>.<option>=<value>` overrides. A backslash escapes the next `:`,
+`=`, `.` or backslash, which is why a colon inside a filtergraph is written
+`\:`. Several models score in one pass when separated by `|`, and each needs
+its own `name=`:
+
+```bash
+-lavfi "[0:v][1:v]vmafx=model='version=vmaf_v0.6.1\:name=vmaf|version=vmaf_v0.6.1neg\:name=vmaf_neg'"
+```
+
+logs `vmafx vmaf mean: 76.667831` and `vmafx vmaf_neg mean: 75.073658`. Two
+models of one name are refused and the graph fails:
+
+```text
+version=vmaf_v0.6.1neg: VMAFX_E_INVALID: the context already scores a model of this name; give each one its own name (VmafxModelConfig.name, name= in a model spec) [vmaf]
+```
+
+`feature` registers extra extractors with the spec of
+`vmafx_context_use_feature_spec()` (`core/include/vmafx/context.h`):
+`<extractor>[=<key>=<value>[:...]]`, or upstream FFmpeg's
+`name=<extractor>[:...]`, several joined by `|`. For example
+`feature='psnr|cambi=full_ref=true'` with `log_path=out.json` adds `psnr_y`,
+`psnr_cb`, `psnr_cr`, `cambi`, `cambi_full_reference` and `cambi_source` to the
+report. The `integer_*` names map to their extractors as the CLI maps them.
+
+### Windows
+
+`n_stats=<seconds>` or `n_stats_frames=<frames>` (exclusive with each other)
+pools the scores over consecutive windows. With `pool=mean+min` and one-second
+windows over the golden pair the log carries lines like:
+
+```text
+vmafx window: {"window":0,"start":0.000000000,"end":1.000000000,"first":0,"last":23,"n_frames":24,"n_scored":24,"partial":false,"v061":{"min":71.174759,"mean":76.326687}}
+```
+
+Window 1 covers frames 24 to 47 and is marked `"partial":true`, because the
+stream ends inside it. `stats_out` chooses the destinations, flags joined by
+`+`: `log` (the default), `metadata` and `file` (NDJSON, one object per window,
+to `stats_path`). The windows equal the CLI's per-frame scores pooled offline
+with `scripts/ci/vmafx_window_pooling.py`; the `windows` check compares them.
+A window over a VMAF model completes one frame after its last frame, because
+the motion features run incrementally
+([ADR-2090](../adr/2090-motion-window-incremental.md)).
+
+### Per-frame metadata
+
+Window statistics reach the next output frame as
+`lavfi.vmafx.window.<model>.<pool>` keys when `stats_out` has `metadata`.
+`metadata=1` attaches every frame's scores as `lavfi.vmafx.<model>` and holds
+the output until the frame's scores are final, which delays the output by the
+retention depth of the models. Print them with `-vf metadata=print` after the
+filter, or read them from the frames in a library caller.
+
+### Hardware frames
+
+`backend=auto` follows the frames. Software frames score on the CPU. CUDA
+frames score on CUDA and are imported without a copy, ordered by CUDA event
+fences. DRM PRIME frames (VAAPI frames mapped with `hwmap`) are imported as
+dma-bufs without a copy on SYCL when the GPU is Intel's and on HIP when it is
+AMD's; the device import waits on the dma-buf's implicit fences, so the
+decoder's writes are complete before a kernel reads them, and a frame goes back
+to its pool only after its release fence says the device read it. Vulkan
+frames score on the device of their GPU (below). `backend=cuda` with
+software frames makes the CUDA context upload them; the result equals
+`vmaf --backend cuda` (`parity --backend cuda-host`).
+
+`import` refines the rule: `auto` imports hardware frames and uploads software
+frames, `device` refuses software frames, and `host` downloads hardware frames
+and scores them on the CPU, logging `vmafx: import=host: hardware frames are
+downloaded before scoring` once.
+
+Other hardware frame types (VAAPI without `hwmap`, QSV, D3D11, D3D12,
+VideoToolbox) pass format negotiation and are then refused by name:
+
+```text
+vmafx: backend auto cannot score vaapi frames; use import=host or hwdownload
+```
+
+The final `vmafx frames:` line counts how many frames were imported on the
+device, scored on the host or downloaded.
+
+VAAPI frames reach the filter as DRM PRIME through a DRM device the VAAPI
+device is derived from (`hwmap=derive_device=drm` cannot derive one from a
+plain VAAPI device):
+
+```bash
+ffmpeg -init_hw_device drm=dr:/dev/dri/renderD129 -init_hw_device vaapi=va@dr -filter_hw_device va \
+  -hwaccel vaapi -hwaccel_device va -hwaccel_output_format vaapi -i distorted.mp4 \
+  -hwaccel vaapi -hwaccel_device va -hwaccel_output_format vaapi -i reference.mp4 \
+  -filter_complex "[0:v]hwmap=derive_device=drm,format=drm_prime[d]; \
+                   [1:v]hwmap=derive_device=drm,format=drm_prime[r]; \
+                   [d][r]vmafx" -f null -
+```
+
+The `format=drm_prime` after each `hwmap` matters: without it `hwmap` passes
+the VAAPI frames on, which `vmafx` refuses by name.
+
+#### Vulkan frames
+
+Vulkan frames (FFmpeg's Vulkan decoder, `hwupload` to a Vulkan device, the
+`libplacebo` filter) score on the VMAFx device on the same GPU: the filter
+reads the Vulkan device's PCI location and opens the device of that location.
+With `backend=auto` the GPU's vendor picks the backend (CUDA on NVIDIA, SYCL
+on Intel, HIP on AMD); `backend=cuda`, `sycl` or `hip` picks it yourself. A
+backend with no device on that GPU is refused by name: Vulkan frames are never
+read across GPUs.
+
+```bash
+ffmpeg -init_hw_device vulkan=vk:NVIDIA -filter_hw_device vk \
+  -hwaccel vulkan -hwaccel_device vk -hwaccel_output_format vulkan -i distorted.mp4 \
+  -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 24 -i reference.yuv \
+  -filter_complex "[1:v]format=nv12,hwupload[r];[0:v][r]vmafx" -f null -
+```
+
+The device name after `vk:` is matched against the Vulkan device names
+(`vulkaninfo --summary` lists them); an index works too.
+
+Each frame is copied once on the GPU before the handover. VMAFx imports one
+exported image per plane, while FFmpeg's decoder writes one multi-plane image
+whose memory is not exportable on every driver, and an FFmpeg frames context
+does not say whether its pool exports its memory. The filter therefore copies
+the planes, on the Vulkan device and behind the frames' timeline semaphores,
+into its own pool of exportable images (one per plane; device-local OPTIMAL
+images for CUDA, LINEAR images for the dma-buf paths of SYCL and HIP) and
+hands those over. CUDA waits on the copy's timeline semaphores on its stream
+and signals them again after the frame's last reader; SYCL and HIP take the
+frame after a host wait for the copy and return it to the pool after its
+release fence. No frame passes through host memory, and the `vmafx frames:`
+line counts them as imported on the device. A planar Vulkan frame on CUDA is
+read from CUDA arrays with one more device copy (`VMAFX_IMPORT_ALLOW_COPY`,
+logged once by the library); NV12 and P010 are converted without one.
+
+Planar and semi-planar layouts are taken; a packed layout (`yuyv422`, `y210`
+and the like) is refused by name. The check is `vmafx_filter_check.py vulkan`
+(below).
+
+### Layouts
+
+Besides planar YUV and NV12 / P010 / P016, the filter takes the 4:2:2 and
+4:4:4 layouts the library imports
+([ADR-2133](../adr/2133-vmafx-import-422-444-formats.md)), as software frames
+and as device frames: NV16, P210, P216, NV24, P410, P416, Y210, Y212, YUYV422,
+XV30, XV36, VUYX, and the MSB-aligned `yuv444p10msb` / `yuv444p12msb` in
+which NVDEC returns 4:4:4 at 10 and 12 bits. Each scores as its planar
+equivalent; the `layouts` check converts the golden pair to every one of them
+and compares with the CLI on the planar file (all identical on the CPU and on
+CUDA). A format whose samples are shifted, interleaved or packed in a way the
+library has no layout for is refused by name, for example P212, the form
+`hwupload` gives Y212 on CUDA: `vmafx: backend cuda: frames of layout p212le
+cannot be scored`.
+
+### Frame pools
+
+A frame that `vmafx` has imported stays with the library until the library
+releases it, and `metadata=1` holds the main frames until their scores are
+final. With `-v verbose` the filter logs how many hardware frames it holds of
+each input:
+
+```text
+vmafx: holds up to N hardware frames of each input (vmafx_context_max_in_flight() + 1)
+```
+
+`N = R + 2*T*(R+1) + 1`, plus 1 on a device backend, with `R` the frame
+retention of the models and `T` the number of `threads`
+(`vmafx_context_max_in_flight()` in `core/include/vmafx/context.h`). A filter
+cannot enlarge the pool of the filter upstream of it, so a fixed-size pool
+(VAAPI, QSV, D3D11, D3D12 and DXVA2 with an `initial_pool_size`) smaller than
+`N`, where frames are held (device import, or the main input with
+`metadata=1`), is refused before any frame:
+
+```text
+vmafx: the vaapi frame pool of the main input has 17 frames and vmafx holds up to 18 of them; give it at least 18 (-extra_hw_frames on the decoder, extra_hw_frames on hwupload)
+```
+
+`hwupload`'s pool has `2 + extra_hw_frames` frames. A decoder's pool also
+holds the decoder's own reference frames, so give a decoder at least `N`
+extra. Without the check a pool of 4 failed mid-stream with `ENOMEM` after
+printing a partial score. Pools that grow (CUDA, Vulkan) are not limited. The
+`pool` check of `vmafx_filter_check.py` measures this on VAAPI.
+
+### Refusals
+
+The filter never lets a frame pass unscored. A frame the library cannot import
+is retried once after a host wait on its acquire fence; then the graph fails
+naming the backend, the input, the formats, the plane and each extractor that
+refused it, and no score line follows. `feature=delta_e_itp` on CUDA frames is
+the planted case: it names `delta_e_itp (cpu, ...)`, because that extractor
+runs on the CPU only. A refusal at configuration (two models of one name, a
+pool that is too small) logs nothing at uninit. This is decision D8 of
+[ADR-1852](../adr/1852-vmafx-api-redesign.md); the `refusal` check proves
+it.
+
+### Encode and score in one command
+
+The loopback decoder of FFmpeg 7.0 and later (`-dec`) feeds an encoder's output
+back into a filter graph, so one command can encode, decode and score
+([#2138](https://github.com/VMAFx/vmafx/issues/2138)). With NVIDIA hardware:
+
+```bash
+ffmpeg -init_hw_device cuda=cu:0 -filter_hw_device cu \
+  -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i reference.yuv \
+  -map 0:v -c:v h264_nvenc -preset p4 -rc constqp -qp 32 encoded.h264 \
+  -hwaccel cuda -hwaccel_output_format cuda -dec 0:0 \
+  -filter_complex "[0:v]hwupload[ref];[dec:0][ref]vmafx=n_stats=1:log_path=vmafx.json[out]" \
+  -map "[out]" -f null -
+```
+
+Patch `0024` lets `-hwaccel`, `-hwaccel_device` and `-hwaccel_output_format`
+precede `-dec`; stock FFmpeg reads them for input streams only, so without them
+the loopback decoder returns system memory and the filter scores host frames.
+The measured output on this command is two window lines (means `86.989539` and
+`85.531429`), `vmafx vmaf mean: 86.260484`, `VMAF score: 86.260484` and
+`vmafx frames: 96 imported on the device, 0 host, 0 downloaded`: the decoded
+frames never touch the host. Patch `0024` is carried by the fork only
+(decision Q-048) and is refreshed with every FFmpeg release
+([ffmpeg-patch-automation.md](../development/ffmpeg-patch-automation.md)).
+`vmafx_filter_check.py e2e` runs it.
+
+### The vmafx_tune filter
+
+`vmafx_tune` (patch `0021`) is the `libvmaf_tune` of the VMAFx API: a
+two-input filter that logs a recommended CRF for the next encode pass. Its
+pads are `main` and `reference`.
+
+```bash
+ffmpeg -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i src01_hrc01_576x324.yuv \
+    -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i src01_hrc00_576x324.yuv \
+    -lavfi "[0:v][1:v]vmafx_tune=model=version=vmaf_v0.6.1" -f null -
+```
+
+logs `recommended_crf=27.2 (target_vmaf=95.0, observed_vmaf=76.67,
+n_frames=48)`; `recommend_target_vmaf=80` gives `33.2`. Its options, from
+`vmafx_tune_options` in `ffmpeg-patches/src/vf_vmafx.c`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `model` | the library's default model | Model spec, as for `vmafx`. |
+| `feature` | none | Extra extractors, `\|` separated. |
+| `threads` | `0` | Worker threads (`0` to `1024`); `n_threads` is an alias. |
+| `backend` | `auto` | Backend of software frames. |
+| `device` | `auto` | GPU of the backend, `auto` or an index. |
+| `recommend_target_vmaf` | `95.0` | Target VMAF score (0 to 100). |
+| `recommend_crf_min` | `18.0` | Lower CRF bound (0 to 51). |
+| `recommend_crf_max` | `51.0` | Upper CRF bound (0 to 51); must exceed the lower bound. |
+| `recommend_passes` | `1` | Probe passes (1 to 8); advisory, one pass is scored. |
+
+The mapping from the observed mean to a CRF is the piecewise linear curve of
+`libvmaf_tune` (`observed_to_crf()` in `vf_vmafx.c`); the per-clip search is
+`tools/vmaf-tune`. The default model differs from `libvmaf_tune`'s, see
+[Migrating](#migrating-from-the-libvmaf-filters).
+
+### The vmafx_pre filter
+
+`vmafx_pre` (patch `0022`) applies an ONNX learned pre-filter to a video
+through the library's DNN session. It is the `vmaf_pre` of the VMAFx API and
+writes the same bytes (the `legacy` check compares them on the fixture
+`ffmpeg-patches/test/pre_blur_4x4.onnx`).
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `model` | none, required | Path to the ONNX model. |
+| `device` | `auto` | Inference device; the values of `tiny_device`. |
+| `threads` | `0` | CPU execution provider intra-op threads. |
+| `chroma` | `0` | `1` also filters U and V at their own size. |
+
+8-bit planes run through `vmafx_dnn_session_run_luma8` and 10 and 12-bit
+planes through `vmafx_dnn_session_run_plane16`. A failed inference fails the
+frame and names the plane.
+
+### The -vmafx-profile option
+
+Patch `0023` adds `-vmafx-profile <path>` to `fftools`, the VMAFx name of
+`-vmaf-profile`. It logs the profile path and the `vmaf-tune` command that
+reads the report and encodes with it; `-vmaf-profile` stays until the
+`vmaf`-named patches are retired.
+
+### Limits
+
+- Dolby Vision profile 5 sources need converting outside the pipeline before
+  scoring; VMAFx reads and applies no RPU data
+  ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md),
+  decision Q-047).
+- `target_width`, `target_height` and `target_scaling` are reserved until RC5
+  (device-targeted scoring) and the filter refuses them when set.
+- The filter imports CUDA frames, DRM PRIME frames (on SYCL and HIP) and
+  Vulkan frames (on the device of their GPU). QSV and VideoToolbox frames are
+  refused by name until the filter's import slots for them are filled;
+  `import=host` or `hwdownload` scores them on the CPU.
+- FFmpeg 9.0.2's `libplacebo` filter fails to initialise ("Error initializing
+  filters", no message) with libplacebo 7.360 or older on a Vulkan device
+  that has internally synchronized queues (NVIDIA 615, Mesa 26.2): FFmpeg
+  sets queue flags that only libplacebo API 365 accepts, which no libplacebo
+  release has yet. This is outside VMAFx; the `libplacebo` route was checked
+  with libplacebo built from its development branch on NVIDIA and Intel, and
+  with libplacebo 7.360.0 on Mesa 26.0.8 (no such queues) on AMD
+  (`T-FFMPEG-LIBPLACEBO-QUEUE-FLAGS-2026-10-07` in [state.md](../state.md)).
+- `libvmafx` creates devices of the backends it was built with: the CPU, and
+  CUDA, SYCL or HIP. `backend=metal`, or a backend the library was built
+  without, fails at configuration and names the backend.
+- The two inputs must match in size and in scored layout. Every layout scores
+  as its planar equivalent (`scored_layout()` in
+  `ffmpeg-patches/src/vf_vmafx.c`), so a decoder's NV12 frames and an uploaded
+  YUV420P reference score together; other mixes are refused.
+- NVENC on an RTX 4090 encodes 4:4:4 at 10 bits only, so the 12-bit 4:4:4
+  decode path is checked through uploads (`layouts`), not through an encode.
+- AMD VAAPI surfaces are tiled, and the HIP device reads linear dma-bufs only:
+  on an AMD GPU the DRM PRIME import is refused by name (naming the plane's
+  `modifier`). Give `vmafx` the VAAPI frames themselves (no `hwmap`) with
+  `import=host`: the VAAPI download de-tiles them (golden pair: `76.667831`,
+  the CLI's value). FFmpeg refuses to download a tiled DRM PRIME mapping
+  (`T-HIP-VAAPI-TILED-SURFACES-2026-10-07` in [state.md](../state.md)).
+- `vmafx_pre` refuses the shipped `learned_filter_v1` model: its ONNX input
+  is `[batch,1,224,224]` and the pre-filter path takes a static `[1,1,H,W]`
+  model (state row `T-VMAFX-PRE-LEARNED-FILTER-V1-REFUSED-2026-10-06` in
+  [state.md](../state.md)).
+
+### Checking a vmafx build
+
+`ffmpeg-patches/test/vmafx_filter_check.py` compares the filter with the `vmaf`
+CLI of the same build. Every subcommand takes `--ffmpeg`, `--vmaf` and
+`--libdir` and exits 0 on success, 1 on a failure and 77 when a fixture is
+missing.
+
+| Subcommand | Checks | Needs |
+| --- | --- | --- |
+| `parity` | Every per-frame, pooled and aggregate value of the filter's JSON report equals the CLI's, as the same double. `--backend cuda` and `cuda-host` compare against `vmaf --backend cuda`. | CPU; CUDA for the two GPU forms |
+| `windows` | `stats_path` windows equal the CLI's per-frame scores pooled offline. | CPU |
+| `provenance` | The report carries the provenance record and the log its init line. | CPU |
+| `refusal` | A CPU-only extractor on CUDA frames fails the graph naming the backend, input and extractor, and no score line follows. | CUDA |
+| `pool` | Both inputs in fixed VAAPI pools: a pool one frame short is refused by name, a pool of exactly `N` frames scores as the CLI. | VAAPI device |
+| `legacy` | `vmafx_pre` writes the bytes of `vmaf_pre`, and `vmafx_tune` logs the recommendation of `libvmaf_tune`. | FFmpeg built with `--enable-libvmaf` and `--enable-libvmafx` |
+| `layouts` | Every 4:2:2 / 4:4:4 layout scores as the CLI scores the planar file it was converted from; `--backend cuda` imports them on the device. | CPU; CUDA for the device form |
+| `vulkan` | The reference encoded on the `--vendor`'s GPU, decoded by FFmpeg's Vulkan decoder on the same GPU and scored by `vmafx` against the reference uploaded to the Vulkan device: every value equals the CLI's on the downloaded decoded frames, and every frame of both inputs is imported on the device. `--libplacebo` puts the `libplacebo` filter between decoder and `vmafx`. | `--enable-vulkan` and the vendor's Vulkan H.264 decode (`ANV_DEBUG=video-decode` on Intel with Mesa 26); `--enable-libplacebo` for `--libplacebo` |
+| `e2e` | The encode-and-score command above equals the same frames scored from files by the CLI on the same backend, windows included, with every frame imported on the device. `--vendor nvidia` (NVENC, NVDEC, CUDA; `--e2e-format 444p10` for HEVC 4:4:4 10-bit), `--vendor intel` (VAAPI encode and decode, DRM PRIME, SYCL) or `--vendor amd` (the same on HIP) with `--render-node`. | The vendor's encoder and decoder, `--enable-libvmafx` (with `--enable-vaapi --enable-libdrm` for Intel and AMD) |
+
 ## `vmafx` filter option table
 
-The `vmafx` filter replaces the `vmaf`-named filters in the 1.0.0 series
-(RC4, [ADR-1852](../adr/1852-vmafx-api-redesign.md)); its options are
-generated from the option groups of `core/api/vmafx.toml` into
-`ffmpeg-patches/src/vf_vmafx_options.h`, the table the filter compiles. The
-filter itself lands in a later RC4 change; until then this table is the
-contract it implements, and the `libvmaf` filter below is what the patched
-FFmpeg builds today. Upstream option names (`n_threads`, `n_subsample`) stay
-accepted as aliases.
+The options of the `vmafx` filter are generated from the option groups of
+`core/api/vmafx.toml` ([ADR-1852](../adr/1852-vmafx-api-redesign.md)) into
+`ffmpeg-patches/src/vf_vmafx_options.h`, the table the filter compiles; the
+table below is that generated text. Upstream option names (`n_threads`,
+`n_subsample`) stay accepted as aliases. [The sections above](#the-vmafx-filter)
+explain how the options combine.
 
 <!-- BEGIN GENERATED: vmafx-api vmafx filter options (scripts/codegen/vmafx-api.py) -->
 
@@ -213,7 +631,52 @@ accepted as aliases.
 
 <!-- END GENERATED: vmafx-api vmafx filter options -->
 
+## Migrating from the libvmaf filters
+
+The `libvmaf*` filters keep working until their retirement (WP10). Moving a
+command to `vmafx` is a change of filter name and of a few option spellings;
+the pads do not change (pad 0 distorted, pad 1 reference).
+
+| Old | New |
+| --- | --- |
+| `libvmaf` | `vmafx` |
+| `model=version=X` | the same spec |
+| `model_path=P` | `model=path=P` |
+| several models (`model=a\|b`) | each needs `name=`; an unnamed duplicate is refused with "the context already scores a model of this name" |
+| `feature=name=psnr\|name=float_ssim` | accepted as written, or `feature=psnr\|float_ssim` |
+| `n_threads` | `threads` (the old name stays as an alias) |
+| `n_subsample` | `subsample` (alias kept) |
+| `log_path`, `log_fmt`, `score_fmt` | the same names |
+| `pool` | the same name; it takes several methods joined by `+` |
+| `tiny_model`, `tiny_device`, `tiny_threads`, `tiny_fp16`, `perceptual_weight`, `cpumask`, `gpumask` | the same names |
+| `cuda=1` | `backend=cuda` |
+| `sycl_device=N` | `backend=sycl:device=N` |
+| `hip_device=N` | `backend=hip:device=N` |
+| `metal_device=N` | `backend=metal:device=N` |
+| `sycl_profile`, `gpu_profile` | `profile=1` |
+| `libvmaf_cuda` | `vmafx` on CUDA frames; it imports the decoder's frame without the device-to-device copy `libvmaf_cuda` made |
+| `libvmaf_sycl` (QSV frames), `libvmaf_metal` (VideoToolbox frames) | `vmafx` refuses these frames by name today; keep the old filters or use `import=host` until the SYCL and Metal import lanes land |
+| `libvmaf_tune` | `vmafx_tune`; the default model differs |
+| `vmaf_pre` | `vmafx_pre`; same options, same bytes |
+| `-vmaf-profile` | `-vmafx-profile` |
+
+Notes on the rows that need more than a rename:
+
+- In a filter string `backend=sycl:device=N` is two options, `backend` and
+  `device`. With software frames the context on that device uploads them, in
+  a `libvmafx` built with the backend; this release checks the CUDA form
+  (`parity --backend cuda-host`). Metal devices are not in this release, and
+  QSV and VideoToolbox frames are refused by name (see [Limits](#limits)).
+- `libvmaf_tune` scored with `vmaf_v0.6.1`; `vmafx_tune` uses the library's
+  default model `vmaf_v1.0.16_3d0h`. Pin `model=version=vmaf_v0.6.1` to keep
+  the old numbers: with that pin the recommendation equals `libvmaf_tune`'s
+  (the `legacy` check).
+- Scores of the default model differ from the `vmaf_v0.6.1` ones by design;
+  the golden pair gives `82.816060` and `76.667831` respectively.
+
 ## `libvmaf` filter option reference
+
+Moving to `vmafx`? See [Migrating from the libvmaf filters](#migrating-from-the-libvmaf-filters).
 
 The `libvmaf` filter ships with FFmpeg (source:
 [`libavfilter/vf_libvmaf.c`](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_libvmaf.c))
@@ -685,3 +1148,8 @@ third-party tools.
   compile
   to zero linked code, but keep the context lines that later patches depend
   on.
+- **`vmafx`, `vmafx_tune`, `vmafx_pre` and `-vmafx-profile` added (RC4 WP9,
+  [ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md)).** Patches `0021`
+  to `0024` add the filters of the VMAFx API, the `-vmafx-profile` option and
+  hardware decoding for loopback decoders; the `libvmaf*` filters stay until
+  their retirement (WP10).

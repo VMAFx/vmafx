@@ -298,6 +298,7 @@ class LiveFfmpegTableTest(unittest.TestCase):
     """The vmafx filter table of the live definition sets what design 5.2 says."""
 
     PROGRAM = r"""
+#include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
 #include <libavutil/log.h>
@@ -310,10 +311,20 @@ static const AVClass klass = {.class_name = "vmafx", .item_name = av_default_ite
                               .option = options, .version = LIBAVUTIL_VERSION_INT};
 static const char *const backends[] = VMAFX_OPT_BACKEND_VALUES;
 static const char *const formats[] = VMAFX_OPT_OUTPUT_FORMAT_VALUES;
+static int errors;
+static void count_errors(void *avcl, int level, const char *fmt, va_list vl)
+{
+    (void)avcl; (void)fmt; (void)vl;
+    errors += level <= AV_LOG_ERROR;
+}
 int main(void)
 {
     Ctx c = {.klass = &klass};
+    av_log_set_callback(count_errors);
     av_opt_set_defaults(&c);
+    /* Every default lies in its option's range: av_opt_set_defaults() logs
+     * an error for one that does not, on every filter init (RC4 WP9). */
+    if (errors != 0 || c.view_distance != 0.0 || c.display_height != 0) return 6;
     if (c.model != NULL || strcmp(backends[c.backend], "auto") || strcmp(formats[c.output_format], "json"))
         return 1;
     if (c.provenance != 3 || c.subsample != 1 || strcmp(c.device, "auto") || strcmp(c.score_fmt, "%.6f"))

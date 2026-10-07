@@ -19,7 +19,6 @@ Exits 77 when the fixture pair is missing.
 from __future__ import annotations
 
 import json
-import math
 import os
 import subprocess
 import sys
@@ -29,39 +28,10 @@ from pathlib import Path
 REF = "src01_hrc00_576x324.yuv"
 DIST = "src01_hrc01_576x324.yuv"
 MODEL = "vmaf_v0.6.1"
-PERCENTILES = {5: 50.0, 6: 5.0, 7: 10.0, 8: 20.0}  # VmafPool -> percentile
 SKIP = 77
 
-
-def cli_name(target: str) -> str:
-    """The CLI's metric key of a collector feature name."""
-    prefix, suffix = "VMAF_integer_feature_", "_score"
-    if target.startswith(prefix) and target.endswith(suffix):
-        return "integer_" + target[len(prefix) : -len(suffix)]
-    return target
-
-
-def percentile(scores: list[float], perc: float) -> float:
-    """vmaf_percentile(): sorted scores, linear interpolation, C's order."""
-    ordered = sorted(scores)
-    p = perc * (len(ordered) - 1) / 100.0
-    low, high = math.floor(p), math.ceil(p)
-    if low == high:
-        return ordered[low]
-    return ordered[low] * (high - p) + ordered[high] * (p - low)
-
-
-def pooled(scores: list[float]) -> list[float]:
-    """The value of every VmafPool slot 1..8 (slot 0 unused) as the engine pools."""
-    total = 0.0
-    inverse = 0.0
-    for score in scores:
-        total += score
-        inverse += 1.0 / (score + 1.0)
-    count = float(len(scores))
-    values = [0.0, min(scores), max(scores), total / count, count / inverse - 1.0]
-    values += [percentile(scores, PERCENTILES[p]) for p in range(5, 9)]
-    return values
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "ci"))
+from vmafx_window_pooling import cli_name, pooled  # noqa: E402 -- path set above
 
 
 def run(cmd: list[str], env: dict[str, str]) -> None:

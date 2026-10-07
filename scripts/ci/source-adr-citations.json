@@ -6351,6 +6351,7 @@
         "core/src/vmafx/report.c": 1,
         "core/src/vmafx/report_verify.c": 1,
         "core/src/vmafx/score.c": 1,
+        "core/src/vmafx/spec.c": 1,
         "core/src/vmafx/submit.c": 1,
         "core/src/vmafx/sync_object.c": 1,
         "core/src/vmafx/tiny_model.c": 1,
@@ -6792,6 +6793,7 @@
         "core/test/test_vmafx_report.c": 1,
         "core/test/test_vmafx_score.c": 1,
         "core/test/test_vmafx_sha256.c": 1,
+        "core/test/test_vmafx_spec.c": 1,
         "core/test/test_vmafx_window.c": 1,
         "core/test/test_vmafx_window_clock.c": 1,
         "core/test/test_vmafx_window_live.c": 1,
@@ -8150,6 +8152,7 @@
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_vmafx_lifetime.c": 1,
         "core/tools/vmaf.cpp": 1,
+        "ffmpeg-patches/src/vf_vmafx.c": 1,
         "scripts/codegen/tests/fixtures/schema1.toml": 1
       },
       "target": "1336-cuda-context-owned-resource-teardown.md"
@@ -11428,7 +11431,7 @@
         "api/openapi/components.gen.yaml": 1,
         "bindings/python/vmafx/__init__.py": 1,
         "bindings/python/vmafx/_api.py": 1,
-        "core/api/vmafx.toml": 8,
+        "core/api/vmafx.toml": 9,
         "core/include/libvmaf/macros.h": 1,
         "core/include/meson.build": 1,
         "core/include/vmafx/context.h": 2,
@@ -11503,6 +11506,7 @@
         "core/src/vmafx/score.c": 1,
         "core/src/vmafx/sha256.h": 1,
         "core/src/vmafx/sized.c": 1,
+        "core/src/vmafx/spec.c": 1,
         "core/src/vmafx/status_gen.c": 1,
         "core/src/vmafx/status_gen.h": 1,
         "core/src/vmafx/submit.c": 1,
@@ -11571,7 +11575,7 @@
     },
     "1897": {
       "sites": {
-        "core/api/vmafx.toml": 1,
+        "core/api/vmafx.toml": 2,
         "core/src/vmafx/frame_import_vulkan.c": 1,
         "core/test/test_vmafx_import_vulkan_api.c": 1
       },
@@ -11903,9 +11907,17 @@
         "core/test/test_vmafx_import_sycl_formats.c": 1,
         "core/test/vmafx_fixture_util.h": 1,
         "core/test/vmafx_format_cells.h": 1,
-        "core/test/vmafx_import_test_util.h": 1
+        "core/test/vmafx_import_test_util.h": 1,
+        "ffmpeg-patches/src/vf_vmafx.c": 1
       },
       "target": "2133-vmafx-import-422-444-formats.md"
+    },
+    "2152": {
+      "sites": {
+        "ffmpeg-patches/src/vf_vmafx.c": 1,
+        "ffmpeg-patches/test/vmafx_filter_check.py": 1
+      },
+      "target": "2152-vmafx-vulkan-frame-import.md"
     }
   },
   "retired": {

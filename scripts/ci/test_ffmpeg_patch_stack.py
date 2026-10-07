@@ -121,6 +121,32 @@ class RealReplay(unittest.TestCase):
         STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
 
+    def test_source_file_is_the_patch_content(self) -> None:
+        # RC4 WP9: ffmpeg-patches/src/ holds the source of a file a patch adds.
+        sources = {"sample": "sample.c"}
+        (self.repo / "ffmpeg-patches/src").mkdir()
+        source = self.repo / "ffmpeg-patches/src/sample.c"
+        source.write_text("patched\n")
+        with patch.object(STACK, "SOURCES", sources):
+            STACK.maintain(self.repo, self.output, True, False)
+            self.assertEqual(STACK.maintain(self.repo, self.output, False, False)["changed"], [])
+            source.write_text("edited in the source file\n")
+            with self.assertRaisesRegex(ValueError, "drift"):
+                STACK.maintain(self.repo, self.output, False, False)
+            refreshed = STACK.maintain(self.repo, self.output, True, False)
+            self.assertEqual(refreshed["changed"], ["ffmpeg-patches/0001-integration.patch"])
+            self.assertIn("+edited in the source file", self.patch.read_text())
+            self.assertEqual(STACK.maintain(self.repo, self.output, False, False)["changed"], [])
+
+    def test_source_file_without_a_patch_fails(self) -> None:
+        (self.repo / "ffmpeg-patches/src").mkdir()
+        (self.repo / "ffmpeg-patches/src/orphan.c").write_text("x\n")
+        with (
+            patch.object(STACK, "SOURCES", {"libavfilter/orphan.c": "orphan.c"}),
+            self.assertRaisesRegex(ValueError, "no patch in series.txt adds libavfilter/orphan.c"),
+        ):
+            STACK.maintain(self.repo, self.output, False, False)
+
     def test_caller_global_config_cannot_change_canonical_patches(self) -> None:
         STACK.maintain(self.repo, self.output, True, False)
         before = self.contents()
