@@ -9122,7 +9122,7 @@ if is_rust_enabled
     test_rust_twin_registry = executable('test_rust_twin_registry',
         ['test.c', 'test_rust_twin_registry.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
-        link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf],
+        link_with : vmaf_test_link,
         c_args : vmaf_cflags_common,
         dependencies : [pthread_dependency, rust_core_dep],
     )
