@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1311), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1312), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5179,6 +5179,10 @@ Every ADR, one heading each (1311), so the site search finds an ADR by its title
 ## ADR-1886: torch only where training runs
 
 [1886-torch-training-environments-only](1886-torch-training-environments-only.md)
+
+## ADR-1897: VMAFx ABI numbering before 1.0: additions take a patch bump and join the current minor's version node
+
+[1897-vmafx-abi-0x-numbering](1897-vmafx-abi-0x-numbering.md)
 
 ## ADR-1898: A resumable stage runner and a mini retrain that exercises the retrain tooling in CI
 
