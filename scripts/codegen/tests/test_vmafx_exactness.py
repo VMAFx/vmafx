@@ -43,6 +43,32 @@ def fake(feature: str, backend: str) -> object:
     return dataclasses.replace(template, feature=feature, backend=backend)
 
 
+def declared() -> set[tuple[str, str]]:
+    return {(f.feature, f.backend) for f in gen.EXACT_TWIN_FRAGMENTS}
+
+
+def not_exact_twin() -> tuple[str, str]:
+    """A base feature and GPU backend with no exact declaration and no libm bound."""
+    bases = sorted(set(gen.FEATURE_TOLERANCE) - set(gen.FEATURE_ALIASES))
+    backends = sorted(b for b in gen.BACKEND_SUFFIX if b != "cpu")
+    return next(
+        (f, b)
+        for f in bases
+        for b in backends
+        if (f, b) not in declared() and b not in gen.LIBM_TWINS.get(f, {})
+    )
+
+
+def alias_fragment() -> tuple[str, str]:
+    """A declared exact alias twin whose base is declared exact on that backend too."""
+    return next(
+        (alias, b)
+        for alias, (base, _options) in sorted(gen.FEATURE_ALIASES.items())
+        for (f, b) in sorted(declared())
+        if f == alias and (base, b) in declared()
+    )
+
+
 class ExactnessGeneratorTest(unittest.TestCase):
     def test_committed_file_is_current(self) -> None:
         self.assertEqual(gen.OUTPUT.read_text(encoding="utf-8"), live())
@@ -52,20 +78,27 @@ class ExactnessGeneratorTest(unittest.TestCase):
         self.assertNotEqual(gen.OUTPUT.read_text(encoding="utf-8"), live(fragments=kept))
 
     def test_added_fragment_makes_the_twin_exact(self) -> None:
+        # The twin is picked from the live data, not named: every twin declared
+        # exact on master would otherwise turn this test into a no-op.
+        feature, backend = not_exact_twin()
+        twin = gen.BACKEND_EXTRACTOR_ALIASES.get(
+            (feature, backend), feature + gen.BACKEND_SUFFIX[backend]
+        )
+        enum = gen.BACKEND_ENUM[backend]
         before = live()
-        after = live(fragments=[*gen.EXACT_TWIN_FRAGMENTS, fake("psnr", "metal")])
-        self.assertIn(
-            '"integer_psnr_metal", "psnr", VMAFX_BACKEND_METAL, VMAFX_EXACTNESS_TOLERANCE', before
-        )
-        self.assertIn(
-            '"integer_psnr_metal", "psnr", VMAFX_BACKEND_METAL, VMAFX_EXACTNESS_EXACT', after
-        )
+        after = live(fragments=[*gen.EXACT_TWIN_FRAGMENTS, fake(feature, backend)])
+        self.assertNotIn(f'"{twin}", "{feature}", {enum}, VMAFX_EXACTNESS_EXACT', before)
+        self.assertIn(f'"{twin}", "{feature}", {enum}, VMAFX_EXACTNESS_EXACT', after)
 
     def test_alias_with_other_exact_backends_is_refused(self) -> None:
-        extra = fake("motion_debug", "metal")
+        # An alias must be exact on exactly its base's backends. Every alias on
+        # master already matches its base everywhere, so the planted defect is a
+        # dropped alias fragment (the base stays exact on that backend).
+        alias, backend = alias_fragment()
+        kept = [f for f in gen.EXACT_TWIN_FRAGMENTS if (f.feature, f.backend) != (alias, backend)]
         with self.assertRaises(gen.ExactnessError) as caught:
-            live(fragments=[*gen.EXACT_TWIN_FRAGMENTS, extra])
-        self.assertIn("motion_debug", str(caught.exception))
+            live(fragments=kept)
+        self.assertIn(alias, str(caught.exception))
 
     def test_alias_with_other_libm_backends_is_refused(self) -> None:
         libm = {**gen.LIBM_TWINS, "float_ssim_lcs": {"cuda": 1e-9}}
