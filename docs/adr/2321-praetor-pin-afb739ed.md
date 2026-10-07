@@ -44,7 +44,7 @@ Move `PRAETOR_REF` in `.github/workflows/standards-gate.yml` to `afb739ed81f3f1c
 
 - **Positive**: agent context below the root is held to the register by the gate, not by hand; the supply-chain claim is stated as measured, with an expiry.
 - **Negative**: the HISS-11 entry expires on 2027-01-04 and fails the audit then, unless the release workflows reach Level 3 or the entry is renewed with a reason; caveman pages read terser than before.
-- **Neutral / follow-ups**: every hook engine moves with the merge; a branch rebases onto the merged pin first, and a branch that edits a nested `AGENTS.md` or an `AGENTS.d/` page must pass the caveman check. Praetor's checker counts a model name such as `A380` as the article "a" (reported upstream); one page reworded a quote to stay under the limit.
+- **Neutral / follow-ups**: every hook engine moves with the merge; a branch rebases onto the merged pin first, and a branch that edits a nested `AGENTS.md` or an `AGENTS.d/` page must pass the caveman check. Praetor's checker counts a model name such as `A380` as the article "a" (cordanaLLM/praetor#838); one page reworded a quote to stay under the limit.
 
 ## Supply-chain impact
 
