@@ -326,6 +326,8 @@ core/src/vmafx/context.c
 core/src/vmafx/device.c
 core/src/vmafx/device_context.c
 core/src/vmafx/error.c
+core/src/vmafx/exactness.c
+core/src/vmafx/exactness_gen.c
 core/src/vmafx/fence.c
 core/src/vmafx/frame_host.c
 core/src/vmafx/frame_import.c
@@ -334,7 +336,13 @@ core/src/vmafx/frame_import_hooks.c
 core/src/vmafx/frame_pool.c
 core/src/vmafx/model.c
 core/src/vmafx/options.c
+core/src/vmafx/provenance.c
+core/src/vmafx/provenance_build.c
+core/src/vmafx/provenance_json.c
+core/src/vmafx/provenance_render.c
 core/src/vmafx/register.c
+core/src/vmafx/report.c
+core/src/vmafx/report_verify.c
 core/src/vmafx/score.c
 core/src/vmafx/sha256.c
 core/src/vmafx/sized.c
@@ -773,6 +781,7 @@ core/test/test_vmafx_abi_layout.c
 core/test/test_vmafx_api_slice.c
 core/test/test_vmafx_bitexact.c
 core/test/test_vmafx_context.c
+core/test/test_vmafx_exactness.c
 core/test/test_vmafx_frame.c
 core/test/test_vmafx_import_api.c
 core/test/test_vmafx_import_bitexact.c
@@ -780,6 +789,10 @@ core/test/test_vmafx_import_fence.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_log_routing.c
 core/test/test_vmafx_model.c
+core/test/test_vmafx_provenance.c
+core/test/test_vmafx_provenance_json.c
+core/test/test_vmafx_provenance_threads.c
+core/test/test_vmafx_report.c
 core/test/test_vmafx_score.c
 core/test/test_vmafx_sha256.c
 core/test/test_x86_cpu_gate.c

@@ -1297,6 +1297,12 @@ void handle_misc_flag(const int o, const char *const app, CLISettings *const set
     case ARG_PROVENANCE_SIDECAR:
         settings->provenance_sidecar = true;
         break;
+    case ARG_LIST_BACKENDS:
+        settings->list_backends = true;
+        break;
+    case ARG_CHECK_SAMPLE_RANGE:
+        settings->check_sample_range = true;
+        break;
     case 'v':
         if (settings->vmafx_mode) {
             (void)fprintf(stderr, "VMAFX %s (auto-backend, precision=max)\n", vmaf_version());
@@ -1393,13 +1399,9 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case 'v':
     case ARG_NETFLIX_COMPAT:
     case ARG_PROVENANCE_SIDECAR:
-        handle_misc_flag(o, app, settings);
-        break;
     case ARG_LIST_BACKENDS:
-        settings->list_backends = true;
-        break;
     case ARG_CHECK_SAMPLE_RANGE:
-        settings->check_sample_range = true;
+        handle_misc_flag(o, app, settings);
         break;
     case ARG_VERIFY_PROVENANCE:
         settings->verify_provenance = optarg;
