@@ -659,7 +659,7 @@ func TestExtraParamsFor_matchesPythonGolden(t *testing.T) {
 		encoder string
 		want    []string
 	}{
-		{"libx264", []string{"-x264-params", "qpfile=/tmp/q.txt"}},
+		{"libx264", []string{"-qpfile", "/tmp/q.txt"}},
 		{"libaom-av1", []string{"-qpfile", "/tmp/q.txt"}},
 		{"libsvtav1", []string{"-svtav1-params", "qp-file=/tmp/q.txt"}},
 		{"libvvenc", []string{"-vvenc-params", "ROIFile=/tmp/q.txt"}},

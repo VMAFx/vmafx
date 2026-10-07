@@ -114,8 +114,15 @@ ffmpeg -f rawvideo -s 1920x1080 -pix_fmt yuv420p -i clip.yuv \
     -c:v libx264 -crf 23 -qpfile clip.qpfile.txt clip.mp4
 ```
 
-x264 has honoured per-macroblock QP deltas since r2390. The patch passes
-`-qpfile <path>` to `x264_param_parse(... "qpfile", path)`.
+libx264 has no `qpfile` parameter (the x264 command line reads the file
+itself), so `-x264-params qpfile=...` is refused by libx264 and FFmpeg only
+warns `Error parsing option`. The patch reads the file in the encoder wrapper
+and gives each input frame's per-macroblock deltas to x264 as `quant_offsets`,
+the channel FFmpeg's region-of-interest side data uses. x264 adds them to
+its adaptive quantization, so `aq-mode` must not be 0 (the `ultrafast`
+preset sets it to 0; the encoder then fails to open and says so), and the file's
+block grid must be the video's macroblock grid. The per-frame type and
+baseline QP of a record are not used: only the deltas.
 
 ### libsvtav1: full ROI bridge (SVT-AV1 1.6.0 or newer)
 
@@ -345,12 +352,14 @@ the suggested value.
 You are running unpatched FFmpeg. Re-apply the patch series and rebuild;
 see [Prerequisites](#prerequisites).
 
-### `libx264: failed to load qpfile=... (x264 ret=-1)`
+### `libx264: cannot read qpfile ...`, `... needs adaptive quantization`, `... macroblocks`
 
-Either the file does not exist or its format does not match x264's
-qpfile reader. Compare it against the format shown at the start of Hook
-1: a header line per frame, then one row of block deltas per block row.
-There is no validator command.
+The file does not exist or is not in the format shown at the start of Hook
+1 (a header line per frame, then one row of block deltas per block row);
+the preset or `-x264-params` sets `aq-mode=0` (`ultrafast` does); or the
+file's block grid is not the video's macroblock grid (width and height
+divided by 16, rounded up). The message names which. There is no validator
+command.
 
 ### `libsvtav1: qpfile=... parsed but SVT-AV1 < 1.6.0 lacks the ROI ABI`
 

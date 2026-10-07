@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1299), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1300), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5207,3 +5207,7 @@ Every ADR, one heading each (1299), so the site search finds an ADR by its title
 ## ADR-2166: The FFmpeg series drops the Vulkan no-op shims
 
 [2166-ffmpeg-series-drops-vulkan-shims](2166-ffmpeg-series-drops-vulkan-shims.md)
+
+## ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
+
+[2167-ffmpeg-x264-qpfile-quant-offsets](2167-ffmpeg-x264-qpfile-quant-offsets.md)

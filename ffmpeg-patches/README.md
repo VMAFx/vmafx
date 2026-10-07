@@ -258,8 +258,11 @@ orchestrator into FFmpeg's encoder-side and CLI-side surfaces:
 - **`0007-libvmaf-tune-qpfile-unified.patch`** — adds an `-qpfile <path>`
   AVOption to `libx264`, `libsvtav1`, and `libaom-av1`. The shared
   parser at `libavcodec/qpfile_parser.{c,h}` reads vmaf-tune's
-  `saliency.py` qpfile format once; libx264 forwards it to x264's
-  native per-MB qpfile reader; SVT-AV1 wires it through to the
+  `saliency.py` qpfile format once; libx264 gets each input frame's
+  per-MB deltas as x264 `quant_offsets` (libx264 has no `qpfile`
+  parameter; needs `aq-mode` other than 0,
+  [ADR-2167](../docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md));
+  SVT-AV1 wires it through to the
   per-picture `ROI_MAP_EVENT` priv-data ABI (gated on SVT-AV1 ≥ 1.6.0;
   older releases log-and-continue); libaom-av1 wires it through to
   `aom_codec_control(AOME_SET_ROI_MAP, ...)` per frame, with up to 8

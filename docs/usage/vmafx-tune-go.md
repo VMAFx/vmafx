@@ -425,7 +425,7 @@ required.
 
 | Encoder | Channel | Granularity |
 |---------|---------|-------------|
-| `libx264` | `-x264-params qpfile=…` | 16×16 macroblocks |
+| `libx264` | `-qpfile …` (patched FFmpeg bridge, x264 `quant_offsets`) | 16×16 macroblocks |
 | `libaom-av1` | `-qpfile …` (patched FFmpeg bridge) | 16×16 macroblocks |
 | `libx265` | `-x265-params zones=…` | per-clip spatial mean |
 | `libsvtav1` | `-svtav1-params qp-file=…` | 64×64 super-blocks |

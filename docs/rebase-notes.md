@@ -62704,3 +62704,24 @@ Invariants a rebase keeps:
 
 No score, public C API or option change for any build that worked: the CUDA
 selector (`libvmaf=cuda=1`) was built and run (94.323010, the CPU's value).
+
+## `-qpfile` on libx264 through `quant_offsets` (`rc4/api-wp15-x264-qpfile`)
+
+RC4 WP15 ([ADR-2167](adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)) changes the
+libx264 hunks of `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`, adds
+`ffmpeg-patches/test/qpfile_check.py`, and makes `pkg/saliency` and
+`tools/vmaf-tune` pass `-qpfile` for libx264.
+
+Invariants a rebase keeps:
+
+- `libavcodec/libx264.c` has no `x264_param_parse(.., "qpfile", ..)`: libx264
+  has no such key. `X264_init()` loads the file with `ff_qpfile_load()` and
+  refuses `aq-mode=0` and a block grid other than the video's macroblock grid;
+  `setup_frame()` calls `setup_qpfile()` after the ROI side-data block, with
+  `qpf_frames` counting input frames; `X264_close()` frees the file. An upstream
+  change to `setup_roi()` or `setup_frame()` keeps the three.
+- `pkg/saliency.ExtraParamsFor("libx264")` and
+  `vmaftune.saliency.augment_extra_params_with_qpfile()` return `-qpfile`;
+  `-x264-params qpfile=` comes back only with a libx264 that has the key.
+
+No score or public C API impact.

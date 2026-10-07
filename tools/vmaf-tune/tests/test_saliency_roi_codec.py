@@ -95,15 +95,17 @@ def _capture_runner(tmp_path: Path) -> tuple[dict, object]:
     captured: dict[str, list[str]] = {}
 
     def _runner(cmd: list[str], **_kwargs: object) -> object:
-        captured["cmd"] = list(cmd)
-        out = Path(cmd[-1])
-        out.write_bytes(b"\x00\x01")
-
         class _Done:
             returncode = 0
             stdout = ""
             stderr = "ffmpeg version 6.1.1\nlibx265 HEVC encoder"
 
+        # The encoder-version probe (`ffmpeg -version`, cached per process) goes
+        # through the same runner: it is not the encode and writes no output.
+        if list(cmd[1:]) == ["-version"]:
+            return _Done()
+        captured["cmd"] = list(cmd)
+        Path(cmd[-1]).write_bytes(b"\x00\x01")
         return _Done()
 
     return captured, _runner
