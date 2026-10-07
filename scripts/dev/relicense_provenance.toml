@@ -215,6 +215,11 @@ match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*psnr'
 from = ["netflix-integer-psnr"]
 
 [[families]]
+name = "rust-integer-motion"
+match = '^core/src/rust/feature/motion/src/(extractor|sad|window|lib)\.rs$'
+from = ["netflix-integer-motion"]
+
+[[families]]
 name = "cambi"
 match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*cambi'
 from = ["netflix-cambi"]
