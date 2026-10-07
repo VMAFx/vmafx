@@ -170,12 +170,14 @@ func (s *Postgres) List(ctx context.Context, tenantID string, statuses []Status)
 	return jobs, err
 }
 
-// Cancel cancels a pending or running job of tenantID. A job that is already
-// terminal is left as it is (nil); a job that does not exist for the tenant
-// is ErrNotFound. A running job's node learns it from its next heartbeat
-// (Heartbeat's cancelled list) and its report changes nothing.
-func (s *Postgres) Cancel(ctx context.Context, tenantID string, id uuid.UUID) error {
-	return s.inTenant(ctx, tenantID, func(ctx context.Context, q *pgdb.Queries) error {
+// Cancel cancels a pending or running job of tenantID and reports whether it
+// did. A job that is already terminal is left as it is (false, nil); a job
+// that does not exist for the tenant is ErrNotFound. A running job's node
+// learns it from its next heartbeat (Heartbeat's cancelled list) and its
+// report changes nothing.
+func (s *Postgres) Cancel(ctx context.Context, tenantID string, id uuid.UUID) (bool, error) {
+	cancelled := false
+	err := s.inTenant(ctx, tenantID, func(ctx context.Context, q *pgdb.Queries) error {
 		row, err := q.CancelJob(ctx, pgdb.CancelJobParams{ID: id, TenantID: tenantID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return cancelNoop(ctx, q, tenantID, id)
@@ -183,11 +185,13 @@ func (s *Postgres) Cancel(ctx context.Context, tenantID string, id uuid.UUID) er
 		if err != nil {
 			return fmt.Errorf("store: cancel job %s: %w", id, err)
 		}
+		cancelled = true
 		if Status(row.PreviousStatus) != StatusRunning {
 			return nil
 		}
 		return endAttempt(ctx, q, id, row.Attempt, "cancelled", "cancelled")
 	})
+	return cancelled && err == nil, err
 }
 
 // cancelNoop tells a terminal job (nil) from a missing one (ErrNotFound).

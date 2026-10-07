@@ -77,3 +77,14 @@ SET status = 'failed', lost_attempts = lost_attempts + 1, error = @error::text,
     lease_session = NULL, lease_expires_at = NULL,
     finished_at = now(), updated_at = now()
 WHERE id = @id AND attempt = @attempt AND status = 'running';
+
+-- name: RunningAttemptOfSession :one
+SELECT attempt FROM jobs
+WHERE id = @id AND tenant_id = @tenant_id AND status = 'running'
+  AND lease_session = @session_id::uuid;
+
+-- name: LatestAttemptOfSession :one
+SELECT attempt FROM job_attempts
+WHERE job_id = @job_id AND tenant_id = @tenant_id AND session_id = @session_id
+ORDER BY attempt DESC
+LIMIT 1;

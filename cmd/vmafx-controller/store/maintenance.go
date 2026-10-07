@@ -121,3 +121,56 @@ func (s *Postgres) CountActive(ctx context.Context) ([]ActiveCount, error) {
 	})
 	return out, err
 }
+
+// TenantCount is the pending and running jobs of one tenant and the
+// submission time of its oldest pending job (zero when none is pending).
+type TenantCount struct {
+	TenantID      string
+	Pending       int64
+	Running       int64
+	OldestPending time.Time
+}
+
+// Stats are the store's live counts across tenants.
+type Stats struct {
+	Tenants   []TenantCount
+	LiveNodes int64
+}
+
+// Stats returns the per-tenant counts of pending and running jobs, in tenant
+// order, and the number of live node sessions.
+func (s *Postgres) Stats(ctx context.Context) (Stats, error) {
+	var out Stats
+	err := s.inMaintenance(ctx, func(ctx context.Context, q *pgdb.Queries) error {
+		rows, err := q.TenantStats(ctx)
+		if err != nil {
+			return fmt.Errorf("store: read tenant counts: %w", err)
+		}
+		out.Tenants = foldTenantStats(rows)
+		out.LiveNodes, err = q.CountLiveSessions(ctx)
+		if err != nil {
+			return fmt.Errorf("store: count live sessions: %w", err)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// foldTenantStats folds (tenant, status) rows, ordered by tenant, into one
+// TenantCount per tenant.
+func foldTenantStats(rows []pgdb.TenantStatsRow) []TenantCount {
+	out := make([]TenantCount, 0, len(rows))
+	for _, r := range rows {
+		if len(out) == 0 || out[len(out)-1].TenantID != r.TenantID {
+			out = append(out, TenantCount{TenantID: r.TenantID})
+		}
+		tc := &out[len(out)-1]
+		switch Status(r.Status) {
+		case StatusPending:
+			tc.Pending, tc.OldestPending = r.Jobs, r.Oldest
+		case StatusRunning:
+			tc.Running = r.Jobs
+		}
+	}
+	return out
+}

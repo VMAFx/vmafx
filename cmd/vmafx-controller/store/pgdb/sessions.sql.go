@@ -14,6 +14,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countLiveSessions = `-- name: CountLiveSessions :one
+SELECT count(*)::bigint FROM node_sessions WHERE expires_at > now()
+`
+
+func (q *Queries) CountLiveSessions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveSessions)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
 DELETE FROM node_sessions WHERE expires_at < now()
 `

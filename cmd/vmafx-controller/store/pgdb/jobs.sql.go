@@ -10,6 +10,7 @@ package pgdb
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -183,6 +184,50 @@ func (q *Queries) GetJobByIdempotencyKey(ctx context.Context, arg GetJobByIdempo
 	return i, err
 }
 
+const importJob = `-- name: ImportJob :execrows
+INSERT INTO jobs (id, tenant_id, status, spec, backend, assigned_node, score, features, error,
+                  created_at, updated_at, finished_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12)
+ON CONFLICT (id) DO NOTHING
+`
+
+type ImportJobParams struct {
+	ID           uuid.UUID  `json:"id"`
+	TenantID     string     `json:"tenant_id"`
+	Status       string     `json:"status"`
+	Spec         []byte     `json:"spec"`
+	Backend      string     `json:"backend"`
+	AssignedNode *string    `json:"assigned_node"`
+	Score        *float64   `json:"score"`
+	Features     []byte     `json:"features"`
+	Error        *string    `json:"error"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+}
+
+func (q *Queries) ImportJob(ctx context.Context, arg ImportJobParams) (int64, error) {
+	result, err := q.db.Exec(ctx, importJob,
+		arg.ID,
+		arg.TenantID,
+		arg.Status,
+		arg.Spec,
+		arg.Backend,
+		arg.AssignedNode,
+		arg.Score,
+		arg.Features,
+		arg.Error,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.FinishedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertJob = `-- name: InsertJob :one
 INSERT INTO jobs (id, tenant_id, idempotency_key, spec, backend, priority, max_lost_attempts)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -323,4 +368,44 @@ SELECT set_config('vmafx.tenant_id', $1::text, true)
 func (q *Queries) SetTenant(ctx context.Context, tenantID string) error {
 	_, err := q.db.Exec(ctx, setTenant, tenantID)
 	return err
+}
+
+const tenantStats = `-- name: TenantStats :many
+SELECT tenant_id, status, count(*)::bigint AS jobs, min(created_at)::timestamptz AS oldest
+FROM jobs
+WHERE status IN ('pending', 'running')
+GROUP BY tenant_id, status
+ORDER BY tenant_id, status
+`
+
+type TenantStatsRow struct {
+	TenantID string    `json:"tenant_id"`
+	Status   string    `json:"status"`
+	Jobs     int64     `json:"jobs"`
+	Oldest   time.Time `json:"oldest"`
+}
+
+func (q *Queries) TenantStats(ctx context.Context) ([]TenantStatsRow, error) {
+	rows, err := q.db.Query(ctx, tenantStats)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TenantStatsRow{}
+	for rows.Next() {
+		var i TenantStatsRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.Status,
+			&i.Jobs,
+			&i.Oldest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

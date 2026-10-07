@@ -282,6 +282,26 @@ func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) er
 	return err
 }
 
+const latestAttemptOfSession = `-- name: LatestAttemptOfSession :one
+SELECT attempt FROM job_attempts
+WHERE job_id = $1 AND tenant_id = $2 AND session_id = $3
+ORDER BY attempt DESC
+LIMIT 1
+`
+
+type LatestAttemptOfSessionParams struct {
+	JobID     uuid.UUID `json:"job_id"`
+	TenantID  string    `json:"tenant_id"`
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+func (q *Queries) LatestAttemptOfSession(ctx context.Context, arg LatestAttemptOfSessionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, latestAttemptOfSession, arg.JobID, arg.TenantID, arg.SessionID)
+	var attempt int32
+	err := row.Scan(&attempt)
+	return attempt, err
+}
+
 const releaseAttempt = `-- name: ReleaseAttempt :execrows
 UPDATE jobs
 SET status = 'pending', lease_session = NULL, assigned_node = NULL, lease_expires_at = NULL,
@@ -327,4 +347,23 @@ type RequeueExpiredParams struct {
 func (q *Queries) RequeueExpired(ctx context.Context, arg RequeueExpiredParams) error {
 	_, err := q.db.Exec(ctx, requeueExpired, arg.DelaySeconds, arg.ID, arg.Attempt)
 	return err
+}
+
+const runningAttemptOfSession = `-- name: RunningAttemptOfSession :one
+SELECT attempt FROM jobs
+WHERE id = $1 AND tenant_id = $2 AND status = 'running'
+  AND lease_session = $3::uuid
+`
+
+type RunningAttemptOfSessionParams struct {
+	ID        uuid.UUID `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+func (q *Queries) RunningAttemptOfSession(ctx context.Context, arg RunningAttemptOfSessionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, runningAttemptOfSession, arg.ID, arg.TenantID, arg.SessionID)
+	var attempt int32
+	err := row.Scan(&attempt)
+	return attempt, err
 }

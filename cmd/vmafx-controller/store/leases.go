@@ -98,16 +98,18 @@ type Result struct {
 }
 
 // Report records the result of a running attempt and ends the job: completed,
-// or failed when r.Err is set. Only the session that holds the attempt's lease
-// can report it. Repeating a report of the caller's own attempt after the job
-// ended (a retry, or a report after a cancellation) is a no-op success;
+// or failed when r.Err is set. It reports whether this call recorded the
+// result. Only the session that holds the attempt's lease can report it.
+// Repeating a report of the caller's own attempt after the job ended (a retry,
+// or a report after a cancellation) is a no-op success (false, nil);
 // reporting any other attempt is ErrFenced, and nothing is written.
-func (s *Postgres) Report(ctx context.Context, a AttemptRef, r Result) error {
+func (s *Postgres) Report(ctx context.Context, a AttemptRef, r Result) (bool, error) {
 	params, err := finishParams(a, r)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return s.inTenant(ctx, a.Session.TenantID, func(ctx context.Context, q *pgdb.Queries) error {
+	recorded := false
+	err = s.inTenant(ctx, a.Session.TenantID, func(ctx context.Context, q *pgdb.Queries) error {
 		if _, serr := liveSession(ctx, q, a.Session); serr != nil {
 			return serr
 		}
@@ -118,8 +120,10 @@ func (s *Postgres) Report(ctx context.Context, a AttemptRef, r Result) error {
 		if n == 0 {
 			return endedOwnAttempt(ctx, q, a, reportRepeatable)
 		}
+		recorded = true
 		return endAttempt(ctx, q, a.JobID, a.Attempt, params.Status, r.Err)
 	})
+	return recorded && err == nil, err
 }
 
 // finishParams builds the write that ends a job with r.
@@ -207,4 +211,76 @@ func endAttempt(ctx context.Context, q *pgdb.Queries, job uuid.UUID, attempt int
 		return fmt.Errorf("store: end attempt %d of job %s: %w", attempt, job, err)
 	}
 	return nil
+}
+
+// AttemptOf returns the attempt of jobID the session should name in a write:
+// the running attempt it holds, else the last attempt it ever held of the job
+// (so a retried write after the job ended is decided by Report or Release).
+// A job of the tenant that the session never held is ErrFenced; a job the
+// tenant does not have is ErrNotFound.
+func (s *Postgres) AttemptOf(ctx context.Context, ref SessionRef, jobID uuid.UUID) (int32, error) {
+	var attempt int32
+	err := s.inTenant(ctx, ref.TenantID, func(ctx context.Context, q *pgdb.Queries) error {
+		if _, serr := liveSession(ctx, q, ref); serr != nil {
+			return serr
+		}
+		var lerr error
+		attempt, lerr = lookupAttempt(ctx, q, ref, jobID)
+		return lerr
+	})
+	return attempt, err
+}
+
+// lookupAttempt is AttemptOf inside a tenant transaction.
+func lookupAttempt(ctx context.Context, q *pgdb.Queries, ref SessionRef, jobID uuid.UUID) (int32, error) {
+	running, err := q.RunningAttemptOfSession(ctx, pgdb.RunningAttemptOfSessionParams{
+		ID: jobID, TenantID: ref.TenantID, SessionID: ref.ID,
+	})
+	if err == nil {
+		return running, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("store: read running attempt of job %s: %w", jobID, err)
+	}
+	latest, err := q.LatestAttemptOfSession(ctx, pgdb.LatestAttemptOfSessionParams{
+		JobID: jobID, TenantID: ref.TenantID, SessionID: ref.ID,
+	})
+	if err == nil {
+		return latest, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("store: read attempts of job %s: %w", jobID, err)
+	}
+	if _, gerr := q.GetJob(ctx, pgdb.GetJobParams{ID: jobID, TenantID: ref.TenantID}); errors.Is(gerr, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("%w: %s", ErrNotFound, jobID)
+	} else if gerr != nil {
+		return 0, fmt.Errorf("store: read job %s: %w", jobID, gerr)
+	}
+	return 0, fmt.Errorf("%w: job %s was never leased to this session", ErrFenced, jobID)
+}
+
+// RunningAttempt returns the attempt of jobID the session holds a running
+// lease on, and whether it holds one. It writes nothing.
+func (s *Postgres) RunningAttempt(ctx context.Context, ref SessionRef, jobID uuid.UUID) (int32, bool, error) {
+	var (
+		attempt int32
+		held    bool
+	)
+	err := s.inTenant(ctx, ref.TenantID, func(ctx context.Context, q *pgdb.Queries) error {
+		if _, serr := liveSession(ctx, q, ref); serr != nil {
+			return serr
+		}
+		a, rerr := q.RunningAttemptOfSession(ctx, pgdb.RunningAttemptOfSessionParams{
+			ID: jobID, TenantID: ref.TenantID, SessionID: ref.ID,
+		})
+		if errors.Is(rerr, pgx.ErrNoRows) {
+			return nil
+		}
+		if rerr != nil {
+			return fmt.Errorf("store: read running attempt of job %s: %w", jobID, rerr)
+		}
+		attempt, held = a, true
+		return nil
+	})
+	return attempt, held, err
 }

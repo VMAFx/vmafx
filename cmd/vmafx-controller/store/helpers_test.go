@@ -10,30 +10,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
-	"net/url"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/golusoris/golusoris/testutil/pg"
-
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/storetest"
 )
 
-// testImage is the PostgreSQL release the chart deploys (ADR-2350 D1).
-const testImage = "postgres:18.6-alpine"
-
-// oldestImage is the oldest release external servers may run.
-const oldestImage = "postgres:16.15-alpine"
-
-// appRole is the role the store connects as. It owns the tables, like the
-// application user of a CloudNativePG cluster, and is not a superuser, so
-// row-level security applies to it (FORCE ROW LEVEL SECURITY).
-const appRole = "vmafx_app"
+// testImage and oldestImage are the releases the tests run on.
+const (
+	testImage   = storetest.Image
+	oldestImage = storetest.OldestImage
+)
 
 // testDB is a migrated database and the store on it.
 type testDB struct {
@@ -42,41 +34,11 @@ type testDB struct {
 	dsn   string
 }
 
-// newTestDB starts PostgreSQL (image), creates the application role, migrates
-// as that role, and returns the store.
+// newTestDB starts PostgreSQL (image) and migrates it (storetest.New).
 func newTestDB(t *testing.T, image string) testDB {
 	t.Helper()
-	admin := pg.Start(t, pg.Options{Image: image})
-	ctx := context.Background()
-	for _, stmt := range []string{
-		"CREATE ROLE " + appRole + " LOGIN PASSWORD 'app'",
-		"GRANT CREATE ON SCHEMA public TO " + appRole,
-	} {
-		if _, err := admin.Exec(ctx, stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
-	}
-	dsn := roleDSN(t, admin.Config().ConnString())
-	if err := store.MigratePostgres(dsn, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("app pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return testDB{store: store.NewPostgres(pool), pool: pool, dsn: dsn}
-}
-
-// roleDSN rewrites the container's superuser DSN to the application role.
-func roleDSN(t *testing.T, dsn string) string {
-	t.Helper()
-	u, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatalf("parse DSN: %v", err)
-	}
-	u.User = url.UserPassword(appRole, "app")
-	return u.String()
+	db := storetest.New(t, image)
+	return testDB{store: db.Store, pool: db.Pool, dsn: db.DSN}
 }
 
 // spec is a job specification for tests.
@@ -124,26 +86,10 @@ func claim(t *testing.T, s *store.Postgres, ref store.SessionRef, backends ...st
 	return c
 }
 
-// expireLease moves a job's lease into the past, as if its node fell silent.
+// expireLease moves a job's lease into the past (storetest.ExpireLease).
 func expireLease(t *testing.T, db testDB, id uuid.UUID) {
 	t.Helper()
-	ctx := context.Background()
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, "SELECT set_config('vmafx.maintenance', 'on', true)"); err != nil {
-		t.Fatalf("maintenance: %v", err)
-	}
-	tag, err := tx.Exec(ctx,
-		"UPDATE jobs SET lease_expires_at = now() - interval '1 second' WHERE id = $1 AND status = 'running'", id)
-	if err != nil || tag.RowsAffected() != 1 {
-		t.Fatalf("expire lease of %s: rows=%d err=%v", id, tag.RowsAffected(), err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit: %v", err)
-	}
+	storetest.ExpireLease(t, db.pool, id.String())
 }
 
 // noBackoff makes an expired job claimable again at once.

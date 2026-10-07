@@ -21,3 +21,6 @@ WHERE id = @id AND tenant_id = @tenant_id AND token_sha256 = @token_sha256 AND e
 
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM node_sessions WHERE expires_at < now();
+
+-- name: CountLiveSessions :one
+SELECT count(*)::bigint FROM node_sessions WHERE expires_at > now();

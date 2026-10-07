@@ -56,3 +56,17 @@ FROM jobs
 WHERE status IN ('pending', 'running')
 GROUP BY status, backend
 ORDER BY status, backend;
+
+-- name: TenantStats :many
+SELECT tenant_id, status, count(*)::bigint AS jobs, min(created_at)::timestamptz AS oldest
+FROM jobs
+WHERE status IN ('pending', 'running')
+GROUP BY tenant_id, status
+ORDER BY tenant_id, status;
+
+-- name: ImportJob :execrows
+INSERT INTO jobs (id, tenant_id, status, spec, backend, assigned_node, score, features, error,
+                  created_at, updated_at, finished_at)
+VALUES (@id, @tenant_id, @status, @spec, @backend, sqlc.narg('assigned_node'), sqlc.narg('score'),
+        sqlc.narg('features'), sqlc.narg('error'), @created_at, @updated_at, sqlc.narg('finished_at'))
+ON CONFLICT (id) DO NOTHING;

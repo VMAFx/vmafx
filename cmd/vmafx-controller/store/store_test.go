@@ -162,15 +162,15 @@ func TestFencingGivesOneResultAfterALostLease(t *testing.T) {
 		t.Fatalf("second claim: %+v", c)
 	}
 	late := store.AttemptRef{Session: first, JobID: id, Attempt: 1}
-	if err := db.store.Report(ctx, late, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
+	if _, err := db.store.Report(ctx, late, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
 		t.Fatalf("report of the lost attempt: err = %v, want ErrFenced", err)
 	}
 	current := store.AttemptRef{Session: second, JobID: id, Attempt: 2}
-	if err := db.store.Report(ctx, current, store.Result{Score: 91.5, Features: map[string]float64{"vif": 0.9}}); err != nil {
-		t.Fatalf("report of the running attempt: %v", err)
+	if rec, err := db.store.Report(ctx, current, store.Result{Score: 91.5, Features: map[string]float64{"vif": 0.9}}); err != nil || !rec {
+		t.Fatalf("report of the running attempt: recorded=%v err=%v", rec, err)
 	}
-	if err := db.store.Report(ctx, current, store.Result{Score: 91.5}); err != nil {
-		t.Fatalf("retried report must succeed without a write: %v", err)
+	if rec, err := db.store.Report(ctx, current, store.Result{Score: 91.5}); err != nil || rec {
+		t.Fatalf("retried report must succeed without a write: recorded=%v err=%v", rec, err)
 	}
 	job, err := db.store.Get(ctx, "t1", id)
 	if err != nil || job.Status != store.StatusCompleted || *job.Score != 91.5 || job.Features["vif"] != 0.9 {
@@ -239,7 +239,7 @@ func TestReleaseReturnsTheJobWithoutCountingIt(t *testing.T) {
 	if err := db.store.Release(ctx, a); err != nil {
 		t.Fatalf("repeated release must succeed: %v", err)
 	}
-	if err := db.store.Report(ctx, a, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
+	if _, err := db.store.Report(ctx, a, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
 		t.Fatalf("report of a released attempt: err = %v, want ErrFenced", err)
 	}
 	if job, err := db.store.Get(ctx, "t1", id); err != nil || job.AssignedNode != "" || job.Status != store.StatusPending {
@@ -260,7 +260,7 @@ func TestHeartbeatRenewsLeasesAndNamesCancelledJobs(t *testing.T) {
 	ref := register(t, db.store, "t1", "n1")
 	first := claim(t, db.store, ref, "cpu")
 	claim(t, db.store, ref, "cpu")
-	if err := db.store.Cancel(ctx, "t1", gone); err != nil {
+	if _, err := db.store.Cancel(ctx, "t1", gone); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	hb := store.HeartbeatParams{Session: ref, Running: []uuid.UUID{gone, keep}, SessionTTL: time.Minute, LeaseTTL: time.Hour}
@@ -291,20 +291,20 @@ func TestCancelledRunningJobIgnoresItsReport(t *testing.T) {
 	id := submit(t, db.store, "t1", "cpu", 0)
 	ref := register(t, db.store, "t1", "n1")
 	claim(t, db.store, ref, "cpu")
-	if err := db.store.Cancel(ctx, "t1", id); err != nil {
+	if _, err := db.store.Cancel(ctx, "t1", id); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	a := store.AttemptRef{Session: ref, JobID: id, Attempt: 1}
-	if err := db.store.Report(ctx, a, store.Result{Err: "stopped by the controller"}); err != nil {
+	if _, err := db.store.Report(ctx, a, store.Result{Err: "stopped by the controller"}); err != nil {
 		t.Fatalf("report after cancel: %v", err)
 	}
 	if job, err := db.store.Get(ctx, "t1", id); err != nil || job.Status != store.StatusCancelled {
 		t.Fatalf("status after report: %+v err=%v", job, err)
 	}
-	if err := db.store.Cancel(ctx, "t1", id); err != nil {
-		t.Fatalf("cancel of a terminal job must be a no-op: %v", err)
+	if done, err := db.store.Cancel(ctx, "t1", id); err != nil || done {
+		t.Fatalf("cancel of a terminal job must be a no-op: cancelled=%v err=%v", done, err)
 	}
-	if err := db.store.Cancel(ctx, "t2", id); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.store.Cancel(ctx, "t2", id); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cancel by another tenant: err = %v, want ErrNotFound", err)
 	}
 }
@@ -391,8 +391,11 @@ func TestStoreRefusesBadArguments(t *testing.T) {
 			_, err := db.store.Heartbeat(ctx, store.HeartbeatParams{Session: ref, Running: tooMany, SessionTTL: time.Minute, LeaseTTL: time.Minute})
 			return err
 		}(),
-		"non-finite feature": db.store.Report(ctx, store.AttemptRef{Session: ref, JobID: uuid.New(), Attempt: 1},
-			store.Result{Features: map[string]float64{"x": nan()}}),
+		"non-finite feature": func() error {
+			_, err := db.store.Report(ctx, store.AttemptRef{Session: ref, JobID: uuid.New(), Attempt: 1},
+				store.Result{Features: map[string]float64{"x": nan()}})
+			return err
+		}(),
 		"no backoff": func() error {
 			_, err := db.store.ExpireLeases(ctx, nil, 10)
 			return err
@@ -420,7 +423,7 @@ func TestFencingRefusesAnOldAttemptOfTheSameSession(t *testing.T) {
 		t.Fatalf("reclaim by the same session: %+v", c)
 	}
 	old := store.AttemptRef{Session: ref, JobID: id, Attempt: 1}
-	if err := db.store.Report(ctx, old, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
+	if _, err := db.store.Report(ctx, old, store.Result{Score: 1}); !errors.Is(err, store.ErrFenced) {
 		t.Fatalf("report of attempt 1 while attempt 2 runs: err = %v, want ErrFenced", err)
 	}
 	if job, err := db.store.Get(ctx, "t1", id); err != nil || job.Status != store.StatusRunning {

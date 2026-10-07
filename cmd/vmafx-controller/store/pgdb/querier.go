@@ -24,6 +24,7 @@ type Querier interface {
 	// with the session that holds the lease.
 	ClaimNext(ctx context.Context, arg ClaimNextParams) (Job, error)
 	CountActive(ctx context.Context) ([]CountActiveRow, error)
+	CountLiveSessions(ctx context.Context) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
 	EndAttempt(ctx context.Context, arg EndAttemptParams) error
 	ExpiredLeases(ctx context.Context, maxRows int32) ([]ExpiredLeasesRow, error)
@@ -33,6 +34,7 @@ type Querier interface {
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (JobAttempt, error)
 	GetJob(ctx context.Context, arg GetJobParams) (Job, error)
 	GetJobByIdempotencyKey(ctx context.Context, arg GetJobByIdempotencyKeyParams) (Job, error)
+	ImportJob(ctx context.Context, arg ImportJobParams) (int64, error)
 	InsertAttempt(ctx context.Context, arg InsertAttemptParams) error
 	InsertJob(ctx context.Context, arg InsertJobParams) (Job, error)
 	// SPDX-License-Identifier: EUPL-1.2
@@ -41,11 +43,13 @@ type Querier interface {
 	// Node sessions (sqlc input, ADR-2350 D2). The token is stored as its SHA-256;
 	// a session belongs to one tenant (ADR-1522).
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
+	LatestAttemptOfSession(ctx context.Context, arg LatestAttemptOfSessionParams) (int32, error)
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
 	LiveSession(ctx context.Context, arg LiveSessionParams) (NodeSession, error)
 	NotifyJobs(ctx context.Context, backend string) error
 	ReleaseAttempt(ctx context.Context, arg ReleaseAttemptParams) (int64, error)
 	RequeueExpired(ctx context.Context, arg RequeueExpiredParams) error
+	RunningAttemptOfSession(ctx context.Context, arg RunningAttemptOfSessionParams) (int32, error)
 	SetMaintenance(ctx context.Context) error
 	// SPDX-License-Identifier: EUPL-1.2
 	// Copyright 2026 Lusoris
@@ -54,6 +58,7 @@ type Querier interface {
 	// query names the tenant in its WHERE clause; row-level security is the
 	// second wall, not the first.
 	SetTenant(ctx context.Context, tenantID string) error
+	TenantStats(ctx context.Context) ([]TenantStatsRow, error)
 	TouchSession(ctx context.Context, arg TouchSessionParams) (int64, error)
 }
 
