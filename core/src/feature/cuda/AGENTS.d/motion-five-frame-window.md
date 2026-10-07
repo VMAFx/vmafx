@@ -16,11 +16,11 @@ invariant: motion_five_frame_window on CUDA twins = ring of three raw planes + C
   `pix[n % ring]`, kernel reads `[(n + 1) % ring]` (frame n - (ring - 1)).
   `has_prev = index >= ring - 1`. Kernel unchanged
   (`integer_motion_sad_cuda.c`). `prev_done` = previous frame's event from
-  frame 1 on, also for a frame without a SAD: chain of events must reach the
+  frame 1 on, also for frame without SAD: chain of events must reach
   copy of frame n-2 (picture streams differ). Do not go back to
   `has_prev ? event : NULL`.
 - Readback: only slots of frames >= `ring - 1` (`motion_readback_slots()`
-  bounds in `motion_collect_batch()` / `motion_flush_pending_tail()`); a slot
+  bounds in `motion_collect_batch()` / `motion_flush_pending_tail()`); slot
   below it was never zeroed or written.
 - Host, `motion_cuda`, option on: `collect()` stores SAD (+ debug `motion`)
   only (`emit_batch_scores()` skips motion2 / motion3,
@@ -28,14 +28,14 @@ invariant: motion_five_frame_window on CUDA twins = ring of three raw planes + C
   `motion_flush_window()`. Three-frame path untouched: frame-by-frame
   emission, `motion_flush_trailing()`.
 - Host, `motion_v2_cuda`: `flush()` = `vmaf_motion_window_flush()` for both
-  windows. No local copy of the CPU flush; do not add one back.
+  windows. No local copy of CPU flush; do not add one back.
 - Option rows = CPU's (name, alias `mffw`, bool, default false,
   `VMAF_OPT_FLAG_FEATURE_PARAM`), no `VMAF_OPT_FLAG_DEFAULT_ONLY`
   (`test_gpu_option_value_capability_contract.py`,
   `test_cuda_twin_option_parity`).
-- CPU change to `extract()` min_idx / prev selection or to the window ->
-  window comes through the shared function; `ring` / `has_prev` here in same
+- CPU change to `extract()` min_idx / prev selection or to window ->
+  window comes through shared function; `ring` / `has_prev` here in same
   PR.
 - Guards: `test_cuda_motion_five_frame_window` (`==`, six option sets, 11 / 1
-  / 2 / 3 frames, 8 / 10 bit; 11 frames cross the 8-frame batch), gate cells
+  / 2 / 3 frames, 8 / 10 bit; 11 frames cross 8-frame batch), gate cells
   `motion_mffw`, `motion_v2_mffw` (exact, `scripts/ci/exact_twins.d/`).

@@ -13,10 +13,10 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail
   `research-1120-gpu-speed-covariance-eigenbasis-correctness`). Since
   ADR-1380 `speed/speed_score.cu` holds it by construction: every channel
   (U ref, U dis, V ref, V dis; temporal: ref, dis) owns its `means[25]`
-  (global mean per phase-shift element over the full submatrix, never
+  (global mean per phase-shift element over full submatrix, never
   per tile), its one covariance sweep divided by `N` once, and its own
-  `speed_linalg_kernel` block (eigenvalues + QR). The host tail reads the
-  channel's own eigenvalues. Never share a basis between ref
+  `speed_linalg_kernel` block (eigenvalues + QR). host tail reads
+  channel's own eigenvalues. Never share basis between ref
   and dis channels: ~2× chroma error (masked on temporal, `ref ≈ dis`).
   Any change to SpEED kernel math mirrors CPU (`speed.c`), CUDA, HIP and
   SYCL in same PR. See §"Device-resident CAMBI and SpEED" below.
@@ -49,13 +49,13 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail
   One readback per frame = tail block `SPEED_BUF_TAIL` (status, eigenvalues,
   variances; `SpeedGpuTailLayout`). `speed_cuda_pipeline_collect()` waits,
   then `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `speed.c`'s
-  own fp64 `log2()` statements on the host's libm. Twin == CPU bit for bit
+  own fp64 `log2()` statements on host's libm. Twin == CPU bit for bit
   on any libm (glibc, libimf). Gate cells `speed_chroma.cuda`,
   `speed_temporal.cuda` in `scripts/ci/exact_twins.d/`; parity tests `==`.
-  Never add `log2` / score kernel / second readback to the device: contract
+  Never add `log2` / score kernel / second readback to device: contract
   test plants each. `test_cuda_speed_chroma_parity`: 960x960 texture (regular
   covariance), three scores, every frame; fixture + CPU run + comparison in
-  `core/test/speed_chroma_twin_parity.h`, shared with the HIP test.
+  `core/test/speed_chroma_twin_parity.h`, shared with HIP test.
 - **Givens rotation = `speed_givens_unit()`** (`feature/speed_givens.h`,
   shared with HIP + SYCL): upstream's `1.0 / sqrt(1 + t * t)` (fp64 root and
   quotient, one rounding to fp32) from `rn_sqrt` / `rn_div` / `exact_fma`.
@@ -74,15 +74,15 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail
   (every fatbin, ADR-1403). No fp64 type in file, no `sqrtf` / `log2f` /
   `__fdividef`. `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
   `0x1.6bdb1ap-49f`. Only `exact_fma()` = error-free transforms.
-- **`lanczos4` prescale weights = host table, never a device sine.** CPU
+- **`lanczos4` prescale weights = host table, never device sine.** CPU
   rounds each weight once from fp64 `sin()`; fp32 `sinpif()` is ulps off and
-  SpEED amplifies (8.8e-3 relative on a smooth field,
+  SpEED amplifies (8.8e-3 relative on smooth field,
   `T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
   `speed_upload_lanczos()` fills `SPEED_BUF_LANCZOS` at init from
   `speed_internal_gpu_lanczos_weights()` (`vif_scale_lanczos4_axis_weights()`,
-  the CPU scaler's own routine): 9 taps per scaled column, then per scaled
+  CPU scaler's own routine): 9 taps per scaled column, then per scaled
   row; `scale_lanczos()` reads `wx` / `wy` from it. Buffer exists only for
-  `lanczos4` with a resample. Guards: contract test (planted `sinpif`,
+  `lanczos4` with resample. Guards: contract test (planted `sinpif`,
   planted missing table), `test_speed_lanczos4_weights` (no device),
   `test_cuda_speed_lanczos4_parity`.
 - **Init failure:** `speed_cuda_pipeline_open()` publishes pipeline before
@@ -93,9 +93,9 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail
   `test_cuda_speed_{chroma,temporal,singular}_parity`, smoke tests (all
   exit 77 without device).
 - Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
-  (`count_ff()`) into the pair-divisor `ff_div_to_float()`. Never
-  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) an odd count
-  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0` the
+  (`count_ff()`) into pair-divisor `ff_div_to_float()`. Never
+  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) odd count
+  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0`
   division = old one-float form bit for bit. Means divisor stays fp32
   (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
   header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).

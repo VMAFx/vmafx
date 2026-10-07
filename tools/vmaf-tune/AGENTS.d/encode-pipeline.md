@@ -49,22 +49,22 @@ invariant: Subprocess boundary is test seam; run_encode_with_stats captures enco
 - **Pass-1 input args are not `_build_input_args` (HISS-04 split).**
   `build_pass1_stats_command` uses `_pass1_input_args`. It shares
   `_raw_demuxer_args` with `_build_input_args` but keeps its own clip
-  guard: the `duration_s` fallback requires
-  `sample_clip_seconds <= 0.0`, so a NaN clip length emits no `-t`
-  there, while `_build_seek_args` does emit one. Merging the two
-  changes pass-1 argv; do it only as a tested behaviour change.
+  guard: `duration_s` fallback requires
+  `sample_clip_seconds <= 0.0`, so NaN clip length emits no `-t`
+  there, while `_build_seek_args` does emit one. Merging two
+  changes pass-1 argv; do it only as tested behaviour change.
 - **`_build_input_args` emits `-f rawvideo` block before seek args**
   (`encode.py`). `-ss` / `-t` must stay input-side, ahead of `-i`, or
   ffmpeg decodes whole source. ADR-0506 / Bug #V6-1.
-- **A libx265 two-pass cell is pass 1 at the CRF, then ABR (ADR-1565).**
+- **libx265 two-pass cell is pass 1 at CRF, then ABR (ADR-1565).**
   `run_two_pass_encode` routes adapters with
   `two_pass_abr_at_pass1_bitrate` through `_encode_abr_two_pass`: pass 1
-  writes a real file (`EncodeRequest.pass1_output`, not the null muxer),
-  `_probe_bitrate_kbps` reads its bit rate with ffprobe (next to the ffmpeg
-  binary, through the same `runner`), pass 2 sets `abr_bitrate_kbps` and
+  writes real file (`EncodeRequest.pass1_output`, not null muxer),
+  `_probe_bitrate_kbps` reads its bit rate with ffprobe (next to ffmpeg
+  binary, through same `runner`), pass 2 sets `abr_bitrate_kbps` and
   `_with_abr_rate_control` swaps `-crf <q>` for `-b:v <kbps>k`. x265 exits 183
-  on a pass 2 with `-crf`. No bit rate fails the cell (exit 1); never guess one
-  or fall back to single pass. The result's request lists `-b:v` in
-  `extra_params`, which is how the corpus row records the ABR rate control;
-  its `crf` stays the pass-1 CRF. Go twin: `pkg/corpus.runABRTwoPassEncode`,
+  on pass 2 with `-crf`. No bit rate fails cell (exit 1); never guess one
+  or fall back to single pass. result's request lists `-b:v` in
+  `extra_params`, which is how corpus row records ABR rate control;
+  its `crf` stays pass-1 CRF. Go twin: `pkg/corpus.runABRTwoPassEncode`,
   `pkg/ffencode.withABRRateControl`.

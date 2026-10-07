@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/hip/integer_adm_hip.c
   - core/src/feature/hip/integer_ssim_hip.c
-invariant: Never return from submit while a picture upload transfer is in flight.
+invariant: Never return from submit while picture upload transfer is in flight.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Picture uploads: never return from submit() with one in flight
@@ -20,40 +20,40 @@ Different set on every run. With several extractors in one process: same wrong
 
 Rules:
 
-- Twin reads frame planes -> ask the context's shared frame (ADR-1408,
+- Twin reads frame planes -> ask context's shared frame (ADR-1408,
   `core/src/hip/shared_frame.h`): `vmaf_hip_plane_source_acquire_luma()` for
   ref + dis luma, `vmaf_hip_plane_source_acquire()` for any set of whole
-  planes; `fex->hip_frame` + a `VmafHipPlaneSource` in the private state;
-  `vmaf_hip_plane_source_close()` in close after the stream is drained. First
-  twin of a frame that asks uploads the plane (waiting upload, on its own
-  stream) plus every plane any twin asked for in the frame before; every
-  other twin gets the same device pointer, uploads nothing, waits for
+  planes; `fex->hip_frame` + `VmafHipPlaneSource` in private state;
+  `vmaf_hip_plane_source_close()` in close after stream is drained. First
+  twin of frame that asks uploads plane (waiting upload, on its own
+  stream) plus every plane any twin asked for in frame before; every
+  other twin gets same device pointer, uploads nothing, waits for
   nothing -> normally one wait per frame. No own `hipMalloc` staging for picture planes, no
-  `vmaf_hip_picture_upload()` in a twin. Adopted: `psnr_hip`, `float_psnr_hip`,
+  `vmaf_hip_picture_upload()` in twin. Adopted: `psnr_hip`, `float_psnr_hip`,
   `float_moment_hip`, `ciede_hip`, `integer_ssim_hip`, `float_ssim_hip`,
   `vif_hip`, `float_vif_hip`, `adm_hip`, `float_adm_hip`, `motion_hip`,
   `motion_v2_hip`, `float_motion_hip`.
   Not yet: see T-HIP-SHARED-FRAME-REMAINING-TWINS-2026-10-01 in
   `docs/state.md`.
 - Shared plane = read-only, packed (`width * bytes-per-sample` per row), valid
-  until the twin's next acquire or close. Frames alternate between two slots;
-  libvmaf collects frame N - 1 of a twin before its submit N, so slot N % 2 is
+  until twin's next acquire or close. Frames alternate between two slots;
+  libvmaf collects frame N - 1 of twin before its submit N, so slot N % 2 is
   free again at frame N + 2. Twin that needs frame N's plane at frame N + 1
-  keeps a copy: motion twins copy device-to-device into `prev_luma` behind
-  the SAD on their stream (`integer_motion_sad_hip.c`).
+  keeps copy: motion twins copy device-to-device into `prev_luma` behind
+  SAD on their stream (`integer_motion_sad_hip.c`).
 - Pictures are read only between `vmaf_hip_shared_frame_begin()` and
-  `vmaf_hip_shared_frame_end()`, which `vmaf_read_pictures()` puts around the
-  dispatch loop. Do not move `end()`, do not acquire outside the pair: the
-  caller refills the pictures when `vmaf_read_pictures()` returns.
-- Twin without shared frame (extractor API used directly, picture not the
-  announced one, part of a plane) uploads into own buffers inside the same
-  call, with the same wait. Nothing for the twin to do.
+  `vmaf_hip_shared_frame_end()`, which `vmaf_read_pictures()` puts around
+  dispatch loop. Do not move `end()`, do not acquire outside pair:
+  caller refills pictures when `vmaf_read_pictures()` returns.
+- Twin without shared frame (extractor API used directly, picture not
+  announced one, part of plane) uploads into own buffers inside same
+  call, with same wait. Nothing for twin to do.
 - Extractor-owned pinned staging stays valid for twins that convert or pack
-  on the host: `vmaf_hip_picture_upload_staged()` (host copy into
+  on host: `vmaf_hip_picture_upload_staged()` (host copy into
   `vmaf_hip_picture_staging_alloc()` buffer before return, device copy from
-  it, no wait; `cambi_hip`, SpEED twins, ADR-1378, ADR-1384) and the float
+  it, no wait; `cambi_hip`, SpEED twins, ADR-1378, ADR-1384) and float
   staging of `integer_ms_ssim_hip` / `integer_psnr_hvs_hip`. Buffer reuse next
-  frame safe only because `collect()` drains the stream the copies ran on and
+  frame safe only because `collect()` drains stream copies ran on and
   libvmaf collects frame N - 1 before submit N. Do not call
   `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly.
 - Upload stream = extractor's private stream (`lc.str`), even when kernels
@@ -71,15 +71,15 @@ Rules:
 - Single-frame fixture cannot see any of this; neither can determinism check
   alone. `core/test/test_hip_upload_race.c` covers every uploading extractor
   four ways: pooled frames against CPU (`hip_pooled_fixture.h`), both pictures
-  refilled the moment `submit()` returns (bit-identical scores), and both
+  refilled moment `submit()` returns (bit-identical scores), and both
   again with every extractor on one shared frame, with and without
   `n_subsample`. Add new extractor to its `race_cases[]` table.
-  `core/test/test_hip_shared_frame.c` checks the shared-frame contract
-  without a device.
+  `core/test/test_hip_shared_frame.c` checks shared-frame contract
+  without device.
 
 Wait costs host time, normally once per frame instead of once per twin since
 ADR-1408.
-Numbers: `docs/backends/hip/overview.md` "Picture uploads". Pinned planes the
+Numbers: `docs/backends/hip/overview.md` "Picture uploads". Pinned planes
 kernels read in place and pinned staging both measured slower on gfx1036
 (Research-1408); discrete AMD GPU unmeasured. Do not buy throughput back by
 dropping wait.

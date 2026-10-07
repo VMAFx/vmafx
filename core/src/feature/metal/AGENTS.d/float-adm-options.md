@@ -3,7 +3,7 @@ paths:
   - core/src/feature/metal/float_adm_metal.mm
   - core/src/feature/metal/float_adm.metal
   - core/src/feature/metal/metal_float_adm_math.h
-invariant: float_adm options reach the kernels (ADR-1220).
+invariant: float_adm options reach kernels (ADR-1220).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # float_adm options must reach the kernels (ADR-1220)

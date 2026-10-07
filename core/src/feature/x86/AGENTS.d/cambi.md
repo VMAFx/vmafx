@@ -12,7 +12,7 @@ invariant: Dispatch binds calculate_c_values_scan_avx2, not upstream calculate_c
 | Group | TUs that move in lockstep |
 | --- | --- |
 | **CAMBI stage kernels** (ADR-1256, Research-2065) | `cambi_avx2.c` (upstream mirror + fork-local scanned c-values driver at end) + `cambi_avx512.c` + `../arm64/cambi_neon.c` (fork-local) + scalar `../cambi.c`; AVX2 / AVX-512 / NEON c-values drivers share walk `../cambi_c_values_frame.h`. New AVX2 stage → AVX-512 + NEON twin same PR; dispatch only if measured faster. Tests: `test_cambi_stage_simd.c` (every stage kernel vs shipped scalar, guard bands), `test_cambi_dispatch_invariance.c` (whole extractor per cpumask), `test_cambi_simd.c` (c-values row). |
-| **CAMBI spatial-mask rows** (ADR-1256) | `cambi_avx2.c` (`compute_dp_row_avx2`, `compute_mask_row_avx2`) + `cambi_avx512.c` (`compute_dp_row_avx512`, `compute_mask_row_avx512`) + `../arm64/cambi_neon.c` (`compute_dp_row_neon`, `compute_mask_row_neon`) + scalar reference in `../cambi.c` (declared in `../cambi.h`). Adapted from upstream `86da14d03` but **not verbatim — keep the fork's versions on a sync**: the dp row keeps only `carry += broadcast(block total)` on the loop-carried chain (upstream's form is slower than scalar under Clang / icx), and the AVX2 mask row biases both compare operands by 2^31 so the signed `vpcmpgtd` equals the scalar unsigned compare for every input. Dispatch only what beats scalar on a measured run (ADR-1256); re-bench before wiring a changed kernel. Tested in `../../test/test_cambi_spatial_mask_simd.c`. |
+| **CAMBI spatial-mask rows** (ADR-1256) | `cambi_avx2.c` (`compute_dp_row_avx2`, `compute_mask_row_avx2`) + `cambi_avx512.c` (`compute_dp_row_avx512`, `compute_mask_row_avx512`) + `../arm64/cambi_neon.c` (`compute_dp_row_neon`, `compute_mask_row_neon`) + scalar reference in `../cambi.c` (declared in `../cambi.h`). Adapted from upstream `86da14d03` but **not verbatim — keep fork's versions on sync**: dp row keeps only `carry += broadcast(block total)` on loop-carried chain (upstream's form is slower than scalar under Clang / icx); AVX2 mask row biases both compare operands by 2^31 so signed `vpcmpgtd` equals scalar unsigned compare for every input. Dispatch only what beats scalar on measured run (ADR-1256); re-bench before wiring changed kernel. Tested in `../../test/test_cambi_spatial_mask_simd.c`. |
 
 ## CAMBI AVX2 scanned c-values invariants (Research-2065)
 
@@ -25,7 +25,7 @@ invariant: Dispatch binds calculate_c_values_scan_avx2, not upstream calculate_c
 - Band test unsigned via `min_epu16(v - base, size - 1) == v - base` (AVX2 has
   no unsigned 16-bit compare). `size >= 1` guaranteed by `alloc_cambi_buffers`.
 - No masked loads on AVX2 → scalar tail (`cambi_column_*`) < 16 cols. Never
-  vector-load past last column; a bit set past `n` → helper writes outside
+  vector-load past last column; bit set past `n` → helper writes outside
   histogram.
 - `packs(lo128, hi128)` + `movemask_epi8` = one bit per column, in order.
 

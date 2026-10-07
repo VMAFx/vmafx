@@ -44,7 +44,7 @@ Rules for new script in `ai/scripts/` or module in
    through `run_manifest.write_manifest_json()` or
    `run_manifest.dumps_manifest_json()`. Both accept any JSON-like root,
    recursively map `NaN` / positive infinity / negative infinity to `null`,
-   and serialize with `allow_nan=False`. The file writer must remain layered
+   and serialize with `allow_nan=False`. file writer must remain layered
    on `write_text_atomic()`; do not restore bare `json.dumps()` or
    `Path.write_text()` at these boundaries.
 
@@ -64,9 +64,9 @@ Rules for new script in `ai/scripts/` or module in
 
 ## ONNX graph metadata (ADR-1546)
 
-Read a graph's opsets and input / output names and shapes with
-`aiutils.onnx_signature.read_signature()`, not ad-hoc byte scans or a new
-`onnx` dependency: the registry validator runs where only `jsonschema` is
-installed. The reader skips nodes and initializers by their length prefix;
+Read graph's opsets and input / output names and shapes with
+`aiutils.onnx_signature.read_signature()`, not ad-hoc byte scans or new
+`onnx` dependency: registry validator runs where only `jsonschema` is
+installed. reader skips nodes and initializers by their length prefix;
 keep it free of recursion and of third-party imports.
-`ai/tests/test_onnx_signature.py` pins it to the shipped graphs.
+`ai/tests/test_onnx_signature.py` pins it to shipped graphs.

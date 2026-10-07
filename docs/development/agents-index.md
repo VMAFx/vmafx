@@ -63,6 +63,15 @@ The rules, written as in any other `AGENTS.md`.
 - The body starts with a level-one heading (`# Title`). Links are relative to
   the page, which is one directory deeper than the index:
   `../../../docs/adr/...` from `scripts/ci/AGENTS.d/`.
+- The body, `_index.md` and the `invariant:` line are agent text in the
+  internal register. Since the praetor pin `afb739ed81f3`
+  ([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)), `praetorctl
+  compile-context --verify` and `praetorctl audit` lint every tracked nested
+  `AGENTS.md`, and the index is rendered from these three. Check a page with
+  `praetorctl caveman check --kind=context <page>` and the index after
+  `make docs-fragments-write`. The usual finding is article density above
+  2.0 per 100 prose words; drop the articles and split sentences longer than
+  30 prose words at a `;` or `:`.
 
 ## Regenerate and check
 

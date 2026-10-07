@@ -18,9 +18,9 @@ invariant: Exempt = `release-please--` head ref AND bot author; always exits 0; 
   That ambiguity is exactly what `mustReport` list exists to close.
 - Only four authoring-discipline gates may consult it: Deliverables
   Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
-  Sync. The local pre-push mirror of the Deliverables Checklist
+  Sync. local pre-push mirror of Deliverables Checklist
   (`scripts/git-hooks/pre-push-pr-body-lint.sh`) consults it too, so pushing
-  the release-branch changelog cut is not blocked by a gate CI would skip.
+  release-branch changelog cut is not blocked by gate CI would skip.
   `Release Script Contract` and `ADR Collision Guard` stay armed on
   release PRs. Former = gate proving cut ran; also runs
   `tests/test-release-pr-exempt.sh`, so exemption's own test can never

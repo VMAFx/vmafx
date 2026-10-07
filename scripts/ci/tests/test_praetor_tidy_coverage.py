@@ -5,7 +5,8 @@
 
 Each case builds a throwaway git repository. The planted defects: a unit a lane measures that the
 lane file lacks, an exception the manifest block lacks, and a block edited by hand; ``--check``
-must fail each, and ``--write`` must repair it.
+must fail each, and ``--write`` must repair it. A HISS-11 entry of the repository list reaches the
+block with the expiry cap; an entry of a rule praetor does not read stays out.
 """
 
 from __future__ import annotations
@@ -100,6 +101,31 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         result = self.repo.run("--check")
         self.assertEqual(result.returncode, 1)
         self.assertIn("measured-sources.txt is stale", result.stdout)
+
+    def test_a_declared_praetor_rule_entry_is_rendered_with_the_cap(self) -> None:
+        workflow = self.repo.root / ".github/workflows/publish.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("on: push\n")
+        (self.repo.root / ".config/lint-exceptions.d/HISS-11.toml").write_text(
+            '[[exception]]\npath = ".github/workflows/publish.yml"\n'
+            'reason = "provenance at Level 2"\nexpires = 2027-03-31\n'
+        )
+        self.repo.run("--write")
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertIn(
+            '  - rule: HISS-11\n    path: ".github/workflows/publish.yml"\n'
+            '    reason: "provenance at Level 2"\n    expires: "2027-01-04"\n',
+            manifest,
+        )
+
+    def test_an_entry_of_another_rule_stays_out_of_the_block(self) -> None:
+        (self.repo.root / ".config/lint-exceptions.d/black.toml").write_text(
+            '[[exception]]\npath = "src/a.c"\nreason = "formatter"\nexpires = 2027-06-30\n'
+        )
+        self.repo.run("--write")
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertNotIn("rule: black", manifest)
+        self.assertNotIn('path: "src/a.c"', manifest)
 
     def test_write_keeps_the_text_around_the_block(self) -> None:
         manifest = self.repo.root / ".standards.yaml"

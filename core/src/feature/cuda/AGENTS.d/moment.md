@@ -18,10 +18,10 @@ invariant: float_moment_cuda reproduces CPU float_moment bit for bit, past 2^53 
 - NEVER `r * r` in integers for 16bpc samples (1.0e-4 off at 16 bit), never
   fp64 square, never plain `*` (intrinsic = contract).
 - Exact sum = CPU's while <= 2^53 units (every frame <= 2^21 pixels, every
-  8/10/12-bit frame). Past it CPU rounds per add: on a frame that can get
+  8/10/12-bit frame). Past it CPU rounds per add: on frame that can get
   there (`vmaf_moment_sum_may_round()`) `moment_cuda_dispatch_sum()` launches
-  the four kernels of `feature/float_moment_sum_gpu.h` after the frame kernel
-  (ADR-1497; page `../../AGENTS.d/float-moment-sum.md`); they write the CPU's
+  four kernels of `feature/float_moment_sum_gpu.h` after frame kernel
+  (ADR-1497; page `../../AGENTS.d/float-moment-sum.md`); they write CPU's
   sums into accumulators 2 and 3. Row buffers owned here
   (`vmaf_cuda_buffer_free_owned`). NEVER skip them for 16-bit frames above
   2^21 pixels.
@@ -29,5 +29,5 @@ invariant: float_moment_cuda reproduces CPU float_moment bit for bit, past 2^53 
   content.
 - Guards: `test_cuda_float_moment_parity` (+ `_large`; cases in
   `core/test/float_moment_twin_parity.h`, shared with SYCL and HIP tests; `==`
-  past 2^53 and at the 2^53 boundary), `test_cuda_float_moment_exact_contract.py`,
+  past 2^53 and at 2^53 boundary), `test_cuda_float_moment_exact_contract.py`,
   `test_float_moment_sum_contract.py`.

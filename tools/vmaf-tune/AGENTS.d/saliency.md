@@ -42,9 +42,9 @@ invariant: Saliency inference consumes RGB; predictor uses raw-YUV helper; tempo
   module top-level; lazy-load via `_import_onnxruntime` so corpus
   subcommand and unit tests work without it installed.
 - **Any frame height is valid; no `height % 8` guard (ADR-1540 follow-up).**
-  `compute_saliency_map()` and `pkg/saliency.ComputeMap()` zero-pad the
-  tensor to a multiple of 32 and crop the map back, which covers the
+  `compute_saliency_map()` and `pkg/saliency.ComputeMap()` zero-pad
+  tensor to multiple of 32 and crop map back, which covers
   student's three stride-2 stages for every size (measured down to 1x1
-  with `saliency_student_v1.onnx`). Do not reintroduce a divisibility
+  with `saliency_student_v1.onnx`). Do not reintroduce divisibility
   check; `tests/test_saliency.py::test_compute_saliency_map_height_not_multiple_of_8`
-  and the Go `TestComputeMap` subtest of the same name pin it.
+  and Go `TestComputeMap` subtest of same name pin it.

@@ -4,7 +4,7 @@ paths:
   - core/src/feature/metal/integer_adm_metal_host.h
   - core/src/feature/metal/metal_integer_adm_uniforms.h
   - core/src/feature/metal/integer_adm_metal.mm
-invariant: integer_adm_metal: host logic, slots and the scale-1 parent (ADR-1806).
+invariant: integer_adm_metal: host logic, slots and scale-1 parent (ADR-1806).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `integer_adm_metal`: host logic, slots, scale-1 parent (ADR-1806)
@@ -24,17 +24,17 @@ exact case off. Six defects, each now one definition:
   scores = `adm_cm_result()` / `adm_csf_den_result()` + `i4_` forms, double
   noise weight. No local table, no local quant step, no local `powf`.
 - **Scale 1 reads int16** (`integer_adm_dwt_vert_s1`, CPU `i16_to_i32()`);
-  scales 2-3 int32 (`integer_adm_dwt_vert_s123`). Never bind the int16 band to
-  an int kernel.
+  scales 2-3 int32 (`integer_adm_dwt_vert_s123`). Never bind int16 band to
+  int kernel.
 - **Scales 1-3 masking terms** = `vmaf_mtl_iadm_i4_masking_term()` with
   `I4AdmCmCtx::add_bef_shift_flt` = INT32_MIN (Netflix#955, ADR-0155), never
   +2^31. Denominator square add = `I4AdmDenCtx::add_shift_sq` = 2^shift_sq.
 - **`adm_skip_scale0`**: scale 0 = DWT only, num 0, den 1e-10f, AIM 0.
-- **`kernel` is a macro in the host shim**: no host-header identifier named
-  `kernel` (stage field = `entry`); no MSL type names (`half`) in headers the
+- **`kernel` is macro in host shim**: no host-header identifier named
+  `kernel` (stage field = `entry`); no MSL type names (`half`) in headers
   kernels include (`test_metal_shader_build_contract`).
 - Guards: `test_metal_integer_adm_host_replay` (unmodified `.metal` through
   `core/test/metal_msl_host_shim.h`, `==` vs CPU, guard bands),
   `test_metal_integer_adm_math`, `test_metal_integer_adm_exact_contract.py`.
   Device: `test_metal_integer_adm_parity`. Replay limits: one thread per
-  threadgroup (no barrier/race coverage), not the Metal compiler.
+  threadgroup (no barrier/race coverage), not Metal compiler.

@@ -10,15 +10,15 @@ invariant: Windows nvcc host = build MSVC, else newest vswhere toolset, else PAT
 ## Windows CUDA compiler discovery
 
 `meson.build` must assign `cl_path` on every discovery route. NVCC's `-ccbin`
-and MSVC include discovery consume that same path. Order: the build's own
-MSVC (`nvcc_build_msvc`, from `cxx` when its id is `msvc`), then the newest
-toolset under the latest `vswhere` install (sorted by `[version]`, never the
-first `cl.exe` of a recursive walk: that was the v142 toolset 14.29 of VS 18,
+and MSVC include discovery consume that same path. Order: build's own
+MSVC (`nvcc_build_msvc`, from `cxx` when its id is `msvc`), then newest
+toolset under latest `vswhere` install (sorted by `[version]`, never
+first `cl.exe` of recursive walk: that was v142 toolset 14.29 of VS 18,
 whose STL hides `<numbers>` from nvcc's C++20 host passes;
 `T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`), then `PATH`.
-`nvcc_build_msvc` is assigned before the `host_machine.system() == 'windows'`
-block because the regression extracts that block into a project without
-compilers and sets the variable itself. Keep configure regression in
+`nvcc_build_msvc` is assigned before `host_machine.system() == 'windows'`
+block because regression extracts that block into project without
+compilers and sets variable itself. Keep configure regression in
 `../test/test_windows_cuda_compiler_discovery.py` when rebasing Windows
 discovery block from Netflix PR #1472.
 

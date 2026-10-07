@@ -11,15 +11,15 @@ invariant: `make lint-c` lints exactly Ninja's configured commands, every varian
 
 `lint-configured.py` owns local `make lint-c` selection. Make first regenerates
 Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
-overrides, then builds generated prerequisites. Make must prepend the absolute
+overrides, then builds generated prerequisites. Make must prepend absolute
 `VIRTUAL_ENV_ABS` to `PATH`: Meson persists its resolved Ninja command and
-later launches it from the build directory, where relative `.venv/bin` is
-invalid. The real-Make fixture asserts this path stays absolute. Because Meson
+later launches it from build directory, where relative `.venv/bin` is
+invalid. real-Make fixture asserts this path stays absolute. Because Meson
 1.12 no longer materialises its native database, `write-compile-commands.py`
 must then export
 exactly Ninja's `c_COMPILER` and `cpp_COMPILER` rules. Keep that export
-validated, atomic and fail-closed; never accept an empty/partial rule set or
-replace a last-valid database after a failed export. Intersect the resulting
+validated, atomic and fail-closed; never accept empty/partial rule set or
+replace last-valid database after failed export. Intersect resulting
 native database with tracked native sources, including engine roots, tests,
 C++ tools and tracked vendored code. Preserve every configured command variant;
 never infer commands for inactive backends, never regenerate database with
@@ -30,12 +30,12 @@ scope, run cppcheck even after clang-tidy fails. Scratch-Git fixture
 boundaries; `tests/test_write_compile_commands.py` owns exporter failure and
 last-valid-file preservation. Required Pre-Commit runs both when driver,
 exporter, workflows or Makefile change.
-Every configured clang-tidy command carries `--warnings-as-errors=*`. The tool
-otherwise exits zero after printing ordinary findings, which turns a red
-whole-tree inventory into a false-green gate. Preserve the fixture that emits
-a warning with clang-tidy's default zero exit and proves the driver promotes it
-to failure. Do not replace this with log parsing, a baseline, touched-file
-selection, or an upstream-origin exemption.
+Every configured clang-tidy command carries `--warnings-as-errors=*`. tool
+otherwise exits zero after printing ordinary findings, which turns red
+whole-tree inventory into false-green gate. Preserve fixture that emits
+warning with clang-tidy's default zero exit and proves driver promotes it
+to failure. Do not replace this with log parsing, baseline, touched-file
+selection, or upstream-origin exemption.
 Does not replace lane-specific ratchet measurements or their baselines.
 
 Real-Make fixtures create failing/recording pip sentinel before fake

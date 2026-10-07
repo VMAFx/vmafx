@@ -29,26 +29,26 @@ invariant: LDG channel reads, tile indexing padding clamping, and unwind helper 
   channel reads through L1 read-only texture cache. Any future kernel reading
   per-pixel plane data from `VmafPicture` must follow same pattern.
   See [ADR-0762](../../../../../docs/adr/0762-cuda-ciede-ldg.md).
-- **The `*_unwind` / `*_init_unwind` helpers are the single teardown path for
-  their extractor, and the arithmetic helpers must stay `static` in the same
+- **`*_unwind` / `*_init_unwind` helpers are single teardown path for
+  their extractor, and arithmetic helpers must stay `static` in same
   translation unit (HISS-21 / 2026-09-21).** Every extractor's old `free_ref` /
   `free_buffers` / `fail_cuda` label now lives in one `static` helper that holds
-  the label's statements verbatim; callers pass their live `err` / `ret` so the
-  returned code is unchanged. `ssim_cuda.c`'s `issim_init_unwind` takes an
-  `ISSIM_UNWIND_*` stage because it replaced a three-level fall-through cascade —
-  adding a resource means adding a stage, not a second exit path. The helpers
+  label's statements verbatim; callers pass their live `err` / `ret` so
+  returned code is unchanged. `ssim_cuda.c`'s `issim_init_unwind` takes
+  `ISSIM_UNWIND_*` stage because it replaced three-level fall-through cascade —
+  adding resource means adding stage, not second exit path. helpers
   carrying score arithmetic (`integer_ssim_setup_geometry`'s `c1` / `c2`,
   `motion_v2_stamp_value`, `motion_v2_emit_frame`, `float_psnr_peak_for_bpc`)
-  must stay `static` and keep each expression in one statement: moving an operand
-  across a call boundary, or letting one of these become external, re-opens the
-  FMA-contraction divergence ADR-1253 closed. On rebase: reapply the helper
-  boundary, never restore the label.
-  `integer_adm_cuda.c` is out of scope for the helper NAMES above: #1507
+  must stay `static` and keep each expression in one statement: moving operand
+  across call boundary, or letting one of these become external, re-opens
+  FMA-contraction divergence ADR-1253 closed. On rebase: reapply helper
+  boundary, never restore label.
+  `integer_adm_cuda.c` is out of scope for helper NAMES above: #1507
   rewrote its init and teardown while this branch was open, so it releases
   through paired helpers (`adm_cuda_init_device` / `adm_cuda_release_device`,
   `adm_cuda_init_buffers` / `adm_cuda_free_buffers`,
   `adm_cuda_load_modules` / `adm_cuda_unload_modules`) and keeps one
-  `CHECK_CUDA_GOTO` ladder inside `adm_cuda_init_device_locked()`, the same
-  macro the rest of the CUDA tree uses. The rules are unchanged for it: the
-  release set and release order on every exit path, a real error code out of
-  every failure, and no arithmetic expression split across a boundary.
+  `CHECK_CUDA_GOTO` ladder inside `adm_cuda_init_device_locked()`, same
+  macro rest of CUDA tree uses. rules are unchanged for it:
+  release set and release order on every exit path, real error code out of
+  every failure, and no arithmetic expression split across boundary.

@@ -277,9 +277,9 @@ def _instruction(directory: str) -> str:
     return (
         "Generated index. Before editing: match every path you will touch against\n"
         "`Touching` in [Topic pages](#topic-pages) and read each matching page first; no\n"
-        "match, no page. Text between here and the table binds every file of this\n"
-        "directory. `Touching` paths: relative to this directory, leading `/` =\n"
-        f"repository root. New invariant: a page under `{PAGES_DIR}/` ([how]({guide})).\n"
+        "match, no page. Text between here and [Topic pages](#topic-pages) binds every\n"
+        "file of this directory. `Touching` paths: relative to this directory, leading\n"
+        f"`/` = repository root. New invariant: new page under `{PAGES_DIR}/` ([how]({guide})).\n"
     )
 
 

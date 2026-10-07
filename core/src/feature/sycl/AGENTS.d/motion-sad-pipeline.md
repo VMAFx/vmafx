@@ -13,16 +13,16 @@ invariant: Motion SAD = one shared kernel, difference first; sum |blur(prev - cu
   (`integer_motion_pipeline_sycl.{h,cpp}`): `sum |blur(prev - cur)|`,
   vertical pass rounded `>> bpc`, horizontal `>> 16`, reflect-101 borders =
   CPU `integer_motion.c` / `integer_motion_v2.c` `motion_score_pipeline_*`
-  since the Netflix a4a1492d port (PR #532). Bit-exact; gate
+  since Netflix a4a1492d port (PR #532). Bit-exact; gate
   `test_sycl_motion_tiny_frames` compares with `==` (3x3 .. 1283x723, 8/10/16
   bit). `blur(cur) - blur(prev)` rounds twice per pixel -> 2e-4 off at 17x17;
   never reintroduce it. `prev - cur` order load-bearing (arithmetic shift
   floors negatives). Vertical sum int32 up to 15 bpc, int64 at 16 (host picks
-  the `submit_sad<Acc>` instance). Kernel lives only in the pipeline TU
+  `submit_sad<Acc>` instance). Kernel lives only in pipeline TU
   (Research-2090 name collision); extractor TUs hold none. `motion_sycl` keeps
-  the raw luma of the previous frame in `d_raw_y[2]` (device memcpy from the
-  shared frame after the kernel), because the shared frame buffers are
-  overwritten by the next upload. Measured cost vs the old per-frame blur
+  raw luma of previous frame in `d_raw_y[2]` (device memcpy from
+  shared frame after kernel), because shared frame buffers are
+  overwritten by next upload. Measured cost vs old per-frame blur
   (4K micro-benchmark, kernel + copy): about +11% on B580 and UHD 770.
 
 | SYCL TU | CPU TU | Parity test | ADR |

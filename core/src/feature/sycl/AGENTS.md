@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Orientation for agents on per-feature SYCL kernels (DPC++).
 Parent: [../AGENTS.md](../AGENTS.md). Backend runtime (queue, USM,
@@ -23,7 +23,7 @@ feature/sycl/
 ```
 
 All TUs compiled with `icpx` (Intel oneAPI) — build line
-under [`../../meson.build`](../../meson.build) adds `-fsycl` and the SYCL
+under [`../../meson.build`](../../meson.build) adds `-fsycl` and SYCL
 strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 
 ## Ground rules
@@ -38,13 +38,13 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 
 ## Twin-update rules
 
-When a SYCL TU has a live CUDA, HIP, or Metal twin, user-visible behavior and
-numeric fixes must be reviewed across those twins in the same PR. Vulkan was
-removed in ADR-0726 and is not a live twin. The complete CUDA mapping lives in
-[`../cuda/AGENTS.md`](../cuda/AGENTS.md). The cross-backend parity gate at
+When SYCL TU has live CUDA, HIP, or Metal twin, user-visible behavior and
+numeric fixes must be reviewed across those twins in same PR. Vulkan was
+removed in ADR-0726 and is not live twin. complete CUDA mapping lives in
+[`../cuda/AGENTS.md`](../cuda/AGENTS.md). cross-backend parity gate at
 `places=4`
 ([`scripts/ci/cross_backend_parity_gate.py`](../../../../scripts/ci/cross_backend_parity_gate.py),
-ADR-0214) catches drift only after a full GPU run; it does not replace that
+ADR-0214) catches drift only after full GPU run; it does not replace that
 source review.
 
 ## Rebase-sensitive invariants
@@ -60,29 +60,29 @@ source review.
 | `integer_ciede_sycl.cpp`, `sycl_ciede_math.h`, `/core/test/test_sycl_ciede_parity.c` | [ciede](AGENTS.d/ciede.md) | integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp32 pairs match ciede.c. |
 | `/scripts/ci/clang-tidy-sycl.sh`, `/scripts/ci/gen-sycl-compile-commands.py`, `/.clang-tidy` | [clang-tidy](AGENTS.d/clang-tidy.md) | icpx-aware clang-tidy; stock LLVM clang-tidy cannot resolve <sycl/sycl.hpp>. |
 | `/core/src/sycl/dmabuf_import.cpp`, `integer_motion_sycl.cpp` | [dmabuf-vaapi](AGENTS.d/dmabuf-vaapi.md) | VAAPI / dmabuf zero-copy import — FFmpeg libvmaf_sycl pipeline. |
-| `/scripts/ci/exact_twins.d/*`, `/scripts/ci/cross_backend_calibration.py`, `/core/test/test_sycl_exact_twins.c` | [exact-twins](AGENTS.d/exact-twins.md) | Twins declared exact as a group; bit-identical with CPU reference, measured at --precision max. |
+| `/scripts/ci/exact_twins.d/*`, `/scripts/ci/cross_backend_calibration.py`, `/core/test/test_sycl_exact_twins.c` | [exact-twins](AGENTS.d/exact-twins.md) | Twins declared exact as group; bit-identical with CPU reference, measured at --precision max. |
 | `float_adm_sycl.cpp`, `sycl_float_adm_math.h`, `/core/test/test_sycl_float_adm_parity.c` | [float-adm](AGENTS.d/float-adm.md) | float_adm_sycl.cpp = CPU float_adm, bit for bit; options must be captured, not hardcoded. |
 | `integer_moment_sycl.cpp`, `/core/test/test_sycl_float_moment_parity.c` | [float-moment](AGENTS.d/float-moment.md) | float_moment_sycl = CPU float_moment, bit for bit past 2^53 units too; integers only; no scratch. |
 | `float_motion_sycl.cpp`, `/core/test/test_sycl_float_motion_parity.c`, `/core/test/test_sycl_twin_option_parity.c` | [float-motion](AGENTS.d/float-motion.md) | float_motion_sycl.cpp SAD = CPU order, bit for bit; emits through motion_clip() / motion_blend_clip(), motion3 included. |
 | `float_psnr_sycl.cpp`, `/core/test/test_sycl_float_psnr_parity.c` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_sycl = CPU float_psnr, bit for bit past 2^53 units too; 64-bit int row-segment sums. |
-| `integer_ssim_sycl.cpp`, `sycl_ssim_terms.h`, `/core/test/test_sycl_ssim_parity.c` | [float-ssim](AGENTS.d/float-ssim.md) | float_ssim_sycl terms = CPU doubles, frame sums = CPU raster order; decimation is bit-exact with the CPU. |
+| `integer_ssim_sycl.cpp`, `sycl_ssim_terms.h`, `/core/test/test_sycl_ssim_parity.c` | [float-ssim](AGENTS.d/float-ssim.md) | float_ssim_sycl terms = CPU doubles, frame sums = CPU raster order; decimation is bit-exact with CPU. |
 | `float_vif_sycl.cpp`, `sycl_float_vif_math.h`, `/core/test/test_sycl_float_vif_parity.c` | [float-vif](AGENTS.d/float-vif.md) | float_vif_sycl.cpp = CPU arithmetic, bit for bit; options must be captured, not hardcoded. |
 | `sycl_soft_double.h`, `sycl_soft_signed.h` | [fp64-fallback](AGENTS.d/fp64-fallback.md) | fp64-free kernels non-negotiable; double emulation through soft double on hardware without native fp64. |
 | `integer_motion_sycl.cpp`, `/core/test/test_sycl_init_unwind.cpp` | [init-unwind](AGENTS.d/init-unwind.md) | A failed extractor init owns its cleanup; calls NULL-safe local close callback. |
 | `integer_psnr_sycl.cpp`, `/core/test/test_sycl_psnr_parity.c` | [integer-psnr](AGENTS.d/integer-psnr.md) | integer_psnr_sycl.cpp = full CPU psnr option table, bit-exact; ceiling division for chroma plane geometry. |
 | `integer_ssim_sycl.cpp`, `sycl_integer_ssim_math.h`, `/core/test/test_sycl_ssim_parity.c` | [integer-ssim](AGENTS.d/integer-ssim.md) | integer_ssim_sycl = CPU ssim, bit for bit (ADR-1443); SSIM twins take CPU options. |
 | `integer_vif_sycl.cpp`, `sycl_integer_vif_math.h`, `/core/test/test_sycl_vif_parity.c` | [integer-vif](AGENTS.d/integer-vif.md) | integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling division for odd widths. |
-| `integer_*.cpp`, `float_*.cpp` | [kernel-identities](AGENTS.d/kernel-identities.md) | Kernel identities and output captures have an explicit boundary. |
+| `integer_*.cpp`, `float_*.cpp` | [kernel-identities](AGENTS.d/kernel-identities.md) | Kernel identities and output captures have explicit boundary. |
 | `sycl_compat.h`, `integer_ssim_sycl.cpp` | [local-accessor](AGENTS.d/local-accessor.md) | Stencil/convolution SYCL kernels MUST use local_accessor for tap access. |
 | `integer_motion_sycl.cpp`, `/core/test/test_sycl_motion_add_uv_parity.c` | [motion-add-uv](AGENTS.d/motion-add-uv.md) | integer_motion_sycl.cpp::motion_add_uv GPU contract; queue-sync invariant, no host wait in submit. |
-| `integer_motion_sycl.cpp`, `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | SYCL motion twins keep frame n-2 outside the recorded graph and flush with the CPU window function; no new kernel. |
+| `integer_motion_sycl.cpp`, `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | SYCL motion twins keep frame n-2 outside recorded graph and flush with CPU window function; no new kernel. |
 | `integer_motion_pipeline_sycl.*`, `/core/test/test_sycl_motion*` | [motion-sad-pipeline](AGENTS.d/motion-sad-pipeline.md) | Motion SAD = one shared kernel, difference first; sum \|blur(prev - cur)\|. |
-| `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_v2_parity.c` | [motion-v2](AGENTS.d/motion-v2.md) | integer_motion_v2_sycl.cpp reads the shared frame; flush derives motion2_v2 / motion3_v2 via the CPU window function. |
+| `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_v2_parity.c` | [motion-v2](AGENTS.d/motion-v2.md) | integer_motion_v2_sycl.cpp reads shared frame; flush derives motion2_v2 / motion3_v2 via CPU window function. |
 | `integer_motion_sycl.cpp`, `/core/test/test_sycl_motion*` | [motion](AGENTS.d/motion.md) | motion_sycl output set = CPU motion, and motion_force_zero lives in submit / collect. |
 | `integer_ms_ssim_sycl.cpp`, `/core/test/test_sycl_ms_ssim_parity.c` | [ms-ssim](AGENTS.d/ms-ssim.md) | integer_ms_ssim_sycl.cpp = CPU arithmetic, type for type; honours enable_chroma, enable_lcs, enable_db. |
 | `integer_*.cpp`, `/core/src/feature/cuda/integer_*.c` | [option-table-sync](AGENTS.d/option-table-sync.md) | Adding feature knob to any one backend must sync option tables across backends. |
 | `/core/src/meson.build`, `sycl_compat.h` | [orientation](AGENTS.d/orientation.md) | Orientation for agents on per-feature SYCL kernels and governing ADRs. |
-| `/scripts/ci/cross_backend_parity_gate.py`, `/core/test/test_sycl_*_parity.c` | [parity-tests](AGENTS.d/parity-tests.md) | Every shipping SYCL kernel here must have a scalar-vs-SYCL parity test. |
+| `/scripts/ci/cross_backend_parity_gate.py`, `/core/test/test_sycl_*_parity.c` | [parity-tests](AGENTS.d/parity-tests.md) | Every shipping SYCL kernel here must have scalar-vs-SYCL parity test. |
 | `integer_psnr_hvs_sycl.cpp`, `/core/test/test_sycl_psnr_hvs_parity.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT lives in local memory. |
 | `integer_*.cpp`, `float_*.cpp` | [queue-sync](AGENTS.d/queue-sync.md) | Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait. |
 | `sycl_compat.h`, `integer_adm_sycl.cpp`, `integer_vif_sycl.cpp`, `integer_ssim_sycl.cpp`, `integer_motion_pipeline_sycl.cpp`, `ssimulacra2_sycl.cpp` | [scratch-memory](AGENTS.d/scratch-memory.md) | No scratch memory in kernels; zero private_mem_size and spill_memory_size on xe. |

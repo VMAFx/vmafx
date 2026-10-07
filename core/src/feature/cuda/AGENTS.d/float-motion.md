@@ -11,12 +11,12 @@ invariant: float_motion emits CPU motion3 and executes SAD in bit-exact CPU orde
 - **`float_motion_cuda` emits CPU `motion3`**
   (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`): `motion_blend_clip()` =
   CPU `float_motion.c::motion_blend_clip` (fps weight, blend, cap) of
-  `motion2`; frame 0 from the first SAD at index 1, tail from `flush`, `0`
-  for a one-frame input. `motion_blend_factor` / `motion_blend_offset`
+  `motion2`; frame 0 from first SAD at index 1, tail from `flush`, `0`
+  for one-frame input. `motion_blend_factor` / `motion_blend_offset`
   declared in CPU table order (order spells feature names, e.g.
   `motion3_mbf_0.5_mbo_2`). `flush` appends through
-  `motion_append_once()` (probe, then append) because the pending collect
-  may already have written the tail.
+  `motion_append_once()` (probe, then append) because pending collect
+  may already have written tail.
 - **`float_motion_cuda` SAD = CPU order, bit for bit (ADR-1409).**
   `float_motion.c::compute_motion_simd()` = one fp32 running sum per row
   (`float_sad_line*`, all SIMD twins sequential), one fp32 sum over rows,
@@ -35,8 +35,8 @@ invariant: float_motion emits CPU motion3 and executes SAD in bit-exact CPU orde
 
 - Tile loads index through `vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx,
   sup), sup)` (`cuda/cuda_tile_index.h`), as HIP's `fm_tile_index()`. Bare
-  reflect-101 sent padding loads of a plane 3-9 or 17 samples wide / high to
-  a negative index: a read before the plane, into memory no output uses
+  reflect-101 sent padding loads of plane 3-9 or 17 samples wide / high to
+  negative index: read before plane, into memory no output uses
   (T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05). Scores unchanged.
   Guard: `test_cuda_kernel_source_contract.py`
   (`test_unclamped_float_motion_tile_mirror_is_detected`).

@@ -7,6 +7,16 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Praetor pin afb739ed81f3 (2026-10-07)
+
+`chore/praetor-pin-afb739ed`, [ADR-2321](adr/2321-praetor-pin-afb739ed.md). Fork-only governance files; no upstream file. Engine output
+(take master's side on a conflict, then regenerate in a throwaway copy with the pinned engine): `PRAETOR_REF`, `tools/markdownlint/`,
+the DevContainer bundle (six `praetor-source.*.b64` parts), `.config/agent/hooks/block_evasion.py`, `.paperclip/harness.json`,
+`.paperclip/rules.md` and the `register.sources` digest in `.standards.yaml`, and the register block of `AGENTS.md` with the six compiled
+context files (`praetorctl compile-context`). The `exceptions:` block of `.standards.yaml` is generated: run
+`python3 scripts/ci/praetor_tidy_coverage.py --write`. A nested `AGENTS.md` or `AGENTS.d/` page brought in by a rebase or an upstream
+sync must pass `praetorctl caveman check --kind=context`; the indexes come from `make docs-fragments-write`.
+
 ## Windows: _wsopen_s permission mask (2026-10-07)
 
 `fix/msvc-wsopen-pmode`. no rebase impact: fork-only `compat/path_utf8.c`; in `svm.cpp` the `vmaf_open_bin_crt()` helper (fork edit of the vendored libsvm open call) masks `pmode`; keep the mask when re-syncing.

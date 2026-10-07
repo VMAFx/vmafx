@@ -11525,6 +11525,12 @@
         "scripts/research/tests/test_radar_collect.py": 1
       },
       "target": "2171-research-radar.md"
+    },
+    "2321": {
+      "sites": {
+        ".config/lint-exceptions.d/HISS-11.toml": 1
+      },
+      "target": "2321-praetor-pin-afb739ed.md"
     }
   },
   "retired": {

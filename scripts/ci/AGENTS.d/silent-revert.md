@@ -3,7 +3,7 @@ paths:
   - scripts/ci/check-silent-revert.py
   - scripts/ci/silent-revert-allowlist.json
   - scripts/ci/tests/test_check_silent_revert.py
-invariant: Measure the merge result, exclude merge commits from intent, use the live target tip, fail closed.
+invariant: Measure merge result, exclude merge commits from intent, use live target tip, fail closed.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # check-silent-revert.py invariants (ADR-1284 / ADR-1291)
@@ -32,14 +32,14 @@ Four load-bearing properties. Drop one, gate becomes decoration.
    resolve cleanly, git without `merge-tree --write-tree`: all exit non-zero.
    Never print `clean` for case gate could not analyse.
 
-There are two declaration mechanisms. A one-off deliberate revert declares the
-whole PR with a `revert:` title, `reverts: #N`, or
-`intentional revert: <reason>`. An accepted ADR that requires restoring work
-the target once lost uses `silent-revert-allowlist.json`, constrained by
-detector, exact path, exact full commit for `reverse-hunk`, and a regex that
-matches every evidence line. The latter is an expiring declaration, not a path
-suppression: remove it when the finding disappears. Never add a bare path or
-source-tree exclusion, and never loosen an entry to make a new finding match.
+There are two declaration mechanisms. one-off deliberate revert declares
+whole PR with `revert:` title, `reverts: #N`, or
+`intentional revert: <reason>`. accepted ADR that requires restoring work
+target once lost uses `silent-revert-allowlist.json`, constrained by
+detector, exact path, exact full commit for `reverse-hunk`, and regex that
+matches every evidence line. latter is expiring declaration, not path
+suppression: remove it when finding disappears. Never add bare path or
+source-tree exclusion, and never loosen entry to make new finding match.
 `GENERATED_PREFIXES`
 covers rendered files only; never widen it to source trees.
 `is_evidence()` drops conflict markers — `0c494cca0` committed three into

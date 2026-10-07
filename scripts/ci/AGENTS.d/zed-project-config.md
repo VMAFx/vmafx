@@ -7,11 +7,11 @@ invariant: `.zed/` holds project-scoped settings only; test and files change tog
 <!-- markdownlint-disable MD013 MD060 -->
 # Zed project-configuration contract
 
-`tests/test_zed_project_config.py` is the fail-closed contract for the
+`tests/test_zed_project_config.py` is fail-closed contract for
 project-scoped Zed files. It must keep rejecting user-only `agent` and
-`agent_servers` roots, the retired numbered workspace root, `.venv/bin/`
-assumptions, deleted helper paths, the deprecated Python MCP entrypoint, and
-loss of the three standards-governance tasks. Update the test together with
-`.zed/` only when exact installed-version source proves a schema or executable
-change; a Zed JSON parse alone does not prove that project settings apply the
+`agent_servers` roots, retired numbered workspace root, `.venv/bin/`
+assumptions, deleted helper paths, deprecated Python MCP entrypoint, and
+loss of three standards-governance tasks. Update test together with
+`.zed/` only when exact installed-version source proves schema or executable
+change; Zed JSON parse alone does not prove that project settings apply
 keys.

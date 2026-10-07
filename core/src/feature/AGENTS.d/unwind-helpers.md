@@ -15,7 +15,7 @@ Cleanup `goto` is gone from `ciede`, `feature_collector`, `feature_dists`,
 constructor, in same translation unit, releasing resources in same order old
 `free_*:` chain used. Shallow exits reach same helper; members not yet acquired
 are still NULL, and `free(NULL)` is no-op. Where release set cannot be inferred
-from NULL — feature-collector mutex and aggregate vector, pu21 buffer pair —
+from NULL (feature-collector mutex and aggregate vector, pu21 buffer pair):
 helper takes explicit stage enum and releases every stage at or below it,
 highest first.
 

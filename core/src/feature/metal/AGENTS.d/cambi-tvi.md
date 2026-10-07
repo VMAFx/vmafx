@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/metal/integer_cambi_metal.mm
   - core/src/feature/metal/integer_cambi.metal
-invariant: CAMBI uses the shared TVI helper and the CPU's border rules (ADR-1219).
+invariant: CAMBI uses shared TVI helper and CPU's border rules (ADR-1219).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CAMBI: use the shared TVI helper and the CPU's border rules (ADR-1219)

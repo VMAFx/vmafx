@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1312), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1313), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5259,3 +5259,7 @@ Every ADR, one heading each (1312), so the site search finds an ADR by its title
 ## ADR-2171: A weekly research radar over public video-quality sources
 
 [2171-research-radar](2171-research-radar.md)
+
+## ADR-2321: Move the praetor pin to afb739ed81f3 and meet its nested-context, supply-chain and harness checks
+
+[2321-praetor-pin-afb739ed](2321-praetor-pin-afb739ed.md)

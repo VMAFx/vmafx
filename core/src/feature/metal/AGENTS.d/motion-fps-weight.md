@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/metal/float_motion_metal.mm
   - core/src/feature/metal/integer_motion_metal.mm
-invariant: motion_fps_weight is the CPU value, per frame (ADR-1498).
+invariant: motion_fps_weight is CPU value, per frame (ADR-1498).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Rebase-sensitive invariants (motion_fps_weight)

@@ -13,10 +13,10 @@ invariant: SSIMULACRA 2 regression gates, linear RGB conversion, blur, and SIMD 
   - **Non-finite score semantics (ADR-1302)** are also lock-step across scalar,
     AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal host code. Edge
     differences go through `ssimulacra2_score.h` before accumulation and every
-    polynomial pool goes through its finalizer; each extractor rejects a
+    polynomial pool goes through its finalizer; each extractor rejects
     non-finite result before collector publication. Do not restore inline
     ordered comparisons: `NaN > 0` and `NaN < 0` are both false, which erases
-    the edge failure, and the old final `else` mapped NaN to perfect `100.0`.
+    edge failure, and old final `else` mapped NaN to perfect `100.0`.
   - **Opsin absorbance matrix** (`kM00`…`kM22`) and bias `kB` — see
     libjxl `lib/jxl/opsin_params.h`.
   - **`MakePositiveXYB` offsets** — `B=(B-Y)+0.55`, `X*=14`, `X+=0.42`,
@@ -93,7 +93,7 @@ invariant: SSIMULACRA 2 regression gates, linear RGB conversion, blur, and SIMD 
   predicate (`svwhilelt_b32(0, 4)`) so its arithmetic order
   matches NEON sibling regardless of runtime vector length. Never
   widen to `svptrue_b32()` without separate ADR plus snapshot
-  regen, even if it looks like free perf win. See
+  regen, even if it reads as free perf win. See
   [ADR-0161](../../../../docs/adr/0161-ssimulacra2-simd-bitexact.md),
   [ADR-0213](../../../../docs/adr/0213-ssimulacra2-sve2.md), and
   [rebase-notes 0053](../../../../docs/rebase-notes.md) /

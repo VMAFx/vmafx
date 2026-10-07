@@ -42,47 +42,47 @@ invariant: vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing ena
   On rebase: if vertical-pass loop in 16-bit path modified, verify
   upper-bound guard expression before pushing.
 
-- `integer_vif_cuda.c`: reset on the picture stream (scale 0 kernels run there),
-  scales 1-3 run on `s->str` after an event recorded behind reset + scale 0,
+- `integer_vif_cuda.c`: reset on picture stream (scale 0 kernels run there),
+  scales 1-3 run on `s->str` after event recorded behind reset + scale 0,
   DtoH on `s->str`. Reset on `s->str` raced scale 0 under GPU contention: late
-  reset erased the first adds, vif scales wrong with >= 2 instances on one
+  reset erased first adds, vif scales wrong with >= 2 instances on one
   device (Netflix/vmaf#1305).
 
 - **`integer_vif/filter1d.cu` kernels = short bodies over `__forceinline__`
-  `vif_*` stages** (ADR-1142, HISS-04; the four baselined function-size rows
+  `vif_*` stages** (ADR-1142, HISS-04; four baselined function-size rows
   are gone). Horizontal 8-bit and 16-bit = one template `vif_hori_kernel`
   (filter row and `__ldg()` as template arguments, rounding and shift as
   arguments); `filter1d_8_horizontal_kernel` / `filter1d_16_horizontal_kernel`
   only instantiate it. Upstream change
-  to a kernel body -> port it into the matching stage, never restore a long
+  to kernel body -> port it into matching stage, never restore long
   body. Stages are integer-only; same operation sequence as before, so
   verify on device: `test_cuda_exact_twins`, `test_cuda_vif_parity`, `vif`
   gate cell (tolerance 0).
 
-- **`vif_hori_flush_accums()` runs after the per-lane edge branch**
-  (T-CUDA-WARP-REDUCE-UB-2026-10-05): `warp_reduce()` shuffles with the full
-  mask, so every lane of the warp must reach it; a lane past the plane edge
-  flushes its zeroed accumulators. The union of accumulators is declared before
-  the branch. `core/test/test_cuda_warp_reduce_contract.py` reports a flush
-  inside the branch.
+- **`vif_hori_flush_accums()` runs after per-lane edge branch**
+  (T-CUDA-WARP-REDUCE-UB-2026-10-05): `warp_reduce()` shuffles with full
+  mask, so every lane of warp must reach it; lane past plane edge
+  flushes its zeroed accumulators. union of accumulators is declared before
+  branch. `core/test/test_cuda_warp_reduce_contract.py` reports flush
+  inside branch.
 
 - **Residual variance via `vif_sv_sq()` (ADR-1561).** Kernel defines
   `VMAF_IVIF_FUNC` as `static __device__ __forceinline__` and includes
   `feature/integer_vif_sv_sq.h`; `sv_sq` is `uint32_t`. No raw
   `double` -> `int32_t` conversion of `sigma2_sq - g * sigma12`
-  (`test_integer_vif_sv_sq_contract.py`). Header listed in the backend's
+  (`test_integer_vif_sv_sq_contract.py`). Header listed in backend's
   `depend_files` (`core/src/meson.build`).
 
 ## `vif_cuda` names its features before it clears `enable_chroma` (ADR-1836)
 
-- `init_fex_cuda()` builds `feature_name_dict` from the options as the caller
-  set them, then `vif_drop_vestigial_chroma_option()` clears the no-op
+- `init_fex_cuda()` builds `feature_name_dict` from options as caller
+  set them, then `vif_drop_vestigial_chroma_option()` clears no-op
   `enable_chroma`: `enable_chroma=true` gives `integer_vif_scaleN_enable_chroma`
-  (scores unchanged). Clearing first gave the default names; every other
-  extractor names its features from its options first. A failure after the
+  (scores unchanged). Clearing first gave default names; every other
+  extractor names its features from its options first. failure after
   dictionary exists goes through `vif_init_unwind()`, which frees it.
 - Guards: `test_gpu_twin_name_order_contract.py` (every CUDA, SYCL, HIP twin;
-  no exception), `test_integer_vif_cpu_cuda_parity` (reads the suffixed names
-  and refuses the default ones for `enable_chroma=true`),
+  no exception), `test_integer_vif_cpu_cuda_parity` (reads suffixed names
+  and refuses default ones for `enable_chroma=true`),
   `test_cuda_vif_log2_contract.py` (init order ends in
   `return vif_setup_buffers(`).

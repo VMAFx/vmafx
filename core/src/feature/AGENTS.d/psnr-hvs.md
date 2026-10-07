@@ -11,35 +11,35 @@ invariant: Masking threshold = upstream float product (ADR-1488); host scoring t
   `s_mask = sqrt(s_mask * s_gvar) / 32.f` in `calc_psnrhvs()`, Netflix
   `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`. Float product
   (rounded to `float`), root in `double`, stored `float`. No `(double)` in
-  front of the product: PR #552 (CodeQL sweep) added one, 27 of 319 measured
+  front of product: PR #552 (CodeQL sweep) added one, 27 of 319 measured
   frames left upstream by up to 9.4e-7 dB. CodeQL's
-  `cpp/integer-multiplication-cast-to-long` is answered by writing the
-  conversion of the product's RESULT: `sqrt((double)(s_mask * s_gvar))` (same
-  object code as the implicit form; the query reports only implicit
+  `cpp/integer-multiplication-cast-to-long` is answered by writing
+  conversion of product's RESULT: `sqrt((double)(s_mask * s_gvar))` (same
+  object code as implicit form; query reports only implicit
   widenings; `// codeql[...]` comments do not suppress here). Same statement in `x86/psnr_hvs_avx2.c` and
-  `arm64/psnr_hvs_neon.c` (`compute_masks()`), same value in the CUDA, HIP
+  `arm64/psnr_hvs_neon.c` (`compute_masks()`), same value in CUDA, HIP
   and SYCL kernels (`hvs_threshold()`). Change one -> all six, same PR.
   Upstream sync: take upstream's side. Guards:
   `test_psnr_hvs_dispatch_invariance` (recorded blocks scored as Netflix
   master scores them), `test_psnr_hvs_simd`,
   `test_psnr_hvs_twin_exact_sum_contract.py`.
 - **`psnr_hvs_score.c` = host tail of `calc_psnrhvs()` for GPU twins**
-  (fork-local, ADR-1397). `vmaf_psnr_hvs_plane_score()` adds a plane's
-  terms one by one into a single `float` (the CPU's `ret`), then
+  (fork-local, ADR-1397). `vmaf_psnr_hvs_plane_score()` adds plane's
+  terms one by one into single `float` (CPU's `ret`), then
   `/ pixels`, `/ samplemax^2` in `float`; `vmaf_psnr_hvs_combined_score()`
   and `vmaf_psnr_hvs_score_db()` = CPU `extract()` expressions. Built in
   `libvmaf_psnr_hvs_scalar_static_lib` (strict FP: combined score must
   not contract). Loop must stay sequential, `float`, index order: no
   vectorising, pairwise sum, `double`, or per-block subtotal (each
-  changes the rounding; guards `test_psnr_hvs_score`,
+  changes rounding; guards `test_psnr_hvs_score`,
   `test_psnr_hvs_twin_exact_sum_contract.py`). Zero terms may be skipped
-  (`x + 0.0f == x`); nothing else. **On rebase**: upstream change to the
+  (`x + 0.0f == x`); nothing else. **On rebase**: upstream change to
   tail of `calc_psnrhvs()` or to `extract()` in
   `third_party/xiph/psnr_hvs.c` -> same change here + every twin that
   calls it (`cuda/integer_psnr_hvs_cuda.c`,
   `sycl/integer_psnr_hvs_sycl.cpp`, `hip/integer_psnr_hvs_hip.c`;
-  ADR-1401). `log10` behind the dB value = host libm: an icx-built
-  binary (libimf) and a gcc-built one (glibc) differ by one ulp on some
+  ADR-1401). `log10` behind dB value = host libm: icx-built
+  binary (libimf) and gcc-built one (glibc) differ by one ulp on some
   frames, CPU extractor and twins alike, so compare twin and CPU from
   one binary.
 - **`psnr_hvs` AVX2 DCT bit-exactness** (fork-local, ADR-0159):
@@ -81,13 +81,13 @@ invariant: Masking threshold = upstream float product (ADR-1488); host scoring t
   **IMPORTANT — Intel icx (`intel-llvm`)**: `#pragma STDC FP_CONTRACT
   OFF` is also silently ignored by icx unless `-fp-model=precise` is
   also on command line. `vmaf_fp_model_args` and `vmaf_strict_fp_args` in
-  `core/src/meson.build` are the shared compiler-ID policy for x86 and AArch64
+  `core/src/meson.build` are shared compiler-ID policy for x86 and AArch64
   carve-outs, scalar references, and `core/test/meson.build`'s
   `_simd_strict_fp_args`. Unix icx uses `-fp-model=precise` followed by
   `-ffp-contract=off`; `icx-cl` uses `/fp:precise /Qfma-`; MSVC uses
   `/fp:precise`; clang-cl forwards `/clang:-ffp-contract=off`. Do not copy raw
-  strict-FP literals back into individual targets or duplicate the mapping in
-  the test build. `vmaf_cuda_host_strict_fp_args` separately forwards the
+  strict-FP literals back into individual targets or duplicate mapping in
+  test build. `vmaf_cuda_host_strict_fp_args` separately forwards
   native host spelling through nvcc (`/fp:precise` on Windows). Do not remove
   these flags without re-running `--suite=fast --suite=simd` under icx. Traced
   via 2026-05-30
@@ -97,14 +97,14 @@ invariant: Masking threshold = upstream float product (ADR-1488); host scoring t
   and [rebase-notes 0052](../../../../docs/rebase-notes.md).
   **two flags are order-sensitive and must not be re-sorted.**
   `-fp-model=precise` implies `-ffp-contract=on`, so it goes FIRST and
-  `-ffp-contract=off` LAST; the other order re-enables the contraction the
+  `-ffp-contract=off` LAST; other order re-enables contraction
   pair exists to disable. Measured on
   `speed_matmul_avx2` scalar tail with icx 2026.0: `-mfma
   -ffp-contract=off` emits zero `vfmadd`, adding `-fp-model=precise`
   after it emits nine, and putting `-fp-model=precise` before it emits
-  zero again. `core/test/meson.build` must continue to alias the shared
-  `vmaf_strict_fp_args` variable — SIMD tests compile their own copies of
-  scalar references, so replacing the alias with a divergent list puts two
+  zero again. `core/test/meson.build` must continue to alias shared
+  `vmaf_strict_fp_args` variable: SIMD tests compile their own copies of
+  scalar references, so replacing alias with divergent list puts two
   sides of every bit-exactness comparison on different contraction settings.
   That is what broke `test_ssimulacra2_simd` first time reorder
   was tried; see `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in

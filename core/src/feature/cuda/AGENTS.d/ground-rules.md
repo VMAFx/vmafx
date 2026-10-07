@@ -24,13 +24,13 @@ invariant: Parent rules, license headers, include order, and no FMA contraction 
   `cuda_device_strict_fp_args` (`core/src/meson.build`, policy markers):
   nvcc `-Xcompiler=<host strict FP>` + `--fmad=false`; clang CUDA
   (`-Denable_nvcc=false`) `-ffp-contract=off`. Same model as CPU and SYCL
-  (ADR-1367). `cuda_cu_extra_flags` = other private flags only, never an FP
+  (ADR-1367). `cuda_cu_extra_flags` = other private flags only, never FP
   flag; `test_strict_fp_compiler_args.py` rejects per-kernel copies,
-  opt-outs, a fatbin command without the list, a second definition.
+  opt-outs, fatbin command without list, second definition.
   Reference fuses on purpose (`vmaf_fmaf_exact()` / `fmadd`:
   `ms_ssim_decimate.c`, `ssimulacra2.c`, SpEED) -> kernel spells
-  `__fmaf_rn()`; never rely on the compiler to fuse. New kernel: write
+  `__fmaf_rn()`; never rely on compiler to fuse. New kernel: write
   reference's operations in reference's types; plain `a * b + c` rounds
-  twice, as on the host. Division and sqrt are
+  twice, as on host. Division and sqrt are
   IEEE (`-prec-div` / `-prec-sqrt` default true, no `--use_fast_math`).
   On rebase: keep flag.

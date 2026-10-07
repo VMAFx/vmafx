@@ -23,20 +23,20 @@ invariant: Hardware probing is opt-in by codec; dummy-encode resolution floor is
   ~128×96; 64×64 (pre-fix value) was below both minima and caused
   every hardware encoder to fail probe with EINVAL on otherwise
   fully-working GPU hosts.
-- **Hardware encoders are probed before the CLI's first encode, too.**
+- **Hardware encoders are probed before CLI's first encode, too.**
   `cli._require_hardware_encoder()` runs `probe_encoder_available()` for
   any encoder in `compare.HARDWARE_ENCODERS` (NVENC, QSV, AMF and, since
   2026-10-04, VideoToolbox) from `corpus`, live `recommend` and `ladder`,
-  and stops with exit status 2 and the probe's reason.
+  and stops with exit status 2 and probe's reason.
 - **One VA-API resolution order (`hw_devices.resolve_vaapi_device`).**
-  Explicit path, then the node `session_vaapi_device()` set for the
+  Explicit path, then node `session_vaapi_device()` set for
   command (`compare --vaapi-device`), then `$VMAFTUNE_VAAPI_DEVICE`,
-  then the first Intel render node, then `/dev/dri/renderD128`. The
-  session is a context manager so a test or a command cannot leak it.
+  then first Intel render node, then `/dev/dri/renderD128`.
+  session is context manager so test or command cannot leak it.
 - **`resolution.py` decision rule is height-only.** `height >= 2160`
   picks `MODEL_4K` (`vmaf_v1.0.16_1d5h_2160`); everything else picks
-  `MODEL_1080P` (`vmaf_v1.0.16_3d0h`). An explicit `--vmaf-model` turns
-  the rule off (`CorpusOptions.resolution_aware=False`), and `neg` maps
+  `MODEL_1080P` (`vmaf_v1.0.16_3d0h`). explicit `--vmaf-model` turns
+  rule off (`CorpusOptions.resolution_aware=False`), and `neg` maps
   either result through `neg_model_for`. Width
   is accepted in API for symmetry but ignored in body. Do not add
   per-codec / per-pixel-count branches without ADR-0289 follow-up —

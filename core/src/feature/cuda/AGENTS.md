@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Orientation for agents on per-feature CUDA kernels (host
 glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). Backend
@@ -35,7 +35,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_cambi_cuda.c`, `integer_adm_cuda.c` | [host-preprocessing-download](AGENTS.d/host-preprocessing-download.md) | Host-side preprocessing in submit callbacks must download GPU to host first. |
 | `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [kernel-launch-params](AGENTS.d/kernel-launch-params.md) | cuLaunchKernel kernelParams must point to device-pointer value, not buffer struct. |
 | `integer_adm_cuda.c`, `integer_ssim_cuda.c` | [kernel-templates](AGENTS.d/kernel-templates.md) | Kernel templates mirror HIP, enforce extern C, mul24 ban, register caps, and LDG loads. |
-| `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [module-lifetime](AGENTS.d/module-lifetime.md) | Every successfully loaded CUDA module has an owned handle and context. |
+| `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [module-lifetime](AGENTS.d/module-lifetime.md) | Every successfully loaded CUDA module has owned handle and context. |
 | `integer_moment_cuda.c`, `integer_moment_cuda.h`, `integer_moment/moment_score.cu` | [moment](AGENTS.d/moment.md) | float_moment_cuda reproduces CPU float_moment bit for bit, past 2^53 units too. |
 | `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on CUDA twins = ring of three raw planes + CPU window function at flush; bit-identical. |
 | `integer_motion_v2_cuda.c`, `integer_motion_v2_cuda.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 CPU mirror contract and score emission parity. |

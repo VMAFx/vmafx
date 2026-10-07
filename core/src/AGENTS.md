@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
 
 Scoped orientation for coding agent working directly inside `core/src/`.
 Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
@@ -20,16 +20,16 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 | --- | --- | --- |
 | `meson.build`, `/core/test/check_exported_symbols.py` | [build-and-compiler](AGENTS.d/build-and-compiler.md) | Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common. |
 | `feature/ciede.c`, `feature/cuda/integer_ciede/ciede_device.h`, `feature/ciede_ff_math.h`, `/core/test/test_ciede_upstream_products.c` | [ciede-squares-are-products](AGENTS.d/ciede-squares-are-products.md) | ciede.c squares = products (ADR-1467); its chroma and rotation products = float, no double cast (ADR-1476). |
-| `conversion_context.c`, `conversion_context.h`, `conversion_policy.c`, `conversion_policy.h`, `read_json_model.c`, `read_json_model.cpp` | [conversion-target](AGENTS.d/conversion-target.md) | Convert to the model's conversion_target on the host; input colour lives on the context. |
+| `conversion_context.c`, `conversion_context.h`, `conversion_policy.c`, `conversion_policy.h`, `read_json_model.c`, `read_json_model.cpp` | [conversion-target](AGENTS.d/conversion-target.md) | Convert to model's conversion_target on host; input colour lives on context. |
 | `picture.h`, `picture_pool.h` | [doxygen-header-invariants](AGENTS.d/doxygen-header-invariants.md) | Internal core/src headers carry Doxygen file briefs and parameter comments. |
 | `framesync.c`, `framesync.h` | [framesync-producer](AGENTS.d/framesync-producer.md) | Framesync buffer error paths invoke vmaf_framesync_abort to prevent consumer cond_wait hang. |
 | `picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp` | [init-and-teardown](AGENTS.d/init-and-teardown.md) | Out-parameter init clears handles on failure; teardown owners replace partial cleanup ladders. |
-| `x86/avx512_warm_up.h`, `cpu.cpp`, `/core/test/test_cpu.c`, `/core/test/test_inline_asm_clobber_contract.py` | [inline-asm-clobbers](AGENTS.d/inline-asm-clobbers.md) | Inline asm that clobbers ymmN / zmmN also names xmmN; clang drops a wide clobber without the target feature. |
+| `x86/avx512_warm_up.h`, `cpu.cpp`, `/core/test/test_cpu.c`, `/core/test/test_inline_asm_clobber_contract.py` | [inline-asm-clobbers](AGENTS.d/inline-asm-clobbers.md) | Inline asm that clobbers ymmN / zmmN also names xmmN; clang drops wide clobber without target feature. |
 | `log.c`, `log.h`, `log.cpp` | [logging-and-diagnostics](AGENTS.d/logging-and-diagnostics.md) | Fork diagnostics route through vmaf_log with BUG-048 format lock; log.c respects C23 va_start. |
 | `pdjson.c`, `pdjson.h`, `framesync.c` | [memory-and-concurrency-safety](AGENTS.d/memory-and-concurrency-safety.md) | pdjson enforces 512 container limit; pthread init, malloc, and size bounds checked without leak. |
 | `metadata_handler.cpp`, `metadata_handler.h` | [metadata-handler](AGENTS.d/metadata-handler.md) | C++20 metadata handler preserves extern "C" symbols and unique_ptr lifecycle. |
 | `output.cpp`, `thread_locale.cpp`, `thread_locale.h`, `opt.cpp`, `dict.cpp`, `feature/feature_name.cpp` | [output-writers-and-locale](AGENTS.d/output-writers-and-locale.md) | Score capacity checks use >=; JSON writers guard delimiters; locale pushes flush before pop. |
-| `libvmaf.c`, `feature/feature_extractor.cpp` | [picture-ownership-and-dispatch](AGENTS.d/picture-ownership-and-dispatch.md) | PREV_REF window uses counted references, n-2 kept only for a reader; vmaf_read_pictures owns both pictures. |
+| `libvmaf.c`, `feature/feature_extractor.cpp` | [picture-ownership-and-dispatch](AGENTS.d/picture-ownership-and-dispatch.md) | PREV_REF window uses counted references, n-2 kept only for reader; vmaf_read_pictures owns both pictures. |
 | `libvmaf.c`, `percentile.h`, `bootstrap_names.h` | [pooling-and-bootstrap](AGENTS.d/pooling-and-bootstrap.md) | Pooling accumulators remain O(1) float-exact; bootstrap score names stay centralized. |
 | `read_json_model.c`, `read_json_model.h` | [read-json-model](AGENTS.d/read-json-model.md) | Model feature arrays sync capacity before access and free previous names before strdup. |
 | `predict.c`, `interop/pelorus_interop.c` | [scoring-and-pelorus-interop](AGENTS.d/scoring-and-pelorus-interop.md) | Piecewise linear mapping rejects non-finite scores; Pelorus interop validates framing and QP bounds. |

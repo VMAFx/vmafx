@@ -6,7 +6,7 @@ paths:
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
-invariant: `deliverables-check.sh` is the only parser; the validator shims `git diff --name-only` and nothing else.
+invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and nothing else.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PR-body deliverables validator (`validate-pr-body.sh`)
@@ -19,24 +19,24 @@ parser; validator only injects diff via `PATH`-shim that
 intercepts `git diff --name-only`.
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
-the `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
-[pre-push]`). The omnibus `pre-push` hook delegates to same
+`.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
+[pre-push]`). omnibus `pre-push` hook delegates to same
 validator logic. Its `gh` lookup is time-bounded; unavailable credentials fall
-back to the public PR list and page. Only a confirmed no-open-PR result skips
+back to public PR list and page. Only confirmed no-open-PR result skips
 validation. Indeterminate metadata fails closed. Preserve
-`test-pre-push-pr-body-lint.py` in both commit and push hooks so a locked keyring
-cannot restore the unbounded hang or an authentication failure bypass.
+`test-pre-push-pr-body-lint.py` in both commit and push hooks so locked keyring
+cannot restore unbounded hang or authentication failure bypass.
 
-The hook skips the machine-generated release PR only by calling
-`release-pr-exempt.sh` (ADR-1151), the same predicate CI's Deliverables
-Checklist calls; never re-implement it in the hook. It feeds the predicate the
-PR's `headRefName` and an author mapped from `gh pr view --json author` to the
+hook skips machine-generated release PR only by calling
+`release-pr-exempt.sh` (ADR-1151), same predicate CI's Deliverables
+Checklist calls; never re-implement it in hook. It feeds predicate
+PR's `headRefName` and author mapped from `gh pr view --json author` to
 event-payload shape CI passes: `{"is_bot": true, "login": "app/<x>"}` ->
 `PR_AUTHOR=<x>[bot]`, `PR_AUTHOR_TYPE=Bot`; `{"is_bot": false, "login": "<x>"}`
 -> `<x>`, `User`; any other shape (deleted author, missing field) -> empty,
-which never exempts. The public-page fallback carries no author and must never
-exempt; a branch without the predicate validates as before. The
-`test-pr-body-lookup` hook re-runs on predicate edits and covers the bot,
+which never exempts. public-page fallback carries no author and must never
+exempt; branch without predicate validates as before.
+`test-pr-body-lookup` hook re-runs on predicate edits and covers bot,
 human-same-ref, non-bot-lookalike and fallback cases.
 
 **Invariant — single parser source of truth**: do not fork or

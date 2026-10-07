@@ -3,7 +3,7 @@ paths:
   - core/src/feature/feature_mobilesal.c
   - core/test/test_mobilesal.c
   - core/test/dnn/test_mobilesal_run.c
-invariant: MobileSal extractor pads sides to a multiple of 8 for the students and averages only the frame's own area.
+invariant: MobileSal extractor pads sides to multiple of 8 for students and averages only frame's own area.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # MobileSal Saliency Extractor Smoke-Only Gating
@@ -27,13 +27,13 @@ invariant: MobileSal extractor pads sides to a multiple of 8 for the students an
   blockers; any future drop-in replaces `.onnx` and bumps
   registry sha256 without touching this file.
 
-- **Padding to a multiple of 8 ([ADR-1540](../../../../docs/adr/1540-saliency-pad-to-multiple-of-8.md))** —
-  `mobilesal_init()` sizes every buffer for `pw` / `ph`, the frame size
-  rounded up to `MOBILESAL_SIZE_MULTIPLE` (8: the students halve three
+- **Padding to multiple of 8 ([ADR-1540](../../../../docs/adr/1540-saliency-pad-to-multiple-of-8.md))** —
+  `mobilesal_init()` sizes every buffer for `pw` / `ph`, frame size
+  rounded up to `MOBILESAL_SIZE_MULTIPLE` (8: students halve three
   times and concatenate skips, so 576x324 fails in ORT unpadded).
   `mobilesal_pad_plane()` spreads each RGB plane to stride `pw`, last row
-  first, repeating the last column and row; `mobilesal_cropped_mean()`
-  averages the frame's own `w x h` of the map, and a map of another size
-  than the input is `-EIO`. A frame that already is a multiple of 8 is fed
+  first, repeating last column and row; `mobilesal_cropped_mean()`
+  averages frame's own `w x h` of map, and map of another size
+  than input is `-EIO`. frame that already is multiple of 8 is fed
   unchanged (bit-identical scores). `core/test/dnn/test_mobilesal_run.c`
-  guards it with the shipped students.
+  guards it with shipped students.
