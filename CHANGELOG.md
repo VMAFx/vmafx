@@ -40,6 +40,8 @@
   digests, library versions, lock digest, container id and resource use; a killed run resumes from the
   manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
+
+
 - **`cambi` runs in Rust, bit-identical to the C extractor (`cambi_rust`).**
   A build with `-Denable_rust_features=true` registers `cambi_rust`, a
   statement-by-statement port of the scalar `cambi.c` path (preprocessing,
