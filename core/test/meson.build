@@ -1263,6 +1263,17 @@ test('test_vmafx_api_abi_append_only',
     suite : ['fast'],
 )
 
+# The controller store's sqlc-generated queries match their SQL (ADR-2350 D1).
+# Exits 77 (skipped, reason printed) when no pinned sqlc can be obtained for
+# the host; scripts/codegen/tests/test_sqlc_generate.py proves the gate.
+test('test_sqlc_generated_current',
+    import('python').find_installation(),
+    args : [meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'sqlc_generate.py',
+            '--check', '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+    timeout : 300,
+)
+
 # Generator unit tests: every emitter and gate, each refusing its planted defects.
 test('test_vmafx_api_generator',
     import('python').find_installation(),

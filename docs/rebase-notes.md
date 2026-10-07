@@ -62783,3 +62783,77 @@ is now pelorus's own code, so the mirror carries only the banner and the include
 ADR-1589, ADR-0719, ADR-1526 and ADR-2001 as partially superseded; comments and AGENTS notes of
 `cmd/vmafx-controller/`, `cmd/vmafx-operator/` and `deploy/helm/vmafx/` now call the SQLite queue transitional. No
 code path changes. no upstream file.
+- `core/src/libvmaf.c` renames the bodies of `vmaf_use_feature`,
+  `vmaf_use_features_from_model`, `vmaf_use_features_from_model_collection`,
+  `vmaf_import_feature_score`, `vmaf_set_perceptual_weight_enabled`,
+  `vmaf_set_perceptual_weight_strength`, `vmaf_feature_backend_twin`,
+  `vmaf_registered_feature_extractor`, `vmaf_read_pictures`,
+  `vmaf_score_at_index`, `vmaf_score_at_index_model_collection`,
+  `vmaf_feature_score_pooled`, `vmaf_score_pooled` and
+  `vmaf_score_pooled_model_collection` to `vmaf_engine_*` (declared in
+  `core/src/vmafx/engine.h`) and keeps the libvmaf names as one-line
+  forwarders in a block near the end of the file. An upstream change to one of
+  these bodies goes into its `vmaf_engine_*` function; engine-internal callers
+  (the pooling loops, the Metal import, the tiny-model registration) call the
+  `vmaf_engine_` names. New helpers there: `vmaf_engine_frame_retention`,
+  `vmaf_engine_is_flushed`, `vmaf_engine_extractor_backend`.
+- `core/src/log.cpp` and `core/src/log.h` gain `vmaf_get_log_level()` and a
+  per-thread sink (`VmafLogSink`, `vmaf_log_swap_thread_sink()`,
+  `vmaf_log_thread_sink()`): while one is installed `vmaf_log()` delivers to
+  it, filtered by the sink's level. Keep the sink check in `vmaf_log()` on an
+  upstream sync of the logger. `core/src/log.c` is not built (ADR-0708 moved
+  the logger to `log.cpp`) and is unchanged.
+- Full log routing (ADR-1906): `struct ThreadDataBatch` in
+  `core/src/libvmaf.c` carries `log_sink`, set from `vmaf_log_thread_sink()`
+  where the job is enqueued, and `threaded_extract_batch_func()` installs it
+  around the job and restores the previous sink before it returns. A sync
+  that rewrites the job or adds another `vmaf_thread_pool_enqueue()` caller
+  keeps both. `core/src/thread_pool.c` is unchanged.
+- `vmaf_engine_init()` (the former `vmaf_init()` body in `core/src/libvmaf.c`)
+  no longer calls `vmaf_set_log_level()`; `vmafx_context_create()` does, for a
+  context without a log callback (every `vmaf_init()` context). An upstream
+  sync that touches the init body keeps the call out. The atomic
+  `vmaf_log_level` / `istty` of `core/src/log.cpp` come from master (PR #2207,
+  T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06): when this branch rebases onto it,
+  `log.cpp` takes master's atomics and keeps this branch's sink
+  (`thread_sink`, `log_to_sink()`, the sink branch in `vmaf_log()`,
+  `vmaf_get_log_level()` as a relaxed load).
+- The error prints of `core/src/feature/adm.c`, `ssim.c`, `ms_ssim.c`,
+  `motion.c` and `vif.c` (allocation and stride errors, `printf` to stdout
+  plus `fflush(stdout)`) are `vmaf_log(VMAF_LOG_LEVEL_ERROR, ...)` with the
+  same text, and the files include `log.h`. An upstream change to one of
+  these lines keeps `vmaf_log()`; `core/test/test_engine_log_routing_contract.py`
+  fails on a direct stdout / stderr write. `vifdiff()` and the
+  `VIF_OPT_DEBUG_DUMP` output in `vif.c` keep their prints.
+- `core/src/picture.c` exports `vmaf_picture_plane_extents()` (the plane
+  geometry `picture_compute_geometry()` used inline); `core/src/model.c` adds
+  `vmaf_model_builtin_data()` (the embedded bytes of a built-in model).
+- `core/src/vmafx/` gains `device.c`, `frame_host.c`, `model.c`, `options.c`,
+  `register.c`, `score.c`, `sha256.c`, `sized.c`, `submit.c` and the internal
+  headers `internal.h`, `options_internal.h`, `sha256.h`. Generated files as
+  before: regenerate with `python3 scripts/codegen/vmafx-api.py --write`.
+- No score impact (`test_vmafx_bitexact` compares every score with the
+  `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
+  values are unchanged.
+## Pelorus re-vendor at the fixture `_fsopen` commit (2026-10-07)
+
+`refactor/pelorus-revendor-fsopen-fixture`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to
+`11e183ec0aed` (VMAFx/pelorus #91): the conformance fixture body of `core/test/test_pelorus_interop.c` opens its files for reading through
+`fixture_open_read()` (`_fsopen` on Windows). Rendered by `scripts/sync-pelorus-interop.sh --update`; a sync takes pelorus's side and re-runs the
+script, then the drift check. no upstream file.
+## icx-cl: the CRT's deprecated calls (2026-10-07)
+
+`fix/icx-cl-crt-residuals`. Upstream-mirror files touched: `core/src/libvmaf.c` (`VMAF_STRDUP` in the tiny-model attach), `core/test/test_model.c`
+and `core/test/test_output.c` (`vmaf_fopen_utf8()`, `vmaf_tmpfile_portable()`). A sync that brings a plain `strdup` / `fopen` / `tmpfile` /
+`getenv` back into a file the Windows builds compile keeps the fork's spelling (`compat/crt_portable.h`, `compat/path_utf8.h`). Fork files:
+`compat/crt_portable.h` gains `vmaf_tmpfile_portable()`; `vmaf_tiny_ai_resolve_model_path()` takes a caller-owned buffer for the environment
+value (`VMAF_TINY_AI_ENV_PATH_MAX`), and its five callers pass one. `core/src/feature/common/macros.h` (upstream-mirror)
+defines `UNUSED_FUNCTION` as the GNU attribute for every GCC or Clang front end, clang-cl and icx-cl included (they define `_MSC_VER`); a
+sync keeps that condition. The SYCL leg's configure step no longer sets `/experimental:c11atomics`.
+
+## Controller PostgreSQL store (2026-10-07, ADR-2350)
+
+`rc4/api-wp17-store`, [ADR-2350](adr/2350-cloud-native-platform.md). New fork-only package `cmd/vmafx-controller/store/`
+(migrations, sqlc queries, generated `pgdb/`), `scripts/codegen/sqlc_generate.py`, the `SQLC_*` pins in
+`build-config.env` and the Meson test `test_sqlc_generated_current`. Generated files take either side on a conflict and are
+regenerated with `python3 scripts/codegen/sqlc_generate.py --write`. no upstream file.

@@ -10660,7 +10660,10 @@
         "cmd/vmafx-controller/nodes/registry_tenant_test.go": 1,
         "cmd/vmafx-controller/queue/queue.go": 7,
         "cmd/vmafx-controller/queue/queue_tenant_test.go": 1,
-        "cmd/vmafx-controller/scheduler/scheduler.go": 1
+        "cmd/vmafx-controller/scheduler/scheduler.go": 1,
+        "cmd/vmafx-controller/store/pgdb/querier.go": 1,
+        "cmd/vmafx-controller/store/pgdb/sessions.sql.go": 1,
+        "cmd/vmafx-controller/store/queries/postgres/sessions.sql": 1
       },
       "target": "1522-controller-tenant-scoped-reads.md"
     },
@@ -11610,9 +11613,24 @@
     "2350": {
       "sites": {
         "cmd/vmafx-controller/main.go": 4,
+        "cmd/vmafx-controller/store/helpers_test.go": 1,
+        "cmd/vmafx-controller/store/maintenance.go": 1,
+        "cmd/vmafx-controller/store/migrations/postgres/000001_platform_store.up.sql": 1,
+        "cmd/vmafx-controller/store/pgdb/jobs.sql.go": 1,
+        "cmd/vmafx-controller/store/pgdb/leases.sql.go": 1,
+        "cmd/vmafx-controller/store/pgdb/querier.go": 3,
+        "cmd/vmafx-controller/store/pgdb/sessions.sql.go": 1,
+        "cmd/vmafx-controller/store/queries/postgres/jobs.sql": 1,
+        "cmd/vmafx-controller/store/queries/postgres/leases.sql": 1,
+        "cmd/vmafx-controller/store/queries/postgres/sessions.sql": 1,
+        "cmd/vmafx-controller/store/sqlc.yaml": 1,
+        "cmd/vmafx-controller/store/store.go": 2,
+        "core/test/meson.build": 1,
         "deploy/helm/vmafx/templates/controller.yaml": 2,
         "deploy/helm/vmafx/values.yaml": 2,
-        "docker/Dockerfile.controller": 1
+        "docker/Dockerfile.controller": 1,
+        "scripts/codegen/sqlc_generate.py": 1,
+        "scripts/codegen/tests/test_sqlc_generate.py": 1
       },
       "target": "2350-cloud-native-platform.md"
     }
