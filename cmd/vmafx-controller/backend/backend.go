@@ -91,10 +91,21 @@ type TenantCount struct {
 	OldestPending time.Time
 }
 
+// Requeue reasons: why a running job went back to pending. They are the
+// values of the reason label of vmafx_controller_jobs_requeued_total.
+const (
+	// RequeueNodeLost is a job whose node stopped renewing it (an evicted
+	// node, an expired lease).
+	RequeueNodeLost = "node_lost"
+)
+
 // Stats are a backend's live counts for the /metrics page.
 type Stats struct {
 	Tenants   []TenantCount
 	LiveNodes int
+	// Requeued counts running jobs returned to pending since this process
+	// started, by reason.
+	Requeued map[string]uint64
 }
 
 // Backend is where the controller keeps jobs and node sessions. Every method

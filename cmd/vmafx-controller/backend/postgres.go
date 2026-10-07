@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,6 +37,8 @@ func DefaultPostgresOptions() PostgresOptions {
 type Postgres struct {
 	store *store.Postgres
 	opts  PostgresOptions
+	// requeued counts the jobs this process's sweeps returned to pending.
+	requeued atomic.Uint64
 }
 
 var _ Backend = (*Postgres)(nil)
@@ -216,13 +219,24 @@ func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return Stats{}, mapStoreErr(err)
 	}
-	out := Stats{LiveNodes: int(st.LiveNodes), Tenants: make([]TenantCount, 0, len(st.Tenants))}
+	out := Stats{
+		LiveNodes: int(st.LiveNodes), Tenants: make([]TenantCount, 0, len(st.Tenants)),
+		Requeued: map[string]uint64{RequeueNodeLost: p.requeued.Load()},
+	}
 	for _, t := range st.Tenants {
 		out.Tenants = append(out.Tenants, TenantCount{
 			TenantID: t.TenantID, Pending: int(t.Pending), Running: int(t.Running), OldestPending: t.OldestPending,
 		})
 	}
 	return out, nil
+}
+
+// RecordSweep counts what a lease sweep of this process did; pass it as the
+// report of NewLeaseSweeper.
+func (p *Postgres) RecordSweep(r SweepReport) {
+	if r.Requeued > 0 {
+		p.requeued.Add(uint64(r.Requeued))
+	}
 }
 
 // Ready implements Backend: the database answers and carries the schema

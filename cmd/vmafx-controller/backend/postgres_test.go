@@ -159,7 +159,7 @@ func TestLeaseSweepRunsOnRiverAndRequeuesALostJob(t *testing.T) {
 	reports := make(chan backend.SweepReport, 16)
 	workers := jobs.NewWorkers()
 	backend.RegisterLeaseSweep(workers, backend.NewLeaseSweeper(db.Store, backend.ExponentialBackoff(0, 0),
-		func(r backend.SweepReport) { reports <- r }))
+		func(r backend.SweepReport) { b.RecordSweep(r); reports <- r }))
 	client, err := jobs.New(db.Pool, jobs.DefaultOptions(), workers, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("river client: %v", err)
@@ -184,6 +184,9 @@ func TestLeaseSweepRunsOnRiverAndRequeuesALostJob(t *testing.T) {
 	}
 	if job, err := b.Get(ctx, "t1", id); err != nil || job.Status != backend.StatusPending || job.AssignedNode != "" {
 		t.Fatalf("job after the sweep: %+v %v", job, err)
+	}
+	if st, err := b.Stats(ctx); err != nil || st.Requeued[backend.RequeueNodeLost] < 1 {
+		t.Fatalf("requeue count after the sweep: %+v %v", st, err)
 	}
 }
 
