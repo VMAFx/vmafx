@@ -31,6 +31,7 @@
 
 #include "config_components.h"
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -97,6 +98,11 @@ typedef struct VMAFXContext {
     int failed;   /* a frame could not be scored: no score line after it */
     int finished; /* the stream was flushed and every window written */
     int logged_download;
+    /* The pairing contract of the two inputs (do_vmafx()): main frames that had
+     * no reference frame, and pairs whose timestamps differ by more than half
+     * a frame, are counted and reported, never scored silently. */
+    uint64_t n_unscored, n_ts_mismatch;
+    double ts_worst; /* the largest offset seen, in main frame durations */
     /* Frames by path: imported on the device without a copy, host frames
      * wrapped without a copy, hardware frames downloaded (import=host). */
     uint64_t n_imported, n_host, n_downloaded;
@@ -479,8 +485,8 @@ static VmafxStatus host_import(VMAFXContext *s, const AVFrame *frame, uint32_t l
     return vmafx_context_import_frame(s->context, NULL, &imp, input, out, error); /* the CPU */
 }
 
-static VmafxStatus host_wrap(VMAFXContext *s, const AVFrame *frame, uint32_t layout, uint32_t bpc,
-                             ReleaseBox *b, VmafxFrame **out, VmafxError **error)
+static VmafxStatus host_wrap(const AVFrame *frame, uint32_t layout, uint32_t bpc, ReleaseBox *b,
+                             VmafxFrame **out, VmafxError **error)
 {
     const VmafxFrameDesc desc = {.struct_size = sizeof(desc),
                                  .pix_fmt = layout,
@@ -514,7 +520,7 @@ static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, V
     VmafxError *error = NULL;
     const VmafxStatus status = converted_layout(layout) ?
                                    host_import(s, frame, layout, bpc, b, input, out, &error) :
-                                   host_wrap(s, frame, layout, bpc, b, out, &error);
+                                   host_wrap(frame, layout, bpc, b, out, &error);
     box_after_import(b, status);
     if (status != VMAFX_OK) {
         av_log(ctx, AV_LOG_ERROR, "vmafx: the %s input (%s) cannot be scored\n", input,
@@ -1624,10 +1630,14 @@ static void frame_metadata(VMAFXContext *s, AVFrame *frame, uint64_t index)
     }
 }
 
+/* The index of a held frame that was never submitted (no reference frame):
+ * it carries no scores and waits for none. */
+#define VMAFX_NOT_SCORED UINT64_MAX
+
 static int output_frame(AVFilterContext *ctx, AVFrame *frame, uint64_t index)
 {
     VMAFXContext *s = ctx->priv;
-    if (s->metadata)
+    if (s->metadata && index != VMAFX_NOT_SCORED)
         frame_metadata(s, frame, index);
     if (s->window_meta) {
         av_dict_parse_string(&frame->metadata, s->window_meta, "=", ",", 0);
@@ -1639,6 +1649,8 @@ static int output_frame(AVFilterContext *ctx, AVFrame *frame, uint64_t index)
 /* Frame `index` is final for every model, or not scored at all. */
 static int scores_final(VMAFXContext *s, uint64_t index)
 {
+    if (index == VMAFX_NOT_SCORED)
+        return 1;
     for (unsigned m = 0; m < s->n_models; m++) {
         VmafxScore score = VMAFX_SCORE_INIT;
         if (vmafx_score_frame(s->context, s->models[m], index, &score, NULL) == VMAFX_PENDING)
@@ -1672,7 +1684,8 @@ static int held_drain(AVFilterContext *ctx, int all)
 static int send_or_hold(AVFilterContext *ctx, AVFrame *dist, uint64_t index)
 {
     VMAFXContext *s = ctx->priv;
-    if (!s->metadata)
+    /* A frame behind held ones waits too: the output keeps its order. */
+    if (!s->metadata || (index == VMAFX_NOT_SCORED && !av_fifo_can_read(s->held)))
         return output_frame(ctx, dist, index);
     const HeldFrame h = {dist, index};
     int ret = av_fifo_write(s->held, &h, 1);
@@ -1718,6 +1731,65 @@ static int submit_pair(AVFilterContext *ctx, AVFrame *ref, AVFrame *dist, uint64
     return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_submit");
 }
 
+/* A main frame with no reference frame (the reference starts later or ended
+ * earlier): it passes on unscored, in order, and is counted. */
+static int pass_unscored(AVFilterContext *ctx, AVFrame *dist)
+{
+    VMAFXContext *s = ctx->priv;
+    if (!s->n_unscored++) {
+        av_log(ctx, AV_LOG_WARNING,
+               "vmafx: the main frame at pts %" PRId64
+               " has no reference frame and passes unscored (the reference starts later or "
+               "ended earlier; eof_action=repeat:repeatlast=1 would score it against the last "
+               "reference frame)\n",
+               dist->pts);
+    }
+    return send_or_hold(ctx, dist, VMAFX_NOT_SCORED);
+}
+
+/* Half the duration of a main frame, in the main input's time base; 0 when
+ * neither the frame nor the link says how long a frame lasts. */
+static int64_t half_frame(const AVFilterContext *ctx, const AVFrame *dist)
+{
+    AVFilterLink *main = ctx->inputs[0];
+    int64_t duration = dist->duration;
+    if (duration <= 0) {
+        const AVRational rate = ff_filter_link(main)->frame_rate;
+        if (rate.num > 0 && rate.den > 0)
+            duration = av_rescale_q(1, av_inv_q(rate), main->time_base);
+    }
+    return duration > 0 ? duration / 2 : 0;
+}
+
+/* The two frames of a pair belong together when their timestamps agree to
+ * half a frame. Streams of unequal rate or start time are paired by
+ * timestamp, not by number: the pair is then not frame to frame, and the
+ * score says nothing about the encode. Counted, and warned about once. */
+static void check_pair_timestamps(AVFilterContext *ctx, const AVFrame *dist, const AVFrame *ref,
+                                  uint64_t index)
+{
+    VMAFXContext *s = ctx->priv;
+    const int64_t half = half_frame(ctx, dist);
+    if (dist->pts == AV_NOPTS_VALUE || ref->pts == AV_NOPTS_VALUE || half <= 0)
+        return;
+    const int64_t delta =
+        av_rescale_q(ref->pts, ctx->inputs[1]->time_base, ctx->inputs[0]->time_base) - dist->pts;
+    if (FFABS(delta) <= half)
+        return;
+    const double frames = FFABS((double)delta) / (2.0 * (double)half);
+    if (!s->n_ts_mismatch++) {
+        av_log(ctx, AV_LOG_WARNING,
+               "vmafx: pair %" PRIu64 ": the reference frame (pts %" PRId64 ") is %.2f frame "
+               "durations from the main frame (pts %" PRId64 "), in the main time base; streams "
+               "of different rate or start time are paired by timestamp, not by frame number, "
+               "so the score is not frame to frame. Give both the same rate and start (fps, "
+               "setpts, trim)\n",
+               index, av_rescale_q(ref->pts, ctx->inputs[1]->time_base, ctx->inputs[0]->time_base),
+               frames, dist->pts);
+    }
+    s->ts_worst = FFMAX(s->ts_worst, frames);
+}
+
 static int do_vmafx(FFFrameSync *fs)
 {
     AVFilterContext *ctx = fs->parent;
@@ -1727,13 +1799,16 @@ static int do_vmafx(FFFrameSync *fs)
     int ret = ff_framesync_dualinput_get(fs, &dist, &ref);
     if (ret < 0)
         return ret;
-    if (ctx->is_disabled || !ref)
-        return ff_filter_frame(ctx->outputs[0], dist);
+    if (ctx->is_disabled)
+        return send_or_hold(ctx, dist, VMAFX_NOT_SCORED);
+    if (!ref)
+        return pass_unscored(ctx, dist);
     if (s->failed) {
         av_frame_free(&dist);
         return AVERROR_EXTERNAL;
     }
     const uint64_t index = s->frame_cnt++;
+    check_pair_timestamps(ctx, dist, ref, index);
     ret = windows_frame(ctx, index, dist);
     if (ret >= 0)
         ret = submit_pair(ctx, ref, dist, index);
@@ -1755,6 +1830,8 @@ static int finish_stream(AVFilterContext *ctx)
     VMAFXContext *s = ctx->priv;
     s->finished = 1;
     if (s->failed || !s->context)
+        return 0;
+    if (!s->frame_cnt) /* nothing was submitted: the library refuses to flush an empty context */
         return 0;
     VmafxError *error = NULL;
     VmafxStatus st = vmafx_flush(s->context, &error);
@@ -1994,6 +2071,14 @@ static int open_windows(AVFilterContext *ctx)
     return 0;
 }
 
+static void log_input_order(AVFilterContext *ctx)
+{
+    av_log(ctx, AV_LOG_INFO,
+           "%s: input 0 (main) is the distorted video, input 1 (reference) the reference; "
+           "swapping them scores the other direction\n",
+           ctx->filter->name);
+}
+
 /* The provenance record at init (`provenance=log`). */
 static void log_provenance(AVFilterContext *ctx)
 {
@@ -2049,8 +2134,46 @@ static int setup_scoring(AVFilterContext *ctx)
                                  AV_FIFO_FLAG_AUTO_GROW);
         ret = s->held ? 0 : AVERROR(ENOMEM);
     }
-    if (ret >= 0)
+    if (ret >= 0) {
+        log_input_order(ctx);
         log_provenance(ctx);
+    }
+    return ret;
+}
+
+/* The report is written at the end of the run, when a failure can no longer
+ * fail the command: a path that cannot be written fails at init instead. */
+static int report_path_check(AVFilterContext *ctx)
+{
+    const VMAFXContext *s = ctx->priv;
+    if (!s->output || !*s->output)
+        return 0;
+    FILE *f = avpriv_fopen_utf8(s->output, "ab"); /* keeps what is there; the report replaces it */
+    if (!f) {
+        const int err = AVERROR(errno);
+        av_log(ctx, AV_LOG_ERROR, "vmafx: log_path %s cannot be written: %s\n", s->output,
+               av_err2str(err));
+        return err;
+    }
+    fclose(f);
+    return 0;
+}
+
+/* The framesync defaults of a scoring filter. A main frame without a
+ * reference frame passes on unscored (and is counted) instead of being scored
+ * against the last reference frame again: the stock default (repeat) scores
+ * the tail of a longer main stream against one frame. eof_action=repeat with
+ * repeatlast=1 restores it. */
+static void sync_defaults(VMAFXContext *s)
+{
+    s->fs.opt_eof_action = EOF_ACTION_PASS;
+    s->fs.opt_repeatlast = 0;
+}
+
+static int vmafx_preinit(AVFilterContext *ctx)
+{
+    const int ret = vmafx_framesync_preinit(ctx);
+    sync_defaults(ctx->priv);
     return ret;
 }
 
@@ -2072,6 +2195,9 @@ static av_cold int init(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_ERROR, "vmafx: stats_out=file needs stats_path\n");
         return AVERROR(EINVAL);
     }
+    int ret = report_path_check(ctx);
+    if (ret < 0)
+        return ret;
     return 0;
 }
 
@@ -2085,6 +2211,15 @@ static int config_input_ref(AVFilterLink *inlink)
                main->w, main->h, av_get_pix_fmt_name(main->format), inlink->w, inlink->h,
                av_get_pix_fmt_name(inlink->format));
         return AVERROR(EINVAL);
+    }
+    const AVRational main_rate = ff_filter_link(ctx->inputs[0])->frame_rate;
+    const AVRational ref_rate = ff_filter_link(inlink)->frame_rate;
+    if (main_rate.num > 0 && ref_rate.num > 0 && av_cmp_q(main_rate, ref_rate)) {
+        av_log(ctx, AV_LOG_WARNING,
+               "vmafx: main runs at %d/%d fps and the reference at %d/%d: frames are paired by "
+               "timestamp, not by number, so the score is not frame to frame; give both the "
+               "same rate (fps)\n",
+               main_rate.num, main_rate.den, ref_rate.num, ref_rate.den);
     }
     return 0;
 }
@@ -2220,6 +2355,11 @@ static void write_report(AVFilterContext *ctx)
     VMAFXContext *s = ctx->priv;
     if (!s->output)
         return;
+    if (!s->frame_cnt) {
+        av_log(ctx, AV_LOG_WARNING, "vmafx: log_path %s not written: no frame pair was scored\n",
+               s->output);
+        return;
+    }
     const uint32_t format = formats[av_clip(s->output_format, 0, FF_ARRAY_ELEMS(formats) - 1)];
     const uint32_t flags = (s->provenance & 2) && format >= VMAFX_REPORT_FORMAT_CSV ?
                                VMAFX_REPORT_PROVENANCE_SIDECAR :
@@ -2271,6 +2411,24 @@ static void log_frame_paths(AVFilterContext *ctx)
            s->n_imported, s->n_host, s->n_downloaded);
 }
 
+/* The pairing contract at the end of the run: what passed unscored and what
+ * was paired across a timestamp offset (do_vmafx()). */
+static void log_pairing(AVFilterContext *ctx)
+{
+    const VMAFXContext *s = ctx->priv;
+    if (s->n_unscored)
+        av_log(ctx, AV_LOG_WARNING,
+               "vmafx: %" PRIu64 " main frames had no reference frame and passed unscored; the "
+               "scores cover %" PRIu64 " pairs\n",
+               s->n_unscored, s->frame_cnt);
+    if (s->n_ts_mismatch)
+        av_log(ctx, AV_LOG_WARNING,
+               "vmafx: %" PRIu64 " of %" PRIu64 " pairs had main and reference timestamps more "
+               "than half a frame apart (worst: %.2f frame durations); the score is not frame to "
+               "frame\n",
+               s->n_ts_mismatch, s->frame_cnt, s->ts_worst);
+}
+
 static void release_windows(VMAFXContext *s)
 {
     for (; s->span_count; s->span_count--, s->span_head = (s->span_head + 1) % VMAFX_MAX_SPANS)
@@ -2312,12 +2470,13 @@ static av_cold void uninit(AVFilterContext *ctx)
     VMAFXContext *s = ctx->priv;
     ff_framesync_uninit(&s->fs);
     if (s->context && !s->failed) {
-        if (!s->finished)
+        if (!s->finished && s->frame_cnt)
             (void)vmafx_flush(s->context, NULL);
         log_pooled(ctx); /* predicts every frame: the report then lists the model scores */
         write_report(ctx);
         log_profile(ctx);
         log_frame_paths(ctx);
+        log_pairing(ctx);
     }
     release_all(ctx);
 }
@@ -2348,7 +2507,7 @@ const FFFilter ff_vf_vmafx = {
                                           "streams on any VMAFx backend."),
     .p.priv_class = &vmafx_class,
     .p.flags = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
-    .preinit = vmafx_framesync_preinit,
+    .preinit = vmafx_preinit,
     .init = init,
     .uninit = uninit,
     .activate = activate,
@@ -2457,6 +2616,13 @@ static const AVOption vmafx_tune_options[] = {
 
 FRAMESYNC_DEFINE_CLASS(vmafx_tune, VMAFXContext, fs);
 
+static int vmafx_tune_preinit(AVFilterContext *ctx)
+{
+    const int ret = vmafx_tune_framesync_preinit(ctx);
+    sync_defaults(ctx->priv);
+    return ret;
+}
+
 static av_cold int tune_init(AVFilterContext *ctx)
 {
     VMAFXContext *s = ctx->priv;
@@ -2513,7 +2679,7 @@ const FFFilter ff_vf_vmafx_tune = {
     .p.name = "vmafx_tune",
     .p.description = NULL_IF_CONFIG_SMALL("Recommend a CRF for the next pass from its VMAF."),
     .p.priv_class = &vmafx_tune_class,
-    .preinit = vmafx_tune_framesync_preinit,
+    .preinit = vmafx_tune_preinit,
     .init = tune_init,
     .uninit = tune_uninit,
     .activate = activate,

@@ -227,6 +227,11 @@ backend within it.
   `refusal`, `legacy`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
   guard them; patch `0024` is fork-only (Q-048) and is refreshed, not dropped,
   when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
+  The filter pairs or reports ([ADR-2165](../adr/2165-vmafx-filter-pairing-contract.md)):
+  `vmafx_preinit()` sets the framesync defaults `eof_action=pass` and
+  `repeatlast=0`, a main frame without a reference frame passes on unscored
+  and counted, and nothing is flushed or written when no pair was scored;
+  `vmafx_filter_check.py contract` guards it.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

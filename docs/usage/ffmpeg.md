@@ -215,6 +215,42 @@ and pad 1 (`reference`) is the reference. The warning at the top of
 [Input ordering](#input-ordering) applies unchanged. Reversing the pads does
 not fail; it changes the direction of the comparison.
 
+### Pairing the two inputs
+
+The filter pairs a main frame with the reference frame of the same timestamp
+(FFmpeg's framesync), and scores nothing it cannot pair. Three defaults
+differ from the stock `libvmaf` filter, so that a score always means frame
+against its own reference frame:
+
+- `eof_action=pass` and `repeatlast=0`. A main frame with no reference frame (the
+  reference starts later or ended earlier) passes on unscored, in order, and
+  is counted: the log carries one warning at the first such frame and
+  `vmafx: N main frames had no reference frame and passed unscored; the scores
+  cover M pairs` at the end. The stock default (`eof_action=repeat`) scores the
+  tail of a longer main stream against the last reference frame again, and a
+  reference of 24 frames under a main of 48 gives a score that is wrong
+  without a message. `eof_action=repeat:repeatlast=1` restores it; `repeat`
+  alone has no effect, because `repeatlast=0` makes the framesync pass.
+- Streams of different frame rate are paired by timestamp, not by frame
+  number: the filter warns at configuration (`main runs at 24/1 fps and the
+  reference at 30/1`) and counts pairs whose timestamps differ by more than
+  half a frame (`vmafx: N of M pairs had main and reference timestamps more than
+  half a frame apart`). Give both the same rate and start (`fps`, `setpts`,
+  `trim`) before the filter.
+- The init line `vmafx: input 0 (main) is the distorted video, input 1
+  (reference) the reference` names the order; the pad names are the same.
+
+Frames the timeline disabled (`enable=`) pass unscored without a warning. A run in
+which no pair was scored (every frame disabled, or a reference that never
+arrives) succeeds, writes no report (`log_path` is then not written, with a
+warning) and logs no score. A `log_path` in a directory that does not exist
+fails at configuration, not after the last frame.
+
+To score the first N frames, cut each input (`trim=end_frame=N` before the
+filter, or `-frames:v N` on each input): `-frames:v N` on the output stops the
+graph when the encoder has N frames, and the filter may already have scored one
+pair more.
+
 ### First vmafx command
 
 With the Netflix pair from [A pair of YUV files](#a-pair-of-yuv-files):
@@ -432,7 +468,7 @@ printing a partial score. Pools that grow (CUDA, Vulkan) are not limited. The
 
 ### Refusals
 
-The filter never lets a frame pass unscored. A frame the library cannot import
+The filter never lets a frame that has a reference frame pass unscored. A frame the library cannot import
 is retried once after a host wait on its acquire fence; then the graph fails
 naming the backend, the input, the formats, the plane and each extractor that
 refused it, and no score line follows. `feature=delta_e_itp` on CUDA frames is
@@ -581,6 +617,7 @@ missing.
 | `refusal` | A CPU-only extractor on CUDA frames fails the graph naming the backend, input and extractor, and no score line follows. | CUDA |
 | `pool` | Both inputs in fixed VAAPI pools: a pool one frame short is refused by name, a pool of exactly `N` frames scores as the CLI. | VAAPI device |
 | `legacy` | `vmafx_pre` writes the bytes of `vmaf_pre`, and `vmafx_tune` logs the recommendation of `libvmaf_tune`. | FFmpeg built with `--enable-libvmaf` and `--enable-libvmafx` |
+| `contract` | The pairing and error contract on host frames: a short reference leaves main frames unscored and counted and the score equals the CLI's over the paired frames, unequal rates are warned about, a timeline-disabled filter is not an error, an unwritable `log_path` fails at init, the init line names the input order. | CPU |
 | `layouts` | Every 4:2:2 / 4:4:4 layout scores as the CLI scores the planar file it was converted from; `--backend cuda` imports them on the device. | CPU; CUDA for the device form |
 | `vulkan` | The reference encoded on the `--vendor`'s GPU, decoded by FFmpeg's Vulkan decoder on the same GPU and scored by `vmafx` against the reference uploaded to the Vulkan device: every value equals the CLI's on the downloaded decoded frames, and every frame of both inputs is imported on the device. `--libplacebo` puts the `libplacebo` filter between decoder and `vmafx`. | `--enable-vulkan` and the vendor's Vulkan H.264 decode (`ANV_DEBUG=video-decode` on Intel with Mesa 26); `--enable-libplacebo` for `--libplacebo` |
 | `e2e` | The encode-and-score command above equals the same frames scored from files by the CLI on the same backend, windows included, with every frame imported on the device. `--vendor nvidia` (NVENC, NVDEC, CUDA; `--e2e-format 444p10` for HEVC 4:4:4 10-bit), `--vendor intel` (VAAPI encode and decode, DRM PRIME, SYCL) or `--vendor amd` (the same on HIP) with `--render-node`. | The vendor's encoder and decoder, `--enable-libvmafx` (with `--enable-vaapi --enable-libdrm` for Intel and AMD) |
