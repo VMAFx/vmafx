@@ -42,6 +42,14 @@ int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned heigh
     return -1;
 }
 
+int raw_input_set_rgb(video_input *_vid, unsigned matrix, unsigned range, unsigned transfer,
+                      unsigned out_range)
+{
+    if (_vid->vtbl == NULL || _vid->vtbl->set_rgb == NULL)
+        return -1;
+    return (*_vid->vtbl->set_rgb)(_vid->ctx, matrix, range, transfer, out_range);
+}
+
 int video_input_open(video_input *_vid, FILE *_fin)
 {
     void *ctx = Y4M_INPUT_VTBL.open(_fin);

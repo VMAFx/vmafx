@@ -92,6 +92,9 @@ Transfer characteristic (values equal enum VmafColorTransferCharacteristic). Add
 | `VMAFX_COLOR_TRC_UNKNOWN` | 0 | 0.1 |
 | `VMAFX_COLOR_TRC_BT709` | 1 | 0.1 |
 | `VMAFX_COLOR_TRC_SMPTE2084` | 2 | 0.1 |
+| `VMAFX_COLOR_TRC_SRGB` | 3 | 0.1 |
+| `VMAFX_COLOR_TRC_HLG` | 4 | 0.1 |
+| `VMAFX_COLOR_TRC_LINEAR` | 5 | 0.1 |
 
 ## `VmafxColorMatrix`
 
@@ -103,6 +106,8 @@ YCbCr matrix coefficients (values equal enum VmafColorMatrixCoefficients). Added
 | `VMAFX_COLOR_MATRIX_BT709` | 1 | 0.1 |
 | `VMAFX_COLOR_MATRIX_BT2020_NCL` | 2 | 0.1 |
 | `VMAFX_COLOR_MATRIX_ICTCP` | 3 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT601` | 4 | 0.1 |
+| `VMAFX_COLOR_MATRIX_BT2020_CL` | 5 | 0.1 |
 
 ## `VmafxResampleFilter`
 
@@ -177,14 +182,14 @@ Where one plane of an imported frame lives. Embedded by value in VmafxFrameImpor
 
 ### `VmafxFrameImport`
 
-A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 328 bytes, alignment 8. Since 0.1.
+A frame the producer already holds in memory a device reads (design section 2.7). Initialise with VMAFX_FRAME_IMPORT_INIT. Size 344 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
 | `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
 | `memory` | `uint32_t memory` | 4 | 0.1 | What each plane's handle refers to. Values: `VmafxMemoryKind`. |
-| `pix_fmt` | `uint32_t pix_fmt` | 8 | 0.1 | Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing else. Values: `VmafxPixelFormat`. |
-| `bpc` | `uint32_t bpc` | 12 | 0.1 | Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to 16 for the planar formats. |
+| `pix_fmt` | `uint32_t pix_fmt` | 8 | 0.1 | Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 / P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, UYVY422, VUYX, AYUV, V210) and YUV444P_MSB are converted to planar (a gather, a shift and a mask), nothing else; RGB, RGBA and BGRA are converted to Y'CbCr with the matrix, range and transfer of `rgb_*` (ADR-2146). Values: `VmafxPixelFormat`. |
+| `bpc` | `uint32_t bpc` | 12 | 0.1 | Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / UYVY422 / VUYX / AYUV, 10 for V210, 9 to 16 for YUV444P_MSB, 8 to 16 for RGB, RGBA, BGRA and the planar formats. |
 | `w` | `uint32_t w` | 16 | 0.1 | Luma width in pixels. |
 | `h` | `uint32_t h` | 20 | 0.1 | Luma height in pixels. |
 | `n_planes` | `uint32_t n_planes` | 24 | 0.1 | Planes in `plane`: 1 for YUV400P, 2 for the semi-planar layouts (luma, interleaved chroma), 1 for the packed layouts, else 3. |
@@ -198,6 +203,10 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 | `vulkan_tiling` | `uint32_t vulkan_tiling` | 300 | 0.1 | VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10. Values: `VmafxVulkanTiling`. |
 | `vulkan_flags` | `uint32_t vulkan_flags` | 304 | 0.1 | VULKAN memory: properties of the memory objects. Added in ABI 0.1.10. Bits: `VmafxVulkanFlags`. |
 | `vulkan_pci` | `uint32_t vulkan_pci[4]` | 308 | 0.1 | VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10. |
+| `rgb_matrix` | `uint32_t rgb_matrix` | 324 | 0.1 | RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.11. Values: `VmafxColorMatrix`. |
+| `rgb_range` | `uint32_t rgb_range` | 328 | 0.1 | RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11. Values: `VmafxColorRange`. |
+| `rgb_transfer` | `uint32_t rgb_transfer` | 332 | 0.1 | RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11. Values: `VmafxColorTransfer`. |
+| `rgb_out_range` | `uint32_t rgb_out_range` | 336 | 0.1 | RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.11. Values: `VmafxColorRange`. |
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.
 

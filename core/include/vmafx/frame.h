@@ -196,6 +196,15 @@ typedef enum VmafxColorTransfer {
     VMAFX_COLOR_TRC_BT709 = 1,
     /** SMPTE ST 2084 (PQ). */
     VMAFX_COLOR_TRC_SMPTE2084 = 2,
+    /** IEC 61966-2-1 (sRGB). Added in ABI 0.1.11 (ADR-2146). */
+    VMAFX_COLOR_TRC_SRGB = 3,
+    /** ARIB STD-B67 (HLG). Added in ABI 0.1.11. */
+    VMAFX_COLOR_TRC_HLG = 4,
+    /**
+     * Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies
+     * to non-linear signals). Added in ABI 0.1.11.
+     */
+    VMAFX_COLOR_TRC_LINEAR = 5,
 } VmafxColorTransfer;
 
 /**
@@ -211,6 +220,16 @@ typedef enum VmafxColorMatrix {
     VMAFX_COLOR_MATRIX_BT2020_NCL = 2,
     /** ICtCp. */
     VMAFX_COLOR_MATRIX_ICTCP = 3,
+    /**
+     * ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.11
+     * (ADR-2146).
+     */
+    VMAFX_COLOR_MATRIX_BT601 = 4,
+    /**
+     * ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with
+     * VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.11.
+     */
+    VMAFX_COLOR_MATRIX_BT2020_CL = 5,
 } VmafxColorMatrix;
 
 /**
@@ -354,15 +373,16 @@ struct VmafxFrameImport {
     uint32_t memory;
     /**
      * Layout of the producer's planes; the semi-planar layouts (NV12 / NV16 / NV24, P010 / P210 /
-     * P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, VUYX) and
-     * YUV444P_MSB are converted to planar on the device (a gather, a shift and a mask), nothing
-     * else. Values: VmafxPixelFormat.
+     * P410, P016 / P216 / P416) the packed ones (Y210, Y212, Y410, XV36, YUYV422, UYVY422, VUYX,
+     * AYUV, V210) and YUV444P_MSB are converted to planar (a gather, a shift and a mask), nothing
+     * else; RGB, RGBA and BGRA are converted to Y'CbCr with the matrix, range and transfer of
+     * `rgb_*` (ADR-2146). Values: VmafxPixelFormat.
      */
     uint32_t pix_fmt;
     /**
      * Bits per component: 8 for NV12 / NV16 / NV24, 10 for P010 / P210 / P410 / Y210 / Y410, 12 for
-     * Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / VUYX, 9 to 16 for YUV444P_MSB, 8 to
-     * 16 for the planar formats.
+     * Y212 / XV36, 16 for P016 / P216 / P416, 8 for YUYV422 / UYVY422 / VUYX / AYUV, 10 for V210, 9
+     * to 16 for YUV444P_MSB, 8 to 16 for RGB, RGBA, BGRA and the planar formats.
      */
     uint32_t bpc;
     /** Luma width in pixels. */
@@ -420,6 +440,27 @@ struct VmafxFrameImport {
      * `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10.
      */
     uint32_t vulkan_pci[4];
+    /**
+     * RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame
+     * is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146).
+     * Added in ABI 0.1.11. Values: VmafxColorMatrix.
+     */
+    uint32_t rgb_matrix;
+    /**
+     * RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11. Values:
+     * VmafxColorRange.
+     */
+    uint32_t rgb_range;
+    /**
+     * RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11.
+     * Values: VmafxColorTransfer.
+     */
+    uint32_t rgb_transfer;
+    /**
+     * RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models
+     * are trained on. Added in ABI 0.1.11. Values: VmafxColorRange.
+     */
+    uint32_t rgb_out_range;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */

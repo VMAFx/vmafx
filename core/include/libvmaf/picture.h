@@ -188,6 +188,9 @@ enum VmafColorTransferCharacteristic {
     VMAF_COLOR_TRC_UNKNOWN = 0, /**< Unset. */
     VMAF_COLOR_TRC_BT709,       /**< ITU-R BT.709. */
     VMAF_COLOR_TRC_SMPTE2084,   /**< SMPTE ST 2084 (PQ). */
+    VMAF_COLOR_TRC_SRGB, /**< IEC 61966-2-1 (sRGB; RGB input statement; the converter refuses it). */
+    VMAF_COLOR_TRC_HLG,  /**< ARIB STD-B67 (HLG; refused by the converter). */
+    VMAF_COLOR_TRC_LINEAR, /**< Linear light (refused). */
 };
 
 /** @enum VmafColorMatrixCoefficients @brief YCbCr matrix. Append-only. */
@@ -196,6 +199,8 @@ enum VmafColorMatrixCoefficients {
     VMAF_COLOR_MATRIX_BT709,       /**< ITU-R BT.709. */
     VMAF_COLOR_MATRIX_BT2020_NCL,  /**< ITU-R BT.2020 non-constant luminance. */
     VMAF_COLOR_MATRIX_ICTCP,       /**< ICtCp. */
+    VMAF_COLOR_MATRIX_BT601, /**< ITU-R BT.601 (RGB input conversion; the converter refuses it). */
+    VMAF_COLOR_MATRIX_BT2020_CL, /**< ITU-R BT.2020 constant luminance (declared; refused). */
 };
 
 /**

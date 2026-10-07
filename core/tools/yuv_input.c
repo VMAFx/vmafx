@@ -72,6 +72,8 @@ typedef __int64 off_t;
 #include "vidinput.h"
 
 #include "libvmaf/picture.h"
+#include "vmafx/import_layouts_gen.h"
+#include "vmafx/rgb_convert.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -87,15 +89,26 @@ typedef __int64 off_t;
 #define OC_EXTERN
 #endif
 
+/* A raw file frame is either the planar frame of `pix_fmt` (layout NULL) or the
+ * layout of the import table named by the --pixel_format (NV12, P010, YUYV422,
+ * V210, RGBA ...), which is read into `src_buf` and converted into the planar
+ * frame of `layout->planar_fmt` by the code the library's host import runs
+ * (vmafx/import_layout.h, vmafx/import_convert.h, vmafx/rgb_convert.h): one
+ * behaviour per layout (ADR-2145, ADR-2146). */
 typedef struct yuv_input {
     FILE *fin;
     unsigned width, height;
-    enum VmafPixelFormat pix_fmt;
+    enum VmafPixelFormat pix_fmt; /* of the planar frame made */
     unsigned bitdepth;
     size_t dst_buf_sz;
     uint8_t *dst_buf;
     int src_c_dec_v, src_c_dec_h;
     int dst_c_dec_h, dst_c_dec_v;
+    const VmafxImportLayout *layout; /* NULL: the file holds the planar frame */
+    size_t frame_sz;                 /* bytes of one frame in the file */
+    uint8_t *src_buf;                /* one frame of the layout */
+    VmafxRgbPlan rgb;                /* RGB layouts: set by raw_input_set_rgb() */
+    bool rgb_ready;
 } yuv_input;
 
 /* Validate file size against declared geometry + bit depth so that a
@@ -118,10 +131,12 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
         return; /* pipe or fstat failure — skip, let reader hit EOF */
 
     off_t file_sz = st.st_size;
-    size_t frame_sz = yuv->dst_buf_sz;
+    size_t frame_sz = yuv->frame_sz;
     unsigned bpp = yuv->bitdepth > 8u ? 2u : 1u;
-    const char *fmt_name = yuv->pix_fmt == VMAF_PIX_FMT_YUV420P ? "yuv420p" :
+    const char *fmt_name = yuv->layout                          ? yuv->layout->name :
+                           yuv->pix_fmt == VMAF_PIX_FMT_YUV420P ? "yuv420p" :
                            yuv->pix_fmt == VMAF_PIX_FMT_YUV422P ? "yuv422p" :
+                           yuv->pix_fmt == VMAF_PIX_FMT_YUV400P ? "gray" :
                                                                   "yuv444p";
 
     if (file_sz < (off_t)frame_sz) {
@@ -190,15 +205,84 @@ static int yuv_input_set_plane_geometry(yuv_input *yuv)
         yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
         yuv->dst_buf_sz = (w * h * 3U) << hbd;
         return 0;
+    case VMAF_PIX_FMT_YUV400P:
+        /* Luma only; the chroma factors are never read (no chroma plane). */
+        yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
+        yuv->dst_buf_sz = (w * h) << hbd;
+        return 0;
     default:
         return -1;
     }
 }
 
-static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
-                                 enum VmafPixelFormat pix_fmt, unsigned bitdepth)
+/* The layout of the import table a raw --pixel_format names, or NULL for a
+ * planar VmafPixelFormat (1 to 4) and for a value that is none. */
+static const VmafxImportLayout *yuv_find_layout(int pix_fmt)
 {
-    yuv_input *yuv = malloc(sizeof(*yuv));
+    if (pix_fmt < (int)VMAFX_PIXEL_FORMAT_NV12)
+        return NULL;
+    for (size_t i = 0; i < VMAFX_N_IMPORT_LAYOUTS; i++) {
+        if (vmafx_import_layouts[i].pix_fmt == (uint32_t)pix_fmt)
+            return &vmafx_import_layouts[i];
+    }
+    return NULL;
+}
+
+/* Plane geometry of the planar frame made, as the library's import takes it. */
+static void yuv_planar_extents(const yuv_input *yuv, unsigned pw[3], unsigned ph[3])
+{
+    const unsigned cw_dec = (unsigned)yuv->dst_c_dec_h;
+    const unsigned ch_dec = (unsigned)yuv->dst_c_dec_v;
+    pw[0] = yuv->width;
+    ph[0] = yuv->height;
+    pw[1] = pw[2] = yuv->pix_fmt == VMAF_PIX_FMT_YUV400P ? 0u : (yuv->width + cw_dec - 1u) / cw_dec;
+    ph[1] = ph[2] =
+        yuv->pix_fmt == VMAF_PIX_FMT_YUV400P ? 0u : (yuv->height + ch_dec - 1u) / ch_dec;
+}
+
+/* Bytes of the producer planes of one frame of `yuv->layout`, one after the
+ * other with the rows tightly packed (the way a raw file holds them). */
+static size_t yuv_layout_frame_size(const yuv_input *yuv)
+{
+    unsigned pw[3];
+    unsigned ph[3];
+    yuv_planar_extents(yuv, pw, ph);
+    size_t total = 0;
+    for (uint32_t i = 0; i < yuv->layout->n_planes; i++) {
+        uint64_t row = 0;
+        uint64_t rows = 0;
+        vmafx_import_plane_extent(yuv->layout, yuv->bitdepth, i, pw, ph, &row, &rows);
+        total += (size_t)(row * rows);
+    }
+    return total;
+}
+
+/* Fix the planar frame and the file frame of a layout. -1 when the bit depth is
+ * outside what the layout holds. */
+static int yuv_layout_setup(yuv_input *yuv, const VmafxImportLayout *layout)
+{
+    if (yuv->bitdepth < layout->bpc_min || yuv->bitdepth > layout->bpc_max) {
+        (void)fprintf(stderr, "yuv: %s holds %u to %u bits per component, not %u\n", layout->name,
+                      layout->bpc_min, layout->bpc_max, yuv->bitdepth);
+        return -1;
+    }
+    yuv->layout = layout;
+    yuv->pix_fmt = (enum VmafPixelFormat)layout->planar_fmt;
+    if (yuv_input_set_plane_geometry(yuv) != 0)
+        return -1;
+    yuv->frame_sz = yuv_layout_frame_size(yuv);
+    yuv->src_buf = malloc(yuv->frame_sz);
+    if (!yuv->src_buf) {
+        (void)fprintf(stderr, "Could not allocate yuv layout buffer.\n");
+        return -1;
+    }
+    return 0;
+}
+
+static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height, int pix_fmt,
+                                 unsigned bitdepth)
+{
+    yuv_input *yuv = calloc(1, sizeof(*yuv));
     if (!yuv) {
         (void)fprintf(stderr, "Could not allocate yuv reader state.\n");
         return NULL;
@@ -207,12 +291,20 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
     yuv->fin = _fin;
     yuv->width = width;
     yuv->height = height;
-    yuv->pix_fmt = pix_fmt;
+    yuv->pix_fmt = (enum VmafPixelFormat)pix_fmt;
     yuv->bitdepth = bitdepth;
 
-    if (yuv_input_set_plane_geometry(yuv) != 0) {
+    const VmafxImportLayout *const layout = yuv_find_layout(pix_fmt);
+    if (layout ? yuv_layout_setup(yuv, layout) != 0 : yuv_input_set_plane_geometry(yuv) != 0) {
+        free(yuv->src_buf);
         free(yuv);
         return NULL;
+    }
+    if (!layout)
+        yuv->frame_sz = yuv->dst_buf_sz;
+    if (layout && layout->needs_statement) {
+        /* The statement comes with raw_input_set_rgb(); a frame is never read before. */
+        yuv->rgb_ready = false;
     }
 
     yuv_check_file_size(_fin, yuv); /* exits with code 2 on mismatch */
@@ -220,6 +312,7 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
     yuv->dst_buf = malloc(yuv->dst_buf_sz);
     if (!yuv->dst_buf) {
         (void)fprintf(stderr, "Could not allocate yuv reader buffer.\n");
+        free(yuv->src_buf);
         free(yuv);
         return NULL;
     }
@@ -236,6 +329,8 @@ static int pix_fmt_map(enum VmafPixelFormat pix_fmt)
         return PF_422;
     case VMAF_PIX_FMT_YUV444P:
         return PF_444;
+    case VMAF_PIX_FMT_YUV400P:
+        return PF_400;
     default:
         return 0;
     }
@@ -250,15 +345,94 @@ static void yuv_input_get_info(yuv_input *_yuv, video_input_info *_info)
     _info->depth = _yuv->bitdepth;
 }
 
+/* Convert the layout frame in `src_buf` into the planar frame `out` (data and stride of each
+ * plane): the library's reads, plane by plane. */
+static void yuv_convert_layout(const yuv_input *yuv, uint8_t *const out[3], const size_t stride[3])
+{
+    unsigned pw[3];
+    unsigned ph[3];
+    yuv_planar_extents(yuv, pw, ph);
+    const uint8_t *src[3] = {NULL, NULL, NULL};
+    size_t pitch[3] = {0, 0, 0};
+    size_t offset = 0;
+    for (uint32_t i = 0; i < yuv->layout->n_planes; i++) {
+        uint64_t row = 0;
+        uint64_t rows = 0;
+        vmafx_import_plane_extent(yuv->layout, yuv->bitdepth, i, pw, ph, &row, &rows);
+        src[i] = yuv->src_buf + offset;
+        pitch[i] = (size_t)row;
+        offset += (size_t)(row * rows);
+    }
+    const uint32_t out_bytes = yuv->bitdepth > 8u ? 2u : 1u;
+    const unsigned n_out = yuv->pix_fmt == VMAF_PIX_FMT_YUV400P ? 1u : 3u;
+    for (unsigned i = 0; i < n_out; i++) {
+        if (yuv->layout->packed == VMAFX_IMPORT_PACKED_RGB) {
+            vmafx_rgb_read_plane(out[i], stride[i], src[0], pitch[0], pw[i], ph[i], i, &yuv->rgb);
+            continue;
+        }
+        VmafxImportRead rd;
+        vmafx_import_plane_read(yuv->layout, yuv->bitdepth, i, &rd);
+        vmafx_import_read_plane(out[i], stride[i], out_bytes, src[rd.src_plane],
+                                pitch[rd.src_plane], pw[i], ph[i], &rd);
+    }
+}
+
+/* Read one frame of the layout and convert it into `out`. 1 on success, 0 for a clean EOF before
+ * the frame, -1 on a short read or an RGB layout without its statement. */
+static int yuv_load_layout(yuv_input *yuv, FILE *fin, uint8_t *const out[3], const size_t stride[3])
+{
+    if (yuv->layout->needs_statement && !yuv->rgb_ready) {
+        (void)fprintf(stderr,
+                      "yuv: %s is converted to Y'CbCr with a matrix, range and transfer you "
+                      "state; none is assumed (--rgb_matrix, --rgb_range, --rgb_transfer, "
+                      "--rgb_out_range)\n",
+                      yuv->layout->name);
+        return -1;
+    }
+    const size_t bytes_read = fread(yuv->src_buf, 1, yuv->frame_sz, fin);
+    if (bytes_read == 0)
+        return 0;
+    if (bytes_read != yuv->frame_sz) {
+        (void)fprintf(stderr, "Error reading YUV frame data.\n");
+        return -1;
+    }
+    yuv_convert_layout(yuv, out, stride);
+    return 1;
+}
+
+/* The planar frame of a layout into `dst_buf`, rows tightly packed. */
+static int yuv_load_layout_tight(yuv_input *yuv, FILE *fin)
+{
+    unsigned pw[3];
+    unsigned ph[3];
+    yuv_planar_extents(yuv, pw, ph);
+    const size_t xs = yuv->bitdepth > 8u ? 2u : 1u;
+    uint8_t *out[3];
+    size_t stride[3];
+    uint8_t *at = yuv->dst_buf;
+    for (unsigned i = 0; i < 3u; i++) {
+        out[i] = at;
+        stride[i] = (size_t)pw[i] * xs;
+        at += stride[i] * ph[i];
+    }
+    return yuv_load_layout(yuv, fin, out, stride);
+}
+
 static int yuv_input_fetch_frame(yuv_input *yuv, FILE *fin, video_input_ycbcr _ycbcr,
                                  const char _tag[5])
 {
-    size_t bytes_read = fread(yuv->dst_buf, 1, yuv->dst_buf_sz, fin);
-    if (bytes_read == 0)
-        return 0;
-    if (bytes_read != yuv->dst_buf_sz) {
-        (void)fprintf(stderr, "Error reading YUV frame data.\n");
-        return -1;
+    if (yuv->layout) {
+        const int rc = yuv_load_layout_tight(yuv, fin);
+        if (rc <= 0)
+            return rc;
+    } else {
+        size_t bytes_read = fread(yuv->dst_buf, 1, yuv->dst_buf_sz, fin);
+        if (bytes_read == 0)
+            return 0;
+        if (bytes_read != yuv->dst_buf_sz) {
+            (void)fprintf(stderr, "Error reading YUV frame data.\n");
+            return -1;
+        }
     }
 
     (void)_tag;
@@ -272,10 +446,15 @@ static int yuv_input_fetch_frame(yuv_input *yuv, FILE *fin, video_input_ycbcr _y
      * applied to dst_buf_sz in yuv_input_open() and must be mirrored here. */
     size_t xstride = (yuv->bitdepth > 8) ? 2u : 1u;
     size_t pic_sz = (size_t)yuv->width * (size_t)yuv->height * xstride;
-    unsigned frame_c_w = yuv->width / yuv->dst_c_dec_h;
-    unsigned frame_c_h = yuv->height / yuv->dst_c_dec_v;
-    size_t c_w = ((size_t)yuv->width + (size_t)yuv->dst_c_dec_h - 1u) / (size_t)yuv->dst_c_dec_h;
-    size_t c_h = ((size_t)yuv->height + (size_t)yuv->dst_c_dec_v - 1u) / (size_t)yuv->dst_c_dec_v;
+    const bool luma_only = yuv->pix_fmt == VMAF_PIX_FMT_YUV400P;
+    unsigned frame_c_w = luma_only ? 0u : yuv->width / yuv->dst_c_dec_h;
+    unsigned frame_c_h = luma_only ? 0u : yuv->height / yuv->dst_c_dec_v;
+    size_t c_w =
+        luma_only ? 0u :
+                    ((size_t)yuv->width + (size_t)yuv->dst_c_dec_h - 1u) / (size_t)yuv->dst_c_dec_h;
+    size_t c_h = luma_only ? 0u :
+                             ((size_t)yuv->height + (size_t)yuv->dst_c_dec_v - 1u) /
+                                 (size_t)yuv->dst_c_dec_v;
     size_t c_sz = c_w * c_h * xstride;
 
     _ycbcr[0].width = yuv->width;
@@ -297,6 +476,21 @@ static int yuv_input_fetch_frame(yuv_input *yuv, FILE *fin, video_input_ycbcr _y
 static void yuv_input_close(yuv_input *_yuv)
 {
     free(_yuv->dst_buf);
+    free(_yuv->src_buf);
+}
+
+/* The statement of an RGB layout; the transfer is stated and recorded by the caller (the matrix
+ * applies to the code values as an encoder does, ADR-2146). */
+static int yuv_input_set_rgb(yuv_input *yuv, unsigned matrix, unsigned range, unsigned transfer,
+                             unsigned out_range)
+{
+    (void)transfer;
+    if (!yuv->layout || !yuv->layout->needs_statement)
+        return -1;
+    if (!vmafx_rgb_plan_init(&yuv->rgb, yuv->layout, yuv->bitdepth, matrix, range, out_range))
+        return -1;
+    yuv->rgb_ready = true;
+    return 0;
 }
 
 /* Read one plane. Returns 1 on success, 0 for a clean EOF at the very first
@@ -337,7 +531,12 @@ static int yuv_read_plane(FILE *fin, VmafPicture *pic, unsigned i, size_t bytes_
 
 static int yuv_fetch_into_vmaf_picture(yuv_input *yuv, FILE *fin, VmafPicture *pic)
 {
-    (void)yuv;
+    if (yuv->layout) {
+        uint8_t *out[3] = {pic->data[0], pic->data[1], pic->data[2]};
+        const size_t stride[3] = {(size_t)pic->stride[0], (size_t)pic->stride[1],
+                                  (size_t)pic->stride[2]};
+        return yuv_load_layout(yuv, fin, out, stride);
+    }
     const size_t bytes_per_sample = (pic->bpc + 7) / 8;
 
     for (unsigned i = 0; i < 3; i++) {
@@ -359,7 +558,7 @@ static int yuv_fetch_into_vmaf_picture(yuv_input *yuv, FILE *fin, VmafPicture *p
  */
 static void *yuv_vtbl_open_raw(FILE *fin, unsigned w, unsigned h, int pix_fmt, unsigned bitdepth)
 {
-    return yuv_input_open(fin, w, h, (enum VmafPixelFormat)pix_fmt, bitdepth);
+    return yuv_input_open(fin, w, h, pix_fmt, bitdepth);
 }
 
 static void yuv_vtbl_get_info(void *ctx, video_input_info *info)
@@ -370,6 +569,12 @@ static void yuv_vtbl_get_info(void *ctx, video_input_info *info)
 static int yuv_vtbl_fetch_frame(void *ctx, FILE *fin, video_input_ycbcr ycbcr, char tag[5])
 {
     return yuv_input_fetch_frame((yuv_input *)ctx, fin, ycbcr, tag);
+}
+
+static int yuv_vtbl_set_rgb(void *ctx, unsigned matrix, unsigned range, unsigned transfer,
+                            unsigned out_range)
+{
+    return yuv_input_set_rgb((yuv_input *)ctx, matrix, range, transfer, out_range);
 }
 
 static void yuv_vtbl_close(void *ctx)
@@ -383,8 +588,13 @@ static int yuv_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *p
 }
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL` (ADR-0141 / ADR-0278)
-OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {
-    yuv_vtbl_open_raw,    NULL,           yuv_vtbl_get_info,
-    yuv_vtbl_fetch_frame, yuv_vtbl_close, yuv_vtbl_fetch_into_vmaf_picture};
+OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {.open_raw = yuv_vtbl_open_raw,
+                                                   .open = NULL,
+                                                   .get_info = yuv_vtbl_get_info,
+                                                   .fetch_frame = yuv_vtbl_fetch_frame,
+                                                   .close = yuv_vtbl_close,
+                                                   .fetch_into_vmaf_picture =
+                                                       yuv_vtbl_fetch_into_vmaf_picture,
+                                                   .set_rgb = yuv_vtbl_set_rgb};
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -35,12 +35,14 @@ from . import (
     emit_conformance,
     emit_docs,
     emit_ffmpeg_options,
+    emit_formats,
     emit_layout_test,
     emit_mcp,
     emit_openapi,
     emit_option_docs,
     emit_proto,
     emit_python,
+    emit_rgb,
     emit_symbols,
     gitref,
 )
@@ -104,6 +106,8 @@ def render(api: Api, root: Path | None = None) -> dict[str, str]:
         files.update({path: renderer(api) for path, renderer in OPTION_OUTPUTS})
         if root is not None:
             files.update(regions(api, root))
+    files.update(dict(emit_formats.outputs(api)))
+    files.update(dict(emit_rgb.outputs(api)))
     return files
 
 

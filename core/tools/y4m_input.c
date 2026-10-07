@@ -390,10 +390,20 @@ static void y4m_convert_mono_420jpeg(y4m_input *const y4m, unsigned char *dst,
                                      const unsigned char *const aux)
 {
     (void)aux;
-    dst += (size_t)y4m->pic_w * y4m->pic_h;
-    const size_t c_sz = (size_t)((y4m->pic_w + y4m->dst_c_dec_h - 1) / y4m->dst_c_dec_h) *
-                        (size_t)((y4m->pic_h + y4m->dst_c_dec_v - 1) / y4m->dst_c_dec_v);
-    (void)memset(dst, 128, c_sz * 2U);
+    const size_t xstride = y4m->depth > 8 ? 2U : 1U;
+    dst += (size_t)y4m->pic_w * y4m->pic_h * xstride;
+    const size_t c_samples = (size_t)((y4m->pic_w + y4m->dst_c_dec_h - 1) / y4m->dst_c_dec_h) *
+                             (size_t)((y4m->pic_h + y4m->dst_c_dec_v - 1) / y4m->dst_c_dec_v) * 2U;
+    if (xstride == 1U) {
+        (void)memset(dst, 128, c_samples);
+        return;
+    }
+    /* Neutral chroma of a high-bit-depth frame: the mid code, little-endian words. */
+    const unsigned mid = 1U << (y4m->depth - 1);
+    for (size_t i = 0; i < c_samples; i++) {
+        dst[2U * i] = (unsigned char)(mid & 0xffU);
+        dst[2U * i + 1U] = (unsigned char)(mid >> 8U);
+    }
 }
 
 // NOLINTNEXTLINE(readability-non-const-parameter) — ADR-1155: conforms to y4m_convert_func signature
@@ -419,67 +429,62 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
         y4m->convert = y4m_convert_null;
         return 0;
     }
-    if (strcmp(y4m->chroma_type, "420p10") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 2;
-        y4m->dst_buf_read_sz = ((size_t)y4m->pic_w * y4m->pic_h +
-                                (size_t)2 * ((y4m->pic_w + 1) / 2) * ((y4m->pic_h + 1) / 2)) *
-                               2;
-        y4m->depth = 10;
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
+    return 1;
+}
+
+/* Frame geometry of a high-bit-depth tag: `dec_h` x `dec_v` is the chroma decimation (0 x 0:
+ * monochrome, read as 4:2:0 with neutral chroma). */
+static void y4m_set_hbd_geometry(y4m_input *const y4m, int dec_h, int dec_v, int depth)
+{
+    const size_t w = (size_t)y4m->pic_w;
+    const size_t h = (size_t)y4m->pic_h;
+    y4m->depth = depth;
+    y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
+    if (dec_h == 0) {
+        y4m->src_c_dec_h = y4m->src_c_dec_v = 0;
+        y4m->dst_c_dec_h = y4m->dst_c_dec_v = 2;
+        y4m->dst_buf_read_sz = w * h * 2U;
+        y4m->convert = y4m_convert_mono_420jpeg;
+        return;
     }
-    if (strcmp(y4m->chroma_type, "420p12") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 2;
-        y4m->dst_buf_read_sz = ((size_t)y4m->pic_w * y4m->pic_h +
-                                (size_t)2 * ((y4m->pic_w + 1) / 2) * ((y4m->pic_h + 1) / 2)) *
-                               2;
-        y4m->depth = 12;
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
-    }
-    if (strcmp(y4m->chroma_type, "422p10") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = 2;
-        y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
-        y4m->depth = 10;
-        y4m->dst_buf_read_sz = (size_t)2 * ((size_t)y4m->pic_w * y4m->pic_h +
-                                            (size_t)2 * ((y4m->pic_w + 1) / 2) * y4m->pic_h);
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
-    }
-    if (strcmp(y4m->chroma_type, "422p12") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = 2;
-        y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
-        y4m->depth = 12;
-        y4m->dst_buf_read_sz = (size_t)2 * ((size_t)y4m->pic_w * y4m->pic_h +
-                                            (size_t)2 * ((y4m->pic_w + 1) / 2) * y4m->pic_h);
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
+    y4m->src_c_dec_h = y4m->dst_c_dec_h = dec_h;
+    y4m->src_c_dec_v = y4m->dst_c_dec_v = dec_v;
+    y4m->dst_buf_read_sz = (w * h + 2U * ((w + (size_t)dec_h - 1U) / (size_t)dec_h) *
+                                        ((h + (size_t)dec_v - 1U) / (size_t)dec_v)) *
+                           2U;
+    y4m->convert = y4m_convert_null;
+}
+
+/* High-bit-depth planar tags: 420pN, 422pN and 444pN with N = 9, 10, 12, 14 or 16 (what FFmpeg's
+ * yuv4mpegpipe writes for yuv420p9le ... yuv444p16le), samples as 16-bit little-endian words; and
+ * monoN (gray9 ... gray16), read as 4:2:0 with the neutral chroma code like the 8-bit `mono`.
+ * Returns 0 when the tag is one of them, 1 when it is not. */
+static int y4m_setup_hbd_format(y4m_input *const y4m)
+{
+    static const struct {
+        const char *family;
+        int dec_h;
+        int dec_v;
+    } families[] = {{"420p", 2, 2}, {"422p", 2, 1}, {"444p", 1, 1}, {"mono", 0, 0}};
+    static const int depths[] = {9, 10, 12, 14, 16};
+    for (size_t f = 0; f < sizeof(families) / sizeof(families[0]); f++) {
+        const size_t n = strlen(families[f].family);
+        if (strncmp(y4m->chroma_type, families[f].family, n) != 0)
+            continue;
+        for (size_t d = 0; d < sizeof(depths) / sizeof(depths[0]); d++) {
+            char tag[16];
+            (void)snprintf(tag, sizeof(tag), "%s%d", families[f].family, depths[d]);
+            if (strcmp(y4m->chroma_type, tag) == 0) {
+                y4m_set_hbd_geometry(y4m, families[f].dec_h, families[f].dec_v, depths[d]);
+                return 0;
+            }
+        }
     }
     return 1;
 }
 
 static int y4m_setup_chroma_format_part2(y4m_input *const y4m)
 {
-    if (strcmp(y4m->chroma_type, "444p10") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
-        y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3 * 2;
-        y4m->depth = 10;
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
-    }
-    if (strcmp(y4m->chroma_type, "444p12") == 0) {
-        y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
-        y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3 * 2;
-        y4m->depth = 12;
-        y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
-        return 0;
-    }
     if (strcmp(y4m->chroma_type, "420paldv") == 0) {
         y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 2;
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h;
@@ -538,6 +543,8 @@ static int y4m_setup_chroma_format_part3(y4m_input *const y4m)
 static int y4m_setup_chroma_format(y4m_input *const y4m)
 {
     y4m->depth = 8;
+    if (y4m_setup_hbd_format(y4m) == 0)
+        return 0;
     if (y4m_setup_chroma_format_part1(y4m) == 0)
         return 0;
     if (y4m_setup_chroma_format_part2(y4m) == 0)

@@ -11,9 +11,11 @@
  * the producer's planes, for every layout vmafx_frame_import() takes beyond
  * planar: semi-planar chroma (NV12 / NV16 / NV24 and the P0xx / P2xx / P4xx
  * family: one luma plane and one plane of interleaved Cb / Cr), packed 4:2:2
- * (Y210 / Y216: Y0 Cb Y1 Cr in 16-bit words) and packed 4:4:4 (Y410 / XV30:
- * one 32-bit word per pixel holding Cb, Y, Cr in bits 0 to 9, 10 to 19 and
- * 20 to 29). Every output sample is one input sample, shifted right and
+ * (Y210 / Y216: Y0 Cb Y1 Cr in 16-bit words; UYVY; V210: six pixels in four
+ * 32-bit words) and packed 4:4:4 (Y410 / XV30: one 32-bit word per pixel
+ * holding Cb, Y, Cr in bits 0 to 9, 10 to 19 and 20 to 29; AYUV, VUYX, XV36).
+ * The RGB layouts are converted by rgb_convert.h, with the same plan type
+ * for where the samples are. Every output sample is one input sample, shifted right and
  * masked: nothing is rounded, scaled or filtered, so the result is bit for
  * bit the planar frame a host upload of the same samples makes. The CUDA, HIP
  * and SYCL kernels (core/src/vmafx/import_convert_kernels.h, the SYCL import
@@ -47,6 +49,14 @@ typedef struct VmafxImportRead {
     uint32_t in_bytes;  /* 1, 2 or 4 */
     uint32_t shift;
     uint32_t mask;
+    /* Grouped form (V210, ADR-2145; `period` 0: not used, the fields above
+     * apply): sample x is in group g = x / period of `group_elems` elements,
+     * and k = x % period picks nibble k of `pattern`: bits 0 to 1 the element
+     * of the group, bits 2 to 3 the shift in tens of bits. `shift` is not
+     * read, `mask` and `in_bytes` are. */
+    uint32_t period;
+    uint32_t group_elems;
+    uint32_t pattern;
 } VmafxImportRead;
 
 /* One input element at byte `at` of `row`, little-endian. */
@@ -65,8 +75,14 @@ static inline uint32_t vmafx_import_load(const uint8_t *row, size_t at, uint32_t
 /* One output sample of the row `s`. */
 static inline uint32_t vmafx_import_sample(const uint8_t *s, uint32_t x, const VmafxImportRead *rd)
 {
-    const size_t element = (size_t)x * rd->step + rd->offset;
-    uint32_t v = vmafx_import_load(s, element * rd->in_bytes, rd->in_bytes) >> rd->shift;
+    size_t element = (size_t)x * rd->step + rd->offset;
+    uint32_t shift = rd->shift;
+    if (rd->period != 0u) {
+        const uint32_t nibble = (rd->pattern >> (4u * (x % rd->period))) & 15u;
+        element = (size_t)(x / rd->period) * rd->group_elems + (nibble & 3u);
+        shift = 10u * (nibble >> 2u);
+    }
+    uint32_t v = vmafx_import_load(s, element * rd->in_bytes, rd->in_bytes) >> shift;
     if (rd->mask != 0u) {
         v &= rd->mask;
     }

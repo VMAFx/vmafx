@@ -83,11 +83,46 @@ static inline bool vt_is_semi(uint32_t pix_fmt)
     return pix_fmt >= VMAFX_PIXEL_FORMAT_NV12 && pix_fmt <= VMAFX_PIXEL_FORMAT_P416;
 }
 
+static inline bool vt_is_rgb(uint32_t pix_fmt)
+{
+    return pix_fmt == VMAFX_PIXEL_FORMAT_RGB || pix_fmt == VMAFX_PIXEL_FORMAT_RGBA ||
+           pix_fmt == VMAFX_PIXEL_FORMAT_BGRA;
+}
+
 static inline bool vt_is_packed(uint32_t pix_fmt)
 {
     return pix_fmt == VMAFX_PIXEL_FORMAT_Y210 || pix_fmt == VMAFX_PIXEL_FORMAT_Y410 ||
            pix_fmt == VMAFX_PIXEL_FORMAT_YUYV422 || pix_fmt == VMAFX_PIXEL_FORMAT_Y212 ||
-           pix_fmt == VMAFX_PIXEL_FORMAT_VUYX || pix_fmt == VMAFX_PIXEL_FORMAT_XV36;
+           pix_fmt == VMAFX_PIXEL_FORMAT_VUYX || pix_fmt == VMAFX_PIXEL_FORMAT_XV36 ||
+           pix_fmt == VMAFX_PIXEL_FORMAT_UYVY422 || pix_fmt == VMAFX_PIXEL_FORMAT_AYUV ||
+           pix_fmt == VMAFX_PIXEL_FORMAT_V210 || vt_is_rgb(pix_fmt);
+}
+
+/* The statement of an RGB import (ADR-2146): what the test's frames say they
+ * are. Set by the format runner (vmafx_format_cells.h) before it imports and
+ * applied to every RGB descriptor by vt_apply_rgb_statement(). */
+typedef struct VtRgbStatement {
+    uint32_t matrix;
+    uint32_t range;
+    uint32_t transfer;
+    uint32_t out_range;
+} VtRgbStatement;
+
+static inline VtRgbStatement *vt_rgb_statement(void)
+{
+    static VtRgbStatement statement;
+    return &statement;
+}
+
+static inline void vt_apply_rgb_statement(VmafxFrameImport *imp)
+{
+    if (vt_is_rgb(imp->pix_fmt)) {
+        const VtRgbStatement *const s = vt_rgb_statement();
+        imp->rgb_matrix = s->matrix;
+        imp->rgb_range = s->range;
+        imp->rgb_transfer = s->transfer;
+        imp->rgb_out_range = s->out_range;
+    }
 }
 
 /* Planar words with the sample in the top bits (YUV444P_MSB). */
@@ -132,10 +167,18 @@ static inline size_t vt_packed_row(const VmafxFrameDesc *d, uint32_t pix_fmt)
     case VMAFX_PIXEL_FORMAT_Y210:
     case VMAFX_PIXEL_FORMAT_Y212:
     case VMAFX_PIXEL_FORMAT_YUYV422:
+    case VMAFX_PIXEL_FORMAT_UYVY422:
         return (size_t)((d->w + 1u) / 2u) * 4u * bytes;
     case VMAFX_PIXEL_FORMAT_Y410:
         return (size_t)d->w * 4u;
-    default: /* XV36, VUYX */
+    case VMAFX_PIXEL_FORMAT_V210:
+        return (size_t)((d->w + 5u) / 6u) * 16u;
+    case VMAFX_PIXEL_FORMAT_RGB:
+        return (size_t)d->w * 3u * bytes;
+    case VMAFX_PIXEL_FORMAT_RGBA:
+    case VMAFX_PIXEL_FORMAT_BGRA:
+        return (size_t)d->w * 4u * bytes;
+    default: /* XV36, VUYX, AYUV */
         return (size_t)d->w * 4u * bytes;
     }
 }
@@ -162,6 +205,26 @@ static inline void vt_pack_pixel(uint8_t *o, uint32_t pix_fmt, unsigned x, size_
     if (pix_fmt == VMAFX_PIXEL_FORMAT_Y410) {
         const uint32_t word = u | (lum << 10u) | (v << 20u) | (3u << 30u);
         memcpy(o + (size_t)4u * x, &word, sizeof(word));
+    } else if (vt_is_rgb(pix_fmt)) {
+        /* (lum, u, v) are R, G, B here; the alpha element, if any, is a marker. */
+        const unsigned elems = pix_fmt == VMAFX_PIXEL_FORMAT_RGB ? 3u : 4u;
+        const bool bgra = pix_fmt == VMAFX_PIXEL_FORMAT_BGRA;
+        const size_t at = (size_t)elems * x;
+        vt_put_sample(o, at + (bgra ? 2u : 0u), bytes, (uint16_t)lum);
+        vt_put_sample(o, at + 1u, bytes, (uint16_t)u);
+        vt_put_sample(o, at + (bgra ? 0u : 2u), bytes, (uint16_t)v);
+    } else if (pix_fmt == VMAFX_PIXEL_FORMAT_AYUV) {
+        const size_t at = (size_t)4u * x; /* A Y Cb Cr; the alpha byte stays the marker */
+        o[at + 1u] = (uint8_t)lum;
+        o[at + 2u] = (uint8_t)u;
+        o[at + 3u] = (uint8_t)v;
+    } else if (pix_fmt == VMAFX_PIXEL_FORMAT_UYVY422) {
+        const size_t group = (size_t)4u * (x / 2u);
+        o[group + 1u + (size_t)(x % 2u) * 2u] = (uint8_t)lum; /* Cb Y0 Cr Y1 */
+        if (x % 2u == 0u) {
+            o[group] = (uint8_t)u;
+            o[group + 2u] = (uint8_t)v;
+        }
     } else if (pix_fmt == VMAFX_PIXEL_FORMAT_XV36 || pix_fmt == VMAFX_PIXEL_FORMAT_VUYX) {
         const bool vuyx = pix_fmt == VMAFX_PIXEL_FORMAT_VUYX;
         const size_t at = (size_t)4u * x;
@@ -178,6 +241,36 @@ static inline void vt_pack_pixel(uint8_t *o, uint32_t pix_fmt, unsigned x, size_
     }
 }
 
+/* One V210 row of `w` pixels from the samples `y[w]`, `cb[(w + 1) / 2]`,
+ * `cr[...]`, as the format is defined: six pixels in four 32-bit words
+ * (Cb0 Y0 Cr0 / Y1 Cb1 Y2 / Cr1 Y3 Cb2 / Y4 Cr2 Y5, ten bits each from bit 0, 10,
+ * 20); samples past the width and the top two bits of each word are the
+ * marker 0x3ff / 3 the import must never read. */
+static inline void vt_pack_v210_row(uint8_t *o, unsigned w, const uint8_t *plane_y,
+                                    const uint8_t *plane_cb, const uint8_t *plane_cr, size_t bytes)
+{
+    const unsigned cw = (w + 1u) / 2u;
+    for (unsigned g = 0; g * 6u < w; g++) {
+        uint32_t s[12];
+        for (unsigned k = 0; k < 6u; k++) {
+            const unsigned x = g * 6u + k;
+            s[k] = x < w ? vt_sample(plane_y, x, bytes) : 0x3ffu;
+        }
+        for (unsigned k = 0; k < 3u; k++) {
+            const unsigned c = g * 3u + k;
+            s[6u + k] = c < cw ? vt_sample(plane_cb, c, bytes) : 0x3ffu;
+            s[9u + k] = c < cw ? vt_sample(plane_cr, c, bytes) : 0x3ffu;
+        }
+        const uint32_t words[4] = {
+            s[6] | (s[0] << 10u) | (s[9] << 20u) | (3u << 30u),
+            s[1] | (s[7] << 10u) | (s[2] << 20u) | (3u << 30u),
+            s[10] | (s[3] << 10u) | (s[8] << 20u) | (3u << 30u),
+            s[4] | (s[11] << 10u) | (s[5] << 20u) | (3u << 30u),
+        };
+        memcpy(o + (size_t)16u * g, words, sizeof(words));
+    }
+}
+
 static inline void vt_to_packed(const VmafxFrameDesc *d, const uint8_t *planar, uint32_t pix_fmt,
                                 uint8_t *out)
 {
@@ -189,10 +282,16 @@ static inline void vt_to_packed(const VmafxFrameDesc *d, const uint8_t *planar, 
     const uint8_t *const cr = cb + row[1] * h[1];
     const size_t pitch = vt_packed_row(d, pix_fmt);
     const size_t bytes = d->bpc > 8u ? 2u : 1u;
-    const unsigned shift = bytes == 2u ? 16u - d->bpc : 0u;
+    /* The sample sits in the top bits of its word in Y210 / Y212 / XV36; RGB is low-aligned. */
+    const unsigned shift = bytes == 2u && !vt_is_rgb(pix_fmt) ? 16u - d->bpc : 0u;
     for (unsigned y = 0; y < h[0]; y++) {
         uint8_t *const o = out + (size_t)y * pitch;
         memset(o, 0xa5, pitch);
+        if (pix_fmt == VMAFX_PIXEL_FORMAT_V210) {
+            vt_pack_v210_row(o, w[0], planar + (size_t)y * row[0], cb + (size_t)y * row[1],
+                             cr + (size_t)y * row[2], bytes);
+            continue;
+        }
         for (unsigned x = 0; x < w[0]; x++) {
             const unsigned c = w[1] == w[0] ? x : x / 2u;
             vt_pack_pixel(o, pix_fmt, x, bytes, shift,

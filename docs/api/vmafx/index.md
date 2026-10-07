@@ -271,11 +271,37 @@ per sample of the frame the import makes):
 | `P010`, `P210`, `P410` | The same with 16-bit words whose 10 bits are the most significant | The same chroma | 10 |
 | `P016`, `P216`, `P416` | The same with 16-bit words | The same chroma | 16 |
 | `Y210`, `Y212` | One plane of 16-bit words Y0 Cb Y1 Cr per two pixels, the 10 or 12 bits most significant | `YUV422P` | 10, 12 |
-| `YUYV422` | One plane of the bytes Y0 Cb Y1 Cr per two pixels (YUY2) | `YUV422P` | 8 |
+| `YUYV422`, `UYVY422` | One plane of the bytes Y0 Cb Y1 Cr (YUY2) or Cb Y0 Cr Y1 (UYVY) per two pixels | `YUV422P` | 8 |
+| `V210` | One plane of 32-bit words, six pixels in four words (Cb Y Cr / Y Cb Y / Cr Y Cb / Y Cr Y, ten bits each, the top two bits of a word unused); a row holds `ceil(w / 6) * 16` bytes of data, the producer may pad it | `YUV422P` | 10 |
 | `Y410` (Intel XV30) | One plane of 32-bit words per pixel: Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29 | `YUV444P` | 10 |
 | `XV36` | One plane of four 16-bit words Cb Y Cr X per pixel, the 12 bits most significant | `YUV444P` | 12 |
-| `VUYX` | One plane of the bytes V Cb Y X per pixel | `YUV444P` | 8 |
+| `VUYX`, `AYUV` | One plane of the bytes V Cb Y X (VUYX) or A Y Cb Cr (AYUV) per pixel; the unused and alpha bytes are not read | `YUV444P` | 8 |
+| `RGB`, `RGBA`, `BGRA` | One plane of R G B, R G B A or B G R A samples per pixel (bytes at 8 bits, else 16-bit words with the sample in the low bits); the alpha sample is not read | `YUV444P` Y'CbCr, converted with the statement below | 8 to 16 |
 | `YUV444P_MSB` | Three planes of 16-bit words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces) | `YUV444P` | 9 to 16 |
+
+Every layout and its FFmpeg and GStreamer names are in the generated
+[pixel format table](../../usage/pixel-formats.md); the filter and element
+lists are generated from the same definition.
+
+#### RGB input
+
+An RGB frame has no luma until a matrix says how to make one, so the library
+never guesses. `VmafxFrameImport` carries `rgb_matrix` (`MATRIX_BT601`,
+`MATRIX_BT709` or `MATRIX_BT2020_NCL`), `rgb_range` (the range of the R'G'B'
+samples), `rgb_transfer` (`TRC_BT709`, `TRC_SRGB`, `TRC_SMPTE2084` or
+`TRC_HLG`) and `rgb_out_range` (the range of the Y'CbCr frame made; `LIMITED`
+is the range the VMAF models are trained on). They are the frame colour types
+`VmafxColorMatrix`, `VmafxColorRange` and `VmafxColorTransfer`. A value of
+`UNKNOWN` (0) in any of them is refused with `VMAFX_E_INVALID` naming the field
+and the layout. `MATRIX_BT2020_CL`, `MATRIX_ICTCP` and `TRC_LINEAR` are
+declared and refused with `VMAFX_E_NOTSUP` naming them. The conversion is the
+H.273 matrix applied to the
+code values, in 64-bit integers with one rounding (ties round up) and a clip
+to the code range
+([ADR-2146](../../adr/2146-vmafx-rgb-input-explicit-matrix.md)); a
+gray pixel has exactly the middle chroma code. The transfer is checked and
+recorded, not applied. The CPU, CUDA and HIP conversions return the same
+integers. The other layouts ignore these fields.
 
 A CUDA, HIP or SYCL device converts every layout above on the device; a packed
 layout or `YUV444P_MSB` in a device array or GL texture is refused naming
