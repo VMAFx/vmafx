@@ -50,7 +50,10 @@ typedef struct VmafxDeviceInfo VmafxDeviceInfo;
 struct VmafxDeviceDesc {
     /** Size of this struct as the caller compiled it; set by the _INIT macro. */
     uint32_t struct_size;
-    /** Backend of the device; this release creates CPU devices only. Values: VmafxBackend. */
+    /**
+     * Backend of the device: CPU in every build, CUDA in a build with the CUDA backend; another
+     * backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
+     */
     uint32_t backend;
     /**
      * Device index within the backend (see vmafx_device_count()); -1: any device of the backend.

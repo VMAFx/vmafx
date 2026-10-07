@@ -33,6 +33,27 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
+- **VMAFx device frames on CUDA (RC4, ADR-1929, ADR-2023).** In a build with
+  the CUDA backend the VMAFx API creates CUDA devices by index or from your
+  context and stream (`vmafx_device_create` with `VMAFX_BACKEND_CUDA`,
+  `vmafx_device_count`, `vmafx_device_info`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  CUDA twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): CUDA device pointers are read where they are, NV12,
+  P010 and P016 are planarised on the device, CUDA arrays and OpenGL textures
+  (the new `VMAFX_MEMORY_GL_TEXTURE`) are read out on the device. Acquire
+  fences of kind `VMAFX_FENCE_CUDA_EVENT` are waited on by the device's
+  stream, and the new `VMAFX_FENCE_GL_SYNC` orders a GL producer's rendering;
+  release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_CUDA_EVENT`) are signalled
+  after the last reader in every context, and the new release callback of
+  `VmafxFrameImport` (`release`, `user`) lets a producer make its stream wait
+  on the release event before it reuses its memory. CUDA frame pools
+  (`vmafx_frame_pool_create` with a CUDA device) hand out device frames.
+  Imported frames score bit for bit as the same frames uploaded from the
+  host. ABI 0.1.4. See
+  [CUDA devices](docs/api/vmafx/index.md#cuda-devices).
+
+
 - **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
   The VMAFx API gains the shared contract of zero-copy frame import:
   device enumeration and information (`vmafx_device_count`,
@@ -353,6 +374,13 @@
 
 ### Fixed
 
+- **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
+  read both input pictures with the pitch of the engine's own device
+  pictures, so a CUDA picture with another pitch (a frame imported where its
+  producer holds it) scored wrong VIF values; it now uses each picture's
+  stride.
+
+
 - **Float extractors report their errors through the log (ADR-1906).** The
   allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
   code (`error: ...` lines) went to standard output, where they mixed with
@@ -514,6 +542,27 @@ They are recorded in full, unedited, in
   function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
   struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
   [the VMAFx API page](docs/api/vmafx/index.md).
+
+
+- **VMAFx device frames on CUDA (RC4, ADR-1929, ADR-2023).** In a build with
+  the CUDA backend the VMAFx API creates CUDA devices by index or from your
+  context and stream (`vmafx_device_create` with `VMAFX_BACKEND_CUDA`,
+  `vmafx_device_count`, `vmafx_device_info`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  CUDA twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): CUDA device pointers are read where they are, NV12,
+  P010 and P016 are planarised on the device, CUDA arrays and OpenGL textures
+  (the new `VMAFX_MEMORY_GL_TEXTURE`) are read out on the device. Acquire
+  fences of kind `VMAFX_FENCE_CUDA_EVENT` are waited on by the device's
+  stream, and the new `VMAFX_FENCE_GL_SYNC` orders a GL producer's rendering;
+  release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_CUDA_EVENT`) are signalled
+  after the last reader in every context, and the new release callback of
+  `VmafxFrameImport` (`release`, `user`) lets a producer make its stream wait
+  on the release event before it reuses its memory. CUDA frame pools
+  (`vmafx_frame_pool_create` with a CUDA device) hand out device frames.
+  Imported frames score bit for bit as the same frames uploaded from the
+  host. ABI 0.1.4. See
+  [CUDA devices](docs/api/vmafx/index.md#cuda-devices).
 
 
 - **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
@@ -4647,6 +4696,13 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   instances on one context, 48 frames of the Netflix 576x324 pair: 28 to 85
   wrong frames of 192 per feature in every run before, none in 105 runs after
   (Netflix/vmaf#1305).
+
+
+- **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
+  read both input pictures with the pitch of the engine's own device
+  pictures, so a CUDA picture with another pitch (a frame imported where its
+  producer holds it) scored wrong VIF values; it now uses each picture's
+  stride.
 
 
 - **The Python extension builds again on every compiler.**

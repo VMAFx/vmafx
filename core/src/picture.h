@@ -20,6 +20,8 @@
 #ifndef VMAF_SRC_PICTURE_H_
 #define VMAF_SRC_PICTURE_H_
 
+#include <stdbool.h>
+
 #ifdef HAVE_CUDA
 #ifdef DEVICE_CODE
 #include <cuda.h>
@@ -63,6 +65,11 @@ typedef struct VmafPicturePrivate {
         CUevent ready, finished;
         CUstream str;
         VmafCudaState *state;
+        /* RC4 WP3 (ADR-2023): a frame of the VMAFx API (an import or a pool
+         * frame), never copied to the host; `ordered` when its stream waits
+         * for the producer already, so the ADR-1199 barrier is skipped. */
+        bool vmafx;
+        bool ordered;
     } cuda;
 #endif
 #ifdef HAVE_SYCL

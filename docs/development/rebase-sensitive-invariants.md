@@ -176,6 +176,14 @@ backend within it.
   fixed by the ADR. `core/src/vmafx/exactness_gen.c` is generated from
   `scripts/ci/exact_twins.d` by `make docs-fragments-write`. See
   [core/src/AGENTS.d/vmafx-provenance.md](../../core/src/AGENTS.d/vmafx-provenance.md).
+- **VMAFx CUDA frames are read on one stream per device ([ADR-2023](../adr/2023-vmafx-cuda-device-frames.md))**:
+  every frame of a CUDA device of the VMAFx API is a CUDA picture on the
+  device's library stream; its acquire wait, conversions and ready event are
+  there, and its release is enqueued there where its last reference is
+  dropped (`core/src/cuda/import_fence.c`). `core/src/libvmaf.c` skips the
+  ADR-1199 barrier only for a pair of `ordered` pictures and never downloads a
+  `vmafx` picture. `integer_vif_cuda` reads each picture with its own pitch
+  (`VifBufferCuda.dis_stride`). Preserve `test_vmafx_import_cuda*` together.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

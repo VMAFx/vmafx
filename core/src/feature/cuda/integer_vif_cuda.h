@@ -61,7 +61,11 @@ typedef struct VifBufferCuda {
         uint32_t *padding;
     } tmp;
 
+    /* Row pitches (bytes) of the reference and distorted pictures scale 0
+     * reads, each the picture's own stride[0] (set per frame: a picture's
+     * pitch is its allocator's, an imported plane's its producer's). */
     ptrdiff_t stride;
+    ptrdiff_t dis_stride;
     ptrdiff_t rd_stride; /* stride (bytes) for half-res ref/dis downsampled buffers */
     ptrdiff_t stride_16;
     ptrdiff_t stride_32;

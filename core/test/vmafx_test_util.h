@@ -22,6 +22,17 @@
 
 #include "vmafx/vmafx.h"
 
+/* A backend and a fence kind that no build on this platform has: the refusal
+ * tests name them, so that a backend lane in the build (CUDA, SYCL, HIP)
+ * does not turn an expected refusal into a call into its runtime. */
+#ifdef __APPLE__
+#define VT_UNBUILT_BACKEND VMAFX_BACKEND_HIP
+#define VT_UNBUILT_FENCE VMAFX_FENCE_WIN32_SHARED
+#else
+#define VT_UNBUILT_BACKEND VMAFX_BACKEND_METAL
+#define VT_UNBUILT_FENCE VMAFX_FENCE_METAL_SHARED_EVENT
+#endif
+
 /* NOLINTBEGIN(modernize-use-nullptr): C header. The fork builds C as C23,
  * where clang-tidy also proposes the `nullptr` keyword, but MSVC's documented
  * /std:clatest C23 feature set does not include `nullptr` and the required

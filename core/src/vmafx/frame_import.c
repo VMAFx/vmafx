@@ -38,6 +38,9 @@
 
 #include "error_internal.h"
 #include "frame_import_hooks.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 #include "internal.h"
 #include "mem.h"
 #include "metal/iosurface_layout.h"
@@ -55,17 +58,7 @@
 /* Row alignment of the planes an import converts (picture.c DATA_ALIGN). */
 #define VMAFX_IMPORT_ALIGN 64u
 
-/* How a producer lays out one pixel format. */
-typedef struct ImportLayout {
-    uint32_t pix_fmt;    /* VmafxPixelFormat the producer hands over */
-    uint32_t planar_fmt; /* VmafxPixelFormat of the frame it makes */
-    uint32_t n_planes;   /* planes the producer hands over */
-    uint32_t bpc_min;
-    uint32_t bpc_max;
-    uint32_t shift;   /* right shift of every sample (P010: 6) */
-    bool interleaved; /* plane 1 holds Cb / Cr pairs */
-    const char *name; /* FFmpeg's name, for messages */
-} ImportLayout;
+typedef VmafxImportLayout ImportLayout;
 
 static const ImportLayout import_layouts[] = {
     {VMAFX_PIXEL_FORMAT_YUV420P, VMAFX_PIXEL_FORMAT_YUV420P, 3u, 8u, 16u, 0u, false, "yuv420p"},
@@ -79,9 +72,9 @@ static const ImportLayout import_layouts[] = {
 
 #define N_IMPORT_LAYOUTS (sizeof(import_layouts) / sizeof(import_layouts[0]))
 
-static const char *const memory_names[] = {"NONE",          "HOST",        "DEVICE_POINTER",
-                                           "DEVICE_ARRAY",  "DMABUF",      "METAL_SURFACE",
-                                           "METAL_TEXTURE", "WIN32_SHARED"};
+static const char *const memory_names[] = {"NONE",          "HOST",         "DEVICE_POINTER",
+                                           "DEVICE_ARRAY",  "DMABUF",       "METAL_SURFACE",
+                                           "METAL_TEXTURE", "WIN32_SHARED", "GL_TEXTURE"};
 
 const char *vmafx_memory_kind_name(uint32_t memory)
 {
@@ -115,6 +108,22 @@ static const char *const plane_modifier_names[] = {
     "desc.plane[0].modifier", "desc.plane[1].modifier", "desc.plane[2].modifier"};
 static const char *const plane_size_names[] = {"desc.plane[0].size", "desc.plane[1].size",
                                                "desc.plane[2].size"};
+static const char *const plane_index_names[] = {
+    "desc.plane[0].plane_index", "desc.plane[1].plane_index", "desc.plane[2].plane_index"};
+static const char *const plane_offset_names[] = {"desc.plane[0].offset", "desc.plane[1].offset",
+                                                 "desc.plane[2].offset"};
+
+const char *vmafx_import_plane_field(uint32_t i, const char *field)
+{
+    assert(i < 3u && field != NULL);
+    const char *const *const names = strcmp(field, "handle") == 0   ? plane_handle_names :
+                                     strcmp(field, "pitch") == 0    ? plane_pitch_names :
+                                     strcmp(field, "modifier") == 0 ? plane_modifier_names :
+                                     strcmp(field, "size") == 0     ? plane_size_names :
+                                     strcmp(field, "offset") == 0   ? plane_offset_names :
+                                                                      plane_index_names;
+    return names[i];
+}
 
 static bool dim_ok(uint32_t dim)
 {
@@ -165,21 +174,20 @@ static VmafxStatus check_geometry(const VmafxReport *report, const VmafxFrameImp
     return VMAFX_OK;
 }
 
-/* The device binds the descriptor's memory kind. */
-static VmafxStatus check_memory(const VmafxReport *report, const VmafxDevice *device,
-                                const VmafxFrameImport *d, const ImportLayout *layout)
+/* A value of VmafxMemoryKind other than NONE. */
+static VmafxStatus check_memory_kind(const VmafxReport *report, const VmafxFrameImport *d)
 {
-    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_WIN32_SHARED) {
+    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_GL_TEXTURE) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "memory kind %u is not a VmafxMemoryKind", (unsigned)d->memory);
     }
-    if (device->backend != VMAFX_BACKEND_CPU) {
-        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
-                          "backend %s, memory %s, pixel format %s: this build imports on the CPU "
-                          "device only",
-                          vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
-                          layout->name);
-    }
+    return VMAFX_OK;
+}
+
+/* The CPU device binds the descriptor's memory kind. */
+static VmafxStatus check_memory(const VmafxReport *report, const VmafxFrameImport *d,
+                                const ImportLayout *layout)
+{
     if (d->memory != VMAFX_MEMORY_HOST) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "backend cpu, memory %s, pixel format %s: the CPU device binds HOST "
@@ -189,10 +197,9 @@ static VmafxStatus check_memory(const VmafxReport *report, const VmafxDevice *de
     return VMAFX_OK;
 }
 
-/* Bytes of one row of producer plane `i` and its rows, for the planar
- * geometry `pw` / `ph` of the frame. */
-static void plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_t i, const unsigned pw[3],
-                         const unsigned ph[3], uint64_t *row, uint64_t *rows)
+void vmafx_import_plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_t i,
+                               const unsigned pw[3], const unsigned ph[3], uint64_t *row,
+                               uint64_t *rows)
 {
     const uint64_t bytes = bpc > 8u ? 2u : 1u;
     const uint64_t pair = layout->interleaved && i == 1u ? 2u : 1u;
@@ -215,10 +222,9 @@ static bool plane_fits(const VmafxImportPlane *p, uint64_t row, uint64_t rows)
     return p->size == 0u || (p->offset <= p->size && extent <= p->size - p->offset);
 }
 
-/* One host plane: an address, a linear layout, a pitch that holds a row and
- * rows that lie inside the given size and the address space. */
-static VmafxStatus check_host_plane(const VmafxReport *report, const VmafxImportPlane *p,
-                                    uint32_t i, uint64_t row, uint64_t rows)
+VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const VmafxImportPlane *p,
+                                            uint32_t i, uint64_t row, uint64_t rows,
+                                            const char *memory)
 {
     if (p->handle == 0u) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PLANE, plane_handle_names[i],
@@ -226,9 +232,9 @@ static VmafxStatus check_host_plane(const VmafxReport *report, const VmafxImport
     }
     if (p->modifier != 0u) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PLANE, plane_modifier_names[i],
-                          "plane %u: modifier 0x%llx; host memory is read linearly (modifier 0) "
+                          "plane %u: modifier 0x%llx; %s memory is read linearly (modifier 0) "
                           "and is never de-tiled through a copy",
-                          (unsigned)i, (unsigned long long)p->modifier);
+                          (unsigned)i, (unsigned long long)p->modifier, memory);
     }
     if (p->pitch < row || p->pitch > (uint64_t)PTRDIFF_MAX) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PLANE, plane_pitch_names[i],
@@ -254,8 +260,9 @@ static VmafxStatus check_planes(const VmafxReport *report, const VmafxFrameImpor
     for (uint32_t i = 0; i < layout->n_planes; i++) {
         uint64_t row = 0;
         uint64_t rows = 0;
-        plane_extent(layout, d->bpc, i, pw, ph, &row, &rows);
-        const VmafxStatus status = check_host_plane(report, &d->plane[i], i, row, rows);
+        vmafx_import_plane_extent(layout, d->bpc, i, pw, ph, &row, &rows);
+        const VmafxStatus status =
+            vmafx_import_check_linear_plane(report, &d->plane[i], i, row, rows, "host");
         if (status != VMAFX_OK) {
             return status;
         }
@@ -292,7 +299,7 @@ static VmafxStatus check_acquire(const VmafxReport *report, const VmafxFence *ac
 /* First sample of producer plane `i`. */
 static uint8_t *plane_address(const VmafxImportPlane *p)
 {
-    /* SAFETY: check_host_plane() proved handle + offset + the plane's extent
+    /* SAFETY: vmafx_import_check_linear_plane() proved handle + offset + the plane's extent
      * <= UINTPTR_MAX and, when the producer gave a size, inside it; the
      * producer guarantees the memory is readable until the release fence. */
     /* NOLINTNEXTLINE(performance-no-int-to-ptr): a host plane crosses the ABI as uintptr_t (ADR-1852 design section 2.1 item 6, ADR-1929). */
@@ -408,9 +415,47 @@ static VmafxStatus bind_frame(const VmafxReport *report, VmafxDevice *device,
     const uint32_t residency = vmafx_test_import_residency();
     frame->residency = residency == VMAFX_TEST_RESIDENCY_OFF ? device->backend : residency;
     frame->owned = owned;
+    frame->release = d->release;
+    frame->user = d->user;
     frame->device = vmafx_device_ref(device);
     *out = frame;
     return VMAFX_OK;
+}
+
+/* The CPU device's checks and binding of a geometry-checked descriptor. */
+static VmafxStatus import_on_cpu(const VmafxReport *report, VmafxDevice *device,
+                                 const VmafxFrameImport *d, const ImportLayout *layout,
+                                 VmafxFrame **out)
+{
+    VmafxStatus status = check_memory(report, d, layout);
+    if (status == VMAFX_OK) {
+        status = check_planes(report, d, layout);
+    }
+    if (status == VMAFX_OK) {
+        status = check_acquire(report, &d->acquire);
+    }
+    return status == VMAFX_OK ? bind_frame(report, device, d, layout, out) : status;
+}
+
+/* The import on the lane of the device's backend. */
+static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *device,
+                                    const VmafxFrameImport *d, const ImportLayout *layout,
+                                    VmafxFrame **out)
+{
+    switch (device->backend) {
+    case VMAFX_BACKEND_CPU:
+        return import_on_cpu(report, device, d, layout, out);
+#ifdef HAVE_CUDA
+    case VMAFX_BACKEND_CUDA:
+        return vmafx_cuda_frame_import(report, device, d, layout, out);
+#endif
+    default:
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
+                          "backend %s, memory %s, pixel format %s: this build imports on the "
+                          "devices of the backends it was built with",
+                          vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
+                          layout->name);
+    }
 }
 
 VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc, VmafxFrame **out,
@@ -439,15 +484,9 @@ VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc
         status = check_geometry(&report, &d, &layout);
     }
     if (status == VMAFX_OK) {
-        status = check_memory(&report, dev, &d, layout);
+        status = check_memory_kind(&report, &d);
     }
-    if (status == VMAFX_OK) {
-        status = check_planes(&report, &d, layout);
-    }
-    if (status == VMAFX_OK) {
-        status = check_acquire(&report, &d.acquire);
-    }
-    return status == VMAFX_OK ? bind_frame(&report, dev, &d, layout, out) : status;
+    return status == VMAFX_OK ? import_on_device(&report, dev, &d, layout, out) : status;
 }
 
 /* ---- Release fences ---------------------------------------------------------------- */
@@ -479,11 +518,17 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
                           !frame ? "frame" : "out", "NULL argument");
     }
+#ifdef HAVE_CUDA
+    if (kind != VMAFX_FENCE_HOST && kind != VMAFX_FENCE_NONE && frame->lane &&
+        frame->device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_release_fence(&report, frame, kind, out);
+    }
+#endif
     if (kind != VMAFX_FENCE_HOST) {
         return VMAFX_FAIL(&report, kind == VMAFX_FENCE_NONE ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
                           VMAFX_SUBJECT_FENCE, "kind",
-                          "backend %s: a release fence of kind %u; this build signals HOST "
-                          "release fences",
+                          "backend %s: a release fence of kind %u; the frames of this device "
+                          "signal HOST release fences",
                           vmafx_backend_name(frame->device->backend), (unsigned)kind);
     }
     VmafxHostFence *const fence = release_fence_of(frame);

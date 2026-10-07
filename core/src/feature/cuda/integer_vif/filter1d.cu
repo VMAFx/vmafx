@@ -113,12 +113,13 @@ __device__ __forceinline__ int vif_mirror_index(int i, int n)
 /* Cooperative load of the vertical tiles.  Thread (ty, tx) owns tile columns
  * [tx*vpt, tx*vpt + vpt) and iterates over tile rows stepping by blockDim.y.
  * tile_row=0 maps to image row (blockIdx.y*blockDim.y - fwidth/2).
- * `stride` is in samples. */
+ * `stride` / `dis_stride` are the pitches of `ref_in` / `dis_in` in samples:
+ * two pictures may have different pitches (ADR-2023). */
 template <typename alignment_type, typename sample_type, int fwidth>
 __device__ __forceinline__ void
 vif_vert_load_tiles(sample_type (*ref_tile)[VIF_VERT_TILE_COLS],
                     sample_type (*dis_tile)[VIF_VERT_TILE_COLS], const sample_type *ref_in,
-                    const sample_type *dis_in, ptrdiff_t stride, int w, int h)
+                    const sample_type *dis_in, ptrdiff_t stride, ptrdiff_t dis_stride, int w, int h)
 {
     constexpr int val_per_thread = sizeof(alignment_type) / sizeof(sample_type);
     constexpr int half_fv = fwidth / 2;
@@ -133,7 +134,7 @@ vif_vert_load_tiles(sample_type (*ref_tile)[VIF_VERT_TILE_COLS],
             const alignment_type ref_vec = *reinterpret_cast<const alignment_type *>(
                 &ref_in[(ptrdiff_t)img_row * stride + x_block_start + col]);
             const alignment_type dis_vec = *reinterpret_cast<const alignment_type *>(
-                &dis_in[(ptrdiff_t)img_row * stride + x_block_start + col]);
+                &dis_in[(ptrdiff_t)img_row * dis_stride + x_block_start + col]);
             const sample_type *ref_s = reinterpret_cast<const sample_type *>(&ref_vec);
             const sample_type *dis_s = reinterpret_cast<const sample_type *>(&dis_vec);
 #pragma unroll
@@ -256,7 +257,7 @@ __device__ __forceinline__ void filter1d_8_vertical_kernel(VifBufferCuda buf, ui
     __shared__ uint8_t dis_tile[TILE_H_MAX][VIF_VERT_TILE_COLS];
 
     vif_vert_load_tiles<alignment_type, uint8_t, fwidth_0>(ref_tile, dis_tile, ref_in, dis_in,
-                                                           buf.stride, w, h);
+                                                           buf.stride, buf.dis_stride, w, h);
     __syncthreads();
 
     if (x_start < w && y < h) {
@@ -680,8 +681,10 @@ filter1d_16_vertical_kernel(VifBufferCuda buf, uint16_t *ref_in, uint16_t *dis_i
 
     const ptrdiff_t stride =
         (scale == 0) ? buf.stride / sizeof(uint16_t) : buf.rd_stride / sizeof(uint16_t);
+    const ptrdiff_t dis_stride =
+        (scale == 0) ? buf.dis_stride / sizeof(uint16_t) : buf.rd_stride / sizeof(uint16_t);
     vif_vert_load_tiles<alignment_type, uint16_t, fwidth>(ref_tile16, dis_tile16, ref_in, dis_in,
-                                                          stride, w, h);
+                                                          stride, dis_stride, w, h);
     __syncthreads();
 
     if (x_start < w && y < h) {

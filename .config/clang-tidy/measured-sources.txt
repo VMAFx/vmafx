@@ -28,6 +28,12 @@ core/src/cpu.cpp
 core/src/cuda/common.c
 core/src/cuda/dispatch_strategy.c
 core/src/cuda/drain_batch.c
+core/src/cuda/import_convert.cu
+core/src/cuda/import_device.c
+core/src/cuda/import_fence.c
+core/src/cuda/import_frame.c
+core/src/cuda/import_gl.c
+core/src/cuda/import_pool.c
 core/src/cuda/picture_cuda.c
 core/src/dict.cpp
 core/src/dnn/dnn_api.c
@@ -805,6 +811,10 @@ core/test/test_vmafx_frame.c
 core/test/test_vmafx_frame_input.c
 core/test/test_vmafx_import_api.c
 core/test/test_vmafx_import_bitexact.c
+core/test/test_vmafx_import_cuda.c
+core/test/test_vmafx_import_cuda_bitexact.c
+core/test/test_vmafx_import_cuda_fence.c
+core/test/test_vmafx_import_cuda_gl.c
 core/test/test_vmafx_import_fence.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_log_routing.c

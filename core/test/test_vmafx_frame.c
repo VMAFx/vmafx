@@ -46,9 +46,9 @@ static char *test_device_skeleton(void)
     vmafx_device_unref(device);
     vmafx_device_unref(device);
     VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
-    desc.backend = VMAFX_BACKEND_CUDA;
+    desc.backend = VT_UNBUILT_BACKEND;
     VmafxError *error = NULL;
-    mu_assert("not in this release",
+    mu_assert("not in this build",
               vmafx_device_create(&desc, &device, &error) == VMAFX_E_NOTSUP &&
                   vt_failed(&error, VMAFX_E_NOTSUP, "desc.backend", VMAFX_SUBJECT_BACKEND));
     desc.backend = VMAFX_BACKEND_CPU;

@@ -24,6 +24,9 @@
 #include "internal.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -53,16 +56,34 @@ static bool is_backend(uint32_t backend)
     return backend <= VMAFX_BACKEND_HIP;
 }
 
-/* `backend` is one this build creates devices for (the CPU in this lane). */
+/* A backend this build creates devices for: the CPU, and CUDA in a build
+ * with the CUDA backend. */
+static bool built_backend(uint32_t backend)
+{
+#ifdef HAVE_CUDA
+    if (backend == VMAFX_BACKEND_CUDA) {
+        return true;
+    }
+#endif
+    return backend == VMAFX_BACKEND_CPU;
+}
+
+#ifdef HAVE_CUDA
+#define VMAFX_BUILT_BACKENDS "CPU and CUDA devices"
+#else
+#define VMAFX_BUILT_BACKENDS "CPU devices only"
+#endif
+
+/* `backend` is one this build creates devices for. */
 static VmafxStatus check_backend(const VmafxReport *report, uint32_t backend, const char *subject)
 {
     if (!is_backend(backend)) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_BACKEND, subject,
                           "backend %u is not a VmafxBackend", (unsigned)backend);
     }
-    if (backend != VMAFX_BACKEND_CPU) {
+    if (!built_backend(backend)) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, subject,
-                          "backend %s: this build creates CPU devices only",
+                          "backend %s: this build creates " VMAFX_BUILT_BACKENDS,
                           vmafx_backend_name(backend));
     }
     return VMAFX_OK;
@@ -91,6 +112,43 @@ static VmafxStatus check_cpu_desc(const VmafxReport *report, const VmafxDeviceDe
     return VMAFX_OK;
 }
 
+/* The descriptor names a device this build can create. */
+static VmafxStatus check_desc(const VmafxReport *report, const VmafxDeviceDesc *d)
+{
+    const VmafxStatus status = check_backend(report, d->backend, "desc.backend");
+    if (status != VMAFX_OK || d->backend != VMAFX_BACKEND_CPU) {
+        return status; /* a backend lane checks its own descriptor */
+    }
+    return check_cpu_desc(report, d);
+}
+
+/* Open the backend lane's device (nothing for the CPU). */
+static VmafxStatus open_lane(const VmafxReport *report, const VmafxDeviceDesc *d,
+                             VmafxDevice *device)
+{
+#ifdef HAVE_CUDA
+    if (d->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_device_open(report, d, device);
+    }
+#else
+    (void)report;
+#endif
+    assert(d->backend == VMAFX_BACKEND_CPU);
+    device->index = 0;
+    return VMAFX_OK;
+}
+
+/* Close the backend lane's device. */
+static void close_lane(VmafxDevice *device)
+{
+#ifdef HAVE_CUDA
+    if (device->backend == VMAFX_BACKEND_CUDA) {
+        vmafx_cuda_device_close(device);
+    }
+#endif
+    device->lane = NULL;
+}
+
 VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out, VmafxError **error)
 {
     const VmafxReport report = VMAFX_REPORT(NULL, error);
@@ -106,25 +164,26 @@ VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out, 
             vmafx_read_sized(&report, &d, (uint32_t)sizeof(d), desc, VMAFX_MIN_DEVICE_DESC, "desc");
     }
     if (status == VMAFX_OK) {
-        status = check_backend(&report, d.backend, "desc.backend");
+        status = check_desc(&report, &d);
     }
-    if (status == VMAFX_OK) {
-        status = check_cpu_desc(&report, &d);
-    }
-    VmafxDevice *const device = status == VMAFX_OK ? malloc(sizeof(*device)) : NULL;
+    VmafxDevice *const device = status == VMAFX_OK ? calloc(1, sizeof(*device)) : NULL;
     if (status != VMAFX_OK || !device) {
         return status != VMAFX_OK ? status :
                                     VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE,
                                                "device", "cannot allocate a device");
     }
-    assert(d.backend == VMAFX_BACKEND_CPU && d.struct_size == sizeof(d));
+    assert(d.struct_size == sizeof(d));
     device->backend = d.backend;
-    device->index = 0;
     device->flags = d.flags;
-    if (vmaf_ref_init(&device->refs) != 0) {
+    status = open_lane(&report, &d, device);
+    if (status == VMAFX_OK && vmaf_ref_init(&device->refs) != 0) {
+        close_lane(device);
+        status = VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE, "device",
+                            "cannot allocate a reference count");
+    }
+    if (status != VMAFX_OK) {
         free(device);
-        return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE, "device",
-                          "cannot allocate a reference count");
+        return status;
     }
     *out = device;
     return VMAFX_OK;
@@ -146,6 +205,7 @@ void vmafx_device_unref(VmafxDevice *device)
     if (vmaf_ref_fetch_decrement(device->refs) != 1) {
         return;
     }
+    close_lane(device);
     (void)vmaf_ref_close(device->refs);
     free(device);
 }
@@ -166,6 +226,11 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
     }
     *count = 0u;
     const VmafxStatus status = check_backend(&report, backend, "backend");
+#ifdef HAVE_CUDA
+    if (status == VMAFX_OK && backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_device_count(&report, count);
+    }
+#endif
     if (status == VMAFX_OK) {
         *count = 1u;
     }
@@ -194,10 +259,19 @@ VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "out",
                           "NULL argument");
     }
-    const VmafxStatus status = check_backend(&report, backend, "backend");
+    VmafxStatus status = check_backend(&report, backend, "backend");
     if (status != VMAFX_OK) {
         return status;
     }
+#ifdef HAVE_CUDA
+    if (backend == VMAFX_BACKEND_CUDA) {
+        VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
+        status = vmafx_cuda_device_info(&report, index, &info);
+        return status == VMAFX_OK ?
+                   vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out") :
+                   status;
+    }
+#endif
     if (index != 0) {
         return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "index",
                           "the CPU has device 0 only, not %d", (int)index);
@@ -214,8 +288,13 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
                           !device ? "device" : "out", "NULL argument");
     }
-    assert(device->backend == VMAFX_BACKEND_CPU);
-    const VmafxDeviceInfo info = cpu_info(device->flags);
+    VmafxDeviceInfo info = cpu_info(device->flags);
+#ifdef HAVE_CUDA
+    if (device->backend == VMAFX_BACKEND_CUDA) {
+        vmafx_cuda_device_describe(device, &info);
+    }
+#endif
+    assert(info.backend == device->backend);
     return vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out");
 }
 

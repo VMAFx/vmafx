@@ -1428,6 +1428,9 @@ if is_cuda_enabled
         # speed_cuda_pipeline.c through the symbol `speed_score_ptx`); the PTX
         # array is generated here via the standard bin2c pipeline.
         'speed_score' : [feature_src_dir + 'cuda/speed/speed_score.cu'],
+        # RC4 WP3 (ADR-2023): NV12 / P010 / P016 planarisation of imported
+        # VMAFx frames, loaded by cuda/import_device.c (`import_convert_ptx`).
+        'import_convert' : [cuda_dir + 'import_convert.cu'],
     }
     # Per-kernel extra nvcc flags. Empty: the floating-point model is not a
     # per-kernel choice (`cuda_device_strict_fp_args` below, ADR-1403), so a
@@ -2941,6 +2944,20 @@ libvmafx_sources = [
     # intermediate libs (avoids unresolved vmafx_tad_* refs in test
     # binaries that link against libvmaf.a without rust_tad_dep).
 ] + rust_tad_direct_sources
+
+# RC4 WP3 CUDA lane (ADR-2023): devices, imports, fences, GL interop and pools
+# of the VMAFx API on CUDA. In the library target, not in cuda_static_lib: the
+# CUDA common objects link into test programs without the VMAFx sources. The
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
+if is_cuda_enabled
+    libvmafx_sources += [
+        cuda_dir + 'import_device.c',
+        cuda_dir + 'import_fence.c',
+        cuda_dir + 'import_frame.c',
+        cuda_dir + 'import_gl.c',
+        cuda_dir + 'import_pool.c',
+    ]
+endif
 
 # `-fsycl` is embedded in sycl_dependency.link_args (see the
 # declare_dependency block above) so every consumer — libvmaf.so and all

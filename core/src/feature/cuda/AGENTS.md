@@ -50,4 +50,4 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `ssim_cuda.c`, `integer_ssim_cuda.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fmad-false flags. |
 | `ssimulacra2_cuda.c`, `ssimulacra2_cuda.h` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_cuda is device-resident and computes bit-exact CPU scores. |
 | `integer_psnr_cuda.c`, `integer_ciede_cuda.c` | [twin-update-rules](AGENTS.d/twin-update-rules.md) | Cross-backend twin parity table and synchronised update requirements. |
-| `integer_vif_cuda.c`, `integer_vif_cuda.h`, `integer_vif/filter1d.cu` | [vif](AGENTS.d/vif.md) | vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing enable_chroma, picture-stream reset. |
+| `integer_vif_cuda.c`, `integer_vif_cuda.h`, `integer_vif/filter1d.cu` | [vif](AGENTS.d/vif.md) | vif_cuda: 16-px minimum, CPU log2 table, names before clearing enable_chroma, stream reset, per-picture pitch. |

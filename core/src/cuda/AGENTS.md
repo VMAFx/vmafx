@@ -408,6 +408,45 @@ chroma isn't flat, or wrong plane reads same sentinel as right one.
 - Guard: `test_cuda_device_input_host_extractors` (`gpumask = 1` keeps CUDA twins
   off, DEVICE pool, `psnr` y/cb/cr `==` CPU run, `n_threads` 0 and 4).
 
+## VMAFx device frames on CUDA (RC4 WP3, ADR-2023)
+
+- Files: `vmafx_cuda.h` (what `core/src/vmafx/` calls), `vmafx_cuda_internal.h`,
+  `import_device.c` (driver once per process, devices, engine attach),
+  `import_frame.c` (checks, binding, conversions, picture attach),
+  `import_fence.c` (release events, host release fences, CUDA_EVENT waits),
+  `import_gl.c` (GL textures, GL sync), `import_pool.c`, `import_convert.cu`.
+  They build into the library target, not `cuda_static_lib` (the CUDA common
+  objects link into tests without the VMAFx sources).
+- One library stream per device (`VmafxCudaDevice.state.str`); every frame of
+  the device is a CUDA picture on it. Releases are enqueued there at the last
+  reference: a host function signals HOST fences, the CUDA_EVENT release
+  event is recorded. Every twin reads picture planes on the picture's stream:
+  a twin that reads a picture on another stream must order that stream back,
+  or a release can come before its read.
+- Release events stay in the table of `import_fence.c` until recorded, so
+  `vmafx_fence_wait()` answers pending; never record them at request time
+  behind a stream waiting on a gate word (`cuStreamWaitValue32`): a blocked
+  stream holds up every `cuCtxSynchronize()` and deadlocked two contexts.
+- `VmafPicturePrivate.cuda.ordered`: the acquire fence was waited on by the
+  library stream, so `libvmaf.c` skips the ADR-1199 barrier for the pair;
+  pool frames and engine uploads stay unordered. `.cuda.vmafx`: never
+  downloaded (`translate_picture_device()` refuses).
+- Pool frames (`import_pool.c`): `VmafxFrame.lane_persistent` is an event
+  recorded behind the frame's readers at release; `vmafx_cuda_pool_frame_arm()`
+  waits on it before the frame goes out again (a frame returns to its pool
+  before the device ran its readers). Pool frames are unordered: the
+  ADR-1199 barrier orders the caller's writes (`test_pool_frames_ordered_by_barrier`).
+- Bound planes: 8-byte aligned rows, pitch a multiple of 8 and at least the
+  row rounded up (vif's vector loads); otherwise refuse naming offset / pitch,
+  or a device copy with `VMAFX_IMPORT_ALLOW_COPY`. Conversion kernels read
+  bytes and are bit-exact with the host upload; they mirror
+  `core/src/metal/iosurface_layout.h`.
+- nv-codec-headers lacks some `CUresult` values (`VMAFX_CU_ERROR_*`) and
+  `cuDeviceTotalMem_v2` (resolved with `FFNV_SYM_FUNC`).
+- Guards: `test_vmafx_import_cuda`, `test_vmafx_import_cuda_bitexact`,
+  `test_vmafx_import_cuda_fence`, `test_vmafx_import_cuda_gl` (device, suite
+  `gpu`/`cuda`), `test_vmafx_import_cuda_cells_contract.py` (fast).
+
 ## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
 
 `common.c` and `picture_cuda.c` have no explicit `goto` left. `provided_ctx_unwind` holds what

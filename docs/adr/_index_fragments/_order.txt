@@ -1316,3 +1316,4 @@
 2044-vmafx-option-groups-scoring-contract
 2073-vmafx-provenance-record
 2094-libvmaf-compat-library-split
+2023-vmafx-cuda-device-frames

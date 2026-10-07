@@ -4,13 +4,19 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 477,
+  "tus": 487,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
     "core/src/cuda/common.c",
     "core/src/cuda/dispatch_strategy.c",
     "core/src/cuda/drain_batch.c",
+    "core/src/cuda/import_convert.cu",
+    "core/src/cuda/import_device.c",
+    "core/src/cuda/import_fence.c",
+    "core/src/cuda/import_frame.c",
+    "core/src/cuda/import_gl.c",
+    "core/src/cuda/import_pool.c",
     "core/src/cuda/picture_cuda.c",
     "core/src/dict.cpp",
     "core/src/dnn/dnn_api.c",
@@ -466,6 +472,10 @@
     "core/test/test_vif_skip_scale0.c",
     "core/test/test_vmaf_roi.c",
     "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_vmafx_import_cuda.c",
+    "core/test/test_vmafx_import_cuda_bitexact.c",
+    "core/test/test_vmafx_import_cuda_fence.c",
+    "core/test/test_vmafx_import_cuda_gl.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
     "core/test/test_y_funque_plus.c",
@@ -505,6 +515,41 @@
         }
       },
       "previous_baseline_sha256": "9f0d19fc22db79ab4bc42811e7b854c57ef928b337a0524bae25d4a8e144bc01"
+    },
+    {
+      "sources": [
+        "core/src/cuda/import_convert.cu",
+        "core/src/cuda/import_device.c",
+        "core/src/cuda/import_fence.c",
+        "core/src/cuda/import_frame.c",
+        "core/src/cuda/import_gl.c",
+        "core/src/cuda/import_pool.c",
+        "core/src/feature/cuda/integer_vif/filter1d.cu",
+        "core/src/feature/cuda/integer_vif_cuda.c",
+        "core/src/libvmaf.c",
+        "core/test/test_vmafx_import_cuda.c",
+        "core/test/test_vmafx_import_cuda_bitexact.c",
+        "core/test/test_vmafx_import_cuda_fence.c",
+        "core/test/test_vmafx_import_cuda_gl.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/cuda/import_convert.cu",
+            "core/src/cuda/import_device.c",
+            "core/src/cuda/import_fence.c",
+            "core/src/cuda/import_frame.c",
+            "core/src/cuda/import_gl.c",
+            "core/src/cuda/import_pool.c",
+            "core/test/test_vmafx_import_cuda.c",
+            "core/test/test_vmafx_import_cuda_bitexact.c",
+            "core/test/test_vmafx_import_cuda_fence.c",
+            "core/test/test_vmafx_import_cuda_gl.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "a091c4e194cfe479856112d2aa4725eaa1cbeb4a4ced008da34e2a904b2380f6"
     }
   ]
 }
