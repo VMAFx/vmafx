@@ -615,3 +615,76 @@ func TestBuildFFmpegCommandPass1OutputReplacesTheNullMuxer(t *testing.T) {
 		t.Errorf("pass 1 default sink = %q, want -f null -", got)
 	}
 }
+
+// TestBuildFFmpegCommand_mergesCodecParams: a two-pass adapter, a saliency
+// augment and an HDR block each add their own -x265-params, and FFmpeg keeps
+// only the last occurrence of a string option; the argv carries one.
+func TestBuildFFmpegCommand_mergesCodecParams(t *testing.T) {
+	t.Parallel()
+
+	req := ffencode.Request{
+		Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+		PixFmt: "yuv420p", Framerate: 24.0,
+		Encoder: "libx265", Preset: "medium", CRF: 23,
+		Output: "/out/enc.mp4", PassNumber: 2, StatsPath: "/tmp/stats",
+		ExtraParams: []string{
+			"-x265-params", "zones=0,9,q=-4",
+			"-color_primaries", "bt2020",
+			"-x265-params", "master-display=G(1,2)B(3,4)R(5,6)WP(7,8)L(9,1)",
+		},
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatalf("BuildFFmpegCommand: %v", err)
+	}
+	var values []string
+	for i, a := range argv {
+		if a == "-x265-params" {
+			values = append(values, argv[i+1])
+		}
+	}
+	if len(values) != 1 {
+		t.Fatalf("got %d -x265-params options, want one: %q", len(values), argv)
+	}
+	for _, want := range []string{"pass=2:stats=/tmp/stats", "zones=0,9,q=-4", "master-display=G(1,2)"} {
+		if !strings.Contains(values[0], want) {
+			t.Errorf("merged -x265-params %q lacks %q", values[0], want)
+		}
+	}
+	if !slices.Contains(argv, "-color_primaries") {
+		t.Errorf("an unrelated option between the two was lost: %q", argv)
+	}
+}
+
+func TestMergeCodecParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"none", []string{"-c:v", "libx264", "out.mp4"}, []string{"-c:v", "libx264", "out.mp4"}},
+		{"one", []string{"-x264-params", "a=1", "o"}, []string{"-x264-params", "a=1", "o"}},
+		{
+			"two of one flag at the first position",
+			[]string{"-x265-params", "a=1", "-b:v", "2k", "-x265-params", "b=2", "o"},
+			[]string{"-x265-params", "a=1:b=2", "-b:v", "2k", "o"},
+		},
+		{
+			"flags stay separate",
+			[]string{"-x265-params", "a=1", "-svtav1-params", "b=2", "-x265-params", "c=3"},
+			[]string{"-x265-params", "a=1:c=3", "-svtav1-params", "b=2"},
+		},
+		{"empty value adds nothing", []string{"-x265-params", "a=1", "-x265-params", ""}, []string{"-x265-params", "a=1"}},
+		{"trailing flag without a value is kept", []string{"-x265-params"}, []string{"-x265-params"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ffencode.MergeCodecParams(tt.in); !slices.Equal(got, tt.want) {
+				t.Errorf("MergeCodecParams(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

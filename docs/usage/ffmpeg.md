@@ -888,7 +888,10 @@ memory. It is not zero-copy: the filter copies each decoded frame device to devi
 libvmaf's own picture pool ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md);
 importing the decoder's frame without that copy is post-1.0 work). It needs
 libvmaf built with `-Denable_cuda=true` and FFmpeg configured with
-`--enable-libvmaf-cuda` (patch `0010`).
+`--enable-libvmaf-cuda` (patch `0010`). It accepts `yuv420p` and `yuv444p16`
+frames only: NVDEC's 8-bit output is NV12, which fails with `Unsupported input
+format: nv12`, so convert on the GPU first (`scale_cuda=format=yuv420p`, as in
+the examples below). The `vmafx` filter imports NV12 as it is.
 
 ### `libvmaf_metal`
 
@@ -968,7 +971,7 @@ ffmpeg -i distorted.mp4 -i reference.mp4 \
 ```bash
 ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
        -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v]scale_cuda=format=yuv420p[d];[1:v]scale_cuda=format=yuv420p[r];[d][r]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 
@@ -1028,7 +1031,7 @@ device-to-device copy per frame into libvmaf's pool, see
 ```bash
 ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
        -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v]scale_cuda=format=yuv420p[d];[1:v]scale_cuda=format=yuv420p[r];[d][r]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 

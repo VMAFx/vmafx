@@ -11705,7 +11705,8 @@
         "core/tools/test/test_cli_provenance.c": 1,
         "core/tools/test/test_vmaf_provenance_report.py": 1,
         "core/tools/test/test_vmaf_verify_provenance.py": 1,
-        "scripts/codegen/tests/test_vmafx_api_proto_repeated.py": 1
+        "scripts/codegen/tests/test_vmafx_api_proto_repeated.py": 1,
+        "tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py": 1
       },
       "target": "2073-vmafx-provenance-record.md"
     },

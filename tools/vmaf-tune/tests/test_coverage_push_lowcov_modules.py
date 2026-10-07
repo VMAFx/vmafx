@@ -450,14 +450,14 @@ class TestRunProbeEncodeShortCircuits:
             called.append(1)
             raise AssertionError("should not be called")
 
-        out = _run_probe_encode(shot, tmp_path / "src.mp4", "libx264", cfg, _runner)
+        out = _run_probe_encode(shot, tmp_path / "src.mp4", "libx264", cfg, _runner, 24.0)
         assert out.bitrate_kbps == 0.0
         assert called == []
 
     def test_nonzero_rc_returns_default(self, tmp_path: Path) -> None:
         cfg = FeatureExtractorConfig(ffmpeg_bin="ffmpeg-test")
         shot = Shot(0, 10)
-        out = _run_probe_encode(shot, tmp_path / "src.mp4", "libx264", cfg, _stub_run(1))
+        out = _run_probe_encode(shot, tmp_path / "src.mp4", "libx264", cfg, _stub_run(1), 24.0)
         assert out.bitrate_kbps == 0.0
         assert out.i_frame_avg_bytes == 0.0
 
@@ -499,12 +499,12 @@ class TestRunSignalstats:
 
     def test_zero_frames_returns_default(self, tmp_path: Path) -> None:
         cfg = FeatureExtractorConfig(probe_max_frames=0)
-        out = _run_signalstats(Shot(0, 10), tmp_path / "src.mp4", cfg, _stub_run(0))
+        out = _run_signalstats(Shot(0, 10), tmp_path / "src.mp4", cfg, _stub_run(0), 24.0)
         assert out.y_avg == 0.0
 
     def test_nonzero_rc_returns_default(self, tmp_path: Path) -> None:
         cfg = FeatureExtractorConfig(ffmpeg_bin="ffmpeg-test")
-        out = _run_signalstats(Shot(0, 10), tmp_path / "src.mp4", cfg, _stub_run(1))
+        out = _run_signalstats(Shot(0, 10), tmp_path / "src.mp4", cfg, _stub_run(1), 24.0)
         assert out.y_avg == 0.0
 
 

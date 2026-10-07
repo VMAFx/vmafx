@@ -33,6 +33,7 @@ Design notes (ADR-0579, ADR-0588):
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import tempfile
 import time
 from collections.abc import Callable, Sequence
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from .defaultmodel import DEFAULT_MODEL
-from .encode import EncodeRequest, EncodeResult, run_encode
+from .encode import CODEC_PARAM_FLAGS, EncodeRequest, EncodeResult, run_encode
 from .jsonio import dumps_strict
 from .score import ScoreRequest, ScoreResult, run_score
 
@@ -642,14 +643,15 @@ def _saliency_was_applied(original_req: EncodeRequest, enc: EncodeResult) -> boo
     # ``enc`` is typed non-Optional so the dead-code ``None`` guard is
     # dropped; ``enc.request`` is always present.
     augmented_params = enc.request.extra_params
-    roi_prefixes = (
-        "-x264-params",
-        "-x265-params",
-        "-svtav1-params",
-        "-vvenc-params",
-        "-qpfile",
+    if "-qpfile" in augmented_params:
+        return True
+    # The encoder-parameter options also carry HDR SEI and pass control: only
+    # the keys the saliency augment helpers write mark an ROI.
+    roi_keys = ("zones=", "qp-file=", "ROIFile=")
+    return any(
+        flag in CODEC_PARAM_FLAGS and any(key in value for key in roi_keys)
+        for flag, value in itertools.pairwise(augmented_params)
     )
-    return any(p in augmented_params for p in roi_prefixes)
 
 
 __all__ = [

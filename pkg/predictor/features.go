@@ -196,7 +196,11 @@ type SignalStats struct {
 
 // ProbeCommand composes the probe-encode argv. vstatsPath receives FFmpeg's
 // per-frame size/type table; the bitstream goes to the null muxer.
-func ProbeCommand(shot pershot.Shot, source, codec string, cfg ExtractorConfig, vstatsPath string, frames int) ([]string, error) {
+//
+// fps converts the shot's start frame to the seconds `-ss` reads (ShotStartArg).
+func ProbeCommand(
+	shot pershot.Shot, source, codec string, cfg ExtractorConfig, vstatsPath string, frames int, fps float64,
+) ([]string, error) {
 	adapter, err := codecadapter.Get(codec)
 	if err != nil {
 		return nil, err
@@ -214,12 +218,12 @@ func ProbeCommand(shot pershot.Shot, source, codec string, cfg ExtractorConfig, 
 		"-hide_banner",
 		"-y",
 		"-vstats_file", vstatsPath,
-		"-ss", strconv.Itoa(shot.StartFrame),
+		"-ss", ShotStartArg(shot, fps),
 		"-i", source,
 		"-frames:v", strconv.Itoa(frames),
 	}
 	cmd = append(cmd, probeArgs...)
-	return append(cmd, "-an", "-f", "null", "/dev/null"), nil
+	return append(cmd, "-an", "-f", "null", os.DevNull), nil
 }
 
 var bitrateRE = regexp.MustCompile(`(?i)bitrate=\s*([\d.]+)kbits/s`)
@@ -275,8 +279,9 @@ func ParseVStats(content string) (iAvg, pAvg, bAvg float64) {
 	return avg("I"), avg("P"), avg("B")
 }
 
-// SignalstatsCommand composes the signalstats argv.
-func SignalstatsCommand(shot pershot.Shot, source string, cfg ExtractorConfig, frames int) []string {
+// SignalstatsCommand composes the signalstats argv. fps converts the shot's
+// start frame to the seconds `-ss` reads (ShotStartArg).
+func SignalstatsCommand(shot pershot.Shot, source string, cfg ExtractorConfig, frames int, fps float64) []string {
 	ffmpegBin := cfg.FFmpegBin
 	if ffmpegBin == "" {
 		ffmpegBin = "ffmpeg"
@@ -284,12 +289,12 @@ func SignalstatsCommand(shot pershot.Shot, source string, cfg ExtractorConfig, f
 	return []string{
 		ffmpegBin,
 		"-hide_banner",
-		"-ss", strconv.Itoa(shot.StartFrame),
+		"-ss", ShotStartArg(shot, fps),
 		"-i", source,
 		"-frames:v", strconv.Itoa(frames),
 		"-vf", "signalstats,metadata=mode=print:file=-",
 		"-f", "null",
-		"/dev/null",
+		os.DevNull,
 	}
 }
 
@@ -400,7 +405,7 @@ func ExtractFeatures(
 	probe := ProbeStats{}
 	if frames > 0 {
 		var probeErr error
-		probe, probeErr = runProbeEncode(ctx, shot, source, codec, cfg, run, frames)
+		probe, probeErr = runProbeEncode(ctx, shot, source, codec, cfg, run, frames, geometry.FPS)
 		if probeErr != nil {
 			return ShotFeatures{}, probeErr
 		}
@@ -408,7 +413,7 @@ func ExtractFeatures(
 
 	sig := SignalStats{}
 	if cfg.UseSignalstats && frames > 0 {
-		sig = runSignalstats(ctx, shot, source, cfg, run, frames)
+		sig = runSignalstats(ctx, shot, source, cfg, run, frames, geometry.FPS)
 	}
 
 	salMean, salVar := 0.0, 0.0
@@ -444,6 +449,7 @@ func runProbeEncode(
 	cfg ExtractorConfig,
 	run CommandRunner,
 	frames int,
+	fps float64,
 ) (ProbeStats, error) {
 	tmpDir, err := os.MkdirTemp("", "vmafx-tune-probe-")
 	if err != nil {
@@ -456,7 +462,7 @@ func runProbeEncode(
 	}()
 
 	vstatsPath := filepath.Join(tmpDir, "vstats.txt")
-	argv, cmdErr := ProbeCommand(shot, source, codec, cfg, vstatsPath, frames)
+	argv, cmdErr := ProbeCommand(shot, source, codec, cfg, vstatsPath, frames, fps)
 	if cmdErr != nil {
 		return ProbeStats{}, cmdErr
 	}
@@ -483,8 +489,9 @@ func runSignalstats(
 	cfg ExtractorConfig,
 	run CommandRunner,
 	frames int,
+	fps float64,
 ) SignalStats {
-	stdout, _, exitStatus, err := run(ctx, SignalstatsCommand(shot, source, cfg, frames))
+	stdout, _, exitStatus, err := run(ctx, SignalstatsCommand(shot, source, cfg, frames, fps))
 	if err != nil || exitStatus != 0 {
 		return SignalStats{}
 	}

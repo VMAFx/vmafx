@@ -6283,6 +6283,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   quantize-int8` calibrates static PTQ from a parquet feature cache.
 
 
+- **The vmaf-tune tools build FFmpeg command lines that do what they say.**
+  Repeated `-x265-params` (two-pass stats, saliency zones, HDR SEI) or
+  `-x264-params` / `-svtav1-params` / `-vvenc-params` options are joined into one
+  (FFmpeg keeps only the last, so a pass-2 encode lost its stats file or its
+  zones); the per-shot probe and signalstats passed the shot's start frame
+  index to `-ss`, which reads seconds, and now convert it with the frame rate;
+  `hevc_nvenc` no longer gets `-master_display` / `-max_cll`, which FFmpeg
+  rejects and which aborted the encode; `/dev/null` became `os.DevNull`; the
+  saliency check keys on the ROI keys instead of any `-x265-params`. The
+  `libvmaf_cuda` recipes convert NVDEC's NV12 with `scale_cuda` (the filter
+  accepts `yuv420p` and `yuv444p16` only). A stale test of the report's
+  `backend_used` writer now follows the library's provenance writer.
+
+
 - **The TransNet V2 exporter pins a commit that exists.** `ai/scripts/export_transnet_v2.py`, the
   `transnet_v2` sidecar, its registry `license_url` and the model page named upstream commit
   `77498b8e`, which returns 404. They now name `a0942ca347ee00aa455631147641954278b1d1a5`, the

@@ -170,7 +170,53 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 	} else {
 		cmd = append(cmd, req.Output)
 	}
-	return cmd, nil
+	return MergeCodecParams(cmd), nil
+}
+
+// codecParamFlags are the encoder-parameter options of FFmpeg's libx264,
+// libx265, libsvtav1 and libvvenc wrappers: each takes one ":"-separated
+// key=value list.
+var codecParamFlags = map[string]struct{}{
+	"-x264-params":   {},
+	"-x265-params":   {},
+	"-svtav1-params": {},
+	"-vvenc-params":  {},
+}
+
+// MergeCodecParams joins repeated encoder-parameter options of argv into one
+// per flag, at the first one's position, values joined with ":" in order.
+//
+// FFmpeg keeps only the last occurrence of a string option, so a two-pass
+// adapter's "-x265-params pass=1:stats=..." followed by a saliency
+// "-x265-params zones=..." or an HDR "-x265-params master-display=..." would
+// silently drop all but the last: no stats file, no zones, no HDR SEI.
+// Several features each build their own argv slice and FFmpeg gives them no
+// other way to combine, so BuildFFmpegCommand merges them here. Python:
+// vmaftune.encode.merge_codec_params.
+func MergeCodecParams(argv []string) []string {
+	out := make([]string, 0, len(argv))
+	valueAt := make(map[string]int, len(codecParamFlags))
+	for i := 0; i < len(argv); i++ {
+		flag := argv[i]
+		if _, ok := codecParamFlags[flag]; !ok || i+1 >= len(argv) {
+			out = append(out, flag)
+			continue
+		}
+		value := argv[i+1]
+		i++
+		at, seen := valueAt[flag]
+		switch {
+		case !seen:
+			out = append(out, flag, value)
+			valueAt[flag] = len(out) - 1
+		case value == "":
+		case out[at] == "":
+			out[at] = value
+		default:
+			out[at] += ":" + value
+		}
+	}
+	return out
 }
 
 // withABRRateControl swaps "-crf <q>" for "-b:v <kbps>k" when req asks for ABR

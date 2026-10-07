@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -94,9 +95,9 @@ def extract_features(
     run = runner or subprocess.run
 
     width, height, fps = _probe_video_geometry(source, cfg, run)
-    probe_stats = _run_probe_encode(shot, source, codec, cfg, run)
+    probe_stats = _run_probe_encode(shot, source, codec, cfg, run, fps)
     if cfg.use_signalstats:
-        sig_stats = _run_signalstats(shot, source, cfg, run)
+        sig_stats = _run_signalstats(shot, source, cfg, run, fps)
     else:
         sig_stats = _SignalStats()
     if cfg.use_saliency:
@@ -208,11 +209,13 @@ def _run_probe_encode(
     codec: str,
     cfg: FeatureExtractorConfig,
     run: SubprocessRunner,
+    fps: float,
 ) -> _ProbeStats:
     """Run one probe encode of ``shot`` and parse FFmpeg's progress stderr.
 
-    Output goes to ``-f null -`` so we don't waste disk on the probe.
-    Frame-type counts come from ``-stats`` + ``-bsf:v showinfo``.
+    Output goes to the null muxer so we don't waste disk on the probe.
+    Frame-type counts come from ``-vstats_file``. ``fps`` converts the shot's
+    start frame to the seconds ``-ss`` reads (:func:`_shot_start_arg`).
     """
     adapter = get_adapter(codec)
     probe_argv = list(adapter.probe_args())
@@ -221,7 +224,7 @@ def _run_probe_encode(
         return _ProbeStats()
 
     with tempfile.TemporaryDirectory(prefix="vmaf-tune-probe-") as tmp:
-        out_null = "/dev/null"
+        out_null = os.devnull
         # Use ``-vstats_file`` for per-frame size + type. Fallback to
         # bitrate-only parsing if vstats isn't honoured by the codec.
         vstats_path = Path(tmp) / "vstats.txt"
@@ -232,7 +235,7 @@ def _run_probe_encode(
             "-vstats_file",
             str(vstats_path),
             "-ss",
-            f"{shot.start_frame}",
+            _shot_start_arg(shot, fps),
             "-i",
             str(source),
             "-frames:v",
@@ -309,6 +312,7 @@ def _run_signalstats(
     source: Path,
     cfg: FeatureExtractorConfig,
     run: SubprocessRunner,
+    fps: float,
 ) -> _SignalStats:
     """Run FFmpeg's ``signalstats`` + ``tblend=difference`` to read luma + frame-diff."""
     frames = min(shot.length, cfg.probe_max_frames)
@@ -318,7 +322,7 @@ def _run_signalstats(
         cfg.ffmpeg_bin,
         "-hide_banner",
         "-ss",
-        f"{shot.start_frame}",
+        _shot_start_arg(shot, fps),
         "-i",
         str(source),
         "-frames:v",
@@ -327,7 +331,7 @@ def _run_signalstats(
         "signalstats,metadata=mode=print:file=-",
         "-f",
         "null",
-        "/dev/null",
+        os.devnull,
     ]
     completed = run(cmd, capture_output=True, text=True, check=False)
     rc = int(getattr(completed, "returncode", 1))

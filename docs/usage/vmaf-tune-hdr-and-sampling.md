@@ -81,7 +81,7 @@ HDR flag dispatch is centralised in `vmaftune.hdr.hdr_codec_args()`.
 | `libx265` | Global `-color_*` plus `-x265-params colorprim=bt2020:transfer=...:colormatrix=bt2020nc:range=...`, with `master-display`, `max-cll` and `hdr10-opt=1` (PQ) when available. |
 | `libsvtav1` | Global `-color_*` plus `-svtav1-params color-primaries=9:transfer-characteristics=16` (PQ) or `=18` (HLG), `:matrix-coefficients=9:color-range=...`, and `mastering-display` / `content-light` when available. |
 | `libvvenc` | Global `-color_*` tags only; SEI options live behind `-vvenc-params` in newer FFmpeg builds. |
-| `hevc_nvenc` | `-pix_fmt p010le -profile:v main10`, global `-color_*`, and `-master_display` / `-max_cll` when available. |
+| `hevc_nvenc` | `-pix_fmt p010le -profile:v main10` plus global `-color_*`. FFmpeg has no `-master_display` / `-max_cll` option for NVENC (it aborts the encode); the static HDR metadata reaches NVENC as side data of decoded frames, which a container source carries and a raw YUV does not. |
 | `hevc_qsv`, `hevc_amf`, `hevc_videotoolbox` | `-pix_fmt p010le -profile:v main10` plus global `-color_*`. |
 | `av1_nvenc`, `av1_qsv`, `av1_amf` | `-pix_fmt p010le` plus global `-color_*`. |
 

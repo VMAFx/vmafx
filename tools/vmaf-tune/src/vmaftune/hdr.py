@@ -372,15 +372,17 @@ def _hdr_args_svtav1(info: HdrInfo) -> tuple[str, ...]:
 
 
 def _hdr_args_nvenc_hevc(info: HdrInfo) -> tuple[str, ...]:
-    """NVENC HEVC: relies on ``-pix_fmt p010le -profile:v main10`` plus
-    the ffmpeg-global ``-color_*`` flags for SEI propagation.
+    """NVENC HEVC: ``-pix_fmt p010le -profile:v main10`` plus the
+    ffmpeg-global ``-color_*`` flags, the same as the other HEVC hardware
+    encoders.
+
+    FFmpeg 9.0.2's ``hevc_nvenc`` has no ``-master_display`` or ``-max_cll``
+    option (an unrecognised option aborts the whole encode), so the static HDR
+    metadata cannot be given on the command line. NVENC takes it from the
+    mastering-display and content-light-level side data of the decoded frames,
+    which a container source carries and a raw YUV does not.
     """
-    args = list(_hdr_args_hevc_main10_global(info))
-    if info.master_display:
-        args.extend(["-master_display", info.master_display])
-    if info.max_cll:
-        args.extend(["-max_cll", info.max_cll])
-    return tuple(args)
+    return _hdr_args_hevc_main10_global(info)
 
 
 def _hdr_args_vvenc(info: HdrInfo) -> tuple[str, ...]:

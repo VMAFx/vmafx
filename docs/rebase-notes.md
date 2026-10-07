@@ -62725,3 +62725,13 @@ Invariants a rebase keeps:
   `-x264-params qpfile=` comes back only with a libx264 that has the key.
 
 No score or public C API impact.
+
+## Tool FFmpeg argv fixes (`rc4/api-wp15-tool-argv`)
+
+RC4 WP15: `pkg/ffencode`, `pkg/corpus`, `pkg/predictor`, `pkg/hdr` and
+`tools/vmaf-tune` (`encode.py`, `executor.py`, `hdr.py`, `predictor_features.py`)
+merge repeated encoder-parameter options, convert the shot start to seconds,
+and drop `-master_display` / `-max_cll` for `hevc_nvenc`; `pkg/hdr/testdata/python_hdr.json`
+is the Python dump the Go test replays and lost the two options. Invariants:
+see `docs/development/rebase-sensitive-invariants.md` ("Encoder-parameter
+options are merged"). No score or C API impact.

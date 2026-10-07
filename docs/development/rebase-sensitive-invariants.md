@@ -249,6 +249,13 @@ backend within it.
   `ffmpeg-patches/test/qpfile_check.py` guards it, and the saliency code of
   `pkg/saliency` and `tools/vmaf-tune` passes `-qpfile`, not
   `-x264-params qpfile=`.
+- **Encoder-parameter options are merged, shot starts are seconds**:
+  `ffencode.BuildFFmpegCommand` and `vmaftune.encode.build_ffmpeg_command` join
+  repeated `-x264-params` / `-x265-params` / `-svtav1-params` / `-vvenc-params`
+  into one (`MergeCodecParams` / `merge_codec_params`; FFmpeg keeps only the
+  last), `-ss` of the per-shot probe and signalstats takes seconds
+  (`ShotStartArg` / `_shot_start_arg`), and no HDR argv carries `-master_display`
+  or `-max_cll` for `hevc_nvenc` (FFmpeg has no such option).
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

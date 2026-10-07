@@ -425,11 +425,12 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     assert (
         'strcmp(c->backend, "vulkan")' not in src
     ), "ADR-0726 regression: Vulkan strcmp resurfaced in vmaf.cpp"
-    # The receipt writer exists, is called, and writes ``backend_used``.
-    assert "void amend_json_with_backend_receipt(" in src
-    assert "amend_json_with_backend_receipt(state->c.output_path" in src
-    # C string literal in the source: "\"backend_used\": "
-    assert r"\"backend_used\": " in backend_src
+    # Since RC4 WP5 (ADR-2073) the CLI no longer splices a ``backend_used``
+    # receipt into the report: the library writes it (``vmafx_report_write``)
+    # and the CLI writes the report through ``cli_write_report()``.
+    assert "cli_write_report(" in src
+    render_src = repo_source("core/src/vmafx/provenance_render.c")
+    assert r"\"backend_used\": " in render_src
     # The not-compiled-in guard fires before any per-backend stanza so
     # an unknown ``--backend NAME`` on a CPU-only build also errors out.
     assert "libvmaf was built" in src

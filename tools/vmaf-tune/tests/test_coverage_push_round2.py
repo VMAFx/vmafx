@@ -1447,8 +1447,8 @@ def test_hdr_svtav1_full_range():
     assert "color-range=1" in payload
 
 
-def test_hdr_nvenc_hevc_includes_master_display_in_args():
-    """NVENC HEVC pass-through of master_display and max_cll."""
+def test_hdr_nvenc_hevc_never_emits_the_sei_options_it_does_not_have():
+    """FFmpeg 9.0.2's hevc_nvenc has no -master_display / -max_cll: they abort the encode."""
     info = HdrInfo(
         transfer="pq",
         primaries="bt2020",
@@ -1459,8 +1459,9 @@ def test_hdr_nvenc_hevc_includes_master_display_in_args():
         max_cll="1000,400",
     )
     args = hdr_codec_args("hevc_nvenc", info)
-    assert "-master_display" in args
-    assert "-max_cll" in args
+    assert "-master_display" not in args
+    assert "-max_cll" not in args
+    assert "-profile:v" in args  # still 10-bit main10 with the global colour tags
 
 
 def test_hdr_nvenc_hevc_no_sei_when_absent():

@@ -191,14 +191,14 @@ func TestHDRCodecArgs(t *testing.T) {
 			},
 		},
 		{
-			name:    "nvenc hevc forces 10-bit and passes the SEI knobs",
+			// FFmpeg 9.0.2's hevc_nvenc has no -master_display or -max_cll:
+			// the option aborts the encode, so none is emitted.
+			name:    "nvenc hevc forces 10-bit and emits no SEI option it does not have",
 			encoder: "hevc_nvenc", info: pq,
 			want: []string{
 				"-pix_fmt", "p010le", "-profile:v", "main10",
 				"-color_primaries", "bt2020", "-color_trc", "smpte2084",
 				"-colorspace", "bt2020nc", "-color_range", "tv",
-				"-master_display", masterDisplay,
-				"-max_cll", "1000,400",
 			},
 		},
 		{

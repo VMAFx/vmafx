@@ -841,11 +841,7 @@
         "-colorspace",
         "bt2020nc",
         "-color_range",
-        "tv",
-        "-master_display",
-        "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
-        "-max_cll",
-        "1000,400"
+        "tv"
       ],
       "hevc_qsv": [
         "-pix_fmt",
