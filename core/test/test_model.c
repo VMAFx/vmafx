@@ -28,6 +28,7 @@
 #include "test.h"
 #include "model.h"
 #include "read_json_model.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -77,7 +78,7 @@ static int model_compare(VmafModel *model_a, VmafModel *model_b)
  * Returns NULL on error; sets *len on success. */
 static char *slurp(const char *path, size_t *len)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return NULL;
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -866,7 +867,7 @@ static char *test_json_model_score_transform_p1_bad_type(void)
 /* The bytes of the model file, NUL terminated; NULL on any I/O error. */
 static char *read_model_json(size_t *len)
 {
-    FILE *f = fopen(JSON_MODEL_PATH "vmaf_v0.6.1.json", "rb");
+    FILE *f = vmaf_fopen_utf8(JSON_MODEL_PATH "vmaf_v0.6.1.json", "rb");
     if (!f)
         return NULL;
     char *buf = NULL;

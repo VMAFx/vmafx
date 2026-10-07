@@ -216,15 +216,15 @@ static int write_file_600(const char *path, const unsigned char *data, size_t le
 /* Open @p path for writing with user-only perms (0600), returning a buffered
  * FILE* via fdopen so existing fprintf-based test code keeps working. Same
  * umask-safety motivation as write_file_600. Returns NULL on any error.
- * Available on both POSIX and MinGW: open()/close() come via <fcntl.h> +
- * <io.h>, fdopen() via <stdio.h>. The 0600 mode is a no-op on Windows
- * (NTFS uses ACLs), but harmless. */
+ * vmaf_open_utf8() and VMAF_FDOPEN / VMAF_CLOSE are the CRT's own spellings on
+ * Windows, where only the read and write bits of the mode reach the CRT
+ * (NTFS uses ACLs). */
 static FILE *fopen_w_600(const char *path)
 {
-    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    const int fd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0)
         return NULL;
-    FILE *fp = fdopen(fd, "w");
+    FILE *fp = VMAF_FDOPEN(fd, "w");
     if (!fp) {
         /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
          * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
@@ -530,7 +530,7 @@ static char *test_sidecar_parses(void)
     char tmpdir[MAX_PATH];
     GetTempPathA(MAX_PATH, tmpdir);
     snprintf(tmpl, sizeof tmpl, "%svmaf-dnn-sidecar-test", tmpdir);
-    FILE *tmpf = fopen(tmpl, "w");
+    FILE *tmpf = vmaf_fopen_utf8(tmpl, "w");
     mu_assert("temp file creation failed", tmpf != NULL);
     fclose(tmpf);
 #else

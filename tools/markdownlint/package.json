@@ -5,7 +5,7 @@
   "description": "Locked Markdown governance gate emitted by Praetor",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "js-yaml": "5.4.2",
@@ -15,5 +15,8 @@
     "micromark-extension-mdxjs": "3.0.0",
     "parse5": "8.0.1",
     "smol-toml": "1.9.0"
+  },
+  "overrides": {
+    "katex": "0.19.0"
   }
 }

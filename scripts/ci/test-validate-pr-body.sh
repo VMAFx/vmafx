@@ -38,7 +38,7 @@ Test PR body for the validator harness.
 - [x] **`AGENTS.md` invariant note** — added.
 - [x] **Reproducer / smoke-test command** — pasted below.
 - [x] **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-- [x] **Rebase note** — `docs/rebase-notes.md`.
+- [x] **Rebase note** — `docs/rebase-notes.d/foo.md`.
 
 ### Reproducer
 
@@ -72,7 +72,7 @@ expect_exit() {
 canonical_body >"${work}/case1.body"
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
   echo "src/foo.c"
 } >"${work}/case1.diff"
@@ -81,7 +81,7 @@ expect_exit "ticked + files present in diff" 0 "${work}/case1.body" "${work}/cas
 # ---------- Case 2: ticked Research digest BUT no docs/research/* in diff -> fail ----------
 canonical_body >"${work}/case2.body"
 {
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
   echo "src/foo.c"
 } >"${work}/case2.diff"
@@ -96,11 +96,11 @@ cat >"${work}/case3.body" <<'EOF'
 3. **`AGENTS.md` invariant note** — added.
 4. **Reproducer / smoke-test command** — pasted below.
 5. **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-6. **Rebase note** — `docs/rebase-notes.md`.
+6. **Rebase note** — `docs/rebase-notes.d/foo.md`.
 EOF
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case3.diff"
 expect_exit "numbered-list shape (no - [x])" 1 "${work}/case3.body" "${work}/case3.diff"
@@ -132,13 +132,13 @@ cat >"${work}/case5.body" <<'EOF'
 - [x] **`AGENTS.md` invariant note** — added.
 - [x] **Reproducer / smoke-test command** — below.
 - [x] **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-- [x] **Rebase note** — `docs/rebase-notes.md`.
+- [x] **Rebase note** — `docs/rebase-notes.d/foo.md`.
 
 no rebase impact: still ticked, parser accepts the tick.
 EOF
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case5.diff"
 expect_exit "sentinel + ticked (parser-permissive)" 0 "${work}/case5.body" "${work}/case5.diff"
@@ -161,19 +161,45 @@ expect_exit "all six opted-out via sentinels" 0 "${work}/case6.body" "${work}/ca
 canonical_body >"${work}/case7.body"
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   # no changelog.d/* file
   echo "src/foo.c"
 } >"${work}/case7.diff"
 expect_exit "ticked CHANGELOG, no fragment in diff" 1 "${work}/case7.body" "${work}/case7.diff"
 
-# ---------- Case 8: ticked Rebase note without docs/rebase-notes.md in diff -> fail ----------
+# ---------- Case 8: ticked Rebase note without a docs/rebase-notes.d fragment in diff -> fail ----------
 canonical_body >"${work}/case8.body"
 {
   echo "docs/research/0001-foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case8.diff"
-expect_exit "ticked Rebase note, no rebase-notes.md in diff" 1 "${work}/case8.body" "${work}/case8.diff"
+expect_exit "ticked Rebase note, no rebase-notes.d fragment in diff" 1 "${work}/case8.body" "${work}/case8.diff"
+
+# ---------- Case 8b-8f: a pull request does not carry a rendered file (ADR-2197) ----------
+# Planted defect: each rendered output in the diff must be refused, even with
+# every deliverable ticked and every fragment present. The control case (only
+# fragments) passes, so the refusal is the rendered path and nothing else.
+for rendered in CHANGELOG.md docs/adr/README.md docs/adr/titles.md docs/adr/by-tag/ci.md \
+  docs/adr/_index_fragments/_order.txt docs/rebase-notes.md; do
+  slug="$(printf '%s' "${rendered}" | tr '/.' '__')"
+  canonical_body >"${work}/render-${slug}.body"
+  {
+    echo "docs/research/0001-foo.md"
+    echo "changelog.d/added/foo.md"
+    echo "docs/rebase-notes.d/foo.md"
+    echo "${rendered}"
+  } >"${work}/render-${slug}.diff"
+  expect_exit "a PR that edits ${rendered} is refused" 1 \
+    "${work}/render-${slug}.body" "${work}/render-${slug}.diff"
+done
+canonical_body >"${work}/render-ok.body"
+{
+  echo "docs/research/0001-foo.md"
+  echo "changelog.d/added/foo.md"
+  echo "docs/rebase-notes.d/foo.md"
+  echo "docs/adr/_index_fragments/2000-foo.md"
+} >"${work}/render-ok.diff"
+expect_exit "a fragment-only PR passes" 0 "${work}/render-ok.body" "${work}/render-ok.diff"
 
 # ---------- Case 9: an explicitly-supplied EMPTY body reports itself ----------
 # `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not, so the stdin

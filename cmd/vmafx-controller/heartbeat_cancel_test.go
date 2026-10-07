@@ -73,7 +73,7 @@ func TestHeartbeatNamesCancelledRunningJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Submit rival job: %v", err)
 	}
-	if err := f.queue.Cancel(context.Background(), foreign); err != nil {
+	if _, err := f.queue.Cancel(context.Background(), foreign); err != nil {
 		t.Fatalf("Cancel rival job: %v", err)
 	}
 	if _, err := f.srv.CancelJob(testTenantCtx(), &controllerv1.CancelJobRequest{JobId: cancelled}); err != nil {
@@ -117,7 +117,7 @@ func TestHeartbeatTenantComesFromTheToken(t *testing.T) {
 	reg := registerCPUNode(t, f)
 	submitTestJob(t, f.srv, "/ref.y4m", "/dis.y4m")
 	id := pullJob(t, f, reg)
-	if err := f.queue.Cancel(context.Background(), id); err != nil {
+	if _, err := f.queue.Cancel(context.Background(), id); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 	hb, err := f.srv.Heartbeat(tenantCtx("rival"), &controllerv1.HeartbeatRequest{

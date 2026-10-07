@@ -149,16 +149,18 @@ class GpuFloatSsimAutoScaleContractTest(unittest.TestCase):
         self.assertIn("context_fallback_name", header)
         self.assertIn("allow_context_fallback", header)
 
+        # ADR-1852 RC4 WP2: the bodies are the vmaf_engine_* entry points; the
+        # libvmaf names forward to them.
         libvmaf = (CORE_ROOT / "src" / "libvmaf.c").read_text(encoding="utf-8")
-        model_start = libvmaf.index("int vmaf_use_features_from_model(")
-        model_end = libvmaf.index("int vmaf_use_features_from_model_collection(")
+        model_start = libvmaf.index("int vmaf_engine_use_features_from_model(")
+        model_end = libvmaf.index("int vmaf_engine_use_features_from_model_collection(")
         self.assertIn("fex_ctx->allow_context_fallback = true;", libvmaf[model_start:model_end])
 
-        direct_start = libvmaf.index("int vmaf_use_feature(")
+        direct_start = libvmaf.index("int vmaf_engine_use_feature(")
         direct_end = libvmaf.index("static unsigned compute_fex_flags(")
         self.assertNotIn("allow_context_fallback = true", libvmaf[direct_start:direct_end])
 
-        read_start = libvmaf.index("int vmaf_read_pictures(")
+        read_start = libvmaf.index("int vmaf_engine_read_pictures(")
         read_end = libvmaf.index("#ifdef HAVE_SYCL", read_start)
         read_body = libvmaf[read_start:read_end]
         self.assertIn("resolve_context_fallbacks(vmaf)", read_body)

@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: EUPL-1.2
+// Copyright 2026 Lusoris
+
+//go:build cgo
+
+package main
+
+import (
+	"errors"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
+)
+
+// nodeMetrics are the node's families (metricdef): what it runs on, its
+// slots, and the controller jobs it runs.
+type nodeMetrics struct {
+	slots    observability.Gauge
+	running  observability.Gauge
+	jobs     observability.Counter
+	duration observability.Histogram
+}
+
+// provideNodeMetrics registers the node's families on reg and records the
+// backend the executor runs on.
+func provideNodeMetrics(reg *prometheus.Registry, exec *Executor) (*nodeMetrics, error) {
+	info, err := observability.NewGauge(reg, metricdef.NodeInfo)
+	if err != nil {
+		return nil, err
+	}
+	m := &nodeMetrics{}
+	gauges := map[*observability.Gauge]metricdef.Family{&m.slots: metricdef.NodeSlots, &m.running: metricdef.NodeJobsRunning}
+	for dst, f := range gauges {
+		if *dst, err = observability.NewGauge(reg, f); err != nil {
+			return nil, err
+		}
+	}
+	if m.jobs, err = observability.NewCounter(reg, metricdef.NodeJobs); err != nil {
+		return nil, err
+	}
+	if m.duration, err = observability.NewHistogram(reg, metricdef.NodeJobDuration); err != nil {
+		return nil, err
+	}
+	info.Set(1, exec.backend, backendVendors[exec.backend])
+	m.slots.Set(0)
+	m.running.Set(0)
+	return m, nil
+}
+
+// provideNodeRegistry is the registry the node serves on /metrics.
+func provideNodeRegistry() (*prometheus.Registry, error) {
+	return observability.NewRegistry()
+}
+
+// setSlots records the slot count the controller client runs with. A nil
+// receiver (tests without metrics) records nothing.
+func (m *nodeMetrics) setSlots(n int) {
+	if m != nil {
+		m.slots.Set(float64(n))
+	}
+}
+
+// jobStarted counts a job the node began running.
+func (m *nodeMetrics) jobStarted() {
+	if m != nil {
+		m.running.Add(1)
+	}
+}
+
+// jobDone records a job that ended: the running count, its outcome on its
+// backend and how long it ran.
+func (m *nodeMetrics) jobDone(backend string, err error, elapsed time.Duration) {
+	if m == nil {
+		return
+	}
+	m.running.Add(-1)
+	m.jobs.Inc(backend, jobOutcome(err))
+	m.duration.Observe(elapsed.Seconds(), backend)
+}
+
+// jobOutcome is the outcome label of a job that ended with err.
+func jobOutcome(err error) string {
+	switch {
+	case err == nil:
+		return "completed"
+	case errors.Is(err, errCancelledByController):
+		return "cancelled"
+	default:
+		return "failed"
+	}
+}

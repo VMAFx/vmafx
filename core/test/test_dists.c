@@ -80,10 +80,73 @@ static char *test_dists_high_bitdepth_rgb_normalisation(void)
     return NULL;
 }
 
+/* vmaf_tiny_ai_resolve_model_path(): the option wins, an environment value is
+ * copied into the caller's buffer (on Windows the environment is read into a
+ * per-thread buffer the loader's own read reuses), and a value longer than the
+ * buffer is refused rather than truncated. */
+#define RESOLVE_ENV "VMAF_DISTS_SQ_MODEL_PATH"
+
+static char *check_resolve_option_wins(void)
+{
+    char buf[VMAF_TINY_AI_ENV_PATH_MAX];
+    mu_assert("setenv failed", vmaf_tiny_ai_test_setenv(RESOLVE_ENV, "/env/model.onnx") == 0);
+    const char *opt = "/opt/model.onnx";
+    const char *path =
+        vmaf_tiny_ai_resolve_model_path("dists_sq", opt, RESOLVE_ENV, buf, sizeof(buf));
+    (void)vmaf_tiny_ai_test_unsetenv(RESOLVE_ENV);
+    mu_assert("option value not returned", path == opt);
+    return NULL;
+}
+
+static char *check_resolve_copies_env(void)
+{
+    char buf[VMAF_TINY_AI_ENV_PATH_MAX] = {0};
+    mu_assert("setenv failed", vmaf_tiny_ai_test_setenv(RESOLVE_ENV, "/env/model.onnx") == 0);
+    const char *path =
+        vmaf_tiny_ai_resolve_model_path("dists_sq", NULL, RESOLVE_ENV, buf, sizeof(buf));
+    /* A later change of the environment leaves the resolved path as it was. */
+    mu_assert("setenv failed", vmaf_tiny_ai_test_setenv(RESOLVE_ENV, "/other/x.onnx") == 0);
+    (void)vmaf_tiny_ai_test_unsetenv(RESOLVE_ENV);
+    mu_assert("environment value not copied into the caller's buffer", path == buf);
+    mu_assert("copied value changed with the environment", strcmp(buf, "/env/model.onnx") == 0);
+    return NULL;
+}
+
+static char *check_resolve_refuses_long_env(void)
+{
+    static char value[VMAF_TINY_AI_ENV_PATH_MAX + 1u];
+    for (size_t i = 0; i + 1u < sizeof(value); i++)
+        value[i] = 'a';
+    value[sizeof(value) - 1u] = '\0';
+    char buf[VMAF_TINY_AI_ENV_PATH_MAX];
+    mu_assert("setenv failed", vmaf_tiny_ai_test_setenv(RESOLVE_ENV, value) == 0);
+    const char *path =
+        vmaf_tiny_ai_resolve_model_path("dists_sq", NULL, RESOLVE_ENV, buf, sizeof(buf));
+    value[sizeof(value) - 2u] = '\0'; /* VMAF_TINY_AI_ENV_PATH_MAX - 1 bytes: fits exactly */
+    mu_assert("setenv failed", vmaf_tiny_ai_test_setenv(RESOLVE_ENV, value) == 0);
+    const char *fits =
+        vmaf_tiny_ai_resolve_model_path("dists_sq", NULL, RESOLVE_ENV, buf, sizeof(buf));
+    (void)vmaf_tiny_ai_test_unsetenv(RESOLVE_ENV);
+    mu_assert("over-long environment value accepted", path == NULL);
+    mu_assert("value of buffer size - 1 refused", fits == buf && strlen(buf) == sizeof(buf) - 1u);
+    return NULL;
+}
+
+static char *test_resolve_model_path(void)
+{
+    char *err = check_resolve_option_wins();
+    if (!err)
+        err = check_resolve_copies_env();
+    if (!err)
+        err = check_resolve_refuses_long_env();
+    return err;
+}
+
 char *run_tests(void)
 {
     VMAF_TINY_AI_RUN_REGISTRATION_TESTS(dists_sq);
     mu_run_test(test_dists_high_bitdepth_rgb_normalisation);
+    mu_run_test(test_resolve_model_path);
     return NULL;
 }
 

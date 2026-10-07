@@ -13,18 +13,18 @@ invariant: float_moment_hip matches CPU bits on every frame, past 2^53 units too
 - CPU second moment: square in `float` (`pic_ * pic_`), added in `double`.
   16 bpc: float square = integer square rounded to 24 bits. Kernel adds
   `moment_float_square()` (one fp32 product -> integer < 2^32). Never
-  `r * r` in integers at 16 bpc, never an fp64 square.
+  `r * r` in integers at 16 bpc, never fp64 square.
 - 8 bpc kernel: integer square = float square (16 bits), unchanged.
 - Sum = exact uint64 in units of 1 / scaler^2. Host: `(double)sum /
   scaler^2 / pixels`, CPU's two divisions, this order.
 - CPU sum exact <= 2^53 units: every frame <= 2^21 pixels, every 8 / 10 / 12
   bit frame. Past it (16 bit, moment * pixels >= 2^37) CPU rounds per add:
-  on a frame that can get there (`vmaf_moment_sum_may_round()`)
-  `moment_hip_launch_sum()` runs the four kernels of
+  on frame that can get there (`vmaf_moment_sum_may_round()`)
+  `moment_hip_launch_sum()` runs four kernels of
   `feature/float_moment_sum_gpu.h` (compiled into `moment_score.hip`) after
-  the frame kernel, on the shared planes; they write the CPU's sums into
+  frame kernel, on shared planes; they write CPU's sums into
   accumulators 2 and 3 (ADR-1497). Row buffers: raw `hipMalloc`, freed with
-  the module. Cost on gfx1036: +7.2 ms per 16-bit 4K frame past 2^53,
+  module. Cost on gfx1036: +7.2 ms per 16-bit 4K frame past 2^53,
   `T-GPU-FLOAT-MOMENT-EXACT-SUM-COST-2026-10-03`.
 - Metal twin still adds integer squares:
   `T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02`.

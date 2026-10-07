@@ -67,6 +67,7 @@
 #include "feature/speed_givens.h"
 #include "feature/speed_internal.h"
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
@@ -212,8 +213,8 @@ static int uf_context(const UfCase *c, VmafFeatureExtractorContext **ctx)
 /* Run the case's extractor over the first UF_FRAMES frames of the pair. */
 static int uf_scores(const UfCase *c, double scores[UF_FRAMES])
 {
-    FILE *ref_file = fopen(SPEED_TESTDATA_DIR "/ref_576x324_48f.yuv", "rb");
-    FILE *dis_file = fopen(SPEED_TESTDATA_DIR "/dis_576x324_48f.yuv", "rb");
+    FILE *ref_file = vmaf_fopen_utf8(SPEED_TESTDATA_DIR "/ref_576x324_48f.yuv", "rb");
+    FILE *dis_file = vmaf_fopen_utf8(SPEED_TESTDATA_DIR "/dis_576x324_48f.yuv", "rb");
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
     int err = (ref_file && dis_file) ? uf_context(c, &ctx) : -ENOENT;

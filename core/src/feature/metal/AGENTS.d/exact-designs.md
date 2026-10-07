@@ -2,12 +2,12 @@
 paths:
   - core/src/feature/metal/*.mm
   - core/src/feature/metal/metal_*.h
-invariant: The exact designs of the Metal twins (ADR-1498): fp32 pairs, integer fp64, CPU summation order.
+invariant: exact designs of Metal twins (ADR-1498): fp32 pairs, integer fp64, CPU summation order.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Exact designs of the Metal twins (ADR-1498)
 
-Twins = CPU bits by construction, on the CUDA / HIP / SYCL exact designs. No
+Twins = CPU bits by construction, on CUDA / HIP / SYCL exact designs. No
 Apple device on lanes: arithmetic checked on host only; device = tester report
 (ADR-1496). Every `.metal` compiles `-fno-fast-math -ffp-contract=off`
 (`metal_shader_strict_fp_args`, one list, `test_metal_shader_build_contract`).
@@ -15,7 +15,7 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
 - **Per-sample arithmetic** = header on `metal_portable.h` (MSL + host
   C/C++ subset: values in/out, no ptr/ref param, no double / long long /
   `ULL` / static local / `std::`). Kernel includes it; host test compiles it
-  against CPU. Change to the CPU routine -> header, same PR.
+  against CPU. Change to CPU routine -> header, same PR.
 - **fp64 in integers** = `metal_soft_double.h` / `metal_soft_signed.h`:
   SYCL `sycl_soft_double.h` / `sycl_soft_signed.h` statement for statement;
   mapping at header top (`vmaf_sycl_soft::f` -> `vmaf_mtl_f`, `S` ->
@@ -34,9 +34,9 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   `float_moment_sum.h` + four `ordered_sum.h` functions, address spaces via
   `VMAF_MTL_DEV` / `VMAF_MTL_TG` / `VMAF_MTL_THR`. Change to either shared
   header -> copy, same PR (`test_metal_float_moment_exact_contract.py`,
-  `test_float_moment_sum_contract.py`). Five kernels, one wait; never a device
-  reduction for the walk; never trust the plan. `.mm` takes `sums[2..3]` from
-  the walk, fails closed. Guard: `test_metal_float_moment_sum`.
+  `test_float_moment_sum_contract.py`). Five kernels, one wait; never device
+  reduction for walk; never trust plan. `.mm` takes `sums[2..3]` from
+  walk, fails closed. Guard: `test_metal_float_moment_sum`.
 - **integer ADM**: decouple = `metal_integer_adm_math.h`: reciprocal = CPU
   integer `2^30 / o` (never fp32 quotient), gain limit =
   `adm_gain_limit_product()` of shared `adm_gain_limit.h` (Metal guard keeps
@@ -70,7 +70,7 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   pass only, adjusted encode window, frame = `index`. Helpers from
   `cambi_internal.h` only, no copies.
 - **Names before option slots (every twin)**: `init()` builds
-  `feature_name_dict` before it or any function it calls first writes an option
+  `feature_name_dict` before it or any function it calls first writes option
   slot (`cambi.c::init` order). cambi: `cambi_metal_resolve_dimensions()` writes
   `enc_*` / `src_*` (FEATURE_PARAM, default 0); dict after it = every name
   suffixed `_encbd_8_ench_..._srcw_...`, gate / model / parity test find no
@@ -103,8 +103,8 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   `x86/vif_avx512.c` -> header, same PR. Guards: `test_metal_integer_vif_gain`, `..._gain_contract.py`.
 - **integer vif host tail**: `scale_num_den()` rounds each scale's num / den
   to float (`vif_store_residuals()`); `collect_fex_metal()` score set =
-  `write_scores()`: `.single_precision_ratio = true`, frame sums add the
-  rounded values. Double quotient = every score off by up to half an fp32
+  `write_scores()`: `.single_precision_ratio = true`, frame sums add
+  rounded values. Double quotient = every score off by up to half fp32
   step (M4 Pro, #2118). Guard: `test_sycl_vif_float_sums_contract.py` (every
   integer VIF twin).
 - **integer ssim**: `metal_integer_ssim_math.h` = `sycl_integer_ssim_math.h`
@@ -120,7 +120,7 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   = fp32 product + Metal `sqrt`, term from integer diff). Kernel stores all 64
   terms per block, no device sum; host `vmaf_psnr_hvs_plane_score()` /
   `_combined_score()` / `_score_db()`. Mask table = host
-  `vmaf_psnr_hvs_mask_value()` (double product -> float), buffer 6; never an
+  `vmaf_psnr_hvs_mask_value()` (double product -> float), buffer 6; never
   fp32 `csf * 0.3885746225901003f` square. CSF tables = `vmaf_mtl_hvs_csf`.
   Change to `calc_psnrhvs()` -> header, same PR. Guards:
   `test_metal_psnr_hvs_math`, `test_psnr_hvs_twin_exact_sum_contract.py`.
@@ -128,13 +128,13 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   `kernel`, ... in any Metal source or included header (C accepts, MSL does
   not; `test_metal_shader_build_contract`).
 
-- **Host-only equality and by-pointer structs in the shared headers (CodeQL sweep, 2026-10-06).**
+- **Host-only equality and by-pointer structs in shared headers (CodeQL sweep, 2026-10-06).**
   `vmaf_mtl_f64_equal()` (`metal_portable.h`, host branch) is `==` for doubles spelled with
-  `isless` / `isgreater` / `isunordered`: same answer for every input, +0 equals -0, a NaN equals nothing.
-  Spelled through `VMAF_MTL_ISLESS` / `_ISGREATER` / `_ISUNORDERED` = `__builtin_*` where the compiler has
-  them: icx's C `<math.h>` maps the `<math.h>` macros to libimf calls, which the strict-FP link drops
-  (`-no-intel-lib=libimf`); three C tests did not link in the oneAPI build. MSVC keeps `<math.h>`.
-  The host-only gain-limit builders (`metal_float_adm_math.h`, `metal_integer_vif_gain.h`) use it instead of `==`
-  (`cpp/equality-on-floats`); do not replace it by a bit compare (it must keep the reference's `==` semantics)
-  or a tolerance. `vmaf_mtl_fm_blur()` takes its 100-byte window by `const VMAF_MTL_FM_THR` pointer
-  (`thread` under Metal, empty on the host; `cpp/large-parameter`); `float_motion.metal` passes `&win`.
+  `isless` / `isgreater` / `isunordered`: same answer for every input, +0 equals -0, NaN equals nothing.
+  Spelled through `VMAF_MTL_ISLESS` / `_ISGREATER` / `_ISUNORDERED` = `__builtin_*` where compiler has
+  them: icx's C `<math.h>` maps `<math.h>` macros to libimf calls, which strict-FP link drops
+  (`-no-intel-lib=libimf`); three C tests did not link in oneAPI build. MSVC keeps `<math.h>`.
+  host-only gain-limit builders (`metal_float_adm_math.h`, `metal_integer_vif_gain.h`) use it instead of `==`
+  (`cpp/equality-on-floats`); do not replace it by bit compare (it must keep reference's `==` semantics)
+  or tolerance. `vmaf_mtl_fm_blur()` takes its 100-byte window by `const VMAF_MTL_FM_THR` pointer
+  (`thread` under Metal, empty on host; `cpp/large-parameter`); `float_motion.metal` passes `&win`.

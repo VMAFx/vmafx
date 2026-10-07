@@ -21,6 +21,7 @@ Status codes, shared enumerations and the export macros.
 | `VMAFX_E_IO` | -7 | `-EIO` | 0.1 | File or stream error. |
 | `VMAFX_E_RANGE` | -8 | `-ERANGE` | 0.1 | Value out of range. |
 | `VMAFX_E_INTERNAL` | -9 | `-EIO` | 0.1 | Engine error without a more specific status; the error carries the engine's errno. |
+| `VMAFX_E_ABI` | -11 | `-EINVAL` | 0.1 | A struct_size below the size the struct had when it was introduced; the error names the struct. |
 
 ## `VmafxLogLevel`
 
@@ -45,5 +46,44 @@ Compute backend (values equal enum VmafBackend; 5 stays reserved for the removed
 | `VMAFX_BACKEND_SYCL` | 2 | 0.1 |
 | `VMAFX_BACKEND_METAL` | 3 | 0.1 |
 | `VMAFX_BACKEND_HIP` | 4 | 0.1 |
+
+## `VmafxPixelFormat`
+
+Planar pixel layout of a frame (values equal enum VmafPixelFormat). Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_PIXEL_FORMAT_UNKNOWN` | 0 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_YUV420P` | 1 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_YUV422P` | 2 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_YUV444P` | 3 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_YUV400P` | 4 | 0.1 |
+
+## `VmafxPool`
+
+Pooling method of a pooled score (values equal enum VmafPoolingMethod). Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_POOL_NONE` | 0 | 0.1 |
+| `VMAFX_POOL_MIN` | 1 | 0.1 |
+| `VMAFX_POOL_MAX` | 2 | 0.1 |
+| `VMAFX_POOL_MEAN` | 3 | 0.1 |
+| `VMAFX_POOL_HARMONIC_MEAN` | 4 | 0.1 |
+| `VMAFX_POOL_MEDIAN` | 5 | 0.1 |
+| `VMAFX_POOL_PERC5` | 6 | 0.1 |
+| `VMAFX_POOL_PERC10` | 7 | 0.1 |
+| `VMAFX_POOL_PERC20` | 8 | 0.1 |
+
+## Handles and callbacks
+
+| Type | Since | Description |
+| --- | --- | --- |
+| `VmafxOptions` | 0.1 | Feature options: string keys and values (the libvmaf feature dictionary). Released by `vmafx_options_free`. |
+| `VmafxLogCallback` | 0.1 | Receives log messages: `level` is a VmafxLogLevel, `message` one line without its newline, valid during the call. Runs on the thread that raised the message, a library worker thread included, and may run on several threads at once: it must be thread-safe and must not call back into the context. |
+
+```c
+typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
+```
 
 Back to the [reference index](reference.md).

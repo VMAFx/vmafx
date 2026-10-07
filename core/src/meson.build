@@ -2830,6 +2830,17 @@ libvmaf_sources = [
     src_dir + 'vmafx/error.c',
     src_dir + 'vmafx/status_gen.c',
     src_dir + 'vmafx/compat_libvmaf_gen.c',
+    # ADR-1852 RC4 WP2: the core API (devices, host frames, options, models,
+    # registration, submission, synchronous scores) on the engine.
+    src_dir + 'vmafx/device.c',
+    src_dir + 'vmafx/frame_host.c',
+    src_dir + 'vmafx/model.c',
+    src_dir + 'vmafx/options.c',
+    src_dir + 'vmafx/register.c',
+    src_dir + 'vmafx/score.c',
+    src_dir + 'vmafx/sha256.c',
+    src_dir + 'vmafx/sized.c',
+    src_dir + 'vmafx/submit.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',
@@ -2849,7 +2860,7 @@ libvmaf_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@4aae30711c655510305e9c14b403f991d342f760 (ABI 1.3).
+    # VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60 (ABI 1.3).
     # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',

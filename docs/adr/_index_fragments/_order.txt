@@ -1314,3 +1314,6 @@
 2198-windows-sycl-leg-and-cut-check
 1713-rc4-rust-extractor-framework
 2350-cloud-native-platform
+1906-vmafx-core-api-semantics
+2342-rc-map-amendment-2026-10
+2321-praetor-pin-afb739ed

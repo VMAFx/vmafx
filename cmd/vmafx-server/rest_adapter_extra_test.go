@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -42,7 +43,7 @@ func newTestRestAdapter(t *testing.T) *restAdapter {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServer(scorer, metrics, log)
 	return newRestAdapter(grpcSrv, log)
@@ -133,7 +134,7 @@ exit 1
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServer(scorer, metrics, log)
 	adapter := newRestAdapter(grpcSrv, log)
@@ -187,7 +188,7 @@ func TestRestAdapter_GetHealth_OK(t *testing.T) {
 func TestRestAdapter_GetReady_NotReady(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	// nil scorer → not ready
 	grpcSrv := newGRPCServer(nil, metrics, log)

@@ -75,6 +75,11 @@ enum VmafxStatusCode {
     VMAFX_E_RANGE = -8,
     /** Engine error without a more specific status; the error carries the engine's errno. */
     VMAFX_E_INTERNAL = -9,
+    /**
+     * A struct_size below the size the struct had when it was introduced; the error names the
+     * struct.
+     */
+    VMAFX_E_ABI = -11,
 };
 
 /**
@@ -101,6 +106,58 @@ typedef enum VmafxBackend {
     VMAFX_BACKEND_METAL = 3,
     VMAFX_BACKEND_HIP = 4,
 } VmafxBackend;
+
+/**
+ * Planar pixel layout of a frame (values equal enum VmafPixelFormat).
+ * @since 0.1
+ */
+typedef enum VmafxPixelFormat {
+    /** Not set; refused by every frame constructor. */
+    VMAFX_PIXEL_FORMAT_UNKNOWN = 0,
+    /** 4:2:0, chroma halved in both directions (rounded up). */
+    VMAFX_PIXEL_FORMAT_YUV420P = 1,
+    /** 4:2:2, chroma halved horizontally (rounded up). */
+    VMAFX_PIXEL_FORMAT_YUV422P = 2,
+    /** 4:4:4, no chroma subsampling. */
+    VMAFX_PIXEL_FORMAT_YUV444P = 3,
+    /** Luma only. */
+    VMAFX_PIXEL_FORMAT_YUV400P = 4,
+} VmafxPixelFormat;
+
+/**
+ * Pooling method of a pooled score (values equal enum VmafPoolingMethod).
+ * @since 0.1
+ */
+typedef enum VmafxPool {
+    /** No pooling: a per-frame score. */
+    VMAFX_POOL_NONE = 0,
+    VMAFX_POOL_MIN = 1,
+    VMAFX_POOL_MAX = 2,
+    VMAFX_POOL_MEAN = 3,
+    VMAFX_POOL_HARMONIC_MEAN = 4,
+    VMAFX_POOL_MEDIAN = 5,
+    /** 5th percentile (linear interpolation). */
+    VMAFX_POOL_PERC5 = 6,
+    /** 10th percentile. */
+    VMAFX_POOL_PERC10 = 7,
+    /** 20th percentile. */
+    VMAFX_POOL_PERC20 = 8,
+} VmafxPool;
+
+/**
+ * Feature options: string keys and values (the libvmaf feature dictionary).
+ * @since 0.1
+ */
+typedef struct VmafxOptions VmafxOptions;
+
+/**
+ * Receives log messages: `level` is a VmafxLogLevel, `message` one line without its newline, valid
+ * during the call. Runs on the thread that raised the message, a library worker thread included,
+ * and may run on several threads at once: it must be thread-safe and must not call back into the
+ * context.
+ * @since 0.1
+ */
+typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
 
 #ifdef __cplusplus
 }

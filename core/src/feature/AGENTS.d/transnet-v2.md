@@ -11,23 +11,23 @@ invariant: TransNet V2 runs upstream predict_frames() windows on 0..255 thumbnai
 - **`transnet_v2.c` window contract** (fork-local, ADR-0223 + ADR-0261,
   windows ADR-1527) — I/O contract `frames: float32 [1, 100, 3, 27, 48]`
   (27x48 thumbnails, 0..255) → one output `float32 [1, 100]`, bound by
-  position (the shipped graph calls it `output_0`). Load-bearing on rebase:
+  position (shipped graph calls it `output_0`). Load-bearing on rebase:
   (1) windows are upstream `predict_frames()`: window k covers frames
-  `50k-25 .. 50k+74` (first frame before the clip, last frame after it),
+  `50k-25 .. 50k+74` (first frame before clip, last frame after it),
   runs when frame `50k+74` is read, and writes frames `50k .. 50k+49` from
-  slots 25..74; `flush()` runs the one or two windows left. Never read the
-  last slot as the current frame's logit: it sees no later frame and misses
+  slots 25..74; `flush()` runs one or two windows left. Never read
+  last slot as current frame's logit: it sees no later frame and misses
   cuts. (2) Samples stay in 0..255 (`luma_to_thumbnail()`; above 8 bits
   scaled by 255 / (2^bpc - 1)): upstream's ColorHistograms casts to integers
-  and bins with `>> 5`. (3) `VMAF_FEATURE_EXTRACTOR_TEMPORAL` keeps the
-  extractor on the calling thread with every frame in order; a gap in the
+  and bins with `>> 5`. (3) `VMAF_FEATURE_EXTRACTOR_TEMPORAL` keeps
+  extractor on calling thread with every frame in order; gap in
   indices is `-EINVAL`. (4) Dual feature names `shot_boundary_probability`
-  and `shot_boundary` (0.5 threshold); a `1.0` marks the last frame of a
-  shot; downstream consumers bind to both. (5) The shipped ONNX is real
-  upstream weights (`smoke: false`, MIT, commit `a0942ca3`); the NTCHW
-  wrapper and the `UnsortedSegmentSum` → `ScatterND` rewrite live in
-  `ai/scripts/export_transnet_v2.py` and must be redone on a re-export.
-  `core/test/dnn/test_transnet_v2_run.c` guards (1)-(4) with the shipped
+  and `shot_boundary` (0.5 threshold); `1.0` marks last frame of
+  shot; downstream consumers bind to both. (5) shipped ONNX is real
+  upstream weights (`smoke: false`, MIT, commit `a0942ca3`); NTCHW
+  wrapper and `UnsortedSegmentSum` → `ScatterND` rewrite live in
+  `ai/scripts/export_transnet_v2.py` and must be redone on re-export.
+  `core/test/dnn/test_transnet_v2_run.c` guards (1)-(4) with shipped
   model. See
   [ADR-0223](../../../../docs/adr/0223-transnet-v2-shot-detector.md),
   [ADR-0261](../../../../docs/adr/0261-transnet-v2-real-weights.md),

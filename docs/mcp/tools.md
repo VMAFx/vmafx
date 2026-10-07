@@ -53,7 +53,7 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 | `height`    | integer `≥ 1`                          | yes      | —                       | Frame height in pixels                         |
 | `pixfmt`    | `"420" \| "422" \| "444"`              | yes      | —                       | YUV chroma subsampling                         |
 | `bitdepth`  | `8 \| 10 \| 12 \| 16`                  | yes      | —                       | Bit depth of both YUV files                    |
-| `model`     | string                                 | no       | `"version=vmaf_v0.6.1"` | Any `--model` grammar from the CLI             |
+| `model`     | string                                 | no       | `"version=vmaf_v1.0.16_3d0h"` | Any `--model` grammar from the CLI. The default is the library default model |
 | `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
 | `subsample` | integer `≥ 1`                          | no       | `1`                     | Score every Nth frame (passed as `--subsample`) |
 | `precision` | string                                 | no       | `"legacy"`              | Passed straight to `--precision` (see below)   |
@@ -562,7 +562,7 @@ took 48 s per frame on four CPU cores and peaked at 8.6 GB of memory.
 | `height`   | integer                                             | yes      | —                        |
 | `pixfmt`   | `"420"` / `"422"` / `"444"`                         | yes      | —                        |
 | `bitdepth` | 8 / 10 / 12 / 16                                    | yes      | —                        |
-| `model`    | string                                              | no       | `"version=vmaf_v0.6.1"`  |
+| `model`    | string                                              | no       | `"version=vmaf_v1.0.16_3d0h"`  |
 | `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"` / `"hip"` / `"metal"` | no       | `"auto"`                 |
 | `n`        | integer in `[1, 32]`                                | no       | `5`                      |
 
@@ -721,7 +721,7 @@ Requires `ffmpeg` and `ffprobe` on `PATH`.
 | --- | --- | --- | --- | --- |
 | `reference_encoded`  | string (path)                                                   | yes      | —                        | Reference encoded video; must be under an allowlisted root |
 | `distorted_encoded`  | string (path)                                                   | yes      | —                        | Distorted encoded video; same allowlist        |
-| `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
+| `model`              | string                                                          | no       | `"version=vmaf_v1.0.16_3d0h"`  | Any `--model` grammar from the CLI. The default is the library default model |
 | `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
 | `subsample`          | integer `≥ 1`                                                   | no       | `1`                      | Score every Nth frame (1 = every frame)        |
 | `precision`          | string                                                          | no       | `"legacy"`               | Passed to `--precision`                        |

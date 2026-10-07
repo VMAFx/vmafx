@@ -1,7 +1,7 @@
 ---
 paths:
   - core/src/feature/metal/float_adm_metal.mm
-invariant: float_adm_metal takes its CSF weights from the CPU (ADR-1489, ADR-1498).
+invariant: float_adm_metal takes its CSF weights from CPU (ADR-1489, ADR-1498).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `float_adm_metal.mm`: CSF weights from the CPU (ADR-1489, ADR-1498)

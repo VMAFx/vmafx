@@ -1,0 +1,279 @@
+// SPDX-License-Identifier: EUPL-1.2
+// Copyright 2026 Lusoris
+
+package obsgen
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+
+	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
+)
+
+// ExternalSeries are the series a dashboard may query that VMAFx code does
+// not define: Prometheus's own up series, and the Go runtime and process
+// collectors every component registers (observability.NewRegistry). The
+// collector entries are checked against a live registry by the tests, so the
+// list cannot name a series nothing serves.
+var ExternalSeries = map[string]string{
+	"up":                            "Prometheus, one per scrape target",
+	"process_start_time_seconds":    "client_golang process collector, every component",
+	"process_resident_memory_bytes": "client_golang process collector, every component",
+	"process_cpu_seconds_total":     "client_golang process collector, every component",
+	"go_goroutines":                 "client_golang Go collector, every component",
+}
+
+// CheckExpr returns the series expr selects that nothing emits: neither a
+// series of a metricdef family nor one of ExternalSeries.
+func CheckExpr(expr string) []string {
+	var dead []string
+	for _, name := range MetricNames(expr) {
+		if _, ok := metricdef.Lookup(name); ok {
+			continue
+		}
+		if _, ok := ExternalSeries[name]; ok {
+			continue
+		}
+		dead = append(dead, name)
+	}
+	return dead
+}
+
+// CheckDashboard returns one problem per Prometheus query of a Grafana
+// dashboard (panels, nested row panels, annotations and template variables)
+// that names a series nothing emits.
+func CheckDashboard(raw []byte) ([]string, error) {
+	var d dashboardQueries
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, fmt.Errorf("obsgen: parse dashboard: %w", err)
+	}
+	var problems []string
+	report := func(where, expr string) {
+		for _, name := range CheckExpr(expr) {
+			problems = append(problems, fmt.Sprintf("%s: %q queries %s, which nothing emits", d.Title, where, name))
+		}
+	}
+	for _, p := range flattenPanels(d.Panels) {
+		for _, t := range p.Targets {
+			if t.Expr != "" {
+				report("panel "+p.Title, t.Expr)
+			}
+		}
+	}
+	for _, a := range d.Annotations.List {
+		report("annotation "+a.Name, a.Expr)
+	}
+	for _, v := range d.Templating.List {
+		report("variable "+v.Name, variableExpr(v.Query))
+	}
+	return problems, nil
+}
+
+// dashboardQueries is the part of a dashboard's JSON that holds queries.
+type dashboardQueries struct {
+	Title       string       `json:"title"`
+	Panels      []panelQuery `json:"panels"`
+	Annotations struct {
+		List []struct {
+			Name string `json:"name"`
+			Expr string `json:"expr"`
+		} `json:"list"`
+	} `json:"annotations"`
+	Templating struct {
+		List []struct {
+			Name  string          `json:"name"`
+			Query json.RawMessage `json:"query"`
+		} `json:"list"`
+	} `json:"templating"`
+}
+
+type panelQuery struct {
+	Title   string `json:"title"`
+	Targets []struct {
+		Expr string `json:"expr"`
+	} `json:"targets"`
+	Panels []panelQuery `json:"panels"`
+}
+
+// flattenPanels returns the panels and the panels of collapsed rows, which
+// Grafana nests one level deep.
+func flattenPanels(panels []panelQuery) []panelQuery {
+	out := slices.Clone(panels)
+	for _, p := range panels {
+		out = append(out, p.Panels...)
+	}
+	return out
+}
+
+var labelValuesRe = regexp.MustCompile(`^\s*(?:label_values|query_result)\((.*?)(?:,\s*[a-zA-Z_][a-zA-Z0-9_]*)?\)\s*$`)
+
+// variableExpr returns the PromQL inside a query variable's
+// label_values(expr, label) or query_result(expr), or "" for any other
+// variable (a datasource, a custom list).
+func variableExpr(raw json.RawMessage) string {
+	var q string
+	if json.Unmarshal(raw, &q) != nil {
+		var m struct {
+			Query string `json:"query"`
+		}
+		if json.Unmarshal(raw, &m) != nil {
+			return ""
+		}
+		q = m.Query
+	}
+	if m := labelValuesRe.FindStringSubmatch(q); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// promqlWords are the PromQL words that are neither functions (always
+// followed by "(") nor metric names.
+var promqlWords = map[string]bool{
+	"by": true, "without": true, "on": true, "ignoring": true, "group_left": true, "group_right": true,
+	"and": true, "or": true, "unless": true, "bool": true, "offset": true, "atan2": true,
+	"inf": true, "nan": true, "Inf": true, "NaN": true,
+	"sum": true, "min": true, "max": true, "avg": true, "group": true, "stddev": true, "stdvar": true,
+	"count": true, "count_values": true, "bottomk": true, "topk": true, "quantile": true,
+	"limitk": true, "limit_ratio": true,
+}
+
+// MetricNames returns the metric names a PromQL expression selects, in order
+// of first appearance. It reads PromQL's lexical structure: strings, label
+// matchers in {}, ranges in [], Grafana variables ($x, ${x}), numbers and
+// durations are skipped; a name followed by "(" is a function; the grouping
+// lists after by, without, on, ignoring, group_left and group_right are
+// label names.
+func MetricNames(expr string) []string {
+	var names []string
+	lx := lexer{s: expr}
+	for lx.i < len(lx.s) {
+		name := lx.next()
+		if name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// lexer walks a PromQL expression; next advances past one token and returns
+// it when it is a metric name.
+type lexer struct {
+	s string
+	i int
+}
+
+func (lx *lexer) next() string {
+	c := lx.s[lx.i]
+	switch {
+	case c == '"' || c == '\'' || c == '`':
+		lx.skipString(c)
+	case c == '{':
+		lx.skipTo('}')
+	case c == '[':
+		lx.skipTo(']')
+	case c == '$':
+		lx.skipVariable()
+	case isDigit(c) || (c == '.' && lx.i+1 < len(lx.s) && isDigit(lx.s[lx.i+1])):
+		lx.skipWord()
+	case isNameStart(c):
+		return lx.name()
+	default:
+		lx.i++
+	}
+	return ""
+}
+
+// name reads an identifier and classifies it.
+func (lx *lexer) name() string {
+	start := lx.i
+	lx.skipWord()
+	word := lx.s[start:lx.i]
+	followedByParen := lx.peekNonSpace() == '('
+	switch {
+	case isGrouping(word) && followedByParen:
+		lx.skipTo(')') // a label list, not a call
+		return ""
+	case followedByParen, promqlWords[word]:
+		return ""
+	default:
+		return word
+	}
+}
+
+func isGrouping(w string) bool {
+	switch w {
+	case "by", "without", "on", "ignoring", "group_left", "group_right":
+		return true
+	}
+	return false
+}
+
+// peekNonSpace returns the next non-space byte without consuming it.
+func (lx *lexer) peekNonSpace() byte {
+	for j := lx.i; j < len(lx.s); j++ {
+		if !isSpace(lx.s[j]) {
+			return lx.s[j]
+		}
+	}
+	return 0
+}
+
+// skipTo advances past the next unquoted close byte (from the current
+// position, which may be the opening byte).
+func (lx *lexer) skipTo(close byte) {
+	lx.i++
+	for lx.i < len(lx.s) {
+		c := lx.s[lx.i]
+		switch {
+		case c == '"' || c == '\'' || c == '`':
+			lx.skipString(c)
+		case c == close:
+			lx.i++
+			return
+		default:
+			lx.i++
+		}
+	}
+}
+
+// skipString advances past a string literal opened by quote.
+func (lx *lexer) skipString(quote byte) {
+	lx.i++
+	for lx.i < len(lx.s) {
+		c := lx.s[lx.i]
+		lx.i++
+		if c == '\\' && quote != '`' {
+			lx.i++
+			continue
+		}
+		if c == quote {
+			return
+		}
+	}
+}
+
+// skipVariable advances past a Grafana variable: $name or ${name}.
+func (lx *lexer) skipVariable() {
+	lx.i++
+	if lx.i < len(lx.s) && lx.s[lx.i] == '{' {
+		lx.skipTo('}')
+		return
+	}
+	lx.skipWord()
+}
+
+// skipWord advances past a run of name characters (identifiers, numbers,
+// durations).
+func (lx *lexer) skipWord() {
+	for lx.i < len(lx.s) && (isNameStart(lx.s[lx.i]) || isDigit(lx.s[lx.i]) || lx.s[lx.i] == '.') {
+		lx.i++
+	}
+}
+
+func isDigit(c byte) bool     { return c >= '0' && c <= '9' }
+func isSpace(c byte) bool     { return strings.IndexByte(" \t\r\n", c) >= 0 }
+func isNameStart(c byte) bool { return c == '_' || c == ':' || (c|0x20 >= 'a' && c|0x20 <= 'z') }

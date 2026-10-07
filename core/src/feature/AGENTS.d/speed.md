@@ -38,8 +38,8 @@ once, as Netflix master has them (`libvmaf/src/feature/speed.c`, `9e48141b`):
 Port #213 had `sqrtf` / `log2f` / `0.75f` there: `speed_chroma` up to 2.3e-5,
 `speed_temporal` up to 6.6e-4, `vmaf_v1.0.16` up to 2.5e-5 from Netflix. Never
 bring fp32 forms back; `performance-type-promotion-in-math-fn` on these lines
-= NOLINT citing ADR-1477, not a rewrite. **On upstream sync**: upstream's side
-on these three. `sqrtf` of an fp32 norm and `/ 2.0f` (#1209) stay: same value.
+= NOLINT citing ADR-1477, not rewrite. **On upstream sync**: upstream's side
+on these three. `sqrtf` of fp32 norm and `/ 2.0f` (#1209) stay: same value.
 
 Mirrors that change in same PR:
 
@@ -51,22 +51,22 @@ Mirrors that change in same PR:
 - [`speed_givens.h`](../speed_givens.h) `speed_givens_unit()` = rotation's
   fp64 statement in fp32 for device kernels. Input domain = 2^23 + 1 floats of
   [1, 2] (`|t| <= 1`); proven on every one. Change -> rerun
-  `test_speed_upstream_form`; a mismatch = wrong routine, never a tolerance
+  `test_speed_upstream_form`; mismatch = wrong routine, never tolerance
   or exception table.
 
 Guard: `core/test/test_speed_upstream_form.c` (device-free). Every libc:
 `create_givens()`, `update_entropy()`, `get_speed_score()` (reached through
-the `speed_internal_cpu_*()` test entries after `get_speed_score()` in
-`speed.c`, declared in `speed_internal.h`; keep them on a sync) == Netflix's
-statements transcribed with file:line and evaluated with the host's own
+`speed_internal_cpu_*()` test entries after `get_speed_score()` in
+`speed.c`, declared in `speed_internal.h`; keep them on sync) == Netflix's
+statements transcribed with file:line and evaluated with host's own
 `sqrt()` / `log2()`; Givens exhaustive; host tail == same statements, modes
 0-6, singular rule, bad arguments. glibc only:
 CPU extractors == Netflix master's values on `testdata/*_576x324_48f.yuv` (11
-frames, 4 option sets; measured with glibc 2.44); other libcs print the check
-as skipped with the reason. Variant `test_speed_upstream_form_foreign_libm`
-(`-DVMAF_TEST_ASSUME_FOREIGN_LIBM`) runs the non-glibc path on every lane.
-Reference values come from a Netflix build; never regenerate them from the
-fork, never pin a host-libm value outside the glibc guard.
+frames, 4 option sets; measured with glibc 2.44); other libcs print check
+as skipped with reason. Variant `test_speed_upstream_form_foreign_libm`
+(`-DVMAF_TEST_ASSUME_FOREIGN_LIBM`) runs non-glibc path on every lane.
+Reference values come from Netflix build; never regenerate them from
+fork, never pin host-libm value outside glibc guard.
 
 ## `speed_chroma` / `speed_temporal` are float-build-only
 
@@ -88,22 +88,22 @@ that ADR fires.
 
 `speed_temporal` `init()` in [`speed.c`](../speed.c) sizes its four frame
 buffers `float_stride * dimensions.alloc_height`. `filter_and_downscale()`
-copies `alloc_height` rows out of each buffer and resamples the frame back in
-place at `scaled_height`; `speed_prescale` above 1 makes that taller than the
+copies `alloc_height` rows out of each buffer and resamples frame back in
+place at `scaled_height`; `speed_prescale` above 1 makes that taller than
 source. Upstream still allocates `float_stride * h` (issue #1626, fix proposed
 upstream in PR #1627). **On upstream sync**: keep `alloc_height`;
-restoring `h` brings the heap overrun back.
+restoring `h` brings heap overrun back.
 `test_speed_frame_buffers` (1.0 / 1.5 / 2.0 / 4.0) catches it under ASan only.
-Drop this note once the upstream fix is ported. `speed_chroma` and the
-CUDA / HIP / SYCL twins already size from the scaled geometry.
+Drop this note once upstream fix is ported. `speed_chroma` and
+CUDA / HIP / SYCL twins already size from scaled geometry.
 
 ## `speed_chroma` buffers use `speed_chroma_dimensions()` ceiling extents
 
-In subsampled formats (4:2:0, 4:2:2) an odd luma width or height produces
-an extra chroma row or column to cover the last luma sample
+In subsampled formats (4:2:0, 4:2:2) odd luma width or height produces
+extra chroma row or column to cover last luma sample
 (`vmaf_chroma_extent()`). `speed.c` `init_chroma()`, `speed_chroma_cuda.c`,
 and `speed_chroma_hip.c` must derive chroma extents via
-`speed_chroma_dimensions()`, not integer `/ 2`, so that buffers match the
+`speed_chroma_dimensions()`, not integer `/ 2`, so that buffers match
 ceiling dimensions allocated by `picture.c` and copied by `picture_copy()`.
 
 ## SpEED anti-alias + decimation: fused off x86 (Netflix/vmaf 76ea5f03)
@@ -141,10 +141,10 @@ Test entries `speed_internal_cpu_est_params()` and
 `speed.c`, declared in `speed_internal.h` with `SpeedInternalEstGeometry`)
 serve `core/test/test_speed_chroma.c` (Netflix c70debb10: `est_params()`,
 `compute_eigenvalues()`, `get_speed_score()` against upstream's values at
-1e-4). Upstream's test includes `speed.c`; the fork's may not
-(`check-no-non-header-includes`). **On upstream sync**: keep the entries; a
+1e-4). Upstream's test includes `speed.c`; fork's may not
+(`check-no-non-header-includes`). **On upstream sync**: keep entries;
 signature change of `est_params()` / `compute_eigenvalues()` changes them in
-the same PR.
+same PR.
 
 ## SpEED covariance sums: row kernels return scalar's bits (ADR-1459)
 
@@ -173,20 +173,20 @@ guarantee or scalar kernel.
 
 SpEED built + registered whatever `enable_float` says (Netflix/vmaf
 4718b4f5f meson hunk + 6046b1926): `speed.c`, `speed_internal.c`,
-`vif_tools.c`, `common/convolution.c` sit in the unconditional
+`vif_tools.c`, `common/convolution.c` sit in unconditional
 `libvmaf_feature_sources` list of `core/src/meson.build`;
 `vmaf_fex_speed_chroma` / `_temporal` sit outside `#if VMAF_FLOAT_FEATURES` in
 `feature_extractor.cpp`. Default model `vmaf_v1.0.16_3d0h` reads
 `speed_chroma`; GPU twins link `speed_internal.c`. **On upstream sync**: never
-move them back under the float gate. SpEED tests in `core/test/meson.build`
-carry no `enable_float` gate; `test_speed` fails in a `-Denable_float=false`
-build when the extractors drop out.
+move them back under float gate. SpEED tests in `core/test/meson.build`
+carry no `enable_float` gate; `test_speed` fails in `-Denable_float=false`
+build when extractors drop out.
 
 Bilinear prescale column table (Netflix/vmaf 78e11b52c): `speed_init()` fills
-`SpeedBuffers.bilinear_x1a` / `_x2a` / `_dxa` once when the prescale is
+`SpeedBuffers.bilinear_x1a` / `_x2a` / `_dxa` once when prescale is
 bilinear and resamples; `speed_prescale_frame()` uses it through
 `vif_scale_frame_bilinear_precomputed_s()`. Same bits as
 `vif_scale_frame_s(vif_scale_bilinear, ...)`, which `speed_internal.c` keeps
-calling (`test_vif_bilinear` holds both to the per-pixel scaler). No width
+calling (`test_vif_bilinear` holds both to per-pixel scaler). No width
 limit: `vif_tools.c` walks columns in chunks of 1024; never import upstream's
 `VIF_BILINEAR_MAX_WIDTH` stack table, assert or init refusals.

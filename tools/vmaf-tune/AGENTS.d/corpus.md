@@ -40,38 +40,38 @@ invariant: Phase A JSONL corpus row schema is API contract; canonical-6 uncondit
   emitting `NaN`.
 - **`vmaf_model` JSONL field is now per-row, not per-job.** Since
   ADR-0289 (resolution-aware model selection), `corpus._row_for`
-  populates `vmaf_model` from the sweep's score model
-  (`_sweep_score_model`, resolved once per job): the height rule
+  populates `vmaf_model` from sweep's score model
+  (`_sweep_score_model`, resolved once per job): height rule
   (`resolution.select_vmaf_model_version`) when
-  `CorpusOptions.resolution_aware` is True, else `vmaf_model`; then the
-  NEG variant when `neg` is set; then the HDR model resolution. Encoded
-  cells and reference-decode-failed cells name the same model. The CLI
+  `CorpusOptions.resolution_aware` is True, else `vmaf_model`; then
+  NEG variant when `neg` is set; then HDR model resolution. Encoded
+  cells and reference-decode-failed cells name same model. CLI
   sets `resolution_aware=False` exactly when `--vmaf-model` is given.
   Mixed-ladder corpora legitimately contain multiple distinct
   `vmaf_model` values across rows. Downstream consumers (Phase B/C/D)
   must group/filter by `vmaf_model` rather than assuming constant.
-- **The coarse-to-fine window comes from the adapter.**
+- **coarse-to-fine window comes from adapter.**
   `corpus.coarse_search_window()` intersects `COARSE_WINDOW` (10..50)
-  with the adapter's `quality_range`, and `coarse_to_fine_search` checks
-  the window against `adapter.validate()` when it is called, before it
-  returns the row iterator, so a refused window raises `ValueError`
-  before any encode (the CLI turns it into exit 2). Keep the eager check:
-  a generator body would raise mid-write. The fine-pass centre follows
+  with adapter's `quality_range`, and `coarse_to_fine_search` checks
+  window against `adapter.validate()` when it is called, before it
+  returns row iterator, so refused window raises `ValueError`
+  before any encode (CLI turns it into exit 2). Keep eager check:
+  generator body would raise mid-write. fine-pass centre follows
   `invert_quality` (`higher_is_better` for VideoToolbox's `-q:v`).
-- **`CorpusOptions.decode_semaphore` gates the once-per-sweep reference
-  decode** (ADR-0577); the ladder sampler passes
+- **`CorpusOptions.decode_semaphore` gates once-per-sweep reference
+  decode** (ADR-0577); ladder sampler passes
   `--max-concurrent-decodes` through it and puts each rung's scratch
   directory under `--workdir` (`ladder.SamplerResources`).
-- **The encode-cache key covers every input of the cell (cache key
-  version 2).** `_cell_cache_key` passes the adapter's
-  `adapter_version`, the ffmpeg version probed once per sweep through
-  `probe_runner`, the pass count, the sample-clip window and a
+- **encode-cache key covers every input of cell (cache key
+  version 2).** `_cell_cache_key` passes adapter's
+  `adapter_version`, ffmpeg version probed once per sweep through
+  `probe_runner`, pass count, sample-clip window and
   `settings` map (geometry, source geometry, pixel format, frame rate,
-  duration, extra encoder argv, score model, score backend). A new
-  input that changes the encode or the score goes into `settings` in
-  the same PR. A hit replays the stored miss row (`CachedResult.row`)
-  with fresh `run_id` / `timestamp` / `encode_path`; an entry without a
-  row is a miss. No ffmpeg version, no cache for the run (logged).
+  duration, extra encoder argv, score model, score backend). new
+  input that changes encode or score goes into `settings` in
+  same PR. hit replays stored miss row (`CachedResult.row`)
+  with fresh `run_id` / `timestamp` / `encode_path`; entry without
+  row is miss. No ffmpeg version, no cache for run (logged).
 - **Sample-clip windows are mirrored on both sides**
   ([ADR-0301](../../../docs/adr/0301-vmaf-tune-sample-clip.md)).
   Encode side uses FFmpeg input-side `-ss <start> -t <N>`

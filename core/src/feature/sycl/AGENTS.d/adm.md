@@ -9,22 +9,22 @@ invariant: Integer ADM tiny frames and linkage; Scale 0 = CPU int16 semantics; s
 
 - `init_fex_sycl()` calls `adm_frame_size_check()` first, before any device
   resource. Bound = CPU bound (17x17).
-- `integer_adm_sycl.cpp` internals live in one anonymous namespace; only the
+- `integer_adm_sycl.cpp` internals live in one anonymous namespace; only
   `extern "C"` extractor struct has external linkage. No C-style `static` at
   file scope, no linkage NOLINT band.
 - Scale 0 = CPU int16 semantics (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18). CPU
   stores bands as `int16_t`; kernels compute wider, so wrap explicitly with
-  `adm_i16()` (mod 2^16, compiler-independent) wherever the CPU narrows:
+  `adm_i16()` (mod 2^16, compiler-independent) wherever CPU narrows:
   `csf_a`, `csf_f`. Never widen these. Diagonal `csf_a` rounds with 65535,
   not `1 << 16`. NOT narrowed since ADR-1402: CM 1/15 centre tap
   (`adm_dev_csf_centre()`, int32 like CPU `adm_cm_thresh()`); scale-0 CM
   excess = `adm_dev_cm_excess_s0()`, int64, capped at INT32_MAX like CPU
-  `adm_cm_excess_s0()`. Never put `adm_i16()` back on the centre term.
-- Scales 1-3 `>> 32` rounding term = `I4_FLT_ROUND` = -2^31: the CPU's
+  `adm_cm_excess_s0()`. Never put `adm_i16()` back on centre term.
+- Scales 1-3 `>> 32` rounding term = `I4_FLT_ROUND` = -2^31: CPU's
   wrapped `(int32_t)(1u << 31)` (Netflix#955, ADR-0155), same as CUDA / HIP.
   Netflix fixes #955 -> change CPU and this constant together.
-- Host finalisation = the CPU's float arithmetic (ADR-1362) -> every ADM
-  output bit-exact. The old double finaliser (`conclude_adm_cm` /
+- Host finalisation = CPU's float arithmetic (ADR-1362) -> every ADM
+  output bit-exact. old double finaliser (`conclude_adm_cm` /
   `conclude_adm_csf_den`, ~1e-7 residual) is gone; do not bring it back.
 - Guard: `test_sycl_adm_tiny_frames` (tiny frames, full-range noise,
   isolated patches; bit-exact arm).

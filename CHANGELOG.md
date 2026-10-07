@@ -6,6 +6,33 @@
 ## [Unreleased]
 ### Added
 
+- **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
+  ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
+  contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
+  context options (`vmafx_context_set_option`), feature option sets
+  (`vmafx_options_set`), extractor, model and model-set registration
+  (`vmafx_context_use_feature`, `vmafx_context_use_model`,
+  `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
+  resolution (`vmafx_feature_resolve`), refcounted models and model sets with
+  the SHA-256 of the bytes as loaded (`vmafx_model_load`,
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
+  the CPU device (`vmafx_device_create`), host frames allocated or borrowed
+  without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
+  submission (`vmafx_submit`, `vmafx_flush`), frame retention
+  (`vmafx_context_frame_retention`) and synchronous per-frame and pooled
+  scores for features, models and model sets (`vmafx_score_frame`,
+  `vmafx_score_pooled`, `vmafx_feature_score_pooled`,
+  `vmafx_score_frame_model_set`, `vmafx_score_pooled_model_set`), equal bit for
+  bit to the `libvmaf.h` calls. One frame can be scored by several contexts
+  without a copy. Errors also name what kind of subject failed and the
+  function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
+  struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
+  [the VMAFx API page](docs/api/vmafx/index.md).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -95,6 +122,14 @@
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
 
 
+- **A compiler or linker warning now fails the Windows MSVC legs that print none.** `Windows MSVC+CUDA`,
+  `Windows ARM64 MSVC` and `Windows MSVC+CUDA (full)` configure with `scripts/ci/werror-args.sh msvc`
+  (`-Dwerror=true`: `/WX` on every `cl.exe` compile, `-WX` on every `link.exe` link, `--Werror
+  all-warnings` on every nvcc fatbin). The icx-cl leg (`Windows MSVC+SYCL`) is not at zero yet and is
+  listed with its count in [the CI overview](docs/development/ci.md#warnings-are-errors-adr-2170). See
+  [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md).
+
+
 - The Windows MSVC builds no longer print the C runtime, declaration and
   command-line warnings: `strdup`, `close`, `sscanf`, `getenv`, `_wfopen`,
   `_wopen` and `_open` are called through the CRT's own non-deprecated
@@ -125,7 +160,52 @@
   changed.
 
 
+- **The vendored Pelorus conformance fixture reads its files back with `_fsopen(..., _SH_DENYNO)` on Windows.** `scripts/sync-pelorus-interop.sh` pins `11e183ec0aed` (VMAFx/pelorus #91, fixing #90): `fixture_equals()` and `fixture_path_exists()` of `core/test/test_pelorus_interop.c` no longer call the deprecated `fopen()` there, which icx-cl reported. No behaviour or ABI change (ABI 1.3).
+
+
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
+
+
+- **The praetor governance engine moves from `04cc813ff054` to `afb739ed81f3`
+  ([ADR-2321](docs/adr/2321-praetor-pin-afb739ed.md)).** Praetor now lints every tracked
+  nested `AGENTS.md` in the internal register; the 19 nested files and 195 `AGENTS.d/` pages
+  that failed `praetorctl caveman check --kind=context` are rewritten, and the generated index
+  header follows. The audit compares the declared SLSA Build Level (3) with the one the
+  workflows reach (2): the gap is declared in `.config/lint-exceptions.d/HISS-11.toml`, which
+  `scripts/ci/praetor_tidy_coverage.py` renders into `.standards.yaml` (expires 2027-01-04).
+  Engine-written files regenerated: the Markdown gate lock (katex 0.19.0), the DevContainer
+  bundle, `.paperclip/harness.json` and `rules.md`, the agent evasion hook; the register block
+  no longer names skills the repository does not carry. The HISS baseline stays at 0.
+
+
+- **The roadmap and release pages list the full RC4 and RC5 scope.**
+  [ADR-2342](docs/adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of 2026-10-06 and
+  2026-10-07 (RC4 work packages for bindings, the FFmpeg series redesign, input formats, engineering
+  principles, the observability package and the cloud-native platform; RC5 live alignment,
+  interlaced video, region masks, container input, bits per pixel, HandBrake and the run-result
+  timeline; the 1.1 to 1.3 placement of the newer issues), and `docs/roadmap.md` and
+  `docs/development/release.md` follow it. No candidate number or milestone changes.
+
+
+- **The plan for reference-exact extractors is written down.**
+  [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
+  extractor against its original implementation, that the default becomes reference-exact with
+  Netflix's behaviour as a named compatibility mode the golden gate runs in, and that the RC9
+  retrain trains on reference-exact features. The roadmap, the release page and the retrain
+  runbook say so. No extractor or score changes yet.
+
+
+- **A pull request no longer carries the rendered changelog, ADR index or rebase
+  notes ([ADR-2197](docs/adr/2197-render-generated-docs-at-landing.md)).** It
+  adds fragments: `changelog.d/<section>/*.md`,
+  `docs/adr/_index_fragments/<slug>.md` and the new
+  `docs/rebase-notes.d/<slug>.md`. `CHANGELOG.md`, `docs/adr/README.md`, the
+  ADR by-tag and title pages and `docs/rebase-notes.md` are written by
+  `make docs-render` when pull requests land (the merge train per batch, the
+  release cut); `scripts/ci/deliverables-check.sh` refuses a pull request that
+  edits one. `docs/adr/_index_fragments/_order.txt` is frozen: later rows follow
+  in the order they landed. GitHub no longer reports such a pull request as
+  conflicting after master moves.
 
 
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
@@ -200,6 +280,20 @@
 
 ### Fixed
 
+- CI: the required gates that share a matrix (`Linux Intel LLVM`, `macOS Clang+Metal`,
+  `Windows MSVC+CUDA (full)`, `FFmpeg Ubuntu gcc`, `FFmpeg macOS clang`) judge their own
+  leg's job instead of the matrix aggregate, so one failing leg no longer turns the other
+  legs' required checks red (`scripts/ci/gate_leg_result.py`).
+
+
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
+
+
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
   encode without the ROI they asked for
   ([ADR-2167](docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)).** Patch
@@ -224,6 +318,18 @@
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+
+
+- **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
+
+
+- **The MCP tools advertise and use the library's default model.** `vmaf_score`, `vmaf_score_encoded`
+  and `describe_worst_frames` of both MCP servers declared `version=vmaf_v0.6.1` as the default of
+  `model` and scored with it when the argument was omitted; they now use `vmaf_v1.0.16_3d0h`, the
+  default of the library, the CLI and the server (ADR-1169). Pass `model` to keep scoring with
+  another model. The controller's gRPC contract documented the same stale default and says
+  `vmaf_v1.0.16_3d0h` now. The default-model gate reads the `version=` spelling and the controller
+  contract, so the drift cannot return unnoticed.
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series
@@ -310,6 +416,33 @@ They are recorded in full, unedited, in
   source of the LGPL libraries among them. See
   [the tester guide](docs/usage/tester-image.md#e-amd-gpu-image-linux)
   and [ADR-1511](docs/adr/1511-amd-gpu-tester-image.md).
+
+
+- **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
+  ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
+  contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
+  context options (`vmafx_context_set_option`), feature option sets
+  (`vmafx_options_set`), extractor, model and model-set registration
+  (`vmafx_context_use_feature`, `vmafx_context_use_model`,
+  `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
+  resolution (`vmafx_feature_resolve`), refcounted models and model sets with
+  the SHA-256 of the bytes as loaded (`vmafx_model_load`,
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
+  the CPU device (`vmafx_device_create`), host frames allocated or borrowed
+  without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
+  submission (`vmafx_submit`, `vmafx_flush`), frame retention
+  (`vmafx_context_frame_retention`) and synchronous per-frame and pooled
+  scores for features, models and model sets (`vmafx_score_frame`,
+  `vmafx_score_pooled`, `vmafx_feature_score_pooled`,
+  `vmafx_score_frame_model_set`, `vmafx_score_pooled_model_set`), equal bit for
+  bit to the `libvmaf.h` calls. One frame can be scored by several contexts
+  without a copy. Errors also name what kind of subject failed and the
+  function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
+  struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
+  [the VMAFx API page](docs/api/vmafx/index.md).
 
 
 - **vmafx-controller reads and enforces its tenant configuration
@@ -4403,6 +4536,12 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   a failed pooled score prints no score line either. This differs from
   upstream FFmpeg on purpose
   ([ADR-1768](docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
 
 
 - **The FFmpeg `libvmaf_sycl` filter no longer scores fewer frames than it

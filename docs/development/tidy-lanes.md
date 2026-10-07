@@ -230,6 +230,12 @@ expires more than 90 days out, so each rendered entry expires on the earlier of 
 `PRAETOR_EXPIRY_CAP` in the script (2027-01-04); renew the cap with the entries. Edit the baselines
 and the exception list, never the generated block.
 
+Praetor reads that one `exceptions` key for its other rules too. Since the pin `afb739ed81f3`
+([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)) the script also copies the exception list's
+entries for the rules in `PRAETOR_RULES`, today only `HISS-11`
+(`.config/lint-exceptions.d/HISS-11.toml`, a declared supply-chain gap), into the block, with the
+same expiry cap.
+
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |
 | C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |

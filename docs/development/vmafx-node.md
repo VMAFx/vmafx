@@ -144,6 +144,7 @@ clear error message.
 |---|---|---|
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
+| `VMAFX_HTTP_ADDR` | `:9090` | HTTP listen address of `/metrics` and the `/livez`, `/readyz`, `/startupz` probes. |
 | `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |
 | `VMAFX_BACKEND` | `cpu` | Backend the node runs and advertises to the controller. Set automatically in node-cuda/rocm/sycl variants. |
 | `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |

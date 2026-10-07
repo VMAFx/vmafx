@@ -28,6 +28,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -68,7 +69,7 @@ static const char *target_420_10bit =
 /* The bytes of the file at `path`, NUL terminated; NULL on any I/O error. */
 static char *read_whole_file(const char *path, size_t *len)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return NULL;
     char *buf = NULL;
@@ -91,7 +92,7 @@ static char *read_whole_file(const char *path, size_t *len)
 static int write_spliced(const char *path, const char *buf, size_t head, size_t n,
                          const char *block)
 {
-    FILE *out = fopen(path, "wb");
+    FILE *out = vmaf_fopen_utf8(path, "wb");
     if (!out)
         return -EIO;
     bool ok = fwrite(buf, 1, head, out) == head;

@@ -14,12 +14,18 @@
  *
  *   VMAF_STRDUP(s)        strdup(); _strdup() on Windows
  *   VMAF_CLOSE(fd)        close(); _close() on Windows
+ *   VMAF_FDOPEN(fd, m)    fdopen(); _fdopen() on Windows
  *   VMAF_SSCANF(...)      sscanf(); sscanf_s() under MSVC. Only for formats
  *                         without %s, %c or %[ (sscanf_s takes a size for those).
  *   vmaf_getenv_portable  getenv(); getenv_s() into a per-thread buffer under
  *                         MSVC. The result is valid until the next call on the
  *                         same thread; NULL when the variable is unset or does
  *                         not fit the 4096-byte buffer.
+ *   vmaf_tmpfile_portable tmpfile(); tmpfile_s() under MSVC. NULL on failure.
+ *
+ * "Under MSVC" means _MSC_VER, which clang-cl and icx-cl define as well: their
+ * -Wdeprecated-declarations reads the same CRT deprecations as cl.exe's C4996.
+ * A named file is opened with vmaf_fopen_utf8() (compat/path_utf8.h).
  */
 
 #include <stdio.h>
@@ -30,10 +36,12 @@
 #include <io.h>
 #define VMAF_STRDUP _strdup
 #define VMAF_CLOSE _close
+#define VMAF_FDOPEN _fdopen
 #else
 #include <unistd.h>
 #define VMAF_STRDUP strdup
 #define VMAF_CLOSE close
+#define VMAF_FDOPEN fdopen
 #endif
 
 #if defined(_MSC_VER)
@@ -62,6 +70,16 @@ static inline const char *vmaf_getenv_portable(const char *name)
 #else
     /* NOLINTNEXTLINE(concurrency-mt-unsafe) — callers keep their own ADR-0488 / ADR-1155 contract. */
     return getenv(name);
+#endif
+}
+
+static inline FILE *vmaf_tmpfile_portable(void)
+{
+#if defined(_MSC_VER)
+    FILE *file = NULL;
+    return tmpfile_s(&file) == 0 ? file : NULL;
+#else
+    return tmpfile();
 #endif
 }
 

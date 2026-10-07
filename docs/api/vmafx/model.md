@@ -6,6 +6,92 @@ Models and model sets.
 
 `#include <vmafx/model.h>`.
 
-No declarations yet: a later RC4 work package fills this header.
+## `VmafxModelFlags`
+
+Model load flags (bit values equal enum VmafModelFlags). Bits of a `u64` field. Since 0.1.
+
+| Constant | Bit | Since | Meaning |
+| --- | --- | --- | --- |
+| `VMAFX_MODEL_DISABLE_CLIP` | 0 | 0.1 | Do not clip the score to the model's range. |
+| `VMAFX_MODEL_ENABLE_TRANSFORM` | 1 | 0.1 | Apply the model's score transform. |
+| `VMAFX_MODEL_DISABLE_TRANSFORM` | 2 | 0.1 | Do not apply the model's score transform. |
+
+## Handles and callbacks
+
+| Type | Since | Description |
+| --- | --- | --- |
+| `VmafxModel` | 0.1 | A loaded model. Refcounted; a context that uses it holds a reference (ADR-1755). Released by `vmafx_model_unref`. |
+| `VmafxModelSet` | 0.1 | A bootstrap model set: a lead model and its member models. Refcounted. Released by `vmafx_model_set_unref`. |
+
+## Structs
+
+### `VmafxModelConfig`
+
+How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT. Size 48 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `name` | `const char *name` | 8 | 0.1 | Name of the model's scores (copied); NULL: `vmaf`. |
+| `flags` | `uint64_t flags` | 16 | 0.1 | Load flags; 0 keeps the model file's defaults. Bits: `VmafxModelFlags`. |
+| `log_level` | `uint32_t log_level` | 24 | 0.1 | Level of the messages `log_callback` receives. Values: `VmafxLogLevel`. |
+| `log_callback` | `VmafxLogCallback log_callback` | 32 | 0.1 | Receives the messages raised while loading (a model belongs to no context) at or below `log_level`, and a load failure reported without an error out-parameter; NULL: the process log. |
+| `log_user` | `void *log_user` | 40 | 0.1 | Passed to `log_callback`. |
+
+Initialise with `VMAFX_MODEL_CONFIG_INIT`.
+
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_model_load` | 0.1 | Load the built-in model `version` (see vmafx_model_builtin_next()). `config` may be NULL. VMAFX_E_NOTFOUND names an unknown version. |
+| `vmafx_model_load_file` | 0.1 | Load a JSON model file (UTF-8 path). VMAFX_E_IO names a file that cannot be read, VMAFX_E_INVALID one that is not a single model, VMAFX_E_NOTSUP a `.pkl` file. |
+| `vmafx_model_override_feature` | 0.1 | Merge `options` (copied) into the options the model passes to `extractor`. Only while the caller holds the only reference: a model a context uses is immutable (VMAFX_E_BUSY). |
+| `vmafx_model_ref` | 0.1 | Take one more reference; returns `model` (NULL for NULL). |
+| `vmafx_model_unref` | 0.1 | Drop one reference; the last one releases the model. NULL is a no-op. |
+| `vmafx_model_name` | 0.1 | Name the model's scores are recorded under; NULL for NULL. |
+| `vmafx_model_feature_count` | 0.1 | Number of features the model reads; 0 for NULL. |
+| `vmafx_model_feature_name` | 0.1 | Name of feature `index`, or NULL past the last one. |
+| `vmafx_model_hash` | 0.1 | SHA-256 of the model bytes as loaded, 64 lowercase hex digits (equal to `sha256sum` of the file); lives as long as the model. NULL for NULL. |
+| `vmafx_model_builtin_next` | 0.1 | The built-in model version after `previous`, the first one for NULL, NULL after the last or for an unknown `previous`. Built-in model sets are listed too. |
+| `vmafx_model_default_version` | 0.1 | Version of the default model (`vmaf_v1.0.16_3d0h`). |
+| `vmafx_model_set_load` | 0.1 | Load the built-in model set `version` (for example `vmaf_b_v0.6.3`). `config` may be NULL. VMAFX_E_NOTFOUND names an unknown version, VMAFX_E_INVALID one that is not a set. |
+| `vmafx_model_set_load_file` | 0.1 | Load a JSON model set file (UTF-8 path); failures as vmafx_model_load_file(). |
+| `vmafx_model_set_override_feature` | 0.1 | vmafx_model_override_feature() for the lead model and every member; VMAFX_E_BUSY once the set is shared. |
+| `vmafx_model_set_ref` | 0.1 | Take one more reference; returns `set` (NULL for NULL). |
+| `vmafx_model_set_unref` | 0.1 | Drop one reference; the last one releases the set and its models. NULL is a no-op. |
+| `vmafx_model_set_lead` | 0.1 | The set's lead model, borrowed: valid as long as the set; take a reference with vmafx_model_ref() to keep it longer. NULL for NULL. |
+| `vmafx_model_set_size` | 0.1 | Number of member models, without the lead; 0 for NULL. |
+| `vmafx_model_set_hash` | 0.1 | SHA-256 of the set's bytes as loaded, as vmafx_model_hash(); NULL for NULL. |
+
+```c
+VMAFX_EXPORT VmafxStatus vmafx_model_load(const VmafxModelConfig *config, const char *version,
+                                          VmafxModel **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_model_load_file(const VmafxModelConfig *config, const char *path,
+                                               VmafxModel **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_model_override_feature(VmafxModel *model, const char *extractor,
+                                                      const VmafxOptions *options,
+                                                      VmafxError **error);
+VMAFX_EXPORT VmafxModel *vmafx_model_ref(VmafxModel *model);
+VMAFX_EXPORT void vmafx_model_unref(VmafxModel *model);
+VMAFX_EXPORT const char *vmafx_model_name(const VmafxModel *model);
+VMAFX_EXPORT uint32_t vmafx_model_feature_count(const VmafxModel *model);
+VMAFX_EXPORT const char *vmafx_model_feature_name(const VmafxModel *model, uint32_t index);
+VMAFX_EXPORT const char *vmafx_model_hash(const VmafxModel *model);
+VMAFX_EXPORT const char *vmafx_model_builtin_next(const char *previous);
+VMAFX_EXPORT const char *vmafx_model_default_version(void);
+VMAFX_EXPORT VmafxStatus vmafx_model_set_load(const VmafxModelConfig *config, const char *version,
+                                              VmafxModelSet **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_model_set_load_file(const VmafxModelConfig *config, const char *path,
+                                                   VmafxModelSet **out, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_model_set_override_feature(VmafxModelSet *set, const char *extractor,
+                                                          const VmafxOptions *options,
+                                                          VmafxError **error);
+VMAFX_EXPORT VmafxModelSet *vmafx_model_set_ref(VmafxModelSet *set);
+VMAFX_EXPORT void vmafx_model_set_unref(VmafxModelSet *set);
+VMAFX_EXPORT VmafxModel *vmafx_model_set_lead(const VmafxModelSet *set);
+VMAFX_EXPORT uint32_t vmafx_model_set_size(const VmafxModelSet *set);
+VMAFX_EXPORT const char *vmafx_model_set_hash(const VmafxModelSet *set);
+```
 
 Back to the [reference index](reference.md).

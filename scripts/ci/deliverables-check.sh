@@ -129,6 +129,24 @@ git diff --name-only "${diff_base}..${diff_head}" >"$tmp_diff"
 echo "deliverables-check: PR body from ${body_src}, diff from ${diff_src}"
 echo ""
 
+# ---------- 2a. Rendered files are not part of a pull request (ADR-2197) ----------
+#
+# CHANGELOG.md, the ADR index and its tag and title pages, and the fragment
+# block of docs/rebase-notes.md are rendered from fragment files when the pull
+# requests land (`make docs-render`), by the merge train per batch and at the
+# release cut. A pull request that edits one of them adds the shared line two
+# pull requests collide on, which is what the fragments exist to avoid. The
+# release pull request (a bot) is exempt: its workflow does not run this gate.
+rendered_paths='^(CHANGELOG\.md|docs/adr/README\.md|docs/adr/titles\.md|docs/research/titles\.md|docs/adr/by-tag/.*|docs/adr/_index_fragments/_order\.txt|docs/rebase-notes\.md)$'
+if grep -nE "${rendered_paths}" "$tmp_diff" >/dev/null; then
+  while IFS= read -r path; do
+    echo "::error file=${path},title=ADR-2197 rendered file::${path} is rendered when pull requests land; a pull request adds fragments (changelog.d/<section>/*.md, docs/adr/_index_fragments/<slug>.md, docs/rebase-notes.d/<slug>.md) and leaves it alone."
+  done < <(grep -E "${rendered_paths}" "$tmp_diff")
+  echo "  Drop the edit (git checkout origin/master -- <path>); 'make docs-render' shows what the render will write."
+  echo "  See docs/development/release.md and ADR-2197."
+  exit 1
+fi
+
 # ---------- 2b. Anti-pattern detection (prose bullet form) ----------
 #
 # Agents occasionally write deliverable lines as prose bullets:
@@ -216,20 +234,19 @@ if grep -qiE -- '- \[x\].*Research digest' "$tmp_body"; then
   fi
 fi
 
-# CHANGELOG entry — if ticked, expect either a new fragment file
-# under changelog.d/<section>/ (preferred, ADR-0221) OR a hand
-# edit to CHANGELOG.md itself (legacy fallback during migration).
+# CHANGELOG entry — if ticked, expect a new fragment file under
+# changelog.d/<section>/ (ADR-0221; CHANGELOG.md itself is rendered, ADR-2197).
 if grep -qiE -- '- \[x\].*CHANGELOG' "$tmp_body"; then
-  if ! grep -qE '^(CHANGELOG\.md|changelog\.d/[^/]+/.*\.md)$' "$tmp_diff"; then
-    echo "::error title=ADR-0108 CHANGELOG::Checkbox ticked but neither CHANGELOG.md nor a new changelog.d/<section>/*.md fragment is in this PR (see ADR-0221)."
+  if ! grep -qE '^changelog\.d/[^/]+/.*\.md$' "$tmp_diff"; then
+    echo "::error title=ADR-0108 CHANGELOG::Checkbox ticked but no changelog.d/<section>/*.md fragment is in this PR (see ADR-0221, ADR-2197)."
     fail=1
   fi
 fi
 
-# Rebase note — if ticked, expect docs/rebase-notes.md in diff
+# Rebase note — if ticked, expect a fragment under docs/rebase-notes.d/
 if grep -qiE -- '- \[x\].*Rebase note' "$tmp_body"; then
-  if ! grep -qE '^docs/rebase-notes\.md$' "$tmp_diff"; then
-    echo "::error title=ADR-0108 rebase note::Checkbox ticked but docs/rebase-notes.md is not in this PR."
+  if ! grep -qE '^docs/rebase-notes\.d/[^/_][^/]*\.md$' "$tmp_diff"; then
+    echo "::error title=ADR-0108 rebase note::Checkbox ticked but no docs/rebase-notes.d/<slug>.md fragment is in this PR (ADR-2197)."
     echo "  Hint: untick the box AND write 'no rebase impact: <reason>' for the opt-out."
     fail=1
   fi

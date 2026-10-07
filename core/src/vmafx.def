@@ -8,15 +8,62 @@ EXPORTS
     vmafx_abi_version
     vmafx_context_create
     vmafx_context_destroy
+    vmafx_context_extractor_count
     vmafx_context_extractor_info
+    vmafx_context_frame_retention
     vmafx_context_from_libvmaf
+    vmafx_context_import_score
     vmafx_context_libvmaf_handle
     vmafx_context_provenance
+    vmafx_context_set_option
+    vmafx_context_use_feature
+    vmafx_context_use_model
+    vmafx_context_use_model_set
+    vmafx_device_backend
+    vmafx_device_create
+    vmafx_device_ref
+    vmafx_device_unref
     vmafx_error_errno
     vmafx_error_free
+    vmafx_error_function
     vmafx_error_message
     vmafx_error_status
     vmafx_error_subject
+    vmafx_error_subject_kind
+    vmafx_feature_resolve
     vmafx_feature_score
+    vmafx_feature_score_pooled
+    vmafx_flush
+    vmafx_frame_create_host
+    vmafx_frame_planes
+    vmafx_frame_ref
+    vmafx_frame_unref
+    vmafx_frame_wrap_host
+    vmafx_model_builtin_next
+    vmafx_model_default_version
+    vmafx_model_feature_count
+    vmafx_model_feature_name
+    vmafx_model_hash
+    vmafx_model_load
+    vmafx_model_load_file
+    vmafx_model_name
+    vmafx_model_override_feature
+    vmafx_model_ref
+    vmafx_model_set_hash
+    vmafx_model_set_lead
+    vmafx_model_set_load
+    vmafx_model_set_load_file
+    vmafx_model_set_override_feature
+    vmafx_model_set_ref
+    vmafx_model_set_size
+    vmafx_model_set_unref
+    vmafx_model_unref
+    vmafx_options_free
+    vmafx_options_set
+    vmafx_score_frame
+    vmafx_score_frame_model_set
+    vmafx_score_pooled
+    vmafx_score_pooled_model_set
     vmafx_status_name
+    vmafx_submit
     vmafx_version_string

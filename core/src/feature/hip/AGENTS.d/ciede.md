@@ -8,7 +8,7 @@ invariant: ciede_hip performs CPU arithmetic in fp32 pairs with libm residual ha
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ciede_hip = CPU arithmetic in fp32 pairs, libm residual (ADR-1448)
 
-- NOT an exact twin. `LIBM_TWINS` `ciede`: `hip` = 1e-9
+- NOT exact twin. `LIBM_TWINS` `ciede`: `hip` = 1e-9
   (`scripts/ci/cross_backend_calibration.py`). gfx1036: 115 of 178 frames
   identical, rest <= 1.4e-11.
 - Arithmetic = `../ciede_ff_math.h` (`pixel()`) + pair functions
@@ -18,7 +18,7 @@ invariant: ciede_hip performs CPU arithmetic in fp32 pairs with libm residual ha
 - HIP primitives = `integer_ciede/ciede_hip_math.h` + `../ff_pair.h`: plain
   fp32 `+ - * /` (strict FP list), `fmaf()` for `two_prod`, root estimates
   `sqrtf` / `cbrtf` / `expf(0.2f * logf(x))`. NOT `powf(x, 0.2f)`: same
-  values, 7 of 50 ms per 1080p frame. NO fp64 math on the device: the CUDA
+  values, 7 of 50 ms per 1080p frame. NO fp64 math on device: CUDA
   fp64 statements = 318 ms per 1080p frame (17x), never merged.
 - Kernel `integer_ciede/ciede_score.hip` (built `-std=c++20`,
   `hip_kernel_extra_args`): one thread per pixel, float stored at raster
@@ -30,7 +30,7 @@ invariant: ciede_hip performs CPU arithmetic in fp32 pairs with libm residual ha
   one double, `45. - 20. * log10(de00_sum / (w * h))`.
 - Residual measured per pixel (437 M pixels): 2 206 one float step off =
   glibc `powf` not correctly rounded; 8 off by 1-9 steps = pair (48 bits) vs
-  fp64 (53) deciding an intermediate float. Another device or libm:
+  fp64 (53) deciding intermediate float. Another device or libm:
   re-measure before trusting 1e-9.
 - Cost 2.7x: 1080p 18.6 -> 49.6 ms, 4K 75.6 -> 210.1 ms (CPU 16 threads
   136). 1080p split: Lab conversions 21.9, colour difference 25.5, upload +

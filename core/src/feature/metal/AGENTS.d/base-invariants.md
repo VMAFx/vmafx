@@ -9,15 +9,15 @@ invariant: One .mm + .metal pair per extractor; partials per workgroup, no atomi
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Rebase-sensitive invariants
 
-- **Five-plane twins refuse a plane past the uint index**
+- **Five-plane twins refuse plane past uint index**
   (T-METAL-UINT-PLANE-INDEX-2026-10-05). `float_vif`, integer SSIM,
   `float_ssim` and `float_ms_ssim` index five moment planes as `k * N + at`
   in `uint`. Their hosts call `vmaf_mtl_plane_index_check()`
   (`metal_plane_index.h`) with five planes in `init_geometry()` /
   `configure()` / `validate_dimensions()`, before `vmaf_metal_context_new()`.
   A new twin that keeps several planes in one `uint`-indexed buffer calls it
-  too. `core/test/test_metal_plane_index_contract.py` reads the kernels and
-  the hosts; `test_metal_plane_index` holds the limit (858,993,459 samples).
+  too. `core/test/test_metal_plane_index_contract.py` reads kernels and
+  hosts; `test_metal_plane_index` holds limit (858,993,459 samples).
 
 - **Only wired `.mm` + `.metal` pairs exist** (ADR-0545). Metal
   feature directory carries exactly one wired `.mm` + `.metal` pair
@@ -50,22 +50,22 @@ invariant: One .mm + .metal pair per extractor; partials per workgroup, no atomi
   expose `atomic_ulong` (`atomic_fetch_add_explicit` for `ulong`
   silently compiles but fails on device — confirmed CI run
   25685703780 / job 75408804495). Metal kernels use per-threadgroup
-  partials indexed by `bid.y * grid_groups.x + bid.x`, reduced on the
+  partials indexed by `bid.y * grid_groups.x + bid.x`, reduced on
   host. Never introduce `atomic_ulong` or
   `atomic_fetch_add_explicit` for 64-bit types. Exact 64-bit reductions
-  use threadgroup `long` / `ulong` scratch followed by a serial lane-0
+  use threadgroup `long` / `ulong` scratch followed by serial lane-0
   sum, as in `integer_vif.metal` and `float_moment.metal`.
 
-- **`simd_sum` reduction is 32-bit only**: MSL `simd_sum()` is the
+- **`simd_sum` reduction is 32-bit only**: MSL `simd_sum()` is
   standard two-level reduction primitive for float / uint values. Those
   kernels use:
   1. `simd_sum(per_thread_val)` → lane 0 of each SIMD group writes to
      `threadgroup float simd_partials[8]` array.
   2. Thread 0 (`lid == 0`) sums `simd_count` SIMD-group partials into
      global `partials[bid.y * grid_groups.x + bid.x]` slot.
-  Do not split a 64-bit addend into independent lo/hi `simd_sum(uint)`
-  calls: a carry out of the low half is then lost. `float_moment` and
-  `integer_vif` therefore use the exact serial lane-0 pattern above.
+  Do not split 64-bit addend into independent lo/hi `simd_sum(uint)`
+  calls: carry out of low half is then lost. `float_moment` and
+  `integer_vif` therefore use exact serial lane-0 pattern above.
 
 - **8×16 threadgroup / 20×20 shared tile (radius-2 kernels)**:
   `integer_motion_v2`, `float_motion`, `integer_motion`, and
@@ -76,10 +76,10 @@ invariant: One .mm + .metal pair per extractor; partials per workgroup, no atomi
 
 - **Per-WG partials buffer**: each `.mm` allocates Shared-storage
   `MTLBuffer` sized `ceil(W/16) * ceil(H/16)` float (or uint)
-  elements, one per threadgroup. `float_moment` is the exact-integer
-  exception: it has eight uint32 planes holding lo/hi pairs for the four
-  uint64 sums (ref1st/dis1st/ref2nd/dis2nd). The host reconstructs each
-  pair before applying the bit-depth scaler. Preserve this shape across
+  elements, one per threadgroup. `float_moment` is exact-integer
+  exception: it has eight uint32 planes holding lo/hi pairs for four
+  uint64 sums (ref1st/dis1st/ref2nd/dis2nd). host reconstructs each
+  pair before applying bit-depth scaler. Preserve this shape across
   rebases; restoring four interleaved floats reopens BUG-048 A6.
 
 - **Bridge-retained PSO slots**: each `.mm` stores
@@ -89,10 +89,10 @@ invariant: One .mm + .metal pair per extractor; partials per workgroup, no atomi
 
 - **`float_moment` feature name correction**: T8-1 scaffold
   `float_moment_metal.c` erroneously listed `{"float_moment1",
-  "float_moment2", "float_std", NULL}` as `provided_features`. The
+  "float_moment2", "float_std", NULL}` as `provided_features`.
   correct names (matching CPU, CUDA, HIP, SYCL, Vulkan) are
   `{"float_moment_ref1st", "float_moment_dis1st",
-  "float_moment_ref2nd", "float_moment_dis2nd", NULL}`. The `.mm`
+  "float_moment_ref2nd", "float_moment_dis2nd", NULL}`. `.mm`
   conversion uses correct names; `.c` file removed from
   `metal_sources` on merge.
 

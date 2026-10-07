@@ -259,6 +259,7 @@ addresses are full addresses (`:8080`), not bare ports.
 | Name | koanf key | Type | Default | Description |
 |---|---|---|---|---|
 | `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address of the node's `VmafxScoring` service. Replaces `VMAFX_NODE_ADDR`; the historical `:50052` default is kept. |
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:9090` | HTTP listen address of the node's `/metrics` page and its `/livez`, `/readyz` and `/startupz` probes; the chart's `node.metricsPort`. |
 | `VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE`, `VMAFX_GRPC_MAX_RECV_SIZE`, `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.*` | | _(unset)_ | The same gRPC TLS and size settings as the server. |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | `ffmpeg` binary used by the startup encoder probe. The node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
 | `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | `vmaf` CLI binary behind the unary `Score` RPC. |

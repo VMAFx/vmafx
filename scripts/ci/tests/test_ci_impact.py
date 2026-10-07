@@ -24,6 +24,7 @@ from typing import Protocol, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci import gate_leg_result as glr
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -726,8 +727,11 @@ class WorkflowContract(unittest.TestCase):
                     block, r"if: always\(\) && needs\.tier\.outputs\.(light|full) == 'true'"
                 )
                 self.assertIn(f"name: {check_name}", block)
-                self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
-                self.assertIn("true:success|false:skipped", block)
+                if "gate_leg_result.py" in block:
+                    self.assertIn(f'gate_leg_result.py --job "{check_name} work"', block)
+                else:
+                    self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
+                    self.assertIn("true:success|false:skipped", block)
         return {check_name for _, check_name, _ in gates}
 
     def test_required_consumers_use_fail_closed_planner_work_gate_contract(self) -> None:
@@ -740,12 +744,40 @@ class WorkflowContract(unittest.TestCase):
         strict_names = set(re.findall(r"'([^']+)'", match.group(1) if match else ""))
         self.assertLessEqual(expected_strict, strict_names)
 
+    def _assert_gate_leg_result_states(self, filename: str, check_name: str) -> None:
+        for plan_result in ("success", "failure", "cancelled", "skipped"):
+            for selected in ("true", "false", ""):
+                for work_result in ("success", "skipped", "failure", "cancelled"):
+                    expected = plan_result == "success" and (
+                        selected,
+                        work_result,
+                    ) in {("true", "success"), ("false", "skipped")}
+                    jobs = [{"name": f"{check_name} work", "conclusion": work_result}]
+                    reason = glr.judge(plan_result, selected, f"{check_name} work", jobs)
+                    with self.subTest(
+                        workflow=filename,
+                        gate=check_name,
+                        plan=plan_result,
+                        selected=selected,
+                        work=work_result,
+                    ):
+                        self.assertEqual(
+                            reason is None,
+                            expected,
+                            f"plan={plan_result} selected={selected} "
+                            f"work={work_result} produced reason={reason!r}",
+                        )
+
     def test_gate_scripts_accept_only_the_two_valid_state_tuples(self) -> None:
         workflow_root = REPO_ROOT / ".github" / "workflows"
         for filename, (_selector, _work_jobs, gates) in REQUIRED_CONSUMER_CONTRACTS.items():
             text = (workflow_root / filename).read_text(encoding="utf-8")
             for gate_job, check_name, _work_job in gates:
-                script = self._literal_run(self._job_block(text, gate_job))
+                block = self._job_block(text, gate_job)
+                if "gate_leg_result.py" in block:
+                    self._assert_gate_leg_result_states(filename, check_name)
+                    continue
+                script = self._literal_run(block)
                 for plan_result in ("success", "failure", "cancelled", "skipped"):
                     for selected in ("true", "false", ""):
                         for work_result in ("success", "skipped", "failure", "cancelled"):

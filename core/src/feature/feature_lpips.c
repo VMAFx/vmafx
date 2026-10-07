@@ -116,8 +116,9 @@ static int lpips_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, u
     if (rc < 0)
         return rc;
 
-    const char *path =
-        vmaf_tiny_ai_resolve_model_path("lpips", s->model_path, "VMAF_LPIPS_MODEL_PATH");
+    char env_path[VMAF_TINY_AI_ENV_PATH_MAX];
+    const char *path = vmaf_tiny_ai_resolve_model_path(
+        "lpips", s->model_path, "VMAF_LPIPS_MODEL_PATH", env_path, sizeof(env_path));
     if (!path)
         return -EINVAL;
 

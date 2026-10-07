@@ -719,6 +719,9 @@ static char *test_blur(void)
     return NULL;
 }
 
+/* The Windows build skips the picture_to_linear_rgb parity test, so the reference and the
+ * dispatcher it needs are not built there either. */
+#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Scalar reference: sRGB EOTF — verbatim copy of extractor's inline helper. */
 static inline float ref_srgb_to_linear(float v)
 {
@@ -763,9 +766,6 @@ static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned 
     return (float)row[sx];
 }
 
-/* The Windows build skips the picture_to_linear_rgb parity test, so the reference and the
- * dispatcher it needs are not built there either. */
-#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* The YUV->RGB matrix and range constants one `yuv_matrix` selects. Each field
  * is the same `float` expression the reference used to compute inline, so the
  * rounding of every constant is unchanged. */

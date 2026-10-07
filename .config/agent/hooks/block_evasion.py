@@ -75,6 +75,24 @@ RULES = [
     ),
 ]
 
+# The RULES judged without the words of read-only commands chained after a commit.
+READ_ONLY_EXEMPT = [
+    r"\bgit([ \t]+-[Cc][ \t]+(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^ \t\n\x22\x27][^ \t"
+    r"\n]*)|[ \t]+(--[A-Za-z][-A-Za-z]*|-[ABD-Zabd-z][-A-Za-z]*|-[Cc][A-Za-z]+)(=[^ \t"
+    r"\n]+)?)*\s+(commit\b[^\n]*\s-[aeiopqsvz]*|am\b[^\n]*\s-[3cikmqsu]*)n",
+    r"SKIP=.*git",
+]
+READ_ONLY_WORDS = (
+    r"((?:;|&&|\|\|?)[ \t]*(?:git[ \t]+(?:--no-pager[ \t]+)?(?:log|show|status|diff|rev"
+    r"-parse)|head|tail|grep|wc))(?:[ \t]+[-A-Za-z0-9_./:=@,+~*?]+)*|((?:;|&&|\|\|?)[ "
+    r"\t]*sed)[ \t]+-n\b(?:[ \t]+[-A-Za-z0-9_./:=@,+~*?]+)*"
+)
+READ_ONLY_VETO = (
+    r"[^\t\x20-\x7e]|[\\\x60$(){}<>^!]|--%|%[;&|]|(?i:(?:^|[^-A-Za-z0-9_])(?:export|dec"
+    r"lare|typeset|set|setenv|alias|function|sal|nal|set-alias|new-alias|doskey|hash)(?"
+    r":[^-A-Za-z0-9_]|$))"
+)
+
 LEFTHOOK_DISABLED = [
     ("0", "[BLOCKED BY HISS] LEFTHOOK=0 detected in environment. Evasion prohibited."),
     (
@@ -126,6 +144,15 @@ def check_environment(environ):
             raise Blocked(NARROWING_REFUSAL)
 
 
+def without_read_only_words(command):
+    # The words of git log, head, sed -n and the other read-only commands READ_ONLY_WORDS
+    # names, chained after ;, &&, || or |, belong to that command and are dropped, its name
+    # kept. A command holding a construct READ_ONLY_VETO names keeps every word.
+    if re.search(READ_ONLY_VETO, command):
+        return command
+    return re.sub(READ_ONLY_WORDS, r"\1\2", command)
+
+
 def check_command(command):
     # re backtracks, so a longer command or line could stall this script past the harness's
     # hook timeout. Such a command is refused, never truncated.
@@ -133,8 +160,10 @@ def check_command(command):
         raise Blocked(SCAN_BOUND_REFUSAL)
     if max(len(line) for line in command.split("\n")) > MAX_SCAN_LINE_CHARS:
         raise Blocked(SCAN_BOUND_REFUSAL)
+    judged = without_read_only_words(command)
     for pattern, refusal in RULES:
-        if re.search(pattern, command):
+        text = judged if pattern in READ_ONLY_EXEMPT else command
+        if re.search(pattern, text):
             raise Blocked(refusal + pattern)
 
 

@@ -81,6 +81,13 @@ extern "C" {
 
 int vmaf_picture_priv_init(VmafPicture *pic);
 
+/* Width and height of each plane of a w x h picture of `pix_fmt`: the luma
+ * plane full size, chroma vmaf_chroma_extent() of it along each subsampled
+ * axis, chroma 0 x 0 for YUV400P. vmaf_picture_alloc() sizes its planes with
+ * it, and the VMAFx API checks borrowed host planes against it (ADR-1852). */
+void vmaf_picture_plane_extents(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
+                                unsigned plane_w[3], unsigned plane_h[3]);
+
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src);
 
 /* Drain all picture-buffer pool entries, freeing each via aligned_free().

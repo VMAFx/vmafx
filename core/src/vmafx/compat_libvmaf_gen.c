@@ -51,6 +51,8 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
     config.n_subsample = cfg.n_subsample;
     config.cpumask = cfg.cpumask;
     config.gpumask = cfg.gpumask;
+    config.log_callback = NULL;
+    config.log_user = NULL;
     VmafxContext *context = NULL;
     VmafxError *error = NULL;
     const VmafxStatus status = vmafx_context_create(&config, &context, &error);

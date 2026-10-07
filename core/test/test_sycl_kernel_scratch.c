@@ -41,6 +41,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "sycl/common.h"
 #include "sycl/scratch_check.h"
+#include "compat/path_utf8.h"
 
 #ifndef VMAF_SYCL_SCRATCH_RATCHET
 #error "meson passes the ratchet list path as VMAF_SYCL_SCRATCH_RATCHET"
@@ -123,7 +124,7 @@ static char *load_ratchet(void)
     const char *const override = vmaf_gpu_dispatch_env_get("VMAF_SYCL_SCRATCH_RATCHET_FILE");
     const char *const path =
         (override != NULL && override[0] != '\0') ? override : VMAF_SYCL_SCRATCH_RATCHET;
-    FILE *f = fopen(path, "r");
+    FILE *f = vmaf_fopen_utf8(path, "r");
     mu_assert("cannot open core/src/sycl/scratch_ratchet.txt", f != NULL);
     char line[MAX_LINE];
     int bad = 0;

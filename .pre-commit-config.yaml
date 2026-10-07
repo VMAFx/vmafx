@@ -162,7 +162,7 @@ repos:
         #   - docs/adr/README.md, CHANGELOG.md: auto-generated from
         #     fragments by scripts/docs/concat-adr-index.sh /
         #     scripts/release/concat-changelog-fragments.sh (ADR-0221).
-        #   - docs/adr/_index_fragments/, changelog.d/: per-PR fragments
+        #   - docs/adr/_index_fragments/, docs/rebase-notes.d/, changelog.d/: per-PR fragments
         #     that are concatenated mechanically. Each fragment is a
         #     bare table row or a body-only ## heading section — they
         #     are not standalone documents and will always trip MD013
@@ -181,7 +181,7 @@ repos:
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
         #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
-        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/|^tools/figures/'
+        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^docs/rebase-notes\.d/|^changelog\.d/|^tools/figures/'
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12

@@ -12,7 +12,7 @@ invariant: Shared float_ssim_order_frame.h is byte-identical across twin lanes a
   of same terms = `0xb4e2b621` (`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`).
 - Added byte-identical by CUDA, HIP, SYCL lanes (git merges identical adds).
   NEVER edit, reformat or regenerate: sha256 pinned in
-  `test_cuda_float_ssim_exact_contract.py`. One include per twin test, never a
-  second copy of the data.
+  `test_cuda_float_ssim_exact_contract.py`. One include per twin test, never
+  second copy of data.
 - User: `test_cuda_float_ssim_order.c` (CPU bits == header's constant, twin
   bits == CPU bits, with + without `enable_lcs`).

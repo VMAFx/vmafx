@@ -46,6 +46,7 @@
 
 #include "svm.h"
 #include "test.h"
+#include "compat/path_utf8.h"
 
 static inline int svm_labels_equal(double a, double b)
 {
@@ -556,7 +557,7 @@ static int make_svm_temp_path(char *out, size_t out_len)
     if (n <= 0 || (size_t)n >= out_len)
         return -1;
     /* Pre-create so svm_save_model can open it. */
-    FILE *f = fopen(out, "w");
+    FILE *f = vmaf_fopen_utf8(out, "w");
     if (!f)
         return -1;
     (void)fclose(f);

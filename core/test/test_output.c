@@ -50,6 +50,8 @@
 
 #include "test.h"
 
+#include "compat/crt_portable.h"
+#include "compat/path_utf8.h"
 #include "feature/feature_collector.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf_priv.h"
@@ -210,7 +212,7 @@ static char *test_csv_basic(void)
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_csv(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
@@ -244,7 +246,7 @@ static char *test_csv_subsample_and_custom_format(void)
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     /* subsample=2 keeps even-indexed frames (0, 2, ...). Frame 1 is dropped
@@ -281,7 +283,7 @@ static char *test_sub_basic(void)
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_sub(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
@@ -303,7 +305,7 @@ static char *test_xml_einval_guards(void)
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
@@ -331,7 +333,7 @@ static char *test_csv_sub_einval_guards(void)
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
@@ -406,7 +408,7 @@ static char *test_xml_basic(void)
     err = vmaf_feature_collector_set_aggregate(fc, "agg_x", 7.25);
     mu_assert("set_aggregate failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_xml(vmaf, fc, f, /*subsample=*/0,
@@ -492,7 +494,7 @@ static char *test_json_basic_and_format(void)
     err = vmaf_feature_collector_set_aggregate(fc, "agg_y", 1.5);
     mu_assert("set_aggregate failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     /* Use "%.17g" — the round-trip lossless ADR-0119 format. */
@@ -542,7 +544,7 @@ static char *test_json_nan_and_inf(void)
     err |= vmaf_feature_collector_set_aggregate(fc, "agg_ok", 3.14);
     mu_assert("set_aggregate failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     /* fps=NaN -> top-level "fps": null branch in vmaf_write_output_json. */
@@ -579,7 +581,7 @@ static char *test_json_empty_collector(void)
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
-    FILE *f = tmpfile();
+    FILE *f = vmaf_tmpfile_portable();
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_json(vmaf, vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
@@ -599,15 +601,7 @@ static char *test_json_empty_collector(void)
  * 64 KiB (tests never produce files that large). */
 static char *slurp_path(const char *path)
 {
-#ifdef _WIN32
-    wchar_t wpath[4096];
-    const int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, 4096);
-    if (converted == 0)
-        return NULL;
-    FILE *f = _wfopen(wpath, L"rb");
-#else
-    FILE *f = fopen(path, "r");
-#endif
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return NULL;
     char *out = slurp(f);

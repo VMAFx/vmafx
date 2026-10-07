@@ -77,6 +77,7 @@ from mcp.types import (
 from pydantic import TypeAdapter
 
 from vmaf_mcp import vlm
+from vmaf_mcp.defaultmodel import DEFAULT_MODEL_ARG
 from vmaf_mcp.http_scoring import HttpScoringRuntime, install_http_scoring_runtime
 
 _logger = logging.getLogger(__name__)
@@ -495,7 +496,7 @@ class ScoreRequest:
     height: int
     pixfmt: str  # "420" | "422" | "444"
     bitdepth: int
-    model: str = "version=vmaf_v0.6.1"
+    model: str = DEFAULT_MODEL_ARG
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "hip" | "metal" | "auto"
     precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119
     subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
@@ -3097,7 +3098,7 @@ async def _run_vmaf_score_encoded(
     ref_path: Path,
     dis_path: Path,
     *,
-    model: str = "version=vmaf_v0.6.1",
+    model: str = DEFAULT_MODEL_ARG,
     backend: str = "auto",
     subsample: int = 1,
     output_fmt: str = "json",
@@ -3577,7 +3578,7 @@ def _score_and_listing_tools() -> list[Tool]:
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
                     "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
+                    "model": {"type": "string", "default": DEFAULT_MODEL_ARG},
                     "backend": {
                         "type": "string",
                         "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
@@ -3695,7 +3696,7 @@ def _worst_frames_tool() -> list[Tool]:
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
                     "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
+                    "model": {"type": "string", "default": DEFAULT_MODEL_ARG},
                     "backend": {
                         "type": "string",
                         "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
@@ -3786,7 +3787,7 @@ def _score_encoded_tool() -> list[Tool]:
                         "type": "string",
                         "description": "Path to the distorted encoded video.",
                     },
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
+                    "model": {"type": "string", "default": DEFAULT_MODEL_ARG},
                     "backend": {
                         "type": "string",
                         "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
@@ -4274,7 +4275,7 @@ async def _tool_vmaf_score(arguments: dict[str, Any], _progress: str | int | Non
         height=height,
         pixfmt=pixfmt,
         bitdepth=bitdepth,
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
         backend=backend,
         precision=str(arguments.get("precision", "legacy")),
         subsample=subsample,
@@ -4327,7 +4328,7 @@ async def _tool_describe_worst_frames(
         height=int(arguments["height"]),
         pixfmt=str(arguments["pixfmt"]),
         bitdepth=int(arguments["bitdepth"]),
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
         backend=str(arguments.get("backend", "auto")),
     )
     n_raw = int(arguments.get("n", 5))
@@ -4356,7 +4357,7 @@ async def _tool_vmaf_score_encoded(arguments: dict[str, Any], _progress: str | i
     return await _run_vmaf_score_encoded(
         ref_path=_validate_path(arguments["reference_encoded"]),
         dis_path=_validate_path(arguments["distorted_encoded"]),
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
         backend=backend,
         subsample=subsample,
         output_fmt=encoded_extras.output_fmt,

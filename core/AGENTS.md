@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
 
 Orientation for any coding agent working inside `core/`. Root orientation
 lives in [../AGENTS.md](../AGENTS.md); this file is scoped hand-off for
@@ -79,8 +79,8 @@ core/
 | `include/libvmaf/model.h`, `src/model.c`, `src/predict.c` | [model-loading-and-defaults](AGENTS.d/model-loading-and-defaults.md) | Default model version defined solely by VMAF_DEFAULT_MODEL_VERSION; model loading scales without ceiling. |
 | `meson.build`, `tools/meson.build` | [orientation-and-workflows](AGENTS.d/orientation-and-workflows.md) | Orientation for core C engine workflows, governing ADRs, backend subtree orientation, and build targets. |
 | `src/picture.c`, `src/picture_pool.c`, `src/libvmaf.c` | [picture-pool-and-ownership](AGENTS.d/picture-pool-and-ownership.md) | Picture pool fetch errors signal availability; vmaf_read_pictures centralizes picture ownership release. |
-| `src/picture_sample_range.c`, `src/picture_sample_range.h`, `src/libvmaf.c`, `include/libvmaf/libvmaf.h`, `tools/cli_parse.cpp`, `tools/vmaf.cpp` | [sample-range-check](AGENTS.d/sample-range-check.md) | Samples above 2^bpc - 1 are invalid input; only the opt-in read_pictures check scans for them. |
-| `src/meson.build`, `test/test_strict_fp_compiler_args.py` | [strict-fp-compiler-args](AGENTS.d/strict-fp-compiler-args.md) | Strict FP is a project argument; every C and C++ translation unit builds without contraction. |
+| `src/picture_sample_range.c`, `src/picture_sample_range.h`, `src/libvmaf.c`, `include/libvmaf/libvmaf.h`, `tools/cli_parse.cpp`, `tools/vmaf.cpp` | [sample-range-check](AGENTS.d/sample-range-check.md) | Samples above 2^bpc - 1 are invalid input; only opt-in read_pictures check scans for them. |
+| `src/meson.build`, `test/test_strict_fp_compiler_args.py` | [strict-fp-compiler-args](AGENTS.d/strict-fp-compiler-args.md) | Strict FP is project argument; every C and C++ translation unit builds without contraction. |
 | `test/meson.build`, `test/test_motion_avx512_parity.c` | [test-harnesses-and-parity](AGENTS.d/test-harnesses-and-parity.md) | Fuzz harnesses track coverage; required aggregator rejects removed float_ansnr; AVX-512 verifies parity. |
 | `src/thread_pool.c`, `src/thread_pool.h` | [thread-pool-and-jobs](AGENTS.d/thread-pool-and-jobs.md) | Thread pool enforces bounded admission, job recycling, and inline buffer reuse. |
 | `meson.build`, `src/meson.build` | [windows-path-contract](AGENTS.d/windows-path-contract.md) | Windows internal paths enforce UTF-8 normalization and runtime shims. |

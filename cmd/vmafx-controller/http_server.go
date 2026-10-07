@@ -154,6 +154,7 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.metrics.ObserveScore(auth.TenantIDFromCtx(r.Context()), req.Model, score)
 	h.log.Info("http Score completed",
 		"score", fmt.Sprintf("%.4f", score),
 		"duration_s", elapsed,

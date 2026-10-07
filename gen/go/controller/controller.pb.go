@@ -107,7 +107,7 @@ type ScoringParams struct {
 	Reference string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
 	// Distorted video, under the same rule as reference.
 	Distorted string `protobuf:"bytes,2,opt,name=distorted,proto3" json:"distorted,omitempty"`
-	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h.
 	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	// Optional backend hint: "cuda", "sycl", "hip", "cpu".
 	// The scheduler uses this to match a node with the required capability.

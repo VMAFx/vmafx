@@ -21,31 +21,31 @@ invariant: Planner fails closed to `mode=full`; planner/work/gate; one tier file
   no-path-filter invariant on required-context workflows. Run it after
   adding top-level directory or required check.
 - **Required contexts use planner -> work -> gate, never trigger filters
-  (BUG-098).** The workflow always starts. An unconditional `impact` job exports
-  one selector; distinctly named heavy `... work` jobs consume it; and an
-  `if: always()` gate alone owns each exact required context name. The gate may
+  (BUG-098).** workflow always starts. unconditional `impact` job exports
+  one selector; distinctly named heavy `... work` jobs consume it; and
+  `if: always()` gate alone owns each exact required context name. gate may
   accept only `true:success` or `false:skipped` and must fail when planning fails.
-  Keep the `(?m)` multiline anchor in the no-path-filter regression: omitting it
-  makes the assertion inspect only the beginning of the YAML and silently miss
-  every nested `paths:` key. GitHub does not create the gate check until its
-  `needs` chain completes, so the required aggregator must keep polling while a
+  Keep `(?m)` multiline anchor in no-path-filter regression: omitting it
+  makes assertion inspect only beginning of YAML and silently miss
+  every nested `paths:` key. GitHub does not create gate check until its
+  `needs` chain completes, so required aggregator must keep polling while
   mapped planner/work proxy is active and briefly after it completes. Preserve
-  the complete `delayedStrictDependencies` map and paginated check-run fetch;
+  complete `delayedStrictDependencies` map and paginated check-run fetch;
   `test_hiss_replay_contract.py` executes both failure modes.
-- **Selectors `tester_image` and `windows_tester_zip` are the former trigger
+- **Selectors `tester_image` and `windows_tester_zip` are former trigger
   path lists of `docker-publish-tester.yml` and `windows-tester-bundle.yml`
-  (ADR-1687).** Change them together with the inputs those workflows build;
-  `tests/test_required_release_legs.py` pins the lists. Both workflows are
+  (ADR-1687).** Change them together with inputs those workflows build;
+  `tests/test_required_release_legs.py` pins lists. Both workflows are
   planner consumers and therefore in `full_patterns`.
-- **`own_paths_only` is the one exception to fail-closed (ADR-1700).** A selector
-  declaring it is true in a full plan only when a known changed path matches its
+- **`own_paths_only` is one exception to fail-closed (ADR-1700).** selector
+  declaring it is true in full plan only when known changed path matches its
   own patterns; with no change list (dispatch, schedule, unreadable diff) it stays
-  true, which is what keeps a publish dispatch building. `load_config()` refuses
-  it on a selector with `inherits` or no patterns, and `test_ci_impact.py`
-  (`OwnPathsOnlyContract`) fails when a third selector declares it or when the
+  true, which is what keeps publish dispatch building. `load_config()` refuses
+  it on selector with `inherits` or no patterns, and `test_ci_impact.py`
+  (`OwnPathsOnlyContract`) fails when third selector declares it or when
   property stops working. Do not widen it by adding code paths; declare it.
 - **Inheritance is resolved without recursion (HISS-01).** `inheritance_order()`
-  sorts the selectors topologically (and raises on a cycle) and
+  sorts selectors topologically (and raises on cycle) and
   `impact_selectors()` resolves them in that order in one pass.
 
 - Tier = `ci_tier.py` decision. Fork PR, `ci: full`, master push, dispatch, schedule, release PR

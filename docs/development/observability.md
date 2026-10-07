@@ -11,7 +11,7 @@ collector. It covers all seven binaries under `cmd/`:
 | Signal      | Mechanism                                             | Status                                                                                                                 |
 |-------------|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | **Logs**    | `log/slog` via golusoris's log module (stderr/stdout) | Production, every binary. Not exported over OTLP (no slog bridge is wired; see [Logs](#logs)).                         |
-| **Metrics** | Prometheus `/metrics` endpoint                        | Production on `vmafx-server` and `vmafx-controller` (`pkg/observability.Metrics`).                                     |
+| **Metrics** | Prometheus `/metrics` endpoint                        | Production on `vmafx-server`, `vmafx-controller` and `vmafx-node`, built from `pkg/observability/metricdef` (see [Metrics](#metrics)). |
 | **Traces**  | OpenTelemetry, OTLP/gRPC → your collector             | Production on every binary except `vmafx-ort-runner` (exempt, see [below](#vmafx-ort-runner-is-exempt)). Off by default. |
 
 Design decisions: [ADR-0782](../adr/0782-otel-tracing.md) (span and
@@ -193,6 +193,89 @@ span: `pkg/ai.Registry.Infer` wraps the subprocess in
 same name, so ONNX latency is visible in every trace without the runner
 participating.
 
+## Metrics
+
+Three binaries serve a Prometheus `/metrics` page on their HTTP listener:
+
+| Binary | Listener (`VMAFX_HTTP_ADDR`) | Families |
+|--------|------------------------------|----------|
+| `vmafx-server` | `:8080` | Score requests, errors and latency; the quality family; `vmafx_build_info`. |
+| `vmafx-controller` | `:8080` | The server's families, plus the job queue: submitted, completed, failed, cancelled and requeued jobs, pending and running jobs and the age of the oldest pending job per tenant, queue wait and time to result, live nodes. |
+| `vmafx-node` | `:9090` | Backend and vendor, slots, running jobs, jobs by backend and outcome, job run time. |
+
+Each also serves the Go runtime and process series of the Prometheus client
+library. The [metric reference](../observability/metrics.md) lists every
+family with its type, unit, labels and cardinality bound.
+
+```bash
+curl -s localhost:8080/metrics | grep '^vmafx_controller_jobs_pending'
+# vmafx_controller_jobs_pending{tenant="acme"} 3
+```
+
+All names come from one definition, `pkg/observability/metricdef`: the
+services build their collectors from it, the dashboards are generated from it
+and the reference page is rendered from it. A family is added there first,
+then registered by the binaries its `Emitters` name; a test per binary fails
+when its `/metrics` page and the definition disagree.
+
+### Label cardinality
+
+Every label is bounded. A label with a closed value set (`backend`,
+`outcome`, `reason`, `vendor`, `profile`) maps any other value to `other`. An
+open label reports at most a fixed number of distinct values per process,
+`tenant` 256 and `model` 64, and merges every later value into `other`:
+counts add up, the age of the oldest job takes the oldest, nothing is
+dropped. An empty value (a request to `vmafx-server`, which has no tenants)
+reads `none`. At these limits the largest family, `vmafx_quality_score`, is
+bounded by 634 790 series per process; a deployment with a few tenants and
+models serves a few hundred. The `profile` label of the quality family reads
+`none` until scoring requests carry a profile.
+
+### Per-tenant series
+
+The controller's job counters and queue gauges carry a `tenant` label. A
+query written against the totals keeps working once wrapped in `sum()`:
+`sum(vmafx_controller_jobs_pending)`.
+
+## Dashboards
+
+The dashboards under `deploy/grafana/dashboards/` are generated in Go with
+the [Grafana Foundation SDK](https://github.com/grafana/grafana-foundation-sdk)
+(v0.0.20, Apache-2.0) from the metric definition, never edited by hand:
+
+```bash
+go run ./tools/obsgen -write   # regenerate dashboards and the metric reference
+go run ./tools/obsgen -check   # exit 1 when a committed file is stale
+```
+
+To use one, import its JSON in Grafana (_Dashboards → New → Import_) and pick
+your Prometheus data source in the **Prometheus data source** variable. The
+**Job** and **Instance** variables list the scrape jobs and targets that
+serve `vmafx_build_info`; **Tenant** lists the tenants that submitted jobs.
+Each restart of a component is marked by the _Deploys and restarts_
+annotation with the version it started, so a change in a graph can be read
+against a rollout.
+
+A test (`TestEveryDashboardQueryIsEmitted` in `pkg/observability/obsgen`)
+fails when any panel, annotation or variable of a shipped dashboard queries a
+series that no binary emits; the dashboard as it was before generation is
+kept as its negative fixture.
+
+### Overview
+
+`vmafx-overview.json` answers, row by row:
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Health and queue | Components up, Live nodes, Pending jobs, Running jobs, Oldest pending job, Score request errors | Is every component scraped, can queued work run, is the queue draining? |
+| Throughput | Jobs per minute, Job failure ratio by tenant, Jobs returned to the queue, Score requests per second | How much work finishes, and how much fails or is retried? |
+| Latency | Queue wait, Time to result, Score request latency, Node job run time | How long does work wait and take? |
+| Scores and nodes | Median score by model, Node slot use | Did the scores move, and are the nodes the bottleneck? |
+
+A growing _Oldest pending job_ with _Live nodes_ above zero and low _Node
+slot use_ means no node can take the queued work: compare the jobs' backend
+with the nodes' (`vmafx_node_info`).
+
 ## Logs
 
 Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
@@ -237,6 +320,7 @@ CGO_LDFLAGS="-L$PWD/core/build-cpu/src -lvmaf -lm" \
 - [ADR-1095](../adr/1095-otel-grpc-trace-context.md) — gRPC trace-context propagation.
 - [ADR-1119](../adr/1119-golusoris-go-framework-adoption.md) — golusoris fx adoption (`otel.Module`, `bootstrap.Base`).
 - [ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md) — why `vmafx-ort-runner` stays framework-free.
-- [OpenTelemetry schema page](../observability/otel.md) — metrics instruments, cardinality budget, Grafana dashboard.
+- [OpenTelemetry schema page](../observability/otel.md) — span names and attributes, OTel instruments.
+- [Metric reference](../observability/metrics.md) — every Prometheus family, generated from `pkg/observability/metricdef`.
 - [`internal/app/bootstrap/bootstrap.go`](../../internal/app/bootstrap/bootstrap.go) — the shared composition stanza.
 - [`pkg/observability/otel_instruments.go`](../../pkg/observability/otel_instruments.go) — span names and attribute keys.

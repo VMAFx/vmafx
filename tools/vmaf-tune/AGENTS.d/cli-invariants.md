@@ -22,20 +22,20 @@ invariant: Output JSON is strict JSON; Pathlib-only filesystem ops; _stamp_track
   Private `_nan_to_none` helpers in those modules were removed in
   ADR-0988; any reintroduction is rebase regression.
 
-- **Help texts read the code they describe.** `ladder --crf-sweep`
-  prints `ladder.DEFAULT_SAMPLER_CRF_SWEEP`, the `auto` help counts
-  `auto.ShortCircuit`, and `corpus --two-pass` lists the adapters with
+- **Help texts read code they describe.** `ladder --crf-sweep`
+  prints `ladder.DEFAULT_SAMPLER_CRF_SWEEP`, `auto` help counts
+  `auto.ShortCircuit`, and `corpus --two-pass` lists adapters with
   `supports_two_pass` (`_two_pass_encoders`). Do not write those values
-  into the help by hand again. Every `ADR-NNNN` in a help string, a
-  `docs/usage/vmaf-tune*.md` page or an AGENTS.d page must name a record
-  about vmaf-tune or one of the cross-cutting records listed in
+  into help by hand again. Every `ADR-NNNN` in help string,
+  `docs/usage/vmaf-tune*.md` page or AGENTS.d page must name record
+  about vmaf-tune or one of cross-cutting records listed in
   `tests/test_help_texts_and_adr_refs.py`; many old vmaf-tune numbers now
-  belong to other subsystems, so check the title before citing. Pelorus's
+  belong to other subsystems, so check title before citing. Pelorus's
   own records are written `Pelorus ADR-NNNN`.
-- **`fast` names the proxy's `unknown` slot.** A production run whose
-  encoder is outside `proxy.ENCODER_VOCAB_V2` writes a stderr note and
-  `proxy_encoder_slot` into the JSON (`_fast_proxy_encoder_slot`); keep
-  both when the vocabulary or the proxy call changes.
+- **`fast` names proxy's `unknown` slot.** production run whose
+  encoder is outside `proxy.ENCODER_VOCAB_V2` writes stderr note and
+  `proxy_encoder_slot` into JSON (`_fast_proxy_encoder_slot`); keep
+  both when vocabulary or proxy call changes.
 
 - **Fast-NR calibration sidecars are write-gated before tune
   consumes them.** `NRProxyBackend` intentionally trusts

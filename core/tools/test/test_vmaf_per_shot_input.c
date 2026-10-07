@@ -17,6 +17,7 @@
 #define FILE_FD fileno
 #endif
 
+#include "compat/crt_portable.h"
 #include "test.h"
 #include "vmaf_per_shot_input.h"
 
@@ -33,7 +34,7 @@ static FILE *make_raw_stream(size_t luma_bytes, size_t chroma_bytes)
 {
     static const uint8_t luma[TEST_LUMA_BYTES] = {0U};
     static const uint8_t chroma[TEST_CHROMA_BYTES] = {0U};
-    FILE *fin = tmpfile();
+    FILE *fin = vmaf_tmpfile_portable();
     if (fin == NULL)
         return NULL;
     if (setvbuf(fin, NULL, _IONBF, 0) != 0) {

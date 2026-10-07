@@ -132,24 +132,24 @@ during migration; see Stage roadmap in
     `VMAFScoreFunc`** (`pkg/bisect/`): `Y4MScorer` (`score_y4m.go`, used by
     `compare` and `ladder`; `VMAFScoreFunc` wraps one per call) decodes every
     input that is not `.y4m` to Y4M and calls `vmaf` with no geometry flags,
-    so libvmaf's y4m branch reads both legs; a raw `.yuv` input is refused.
-    Handing `vmaf` the Matroska encode directly made every compare and
-    ladder probe fail while the commands exited 0. `YUVScoreFunc` = raw-YUV
+    so libvmaf's y4m branch reads both legs; raw `.yuv` input is refused.
+    Handing `vmaf` Matroska encode directly made every compare and
+    ladder probe fail while commands exited 0. `YUVScoreFunc` = raw-YUV
     path: decodes containerised distorted file to raw YUV first, passes
     `--width/--height/--pixel_format/--bitdepth/--model`. Those flags flip
     libvmaf's `use_yuv` branch, why `.y4m` deliberately **absent**
     from `rawYUVSuffixes` — Y4M header then trips file-size guard in
-    `raw_input_open` (ADR-0499). A ladder rung encodes with
-    `bisect.Params.EncodeExtraArgs = -vf scale=W:H` and scores against a
-    reference the rung's `Y4MScorer` decodes through the same
-    `bisect.ScaleFilter`; keep both legs on one filter. The same rung scores
+    `raw_input_open` (ADR-0499). ladder rung encodes with
+    `bisect.Params.EncodeExtraArgs = -vf scale=W:H` and scores against
+    reference rung's `Y4MScorer` decodes through same
+    `bisect.ScaleFilter`; keep both legs on one filter. same rung scores
     with `Y4MScoreParams.Model = corpus.SelectVMAFModelVersion(W, H)` (4K model
-    from 2160 lines, default below), as Python's `ladder` does (ADR-0289); an
-    empty `Model` (`compare`, `bisect`) leaves `--model` off. The rule is pinned
+    from 2160 lines, default below), as Python's `ladder` does (ADR-0289);
+    empty `Model` (`compare`, `bisect`) leaves `--model` off. rule is pinned
     to `tools/vmaf-tune/tests/data/resolution_model_table.json` on both sides.
     QSV encodes append
-    their upload to the caller's `-vf` chain (`appendVideoFilter` in
-    `pkg/encoder/hardware.go`); a second `-vf` would drop the scale.
+    their upload to caller's `-vf` chain (`appendVideoFilter` in
+    `pkg/encoder/hardware.go`); second `-vf` would drop scale.
 
 17. **`--predicate-module` and `--fast-nr` fail fast, are not ignored**
     (`cmd/vmafx-tune/cmd/pershot.go` `rejectUnportedPerShotFlags`): both flags
@@ -212,7 +212,7 @@ during migration; see Stage roadmap in
     stay parallel.
 
 23. **Python-compatible JSON is not `encoding/json`** (`pkg/pyjson`, one
-    CPython-JSON encoder since ADR-1137): every payload a ported
+    CPython-JSON encoder since ADR-1137): every payload ported
     subcommand also emits from Python goes through `pyjson.Marshal` /
     `MarshalIndentSorted` / `MarshalStrict`, never
     `json.Marshal`/`MarshalIndent`. Go, CPython disagree on four:
@@ -226,25 +226,25 @@ during migration; see Stage roadmap in
     uses `MarshalIndent` with declaration-ordered struct fields; known
     gap, not pattern to copy.)
 
-24. **Every QSV encode carries the device chain, in both implementations**
+24. **Every QSV encode carries device chain, in both implementations**
     (`pkg/hwdevice`, `pkg/ffencode` `BuildFFmpegCommand`, `pkg/encoder`
     `injectQSVInitChain`; Python `vmaftune.encode.build_ffmpeg_command`):
     `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
-    -filter_hw_device qsv_dev` before the first `-i`, and
-    `format=nv12,hwupload=extra_hw_frames=64` appended to the request's own
-    `-vf` chain (ADR-0601). The filter device is the QSV device: with
-    `-filter_hw_device va` the upload produced `vaapi` frames and the filter
-    graph failed before the encoder opened. The render node resolves through
+    -filter_hw_device qsv_dev` before first `-i`, and
+    `format=nv12,hwupload=extra_hw_frames=64` appended to request's own
+    `-vf` chain (ADR-0601). filter device is QSV device: with
+    `-filter_hw_device va` upload produced `vaapi` frames and filter
+    graph failed before encoder opened. render node resolves through
     `hwdevice.ResolveVAAPIDevice` (explicit, `VMAFTUNE_VAAPI_DEVICE`, first
-    Intel node, `/dev/dri/renderD128`), the Python resolver's order. Change
-    the chain in both implementations at once; `encode-profile --dry-run`
+    Intel node, `/dev/dri/renderD128`), Python resolver's order. Change
+    chain in both implementations at once; `encode-profile --dry-run`
     argv must stay identical to Python's.
 
-25. **AMF adapters emit the constant-QP block once** (`pkg/codecadapter`):
-    the Python AMF `extra_params()` no longer repeats the `-quality/-rc/
+25. **AMF adapters emit constant-QP block once** (`pkg/codecadapter`):
+    Python AMF `extra_params()` no longer repeats `-quality/-rc/
     -qp_i/-qp_p` block `ffmpeg_codec_args` emits, so Python and Go argv agree
     byte for byte (pkg/codecadapter `AGENTS.md` invariant 3). Repeating it on
-    either side is a parity break, not an inert duplicate.
+    either side is parity break, not inert duplicate.
 
 26. **`sidecar` group's exit statuses and fixtures = Python
     contract** (`cmd/vmafx-tune/cmd/sidecar.go`, `sidecar_parity_test.go`,
@@ -262,7 +262,7 @@ during migration; see Stage roadmap in
     `splitLinesUniversal` reproduces CPython's `newline=None` iteration so
     they match, must not be swapped back for `bufio.Scanner` (caps
     line length, cannot split on lone `\r`).
-27. **`vmafx-ort-runner` is a repository artefact, not an environment
+27. **`vmafx-ort-runner` is repository artefact, not environment
     assumption** (`cmd/vmafx-ort-runner`, ADR-1134): `pkg/predictor.ORTSession`
     (one ORT-session adapter since ADR-1137; `pkg/tune/predictor` = its
     transitional alias) execs it through `pkg/ai.Registry.Infer`; dev
@@ -271,7 +271,7 @@ during migration; see Stage roadmap in
     degrades to analytical curve, log line carries runner's
     stderr — `exit status 3` means linked libvmaf has no ONNX Runtime,
     `not found on PATH` means it is not installed. Do not reintroduce
-    comments or docs describing runner as external or "bundled by the
+    comments or docs describing runner as external or "bundled by
     image": that claim hid missing binary for three months.
     Runner still takes one flat `[1, N]` vector (invariant 20 stands);
     named inputs and stdin transport = protocol extensions of
@@ -305,10 +305,10 @@ during migration; see Stage roadmap in
     `useUsageExitCode` on root (cobra inherits `FlagErrorFunc`), so unknown
     or unparseable flags exit 2; `markCommandFlagsRequired` runs cobra's
     `ValidateRequiredFlags` from `PreRunE`, ahead of cobra's own check
-    (exit 1), and tags it with `asUsageError`. A flag required only in some
-    modes (`auto --src`, required unless `--smoke`) is checked in the run
+    (exit 1), and tags it with `asUsageError`. flag required only in some
+    modes (`auto --src`, required unless `--smoke`) is checked in run
     function with `asUsageError`, never with `MarkFlagRequired`.
     `TestEveryCommandRejectsUnknownFlagWithUsageStatus` and
     `TestMissingRequiredFlagExitsWithUsageStatus` cover new subcommands
-    automatically for the first and by table for the second: add a row
-    when a command gains a required flag.
+    automatically for first and by table for second: add row
+    when command gains required flag.

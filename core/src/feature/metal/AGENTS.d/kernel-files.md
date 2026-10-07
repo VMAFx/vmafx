@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/metal/*.mm
   - core/src/feature/metal/*.metal
-invariant: The table of every Metal kernel file, its status and the features it emits.
+invariant: table of every Metal kernel file, its status and features it emits.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Kernel files

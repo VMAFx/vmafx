@@ -79,6 +79,8 @@ GIT = shutil.which("git") or "/usr/bin/git"
 GENERATED_PREFIXES = (
     "docs/adr/by-tag/",
     "docs/adr/README.md",
+    "docs/adr/titles.md",
+    "docs/research/titles.md",
     "CHANGELOG.md",
     "docs/development/cross-backend-exact-twins.md",
     "mkdocs.yml",

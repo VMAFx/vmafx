@@ -32,15 +32,15 @@ invariant: Model registry entries must validate against schema and verify Sigsto
   On merge: every shipped tiny-AI model needs Sigstore bundle
   path in `model/tiny/registry.json`.
 
-- **Metadata matches the graph ([ADR-1546](../../../../docs/adr/1546-tiny-model-metadata-against-graphs.md))** —
+- **Metadata matches graph ([ADR-1546](../../../../docs/adr/1546-tiny-model-metadata-against-graphs.md))** —
   `ai/scripts/validate_model_registry.py` (required check "Tiny-Model
   Registry Validate") reads every registered graph and its int8 sibling
-  with `ai/src/aiutils/onnx_signature.py` (no `onnx` package) and fails
-  when the registry `opset` or a sidecar's `opset`, `sha256`,
+  with `ai/src/aiutils/onnx_signature.py` (no `onnx` package); fails
+  when registry `opset` or sidecar's `opset`, `sha256`,
   `input_names` / `output_names`, `input_name` / `output_name`,
   feature-list length, `encoder_vocab` (width + 2), `codec_block_dim` or
-  `codec_block_layout` disagrees with the graph. A re-export updates the
-  sidecar and the registry row with the graph; exporters record the opset
-  the file imports (torch raises a requested 17 to 18). The runtime does
-  not check registry digests: only `--tiny-model-verify` reads the
-  registry, for the bundle path.
+  `codec_block_layout` disagrees with graph. re-export updates
+  sidecar and registry row with graph; exporters record opset
+  file imports (torch raises requested 17 to 18). runtime does
+  not check registry digests: only `--tiny-model-verify` reads
+  registry, for bundle path.

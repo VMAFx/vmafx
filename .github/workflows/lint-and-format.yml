@@ -843,6 +843,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # The master push checks the render, whose order is read from
+          # history (ADR-2197); a pull request does not.
+          fetch-depth: ${{ github.event_name == 'push' && 0 || 1 }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
@@ -852,6 +855,12 @@ jobs:
         run: pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Check generated documentation freshness
         run: make docs-fragments-check
+      - name: Check the rendered changelog, ADR index and rebase notes (master push)
+        # A pull request carries fragments, not the render (ADR-2197); the
+        # merge train renders each landing batch, so a master tip without the
+        # render is a push that skipped it. Red here is the report.
+        if: github.event_name == 'push'
+        run: make docs-render-check
       - name: Install MkDocs Material
         run: |
           pip install --require-hashes -r requirements/locks/package-build.txt

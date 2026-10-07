@@ -310,7 +310,7 @@ func registerScoringTools(reg *toolRegistrar) {
 			"height":   schemaObj{"type": "integer", "minimum": 1},
 			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
 			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"model":    schemaObj{"type": "string", "default": defaultModelArg},
 			"backend": schemaObj{
 				"type":    "string",
 				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
@@ -411,7 +411,7 @@ func registerFrameInspectionTools(reg *toolRegistrar) {
 			"height":   schemaObj{"type": "integer", "minimum": 1},
 			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
 			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"model":    schemaObj{"type": "string", "default": defaultModelArg},
 			"backend": schemaObj{
 				"type":    "string",
 				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
@@ -484,7 +484,7 @@ func registerEncodedScoringTools(reg *toolRegistrar) {
 				"type":        "string",
 				"description": "Path to the distorted encoded video.",
 			},
-			"model": schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"model": schemaObj{"type": "string", "default": defaultModelArg},
 			"backend": schemaObj{
 				"type":    "string",
 				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},

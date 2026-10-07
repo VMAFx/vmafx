@@ -6,6 +6,41 @@ Devices: enumeration, creation from a backend index or external handles, profili
 
 `#include <vmafx/device.h>`.
 
-No declarations yet: a later RC4 work package fills this header.
+## Handles and callbacks
+
+| Type | Since | Description |
+| --- | --- | --- |
+| `VmafxDevice` | 0.1 | A compute device. Refcounted; frames and contexts hold references. Released by `vmafx_device_unref`. |
+
+## Structs
+
+### `VmafxDeviceDesc`
+
+Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT. Size 12 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `backend` | `uint32_t backend` | 4 | 0.1 | Backend of the device; this release creates CPU devices only. Values: `VmafxBackend`. |
+| `index` | `int32_t index` | 8 | 0.1 | Device index within the backend; 0 or -1 (any) for the CPU. |
+
+Initialise with `VMAFX_DEVICE_DESC_INIT`.
+
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_device_create` | 0.1 | Create a device. `desc` may be NULL for the CPU. Any other backend is VMAFX_E_NOTSUP naming it. |
+| `vmafx_device_ref` | 0.1 | Take one more reference; returns `device` (NULL for NULL). |
+| `vmafx_device_unref` | 0.1 | Drop one reference; the last one releases the device. NULL is a no-op. |
+| `vmafx_device_backend` | 0.1 | Backend of a device (a VmafxBackend); VMAFX_BACKEND_CPU for NULL. |
+
+```c
+VMAFX_EXPORT VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out,
+                                             VmafxError **error);
+VMAFX_EXPORT VmafxDevice *vmafx_device_ref(VmafxDevice *device);
+VMAFX_EXPORT void vmafx_device_unref(VmafxDevice *device);
+VMAFX_EXPORT uint32_t vmafx_device_backend(const VmafxDevice *device);
+```
 
 Back to the [reference index](reference.md).

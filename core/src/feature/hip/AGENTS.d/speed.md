@@ -11,18 +11,18 @@ invariant: SpEED singular-covariance contract and device-resident CPU fp32 arith
 
 25x25 SpEED covariance matrix regular only if **every** eigenvalue
 at least `1e-6`. CPU treats singular one as routine numerical
-condition, not failure; the device chain (ADR-1384) matches it on two
+condition, not failure; device chain (ADR-1384) matches it on two
 counts.
 
 1. **Zero solution on device.** `speed_hd_block_statistics()` starts
-   every block's solution at 0 and solves only when the channel's
+   every block's solution at 0 and solves only when channel's
    `status` slot says regular, so singular channel scores from zero
    solution, never from previous frame's memory.
 2. **Singularity travels out-of-band.** Per-channel `status` words ride in
-   the tail block; errors are return codes.
+   tail block; errors are return codes.
    `speed_internal_gpu_tail_scores()` copies them into `SpeedGpuFrameResult`
    and applies `speed_extract_score()`'s rule (score `0` when exactly one of
-   ref/dis singular) on the host (ADR-1477);
+   ref/dis singular) on host (ADR-1477);
    `speed_chroma_hip.c::combine_chroma_uv()` imputes
    `speed_chroma_uv` from surviving channel on host, from flags only.
 
@@ -31,7 +31,7 @@ Guarded by `core/test/test_hip_speed_singular_parity.c`. Older
 planes give 4x2 = 8 blocks for 25x25 covariance — singular on every
 frame — never exercises regular path. SpEED test needing regular frame
 must be at least 960x960 and textured: `test_hip_speed_chroma_parity`
-uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
+uses 960x960 splatter fixture of `speed_chroma_twin_parity.h`
 (ADR-1452).
 
 ## SpEED device-resident: CPU fp32 arithmetic by build flag (ADR-1384)
@@ -42,7 +42,7 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
   (`picture_copy`, `speed_internal_filter_and_downscale`, eigen / QR helpers)
   in twin TUs or pipeline.
 - Per frame: `speed_hip_pipeline_upload()` (staged, no wait), seven kernels
-  (last = `speed_hip_solve`, variances), one copy of the tail block
+  (last = `speed_hip_solve`, variances), one copy of tail block
   (`SpeedGpuTailLayout`: status, eigenvalues, variances).
   `speed_hip_pipeline_collect()` / `_wait()` = only wait
   (`vmaf_hip_kernel_collect_wait`).
@@ -58,11 +58,11 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
 - Entropy + score = host tail (ADR-1477, replaces ADR-1452's bound):
   `speed_hip_pipeline_collect()` waits, then
   `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `speed.c`'s own
-  fp64 `log2()` statements on the host's libm. No device logarithm, no
+  fp64 `log2()` statements on host's libm. No device logarithm, no
   `speed_hip_score` kernel, no libm test seam. Twin == CPU bit for bit on any
   libm. Gate cells `speed_chroma.hip`, `speed_temporal.hip`
   (`scripts/ci/exact_twins.d/`); `test_hip_speed_*_parity` assert `==`
-  (`core/test/speed_chroma_twin_parity.h`, shared with the CUDA test).
+  (`core/test/speed_chroma_twin_parity.h`, shared with CUDA test).
 - Givens rotation = `speed_givens_unit()` (`feature/speed_givens.h`, shared
   with CUDA + SYCL): upstream's `1.0 / sqrt(1 + t * t)` in fp32 from `sqrtf`,
   `/`, `fmaf`. Not `1.0f / sqrtf(u)`. Proven on every input by
@@ -71,16 +71,16 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
   (`speed_hip_upload_lanczos()`, `speed_internal_gpu_lanczos_weights()`,
   CPU scaler's own routine), 9 taps per scaled column then per scaled row,
   read through `SpeedHipParams::lanczos`. No device sine: fp32 `sinpif`
-  weights were 8.8e-3 relative off the CPU on smooth content
+  weights were 8.8e-3 relative off CPU on smooth content
   (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
-- Guards: `test_hip_speed_device_math` (replay of the kernels + the host
+- Guards: `test_hip_speed_device_math` (replay of kernels + host
   tail vs CPU extractor, `==`, no device),
   `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
   device.
 - Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
-  (`speed_hd_count_ff()`) into the pair-divisor `speed_hd_ff_div_to_float()`. Never
-  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) an odd count
-  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0` the
+  (`speed_hd_count_ff()`) into pair-divisor `speed_hd_ff_div_to_float()`. Never
+  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) odd count
+  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0`
   division = old one-float form bit for bit. Means divisor stays fp32
   (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
   header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).

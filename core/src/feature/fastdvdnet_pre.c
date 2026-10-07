@@ -179,8 +179,10 @@ static int fastdvdnet_pre_init(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     if (rc < 0)
         return rc;
 
+    char env_path[VMAF_TINY_AI_ENV_PATH_MAX];
     const char *path = vmaf_tiny_ai_resolve_model_path("fastdvdnet_pre", s->model_path,
-                                                       "VMAF_FASTDVDNET_PRE_MODEL_PATH");
+                                                       "VMAF_FASTDVDNET_PRE_MODEL_PATH", env_path,
+                                                       sizeof(env_path));
     if (!path)
         return -EINVAL;
 

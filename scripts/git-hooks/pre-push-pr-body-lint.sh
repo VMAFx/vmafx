@@ -259,6 +259,17 @@ if [ ! -x "${validator}" ]; then
   exit 0
 fi
 
+# The merge train fast-forwards master from a PR worktree after it ran this check on
+# each pull request against its own base. That push holds several squashes and the
+# train's render commit (ADR-2197), so it is no pull request push; pre-commit names the
+# pushed ref in PRE_COMMIT_REMOTE_BRANCH. Branch protection keeps everyone else off master.
+case "${PRE_COMMIT_REMOTE_BRANCH:-}" in
+  refs/heads/master | refs/heads/main)
+    echo "pre-push-pr-body-lint: push to ${PRE_COMMIT_REMOTE_BRANCH} is not a pull request push — skipping (the merge train checks each PR before landing)." >&2
+    exit 0
+    ;;
+esac
+
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
 if [ -z "${branch}" ] || [ "${branch}" = "HEAD" ]; then
   # Detached HEAD — no PR association possible.

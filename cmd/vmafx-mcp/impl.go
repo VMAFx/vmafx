@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/modeleval"
 	"github.com/VMAFx/vmafx/pkg/scorebackend"
 )
@@ -35,6 +36,12 @@ import (
 // ---------------------------------------------------------------------------
 // Backend-disable map — mirrors the Python _BACKEND_DISABLE dict.
 // ---------------------------------------------------------------------------
+
+// defaultModelArg is the --model argument a scoring tool uses when the caller
+// names no model, and the default its input schema advertises. It is the
+// library default (VMAF_DEFAULT_MODEL_VERSION, mirrored by pkg/model), never a
+// literal.
+var defaultModelArg = vmafmodel.CLIArgument(vmafmodel.DefaultVersion)
 
 var backendDisable = map[string][]string{
 	"cpu":   {"cuda", "sycl", "hip", "metal"},
@@ -633,7 +640,7 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	if !validBackends[backend] {
 		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
 	}
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
+	model := strArg(args, "model", defaultModelArg)
 	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
 
 	// When VMAFX_MCP_DIRECT=1, attempt the direct cgo path first.  The cgo
@@ -1098,7 +1105,7 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 	height := intArg(args, "height", 0)
 	pixfmt := strArg(args, "pixfmt", "420")
 	bitdepth := intArg(args, "bitdepth", 8)
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
+	model := strArg(args, "model", defaultModelArg)
 	backend := strArg(args, "backend", "auto")
 	n := intArg(args, "n", 5)
 
@@ -1488,7 +1495,7 @@ func handleVmafScoreEncoded(ctx context.Context, args map[string]any) (any, erro
 	if err != nil {
 		return nil, fmt.Errorf("distorted_encoded: %w", err)
 	}
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
+	model := strArg(args, "model", defaultModelArg)
 	backend := strArg(args, "backend", "auto")
 	if !validBackends[backend] {
 		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)

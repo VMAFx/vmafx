@@ -288,21 +288,24 @@ jobs:
     # required-aggregator
     name: FFmpeg Ubuntu gcc
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected FFmpeg matrix work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.ffmpeg-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid FFmpeg matrix gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "FFmpeg Ubuntu gcc work"
 
   ffmpeg-macos-gate:
     needs: [tier, impact, ffmpeg-work]
@@ -310,21 +313,24 @@ jobs:
     # required-aggregator
     name: FFmpeg macOS clang
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected FFmpeg matrix work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.ffmpeg-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid FFmpeg matrix gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "FFmpeg macOS clang work"
 
   ffmpeg-sycl-gate:
     needs: [tier, impact, ffmpeg-sycl-work]

@@ -1106,7 +1106,7 @@ test('test_conversion_policy', test_conversion_policy, suite : ['fast'])
 test_read_pictures_convert_args = [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'] + zimg_defines
 test_read_pictures_convert = executable('test_read_pictures_convert',
     ['test.c', 'test_read_pictures_convert.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     c_args : test_read_pictures_convert_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, thread_lib],
@@ -1219,8 +1219,8 @@ test('test_log_level_threads', test_log_level_threads, suite : ['fast'])
 # ABI rather than through static compilation of internals.
 # Keeps the public ABI entry points covered by a linked-library test.
 test_public_api_score = executable('test_public_api_score',
-    ['test.c', 'test_public_api_score.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    ['test.c', 'test_public_api_score.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : libvmaf_public_link,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
@@ -1291,11 +1291,101 @@ if get_option('default_library') != 'static'
         env : {
             'VMAFX_LIBRARY' : libvmaf_public_link.full_path(),
             'PYTHONPATH' : meson.project_source_root() / '..' / 'bindings' / 'python',
+            # ctypes cannot load a sanitizer-instrumented library into the
+            # uninstrumented interpreter (the sanitizer runtime is not in the
+            # process): with -Db_sanitize the test skips (77) and says why;
+            # every other build runs it.
+            'VMAFX_SANITIZE' : get_option('b_sanitize'),
         },
         depends : libvmaf_public_link,
         suite : ['fast'],
     )
 endif
+
+# ADR-1852 RC4 WP2: the core VMAFx API (contexts, options, errors, logging,
+# models and model sets, devices, host frames, submission, synchronous scores).
+# White-box tests (context, bitexact, lifetime) link the static library for
+# libvmaf_priv.h / log.h; the others use only the public headers.
+vmafx_static_link = get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf
+vmafx_test_dirs = [
+    '-DVMAFX_TEST_MODEL_DIR="' + (meson.project_source_root() / '..' / 'model') + '"',
+    '-DVMAFX_TEST_YUV_DIR="' + (meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv') + '"',
+]
+test_vmafx_sha256 = executable('test_vmafx_sha256',
+    ['test.c', 'test_vmafx_sha256.c', '../src/vmafx/sha256.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+)
+test('test_vmafx_sha256', test_vmafx_sha256, suite : ['fast'])
+
+test_vmafx_context = executable('test_vmafx_context',
+    ['test.c', 'test_vmafx_context.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_context', test_vmafx_context, suite : ['fast'])
+
+# VMAFx scores equal libvmaf scores bit for bit on the golden pair, both 1080p
+# checkerboards and the 10-bit sparks pair (fixtures in python/test/resource/yuv;
+# skipped with 77 when they are missing).
+test_vmafx_bitexact = executable('test_vmafx_bitexact',
+    ['test.c', 'test_vmafx_bitexact.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_bitexact', test_vmafx_bitexact, suite : ['fast'], timeout : 300)
+
+# Lifetimes under ASan / UBSan: a model released before the context, a failed
+# destroy retried (`-Wl,--wrap=vmaf_thread_pool_destroy`, the constraints of
+# test_collector_owns_mounted_model), planes freed by their release callback.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_vmafx_lifetime = executable('test_vmafx_lifetime',
+        ['test.c', 'test_vmafx_lifetime.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        link_args : ['-Wl,--wrap=vmaf_thread_pool_destroy'],
+        c_args : [vmaf_cflags_common],
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_lifetime', test_vmafx_lifetime, suite : ['fast'])
+endif
+
+# Full log routing (ADR-1906): worker-thread messages, two contexts on two
+# threads, the process log of a context without a callback, model loads.
+# POSIX descriptors and threads: Linux only.
+if host_machine.system() == 'linux'
+    test_vmafx_log_routing = executable('test_vmafx_log_routing',
+        ['test.c', 'test_vmafx_log_routing.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_log_routing', test_vmafx_log_routing, suite : ['fast'], timeout : 120)
+endif
+
+# Engine messages go through vmaf_log(), so a context's sink sees them: no
+# direct stdout / stderr write in core/src outside the declared exceptions.
+test('test_engine_log_routing_contract',
+    import('python').find_installation(),
+    args : files('test_engine_log_routing_contract.py'),
+    suite : ['fast'],
+)
+
+foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score']
+    vmafx_public_exe = executable(vmafx_public_test,
+        ['test.c', vmafx_public_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : libvmaf_public_link,
+        c_args : vmafx_test_dirs,
+        dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
+endforeach
 
 # Linux static-link fault control for output_file_open(). The project's
 # large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
@@ -1542,7 +1632,7 @@ endif
 # via vmaf_import_feature_score() — no YUV frames required.
 test_model_collection_api = executable('test_model_collection_api',
     ['test.c', 'test_model_collection_api.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
     dependencies : [math_lib, pthread_dependency, thread_lib],
@@ -1566,7 +1656,7 @@ test_predict = executable('test_predict',
 # svm.cpp coverage past the parser-only floor.
 # Observation-only: vendored source is not modified (ADR-0889, core/src/AGENTS.md §10).
 test_svm_api = executable('test_svm_api',
-    ['test.c', 'test_svm_api.c', '../src/thread_locale.cpp'],
+    ['test.c', 'test_svm_api.c', '../src/thread_locale.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
@@ -5462,7 +5552,7 @@ test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 # Exercise the production private ROI reader and placeholder, not copied math.
 test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
     ['test.c', 'test_vmaf_roi_bounds.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     dependencies : [test_vmaf_roi_libm],
 )
 test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
@@ -7259,11 +7349,12 @@ test('test_psnr_hvs_gpu_scan_contract',
 # not by the count rounded to fp32 (wrong above 2^24 elements, beyond 16K with
 # speed_prescale above 2). The HIP device header is compiled for the host, as
 # the kernel build compiles it (no contraction); the contract test holds the
-# CUDA, HIP and SYCL sources to the same division. Both device-free.
+# CUDA, HIP and SYCL sources to the same division. Both device-free. No
+# contraction comes from the project-wide strict FP arguments (ADR-1461), in
+# each compiler's own spelling; icx-cl ignores a bare -ffp-contract=off.
 test_speed_cov_count_division = executable('test_speed_cov_count_division',
     ['test.c', 'test_speed_cov_count_division.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    c_args : cc.get_supported_arguments(['-ffp-contract=off']),
     dependencies : [math_lib],
 )
 test('test_speed_cov_count_division', test_speed_cov_count_division, suite : ['fast'])

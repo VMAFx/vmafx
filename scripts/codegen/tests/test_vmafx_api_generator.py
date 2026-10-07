@@ -23,7 +23,17 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
 
-from support import DEFINITION, FIXTURES, ROOT, bumped, document, entry, quiet, render_into
+from support import (
+    DEFINITION,
+    FIXTURES,
+    ROOT,
+    bumped,
+    document,
+    entry,
+    next_patch,
+    quiet,
+    render_into,
+)
 from vmafx_api import abi_check, cli
 from vmafx_api.layout import struct_layout
 from vmafx_api.loader import parse
@@ -79,7 +89,7 @@ class AbiCheckTest(unittest.TestCase):
         self.assertEqual(self.findings(copy.deepcopy(self.base)), [])
 
     def test_reordered_field_needs_a_minor_bump_in_0x(self) -> None:
-        doc = bumped(copy.deepcopy(self.base), "0.1.1")
+        doc = bumped(copy.deepcopy(self.base), next_patch(self.base))
         fields = entry(doc["structs"], "VmafxScore")["fields"]
         fields[0], fields[1] = fields[1], fields[0]
         self.assertTrue(any("VmafxScore" in f for f in self.findings(doc)))
@@ -101,7 +111,7 @@ class AbiCheckTest(unittest.TestCase):
         self.assertTrue(any("VMAFX_E_RANGE renumbered" in f for f in self.findings(doc)))
 
     def test_changed_since_is_breaking(self) -> None:
-        doc = bumped(copy.deepcopy(self.base), "0.1.1")
+        doc = bumped(copy.deepcopy(self.base), next_patch(self.base))
         entry(doc["functions"], "vmafx_feature_score")["since"] = "0.0"
         self.assertTrue(any("since changed" in f for f in self.findings(doc)))
 
@@ -117,7 +127,7 @@ class AbiCheckTest(unittest.TestCase):
         doc = copy.deepcopy(self.base)
         entry(doc["structs"], "VmafxScore")["fields"].append({"name": "flags", "type": "u32"})
         self.assertTrue(any("without an ABI version bump" in f for f in self.findings(doc)))
-        self.assertEqual(self.findings(bumped(doc, "0.1.1")), [])
+        self.assertEqual(self.findings(bumped(doc, next_patch(self.base))), [])
 
     def test_from_1_0_a_shipped_node_is_frozen(self) -> None:
         base = bumped(copy.deepcopy(self.base), "1.0.0")
@@ -130,7 +140,7 @@ class AbiCheckTest(unittest.TestCase):
         self.assertEqual(abi_check.compare(parse(base), parse(bumped(doc, "1.1.0"))), [])
 
     def test_0x_addition_joins_the_current_node_not_an_older_one(self) -> None:
-        doc = bumped(copy.deepcopy(self.base), "0.1.1")
+        doc = bumped(copy.deepcopy(self.base), next_patch(self.base))
         added = copy.deepcopy(entry(doc["functions"], "vmafx_version_string"))
         doc["functions"].append({**added, "name": "vmafx_build_id", "since": "0.0"})
         self.assertTrue(any("older than the current minor" in f for f in self.findings(doc)))
@@ -141,7 +151,7 @@ class AbiCheckTest(unittest.TestCase):
         base = copy.deepcopy(self.base)
         pair = {"name": "VmafxPair", "header": "vmafx/types.h", "since": "0.1"}
         base["structs"].append({**pair, "fields": [{"name": "a", "type": "u32"}]})
-        doc = bumped(copy.deepcopy(base), "0.1.1")
+        doc = bumped(copy.deepcopy(base), next_patch(base))
         entry(doc["structs"], "VmafxPair")["fields"].append({"name": "b", "type": "u32"})
         found = abi_check.compare(parse(base), parse(doc))
         self.assertTrue(any("grew without struct_size" in f for f in found))
@@ -149,7 +159,8 @@ class AbiCheckTest(unittest.TestCase):
     def test_prototype_definition_upgrades_and_is_compatible(self) -> None:
         prototype = parse(document(FIXTURES / "schema1.toml"))
         self.assertEqual(abi_check.compare(prototype, self.old), [])
-        self.assertEqual(
+        # Later work packages only add functions: the prototype's are a subset.
+        self.assertLessEqual(
             {f.name for f in prototype.functions}, {f.name for f in self.old.functions}
         )
 

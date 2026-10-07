@@ -6,7 +6,7 @@ paths:
   - .github/workflows/sycl-parity.yml
   - dev/docker-compose.runner.yml
   - dev/scripts/arc-render-node.sh
-invariant: Fork PRs never run on self-hosted hardware; Arc container sees only the Arc node; an enabled lane must report `success`.
+invariant: Fork PRs never run on self-hosted hardware; Arc container sees only Arc node; enabled lane must report `success`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted runners
@@ -45,23 +45,23 @@ under `.github/workflows/sycl-parity.yml`. Following invariants load-bearing:
 
 ## Self-hosted hardware admission invariants (ADR-1319)
 
-`sycl-arc` and `gpu-full` are different capability contracts. The Arc-only
+`sycl-arc` and `gpu-full` are different capability contracts. Arc-only
 container never satisfies CUDA/HIP or combined-coverage claims. Preserve these
 couplings together:
 
-1. `sycl-parity.yml` is the sole hardware `float_ssim` parity owner and probes
+1. `sycl-parity.yml` is sole hardware `float_ssim` parity owner and probes
    `self-hosted linux x64 sycl-arc` before dispatch.
 2. `tests-and-quality-gates.yml` has exactly one `gpu-full` consumer,
    `Coverage GPU`; its hosted probe checks `self-hosted linux gpu-full` before
-   dispatch. Do not restore the retired duplicate SYCL job.
-3. The required aggregator permits absent/skipped hardware checks only while
-   their own switch is disabled. With a switch true, only `success` passes.
+   dispatch. Do not restore retired duplicate SYCL job.
+3. required aggregator permits absent/skipped hardware checks only while
+   their own switch is disabled. With switch true, only `success` passes.
 4. Keep `scripts/ci/test_self_hosted_runner_workflow_contract.py` wired into
-   Rule Enforcement. It executes the real embedded aggregator JavaScript as
+   Rule Enforcement. It executes real embedded aggregator JavaScript as
    well as checking workflow ownership and admission edges.
 
 ## Workflow coupling
 
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
-| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available`) and `tests-and-quality-gates.yml` (`gpu-full-runner-available`) | Reads `$RUNNER_ENABLED`; disabled means exit 0, `available=false`, no API call. Enabled means query `GET repos/<repo>/actions/runners` with the existing read-only `$GH_TOKEN` and require one ONLINE runner carrying every case-insensitive label in `$RUNNER_LABELS`. A custom-label-only match is insufficient: missing `linux` / `x64` can still make `runs-on` unroutable. API error, no complete match, or all complete matches offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Tests: `scripts/ci/tests/test-runner-available.sh` and `scripts/ci/test_self_hosted_runner_workflow_contract.py`. |
+| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available`) and `tests-and-quality-gates.yml` (`gpu-full-runner-available`) | Reads `$RUNNER_ENABLED`; disabled means exit 0, `available=false`, no API call. Enabled means query `GET repos/<repo>/actions/runners` with existing read-only `$GH_TOKEN` and require one ONLINE runner carrying every case-insensitive label in `$RUNNER_LABELS`. custom-label-only match is insufficient: missing `linux` / `x64` can still make `runs-on` unroutable. API error, no complete match, or all complete matches offline = exit 1 with `::error::`. Never maps API error to "unregistered". Tests: `scripts/ci/tests/test-runner-available.sh` and `scripts/ci/test_self_hosted_runner_workflow_contract.py`. |

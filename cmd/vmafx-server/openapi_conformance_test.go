@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/VMAFx/vmafx/gen/go/oapi"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
@@ -126,7 +127,7 @@ func TestOpenAPIReadyOK(t *testing.T) {
 // "not ready" when the grpcServer has a nil scorer.
 func TestOpenAPIReadyNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	// nil scorer → not ready
 	grpc := newGRPCServer(nil, metrics, log)

@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -51,7 +52,7 @@ func startGRPCTestServer(t *testing.T) (vmafxv1.VmafxScoringClient, func()) {
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	impl := newGRPCServer(scorer, metrics, log)
 
@@ -384,7 +385,7 @@ func TestGRPCScore_ScorerError(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	impl := newGRPCServer(scorer, metrics, log)
 

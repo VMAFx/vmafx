@@ -7,6 +7,28 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+<!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Rendered docs: pull requests carry fragments only (2026-10-07)
+
+`ci/render-at-release`, [ADR-2197](adr/2197-render-generated-docs-at-landing.md). Fork-only tooling. `docs/rebase-notes.md` has a
+fragment block at its top (between two marker comments) rendered from `docs/rebase-notes.d/`; the entries below the block are the
+history and stay as they are. `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md` and
+`docs/research/titles.md` are outputs of `make docs-render`: on a conflict in one, take master's side and re-render, and never
+add them back to a branch (`deliverables-check.sh` refuses them). `_order.txt` is frozen; a rebased branch drops any line it added.
+`.gitattributes` no longer lists `merge=union` for these files.
+
+<!-- rebase-notes:fragments:end -->
+
+## Praetor pin afb739ed81f3 (2026-10-07)
+
+`chore/praetor-pin-afb739ed`, [ADR-2321](adr/2321-praetor-pin-afb739ed.md). Fork-only governance files; no upstream file. Engine output
+(take master's side on a conflict, then regenerate in a throwaway copy with the pinned engine): `PRAETOR_REF`, `tools/markdownlint/`,
+the DevContainer bundle (six `praetor-source.*.b64` parts), `.config/agent/hooks/block_evasion.py`, `.paperclip/harness.json`,
+`.paperclip/rules.md` and the `register.sources` digest in `.standards.yaml`, and the register block of `AGENTS.md` with the six compiled
+context files (`praetorctl compile-context`). The `exceptions:` block of `.standards.yaml` is generated: run
+`python3 scripts/ci/praetor_tidy_coverage.py --write`. A nested `AGENTS.md` or `AGENTS.d/` page brought in by a rebase or an upstream
+sync must pass `praetorctl caveman check --kind=context`; the indexes come from `make docs-fragments-write`.
+
 ## Windows: _wsopen_s permission mask (2026-10-07)
 
 `fix/msvc-wsopen-pmode`. no rebase impact: fork-only `compat/path_utf8.c`; in `svm.cpp` the `vmaf_open_bin_crt()` helper (fork edit of the vendored libsvm open call) masks `pmode`; keep the mask when re-syncing.
@@ -46,6 +68,13 @@ fork's `crt_portable.h` spelling.
 `ci/zero-warnings-metal-and-probe`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `core/src/metal/meson.build`
 (project link argument after `add_languages('objcpp')`), `core/src/sycl/run_captured.py` and the `sycl_quiet_launcher` of
 `sycl_common_*` in `core/src/meson.build`. no upstream file.
+
+## Warnings are errors on the MSVC legs (2026-10-07)
+
+`ci/msvc-werror-gate`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: the `msvc` mode of `scripts/ci/werror-args.sh`,
+its cases and the MSVC leg contract in `scripts/ci/tests/test_werror_args.py`, the `werror: msvc` row key, the `Warnings-as-errors
+arguments` bash step (`id: werror`) and `${{ steps.werror.outputs.args }}` on the cmd configure lines of `libvmaf-build-matrix.yml`
+(`windows-gpu-build`, `windows-arm64`) and `build.yml` (`build-work`). no upstream file.
 
 ## Warnings are errors per leg (2026-10-07)
 
@@ -62783,6 +62812,11 @@ is now pelorus's own code, so the mirror carries only the banner and the include
 ADR-1589, ADR-0719, ADR-1526 and ADR-2001 as partially superseded; comments and AGENTS notes of
 `cmd/vmafx-controller/`, `cmd/vmafx-operator/` and `deploy/helm/vmafx/` now call the SQLite queue transitional. No
 code path changes. no upstream file.
+## VMAFx core API: engine entry points, per-thread log sink, shared picture helpers
+
+`rc4/api-wp2-core`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-1906](adr/1906-vmafx-core-api-semantics.md).
+
 - `core/src/libvmaf.c` renames the bodies of `vmaf_use_feature`,
   `vmaf_use_features_from_model`, `vmaf_use_features_from_model_collection`,
   `vmaf_import_feature_score`, `vmaf_set_perceptual_weight_enabled`,

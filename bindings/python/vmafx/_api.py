@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 0)
+ABI_VERSION = (0, 1, 1)
 
 
 class Status(enum.IntEnum):
@@ -30,6 +30,7 @@ class Status(enum.IntEnum):
     E_IO = -7
     E_RANGE = -8
     E_INTERNAL = -9
+    E_ABI = -11
 
 
 class LogLevel(enum.IntEnum):
@@ -52,6 +53,56 @@ class Backend(enum.IntEnum):
     HIP = 4
 
 
+class PixelFormat(enum.IntEnum):
+    """VmafxPixelFormat."""
+
+    UNKNOWN = 0
+    YUV420P = 1
+    YUV422P = 2
+    YUV444P = 3
+    YUV400P = 4
+
+
+class Pool(enum.IntEnum):
+    """VmafxPool."""
+
+    NONE = 0
+    MIN = 1
+    MAX = 2
+    MEAN = 3
+    HARMONIC_MEAN = 4
+    MEDIAN = 5
+    PERC5 = 6
+    PERC10 = 7
+    PERC20 = 8
+
+
+class SubjectKind(enum.IntEnum):
+    """VmafxSubjectKind."""
+
+    NONE = 0
+    PARAMETER = 1
+    CONTEXT = 2
+    OPTION = 3
+    FEATURE = 4
+    EXTRACTOR = 5
+    MODEL = 6
+    FRAME = 7
+    PLANE = 8
+    DEVICE = 9
+    BACKEND = 10
+    PATH = 11
+    FENCE = 12
+
+
+class ModelFlags(enum.IntFlag):
+    """VmafxModelFlags bits."""
+
+    DISABLE_CLIP = 1
+    ENABLE_TRANSFORM = 2
+    DISABLE_TRANSFORM = 4
+
+
 class VmafxContextConfig(ctypes.Structure):
     """C struct VmafxContextConfig."""
 
@@ -68,6 +119,44 @@ class VmafxScore(ctypes.Structure):
     """C struct VmafxScore."""
 
 
+class VmafxFeatureResolution(ctypes.Structure):
+    """C struct VmafxFeatureResolution."""
+
+
+class VmafxDeviceDesc(ctypes.Structure):
+    """C struct VmafxDeviceDesc."""
+
+
+class VmafxModelConfig(ctypes.Structure):
+    """C struct VmafxModelConfig."""
+
+
+class VmafxFrameDesc(ctypes.Structure):
+    """C struct VmafxFrameDesc."""
+
+
+class VmafxHostPlanes(ctypes.Structure):
+    """C struct VmafxHostPlanes."""
+
+
+class VmafxFramePlanes(ctypes.Structure):
+    """C struct VmafxFramePlanes."""
+
+
+class VmafxPooledScore(ctypes.Structure):
+    """C struct VmafxPooledScore."""
+
+
+class VmafxModelSetScore(ctypes.Structure):
+    """C struct VmafxModelSetScore."""
+
+
+VmafxLogCallback = ctypes.CFUNCTYPE(None, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_void_p)
+
+
+VmafxFrameReleaseCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+
+
 VmafxContextConfig._fields_ = (
     ("struct_size", ctypes.c_uint32),
     ("log_level", ctypes.c_uint32),
@@ -75,6 +164,8 @@ VmafxContextConfig._fields_ = (
     ("n_subsample", ctypes.c_uint32),
     ("cpumask", ctypes.c_uint64),
     ("gpumask", ctypes.c_uint64),
+    ("log_callback", VmafxLogCallback),
+    ("log_user", ctypes.c_void_p),
 )
 
 VmafxProvenance._fields_ = (
@@ -102,10 +193,80 @@ VmafxScore._fields_ = (
     ("extractor", ctypes.c_char_p),
 )
 
+VmafxFeatureResolution._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("backend", ctypes.c_uint32),
+    ("extractor", ctypes.c_char_p),
+    ("unsupported_option", ctypes.c_char_p),
+)
+
+VmafxDeviceDesc._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("backend", ctypes.c_uint32),
+    ("index", ctypes.c_int32),
+)
+
+VmafxModelConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("name", ctypes.c_char_p),
+    ("flags", ctypes.c_uint64),
+    ("log_level", ctypes.c_uint32),
+    ("log_callback", VmafxLogCallback),
+    ("log_user", ctypes.c_void_p),
+)
+
+VmafxFrameDesc._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("w", ctypes.c_uint32),
+    ("h", ctypes.c_uint32),
+)
+
+VmafxHostPlanes._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("data", ctypes.c_void_p * 3),
+    ("stride", ctypes.c_uint64 * 3),
+    ("release", VmafxFrameReleaseCallback),
+    ("user", ctypes.c_void_p),
+)
+
+VmafxFramePlanes._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("n_planes", ctypes.c_uint32),
+    ("w", ctypes.c_uint32 * 3),
+    ("h", ctypes.c_uint32 * 3),
+    ("stride", ctypes.c_uint64 * 3),
+    ("data", ctypes.c_void_p * 3),
+)
+
+VmafxPooledScore._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pool", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("value", ctypes.c_double),
+    ("feature", ctypes.c_char_p),
+)
+
+VmafxModelSetScore._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pool", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("bagging", ctypes.c_double),
+    ("stddev", ctypes.c_double),
+    ("ci95_lo", ctypes.c_double),
+    ("ci95_hi", ctypes.c_double),
+    ("name", ctypes.c_char_p),
+)
+
 
 LAYOUT = {
     VmafxContextConfig: (
-        32,
+        48,
         (
             ("struct_size", 0),
             ("log_level", 4),
@@ -113,6 +274,8 @@ LAYOUT = {
             ("n_subsample", 12),
             ("cpumask", 16),
             ("gpumask", 24),
+            ("log_callback", 32),
+            ("log_user", 40),
         ),
     ),
     VmafxProvenance: (
@@ -144,6 +307,92 @@ LAYOUT = {
             ("value", 16),
             ("feature", 24),
             ("extractor", 32),
+        ),
+    ),
+    VmafxFeatureResolution: (
+        24,
+        (
+            ("struct_size", 0),
+            ("backend", 4),
+            ("extractor", 8),
+            ("unsupported_option", 16),
+        ),
+    ),
+    VmafxDeviceDesc: (
+        12,
+        (
+            ("struct_size", 0),
+            ("backend", 4),
+            ("index", 8),
+        ),
+    ),
+    VmafxModelConfig: (
+        48,
+        (
+            ("struct_size", 0),
+            ("name", 8),
+            ("flags", 16),
+            ("log_level", 24),
+            ("log_callback", 32),
+            ("log_user", 40),
+        ),
+    ),
+    VmafxFrameDesc: (
+        20,
+        (
+            ("struct_size", 0),
+            ("pix_fmt", 4),
+            ("bpc", 8),
+            ("w", 12),
+            ("h", 16),
+        ),
+    ),
+    VmafxHostPlanes: (
+        72,
+        (
+            ("struct_size", 0),
+            ("data", 8),
+            ("stride", 32),
+            ("release", 56),
+            ("user", 64),
+        ),
+    ),
+    VmafxFramePlanes: (
+        88,
+        (
+            ("struct_size", 0),
+            ("pix_fmt", 4),
+            ("bpc", 8),
+            ("n_planes", 12),
+            ("w", 16),
+            ("h", 28),
+            ("stride", 40),
+            ("data", 64),
+        ),
+    ),
+    VmafxPooledScore: (
+        40,
+        (
+            ("struct_size", 0),
+            ("pool", 4),
+            ("first", 8),
+            ("last", 16),
+            ("value", 24),
+            ("feature", 32),
+        ),
+    ),
+    VmafxModelSetScore: (
+        64,
+        (
+            ("struct_size", 0),
+            ("pool", 4),
+            ("first", 8),
+            ("last", 16),
+            ("bagging", 24),
+            ("stddev", 32),
+            ("ci95_lo", 40),
+            ("ci95_hi", 48),
+            ("name", 56),
         ),
     ),
 }
@@ -225,6 +474,327 @@ SIGNATURES = {
             ctypes.c_char_p,
             ctypes.c_uint64,
             ctypes.POINTER(VmafxScore),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_error_subject_kind": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_error_function": (
+        ctypes.c_char_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_options_set": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_options_free": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_set_option": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_use_feature": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_use_model": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_use_model_set": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_import_score": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_uint64,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_extractor_count": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_feature_resolve": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameDesc),
+            ctypes.POINTER(VmafxFeatureResolution),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_frame_retention": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_submit": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_flush": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_device_create": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxDeviceDesc),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_device_ref": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_device_unref": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_device_backend": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_frame_create_host": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameDesc),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_wrap_host": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameDesc),
+            ctypes.POINTER(VmafxHostPlanes),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_planes": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFramePlanes),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_ref": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_frame_unref": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_load": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxModelConfig),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_load_file": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxModelConfig),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_override_feature": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_ref": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_unref": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_name": (
+        ctypes.c_char_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_feature_count": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_feature_name": (
+        ctypes.c_char_p,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ),
+    ),
+    "vmafx_model_hash": (
+        ctypes.c_char_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_builtin_next": (
+        ctypes.c_char_p,
+        (ctypes.c_char_p,),
+    ),
+    "vmafx_model_default_version": (
+        ctypes.c_char_p,
+        (),
+    ),
+    "vmafx_model_set_load": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxModelConfig),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_set_load_file": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxModelConfig),
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_set_override_feature": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_set_ref": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_unref": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_lead": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_size": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_hash": (
+        ctypes.c_char_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_score_frame": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxScore),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_score_frame_model_set": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxModelSetScore),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_score_pooled": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint64,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxPooledScore),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_feature_score_pooled": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_uint32,
+            ctypes.c_uint64,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxPooledScore),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_score_pooled_model_set": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint64,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxModelSetScore),
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
@@ -388,6 +958,174 @@ class Score:
         )
 
 
+@dataclass(frozen=True)
+class FeatureResolution:
+    """Which extractor computes a feature on a context (ADR-1359). Strings live for the process lifetime."""
+
+    backend: int
+    extractor: str | None
+    unsupported_option: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxFeatureResolution) -> FeatureResolution:
+        return cls(
+            backend=raw.backend,
+            extractor=_text(raw.extractor),
+            unsupported_option=_text(raw.unsupported_option),
+        )
+
+
+@dataclass(frozen=True)
+class DeviceDesc:
+    """Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."""
+
+    backend: int
+    index: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxDeviceDesc) -> DeviceDesc:
+        return cls(
+            backend=raw.backend,
+            index=raw.index,
+        )
+
+    def to_c(self) -> VmafxDeviceDesc:
+        raw = VmafxDeviceDesc()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.backend = self.backend
+        raw.index = self.index
+        return raw
+
+
+@dataclass(frozen=True)
+class ModelConfig:
+    """How to load a model. Initialise with VMAFX_MODEL_CONFIG_INIT."""
+
+    name: str | None
+    flags: int
+    log_level: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxModelConfig) -> ModelConfig:
+        return cls(
+            name=_text(raw.name),
+            flags=raw.flags,
+            log_level=raw.log_level,
+        )
+
+
+@dataclass(frozen=True)
+class FrameDesc:
+    """Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."""
+
+    pix_fmt: int
+    bpc: int
+    w: int
+    h: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxFrameDesc) -> FrameDesc:
+        return cls(
+            pix_fmt=raw.pix_fmt,
+            bpc=raw.bpc,
+            w=raw.w,
+            h=raw.h,
+        )
+
+    def to_c(self) -> VmafxFrameDesc:
+        raw = VmafxFrameDesc()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.pix_fmt = self.pix_fmt
+        raw.bpc = self.bpc
+        raw.w = self.w
+        raw.h = self.h
+        return raw
+
+
+@dataclass(frozen=True)
+class HostPlanes:
+    """Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT."""
+
+    stride: tuple[int, ...]
+
+    @classmethod
+    def from_c(cls, raw: VmafxHostPlanes) -> HostPlanes:
+        return cls(
+            stride=tuple(raw.stride),
+        )
+
+
+@dataclass(frozen=True)
+class FramePlanes:
+    """Where the samples of a frame are. The data pointers live as long as the frame."""
+
+    pix_fmt: int
+    bpc: int
+    n_planes: int
+    w: tuple[int, ...]
+    h: tuple[int, ...]
+    stride: tuple[int, ...]
+
+    @classmethod
+    def from_c(cls, raw: VmafxFramePlanes) -> FramePlanes:
+        return cls(
+            pix_fmt=raw.pix_fmt,
+            bpc=raw.bpc,
+            n_planes=raw.n_planes,
+            w=tuple(raw.w),
+            h=tuple(raw.h),
+            stride=tuple(raw.stride),
+        )
+
+
+@dataclass(frozen=True)
+class PooledScore:
+    """A score pooled over a range of frames."""
+
+    pool: int
+    first: int
+    last: int
+    value: float
+    feature: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxPooledScore) -> PooledScore:
+        return cls(
+            pool=raw.pool,
+            first=raw.first,
+            last=raw.last,
+            value=raw.value,
+            feature=_text(raw.feature),
+        )
+
+
+@dataclass(frozen=True)
+class ModelSetScore:
+    """The bootstrap score of a model set at one frame or pooled over frames."""
+
+    pool: int
+    first: int
+    last: int
+    bagging: float
+    stddev: float
+    ci95_lo: float
+    ci95_hi: float
+    name: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxModelSetScore) -> ModelSetScore:
+        return cls(
+            pool=raw.pool,
+            first=raw.first,
+            last=raw.last,
+            bagging=raw.bagging,
+            stddev=raw.stddev,
+            ci95_lo=raw.ci95_lo,
+            ci95_hi=raw.ci95_hi,
+            name=_text(raw.name),
+        )
+
+
 class Context:
     """A VmafxContext; close it with close() or a with-block."""
 
@@ -453,6 +1191,45 @@ class Context:
         _raise(self._lib, status, error, "vmafx_feature_score")
         return Score.from_c(out)
 
+    def set_option(self, key: str, value: str) -> None:
+        """Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_set_option(
+            self._handle, key.encode(), value.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_set_option")
+
+    def import_score(self, feature: str, index: int, value: float) -> None:
+        """Record `value` as the score of `feature` at frame `index`, computed outside the library."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_import_score(
+            self._handle, feature.encode(), index, value, ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_import_score")
+
+    def flush(self) -> None:
+        """Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_flush(self._handle, ctypes.byref(error))
+        _raise(self._lib, status, error, "vmafx_flush")
+
+    def feature_score_pooled(self, feature: str, pool: int, first: int, last: int) -> PooledScore:
+        """Scores of `feature` pooled as vmafx_score_pooled() does."""
+        out = VmafxPooledScore()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_feature_score_pooled(
+            self._handle,
+            feature.encode(),
+            pool,
+            first,
+            last,
+            ctypes.byref(out),
+            ctypes.byref(error),
+        )
+        _raise(self._lib, status, error, "vmafx_feature_score_pooled")
+        return PooledScore.from_c(out)
+
 
 class Library:
     """The loaded VMAFx library."""
@@ -484,6 +1261,14 @@ class Library:
     def status_name(self, status: int) -> str | None:
         """Name of a status code (`VMAFX_E_INVALID`), or `VMAFX_UNKNOWN_STATUS`."""
         return _text(self._lib.vmafx_status_name(status))
+
+    def model_builtin_next(self, previous: str | None) -> str | None:
+        """The built-in model version after `previous`, the first one for NULL, NULL after the last or for an unknown `previous`. Built-in model sets are listed too."""
+        return _text(self._lib.vmafx_model_builtin_next(previous))
+
+    def model_default_version(self) -> str | None:
+        """Version of the default model (`vmaf_v1.0.16_3d0h`)."""
+        return _text(self._lib.vmafx_model_default_version())
 
 
 _check_layout()

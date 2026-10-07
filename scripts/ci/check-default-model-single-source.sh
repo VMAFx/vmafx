@@ -78,9 +78,13 @@ check_mirror tools/vmaf-tune/src/vmaftune/defaultmodel.py \
 check_mirror tools/vmaf-roi-score/src/vmafroiscore/defaultmodel.py \
   's/^DEFAULT_MODEL = "\(.*\)"$/\1/p' "vmaf-roi-score DEFAULT_MODEL"
 
+check_mirror mcp-server/vmaf-mcp/src/vmaf_mcp/defaultmodel.py \
+  's/^DEFAULT_MODEL = "\(.*\)"$/\1/p' "vmaf-mcp DEFAULT_MODEL"
+
 # --------------------------------------- documented defaults in API contracts --
 # The server's contracts tell clients which model an omitted `model` field
-# selects: the gRPC proto, the OpenAPI document and the server pages. They
+# selects: the gRPC protos (scoring and controller), the OpenAPI document and
+# the server pages. They
 # cannot read the header, and they drifted once (all of them documented
 # vmaf_v0.6.1 while the server used the header's default). Every "defaults
 # to <model>" / "Defaults to <model>" / "(default: <model>)" they contain must
@@ -97,7 +101,7 @@ while IFS= read -r contract; do
       bad "$contract documents the default model as \"$documented\"; the server uses \"$authoritative\" ($header)"
     fi
   done <<<"$hits"
-done < <(git ls-files -- 'proto/*.proto' 'api/openapi/*.yaml' 'docs/server/*.md')
+done < <(git ls-files -- 'proto/*.proto' 'cmd/*/proto/*.proto' 'api/openapi/*.yaml' 'docs/server/*.md')
 
 # ------------------------------------------------- unapproved hardcoded uses --
 # A default is "hardcoded" when a component substitutes a literal model name
@@ -139,6 +143,11 @@ test_re='(_test\.go|/tests?/|(^|/)test_[^/]*\.(c|cpp|py)$|_test\.py$)'
 # (model =\n    "vmaf_v0.6.1"), and a literal built by concatenation
 # ("vmaf_v0" + ".6.1").
 M='["'"'"']vmaf_v0\.6\.1(neg)?["'"'"']'
+# The same literal spelled as a --model argument ("version=vmaf_v0.6.1"). It is
+# matched only in the argument-default forms added at the end of the list below:
+# the generic `=` and `:` forms would also read the FFmpeg filter patches, whose
+# own option defaults are the work of the filter redesign (RC4 work package 10).
+MV='["'"'"'](version=)?vmaf_v0\.6\.1(neg)?["'"'"']'
 default_use_re="(=[[:space:]]*${M}"
 default_use_re="${default_use_re}|:[[:space:]]*${M}[[:space:]]*[,);]"
 default_use_re="${default_use_re}|return[[:space:]]+${M}"
@@ -155,6 +164,10 @@ default_use_re="${default_use_re}|value_or\\([[:space:]]*${M}"
 default_use_re="${default_use_re}|strdup\\([[:space:]]*${M}"
 default_use_re="${default_use_re}|[Oo]r\\([^)]*,[[:space:]]*${M})"
 default_use_re="${default_use_re}|(=|return)[^=]*[[:space:]]else[[:space:]]+${M}"
+default_use_re="${default_use_re}|strArg\\([^)]*,[[:space:]]*${MV}"
+default_use_re="${default_use_re}|\\.get\\([^)]*,[[:space:]]*${MV}"
+default_use_re="${default_use_re}|\"default\"[[:space:]]*:[[:space:]]*${MV}"
+default_use_re="${default_use_re}|model[[:space:]]*:[[:space:]]*str[[:space:]]*=[[:space:]]*${MV}"
 
 # Drop lines whose only match is inside a comment. Documentation that names the
 # current default ("e.g. \"vmaf_v0.6.1\"") is not a hardcoded fallback, and

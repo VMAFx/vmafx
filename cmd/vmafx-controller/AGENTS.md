@@ -106,7 +106,20 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    Never drop node guard or tenant compare. Partial reports: `MayReport`.
    Guards: `queue_tenant_test.go`, `grpc_tenant_test.go`.
 
-7. **`CancelledAmong` (ADR-1567)**: tenant + `status='cancelled'` in SQL
+7. **`Cancel` / `ReportResult` report the transition** (WP16, issue #2430):
+   `(bool, error)`; true only when this call moved job to terminal state.
+   Idempotent retry / already-terminal job -> false. Job metrics
+   (`metrics.go::jobFinished`) count only true -> one count per job. Never
+   count on nil error alone. Guard: `metrics_test.go::TestJobLifecycleMetrics`
+   (repeat report + repeat cancel counted once).
+8. **`Stats` = only all-tenant read, counts only** (`queue/stats.go`):
+   per-tenant pending / running COUNT + MIN(created_at) and in-memory requeue
+   totals (`requeued`, reasons `RequeueNodeLost` / `RequeueRestart` /
+   `RequeueRollback` = `metricdef.RequeueReason` values). Returns no job row,
+   no job content (ADR-1522 scopes job reads). Increment `requeued` under
+   `q.mu` where a RUNNING job returns to PENDING (`RequeueNode`,
+   `rollbackTopending`, `reload` count). Guard: `queue/stats_test.go`.
+9. **`CancelledAmong` (ADR-1567)**: tenant + `status='cancelled'` in SQL
    WHERE, IDs bound (`repeatCommaQ`), input order kept, writes nothing.
    `Heartbeat` answers `cancel_job_ids` from it; `maxHeartbeatJobs` = 64
    (node slot limit) -> InvalidArgument above. Refused session -> ok=false,
@@ -272,7 +285,16 @@ lands. Wire protocol unchanged.
 
 ### observability
 
-1. **OTel from `bootstrap.Base` + `bootstrap.HTTPTracing`, spans from golusoris and `grpc_server.go`**
+1. **Metrics from `metricdef` only** (`metrics.go`, WP16 / issue #2430):
+   controller families = `metricdef.ByEmitter(metricdef.Controller)`. Event
+   families via `observability.NewCounter/NewHistogram`
+   (`newControllerMetrics`); queue + registry families read at scrape time
+   via `observability.RegisterScraped` (`registerQueueCollector`, one
+   `Stats` query per scrape, `observability.ScrapeTimeout`). No
+   `prometheus.New*Vec` / GaugeFunc / promauto here. Guard:
+   `metrics_test.go::TestControllerServesEveryFamilyItEmits`.
+
+2. **OTel from `bootstrap.Base` + `bootstrap.HTTPTracing`, spans from golusoris and `grpc_server.go`**
    (`main.go::productionOptions`, ADR-0782 / ADR-1119): `bootstrap.HTTPTracing`
    traces `POST /v1/score` with `otelhttp`; gRPC server spans via `grpcmod.Module`
    `otelgrpc`; child span `vmafx.job.submit` via `observability.StartSpan`.

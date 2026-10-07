@@ -18,7 +18,7 @@
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@4aae30711c655510305e9c14b403f991d342f760
+ * conformance fixture (VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60
  * test/interop_test.c, ABI 1.3).
  *
  * Both repos run byte-for-byte the same checks against their own copy of
@@ -54,6 +54,7 @@
 #include <windows.h>
 /* windows.h first: sddl.h relies on its types. */
 #include <sddl.h>
+#include <share.h>
 #ifdef _MSC_VER
 /* The fixture's Win32 security calls live in advapi32. */
 #pragma comment(lib, "advapi32.lib")
@@ -269,13 +270,25 @@ static int create_checked_fixture(const char *path, const char *contents)
     return 0;
 }
 
+/* Opens a fixture for reading. Windows: _fsopen() with _SH_DENYNO, the sharing fopen() gives;
+ * the CRT declares fopen() deprecated (C4996 under cl.exe, -Wdeprecated-declarations under
+ * clang-cl and icx-cl), and fopen_s() would open the file exclusively. */
+static FILE *fixture_open_read(const char *path)
+{
+#ifdef _WIN32
+    return _fsopen(path, "rb", _SH_DENYNO);
+#else
+    return fopen(path, "rb");
+#endif
+}
+
 /* The whole file equals expected: nothing truncated, appended, or replaced. */
 static int fixture_equals(const char *path, const char *expected)
 {
     char buf[64];
     size_t n;
     int closed;
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = fixture_open_read(path);
 
     if (fp == NULL) {
         return 0;
@@ -288,7 +301,7 @@ static int fixture_equals(const char *path, const char *expected)
 /* 1 when the path exists (checked by opening it, so a link is followed). */
 static int fixture_path_exists(const char *path)
 {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = fixture_open_read(path);
 
     if (fp == NULL) {
         return 0;

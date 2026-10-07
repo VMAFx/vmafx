@@ -2,7 +2,7 @@
 paths:
   - core/src/libvmaf.c
   - core/src/feature/feature_extractor.cpp
-invariant: PREV_REF window uses counted references, n-2 kept only for a reader; vmaf_read_pictures owns both pictures.
+invariant: PREV_REF window uses counted references, n-2 kept only for reader; vmaf_read_pictures owns both pictures.
 ---
 <!-- markdownlint-disable MD013 -->
 # Picture ownership, batch dispatch, and SYCL upload synchronization
@@ -11,52 +11,52 @@ invariant: PREV_REF window uses counted references, n-2 kept only for a reader; 
 
 Context keeps reference picture of frame n-1 (`vmaf->prev_ref`). Frame n-2
 (`vmaf->prev_prev_ref`; Netflix `a2b59b77`) only while
-`vmaf->keep_prev_prev_ref`: set by `admit_prev_prev_ref()` when a registered
+`vmaf->keep_prev_prev_ref`: set by `admit_prev_prev_ref()` when registered
 extractor's `reads_prev_prev_ref()` answers true (`motion` / `motion_v2` with
 `motion_five_frame_window=true`). Netflix keeps n-2 always; fork keeps it only
-for a reader, so without one a context holds exactly what it held before the
+for reader, so without one context holds exactly what it held before
 port (deliberate deviation, ADR-1478; no score moves). With keep:
 `read_pictures_update_prev_ref()` unrefs n-2, moves n-1 down with its count,
 refs current frame; without: unref n-1, ref current frame.
 `vmaf_commit_remaining_owners()` releases both.
 
-Every PREV_REF dispatch path (`batch_extract_one()` on a worker,
+Every PREV_REF dispatch path (`batch_extract_one()` on worker,
 `read_pictures_dispatch_one()` serial, `read_pictures_cuda_submit_current()`)
-hands the extractor its **own counted references** through
-`fex_take_prev_refs()` (n-2 only to a reader) and releases them through
+hands extractor its **own counted references** through
+`fex_take_prev_refs()` (n-2 only to reader) and releases them through
 `fex_release_prev_ref()`.
-Between the two, `vmaf_feature_extractor_context_extract()`:
+Between two, `vmaf_feature_extractor_context_extract()`:
 
-- **SUCCESS**: PREV_REF swap in `feature_extractor.cpp`: for a reader unrefs
+- **SUCCESS**: PREV_REF swap in `feature_extractor.cpp`: for reader unrefs
   `fex->prev_prev_ref`, moves `fex->prev_ref` into it (count kept); for any
-  other extractor unrefs `fex->prev_ref`; then refs the current frame into
+  other extractor unrefs `fex->prev_ref`; then refs current frame into
   `fex->prev_ref`.
 - **ERROR**: both fields unchanged.
 
 Either way each field holds at most one count afterwards and
-`fex_release_prev_ref()` drops both. A bare `memset` or a struct copy in place
-of take / release leaks one picture-pool slot per frame or frees a picture an
+`fex_release_prev_ref()` drops both. bare `memset` or struct copy in place
+of take / release leaks one picture-pool slot per frame or frees picture
 extractor still reads; pool then deadlocks in `vmaf_picture_pool_fetch()`.
-Worker batch: snapshots `f->prev_ref` / `f->prev_prev_ref` taken before the
+Worker batch: snapshots `f->prev_ref` / `f->prev_prev_ref` taken before
 context's window advances, released once by `threaded_extract_batch_func()`
 after every extractor took and balanced its own counts.
 
-Pool rule (ADR-1478), fail closed, never a stall: with keep, a preallocated
+Pool rule (ADR-1478), fail closed, never stall: with keep, preallocated
 pool needs `pic_cnt >= VMAF_PICTURE_POOL_MIN_PREV_PREV_REF` (4); whichever of
 `vmaf_preallocate_pictures()` / registration (`vmaf_use_feature()`,
 `vmaf_use_features_from_model()`, ADR-1324 context fallback, test append
 helper) comes second returns -EINVAL with one log line naming `pic_cnt` and
-the minimum. Without keep: no minimum, as before. Default pool
+minimum. Without keep: no minimum, as before. Default pool
 `n_threads * 2`, `+ 2` with keep (`check_picture_pool()`). CLI
 `thread_cnt > 0 ? (thread_cnt + 1) * 2 + 1 : 4` plus read-ahead
-(`core/tools/vmaf.cpp`): sized before models load, so serial takes 4. A pool
+(`core/tools/vmaf.cpp`): sized before models load, so serial takes 4. pool
 of 3 with keep would hang on frame 2. Guards: `test_motion_five_frame_window`
 (`test_pool_of_four_pictures`, `test_pool_of_three_without_the_window`,
 `test_pool_below_four_is_refused`), `test_read_pictures_failure_ownership`,
 `test_thread_safety_batch`.
 
 **Rebase-sensitive**: upstream `libvmaf.c` struct-copies both pictures into
-the extractor and zeroes them after `extract()`. Keep fork's counted
+extractor and zeroes them after `extract()`. Keep fork's counted
 references; take upstream's window semantics only.
 
 ## `vmaf_read_pictures()` owns both pictures on every return (ADR-1431)
@@ -64,11 +64,11 @@ references; take upstream's window semantics only.
 - Context + two pictures given -> every return releases both once. No early
   `return err;` between argument checks and extractor loop: pool slot leaks,
   `vmaf_picture_pool_close()` waits forever in `vmaf_close()`, `vmaf` CLI hangs
-  holding the device lock after a VRAM out-of-memory (Netflix/vmaf#1420 on fork).
+  holding device lock after VRAM out-of-memory (Netflix/vmaf#1420 on fork).
 - Validation + prep failures -> `read_pictures_frame_cleanup()`. CUDA translation
   failure -> `read_pictures_translate_abort()`: translations sharing `priv` with
   caller's picture released with it, fresh ones (ring pictures, downloaded host
-  copy) released here, fresh device stream drained first (upload reads the host
+  copy) released here, fresh device stream drained first (upload reads host
   picture).
 - No context / one picture `NULL` / flush call (both `NULL`) -> takes nothing.
 - Guards: `test_read_pictures_failure_ownership` (CPU, pool with no spare

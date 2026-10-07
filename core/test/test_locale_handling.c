@@ -28,6 +28,7 @@
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+#include "compat/crt_portable.h"
 #include "config.h"
 #include "thread_locale.h"
 #include "dict.h"
@@ -206,7 +207,7 @@ static char *test_output_xml_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, french);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_xml(vmaf, fc, tmpf, 1, 1920, 1080, 24.0, 1, NULL);
@@ -256,7 +257,7 @@ static char *test_output_json_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, italian);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_json(vmaf, fc, tmpf, 1, 24.0, 1, NULL);
@@ -296,7 +297,7 @@ static char *test_output_csv_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, spanish);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_csv(fc, tmpf, 1, NULL);

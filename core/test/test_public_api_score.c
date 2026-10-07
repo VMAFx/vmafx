@@ -60,6 +60,9 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 
+/* The test reads back files it wrote; the open itself is not public API. */
+#include "compat/path_utf8.h"
+
 /* -------------------------------------------------------------------------
  * Helpers
  * ---------------------------------------------------------------------- */
@@ -196,8 +199,8 @@ static int make_temp_output_path(char *out, size_t out_len)
                      (unsigned long)GetCurrentProcessId());
     if (n <= 0 || (size_t)n >= out_len)
         return -1;
-    /* Pre-create the file so the later fopen("r") + ftell can read it. */
-    FILE *touch = fopen(out, "w");
+    /* Pre-create the file so the later open for reading + ftell can read it. */
+    FILE *touch = vmaf_fopen_utf8(out, "w");
     if (!touch)
         return -1;
     (void)fclose(touch);
@@ -239,7 +242,7 @@ static char *test_vmaf_write_output(void)
     err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(JSON) returned error", !err);
 
-    FILE *f = fopen(tmp, "r");
+    FILE *f = vmaf_fopen_utf8(tmp, "r");
     mu_assert("could not open vmaf_write_output temp file", f != NULL);
     (void)fseek(f, 0, SEEK_END);
     long sz = ftell(f);

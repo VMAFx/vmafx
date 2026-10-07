@@ -112,7 +112,8 @@ test('test_vmaf_per_shot', test_vmaf_per_shot,
 test_vmaf_per_shot_input = executable(
     'test_vmaf_per_shot_input',
     ['../../test/test.c', 'test_vmaf_per_shot_input.c', '../vmaf_per_shot_input.c'],
-    include_directories : [include_directories('../../test'), include_directories('..')],
+    include_directories : [include_directories('../../test'), include_directories('..'),
+                           include_directories('../../src')],
     c_args : vmaf_per_shot_cflags,
 )
 test('test_vmaf_per_shot_input', test_vmaf_per_shot_input, suite : ['fast'])

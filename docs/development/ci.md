@@ -260,6 +260,22 @@ rebuilt each time master moves. Security updates (`vulnerabilityAlerts`) are
 opened at any time and are not grouped. Renovate pull requests come from this
 repository and run the light tier.
 
+## Gates judge their own matrix leg
+
+A matrix job's `needs.<job>.result` is the aggregate of every leg, so a gate
+that reads it fails for a leg it does not name. The gates that share a matrix
+(`Linux Intel LLVM`, `macOS Clang+Metal` and `Windows MSVC+CUDA (full)` in
+`build.yml`; `FFmpeg Ubuntu gcc` and `FFmpeg macOS clang` in
+`ffmpeg-integration.yml`) therefore run
+[`scripts/ci/gate_leg_result.py`](../../scripts/ci/gate_leg_result.py) with the
+name of their own `<check name> work` job. It reads the run's jobs
+(`gh api repos/<repo>/actions/runs/<id>/jobs --paginate`, which needs
+`actions: read`) and passes when the planner succeeded and either the leg was
+selected and concluded `success`, or it was not selected and is absent or
+`skipped`. A missing, unfinished or ambiguous own job fails. A new gate on a
+shared matrix does the same; `scripts/ci/tests/test_gate_leg_result.py` fails
+on two gates that read one matrix job's aggregate.
+
 ## CI impact routing (ADR-1140)
 
 Required checks do not decide whether they apply from a workflow-level `paths:`
@@ -579,7 +595,17 @@ matrix.werror }}")` in the build matrix, `werror: true` on the matrix row).
 With `true` it prints `-Dwerror=true`, which is `-Werror` on every C and C++
 compile, and the linker's own switch in `-Dc_link_args` / `-Dcpp_link_args`
 (`-Wl,--fatal-warnings` for GNU ld, lld and MinGW; `-Wl,-fatal_warnings` for
-Apple's ld64). Any other value prints nothing, except a typo, which exits 2.
+Apple's ld64). With `msvc` (a leg that builds with `cl.exe` and `link.exe`)
+it prints `-Dwerror=true` alone: Meson turns it into `/WX` on every `cl.exe`
+compile and `-WX` on every `link.exe` link (Meson 1.12 adds the linker's
+fatal-warnings switch itself whenever `werror` is set), and
+`core/src/meson.build` adds `--Werror all-warnings` to every nvcc fatbin. The
+MSVC legs run their steps under `cmd`, so a `shell: bash` step named
+`Warnings-as-errors arguments` (`id: werror`) calls the script and the
+configure step appends `${{ steps.werror.outputs.args }}`. `lib.exe`, which
+archives the static libraries of those legs, has no fatal-warnings switch in
+Meson; its warnings (none so far) show in the leg's log. Any other value prints
+nothing, except a typo, which exits 2.
 Rust has its own gate (`cargo clippy -- -D warnings`). Release and container
 image builds do not use the script: a compiler newer than the one a leg pins
 must not stop a release over a new diagnostic.
@@ -597,16 +623,17 @@ one rule, a reason, an expiry).
 | `libvmaf-build-matrix.yml` | Ubuntu clang, clang+DNN, ARM clang, macOS clang, macOS clang+DNN, macOS Metal | clang 22, Apple clang |
 | `libvmaf-build-matrix.yml` | Ubuntu SYCL, SYCL+CUDA | icx / icpx |
 | `libvmaf-build-matrix.yml` | Windows UCRT64 | MinGW gcc |
+| `libvmaf-build-matrix.yml` | Windows MSVC+CUDA, Windows ARM64 MSVC | MSVC `cl.exe` / `link.exe` (x64 and ARM64), nvcc |
+| `build.yml` | Windows MSVC+CUDA (full) | MSVC `cl.exe` / `link.exe`, nvcc |
 | `sanitizers.yml` | ASan+UBSan, TSan | clang 22, lld |
 | `go-ci.yml`, `rust-ci.yml` | the libvmaf build the Go and Rust jobs link | gcc |
 | `ffmpeg-integration.yml` | the libvmaf build of the Ubuntu gcc, macOS clang and SYCL legs | gcc, clang, icpx |
 
 ### Legs that are not gated yet
 
-| Leg | Warnings at master `70d6dd0a5` | What is left |
+| Leg | Warnings (master `70d6dd0a5` unless stated) | What is left |
 | --- | --- | --- |
-| Windows MSVC+CUDA (full), MSVC+CUDA, ARM64 MSVC | about 71,000 each | the MSVC lane (C4305, C4244, C4996) |
-| Windows MSVC+SYCL (icx-cl) | 139 | CRT `-Wdeprecated-declarations` (follows the MSVC lane's C4996 fixes), `-experimental:c11atomics` unused argument, `-Woverriding-option` of the icx-cl SYCL line |
+| Windows MSVC+SYCL (icx-cl) | 4,361 on the gate commit (2026-10-07, job 112842753545) | `-Woverriding-option` of the strict FP line (2,268: `/fp:precise /Qfma-`, and the SYCL `-fp-model=precise -ffp-contract=off` of the Windows icpx), `/experimental:c11atomics` unused by icx-cl (1,957), the C runtime's deprecated calls (131 at 52 sites: `getenv`, `fopen`, `tmpfile`, `strdup`), 3 unused functions, 2 ignored `-ffp-contract=off` |
 | Dev Container Build | 204 | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note |
 | Docker Image Build, Tidy Ratchet, Cppcheck, CodeQL, Coverage Gate and the other jobs that compile libvmaf for analysis | 1 to 12 | the same sites as the gated legs; they gate once the train has landed and a master run shows 0 |
 
@@ -624,6 +651,18 @@ only on the CI run of the pull request that gates them: Apple clang and ld64
 compiler half is proven by clang, no default-on lld warning was found to
 plant).
 
+The MSVC legs were proven on CI, on throwaway branches of the gate commit
+dispatched with `workflow_dispatch` (2026-10-07). `float planted = 0.1;` in
+`core/test/test_picture.c` failed `Windows MSVC+CUDA`, `Windows ARM64 MSVC`
+and `Windows MSVC+CUDA (full)` with C4305 as error C2220 (runs 37635562015 and
+37635566701); `#pragma comment(linker, "/VMAFXPLANTEDDIRECTIVE")` failed the
+`test_picture.exe` link of `Windows MSVC+CUDA` and `Windows ARM64 MSVC` with
+LNK4229 as error LNK1218 (run 37635571313). The gate commit itself passed
+all three legs with `werror : true` in the Meson summary, `-WX` on the link
+lines and no warning in the logs (run 37635551653: the `Windows MSVC+CUDA`
+build, and the `Windows ARM64 MSVC` build with its 355 fast tests; run
+37635557102: the `Windows MSVC+CUDA (full)` build and its CPU tests).
+
 The macOS Metal leg links every target with the Objective-C++ compiler, and
 Meson 1.12 then names `-lc++` twice (224 ld64 warnings per run). The clang++
 driver adds the library itself, so duplicates are harmless;
@@ -640,11 +679,13 @@ only when the compile fails.
    once per translation unit that includes it).
 2. Fix every site; run the Netflix golden gate and the fast suite.
 3. Put `werror: true` on its matrix row (or add `$(scripts/ci/werror-args.sh
-   true)` to its `meson setup`), move its row from the second table to the
-   first, and run `python3 -m unittest scripts/ci/tests/test_werror_args.py`.
-4. Prove the gate once: plant `int planted(void) { int unused; return 0; }` in
-   a throwaway branch and see the leg fail; record the run in the pull
-   request.
+   true)` to its `meson setup`; `werror: msvc` and the `id: werror` bash step
+   for an MSVC leg), move its row from the second table to the first, and run
+   `python3 -m unittest scripts/ci/tests/test_werror_args.py`. The test fails
+   a build-matrix row or an MSVC leg that is neither gated nor listed above.
+4. Prove the gate once: plant `int planted(void) { int unused; return 0; }`
+   (for MSVC, `float planted = 0.1;`, C4305) in a throwaway branch and see the
+   leg fail; record the run in the pull request.
 
 ## Flaky legs (2026-09-04 audit)
 

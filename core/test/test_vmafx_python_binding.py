@@ -75,6 +75,22 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(score.index, 7)
         self.assertIsNone(score.extractor)
 
+    def test_core_context_calls(self) -> None:
+        """RC4 WP2: imported scores, pooling, context options, built-in models."""
+        with self.library.context() as context:
+            for index, value in enumerate((1.0, 3.0, 2.0)):
+                context.import_score("imported", index, value)
+            pooled = context.feature_score_pooled("imported", vmafx.Pool.MAX, 0, 2)
+            context.set_option("perceptual_weight", "1")
+            with self.assertRaises(vmafx.VmafxError) as caught:
+                context.set_option("no_such_option", "1")
+        self.assertEqual(pooled.value, 3.0)
+        self.assertEqual((pooled.first, pooled.last, pooled.pool), (0, 2, vmafx.Pool.MAX))
+        self.assertEqual(caught.exception.status, vmafx.Status.E_NOTFOUND)
+        self.assertEqual(caught.exception.subject, "no_such_option")
+        self.assertEqual(self.library.model_default_version(), "vmaf_v1.0.16_3d0h")
+        self.assertTrue(self.library.model_builtin_next(None))
+
     def test_layout_check_refuses_drift(self) -> None:
         size, offsets = vmafx.LAYOUT[vmafx.VmafxScore]
         vmafx.LAYOUT[vmafx.VmafxScore] = (size + 8, offsets)
@@ -85,5 +101,27 @@ class BindingTest(unittest.TestCase):
             vmafx.LAYOUT[vmafx.VmafxScore] = (size, offsets)
 
 
+def sanitizer_skip_reason() -> str | None:
+    """Why the binding cannot be loaded here, or None.
+
+    A library built with -Db_sanitize needs its sanitizer runtime in the
+    process; ctypes loads it into an uninstrumented interpreter, which fails
+    with an undefined `__tsan_*` / `__asan_*` symbol. Meson passes the option
+    in $VMAFX_SANITIZE.
+    """
+    sanitize = os.environ.get("VMAFX_SANITIZE", "none")
+    if sanitize in ("", "none"):
+        return None
+    return (
+        f"SKIP: the library is built with -Db_sanitize={sanitize}; ctypes cannot load a "
+        "sanitizer-instrumented library into the uninstrumented interpreter. The test runs "
+        "in every build without a sanitizer."
+    )
+
+
 if __name__ == "__main__":
+    REASON = sanitizer_skip_reason()
+    if REASON is not None:
+        print(REASON)
+        raise SystemExit(77)
     unittest.main()

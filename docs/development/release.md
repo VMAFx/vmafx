@@ -73,6 +73,10 @@ map has been revised twice:
   replaces the post-1.0 milestones with the themed releases 1.1 to 1.5
   (below). It is the last change of the map until 2.0, apart from bugs and
   findings.
+- [ADR-2342](../adr/2342-rc-map-amendment-2026-10.md) records the scope
+  decisions of 2026-10-06 and 2026-10-07 without new numbers: more RC4 work
+  packages, more RC5 tool-consolidation work and the post-1.0 placement of the
+  issues filed since.
 
 The user-facing version of this map is [the roadmap](../roadmap.md).
 
@@ -83,12 +87,12 @@ The user-facing version of this map is [the roadmap](../roadmap.md).
 | `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
 | `v1.0.0-rc.2` (RC2) | The dependency and fix train since rc.1 meets the RC1 bar: no confirmed release blocker or untriaged `docs/state.md` row, required checks pass on the exact head, and the tester report path still works | Final performance or production-trained model quality |
 | `v1.0.0-rc.3` (RC3) | Twin exactness: every GPU and SIMD twin returns the CPU extractor's scores bit for bit or carries a measured tolerance recorded in an ADR, 8K cells included; no SYCL kernel uses scratch memory; no extractor or twin overflows at 8K or 16K with 16-bit samples (ADR-1880). Rows that only a device the project does not own can close (unreached CUDA and HIP architectures, Xe-LP, the Windows GPU builds) are carried past rc.3 with a stated reason ([ADR-1707](../adr/1707-rc3-exit-without-outside-hardware.md)) | Performance, production-trained model quality, or exactness on a device the release notes list as not yet verified |
-| `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged; a device-resident frame is scored through the import API with fences and no host copy of pixel data ([ADR-1829](../adr/1829-rc4-zero-copy-import.md)); the new VMAFx API and its generated surfaces, the VMAFx-named FFmpeg filters and provenance on every score pass with the golden-data gate run through the compatibility library ([ADR-1868](../adr/1868-candidate-map-2026-10-05.md)); the versioned scoring API contract and server mode with observability are generated from the same definition; the native `vmafx` GStreamer element and the conformance run of upstream's gst-plugins-bad `vmaf` element on the compatibility `libvmaf.so.3` pass; the API is ready for OBS Studio (texture import including OpenGL interop, asynchronous window scores, bounded queues); real-time FFmpeg GPU scoring with `n_stats` works ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)) | Performance, or production-trained model quality |
-| `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins, host code and tools, with `libgpudispatch` extracted (it folds in the per-backend import code RC4 wrote); the new metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+, HDR-SSIM, HDR-MS-SSIM, XPSNR) and the Metal SpEED twins are written once on it, each twin exact or within a measured libm bound; device-targeted scoring (device profiles mapped onto `nvd` / `rdh`, one decode scored for many targets, ADR-1880); containers, Helm chart and a kind plus kuttl test setup, the operator, the controller / node split and the GPU pool arbiter in `libgpudispatch` ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)) | Performance, or production-trained model quality |
+| `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged; a device-resident frame is scored through the import API with fences and no host copy of pixel data ([ADR-1829](../adr/1829-rc4-zero-copy-import.md)); the new VMAFx API and its generated surfaces, the VMAFx-named FFmpeg filters and provenance on every score pass with the golden-data gate run through the compatibility library ([ADR-1868](../adr/1868-candidate-map-2026-10-05.md)); the versioned scoring API contract and server mode with observability are generated from the same definition; the native `vmafx` GStreamer element and the conformance run of upstream's gst-plugins-bad `vmaf` element on the compatibility `libvmaf.so.3` pass; the API is ready for OBS Studio (texture import including OpenGL interop, asynchronous window scores, bounded queues); real-time FFmpeg GPU scoring with `n_stats` works ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the language bindings are generated from the definition; the FFmpeg patch series is redesigned from `0001` after an audit of everything VMAFx uses in FFmpeg, and builds without warnings on every measured compiler; host input of every semi-planar and packed layout, RGB with a stated matrix and every bit depth from 8 to 16 is bit-exact with the planar path; `motion2` and `motion3` are incremental so live windows complete before the flush; Vulkan frames import on CUDA, SYCL and HIP; `docs/principles.md` is per language with each missing gate proven by a planted defect; the observability package and the cloud-native platform (state out of the processes, scaling on queue depth, CRDs, proto, OpenAPI and the Helm schema generated from the definition) pass their end-to-end tests ([ADR-2342](../adr/2342-rc-map-amendment-2026-10.md)) | Performance, or production-trained model quality |
+| `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins, host code and tools, with `libgpudispatch` extracted (it folds in the per-backend import code RC4 wrote); the new metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+, HDR-SSIM, HDR-MS-SSIM, XPSNR) and the Metal SpEED twins are written once on it, each twin exact or within a measured libm bound; device-targeted scoring (device profiles mapped onto `nvd` / `rdh`, one decode scored for many targets, ADR-1880); containers, Helm chart and a kind plus kuttl test setup, the operator, the controller / node split and the GPU pool arbiter in `libgpudispatch` ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the Go tools replace the Python MCP server and `vmaf-tune`; live alignment of two feeds with timecode, interlaced video, region masks, container input through FFmpeg libraries, bits per pixel and BD-rate, HandBrake support, the minimal run-result timeline and one reusable build-and-provenance workflow for every image pass their tests, and the Vulkan compute experiment has a written verdict ([ADR-2342](../adr/2342-rc-map-amendment-2026-10.md)) | Performance, or production-trained model quality |
 | `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel, the RC5 twins included, passes the static audit for every target; the table lists the legacy build variants (CUDA 12.x for sm_50 to sm_72, the Intel legacy compute runtime for Gen9 to Gen11, every AMD target the pinned ROCm compiler emits), each bit-exact, and declares each backend's and device's format envelope (up to 16K with measured memory limits, 8 to 16 bits, chroma layouts, odd and portrait sizes), every row test-backed (ADR-1880) | Measured performance on any device |
-| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees, and every dispatch level is bit-exact against scalar under emulation (details below the table); every extractor has a bit-exact kernel at every useful ISA level of x86-64, AArch64, RISC-V RVV 1.0, POWER VSX and LoongArch LSX/LASX, with qemu-user CI and the golden gate where no hardware exists (ADR-2001); the CPU format envelope is declared and test-backed in the same table (ADR-1880) | Measured performance on any processor |
+| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees, and every dispatch level is bit-exact against scalar under emulation (details below the table); every extractor has a bit-exact kernel at every useful ISA level of x86-64, AArch64, RISC-V RVV 1.0, POWER VSX and LoongArch LSX/LASX, with qemu-user CI and the golden gate where no hardware exists (ADR-2001); the CPU format envelope is declared and test-backed in the same table (ADR-1880); every extractor with an original implementation is proven against it in a reference conformance column, the default is reference-exact and Netflix's behaviour is a named compatibility mode that the golden gate runs in ([ADR-2343](../adr/2343-reference-exact-default-compat-mode.md)) | Measured performance on any processor |
 | `v1.0.0-rc.8` (RC8) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware, throughput per resolution up to 16K included and distributed throughput across nodes ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the training tooling is ready (data hygiene, evaluation tooling, HDR conversion checks) and the mini retrain passes every stage | Completion of the real retraining programme |
-| `v1.0.0-rc.9` (RC9) | The one-shot real retrain, started only when every precondition of #1246 holds, and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+| `v1.0.0-rc.9` (RC9) | The one-shot real retrain, started only when every precondition of #1246 holds, trained on reference-exact features (the shipped v1 models read compatibility-mode features until then), and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
 
 ### After 1.0.0
 
@@ -99,9 +103,9 @@ change, then the release ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-t
 
 | Release | Theme |
 | --- | --- |
-| 1.1 | Integrations and live quality: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159 |
-| 1.2 | Encoder feedback, embedding and platforms: the rest of #2067, #2164, #2156 |
-| 1.3 | New metrics with exact twins: #2165, #2167, #2166, picks from #2168 |
+| 1.1 | Integrations and live quality: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes |
+| 1.2 | Encoder feedback, embedding and platforms: the rest of #2067, #2164, #2156, encoder-side predictors (#2416), the VLC plugin (#2358), mobile and WebAssembly targets |
+| 1.3 | New metrics with exact twins: #2165, #2167, #2166, picks from #2168, our own no-reference models (#2415), foveated scoring (#2419) |
 | 1.4 | Metric A/B comparison, the best current mix and more training data: #2240, #2241 |
 | 1.5 | The next model generation: #2242 |
 | 2.0 | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the C++23 core, the rest of #1254 |
@@ -200,8 +204,10 @@ graphically):
    whether a release is warranted. If so, it opens or updates one release PR
    that bumps the root manifest and every coordinated version marker.
 2. **Finalize the generated release PR.** After all other release changes are
-   merged, regenerate Unreleased and run the fragment rollover with the PR's
-   exact version and UTC date. Commit that result as the release PR's final
+   merged, run `make docs-render` (the rendered changelog, ADR index and
+   rebase notes are written when pull requests land, so this is normally
+   a no-op) and the fragment rollover with the PR's exact version and UTC
+   date. Commit that result as the release PR's final
    change. Any later fragment invalidates the cut and must be rolled again.
 3. **Merging the release PR** creates a draft GitHub release. It does not yet
    create the public release tag.
@@ -573,24 +579,52 @@ a recovery run left `latest` pointing at the broken original digest.)
 
 `docs/adr/README.md` is the rendered index of every ADR in the fork. Its
 "Index" table is generated from per-ADR fragments under
-`docs/adr/_index_fragments/<slug>.md` plus an order manifest at
-`docs/adr/_index_fragments/_order.txt`. The renderer is
+`docs/adr/_index_fragments/<slug>.md`. The renderer is
 [`scripts/docs/concat-adr-index.sh`](../../scripts/docs/concat-adr-index.sh)
 (see [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) for why the
-pattern exists).
+pattern exists and [ADR-2197](../adr/2197-render-generated-docs-at-landing.md)
+for who writes the render).
+
+### Rendered at landing, not in the pull request
+
+A pull request does **not** carry `CHANGELOG.md`, `docs/adr/README.md`,
+`docs/adr/by-tag/`, `docs/adr/titles.md`, `docs/research/titles.md` or the
+fragment block of `docs/rebase-notes.md`
+([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
+`scripts/ci/deliverables-check.sh` refuses a pull request that edits one of
+them. The outputs are written by one command, `make docs-render`:
+
+- **per landing batch:** the merge train runs it at the batch tip and commits
+  the result as `chore(docs): render generated changelog and ADR index`, in the
+  same push as the batch, so every master tip is rendered;
+- **at the release cut:** see
+  [Cutting a release from fragments](#cutting-a-release-from-fragments);
+- **by hand:** to see what the render will write, run it in a scratch
+  worktree; it is safe to run at any time and writes nothing else.
+
+`make docs-render-check` fails when a render is stale. The master push runs it
+(the `Docs` job), so a push that skipped the render turns master red instead of
+passing silently. A pull request does not run it: `make docs-fragments-check`
+checks the fragments themselves (changelog sections, ADR index rows, rebase-note
+headings) and the outputs that stay in the pull request (exact-twin table,
+AGENTS indexes, charts, vendored assets).
+
+The render needs full history: the order of the index rows and of the rebase
+notes is the order the fragments landed on the branch, read by
+`scripts/docs/fragment-order.py`. A shallow clone fails loudly.
 
 ### Adding a new ADR
 
-**When adding a new ADR (the common case)** — write the fragment as part of
-the same PR and append its slug to `_order.txt`. The PR template's
-ADR-index checklist row covers this. Manual append is preferred over
-`--write` because it produces a one-line diff that reviewers can verify by
-eye and avoids touching unrelated rows.
+**When adding a new ADR (the common case)** — write the fragment
+`docs/adr/_index_fragments/<slug>.md` as part of the same PR, and nothing
+else: do not touch `README.md` or `_order.txt`. `_order.txt` is the frozen list
+of the rows that existed when the index moved to fragments; every other
+fragment follows it in landing order.
 
 ### Fixing drift
 
 **When fixing drift between fragments and `README.md` (this sweep's case)**
-— run `scripts/docs/concat-adr-index.sh --check` to capture the full diff,
+— run `make docs-render-check` to capture the full diff,
 then audit each row against the four drift classes:
 
 - **Silent loss** — fragment exists, README is missing the row.
@@ -614,8 +648,10 @@ the rebuilt branch and expect a clean exit.
 
 **Renumbered slugs.** When the dedup sweep referenced in the script's
 header comment renumbers an ADR (e.g. `0270-saliency-…` → `0286-saliency-…`),
-the fragment must be **renamed** to match the new slug — not duplicated. The
-`_order.txt` entry follows the same rename. The fragment body's
+the fragment must be **renamed** to match the new slug — not duplicated. A
+rename of a fragment listed in the frozen `_order.txt` changes that entry too;
+a rename of any other fragment moves its landing position, so rename in the
+commit that adds it. The fragment body's
 `[ADR-NNNN](NNNN-slug.md)` link must match the renumbered slug; mismatches
 silently render rows that point at non-existent ADR files. The
 fragment-vs-ADR-file slug audit is one line:
@@ -819,7 +855,8 @@ fragments so existing release-train history is preserved.
 
 - **Always add a fragment, never edit `CHANGELOG.md` directly.** Drop a single
   Markdown bullet under `changelog.d/<section>/<topic>.md`. The fragment is
-  the source of truth; the rendered `CHANGELOG.md` is a build artefact.
+  the source of truth; the rendered `CHANGELOG.md` is a build artefact that a
+  pull request does not carry ([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
 - **Filename convention:** lowercase kebab-case, optionally prefixed with the
   task ID (`T7-39-foo.md`) or ADR number (`adr-0312-deferral-retired.md`)
   for implicit lexical ordering within the section.
@@ -828,14 +865,15 @@ fragments so existing release-train history is preserved.
 
 ### When to regenerate (`--write`)
 
-Run `scripts/release/concat-changelog-fragments.sh --write` whenever:
+`make docs-render` writes the changelog with the other rendered outputs: the
+merge train runs it once per landing batch and the release cut runs it. You
+need it by hand only to preview a render, or to reconcile a skew:
 
-- The `--check` lane fails on CI (drift between fragments and the rendered
-  `Unreleased` block).
-- A merge has just landed several fragments that are not yet spliced into the
-  rendered block.
-- A drift-sweep PR is reconciling pre-existing skew (see
-  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)).
+- `make docs-render-check` (the master push) fails on a stale render.
+- Pre-existing skew (see
+  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)) is
+  reconciled by rendering on master, not by a feature branch: a pull request
+  that carries a render is refused.
 
 Never edit the rendered "Unreleased" block by hand to add new entries — those
 inline edits will be silently overwritten by the next regen.
@@ -865,7 +903,7 @@ the final manifest and version-marker updates.
 2. Render the final notes:
 
     ```bash
-    scripts/release/concat-changelog-fragments.sh --write
+    make docs-render
     git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
     ```
 

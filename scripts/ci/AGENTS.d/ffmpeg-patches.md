@@ -5,7 +5,7 @@ paths:
   - scripts/ci/test_ffmpeg_patch_*.py
   - scripts/ci/test_git_fixture_isolation.py
   - ffmpeg-patches/series.txt
-invariant: Replay `series.txt` cumulatively against the `build-config.env` tag; fixtures discard inherited `GIT_*`.
+invariant: Replay `series.txt` cumulatively against `build-config.env` tag; fixtures discard inherited `GIT_*`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # FFmpeg patch lifecycle (ADR-1240)
@@ -18,13 +18,13 @@ inherited `GIT_*` repository variables and caller Git configuration. Discovery
 scheduled, accepts only stable tags; ordinary checks use reviewed tag.
 Required aggregator name = exactly `FFmpeg Patch Stack`.
 
-`checkout-annotated-tag.sh` is the warning-clean release checkout shared by
+`checkout-annotated-tag.sh` is warning-clean release checkout shared by
 Docker, dev-container, hosted-integration, and smoke consumers. It must resolve
-the peeled commit for annotated tags, fetch that exact commit without inherited
-`GIT_*` or caller configuration, verify `HEAD`, and recreate the local tag for
-version discovery. Never replace it with `git clone --depth=1 --branch`: the
-container Git version warns that an annotated tag object is not a commit.
-`test_ffmpeg_patch_smoke_safety.py` uses an annotated fixture tag and rejects
+peeled commit for annotated tags, fetch that exact commit without inherited
+`GIT_*` or caller configuration, verify `HEAD`, and recreate local tag for
+version discovery. Never replace it with `git clone --depth=1 --branch`:
+container Git version warns that annotated tag object is not commit.
+`test_ffmpeg_patch_smoke_safety.py` uses annotated fixture tag and rejects
 warning/error output.
 
 Fixture setup and assertions obey same isolation rule as production

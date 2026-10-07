@@ -77,6 +77,40 @@ sed -i 's/^DEFAULT_MODEL = ".*"$/DEFAULT_MODEL = "vmaf_4k_v0.6.1"/' \
 git -C "$d" commit -aqm drift >/dev/null 2>&1
 expect "drifted Python mirror is caught" 1 "$d"
 
+# 3b. the vmaf-mcp mirror is checked like the others
+d=$(clone mcpdrift)
+sed -i 's/^DEFAULT_MODEL = ".*"$/DEFAULT_MODEL = "vmaf_v0.6.1"/' \
+  "$d/mcp-server/vmaf-mcp/src/vmaf_mcp/defaultmodel.py"
+git -C "$d" commit -aqm drift >/dev/null 2>&1
+expect "drifted vmaf-mcp mirror is caught" 1 "$d"
+
+# 3c. the model argument spelled "version=<name>" is a literal default too.
+# These four forms shipped in the MCP servers with the pre-v1 model after the
+# library default had moved, and the gate read none of them.
+d=$(clone strarg)
+printf '\nfunc reintroducedArgDefault(args map[string]any) string {\n\treturn strArg(args, "model", "version=vmaf_v0.6.1")\n}\n' \
+  >>"$d/pkg/fast/pipeline.go"
+git -C "$d" commit -aqm strarg >/dev/null 2>&1
+expect "Go strArg --model fallback is caught" 1 "$d"
+
+d=$(clone schemadefault)
+printf '\nvar reintroducedSchema = map[string]any{"model": map[string]any{"type": "string", "default": "version=vmaf_v0.6.1"}}\n' \
+  >>"$d/pkg/fast/pipeline.go"
+git -C "$d" commit -aqm schemadefault >/dev/null 2>&1
+expect "schema default naming another model is caught" 1 "$d"
+
+d=$(clone pyannotation)
+printf '\n\nclass _Reintroduced:\n    model: str = "version=vmaf_v0.6.1"\n' \
+  >>"$d/tools/vmaf-tune/src/vmaftune/score.py"
+git -C "$d" commit -aqm pyannotation >/dev/null 2>&1
+expect "python annotated --model default is caught" 1 "$d"
+
+d=$(clone pyget)
+printf '\n\ndef _reintroduced(body):\n    return body.get("model", "version=vmaf_v0.6.1")\n' \
+  >>"$d/tools/vmaf-tune/src/vmaftune/score.py"
+git -C "$d" commit -aqm pyget >/dev/null 2>&1
+expect "python .get --model fallback is caught" 1 "$d"
+
 # 4. a newly reintroduced hardcoded default must fail
 d=$(clone hardcode)
 printf '\nfunc reintroducedDefault() string {\n\tif true {\n\t\treturn "vmaf_v0.6.1"\n\t}\n\treturn ""\n}\n' \
@@ -209,6 +243,11 @@ d=$(clone protodoc)
 printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx.proto"
 git -C "$d" commit -aqm protodoc >/dev/null 2>&1
 expect "proto documenting another default is caught" 1 "$d"
+
+d=$(clone controllerprotodoc)
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/cmd/vmafx-controller/proto/controller.proto"
+git -C "$d" commit -aqm controllerprotodoc >/dev/null 2>&1
+expect "controller proto documenting another default is caught" 1 "$d"
 
 d=$(clone openapidoc)
 # shellcheck disable=SC2016 # the backticks are planted Markdown, not an expansion

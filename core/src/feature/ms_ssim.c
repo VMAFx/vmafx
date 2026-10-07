@@ -26,6 +26,7 @@
 #include <string.h>
 #include <math.h>
 
+#include "log.h"
 #include "mem.h"
 #include "iqa/math_utils.h"
 #include "iqa/decimate.h"
@@ -124,7 +125,7 @@ static int ms_ssim_check_scale_ok(int w, int h, int scales, int gauss)
     for (int idx = 0; idx < scales; ++idx) {
         if (gauss ? cur_w < GAUSSIAN_LEN || cur_h < GAUSSIAN_LEN :
                     cur_w < LPF_LEN || cur_h < LPF_LEN) {
-            (void)printf("error: scale below 1x1!\n");
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: scale below 1x1!\n");
             return 1;
         }
         cur_w /= 2;
@@ -160,23 +161,20 @@ static int ms_ssim_alloc_pyramids(float ***ref_imgs_out, float ***cmp_imgs_out, 
     if (!ref_imgs || !cmp_imgs) {
         free((void *)ref_imgs);
         free((void *)cmp_imgs);
-        (void)printf("error: unable to malloc ref_imgs or cmp_imgs.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: unable to malloc ref_imgs or cmp_imgs.\n");
         return 1;
     }
     if (ms_ssim_alloc_buffers(ref_imgs, w, h, scales)) {
         free((void *)ref_imgs);
         free((void *)cmp_imgs);
-        (void)printf("error: unable to ms_ssim_alloc_buffers on ref_imgs.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: unable to ms_ssim_alloc_buffers on ref_imgs.\n");
         return 1;
     }
     if (ms_ssim_alloc_buffers(cmp_imgs, w, h, scales)) {
         ms_ssim_free_buffers(ref_imgs, scales);
         free((void *)ref_imgs);
         free((void *)cmp_imgs);
-        (void)printf("error: unable to ms_ssim_alloc_buffers on cmp_imgs.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: unable to ms_ssim_alloc_buffers on cmp_imgs.\n");
         return 1;
     }
     *ref_imgs_out = ref_imgs;
@@ -215,8 +213,7 @@ static int ms_ssim_build_pyramids(float **ref_imgs, float **cmp_imgs, int w, int
     for (int idx = 1; idx < scales; ++idx) {
         if (ms_ssim_decimate(ref_imgs[idx - 1], cur_w, cur_h, ref_imgs[idx], NULL, NULL) ||
             ms_ssim_decimate(cmp_imgs[idx - 1], cur_w, cur_h, cmp_imgs[idx], &cur_w, &cur_h)) {
-            (void)printf("error: decimation fails on ref_imgs or cmp_imgs.\n");
-            (void)fflush(stdout);
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: decimation fails on ref_imgs or cmp_imgs.\n");
             return 1;
         }
     }
@@ -287,8 +284,7 @@ static int ms_ssim_score_scales(float **ref_imgs, float **cmp_imgs, int w, int h
         s_scores[idx] = s;
 
         if (msssim == INFINITY) {
-            (void)printf("error: ms_ssim is INFINITY.\n");
-            (void)fflush(stdout);
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: ms_ssim is INFINITY.\n");
             return 1;
         }
         cur_w = cur_w / 2 + (cur_w & 1);
@@ -313,9 +309,9 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     /* check stride */
     int stride = ref_stride; /* stride in bytes */
     if (stride != cmp_stride) {
-        (void)printf("error: for ms_ssim, ref_stride (%d) != dis_stride (%d) bytes.\n", ref_stride,
-                     cmp_stride);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: for ms_ssim, ref_stride (%d) != dis_stride (%d) bytes.\n", ref_stride,
+                 cmp_stride);
         return 1;
     }
     stride /= (int)sizeof(float); /* stride_ in pixels */

@@ -47,6 +47,7 @@
 #include "feature/feature_extractor.h"
 #include "feature/niqe_math.h"
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -294,7 +295,7 @@ static char *test_niqe_sym_pinv(void)
  * success; the caller unrefs `pic`. */
 static int load_yuv420p8_frame0(VmafPicture *pic, const char *path, unsigned w, unsigned h)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return -1;
 

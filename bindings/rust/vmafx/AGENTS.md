@@ -13,17 +13,17 @@
 - **Thread-trait split follows retained borrows**: `Model` and `Picture` are
   `Send` but deliberately `!Sync`. `Context<'a>` and `ContextCloseError<'a>`
   carry `PhantomData<&'a Model>` and therefore stay `!Send`/`!Sync`; never
-  bypass that dependency with an unsafe auto-trait impl. libvmaf does not
+  bypass that dependency with unsafe auto-trait impl. libvmaf does not
   document concurrent model access.
 - **Context Drop leaks, never aborts (ADR-1755)**: active contexts retry close
   once; close-error tokens consume that sole retry only if it has not already
-  happened. After a failed explicit retry, token drop makes no third close call.
-  Any persistent nonzero status leaks the native context and prints one line to
-  stderr (`report_leaked_context`). libvmaf owns a reference to every model it
-  mounted, so the leak holds no pointer into Rust memory. Do not bring
-  `process::abort()` back (HISS-07), and do not make the lifetime `'a` load-bearing
+  happened. After failed explicit retry, token drop makes no third close call.
+  Any persistent nonzero status leaks native context and prints one line to
+  stderr (`report_leaked_context`). libvmaf owns reference to every model it
+  mounted, so leak holds no pointer into Rust memory. Do not bring
+  `process::abort()` back (HISS-07), and do not make lifetime `'a` load-bearing
   again: it stays only for source compatibility.
-- **errno mapping is a stable subset**: `Error::from_libvmaf_rc` maps 5 POSIX
+- **errno mapping is stable subset**: `Error::from_libvmaf_rc` maps 5 POSIX
   errno values (`ENOMEM=12`, `EINVAL=22`, `ENOSYS=38`/`ENOTSUP=95`,
   `EACCES=13`, `ENOENT=2`); falls through to `Error::Libvmaf { code }`. new
   mapped variants fine; changing existing numeric values = breaking change.

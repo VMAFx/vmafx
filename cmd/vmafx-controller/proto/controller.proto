@@ -35,7 +35,7 @@ message ScoringParams {
   string reference = 1;
   // Distorted video, under the same rule as reference.
   string distorted = 2;
-  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h.
   string model = 3;
   // Optional backend hint: "cuda", "sycl", "hip", "cpu".
   // The scheduler uses this to match a node with the required capability.

@@ -189,6 +189,7 @@ func controllerProviders() fx.Option {
 	return fx.Provide(
 		provideScorer,
 		scoringservice.ProvideMetrics,
+		newControllerMetrics,
 		provideJobQueue,
 		provideNodeRegistry,
 		provideScheduler,
@@ -334,17 +335,18 @@ func provideAuthMW(cfg *config.Config, tenantRegistry *auth.TenantRegistry, log 
 // Invokes
 // ---------------------------------------------------------------------------
 
-// wireControllerSources publishes the controller's queue + node-registry gauges
-// on the Prometheus registry. It depends on the queue and registry so fx
-// constructs both (appending their lifecycle hooks) before the listeners bind.
-// (The auth Middleware no longer needs threading here: golusoris#269's
+// wireControllerSources publishes the controller's queue + node-registry
+// families on the Prometheus registry; their values are read when Prometheus
+// scrapes. It depends on the queue and registry so fx constructs both
+// (appending their lifecycle hooks) before the listeners bind. (The auth
+// Middleware no longer needs threading here: golusoris#269's
 // ProvideServerOptionFn pulls it directly into the gRPC interceptor options.)
 func wireControllerSources(
-	metrics *observability.Metrics,
+	registry *prometheus.Registry,
 	q queue.Queue,
 	r *nodes.Registry,
-) {
-	metrics.SetControllerSources(q, r)
+) error {
+	return registerQueueCollector(registry, q, r)
 }
 
 // mountControllerHTTP registers the controller HTTP surface on the golusoris chi

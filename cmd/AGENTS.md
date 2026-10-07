@@ -7,7 +7,7 @@
 |--------------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `vmafx-server`     | long-running fx service (gRPC + HTTP)        | `bootstrap.Base` + `bootstrap.HTTP` + `bootstrap.HTTPTracing` + `grpc.Module` |
 | `vmafx-controller` | long-running fx service (gRPC + HTTP)        | same as server, plus the JWT auth interceptors                                |
-| `vmafx-node`       | long-running fx service (gRPC only)          | `bootstrap.Base` + `grpc.Module`                                              |
+| `vmafx-node`       | long-running fx service (gRPC + HTTP)        | `bootstrap.Base` + `grpc.Module` + `bootstrap.HTTP` + `bootstrap.HTTPTracing` |
 | `vmafx-operator`   | long-running fx service (controller-runtime) | `bootstrap.Base` + `k8s/operator.Module`                                      |
 | `vmafx-mcp`        | fx app around an MCP transport (stdio/HTTP)  | `bootstrap.Base` + hand-rolled transport lifecycle                            |
 | `vmafx-tune`       | cobra CLI; one fx graph per subcommand       | `bootstrap.Base` inside `cmd/vmafx-tune/cmd/golusoris.go::withGolusoris`      |
@@ -28,7 +28,7 @@
 
 2. **HTTP surfaces traced via `bootstrap`, not per binary.** Root wiring
    `bootstrap.HTTP` puts `bootstrap.HTTPTracing` next to it (server,
-   controller). Hand-rolled `*http.Server` wraps handler with
+   controller, node). Hand-rolled `*http.Server` wraps handler with
    `bootstrap.TraceHTTPHandler` outermost (mcp). Span name (`<METHOD> <path>`,
    Swagger subtree collapsed) and probe/scrape filter (`/healthz`, `/readyz`,
    `/livez`, `/startupz`, `/metrics`) defined once there.

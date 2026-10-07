@@ -10,6 +10,9 @@ paths:
   - scripts/ci/clang-tidy-hip.sh
   - scripts/dev/tidy-lane.sh
   - .clang-tidy
+  - scripts/ci/praetor_tidy_coverage.py
+  - scripts/ci/tests/test_praetor_tidy_coverage.py
+  - .config/lint-exceptions.d/HISS-11.toml
 invariant: Baselines only via `make tidy-lane-write` (dev container); counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -146,3 +149,21 @@ CPU baseline = `make tidy-lane-write LANE=cpu` (dev container; equals CI's
 `tidy-ratchet-cpu` artifact), never a host run. GPU lanes:
 `make tidy-lane-write LANE=<cuda|hip|sycl>`; not required contexts, nightly on
 workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).
+
+## Praetor `exceptions:` block ([ADR-2153](../../../docs/adr/2153-praetor-pin-04cc813.md), [ADR-2321](../../../docs/adr/2321-praetor-pin-afb739ed.md))
+
+- Praetor reads one `exceptions:` key in `.standards.yaml`. Block between
+  `BEGIN` / `END generated` markers = output of
+  `python3 scripts/ci/praetor_tidy_coverage.py --write`; hook
+  `check-praetor-tidy-coverage` fails stale block. Never edit block by hand.
+- Sources, one each (HISS-19): tidy coverage entries from baselines'
+  `measured_sources` + `.config/lint-exceptions.d/clang-tidy-coverage.toml`;
+  HISS-11 entries (declared SLSA gap) from
+  `.config/lint-exceptions.d/HISS-11.toml` (`PRAETOR_RULES`). New praetor
+  rule = add it to `PRAETOR_RULES` + case in
+  `scripts/ci/tests/test_praetor_tidy_coverage.py`.
+- Rendered expiry = earlier of entry's date and `PRAETOR_EXPIRY_CAP`
+  (praetor refuses more than 90 days out). Renew cap with entries.
+- HISS-11 entry path = workflow `praetorctl audit` failure line names. Entry
+  for other workflow, or with no gap left, fails audit as stale: remove it
+  when release workflows reach declared level.

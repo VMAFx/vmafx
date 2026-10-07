@@ -80,9 +80,12 @@ Every **fork-local** PR ships the six deliverables in
 5. **`changelog.d/<section>/<topic>.md`** fragment file
    ([ADR-0221](docs/adr/0221-changelog-adr-fragment-pattern.md)).
    Never edit `CHANGELOG.md` directly — it is rendered from the
-   fragment tree by `scripts/release/concat-changelog-fragments.sh`.
-6. **Rebase note** in [`docs/rebase-notes.md`](docs/rebase-notes.md),
-   OR `no rebase impact: REASON`.
+   fragment tree when pull requests land
+   ([ADR-2197](docs/adr/2197-render-generated-docs-at-landing.md)).
+6. **Rebase note** as one fragment file
+   `docs/rebase-notes.d/<slug>.md`
+   (see [`docs/rebase-notes.d/_README.md`](docs/rebase-notes.d/_README.md)),
+   OR `no rebase impact: REASON`. Never edit `docs/rebase-notes.md`.
 
 The PR template
 ([`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md))

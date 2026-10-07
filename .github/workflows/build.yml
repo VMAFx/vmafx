@@ -120,10 +120,13 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
+          # ADR-2170: the leg prints no warnings, so cl.exe, link.exe and
+          # nvcc make them errors (scripts/ci/werror-args.sh msvc).
           - os: windows-2025
             check_name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
+            werror: msvc
             meson_extra: >-
               --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
@@ -421,6 +424,17 @@ jobs:
             --prefix "$PWD/install" \
             ${{ matrix.meson_extra }}
 
+      # ADR-2170: the Windows steps run under cmd, so the one helper that
+      # turns warnings into errors runs here and hands its arguments over.
+      - name: Warnings-as-errors arguments (Windows)
+        if: matrix.windows
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
       - name: Configure libvmaf (Windows)
         if: matrix.windows
         shell: cmd
@@ -430,7 +444,7 @@ jobs:
         run: |
           meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       # ── Build ────────────────────────────────────────────────────────
       - name: Build libvmaf (Linux)
@@ -618,21 +632,24 @@ jobs:
     # required-aggregator
     name: Linux Intel LLVM
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected Linux Intel LLVM work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid Linux Intel LLVM gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "Linux Intel LLVM work"
 
   macos-clang-metal-gate:
     needs: [tier, impact, build-work]
@@ -640,21 +657,24 @@ jobs:
     # required-aggregator
     name: macOS Clang+Metal
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected macOS Clang+Metal work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid macOS Clang+Metal gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "macOS Clang+Metal work"
 
   windows-msvc-cuda-full-gate:
     needs: [tier, impact, build-work]
@@ -662,18 +682,21 @@ jobs:
     # required-aggregator
     name: Windows MSVC+CUDA (full)
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected Windows MSVC+CUDA work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid Windows MSVC+CUDA gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "Windows MSVC+CUDA (full) work"

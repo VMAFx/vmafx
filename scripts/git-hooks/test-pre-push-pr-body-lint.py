@@ -171,6 +171,31 @@ class PullRequestLookup(HookFixture):
         self.assertIn("cannot determine PR state", result.stderr)
 
 
+class MasterFastForward(HookFixture):
+    """The merge train fast-forwards master from a PR worktree: not a PR push (ADR-2197)."""
+
+    def test_push_to_master_from_a_pr_worktree_is_skipped(self) -> None:
+        # A lookup would fail and block the push: the skip must come first.
+        self.write_tool("gh", "exit 1\n")
+        self.write_tool("curl", "exit 22\n")
+        self.environment["PRE_COMMIT_REMOTE_BRANCH"] = "refs/heads/master"
+
+        result = self.run_hook()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a pull request push", result.stderr)
+
+    def test_push_to_the_pr_branch_is_still_checked(self) -> None:
+        self.write_tool("gh", "exit 1\n")
+        self.write_tool("curl", "exit 22\n")
+        self.environment["PRE_COMMIT_REMOTE_BRANCH"] = "refs/heads/fix/pr-lookup"
+
+        result = self.run_hook()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine PR state", result.stderr)
+
+
 class ReleasePullRequestExemption(HookFixture):
     """The hook skips validation only where CI's deliverables gate does."""
 

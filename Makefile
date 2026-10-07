@@ -203,19 +203,49 @@ lint-actions:
 	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
 	@python3 scripts/ci/check_composite_actions.py
 
-# Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
-# docs/adr/README.md are in sync with fragments, ADR tag pages match sources,
-# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), and every
-# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
-# documentation charts match their specs, data and renders, and every vendored
-# docs asset matches the hashes in its vendor.json (ADR-1508).
-docs-fragments-check:
+.PHONY: docs-render docs-render-check
+
+# Generated documentation that a pull request does not carry (ADR-2197). A pull
+# request adds fragments (changelog.d/, docs/adr/_index_fragments/,
+# docs/rebase-notes.d/) and the ADR files themselves; these outputs are
+# rendered from them when the pull requests land:
+#   CHANGELOG.md, docs/adr/README.md, docs/adr/by-tag/, docs/adr/titles.md,
+#   docs/research/titles.md and the fragment block of docs/rebase-notes.md.
+# `make docs-render` writes them. The merge train runs it once per landing batch
+# and commits the result as "chore(docs): render generated changelog and ADR
+# index"; the release cut runs it too (docs/development/release.md).
+# `make docs-render-check` fails when a render is stale: the master push runs it.
+docs-render:
+	@bash scripts/release/concat-changelog-fragments.sh --write
+	@bash scripts/docs/concat-adr-index.sh --write
+	@bash scripts/docs/generate-adr-by-tag.sh --write
+	@python3 scripts/docs/generate-record-titles.py --write
+	@bash scripts/docs/concat-rebase-notes.sh --write
+
+docs-render-check:
 	@echo "--- changelog.d/ vs CHANGELOG.md ---"
 	@bash scripts/release/concat-changelog-fragments.sh --check
 	@echo "--- docs/adr/_index_fragments/ vs docs/adr/README.md ---"
 	@bash scripts/docs/concat-adr-index.sh --check
 	@bash scripts/docs/generate-adr-by-tag.sh --check
 	@python3 scripts/docs/generate-record-titles.py --check
+	@echo "--- docs/rebase-notes.d/ vs docs/rebase-notes.md ---"
+	@bash scripts/docs/concat-rebase-notes.sh --check
+
+# Fragment-tree check (ADR-0221, ADR-2197). Verifies the fragments themselves
+# (changelog sections, ADR index rows, rebase-note headings) but not the
+# rendered outputs above: a pull request does not carry them. It also verifies
+# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), every
+# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
+# documentation charts match their specs, data and renders, and every vendored
+# docs asset matches the hashes in its vendor.json (ADR-1508).
+docs-fragments-check:
+	@echo "--- changelog.d/ fragments ---"
+	@bash scripts/release/concat-changelog-fragments.sh --lint
+	@echo "--- docs/adr/_index_fragments/ rows ---"
+	@python3 scripts/docs/check-adr-index.py
+	@echo "--- docs/rebase-notes.d/ fragments ---"
+	@bash scripts/docs/concat-rebase-notes.sh --lint
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
 	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
@@ -230,11 +260,7 @@ docs-fragments-check:
 	@python3 scripts/docs/check_vendored_assets.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
-docs-fragments-write:
-	@bash scripts/release/concat-changelog-fragments.sh --write
-	@bash scripts/docs/concat-adr-index.sh --write
-	@bash scripts/docs/generate-adr-by-tag.sh --write
-	@python3 scripts/docs/generate-record-titles.py --write
+docs-fragments-write: docs-render
 	@python3 scripts/docs/generate-exact-twins.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write

@@ -1,7 +1,7 @@
 ---
 paths:
   - scripts/ci/coverage-*.sh
-invariant: Floors only rise; lowering one needs an ADR superseding ADR-0922; delta-gate tolerance 0.5pp.
+invariant: Floors only rise; lowering one needs ADR superseding ADR-0922; delta-gate tolerance 0.5pp.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Coverage Gate ratchet (ADR-0922)
@@ -22,7 +22,7 @@ other. Rebase-sensitive invariants:
    pin values explicitly; do not tighten beyond 0.5pp without first
    confirming gcov hit-count variance has fallen (current floor of
    variance ~0.2pp, see ADR-0922 alternatives table).
-3. **Workflow coupling.** The `Compute base-branch coverage for delta
+3. **Workflow coupling.** `Compute base-branch coverage for delta
    gate` and `Enforce coverage-delta gate (ADR-0922)` steps in
    `tests-and-quality-gates.yml`'s `coverage` job require:
    - `actions/checkout` with `fetch-depth: 0` (delta gate runs
@@ -49,4 +49,4 @@ other. Rebase-sensitive invariants:
 
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
-| `coverage-check.sh` | `tests-and-quality-gates.yml` — `Enforce coverage thresholds` step on both required `coverage` and `coverage-gpu` jobs | The CLI shape (`coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>`) and the in-script `PER_FILE_MIN` map are the gate definition. Every entry in `PER_FILE_MIN` must cite the ADR that justifies the lower bar ([ADR-0114](../../../docs/adr/0114-coverage-gate-per-file-overrides.md)). Audit cadence + tighten/keep/remove rule codified in [ADR-0881](../../../docs/adr/0881-coverage-overrides-audit-2026-05-30.md). Gcovr's emit-path format (currently `core/src/...` relative to repo root) is the join-key with `PER_FILE_MIN`; if a future gcovr upgrade changes that format, the override silently stops applying and the global 85 % gate kicks in — the per-line "min XX%" output is the canary. |
+| `coverage-check.sh` | `tests-and-quality-gates.yml` — `Enforce coverage thresholds` step on both required `coverage` and `coverage-gpu` jobs | CLI shape (`coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>`) and in-script `PER_FILE_MIN` map are gate definition. Every entry in `PER_FILE_MIN` must cite ADR that justifies lower bar ([ADR-0114](../../../docs/adr/0114-coverage-gate-per-file-overrides.md)). Audit cadence + tighten/keep/remove rule codified in [ADR-0881](../../../docs/adr/0881-coverage-overrides-audit-2026-05-30.md). Gcovr's emit-path format (currently `core/src/...` relative to repo root) is join-key with `PER_FILE_MIN`; if future gcovr upgrade changes that format, override silently stops applying and global 85 % gate kicks in — per-line "min XX%" output is canary. |

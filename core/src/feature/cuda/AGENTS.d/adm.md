@@ -16,12 +16,12 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   include reintroduces 2-member `enum ADM_CSF_MODE` from
   `adm_options.h`, causes redeclaration error.
 - **`adm_cuda` = CPU bits** (ADR-1416, `EXACT_TWINS`). Host arithmetic =
-  CPU routines of `feature/integer_adm_kernels.h`, never a copy:
-  `adm_csf_factors()` (weights; old copy multiplied the exponent in
+  CPU routines of `feature/integer_adm_kernels.h`, never copy:
+  `adm_csf_factors()` (weights; old copy multiplied exponent in
   `float`, CPU in `double` -> 1-3 ulp, 2.1e-7 in scores),
   `adm_csf_den_ctx_init()` / `i4_adm_csf_den_ctx_init()` (border + every
-  denominator shift, passed to the kernel), `adm_cm_ctx_init()` /
-  `i4_adm_cm_ctx_init()` on an empty `AdmBuffer` + `adm_cm_result()` /
+  denominator shift, passed to kernel), `adm_cm_ctx_init()` /
+  `i4_adm_cm_ctx_init()` on empty `AdmBuffer` + `adm_cm_result()` /
   `i4_adm_cm_result()` / `adm_csf_den_result()` / `i4_adm_csf_den_result()`
   (scores). No `dwt_quant_step()`, `adm_csf_factors()`, `conclude_adm_*()`
   definition in `integer_adm_cuda.c`. `adm_skip_scale0`: numerator 0,
@@ -29,10 +29,10 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   `integer_adm_scale0()`.
   `adm_csf_den.cu`: one block per row + band (`grid = 1 x rows x 3`,
   128 threads), block reduce, ONE fold per row through
-  `adm_csf_den_round_row_total()` (`adm_cm_accumulator.h`, also the CPU's
+  `adm_csf_den_round_row_total()` (`adm_cm_accumulator.h`, also CPU's
   fold). Never fold per warp / thread / block-of-columns: accumulator
   differs, score differs on low-detail frames (6.6e-7). No logarithm in that
-  file: fp32 `__log2f(area) - 20` is off by one for 81 areas just above a
+  file: fp32 `__log2f(area) - 20` is off by one for 81 areas right above
   power of two (962x13542: `adm_scale0` 0.860 vs 0.979).
   `adm_cm.cu` device shifts `ceil(log2(w|h))` take integer extents: equal to
   CPU for 1..131071, leave as is.
@@ -40,17 +40,17 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   `test_adm_cm_row_rounding`, `test_cuda_adm_exact_contract.py`,
   `test_adm_cm_row_rounding_contract.py`.
 - **CSF weight limits = `adm_csf_fixed_limit()` (ADR-1472), host side
-  only.** `adm_cm.cu` narrows `(v * v + round) >> 29|30` to int32 like the
+  only.** `adm_cm.cu` narrows `(v * v + round) >> 29|30` to int32 like
   CPU (`adm_cm_accum_round()` / `i4_adm_cm_accum_round()`). It cannot wrap
   because `adm_csf_fixed_scale()` (`feature/adm_csf_fixed_point.h`) keeps
-  every weight under excess budget / largest wavelet coefficient of the
-  scale: 43900 (scale 0 h, v: the int16 1/30 magnitude of the CSF stage,
-  ADR-1917; the cube alone allows 46603.4), 65536 (scale 0 d), 279958309, 539893111,
+  every weight under excess budget / largest wavelet coefficient of
+  scale: 43900 (scale 0 h, v: int16 1/30 magnitude of CSF stage,
+  ADR-1917; cube alone allows 46603.4), 65536 (scale 0 d), 279958309, 539893111,
   546406567 (scales 1-3). Old limit 2^30 wrapped in Barten mode: NaN
   numerator (10 px checkerboard), `integer_adm2` 0.587 for 0.784 (1 px).
-  Never convert a weight on the device or in this file; never widen or
-  saturate the square in the kernel (CPU bits). Changed DWT taps / shifts,
-  `shift_sq`, `i4_shift_dst` -> constants in the header + `BAND_FORMAT` in
+  Never convert weight on device or in this file; never widen or
+  saturate square in kernel (CPU bits). Changed DWT taps / shifts,
+  `shift_sq`, `i4_shift_dst` -> constants in header + `BAND_FORMAT` in
   `core/test/test_integer_adm_cm_budget.c` follow. Same for HIP, SYCL,
   Metal twins. Check: `--backend cuda` vs `cpu`, `adm=debug=true:adm_csf_mode=1`,
   both 1080p checkerboards, all 18 outputs equal.
@@ -65,12 +65,12 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   Netflix one. Upstream-mirror — keep both headers
   verbatim on rebase.
 - **Integer ADM scales 1-3 keep ADR-0155's negative rounding term as
-  `INT32_MIN`.** The one site in `integer_adm/adm_csf.cu` and both fused sites
+  `INT32_MIN`.** one site in `integer_adm/adm_csf.cu` and both fused sites
   in `integer_adm/adm_cm.cu` deliberately subtract 2^31 before their 32-bit
   right shift to stay Netflix-golden compatible. Do not restore
   `1u << 31` assigned into `int32_t`: it generates NVCC diagnostic `#68-D`.
-  Do not widen the constant either; that changes ADM output. Focused CUDA 13.4
-  builds produced byte-identical fatbins after changing only the spelling.
+  Do not widen constant either; that changes ADM output. Focused CUDA 13.4
+  builds produced byte-identical fatbins after changing only spelling.
   See [Research-2076](../../../../../docs/research/2076-cuda-adm-signbit-warning.md).
 
 - **Integer ADM DWT row / tap arithmetic in
@@ -132,33 +132,33 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
 - Normalised value fits int32 -> int64 form = old wrapped result. Scores
   identical; never narrow back to int32 for speed.
 - Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
-  (parity only; device wrap hides the UB itself).
+  (parity only; device wrap hides UB itself).
 - **Scale-0 decouple reciprocal = `div_lookup`, by arithmetic
   (`T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03`).** `adm_recip_q30()` in
   `integer_adm/adm_decouple_inline.cuh`: fp32 quotient `q` (off by at most 11),
-  exact int32 remainder, `floor(r / |o|)` added with the sign of `o`. Equal to
+  exact int32 remainder, `floor(r / |o|)` added with sign of `o`. Equal to
   `div_lookup[o + 32768]` for every `int16` operand; `int32_t(2^30f / float(o))`
-  alone is another integer for 343 positive operands and moves the restored sample
-  above |o| = 16566. Do not restore it, and do not write a 32-bit integer division
+  alone is another integer for 343 positive operands and moves restored sample
+  above |o| = 16566. Do not restore it, and do not write 32-bit integer division
   there: `adm_cm_line_kernel_8` goes 148 to 228 registers and
   `test_cuda_adm_cm_register_pressure` (ADR-1226) fails. Guards:
-  `test_adm_decouple_recip_cuda` (this header compiled for the host against
-  `adm_decouple_band()`, every `int16` operand, no device) and the case
-  `test_adm_attenuated_detail_exact` of `test_cuda_adm_parity` on a device.
-- **Scale 1-3 decouple bounds the gain product before narrowing**
+  `test_adm_decouple_recip_cuda` (this header compiled for host against
+  `adm_decouple_band()`, every `int16` operand, no device) and case
+  `test_adm_attenuated_detail_exact` of `test_cuda_adm_parity` on device.
+- **Scale 1-3 decouple bounds gain product before narrowing**
   (T-GPU-ADM-S123-GAIN-PRODUCT-NARROWING-2026-10-05). `decouple_r_s123()`:
   `gained = (double)rst_q * adm_enhn_gain_limit`, then
-  `(int32_t)(rst_f > 0 ? fmin(gained, t) : fmax(gained, t))`, as the CPU's
+  `(int32_t)(rst_f > 0 ? fmin(gained, t) : fmax(gained, t))`, as CPU's
   `adm_decouple_band_s123()`. |o| reaches 1.45e9 at scale 1, so
-  `(int32_t)(...) * gain` narrowed first is an undefined conversion (the
+  `(int32_t)(...) * gain` narrowed first is undefined conversion (the
   saturating device cvt hid it). Guard: `test_gpu_adm_gain_product_contract.py`.
 
 - **`decouple_angle_flag_s0()` sums in 64 bits (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`, [ADR-2134](../../../../../docs/adr/2134-cuda-adm-cm-aim-register-budget-angle-flag.md)).**
-  `integer_adm/adm_decouple_inline.cuh` forms the dot product as an unsigned sum restored by
-  `(int64_t)(int32_t)(sum - 1u) + 1` (the one value an int32 cannot hold is 2^31, every band at -32768) and the
-  squared magnitudes as unsigned sums widened to int64, as the CPU's int64 `adm_angle_flag()` sums are. Do not
-  narrow it back to int32. The form costs `adm_cm_aim_line_kernel_4` 209 registers (plain int64: 216), which
+  `integer_adm/adm_decouple_inline.cuh` forms dot product as unsigned sum restored by
+  `(int64_t)(int32_t)(sum - 1u) + 1` (one value int32 cannot hold is 2^31, every band at -32768);
+  squared magnitudes as unsigned sums widened to int64, as CPU's int64 `adm_angle_flag()` sums are. Do not
+  narrow it back to int32. form costs `adm_cm_aim_line_kernel_4` 209 registers (plain int64: 216), which
   is that kernel's own budget in `test_cuda_adm_cm_register_pressure` (every other kernel 208, zero spill);
-  an RC7 row wins the register back. `test_adm_decouple_recip_cuda` holds the flag to the CPU's at every int16
-  corner and expects 0 mismatches. It also holds `decouple_r_s123()`, `get_best15_from32()` and the scale 1-3 flag to the CPU's,
-  so no function of the header is unused in a host build (CodeQL `cpp/unused-static-function`).
+  RC7 row wins register back. `test_adm_decouple_recip_cuda` holds flag to CPU's at every int16
+  corner and expects 0 mismatches. It also holds `decouple_r_s123()`, `get_best15_from32()` and scale 1-3 flag to CPU's,
+  so no function of header is unused in host build (CodeQL `cpp/unused-static-function`).

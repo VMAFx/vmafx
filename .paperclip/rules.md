@@ -11,25 +11,21 @@
   receipt.public_key -> attach no receipt; pin key from `praetorctl gate keygen`
   to require receipts.
 - Timeout != failure. Re-check open PRs before retry; prevent duplicate PRs.
-- Text register internal: `caveman` skill: fragments, no filler, verbatim
-  code/paths/errors; facts, paths, commands, verdict.
+- Text register internal: fragments, no filler, verbatim code/paths/errors;
+  facts, paths, commands, verdict.
 
-## AGit Push Protocol
-
-<!-- markdownlint-disable MD013 -->
+## Push Protocol
 
 ```bash
-git push origin HEAD:refs/for/main -o topic=<issue-id> && git push origin HEAD:refs/heads/paperclip/<issue-id>
+git push origin HEAD:refs/heads/paperclip/<issue-id>
 ```
-
-<!-- markdownlint-enable MD013 -->
 
 ## High-Integrity Invariants
 
 - HISS-01: recursion prohibited; call graph = DAG; Go, C/C++: zero `goto`
 - HISS-02: scalar upper bound on every loop; explicit deadline on every I/O
   call; Go: I/O takes `context.Context` deadline
-- HISS-04: McCabe cyclomatic <= 10, cognitive <= 15, statements <= 50; func
+- HISS-04: McCabe cyclomatic <= 10, cognitive <= 12, statements <= 40; func
   LOC <= 60 (audit ceiling)
 - HISS-07: every error handled or wrapped with context; Go: zero unchecked
   `error` return; Rust: zero `.unwrap()` / `.expect()` outside tests

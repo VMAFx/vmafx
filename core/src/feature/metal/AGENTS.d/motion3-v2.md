@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/metal/float_motion_metal.mm
   - core/src/feature/metal/integer_motion_metal.mm
-invariant: The motion3_v2 cross-twin invariant (ADR-1108).
+invariant: motion3_v2 cross-twin invariant (ADR-1108).
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # motion3_v2 cross-twin invariant (ADR-1108)

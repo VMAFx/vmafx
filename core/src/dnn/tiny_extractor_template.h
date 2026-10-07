@@ -57,10 +57,12 @@
  *    inner loop, no recursion, no setjmp/longjmp.
  *  - Every non-void return is checked or `(void)`-discarded by callers.
  *  - No allocation in inline helpers; the extractor owns its buffers.
- *  - `getenv()` is permitted (one of the option-resolution paths) and
- *    is well-defined per CERT ENV03-C; we treat the result as untrusted
- *    and only pass it to `vmaf_dnn_validate_onnx()` via
- *    `vmaf_dnn_session_open()` which performs `realpath` hardening.
+ *  - The environment is read through `vmaf_getenv_portable()` (one of the
+ *    option-resolution paths, CERT ENV03-C) and copied into a buffer the
+ *    caller owns, because on Windows that helper returns a per-thread buffer
+ *    the loader's own `VMAF_TINY_MODEL_DIR` read reuses. The value is
+ *    untrusted and only reaches `vmaf_dnn_validate_onnx()` via
+ *    `vmaf_dnn_session_open()`, which performs `realpath` hardening.
  *  - Disabled-build `-ENOSYS` is checked before model-path probing so
  *    callers get the optional-runtime contract from ADR-0374 instead of
  *    a misleading "no model path" error on builds that could not run the
@@ -79,6 +81,7 @@
 #include "libvmaf/dnn.h"
 #include "libvmaf/picture.h"
 
+#include "compat/crt_portable.h"
 #include "log.h"
 #include "opt.h"
 
@@ -109,6 +112,33 @@ static inline int vmaf_tiny_ai_require_runtime(const char *feature_name)
     return -ENOSYS;
 }
 
+/* Size of the buffer a caller hands vmaf_tiny_ai_resolve_model_path() for a
+ * path read from the environment, terminator included. */
+#define VMAF_TINY_AI_ENV_PATH_MAX 4096u
+
+/* Copies the environment value of @p env_var into @p buf. Returns @p buf, or
+ * NULL when the variable is unset, empty or longer than the buffer (logged). */
+static inline const char *vmaf_tiny_ai_env_path(const char *feature_name, const char *env_var,
+                                                char *buf, size_t buf_size)
+{
+    /* The model path is resolved once during init, before any worker thread
+     * exists, and nothing in this library calls setenv from another thread
+     * (ADR-0141). */
+    const char *env = vmaf_getenv_portable(env_var);
+    if (!env || !*env) {
+        return NULL;
+    }
+    const size_t len = strlen(env);
+    if (len >= buf_size) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "%s: %s is %zu bytes long, longer than the %zu a path takes\n",
+                 feature_name ? feature_name : "tiny_ai", env_var, len, buf_size - 1u);
+        return NULL;
+    }
+    memcpy(buf, env, len + 1u);
+    return buf;
+}
+
 /**
  * Resolve a tiny-AI extractor's ONNX model path: feature option first,
  * dedicated env var as fallback, NULL if neither is set. Logs one
@@ -119,24 +149,24 @@ static inline int vmaf_tiny_ai_require_runtime(const char *feature_name)
  *                      state struct (owned by `opt.c`); may be NULL.
  * @param env_var       environment variable consulted when the option
  *                      is unset (e.g. "VMAF_LPIPS_MODEL_PATH").
+ * @param env_buf       caller-owned buffer that receives the environment
+ *                      value; at least VMAF_TINY_AI_ENV_PATH_MAX bytes.
+ * @param env_buf_size  size of @p env_buf in bytes.
  * @return non-NULL path on success, NULL when neither source provided
  *         a usable path. The returned pointer aliases either
- *         @p option_value or `getenv(env_var)`; do not free it.
+ *         @p option_value or @p env_buf; do not free it.
  */
 static inline const char *vmaf_tiny_ai_resolve_model_path(const char *feature_name,
                                                           const char *option_value,
-                                                          const char *env_var)
+                                                          const char *env_var, char *env_buf,
+                                                          size_t env_buf_size)
 {
     if (option_value && *option_value) {
         return option_value;
     }
-    if (env_var && *env_var) {
-        /* The model path is resolved once during init, before any worker
-         * thread exists. There is no thread-safe getenv in C, and nothing in
-         * this library calls setenv from another thread. */
-        /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-threaded init, see above (ADR-0141). */
-        const char *env = getenv(env_var);
-        if (env && *env) {
+    if (env_var && *env_var && env_buf && env_buf_size > 0u) {
+        const char *env = vmaf_tiny_ai_env_path(feature_name, env_var, env_buf, env_buf_size);
+        if (env) {
             return env;
         }
     }

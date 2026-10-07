@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/feature_extractor.h
   - core/src/feature/feature_name.cpp
-invariant: GPU-twin VmafOption tables mirror the CPU table entry-for-entry with full semantics.
+invariant: GPU-twin VmafOption tables mirror CPU table entry-for-entry with full semantics.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # GPU-Twin Option Tables CPU Mirror and Semantics
@@ -40,8 +40,8 @@ Two rules follow, and they are not same rule:
    bit. Anything that diverges (different alias, different default,
    missing flag) silently changes key. `core/src/feature/integer_adm.c` is
    reference for `adm` family.
-   An extractor-local capability bit such as `VMAF_OPT_FLAG_DEFAULT_ONLY`
-   may differ; it describes what the twin can execute without changing the
+   extractor-local capability bit such as `VMAF_OPT_FLAG_DEFAULT_ONLY`
+   may differ; it describes what twin can execute without changing
    CPU-authoritative collector-key schema.
 2. **Never declared-and-ignored.** Option that changes value twin
    emits must change it. FEATURE_PARAM option whose arithmetic
@@ -68,12 +68,12 @@ inherited post-loop values (256× too-small floor).
 
 ## Twin option tables mirror the CPU's aliases and semantics (ADR-1214, ADR-1312)
 
-When a GPU twin copies an option from the CPU extractor, copy the `alias` and
-range too: ADR-1183 builds the emitted feature name from the alias and value of
-every non-default option, so `cs` on the twin and `scf` on the CPU means two
-different keys for one feature. And copy the *semantics* from the branch the
-twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
-Watson-only twins it must be a no-op exactly as it is on the CPU.
-`core/test/test_gpu_option_alias_contract.py` is the device-free inventory for
-the eighteen known motion, VIF, and ADM alias sites; extend it whenever an
+When GPU twin copies option from CPU extractor, copy `alias` and
+range too: ADR-1183 builds emitted feature name from alias and value of
+every non-default option, so `cs` on twin and `scf` on CPU means two
+different keys for one feature. And copy *semantics* from branch
+twin implements — `adm_csf_scale` is Barten-mode argument, so in
+Watson-only twins it must be no-op exactly as it is on CPU.
+`core/test/test_gpu_option_alias_contract.py` is device-free inventory for
+eighteen known motion, VIF, and ADM alias sites; extend it whenever
 equivalent twin option is added.

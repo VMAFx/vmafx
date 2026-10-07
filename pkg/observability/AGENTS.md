@@ -6,7 +6,15 @@
 service. Provides:
 
 - `NewLogger(level)` — `log/slog` JSON logger.
-- `NewMetrics(reg)` + `SetControllerSources` — Prometheus instruments.
+- `metricdef/` — one definition of every Prometheus family (name, kind,
+  unit, labels + cardinality bound, buckets, emitting binaries). Data only,
+  stdlib only.
+- `NewRegistry()` (Go + process collectors, `vmafx_build_info`),
+  `NewMetrics(reg)` (scoring + quality families), `NewCounter` /
+  `NewGauge` / `NewHistogram` / `RegisterScraped` — collectors built from
+  `metricdef`, label values bounded (`instruments.go`, `scrape.go`).
+- `obsgen/` — dashboards (Grafana Foundation SDK v0.0.20) + metric reference
+  page generated from `metricdef`; `CheckDashboard` contract check.
 - `InitOTel(ctx, serviceName, log)` — OpenTelemetry trace + meter
   provider wiring (ADR-0927).
 - `WaitForShutdown` / `NewShutdownContext` — signal + graceful-drain.
@@ -38,10 +46,26 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    logs bridge is Phase 3, depends on modernization #3 (zap → slog
    migration) completing first.
 
-5. **Narrow-interface trick (`jobQueueSource`, `nodeRegistrySource`)
-   stays.** These exist to avoid import cycle between
-   `pkg/observability` and `cmd/vmafx-controller/queue`. Do not
-   replace them with concrete types from controller package.
+5. **One metric definition (HISS-19, WP16 / issue #2430).** New family ->
+   `metricdef/families.go` + `All()` first, then registered by every binary
+   in its `Emitters` through `NewCounter` / `NewGauge` / `NewHistogram` /
+   `RegisterScraped`. Never `prometheus.New*Vec`, GaugeFunc or promauto in a
+   service: bypasses label bounds and per-binary contract tests
+   (`TestControllerServesEveryFamilyItEmits`,
+   `TestNodeServesEveryFamilyItEmits`,
+   `TestProvideMetricsServesTheServerFamilies`). Every family registers on
+   service's own registry, never `DefaultRegisterer` (ADR-1014). Open label
+   limits (`TenantLimit` 256, `ModelLimit` 64, Q-121) -> overflow `other`,
+   never drop; raising one moves `seriesBudget` in `metricdef_test.go` and the
+   docs.
+
+6. **Generated files never hand-edited.** `deploy/grafana/dashboards/*.json`,
+   `docs/observability/metrics.md` come from `go run ./tools/obsgen -write`.
+   `obsgen_test.go::TestGeneratedFilesAreCurrent` fails stale copy;
+   `TestEveryDashboardQueryIsEmitted` fails panel / annotation / variable
+   naming series nothing emits (allow-list `ExternalSeries`, proven by
+   `TestExternalSeriesAreServed`). `obsgen/testdata/overview-before-generation.json`
+   = frozen negative fixture (5 dead series), never "fixed".
 
 ## Test requirements
 
@@ -58,9 +82,6 @@ Additional invariants locked in by `coverage_gaps_test.go`:
 - `WaitForShutdown` must return after receiving SIGTERM (not only on
   context cancel). `TestWaitForShutdown_SIGTERMDelivery` sends real
   SIGTERM to `os.Getpid()`; do not run that test with `t.Parallel()`.
-- `SetControllerSources` must register only queue gauges when
-  `r == nil`, and only node gauge when `q == nil`. Half-nil branches
-  tested independently of both-nil and both-non-nil cases.
 - `AttrJobID`, `AttrModel`, `AttrBackend`, `AttrNodeID`, `AttrVendor`,
   `AttrStatus` key strings are schema-locked to values in ADR-0782.
   Any rename is breaking OTLP consumer change — update ADR first.

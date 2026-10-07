@@ -10,7 +10,8 @@ channel), and
 (ScoreStream).
 
 Node serves single gRPC service: `VmafxScoring` (`Score`, `ScoreStream`,
-`Health`); node = **gRPC-only** (no HTTP server). With `VMAFX_CONTROLLER_ADDR`
+`Health`) plus HTTP on `VMAFX_HTTP_ADDR` (default `:9090` = chart
+`node.metricsPort`): `/metrics`, `/livez`, `/readyz`, `/startupz` only. With `VMAFX_CONTROLLER_ADDR`
 set, node also = controller client (`controller_*.go`, ADR-1524): register,
 heartbeat, pull, execute, report. eBPF descriptor tracker
 under `bpf/` = privileged, opt-in (`VMAFX_EBPF_BYPASS`, `ebpf_linux.go`,
@@ -120,8 +121,8 @@ ADR-1539), fail closed.
     gRPC listener or requires scoring assets.
 
 12. **OTel init is `bootstrap.Base`, spans are `grpcmod` + `executor.go`**
-    (ADR-0782 / ADR-1119): no HTTP server -> carries no
-    `bootstrap.HTTPTracing`. gRPC server spans from `grpcmod.Module` `otelgrpc`
+    (ADR-0782 / ADR-1119): HTTP listener carries `bootstrap.HTTPTracing`
+    (probes + `/metrics` filtered). gRPC server spans from `grpcmod.Module` `otelgrpc`
     handler; job spans (`vmafx.scoring`, `vmafx.frame.extraction`,
     `vmafx.onnx.inference`) from `executor.go` via `observability.StartSpan`.
     `app_test.go::TestOTelWiredThroughBootstrap` locks no-op default and
@@ -195,3 +196,15 @@ ADR-1539), fail closed.
     (grant never made) or `"EUPL-1.2"` (GPL-only helpers refused, program
     never loads). Guard: `TestEmbeddedObjectLicence`;
     `TestEmbeddedObjectLoadsIntoKernel` on hosts passing `Preflight`.
+
+16. **Metrics from `metricdef` only** (`metrics.go`, `main.go::nodeServerOptions`,
+    WP16 / issue #2430): node families = `metricdef.ByEmitter(metricdef.Node)`,
+    built via `observability.NewGauge/NewCounter/NewHistogram` on own registry
+    (`provideNodeRegistry` -> `observability.NewRegistry`, ADR-1014). No
+    `prometheus.New*Vec` / promauto here. Job metrics recorded in
+    `controller_client.go::runJob` (`jobStarted` / `jobDone`), slots set in
+    `provideControllerClient`. `nodeServerOptions` shared by `main` and
+    `app_test.go::productionGraph`; tests set `VMAFX_HTTP_ADDR` to free port
+    (`writeNodeEnv`), never bind `:9090`. Guards:
+    `metrics_test.go::TestNodeServesEveryFamilyItEmits`,
+    `TestControllerClientRecordsJobMetrics`, `TestNodeHTTPServesMetricsAndProbes`.

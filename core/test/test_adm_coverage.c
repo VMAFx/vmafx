@@ -42,6 +42,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+#include "compat/crt_portable.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -255,7 +256,7 @@ static int extract_with_stderr_capture(VmafFeatureExtractorContext *ctx, VmafPic
                                        VmafPicture *dist, VmafFeatureCollector *fc, char *log_buf,
                                        size_t log_buf_sz)
 {
-    FILE *tmp_err = tmpfile();
+    FILE *tmp_err = vmaf_tmpfile_portable();
     if (!tmp_err)
         return -EIO;
     (void)fflush(stderr);

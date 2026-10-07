@@ -101,11 +101,11 @@ invariant: Fast-path is opt-in; Optuna is optional dependency; probe features no
   to CPU. `_build_prod_predictor` and `fast_recommend` forward
   selected backend automatically; test seams that inject custom
   `sample_extractor` callable are unaffected.
-- **The TPE objective is the lowest-bitrate pick rule (ADR-1562).**
-  `fast.objective_value` scores a CRF that meets the target by its predicted
-  bitrate and a miss by `UNMET_OBJECTIVE_BASE + shortfall`; Go
-  `fast.objectiveValue` is the same function and both are pinned by one value
+- **TPE objective is lowest-bitrate pick rule (ADR-1562).**
+  `fast.objective_value` scores CRF that meets target by its predicted
+  bitrate and miss by `UNMET_OBJECTIVE_BASE + shortfall`; Go
+  `fast.objectiveValue` is same function and both are pinned by one value
   table (`test_pick_lowest_bitrate.py::test_fast_objective_values`,
   `TestObjectiveValue`). Do not restore `abs(vmaf - target) + 1e-4 * kbps`: it
-  returned a CRF below the target whenever it sat closer to it than the
+  returned CRF below target whenever it sat closer to it than
   cheapest passing CRF.

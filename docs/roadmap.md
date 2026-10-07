@@ -13,10 +13,10 @@ map of where that plan lives and how the releases are sequenced.
 
 | Milestone | Theme |
 | --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric and zero-copy import, RC5 deduplication and cloud-native deployment, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
-| [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations and live quality: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), [#2148](https://github.com/VMAFx/vmafx/issues/2148), [#2147](https://github.com/VMAFx/vmafx/issues/2147), [#2144](https://github.com/VMAFx/vmafx/issues/2144), [#2146](https://github.com/VMAFx/vmafx/issues/2146), [#2159](https://github.com/VMAFx/vmafx/issues/2159) |
-| [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156) |
-| [1.3](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), [#2166](https://github.com/VMAFx/vmafx/issues/2166), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168) |
+| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric, zero-copy import, the VMAFx API, the FFmpeg and GStreamer integrations and the cloud-native platform, RC5 deduplication, tool consolidation and new metrics, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
+| [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations and live quality: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), [#2148](https://github.com/VMAFx/vmafx/issues/2148), [#2147](https://github.com/VMAFx/vmafx/issues/2147), [#2144](https://github.com/VMAFx/vmafx/issues/2144), [#2146](https://github.com/VMAFx/vmafx/issues/2146), [#2159](https://github.com/VMAFx/vmafx/issues/2159); no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), WebRTC, streaming outputs, libVLC and cookbook recipes, and the rest of the milestone |
+| [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156); encoder-side predictors ([#2416](https://github.com/VMAFx/vmafx/issues/2416)), the VLC plugin ([#2358](https://github.com/VMAFx/vmafx/issues/2358)), the mobile and WebAssembly targets |
+| [1.3](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), [#2166](https://github.com/VMAFx/vmafx/issues/2166), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
 | [1.4](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
 | [1.5](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
 | [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the C++23 core, the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
@@ -24,7 +24,8 @@ map of where that plan lives and how the releases are sequenced.
 [ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) set this layout on
 2026-10-06 and declared it the last change of the milestone map until 2.0,
 apart from bugs and findings. The cloud-native work (scoring API contract,
-server mode, containers, Helm, operator, GPU pool arbiter) is part of 1.0.0.
+server mode, observability, the cloud-native platform, containers, Helm,
+operator, GPU pool arbiter) is part of 1.0.0.
 Every release after 1.0.0 runs its own candidate cycle: features first, then
 deduplication, tests and bug fixing, then capability tables with benchmarks and
 tuning, then training if models change, then the release; the same phase rules
@@ -64,6 +65,13 @@ contract, server mode and observability in RC4, containers, Helm chart, operator
 and GPU pool arbiter in RC5, distributed throughput in RC8; a native GStreamer
 element, an API ready for OBS Studio and real-time FFmpeg GPU scoring in RC4.
 The OBS Studio plugin follows in 1.1.
+[ADR-2342](adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of
+2026-10-06 and 2026-10-07, again without new numbers: RC4 also holds the
+FFmpeg series redesign, the input-format work, the engineering principles per
+language, the FFmpeg audit, the observability package and the cloud-native
+platform; RC5 also holds live alignment, interlaced video, region masks,
+container input, bits per pixel and BD-rate, HandBrake support, the minimal
+run-result timeline and the reusable provenance workflow.
 
 ### What this means for you
 
@@ -83,8 +91,8 @@ The OBS Studio plugin follows in 1.1.
 | **RC1** | correctness and tester readiness | — |
 | **RC2** | stabilisation and repair | — |
 | **RC3** | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and FFmpeg filters, provenance, scoring API contract, server mode, GStreamer element, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | deduplication, tool consolidation, new metrics with exact twins, Metal SpEED twins, device-targeted scoring, containers, Helm, operator, GPU pool arbiter | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
+| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, server mode, observability, cloud-native platform, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
+| **RC5** | deduplication, tool consolidation (live alignment, interlaced video, region masks, container input, bits per pixel and BD-rate, HandBrake, run-result timeline), new metrics with exact twins, Metal SpEED twins, device-targeted scoring, containers, Helm, operator, GPU pool arbiter | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
 | **RC6** | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
 | **RC7** | CPU capability source of truth, CPU format envelope, full SIMD ladder on five architectures | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
 | **RC8** | benchmark and tune, throughput per resolution, distributed throughput, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
@@ -120,7 +128,7 @@ The OBS Studio plugin follows in 1.1.
   no accumulator overflows at 16K with 16-bit samples; Netflix golden
   assertions unchanged
 
-#### RC4 — first full Rust metric and zero-copy import
+#### RC4 — first full Rust metric, zero-copy import and the VMAFx API
 
 Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 ([#2142](https://github.com/VMAFx/vmafx/issues/2142)) through the new API.
@@ -148,7 +156,21 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   ready for OBS Studio ([#2238](https://github.com/VMAFx/vmafx/issues/2238):
   texture import including OpenGL interop, asynchronous window scores, bounded
   queues); real-time FFmpeg GPU scoring with `n_stats`
-  ([#2138](https://github.com/VMAFx/vmafx/issues/2138))
+  ([#2138](https://github.com/VMAFx/vmafx/issues/2138)). Since 2026-10-07
+  ([ADR-2342](adr/2342-rc-map-amendment-2026-10.md)): language bindings
+  generated from the definition (Rust, Go, Python); the FFmpeg patch series
+  redesigned in one change from `0001`, grouped by purpose, after an audit of
+  everything VMAFx uses in FFmpeg; host input of every semi-planar and packed
+  layout, RGB with a stated matrix and every bit depth from 8 to 16;
+  incremental `motion2` / `motion3` for live windows; Vulkan frame import;
+  engineering principles per language with warnings as errors in every one;
+  the observability package
+  ([#2430](https://github.com/VMAFx/vmafx/issues/2430)); the cloud-native
+  platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)): state out of
+  the processes (PostgreSQL, a job queue, a two-tier cache, object storage, OCI
+  artifacts), scaling on queue depth, and CRDs, proto, OpenAPI and the Helm
+  schema generated from the definition; conformance of SVT Encore's VMAF
+  options on the compatibility library ([#2364](https://github.com/VMAFx/vmafx/issues/2364))
 - **Exit boundary:** The Rust path is bit-identical to the C path on the parity
   fixtures; an imported device frame scores bit-identically to the same frame
   uploaded from the host, with no host copy of pixel data and fence-ordering
@@ -184,7 +206,19 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   Helm chart and a kind plus kuttl test setup
   ([#1252](https://github.com/VMAFx/vmafx/issues/1252)); the operator, the
   controller / node split and the GPU pool arbiter in `libgpudispatch`
-  ([#1253](https://github.com/VMAFx/vmafx/issues/1253))
+  ([#1253](https://github.com/VMAFx/vmafx/issues/1253)). Since 2026-10-07
+  ([ADR-2342](adr/2342-rc-map-amendment-2026-10.md)) the tool consolidation
+  also carries live alignment of two feeds with timecode
+  ([#2354](https://github.com/VMAFx/vmafx/issues/2354)), interlaced video
+  ([#2361](https://github.com/VMAFx/vmafx/issues/2361)), region masks
+  ([#2362](https://github.com/VMAFx/vmafx/issues/2362)), container input
+  ([#2363](https://github.com/VMAFx/vmafx/issues/2363)), bits per pixel and
+  BD-rate ([#2284](https://github.com/VMAFx/vmafx/issues/2284)), HandBrake
+  support ([#2407](https://github.com/VMAFx/vmafx/issues/2407)) and the minimal
+  run-result timeline they report on; one reusable build-and-provenance
+  workflow for every image; and a small Vulkan compute experiment with a
+  written verdict. The Go tools replace the Python MCP server and `vmaf-tune`
+  here, not after 1.0.0
 - **Exit boundary:** Scores unchanged against the RC3 reference; duplicated code
   removed rather than moved; every new twin bit-identical to its CPU extractor
   or within a measured libm bound recorded in an ADR; a multi-target run scores
@@ -225,7 +259,12 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   the golden gate on each. The CPU format envelope
   (resolution up to 16K with measured memory limits, bit depths 8 to 16, chroma
   layouts, odd and portrait sizes) in the same table, each row test-backed
-  ([ADR-1880](adr/1880-format-envelope-device-targets.md))
+  ([ADR-1880](adr/1880-format-envelope-device-targets.md)). A reference
+  conformance column: every extractor with an original implementation is
+  proven against it, the default becomes reference-exact and Netflix's
+  behaviour a named compatibility mode that the golden gate runs in
+  ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md),
+  [#2286](https://github.com/VMAFx/vmafx/issues/2286))
 - **Exit boundary:** Drift check green; audit finds no instruction outside the
   feature set a gate guarantees; parity green under Intel SDE (AVX2-only model,
   Skylake-X, Ice Lake, Sapphire Rapids, the AMD AVX-512 set) and qemu (aarch64
@@ -257,7 +296,9 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 - **In scope:** The locked one-shot model retraining programme on the clean,
   tuned tree, started only when every precondition of
   [#1246](https://github.com/VMAFx/vmafx/issues/1246) holds (the RC4 to RC8
-  items above included)
+  items above included). The shipped v1 models read compatibility-mode
+  features until this run; the retrain trains on reference-exact features
+  ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md))
 - **Exit boundary:** Model-quality gates, model cards, registry/signing
   metadata, and unchanged Netflix golden assertions pass
 

@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Parent: [../AGENTS.md](../AGENTS.md). Metal backend runtime lives at
 [`../../metal/AGENTS.md`](../../metal/AGENTS.md); ADRs governing this
@@ -39,17 +39,17 @@ when conversion happens.
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `*.mm`, `*.metal`, `metal_portable.h`, `metal_plane_index.h` | [base-invariants](AGENTS.d/base-invariants.md) | One .mm + .metal pair per extractor; partials per workgroup, no atomics; simd_sum is 32-bit; PSO slots bridge-retained. |
-| `integer_cambi_metal.mm`, `integer_cambi.metal` | [cambi-tvi](AGENTS.d/cambi-tvi.md) | CAMBI uses the shared TVI helper and the CPU's border rules (ADR-1219). |
-| `float_motion_metal.mm`, `integer_motion_metal.mm`, `integer_motion_v2_metal.mm` | [drain-and-motion2](AGENTS.d/drain-and-motion2.md) | Every Metal extractor sets VMAF_FEATURE_EXTRACTOR_METAL; the stream drains at the end; frame-0 motion2 is emitted. |
-| `*.mm`, `metal_*.h` | [exact-designs](AGENTS.d/exact-designs.md) | The exact designs of the Metal twins (ADR-1498): fp32 pairs, integer fp64, CPU summation order. |
-| `float_adm_metal.mm` | [float-adm-csf](AGENTS.d/float-adm-csf.md) | float_adm_metal takes its CSF weights from the CPU (ADR-1489, ADR-1498). |
-| `float_adm_metal.mm`, `float_adm.metal`, `metal_float_adm_math.h` | [float-adm-options](AGENTS.d/float-adm-options.md) | float_adm options reach the kernels (ADR-1220). |
+| `integer_cambi_metal.mm`, `integer_cambi.metal` | [cambi-tvi](AGENTS.d/cambi-tvi.md) | CAMBI uses shared TVI helper and CPU's border rules (ADR-1219). |
+| `float_motion_metal.mm`, `integer_motion_metal.mm`, `integer_motion_v2_metal.mm` | [drain-and-motion2](AGENTS.d/drain-and-motion2.md) | Every Metal extractor sets VMAF_FEATURE_EXTRACTOR_METAL; stream drains at end; frame-0 motion2 is emitted. |
+| `*.mm`, `metal_*.h` | [exact-designs](AGENTS.d/exact-designs.md) | exact designs of Metal twins (ADR-1498): fp32 pairs, integer fp64, CPU summation order. |
+| `float_adm_metal.mm` | [float-adm-csf](AGENTS.d/float-adm-csf.md) | float_adm_metal takes its CSF weights from CPU (ADR-1489, ADR-1498). |
+| `float_adm_metal.mm`, `float_adm.metal`, `metal_float_adm_math.h` | [float-adm-options](AGENTS.d/float-adm-options.md) | float_adm options reach kernels (ADR-1220). |
 | `float_motion_metal.mm`, `float_motion.metal` | [float-motion-force-zero](AGENTS.d/float-motion-force-zero.md) | float_motion force-zero ownership and flush idempotency (BUG048 A5). |
 | `integer_adm.metal`, `integer_adm_metal.mm` | [integer-adm-dwt2-16bit](AGENTS.d/integer-adm-dwt2-16bit.md) | Integer ADM 16-bit vertical DWT sums use 64 bits. |
-| `integer_adm_metal_host.c`, `integer_adm_metal_host.h`, `metal_integer_adm_uniforms.h`, `integer_adm_metal.mm` | [integer-adm-host](AGENTS.d/integer-adm-host.md) | integer_adm_metal: host logic, slots and the scale-1 parent (ADR-1806). |
-| `*.mm`, `*.metal` | [kernel-files](AGENTS.d/kernel-files.md) | The table of every Metal kernel file, its status and the features it emits. |
-| `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion-fps-weight](AGENTS.d/motion-fps-weight.md) | motion_fps_weight is the CPU value, per frame (ADR-1498). |
-| `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion3-v2](AGENTS.d/motion3-v2.md) | The motion3_v2 cross-twin invariant (ADR-1108). |
+| `integer_adm_metal_host.c`, `integer_adm_metal_host.h`, `metal_integer_adm_uniforms.h`, `integer_adm_metal.mm` | [integer-adm-host](AGENTS.d/integer-adm-host.md) | integer_adm_metal: host logic, slots and scale-1 parent (ADR-1806). |
+| `*.mm`, `*.metal` | [kernel-files](AGENTS.d/kernel-files.md) | table of every Metal kernel file, its status and features it emits. |
+| `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion-fps-weight](AGENTS.d/motion-fps-weight.md) | motion_fps_weight is CPU value, per frame (ADR-1498). |
+| `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion3-v2](AGENTS.d/motion3-v2.md) | motion3_v2 cross-twin invariant (ADR-1108). |
 | `integer_motion_v2_metal.mm`, `integer_motion_v2.metal` | [mv2-mirror](AGENTS.d/mv2-mirror.md) | mv2_mirror is reflect-101, identical across backends (ADR-1176). |
-| `*.mm`, `float_ms_ssim_option_semantics.h` | [option-table-sync](AGENTS.d/option-table-sync.md) | A Metal twin mirrors the CPU option table and emits the CPU outputs; names before option slots. |
-| `*.mm` | [registration-coverage](AGENTS.d/registration-coverage.md) | Every Metal extractor is registered and covered by the registration contract test. |
+| `*.mm`, `float_ms_ssim_option_semantics.h` | [option-table-sync](AGENTS.d/option-table-sync.md) | A Metal twin mirrors CPU option table and emits CPU outputs; names before option slots. |
+| `*.mm` | [registration-coverage](AGENTS.d/registration-coverage.md) | Every Metal extractor is registered and covered by registration contract test. |

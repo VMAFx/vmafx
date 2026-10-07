@@ -154,7 +154,7 @@ over the `vmaf_score` MCP tool.
 | `height` | integer | yes | Frame height in pixels |
 | `pixfmt` | string | yes | Pixel format: `"420"`, `"422"`, or `"444"` |
 | `bitdepth` | integer | yes | Bit depth: `8` \| `10` \| `12` \| `16` |
-| `model` | string | no | Model specifier (default: `"version=vmaf_v0.6.1"`) |
+| `model` | string | no | Model specifier (default: `"version=vmaf_v1.0.16_3d0h"`, the library default model) |
 | `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, `"hip"`, `"metal"`, or `"auto"` (default: `"auto"`) |
 | `precision` | string | no | Output precision: `"legacy"` (`%.6f`, the C-CLI default per ADR-0119) or `"max"` (lossless `%.17g`). Default: `"legacy"` |
 

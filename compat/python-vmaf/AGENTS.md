@@ -39,20 +39,20 @@ python/vmaf/
 
 - **Feature discovery is Netflix's multi-nickname form (d327ed67b).**
   `VmafexecFeatureExtractorMixin` and `FeatureDiscoveryMixin` keep one
-  `defaultdict(list)` per atom feature (nickname -> scores) and a nickname
-  list; a wildcard collects every emitted key it owns, the owner being the
-  longest atom feature that prefixes the nickname. Never bring back the fork's
+  `defaultdict(list)` per atom feature (nickname -> scores) and nickname
+  list; wildcard collects every emitted key it owns, owner being
+  longest atom feature that prefixes nickname. Never bring back fork's
   former "shortest key wins" single-nickname form, nor
   `CambiFullReferenceFeatureExtractor`'s `cambi_encbd` atom feature it needed:
-  `python/test/cambi_test.py` (Netflix's file) asserts the `cambi` keys.
-  `assert_same_frame_count()` takes the count from the first non-empty
+  `python/test/cambi_test.py` (Netflix's file) asserts `cambi` keys.
+  `assert_same_frame_count()` takes count from first non-empty
   nickname (Netflix's loop leaves it unset when feature 0 is absent).
 - **`Asset.ORDERED_FILTER_LIST` is Netflix's order** (crop, pad, gblur, eq,
-  lutyuv, yadif, format, fps, select; 560c4e491). It orders the FFmpeg chain
-  and the asset string, so a reorder changes workfiles and cached results.
+  lutyuv, yadif, format, fps, select; 560c4e491). It orders FFmpeg chain
+  and asset string, so reorder changes workfiles and cached results.
 - **`TrainTestModel.postprocess_feature_from_another()` returns Python floats**
-  (`[float(v) ...]`, Netflix: `list(ndarray)`), for the NumPy 2 doctest rule
-  below; the ResPow guard catches `Exception`, not Netflix's bare `except:`.
+  (`[float(v) ...]`, Netflix: `list(ndarray)`), for NumPy 2 doctest rule
+  below; ResPow guard catches `Exception`, not Netflix's bare `except:`.
 - **`PyPsnrFeatureExtractor` primary; `PypsnrFeatureExtractor` `@deprecated` alias.**
   Hierarchy: `PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor)`
   (TYPE `"PyPsnr_feature"`), `PypsnrFeatureExtractor(PyPsnrFeatureExtractor)`
@@ -125,14 +125,14 @@ python/vmaf/
 - **`__init__.py` command builders are assembled from pure helpers
   (`T-PYTHON-CALL-VMAFEXEC-FORCE-ZERO-SECOND-MODEL-2026-10-02`).**
   `ExternalProgramCaller.call_vmafexec()` and `call_vmafexec_multi_features()`
-  keep their signatures; the command text comes from
+  keep their signatures; command text comes from
   `_vmafexec_base_command`, `_vmafexec_feature_flags`, `_vmafexec_model_flags`
   (which calls `_vmafexec_model_overloads` once per model),
   `_vmafexec_run_flags`, `_multi_features_run_arguments` and
-  `_feature_argument`. Keep the helpers pure: upstream's loop overwrote
-  `motion_force_zero` with the string `"true"` and then failed its own
-  `isinstance(..., bool)` assertion on the second model. An upstream change to
-  a flag goes into the helper that emits it; the order of the parts is pinned
+  `_feature_argument`. Keep helpers pure: upstream's loop overwrote
+  `motion_force_zero` with string `"true"` and then failed its own
+  `isinstance(..., bool)` assertion on second model. upstream change to
+  flag goes into helper that emits it; order of parts is pinned
   by `test_full_command_is_pinned` and
   `test_full_multi_features_command_is_pinned` in
   `python/test/python_harness_coverage_test.py`.
@@ -154,20 +154,20 @@ python/vmaf/
   `tempfile.mkstemp`. 0 Semgrep findings in SARIF, resolving alerts 947–949. Tests in
   `compat/vmaf/tests/test_decorator_extended.py` (26 tests) guard key length (64 hex),
   golden vectors, concurrency, Windows lock dispatch, cold invalidation.
-- **`python/pyproject.toml` declares the licences the `vmaf` wheel carries ([ADR-1560](../../docs/adr/1560-python-package-licence-union.md)).**
+- **`python/pyproject.toml` declares licences `vmaf` wheel carries ([ADR-1560](../../docs/adr/1560-python-package-licence-union.md)).**
   `BSD-2-Clause-Patent AND BSD-2-Clause AND BSD-3-Clause-Clear AND EUPL-1.2`
   with `license-files = ["LICENSES/*"]` (`python/LICENSES/`), not upstream's
   `BSD-2-Clause-Patent`: modules of this tree carry BSD-2-Clause and
-  BSD-3-Clause-Clear, and the ADM extension includes EUPL-1.2 headers. A new
-  file under another licence here, or a new header `adm_dwt2_cy.pyx` pulls in,
-  fails `python/test/setup_metadata_test.py` until the expression and the texts
+  BSD-3-Clause-Clear, and ADM extension includes EUPL-1.2 headers. new
+  file under another licence here, or new header `adm_dwt2_cy.pyx` pulls in,
+  fails `python/test/setup_metadata_test.py` until expression and texts
   gain it.
 - **`SubjectiveDatasetReader` / `SubjectiveDatasetTester` are Netflix's API
-  over the fork's helpers (2e6bbb657).** `read_dataset()` /
+  over fork's helpers (2e6bbb657).** `read_dataset()` /
   `run_test_on_dataset()` wrap them. Port Netflix changes of `read()` / `run()`
   into `_resolve_asset_fields()`, `_build_asset_dict()`,
-  `_tester_optional_dict()` and friends; never paste the long methods back
-  (HISS-04). The tester keeps `allow_uncalibrated` (ADR-0620).
+  `_tester_optional_dict()` and friends; never paste long methods back
+  (HISS-04). tester keeps `allow_uncalibrated` (ADR-0620).
 
 ## Governing ADRs
 

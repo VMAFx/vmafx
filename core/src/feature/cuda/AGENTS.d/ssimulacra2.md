@@ -7,24 +7,24 @@ invariant: ssimulacra2_cuda is device-resident and computes bit-exact CPU scores
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Device-resident SSIMULACRA2
 
-- **`ssimulacra2_cuda` is device-resident** (ADR-1391, the CUDA port of the
-  ADR-1363 SYCL chain). `submit()` enqueues the whole frame on the picture
-  stream (YUV -> linear RGB from the device planes, then per scale XYB, five
-  blurs, per-pixel SSIM / edge sums, downsample) and one 864-byte copy of the
-  per-scale sums; `collect()` waits once and pools on the host. Invariants:
-  - No host compute and no host wait inside a frame: no `cuStreamSynchronize`,
+- **`ssimulacra2_cuda` is device-resident** (ADR-1391, CUDA port of
+  ADR-1363 SYCL chain). `submit()` enqueues whole frame on picture
+  stream (YUV -> linear RGB from device planes, then per scale XYB, five
+  blurs, per-pixel SSIM / edge sums, downsample) and one 864-byte copy of
+  per-scale sums; `collect()` waits once and pools on host. Invariants:
+  - No host compute and no host wait inside frame: no `cuStreamSynchronize`,
     no DtoH / HtoD of planes. `core/test/test_cuda_ssimulacra2_parity.c` holds
-    the twin to `==` with the CPU on every frame (ADR-1433).
+    twin to `==` with CPU on every frame (ADR-1433).
   - `ssimulacra2_blur` and `ssimulacra2_device` build with `--fmad=false`
-    (every fatbin does, ADR-1403); products that feed an
-    add stay in their own expressions; the cube root divides through
-    `VMAF_SS2_FDIV` = `__fdiv_rn`; the YUV matrix uses `__fmaf_rn` in the
+    (every fatbin does, ADR-1403); products that feed
+    add stay in their own expressions; cube root divides through
+    `VMAF_SS2_FDIV` = `__fdiv_rn`; YUV matrix uses `__fmaf_rn` in
     ADR-0891 order. That keeps YUV, XYB, blurs and downsample bit-identical
     to `ssimulacra2.c`.
-  - `ssimulacra2_device.cu` compiles the shared helpers of
+  - `ssimulacra2_device.cu` compiles shared helpers of
     `feature/ssimulacra2_math.h`, `ssimulacra2_score.h` and
-    `ssimulacra2_eotf_lut.h` into device code through the `VMAF_SS2_FUNC` /
-    `VMAF_SS2_EOTF_LUT_STORAGE` hooks. A change to those headers changes the
+    `ssimulacra2_eotf_lut.h` into device code through `VMAF_SS2_FUNC` /
+    `VMAF_SS2_EOTF_LUT_STORAGE` hooks. change to those headers changes
     CUDA twin; keep them valid device code.
   - Sums = CPU's loops, bit for bit (ADR-1433). `ssim_map()` /
     `edge_diff_map()` add each term pixel after pixel into one double;
@@ -46,10 +46,10 @@ invariant: ssimulacra2_cuda is device-resident and computes bit-exact CPU scores
     `test_cuda_ssimulacra2_exact_contract.py`, `test_cuda_ssimulacra2_parity`
     (`==`, fails on tree sum). Cost + tuning candidates:
     `T-CUDA-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-01`.
-  - Blur layout: the horizontal pass stages 32-row x 32-column tiles through
+  - Blur layout: horizontal pass stages 32-row x 32-column tiles through
     shared memory with one warp per block and forms `ref^2`, `dis^2` and
-    `ref*dis` on load (radius at most `SS2C_BLUR_MAX_RADIUS` = 16); the
-    vertical pass walks one column per thread on the row-major output, which
-    is already coalesced. The ADR-0456 transpose and separate multiply kernel
+    `ref*dis` on load (radius at most `SS2C_BLUR_MAX_RADIUS` = 16);
+    vertical pass walks one column per thread on row-major output, which
+    is already coalesced. ADR-0456 transpose and separate multiply kernel
     are gone: that layout measured about 2x slower
     ([Research-1391](../../../../../docs/research/1391-cuda-ssimulacra2-device-resident.md)).

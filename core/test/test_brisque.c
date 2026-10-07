@@ -46,6 +46,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -228,7 +229,7 @@ static char *test_brisque_range_scale(void)
 static int load_yuv420p8_frame(VmafPicture *pic, const char *path, unsigned w, unsigned h,
                                unsigned frame)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return -1;
     const long fsz = (long)w * h * 3 / 2;

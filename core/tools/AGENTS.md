@@ -5,9 +5,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
 
 Orientation for agents working on CLI binaries. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -34,7 +34,7 @@ Three C binaries built by libvmaf's Meson tree:
 | `cli_feature_backend.cpp`, `cli_feature_backend.h`, `vmaf.cpp` | [feature-backend-twin](AGENTS.d/feature-backend-twin.md) | register_cli_feature() maps CPU extractor to twin through libvmaf; backend_used reflects device if any ran. |
 | `vmaf.cpp`, `test/test_vmaf_frame_readahead.sh` | [frame-readahead](AGENTS.d/frame-readahead.md) | Reader threads run up to kReadaheadDepth frames ahead; reserve ring slot before pool picture; request_stop both. |
 | `test/meson.build` | [gpu-tool-tests](AGENTS.d/gpu-tool-tests.md) | Every test under core/tools/test/ carrying Meson gpu suite tag must set is_parallel : false. |
-| `cli_backends.cpp`, `cli_backends.h`, `cli_parse.cpp`, `vmaf.cpp`, `/tools/vmaf-tune/src/vmaftune/score_backend.py`, `/pkg/scorebackend/scorebackend.go` | [list-backends](AGENTS.d/list-backends.md) | vmaf --list-backends is the one source of usable backends; both score-backend selectors read it. |
+| `cli_backends.cpp`, `cli_backends.h`, `cli_parse.cpp`, `vmaf.cpp`, `/tools/vmaf-tune/src/vmaftune/score_backend.py`, `/pkg/scorebackend/scorebackend.go` | [list-backends](AGENTS.d/list-backends.md) | vmaf --list-backends is one source of usable backends; both score-backend selectors read it. |
 | `vmaf.cpp`, `cli_parse.cpp` | [no-reference-mode](AGENTS.d/no-reference-mode.md) | --no-reference requires tiny_model_path, forces no_prediction; open_cli_inputs opens distorted source twice. |
 | `cli_parse.cpp`, `cli_parse.h` | [option-parsing-and-escape](AGENTS.d/option-parsing-and-escape.md) | Option dicts belong to CLISettings; parse_unsigned rejects negatives; long-only options pass enum to error(). |
 | `meson.build`, `vmaf.cpp` | [orientation](AGENTS.d/orientation.md) | Upstream-mirror tools conform to fork lint profile; CliRunGuard invokes ordered cleanup after parsing. |

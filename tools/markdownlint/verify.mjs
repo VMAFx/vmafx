@@ -1540,6 +1540,38 @@ function lintOutputSelfTest(temporary) {
   process.stdout.write("lint output fixtures: findings, order and format match markdownlint-cli2 0.23.3\n");
 }
 
+// markdownlint parses math with micromark-extension-math, whose module load imports katex: the
+// package.json override lifts katex past the extension's ^0.16.0 range to a release free of
+// GHSA-238p-pmpm-9mq7 (#793), so this fixture proves the overridden katex still serves the
+// extension. Positive: emphasis and reversed-link text inside inline and block math is math, not
+// a finding, and the extension's HTML side renders both through katex. Negative: the same text
+// outside math is reported, and TeX that katex cannot parse throws.
+const MATH_FIXTURES = Object.freeze({
+  "docs/math.md": "# Math\n\nInline $x *y * z$ and $(a)[b]$ here.\n\n$$\nx *y * z\n$$\n",
+  "docs/plain.md": "# Plain\n\nInline x *y * z and (a)[b] here.\n\nx *y * z\n",
+});
+const MATH_EXPECTED = Object.freeze([
+  "docs/plain.md:3:21 error MD011/no-reversed-links Reversed link syntax [(a)[b]]",
+  "docs/plain.md:3:12 error MD037/no-space-in-emphasis Spaces inside emphasis markers [Context: \"y *\"]",
+  "docs/plain.md:5:5 error MD037/no-space-in-emphasis Spaces inside emphasis markers [Context: \"y *\"]",
+]);
+function mathSelfTest(temporary) {
+  const fixture = path.join(temporary, "math-fixture");
+  writeFixtureFiles(fixture, MATH_FIXTURES);
+  const result = lintCommand(fixture, temporary, Object.keys(MATH_FIXTURES));
+  assert.deepEqual([result.status, result.stdout], [1, ""]);
+  assert.equal(result.stderr, `${MATH_EXPECTED.join("\n")}\n`);
+  const { micromark } = loadDependency(temporary, "micromark");
+  const { math, mathHtml } = loadDependency(temporary, "micromark-extension-math");
+  const render = (text) => micromark(text, { extensions: [math()], htmlExtensions: [mathHtml()] });
+  const html = render(MATH_FIXTURES["docs/math.md"]);
+  assert.match(html, /<span class="math math-inline"><span class="katex">/u);
+  assert.match(html, /<div class="math math-display"><span class="katex-display">/u);
+  assert.throws(() => render("$\\frac{a$\n"), /KaTeX parse error/u);
+  const katex = loadDependency(temporary, "katex/package.json").version;
+  process.stdout.write(`math fixtures: inline and block math lint as math, katex ${katex} renders both\n`);
+}
+
 // The per-file ceiling is a memory bound (see MAX_FILE_BYTES_CEILING). Boundary: a file exactly at
 // the ceiling, of linked and code-spanned bullets, lints clean in a lint child capped at
 // LINT_MEMORY_HEAP_MB. Negative: one byte past the ceiling is refused before it is read.
@@ -2260,6 +2292,7 @@ function runSelfTest(toolDir, temporary) {
   lintEntrySelfTest(temporary);
   hermeticConfigSelfTest(temporary);
   lintOutputSelfTest(temporary);
+  mathSelfTest(temporary);
   lintMemorySelfTest(temporary);
   styleExclusionSelfTest(temporary);
   raisedBoundSelfTest(temporary);

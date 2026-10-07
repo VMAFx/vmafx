@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
 
 Orientation for agents working on C unit test suite. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -68,7 +68,7 @@ C unit tests for libvmaf engine. Runs on every build via
 | `test_ciede_neon.c`, `meson.build` | [aarch64-msvc](AGENTS.d/aarch64-msvc.md) | Windows ARM64 MSVC builds tests gating on aarch64 with cl.exe; no POSIX-only headers or calls under ARCH_AARCH64. |
 | `test_motion_min_dim.c`, `test_lpips.c` | [c-test-msvc-null](AGENTS.d/c-test-msvc-null.md) | C test files spell NULL with NOLINT bracket for MSVC; run_tests() bounded by readability-function-size at 15 branches. |
 | `test_cambi.c`, `test_cambi_stage_simd.c`, `test_integer_cambi_sycl.c`, `test_sycl_cambi_parity.c` | [cambi-smoke-and-seams](AGENTS.d/cambi-smoke-and-seams.md) | test_integer_cambi_sycl.c is smoke test; test_sycl_cambi_parity.c is parity gate; both exist intentionally. |
-| `float_bits.h`, `test_float_bits.c`, `*_twin_parity.h`, `test_metal_*_parity.c`, `test_speed_upstream_form.c` | [codeql-bit-identity](AGENTS.d/codeql-bit-identity.md) | Exact results are compared with float_bits.h, never `==` or a new memcpy copy; test variants keep static bodies equal. |
+| `float_bits.h`, `test_float_bits.c`, `*_twin_parity.h`, `test_metal_*_parity.c`, `test_speed_upstream_form.c` | [codeql-bit-identity](AGENTS.d/codeql-bit-identity.md) | Exact results are compared with float_bits.h, never `==` or new memcpy copy; test variants keep static bodies equal. |
 | `test_cambi.c`, `test_svm_api.c` | [codeql-fp-contracts](AGENTS.d/codeql-fp-contracts.md) | CodeQL flags float equality; test_cambi uses float_bits_equal; svm_labels_equal compares 64-bit IEEE bit identity. |
 | `float_ssim_order_frame.h`, `test_cuda_float_ssim_order.c`, `test_cuda_float_ssim_exact_contract.py` | [float-ssim-order-frame](AGENTS.d/float-ssim-order-frame.md) | Shared float_ssim_order_frame.h is byte-identical across twin lanes and never edited; tests assert exact CPU bits. |
 | `test_framesync_init_failure.c`, `test_framesync.c`, `meson.build` | [framesync](AGENTS.d/framesync.md) | Framesync initializer failures recompile framesync.c into test executable; target keeps LTO off on Darwin. |
@@ -76,7 +76,7 @@ C unit tests for libvmaf engine. Runs on every build via
 | `test_adm_small_border.c`, `test_adm_wide_rounding.c`, `test_gpu_adm_tiny_frames.c`, `test_adm_cm_row_rounding.c`, `test_adm_cm_row_rounding_contract.py`, `test_sycl_motion_add_uv_parity.c` | [gpu-parity-variants](AGENTS.d/gpu-parity-variants.md) | Parity tests register small and 960x540 variants; shared GPU test sources request only names every arm emits. |
 | `test_cuda_buffer_alloc_oom.c`, `test_cuda_pic_preallocation.c`, `test_cuda_speed_chroma_smoke.c`, `test_cuda_speed_temporal_smoke.c`, `test_gpu_dispatch_runtime.c` | [gpu-test-discipline](AGENTS.d/gpu-test-discipline.md) | GPU tests must skip gracefully when no device present; GPU-only extractors get smoke gate, not parity gate. |
 | `test_dict.cpp`, `test_feature.cpp`, `test_flush_context_ordering.c`, `test_luminance_tools.cpp`, `test_bootstrap_name_contract.py` | [header-and-source-boundaries](AGENTS.d/header-and-source-boundaries.md) | test_dict.cpp and test_feature.cpp are authoritative test files; test_bootstrap_name_contract.py is source-level test. |
-| `metal_twin.h`, `test_metal_*_parity.c`, `test_metal_report_rows_contract.py`, `*_twin_parity.h` | [metal-parity-tests](AGENTS.d/metal-parity-tests.md) | Metal parity tests compare `==`, run every case via metal_run_case(), skip without a device, pass as self-tests. |
+| `metal_twin.h`, `test_metal_*_parity.c`, `test_metal_report_rows_contract.py`, `*_twin_parity.h` | [metal-parity-tests](AGENTS.d/metal-parity-tests.md) | Metal parity tests compare `==`, run every case via metal_run_case(), skip without device, pass as self-tests. |
 | `test_svm_parser.c`, `test_speed.c`, `test_speed_qa.c`, `test_iqa_convolve_coverage.c`, `test_integer_motion_v2_coverage.c`, `test_ssim_coverage.c`, `test_integer_psnr_coverage.c` | [observation-fixtures](AGENTS.d/observation-fixtures.md) | Observation test fixtures keep original registrations and order; parser and input arrays remain read-only. |
 | `test.h`, `mu_table.h`, `meson.build` | [orientation](AGENTS.d/orientation.md) | Tests follow test.h; readability-function-size 15 branches, HISS-04 60-line cap; clean up before asserting. |
 | `test_pelorus_interop.c`, `/scripts/sync-pelorus-interop.sh` | [pelorus-interop](AGENTS.d/pelorus-interop.md) | test_pelorus_interop.c is exact Pelorus fixture; never add VMAFx-only NOLINT bands, (void) casts, or warning repairs. |
