@@ -11804,6 +11804,7 @@
         "core/test/conversion_target_model.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_compat_conformance_scoring.c": 1,
+        "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
         "core/test/test_vmafx_frame_input.c": 1,
         "core/test/test_vmafx_python_binding.py": 1,
         "scripts/ci/test_e2e_runtime_contract.py": 1,
