@@ -310,7 +310,9 @@ frames score on CUDA and are imported without a copy, ordered by CUDA event
 fences. DRM PRIME frames (VAAPI frames mapped with `hwmap`) are imported as
 dma-bufs without a copy on SYCL when the GPU is Intel's and on HIP when it is
 AMD's; the device import waits on the dma-buf's implicit fences, so the
-decoder's writes are complete before a kernel reads them. `backend=cuda` with
+decoder's writes are complete before a kernel reads them, and a frame goes back
+to its pool only after its release fence says the device read it. Vulkan
+frames score on the device of their GPU (below). `backend=cuda` with
 software frames makes the CUDA context upload them; the result equals
 `vmaf --backend cuda` (`parity --backend cuda-host`).
 
@@ -319,7 +321,7 @@ frames, `device` refuses software frames, and `host` downloads hardware frames
 and scores them on the CPU, logging `vmafx: import=host: hardware frames are
 downloaded before scoring` once.
 
-Other hardware frame types (VAAPI without `hwmap`, QSV, Vulkan, D3D11, D3D12,
+Other hardware frame types (VAAPI without `hwmap`, QSV, D3D11, D3D12,
 VideoToolbox) pass format negotiation and are then refused by name:
 
 ```text
@@ -344,6 +346,45 @@ ffmpeg -init_hw_device drm=dr:/dev/dri/renderD129 -init_hw_device vaapi=va@dr -f
 
 The `format=drm_prime` after each `hwmap` matters: without it `hwmap` passes
 the VAAPI frames on, which `vmafx` refuses by name.
+
+#### Vulkan frames
+
+Vulkan frames (FFmpeg's Vulkan decoder, `hwupload` to a Vulkan device, the
+`libplacebo` filter) score on the VMAFx device on the same GPU: the filter
+reads the Vulkan device's PCI location and opens the device of that location.
+With `backend=auto` the GPU's vendor picks the backend (CUDA on NVIDIA, SYCL
+on Intel, HIP on AMD); `backend=cuda`, `sycl` or `hip` picks it yourself. A
+backend with no device on that GPU is refused by name: Vulkan frames are never
+read across GPUs.
+
+```bash
+ffmpeg -init_hw_device vulkan=vk:NVIDIA -filter_hw_device vk \
+  -hwaccel vulkan -hwaccel_device vk -hwaccel_output_format vulkan -i distorted.mp4 \
+  -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 24 -i reference.yuv \
+  -filter_complex "[1:v]format=nv12,hwupload[r];[0:v][r]vmafx" -f null -
+```
+
+The device name after `vk:` is matched against the Vulkan device names
+(`vulkaninfo --summary` lists them); an index works too.
+
+Each frame is copied once on the GPU before the handover. VMAFx imports one
+exported image per plane, while FFmpeg's decoder writes one multi-plane image
+whose memory is not exportable on every driver, and an FFmpeg frames context
+does not say whether its pool exports its memory. The filter therefore copies
+the planes, on the Vulkan device and behind the frames' timeline semaphores,
+into its own pool of exportable images (one per plane; device-local OPTIMAL
+images for CUDA, LINEAR images for the dma-buf paths of SYCL and HIP) and
+hands those over. CUDA waits on the copy's timeline semaphores on its stream
+and signals them again after the frame's last reader; SYCL and HIP take the
+frame after a host wait for the copy and return it to the pool after its
+release fence. No frame passes through host memory, and the `vmafx frames:`
+line counts them as imported on the device. A planar Vulkan frame on CUDA is
+read from CUDA arrays with one more device copy (`VMAFX_IMPORT_ALLOW_COPY`,
+logged once by the library); NV12 and P010 are converted without one.
+
+Planar and semi-planar layouts are taken; a packed layout (`yuyv422`, `y210`
+and the like) is refused by name. The check is `vmafx_filter_check.py vulkan`
+(below).
 
 ### Layouts
 
@@ -493,9 +534,18 @@ reads the report and encodes with it; `-vmaf-profile` stays until the
   decision Q-047).
 - `target_width`, `target_height` and `target_scaling` are reserved until RC5
   (device-targeted scoring) and the filter refuses them when set.
-- The filter imports CUDA frames and DRM PRIME frames (on SYCL and HIP). QSV
-  and VideoToolbox frames are refused by name until the filter's import slots
-  for them are filled; `import=host` or `hwdownload` scores them on the CPU.
+- The filter imports CUDA frames, DRM PRIME frames (on SYCL and HIP) and
+  Vulkan frames (on the device of their GPU). QSV and VideoToolbox frames are
+  refused by name until the filter's import slots for them are filled;
+  `import=host` or `hwdownload` scores them on the CPU.
+- FFmpeg 9.0.2's `libplacebo` filter fails to initialise ("Error initializing
+  filters", no message) with libplacebo 7.360 or older on a Vulkan device
+  that has internally synchronized queues (NVIDIA 615, Mesa 26.2): FFmpeg
+  sets queue flags that only libplacebo API 365 accepts, which no libplacebo
+  release has yet. This is outside VMAFx; the `libplacebo` route was checked
+  with libplacebo built from its development branch on NVIDIA and Intel, and
+  with libplacebo 7.360.0 on Mesa 26.0.8 (no such queues) on AMD
+  (`T-FFMPEG-LIBPLACEBO-QUEUE-FLAGS-2026-10-07` in [state.md](../state.md)).
 - `libvmafx` creates devices of the backends it was built with: the CPU, and
   CUDA, SYCL or HIP. `backend=metal`, or a backend the library was built
   without, fails at configuration and names the backend.
@@ -532,6 +582,7 @@ missing.
 | `pool` | Both inputs in fixed VAAPI pools: a pool one frame short is refused by name, a pool of exactly `N` frames scores as the CLI. | VAAPI device |
 | `legacy` | `vmafx_pre` writes the bytes of `vmaf_pre`, and `vmafx_tune` logs the recommendation of `libvmaf_tune`. | FFmpeg built with `--enable-libvmaf` and `--enable-libvmafx` |
 | `layouts` | Every 4:2:2 / 4:4:4 layout scores as the CLI scores the planar file it was converted from; `--backend cuda` imports them on the device. | CPU; CUDA for the device form |
+| `vulkan` | The reference encoded on the `--vendor`'s GPU, decoded by FFmpeg's Vulkan decoder on the same GPU and scored by `vmafx` against the reference uploaded to the Vulkan device: every value equals the CLI's on the downloaded decoded frames, and every frame of both inputs is imported on the device. `--libplacebo` puts the `libplacebo` filter between decoder and `vmafx`. | `--enable-vulkan` and the vendor's Vulkan H.264 decode (`ANV_DEBUG=video-decode` on Intel with Mesa 26); `--enable-libplacebo` for `--libplacebo` |
 | `e2e` | The encode-and-score command above equals the same frames scored from files by the CLI on the same backend, windows included, with every frame imported on the device. `--vendor nvidia` (NVENC, NVDEC, CUDA; `--e2e-format 444p10` for HEVC 4:4:4 10-bit), `--vendor intel` (VAAPI encode and decode, DRM PRIME, SYCL) or `--vendor amd` (the same on HIP) with `--render-node`. | The vendor's encoder and decoder, `--enable-libvmafx` (with `--enable-vaapi --enable-libdrm` for Intel and AMD) |
 
 ## `vmafx` filter option table

@@ -59,6 +59,20 @@ and how an encoder's output reaches the filter as device frames in one command
 8. **No Dolby Vision profile 5 handling.** Sources need converting outside the
    pipeline; VMAFx reads and applies no RPU data (decision Q-047,
    [ADR-1685](1685-post-1-0-embedding-zero-copy-milestone.md)).
+9. **Vulkan frames are copied once on the GPU, then imported.** The library
+   imports one exported image per plane (ADR-2152); FFmpeg's decoder writes
+   one multi-plane image whose memory RADV and ANV cannot export, and an
+   FFmpeg frames context records nowhere whether its pool allocated
+   exportable memory. The filter copies every Vulkan frame on the Vulkan
+   device, behind its timeline semaphores, into its own pool of exportable
+   per-plane frames (OPTIMAL for CUDA, LINEAR for the dma-buf paths of SYCL
+   and HIP) and imports those on the VMAFx device at the same PCI location;
+   `backend=auto` picks the backend by the GPU's vendor. CUDA waits on and
+   signals the copies' timelines on the device; SYCL and HIP take a copy
+   after a host wait and return it after its HOST release fence. This is the
+   one place the filter owns a pool (decision 4 refuses to for the other
+   frame types): the copy replaces a host round trip, not a zero-copy path.
+   Every device frame goes back to its producer only after its release fence.
 
 ## Alternatives considered
 
@@ -70,6 +84,8 @@ and how an encoder's output reaches the filter as device frames in one command
 | Parse `model` / `feature` in each filter | No library change | Two parsers (FFmpeg, GStreamer) drift | HISS-19: one parser in the library |
 | `hwupload` after a software decode for #2138 | Stock FFmpeg | The encoded frames cross the bus twice | Defeats device scoring of the encoder's output |
 | Submit the loopback hwaccel change to FFmpeg first | No fork patch | Outside the release train | Maintainer chose fork-only (Q-048) |
+| Import Vulkan frames directly when the producer's pool exports its memory | No copy for per-plane exportable frames (some `libplacebo` outputs) | No public FFmpeg field says whether a pool exports; probing would repeat `try_export_flags()` of `hwcontext_vulkan.c`, and `vkGetMemoryFdKHR()` on memory that was not allocated exportable is invalid usage | A wrong guess is undefined behaviour; one GPU copy per frame is measured and safe |
+| Download Vulkan frames (`import=host`) | Works with any Vulkan frame | A host round trip per frame | Kept as the explicit option, not the default |
 
 ## Consequences
 
@@ -78,7 +94,8 @@ and how an encoder's output reaches the filter as device frames in one command
   their cause; #2138 runs as one command with no host copy.
 - **Negative**: the fork carries patch `0024` across FFmpeg releases; users of
   fixed-size pools must size them (`-extra_hw_frames`).
-- **Neutral / follow-ups**: QSV frames on SYCL; Metal through the tester bundle; retire the
+- **Neutral / follow-ups**: the GStreamer element's Vulkan path (request
+  WP3-vulkan-1, second half); QSV frames on SYCL; Metal through the tester bundle; retire the
   `libvmaf*` filters (WP10); `learned_filter_v1` needs a `[1,1,H,W]` export
   before `vmafx_pre` or `vmaf_pre` can run it.
 
@@ -87,11 +104,14 @@ and how an encoder's output reaches the filter as device frames in one command
 - [ADR-1852](1852-vmafx-api-redesign.md) (D4, D6, D8),
   [ADR-2074](2074-vmafx-window-scores.md), [ADR-2090](2090-motion-window-incremental.md),
   [ADR-2023](2023-vmafx-cuda-device-frames.md), [ADR-1897](1897-vmafx-abi-0x-numbering.md),
+  [ADR-2152](2152-vmafx-vulkan-frame-import.md),
   [ADR-1685](1685-post-1-0-embedding-zero-copy-milestone.md),
   [Research-2163](../research/2163-vmafx-ffmpeg-gstreamer-filters.md).
 - `Q-048`: "Our series only" (the loopback-decoder hwaccel patch stays in
   `ffmpeg-patches/`, nothing is submitted upstream).
 - `Q-047`: "Keep DV5 out".
+- Request WP3-vulkan-1 (Vulkan frames into the filter and the element,
+  `libplacebo` output included).
 - Request WP9-1 (window clock, `extra_hw_frames` from
   `vmafx_context_max_in_flight()` + 1) and WP9-2 (windows complete before the
   end of the stream).

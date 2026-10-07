@@ -62634,6 +62634,16 @@ Invariants a rebase keeps:
   naming the backend, and a fixed-size frame pool smaller than
   `vmafx_context_max_in_flight() + 1` is refused before any frame. A
   silent fallback to the host is a regression.
+- Vulkan frames (`vk_*()` in `vf_vmafx.c`, under `CONFIG_VULKAN`) are copied
+  on the GPU into the filter's own pool of exportable per-plane frames and
+  imported on the device at the Vulkan device's PCI location (request
+  WP3-vulkan-1, ADR-2152). The filter loads its Vulkan functions through the
+  device's `get_proc_addr` and fetches its queue with `vkGetDeviceQueue2()`
+  and the device's `queue_flags`; FFmpeg's `vulkan.o` helpers are not linked,
+  so the filter's objects stay buildable without `--enable-vulkan`.
+- A device frame returns to its producer only after its release fence: the
+  CUDA release event, the copies' timelines on CUDA, or a HOST release fence
+  that `box_release_resources()` waits on (DRM PRIME, Vulkan on SYCL and HIP).
 - Patch `0024` is carried by the fork only (decision Q-048). When an FFmpeg
   release changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`, the patch is
   refreshed, not dropped.

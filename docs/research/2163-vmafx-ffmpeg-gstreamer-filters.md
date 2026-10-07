@@ -3,7 +3,7 @@
 
 - **Status**: Active
 - **Workstream**: [ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md)
-- **Last updated**: 2026-10-06
+- **Last updated**: 2026-10-07
 
 Measurements and design choices behind the `vmafx`, `vmafx_tune` and
 `vmafx_pre` FFmpeg filters, the `-vmafx-profile` option, hardware decoding for
@@ -52,6 +52,51 @@ filter share one engine, one option table (generated from
 `vmafx_context_use_feature_spec()`, so a `model` or `feature` string means the
 same on both.
 
+### Vulkan frames (request WP3-vulkan-1)
+
+The reference encoded on each GPU (NVENC, or VAAPI on the Arc A380 and the
+gfx1036), decoded with FFmpeg's Vulkan decoder on the same GPU, scored by
+`vmafx` against the reference uploaded to the Vulkan device, and compared with
+the CLI on the downloaded decoded frames (`vmafx_filter_check.py vulkan`):
+
+| GPU, backend | Route | Values equal / compared | Frames imported |
+| --- | --- | --- | --- |
+| RTX 4090, CUDA | Vulkan decode to `vmafx` | 722 / 722 | 96 of 96 |
+| RTX 4090, CUDA | Vulkan decode to `libplacebo` to `vmafx` | 722 / 722 | 96 of 96 |
+| Arc A380, SYCL | Vulkan decode to `vmafx` (`ANV_DEBUG=video-decode`) | 722 / 722 | 96 of 96 |
+| Arc A380, SYCL | Vulkan decode to `libplacebo` to `vmafx` | 722 / 722 | 96 of 96 |
+| gfx1036, HIP (pinned ROCm 10.1.0 image with the Vulkan loader, Mesa 26.0.8) | Vulkan decode to `vmafx` | 722 / 722 | 96 of 96 |
+| gfx1036, HIP (same image) | Vulkan decode to `libplacebo` to `vmafx` | 722 / 722 in 3 of 4 runs; one run differed on one frame (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01` sighting) | 96 of 96 |
+
+A planted defect (the copy skips the chroma planes) makes the check fail with
+mismatches named per frame and feature.
+
+What the measurements and the FFmpeg n9.0.2 sources showed:
+
+- FFmpeg's pool allocates exportable memory only when its own probe
+  (`try_export_flags()` in `libavutil/hwcontext_vulkan.c`) says so and stores
+  the outcome in a private struct; `AVVulkanFramesContext` has no field for
+  it. The filter cannot tell an exportable pool from another, so it copies
+  every frame into its own pool, whose memory FFmpeg exports for the per-plane
+  formats on all three drivers.
+- FFmpeg allocates LINEAR images in host-visible memory and OPTIMAL images in
+  device-local memory; the CUDA copies are OPTIMAL (read through CUDA arrays,
+  NV12 and P010 converted on the device, a planar frame with one library
+  device copy), the SYCL and HIP copies LINEAR (their dma-buf paths read
+  linear memory only).
+- On a device with internally synchronized queues the queue must be fetched
+  with `vkGetDeviceQueue2()` and the device's `queue_flags`: `vkGetDeviceQueue()`
+  returned a queue the NVIDIA driver accepted and ANV crashed on in
+  `vkQueueSubmit2()`.
+- FFmpeg 9.0.2's `libplacebo` filter fails to initialise with every released
+  libplacebo (API 360) on a device with internally synchronized queues (NVIDIA
+  615, Mesa 26.2.4); libplacebo's development branch (API 374) works
+  (`T-FFMPEG-LIBPLACEBO-QUEUE-FLAGS-2026-10-07`).
+- The library runs a device frame's release callback after it enqueued the
+  device's release signal, not after the device finished; a frame goes back to
+  its producer after its HOST release fence (DRM PRIME and the SYCL / HIP
+  Vulkan copies), or behind the release event or timeline on CUDA.
+
 ## 2. Alternatives considered
 
 ### 2.1 Frame-pool sizing for hardware frames
@@ -81,7 +126,21 @@ for input streams only, so the decoder behind `-dec` returns system memory.
 | `hwupload` after a software decode | Host decode and an upload per frame: the encoded frames cross the bus twice | Rejected |
 | Submit the change to FFmpeg first | Review time outside the release train; the filter works only once it is merged | Not now: the maintainer chose fork-only (Q-048) |
 
+### 2.3 Vulkan frames
+
+| Option | Cost | Verdict |
+| --- | --- | --- |
+| Copy every frame on the GPU into the filter's exportable per-plane pool | One GPU copy per frame and input | Chosen |
+| Import the producer's frames directly when they are per-plane and exportable | Needs a signal FFmpeg does not give; a wrong guess calls `vkGetMemoryFdKHR()` on unexportable memory (invalid usage) | Rejected until FFmpeg exposes the export flags |
+| `hwdownload` / `import=host` | A host round trip per frame | Explicit option only |
+| FFmpeg's internal Vulkan helpers (`ff_vk_exec_*`): less code | `vulkan.o` builds only with `--enable-vulkan`, which the filter's objects cannot depend on; `vkCmdCopyImage` is not in FFmpeg's function table | Rejected: the filter loads the 21 functions it needs through `get_proc_addr` |
+
 ## 3. Open items
+
+- The GStreamer element still refuses `memory:VulkanImage` by name (second
+  half of request WP3-vulkan-1): GStreamer 1.28 allocates image memory that
+  cannot be exported, so the element needs the same copy into images it
+  allocates exportable.
 
 - The SYCL and HIP slots import DRM PRIME frames (VAAPI frames through
   `hwmap`); QSV frames and the Metal slot (VideoToolbox) still refuse by name,

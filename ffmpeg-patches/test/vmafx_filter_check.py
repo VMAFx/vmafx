@@ -37,6 +37,16 @@ fixture is missing:
   ``vmafx_context_max_in_flight() + 1`` is refused by name before any frame;
   a pool of exactly that size scores the pair as the CLI does.
 
+- ``vulkan``: the reference encoded on the ``--vendor``'s GPU, decoded by
+  FFmpeg's Vulkan decoder on the same GPU (``-hwaccel vulkan``) and scored
+  by vmafx against the reference uploaded to the Vulkan device; the filter
+  copies each frame on the GPU into exportable per-plane images and the
+  device of that GPU (CUDA, SYCL, HIP) imports them. Every value must equal
+  the CLI's on the downloaded decoded frames, and every frame of both inputs
+  must be imported on the device. ``--libplacebo`` puts FFmpeg's
+  ``libplacebo`` filter between the decoder and vmafx (its output frames are
+  scored the same way).
+
 Pairs: the Netflix 576x324 pair, both 1080p checkerboard pairs, the 4K BBB
 pair (first ``--frames-4k`` frames).
 """
@@ -635,6 +645,74 @@ def e2e_environment(args: argparse.Namespace, v: Vendor) -> dict[str, str]:
     return env
 
 
+# The Vulkan device of a vendor's GPU, by FFmpeg's device-name match.
+VULKAN_DEVICES = {"nvidia": "NVIDIA", "intel": "Intel", "amd": "RADV"}
+
+
+def hw_device_flags(v: Vendor) -> list[str]:
+    cmd: list[str] = []
+    for device in v.devices:
+        cmd += ["-init_hw_device", device]
+    return [*cmd, "-filter_hw_device", v.devices[-1].split("=", 1)[1].split(":")[0].split("@")[0]]
+
+
+def vulkan_encode(args: argparse.Namespace, v: Vendor, tmp: Path, pair: Pair) -> Path:
+    """The reference encoded on the vendor's GPU, as `e2e` encodes it."""
+    out = tmp / "encoded.h264"
+    size = f"{pair.width}x{pair.height}"
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *hw_device_flags(v)]
+    cmd += ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", size, "-r", "24"]
+    cmd += ["-i", str(fixture(args, pair.ref)), *v.encode, "-f", "h264", str(out)]
+    run(cmd, e2e_environment(args, v))
+    return out
+
+
+def vulkan_command(args: argparse.Namespace, tmp: Path, pair: Pair, encoded: Path) -> list[str]:
+    """Vulkan decode -> (libplacebo) -> vmafx against the uploaded reference,
+    and the scored frames downloaded for the file run."""
+    report, decoded = tmp / "filter.json", tmp / "decoded.yuv"
+    placebo = "libplacebo=format=nv12," if args.libplacebo else ""
+    graph = (
+        f"[0:v]{placebo}split=2[dv][dd];[1:v]format=nv12,hwupload[r];"
+        f"[dv][r]vmafx=log_path={escape(report)}:score_fmt=%.17g[o];"
+        "[dd]hwdownload,format=nv12,format=yuv420p[raw]"
+    )
+    size = f"{pair.width}x{pair.height}"
+    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info", "-y"]
+    cmd += ["-init_hw_device", f"vulkan=vk:{VULKAN_DEVICES[args.vendor]}"]
+    cmd += ["-filter_hw_device", "vk", "-hwaccel", "vulkan", "-hwaccel_device", "vk"]
+    cmd += ["-hwaccel_output_format", "vulkan", "-i", str(encoded)]
+    cmd += ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", size, "-r", "24"]
+    cmd += ["-i", str(fixture(args, pair.ref)), "-filter_complex", graph]
+    cmd += ["-map", "[o]", "-f", "null", "-", "-map", "[raw]", "-fps_mode", "passthrough"]
+    return [*cmd, "-f", "rawvideo", str(decoded)]
+
+
+def cmd_vulkan(args: argparse.Namespace) -> int:
+    """Vulkan frames (ADR-2152) into vmafx on the device of their GPU."""
+    pair = PAIRS["golden"]
+    if not fixture(args, pair.ref).is_file():
+        return SKIP
+    v = vendor(args)
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        encoded = vulkan_encode(args, v, tmp, pair)
+        result = run(vulkan_command(args, tmp, pair, encoded), e2e_environment(args, v))
+        paths = [x for x in result.stderr.splitlines() if "vmafx frames:" in x]
+        filt = json.loads((tmp / "filter.json").read_text(encoding="utf-8"))
+        cli = e2e_file_report(args, v, tmp, pair)
+    total, same, worst, bad = compare(cli, filt)
+    path = paths[-1].split("vmafx frames:")[-1].strip() if paths else "(no line)"
+    frames = len(cli["frames"])
+    expect = f"{2 * frames} imported on the device, 0 host, 0 downloaded"
+    route = "vulkan->libplacebo->vmafx" if args.libplacebo else "vulkan->vmafx"
+    print(f"frame paths: {path} (expected: {expect})")
+    print(f"| {route} ({args.vendor}) | {v.backend} | {frames} | {total} | {same} | {worst:g} |")
+    for item in bad[:5]:
+        print(f"MISMATCH {item}")
+    return 0 if expect == path and not bad and total else 1
+
+
 def cmd_e2e(args: argparse.Namespace) -> int:
     """#2138: GPU encode -> loopback GPU decode -> vmafx on the device, against
     the same frames scored from files by the CLI on the same backend."""
@@ -673,7 +751,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "command",
-        choices=("parity", "windows", "provenance", "refusal", "pool", "legacy", "layouts", "e2e"),
+        choices=(
+            "parity",
+            "windows",
+            "provenance",
+            "refusal",
+            "pool",
+            "legacy",
+            "layouts",
+            "e2e",
+            "vulkan",
+        ),
     )
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--vmaf", required=True)
@@ -695,6 +783,9 @@ def main() -> int:
     )
     parser.add_argument("--render-node", default="/dev/dri/renderD128", help="e2e: the GPU's node")
     parser.add_argument("--e2e-format", default="420p8", choices=("420p8", "444p10"))
+    parser.add_argument(
+        "--libplacebo", action="store_true", help="vulkan: libplacebo between decoder and vmafx"
+    )
     args = parser.parse_args()
     return {
         "parity": cmd_parity,
@@ -705,6 +796,7 @@ def main() -> int:
         "legacy": cmd_legacy,
         "layouts": cmd_layouts,
         "e2e": cmd_e2e,
+        "vulkan": cmd_vulkan,
     }[args.command](args)
 
 

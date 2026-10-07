@@ -218,8 +218,13 @@ backend within it.
   stays in the filter's format list (a frame type without an import is refused
   by name, never converted by an inserted scale), and a fixed-size frame pool
   smaller than `vmafx_context_max_in_flight() + 1` is refused before the first
-  frame. `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
-  `refusal`, `legacy`, `e2e`) and `gstreamer/test/test_gst_vmafx_parity.py`
+  frame. A device frame goes back to its producer only after its release
+  fence (`box_release_resources()` waits on a HOST fence), and a Vulkan frame
+  is copied on the GPU into the filter's exportable per-plane pool and
+  imported on the VMAFx device at the Vulkan device's PCI location, never
+  imported straight from the producer's pool and never on another GPU
+  (`vk_import()`). `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
+  `refusal`, `legacy`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
   guard them; patch `0024` is fork-only (Q-048) and is refreshed, not dropped,
   when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:

@@ -6,7 +6,9 @@
   metadata, embeds the provenance record, and follows its frames to their
   device: CUDA frames are imported without a copy on CUDA, VAAPI frames mapped
   to DRM PRIME on SYCL (Intel) or HIP (AMD), the 4:2:2 / 4:4:4 semi-planar,
-  packed and MSB-aligned layouts are taken as well, software frames score on
+  packed and MSB-aligned layouts are taken as well, Vulkan frames (FFmpeg's
+  Vulkan decoder, `libplacebo`) are copied once on the GPU and scored on the
+  CUDA, SYCL or HIP device of the same GPU, software frames score on
   the CPU, and a frame it cannot import fails the graph naming the backend and
   the extractor instead of passing unscored. `vmafx_tune` (patch `0021`) and
   `vmafx_pre` (patch `0022`) are the VMAFx names of `libvmaf_tune` and

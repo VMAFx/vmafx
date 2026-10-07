@@ -11911,6 +11911,13 @@
         "ffmpeg-patches/src/vf_vmafx.c": 1
       },
       "target": "2133-vmafx-import-422-444-formats.md"
+    },
+    "2152": {
+      "sites": {
+        "ffmpeg-patches/src/vf_vmafx.c": 1,
+        "ffmpeg-patches/test/vmafx_filter_check.py": 1
+      },
+      "target": "2152-vmafx-vulkan-frame-import.md"
     }
   },
   "retired": {

@@ -21,10 +21,12 @@
  * The vmafx filter: VMAF and the other VMAFx metrics of two video streams
  * through the VMAFx API (libvmafx). Every backend through one filter: the
  * backend follows the input frames (software frames on the CPU, CUDA frames
- * on CUDA, imported without a copy); the options are generated from the
- * library's option groups (vf_vmafx_options.h); n_stats windows run on the
- * library's window clock; the provenance record goes to the log and the
- * report. Source of truth: ffmpeg-patches/src/vf_vmafx.c in the VMAFx tree.
+ * on CUDA, DRM PRIME frames on SYCL or HIP, imported without a copy; Vulkan
+ * frames copied once on the GPU and imported on the device of their GPU);
+ * the options are generated from the library's option groups
+ * (vf_vmafx_options.h); n_stats windows run on the library's window clock;
+ * the provenance record goes to the log and the report. Source of truth:
+ * ffmpeg-patches/src/vf_vmafx.c in the VMAFx tree.
  */
 
 #include "config_components.h"
@@ -46,6 +48,12 @@
 #include "libavutil/pixdesc.h"
 #if CONFIG_CUDA
 #include "libavutil/hwcontext_cuda_internal.h"
+#endif
+#if CONFIG_VULKAN
+#include <unistd.h>
+
+#include "libavutil/hwcontext_vulkan.h"
+#include "libavutil/internal.h"
 #endif
 #if CONFIG_LIBDRM
 #include <sys/stat.h>
@@ -82,7 +90,9 @@ typedef struct VMAFXContext {
     unsigned n_models;
     const struct VMAFXBackendSlot *slot; /* the backend frames go to */
     int hw;                              /* the inputs are hardware frames */
-    enum AVPixelFormat sw_format;        /* the planes' layout */
+    int vulkan;                          /* ... Vulkan frames, copied for the handover */
+    struct VMAFXVulkan *vk;
+    enum AVPixelFormat sw_format; /* the planes' layout */
     uint64_t frame_cnt;
     int failed;   /* a frame could not be scored: no score line after it */
     int finished; /* the stream was flushed and every window written */
@@ -132,6 +142,28 @@ static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, V
 #define VMAFX_DRM_OPEN NULL
 #define VMAFX_DRM_IMPORT NULL
 #endif
+
+#if CONFIG_VULKAN
+static int vk_open(AVFilterContext *ctx, AVBufferRef *frames);
+static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
+static void vk_close(VMAFXContext *s);
+#endif
+
+/* The slot of the backend that reads the GPUs of a PCI vendor with
+ * backend=auto: CUDA on NVIDIA, SYCL on Intel, HIP on AMD; 0 for another. */
+static int vendor_slot(unsigned vendor)
+{
+    switch (vendor) {
+    case 0x10deu:
+        return 2;
+    case 0x8086u:
+        return 3;
+    case 0x1002u:
+        return 4;
+    default:
+        return 0;
+    }
+}
 
 /* Indexed by the `backend` option (auto, cpu, cuda, sycl, hip, metal). */
 static const VMAFXBackendSlot backend_slots[] = {
@@ -361,7 +393,7 @@ typedef struct ReleaseBox {
     atomic_int refs;
     AVFrame *frame;
     AVBufferRef *hwdev; /* CUDA: the device the frame lives on */
-    VmafxFence fence;   /* CUDA: recorded behind the last reader */
+    VmafxFence fence;   /* CUDA: recorded behind the last reader; SYCL, HIP: HOST */
 } ReleaseBox;
 
 static ReleaseBox *box_new(const AVFrame *frame)
@@ -389,12 +421,20 @@ static void box_drop(ReleaseBox *b)
 static void cuda_release_wait(ReleaseBox *b);
 #endif
 
+/* Before a device frame goes back to its producer: its HOST release fence,
+ * which the device signals after the frame's last reader (SYCL, HIP). The
+ * library enqueues that signal before it runs the release callback. */
+#define VMAFX_RELEASE_WAIT_NS UINT64_C(10000000000)
+
 static void box_release_resources(ReleaseBox *b)
 {
 #if CONFIG_CUDA
     if (b->hwdev)
         cuda_release_wait(b);
 #endif
+    if (b->fence.kind == VMAFX_FENCE_HOST &&
+        vmafx_fence_wait(&b->fence, VMAFX_RELEASE_WAIT_NS, NULL) != VMAFX_OK)
+        av_log(NULL, AV_LOG_ERROR, "vmafx: a frame's release fence was not signalled in 10 s\n");
     (void)vmafx_fence_destroy(&b->fence, NULL);
     av_frame_free(&b->frame);
     av_buffer_unref(&b->hwdev);
@@ -518,8 +558,12 @@ static int to_vmafx_frame(AVFilterContext *ctx, AVFrame *frame, const char *inpu
         s->n_downloaded++;
         return download_frame(ctx, frame, input, out);
     }
-    av_assert0(s->slot && s->slot->import);
     s->n_imported++;
+#if CONFIG_VULKAN
+    if (s->vulkan)
+        return vk_import(ctx, frame, input, out);
+#endif
+    av_assert0(s->slot && s->slot->import);
     return s->slot->import(ctx, frame, input, out);
 }
 
@@ -684,7 +728,8 @@ static int drm_open(AVFilterContext *ctx, AVBufferRef *frames)
 /* A DRM PRIME frame imported as dma-bufs without a copy: one plane of the
  * import per plane of the frame's layers, in layer order. The producer's
  * writes are ordered by the dma-buf's implicit fences, which the device
- * import waits for (decision D8 retries a busy one). */
+ * import waits for (decision D8 retries a busy one); the frame goes back to
+ * its producer after its HOST release fence. */
 static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
 {
     VMAFXContext *s = ctx->priv;
@@ -720,12 +765,688 @@ static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, V
     imp.release = box_release;
     imp.user = b;
     VmafxError *error = NULL;
-    const VmafxStatus status =
-        vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, &error);
+    VmafxStatus status = vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, &error);
+    /* The surface goes back to its pool (a decoder writes it again) only
+     * after the device read it: box_release() waits on this fence. */
+    if (status == VMAFX_OK)
+        status = vmafx_frame_release_fence(*out, VMAFX_FENCE_HOST, &b->fence, &error);
+    if (status != VMAFX_OK && *out) {
+        vmafx_frame_unref(*out); /* runs box_release() */
+        *out = NULL;
+    }
     box_after_import(b, status);
     return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
 }
 #endif /* CONFIG_LIBDRM */
+
+/* ---- Vulkan frames (CUDA, SYCL, HIP; ADR-2152) ------------------------------
+ * A Vulkan frame is read by the VMAFx device on the same GPU (PCI location,
+ * VK_EXT_pci_bus_info), never across GPUs. The library imports one image per
+ * plane whose memory the producer exported; FFmpeg's decoder writes one
+ * multi-plane image whose memory is not exportable on every driver, and a
+ * frames context does not tell whether its pool exports its memory. So each
+ * frame is copied on the GPU into a frame of the filter's own pool of
+ * exportable per-plane images (AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE): OPTIMAL
+ * (device-local) for CUDA, LINEAR for the dma-buf backends (SYCL, HIP). The
+ * copy waits on the frames' timeline semaphores and signals them, as FFmpeg's
+ * own submissions do, and releases the images to VK_QUEUE_FAMILY_EXTERNAL in
+ * VK_IMAGE_LAYOUT_GENERAL. CUDA waits on the timelines on its stream and
+ * signals them at the frame's release; SYCL and HIP take the frame after a
+ * host wait and hand it back after its HOST release fence. */
+
+#if CONFIG_VULKAN
+#define VMAFX_VK_RING 4 /* command buffers in flight */
+#define VMAFX_VK_WAIT_NS UINT64_C(10000000000)
+
+/* The Vulkan functions the handover calls, loaded through the device's
+ * get_proc_addr (FFmpeg links no Vulkan loader). */
+#define VMAFX_VK_INSTANCE_FNS(X)                                                                   \
+    X(GetDeviceProcAddr);                                                                          \
+    X(GetPhysicalDeviceProperties2);                                                               \
+    X(EnumerateDeviceExtensionProperties);
+#define VMAFX_VK_DEVICE_FNS(X)                                                                     \
+    X(GetDeviceQueue2);                                                                            \
+    X(CreateCommandPool);                                                                          \
+    X(DestroyCommandPool);                                                                         \
+    X(AllocateCommandBuffers);                                                                     \
+    X(BeginCommandBuffer);                                                                         \
+    X(EndCommandBuffer);                                                                           \
+    X(CmdPipelineBarrier2);                                                                        \
+    X(CmdCopyImage);                                                                               \
+    X(QueueSubmit2);                                                                               \
+    X(CreateFence);                                                                                \
+    X(DestroyFence);                                                                               \
+    X(WaitForFences);                                                                              \
+    X(ResetFences);                                                                                \
+    X(GetMemoryFdKHR);                                                                             \
+    X(GetSemaphoreFdKHR);                                                                          \
+    X(WaitSemaphores);                                                                             \
+    X(GetImageSubresourceLayout);                                                                  \
+    X(GetImageMemoryRequirements2);
+
+typedef struct VMAFXVulkan {
+    AVHWDeviceContext *dev; /* the inputs' Vulkan device */
+    AVVulkanDeviceContext *hw;
+    uint32_t pci[4];
+    uint32_t vendor; /* PCI vendor of the GPU */
+    uint32_t qf;     /* queue family of the copies */
+    VkQueue queue;
+    VkCommandPool pool;
+    VkCommandBuffer cmd[VMAFX_VK_RING];
+    VkFence fence[VMAFX_VK_RING];
+    unsigned next;
+    AVBufferRef *copies[2]; /* per input: the exportable per-plane frames */
+    int device_waits;       /* the device waits on and signals the timelines (CUDA) */
+#define VMAFX_VK_FN(name) PFN_vk##name name
+    VMAFX_VK_INSTANCE_FNS(VMAFX_VK_FN)
+    VMAFX_VK_DEVICE_FNS(VMAFX_VK_FN)
+#undef VMAFX_VK_FN
+} VMAFXVulkan;
+
+static int vk_load(VMAFXVulkan *v)
+{
+    const PFN_vkGetInstanceProcAddr gipa = v->hw->get_proc_addr;
+    int ok = gipa != NULL;
+#define VMAFX_VK_FN(name)                                                                          \
+    v->name = ok ? (PFN_vk##name)gipa(v->hw->inst, "vk" #name) : NULL;                             \
+    ok = ok && v->name
+    VMAFX_VK_INSTANCE_FNS(VMAFX_VK_FN)
+#undef VMAFX_VK_FN
+#define VMAFX_VK_FN(name)                                                                          \
+    v->name = ok ? (PFN_vk##name)v->GetDeviceProcAddr(v->hw->act_dev, "vk" #name) : NULL;          \
+    ok = ok && v->name
+    VMAFX_VK_DEVICE_FNS(VMAFX_VK_FN)
+#undef VMAFX_VK_FN
+    return ok ? 0 : AVERROR(ENOSYS);
+}
+
+static int vk_has_pci_info(VMAFXVulkan *v)
+{
+    uint32_t n = 0;
+    int found = 0;
+    if (v->EnumerateDeviceExtensionProperties(v->hw->phys_dev, NULL, &n, NULL) != VK_SUCCESS)
+        return 0;
+    VkExtensionProperties *ext = av_malloc_array(n ? n : 1, sizeof(*ext));
+    if (ext && v->EnumerateDeviceExtensionProperties(v->hw->phys_dev, NULL, &n, ext) == VK_SUCCESS)
+        for (uint32_t i = 0; i < n && !found; i++)
+            found = !strcmp(ext[i].extensionName, VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
+    av_free(ext);
+    return found;
+}
+
+/* The PCI location of the Vulkan device; ENOSYS when its driver has none. */
+static int vk_pci(VMAFXVulkan *v)
+{
+    VkPhysicalDevicePCIBusInfoPropertiesEXT bus = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT,
+    };
+    VkPhysicalDeviceProperties2 props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &bus,
+    };
+    if (!vk_has_pci_info(v))
+        return AVERROR(ENOSYS);
+    v->GetPhysicalDeviceProperties2(v->hw->phys_dev, &props);
+    v->vendor = props.properties.vendorID;
+    v->pci[0] = bus.pciDomain;
+    v->pci[1] = bus.pciBus;
+    v->pci[2] = bus.pciDevice;
+    v->pci[3] = bus.pciFunction;
+    return 0;
+}
+
+/* A queue family of the device that copies images (graphics or compute
+ * queues transfer too). */
+static int vk_queue_family(const AVVulkanDeviceContext *hw)
+{
+    for (int i = 0; i < hw->nb_qf; i++)
+        if (hw->qf[i].flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
+            return hw->qf[i].idx;
+    return -1;
+}
+
+static int vk_ring_open(VMAFXVulkan *v)
+{
+    const int qf = vk_queue_family(v->hw);
+    const VkCommandPoolCreateInfo pi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = (uint32_t)qf,
+    };
+    const VkCommandBufferAllocateInfo ai = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = VMAFX_VK_RING,
+    };
+    const VkFenceCreateInfo fi = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+    if (qf < 0 || v->CreateCommandPool(v->hw->act_dev, &pi, v->hw->alloc, &v->pool) != VK_SUCCESS)
+        return AVERROR_EXTERNAL;
+    v->qf = (uint32_t)qf;
+    /* The queue as the device created it (its flags: internally synchronized
+     * queues where the driver has them). */
+    const VkDeviceQueueInfo2 qi = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+        .flags = v->hw->queue_flags,
+        .queueFamilyIndex = v->qf,
+    };
+    v->GetDeviceQueue2(v->hw->act_dev, &qi, &v->queue);
+    if (!v->queue)
+        return AVERROR_EXTERNAL;
+    VkCommandBufferAllocateInfo a = ai;
+    a.commandPool = v->pool;
+    if (v->AllocateCommandBuffers(v->hw->act_dev, &a, v->cmd) != VK_SUCCESS)
+        return AVERROR_EXTERNAL;
+    for (int i = 0; i < VMAFX_VK_RING; i++)
+        if (v->CreateFence(v->hw->act_dev, &fi, v->hw->alloc, &v->fence[i]) != VK_SUCCESS)
+            return AVERROR_EXTERNAL;
+    return 0;
+}
+
+static void vk_close(VMAFXContext *s)
+{
+    VMAFXVulkan *v = s->vk;
+    if (!v)
+        return;
+    for (int i = 0; i < VMAFX_VK_RING; i++) {
+        if (!v->fence[i])
+            continue;
+        (void)v->WaitForFences(v->hw->act_dev, 1, &v->fence[i], VK_TRUE, VMAFX_VK_WAIT_NS);
+        v->DestroyFence(v->hw->act_dev, v->fence[i], v->hw->alloc);
+    }
+    if (v->pool)
+        v->DestroyCommandPool(v->hw->act_dev, v->pool, v->hw->alloc); /* frees the buffers */
+    av_buffer_unref(&v->copies[0]);
+    av_buffer_unref(&v->copies[1]);
+    av_freep(&s->vk);
+}
+
+/* Device of VMAFx backend `backend` at the Vulkan device's PCI location, or
+ * -1 (no such device, or the backend is not in this build). */
+static int32_t vk_device_at(uint32_t backend, const uint32_t pci[4])
+{
+    uint32_t n = 0;
+    if (vmafx_device_count(backend, &n, NULL) != VMAFX_OK)
+        return -1;
+    for (uint32_t i = 0; i < n && i <= INT32_MAX; i++) {
+        VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
+        if (vmafx_device_info(backend, (int32_t)i, &info, NULL) == VMAFX_OK &&
+            !memcmp(info.pci, pci, sizeof(info.pci)))
+            return (int32_t)i;
+    }
+    return -1;
+}
+
+/* The VMAFx device on the Vulkan device's GPU: of the `backend` option's
+ * backend, or with backend=auto of the backend of the GPU's vendor. */
+static int vk_pick_device(AVFilterContext *ctx)
+{
+    VMAFXContext *s = ctx->priv;
+    const VMAFXVulkan *v = s->vk;
+    const int slot = s->backend != 0 ? s->backend : vendor_slot(v->vendor);
+    const int32_t index =
+        slot >= 2 && slot <= 4 ? vk_device_at(backend_slots[slot].backend, v->pci) : -1;
+    if (index < 0) {
+        av_log(ctx, AV_LOG_ERROR,
+               "vmafx: backend %s has no device on the Vulkan device's GPU (PCI vendor 0x%04x, "
+               "location %04x:%02x:%02x.%x); Vulkan frames are never read across GPUs\n",
+               slot >= 2 && slot <= 4 ? backend_slots[slot].name : "auto", v->vendor, v->pci[0],
+               v->pci[1], v->pci[2], v->pci[3]);
+        return AVERROR(ENODEV);
+    }
+    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
+    desc.backend = backend_slots[slot].backend;
+    desc.index = index;
+    desc.flags = s->profile ? VMAFX_DEVICE_PROFILING : 0;
+    s->slot = &backend_slots[slot];
+    VmafxError *error = NULL;
+    const VmafxStatus st = vmafx_device_create(&desc, &s->vdev, &error);
+    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_device_create(vulkan)");
+}
+
+/* The VMAFx layouts a Vulkan frame takes: planar and semi-planar, one image
+ * per plane. A packed layout (one plane of several components) is refused. */
+static int vk_layout_ok(enum AVPixelFormat sw)
+{
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(sw);
+    return desc && (av_pix_fmt_count_planes(sw) > 1 || desc->nb_components == 1);
+}
+
+static int vk_open(AVFilterContext *ctx, AVBufferRef *frames)
+{
+    VMAFXContext *s = ctx->priv;
+    const AVHWFramesContext *fc = (const AVHWFramesContext *)frames->data;
+    if (!vk_layout_ok(s->sw_format)) {
+        av_log(ctx, AV_LOG_ERROR, "vmafx: Vulkan frames of layout %s (packed) cannot be scored\n",
+               av_get_pix_fmt_name(s->sw_format));
+        return AVERROR(EINVAL);
+    }
+    s->vk = av_mallocz(sizeof(*s->vk));
+    if (!s->vk)
+        return AVERROR(ENOMEM);
+    s->vk->dev = fc->device_ctx;
+    s->vk->hw = fc->device_ctx->hwctx;
+    int ret = vk_load(s->vk);
+    if (ret >= 0 && (ret = vk_pci(s->vk)) < 0)
+        av_log(ctx, AV_LOG_ERROR,
+               "vmafx: the Vulkan device reports no PCI location "
+               "(VK_EXT_pci_bus_info), so its GPU cannot be matched\n");
+    if (ret >= 0)
+        ret = vk_ring_open(s->vk);
+    if (ret >= 0)
+        ret = vk_pick_device(ctx);
+    if (ret >= 0)
+        s->vk->device_waits = s->slot->backend == VMAFX_BACKEND_CUDA;
+    return ret;
+}
+
+/* The filter's pool of exportable per-plane frames for input `k`. */
+static int vk_copies(VMAFXContext *s, int k, const AVFrame *frame)
+{
+    VMAFXVulkan *v = s->vk;
+    if (v->copies[k])
+        return 0;
+    v->copies[k] =
+        av_hwframe_ctx_alloc(((AVHWFramesContext *)frame->hw_frames_ctx->data)->device_ref);
+    if (!v->copies[k])
+        return AVERROR(ENOMEM);
+    AVHWFramesContext *fc = (AVHWFramesContext *)v->copies[k]->data;
+    AVVulkanFramesContext *vfc = fc->hwctx;
+    fc->format = AV_PIX_FMT_VULKAN;
+    fc->sw_format = frame_sw_format(frame);
+    fc->width = frame->width;
+    fc->height = frame->height;
+    vfc->tiling = v->device_waits ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR;
+    vfc->flags = AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE;
+    const int ret = av_hwframe_ctx_init(v->copies[k]);
+    if (ret < 0)
+        av_buffer_unref(&v->copies[k]);
+    return ret;
+}
+
+static int vk_images(const AVVkFrame *f)
+{
+    int n = 0;
+    while (n < AV_NUM_DATA_POINTERS && f->img[n])
+        n++;
+    return n;
+}
+
+/* A barrier of image `i` to `layout`; from VK_QUEUE_FAMILY_EXTERNAL (a copy
+ * frame the library had) back to the copies' queue family. */
+static VkImageMemoryBarrier2 vk_barrier(const VMAFXVulkan *v, AVVkFrame *f, int i,
+                                        VkImageLayout layout, VkAccessFlags2 access)
+{
+    const int external = f->queue_family[i] == VK_QUEUE_FAMILY_EXTERNAL;
+    const VkImageMemoryBarrier2 b = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .srcAccessMask = f->access[i],
+        .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .dstAccessMask = access,
+        .oldLayout = f->layout[i],
+        .newLayout = layout,
+        .srcQueueFamilyIndex = external ? VK_QUEUE_FAMILY_EXTERNAL : VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = external ? v->qf : VK_QUEUE_FAMILY_IGNORED,
+        .image = f->img[i],
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+    };
+    f->layout[i] = layout;
+    f->access[i] = access;
+    if (external)
+        f->queue_family[i] = v->qf;
+    return b;
+}
+
+/* The handover barrier of image `i` (FFmpeg's PREP_MODE_EXTERNAL_EXPORT):
+ * VK_IMAGE_LAYOUT_GENERAL, released to VK_QUEUE_FAMILY_EXTERNAL. */
+static VkImageMemoryBarrier2 vk_export_barrier(const VMAFXVulkan *v, AVVkFrame *f, int i)
+{
+    VkImageMemoryBarrier2 b =
+        vk_barrier(v, f, i, VK_IMAGE_LAYOUT_GENERAL,
+                   VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+    b.srcQueueFamilyIndex = v->qf;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+    f->queue_family[i] = VK_QUEUE_FAMILY_EXTERNAL;
+    return b;
+}
+
+static void vk_barriers(const VMAFXVulkan *v, VkCommandBuffer cmd, const VkImageMemoryBarrier2 *bar,
+                        int n)
+{
+    const VkDependencyInfo dep = {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = (uint32_t)n,
+        .pImageMemoryBarriers = bar,
+    };
+    v->CmdPipelineBarrier2(cmd, &dep);
+}
+
+/* Plane `p` of `src` (an aspect of its one multi-plane image, or its own
+ * image) copied into image `p` of `dst`. */
+static void vk_copy_plane(const VMAFXVulkan *v, VkCommandBuffer cmd, const AVFrame *frame,
+                          const AVVkFrame *src, const AVVkFrame *dst, int p, int n_planes)
+{
+    const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(frame_sw_format(frame));
+    const int sub = p == 1 || p == 2;
+    const int multi = vk_images(src) == 1 && n_planes > 1;
+    const VkImageCopy c = {
+        .srcSubresource = {multi ? (VkImageAspectFlags)VK_IMAGE_ASPECT_PLANE_0_BIT << p :
+                                   VK_IMAGE_ASPECT_COLOR_BIT,
+                           0, 0, 1},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .extent = {sub ? AV_CEIL_RSHIFT(frame->width, d->log2_chroma_w) : frame->width,
+                   sub ? AV_CEIL_RSHIFT(frame->height, d->log2_chroma_h) : frame->height, 1},
+    };
+    v->CmdCopyImage(cmd, src->img[multi ? 0 : p], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst->img[p],
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+}
+
+/* The copy of `frame` into `copy` and the handover of `copy`'s images. */
+static void vk_record(const VMAFXVulkan *v, VkCommandBuffer cmd, const AVFrame *frame,
+                      AVVkFrame *src, AVVkFrame *dst, int n_planes)
+{
+    VkImageMemoryBarrier2 bar[2 * AV_NUM_DATA_POINTERS];
+    int nb = 0;
+    for (int i = 0; i < vk_images(src); i++)
+        bar[nb++] = vk_barrier(v, src, i, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               VK_ACCESS_2_TRANSFER_READ_BIT);
+    for (int i = 0; i < n_planes; i++)
+        bar[nb++] = vk_barrier(v, dst, i, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    vk_barriers(v, cmd, bar, nb);
+    for (int p = 0; p < n_planes; p++)
+        vk_copy_plane(v, cmd, frame, src, dst, p, n_planes);
+    nb = 0;
+    for (int i = 0; i < n_planes; i++)
+        bar[nb++] = vk_export_barrier(v, dst, i);
+    vk_barriers(v, cmd, bar, nb);
+}
+
+/* Submit `cmd` behind the timelines of the images of `f[0..1]`: each waited
+ * at its value and signalled one higher, as FFmpeg's submissions do. */
+static int vk_submit(VMAFXVulkan *v, VkCommandBuffer cmd, VkFence fence, AVVkFrame *const f[2])
+{
+    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS], sig[2 * AV_NUM_DATA_POINTERS];
+    int k = 0;
+    for (int j = 0; j < 2; j++)
+        for (int i = 0; i < vk_images(f[j]); i++, k++) {
+            wait[k] = (VkSemaphoreSubmitInfo){
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                .semaphore = f[j]->sem[i],
+                .value = f[j]->sem_value[i],
+                .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            };
+            sig[k] = wait[k];
+            sig[k].value = wait[k].value + 1;
+        }
+    const VkCommandBufferSubmitInfo cb = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+        .commandBuffer = cmd,
+    };
+    const VkSubmitInfo2 si = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .waitSemaphoreInfoCount = (uint32_t)k,
+        .pWaitSemaphoreInfos = wait,
+        .commandBufferInfoCount = 1,
+        .pCommandBufferInfos = &cb,
+        .signalSemaphoreInfoCount = (uint32_t)k,
+        .pSignalSemaphoreInfos = sig,
+    };
+    VkResult r = v->EndCommandBuffer(cmd);
+    if (r == VK_SUCCESS) {
+#if FF_API_VULKAN_SYNC_QUEUES
+        FF_DISABLE_DEPRECATION_WARNINGS
+        v->hw->lock_queue(v->dev, v->qf, 0);
+        r = v->QueueSubmit2(v->queue, 1, &si, fence);
+        v->hw->unlock_queue(v->dev, v->qf, 0);
+        FF_ENABLE_DEPRECATION_WARNINGS
+#else
+        r = v->QueueSubmit2(v->queue, 1, &si, fence);
+#endif
+    }
+    if (r != VK_SUCCESS)
+        return AVERROR_EXTERNAL;
+    for (int j = 0; j < 2; j++)
+        for (int i = 0; i < vk_images(f[j]); i++)
+            f[j]->sem_value[i]++;
+    return 0;
+}
+
+/* The next command buffer of the ring, once its last submission finished. */
+static VkCommandBuffer vk_begin(VMAFXVulkan *v, VkFence *fence)
+{
+    const unsigned n = v->next++ % VMAFX_VK_RING;
+    const VkCommandBufferBeginInfo bi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    if (v->WaitForFences(v->hw->act_dev, 1, &v->fence[n], VK_TRUE, VMAFX_VK_WAIT_NS) !=
+            VK_SUCCESS ||
+        v->ResetFences(v->hw->act_dev, 1, &v->fence[n]) != VK_SUCCESS ||
+        v->BeginCommandBuffer(v->cmd[n], &bi) != VK_SUCCESS)
+        return VK_NULL_HANDLE;
+    *fence = v->fence[n];
+    return v->cmd[n];
+}
+
+/* `frame` copied on the GPU into a new frame of the input's pool; NULL when
+ * the copy cannot be made. Both frames are locked while their timelines and
+ * layouts change. */
+static AVFrame *vk_device_copy(VMAFXContext *s, int k, const AVFrame *frame)
+{
+    VMAFXVulkan *v = s->vk;
+    AVFrame *copy = av_frame_alloc();
+    if (!copy || vk_copies(s, k, frame) < 0 || av_hwframe_get_buffer(v->copies[k], copy, 0) < 0) {
+        av_frame_free(&copy);
+        return NULL;
+    }
+    AVHWFramesContext *sfc = (AVHWFramesContext *)frame->hw_frames_ctx->data;
+    AVHWFramesContext *dfc = (AVHWFramesContext *)copy->hw_frames_ctx->data;
+    AVVulkanFramesContext *svk = sfc->hwctx, *dvk = dfc->hwctx;
+    AVVkFrame *const f[2] = {(AVVkFrame *)frame->data[0], (AVVkFrame *)copy->data[0]};
+    const int n_planes = av_pix_fmt_count_planes(frame_sw_format(frame));
+    int ok = vk_images(f[1]) == n_planes && (vk_images(f[0]) == 1 || vk_images(f[0]) == n_planes);
+    svk->lock_frame(sfc, f[0]);
+    dvk->lock_frame(dfc, f[1]);
+    VkFence fence = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = ok ? vk_begin(v, &fence) : VK_NULL_HANDLE;
+    if (cmd)
+        vk_record(v, cmd, frame, f[0], f[1], n_planes);
+    ok = cmd && vk_submit(v, cmd, fence, f) >= 0;
+    dvk->unlock_frame(dfc, f[1]);
+    svk->unlock_frame(sfc, f[0]);
+    if (!ok)
+        av_frame_free(&copy);
+    return copy;
+}
+
+static int vk_semaphore_fd(const VMAFXVulkan *v, VkSemaphore sem)
+{
+    const VkSemaphoreGetFdInfoKHR info = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+        .semaphore = sem,
+        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
+    };
+    int fd = -1;
+    return v->GetSemaphoreFdKHR(v->hw->act_dev, &info, &fd) == VK_SUCCESS ? fd : -1;
+}
+
+/* Whether image `i` of `f` is a dedicated allocation: FFmpeg allocates one
+ * when the driver prefers or requires it. */
+static int vk_dedicated(const VMAFXVulkan *v, const AVVkFrame *f, int i)
+{
+    VkMemoryDedicatedRequirements ded = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    VkMemoryRequirements2 req = {.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, .pNext = &ded};
+    const VkImageMemoryRequirementsInfo2 info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+        .image = f->img[i],
+    };
+    v->GetImageMemoryRequirements2(v->hw->act_dev, &info, &req);
+    return ded.prefersDedicatedAllocation || ded.requiresDedicatedAllocation;
+}
+
+/* Plane `i` of the copy: its exported memory, where its rows are, and (on a
+ * device that waits on them) its timeline as acquire fence `acq`. */
+static int vk_describe_plane(const VMAFXVulkan *v, const AVVkFrame *f, int i, VmafxFrameImport *imp,
+                             VmafxFence *acq)
+{
+    const VkMemoryGetFdInfoKHR mi = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+        .memory = f->mem[i],
+        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
+    };
+    VmafxImportPlane *pl = &imp->plane[i];
+    int ok = v->GetMemoryFdKHR(v->hw->act_dev, &mi, &pl->fd) == VK_SUCCESS;
+    pl->size = f->size[i];
+    pl->offset = (uint64_t)f->offset[i];
+    if (f->tiling == VK_IMAGE_TILING_LINEAR) {
+        const VkImageSubresource sub = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT};
+        VkSubresourceLayout layout;
+        v->GetImageSubresourceLayout(v->hw->act_dev, f->img[i], &sub, &layout);
+        pl->offset += layout.offset;
+        pl->pitch = layout.rowPitch;
+    }
+    if (vk_dedicated(v, f, i))
+        imp->vulkan_flags |= VMAFX_VULKAN_DEDICATED;
+    if (v->device_waits) {
+        acq->kind = VMAFX_FENCE_VULKAN_SEMAPHORE;
+        acq->fd = vk_semaphore_fd(v, f->sem[i]);
+        acq->value = f->sem_value[i];
+        ok = ok && acq->fd >= 0;
+    }
+    return ok;
+}
+
+static VmafxFence *vk_acquire_fence(VmafxFrameImport *imp, int i)
+{
+    return i == 0 ? &imp->acquire : &imp->acquire_more[i - 1];
+}
+
+static void vk_close_descriptors(VmafxFrameImport *imp)
+{
+    for (unsigned i = 0; i < imp->n_planes && i < 3; i++) {
+        if (imp->plane[i].fd >= 0)
+            close(imp->plane[i].fd);
+        if (vk_acquire_fence(imp, i)->fd >= 0)
+            close(vk_acquire_fence(imp, i)->fd);
+    }
+}
+
+/* The descriptor of copy frame `copy`: one exported image per plane. */
+static int vk_describe(const VMAFXVulkan *v, const AVFrame *copy, VmafxFrameImport *imp)
+{
+    const AVVkFrame *f = (const AVVkFrame *)copy->data[0];
+    uint32_t bpc = 0;
+    imp->memory = VMAFX_MEMORY_VULKAN;
+    imp->pix_fmt = layout_of(frame_sw_format(copy), &bpc);
+    imp->bpc = bpc;
+    imp->w = (uint32_t)copy->width;
+    imp->h = (uint32_t)copy->height;
+    imp->n_planes = (uint32_t)av_pix_fmt_count_planes(frame_sw_format(copy));
+    imp->vulkan_handle_type = VMAFX_VULKAN_HANDLE_OPAQUE_FD;
+    imp->vulkan_tiling = (uint32_t)f->tiling; /* the values equal VkImageTiling */
+    memcpy(imp->vulkan_pci, v->pci, sizeof(imp->vulkan_pci));
+    for (unsigned i = 0; i < 3; i++) {
+        imp->plane[i].fd = -1;
+        vk_acquire_fence(imp, (int)i)->fd = -1;
+    }
+    int ok = imp->n_planes <= 3;
+    for (unsigned i = 0; i < imp->n_planes && ok; i++)
+        ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));
+    return ok ? 0 : AVERROR_EXTERNAL;
+}
+
+/* SYCL and HIP wait on no Vulkan semaphore: the copy is waited for on the
+ * host, so the frame needs no acquire fence. */
+static int vk_host_wait(const VMAFXVulkan *v, const AVFrame *copy)
+{
+    const AVVkFrame *f = (const AVVkFrame *)copy->data[0];
+    const VkSemaphoreWaitInfo wi = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .semaphoreCount = (uint32_t)vk_images(f),
+        .pSemaphores = f->sem,
+        .pValues = f->sem_value,
+    };
+    return v->WaitSemaphores(v->hw->act_dev, &wi, VMAFX_VK_WAIT_NS) == VK_SUCCESS ?
+               0 :
+               AVERROR_EXTERNAL;
+}
+
+/* CUDA signals each image's timeline one higher behind the frame's last
+ * reader; the next copy into the frame waits for that value. */
+static VmafxStatus vk_signal_release(const VMAFXVulkan *v, VmafxFrame *frame, AVVkFrame *f,
+                                     VmafxError **error)
+{
+    VmafxStatus st = VMAFX_OK;
+    for (int i = 0; i < vk_images(f) && st == VMAFX_OK; i++) {
+        VmafxFence sig = VMAFX_FENCE_INIT;
+        sig.kind = VMAFX_FENCE_VULKAN_SEMAPHORE;
+        sig.fd = vk_semaphore_fd(v, f->sem[i]);
+        sig.value = f->sem_value[i] + 1;
+        st = sig.fd >= 0 ? vmafx_frame_signal_on_release(frame, &sig, error) : VMAFX_E_DEVICE;
+        if (sig.fd >= 0)
+            close(sig.fd);
+        if (st == VMAFX_OK)
+            f->sem_value[i]++;
+    }
+    return st;
+}
+
+/* The copy imported (the library takes its descriptors' duplicates), with
+ * the release the backend needs: the timelines on CUDA, a HOST release fence
+ * waited for before the copy goes back to the pool on SYCL and HIP. */
+static VmafxStatus vk_import_copy(VMAFXContext *s, AVFrame *copy, ReleaseBox *b, const char *input,
+                                  VmafxFrame **out, VmafxError **error)
+{
+    VMAFXVulkan *v = s->vk;
+    VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+    if (vk_describe(v, copy, &imp) < 0 || (!v->device_waits && vk_host_wait(v, copy) < 0)) {
+        vk_close_descriptors(&imp);
+        return VMAFX_E_DEVICE;
+    }
+    if (v->device_waits && planar_of(imp.pix_fmt) == imp.pix_fmt)
+        imp.flags |= VMAFX_IMPORT_ALLOW_COPY; /* planar CUDA arrays: the library's
+                                             device copy */
+    imp.release = box_release;
+    imp.user = b;
+    VmafxStatus st = vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, error);
+    vk_close_descriptors(&imp);
+    if (st == VMAFX_OK)
+        st = v->device_waits ? vk_signal_release(v, *out, (AVVkFrame *)copy->data[0], error) :
+                               vmafx_frame_release_fence(*out, VMAFX_FENCE_HOST, &b->fence, error);
+    return st;
+}
+
+/* A Vulkan frame: copied on the GPU into an exportable per-plane frame, which
+ * the device imports without a host copy. */
+static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
+{
+    VMAFXContext *s = ctx->priv;
+    AVFrame *copy = vk_device_copy(s, strcmp(input, "main") != 0, frame);
+    if (!copy) {
+        av_log(ctx, AV_LOG_ERROR,
+               "vmafx: the %s input's Vulkan frame cannot be copied for the "
+               "handover\n",
+               input);
+        return AVERROR_EXTERNAL;
+    }
+    ReleaseBox *b = box_new(copy);
+    av_frame_free(&copy);
+    if (!b)
+        return AVERROR(ENOMEM);
+    VmafxError *error = NULL;
+    VmafxStatus st = vk_import_copy(s, b->frame, b, input, out, &error);
+    if (st != VMAFX_OK && *out) {
+        vmafx_frame_unref(*out); /* runs box_release() */
+        *out = NULL;
+    }
+    box_after_import(b, st);
+    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_context_import_frame(vulkan)");
+}
+#endif /* CONFIG_VULKAN */
 
 /* ---- Windows (n_stats, #2138) ------------------------------------------------------ */
 
@@ -1160,11 +1881,9 @@ static int use_tiny_model(AVFilterContext *ctx)
 static int drm_auto_slot(AVBufferRef *frames)
 {
 #if CONFIG_LIBDRM
-    const unsigned vendor = frames ? drm_vendor(frames) : 0u;
-    if (vendor == 0x8086u)
-        return 3; /* sycl */
-    if (vendor == 0x1002u)
-        return 4; /* hip */
+    const int slot = vendor_slot(frames ? drm_vendor(frames) : 0u);
+    if (slot == 3 || slot == 4) /* DRM PRIME frames go to SYCL or HIP */
+        return slot;
 #else
     (void)frames;
 #endif
@@ -1186,6 +1905,19 @@ static int pick_slot(AVFilterContext *ctx, enum AVPixelFormat format, AVBufferRe
         }
         return 0;
     }
+#if CONFIG_VULKAN
+    if (format == AV_PIX_FMT_VULKAN && s->import_mode != 2) {
+        if (s->backend == 1 || s->backend == 5) {
+            av_log(ctx, AV_LOG_ERROR,
+                   "vmafx: backend %s cannot score Vulkan frames (CUDA, SYCL or HIP on the "
+                   "frames' GPU can); use import=host or hwdownload\n",
+                   opt->name);
+            return AVERROR(EINVAL);
+        }
+        s->vulkan = 1; /* the device is the one on the frames' GPU (vk_open()) */
+        return 0;
+    }
+#endif
     const int vendor_slot =
         s->backend == 0 && format == AV_PIX_FMT_DRM_PRIME ? drm_auto_slot(frames) : 0;
     for (unsigned i = 2; i < FF_ARRAY_ELEMS(backend_slots); i++) {
@@ -1209,6 +1941,10 @@ static int pick_slot(AVFilterContext *ctx, enum AVPixelFormat format, AVBufferRe
 static int open_device(AVFilterContext *ctx, AVBufferRef *frames)
 {
     VMAFXContext *s = ctx->priv;
+#if CONFIG_VULKAN
+    if (s->vulkan)
+        return vk_open(ctx, frames);
+#endif
     if (s->slot->backend == VMAFX_BACKEND_CPU || (s->hw && s->import_mode == 2))
         return 0;
     if (s->hw) {
@@ -1566,6 +2302,9 @@ static void release_all(AVFilterContext *ctx)
     s->context = NULL;
     vmafx_device_unref(s->vdev);
     s->vdev = NULL;
+#if CONFIG_VULKAN
+    vk_close(s); /* after the context: it released every copy */
+#endif
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
