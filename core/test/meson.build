@@ -9128,6 +9128,19 @@ if is_rust_enabled
     )
     test('test_rust_twin_registry', test_rust_twin_registry, suite : ['rust', 'fast'])
 
+    # ADR-2090 / MI-1: motion_rust derives motion2 / motion3 frame by frame
+    # through Extractor::advance (shim trampoline), serial and with workers,
+    # equal to the C motion extractor bit for bit.
+    test_rust_motion_window_incremental = executable('test_rust_motion_window_incremental',
+        ['test.c', 'test_rust_motion_window_incremental.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmaf_test_link,
+        c_args : vmaf_cflags_common,
+        dependencies : [pthread_dependency, thread_lib, rust_core_dep],
+    )
+    test('test_rust_motion_window_incremental', test_rust_motion_window_incremental,
+        suite : ['rust', 'fast'])
+
     test('test_rust_twin_harness_netflix',
         import('python').find_installation(),
         args : [

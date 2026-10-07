@@ -38,6 +38,12 @@ invariant: One Rust archive in libvmaf only; registry reaches Rust via the shim 
   option table, provided features and `reads_prev_prev_ref` are the C
   extractor's, which the option parser and the feature-name dictionary rely
   on. Do not give a twin options of its own.
+- **Twin advance = shim trampoline (ADR-2090, MI-1).** `add_twin()` sets
+  `advance` to `twin_advance` iff C extractor defines one, else NULL; never
+  inherited C callback (C advance derives from Rust SADs into C priv, Rust
+  flush appends again, `-EINVAL`). `advance_one_extractor()`
+  (`core/src/libvmaf.c`) runs `init_shared_rust_twin()` before pooled twin's
+  first advance; keep both. Guard: `test_rust_motion_window_incremental`.
 - **C stays default.** `first_pass_eligible()` skips Rust twins when no flag
   is asked for; only `vmaf_feature_extractor_impl_select()` (env
   `VMAF_FEATURE_IMPL=rust`, read once through `vmaf_gpu_dispatch_env_get()`)

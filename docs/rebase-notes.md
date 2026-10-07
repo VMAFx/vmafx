@@ -63107,6 +63107,18 @@ amends [ADR-2074](adr/2074-vmafx-window-scores.md) decision 9.
   bit (32 988 per-frame values against master, 0 different; Netflix golden
   gate green); no FFmpeg patch change (`libvmaf.h` unchanged, the scores only
   arrive earlier).
+- Rust twins (lane request MI-1, Q-093): `VmafxRsTwin` gains `advance` (last
+  field, `VMAFX_RS_ABI_VERSION` 2); on a conflict in
+  `core/src/rust/include/vmafx_rs.h` take either side and run
+  `scripts/dev/rust-abi-header.sh`. The shim maps `advance` to
+  `twin_advance()`, never the inherited C callback, and
+  `advance_one_extractor()` (`core/src/libvmaf.c`) initialises a pooled Rust
+  twin before its first advance. `motion_rust`'s `window.rs` ports
+  `motion_window_stamp()`, `motion_window_count_sads()`,
+  `motion_window_derive()`, `vmaf_motion_window_advance()` and
+  `vmaf_motion_window_flush()` statement by statement: an upstream sync that
+  changes them changes `window.rs` in the same PR
+  (`test_rust_motion_window_incremental`, `rust_twin_diff.py --feature motion`).
 ## Tester legs build where their inputs change; the cut checks them (2026-10-07, ADR-2198)
 
 Fork-only CI: `windows_tester_zip_sycl` in `.github/ci-impact.json`, `own_input_lanes` in `.github/ci-tier.json`

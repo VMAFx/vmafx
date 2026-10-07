@@ -545,9 +545,12 @@ with `debug`), with every option of the table, including
 `motion_five_frame_window` and `motion_moving_average`. It is built with
 `-Denable_rust_features=true` and selected with `VMAF_FEATURE_IMPL=rust` (every
 `motion` of the run, including the one a model asks for) or by name with
-`--feature motion_rust`; without either the C extractor runs. The JSON
-`feature_backends` entry names the twin that ran. Check the twin against the C
-extractor on your own clips with:
+`--feature motion_rust`; without either the C extractor runs. Like the C
+extractor it appends `motion2` and `motion3` of a frame as soon as the frame
+after it is scored ([ADR-2090](../adr/2090-motion-window-incremental.md)), so a
+window over a VMAF model completes before the end of the stream with the twin
+too. The JSON `feature_backends` entry names the twin that ran. Check the twin
+against the C extractor on your own clips with:
 
 ```bash
 python3 scripts/ci/rust_twin_diff.py --vmaf build-rs/tools/vmaf \
