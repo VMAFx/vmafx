@@ -11376,6 +11376,17 @@
         "core/test/test_cuda_adm_cm_register_pressure.py": 1
       },
       "target": "2134-cuda-adm-cm-aim-register-budget-angle-flag.md"
+    },
+    "2168": {
+      "sites": {
+        ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/docker-image.yml": 1,
+        ".github/workflows/ffmpeg-integration.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "scripts/ci/depot_minutes.py": 2,
+        "scripts/ci/test_depot_minutes.py": 1
+      },
+      "target": "2168-depot-runners.md"
     }
   },
   "retired": {

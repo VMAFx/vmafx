@@ -863,6 +863,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   displays. See [the roadmap](docs/roadmap.md).
 
 
+- The four longest Linux jobs of master pushes (`Coverage Gate`, `Dev Container Build work`,
+  `Docker Image Build work`, `FFmpeg SYCL work`) run on Depot runners when the repository
+  variable `VMAFX_DEPOT_LINUX_RUNNER` holds a Depot label; unset, they run on GitHub-hosted
+  runners as before, and pull requests always do. `scripts/ci/depot_minutes.py` reports the
+  month's Depot base minutes (ADR-2168).
+
+
 - **`ciede2000` no longer depends on the compiler or on the C library's `powf`
   for its squares; scores of GCC-built binaries move by up to 2e-11.**
   `ciede.c` squared a `float` with `powf(x, 2)`. GCC calls the C library

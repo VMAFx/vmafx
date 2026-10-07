@@ -141,7 +141,9 @@ jobs:
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
     name: FFmpeg SYCL work
-    runs-on: ubuntu-latest
+    # Depot switch (ADR-2168): master push / dispatch only, repository variable
+    # VMAFX_DEPOT_LINUX_RUNNER (unset = GitHub-hosted). docs/development/ci.md#depot-runners
+    runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_DEPOT_LINUX_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:
       CC: gcc

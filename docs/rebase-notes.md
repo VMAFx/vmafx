@@ -62556,3 +62556,11 @@ RC4 (#2378) lands, remove the families it fixes from the list in the same PR, wi
 the twin matrix at those depths. `test_read_pictures_bpc` fails without the guard
 and checks that `psnr_hvs` still scores 9 and 11 bits. No score at 8, 10, 12 or
 16 bits changes.
+
+## ci/depot-runners (ADR-2168)
+
+The `runs-on` of `Coverage Gate`, `Dev Container Build work`, `Docker Image Build work` and
+`FFmpeg SYCL work` is the `vars.VMAFX_DEPOT_LINUX_RUNNER` expression of ADR-2168 in
+`tests-and-quality-gates.yml`, `dev-container-build.yml`, `docker-image.yml` and
+`ffmpeg-integration.yml`. An upstream sync keeps the fork's line. Temporary: removed when
+another CI provider is chosen.

@@ -50,7 +50,9 @@ jobs:
     # job reported and nothing acted on it. ADR-1297 finishes the promotion.
     # ADR-1102 makes this container the canonical published artifact.
     name: Docker Image Build work
-    runs-on: ubuntu-latest
+    # Depot switch (ADR-2168): master push / dispatch only, repository variable
+    # VMAFX_DEPOT_LINUX_RUNNER (unset = GitHub-hosted). docs/development/ci.md#depot-runners
+    runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_DEPOT_LINUX_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

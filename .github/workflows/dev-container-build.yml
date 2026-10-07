@@ -63,7 +63,9 @@ jobs:
     # comes out of must not be allowed to stop building silently. The workflow
     # always reports its gate; the planner selects this work for container inputs.
     name: Dev Container Build work
-    runs-on: ubuntu-latest
+    # Depot switch (ADR-2168): master push / dispatch only, repository variable
+    # VMAFX_DEPOT_LINUX_RUNNER (unset = GitHub-hosted). docs/development/ci.md#depot-runners
+    runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_DEPOT_LINUX_RUNNER) || 'ubuntu-latest' }}
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
     # take up to 45 min on a cold runner, and the release rehearsal adds a
     # CPU-only release compile; set a generous ceiling.

@@ -254,6 +254,37 @@ commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-canc
   added to that list with a reason. Run the check with
   `python3 -B -m unittest scripts/ci/tests/test_master_concurrency_contract.py`.
 
+## Depot runners
+
+Four long Linux jobs of a master push can run on
+[Depot](https://depot.dev/docs/github-actions/runner-types) runners instead of
+GitHub-hosted ones ([ADR-2168](../adr/2168-depot-runners.md)). The arrangement
+is temporary, until another CI provider is chosen.
+
+| Job | Workflow | Median on GitHub-hosted |
+| --- | --- | --- |
+| `Coverage Gate` | `tests-and-quality-gates.yml` | 52 min |
+| `Dev Container Build work` | `dev-container-build.yml` | 49 min |
+| `Docker Image Build work` | `docker-image.yml` | 29 min |
+| `FFmpeg SYCL work` | `ffmpeg-integration.yml` | 27 min |
+
+- **Switch on**: set the repository variable `VMAFX_DEPOT_LINUX_RUNNER` to a
+  Depot label, for example
+  `gh variable set VMAFX_DEPOT_LINUX_RUNNER --body depot-ubuntu-24.04-8`. The
+  label's suffix is the vCPU count, and a base minute is two vCPU-minutes. The
+  Depot organisation must be connected to the repository first.
+- **Switch off**: `gh variable delete VMAFX_DEPOT_LINUX_RUNNER`. Unset or empty
+  means GitHub-hosted, and no commit is needed.
+- **Scope**: only a push or dispatch on `master` uses the variable. Pull
+  requests, fork pull requests, other branches and every other job stay on
+  GitHub-hosted runners.
+- **Usage**: `python3 scripts/ci/depot_minutes.py` prints this month's base
+  minutes against the Depot organisation's limit of 10,000 and exits 1 at
+  90 %, so a caller can clear the variable. It reads the Actions API only
+  (`gh` must be logged in).
+- Depot images are Ubuntu 24.04 and 22.04; the four jobs ask for
+  `ubuntu-latest`.
+
 ## Required-checks aggregator
 
 The single required check on `master` branch protection is the **Required
