@@ -228,7 +228,11 @@ VMAFX_STORE_BACKEND=postgres vmafx-controller  # every replica the same way
 - **Schema.** `vmafx-controller migrate` applies the store's migrations and
   River's, then exits; run it once per release, before the controllers of
   that release start. A controller whose database is below the schema it
-  needs reports not ready on `/readyz` and logs both versions.
+  needs reports not ready on `/readyz` and logs both versions. A controller
+  that starts before its database answers, or before River's tables exist,
+  does not exit: it retries starting River every 2 s (for up to 30 minutes)
+  and reports not ready until River runs, so its replicas can start in any
+  order with the database and the migration.
 - **Node work is leased.** `PullWork` gives a node a job with a lease
   (`VMAFX_STORE_LEASE_TTL`, default 60 s); every `Heartbeat` naming the job
   renews it. A lease that is not renewed expires: a sweep that runs every

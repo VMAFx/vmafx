@@ -204,6 +204,14 @@ lands. Wire protocol unchanged.
 5. **Tests** (`go test ./cmd/vmafx-controller/backend/`, Docker): end to
    end, tenants apart, refusals, River sweep, import, commands.
    `store/storetest` = shared DB helper (tests only).
+6. **River lifetime** (`store_wiring.go`, `riverRunner`): River started
+   with own context, ended after `Stop`. Never pass fx `OnStart` ctx to
+   `river.Start`: fx ends that ctx at start timeout (fxtest at start return) ->
+   River stops fetching, notifier spins. Start retried in background
+   (2 s, 900 tries); `/readyz` 503 until River runs (`postgresBackend.Ready`)
+   -> replicas start before DB / migration Job without exiting. Guards:
+   `TestRiverKeepsSweepingAfterTheStart`,
+   `TestControllerStartedBeforeItsMigrationsWaitsUnready`.
 
 ### grpc server
 

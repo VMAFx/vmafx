@@ -21,8 +21,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -143,13 +145,32 @@ func providePostgresBackend(lc fx.Lifecycle, cfg *config.Config, opts storeOptio
 	}
 	st := store.NewPostgres(pool)
 	b := backend.NewPostgres(st, backend.PostgresOptions{LeaseTTL: opts.LeaseTTL, SessionTTL: opts.SessionTTL})
-	river, err := newSweepClient(pool, st, b, opts, log)
+	client, err := newSweepClient(pool, st, b, opts, log)
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
+	river := newRiverRunner(client, log)
 	lc.Append(postgresHook(pool, river, log))
-	return b, nil
+	return postgresBackend{Postgres: b, river: river}, nil
+}
+
+// postgresBackend adds River to the readiness of the PostgreSQL backend: a
+// replica whose River does not run sweeps no leases.
+type postgresBackend struct {
+	*backend.Postgres
+	river *riverRunner
+}
+
+// Ready implements backend.Backend.
+func (p postgresBackend) Ready(ctx context.Context) error {
+	if !p.river.running.Load() {
+		return errRiverNotRunning
+	}
+	if err := p.Postgres.Ready(ctx); err != nil {
+		return fmt.Errorf("postgres backend: %w", err)
+	}
+	return nil
 }
 
 // newSweepClient builds the River client that works the lease sweep.
@@ -165,26 +186,101 @@ func newSweepClient(pool *pgxpool.Pool, st *store.Postgres, b *backend.Postgres,
 	return client, nil
 }
 
-// postgresHook starts River with the controller and stops it, then the pool,
-// when the controller stops. The schema is checked by /readyz, not here, so a
-// controller started before its migration Job waits unready instead of
-// crashing.
-func postgresHook(pool *pgxpool.Pool, river *jobs.Client, log *slog.Logger) fx.Hook {
+// River start: a controller started before its database or before the
+// migration Job keeps trying in the background and stays unready, every
+// riverStartEvery, at most riverStartTries times (HISS-02; 30 minutes).
+const (
+	riverStartEvery = 2 * time.Second
+	riverStartTries = 900
+)
+
+// errRiverNotRunning is the readiness answer until River runs.
+var errRiverNotRunning = errors.New("not ready: River has not started yet (the database or its schema is not ready)")
+
+// riverRunner runs River for the controller's lifetime. River keeps the
+// context it is started with, and the context fx hands a start hook expires
+// with the start timeout, so River gets its own, ended after River stops.
+type riverRunner struct {
+	client     *jobs.Client
+	log        *slog.Logger
+	running    atomic.Bool
+	riverCtx   context.Context
+	stopRiver  context.CancelFunc
+	tryCtx     context.Context
+	stopTrying context.CancelFunc
+	done       chan struct{}
+}
+
+func newRiverRunner(client *jobs.Client, log *slog.Logger) *riverRunner {
+	return &riverRunner{client: client, log: log, done: make(chan struct{})}
+}
+
+// start begins the background start of River and returns at once. Both
+// contexts live as long as the controller: stop ends them.
+func (r *riverRunner) start() {
+	r.riverCtx, r.stopRiver = context.WithCancel(context.Background())
+	r.tryCtx, r.stopTrying = context.WithCancel(context.Background())
+	go r.run()
+}
+
+// run starts River, retrying until it starts, the controller stops, or the
+// tries run out.
+func (r *riverRunner) run() {
+	defer close(r.done)
+	t := time.NewTimer(0)
+	defer t.Stop()
+	for try := 1; try <= riverStartTries; try++ {
+		select {
+		case <-r.tryCtx.Done():
+			return
+		case <-t.C:
+		}
+		err := r.client.Start(r.riverCtx)
+		if err == nil {
+			r.running.Store(true)
+			r.log.Info("River started", "try", try)
+			return
+		}
+		r.log.Warn("River did not start; retrying", "try", try, "in", riverStartEvery, "error", err)
+		t.Reset(riverStartEvery)
+	}
+	r.log.Error("River did not start; this controller stays unready", "tries", riverStartTries)
+}
+
+// stop ends the start loop, then stops River gracefully within ctx.
+func (r *riverRunner) stop(ctx context.Context) error {
+	r.stopTrying()
+	select {
+	case <-r.done:
+	case <-ctx.Done():
+		r.stopRiver()
+		return fmt.Errorf("stop River: %w", ctx.Err())
+	}
+	defer r.stopRiver()
+	if !r.running.Load() {
+		return nil
+	}
+	if err := r.client.Stop(ctx); err != nil {
+		return fmt.Errorf("stop River: %w", err)
+	}
+	return nil
+}
+
+// postgresHook starts River with the controller, in the background (see
+// riverRunner), and stops it, then the pool, when the controller stops. The
+// schema is checked by /readyz, not here, so a controller started before its
+// database or its migration Job waits unready instead of exiting.
+func postgresHook(pool *pgxpool.Pool, river *riverRunner, log *slog.Logger) fx.Hook {
 	return fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if err := river.Start(ctx); err != nil {
-				return fmt.Errorf("start River: %w", err)
-			}
+		OnStart: func(context.Context) error {
+			river.start()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
 			log.Info("stopping River and closing the PostgreSQL pool")
-			err := river.Stop(ctx)
+			err := river.stop(ctx)
 			pool.Close()
-			if err != nil {
-				return fmt.Errorf("stop River: %w", err)
-			}
-			return nil
+			return err
 		},
 	}
 }

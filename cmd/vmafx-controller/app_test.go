@@ -157,7 +157,7 @@ func TestGRPCListenerBindsAndServes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	client := vmafxv1.NewVmafxScoringClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -199,7 +199,7 @@ func TestAuthInterceptorRejectsMissingTokenWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	client := vmafxv1.NewVmafxScoringClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -390,7 +390,7 @@ func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -427,4 +427,14 @@ func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
 		t.Errorf("server span parent %s is not the client span %s",
 			serverSpan.Parent().SpanID(), clientSpan.SpanContext().SpanID())
 	}
+}
+
+// closeWithTest closes c when the test ends and reports a failed close.
+func closeWithTest(t *testing.T, c interface{ Close() error }) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	})
 }
