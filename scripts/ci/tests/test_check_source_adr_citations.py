@@ -72,15 +72,15 @@ class SourceAdrCitationTests(unittest.TestCase):
     def registry(
         self,
         *,
-        live: dict[str, Any] | None = None,
         retired: dict[str, Any] | None = None,
         fixtures: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         body = {
-            "schema_version": 1,
-            "live": live or {},
+            "schema_version": 2,
             "retired": retired or {},
             "fixtures": fixtures or {},
+            **(extra or {}),
         }
         self.write("source-adr-citations.json", json.dumps(body, indent=2, sort_keys=True) + "\n")
         self.run_git("add", ".")
@@ -103,19 +103,20 @@ class SourceAdrCitationTests(unittest.TestCase):
             check=False,
         )
 
-    def test_exact_live_target_and_site_count_pass(self) -> None:
+    def test_a_live_citation_needs_no_registry_entry(self) -> None:
+        """ADR-2200: the binding is derived from the tree, so adding one edits no shared file."""
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* Kept for ADR-0042. */\n")
-        self.registry(
-            live={
-                "0042": {
-                    "target": "0042-original-decision.md",
-                    "sites": {"core/example.c": 1},
-                }
-            }
-        )
+        self.registry()
+        before = (self.repo / "source-adr-citations.json").read_bytes()
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("1 live derived", result.stdout)
+        self.write("core/second.c", "/* Also ADR-0042 and ADR-0042. */\n")
+        self.run_git("add", ".")
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((self.repo / "source-adr-citations.json").read_bytes(), before)
 
     def test_missing_number_fails_closed(self) -> None:
         self.write("core/example.c", "/* The invariant came from ADR-0099. */\n")
@@ -123,36 +124,6 @@ class SourceAdrCitationTests(unittest.TestCase):
         result = self.run_checker()
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("ADR-0099", result.stdout)
-
-    def test_number_reallocated_to_an_unrelated_slug_fails(self) -> None:
-        self.write_adr("0042-new-unrelated-decision.md")
-        self.write("core/example.c", "/* Kept for ADR-0042. */\n")
-        self.registry(
-            live={
-                "0042": {
-                    "target": "0042-original-decision.md",
-                    "sites": {"core/example.c": 1},
-                }
-            }
-        )
-        result = self.run_checker()
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("reallocated", result.stdout)
-
-    def test_new_site_or_occurrence_cannot_bypass_review(self) -> None:
-        self.write_adr("0042-original-decision.md")
-        self.write("core/example.c", "/* ADR-0042. ADR-0042. */\n")
-        self.registry(
-            live={
-                "0042": {
-                    "target": "0042-original-decision.md",
-                    "sites": {"core/example.c": 1},
-                }
-            }
-        )
-        result = self.run_checker()
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("site drift", result.stdout)
 
     def test_governed_superseded_identity_passes(self) -> None:
         self.write_adr("0043-successor.md")
@@ -222,32 +193,55 @@ class SourceAdrCitationTests(unittest.TestCase):
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout)
 
-    def test_write_derives_live_bindings_but_not_retirements(self) -> None:
+    def test_a_legacy_live_section_is_refused_not_ignored(self) -> None:
+        """Planted: a registry that still lists live bindings must not pass silently."""
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* ADR-0042. */\n")
+        self.registry(extra={"live": {}})
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("derived from the tree", result.stdout)
+
+    def test_the_old_schema_is_refused(self) -> None:
+        self.write("core/example.c", "/* nothing */\n")
+        self.registry()
+        path = self.repo / "source-adr-citations.json"
+        body = json.loads(path.read_text(encoding="utf-8"))
+        body["schema_version"] = 1
+        path.write_text(json.dumps(body), encoding="utf-8")
+        self.run_git("add", ".")
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("schema_version", result.stdout)
+
+    def test_there_is_no_write_mode_for_live_bindings(self) -> None:
         self.registry()
         result = self.run_checker("--write")
-        self.assertEqual(result.returncode, 0, result.stdout)
-        written = json.loads((self.repo / "source-adr-citations.json").read_text(encoding="utf-8"))
-        self.assertEqual(written["live"]["0042"]["target"], "0042-original-decision.md")
-        self.assertEqual(written["live"]["0042"]["sites"], {"core/example.c": 1})
+        self.assertEqual(result.returncode, 2, result.stdout)
 
+    def test_a_missing_number_names_what_to_do(self) -> None:
         self.write("core/example.c", "/* ADR-0099. */\n")
-        result = self.run_checker("--write")
+        self.registry()
+        result = self.run_checker()
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("must be audited", result.stdout)
+        self.assertIn("no ADR file and no retirement record", result.stdout)
+
+    def test_two_pull_requests_citing_different_numbers_do_not_share_a_line(self) -> None:
+        """The registry bytes are the same whichever citations a change adds."""
+        self.write_adr("0042-original-decision.md")
+        self.write_adr("0041-other-decision.md")
+        self.write("core/a.c", "/* ADR-0042. */\n")
+        self.write("core/b.c", "/* ADR-0041. */\n")
+        self.registry()
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        registry = json.loads((self.repo / "source-adr-citations.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(registry), {"schema_version", "retired", "fixtures"})
 
     def test_fixture_git_discards_inherited_repository_environment(self) -> None:
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* Kept for ADR-0042. */\n")
-        self.registry(
-            live={
-                "0042": {
-                    "target": "0042-original-decision.md",
-                    "sites": {"core/example.c": 1},
-                }
-            }
-        )
+        self.registry()
         with tempfile.TemporaryDirectory() as caller_tmp:
             caller = Path(caller_tmp)
             clean_env = {

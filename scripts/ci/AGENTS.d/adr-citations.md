@@ -2,22 +2,29 @@
 paths:
   - scripts/ci/*source-adr-citations*
   - scripts/ci/tests/test_check_source_adr_citations.py
-invariant: Plain `ADR-NNNN` in source binds to an exact file; `--write` updates live bindings only; test repos strip `GIT_*`.
+invariant: Plain `ADR-NNNN` in source binds to an exact file, derived each run; registry keeps `retired` + `fixtures`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
-# Source ADR citation provenance (ADR-1311)
+# Source ADR citation provenance (ADR-1311, ADR-2200)
 
 `check-source-adr-citations.py` owns plain `ADR-NNNN` references in tracked
 implementation and build/control files. Preserve the explicit source-suffix /
-basename scope, the exact live `number -> filename -> path/count` bindings,
-the hand-governed retirement records, the exact-path fixture exemptions, the
+basename scope, the derived `number -> filename -> path/count` bindings, the
+hand-governed retirement records, the exact-path fixture exemptions, the
 always-run pre-commit hook, and the positive/negative/boundary test suite
-together. `--write` may update only live bindings and must refuse unknown
-missing numbers; never auto-invent a retirement, broaden a fixture exemption,
-or accept a reused retired number. Markdown links remain the separate
-`check-adr-links.py` contract. `mkdocs.yml` is prose navigation, not source,
-and stays outside this gate so its full ADR index cannot masquerade as 1,000+
-implementation citations.
+together.
+
+Live bindings are derived from `git ls-files` and `docs/adr/` on every run
+(ADR-2200). They are not recorded: a change that cites an ADR edits no shared
+file. `source-adr-citations.json` is schema 2 and holds only `retired` and
+`fixtures`; a `live` key is an error, and there is no `--write`. Keep the
+refusals: a number with no ADR file and no retirement record; a retired number
+that has an ADR file again; a fixture number cited outside its recorded paths
+or with other counts. Never auto-invent a retirement, broaden a fixture
+exemption, or accept a reused retired number. Markdown links remain the
+separate `check-adr-links.py` contract. `mkdocs.yml` is prose navigation, not
+source, and stays outside this gate so its full ADR index cannot masquerade as
+1,000+ implementation citations.
 Disposable test repositories must strip every inherited `GIT_*` variable,
 disable caller system/global configuration, hooks, and signing for both direct
 Git calls and checker subprocesses. The regression poisons `GIT_INDEX_FILE`,

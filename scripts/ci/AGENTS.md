@@ -39,7 +39,7 @@ after upstream sync touching `core/src/feature/`.
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `*source-adr-citations*`, `tests/test_check_source_adr_citations.py` | [adr-citations](AGENTS.d/adr-citations.md) | Plain `ADR-NNNN` in source binds to an exact file; `--write` updates live bindings only; test repos strip `GIT_*`. |
+| `*source-adr-citations*`, `tests/test_check_source_adr_citations.py` | [adr-citations](AGENTS.d/adr-citations.md) | Plain `ADR-NNNN` in source binds to an exact file, derived each run; registry keeps `retired` + `fixtures`. |
 | `agent-eligibility-precheck.py`, `/scripts/lib/backlog_tracker.py`, `tests/test_agent_eligibility_precheck.py` | [agent-dispatch](AGENTS.d/agent-dispatch.md) | Exit codes 0 / 1 / 2 and the `::error title=...::` stderr format are the dispatcher contract. |
 | `assertion-density.sh`, `tests/test-assertion-density.sh` | [assertion-density](AGENTS.d/assertion-density.md) | Copyright grep accepts the legacy and the current Lusoris marker; a single-literal pattern silently skips the gate. |
 | `check-base-image-single-source.sh`, `check-container-image-references.py`, `tests/test_base_image_single_source.py`, `/docker/dev/ubuntu-26.04-cuda.Dockerfile` | [base-images](AGENTS.d/base-images.md) | One FROM/COPY parser; shared FROM arguments default from `build-config.env`; CUDA bases equal `DEV_BASE` with digest. |

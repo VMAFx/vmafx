@@ -529,6 +529,17 @@ The open scope restrictions of the lint configuration (which paths
 `Tidy Changed` excludes, and what blocks each) are in the
 [carve-out table of the tidy ratchet page](tidy-ratchet.md#carve-outs-still-open-after-adr-1142).
 
+### Source ADR citations (ADR-1311, ADR-2200)
+
+`scripts/ci/check-source-adr-citations.py` binds each plain `ADR-NNNN` in
+source and build files to the one file `docs/adr/NNNN-*.md`. It derives the
+binding from the tree on every run, so citing an ADR needs no registry edit;
+`scripts/ci/source-adr-citations.json` holds only the hand-written `retired`
+and `fixtures` records. The gate fails on a number that has no ADR file and no
+retirement record (file the ADR, or audit and record the retirement), on a
+retired number that has a file again, and on a fixture number cited outside its
+recorded paths.
+
 ### Local lint build profile and receipts
 
 `make lint` against a configured build, its receipt directory and the cppcheck

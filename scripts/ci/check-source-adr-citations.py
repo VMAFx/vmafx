@@ -4,9 +4,14 @@
 """Bind source ``ADR-NNNN`` citations to exact decisions (ADR-1311).
 
 Markdown links carry a slug and are checked by ``check-adr-links.py``. Plain
-source citations carry only a number, so this gate records the exact ADR
-filename and the exact source-site counts that reviewers audited. Retired and
-synthetic identities have separate, narrowly scoped registry entries.
+source citations carry only a number. The gate derives the live binding
+(number, exact ADR filename, source sites and counts) from the tree on every
+run, so a change that adds or moves a citation edits no shared file (ADR-2200).
+The registry keeps only what no tree can derive and a reviewer must author:
+retired identities (a number cited for a decision that no longer has its file)
+and the exact-path fixture exemptions (synthetic numbers). The gate refuses a
+citation of a number that has no ADR file and no record, a retired number that
+was reallocated, and a fixture number cited outside its recorded paths.
 """
 
 from __future__ import annotations
@@ -17,7 +22,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -70,6 +74,7 @@ SOURCE_NAME_PREFIXES = ("Containerfile", "Dockerfile")
 PROSE_CONTROL_FILES = frozenset({"mkdocs.yml"})
 DEFAULT_REGISTRY = Path("scripts/ci/source-adr-citations.json")
 VALID_RETIREMENT_STATUSES = frozenset({"abandoned", "superseded", "unfiled-historical"})
+REGISTRY_SCHEMA_VERSION = 2
 RETIREMENT_KEYS = frozenset(
     {"status", "reason", "evidence", "git_commits", "successor", "related", "sites"}
 )
@@ -175,14 +180,19 @@ def load_registry(path: Path) -> dict[str, Any]:
         raise GateError(f"registry is not valid UTF-8 JSON: {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise GateError("registry root must be an object")
-    if value.get("schema_version") != 1:
-        raise GateError("registry schema_version must be 1")
-    expected = {"schema_version", "live", "retired", "fixtures"}
+    if "live" in value:
+        raise GateError(
+            "registry has a 'live' section: live bindings are derived from the tree "
+            "(ADR-2200); delete it and set schema_version to 2"
+        )
+    if value.get("schema_version") != REGISTRY_SCHEMA_VERSION:
+        raise GateError(f"registry schema_version must be {REGISTRY_SCHEMA_VERSION}")
+    expected = {"schema_version", "retired", "fixtures"}
     extra = set(value) - expected
     missing = expected - set(value)
     if extra or missing:
         raise GateError(f"registry keys differ: missing={sorted(missing)} extra={sorted(extra)}")
-    for section in ("live", "retired", "fixtures"):
+    for section in ("retired", "fixtures"):
         if not isinstance(value[section], dict):
             raise GateError(f"registry {section!r} must be an object")
     return value
@@ -227,22 +237,6 @@ def validate_adr_filename(value: Any, label: str, corpus: dict[str, str]) -> str
             f"{label} expected {value!r}, but ADR-{number} is now {actual!r} (reallocated)"
         )
     return value
-
-
-def validate_live(
-    live: dict[str, Any], corpus: dict[str, str], tracked: set[str]
-) -> dict[str, dict[str, Any]]:
-    normalized: dict[str, dict[str, Any]] = {}
-    for number, value in sorted(live.items()):
-        validate_number(number, "live")
-        if not isinstance(value, dict) or set(value) != {"target", "sites"}:
-            raise GateError(f"live ADR-{number} must contain only target and sites")
-        target = validate_adr_filename(value["target"], f"live ADR-{number}.target", corpus)
-        if target[:4] != number:
-            raise GateError(f"live ADR-{number}.target carries a different number: {target}")
-        sites = validate_sites(value["sites"], f"live ADR-{number}", tracked, allow_empty=False)
-        normalized[number] = {"target": target, "sites": sites}
-    return normalized
 
 
 def validate_retirement_evidence(value: Any, label: str, tracked: set[str]) -> list[str]:
@@ -393,83 +387,36 @@ def compare_sites(
     return errors
 
 
-def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
-    ) as handle:
-        handle.write(payload)
-        temporary = Path(handle.name)
-    temporary.replace(path)
-
-
-def write_live_registry(
-    registry_path: Path, registry: dict[str, Any], live: dict[str, dict[str, Any]], scanned: int
-) -> None:
-    """Persist the derived live bindings after hand-governed entries pass."""
-    registry["live"] = live
-    atomic_write_json(registry_path, registry)
-    print(
-        f"check-source-adr-citations: wrote {registry_path} "
-        f"({len(live)} live identities across {scanned} source/control files)"
-    )
-
-
-def check(root: Path, registry_path: Path, *, write: bool) -> int:
+def check(root: Path, registry_path: Path) -> int:
     tracked_list = tracked_paths(root)
     tracked = set(tracked_list)
     corpus = adr_corpus(root)
     registry = load_registry(registry_path)
-    live = validate_live(registry["live"], corpus, tracked)
     retired = validate_retired(root, registry["retired"], corpus, tracked)
     fixtures = validate_fixtures(registry["fixtures"], tracked)
 
-    overlap = set(live) & set(retired)
-    if overlap:
-        raise GateError(f"numbers cannot be both live and retired: {sorted(overlap)}")
-
     discovered, scanned = discover_sites(root, tracked_list)
     decision_sites, actual_fixture_sites = take_fixture_sites(discovered, fixtures)
-    derived_live, actual_retired_sites, unknown = expected_live(decision_sites, corpus, retired)
+    live, actual_retired_sites, unknown = expected_live(decision_sites, corpus, retired)
     if unknown:
         detail = "\n  ".join(unknown)
         raise GateError(
-            "unknown missing source ADR citations must be audited before the registry can change:\n  "
-            + detail
+            "source cites a number that has no ADR file and no retirement record "
+            "(file the ADR, or audit and record the retirement):\n  " + detail
         )
 
     errors = compare_sites("retired", actual_retired_sites, retired)
     errors.extend(compare_sites("fixture", actual_fixture_sites, fixtures))
-
-    if write:
-        if errors:
-            raise GateError(
-                "retired/fixture entries are hand-governed and must be corrected:\n  "
-                + "\n  ".join(errors)
-            )
-        write_live_registry(registry_path, registry, derived_live, scanned)
-        return 0
-
-    if live != derived_live:
-        registered = set(live)
-        current = set(derived_live)
-        for number in sorted(registered | current):
-            if live.get(number) != derived_live.get(number):
-                errors.append(
-                    f"live ADR-{number} site drift: registry={live.get(number)} "
-                    f"source={derived_live.get(number)}"
-                )
     if errors:
         raise GateError(
-            "\n".join(errors) + "\nrun with --write only after auditing the source change"
+            "\n".join(errors) + "\nretired and fixture records are hand-governed: correct them"
         )
 
     occurrences = sum(sum(entry["sites"].values()) for entry in live.values())
     occurrences += sum(sum(entry["sites"].values()) for entry in retired.values())
     print(
         "check-source-adr-citations: OK "
-        f"({len(live)} live, {len(retired)} retired, {len(fixtures)} fixture identities; "
+        f"({len(live)} live derived, {len(retired)} retired, {len(fixtures)} fixture identities; "
         f"{occurrences} governed occurrences in {scanned} source/control files)"
     )
     return 0
@@ -479,9 +426,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
-    parser.add_argument(
-        "--write", action="store_true", help="rewrite mechanically derived live bindings"
-    )
     return parser.parse_args(argv)
 
 
@@ -490,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     registry_path = args.registry if args.registry.is_absolute() else root / args.registry
     try:
-        return check(root, registry_path, write=bool(args.write))
+        return check(root, registry_path)
     except GateError as exc:
         print(f"check-source-adr-citations: ERROR: {exc}", file=sys.stderr)
         return 1

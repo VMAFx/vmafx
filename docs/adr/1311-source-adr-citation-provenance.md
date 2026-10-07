@@ -2,7 +2,7 @@
 
 # ADR-1311: Bind source ADR citations to exact decisions and governed retirements
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part by [ADR-2200](2200-source-adr-citations-derived.md): the live bindings are derived from the tree, not recorded)
 - **Date**: 2026-09-25
 - **Deciders**: Lusoris
 - **Tags**: `ci`, `documentation`, `provenance`, `adr`, `source-code`
