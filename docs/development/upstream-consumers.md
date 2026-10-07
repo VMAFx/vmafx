@@ -107,7 +107,10 @@ the last printed digit (or a trailing zero) is a mismatch. Tests:
 ### CI
 
 `.github/workflows/upstream-consumers.yml` runs on changes under `core/`, to
-`build-config.env`, to the scripts and to the workflow. It builds the CPU
+`build-config.env`, to the scripts and to the workflow, at the full CI tier
+([ADR-2169](../adr/2169-ci-fewer-runs.md)): master pushes, dispatches, pull
+requests from forks and pull requests labelled `ci: full`; an own pull request
+at the light tier skips it. It builds the CPU
 library at the pull request head and, on a pull request, at the base commit,
 then runs both scripts with `--against-cli` and `--reference-prefix`. Score
 files and logs are uploaded when the job fails. The GPU leg (`--cuda`) needs a

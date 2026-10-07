@@ -35,8 +35,20 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
-  consumers:
+  # ADR-2169: the tier decides; the consumers build upstream FFmpeg and GStreamer
+  # like the FFmpeg lanes, so they run at the full tier only (master push,
+  # dispatch, fork pull request, `ci: full`).
+  tier:
+    name: CI tier (Upstream Consumers)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  consumers:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Upstream Consumers
     runs-on: ubuntu-26.04
     timeout-minutes: 45

@@ -11833,6 +11833,7 @@
         ".github/workflows/pr-type-label.yml": 1,
         ".github/workflows/required-aggregator.yml": 7,
         ".github/workflows/tidy-metal.yml": 1,
+        ".github/workflows/upstream-consumers.yml": 1,
         "scripts/ci/ci_escalate.py": 1,
         "scripts/ci/ci_router.py": 1,
         "scripts/ci/ci_tier.py": 1,

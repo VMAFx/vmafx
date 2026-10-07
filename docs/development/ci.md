@@ -64,6 +64,7 @@ required and which ADR owns it, see
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg plus libvmaf build (Linux GCC, macOS Clang, SYCL). |
 | [`ffmpeg-patch-stack.yml`](../../.github/workflows/ffmpeg-patch-stack.yml) | Replays the cumulative FFmpeg patch series (see [FFmpeg patch automation](ffmpeg-patch-automation.md)). |
+| [`upstream-consumers.yml`](../../.github/workflows/upstream-consumers.yml) | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity on the self-hosted Intel Arc A380 runner (ADR-1177; see the [runbook](ci-self-hosted-sycl.md)). |
 | [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
 | [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
