@@ -33,13 +33,6 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
-- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
-  `make mini-retrain` runs extraction, feature checks, combination, training and export of
-  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
-  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
-  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
-  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
-  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 - **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
   The VMAFx API gains the shared contract of zero-copy frame import:
   device enumeration and information (`vmafx_device_count`,
@@ -63,6 +56,15 @@
   same functions. An imported frame scores bit for bit as the same frame
   created on the host. ABI 0.1.3. See
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
+
+
+- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
+  `make mini-retrain` runs extraction, feature checks, combination, training and export of
+  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
+  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
+  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
+  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
+  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
@@ -279,6 +281,11 @@
   accepts `yuv420p` and `yuv444p16` only).
 
 
+- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
+  its subject, so a model file whose path was longer was named by a cut-off
+  path; subjects now keep 1023 bytes and messages 1023.
+
+
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.
 
 
@@ -287,9 +294,6 @@
   `_open` to `_wsopen_s` / `_sopen_s` (the CRT's non-deprecated spellings) made the
   CRT reject permission bits other than `_S_IREAD` and `_S_IWRITE` as an invalid
   parameter; the mode is masked to those two bits, as the old calls effectively did.
-- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
-  its subject, so a model file whose path was longer was named by a cut-off
-  path; subjects now keep 1023 bytes and messages 1023.
 
 ## [1.0.0-rc.3] - 2026-10-07
 
