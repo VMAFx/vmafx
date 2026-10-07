@@ -30,11 +30,18 @@
 
 #if !defined(__cplusplus)
 
+#include <stdint.h>
+
 typedef int atomic_int;
 typedef unsigned int atomic_uint;
+/* VMAFx (RC4 WP3, ADR-1929): the types and operations core/src/vmafx/ uses. */
+typedef uintptr_t atomic_uintptr_t;
+typedef uint_fast64_t atomic_uint_fast64_t;
 
 #define memory_order_relaxed __ATOMIC_RELAXED
 #define memory_order_acquire __ATOMIC_ACQUIRE
+#define memory_order_release __ATOMIC_RELEASE
+#define memory_order_seq_cst __ATOMIC_SEQ_CST
 
 #define atomic_init(p_a, v)                                                                        \
     do {                                                                                           \
@@ -45,6 +52,12 @@ typedef unsigned int atomic_uint;
 #define atomic_load_explicit(p_a, mo) __atomic_load_n(p_a, mo)
 #define atomic_fetch_add(p_a, inc) __atomic_fetch_add(p_a, inc, __ATOMIC_SEQ_CST)
 #define atomic_fetch_sub(p_a, dec) __atomic_fetch_sub(p_a, dec, __ATOMIC_SEQ_CST)
+#define atomic_store_explicit(p_a, v, mo) __atomic_store_n(p_a, v, mo)
+#define atomic_exchange(p_a, v) __atomic_exchange_n(p_a, v, __ATOMIC_SEQ_CST)
+#define atomic_compare_exchange_strong(p_a, p_e, v)                                                \
+    __atomic_compare_exchange_n(p_a, p_e, v, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+#define atomic_compare_exchange_weak(p_a, p_e, v)                                                  \
+    __atomic_compare_exchange_n(p_a, p_e, v, 1, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 
 #endif /* !defined(__cplusplus) */
 

@@ -17,9 +17,11 @@
 #include "vmafx/vmafx.h"
 
 _Static_assert(sizeof(void *) == 8, "VMAFx builds 64-bit only (ADR-1258)");
+extern const VmafxDeviceDesc vmafx_layout_probe_VmafxDeviceDesc;
+extern const VmafxFrameImport vmafx_layout_probe_VmafxFrameImport;
 extern const VmafxHostPlanes vmafx_layout_probe_VmafxHostPlanes;
 extern const VmafxFramePlanes vmafx_layout_probe_VmafxFramePlanes;
-_Static_assert(sizeof(VmafxContextConfig) == 48, "VmafxContextConfig size");
+_Static_assert(sizeof(VmafxContextConfig) == 56, "VmafxContextConfig size");
 _Static_assert(_Alignof(VmafxContextConfig) == 8, "VmafxContextConfig alignment");
 _Static_assert(offsetof(VmafxContextConfig, struct_size) == 0,
                "VmafxContextConfig.struct_size offset");
@@ -32,6 +34,8 @@ _Static_assert(offsetof(VmafxContextConfig, gpumask) == 24, "VmafxContextConfig.
 _Static_assert(offsetof(VmafxContextConfig, log_callback) == 32,
                "VmafxContextConfig.log_callback offset");
 _Static_assert(offsetof(VmafxContextConfig, log_user) == 40, "VmafxContextConfig.log_user offset");
+_Static_assert(offsetof(VmafxContextConfig, import_retry_wait_ns) == 48,
+               "VmafxContextConfig.import_retry_wait_ns offset");
 _Static_assert(sizeof(VmafxProvenance) == 32, "VmafxProvenance size");
 _Static_assert(_Alignof(VmafxProvenance) == 8, "VmafxProvenance alignment");
 _Static_assert(offsetof(VmafxProvenance, struct_size) == 0, "VmafxProvenance.struct_size offset");
@@ -67,11 +71,59 @@ _Static_assert(offsetof(VmafxFeatureResolution, extractor) == 8,
                "VmafxFeatureResolution.extractor offset");
 _Static_assert(offsetof(VmafxFeatureResolution, unsupported_option) == 16,
                "VmafxFeatureResolution.unsupported_option offset");
-_Static_assert(sizeof(VmafxDeviceDesc) == 12, "VmafxDeviceDesc size");
-_Static_assert(_Alignof(VmafxDeviceDesc) == 4, "VmafxDeviceDesc alignment");
+_Static_assert(sizeof(VmafxDeviceDesc) == 32, "VmafxDeviceDesc size");
+_Static_assert(_Alignof(VmafxDeviceDesc) == 8, "VmafxDeviceDesc alignment");
 _Static_assert(offsetof(VmafxDeviceDesc, struct_size) == 0, "VmafxDeviceDesc.struct_size offset");
 _Static_assert(offsetof(VmafxDeviceDesc, backend) == 4, "VmafxDeviceDesc.backend offset");
 _Static_assert(offsetof(VmafxDeviceDesc, index) == 8, "VmafxDeviceDesc.index offset");
+_Static_assert(offsetof(VmafxDeviceDesc, flags) == 12, "VmafxDeviceDesc.flags offset");
+_Static_assert(offsetof(VmafxDeviceDesc, external) == 16, "VmafxDeviceDesc.external offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxDeviceDesc.external) == 16,
+               "VmafxDeviceDesc.external holds 2 elements");
+_Static_assert(sizeof(VmafxDeviceInfo) == 40, "VmafxDeviceInfo size");
+_Static_assert(_Alignof(VmafxDeviceInfo) == 8, "VmafxDeviceInfo alignment");
+_Static_assert(offsetof(VmafxDeviceInfo, struct_size) == 0, "VmafxDeviceInfo.struct_size offset");
+_Static_assert(offsetof(VmafxDeviceInfo, backend) == 4, "VmafxDeviceInfo.backend offset");
+_Static_assert(offsetof(VmafxDeviceInfo, index) == 8, "VmafxDeviceInfo.index offset");
+_Static_assert(offsetof(VmafxDeviceInfo, flags) == 12, "VmafxDeviceInfo.flags offset");
+_Static_assert(offsetof(VmafxDeviceInfo, memory_kinds) == 16,
+               "VmafxDeviceInfo.memory_kinds offset");
+_Static_assert(offsetof(VmafxDeviceInfo, fence_kinds) == 20, "VmafxDeviceInfo.fence_kinds offset");
+_Static_assert(offsetof(VmafxDeviceInfo, total_memory) == 24,
+               "VmafxDeviceInfo.total_memory offset");
+_Static_assert(offsetof(VmafxDeviceInfo, name) == 32, "VmafxDeviceInfo.name offset");
+_Static_assert(sizeof(VmafxFence) == 32, "VmafxFence size");
+_Static_assert(_Alignof(VmafxFence) == 8, "VmafxFence alignment");
+_Static_assert(offsetof(VmafxFence, struct_size) == 0, "VmafxFence.struct_size offset");
+_Static_assert(offsetof(VmafxFence, kind) == 4, "VmafxFence.kind offset");
+_Static_assert(offsetof(VmafxFence, handle) == 8, "VmafxFence.handle offset");
+_Static_assert(offsetof(VmafxFence, value) == 16, "VmafxFence.value offset");
+_Static_assert(offsetof(VmafxFence, fd) == 24, "VmafxFence.fd offset");
+_Static_assert(offsetof(VmafxFence, reserved) == 28, "VmafxFence.reserved offset");
+_Static_assert(sizeof(VmafxImportPlane) == 48, "VmafxImportPlane size");
+_Static_assert(_Alignof(VmafxImportPlane) == 8, "VmafxImportPlane alignment");
+_Static_assert(offsetof(VmafxImportPlane, handle) == 0, "VmafxImportPlane.handle offset");
+_Static_assert(offsetof(VmafxImportPlane, fd) == 8, "VmafxImportPlane.fd offset");
+_Static_assert(offsetof(VmafxImportPlane, plane_index) == 12,
+               "VmafxImportPlane.plane_index offset");
+_Static_assert(offsetof(VmafxImportPlane, offset) == 16, "VmafxImportPlane.offset offset");
+_Static_assert(offsetof(VmafxImportPlane, pitch) == 24, "VmafxImportPlane.pitch offset");
+_Static_assert(offsetof(VmafxImportPlane, modifier) == 32, "VmafxImportPlane.modifier offset");
+_Static_assert(offsetof(VmafxImportPlane, size) == 40, "VmafxImportPlane.size offset");
+_Static_assert(sizeof(VmafxFrameImport) == 216, "VmafxFrameImport size");
+_Static_assert(_Alignof(VmafxFrameImport) == 8, "VmafxFrameImport alignment");
+_Static_assert(offsetof(VmafxFrameImport, struct_size) == 0, "VmafxFrameImport.struct_size offset");
+_Static_assert(offsetof(VmafxFrameImport, memory) == 4, "VmafxFrameImport.memory offset");
+_Static_assert(offsetof(VmafxFrameImport, pix_fmt) == 8, "VmafxFrameImport.pix_fmt offset");
+_Static_assert(offsetof(VmafxFrameImport, bpc) == 12, "VmafxFrameImport.bpc offset");
+_Static_assert(offsetof(VmafxFrameImport, w) == 16, "VmafxFrameImport.w offset");
+_Static_assert(offsetof(VmafxFrameImport, h) == 20, "VmafxFrameImport.h offset");
+_Static_assert(offsetof(VmafxFrameImport, n_planes) == 24, "VmafxFrameImport.n_planes offset");
+_Static_assert(offsetof(VmafxFrameImport, plane) == 32, "VmafxFrameImport.plane offset");
+_Static_assert(sizeof(vmafx_layout_probe_VmafxFrameImport.plane) == 144,
+               "VmafxFrameImport.plane holds 3 elements");
+_Static_assert(offsetof(VmafxFrameImport, acquire) == 176, "VmafxFrameImport.acquire offset");
+_Static_assert(offsetof(VmafxFrameImport, flags) == 208, "VmafxFrameImport.flags offset");
 _Static_assert(sizeof(VmafxModelConfig) == 48, "VmafxModelConfig size");
 _Static_assert(_Alignof(VmafxModelConfig) == 8, "VmafxModelConfig alignment");
 _Static_assert(offsetof(VmafxModelConfig, struct_size) == 0, "VmafxModelConfig.struct_size offset");
@@ -148,6 +200,7 @@ _Static_assert(VMAFX_E_DEVICE == -6, "VMAFX_E_DEVICE");
 _Static_assert(VMAFX_E_IO == -7, "VMAFX_E_IO");
 _Static_assert(VMAFX_E_RANGE == -8, "VMAFX_E_RANGE");
 _Static_assert(VMAFX_E_INTERNAL == -9, "VMAFX_E_INTERNAL");
+_Static_assert(VMAFX_E_TIMEOUT == -10, "VMAFX_E_TIMEOUT");
 _Static_assert(VMAFX_E_ABI == -11, "VMAFX_E_ABI");
 _Static_assert(VMAFX_LOG_LEVEL_NONE == 0, "VMAFX_LOG_LEVEL_NONE");
 _Static_assert(VMAFX_LOG_LEVEL_ERROR == 1, "VMAFX_LOG_LEVEL_ERROR");
@@ -164,6 +217,9 @@ _Static_assert(VMAFX_PIXEL_FORMAT_YUV420P == 1, "VMAFX_PIXEL_FORMAT_YUV420P");
 _Static_assert(VMAFX_PIXEL_FORMAT_YUV422P == 2, "VMAFX_PIXEL_FORMAT_YUV422P");
 _Static_assert(VMAFX_PIXEL_FORMAT_YUV444P == 3, "VMAFX_PIXEL_FORMAT_YUV444P");
 _Static_assert(VMAFX_PIXEL_FORMAT_YUV400P == 4, "VMAFX_PIXEL_FORMAT_YUV400P");
+_Static_assert(VMAFX_PIXEL_FORMAT_NV12 == 16, "VMAFX_PIXEL_FORMAT_NV12");
+_Static_assert(VMAFX_PIXEL_FORMAT_P010 == 17, "VMAFX_PIXEL_FORMAT_P010");
+_Static_assert(VMAFX_PIXEL_FORMAT_P016 == 18, "VMAFX_PIXEL_FORMAT_P016");
 _Static_assert(VMAFX_POOL_NONE == 0, "VMAFX_POOL_NONE");
 _Static_assert(VMAFX_POOL_MIN == 1, "VMAFX_POOL_MIN");
 _Static_assert(VMAFX_POOL_MAX == 2, "VMAFX_POOL_MAX");
@@ -186,13 +242,31 @@ _Static_assert(VMAFX_SUBJECT_DEVICE == 9, "VMAFX_SUBJECT_DEVICE");
 _Static_assert(VMAFX_SUBJECT_BACKEND == 10, "VMAFX_SUBJECT_BACKEND");
 _Static_assert(VMAFX_SUBJECT_PATH == 11, "VMAFX_SUBJECT_PATH");
 _Static_assert(VMAFX_SUBJECT_FENCE == 12, "VMAFX_SUBJECT_FENCE");
+_Static_assert(VMAFX_MEMORY_NONE == 0, "VMAFX_MEMORY_NONE");
+_Static_assert(VMAFX_MEMORY_HOST == 1, "VMAFX_MEMORY_HOST");
+_Static_assert(VMAFX_MEMORY_DEVICE_POINTER == 2, "VMAFX_MEMORY_DEVICE_POINTER");
+_Static_assert(VMAFX_MEMORY_DEVICE_ARRAY == 3, "VMAFX_MEMORY_DEVICE_ARRAY");
+_Static_assert(VMAFX_MEMORY_DMABUF == 4, "VMAFX_MEMORY_DMABUF");
+_Static_assert(VMAFX_MEMORY_METAL_SURFACE == 5, "VMAFX_MEMORY_METAL_SURFACE");
+_Static_assert(VMAFX_MEMORY_METAL_TEXTURE == 6, "VMAFX_MEMORY_METAL_TEXTURE");
+_Static_assert(VMAFX_MEMORY_WIN32_SHARED == 7, "VMAFX_MEMORY_WIN32_SHARED");
+_Static_assert(VMAFX_FENCE_NONE == 0, "VMAFX_FENCE_NONE");
+_Static_assert(VMAFX_FENCE_HOST == 1, "VMAFX_FENCE_HOST");
+_Static_assert(VMAFX_FENCE_CUDA_EVENT == 2, "VMAFX_FENCE_CUDA_EVENT");
+_Static_assert(VMAFX_FENCE_HIP_EVENT == 3, "VMAFX_FENCE_HIP_EVENT");
+_Static_assert(VMAFX_FENCE_SYCL_EVENT == 4, "VMAFX_FENCE_SYCL_EVENT");
+_Static_assert(VMAFX_FENCE_SYNC_FILE == 5, "VMAFX_FENCE_SYNC_FILE");
+_Static_assert(VMAFX_FENCE_METAL_SHARED_EVENT == 6, "VMAFX_FENCE_METAL_SHARED_EVENT");
+_Static_assert(VMAFX_FENCE_WIN32_SHARED == 7, "VMAFX_FENCE_WIN32_SHARED");
 _Static_assert(VMAFX_MODEL_DISABLE_CLIP == 0x1u, "VMAFX_MODEL_DISABLE_CLIP");
 _Static_assert(VMAFX_MODEL_ENABLE_TRANSFORM == 0x2u, "VMAFX_MODEL_ENABLE_TRANSFORM");
 _Static_assert(VMAFX_MODEL_DISABLE_TRANSFORM == 0x4u, "VMAFX_MODEL_DISABLE_TRANSFORM");
+_Static_assert(VMAFX_IMPORT_ALLOW_COPY == 0x1u, "VMAFX_IMPORT_ALLOW_COPY");
+_Static_assert(VMAFX_DEVICE_PROFILING == 0x1u, "VMAFX_DEVICE_PROFILING");
 
 int main(void)
 {
-    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 12,
-                 70, 52);
+    (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 16,
+                 104, 74);
     return 0;
 }

@@ -16,7 +16,7 @@ Contexts: options, feature and model registration, submit, flush, extractor intr
 
 ### `VmafxContextConfig`
 
-Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT. Size 48 bytes, alignment 8. Since 0.1.
+Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT. Size 56 bytes, alignment 8. Since 0.1.
 
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ Context configuration. Initialise with VMAFX_CONTEXT_CONFIG_INIT. Size 48 bytes,
 | `gpumask` | `uint64_t gpumask` | 24 | 0.1 | GPU dispatch bits to disable. |
 | `log_callback` | `VmafxLogCallback log_callback` | 32 | 0.1 | Receives every message the library raises for this context at or below `log_level`, on the calling thread and on the context's worker threads, and every failure reported without an error out-parameter; nothing of the context then reaches the process log (ADR-1906). NULL: the process log (stderr), whose level the context then sets, as vmaf_init() does. Added in ABI 0.1.1. |
 | `log_user` | `void *log_user` | 40 | 0.1 | Passed to `log_callback`. Added in ABI 0.1.1. |
+| `import_retry_wait_ns` | `uint64_t import_retry_wait_ns` | 48 | 0.1 | Longest host wait on the acquire fence before the one retry of vmafx_context_import_frame() (the import rule, ADR-1929), in nanoseconds: 1 to 600000000000 (10 minutes); 0, the value of VMAFX_CONTEXT_CONFIG_INIT, is the default of 10 seconds. A larger value is refused with VMAFX_E_RANGE naming `config.import_retry_wait_ns`, not clamped. Added in ABI 0.1.3. |
 
 Initialise with `VMAFX_CONTEXT_CONFIG_INIT`.
 
@@ -75,6 +76,9 @@ Initialise with `VMAFX_FEATURE_RESOLUTION_INIT`.
 | `vmafx_context_frame_retention` | 0.1 | How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL. |
 | `vmafx_submit` | 0.1 | Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry. |
 | `vmafx_flush` | 0.1 | Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID. |
+| `vmafx_context_use_device` | 0.1 | Score on `device`: the context picks each feature's twin on its backend and holds a reference to the device until it is destroyed. Call it once, before any feature, model or frame; a device can serve several contexts. A context without a device scores on the CPU. |
+| `vmafx_context_admit` | 0.1 | Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame. |
+| `vmafx_context_import_frame` | 0.1 | Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import() and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds by default); a second failure or any other one fails naming the backend, device, `input` (for example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors. Never falls back to a host copy. |
 
 ```c
 VMAFX_EXPORT VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
@@ -105,6 +109,13 @@ VMAFX_EXPORT uint32_t vmafx_context_frame_retention(const VmafxContext *context)
 VMAFX_EXPORT VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference,
                                       VmafxFrame *distorted, uint64_t index, VmafxError **error);
 VMAFX_EXPORT VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_use_device(VmafxContext *context, VmafxDevice *device,
+                                                  VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const VmafxFrame *frame,
+                                             VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
+                                                    const VmafxFrameImport *desc, const char *input,
+                                                    VmafxFrame **out, VmafxError **error);
 ```
 
 Back to the [reference index](reference.md).

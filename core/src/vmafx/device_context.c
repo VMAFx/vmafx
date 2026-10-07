@@ -1,0 +1,58 @@
+/**
+ *
+ *  Copyright 2026 Lusoris
+ *
+ * SPDX-License-Identifier: EUPL-1.2
+ */
+
+/*
+ * Attaching a device to a VMAFx context (RC4 WP3 common lane, ADR-1852
+ * design section 2.3): the context holds a reference to its device until it
+ * is destroyed, and picks each feature's twin on the device's backend, so
+ * the device comes before any feature, model or frame. The CPU device needs
+ * no engine state; the backend lanes import their device into the engine
+ * here (the successor of vmaf_cuda_import_state() and its siblings).
+ */
+
+#include <assert.h>
+#include <stdint.h>
+
+#include "engine.h"
+#include "error_internal.h"
+#include "internal.h"
+#include "vmafx/vmafx.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+VmafxStatus vmafx_context_use_device(VmafxContext *context, VmafxDevice *device, VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(context, error);
+    if (!context || !device) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !context ? "context" : "device", "NULL argument");
+    }
+    if (context->device) {
+        return VMAFX_FAIL(&report, VMAFX_E_BUSY, 0, VMAFX_SUBJECT_DEVICE, "device",
+                          "the context scores on a device already; a context has one device");
+    }
+    if (vmaf_engine_extractor_count(context->engine) != 0u || context->have_frame ||
+        context->models.count != 0u || context->model_sets.count != 0u) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_CONTEXT, "context",
+                          "attach the device before any feature, model or frame: the context "
+                          "picks each feature's twin on the device's backend when it is "
+                          "registered");
+    }
+    if (device->backend != VMAFX_BACKEND_CPU) {
+        return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
+                          "backend %s: this build scores on the CPU device only",
+                          vmafx_backend_name(device->backend));
+    }
+    assert(context->device == NULL && device->backend == VMAFX_BACKEND_CPU);
+    context->device = vmafx_device_ref(device);
+    return VMAFX_OK;
+}
+
+/* NOLINTEND(modernize-use-nullptr) */

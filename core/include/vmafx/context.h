@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <vmafx/types.h>
 #include <vmafx/error.h>
+#include <vmafx/device.h>
 #include <vmafx/frame.h>
 #include <vmafx/model.h>
 
@@ -63,6 +64,13 @@ struct VmafxContextConfig {
     VmafxLogCallback log_callback;
     /** Passed to `log_callback`. Added in ABI 0.1.1. */
     void *log_user;
+    /**
+     * Longest host wait on the acquire fence before the one retry of vmafx_context_import_frame()
+     * (the import rule, ADR-1929), in nanoseconds: 1 to 600000000000 (10 minutes); 0, the value of
+     * VMAFX_CONTEXT_CONFIG_INIT, is the default of 10 seconds. A larger value is refused with
+     * VMAFX_E_RANGE naming `config.import_retry_wait_ns`, not clamped. Added in ABI 0.1.3.
+     */
+    uint64_t import_retry_wait_ns;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
@@ -224,6 +232,37 @@ VMAFX_EXPORT VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *referen
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error);
+
+/**
+ * Score on `device`: the context picks each feature's twin on its backend and holds a reference to
+ * the device until it is destroyed. Call it once, before any feature, model or frame; a device can
+ * serve several contexts. A context without a device scores on the CPU.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_use_device(VmafxContext *context, VmafxDevice *device,
+                                                  VmafxError **error);
+
+/**
+ * Whether every extractor registered on the context can read `frame` where it lives, without a host
+ * copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit()
+ * makes the same check before it counts a frame.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const VmafxFrame *frame,
+                                             VmafxError **error);
+
+/**
+ * Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import()
+ * and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once
+ * after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds
+ * by default); a second failure or any other one fails naming the backend, device, `input` (for
+ * example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors.
+ * Never falls back to a host copy.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
+                                                    const VmafxFrameImport *desc, const char *input,
+                                                    VmafxFrame **out, VmafxError **error);
 
 #ifdef __cplusplus
 }

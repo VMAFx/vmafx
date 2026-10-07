@@ -1357,6 +1357,40 @@ if host_machine.system() == 'linux'
     test('test_vmafx_log_routing', test_vmafx_log_routing, suite : ['fast'], timeout : 120)
 endif
 
+# RC4 WP3 common lane: devices, fences, imported frames, pools, admission and
+# the import rule (D8) on the CPU device. import_api uses the public headers;
+# import_bitexact (fixtures in python/test/resource/yuv, synthetic 4K always)
+# and import_fence (switches and counters of core/src/vmafx/frame_import_hooks.h,
+# POSIX threads) link the static library.
+test_vmafx_import_api = executable('test_vmafx_import_api',
+    ['test.c', 'test_vmafx_import_api.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    c_args : vmafx_test_dirs,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_api', test_vmafx_import_api, suite : ['fast'])
+
+test_vmafx_import_bitexact = executable('test_vmafx_import_bitexact',
+    ['test.c', 'test_vmafx_import_bitexact.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_bitexact', test_vmafx_import_bitexact, suite : ['fast'], timeout : 300)
+
+if host_machine.system() == 'linux'
+    test_vmafx_import_fence = executable('test_vmafx_import_fence',
+        ['test.c', 'test_vmafx_import_fence.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_import_fence', test_vmafx_import_fence, suite : ['fast'], timeout : 120)
+endif
+
 # Engine messages go through vmaf_log(), so a context's sink sees them: no
 # direct stdout / stderr write in core/src outside the declared exceptions.
 test('test_engine_log_routing_contract',

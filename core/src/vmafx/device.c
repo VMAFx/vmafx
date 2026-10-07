@@ -6,9 +6,14 @@
  */
 
 /*
- * VmafxDevice skeleton (ADR-1852, RC4 WP2): every frame carries a device from
- * the start. This release creates CPU devices only; the device backends,
- * enumeration and external handles are WP3's (core/src/vmafx/device*.c).
+ * VmafxDevice (ADR-1852): every frame carries a device from the start (WP2
+ * skeleton). The RC4 WP3 common lane adds enumeration, information, external
+ * handles and profiling for the CPU device; the backend lanes (CUDA, SYCL,
+ * HIP, Metal) create their devices behind these functions, and until a lane
+ * lands its backend is refused naming it, never replaced by the CPU.
+ *
+ * VmafxDeviceInfo is size-prefixed and grows at the end: the RC6 / RC7
+ * capability tables append each device's format envelope (PR #2185).
  */
 
 #include <assert.h>
@@ -26,11 +31,64 @@
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
 /* The process CPU device: frames created without a device use it. */
-static VmafxDevice cpu_device = {.refs = NULL, .backend = VMAFX_BACKEND_CPU, .index = 0};
+static VmafxDevice cpu_device = {
+    .refs = NULL, .backend = VMAFX_BACKEND_CPU, .index = 0, .flags = 0u};
+
+static const char *const backend_names[] = {"cpu", "cuda", "sycl", "metal", "hip"};
+
+const char *vmafx_backend_name(uint32_t backend)
+{
+    return backend < sizeof(backend_names) / sizeof(backend_names[0]) ? backend_names[backend] :
+                                                                        "unknown";
+}
 
 VmafxDevice *vmafx_device_cpu(void)
 {
     return &cpu_device;
+}
+
+/* A value of VmafxBackend (5 stays reserved for the removed backend). */
+static bool is_backend(uint32_t backend)
+{
+    return backend <= VMAFX_BACKEND_HIP;
+}
+
+/* `backend` is one this build creates devices for (the CPU in this lane). */
+static VmafxStatus check_backend(const VmafxReport *report, uint32_t backend, const char *subject)
+{
+    if (!is_backend(backend)) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_BACKEND, subject,
+                          "backend %u is not a VmafxBackend", (unsigned)backend);
+    }
+    if (backend != VMAFX_BACKEND_CPU) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, subject,
+                          "backend %s: this build creates CPU devices only",
+                          vmafx_backend_name(backend));
+    }
+    return VMAFX_OK;
+}
+
+/* The CPU device takes no external handles and has no kernel profiler. */
+static VmafxStatus check_cpu_desc(const VmafxReport *report, const VmafxDeviceDesc *d)
+{
+    if (d->external[0] != 0u || d->external[1] != 0u) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.external",
+                          "the CPU device takes no external handles");
+    }
+    if (d->flags & ~(uint32_t)VMAFX_DEVICE_PROFILING) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.flags",
+                          "unknown flag bits 0x%x",
+                          (unsigned)(d->flags & ~(uint32_t)VMAFX_DEVICE_PROFILING));
+    }
+    if (d->flags & VMAFX_DEVICE_PROFILING) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.flags",
+                          "VMAFX_DEVICE_PROFILING: the CPU device has no kernel profiler");
+    }
+    if (d->index != 0 && d->index != -1) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "desc.index",
+                          "the CPU has device 0 only, not %d", (int)d->index);
+    }
+    return VMAFX_OK;
 }
 
 VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out, VmafxError **error)
@@ -42,29 +100,27 @@ VmafxStatus vmafx_device_create(const VmafxDeviceDesc *desc, VmafxDevice **out, 
     }
     *out = NULL;
     VmafxDeviceDesc d = VMAFX_DEVICE_DESC_INIT;
+    VmafxStatus status = VMAFX_OK;
     if (desc) {
-        const VmafxStatus status =
+        status =
             vmafx_read_sized(&report, &d, (uint32_t)sizeof(d), desc, VMAFX_MIN_DEVICE_DESC, "desc");
-        if (status != VMAFX_OK) {
-            return status;
-        }
     }
-    if (d.backend != VMAFX_BACKEND_CPU) {
-        return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "desc.backend",
-                          "backend %u: this release creates CPU devices only", (unsigned)d.backend);
+    if (status == VMAFX_OK) {
+        status = check_backend(&report, d.backend, "desc.backend");
     }
-    if (d.index != 0 && d.index != -1) {
-        return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "desc.index",
-                          "the CPU has device 0 only, not %d", (int)d.index);
+    if (status == VMAFX_OK) {
+        status = check_cpu_desc(&report, &d);
     }
-    VmafxDevice *const device = malloc(sizeof(*device));
-    if (!device) {
-        return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE, "device",
-                          "cannot allocate a device");
+    VmafxDevice *const device = status == VMAFX_OK ? malloc(sizeof(*device)) : NULL;
+    if (status != VMAFX_OK || !device) {
+        return status != VMAFX_OK ? status :
+                                    VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE,
+                                               "device", "cannot allocate a device");
     }
     assert(d.backend == VMAFX_BACKEND_CPU && d.struct_size == sizeof(d));
     device->backend = d.backend;
     device->index = 0;
+    device->flags = d.flags;
     if (vmaf_ref_init(&device->refs) != 0) {
         free(device);
         return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_DEVICE, "device",
@@ -97,6 +153,83 @@ void vmafx_device_unref(VmafxDevice *device)
 uint32_t vmafx_device_backend(const VmafxDevice *device)
 {
     return device ? device->backend : (uint32_t)VMAFX_BACKEND_CPU;
+}
+
+/* ---- Enumeration and information (RC4 WP3) ----------------------------------------- */
+
+VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!count) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "count",
+                          "NULL argument");
+    }
+    *count = 0u;
+    const VmafxStatus status = check_backend(&report, backend, "backend");
+    if (status == VMAFX_OK) {
+        *count = 1u;
+    }
+    return status;
+}
+
+/* What the CPU device is and imports. */
+static VmafxDeviceInfo cpu_info(uint32_t flags)
+{
+    VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
+    info.backend = VMAFX_BACKEND_CPU;
+    info.index = 0;
+    info.flags = flags;
+    info.memory_kinds = 1u << VMAFX_MEMORY_HOST;
+    info.fence_kinds = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST);
+    info.total_memory = 0u;
+    info.name = "cpu";
+    return info;
+}
+
+VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *out,
+                              VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!out) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "out",
+                          "NULL argument");
+    }
+    const VmafxStatus status = check_backend(&report, backend, "backend");
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    if (index != 0) {
+        return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "index",
+                          "the CPU has device 0 only, not %d", (int)index);
+    }
+    const VmafxDeviceInfo info = cpu_info(0u);
+    return vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out");
+}
+
+VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *out,
+                                  VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!device || !out) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !device ? "device" : "out", "NULL argument");
+    }
+    assert(device->backend == VMAFX_BACKEND_CPU);
+    const VmafxDeviceInfo info = cpu_info(device->flags);
+    return vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out");
+}
+
+VmafxStatus vmafx_device_profile(VmafxDevice *device, const char **out, VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!device || !out) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !device ? "device" : "out", "NULL argument");
+    }
+    *out = NULL;
+    return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_DEVICE, "device",
+                      "backend %s device %d was not created with VMAFX_DEVICE_PROFILING",
+                      vmafx_backend_name(device->backend), (int)device->index);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
