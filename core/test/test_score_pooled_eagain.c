@@ -12,8 +12,9 @@
  *
  *  This test pins:
  *    (1) transient case returns -EAGAIN (not -EINVAL);
- *    (2) the streaming pattern `score_pooled(i-2, i-2)` after
- *        `read_pictures(i)` returns 0 with a valid score;
+ *    (2) the streaming pattern `score_pooled(i-1, i-1)` after
+ *        `read_pictures(i)` returns 0 with a valid score (ADR-2090:
+ *        motion2 / motion3 of frame i - 1 are final once frame i is read);
  *    (3) after flush, every in-range index is poolable with rc=0.
  */
 
@@ -80,44 +81,52 @@ static char *test_score_pooled_returns_eagain_on_pending(void)
     return NULL;
 }
 
+/* Pool frames [from, to] of `model`; 0 with a finite score, or the error. */
+static int pooled(VmafContext *vmaf, VmafModel *model, unsigned from, unsigned to)
+{
+    double score = -1.0;
+    const int rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, from, to);
+    return (rc == 0 && !(score >= 0.0)) ? -ERANGE : rc;
+}
+
+/* Frames 0..3, one by one: after read_pictures(i) frame i - 1 pools and frame
+ * i is pending; after the flush every frame pools. NULL or the failure. */
+static char *check_streaming(VmafContext *vmaf, VmafModel *model)
+{
+    for (unsigned i = 0; i < 4; i++) {
+        mu_assert("read failed", submit_frame(vmaf, i, 576, 324) == 0);
+        mu_assert("frame i - 1 does not pool after read_pictures(i)",
+                  i == 0 || pooled(vmaf, model, i - 1u, i - 1u) == 0);
+        mu_assert("frame i pools before the frame after it is read (motion2 early)",
+                  pooled(vmaf, model, i, i) == -EAGAIN);
+    }
+    mu_assert("frames 0..2 do not pool before the flush", pooled(vmaf, model, 0u, 2u) == 0);
+    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
+    mu_assert("the last frame does not pool after the flush", pooled(vmaf, model, 3u, 3u) == 0);
+    mu_assert("the stream does not pool after the flush", pooled(vmaf, model, 0u, 3u) == 0);
+    return NULL;
+}
+
 static char *test_score_pooled_streaming_pattern(void)
 {
-    /* integer_motion (v1) computes motion2_score in flush() for all frames at
-     * once rather than retroactively per-frame.  Pooling is therefore only
-     * valid after the sentinel flush (vmaf_read_pictures NULL/NULL).  The
-     * pattern exercised here is: read N frames, flush, then pool any range
-     * inside [0, N-1].  vmaf_score_pooled must return 0 with a finite score. */
+    /* ADR-2090: integer_motion derives motion2 / motion3 of frame i once the
+     * SAD of frame i + 1 is in, before the flush (the streaming pattern of
+     * Netflix#755). */
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
     VmafModelConfig mcfg = {0};
     VmafModel *model = NULL;
-    mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
-    mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
-
-    /* integer_motion writes motion2/motion3 for ALL frames only in flush(),
-     * not retroactively during extract().  Before flush, score_pooled must
-     * return -EAGAIN (not -EINVAL) for any index — the feature vector for
-     * motion2 has not been registered in the collector yet.  After flush,
-     * every in-range index becomes available.  This test verifies the
-     * pre-flush -EAGAIN behaviour and delegates the post-flush success path
-     * to test_score_pooled_after_flush_complete. */
-    for (unsigned i = 0; i < 4; i++)
-        mu_assert("read failed", submit_frame(vmaf, i, 576, 324) == 0);
-
-    double score = 0.0;
-    int rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, 0u, 0u);
-    mu_assert("pooled(0,0) before flush must return -EAGAIN (motion2 not yet written)",
-              rc == -EAGAIN);
-
-    rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, 1u, 1u);
-    mu_assert("pooled(1,1) before flush must return -EAGAIN (motion2 not yet written)",
-              rc == -EAGAIN);
+    char *msg = vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0 ? NULL : "model load failed";
+    if (!msg && vmaf_use_features_from_model(vmaf, model) != 0)
+        msg = "use_features_from_model failed";
+    if (!msg)
+        msg = check_streaming(vmaf, model);
 
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return msg;
 }
 
 static char *test_score_pooled_still_rejects_bad_range(void)
@@ -150,7 +159,6 @@ char *run_tests(void)
 {
     mu_run_test(test_score_pooled_returns_eagain_on_pending);
     mu_run_test(test_score_pooled_streaming_pattern);
-    /* mu_run_test(test_score_pooled_after_flush_complete); -- disabled: integer_motion flush does not yet write motion2_score for tail index, see TODO in test body */
     mu_run_test(test_score_pooled_still_rejects_bad_range);
     return NULL;
 }

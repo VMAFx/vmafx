@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 517,
+  "tus": 518,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -399,6 +399,7 @@
     "core/test/test_motion_five_frame_window.c",
     "core/test/test_motion_min_dim.c",
     "core/test/test_motion_v2_simd.c",
+    "core/test/test_motion_window_incremental.c",
     "core/test/test_ms_ssim_decimate.c",
     "core/test/test_ms_ssim_decimate_coverage.c",
     "core/test/test_niqe.c",
@@ -1139,6 +1140,26 @@
         }
       },
       "previous_baseline_sha256": "e5769f6e8ff5c17bc43935cf46dda95d7cd61373458470db301376b8059ab07a"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_motion.c",
+        "core/src/feature/integer_motion_v2.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/window.c",
+        "core/test/test_motion_window_incremental.c",
+        "core/test/test_score_pooled_eagain.c",
+        "core/test/test_vmafx_window.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_motion_window_incremental.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "09e82e75b702063517be1874d6754001d0c5c58e1cba85c1bf5ce9a7f20ddfba"
     }
   ]
 }

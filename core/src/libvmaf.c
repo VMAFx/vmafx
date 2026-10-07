@@ -2887,6 +2887,33 @@ static bool batch_extractor_skip(const VmafFeatureExtractorContext *shared_ctx, 
     return fex_subsample_skip(shared_ctx->fex->flags, index, n_subsample);
 }
 
+/* ADR-2090: let every registered extractor with an advance() callback append
+ * the scores its collector entries now make final (motion2 / motion3 of the
+ * frames whose window is complete), so they need not wait for the flush. Runs
+ * on the thread that feeds frames, after a frame is accepted and after a read
+ * fence. An extractor the worker pool runs is advanced on its registered
+ * context, which never extracts; that context is marked initialised, as the
+ * threaded flush marks it, so close() frees what advance() built. Any other
+ * context is advanced once it has been initialised by its first frame. */
+static int advance_extractors(VmafContext *vmaf)
+{
+    if (vmaf->flushed)
+        return 0;
+    int err = 0;
+    const RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe.cnt && !err; i++) {
+        VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
+        if (!fex_ctx->fex->advance || fex_ctx->is_closed)
+            continue;
+        const bool pooled = vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
+        if (!pooled && !fex_ctx->is_initialized)
+            continue;
+        fex_ctx->is_initialized = true;
+        err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
+    }
+    return err;
+}
+
 /* Create (once) this worker's private context for extractor i.
  * vmaf_feature_extractor_context_create deep-copies the shared extractor into
  * a new VmafFeatureExtractor owned by td->fex_ctx[i]; from then on
@@ -4226,7 +4253,8 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
      * compat library does the same, ADR-2094). */
     memset(ref, 0, sizeof(*ref));
     memset(dist, 0, sizeof(*dist));
-    return err;
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return err ? err : advance_extractors(vmaf);
 }
 
 #ifdef HAVE_SYCL
@@ -4348,7 +4376,9 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* GPU buffers are already populated (for example through VPL Level Zero
      * interop), so the extractor pass only collects prior work and submits the
      * current frame without an upload. */
-    return read_pictures_sycl_extractors(vmaf, index);
+    const int extract_err = read_pictures_sycl_extractors(vmaf, index);
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return extract_err ? extract_err : advance_extractors(vmaf);
 }
 
 int vmaf_flush_sycl(VmafContext *vmaf)
@@ -4452,7 +4482,9 @@ static int fence_for_read(VmafContext *vmaf, unsigned index)
     (void)index;
 #endif
 
-    return 0;
+    /* ADR-2090: what the fenced writes complete (motion2 / motion3 of the
+     * frames whose window the worker threads or the collects just filled). */
+    return advance_extractors(vmaf);
 }
 
 int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
@@ -4944,6 +4976,13 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
 {
     if (vmaf)
         vmaf->api_owner = owner;
+}
+
+int vmaf_engine_advance(VmafContext *vmaf)
+{
+    if (!vmaf)
+        return -EINVAL;
+    return advance_extractors(vmaf);
 }
 
 void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user)

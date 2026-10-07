@@ -128,6 +128,21 @@ typedef struct VmafFeatureExtractor {
      */
     int (*flush)(struct VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector);
     /**
+     * Advance callback. Optional, for an extractor that writes the score of a
+     * frame only once later frames are in (the motion2 / motion3 window,
+     * ADR-2090): append every such score the collector's contents now make
+     * final, never one that a later frame could still change. The engine calls
+     * it on the thread that feeds frames, on the registered extractor, after
+     * each frame it accepts and after a read fence; never at the same time as
+     * this instance's extract(), collect() or flush(). With worker threads that
+     * instance's init() has not run: build what the call needs on first use.
+     * flush() appends the rest. Returns 0 or a negative errno.
+     *
+     * @param               fex self.
+     * @param feature_collector VmafFeatureCollector used to read and write scores.
+     */
+    int (*advance)(struct VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector);
+    /**
      * Close callback. Optional, clean up fex->priv buffers here.
      *
      * @param               fex self.

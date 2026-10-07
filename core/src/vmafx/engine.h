@@ -123,6 +123,14 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner);
  * NULL turns it off. */
 void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user);
 
+/* ADR-2090: append the scores the collector's contents now make final
+ * (motion2 / motion3 of every frame whose window the SAD scores complete),
+ * as vmaf_engine_read_pictures() does after each frame. For the VMAFx
+ * completion thread, under the context's engine lock, before it probes: a
+ * SAD a worker appended after the feeder's last call completes its frames.
+ * 0, or the first extractor's negative errno; nothing after the flush. */
+int vmaf_engine_advance(VmafContext *vmaf);
+
 /* Number of registered feature extractors. */
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);
 

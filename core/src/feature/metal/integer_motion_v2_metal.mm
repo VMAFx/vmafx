@@ -12,10 +12,12 @@
  *  the sum of |blur(prev - cur)|) and stores each threadgroup's exact integer
  *  SAD. Host: the SAD is the uint64 sum of those, and the stored score is the
  *  CPU's, MIN(SAD / 256 / (w * h) * motion_fps_weight, motion_max_val), 0 for
- *  a frame without an earlier frame to difference against. flush() derives
- *  motion2_v2 and motion3_v2 of every frame from the stored scores with the
- *  CPU extractor's own function, vmaf_motion_window_flush() (motion_window.h,
- *  ADR-1478), so the twin's scores are the CPU's whenever its SADs are: a
+ *  a frame without an earlier frame to difference against. advance() and
+ *  flush() derive motion2_v2 and motion3_v2 of every frame from the stored
+ *  scores, each once its window is complete (ADR-2090), with the CPU
+ *  extractor's own functions, vmaf_motion_window_advance() / _flush()
+ *  (motion_window.h, ADR-1478), so the twin's scores are the CPU's whenever
+ *  its SADs are: a
  *  one-frame input gets motion2_v2 = motion3_v2 = 0, as on the CPU. This is
  *  the design of motion_v2_cuda, motion_v2_hip and motion_v2_sycl (ADR-1373,
  *  ADR-1382, ADR-1491; the Metal port of ADR-1498).
@@ -102,6 +104,8 @@ using MotionV2StateMetal = struct MotionV2StateMetal {
     bool motion_moving_average;
 
     VmafDictionary *feature_name_dict;
+    /* motion2_v2 / motion3_v2, derived as the SAD scores come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 };
 } // namespace
 
@@ -421,8 +425,8 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
     /* The CPU's score and stored value (integer_motion_v2.c::extract):
      * normalised, weighted by motion_fps_weight, capped at motion_max_val.
-     * flush() derives motion2_v2 / motion3_v2 from it and does not weight it
-     * again. */
+     * advance() and flush() derive motion2_v2 / motion3_v2 from it and do not
+     * weight it again. */
     const double score = (double)sad / 256. / (s->frame_w * s->frame_h);
     const double weighted = score * s->motion_fps_weight;
     return vmaf_feature_collector_append_with_dict(
@@ -430,17 +434,11 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         (weighted < s->motion_max_val) ? weighted : s->motion_max_val, index);
 }
 
-/* motion2_v2 and motion3_v2 of every frame, from the stored SAD scores: the
- * CPU extractor's own derivation (integer_motion.c::vmaf_motion_window_flush(),
- * ADR-1478), with the three-frame or the five-frame window. A one-frame run
- * gets motion2_v2 = motion3_v2 = 0, as on the CPU; an empty run nothing. */
-int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+/* The window of this twin's options, on its state: the CPU extractor's
+ * (integer_motion.c::vmaf_motion_window_advance() / _flush(), ADR-1478),
+ * with the three-frame or the five-frame window. */
+VmafMotionWindow mv2_metal_window_of(MotionV2StateMetal *s)
 {
-    const MotionV2StateMetal *const s = (MotionV2StateMetal *)fex->priv;
-
-    /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == NULL) { return 1; }
-
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
         .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
@@ -450,7 +448,35 @@ int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_col
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = s->motion_five_frame_window,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* ADR-2090: motion2_v2 / motion3_v2 of the frames whose window the SAD scores
+ * collected so far complete. */
+int advance_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
+
+    /* No frame reached init(): nothing was stored, nothing to derive. */
+    if (s->feature_name_dict == NULL) { return 0; }
+
+    const VmafMotionWindow window = mv2_metal_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+/* motion2_v2 and motion3_v2 of the frames no advance derived, from the stored
+ * SAD scores. A one-frame run gets motion2_v2 = motion3_v2 = 0, as on the CPU;
+ * an empty run nothing. */
+int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
+
+    /* No frame reached init(): nothing was stored, nothing to derive. */
+    if (s->feature_name_dict == NULL) { return 1; }
+
+    const VmafMotionWindow window = mv2_metal_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
 }
@@ -475,6 +501,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal = {
     .name = "motion_v2_metal",
     .init = init_fex_metal,
     .flush = flush_fex_metal,
+    .advance = advance_fex_metal,
     .close = close_fex_metal,
     .submit = submit_fex_metal,
     .collect = collect_fex_metal,
