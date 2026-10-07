@@ -62920,6 +62920,11 @@ gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep bot
   conflict in `core/test/meson.build` per hunk and keep the variable names.
 - The WP2 forwarders at the end of `core/src/libvmaf.c` are gone; the
   `VmafModel` / `VmafModelCollection` structs gain `api_owner`.
+- `vmaf_engine_read_pictures()` clears both caller `VmafPicture` structs once
+  the context owns the pictures, in every build (a CUDA build left them
+  pointing at released host translations; `test_compat_conformance` compares
+  the traces). The body sits in `read_pictures_owned()`; an upstream change to
+  `vmaf_read_pictures()` goes there and keeps the clearing in the wrapper.
 - `core/include/libvmaf/*.h`: every exported declaration carries
   `VMAF_DEPRECATED("use <vmafx successor>")` (empty unless
   `VMAF_ENABLE_DEPRECATION_WARNINGS`); `test_libvmaf_deprecation` checks each

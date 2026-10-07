@@ -11796,7 +11796,7 @@
       "sites": {
         ".github/workflows/tests-and-quality-gates.yml": 1,
         "core/src/conversion_context.h": 1,
-        "core/src/libvmaf.c": 1,
+        "core/src/libvmaf.c": 2,
         "core/src/vmafx/context_frames.c": 1,
         "core/src/vmafx/engine.h": 1,
         "core/src/vmafx/internal.h": 2,

@@ -4119,16 +4119,9 @@ static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPictur
     return err;
 }
 
-int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                              unsigned index)
+static int read_pictures_owned(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                               unsigned index)
 {
-    if (!vmaf)
-        return -EINVAL;
-    if (!ref != !dist)
-        return -EINVAL;
-    if (!ref && !dist)
-        return vmaf->flushed ? -EINVAL : flush_context(vmaf);
-
     /* From here on the context owns both pictures whatever the result: every
      * return below releases them (Netflix/vmaf#1420, ADR-1431). A picture
      * left behind on a failure stays out of the picture pool, and the CLI's
@@ -4174,6 +4167,27 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
 
     read_pictures_update_prev_ref(vmaf, fr.ref);
     return read_pictures_frame_cleanup(vmaf, &fr, 0);
+}
+
+int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                              unsigned index)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!ref != !dist)
+        return -EINVAL;
+    if (!ref && !dist)
+        return vmaf->flushed ? -EINVAL : flush_context(vmaf);
+
+    const int err = read_pictures_owned(vmaf, ref, dist, index);
+    /* The context owns both pictures now, whatever the result. A CUDA build
+     * releases its host translations, struct copies of the caller's pictures,
+     * and would leave the caller's structs pointing at released storage: clear
+     * them, as vmaf_picture_unref() clears the structs of a CPU build (the
+     * compat library does the same, ADR-2094). */
+    memset(ref, 0, sizeof(*ref));
+    memset(dist, 0, sizeof(*dist));
+    return err;
 }
 
 #ifdef HAVE_SYCL
