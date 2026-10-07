@@ -91,10 +91,10 @@ SYCL_MATRIX = {
     "icpx": (False, ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
     "acpp": (True, ["-ffp-contract=off"], []),
 }
-# The MSVC-syntax driver (icx-cl) keeps the two-flag spelling: its handling of
-# `-fno-fast-math` is not measured. Toolchain -> sycl_strict_fp_args.
+# The MSVC build (ADR-1364) compiles and device-links its SYCL TUs with icpx too, so it
+# takes the same reset (ADR-2170). Toolchain -> sycl_strict_fp_args.
 SYCL_MSVC_DRIVER = {
-    "icx-cl": ["-fp-model=precise", "-ffp-contract=off", *SYCL_PREC],
+    "icx-cl": ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC],
 }
 # The icpx driver link carries the precision pair for the SPIR-V JIT image. The
 # MSVC build (ADR-1364) links with link.exe, and its explicit device link, which
@@ -128,7 +128,12 @@ COMPILER_MATRIX = {
     "intel-llvm-cl": (
         "windows",
         ["/fp:precise"],
-        ["/fp:precise", "/Qfma-"],
+        [
+            "/fp:precise",
+            "/clang:-fno-fast-math",
+            "/clang:-fcomplex-arithmetic=full",
+            "/clang:-ffp-contract=off",
+        ],
         ["-Xcompiler=/fp:precise"],
     ),
     "clang-cl": (
@@ -195,7 +200,7 @@ STRICT_LAST_FLAG = {
     "clang": "-ffp-contract=off",
     "intel-llvm": "-ffp-contract=off",
     "msvc": "/fp:precise",
-    "intel-llvm-cl": "/Qfma-",
+    "intel-llvm-cl": "/clang:-ffp-contract=off",
     "clang-cl": "/clang:-ffp-contract=off",
 }
 C_FAMILY_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
@@ -474,7 +479,11 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                 "-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off",
             ),
             ("msvc", "/fp:precise"),
-            ("intel-llvm-cl", "/fp:precise /Qfma-"),
+            (
+                "intel-llvm-cl",
+                "/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full"
+                " /clang:-ffp-contract=off",
+            ),
             ("clang-cl", "/clang:-ffp-contract=off"),
         ):
             with self.subTest(compiler_id=compiler_id, flags=flags):
@@ -485,7 +494,8 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             ("clang", "-ffp-contract=off -ffp-contract=fast", "follows"),
             ("clang", "-ffp-contract=off -ffast-math", "follows"),
             ("intel-llvm", "-fp-model=precise -ffp-contract=off -fp-model=precise", "follows"),
-            ("intel-llvm-cl", "/Qfma- /fp:precise", "follows"),
+            ("intel-llvm-cl", "/clang:-ffp-contract=off /fp:precise", "follows"),
+            ("intel-llvm-cl", "/fp:precise /Qfma-", "is missing"),
             ("clang-cl", "-ffp-contract=off", "is missing"),
         ):
             with self.subTest(compiler_id=compiler_id, flags=flags):

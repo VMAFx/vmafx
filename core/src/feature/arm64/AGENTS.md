@@ -111,7 +111,8 @@ feature/arm64/
   only under `#if defined(__GNUC__)` or `defined(__clang__)` guards as
   today. `<arm_neon.h>` is include on every compiler. Strict FP comes from
   shared `vmaf_strict_fp_args` in `core/src/meson.build`: `/fp:precise` on
-  MSVC, `/fp:precise /Qfma-` on `intel-llvm-cl`,
+  MSVC, `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full
+  /clang:-ffp-contract=off` on `intel-llvm-cl`,
   `/clang:-ffp-contract=off` on clang-cl, and `-ffp-contract=off` on GCC/clang.
   Never restore literal strict-FP option in arm64 `c_args`. SVE2 TUs
   never build under MSVC (no `<arm_sve.h>`; probe skipped). Local MSVC check

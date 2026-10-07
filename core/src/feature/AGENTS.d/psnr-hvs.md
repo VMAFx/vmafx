@@ -84,7 +84,8 @@ invariant: Masking threshold = upstream float product (ADR-1488); host scoring t
   `core/src/meson.build` are shared compiler-ID policy for x86 and AArch64
   carve-outs, scalar references, and `core/test/meson.build`'s
   `_simd_strict_fp_args`. Unix icx uses `-fp-model=precise` followed by
-  `-ffp-contract=off`; `icx-cl` uses `/fp:precise /Qfma-`; MSVC uses
+  `-ffp-contract=off`; `icx-cl` uses `/fp:precise` plus same reset and
+  contraction-off through `/clang:` (ADR-2170); MSVC uses
   `/fp:precise`; clang-cl forwards `/clang:-ffp-contract=off`. Do not copy raw
   strict-FP literals back into individual targets or duplicate mapping in
   test build. `vmaf_cuda_host_strict_fp_args` separately forwards

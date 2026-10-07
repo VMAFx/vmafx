@@ -90,9 +90,17 @@ if _strict_fp_compiler_id == 'intel-llvm'
     vmaf_strict_fp_args = vmaf_fp_model_args + ['-fno-fast-math', '-fcomplex-arithmetic=full', '-ffp-contract=off']
 elif _strict_fp_compiler_id == 'intel-llvm-cl'
     vmaf_fp_model_args = ['/fp:precise']
-    # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
-    # documented separate-rounding equivalent for AVX2-or-newer targets.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['/Qfma-']
+    # Intel's Windows driver takes Clang options only through /clang:. The
+    # documented pair `/fp:precise /Qfma-` is the override icx-cl reports as
+    # -Woverriding-option on every compile; the Unix icx spelling above, passed
+    # through /clang:, sets the same state without it (ADR-2170). Measured with
+    # icx-cl 2026.0 for x86_64-pc-windows-msvc: the -cc1 arguments differ only
+    # by the `-fcomplex-arithmetic=full` token, the 402 predefined macros are
+    # equal, and the objects of a contraction, division, mixed-precision and
+    # complex-arithmetic corpus are byte-identical at /O2, /O3, /arch:AVX2 and
+    # /arch:CORE-AVX512.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['/clang:-fno-fast-math',
+        '/clang:-fcomplex-arithmetic=full', '/clang:-ffp-contract=off']
 elif _strict_fp_compiler_id == 'msvc'
     # Since Visual Studio 2022, /fp:precise leaves contraction disabled unless
     # /fp:contract is explicitly requested.
@@ -1092,7 +1100,7 @@ if is_asm_enabled
       # -fp-model=precise is also passed on the command line. For strict-FP
       # carve-out static libs the shared policy adds both flags so scalar tails
       # and C-level glue stay bit-exact with their references. Windows icx-cl
-      # uses the equivalent `/fp:precise /Qfma-` spellings.
+      # uses the equivalent /fp:precise and /clang: spellings.
       #
       # ORDER HAZARD, measured -- do not "tidy" the shared policy above.
       # `-fp-model=precise` implies `-ffp-contract=on`, so when it lands AFTER
@@ -2120,9 +2128,12 @@ if is_sycl_enabled
     if is_sycl_acpp
         sycl_strict_fp_args = ['-ffp-contract=off']
     else
-        # The icx-cl driver (MSVC syntax) keeps the two-flag spelling: its handling of
-        # `-fno-fast-math` is not measured, and the Windows SYCL leg is not gated yet.
-        sycl_fast_math_reset = sycl_msvc_device_link ? [] : ['-fno-fast-math', '-fcomplex-arithmetic=full']
+        # The MSVC build compiles and device-links the SYCL TUs with icpx (GNU syntax)
+        # as well, so the reset applies there too (ADR-2170). Measured with icpx 2026.0
+        # for x86_64-pc-windows-msvc: the -cc1 lines of the host and both device
+        # passes, and the device link's, differ only by `-fcomplex-arithmetic=full`;
+        # the device bitcode and the 970 predefined macros are identical.
+        sycl_fast_math_reset = ['-fno-fast-math', '-fcomplex-arithmetic=full']
         sycl_strict_fp_args = ['-fp-model=precise'] + sycl_fast_math_reset + ['-ffp-contract=off'] + sycl_fp32_prec_args
     endif
     # END VMAF SYCL strict FP policy

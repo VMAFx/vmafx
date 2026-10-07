@@ -396,8 +396,8 @@ multiply-add calls the intrinsic or `fma()`.
 | Compiler | Flags in `vmaf_strict_fp_args` |
 | --- | --- |
 | GCC, clang | `-ffp-contract=off` |
-| icx, icpx (`intel-llvm`) | `-fp-model=precise -ffp-contract=off` (order matters: precise first) |
-| icx-cl (`intel-llvm-cl`) | `/fp:precise /Qfma-` |
+| icx, icpx (`intel-llvm`) | `-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off` (order matters: precise first, contraction-off last) |
+| icx-cl (`intel-llvm-cl`) | `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` |
 | MSVC | `/fp:precise` |
 | clang-cl | `/clang:-ffp-contract=off` |
 
