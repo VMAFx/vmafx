@@ -199,7 +199,7 @@ lint-go:
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
-	@actionlint
+	@python3 scripts/ci/run_actionlint.py
 	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
 	@python3 scripts/ci/check_composite_actions.py
 

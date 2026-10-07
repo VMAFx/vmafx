@@ -187,6 +187,10 @@ repos:
     rev: v1.7.12
     hooks:
       - id: actionlint
+        # ADR-2199: actionlint deadlocks when a `run:` script is larger than the pipe
+        # it writes to shellcheck before starting it, which a user holding many
+        # pipes makes common. The wrapper runs it under a deadline and fails loudly.
+        entry: python3 scripts/ci/run_actionlint.py
 
   # Composite actions under .github/actions/ are not workflows: actionlint rejects
   # them ("jobs section is missing"). The GitHub action schema is checked here, the

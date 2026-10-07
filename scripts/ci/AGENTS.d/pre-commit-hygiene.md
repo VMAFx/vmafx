@@ -30,3 +30,12 @@ Autoupdate heuristic has known sort-order bug on repos that
 land point releases out of branch order (suggested a
 `gitleaks v8.30.1 → v8.30.0` downgrade during ADR-0893 audit).
 Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
+
+**actionlint runs through `scripts/ci/run_actionlint.py` (ADR-2199)**: hook
+`entry:` override and `make lint-actions` both. Reason: actionlint v1.7.12
+deadlocks writing `run:` script to shellcheck stdin pipe before start;
+`fs.pipe-user-pages-soft` exhaustion shrinks pipes to 8 KiB. Wrapper = 90 s
+deadline, SIGQUIT first (goroutine dump saved to a named file), exit 124 +
+named cause, never pass. Do not call bare `actionlint`
+in hook or target; do not lengthen deadline to hide a hang;
+`test_run_actionlint.py` plants the hang.

@@ -325,6 +325,20 @@ The pre-commit hook runs on staged workflow files:
 pre-commit run actionlint --all-files
 ```
 
+Both the hook and `make lint-actions` run actionlint through
+`scripts/ci/run_actionlint.py` ([ADR-2199](../adr/2199-actionlint-bounded-run.md)),
+which gives it 90 seconds (`ACTIONLINT_TIMEOUT_S`; a healthy run takes about
+one). actionlint v1.7.12 writes the script of a `run:` block to shellcheck's
+stdin pipe before it starts shellcheck, so it hangs when the script is larger
+than the pipe, and the kernel shrinks the pipes of a user who holds more than
+`fs.pipe-user-pages-soft` pages in total (many builds and agents at once). A
+hang now ends with exit 124 and a message that names the pipe capacity and a
+file with the goroutine dump (`SIGQUIT` at the deadline; `ACTIONLINT_DUMP_DIR`
+chooses the directory, the temporary directory by default); it is a failure,
+never a pass. Find the process that holds the pipes
+(`ls -l /proc/*/fd | grep -c pipe`) and run again. The defect is upstream
+(rhysd/actionlint#702).
+
 To validate workflows and composite actions across the repository without
 pre-commit, run:
 
