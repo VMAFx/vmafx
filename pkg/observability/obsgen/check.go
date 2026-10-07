@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
@@ -53,6 +54,37 @@ func CheckExpr(expr string, exporters ...string) []string {
 	return dead
 }
 
+// wholeNumberMatcher finds an equality matcher on le or quantile with a whole
+// number: Prometheus 3 ingests those label values in float form (le="70" is
+// stored as le="70.0"), so such a matcher selects nothing.
+var wholeNumberMatcher = regexp.MustCompile(`\b(le|quantile)\s*(=|!=)\s*"([0-9]+)"`)
+
+// CheckBucketMatchers returns one problem per equality matcher of expr on a
+// whole-number le or quantile value; LeMatcher writes the matcher that
+// selects the bucket on Prometheus 2 and 3.
+func CheckBucketMatchers(expr string) []string {
+	var out []string
+	for _, mm := range wholeNumberMatcher.FindAllStringSubmatch(expr, -1) {
+		out = append(out, fmt.Sprintf("%s matches nothing on Prometheus 3, which stores %s=%q; use %s",
+			mm[0], mm[1], mm[3]+".0", LeMatcher(mm[3])))
+	}
+	return out
+}
+
+// LeMatcher selects the bucket with upper bound bound (as the client writes
+// it, "70" or "0.05") whether Prometheus stored it as written (Prometheus 2,
+// text format) or in float form (Prometheus 3: "70.0").
+// TestLeMatcherSelectsOneBucket proves it selects no other bucket of any
+// histogram family.
+func LeMatcher(bound string) string {
+	return `le=~"` + bound + `(\\.0)?"`
+}
+
+// bucketBound is a bucket's upper bound as the Prometheus client writes it.
+func bucketBound(b float64) string {
+	return strconv.FormatFloat(b, 'g', -1, 64)
+}
+
 func emitted(name string, exporters []string) bool {
 	if _, ok := metricdef.Lookup(name); ok {
 		return true
@@ -81,6 +113,9 @@ func CheckDashboard(raw []byte) ([]string, error) {
 	report := func(where, expr string) {
 		for _, name := range CheckExpr(expr, exporters...) {
 			problems = append(problems, fmt.Sprintf("%s: %q queries %s, which nothing emits", d.Title, where, name))
+		}
+		for _, p := range CheckBucketMatchers(expr) {
+			problems = append(problems, fmt.Sprintf("%s: %q: %s", d.Title, where, p))
 		}
 	}
 	for _, p := range flattenPanels(d.Panels) {

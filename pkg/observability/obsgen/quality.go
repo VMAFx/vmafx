@@ -36,7 +36,7 @@ func quality() *dashboard.DashboardBuilder {
 			timeseriesPanel("Median score by tenant", "Median pooled score per tenant. A drop for one tenant alone points at its content or its encodes, not at the platform.", unitScore,
 				query(quantile(0.5, m.QualityScore, "tenant", qualityMatchers...), "{{tenant}}")),
 			timeseriesPanel("Share of scores below 70", "Scores below 70 over all scores, per model. 70 is a common floor for acceptable streaming quality; the buckets also hold 60, 75 and 80.", unitRatio,
-				query(sumBy("model", "rate("+bucket(m.QualityScore, append(qualityMatchers, `le="70"`)...)+rateWindow+")")+
+				query(sumBy("model", "rate("+bucket(m.QualityScore, append(qualityMatchers, LeMatcher(bucketBound(70)))...)+rateWindow+")")+
 					" / clamp_min("+sumBy("model", "rate("+sel(m.QualityScore.Name+"_count", qualityMatchers...)+rateWindow+")")+", 1e-9)", "{{model}}")),
 		}},
 		{"Distribution and volume", []panelBuilder{

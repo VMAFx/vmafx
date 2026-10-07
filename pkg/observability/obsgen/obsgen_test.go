@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
 // repoRoot is the repository root, relative to this package.
@@ -101,6 +103,56 @@ func TestCheckRefusesTheDeadPanels(t *testing.T) {
 	}
 	if len(problems) != 5 {
 		t.Errorf("got %d problems, want 5:\n%s", len(problems), joined)
+	}
+}
+
+// TestCheckRefusesWholeNumberBucketMatchers: a dashboard matching le="70"
+// shows no data on Prometheus 3 (which stores le="70.0"); the check reports
+// it and accepts LeMatcher and a fractional bound.
+func TestCheckRefusesWholeNumberBucketMatchers(t *testing.T) {
+	t.Parallel()
+	for expr, want := range map[string]int{
+		`rate(vmafx_quality_score_bucket{le="70"}[5m])`:                   1,
+		`rate(x_bucket{le = "30", job="a"}[5m]) + y{quantile!="1"}`:       2,
+		`rate(vmafx_quality_score_bucket{` + LeMatcher("70") + `}[5m])`:   0,
+		`rate(vmafx_server_score_duration_seconds_bucket{le="0.05"}[5m])`: 0,
+		`rate(x_bucket{le="+Inf"}[5m])`:                                   0,
+	} {
+		if got := CheckBucketMatchers(expr); len(got) != want {
+			t.Errorf("CheckBucketMatchers(%q) = %v, want %d problems", expr, got, want)
+		}
+	}
+	planted := []byte(`{"title":"T","panels":[{"title":"P","targets":[{"expr":"rate(vmafx_quality_score_bucket{le=\"70\"}[5m])"}]}]}`)
+	if problems, err := CheckDashboard(planted); err != nil || len(problems) != 1 {
+		t.Errorf("CheckDashboard(le=\"70\") = %v, %v; want one problem", problems, err)
+	}
+}
+
+// TestLeMatcherSelectsOneBucket: for every bucket of every histogram family,
+// LeMatcher's regular expression (as PromQL unquotes it) matches the bound in
+// both stored forms and no other bucket's bound in either form.
+func TestLeMatcherSelectsOneBucket(t *testing.T) {
+	t.Parallel()
+	stored := func(b float64) []string {
+		s := bucketBound(b)
+		if strings.ContainsAny(s, ".e") {
+			return []string{s}
+		}
+		return []string{s, s + ".0"}
+	}
+	for _, f := range metricdef.All() {
+		for _, b := range f.Buckets {
+			matcher := LeMatcher(bucketBound(b))
+			pattern := strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(matcher, `le=~"`), `"`), `\\`, `\`)
+			re := regexp.MustCompile("^(?:" + pattern + ")$")
+			for _, other := range f.Buckets {
+				for _, v := range stored(other) {
+					if re.MatchString(v) != (other == b) {
+						t.Errorf("%s: %s on le=%q: match %v", f.Name, matcher, v, re.MatchString(v))
+					}
+				}
+			}
+		}
 	}
 }
 

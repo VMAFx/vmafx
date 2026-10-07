@@ -66,6 +66,10 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    naming series nothing emits (allow-list `ExternalSeries`, proven by
    `TestExternalSeriesAreServed`). `obsgen/testdata/overview-before-generation.json`
    = frozen negative fixture (5 dead series), never "fixed".
+   Bucket matcher: `LeMatcher(bound)` (`le=~"70(\\.0)?"`), never `le="70"`:
+   Prometheus 3 stores `le="70.0"`. `CheckBucketMatchers` fails whole-number
+   `le` / `quantile` equality; `TestLeMatcherSelectsOneBucket` proves no other
+   bucket matched.
 
 7. **Scraped reads never fail /metrics** (`scrape.go`): `RegisterScraped`
    takes `NewReadErrors` counter + `ScrapeGroup{Source, Families, Read}`;

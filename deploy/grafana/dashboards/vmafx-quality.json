@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "${prometheus_datasource}"
           },
-          "expr": "sum by (model) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\",le=\"70\"}[$__rate_interval])) / clamp_min(sum by (model) (rate(vmafx_quality_score_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])), 1e-9)",
+          "expr": "sum by (model) (rate(vmafx_quality_score_bucket{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\",le=~\"70(\\\\.0)?\"}[$__rate_interval])) / clamp_min(sum by (model) (rate(vmafx_quality_score_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",model=~\"$model\",profile=~\"$profile\"}[$__rate_interval])), 1e-9)",
           "instant": false,
           "legendFormat": "{{model}}",
           "range": true

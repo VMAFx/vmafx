@@ -271,7 +271,11 @@ against a rollout.
 A test (`TestEveryDashboardQueryIsEmitted` in `pkg/observability/obsgen`)
 fails when any panel, annotation or variable of a shipped dashboard queries a
 series that no binary emits; the dashboard as it was before generation is
-kept as its negative fixture.
+kept as its negative fixture. The same test refuses an equality matcher on a
+whole-number `le` or `quantile` value such as `le="70"`: Prometheus 3 stores
+that bucket as `le="70.0"`, so the matcher selects nothing. The generated
+queries select a bucket with `le=~"70(\\.0)?"` (`obsgen.LeMatcher`), which
+matches the label as Prometheus 2 and Prometheus 3 store it.
 
 ### Overview
 
