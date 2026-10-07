@@ -51,6 +51,19 @@ if gstcuda_dep.found()
   args += '-DHAVE_GST_CUDA=1'
 endif
 
+# VulkanImage input needs GStreamer's Vulkan library and the Vulkan headers (no loader is linked).
+gstvk_dep = dependency('gstreamer-vulkan-1.0', version : '>= 1.22', required : get_option('vulkan'))
+if gstvk_dep.found() and not cc.has_header('vulkan/vulkan.h')
+  if get_option('vulkan').enabled()
+    error('feature vulkan: vulkan/vulkan.h was not found')
+  endif
+  gstvk_dep = dependency('', required : false)
+endif
+if gstvk_dep.found()
+  deps += gstvk_dep
+  args += '-DHAVE_GST_VULKAN=1'
+endif
+
 sources = files(
   'src/gstvmafx.c',
   'src/gstvmafx_caps.c',
@@ -60,6 +73,7 @@ sources = files(
   'src/gstvmafx_out.c',
   'src/gstvmafx_run.c',
   'src/gstvmafx_util.c',
+  'src/gstvmafx_vulkan.c',
   'src/gstvmafx_windows.c',
 )
 
