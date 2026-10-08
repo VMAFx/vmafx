@@ -398,8 +398,9 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     default).
 
     The CLI is ``core/tools/vmaf.cpp`` (it was ``vmaf.c``); the
-    device-backend predicate and the ``backend_used`` receipt writer
-    moved to ``core/tools/cli_feature_backend.cpp`` (ADR-1359). Pinning
+    device-backend predicate moved to ``core/tools/cli_feature_backend.cpp``
+    (ADR-1359) and the ``backend_used`` receipt is written by the library's
+    report renderer, ``core/src/vmafx/provenance_render.c`` (RC4 WP5). Pinning
     the source carries the same regression-prevention value as a live
     integration test for the dispatch policy; the test passes on CI
     hosts without CUDA / SYCL / HIP. ADR-0726 dropped the Vulkan
@@ -425,11 +426,14 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     assert (
         'strcmp(c->backend, "vulkan")' not in src
     ), "ADR-0726 regression: Vulkan strcmp resurfaced in vmaf.cpp"
-    # The receipt writer exists, is called, and writes ``backend_used``.
-    assert "void amend_json_with_backend_receipt(" in src
-    assert "amend_json_with_backend_receipt(state->c.output_path" in src
+    # The report is written by the library (RC4 WP5): the CLI hands the output
+    # path to ``cli_write_report()`` and no longer edits the file afterwards,
+    # and the library's report renderer writes ``backend_used``.
+    assert "cli_write_report(state->vmaf, state->c.output_path" in src
+    assert "amend_json_with_backend_receipt" not in src, "the CLI edits the report again"
+    render_src = repo_source("core/src/vmafx/provenance_render.c")
     # C string literal in the source: "\"backend_used\": "
-    assert r"\"backend_used\": " in backend_src
+    assert r"\"backend_used\": " in render_src
     # The not-compiled-in guard fires before any per-backend stanza so
     # an unknown ``--backend NAME`` on a CPU-only build also errors out.
     assert "libvmaf was built" in src

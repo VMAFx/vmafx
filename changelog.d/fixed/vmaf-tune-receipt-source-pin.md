@@ -1,0 +1,1 @@
+- Test: the vmaf-tune source pin of the explicit-backend policy follows the backend receipt into the library's report renderer instead of the CLI function #2288 removed.
