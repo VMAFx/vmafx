@@ -11,7 +11,8 @@
 #   -Dwerror=true                         -Werror on every C and C++ compile (Meson's own switch)
 #   -Dc_link_args / -Dcpp_link_args       the linker's fatal-warnings switch: GNU ld, lld and the
 #                                         MinGW linker take --fatal-warnings, Apple's ld64
-#                                         takes -fatal_warnings
+#                                         takes -fatal_warnings plus -no_warn_duplicate_libraries
+#                                         (Meson's own -lc++ probe, see below)
 # With `msvc` (a leg that builds with cl.exe and link.exe) it prints `-Dwerror=true` alone:
 # Meson turns that into /WX on every cl.exe compile, -WX on every link.exe link (Meson 1.12
 # adds the linker's fatal-warnings switch itself whenever werror is set) and, through
@@ -44,7 +45,11 @@ esac
 # WERROR_ARGS_OS exists for the script's own test; a workflow never sets it.
 os="${WERROR_ARGS_OS:-$(uname -s)}"
 case "${os}" in
-  Darwin) fatal="-Wl,-fatal_warnings" ;;
+  # Meson probes the C++ runtime of a C-linked target with `clang++ ... -lc++`, which names
+  # libc++ twice (the driver adds it too); ld64 warns "ignoring duplicate libraries: '-lc++'"
+  # and -fatal_warnings turned that probe into "Could not detect either libc++ or libstdc++".
+  # The switch below drops that one warning class, which no source can cause, and nothing else.
+  Darwin) fatal="-Wl,-fatal_warnings,-no_warn_duplicate_libraries" ;;
   Linux | MINGW* | MSYS* | CYGWIN*) fatal="-Wl,--fatal-warnings" ;;
   *)
     echo "werror-args.sh: no fatal-warnings linker switch known for '${os}'" >&2

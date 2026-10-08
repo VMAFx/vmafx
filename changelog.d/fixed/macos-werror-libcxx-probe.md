@@ -1,0 +1,1 @@
+- CI: the macOS legs that turn linker warnings into errors no longer fail the configure step on Meson's own `-lc++` probe (`-Wl,-no_warn_duplicate_libraries` joins `-Wl,-fatal_warnings`).

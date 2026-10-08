@@ -611,21 +611,23 @@ from the leg's `meson setup` line (`$(scripts/ci/werror-args.sh "${{
 matrix.werror }}")` in the build matrix, `werror: true` on the matrix row).
 With `true` it prints `-Dwerror=true`, which is `-Werror` on every C and C++
 compile, and the linker's own switch in `-Dc_link_args` / `-Dcpp_link_args`
-(`-Wl,--fatal-warnings` for GNU ld, lld and MinGW; `-Wl,-fatal_warnings` for
-Apple's ld64). With `msvc` (a leg that builds with `cl.exe` and `link.exe`)
-it prints `-Dwerror=true` alone: Meson turns it into `/WX` on every `cl.exe`
-compile and `-WX` on every `link.exe` link (Meson 1.12 adds the linker's
-fatal-warnings switch itself whenever `werror` is set), and
-`core/src/meson.build` adds `--Werror all-warnings` to every nvcc fatbin. The
-MSVC legs run their steps under `cmd`, so a `shell: bash` step named
-`Warnings-as-errors arguments` (`id: werror`) calls the script and the
-configure step appends `${{ steps.werror.outputs.args }}`. `lib.exe`, which
-archives the static libraries of those legs, has no fatal-warnings switch in
-Meson; its warnings (none so far) show in the leg's log. Any other value prints
-nothing, except a typo, which exits 2.
-Rust has its own gate (`cargo clippy -- -D warnings`). Release and container
-image builds do not use the script: a compiler newer than the one a leg pins
-must not stop a release over a new diagnostic.
+(`-Wl,--fatal-warnings` for GNU ld, lld and MinGW;
+`-Wl,-fatal_warnings,-no_warn_duplicate_libraries` for Apple's ld64: Meson
+probes the C++ runtime of a C-linked target with `clang++ -lc++`, which names
+libc++ twice, and ld64's warning about it would otherwise fail the configure
+step). With `msvc` (a leg that builds with `cl.exe` and `link.exe`) it prints
+`-Dwerror=true` alone: Meson turns it into `/WX` on every `cl.exe` compile and
+`-WX` on every `link.exe` link (Meson 1.12 adds the linker's fatal-warnings
+switch itself whenever `werror` is set), and `core/src/meson.build` adds
+`--Werror all-warnings` to every nvcc fatbin. The MSVC legs run their steps
+under `cmd`, so a `shell: bash` step named `Warnings-as-errors arguments` (`id:
+werror`) calls the script and the configure step appends `${{
+steps.werror.outputs.args }}`. `lib.exe`, which archives the static libraries
+of those legs, has no fatal-warnings switch in Meson; its warnings (none so
+far) show in the leg's log. Any other value prints nothing, except a typo,
+which exits 2. Rust has its own gate (`cargo clippy -- -D warnings`). Release
+and container image builds do not use the script: a compiler newer than the one
+a leg pins must not stop a release over a new diagnostic.
 
 A fix for a warning changes no computed value and suppresses nothing: no
 `-Wno-*`, no `#pragma ... ignored`, no flag removed to hide a class. A

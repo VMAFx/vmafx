@@ -144,7 +144,7 @@ class WerrorArgsScriptTests(unittest.TestCase):
         for os_name, fatal in (
             ("Linux", "-Wl,--fatal-warnings"),
             ("MINGW64_NT-10.0", "-Wl,--fatal-warnings"),
-            ("Darwin", "-Wl,-fatal_warnings"),
+            ("Darwin", "-Wl,-fatal_warnings,-no_warn_duplicate_libraries"),
         ):
             with self.subTest(os=os_name):
                 result = run_script("true", os_name=os_name)
