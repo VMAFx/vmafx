@@ -1,0 +1,1 @@
+- Test: the Windows MinGW UCRT64 build compiles the compat conformance tests again. Their trace macro names MinGW's printf archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu` and `%td`.
