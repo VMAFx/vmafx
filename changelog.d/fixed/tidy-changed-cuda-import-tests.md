@@ -1,0 +1,1 @@
+- CI: the Tidy Changed job leaves out the CUDA import tests (`test_vmafx_import_cuda*.c`), which only the CUDA lane of the clang-tidy ratchet can compile.

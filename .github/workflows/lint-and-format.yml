@@ -346,6 +346,7 @@ jobs:
               -e '^core/src/cuda/' \
               -e '^core/src/feature/cuda/' \
               -e '^core/test/test_cuda_' \
+              -e '^core/test/test_vmafx_import_cuda' \
               -e '^core/test/test_gpu_picture_pool\.c$' \
               -e '^core/test/test_adm_small_border\.c$' \
               -e '^core/test/test_adm_wide_rounding\.c$' \
