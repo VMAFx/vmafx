@@ -18,11 +18,8 @@
 set -euo pipefail
 
 # Real-Git cases must not inherit the hook caller's repository or config.
-while IFS= read -r fixture_git_variable; do
-  unset "$fixture_git_variable"
-done < <(compgen -A variable GIT_)
-unset fixture_git_variable
-export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 classifier="${repo_root}/scripts/ci/classify-dependency-pr.sh"
@@ -231,8 +228,6 @@ mkdir -p "${repo}/deploy/helm/vmafx" "${repo}/core/src/feature"
 (
   cd "${repo}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   echo "image: v1" >deploy/helm/vmafx/values.yaml
   echo "int x;" >core/src/feature/seed.c
   git add -A && git commit -qm base
@@ -280,8 +275,6 @@ mkdir -p "${repo21}/python"
 (
   cd "${repo21}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   printf 'numpy>=2.5.2\n' >python/requirements.txt
   printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
   git add -A && git commit -qm base
@@ -313,8 +306,6 @@ mkdir -p "${repo22}/python" "${repo22}/core/src"
 (
   cd "${repo22}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
   printf 'int x;\n' >core/src/thing.c
   git add -A && git commit -qm base

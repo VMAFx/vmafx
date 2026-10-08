@@ -33,6 +33,10 @@
 
 set -euo pipefail
 
+# A git hook exports GIT_DIR; drop it so the scratch repository below is not the caller's.
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
+
 REMOTE="https://git.ffmpeg.org/ffmpeg.git"
 REF="refs/heads/master"
 QUIET=0
