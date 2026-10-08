@@ -1,0 +1,1 @@
+- Test: `test_vmafx_provenance_threads` takes about 15 ms instead of 16 to 30 s and no longer fails on a host that submits its frames before the first query: the main thread queries once per submitted frame instead of in a tight loop that starved the scoring workers of the feature collector's lock.

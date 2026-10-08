@@ -41,11 +41,18 @@ enum { W = 176, H = 144, N_FRAMES = 16 };
 /* A model whose features accept 176x144 frames. */
 #define MODEL_VERSION "vmaf_v0.6.1" /* vmaf-model-pin: features fit 176x144 frames */
 
-/* Queries the main thread makes at most while the submitter runs (HISS-02). */
-#define MAX_QUERIES 1000000u
+/* Queries the main thread makes at most while the submitter runs, and spins the submitter makes
+ * at most waiting for the first query (HISS-02). One query per submitted frame is enough to
+ * overlap the workers; a query loop without a pause holds the feature collector's lock so often
+ * that the 16 frames, 10 ms of work, took 8 s (and timed out under gcov, T-PROVENANCE-THREADS-
+ * QUERY-STARVES-SUBMITTER-2026-10-08). */
+#define MAX_QUERIES 1000u
+#define MAX_SPINS 100000000u
 
 typedef struct Submitter {
     VmafxContext *context;
+    atomic_uint submitted; /* frames handed to vmafx_submit() */
+    atomic_bool queried;   /* the main thread made its first query */
     atomic_bool done;
     bool ok;
 } Submitter;
@@ -62,8 +69,13 @@ static void *submit_frames(void *arg)
         vt_fill(&desc, data, i + 50u);
         VmafxFrame *const dist = vt_copy_frame(&desc, data);
         ok = vmafx_submit(s->context, ref, dist, i, NULL) == VMAFX_OK;
+        atomic_fetch_add(&s->submitted, 1u);
     }
     free(data);
+    /* The workers are still scoring: hold the flush until the main thread has queried once, so
+     * the query overlaps the run however fast this host submits. */
+    for (unsigned spins = 0; spins < MAX_SPINS && !atomic_load(&s->queried); spins++) {
+    }
     s->ok = ok && vmafx_flush(s->context, NULL) == VMAFX_OK;
     atomic_store(&s->done, true);
     return NULL;
@@ -80,18 +92,28 @@ static bool consistent(const VmafxProvenance *rec, uint64_t previous)
                                   rec->bpc == 8u && rec->pix_fmt == VMAFX_PIXEL_FORMAT_YUV420P);
 }
 
-/* Query the record until the submitter is done; false on an inconsistent
- * record or a failed query. */
+/* Query the record once, then once more per frame the submitter hands over, until it is done;
+ * false on an inconsistent record or a failed query. The first query is made whether or not the
+ * submitter is done, so a host that finishes first still checks one record. */
 static bool query_while_submitting(VmafxContext *context, Submitter *s, unsigned *queries)
 {
     uint64_t previous = 0;
     bool ok = true;
-    for (*queries = 0; ok && !atomic_load(&s->done) && *queries < MAX_QUERIES; (*queries)++) {
+    *queries = 0;
+    do {
         VmafxProvenance rec = VMAFX_PROVENANCE_INIT;
         ok =
             vmafx_context_provenance(context, &rec, NULL) == VMAFX_OK && consistent(&rec, previous);
         previous = rec.n_frames;
-    }
+        (*queries)++;
+        atomic_store(&s->queried, true);
+        const unsigned last_submitted = atomic_load(&s->submitted);
+        /* Wait for the next frame; an atomic read takes no lock the workers need. */
+        for (unsigned spins = 0; spins < MAX_SPINS && !atomic_load(&s->done) &&
+                                 atomic_load(&s->submitted) == last_submitted;
+             spins++) {
+        }
+    } while (ok && !atomic_load(&s->done) && *queries < MAX_QUERIES);
     return ok;
 }
 
@@ -125,6 +147,8 @@ static char *query_while_submitting_with(uint32_t n_threads)
     mu_assert("session", context != NULL);
     Submitter s = {.context = context, .ok = false};
     atomic_init(&s.done, false);
+    atomic_init(&s.queried, false);
+    atomic_init(&s.submitted, 0u);
     pthread_t thread;
     const bool started = pthread_create(&thread, NULL, submit_frames, &s) == 0;
     unsigned queries = 0;
