@@ -7,6 +7,10 @@
 # one is left alone, and a missing formatter is skipped with a notice. The
 # formatter is a fake `shfmt` on PATH, so the test needs no toolchain.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hook="$here/../../githooks/pre-commit.sh"
 tmp="$(mktemp -d)"
@@ -34,8 +38,6 @@ chmod +x "$tmp/bin/shfmt"
 
 cd "$tmp/repo"
 git init -q
-git config user.email t@t
-git config user.name t
 printf 'needs-format\n' >a.sh
 printf 'clean\n' >b.sh
 git add a.sh b.sh

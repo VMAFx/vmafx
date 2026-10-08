@@ -64,7 +64,7 @@ class SmallPrGateTest(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args: str) -> str:
-        env = {**os.environ, **IDENT}
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
         )

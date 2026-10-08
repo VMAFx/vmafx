@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Run Git fixture helpers under caller redirection without touching a real repo."""
+"""Run Git fixture helpers under caller redirection without touching a real repo.
+
+Also guards the fixture identity: no test script may write ``user.email`` or
+``user.name`` into a git config, and every script that builds a scratch
+repository must leave a hook-exported ``GIT_DIR`` repository untouched.
+"""
 
 from __future__ import annotations
 
+import concurrent.futures
+import datetime
 import json
 import os
 import re
@@ -30,6 +37,119 @@ VARIABLES = (
     "GIT_INDEX_FILE",
     "GIT_CONFIG_PARAMETERS",
 )
+
+
+# `git config user.email|user.name` written to a config file. Per-command `-c user.*=`
+# and GIT_AUTHOR_* / GIT_COMMITTER_* variables are the allowed ways to give a fixture an
+# identity: they never persist, so they cannot leak into a caller's shared .git/config.
+IDENTITY_WRITE = re.compile(
+    r"""config\s+(?:--(?:local|global|worktree|system)\s+)?user\.(?:email|name)\b"""
+    r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system)["']\s*,\s*)?["']user\.(?:email|name)["']"""
+)
+# Scripts that create a scratch repository: a `git ... init` command or an "init" argument.
+SCRATCH_REPOSITORY = re.compile(r"""git[^\n]*\binit\b|["']init["']""")
+TEST_SCRIPT = re.compile(r"(^|/)test[-_][^/]*\.(sh|py)$")
+# Workflow steps and Containerfiles are out of scope: a CI runner or an image build has no hook
+# environment, and the clone they configure is ephemeral.
+SUFFIXES = (".sh", ".py", ".mjs", ".go", ".rs", ".mk", "Makefile")
+
+# An exception names one file, one rule, a reason and an expiry (ISO date) and fails like a
+# missing exception once it expires. Every entry builds its git environment through a helper
+# that drops GIT_*, and the runtime sentinel check below covers it as well.
+IDENTITY_EXCEPTION_REASON = (
+    "git helper scrubs GIT_* and ignores global config; sentinel check covers it"
+)
+IDENTITY_EXCEPTION_EXPIRY = "2026-12-31"
+IDENTITY_EXCEPTION_FILES = (
+    "scripts/ci/test_git_fixture_isolation.py",
+    "scripts/ci/tests/test_check_source_adr_citations.py",
+    "scripts/ci/tests/test_research_digest_ids.py",
+    "scripts/ci/tests/test_scorecard_gate.py",
+    "scripts/dev/tests/test_install_merge_train_guard.py",
+    "scripts/dev/tests/test_merge_train_guard.py",
+    "scripts/git-hooks/test-pre-push-mypy.py",
+    "scripts/git-hooks/test-pre-push-pr-body-lint.py",
+    "scripts/githooks/tests/test_install.py",
+)
+
+
+def tracked_files() -> list[str]:
+    """List tracked files without inheriting a caller's repository."""
+    done = run_git(ROOT, "ls-files", "-z", environment=clean_git_environment())
+    listing = done.stdout
+    assert isinstance(listing, str)
+    return [name for name in listing.split("\0") if name]
+
+
+def identity_writes(text: str) -> bool:
+    """True when the text writes a fixture identity into a git config."""
+    return IDENTITY_WRITE.search(text) is not None
+
+
+def scratch_scripts() -> list[str]:
+    """Tracked test scripts that build a scratch repository and can run on their own."""
+    found = []
+    for name in tracked_files():
+        if not TEST_SCRIPT.search(name) or name == "scripts/ci/test_git_fixture_isolation.py":
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+        runnable = name.endswith(".sh") or "__main__" in text
+        if runnable and SCRATCH_REPOSITORY.search(text):
+            found.append(name)
+    return found
+
+
+def sentinel_environment(sentinel: Path) -> dict[str, str]:
+    """The environment a git hook gives its children: GIT_DIR and GIT_INDEX_FILE."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_DIR=str(sentinel / ".git"), GIT_INDEX_FILE=str(sentinel / ".git/index"))
+    environment["GIT_CONFIG_NOSYSTEM"] = "1"
+    # Auto-maintenance would race the snapshot with a transient objects/maintenance.lock.
+    environment.update(
+        GIT_CONFIG_COUNT="2",
+        GIT_CONFIG_KEY_0="maintenance.auto",
+        GIT_CONFIG_VALUE_0="false",
+        GIT_CONFIG_KEY_1="gc.auto",
+        GIT_CONFIG_VALUE_1="0",
+    )
+    return environment
+
+
+def make_sentinel(root: Path) -> Path:
+    """A committed repository whose files must be byte-identical after a hook-run script."""
+    sentinel = root / "sentinel"
+    sentinel.mkdir()
+    clean = clean_git_environment()
+    run_git(sentinel, "init", "-q", "-b", "master", environment=clean)
+    (sentinel / "tracked").write_text("caller work\n")
+    run_git(sentinel, "add", "tracked", environment=clean)
+    run_git(
+        sentinel,
+        "-c", "user.name=Sentinel", "-c", "user.email=sentinel@example.invalid",
+        "commit", "-qm", "sentinel baseline",
+        environment=clean,
+    )  # fmt: skip
+    return sentinel
+
+
+def sentinel_damage(script: str, directory: Path) -> list[str]:
+    """Run `script` from the checkout root under a sentinel GIT_DIR; list changed sentinel files."""
+    sentinel = make_sentinel(directory)
+    before = snapshot(sentinel)
+    path = Path(script) if Path(script).is_absolute() else ROOT / script
+    executable = sys.executable if path.suffix == ".py" else BASH
+    run_command(
+        [executable, str(path)],
+        allowed_executables=(executable,),
+        cwd=ROOT,
+        env=sentinel_environment(sentinel),
+        text=True,
+        capture_output=True,
+        timeout_seconds=600,
+        check=False,
+    )
+    after = snapshot(sentinel)
+    return sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
 
 
 def snapshot(directory: Path) -> dict[str, bytes]:
@@ -202,6 +322,80 @@ class GitFixtureIsolation(unittest.TestCase):
                 else:
                     self.assertEqual(after_caller, before_caller)
                     self.assertEqual(after_linked, before_linked)
+
+    def test_no_script_writes_a_fixture_identity_into_a_git_config(self) -> None:
+        today = datetime.date.today().isoformat()
+        offenders = []
+        for name in tracked_files():
+            if not name.endswith(SUFFIXES) and Path(name).name != "Makefile":
+                continue
+            path = ROOT / name
+            if not path.is_file():
+                continue
+            if not identity_writes(path.read_text(encoding="utf-8", errors="replace")):
+                continue
+            if name not in IDENTITY_EXCEPTION_FILES or today > IDENTITY_EXCEPTION_EXPIRY:
+                offenders.append(name)
+        self.assertEqual(
+            offenders,
+            [],
+            "fixture identity written to a git config; use GIT_AUTHOR_*/GIT_COMMITTER_* "
+            "(scripts/lib/clean-git-env.sh) or `git -c user.*=`: " + ", ".join(offenders),
+        )
+
+    def test_identity_exceptions_are_live_and_needed(self) -> None:
+        self.assertGreaterEqual(
+            IDENTITY_EXCEPTION_EXPIRY, datetime.date.today().isoformat(), "exceptions expired"
+        )
+        for name in IDENTITY_EXCEPTION_FILES:
+            with self.subTest(name=name):
+                text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+                self.assertTrue(identity_writes(text), "no longer needed: remove the exception")
+
+    def test_identity_rule_refuses_the_planted_old_scripts(self) -> None:
+        # Negative controls: the exact lines of the scripts that leaked `t@t` on 2026-10-08.
+        for planted in (
+            'cd "$tmp"\ngit init -q\ngit config user.email t@t\ngit config user.name t\n',
+            'git -C "$dst" config user.email t@t\n',
+            '        self.git("config", "user.email", "test@example.invalid")\n',
+        ):
+            with self.subTest(planted=planted):
+                self.assertTrue(identity_writes(planted))
+        for allowed in (
+            "git -c user.name=t -c user.email=t@example.invalid commit -qm x\n",
+            "export GIT_AUTHOR_EMAIL=t@example.invalid\n",
+            "git config --get user.email\n",
+        ):
+            with self.subTest(allowed=allowed):
+                self.assertFalse(identity_writes(allowed))
+
+    def test_planted_leaking_script_damages_the_sentinel(self) -> None:
+        # Runtime negative control: the old test-preflight-msvcism.sh pattern, run the way a
+        # hook runs it, must change the sentinel; the gate below must be able to see that.
+        with tempfile.TemporaryDirectory(prefix="git-identity-planted-") as directory:
+            root = Path(directory)
+            leak = root / "test-planted-leak.sh"
+            leak.write_text(
+                '#!/usr/bin/env bash\nset -euo pipefail\ntmp=$(mktemp -d)\ncd "$tmp"\n'
+                "git init -q\ngit config user.email t@t\ngit config user.name t\n"
+            )
+            changed = sentinel_damage(str(leak), root)
+            self.assertIn(".git/config", changed)
+
+    def test_scratch_repository_scripts_leave_a_hook_git_dir_alone(self) -> None:
+        scripts = scratch_scripts()
+        self.assertGreater(len(scripts), 30, "discovery found too few scratch-repository scripts")
+
+        def damage(script: str) -> list[str]:
+            with tempfile.TemporaryDirectory(prefix="git-identity-sentinel-") as directory:
+                return sentinel_damage(script, Path(directory))
+
+        # Four workers: the scripts are independent and each owns its sentinel.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = dict(zip(scripts, pool.map(damage, scripts), strict=True))
+        for script, changed in results.items():
+            with self.subTest(script=script):
+                self.assertEqual(changed, [], f"{script} changed the hook's GIT_DIR repository")
 
     def test_local_and_required_ci_hook_registration(self) -> None:
         config = (ROOT / ".pre-commit-config.yaml").read_text()

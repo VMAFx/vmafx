@@ -9,6 +9,10 @@
 # actually caught. Every case runs against a scratch clone so the working tree
 # is never modified.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 export LC_ALL=C
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -32,8 +36,6 @@ clone() {
   git -C "$repo_root" diff HEAD --binary >"$work/wip.patch" 2>/dev/null ||
     echo "note: could not capture uncommitted work; testing HEAD only" >&2
   git -C "$dst" init -q 2>/dev/null
-  git -C "$dst" config user.email t@t
-  git -C "$dst" config user.name t
   if [ -s "$work/wip.patch" ]; then
     git -C "$dst" apply "$work/wip.patch" 2>/dev/null ||
       echo "note: uncommitted work did not apply to the scratch clone" >&2

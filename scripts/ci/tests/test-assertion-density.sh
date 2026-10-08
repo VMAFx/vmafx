@@ -15,6 +15,10 @@
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DENSITY_SCRIPT="$SCRIPT_DIR/../assertion-density.sh"
 
@@ -45,8 +49,6 @@ make_repo() {
   local repo="$1" relpath i=0
   shift
   git -C "$repo" init -q
-  git -C "$repo" config user.email "test@example.com"
-  git -C "$repo" config user.name "Test"
   mkdir -p "$repo/core/src/feature" "$repo/scripts/ci"
   for src_path in "$@"; do
     relpath="core/src/feature/fixture_${i}.c"

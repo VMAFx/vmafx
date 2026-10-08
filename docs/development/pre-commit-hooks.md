@@ -521,5 +521,27 @@ the fake caller's shared `core.bare`, while the current Level Zero test must
 preserve both worktrees and all shared Git metadata byte for byte. This tests
 the hook environment even when the invoking shell has no Git variables.
 
+### Fixture identity and hook environments
+
+A git hook runs with `GIT_DIR` and `GIT_INDEX_FILE` exported. A test that runs
+`git init`, `git config user.email t@t` or `git commit` in a scratch directory then
+acts on the repository that is running the hook: the identity lands in the shared
+`.git/config` (every linked worktree reads it), and commits and index entries land
+in the caller's history. On 2026-10-08 four commits on `master` were created with the
+committer `t@t` this way; history on `master` is not rewritten. Rules for a test
+script that builds a scratch repository:
+
+- Shell: `source` `scripts/lib/clean-git-env.sh` after `set -euo pipefail`. It drops every `GIT_*`
+  variable, ignores global and system configuration and sets `GIT_AUTHOR_*` /
+  `GIT_COMMITTER_*`. Python and Node fixtures build the same environment (no `GIT_*`
+  from the caller, `GIT_CONFIG_GLOBAL=/dev/null`).
+- Never write an identity into a config (`git config user.email`). Use the environment
+  variables above, or `git -c user.name=... -c user.email=... commit` per command.
+- `python3 scripts/ci/test_git_fixture_isolation.py` enforces both: it rejects a
+  `git config user.*` write in any tracked script (a named, expiring exception list
+  covers Python helpers that already scrub the environment) and runs every
+  scratch-repository test script under a sentinel `GIT_DIR`, failing when the
+  sentinel's config, index, refs or objects change. It takes about three minutes.
+
 Only temporary caller paths are injected. The local pre-commit/pre-push hook
 runs when its inputs change. Required `Pre-Commit` CI also runs the regression.

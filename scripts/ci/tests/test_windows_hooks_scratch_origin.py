@@ -40,9 +40,19 @@ def scratch_git_lines(text: str) -> list[str]:
     raise AssertionError("the scratch-clone step has no cd into the scratch clone")
 
 
+def hook_free_environment() -> dict[str, str]:
+    """The process environment without GIT_* (a hook's GIT_DIR / GIT_INDEX_FILE would point
+    every git command, fixture setup and workflow step included, at the caller's repository)."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def git(cwd: Path, *args: str) -> str:
     assert GIT is not None
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    env = {
+        **hook_free_environment(),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
     return subprocess.run(  # noqa: S603 -- fixed git argv from the test's own fixture paths
         [GIT, "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
         check=True,
@@ -74,6 +84,7 @@ def resolves_origin_master(scratch: Path) -> bool:
         [GIT, "-C", str(scratch), "rev-parse", "--verify", "-q", "origin/master^{commit}"],
         capture_output=True,
         check=False,
+        env=hook_free_environment(),
         timeout=60,
     )
     return result.returncode == 0
@@ -87,7 +98,7 @@ def run_step(checkout: Path, runner_temp: Path, commands: list[str]) -> Path:
         cwd=checkout,
         check=True,
         capture_output=True,
-        env={**os.environ, "RUNNER_TEMP": str(runner_temp)},
+        env={**hook_free_environment(), "RUNNER_TEMP": str(runner_temp)},
         timeout=120,
     )
     return runner_temp / "scratch"

@@ -5,6 +5,10 @@
 # Hermetic positive and negative cases for ADR-1277.
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../check-local-data-contract.sh"
 tmp="$(mktemp -d)"
@@ -21,8 +25,6 @@ new_case() {
   case_dir="$tmp/case-$case_number"
   mkdir -p "$case_dir"
   git -C "$case_dir" init -q
-  git -C "$case_dir" config user.email test@example.invalid
-  git -C "$case_dir" config user.name test
   printf '%s/\n%s/\n' "$state_root" "$corpus_root" >"$case_dir/.gitignore"
   printf '%s/\n%s/\n%s/\n' \
     "$state_root" "$retired_root" "$corpus_root" >"$case_dir/.dockerignore"

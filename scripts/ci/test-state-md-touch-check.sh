@@ -25,6 +25,10 @@
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/state-md-touch-check.sh"
 
@@ -42,8 +46,6 @@ trap 'rm -rf "$WORKDIR"' EXIT
 (
   cd "$WORKDIR"
   git init -q -b master
-  git config user.email "test@example.com"
-  git config user.name "Test"
   mkdir -p docs
   printf 'seed\n' >README.md
   git add README.md

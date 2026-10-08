@@ -8,6 +8,10 @@
 # needs Docker, so it is exercised only when Docker is present; the --pre-build
 # mode, which is the one that catches a stale build context, always runs.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../../dev/check-container-source.sh"
 tmp="$(mktemp -d)"
@@ -35,8 +39,6 @@ make_repo() { # $1 dir
   local d="$1"
   mkdir -p "$d/core"
   git -C "$d" init --quiet -b master
-  git -C "$d" config user.email t@example.com
-  git -C "$d" config user.name t
   echo one >"$d/core/a.c"
   git -C "$d" add -A
   git -C "$d" commit --quiet -m "first"
