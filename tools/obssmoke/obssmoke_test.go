@@ -79,3 +79,14 @@ func TestRuleProblems(t *testing.T) {
 		t.Error("an unhealthy rule passed")
 	}
 }
+
+// TestSendFramesRefusesUnevenFrameLists: a reference list and a distorted list
+// of different lengths are an error before anything is sent (a nil stream would
+// panic on the first Send), where the pairing loop would index past the shorter.
+func TestSendFramesRefusesUnevenFrameLists(t *testing.T) {
+	t.Parallel()
+	err := sendFrames(nil, [][]byte{{1}, {2}}, [][]byte{{1}})
+	if err == nil || !strings.Contains(err.Error(), "2 reference frames, 1 distorted frames") {
+		t.Errorf("sendFrames with uneven lists = %v", err)
+	}
+}

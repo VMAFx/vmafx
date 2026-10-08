@@ -76,7 +76,7 @@ func renderRules(values []string, out string) error {
 		_, err = os.Stdout.Write(rules)
 		return err
 	}
-	return os.WriteFile(out, rules, 0o644) // #nosec G306 -- a rule file Prometheus reads
+	return os.WriteFile(out, rules, 0o644) // #nosec G306 G703 -- a rule file Prometheus reads, at the path the operator gave
 }
 
 func run(write, check bool) error {
@@ -130,5 +130,5 @@ func apply(f obsgen.File, write bool) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- repository directory, read by containers
 		return false, err
 	}
-	return true, os.WriteFile(path, content, 0o644) // #nosec G306 -- repository file, read by containers
+	return true, os.WriteFile(path, content, 0o644) // #nosec G306 G703 -- repository file, read by containers, at a path the generator built
 }

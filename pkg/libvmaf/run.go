@@ -117,7 +117,7 @@ func runArgv(req Request, modelPath, outPath string) []string {
 
 // fileSHA256 is the lower-case hex SHA-256 of a model file.
 func fileSHA256(path string) (digest string, err error) {
-	file, err := os.Open(path) //nolint:gosec // the path came from resolveModel
+	file, err := os.Open(path) // #nosec G304 -- the path came from resolveModel
 	if err != nil {
 		return "", fmt.Errorf("libvmaf: open model for hashing: %w", err)
 	}
@@ -146,7 +146,7 @@ type vmafReport struct {
 
 // parseReport reads the vmaf JSON report at path.
 func parseReport(path string) (*Result, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is our own tmpfile
+	data, err := os.ReadFile(path) // #nosec G304 -- path is our own tmpfile
 	if err != nil {
 		return nil, fmt.Errorf("libvmaf: read output file: %w", err)
 	}

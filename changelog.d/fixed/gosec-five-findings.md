@@ -1,0 +1,1 @@
+- Tooling: `tools/obssmoke` refuses a reference and a distorted frame list of different lengths before it opens the stream instead of panicking mid-stream; the Go security scan (`make lint-go`) is clean again.
