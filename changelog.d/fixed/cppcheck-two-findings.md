@@ -1,0 +1,1 @@
+- Lint: the Cppcheck job is clean again. `options_text()` zero-initialises its entry array and the provenance JSON writer formats integers with a literal format.

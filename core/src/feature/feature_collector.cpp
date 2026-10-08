@@ -588,7 +588,7 @@ unsigned sorted_entries(const VmafDictionary *dict, const VmafDictionaryEntry **
 /* `key=value` joined by ':' in key order, or nullptr (no memory). */
 char *options_text(const VmafDictionary *dict)
 {
-    const VmafDictionaryEntry *entries[producer_options_max];
+    const VmafDictionaryEntry *entries[producer_options_max] = {};
     const unsigned cnt = sorted_entries(dict, entries);
     size_t len = 1;
     for (unsigned i = 0; i < cnt; i++)

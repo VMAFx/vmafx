@@ -194,11 +194,11 @@ void vmafx_json_object_string(VmafxJsonObject *object, const char *key, const ch
     vmafx_json_object_take(object, key, vmafx_json_text_take(&text));
 }
 
-static void object_number(VmafxJsonObject *object, const char *key, const char *format,
-                          int64_t value)
+static void object_number(VmafxJsonObject *object, const char *key, int64_t value)
 {
     char buf[32];
-    (void)snprintf(buf, sizeof(buf), format, value);
+    /* A literal format: cppcheck reads "%" PRId64 as a lone '%' and reports no argument. */
+    (void)snprintf(buf, sizeof(buf), "%lld", (long long)value);
     VmafxJsonText text = {0};
     vmafx_json_text_puts(&text, buf);
     vmafx_json_object_take(object, key, vmafx_json_text_take(&text));
@@ -206,12 +206,12 @@ static void object_number(VmafxJsonObject *object, const char *key, const char *
 
 void vmafx_json_object_u32(VmafxJsonObject *object, const char *key, uint32_t value)
 {
-    object_number(object, key, "%" PRId64, (int64_t)value);
+    object_number(object, key, (int64_t)value);
 }
 
 void vmafx_json_object_i32(VmafxJsonObject *object, const char *key, int32_t value)
 {
-    object_number(object, key, "%" PRId64, (int64_t)value);
+    object_number(object, key, (int64_t)value);
 }
 
 void vmafx_json_object_u64(VmafxJsonObject *object, const char *key, uint64_t value)
