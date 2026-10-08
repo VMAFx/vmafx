@@ -1,0 +1,1 @@
+- CI: the Markdown Lint job skips `docs/rebase-notes.d/` fragments, as the pre-commit hook does, so a push that adds a rebase note no longer fails MD041.

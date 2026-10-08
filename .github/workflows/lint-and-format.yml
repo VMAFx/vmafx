@@ -1088,7 +1088,7 @@ jobs:
               "origin/${PR_BASE_REF}...HEAD" -- '*.md' \
               | keep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
               | keep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
-              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)')
+              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|docs/rebase-notes\.d/|changelog\.d/)')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
             zero="0000000000000000000000000000000000000000"
@@ -1097,7 +1097,7 @@ jobs:
                 files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD -- '*.md' \
                   | keep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
                   | keep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
-              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)')
+              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|docs/rebase-notes\.d/|changelog\.d/)')
               else
                 files=""
               fi
@@ -1105,7 +1105,7 @@ jobs:
               files=$(git diff --name-only --diff-filter=d "$before"..HEAD -- '*.md' \
                 | keep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
                 | keep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
-              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)')
+              | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|docs/rebase-notes\.d/|changelog\.d/)')
             fi
           else
             # workflow_dispatch — scan the full corpus. Operator-explicit.
@@ -1113,7 +1113,7 @@ jobs:
               'docs/**/*.md' \
               'README.md' 'CLAUDE.md' 'AGENTS.md' \
               | keep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
-              | keep -vE '^(docs/adr/README\.md|docs/adr/_index_fragments/)')
+              | keep -vE '^(docs/adr/README\.md|docs/adr/_index_fragments/|docs/rebase-notes\.d/)')
           fi
           # Newline-delimit for the next step (one path per line, no IFS surprises).
           {
