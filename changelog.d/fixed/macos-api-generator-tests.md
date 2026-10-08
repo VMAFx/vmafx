@@ -1,0 +1,1 @@
+- Test: the VMAFx API generator tests pass on macOS. The C++ include case reads every generated table (clang's `-Wunused-const-variable`), and the two version-script link cases run on Linux only, with the reason printed.

@@ -128,6 +128,11 @@ class CheckerLogicTest(unittest.TestCase):
 STUB = '__attribute__((visibility("default"))) void {name}(void) {{}}\n'
 
 
+@unittest.skipUnless(
+    sys.platform.startswith("linux"),
+    "the version script (--version-script) and `nm -D` are ELF and GNU ld; macOS's ld64 takes"
+    " -exported_symbols_list and has no versioned nodes, Windows uses vmafx.def",
+)
 @unittest.skipIf(
     None in (tool("cc"), tool("nm"), tool("c++filt")), "needs cc, nm and c++filt on PATH"
 )
