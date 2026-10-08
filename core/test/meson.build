@@ -8779,6 +8779,15 @@ test('test_win32_pthread_shim_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# engine.h redeclares libvmaf functions under their engine names; MSVC rejects
+# a plain declaration before the VMAF_EXPORT one (C2375), so engine.h must
+# include the public header of every function it redeclares.
+test('test_engine_declaration_order_contract',
+    import('python').find_installation(),
+    args : files('test_engine_declaration_order_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 # An internal C function named after a C library function becomes the same
 # assembler symbol as the macOS header's labelled declaration in a full-LTO
 # link, and every call of the library function branches to it

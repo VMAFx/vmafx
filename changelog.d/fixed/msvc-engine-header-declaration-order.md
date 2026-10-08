@@ -1,0 +1,1 @@
+- Build: the Windows MSVC builds compile `core/src/vmafx/context_frames.c` again. `engine.h` includes `libvmaf/perceptual_weight.h` before it redeclares the perceptual-weight functions, so MSVC no longer reports C2375 (different linkage).
