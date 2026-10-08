@@ -139,8 +139,9 @@ def stop_hung(process: subprocess.Popen[str]) -> str:
     """SIGQUIT for the stack, then the whole process group; returns what stderr held."""
     dump = ""
     with contextlib.suppress(OSError):
-        with contextlib.suppress(AttributeError):
-            os.killpg(process.pid, signal.SIGQUIT)
+        # SIGQUIT to the leader only: the Go runtime prints its stacks; a group-wide SIGQUIT
+        # makes every child (shellcheck) dump core, and the coredump handler then holds the
+        # pipes the dump is read from.
         process.send_signal(signal.SIGQUIT)
         _out, dump = _drain(process, float(os.environ.get("ACTIONLINT_DUMP_WAIT_S") or DUMP_WAIT_S))
     with contextlib.suppress(OSError, AttributeError):
@@ -187,6 +188,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"run_actionlint: {exc}", file=sys.stderr)
         return 2
     executable = str(Path(binary).resolve(strict=True))
+    # A process started as a background job of a non-interactive shell inherits SIGQUIT as
+    # ignored, and an ignored signal stays ignored across exec: the hung child would then
+    # never print its stacks. The merge train runs that way (2026-10-08). Hand the child the
+    # default disposition.
+    signal.signal(signal.SIGQUIT, signal.SIG_DFL)
     status, out, err, timed_out = run_bounded(executable, args, limit)
     if timed_out:
         dump = save_dump(err) if err else None

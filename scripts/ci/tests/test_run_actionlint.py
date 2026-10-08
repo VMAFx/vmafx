@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import stat
 import sys
 import tempfile
@@ -96,7 +97,10 @@ class Wrapper(unittest.TestCase):
         binary = self.fake(
             'trap \'echo "SIGQUIT: quit" >&2; echo "goroutine 1 [sync.WaitGroup.Wait, 5 minutes]:" >&2; '
             'echo "os.(*File).Write process.go:32" >&2; exit 2\' QUIT\n'
-            "while true; do sleep 0.05; done"
+            # `wait` returns as soon as the trapped signal arrives (a foreground `sleep` holds
+            # the trap until it ends), and the background sleep keeps no pipe open. A foreground
+            # sleep plus a 2 s dump wait failed under the merge train's loaded tooling run.
+            "while true; do sleep 1 >/dev/null 2>&1 & wait $!; done"
         )
         code, _out, err, _t = self.run_wrapper(binary, "x.yml", timeout="2", dump_wait_s="5")
         self.assertEqual(code, run_actionlint.EXIT_TIMEOUT)
@@ -106,6 +110,12 @@ class Wrapper(unittest.TestCase):
         text = dumps[0].read_text(encoding="utf-8")
         self.assertIn("goroutine 1", text)
         self.assertIn("process.go:32", text)
+
+    def test_the_dump_is_kept_when_started_with_sigquit_ignored(self) -> None:
+        """A background job of a non-interactive shell starts with SIGQUIT ignored."""
+        previous = signal.signal(signal.SIGQUIT, signal.SIG_IGN)
+        self.addCleanup(signal.signal, signal.SIGQUIT, previous)
+        self.test_the_goroutine_dump_is_kept_and_named()
 
     def test_a_hang_without_a_dump_says_so(self) -> None:
         """A program that ignores SIGQUIT is still terminated and the message admits no dump."""
