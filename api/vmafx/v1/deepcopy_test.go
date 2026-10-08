@@ -81,8 +81,12 @@ func testObjectMeta() metav1.ObjectMeta {
 func testTenant() *VmafxTenant {
 	enabled := true
 	stamp := metav1.NewTime(time.Unix(1_700_000_000, 0).UTC())
+	// A named value, not a literal in the field list: `go fix` (Go 1.27) rewrites
+	// `TypeMeta: metav1.TypeMeta{Kind: ...}` of a struct that embeds TypeMeta into the
+	// promoted fields, `Kind: ...`, which is not valid in a composite literal.
+	typeMeta := metav1.TypeMeta{Kind: "VmafxTenant", APIVersion: "vmafx.dev/v1"}
 	return &VmafxTenant{
-		TypeMeta:   metav1.TypeMeta{Kind: "VmafxTenant", APIVersion: "vmafx.dev/v1"},
+		TypeMeta:   typeMeta,
 		ObjectMeta: testObjectMeta(),
 		Spec: VmafxTenantSpec{
 			TenantID: "acme",

@@ -1,0 +1,1 @@
+- CI: `go fix -diff` is clean again: the `VmafxTenant` deep-copy test builds its `TypeMeta` as a named value, which the Go 1.27 fixer does not rewrite into an invalid composite literal.
