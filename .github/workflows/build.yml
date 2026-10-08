@@ -477,10 +477,13 @@ jobs:
         run: ccache -s
 
       # ── DNN suite ────────────────────────────────────────────────────
+      # sudo replaces PATH with its secure_path, which has no oneAPI directory: the
+      # compat library tests start `icx` by name (Meson's compiler on this leg) and
+      # failed with FileNotFoundError. `env "PATH=$PATH"` keeps the runner's PATH.
       - name: Run meson dnn suite (Linux)
         if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
         run: >-
-          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          sudo -E env "PATH=$PATH" "$(command -v python3)" scripts/ci/run_meson_test.py
           --meson-executable "$(command -v meson)" --
           -C core/build --suite=dnn --print-errorlogs
 
@@ -490,7 +493,7 @@ jobs:
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
         run: >-
-          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          sudo -E env "PATH=$PATH" "$(command -v python3)" scripts/ci/run_meson_test.py
           --meson-executable "$(command -v meson)" -- -C core/build
           --no-rebuild --print-errorlogs
 

@@ -1,0 +1,1 @@
+- CI: the Linux Intel LLVM test steps keep the runner's PATH through sudo, so the compat library tests find `icx`.
