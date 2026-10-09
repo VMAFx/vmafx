@@ -1187,6 +1187,13 @@
   open on every driver.
 
 
+- **The Windows SYCL build compiles again.** Since the math constants come
+  from `<math.h>` (#2638), the SYCL feature sources need `_USE_MATH_DEFINES`
+  on Windows, which the project-wide argument did not reach: icpx compiles
+  them in custom targets. Both SYCL argument lists now carry the define, and
+  `test_sycl_math_constants_contract.py` keeps every icpx compile line on it.
+
+
 - **A cross-device parity run that compared nothing passed** (`T-TINY-AI-CROSS-DEVICE-PARITY-UNGATED-2026-09-25`).
   `vmaf_train.cross_backend.CrossBackendReport.ok` is now False when no output was compared, when a requested
   provider is missing, or when ONNX Runtime accepted a provider but ran the session on the CPU, so
