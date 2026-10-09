@@ -234,6 +234,19 @@
   `docs/development/dco.md` and ADR-2462.
 
 
+- **The patched FFmpeg is built with MSVC against `vmaf.lib` on every change
+  (Netflix/vmaf `3e1385bed`).** The required check `FFmpeg Windows MSVC`
+  builds the configured FFmpeg release with the whole `ffmpeg-patches/` series
+  through `configure --toolchain=msvc` against a static MSVC install, and
+  requires the libvmaf filter's scores to equal the CLI's and no compiler
+  warning on the lines the series writes. The `vmaf_pre` and
+  `libvmaf_tune` filters pass their pixel-format lists through FFmpeg's typed
+  helper, which `cl.exe` had reported as an incompatible-type warning.
+  `ffmpeg-patches/test/build-and-run.sh` takes `FFMPEG_TOOLCHAIN=msvc`,
+  `FFMPEG_JOBS`, `SMOKE_FATE` and `VMAF_SCORE_CHECK`
+  ([FFmpeg with MSVC](docs/getting-started/building-on-windows.md#ffmpeg-with-msvc)).
+
+
 - **The Helm chart runs vmafx-controller as several replicas on PostgreSQL
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
   `controller.store.backend: postgres` with `controller.replicas` renders a
@@ -1012,6 +1025,15 @@
   legs' required checks red (`scripts/ci/gate_leg_result.py`).
 
 
+- **System-wide Python installs no longer fail on a distribution-installed package.** Since the
+  build lock pins PyYAML 6.0.3, `sudo pip3 install --break-system-packages` stopped on Ubuntu's
+  `python3-yaml` 6.0.1 (`Cannot uninstall PyYAML 6.0.1, RECORD file not found`), which turned the
+  Netflix golden, sanitizer, coverage and CodeQL jobs red. Every such install in the workflows,
+  `docker/Dockerfile.production-gpu` and `mcp-server/vmaf-mcp/Dockerfile` passes
+  `--ignore-installed`, and `scripts/ci/check_python_dependency_locks.py` refuses an install that
+  breaks system packages without it (`--user` installs are exempt).
+
+
 - **Eighteen test files compare exact results with `core/test/float_bits.h`, and four CodeQL findings in tests are fixed in code (no alert dismissed).**
   `cpp/equality-on-floats` (alerts 1404-1405, 1411-1415, 1417-1458, 1482-1487, 1491-1492, 1496-1498, 1484-1485): the Metal math replays, the DNN tests, `test_predict`, `test_cambi_full_ref_wide_source`, `test_speed_cov_count_division` and `float_moment_sum_model.h` assert with `vmaf_test_identical_f32/_f64`, which is stricter than `==` (a ±0 mismatch fails, a NaN fails) and never a tolerance; `test_speed_cov_count_division` drops its private bit copy.
   `cpp/constant-comparison` (1495): the always-false `total > 2 * MODEL_JSON_MAX` check of `splice_model_json()` is now a live bound on the model plus the block (`SPLICE_TOTAL_MAX`), and `test_splice_model_json_bounds` fails when any of the three bounds is removed.
@@ -1157,6 +1179,9 @@
   another model. The controller's gRPC contract documented the same stale default and says
   `vmaf_v1.0.16_3d0h` now. The default-model gate reads the `version=` spelling and the controller
   contract, so the drift cannot return unnoticed.
+
+
+- Test: the Windows MinGW UCRT64 build compiles the compat conformance tests again. Their trace macro names MinGW's printf archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu` and `%td`.
 
 
 - Build: the Windows MinGW UCRT64 build compiles again. The VMAFx API's printf-format

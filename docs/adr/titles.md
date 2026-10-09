@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1347), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1348), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5391,6 +5391,10 @@ Every ADR, one heading each (1347), so the site search finds an ADR by its title
 ## ADR-2752: A static MSVC build installs vmaf.lib and vmafx.lib
 
 [2752-msvc-static-library-platform-names](2752-msvc-static-library-platform-names.md)
+
+## ADR-2783: The patched FFmpeg is built with MSVC against vmaf.lib in CI
+
+[2783-ffmpeg-msvc-consumer-leg](2783-ffmpeg-msvc-consumer-leg.md)
 
 ## ADR-2784: Move the praetor pin to 3a766f2d56ad, take its REUSE workflow and declare the build-warnings lanes it cannot read
 

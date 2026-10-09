@@ -8,6 +8,38 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## `vif_tools.c`: AVX2 row dispatch taken for a filter with a tap (2026-10-09)
+
+- `vif_filter1d_vertical_dispatch_s()` in `core/src/feature/vif_tools.c` takes
+  the AVX2 row pass only for `fwidth >= 1`, the condition under which its row
+  table is filled for every entry `convolution_f32_avx_rows_s()` reads.
+  cppcheck 2.19.0 reports `uninitvar` on the table without it. **On sync**:
+  keep the `fwidth >= 1 &&` in front of `vif_use_avx2_convolution()` when
+  upstream changes that dispatch; no score changes with it (the Netflix golden
+  gate passes unchanged).
+
+## Netflix/vmaf 3e1385bed: FFmpeg built with MSVC in CI (2026-10-08)
+
+- Upstream adds a Windows row to `.github/workflows/ffmpeg.yml` that builds
+  FFmpeg `master` through a Meson port of FFmpeg. The fork's equivalent is the
+  `ffmpeg-msvc-work` / `ffmpeg-msvc-gate` jobs of
+  `.github/workflows/ffmpeg-integration.yml` (required check
+  `FFmpeg Windows MSVC`, ADR-2783), which run
+  `ffmpeg-patches/test/build-and-run.sh` with `FFMPEG_TOOLCHAIN=msvc`.
+  **On sync**: do not import upstream's `ffmpeg.yml` row; the fork has no
+  `ffmpeg.yml`.
+- `scripts/ci/upstream-consumer-lib.sh` now holds `uc_ffmpeg_graph` (moved
+  from `upstream-ffmpeg-compat.sh`'s `ff_graph`); the smoke script's score
+  check and the upstream-consumer check share it.
+- `docs/getting-started/building-on-windows.md`: the ARM64 toolset notes stay
+  under "Native MSVC on Windows ARM64"; "Threads on MSVC", "Library files of
+  an MSVC build" and "FFmpeg with MSVC" follow as sections of their own.
+- `ffmpeg-patches/0002` and `0008` call `ff_set_pixel_formats_from_list2()`
+  for their `enum AVPixelFormat` lists (cl.exe `C4133` with the untyped
+  `ff_set_common_formats_from_list2()`). Keep the typed helper when
+  refreshing the series. The smoke script's warning gate under `msvc` reads
+  only the lines the series writes and the linker (`msvc_findings`).
+
 ## ADM second viewing distance on CUDA, shared merge helpers (2026-10-08)
 
 - `core/src/feature/adm_view_dist.{c,h}` (new): the merge callback and the
