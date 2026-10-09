@@ -115,7 +115,7 @@ repos:
         exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.10
+    rev: v0.17.0
     hooks:
       - id: ruff-check
         # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
