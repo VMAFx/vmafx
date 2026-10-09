@@ -35,13 +35,13 @@
 
 ## Bug-status hygiene ([ADR-0165](../docs/adr/0165-state-md-bug-tracking.md))
 
-<!-- Required when a PR closes / opens / rules-out a bug. Skip with
-     "no state delta: REASON" if the PR has no bug-status impact (pure feat,
-     refactor, infra, etc.). -->
+<!-- Required when a PR closes / opens / rules-out a bug. A PR with no
+     bug-status impact (pure feat, refactor, infra, etc.) skips it with one line
+     "no state delta: REASON", REASON replaced by the actual reason. -->
 
 - [ ] [`docs/state.md`](../docs/state.md) updated in this PR with a row
   in the appropriate section (Open / Recently closed / Confirmed
-  not-affected / Deferred), OR `no state delta: REASON`.
+  not-affected / Deferred), OR the opt-out line described in the comment above.
 
 ## Netflix golden-data gate ([ADR-0024](../docs/adr/0024-netflix-golden-preserved.md))
 

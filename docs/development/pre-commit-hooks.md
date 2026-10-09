@@ -175,7 +175,13 @@ not public documentation and are never copied back.
 
 Synchronization is serialized by a lock in the common Git directory. Lock
 contention, missing or non-regular canonical ledgers, a symlinked local state
-root, and a missing synchronizer all fail the hook. A failed hook therefore
+root, and a missing synchronizer all fail the hook. The lock directory holds
+an `owner` file with the holder's process id and the host's boot id (Linux
+`boot_id`, macOS `kern.bootsessionuuid`). A lock whose owner ran in an earlier
+boot or is no longer running, or one with no owner file that is older than two
+minutes (left by an earlier version of the hook), is stale: the next sync takes
+it over and prints `state-sync: took over the stale lock ...`. A lock with a
+running owner still fails the hook, and the message names the owner. A failed hook therefore
 cannot silently record the main checkout's branch on behalf of an agent
 worktree. See [ADR-1280](../adr/1280-worktree-state-sync.md) and its
 [research digest](../research/1280-worktree-state-sync.md).

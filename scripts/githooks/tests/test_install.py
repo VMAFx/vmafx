@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -366,27 +367,23 @@ class HookInstallTests(unittest.TestCase):
                 self.run_command("bash", "scripts/git-hooks/pre-push-mkdocs-strict.sh")
                 self.assertIn(["mkdocs"], self.events())
 
-    def test_state_sync_uses_regular_worktree_mirror_and_shared_state(self) -> None:
+    def state_sync_worktree(self) -> tuple[Path, Path]:
+        """Canonical ledgers, a linked worktree and the praetorctl stand-in."""
         canonical_state = self.repo / ".workingdir"
         canonical_state.mkdir()
-        ledger_names = (
-            "OPEN.md",
-            "BACKLOG.md",
-            "BUGS.md",
-            "QUESTIONS.md",
-            "STATE.md",
-            "bugs.meta.json",
-            "questions.meta.json",
-        )
-        for name in ledger_names:
+        for name in STATE_LEDGERS:
             (canonical_state / name).write_text(f"canonical:{name}\n")
-
         worktree = self.base / "state worktree"
         self.run_git("worktree", "add", "-b", "state-sync-fixture", str(worktree))
+        self.write_bin("praetorctl", STATE_SYNC_PRAETORCTL)
+        return canonical_state, worktree
+
+    def test_state_sync_uses_regular_worktree_mirror_and_shared_state(self) -> None:
+        canonical_state, worktree = self.state_sync_worktree()
+        ledger_names = STATE_LEDGERS
         local_state = worktree / ".workingdir"
         (local_state / "cache").mkdir(parents=True)
         (local_state / "cache/keep.txt").write_text("preserve me\n")
-        self.write_bin("praetorctl", STATE_SYNC_PRAETORCTL)
 
         self.run_command("bash", "scripts/githooks/state-sync.sh", cwd=worktree)
 
@@ -411,6 +408,74 @@ class HookInstallTests(unittest.TestCase):
             (canonical_state / "STATE.md").read_text(),
             "canonical:STATE.md\nsynced:state-sync-fixture\n",
         )
+
+    def test_state_sync_takes_over_a_stale_lock_and_refuses_a_live_one(self) -> None:
+        _, worktree = self.state_sync_worktree()
+        lock = self.repo / ".git/vmafx-state-sync.lock"
+        boot = host_boot_id()
+        live, gone = os.getpid(), NO_SUCH_PID
+        long_ago = time.time() - 600
+        cases = [
+            ("dead owner", f"pid={gone}\nboot={boot}\n", None, True),
+            ("ownerless and old", None, long_ago, True),
+            ("live owner", f"pid={live}\nboot={boot}\n", None, False),
+            ("ownerless and fresh", None, None, False),
+        ]
+        if boot != "unknown":
+            cases.append(("owner of an earlier boot", f"pid={live}\nboot=not-{boot}\n", None, True))
+        for name, owner, mtime, stale in cases:
+            with self.subTest(case=name):
+                shutil.rmtree(lock, ignore_errors=True)
+                lock.mkdir()
+                if owner is not None:
+                    (lock / "owner").write_text(owner)
+                if mtime is not None:
+                    os.utime(lock, (mtime, mtime))
+                result = self.run_command(
+                    "bash", "scripts/githooks/state-sync.sh", cwd=worktree, check=False
+                )
+                if stale:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("took over the stale lock", result.stderr)
+                    self.assertFalse(lock.exists(), "the lock outlived the sync that took it")
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("another state synchronization owns", result.stderr)
+                    self.assertEqual(
+                        (lock / "owner").read_text() if owner is not None else None, owner
+                    )
+
+
+def host_boot_id() -> str:
+    """The boot state-sync.sh records: Linux's boot_id, macOS's boot session."""
+    linux = Path("/proc/sys/kernel/random/boot_id")
+    if linux.is_file():
+        return linux.read_text().strip()
+    sysctl = shutil.which("sysctl")
+    if sysctl is not None:
+        result = run_command(
+            (sysctl, "-n", "kern.bootsessionuuid"),
+            allowed_executables=(sysctl,),
+            text=True,
+            capture_output=True,
+            timeout_seconds=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return "unknown"
+
+
+# A process id no host hands out: above every pid_max (Linux 2^22, macOS 99998).
+NO_SUCH_PID = 2_147_483_000
+STATE_LEDGERS = (
+    "OPEN.md",
+    "BACKLOG.md",
+    "BUGS.md",
+    "QUESTIONS.md",
+    "STATE.md",
+    "bugs.meta.json",
+    "questions.meta.json",
+)
 
 
 # A stand-in for `praetorctl state sync <root>`: it requires a regular

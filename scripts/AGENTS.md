@@ -317,11 +317,15 @@ with `.workingdir` symlink or run synchronizer against main checkout,
 because those paths respectively violate Praetor confinement and record false
 Git identity. Keep common-Git lock fail-closed, preserve worktree-local
 cache content, and copy only derived `STATE.md` back to canonical private
-state. Mirror every ledger with its metadata: `bugs.meta.json`,
+state. Lock dir carries `owner` (`pid=`, `boot=`); stale = owner ran in other
+boot, owner pid gone, or no owner file and older than 2 minutes -> next sync
+takes lock over: rename aside, owner recheck, log line. Live owner -> refuse.
+Mirror every ledger with its metadata: `bugs.meta.json`,
 `questions.meta.json` (Praetor reads one entry per bug / question; missing ->
 sync fails in every worktree). real-worktree regression in
 `githooks/tests/test_install.py` must cover branch identity, regular files,
-metadata files, cache preservation, and symlink refusal.
+metadata files, cache preservation, symlink refusal, and stale versus live
+lock owners.
 
 ### Python pre-push scope follows the PR merge base
 

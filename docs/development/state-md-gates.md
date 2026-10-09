@@ -233,7 +233,9 @@ Either:
 2. The PR description contains `no state delta: REASON`, where REASON is any
    non-empty token that is not the literal placeholder `REASON`. Use this for
    pure `feat`, `refactor` and `infra` PRs that genuinely have no bug-status
-   impact.
+   impact. The pull request template keeps its example of the line inside an
+   HTML comment, which the gate strips, so an unedited template opts nothing
+   out; a placeholder left anywhere else does not void a real opt-out.
 
 ### Placeholder references
 
@@ -281,8 +283,9 @@ gh pr view 999 --json body -q .body \
 
 The companion fixture script
 [`scripts/ci/test-state-md-touch-check.sh`](../../scripts/ci/test-state-md-touch-check.sh)
-exercises the gate against 18 cases (5 primary, 3 regression, 10
-placeholder-ref). Run it after touching either script:
+exercises the gate against 22 cases (5 primary, 3 regression, 10
+placeholder-ref, 4 bodies built from the pull request template). The Tooling
+Tests job runs it; run it after touching either script or the template:
 
 ```bash
 bash scripts/ci/test-state-md-touch-check.sh

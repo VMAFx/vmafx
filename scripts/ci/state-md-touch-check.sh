@@ -274,15 +274,15 @@ fi
 
 # 4b. Explicit opt-out sentinel in the PR body. Format:
 #       no state delta: <REASON>
-# REASON must be non-empty AND not the literal placeholder
-# "REASON" — that's template instructional text leaking through
-# (the HTML-comment instances are already stripped above; this
-# guards the example inside the checkbox row itself). We require
-# at least one *lowercase* alphanumeric/punctuation token after
-# the colon, which a copy-pasted "REASON" placeholder fails by
-# being all-caps.
-if grep -qiE 'no state delta:[[:space:]]*[^[:space:].]+' "$tmp_body" &&
-  ! grep -qE 'no state delta:[[:space:]]*REASON([[:space:].]|$)' "$tmp_body"; then
+# At least one opt-out must give a reason other than the literal
+# placeholder "REASON", which is template instructional text leaking
+# through (the HTML-comment instances are already stripped above). A
+# placeholder elsewhere in the body does not void a real opt-out. The
+# matches are captured first and searched from a here-string, never
+# through a pipe whose writer pipefail would report when the reader
+# stops early.
+optouts="$(grep -oiE 'no state delta:[[:space:]]*[^[:space:].]+' "$tmp_body" || [ "$?" -eq 1 ])"
+if [ -n "$optouts" ] && grep -qvE ':[[:space:]]*REASON$' <<<"$optouts"; then
   echo "state-md-touch-check: PASS — opt-out 'no state delta: ...' present."
   exit 0
 fi

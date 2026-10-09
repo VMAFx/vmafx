@@ -18,6 +18,9 @@
 # trigger heuristic ("debug" should not fire, "Closes #" must fire,
 # "BUG" upper-case must fire).
 #
+# Then four bodies built from .github/PULL_REQUEST_TEMPLATE.md and the
+# placeholder "no state delta: REASON" (T1-T4).
+#
 # Run from anywhere:
 #   bash scripts/ci/test-state-md-touch-check.sh
 #
@@ -279,6 +282,44 @@ got=$(set_state_md_and_run \
   "fix: foo cosmetic" \
   "Body without opt-out.")
 expect "P10. 'debug-pr' substring (no whitespace) does not match 'this PR'" "PASS" "$got"
+
+# ---------- Bodies copied from the pull request template --------------
+#
+# The template's example opt-out lives inside its HTML comment, so an
+# unedited template opts nothing out, and a body copied from it with a
+# real opt-out added passes. A placeholder left anywhere in a body never
+# voids a real opt-out.
+TEMPLATE="${SCRIPT_DIR}/../../.github/PULL_REQUEST_TEMPLATE.md"
+template_body="$(cat "$TEMPLATE")"
+
+# Case T1: template body + a real opt-out → PASS --------------------------
+reset_repo
+make_commit "fix: cosmetic" "core/src/feature/feature_x.c" "fix"
+got=$(run_gate "fix: cosmetic typo in a log message" "${template_body}
+
+no state delta: log text only, no bug-status impact.")
+expect "T1. template body + real opt-out" "PASS" "$got"
+
+# Case T2: unedited template body → FAIL (the example is not an opt-out) --
+reset_repo
+make_commit "fix: cosmetic" "core/src/feature/feature_x.c" "fix"
+got=$(run_gate "fix: cosmetic typo in a log message" "${template_body}")
+expect "T2. unedited template body opts nothing out" "FAIL" "$got"
+
+# Case T3: a placeholder line and a real opt-out → PASS -------------------
+reset_repo
+make_commit "fix: cosmetic" "core/src/feature/feature_x.c" "fix"
+got=$(run_gate "fix: cosmetic typo in a log message" \
+  "- [ ] docs/state.md updated, OR \`no state delta: REASON\`.
+
+no state delta: log text only, no bug-status impact.")
+expect "T3. placeholder line + real opt-out" "PASS" "$got"
+
+# Case T4: the placeholder alone → FAIL -----------------------------------
+reset_repo
+make_commit "fix: cosmetic" "core/src/feature/feature_x.c" "fix"
+got=$(run_gate "fix: cosmetic typo in a log message" "no state delta: REASON")
+expect "T4. placeholder alone is not an opt-out" "FAIL" "$got"
 
 echo ""
 echo "test-state-md-touch-check: ${ok}/${total} passed, ${ng} failed."
