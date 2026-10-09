@@ -232,6 +232,11 @@ def _skip_scale0_failures(code: str) -> list[str]:
     decouple = stages.find("IADM_METAL_DECOUPLE_CSF_S0")
     if skip < 0 or decouple < 0 or "return n;" not in stages[skip:decouple]:
         failures.append(f"{HOST}: adm_skip_scale0 runs more than the DWT at scale 0")
+    views = _function_body(code, "unsigned iadm_metal_view_stages(")
+    if "iadm_metal_stages(o, g, scale, all)" not in views or (
+        "view == 0u || !iadm_is_dwt(all[i].entry)" not in views
+    ):
+        failures.append(f"{HOST}: a later viewing distance does not run the stages after the DWT")
     return failures
 
 
@@ -244,7 +249,8 @@ def _mm_failures(mm: str) -> list[str]:
         failures.append(f"{MM}: the dispatch keeps its own uniforms, slots or score formulas")
     for piece in (
         "iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);",
-        "iadm_metal_stages(&o, &s->geom, scale, stages);",
+        # Every viewing distance's stages, the DWT only for the first (ADR-2795).
+        "iadm_metal_view_stages(&o, &s->geom, scale, v, stages);",
         "iadm_metal_scores(&o, &s->geom, accum, index, &r);",
         "bind_buffer(enc, s->ref_band[scale - 1], 6);",
     ):
@@ -326,6 +332,21 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
             "    const vmaf_mtl_i32 rst = (vmaf_mtl_i32)(float)(((k * o) + 16384) >> 15);",
         )
         self._assert_detected(failures, "vmaf_mtl_iadm_decouple_s123(")
+
+    def test_later_view_rerunning_the_dwt_is_detected(self) -> None:
+        # ADR-2795: the second viewing distance reads the first one's bands.
+        failures = self._edited(
+            HOST, "view == 0u || !iadm_is_dwt(all[i].entry)", "view == 0u || view != 0u"
+        )
+        self._assert_detected(failures, "stages after the DWT")
+
+    def test_dispatch_without_the_view_stages_is_detected(self) -> None:
+        failures = self._edited(
+            MM,
+            "iadm_metal_view_stages(&o, &s->geom, scale, v, stages);",
+            "iadm_metal_stages(&o, &s->geom, scale, stages);",
+        )
+        self._assert_detected(failures, "iadm_metal_view_stages")
 
     def test_kernel_side_decouple_is_detected(self) -> None:
         failures = self._edited(

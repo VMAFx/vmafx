@@ -28,6 +28,7 @@ MERGING_TABLES = {
     "adm_cuda": (ROOT / "core/src/feature/cuda/integer_adm_cuda.c", "options_cuda"),
     "adm_sycl": (ROOT / "core/src/feature/sycl/integer_adm_sycl.cpp", "options"),
     "adm_hip": (ROOT / "core/src/feature/hip/integer_adm_hip.c", "options_hip"),
+    "integer_adm_metal": (ROOT / "core/src/feature/metal/integer_adm_metal.mm", "options"),
 }
 VIEW_SRC = ROOT / "core/src/feature/adm_view_dist.c"
 VIEW_HDR = ROOT / "core/src/feature/adm_view_dist.h"
@@ -62,17 +63,17 @@ def rust_extra_keys(text: str) -> list[str]:
 
 
 def option_entries(text: str, table_name: str = "options") -> list[str]:
-    # C tables end in {0}, C++ ones (SYCL, in an anonymous namespace) in
-    # {.name = nullptr}.
+    # C tables end in {0}, C++ ones (SYCL, Metal) in {.name = nullptr}; an
+    # entry opens at four spaces of indent, as `{` alone or `{.name = ...`.
     table = re.search(
         rf"(?:static )?const VmafOption {table_name}\[\] = \{{(.*?)"
-        rf"\{{(?:0|\.name = nullptr)\}}\}};",
+        r"\{(?:0|\.name\s*=\s*nullptr)\},?\s*\};",
         text,
         re.S,
     )
     if not table:
-        raise AssertionError("integer_adm.c: option table not found")
-    return re.split(r"\n    \{\n", table.group(1))[1:]
+        raise AssertionError(f"option table {table_name} not found")
+    return re.split(r"\n    \{", table.group(1))[1:]
 
 
 def non_feature_params(text: str, table_name: str = "options") -> set[str]:

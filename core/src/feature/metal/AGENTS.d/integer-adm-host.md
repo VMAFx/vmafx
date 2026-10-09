@@ -38,3 +38,15 @@ exact case off. Six defects, each now one definition:
   `test_metal_integer_adm_math`, `test_metal_integer_adm_exact_contract.py`.
   Device: `test_metal_integer_adm_parity`. Replay limits: one thread per
   threadgroup (no barrier/race coverage), not Metal compiler.
+- **Two viewing distances (ADR-2795).** `iadm_metal_view_stages()` = stage
+  plan per distance: view 0 every stage of `iadm_metal_stages()`, view 1 only
+  stages after DWT (reads bands view 0's DWT left). `.mm` encodes per scale
+  view 0 then view 1, each with `iadm_options(s, view)` (distance replaced),
+  own uniforms, own reduction buffer (`accum` / `accum_x`); collect = one
+  `iadm_metal_scores()` per distance, second under `<base>:nvde`, no debug
+  scores. Never re-run DWT for view 1, never share reduction buffer between
+  distances. Merge + names = shared `adm_view_dist.c`. Guards: replay
+  `test_two_viewing_distances`, self-test + device
+  `test_adm_two_views_exact` / `test_adm_merged_registrations_exact`,
+  contract pins `iadm_metal_view_stages`. Device evidence = macOS tester
+  bundle (no Apple device here).

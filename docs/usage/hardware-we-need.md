@@ -29,7 +29,7 @@ machine still repeats the measurement on different silicon and is welcome.
 
 | Hardware family | Run this package | Closes (state row) | Status |
 | --- | --- | --- | --- |
-| Apple M-series, native (M1 to M4 Macs) | [macOS bundle](tester-image.md#a-native-macos-bundle-apple-silicon) | [`T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03`](../state.md), the 23 open Metal rows ([list](tester-image.md#metal-state-rows)) | 1 reported, worst fail |
+| Apple M-series, native (M1 to M4 Macs) | [macOS bundle](tester-image.md#a-native-macos-bundle-apple-silicon) | [`T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03`](../state.md), the 24 open Metal rows ([list](tester-image.md#metal-state-rows)) | 1 reported, worst fail |
 | Arm without SVE2 (Apple M-series under Docker Desktop, Graviton 2, Ampere Altra, Raspberry Pi 4 and 5) | [container image](tester-image.md#b-container-image) | [`T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03`](../state.md) | no report yet |
 | Arm with SVE2 (AWS Graviton 4, Azure Cobalt 100, Google Axion) | [container image](tester-image.md#b-container-image) | [`T-ARM-SIMD-GATES-SVE2-VECTOR-LENGTH-UNVERIFIED-2026-10-02`](../state.md) | no report yet |
 | Intel with AVX-512 (Xeon Skylake-SP to Sapphire Rapids and later, Core 11th generation) | [container image](tester-image.md#b-container-image) | [`T-CPU-AVX512-ZEN5-ONLY-UNVERIFIED-2026-10-02`](../state.md) | no report yet |

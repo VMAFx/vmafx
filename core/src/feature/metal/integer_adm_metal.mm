@@ -55,6 +55,7 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 #include "../adm_csf_fixed_point.h"
 #include "../adm_options.h"
+#include "../adm_view_dist.h"
 #include "../nonfinite_score.h"
 }
 
@@ -80,6 +81,7 @@ using IntegerAdmStateMetal = struct IntegerAdmStateMetal {
     void *csf_a;
     void *csf_f;
     void *accum[IADM_METAL_NUM_SCALES]; /* reduction slots, vmaf_mtl_iadm_accum_word() */
+    void *accum_x[IADM_METAL_NUM_SCALES]; /* the second viewing distance's (ADR-2795) */
 
     IadmMetalGeometry geom;
 
@@ -87,6 +89,9 @@ using IntegerAdmStateMetal = struct IntegerAdmStateMetal {
     bool debug;
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
+    /* A second viewing distance evaluated on the same DWT (Netflix/vmaf
+     * cffd5b77d, ADR-2795); 0 = none. */
+    double adm_norm_view_dist_extra;
     int adm_ref_display_height;
     int adm_csf_mode;
     double adm_csf_scale;
@@ -158,6 +163,17 @@ static const VmafOption options[] = {
      .min = 0.75,
      .max = 24.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    /* Not a feature parameter: the scores of this distance are filed under
+     * the names its own `adm_norm_view_dist` would give them. */
+    {.name = "adm_norm_view_dist_extra",
+     .help = "second normalized viewing distance; when > 0, ADM is also evaluated at it "
+             "from the same DWT, and its scores carry that distance's nvd suffix",
+     .alias = "nvde",
+     .offset = offsetof(IntegerAdmStateMetal, adm_norm_view_dist_extra),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 0.0},
+     .min = 0.0,
+     .max = 24.0},
     {.name = "adm_ref_display_height",
      .help = "reference display height in pixels",
      .alias = "rdh",
@@ -218,13 +234,20 @@ static const VmafOption options[] = {
     {.name=nullptr},
 };
 
-/* The options as integer_adm_metal_host.c reads them. */
-IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
+/* Viewing distances one frame is evaluated at (ADR-2795). */
+unsigned iadm_views(const IntegerAdmStateMetal *s)
+{
+    return (s->adm_norm_view_dist_extra > 0.0) ? 2u : 1u;
+}
+
+/* The options as integer_adm_metal_host.c reads them, at the viewing distance
+ * of `view` (0: adm_norm_view_dist, 1: adm_norm_view_dist_extra). */
+IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s, unsigned view)
 {
     IadmMetalOptions o;
     memset(&o, 0, sizeof(o));
     o.adm_enhn_gain_limit = s->adm_enhn_gain_limit;
-    o.adm_norm_view_dist = s->adm_norm_view_dist;
+    o.adm_norm_view_dist = view ? s->adm_norm_view_dist_extra : s->adm_norm_view_dist;
     o.adm_csf_scale = s->adm_csf_scale;
     o.adm_csf_diag_scale = s->adm_csf_diag_scale;
     o.adm_noise_weight = s->adm_noise_weight;
@@ -281,6 +304,7 @@ void release_buffers(IntegerAdmStateMetal *s)
         release_buffer(&s->ref_band[i]);
         release_buffer(&s->dis_band[i]);
         release_buffer(&s->accum[i]);
+        release_buffer(&s->accum_x[i]);
     }
     release_buffer(&s->src_ref);
     release_buffer(&s->src_dis);
@@ -317,6 +341,9 @@ int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
         err = new_buffer(device, band, &s->ref_band[scale]);
         if (err == 0) { err = new_buffer(device, band, &s->dis_band[scale]); }
         if (err == 0) { err = new_buffer(device, accum, &s->accum[scale]); }
+        if (err == 0 && iadm_views(s) > 1u) {
+            err = new_buffer(device, accum, &s->accum_x[scale]);
+        }
     }
     return err;
 }
@@ -348,10 +375,12 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsi
 
     int err = adm_frame_size_check("integer_adm_metal", w, h);
     if (err != 0) { return err; }
-    /* The CPU's CSF configuration check (adm_csf_check_scale() per scale),
-     * before any device work. */
-    const IadmMetalOptions o = iadm_options(s);
-    err = iadm_metal_check_options(&o);
+    /* The CPU's CSF configuration check (adm_csf_check_scale() per scale), at
+     * every viewing distance, before any device work. */
+    for (unsigned v = 0; v < iadm_views(s) && err == 0; ++v) {
+        const IadmMetalOptions o = iadm_options(s, v);
+        err = iadm_metal_check_options(&o);
+    }
     if (err != 0) { return err; }
     iadm_metal_geometry(&s->geom, w, h, bpc);
 
@@ -369,7 +398,14 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsi
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
         if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
-    if (err != 0) { teardown_device_state(s); }
+    if (err == 0) {
+        /* The second viewing distance's names (ADR-2795). */
+        err = vmaf_adm_extend_name_dict(fex, &s->feature_name_dict);
+    }
+    if (err != 0) {
+        if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
+        teardown_device_state(s);
+    }
     return err;
 }
 
@@ -389,9 +425,10 @@ void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger inde
     [enc setBuffer:(__bridge id<MTLBuffer>)buffer offset:0 atIndex:index];
 }
 
-/* The buffers of `entry` at the indices integer_adm.metal declares. */
+/* The buffers of `entry` at the indices integer_adm.metal declares; `accum`
+ * is the reduction buffer of the viewing distance being encoded. */
 void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
-                               IadmMetalKernel entry, int scale)
+                               IadmMetalKernel entry, int scale, void *accum)
 {
     switch (entry) {
     case IADM_METAL_DWT_VERT_8BPC:
@@ -429,13 +466,13 @@ void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> en
         bind_buffer(enc, s->ref_band[scale], 0);
         bind_buffer(enc, s->dis_band[scale], 1);
         bind_buffer(enc, s->csf_f, 3);
-        bind_buffer(enc, s->accum[scale], 8);
+        bind_buffer(enc, accum, 8);
         break;
     case IADM_METAL_AIM_CM_S0:
     case IADM_METAL_AIM_CM_S123:
         bind_buffer(enc, s->ref_band[scale], 0);
         bind_buffer(enc, s->dis_band[scale], 1);
-        bind_buffer(enc, s->accum[scale], 8);
+        bind_buffer(enc, accum, 8);
         break;
     default:
         break;
@@ -444,11 +481,11 @@ void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> en
 
 void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
                          const IadmMetalStage *stage, int scale, const IadmDims *d,
-                         const IadmCsf *c)
+                         const IadmCsf *c, void *accum)
 {
     id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso[stage->entry]];
-    bind_stage_buffers(s, enc, stage->entry, scale);
+    bind_stage_buffers(s, enc, stage->entry, scale, accum);
     [enc setBytes:d length:sizeof(*d) atIndex:4];
     [enc setBytes:c length:sizeof(*c) atIndex:5];
     [enc dispatchThreadgroups:MTLSizeMake(stage->groups[0], stage->groups[1], stage->groups[2])
@@ -464,6 +501,11 @@ void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
         const size_t bytes = iadm_metal_buffer_bytes(&s->geom, IADM_METAL_BUF_ACCUM, scale);
         [blit fillBuffer:(__bridge id<MTLBuffer>)s->accum[scale] range:NSMakeRange(0, bytes) value:0];
+        if (s->accum_x[scale]) {
+            [blit fillBuffer:(__bridge id<MTLBuffer>)s->accum_x[scale]
+                       range:NSMakeRange(0, bytes)
+                       value:0];
+        }
     }
     [blit endEncoding];
 }
@@ -489,15 +531,22 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPictur
     if (cmd == nil) { return -ENOMEM; }
     zero_accumulators(s, cmd);
 
-    const IadmMetalOptions o = iadm_options(s);
+    /* Each scale's DWT once, then the decouple, CSF and reductions per
+     * viewing distance, each into its own buffers (ADR-2795). The encoders
+     * run in order, and a distance's stages write only csf_a, csf_f and its
+     * reduction buffer, so the next distance reads the bands the DWT left. */
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
-        IadmDims d;
-        IadmCsf c;
-        iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);
-        IadmMetalStage stages[IADM_METAL_MAX_STAGES];
-        const unsigned count = iadm_metal_stages(&o, &s->geom, scale, stages);
-        for (unsigned i = 0; i < count; ++i) {
-            encode_stage(s, cmd, &stages[i], scale, &d, &c);
+        for (unsigned v = 0; v < iadm_views(s); ++v) {
+            const IadmMetalOptions o = iadm_options(s, v);
+            IadmDims d;
+            IadmCsf c;
+            iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);
+            IadmMetalStage stages[IADM_METAL_MAX_STAGES];
+            const unsigned count = iadm_metal_view_stages(&o, &s->geom, scale, v, stages);
+            void *const accum = v ? s->accum_x[scale] : s->accum[scale];
+            for (unsigned i = 0; i < count; ++i) {
+                encode_stage(s, cmd, &stages[i], scale, &d, &c, accum);
+            }
         }
     }
 
@@ -507,19 +556,22 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPictur
 }
 
 static int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const IadmMetalScores *r,
-                       unsigned index)
+                       unsigned index, unsigned view)
 {
-    VmafNamedScore values[18] = {
-        {.name="VMAF_integer_feature_adm2_score", .value=r->score},
-        {.name="VMAF_integer_feature_aim_score", .value=r->score_aim},
-        {.name="VMAF_integer_feature_adm3_score", .value=r->score_adm3},
-        {.name="integer_adm_scale0", .value=r->scale_scores[0]},
-        {.name="integer_adm_scale1", .value=r->scale_scores[1]},
-        {.name="integer_adm_scale2", .value=r->scale_scores[2]},
-        {.name="integer_adm_scale3", .value=r->scale_scores[3]},
+    /* View 1 files the second distance's seven scores under the keys the
+     * dictionary maps to that distance's names (ADR-2795); the debug scores
+     * are the first distance's only, as on the CPU. */
+    const char *const *names = view ? vmaf_adm_extra_view_keys : vmaf_adm_view_names;
+    const double view_values[VMAF_ADM_VIEW_SCORE_COUNT] = {
+        r->score,           r->score_aim,       r->score_adm3,      r->scale_scores[0],
+        r->scale_scores[1], r->scale_scores[2], r->scale_scores[3],
     };
-    size_t value_count = 7u;
-    if (s->debug) {
+    VmafNamedScore values[18] = {};
+    for (size_t i = 0u; i < VMAF_ADM_VIEW_SCORE_COUNT; ++i) {
+        values[i] = VmafNamedScore{.name=names[i], .value=view_values[i]};
+    }
+    size_t value_count = VMAF_ADM_VIEW_SCORE_COUNT;
+    if (s->debug && view == 0u) {
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
@@ -538,15 +590,21 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureColl
 {
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
 
-    const uint32_t *accum[IADM_METAL_NUM_SCALES];
-    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
-        accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)s->accum[scale] contents];
+    /* Every viewing distance's scores, the first distance's first, as the
+     * CPU files them. */
+    int err = 0;
+    for (unsigned v = 0; v < iadm_views(s) && err == 0; ++v) {
+        const uint32_t *accum[IADM_METAL_NUM_SCALES];
+        for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
+            void *const buf = v ? s->accum_x[scale] : s->accum[scale];
+            accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)buf contents];
+        }
+        const IadmMetalOptions o = iadm_options(s, v);
+        IadmMetalScores r;
+        err = iadm_metal_scores(&o, &s->geom, accum, index, &r);
+        if (err == 0) { err = emit_scores(s, fc, &r, index, v); }
     }
-    const IadmMetalOptions o = iadm_options(s);
-    IadmMetalScores r;
-    const int err = iadm_metal_scores(&o, &s->geom, accum, index, &r);
-    if (err) { return err; }
-    return emit_scores(s, fc, &r, index);
+    return err;
 }
 
 int close_fex_metal(VmafFeatureExtractor *fex)
@@ -610,6 +668,8 @@ VmafFeatureExtractor vmaf_fex_integer_adm_metal = {
     .priv_size         = sizeof(IntegerAdmStateMetal),
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
     .provided_features = provided_features,
+    .merge             = vmaf_adm_merge_view_dist,
+    .extend_name_dict  = vmaf_adm_extend_name_dict,
     .chars = {
         .n_dispatches_per_frame = 6 * IADM_METAL_NUM_SCALES,
         .is_reduction_only      = false,

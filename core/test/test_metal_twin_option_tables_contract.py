@@ -69,10 +69,6 @@ PAIRS = {
     "ciede": ("ciede.c", "metal/integer_ciede_metal.mm"),
 }
 KNOWN_GAPS = {
-    # ADR-2795: the second ADM viewing distance reaches the CPU extractor and
-    # its Rust twin first; the Metal twin takes it in its own pull request of
-    # the stack, which deletes this gap (a closed gap fails the test).
-    "adm": ["the twin lacks adm_norm_view_dist_extra"],
     # Every float_adm twin runs the default CSF mode only and marks the
     # option default-only, so another mode keeps the CPU (ADR-1316).
     "float_adm": [

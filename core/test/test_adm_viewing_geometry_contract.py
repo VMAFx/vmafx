@@ -114,7 +114,10 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
 
     def test_metal_parity_harness_releases_each_resource_once(self) -> None:
         source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
-        context = function_body(source, "adm_context")
+        # adm_context() registers through use_adm(), once per registration
+        # (two for the merged viewing distances of ADR-2795).
+        self.assertIn("use_adm(", function_body(source, "adm_context"))
+        context = function_body(source, "use_adm")
         registration = context.find("vmaf_use_feature(")
         dict_free = context.find("vmaf_feature_dictionary_free(&opts)")
         self.assertGreaterEqual(registration, 0)

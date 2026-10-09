@@ -132,6 +132,13 @@ void iadm_metal_uniforms(const IadmMetalOptions *o, const IadmMetalGeometry *g, 
 unsigned iadm_metal_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g, int scale,
                            IadmMetalStage stages[IADM_METAL_MAX_STAGES]);
 
+/* The dispatches of `scale` at viewing distance `view` (ADR-2795), in order;
+ * returns their count. View 0 runs every stage of iadm_metal_stages(); a
+ * later view only the stages after the DWT, which read the bands view 0's
+ * DWT left, with `o` at that view's distance and its own reduction buffers. */
+unsigned iadm_metal_view_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g, int scale,
+                                unsigned view, IadmMetalStage stages[IADM_METAL_MAX_STAGES]);
+
 /* The scores of frame `index` from the four scales' reduction buffers, as
  * integer_adm.c's integer_compute_adm() and extract() form them. Returns the
  * first error of the CPU's checks (-EINVAL for a non-finite or undefined

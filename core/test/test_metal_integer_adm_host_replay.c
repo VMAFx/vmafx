@@ -58,12 +58,14 @@
  * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
  * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define MAX_KEYS 18u
+#define MAX_KEYS 32u
 #define MAX_OPTS 6u
 #define KEY_LEN 96u
 #define GUARD_MIN 256u
 #define GUARD_FILL 0xA5u
-#define N_BUFFERS (6u + 3u * IADM_METAL_NUM_SCALES)
+/* Sources, DWT rows, CSF planes; per scale two bands and the reduction slots
+ * of each of the two viewing distances (ADR-2795). */
+#define N_BUFFERS (6u + 4u * IADM_METAL_NUM_SCALES)
 
 typedef unsigned (*SampleFn)(unsigned row, unsigned col, bool distorted, unsigned bpc,
                              const void *ctx);
@@ -80,6 +82,8 @@ typedef struct ReplayCase {
     unsigned bpc;
     bool scalar; /* the CPU leg runs without SIMD */
     bool debug;
+    const char *nvde;    /* a second viewing distance (ADR-2795), NULL for none */
+    const char *suffix2; /* feature-name suffix of the second distance */
 } ReplayCase;
 
 /* --- pictures ----------------------------------------------------------- */
@@ -223,17 +227,26 @@ static size_t case_keys(const ReplayCase *c, char keys[MAX_KEYS][KEY_LEN])
     for (; n < 7u; n++) {
         (void)snprintf(keys[n], KEY_LEN, "%s%s", c->suffix ? stem[n] : plain[n], sfx);
     }
-    if (!c->debug) {
-        return n;
+    if (c->debug) {
+        (void)snprintf(keys[n++], KEY_LEN, "integer_adm%s", sfx);
+        (void)snprintf(keys[n++], KEY_LEN, "integer_adm_num%s", sfx);
+        (void)snprintf(keys[n++], KEY_LEN, "integer_adm_den%s", sfx);
+        for (unsigned s = 0u; s < IADM_METAL_NUM_SCALES; s++) {
+            (void)snprintf(keys[n++], KEY_LEN, "integer_adm_num_scale%u%s", s, sfx);
+            (void)snprintf(keys[n++], KEY_LEN, "integer_adm_den_scale%u%s", s, sfx);
+        }
     }
-    (void)snprintf(keys[n++], KEY_LEN, "integer_adm%s", sfx);
-    (void)snprintf(keys[n++], KEY_LEN, "integer_adm_num%s", sfx);
-    (void)snprintf(keys[n++], KEY_LEN, "integer_adm_den%s", sfx);
-    for (unsigned s = 0u; s < IADM_METAL_NUM_SCALES; s++) {
-        (void)snprintf(keys[n++], KEY_LEN, "integer_adm_num_scale%u%s", s, sfx);
-        (void)snprintf(keys[n++], KEY_LEN, "integer_adm_den_scale%u%s", s, sfx);
+    /* The second distance's seven scores, after the first distance's. */
+    for (unsigned i = 0u; c->nvde && i < 7u; i++) {
+        (void)snprintf(keys[n++], KEY_LEN, "%s%s", stem[i], c->suffix2);
     }
     return n;
+}
+
+/* Where the second distance's values start: after the first's keys. */
+static size_t second_view_at(const ReplayCase *c)
+{
+    return c->debug ? 18u : 7u;
 }
 
 static void replay_values(const IadmMetalScores *r, double out[MAX_KEYS])
@@ -267,6 +280,9 @@ static int cpu_context(VmafContext **vmaf, const ReplayCase *c)
     }
     if (!err && c->debug) {
         err = vmaf_feature_dictionary_set(&opts, "debug", "true");
+    }
+    if (!err && c->nvde) {
+        err = vmaf_feature_dictionary_set(&opts, "adm_norm_view_dist_extra", c->nvde);
     }
     if (!err) {
         /* vmaf_use_feature() takes the dictionary over, on failure too. */
@@ -310,6 +326,7 @@ static int cpu_scores(const ReplayCase *c, char keys[MAX_KEYS][KEY_LEN], size_t 
 
 typedef struct ReplayFrame {
     IadmReplayBuffers b;
+    uint8_t *accum_x[IADM_METAL_NUM_SCALES]; /* the second viewing distance's slots */
     uint8_t *all[N_BUFFERS];
     size_t bytes[N_BUFFERS];
     unsigned count;
@@ -352,6 +369,7 @@ static bool frame_alloc(ReplayFrame *f, const IadmMetalGeometry *g)
         f->b.ref_band[s] = frame_buffer(f, band);
         f->b.dis_band[s] = frame_buffer(f, band);
         f->b.accum[s] = frame_buffer(f, iadm_metal_buffer_bytes(g, IADM_METAL_BUF_ACCUM, s));
+        f->accum_x[s] = frame_buffer(f, iadm_metal_buffer_bytes(g, IADM_METAL_BUF_ACCUM, s));
     }
     return f->count == N_BUFFERS;
 }
@@ -453,29 +471,64 @@ static int replay_options(const ReplayCase *c, IadmMetalOptions *o)
     return err;
 }
 
-/* integer_adm_metal.mm's submit_fex_metal() on the host. */
-static void replay_frame(const IadmMetalOptions *o, const IadmMetalGeometry *g, ReplayFrame *f)
+/* integer_adm_metal.mm's submit_fex_metal() on the host: each scale's DWT
+ * once, then the other stages per viewing distance, the second (`o[1]`, when
+ * `views` is 2) into its own reduction slots. */
+static void replay_frame(const IadmMetalOptions o[2], unsigned views, const IadmMetalGeometry *g,
+                         ReplayFrame *f)
 {
+    IadmReplayBuffers second = f->b;
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; scale++) {
-        IadmDims d;
-        IadmCsf c;
-        iadm_metal_uniforms(o, g, scale, &d, &c);
-        IadmMetalStage stages[IADM_METAL_MAX_STAGES];
-        const unsigned count = iadm_metal_stages(o, g, scale, stages);
-        for (unsigned i = 0u; i < count; i++) {
-            iadm_replay_stage(&stages[i], scale, &d, &c, &f->b);
+        second.accum[scale] = f->accum_x[scale];
+    }
+    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; scale++) {
+        for (unsigned v = 0u; v < views; v++) {
+            IadmDims d;
+            IadmCsf c;
+            iadm_metal_uniforms(&o[v], g, scale, &d, &c);
+            IadmMetalStage stages[IADM_METAL_MAX_STAGES];
+            const unsigned count = iadm_metal_view_stages(&o[v], g, scale, v, stages);
+            for (unsigned i = 0u; i < count; i++) {
+                iadm_replay_stage(&stages[i], scale, &d, &c, v ? &second : &f->b);
+            }
         }
     }
+}
+
+/* The scores of viewing distance `view` from its reduction slots. */
+static int replay_view_scores(const IadmMetalOptions *o, const IadmMetalGeometry *g,
+                              const ReplayFrame *f, unsigned view, IadmMetalScores *r)
+{
+    uint8_t *const *slots = view ? f->accum_x : f->b.accum;
+    const uint32_t *const accum[IADM_METAL_NUM_SCALES] = {
+        (const uint32_t *)slots[0], (const uint32_t *)slots[1], (const uint32_t *)slots[2],
+        (const uint32_t *)slots[3]};
+    return iadm_metal_scores(o, g, accum, 0u, r);
+}
+
+/* The case's options at each of its viewing distances; their count. */
+static int replay_view_options(const ReplayCase *c, IadmMetalOptions o[2], unsigned *views)
+{
+    int err = replay_options(c, &o[0]);
+    *views = c->nvde ? 2u : 1u;
+    o[1] = o[0];
+    if (!err && c->nvde) {
+        char *end = NULL;
+        o[1].adm_norm_view_dist = strtod(c->nvde, &end);
+        err = (end == c->nvde) ? -EINVAL : 0;
+    }
+    for (unsigned v = 0u; v < *views && !err; v++) {
+        err = iadm_metal_check_options(&o[v]);
+    }
+    return err;
 }
 
 /* The twin's values of the case, and how many buffers it overran. */
 static int replay_scores(const ReplayCase *c, double out[MAX_KEYS], unsigned *overruns)
 {
-    IadmMetalOptions o;
-    int err = replay_options(c, &o);
-    if (!err) {
-        err = iadm_metal_check_options(&o);
-    }
+    IadmMetalOptions o[2];
+    unsigned views = 1u;
+    int err = replay_view_options(c, o, &views);
     if (err) {
         return err;
     }
@@ -487,17 +540,22 @@ static int replay_scores(const ReplayCase *c, double out[MAX_KEYS], unsigned *ov
         return -ENOMEM;
     }
     frame_sources(&f, c);
-    replay_frame(&o, &g, &f);
+    replay_frame(o, views, &g, &f);
     *overruns = frame_overruns(&f);
-    const uint32_t *const accum[IADM_METAL_NUM_SCALES] = {
-        (const uint32_t *)f.b.accum[0], (const uint32_t *)f.b.accum[1],
-        (const uint32_t *)f.b.accum[2], (const uint32_t *)f.b.accum[3]};
     IadmMetalScores r;
-    err = iadm_metal_scores(&o, &g, accum, 0u, &r);
-    frame_free(&f);
+    err = replay_view_scores(&o[0], &g, &f, 0u, &r);
     if (!err) {
         replay_values(&r, out);
     }
+    if (!err && views > 1u) {
+        err = replay_view_scores(&o[1], &g, &f, 1u, &r);
+        double second[MAX_KEYS];
+        replay_values(&r, second);
+        for (size_t i = 0u; i < 7u; i++) {
+            out[second_view_at(c) + i] = second[i];
+        }
+    }
+    frame_free(&f);
     return err;
 }
 
@@ -585,6 +643,23 @@ static char *test_model_options(void)
          .opts = {{"adm_csf_mode", "3"}}},
     };
     mu_assert("integer_adm_metal's replay differs from the CPU under the model options",
+              list_mismatches(list, LIST_LEN(list)) == 0u);
+    return NULL;
+}
+
+/* ADR-2795: a second viewing distance on the DWT of the first, at 8 and 10
+ * bits and under the model options (the vmaf_v1.0.16_3d0h / _5d0h pair). */
+static char *test_two_viewing_distances(void)
+{
+    static const ReplayCase list[] = {
+        {CASE("two views", 256u, 144u, 8u, textured_sample), .debug = true, .nvde = "5",
+         .suffix2 = "_nvd_5"},
+        {CASE("two views, 10-bit", 256u, 144u, 10u, textured_sample), .debug = true, .nvde = "5",
+         .suffix2 = "_nvd_5"},
+        {CASE("two views, model options", 256u, 144u, 8u, textured_sample), .suffix = MODEL_SUFFIX,
+         MODEL_OPTS, .nvde = "5", .suffix2 = "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02_nvd_5_apn_2"},
+    };
+    mu_assert("integer_adm_metal's replay differs from the CPU at two viewing distances",
               list_mismatches(list, LIST_LEN(list)) == 0u);
     return NULL;
 }
@@ -678,6 +753,7 @@ char *run_tests(void)
     mu_run_test(test_default_options);
     mu_run_test(test_model_options);
     mu_run_test(test_skip_scale0);
+    mu_run_test(test_two_viewing_distances);
     mu_run_test(test_tiny_and_extreme);
     mu_run_test(test_gain_limits);
     mu_run_test(test_netflix_crop);

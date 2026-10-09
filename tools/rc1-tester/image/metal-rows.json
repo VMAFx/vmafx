@@ -1205,6 +1205,20 @@
      "feature": "float_ms_ssim"
     }
    ]
+  },
+  {
+   "id": "T-METAL-ADM-SECOND-VIEW-DIST-DEVICE-2026-10-09",
+   "closes_when": "integer_adm_metal at two viewing distances, in one context and as two folded registrations, equals the CPU on every output of both distances",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_two_views_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_merged_registrations_exact"
+    }
+   ]
   }
  ]
 }

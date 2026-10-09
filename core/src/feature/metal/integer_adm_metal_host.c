@@ -297,6 +297,27 @@ unsigned iadm_metal_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g
     return n;
 }
 
+static bool iadm_is_dwt(IadmMetalKernel entry)
+{
+    return entry == IADM_METAL_DWT_VERT_8BPC || entry == IADM_METAL_DWT_VERT_16BPC ||
+           entry == IADM_METAL_DWT_VERT_S1 || entry == IADM_METAL_DWT_VERT_S123 ||
+           entry == IADM_METAL_DWT_HORI_S0 || entry == IADM_METAL_DWT_HORI_S123;
+}
+
+unsigned iadm_metal_view_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g, int scale,
+                                unsigned view, IadmMetalStage stages[IADM_METAL_MAX_STAGES])
+{
+    IadmMetalStage all[IADM_METAL_MAX_STAGES];
+    const unsigned count = iadm_metal_stages(o, g, scale, all);
+    unsigned n = 0u;
+    for (unsigned i = 0u; i < count; ++i) {
+        if (view == 0u || !iadm_is_dwt(all[i].entry)) {
+            stages[n++] = all[i];
+        }
+    }
+    return n;
+}
+
 static uint64_t iadm_slot(const uint32_t *accum, unsigned wg, unsigned slot)
 {
     return ((uint64_t)accum[vmaf_mtl_iadm_accum_word(wg, slot, 1u)] << 32) |

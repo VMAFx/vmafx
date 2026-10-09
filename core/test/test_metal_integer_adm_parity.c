@@ -59,7 +59,7 @@
 
 static const char *const TWIN_NAME = METAL_TWIN("integer_adm_metal", "adm");
 
-#define MAX_KEYS 18u
+#define MAX_KEYS 32u
 #define MAX_OPTS 8u
 
 typedef struct Geometry {
@@ -82,6 +82,10 @@ typedef struct AdmCase {
     const char *opts[MAX_OPTS][2];
     size_t n_keys;
     const char *keys[MAX_KEYS];
+    /* ADR-2795: register the twin a second time at this adm_norm_view_dist,
+     * as two models do, against one CPU context with it as
+     * adm_norm_view_dist_extra; NULL for one registration. */
+    const char *merge_nvd;
 } AdmCase;
 
 /* A 32-bit integer hash (lowbias32) of the position, seeded per picture.
@@ -222,8 +226,29 @@ static int feed_frame(VmafContext *vmaf, const AdmCase *c)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
+/* Register `name` with the case's options plus `extra` = `value` when
+ * `extra` is set. */
+static int use_adm(VmafContext *vmaf, const char *name, const AdmCase *c, const char *extra,
+                   const char *value)
+{
+    VmafFeatureDictionary *opts = NULL;
+    int err = 0;
+    for (size_t i = 0; i < c->n_opts && !err; i++) {
+        err = vmaf_feature_dictionary_set(&opts, c->opts[i][0], c->opts[i][1]);
+    }
+    if (!err && extra) {
+        err = vmaf_feature_dictionary_set(&opts, extra, value);
+    }
+    if (!err) {
+        /* vmaf_use_feature() takes the dictionary over, on failure too. */
+        return vmaf_use_feature(vmaf, name, opts);
+    }
+    (void)vmaf_feature_dictionary_free(&opts);
+    return err;
+}
+
 /* A context with the CPU `adm`, or with the twin on `state`, carrying the
- * case's options. */
+ * case's options (and, with `merge_nvd`, the second viewing distance). */
 static int adm_context(VmafContext **vmaf, void *state, const AdmCase *c)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -234,15 +259,16 @@ static int adm_context(VmafContext **vmaf, void *state, const AdmCase *c)
     if (!err && state) {
         err = metal_twin_import(*vmaf, state);
     }
-    VmafFeatureDictionary *opts = NULL;
-    for (size_t i = 0; i < c->n_opts && !err; i++) {
-        err = vmaf_feature_dictionary_set(&opts, c->opts[i][0], c->opts[i][1]);
+    if (err) {
+        return err;
     }
-    if (!err) {
-        /* vmaf_use_feature() takes the dictionary over, on failure too. */
-        err = vmaf_use_feature(*vmaf, state ? TWIN_NAME : "adm", opts);
-    } else {
-        (void)vmaf_feature_dictionary_free(&opts);
+    if (!state) {
+        return use_adm(*vmaf, "adm", c, c->merge_nvd ? "adm_norm_view_dist_extra" : NULL,
+                       c->merge_nvd);
+    }
+    err = use_adm(*vmaf, TWIN_NAME, c, NULL, NULL);
+    if (!err && c->merge_nvd) {
+        err = use_adm(*vmaf, TWIN_NAME, c, "adm_norm_view_dist", c->merge_nvd);
     }
     return err;
 }
@@ -633,11 +659,70 @@ static void run_default_cases(void)
     metal_run_case(test_adm_shift_boundary_area_exact);
 }
 
+/* ADR-2795: one context at two viewing distances, with `debug` at 8 and 10
+ * bits: the first distance keeps its names and its debug scores, the second
+ * files its seven under the names `adm_norm_view_dist=5` gives them. */
+#define TWO_VIEW_CASE(name_, bpc_)                                                                 \
+    {                                                                                              \
+        .name = (name_), .geometry = {256u, 144u}, .bpc = (bpc_), .sample = textured_sample,       \
+        .n_opts = 2u, .opts = {{"debug", "true"}, {"adm_norm_view_dist_extra", "5"}},              \
+        .n_keys = N_DEFAULT_DEBUG_KEYS + 7u,                                                       \
+        .keys = {DEFAULT_DEBUG_KEYS, ADM_SCORE_KEYS("_nvd_5")}                                     \
+    }
+
+#define MODEL_OPTS_6                                                                               \
+    {"adm_csf_mode", "2"}, {"adm_dlm_weight", "0.7"}, {"adm_enhn_gain_limit", "1.0"},              \
+        {"adm_min_val", "0.5"}, {"adm_noise_weight", "0.02"}, {"adm_p_norm", "2.0"}
+#define MODEL_SUFFIX_5H "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02_nvd_5_apn_2"
+
+static char *test_adm_two_views_exact(void)
+{
+    static const AdmCase c8 = TWO_VIEW_CASE("adm two views", 8u);
+    static const AdmCase c10 = TWO_VIEW_CASE("adm two views 10-bit", 10u);
+    static const AdmCase model = {
+        .name = "adm two views model options",
+        .geometry = {256u, 144u},
+        .bpc = 8u,
+        .sample = textured_sample,
+        .n_opts = 7u,
+        .opts = {MODEL_OPTS_6, {"adm_norm_view_dist_extra", "5"}},
+        .n_keys = 14u,
+        .keys = {ADM_SCORE_KEYS(MODEL_SUFFIX), ADM_SCORE_KEYS(MODEL_SUFFIX_5H)}};
+    char *msg = check_case(&c8, "integer_adm_metal differs from the CPU at two viewing distances");
+    if (!msg) {
+        msg = check_case(&c10, "integer_adm_metal differs from the CPU at two distances, 10-bit");
+    }
+    return msg ?
+               msg :
+               check_case(&model,
+                          "integer_adm_metal differs from the CPU at two distances, model options");
+}
+
+/* ADR-2795: the twin registered at 3H and at 5H (the registry folds the
+ * second into the first, as two models do) scores as one CPU context with
+ * both distances. */
+static char *test_adm_merged_registrations_exact(void)
+{
+    static const AdmCase c = {
+        .name = "adm merged registrations",
+        .geometry = {256u, 144u},
+        .bpc = 8u,
+        .sample = textured_sample,
+        .n_opts = 6u,
+        .opts = {MODEL_OPTS_6},
+        .n_keys = 14u,
+        .keys = {ADM_SCORE_KEYS(MODEL_SUFFIX), ADM_SCORE_KEYS(MODEL_SUFFIX_5H)},
+        .merge_nvd = "5"};
+    return check_case(&c, "integer_adm_metal registered at 3H and 5H differs from the CPU");
+}
+
 static void run_option_cases(void)
 {
     metal_run_case(test_adm_model_options_exact);
     metal_run_case(test_adm_barten_mode_exact);
     metal_run_case(test_adm_skip_scale0_exact);
+    metal_run_case(test_adm_two_views_exact);
+    metal_run_case(test_adm_merged_registrations_exact);
 }
 
 static void run_content_cases(void)
