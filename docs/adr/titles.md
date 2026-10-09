@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1356), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1357), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5419,6 +5419,10 @@ Every ADR, one heading each (1356), so the site search finds an ADR by its title
 ## ADR-2795: Integer ADM evaluates two viewing distances in one context
 
 [2795-adm-shared-viewing-distances](2795-adm-shared-viewing-distances.md)
+
+## ADR-2796: Every clang-tidy ratchet lane is a hosted, path-routed required check
+
+[2796-hosted-tidy-all-lanes](2796-hosted-tidy-all-lanes.md)
 
 ## ADR-2817: Re-pin the Pelorus mirror to v0.3.0, its EUPL-1.2 release, and check the licence on every sync
 
