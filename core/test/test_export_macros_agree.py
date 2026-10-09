@@ -67,6 +67,23 @@ def expansions(include_dirs: list[Path], defines: list[str]) -> dict[str, str]:
     return {name: (body or "").strip() for name, body in DEFINE.findall(done.stdout)}
 
 
+def native_is_mingw_gcc() -> bool:
+    """Whether the build's own compiler is GCC targeting MinGW, as on the UCRT64 leg.
+
+    The "native" family then preprocesses as "MinGW GCC" does, so a definition
+    without the MinGW branch is wrong in both families.
+    """
+    argv = [*CC, "-E", "-dM", "-x", "c", "-"]
+    # The build's compiler on an empty source; no shell.
+    done = subprocess.run(  # noqa: S603
+        argv, input="", capture_output=True, text=True, check=False, timeout=TIMEOUT
+    )
+    if done.returncode != 0:
+        raise RuntimeError(f"{' '.join(argv)} failed: {done.stderr}")
+    defined = set(re.findall(r"^#define (\w+)", done.stdout, re.MULTILINE))
+    return "__MINGW32__" in defined and "__clang__" not in defined
+
+
 def disagreements(include_dirs: list[Path]) -> list[str]:
     out = []
     for family, defines in FAMILIES.items():
@@ -97,8 +114,9 @@ class ExportMacrosAgree(unittest.TestCase):
             macros = (INCLUDE / "libvmaf" / "macros.h").read_text(encoding="utf-8")
             (planted / "libvmaf" / "macros.h").write_text(macros, encoding="utf-8")
             found = disagreements([planted])
-        self.assertEqual(len(found), 1)
-        self.assertTrue(found[0].startswith("MinGW GCC:"), found)
+        expected = {"MinGW GCC", "native"} if native_is_mingw_gcc() else {"MinGW GCC"}
+        self.assertEqual({entry.split(":", 1)[0] for entry in found}, expected, found)
+        self.assertEqual(len(found), len(expected), found)
 
 
 if __name__ == "__main__":

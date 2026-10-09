@@ -874,6 +874,8 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-yaml
             vim make diffutils
           update: true
           path-type: inherit
