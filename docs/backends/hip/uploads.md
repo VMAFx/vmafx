@@ -12,8 +12,8 @@ process; the `vmaf` tool creates one.
 
 The VMAFx API imports frames a producer holds on a HIP device: device
 pointers, dma-bufs (as external memory, `hipImportExternalMemory()`), HIP
-arrays and OpenGL textures, with HIP event, sync_file and GL sync acquire
-fences ([HIP devices](../../api/vmafx/index.md#hip-devices),
+arrays and OpenGL textures (through EGL dma-bufs), with HIP event, sync_file
+and GL sync acquire fences ([HIP devices](../../api/vmafx/index.md#hip-devices),
 [ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)). An imported frame is
 a `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture that carries the device's
 library stream. Where a twin uploads a host picture, it copies a device

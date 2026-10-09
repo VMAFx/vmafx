@@ -349,6 +349,7 @@ core/src/vmafx/context_frames.c
 core/src/vmafx/convert.c
 core/src/vmafx/device.c
 core/src/vmafx/device_context.c
+core/src/vmafx/egl_export.c
 core/src/vmafx/error.c
 core/src/vmafx/exactness.c
 core/src/vmafx/exactness_gen.c

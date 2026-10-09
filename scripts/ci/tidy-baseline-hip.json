@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 497,
+  "tus": 498,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -195,6 +195,7 @@
     "core/src/thread_pool.c",
     "core/src/vmafx/device.c",
     "core/src/vmafx/device_context.c",
+    "core/src/vmafx/egl_export.c",
     "core/src/vmafx/fence.c",
     "core/src/vmafx/frame_import.c",
     "core/src/vmafx/frame_import_admit.c",
@@ -572,6 +573,23 @@
         }
       },
       "previous_baseline_sha256": "0cbd1449757321eb4d62771df26aa73202a91384e8221c1a4c34927a3552e4ba"
+    },
+    {
+      "sources": [
+        "core/src/hip/import_frame.c",
+        "core/src/hip/import_gl.c",
+        "core/src/vmafx/egl_export.c",
+        "core/test/test_vmafx_import_hip_gl.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/egl_export.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b87d120cf5b35dc914e596ed1c24280207f01be1a40a6e97e6818a907e738028"
     }
   ]
 }

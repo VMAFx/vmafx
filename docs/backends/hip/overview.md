@@ -291,10 +291,11 @@ Open items only; the ledger row ids are in
   checked on the host: ROCm 10.1 imports no external semaphore that could
   carry one (ROCm 7.2.4 aborts the process trying), so no HIP stream waits on
   or signals one (`T-HIP-ROCM-NO-SYNC-FILE-SEMAPHORE-2026-10-06`). OpenGL
-  textures import only from a GLX context on the device's GPU, and not at all
-  with ROCm 10.1, whose runtime maps a texture but cannot read it: the import
-  is refused naming the runtime (`T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06`;
-  ROCm 7.2.4 reads them). A HIP device has no frame pools.
+  textures are imported through EGL's dma-buf export from the current EGL
+  context, because the runtime's own GL interop cannot read a texture with
+  ROCm 10.1 ([ADR-2132](../../adr/2132-hip-gl-textures-through-egl-dmabuf.md));
+  a tiled export is copied on the GPU and needs
+  `VMAFX_IMPORT_ALLOW_COPY`. A HIP device has no frame pools.
 - **Six twins stage their own copy of the frame** instead of reading the
   shared planes: `integer_ms_ssim_hip`, `psnr_hvs_hip`, `cambi_hip`,
   `speed_chroma_hip`, `speed_temporal_hip` and `ssimulacra2_hip`

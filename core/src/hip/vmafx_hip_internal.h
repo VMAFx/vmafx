@@ -7,7 +7,7 @@
 
 /*
  * State the files of the VMAFx HIP lane share (import_device.c,
- * import_frame.c, import_dmabuf.c, import_fence.c, import_gl.c; ADR-2092).
+ * import_frame.c, import_dmabuf.c, import_fence.c, import_gl.c; ADR-2092, ADR-2132).
  */
 
 #ifndef VMAF_SRC_HIP_VMAFX_HIP_INTERNAL_H_
@@ -67,21 +67,13 @@ typedef struct VmafxHipDevice {
     VmafxHipGrave *graves;
 } VmafxHipDevice;
 
-/* GL textures one import registered and mapped (import_gl.c). */
-typedef struct VmafxHipGl {
-    hipGraphicsResource_t res[VMAFX_HIP_PLANES];
-    uint32_t n;  /* registered */
-    bool mapped; /* mapped on the library stream */
-} VmafxHipGl;
-
 /* The lane's state of one frame, freed by its release. */
 typedef struct VmafxHipFrame {
     VmafxHipDevice *dev;
     void *owned;           /* converted planes, stream-ordered on the library stream */
     VmafxHipDmabuf dmabuf; /* external memory the planes are in */
     uint32_t release_slot; /* 1 + the slot of its HIP_EVENT release fence; 0: none */
-    VmafxHipGl gl;
-    pthread_mutex_t lock; /* release-fence calls on several threads */
+    pthread_mutex_t lock;  /* release-fence calls on several threads */
 } VmafxHipFrame;
 
 /* Device of a VmafxDevice of the HIP backend. */
@@ -127,12 +119,14 @@ int vmafx_hip_dmabuf_bury(VmafxHipFrame *hf);
  * free every one). */
 void vmafx_hip_graves_reap(VmafxHipDevice *dev, bool all);
 
-/* GL interop (import_gl.c): check the textures of an import, register and
- * map them on the library stream, filling `arrays`; the acquire fence of
- * kind GL_SYNC is checked first. */
-VmafxStatus vmafx_hip_gl_map(const VmafxReport *report, VmafxHipFrame *hf,
-                             const VmafxFrameImport *d, hipArray_t arrays[3]);
-/* Unmap and unregister the GL textures of an import. */
-int vmafx_hip_gl_release(VmafxHipFrame *hf);
+/* GL textures (import_gl.c): the dma-bufs of the textures of a GL_TEXTURE
+ * import in `out`, a DMABUF import of the same frame (ADR-2132); `*copied`
+ * tells whether a texture was copied on the GPU into a linear dma-buf. The
+ * acquire fence of `out` is NONE: the caller checked the GL sync. */
+VmafxStatus vmafx_hip_gl_export(const VmafxReport *report, const VmafxHipDevice *dev,
+                                const VmafxFrameImport *d, const VmafxImportLayout *layout,
+                                VmafxFrameImport *out, bool *copied);
+/* Close the exported descriptors of `dmabuf` (the import duplicated them). */
+void vmafx_hip_gl_close(VmafxFrameImport *dmabuf, uint32_t n_planes);
 
 #endif /* VMAF_SRC_HIP_VMAFX_HIP_INTERNAL_H_ */

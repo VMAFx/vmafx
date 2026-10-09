@@ -15,15 +15,15 @@ depend on:
   psnr_hip and float_vif_hip read on the null stream);
 - an import submits its library-stream work before the frame is bound (the
   gfx1036 let later copies overtake an unsubmitted array readout);
-- a GL import checks for a GLX context of the device's GPU before any call
-  into the runtime's GL interop (which crashes the process once its first
-  call found no usable context);
+- a GL import is exported as dma-bufs (ADR-2132), never read through the
+  runtime's GL interop (unreadable on ROCm 10.1, crashing on ROCm 7.2 after a
+  failed first call): the GL sync is checked before anything is exported, the
+  context's GPU is checked against the device's before any texture is
+  exported, a texture the driver exports tiled is copied on the GPU only with
+  VMAFX_IMPORT_ALLOW_COPY and the producer's pending writes are waited for;
 - a dma-buf is imported with its own size, and a larger size from the
   producer is refused (the runtime does not check it);
-- a SYNC_FILE release fence is refused, not faked;
-- a GL texture the runtime maps but refuses to read (every read on ROCm
-  10.1) is refused as unsupported naming desc.memory, not reported as a
-  device failure.
+- a SYNC_FILE release fence is refused, not faked.
 
 Every check has a planted-regression case that must be detected.
 """
@@ -40,12 +40,13 @@ SRC = ROOT / "core" / "src"
 PICTURE = "hip/picture_hip.c"
 FRAME = "hip/import_frame.c"
 GL = "hip/import_gl.c"
+EGL = "vmafx/egl_export.c"
 DMABUF = "hip/import_dmabuf.c"
 FENCE = "hip/import_fence.c"
 PSNR_HVS = "feature/hip/integer_psnr_hvs_hip.c"
 SS2 = "feature/hip/ssimulacra2_hip.c"
 MS_SSIM = "feature/hip/integer_ms_ssim_hip.c"
-SOURCES = (PICTURE, FRAME, GL, DMABUF, FENCE, PSNR_HVS, SS2, MS_SSIM)
+SOURCES = (PICTURE, FRAME, GL, EGL, DMABUF, FENCE, PSNR_HVS, SS2, MS_SSIM)
 
 
 def _sources() -> dict[str, str]:
@@ -121,20 +122,30 @@ def _import_failures(src: dict[str, str]) -> list[str]:
     bind = _function_body(src[FRAME], "bind_hip_frame")
     if not _in_order(bind, "enqueue_import(", "hipStreamQuery(", "bind_picture("):
         failures.append(f"{FRAME}: the import's work is left unsubmitted")
-    gl_map = _function_body(src[GL], "vmafx_hip_gl_map")
-    if not _in_order(gl_map, "check_gl_context(", "gl_devices(", "gl_register("):
-        failures.append(f"{GL}: the runtime's GL interop is called before the GLX check")
+    gl_import = _function_body(src[FRAME], "import_gl")
+    if not _in_order(
+        gl_import, "vmafx_gl_sync_acquire(", "vmafx_hip_gl_export(", "bind_hip_frame("
+    ):
+        failures.append(f"{FRAME}: a GL texture is exported before its GL sync is checked")
+    if "hipGraphics" in src[GL] + src[FRAME]:
+        failures.append(f"{GL}: a GL texture is read through the runtime's GL interop")
+    planes = _function_body(src[EGL], "vmafx_egl_export_planes")
+    if not _in_order(planes, "open_display(", "export_one("):
+        failures.append(f"{EGL}: a texture is exported before the context's GPU is checked")
+    opened = _function_body(src[EGL], "open_display")
+    if "strcasecmp(pci, device_pci)" not in opened:
+        failures.append(f"{EGL}: the context's GPU is not checked against the device's")
+    one = _function_body(src[EGL], "export_one")
+    if not _in_order(one, "if (!allow_copy ||", "linearise("):
+        failures.append(f"{EGL}: a tiled texture is copied without VMAFX_IMPORT_ALLOW_COPY")
+    if "writers_done(" not in planes:
+        failures.append(f"{EGL}: the producer's pending writes are not waited for")
     one = _function_body(src[DMABUF], "import_one")
     if ".size = dmabuf_size(own)" not in one:
         failures.append(f"{DMABUF}: a dma-buf is imported with a size the runtime does not check")
     extent = _function_body(src[DMABUF], "check_extent")
     if "p->size > actual" not in extent:
         failures.append(f"{DMABUF}: a size past the dma-buf is accepted")
-    failed = _function_body(src[FRAME], "fill_failed")
-    if not _in_order(
-        failed, "hipErrorInvalidValue", "VMAFX_MEMORY_GL_TEXTURE", "VMAFX_E_NOTSUP", '"desc.memory"'
-    ):
-        failures.append(f"{FRAME}: an unreadable GL texture is not refused as unsupported")
     refused = _function_body(src[FENCE], "release_kind_refused")
     if "VMAFX_FENCE_SYNC_FILE" not in refused or "VMAFX_E_NOTSUP" not in refused:
         failures.append(f"{FENCE}: a SYNC_FILE release fence is not refused")
@@ -213,29 +224,54 @@ class HipImportContractTest(unittest.TestCase):
         src = _replace(_sources(), FRAME, "    (void)hipStreamQuery(hf->dev->str);\n", "")
         self.assert_detected(src, "left unsubmitted")
 
-    def test_gl_interop_before_the_glx_check_is_detected(self) -> None:
+    def test_gl_export_before_the_sync_check_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FRAME,
+            '    VmafxStatus status = vmafx_gl_sync_acquire(report, &desc->acquire, "hip");',
+            "    VmafxStatus status = VMAFX_OK;",
+        )
+        self.assert_detected(src, "before its GL sync is checked")
+
+    def test_runtime_gl_interop_is_detected(self) -> None:
         src = _replace(
             _sources(),
             GL,
-            "    VmafxStatus status = check_gl_context(report, hf->dev);",
+            "/* NOLINTEND(modernize-use-nullptr) */",
+            "static void bad(void) { hipGraphicsMapResources(0, 0, 0); }",
+        )
+        self.assert_detected(src, "through the runtime's GL interop")
+
+    def test_export_before_the_gpu_check_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            EGL,
+            "    VmafxStatus status = open_display(report, backend, device_pci, &dpy, &ctx, node);",
             "    VmafxStatus status = VMAFX_OK;",
         )
-        self.assert_detected(src, "before the GLX check")
+        self.assert_detected(src, "before the context's GPU is checked")
+
+    def test_unchecked_gpu_is_detected(self) -> None:
+        src = _replace(_sources(), EGL, "strcasecmp(pci, device_pci)", "strcasecmp(pci, pci)")
+        self.assert_detected(src, "GPU is not checked against the device's")
+
+    def test_copy_without_allow_copy_is_detected(self) -> None:
+        src = _replace(
+            _sources(), EGL, "if (!allow_copy || !gbm_dev || !gl_ready())", "if (!gbm_dev)"
+        )
+        self.assert_detected(src, "without VMAFX_IMPORT_ALLOW_COPY")
+
+    def test_unwaited_writers_are_detected(self) -> None:
+        src = _replace(
+            _sources(), EGL, "const int w = writers_done(out[i].fd);", "const int w = 0;"
+        )
+        self.assert_detected(src, "pending writes are not waited for")
 
     def test_unchecked_dmabuf_size_is_detected(self) -> None:
         src = _replace(_sources(), DMABUF, ".size = dmabuf_size(own)", ".size = 0u")
         self.assert_detected(src, "size the runtime does not check")
         src = _replace(_sources(), DMABUF, "    if (p->size > actual) {", "    if (false) {")
         self.assert_detected(src, "past the dma-buf is accepted")
-
-    def test_unreadable_gl_texture_as_device_failure_is_detected(self) -> None:
-        src = _replace(
-            _sources(),
-            FRAME,
-            '    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "desc.memory",',
-            '    return VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "frame",',
-        )
-        self.assert_detected(src, "unreadable GL texture is not refused")
 
     def test_faked_sync_file_release_is_detected(self) -> None:
         src = _replace(

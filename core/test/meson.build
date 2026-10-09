@@ -415,7 +415,7 @@ test('test_hip_float_psnr_exact_contract',
 # planted regression per check.
 # ADR-2092: device-free source guard for the HIP lane of the VMAFx API (twins
 # read device pictures on the device, the null stream waits for the copies,
-# an import submits its work, the GLX check precedes the runtime's GL interop,
+# an import submits its work, GL textures are exported as dma-bufs (ADR-2132),
 # dma-bufs are imported with their own size, no faked SYNC_FILE release), with
 # a planted regression per check.
 test('test_vmafx_import_hip_contract',
@@ -8033,9 +8033,9 @@ test('test_hip_shared_frame', test_hip_shared_frame, suite : ['fast'])
 # core/src/vmafx/frame_import_hooks.h). Each needs the device (77 without
 # one) and runs alone on it; the bit-exactness run reads the Netflix fixtures
 # and testdata/bbb. With libgbm the producer side also writes dma-bufs on the
-# device's render node (VMAFX_TEST_HAVE_GBM); the GL test needs a GLX context
-# on the HIP device's GPU (DISPLAY) and skips without one. Linux: the
-# producers use POSIX threads, dma-bufs, sync_files and GLX.
+# device's render node (VMAFX_TEST_HAVE_GBM); the GL test needs an EGL context
+# on the HIP device's GPU and skips without one. Linux: the producers use
+# POSIX threads, dma-bufs, sync_files and EGL.
 vmafx_gbm_dep = dependency('gbm', required : false)
 vmafx_hip_test_args = vmaf_cflags_common + vmafx_test_dirs + ['-DHAVE_HIP=1',
     '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
@@ -8059,18 +8059,16 @@ foreach vmafx_hip_test : vmafx_hip_tests
         is_parallel : false,
         timeout : vmafx_hip_test[1])
 endforeach
-# The GL test renders through GLX (the HIP runtime's GL interop reads the
-# current GLX context only): built where libX11 and libGL are found.
-vmafx_x11_dep = dependency('x11', required : false)
-vmafx_gl_dep = dependency('gl', required : false)
-if host_machine.system() == 'linux' and vmafx_x11_dep.found() and vmafx_gl_dep.found()
+# The GL test (ADR-2132) renders through a headless EGL context on the HIP
+# device's GPU, with EGL and GL resolved at run time: no extra dependency.
+if host_machine.system() == 'linux'
     test_vmafx_import_hip_gl = executable('test_vmafx_import_hip_gl',
         ['test.c', 'test_vmafx_import_hip_gl.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
         link_with : vmafx_static_link,
         c_args : vmafx_hip_test_args,
-        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps, vmafx_x11_dep,
-                        vmafx_gl_dep],
+        dependencies : [math_lib, pthread_dependency, thread_lib, hip_deps,
+                        meson.get_compiler('c').find_library('dl', required : false)],
     )
     test('test_vmafx_import_hip_gl', test_vmafx_import_hip_gl,
         suite : ['gpu', 'hip'],

@@ -275,9 +275,9 @@ into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
 Every build imports host memory on the CPU device; a build with the CUDA
 backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
 devices ([CUDA devices](#cuda-devices) below), and a build with the HIP
-backend imports HIP device memory, dma-bufs, HIP arrays and OpenGL textures on
-HIP devices ([HIP devices](#hip-devices)). The SYCL and Metal imports arrive
-behind the same calls and types.
+backend imports HIP device memory, dma-bufs, HIP arrays and OpenGL textures
+(through EGL dma-bufs) on HIP devices ([HIP devices](#hip-devices)). The SYCL
+and Metal imports arrive behind the same calls and types.
 
 ### Devices
 
@@ -533,20 +533,27 @@ What a HIP device imports:
 | `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: a device address on the device; `pitch` in bytes | Planar planes are read where they are, at any offset and pitch; NV12 / P010 / P016 are planarised on the device |
 | `VMAFX_MEMORY_DMABUF` (Linux) | `fd`: a dma-buf descriptor (the library duplicates it; yours stays open and yours); `offset`, `pitch`; `modifier` 0 (linear), `plane_index` 0; `size` 0 or at most the dma-buf's size | The dma-buf is imported as external memory and mapped whole, once per descriptor of the frame; then as device pointers |
 | `VMAFX_MEMORY_DEVICE_ARRAY` | `handle`: a `hipArray_t` of the plane's size (1 channel; the NV12 chroma array 2 channels), 8- or 16-bit | NV12 / P010 / P016 are planarised on the device; a planar frame needs `VMAFX_IMPORT_ALLOW_COPY` (one device copy per plane) |
-| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the GLX context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture) | As for arrays; registered read-only and mapped for the import, unmapped when the frame is released. Not on ROCm 10.1, whose runtime cannot read a mapped GL texture: refused, see below |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread, which must render on the device's GPU (NV12: a `GL_R8` luma and a `GL_RG8` chroma texture; P010 / P016: `GL_R16` and `GL_RG16`) | Each texture is exported as a dma-buf through EGL and imported as above. A driver that exports its own tiling (radeonsi does) is copied on the GPU into a linear dma-buf, which needs `VMAFX_IMPORT_ALLOW_COPY`; see below |
 
 A tiled dma-buf (a modifier other than linear) is refused with
 `VMAFX_E_NOTSUP` naming the plane's `modifier`, and a `size` larger than the
 dma-buf with `VMAFX_E_RANGE` naming the plane's `size`: the runtime would map
-memory that is not the buffer's. A GL import without a GLX context of the
-device's GPU (an EGL context, another GPU's renderer, no context) is refused
-with `VMAFX_E_NOTSUP` naming `desc.memory` before the runtime's GL interop is
-called; on a host with two GPUs, make the GL context on the device's GPU
-(`DRI_PRIME`). A HIP runtime that maps a texture but refuses to read it (ROCm
-10.1, the version the project's builds use, refuses every read; ROCm 7.2
-reads them) makes the import `VMAFX_E_NOTSUP` naming `desc.memory`, the
-texture's extent and the runtime's version. No path copies a frame through
-the host.
+memory that is not the buffer's.
+
+A GL import reads the textures of the EGL context current on the calling
+thread (a surfaceless, Wayland or X11 context; GLX is not needed). The
+runtime's own GL interop is not used: the project's ROCm 10.1 cannot read a
+mapped GL texture ([ADR-2132](../../adr/2132-hip-gl-textures-through-egl-dmabuf.md)).
+Without a current EGL context the import is `VMAFX_E_INVALID` naming
+`desc.memory`; a context that renders on another GPU than the device
+(`VMAFX_E_NOTSUP`, naming `device`), without EGL's dma-buf export or whose
+display has no DRM device is refused. A texture whose export is tiled needs
+`VMAFX_IMPORT_ALLOW_COPY`; without it the import is `VMAFX_E_NOTSUP` naming
+the flag. The copy is one GPU blit per plane in your GL context, which
+restores the framebuffer bindings, the scissor test and the colour mask it
+touches. `libgbm.so.1` is needed at run time for it. Your GL sync is checked
+on the host first, then the dma-bufs' pending writes are waited for (at most
+1 s). No path copies a frame through the host.
 
 | Acquire fence | The HIP device |
 | --- | --- |

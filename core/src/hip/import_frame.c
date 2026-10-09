@@ -17,10 +17,10 @@
  * layout is refused for alignment. NV12 / P010 / P016 are planarised on the
  * device into planes of the frame's own (import_convert.hip: a de-interleave
  * and the P010 shift, nothing else), so an imported frame scores bit for bit
- * as the same frame uploaded from the host. HIP arrays and GL textures
- * (import_gl.c) are not linear memory: a semi-planar frame in arrays is
- * converted the same way, a planar one is copied on the device only with
- * VMAFX_IMPORT_ALLOW_COPY. Nothing is ever copied through the host (the
+ * as the same frame uploaded from the host. HIP arrays are not linear
+ * memory: a semi-planar frame in arrays is converted the same way, a planar
+ * one is copied on the device only with VMAFX_IMPORT_ALLOW_COPY. GL textures
+ * become dma-bufs first (import_gl.c, ADR-2132). Nothing is ever copied through the host (the
  * planted VMAFX_TEST_FORCE_HOST_COPY defect does, and counts it).
  *
  * Ordering: a HIP_EVENT acquire fence is a wait enqueued on the library
@@ -106,9 +106,9 @@ static VmafxStatus check_hip_memory(const VmafxReport *report, const VmafxFrameI
     switch (d->memory) {
     case VMAFX_MEMORY_DEVICE_POINTER:
     case VMAFX_MEMORY_DMABUF:
+    case VMAFX_MEMORY_GL_TEXTURE: /* exported as dma-bufs: the copy rule is the export's */
         return VMAFX_OK;
     case VMAFX_MEMORY_DEVICE_ARRAY:
-    case VMAFX_MEMORY_GL_TEXTURE:
         if (layout->interleaved || (d->flags & VMAFX_IMPORT_ALLOW_COPY)) {
             return VMAFX_OK;
         }
@@ -429,40 +429,15 @@ static VmafxStatus no_kernels(const VmafxReport *report, const HipSource *src)
                       src->layout->name);
 }
 
-/* A read-out of the producer's plane `i` that failed, named. The HIP runtime
- * of ROCm 10.1 maps a GL texture but refuses every read of its array with
- * hipErrorInvalidValue (and a texture-object read of it faults the GPU),
- * where ROCm 7.2 reads it: the import is refused as unsupported, naming the
- * memory kind, the array's extent and the runtime
- * (T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06). */
-static VmafxStatus fill_failed(const VmafxReport *report, const HipSource *src, uint32_t i,
-                               hipError_t rc)
+/* A read-out of the producer's plane that failed, named. */
+static VmafxStatus fill_failed(const VmafxReport *report, const HipSource *src, hipError_t rc)
 {
     if (rc == hipErrorNotSupported) {
         return no_kernels(report, src);
     }
-    if (rc != hipErrorInvalidValue || src->d->memory != VMAFX_MEMORY_GL_TEXTURE) {
-        return VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_FRAME, "frame",
-                          "backend hip: cannot enqueue the planes of the import: %s (%d)",
-                          hipGetErrorName(rc), (int)rc);
-    }
-    assert(i < VMAFX_HIP_PLANES);
-    const uint32_t from = (src->layout->interleaved && i > 0u) ? 1u : i;
-    hipChannelFormatDesc channels;
-    hipExtent extent;
-    unsigned int flags = 0;
-    memset(&channels, 0, sizeof(channels));
-    memset(&extent, 0, sizeof(extent));
-    const bool described =
-        hipArrayGetInfo(&channels, &extent, &flags, src->arrays[from]) == hipSuccess;
-    int version = 0;
-    const bool versioned = hipRuntimeGetVersion(&version) == hipSuccess;
-    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, (int32_t)rc, VMAFX_SUBJECT_PARAMETER, "desc.memory",
-                      "backend hip, memory GL_TEXTURE: the HIP runtime (version %d) maps texture "
-                      "%u (array %zux%zu) but refuses to read it: %s; ROCm 7.2 reads mapped GL "
-                      "textures, ROCm 10.1 does not (T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06)",
-                      versioned ? version : -1, (unsigned)from, described ? extent.width : 0u,
-                      described ? extent.height : 0u, hipGetErrorName(rc));
+    return VMAFX_FAIL(report, VMAFX_E_DEVICE, (int32_t)rc, VMAFX_SUBJECT_FRAME, "frame",
+                      "backend hip: cannot enqueue the planes of the import: %s (%d)",
+                      hipGetErrorName(rc), (int)rc);
 }
 
 /* Every plane of the frame into `data` / `stride`, the work on the library
@@ -480,7 +455,7 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxHipFrame *hf, con
                                   fill_linear_plane(hf->dev, src, &plan, hf->owned, i, data);
         stride[i] = (ptrdiff_t)(plan.owned[i] ? plan.pitch[i] : src->d->plane[i].pitch);
         if (rc != hipSuccess) {
-            status = fill_failed(report, src, i, rc);
+            status = fill_failed(report, src, rc);
         }
     }
     if (status == VMAFX_OK && src->layout->interleaved) {
@@ -506,9 +481,7 @@ int vmafx_hip_frame_release(VmafxFrame *frame, VmafPicture *pic)
         /* The release still runs: the stream calls name their device. */
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmafx: backend hip: cannot bind the device (%d)\n", err);
     }
-    const int unmapped = vmafx_hip_gl_release(hf);
     const int released = vmafx_hip_release_frame(hf, fence);
-    err = err ? err : unmapped;
     return err ? err : released;
 }
 
@@ -535,8 +508,6 @@ static VmafxStatus locate_planes(const VmafxReport *report, VmafxHipFrame *hf, H
 {
     const VmafxFrameImport *const d = src->d;
     switch (d->memory) {
-    case VMAFX_MEMORY_GL_TEXTURE:
-        return vmafx_hip_gl_map(report, hf, d, src->arrays);
     case VMAFX_MEMORY_DEVICE_ARRAY:
         for (uint32_t i = 0; i < src->layout->n_planes; i++) {
             /* NOLINTNEXTLINE(performance-no-int-to-ptr): the producer's hipArray_t crosses the ABI as uintptr_t (VmafxImportPlane.handle, ADR-1929). */
@@ -592,7 +563,6 @@ static VmafxStatus bind_picture(const VmafxReport *report, const VmafxHipFrame *
  * stream-ordered free. */
 static void unwind_import(VmafxHipFrame *hf)
 {
-    (void)vmafx_hip_gl_release(hf);
     (void)vmafx_hip_release_frame(hf, NULL);
 }
 
@@ -639,6 +609,38 @@ static VmafxStatus bind_hip_frame(const VmafxReport *report, VmafxDevice *device
     return VMAFX_OK;
 }
 
+/* A GL_TEXTURE import: the textures' dma-bufs (a GPU copy into linear ones
+ * where the driver exports a tiled layout), imported as a DMABUF frame
+ * (ADR-2132). The GL sync is checked first, before anything is exported. */
+static VmafxStatus import_gl(const VmafxReport *report, VmafxDevice *device,
+                             const VmafxFrameImport *desc, const VmafxImportLayout *layout,
+                             VmafxFrame **out)
+{
+    VmafxStatus status = vmafx_gl_sync_acquire(report, &desc->acquire, "hip");
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    VmafxFrameImport dmabuf;
+    bool copied = false;
+    status = vmafx_hip_gl_export(report, vmafx_hip_dev(device), desc, layout, &dmabuf, &copied);
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    status = check_hip_planes(report, &dmabuf, layout);
+    if (status == VMAFX_OK) {
+        if (copied) {
+            note_device_copy(vmafx_hip_dev(device), desc);
+        }
+        HipSource src;
+        memset(&src, 0, sizeof(src));
+        src.d = &dmabuf;
+        src.layout = layout;
+        status = bind_hip_frame(report, device, &src, out);
+    }
+    vmafx_hip_gl_close(&dmabuf, layout->n_planes); /* the import duplicated them */
+    return status;
+}
+
 VmafxStatus vmafx_hip_frame_import(const VmafxReport *report, VmafxDevice *device,
                                    const VmafxFrameImport *desc, const VmafxImportLayout *layout,
                                    VmafxFrame **out)
@@ -653,12 +655,14 @@ VmafxStatus vmafx_hip_frame_import(const VmafxReport *report, VmafxDevice *devic
     if (status != VMAFX_OK) {
         return status;
     }
+    if (desc->memory == VMAFX_MEMORY_GL_TEXTURE) {
+        return import_gl(report, device, desc, layout, out);
+    }
     HipSource src;
     memset(&src, 0, sizeof(src));
     src.d = desc;
     src.layout = layout;
-    src.from_arrays =
-        desc->memory == VMAFX_MEMORY_DEVICE_ARRAY || desc->memory == VMAFX_MEMORY_GL_TEXTURE;
+    src.from_arrays = desc->memory == VMAFX_MEMORY_DEVICE_ARRAY;
     return bind_hip_frame(report, device, &src, out);
 }
 

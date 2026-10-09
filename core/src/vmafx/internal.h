@@ -364,6 +364,41 @@ int vmafx_sync_file_wait(int fd, uint64_t timeout_ns);
 VmafxStatus vmafx_sync_file_acquire(const VmafxReport *report, const VmafxFence *acquire,
                                     const char *backend);
 
+/* ---- GL textures as linear dma-bufs (egl_export.c) ------------------------ */
+
+/* One plane to export: GL texture name, DRM fourcc of its format (R8, GR88,
+ * R16, GR1616) and its size in samples. */
+typedef struct VmafxEglTarget {
+    uintptr_t texture;
+    uint32_t fourcc;
+    uint32_t w;
+    uint32_t h;
+} VmafxEglTarget;
+
+/* One exported plane: a dma-buf descriptor the caller closes
+ * (vmafx_egl_close_planes()), its layout and size. */
+typedef struct VmafxEglPlane {
+    int fd;
+    uint64_t offset;
+    uint64_t pitch;
+    uint64_t modifier;
+    uint64_t size;
+} VmafxEglPlane;
+
+/* The `n` (1 to 3) textures of the EGL context current on the calling thread
+ * as linear dma-bufs in `out`. A texture the driver exports linear is
+ * exported as it is; one exported tiled is copied on the GPU into a linear
+ * dma-bufs (GBM, one blit) when `allow_copy`, and refused (VMAFX_E_NOTSUP)
+ * otherwise; `*copied` tells whether any was. `device_pci` ("0000:0e:00.0")
+ * is the importing device's GPU, checked against the context's. On a failure
+ * every descriptor is closed. */
+VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
+                                    const char *device_pci, const VmafxEglTarget *targets,
+                                    uint32_t n, bool allow_copy, VmafxEglPlane out[3],
+                                    bool *copied);
+/* Close the descriptors of `n` exported planes. */
+void vmafx_egl_close_planes(VmafxEglPlane *planes, uint32_t n);
+
 /* ---- Imports (frame_import.c) -------------------------------------------- */
 
 /* How a producer lays out one pixel format vmafx_frame_import() takes. */
