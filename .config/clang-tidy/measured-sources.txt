@@ -607,6 +607,7 @@ core/test/test_integer_vif_avx2_stages.c
 core/test/test_integer_vif_avx512_stages.c
 core/test/test_integer_vif_cpu_cuda_parity.c
 core/test/test_integer_vif_log2.c
+core/test/test_integer_vif_row_copy.c
 core/test/test_integer_vif_sv_sq.c
 core/test/test_iqa_convolve.c
 core/test/test_iqa_convolve_coverage.c

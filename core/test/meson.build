@@ -6484,6 +6484,26 @@ test_float_vif_coverage = executable('test_float_vif_coverage',
 )
 test('test_float_vif_coverage', test_float_vif_coverage, suite : ['fast'])
 
+# Netflix/vmaf 9f4bd165f: integer_vif copies each luma row's samples, not the
+# picture's stride. The wide plane ends at an inaccessible page, so the old
+# stride-sized copy faults; the scores must equal those at the library's stride.
+test_integer_vif_row_copy = executable('test_integer_vif_row_copy',
+    ['test.c', 'test_integer_vif_row_copy.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_row_copy', test_integer_vif_row_copy, suite : ['fast'])
+
 # Exercise internal VIF symbols with the same float gate/object recipe as coverage,
 # including shared-only builds where these helpers are not public exports.
 test_vif_lifecycle = executable('test_vif_lifecycle',

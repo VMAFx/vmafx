@@ -660,9 +660,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     unsigned char *ref_out = s->public.buf.ref;
     unsigned char *dis_out = s->public.buf.dis;
 
+    /* Copy each row's samples only (Netflix/vmaf 9f4bd165f): a picture's
+     * stride may exceed the buffer's, and its last row need not extend to a
+     * full stride (a wrapped or cropped picture). */
+    const size_t row_bytes = (size_t)w << (ref_pic->bpc > 8);
     for (unsigned i = 0; i < h; i++) {
-        memcpy(ref_out, ref_in, ref_pic->stride[0]);
-        memcpy(dis_out, dis_in, dist_pic->stride[0]);
+        memcpy(ref_out, ref_in, row_bytes);
+        memcpy(dis_out, dis_in, row_bytes);
         ref_in += ref_pic->stride[0];
         dis_in += dist_pic->stride[0];
         ref_out += s->public.buf.stride;

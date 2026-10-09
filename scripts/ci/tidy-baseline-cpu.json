@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 523,
+  "tus": 524,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -332,6 +332,7 @@
     "core/test/test_integer_vif_avx2_stages.c",
     "core/test/test_integer_vif_avx512_stages.c",
     "core/test/test_integer_vif_log2.c",
+    "core/test/test_integer_vif_row_copy.c",
     "core/test/test_integer_vif_sv_sq.c",
     "core/test/test_iqa_convolve.c",
     "core/test/test_iqa_convolve_coverage.c",
@@ -1313,6 +1314,21 @@
         }
       },
       "previous_baseline_sha256": "22a4cfe2d46641b2fa618221f88fd50f2abf8e859f23908443fb8164bafdc492"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_vif.c",
+        "core/test/test_integer_vif_row_copy.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_integer_vif_row_copy.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "047ef1ff1424e30ec63c3c56dc2886abd264561c1a8b2d3437aa4463ae4f5d6e"
     }
   ]
 }

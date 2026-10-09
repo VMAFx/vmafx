@@ -206,6 +206,12 @@ the parity guard's option matrix has not seen), ad42c5320 and 9cb9479f2
 (SpEED, above), 8bc5a5c6a and b41d2340a (arm64 ADM, see the arm64 note in
 `docs/rebase-notes.md`), the MSVC series and the HDR groundwork.
 
+Upstream master moved to `700124a4c` on 2026-10-09: `9f4bd165f` (integer VIF
+copied a whole stride per row) is **ported** with a guard-page test;
+`4068ee3b5` (CAMBI 10-bit same-size copy ignored the stride) was **already
+fixed** here (`T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05`);
+`700124a4c` (`vmaf_picture_wrap()`) is ported in its own pull request.
+
 `8bc5a5c6a` ("adm: add NEON scale-zero contrast masking") and `b41d2340a`
 ("adm: extend NEON processing across scales") are
 **ported in the fork's form**: every NEON kernel returns the fork's scalar
