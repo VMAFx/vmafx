@@ -239,7 +239,11 @@ static char *mwi_stream(const MwiOpts *o, unsigned n, bool shuffled)
     VmafDictionary *dict = NULL;
     VmafMotionWindowState state = {0};
     const VmafMotionWindow w = mwi_window(o, &state);
-    double sad[MWI_MAX_FRAMES];
+    /* Whole before the loop: the loop writes every entry mwi_values_match()
+     * reads (the arrival order is a permutation of 0..n-1) and stops early
+     * only on an error, after which nothing is read; cppcheck cannot see
+     * that through the permuted index. */
+    double sad[MWI_MAX_FRAMES] = {0.0};
     int err = mwi_open(&fc, &dict);
     for (unsigned k = 0; k < n && !err; k++) {
         const unsigned i = mwi_arrival(k, n, shuffled);
@@ -279,7 +283,7 @@ static char *test_flush_without_state_equals_upstream_flush(void)
         VmafFeatureCollector *fc = NULL;
         VmafDictionary *dict = NULL;
         const VmafMotionWindow w = mwi_window(&mwi_opts[o], NULL);
-        double sad[MWI_MAX_FRAMES];
+        double sad[MWI_MAX_FRAMES] = {0.0}; /* whole on every path, as in mwi_stream() */
         int err = mwi_open(&fc, &dict);
         for (unsigned i = 0; i < MWI_MAX_FRAMES && !err; i++) {
             sad[i] = mwi_sad_score(&mwi_opts[o], i);
