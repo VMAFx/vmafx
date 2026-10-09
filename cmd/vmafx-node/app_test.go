@@ -46,6 +46,7 @@ import (
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
@@ -71,9 +72,7 @@ func writeNodeEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write vmaf stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte("#!/bin/sh\nexit 0\n"))
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write model: %v", err)

@@ -22,6 +22,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // installFakeRunner puts an executable vmafx-ort-runner shell script alone
@@ -35,9 +37,7 @@ func installFakeRunner(t *testing.T, body string) string {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsFile + "\"\n" + body + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "vmafx-ort-runner"), []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake runner: %v", err)
-	}
+	execstub.Write(t, filepath.Join(dir, "vmafx-ort-runner"), []byte(script))
 	t.Setenv("PATH", dir)
 	return argsFile
 }

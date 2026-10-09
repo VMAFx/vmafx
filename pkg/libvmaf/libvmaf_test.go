@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/model"
 )
 
@@ -52,9 +53,7 @@ fi
 exit 0
 `
 	scriptPath := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeVmafScript: %v", err)
-	}
+	execstub.Write(t, scriptPath, []byte(script))
 	return scriptPath
 }
 
@@ -168,9 +167,7 @@ cat > "$outfile" <<'EOF'
 ` + goldenJSON + `
 EOF
 `
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("write vmaf argument recorder: %v", err)
-	}
+	execstub.Write(t, scriptPath, []byte(script))
 
 	modelDir := t.TempDir()
 	writeModel(t, modelDir, "vmaf_v0.6.1")
@@ -262,9 +259,7 @@ sleep 30
 exit 0
 `
 	scriptPath := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeSleepingVmafScript: %v", err)
-	}
+	execstub.Write(t, scriptPath, []byte(script))
 	return scriptPath
 }
 

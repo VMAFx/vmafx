@@ -13,6 +13,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 func TestParseNvidiaSMI(t *testing.T) {
@@ -45,9 +47,7 @@ func TestNvidiaSMIMemoryRunsTheQuery(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "nvidia-smi")
 	script := "#!/bin/sh\n[ \"$1\" = --query-gpu=index,name,memory.used,memory.total ] || exit 3\n" +
 		"[ \"$2\" = --format=csv,noheader,nounits ] || exit 4\necho '0, GPU A, 1, 2'\n"
-	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, bin, []byte(script))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	got, err := nvidiaSMIMemory(bin)(ctx)

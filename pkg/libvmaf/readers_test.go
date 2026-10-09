@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
@@ -159,9 +160,7 @@ cat > "$out" <<'EOF'
 EOF
 `
 	bin := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, bin, []byte(script))
 	modelDir := t.TempDir()
 	writeModel(t, modelDir, "vmaf_v0.6.1")
 	s, err := New(bin, modelDir)

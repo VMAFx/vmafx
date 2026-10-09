@@ -39,6 +39,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/modeleval"
 )
 
@@ -369,9 +370,7 @@ func TestRunVmafTune_SurfacesStderr(t *testing.T) {
 	fake := filepath.Join(dir, "fake-vmaf-tune.sh")
 	const diag = "boom: src not found"
 	script := "#!/bin/sh\necho '" + diag + "' >&2\nexit 3\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
+	execstub.Write(t, fake, []byte(script))
 
 	_, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
 	if err == nil {
@@ -390,9 +389,7 @@ func TestRunVmafTune_ReturnsStdoutOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-vmaf-tune-ok.sh")
 	script := "#!/bin/sh\nprintf '{\"ok\":true}'\nexit 0\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
+	execstub.Write(t, fake, []byte(script))
 
 	out, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
 	if err != nil {
@@ -693,9 +690,7 @@ func fakeVmafReport(t *testing.T, report string) string {
 	body := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"--list-backends\" ]; then\ncat <<'EOF'\n" + report + "\nEOF\nexit 0\nfi\n" +
 		"echo '--no_cuda --no_sycl --no_hip --no_metal'\n"
-	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, script, []byte(body))
 	probeMu.Lock()
 	delete(probeCache, script)
 	probeMu.Unlock()
@@ -741,9 +736,7 @@ func TestProbeBackends_CPUOnlyBuildReportsNoGPU(t *testing.T) {
 
 func TestProbeBackends_NoReportMeansCPUOnly(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "vmaf")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 2\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, script, []byte("#!/bin/sh\nexit 2\n"))
 	probeMu.Lock()
 	delete(probeCache, script)
 	probeMu.Unlock()

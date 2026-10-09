@@ -4,10 +4,10 @@
 package fast
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
@@ -16,9 +16,7 @@ import (
 // on PATH (T-GO-FAST-INTEGRATION-PATH-VMAF-2026-10-05).
 func TestTestConfigRunsTheVMAFUnderTest(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "vmaf-under-test")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, bin, []byte("#!/bin/sh\nexit 0\n"))
 	t.Setenv(vmaftest.EnvVar, bin)
 
 	cfg := testConfig(t, "unused.yuv", nil)

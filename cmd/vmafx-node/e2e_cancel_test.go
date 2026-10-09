@@ -26,6 +26,7 @@ import (
 	"time"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
@@ -35,9 +36,7 @@ func sleepingVmaf(t *testing.T, pidFile string) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "vmaf")
 	script := fmt.Sprintf("#!/bin/sh\necho $$ > %q\nexec sleep 300\n", pidFile)
-	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { // #nosec G306 -- the test must execute it
-		t.Fatalf("write vmaf stand-in: %v", err)
-	}
+	execstub.Write(t, bin, []byte(script))
 	return bin
 }
 

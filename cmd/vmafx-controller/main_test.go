@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -65,9 +66,7 @@ fi
 exit 0
 `
 	p := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(p, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeVmafStub: %v", err)
-	}
+	execstub.Write(t, p, []byte(script))
 	return p
 }
 

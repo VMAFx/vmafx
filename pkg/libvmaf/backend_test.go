@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // recordArgs runs one score through a vmaf stub that records its argv and
@@ -37,9 +39,7 @@ cat > "$outfile" <<'EOF'
 ` + goldenJSON + `
 EOF
 `
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("write vmaf argument recorder: %v", err)
-	}
+	execstub.Write(t, scriptPath, []byte(script))
 	modelDir := t.TempDir()
 	writeModel(t, modelDir, "vmaf_v0.6.1")
 	s, err := New(scriptPath, modelDir)
