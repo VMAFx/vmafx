@@ -679,10 +679,11 @@ static char *cm_check(CmFixture *f, const CmKernels *k, const char *fill, int id
 }
 
 /* The event sweeps of tests 4 and 4b visit every position in a plain build,
- * which is what proves every vector lane bit for bit. A sanitizer build (the
- * ASan + UBSan and TSan legs, debug) runs the kernels some 17 times slower:
+ * which is what proves every vector lane bit for bit. An instrumented build (the
+ * ASan + UBSan, TSan and UBSan legs, debug) runs the kernels some 17 times slower:
  * test 4b's full sweep alone took 31 s there, over the 30 s test budget
- * (T-ADM-SIMD-SANITIZER-SWEEP-TIMEOUT-2026-10-09). What such a build adds is
+ * (T-ADM-SIMD-SANITIZER-SWEEP-TIMEOUT-2026-10-09,
+ * T-ADM-SIMD-UBSAN-SWEEP-TIMEOUT-2026-10-09). What such a build adds is
  * memory and arithmetic checking. The kernels' addresses do not depend on the
  * data (the dense fills reach all of them), and the arithmetic an event drives
  * depends on its distance to a border (mirroring, the scalar edge columns),
@@ -690,7 +691,7 @@ static char *cm_check(CmFixture *f, const CmKernels *k, const char *fill, int id
  * rows, crossed with the same columns. */
 static bool event_coordinate_swept(int v, int n)
 {
-    return !VMAF_TEST_SANITIZER_BUILD || v < 3 || v >= n - 3 || v == n / 2;
+    return !VMAF_TEST_INSTRUMENTED_BUILD || v < 3 || v >= n - 3 || v == n / 2;
 }
 
 static bool event_position_swept(int row, int col, int w, int h)

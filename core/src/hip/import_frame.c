@@ -344,7 +344,7 @@ static hipError_t gather_plane(const VmafxHipDevice *dev, const HipSource *src, 
     size_t out_pitch = plan->pitch[i];
     unsigned w = plan->pw[i];
     unsigned h = plan->ph[i];
-    unsigned out_bytes = plan->bytes;
+    unsigned out_bytes = (unsigned)plan->bytes; /* 1 or 2 (plan_planes) */
     void *args[] = {(void *)&in, &in_pitch,  (void *)&out, &out_pitch, &w,       &h,
                     &rd.step,    &rd.offset, &rd.in_bytes, &rd.shift,  &rd.mask, &out_bytes};
     return launch_2d(dev, dev->kernels.gather, w, h, args);

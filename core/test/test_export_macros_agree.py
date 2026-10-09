@@ -34,6 +34,8 @@ INCLUDE = Path(sys.argv.pop(1)) if len(sys.argv) > 1 else Path()
 MACROS = ("VMAF_EXPORT", "VMAFX_EXPORT")
 DEFINE = re.compile(r"^#define (VMAFX?_EXPORT)(?: (.*))?$", re.MULTILINE)
 SOURCE = "#include <libvmaf/macros.h>\n#include <vmafx/types.h>\n"
+# The C library headers the two public headers include, replaced by empty files.
+STUB_HEADERS = ("stddef.h", "stdint.h")
 # The compiler families, as the predefined macros the headers test. -U__clang__
 # makes a clang host preprocess as GCC; a GCC host has nothing to undefine.
 FAMILIES = {
@@ -56,12 +58,23 @@ PLANTED_TYPES_H = """#ifndef VMAFX_EXPORT
 
 
 def expansions(include_dirs: list[Path], defines: list[str]) -> dict[str, str]:
-    """The body of each export macro after the headers, for one compiler family."""
-    argv = [*CC, "-E", "-dM", "-x", "c", "-", *(f"-I{d}" for d in include_dirs), *defines]
-    # The build's compiler on a fixed source; no shell.
-    done = subprocess.run(  # noqa: S603
-        argv, input=SOURCE, capture_output=True, text=True, check=False, timeout=TIMEOUT
-    )
+    """The body of each export macro after the headers, for one compiler family.
+
+    The C library headers vmafx/types.h includes are empty stand-ins
+    (-nostdinc, STUB_HEADERS): the test reads only the export macros, and a
+    host's own headers act on the simulated family's defines. icx's stddef.h
+    includes MSVC's <corecrt.h> under -D_MSC_VER (the Linux Intel LLVM leg).
+    """
+    with tempfile.TemporaryDirectory() as raw:
+        stubs = Path(raw)
+        for name in STUB_HEADERS:
+            (stubs / name).write_text("", encoding="utf-8")
+        argv = [*CC, "-E", "-dM", "-nostdinc", "-x", "c", "-", f"-isystem{stubs}"]
+        argv += [*(f"-I{d}" for d in include_dirs), *defines]
+        # The build's compiler on a fixed source; no shell.
+        done = subprocess.run(  # noqa: S603
+            argv, input=SOURCE, capture_output=True, text=True, check=False, timeout=TIMEOUT
+        )
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(argv)} failed: {done.stderr}")
     return {name: (body or "").strip() for name, body in DEFINE.findall(done.stdout)}
