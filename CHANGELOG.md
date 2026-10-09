@@ -854,6 +854,9 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The vendored Pelorus interop mirror moves to Pelorus v0.3.0 and is EUPL-1.2 ([ADR-2817](docs/adr/2817-pelorus-v030-eupl-repin.md)).** `scripts/sync-pelorus-interop.sh` pins the v0.3.0 tag's commit `e2e4040311a4`; the ten mirrored files (`core/include/libvmaf/pelorus/`, `core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) now name `EUPL-1.2` in their `SPDX-License-Identifier` line, so `REUSE.toml` drops their BSD-2-Clause-Patent annotation, the ten per-file SPDX exceptions are gone and the credits page lists EUPL-1.2. The sync script now stops when a pinned source declares any other licence. The interop ABI stays 1.3: the parser is unchanged, `interop.h` only gains unit and range comments, and the conformance fixture checks the privacy of the files it creates on the open descriptor. `test_perceptual_weight` gains two R4 cases, a newer producer's longer banding section and an older producer's shorter one.
+
+
 - **The Go binaries' environment, its documentation and the chart's
   `VMAFX_*` entries are generated from one definition
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** The `[[config]]`
@@ -1311,6 +1314,9 @@
   contract, so the drift cannot return unnoticed.
 
 
+- Build: the Windows MinGW-w64 (UCRT64) build no longer fails at the link-time-optimised link of `test_vmafx_host_fence_wait` with `-Werror=stringop-overflow`. The host-fence functions return early for a NULL fence after their assertion, because current mingw-w64 headers let a failed `assert()` return.
+
+
 - Test: the Windows MinGW UCRT64 build compiles the compat conformance tests again. Their trace macro names MinGW's printf archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu` and `%td`.
 
 
@@ -1347,6 +1353,13 @@
   checks refused the result, or the CLI could not start. The release download
   now has six library files; see
   [Release download](docs/getting-started/index.md#release-download).
+
+
+- **The RC3 home GPU retest kit survives a failing `nvidia-smi`.** `scripts/dev/rc3-home-gpu-retest.sh`
+  wrote nvidia-smi's GPU list into `host.txt` as the last command of an `&&` list under `set -e`, so a
+  failing nvidia-smi (exit 18 after a driver update that leaves the kernel module and the library at
+  different versions) ended every run, `--dry-run` included. The kit now writes
+  `nvidia-smi failed: exit N, no GPU inventory` into `host.txt` and goes on.
 
 
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
