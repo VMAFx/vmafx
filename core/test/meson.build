@@ -1411,6 +1411,7 @@ test('test_vmafx_api_generator',
 test('test_libvmaf_deprecation',
     import('python').find_installation(),
     args : [files('test_libvmaf_deprecation.py')] + vmaf_test_cc_args + [
+            '--cc-syntax=' + cc.get_argument_syntax(), '--cc-id=' + cc.get_id(),
             meson.project_source_root() / 'include',
             meson.project_source_root() / 'api' / 'vmafx.toml'],
     suite : ['fast'],

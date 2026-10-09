@@ -11,8 +11,17 @@
   clean under -Werror, as upstream FFmpeg must; the library itself
   (VMAF_BUILDING_LIBVMAF) never warns.
 
-Usage: test_libvmaf_deprecation.py --cc=<word>... <public include dir> <definition>
-(--cc: the compiler command as Meson runs it, launcher included; meson_cc.py)
+Usage: test_libvmaf_deprecation.py --cc=<word>... --cc-syntax=<gcc|msvc> --cc-id=<id>
+       <public include dir> <definition>
+(--cc: the compiler command as Meson runs it, launcher included; --cc-syntax and --cc-id:
+Meson's cc.get_argument_syntax() and cc.get_id(); meson_cc.py)
+
+With the msvc syntax (cl.exe, clang-cl) the compile takes /W3 /WX, the level of the
+project's warning_level=2 and its warnings-as-errors switch; `-Werror` is an invalid /W
+level to cl.exe (the Windows ARM64 MSVC leg failed on "D8021 : invalid numeric argument
+'/Werror'"). cl.exe writes compile diagnostics to standard output, its banner and
+command-line errors to standard error, so its diagnostics are read from standard output;
+every other compiler's from standard error.
 """
 
 from __future__ import annotations
@@ -25,10 +34,13 @@ import unittest
 from pathlib import Path
 
 import tomllib
-from meson_cc import take_cc
+from meson_cc import take_cc, take_value
 
 TIMEOUT = 120  # seconds per compile (HISS-02)
 CC = take_cc(sys.argv)
+MSVC_SYNTAX = take_value(sys.argv, "cc-syntax") == "msvc"
+# cl.exe writes compile diagnostics to stdout; clang-cl, GCC and clang to stderr.
+DIAGNOSTICS_ON_STDOUT = take_value(sys.argv, "cc-id") == "msvc"
 INCLUDE, DEFINITION = (Path(a) for a in sys.argv[1:3])
 del sys.argv[1:3]
 DECLARATION = re.compile(
@@ -61,12 +73,36 @@ def findings(text: str, expected: dict[str, str]) -> list[str]:
     return out
 
 
+def compile_argv(source: Path, obj: Path, defines: tuple[str, ...]) -> list[str]:
+    """The compile command: warnings on and made errors, in the compiler's own syntax.
+
+    `-D<name>` is valid for cl.exe as for GCC and clang.
+    """
+    if MSVC_SYNTAX:
+        return [
+            *CC,
+            "/nologo",
+            "/c",
+            "/W3",
+            "/WX",
+            f"/I{INCLUDE}",
+            *defines,
+            str(source),
+            f"/Fo{obj}",
+        ]
+    return [*CC, "-c", "-Wall", "-Werror", f"-I{INCLUDE}", *defines, str(source), "-o", str(obj)]
+
+
+def diagnostics(done: subprocess.CompletedProcess[str]) -> str:
+    """The stream the compiler writes its diagnostics to: stdout for cl.exe, stderr otherwise."""
+    return done.stdout if DIAGNOSTICS_ON_STDOUT else done.stderr
+
+
 def compile_consumer(*defines: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as raw:
         source = Path(raw) / "consumer.c"
         source.write_text(CONSUMER, encoding="utf-8")
-        argv = [*CC, "-c", "-Wall", "-Werror", f"-I{INCLUDE}", *defines, str(source)]
-        argv += ["-o", str(Path(raw) / "consumer.o")]
+        argv = compile_argv(source, Path(raw) / "consumer.o", defines)
         # The build's compiler and a source this test wrote; no shell.
         return subprocess.run(  # noqa: S603
             argv, capture_output=True, text=True, check=False, timeout=TIMEOUT
@@ -109,16 +145,16 @@ class MarkerTest(unittest.TestCase):
 class CompileTest(unittest.TestCase):
     def test_default_build_has_no_warning(self) -> None:
         done = compile_consumer()
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
     def test_opt_in_names_the_replacement(self) -> None:
         done = compile_consumer("-DVMAF_ENABLE_DEPRECATION_WARNINGS")
-        self.assertNotEqual(done.returncode, 0)
-        self.assertIn("vmafx_version_string", done.stderr)
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("vmafx_version_string", diagnostics(done), done.stdout + done.stderr)
 
     def test_library_itself_never_warns(self) -> None:
         done = compile_consumer("-DVMAF_ENABLE_DEPRECATION_WARNINGS", "-DVMAF_BUILDING_LIBVMAF")
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
 
 if __name__ == "__main__":

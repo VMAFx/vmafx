@@ -21,3 +21,17 @@ def take_cc(argv: list[str]) -> list[str]:
     if not words:
         raise SystemExit(f"usage: {argv[0]} --cc=<word>... (the compiler command, one word each)")
     return words
+
+
+def take_value(argv: list[str], name: str) -> str:
+    """Remove the leading `--<name>=<value>` argument from argv[1:] and return the value.
+
+    core/test/meson.build passes `--cc-syntax=` with `cc.get_argument_syntax()` ("msvc"
+    for cl.exe and clang-cl, which take /-style flags; "gcc" for GCC and clang) and
+    `--cc-id=` with `cc.get_id()` ("msvc" for cl.exe). A test that reads one fails
+    without it rather than guessing.
+    """
+    prefix = f"--{name}="
+    if len(argv) > 1 and argv[1].startswith(prefix) and len(argv[1]) > len(prefix):
+        return argv.pop(1)[len(prefix) :]
+    raise SystemExit(f"usage: {argv[0]} ... {prefix}<value> (from core/test/meson.build)")
