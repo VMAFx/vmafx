@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config python3-pip python3-venv
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Build the vmaf CLI (CPU, no DNN)

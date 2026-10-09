@@ -95,7 +95,7 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/package-build.txt
@@ -257,7 +257,7 @@ jobs:
           sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         if: steps.impact.outputs.c_core == 'true'
@@ -409,7 +409,7 @@ jobs:
             python3-pip python3-venv ffmpeg
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.tiny_ai == 'true'
@@ -837,7 +837,7 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Build libvmaf (full MCP transport matrix)
@@ -990,7 +990,7 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           # gcovr replaces lcov: it deduplicates .gcno files belonging to
           # the same source compiled into multiple targets (libvmaf.so +
