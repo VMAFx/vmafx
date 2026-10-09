@@ -596,7 +596,7 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureColl
     for (unsigned v = 0; v < iadm_views(s) && err == 0; ++v) {
         const uint32_t *accum[IADM_METAL_NUM_SCALES];
         for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
-            void *const buf = v ? s->accum_x[scale] : s->accum[scale];
+            const void *const buf = v ? s->accum_x[scale] : s->accum[scale];
             accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)buf contents];
         }
         const IadmMetalOptions o = iadm_options(s, v);

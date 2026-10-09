@@ -121,6 +121,15 @@ jobs:
               'Semgrep',
               'Tidy Changed',
               'Tidy Ratchet',
+              // Q-315 / ADR-2796: every other clang-tidy lane. Each leg always
+              // starts and reports; the impact planner (selector tidy_<lane>)
+              // decides whether it measures the lane.
+              'Tidy Lane (cuda)',
+              'Tidy Lane (hip)',
+              'Tidy Lane (sycl)',
+              'Tidy Lane (arm64)',
+              'Tidy Lane (clang)',
+              'Tidy Metal',
               'Cppcheck',
               'Dependency Review',
               'Gitleaks',
@@ -365,6 +374,14 @@ jobs:
               // therefore means the workflow failed to register, not that a
               // path filter legitimately omitted the context.
               'Tidy SYCL',
+              // ADR-2796 — the lane legs have no trigger path filter; the planner
+              // skips only their work, so absence means broken registration.
+              'Tidy Lane (cuda)',
+              'Tidy Lane (hip)',
+              'Tidy Lane (sycl)',
+              'Tidy Lane (arm64)',
+              'Tidy Lane (clang)',
+              'Tidy Metal',
               'Windows ARM64 MSVC',
               // ADR-2440 — the locked praetor workflow reports on every pull request
               // and master push; absence means broken registration.

@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+name: Measure a clang-tidy ratchet lane
+description: >-
+  Pull the pinned dev container and run scripts/dev/tidy-lane.sh for one lane
+  against its committed baseline (ADR-2796, ADR-1471). The container carries the
+  toolchains the lane needs (nvcc, hipcc, icpx, the aarch64 cross compiler).
+inputs:
+  lane:
+    description: cuda, hip, sycl, arm64 or clang
+    required: true
+  image:
+    description: >-
+      Dev container reference, pinned by digest. The one place the hosted lanes (Lint and the
+      nightly sweep) name the image: bump it in the pull request that re-measures the
+      baselines after a dev/Containerfile change.
+    required: false
+    default: ghcr.io/vmafx/vmafx-dev-mcp@sha256:31a48dad7525e05323e26914db2009f837a92e83ae55408a514024230e2b2e17
+  token:
+    description: Token with read access to the private package
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Make room for the image
+      shell: bash
+      run: |
+        # The dev image is tens of gigabytes; the hosted disk has room for it
+        # only after the preinstalled SDKs the job never uses are gone.
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        df -h / | tail -n 1
+    - name: Pull the pinned dev container
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        REGISTRY_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        case "$IMAGE" in
+          *@sha256:*) ;;
+          *) echo "::error::the dev container must be pinned by digest, got '$IMAGE'"; exit 1 ;;
+        esac
+        printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        docker pull --quiet "$IMAGE"
+    - name: Measure the lane
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        LANE: ${{ inputs.lane }}
+      run: |
+        set -euo pipefail
+        bash scripts/dev/tidy-lane.sh --image "$IMAGE" --jobs "$(nproc)" \
+          --out "$RUNNER_TEMP/tidy-lane" "$LANE"

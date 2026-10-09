@@ -137,7 +137,13 @@ planner = _load_planner()
 
 
 # ADR-1700: the selectors that the full-mode fallback does not set by itself.
-OWN_PATHS_ONLY = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
+TIDY_LANES = ("cuda", "hip", "sycl", "arm64", "clang", "metal")
+TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
+OWN_PATHS_ONLY = {
+    "tester_image",
+    "windows_tester_zip",
+    "windows_tester_zip_sycl",
+} | TIDY_SELECTORS
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -334,7 +340,12 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(
             all(on for name, on in plan.selectors.items() if name not in OWN_PATHS_ONLY)
         )
-        self.assertFalse(any(plan.selectors[name] for name in OWN_PATHS_ONLY))
+        self.assertFalse(any(plan.selectors[name] for name in OWN_PATHS_ONLY - TIDY_SELECTORS))
+        # The workflow hosts the lanes, so it is one of their own paths (not Metal's).
+        self.assertEqual(
+            {name for name in TIDY_SELECTORS if plan.selectors[name]},
+            TIDY_SELECTORS - {"tidy_metal"},
+        )
 
     def test_go_workflow_change_forces_full(self) -> None:
         plan = _plan_for([".github/workflows/go-ci.yml"])
@@ -537,6 +548,71 @@ class GitIntegration(unittest.TestCase):
         self.assertTrue(kv["reason"].startswith("event-not-routed:"))
 
 
+class TidyLaneRouting(unittest.TestCase):
+    """Q-315: every hosted tidy lane runs only when a file of that lane changes."""
+
+    def _lanes(self, plan: ImpactPlan) -> set[str]:
+        return {lane for lane in TIDY_LANES if plan.selectors[f"tidy_{lane}"]}
+
+    def test_a_cuda_file_selects_the_cuda_lane_and_the_cpu_gate_only(self) -> None:
+        plan = _plan_for(["core/src/feature/cuda/integer_ssim/ssim_score.cu"])
+        self.assertEqual(plan.mode, "impact")
+        self.assertEqual(self._lanes(plan), {"cuda"})
+        self.assertTrue(plan.selectors["c_core"])  # the cpu lane ("Tidy Ratchet")
+
+    def test_each_lane_is_selected_by_its_own_files_and_no_other_lane(self) -> None:
+        cases = {
+            "cuda": "core/src/cuda/picture.c",
+            "hip": "core/src/feature/hip/ciede_hip.c",
+            "sycl": "core/src/feature/sycl/integer_ssim_sycl.cpp",
+            "arm64": "core/src/feature/arm64/vif_neon.c",
+            "clang": "core/test/fuzz/fuzz_json.c",
+            "metal": "core/src/feature/metal/psnr_metal.mm",
+        }
+        for lane, path in cases.items():
+            with self.subTest(lane=lane):
+                self.assertEqual(self._lanes(_plan_for([path])), {lane})
+
+    def test_a_docs_only_change_selects_no_lane_and_not_the_cpu_gate(self) -> None:
+        plan = _plan_for(["docs/development/tidy-ratchet.md", "changelog.d/fixed/x.md"])
+        self.assertEqual(self._lanes(plan), set())
+        self.assertFalse(plan.selectors["c_core"])
+
+    def test_a_shared_cpu_file_selects_no_device_lane(self) -> None:
+        plan = _plan_for(["core/src/libvmaf.c"])
+        self.assertEqual(self._lanes(plan), set())
+        self.assertTrue(plan.selectors["c_core"])
+
+    def test_the_ratchet_and_a_lane_baseline_select_the_lanes_they_define(self) -> None:
+        self.assertEqual(self._lanes(_plan_for(["scripts/ci/tidy-baseline-hip.json"])), {"hip"})
+        plan = _plan_for(["scripts/ci/tidy-ratchet.py"])
+        self.assertEqual(self._lanes(plan), set(TIDY_LANES))
+
+    def test_a_fallback_plan_keeps_the_lanes_off_unless_a_path_matches(self) -> None:
+        plan = _plan_for(["scripts/ci/plan-ci-impact.py"])
+        self.assertEqual(plan.mode, "full")
+        self.assertEqual(self._lanes(plan), set())
+
+    def test_every_baseline_only_source_matches_its_lane_patterns(self) -> None:
+        """A lane's selector must see every file the lane alone measures (drift guard)."""
+        root = CONFIG.parents[1]
+        baselines = {
+            lane: set(
+                json.loads(
+                    (root / f"scripts/ci/tidy-baseline-{lane}.json").read_text(encoding="utf-8")
+                ).get("measured_sources", [])
+            )
+            for lane in ("cpu", *TIDY_LANES)
+        }
+        selectors = planner.load_config(CONFIG)["selectors"]
+        for lane in TIDY_LANES:
+            patterns = tuple(selectors[f"tidy_{lane}"]["patterns"])
+            alone = {p for p in baselines[lane] - baselines["cpu"] if (root / p).exists()}
+            unmatched = sorted(p for p in alone if not planner._matches(p, patterns))
+            with self.subTest(lane=lane):
+                self.assertEqual(unmatched, [], f"{lane}: files only this lane measures")
+
+
 class OwnPathsOnlyContract(unittest.TestCase):
     """ADR-1700: `own_paths_only` selectors follow their own paths in full mode."""
 
@@ -549,7 +625,7 @@ class OwnPathsOnlyContract(unittest.TestCase):
     def _changes(*records: tuple[str, tuple[str, ...]]) -> tuple[object, ...]:
         return tuple(planner.Change(status=status, paths=paths) for status, paths in records)
 
-    def test_the_exception_is_declared_for_exactly_the_two_tester_selectors(self) -> None:
+    def test_the_exception_is_declared_for_exactly_the_tester_and_tidy_lane_selectors(self) -> None:
         selectors = planner.load_config(CONFIG)["selectors"]
         declared = {name for name, sel in selectors.items() if sel.get("own_paths_only")}
         self.assertEqual(declared, OWN_PATHS_ONLY)
@@ -578,7 +654,8 @@ class OwnPathsOnlyContract(unittest.TestCase):
             with self.subTest(path=path):
                 plan = _plan_for([path, "Makefile"])
                 self.assertEqual(plan.mode, "full")
-                self.assertEqual({n for n in OWN_PATHS_ONLY if plan.selectors[n]}, selected)
+                testers = OWN_PATHS_ONLY - TIDY_SELECTORS
+                self.assertEqual({n for n in testers if plan.selectors[n]}, selected)
 
     def test_other_fallbacks_with_known_paths_follow_own_paths(self) -> None:
         config = planner.load_config(CONFIG)

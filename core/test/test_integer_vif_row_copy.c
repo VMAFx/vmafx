@@ -228,6 +228,40 @@ static int same_bits(double a, double b)
 /* Which picture of the pair gets the wide luma. */
 enum WideSide { WIDE_REF = 1, WIDE_DIST = 2, WIDE_BOTH = 3 };
 
+/* The scores of `ref` against `dist` with the luma of `side` in guarded wide
+ * planes. Sets `*guarded` when a plane could not be mapped; then nothing is
+ * scored and the result is -1. */
+static int wide_scores(VmafPicture *ref, VmafPicture *dist, enum WideSide side, double out[SCORES],
+                       int *guarded)
+{
+    GuardedPlane g_ref = {0};
+    GuardedPlane g_dist = {0};
+    VmafPicture ref_view = *ref;
+    VmafPicture dist_view = *dist;
+    int unmapped = 0;
+    if (side & WIDE_REF) {
+        unmapped |= wide_view(ref, &g_ref, &ref_view);
+    }
+    if (side & WIDE_DIST) {
+        unmapped |= wide_view(dist, &g_dist, &dist_view);
+    }
+    *guarded = unmapped;
+    const int err = unmapped ? -1 : vif_scores(&ref_view, &dist_view, out);
+    guarded_free(&g_ref);
+    guarded_free(&g_dist);
+    return err;
+}
+
+/* Every score finite, and each wide score the same bits as its tight one. */
+static char *same_scores(const double tight[SCORES], const double wide[SCORES])
+{
+    for (unsigned k = 0; k < SCORES; k++) {
+        mu_assert("vif score is finite", isfinite(tight[k]));
+        mu_assert("a wide stride changes no VIF score", same_bits(tight[k], wide[k]));
+    }
+    return NULL;
+}
+
 /* The scores with the wide luma on `side` equal the scores at the library's
  * stride. */
 static char *check_wide(unsigned bpc, enum WideSide side)
@@ -241,31 +275,15 @@ static char *check_wide(unsigned bpc, enum WideSide side)
 
     double tight[SCORES] = {0};
     double wide[SCORES] = {0};
-    GuardedPlane g_ref = {0};
-    GuardedPlane g_dist = {0};
-    VmafPicture ref_view = ref;
-    VmafPicture dist_view = dist;
-    const int scored = vif_scores(&ref, &dist, tight);
     int guarded = 0;
-    if (side & WIDE_REF) {
-        guarded |= wide_view(&ref, &g_ref, &ref_view);
-    }
-    if (side & WIDE_DIST) {
-        guarded |= wide_view(&dist, &g_dist, &dist_view);
-    }
-    const int scored_wide = (scored || guarded) ? -1 : vif_scores(&ref_view, &dist_view, wide);
-    guarded_free(&g_ref);
-    guarded_free(&g_dist);
+    const int scored = vif_scores(&ref, &dist, tight);
+    const int scored_wide = scored ? -1 : wide_scores(&ref, &dist, side, wide, &guarded);
     (void)vmaf_picture_unref(&ref);
     (void)vmaf_picture_unref(&dist);
     mu_assert("scoring at the library's stride failed", !scored);
     mu_assert("the guarded plane could not be mapped", !guarded);
     mu_assert("scoring the wide stride failed", !scored_wide);
-    for (unsigned k = 0; k < SCORES; k++) {
-        mu_assert("vif score is finite", isfinite(tight[k]));
-        mu_assert("a wide stride changes no VIF score", same_bits(tight[k], wide[k]));
-    }
-    return NULL;
+    return same_scores(tight, wide);
 }
 
 static char *test_8bit_wide_strides(void)

@@ -615,7 +615,7 @@ static void set_color_field(VmafColor *color, size_t field, unsigned val)
 static int parse_colorspace_entry(json_stream *s, const char *key, VmafColor *color)
 {
     for (size_t i = 0; i < sizeof(color_fields) / sizeof(*color_fields); i++) {
-        if (strcmp(key, color_fields[i].key))
+        if (strcmp(key, color_fields[i].key) != 0)
             continue;
         unsigned val = 0;
         const int err = parse_color_name(s, color_fields[i].names, color_fields[i].n_names, &val);
@@ -654,14 +654,15 @@ static int parse_conversion_target_pixel_format(json_stream *s, VmafModel *model
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
     const char *name = json_get_string(s, NULL);
-    if (!strcmp(name, "420"))
+    if (!strcmp(name, "420")) {
         model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV420P;
-    else if (!strcmp(name, "422"))
+    } else if (!strcmp(name, "422")) {
         model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV422P;
-    else if (!strcmp(name, "444"))
+    } else if (!strcmp(name, "444")) {
         model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV444P;
-    else
+    } else {
         return -EINVAL;
+    }
     return 0;
 }
 
@@ -852,17 +853,20 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     /* ADR-1755: the loader's caller is the first owner. */
     if (vmaf_ref_init(&m->owners) != 0) {
         err = -ENOMEM;
-    } else if (!(m->name = vmaf_model_generate_name(cfg))) {
-        err = -ENOMEM;
     } else {
-        VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
+        m->name = vmaf_model_generate_name(cfg);
+        if (m->name) {
+            VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
 
-        err = model_parse(s, m, cfg->flags);
+            err = model_parse(s, m, cfg->flags);
 
-        vmaf_thread_locale_pop(locale_state);
+            vmaf_thread_locale_pop(locale_state);
 
-        if (!err)
-            return 0;
+            if (!err)
+                return 0;
+        } else {
+            err = -ENOMEM;
+        }
     }
 
     /* Leak-free teardown on parse failure. `vmaf_model_destroy`

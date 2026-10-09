@@ -297,7 +297,7 @@ class IntegerMotionMetalExactContract(unittest.TestCase):
 
     def test_missing_provided_feature_is_detected(self) -> None:
         failures = self._edited(
-            HOST, '    "VMAF_integer_feature_motion3_score",\n    NULL\n', "    NULL\n"
+            HOST, '    "VMAF_integer_feature_motion3_score",\n    nullptr\n', "    nullptr\n"
         )
         self._assert_detected(failures, "provided features are not integer_motion.c's")
 

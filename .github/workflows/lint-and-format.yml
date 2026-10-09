@@ -502,6 +502,72 @@ jobs:
           path: tidy-ratchet-cpu.json
 
 
+  clang-tidy-lanes:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # Q-315 / ADR-2796: every clang-tidy ratchet lane is a hosted, required
+    # check, each routed by its own selector (tidy_<lane> in
+    # .github/ci-impact.json, "own_paths_only", ADR-1700): the leg always
+    # starts, so the context always reports, and it measures the lane only when
+    # a file of that lane changed. The cpu lane is `Tidy Ratchet` above; metal
+    # is `Tidy Metal` (tidy-metal.yml, a macOS runner). A leg that did not run
+    # prints why and the lane it skipped: a skipped lane is never reported as
+    # clean (HISS-18). The toolchains (nvcc, hipcc, icpx, the aarch64 cross
+    # compiler) come from the dev container, pinned by digest in
+    # .github/actions/tidy-lane/action.yml; bump the digest in the pull request
+    # that re-measures the baselines after a dev/Containerfile change
+    # (docs/development/tidy-ratchet.md, "Hosted lanes").
+    # required-aggregator: Tidy Lane (cuda)
+    # required-aggregator: Tidy Lane (hip)
+    # required-aggregator: Tidy Lane (sycl)
+    # required-aggregator: Tidy Lane (arm64)
+    # required-aggregator: Tidy Lane (clang)
+    name: Tidy Lane (${{ matrix.lane }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [cuda, hip, sycl, arm64, clang]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — lane skipped by plan
+        if: steps.impact.outputs[format('tidy_{0}', matrix.lane)] != 'true'
+        env:
+          LANE: ${{ matrix.lane }}
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: |
+          echo "::notice::tidy_$LANE not impacted (mode=$MODE reason=$REASON) — the $LANE lane was NOT measured; its baseline is checked by the nightly sweep (ADR-2796)"
+      - name: Measure the lane against its baseline
+        if: steps.impact.outputs[format('tidy_{0}', matrix.lane)] == 'true'
+        uses: ./.github/actions/tidy-lane
+        with:
+          lane: ${{ matrix.lane }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload measurement and log
+        if: ${{ always() && steps.impact.outputs[format('tidy_{0}', matrix.lane)] == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: tidy-lane-${{ matrix.lane }}
+          path: ${{ runner.temp }}/tidy-lane
+          if-no-files-found: ignore
+
   clang-tidy-sycl:
     needs: tier
     if: needs.tier.outputs.light == 'true'

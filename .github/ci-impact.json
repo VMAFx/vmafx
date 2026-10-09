@@ -443,6 +443,138 @@
         "c_core"
       ],
       "patterns": []
+    },
+    "tidy_cuda": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/cuda/*",
+        "core/src/cuda/**",
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/cuda/*",
+        "core/src/feature/cuda/**",
+        "core/src/hip/dispatch_strategy.c",
+        "core/src/log.c",
+        "core/test/*adm*",
+        "core/test/*cuda*",
+        "core/test/*gpu*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-cuda.json",
+        "scripts/ci/gen-gpu-compile-commands.py"
+      ]
+    },
+    "tidy_hip": {
+      "own_paths_only": true,
+      "patterns": [
+        ".clang-tidy",
+        ".github/workflows/lint-and-format.yml",
+        "Makefile",
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/hip/*",
+        "core/src/feature/hip/**",
+        "core/src/hip/*",
+        "core/src/hip/**",
+        "core/src/log.c",
+        "core/test/*adm*",
+        "core/test/*gpu*",
+        "core/test/*hip*",
+        "core/test/*sycl*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "scripts/ci/clang-tidy-hip.sh",
+        "scripts/ci/gen-gpu-compile-commands.py",
+        "scripts/ci/tidy-baseline-hip.json",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/ci/write-compile-commands.py",
+        "scripts/dev/tidy-lane.sh"
+      ]
+    },
+    "tidy_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/sycl/*",
+        "core/src/feature/sycl/**",
+        "core/src/log.c",
+        "core/src/sycl/*",
+        "core/src/sycl/**",
+        "core/test/*adm*",
+        "core/test/*gpu*",
+        "core/test/*sycl*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "core/tools/vmaf_vpl*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-sycl.json",
+        "scripts/ci/gen-sycl-compile-commands.py",
+        "scripts/ci/clang-tidy-sycl.sh"
+      ]
+    },
+    "tidy_arm64": {
+      "own_paths_only": true,
+      "patterns": [
+        "build-aux/aarch64-linux-gnu*.ini",
+        "core/src/arm/*",
+        "core/src/arm/**",
+        "core/src/feature/arm64/*",
+        "core/src/feature/arm64/**",
+        "core/test/*arm64*",
+        "core/test/*neon*",
+        "core/test/*sve*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-arm64.json"
+      ]
+    },
+    "tidy_clang": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/read_json_model.c",
+        "core/test/fuzz/*",
+        "core/test/fuzz/**",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-clang.json"
+      ]
+    },
+    "tidy_metal": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/feature/metal/*",
+        "core/src/feature/metal/**",
+        "core/src/metal/*",
+        "core/src/metal/**",
+        "core/test/*metal*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        "scripts/ci/tidy-baseline-metal.json",
+        ".github/workflows/tidy-metal.yml"
+      ]
     }
   }
 }

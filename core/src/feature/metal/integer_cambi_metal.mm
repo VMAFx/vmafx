@@ -874,7 +874,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
 
     /* Heatmaps of the distorted picture only, as cambi.c writes them. */
-    const unsigned *heatmap_frame = (s->heatmaps_path != NULL) ? &index : NULL;
+    const unsigned *heatmap_frame = (s->heatmaps_path != nullptr) ? &index : nullptr;
     int err = cambi_metal_score(s, dist_pic, (unsigned)s->enc_width, (unsigned)s->enc_height,
                                 s->adjusted_window, heatmap_frame, &s->dist_score);
     if (err == 0 && s->full_ref) {

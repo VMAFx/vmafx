@@ -80,7 +80,7 @@ HOST_PIECES = (
     "(vmaf_mtl_u32)s->motion_filter_size",
     "threadsPerThreadgroup:MTLSizeMake(VMAF_MTL_FM_ROW_GROUP, 1, 1)",
     "s->n_planes = FMM_MAX_PLANES;",
-    "for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {",
+    "for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES && err == 0; c++) {",
 )
 # CPU options the twin does not take yet: none, its table is the CPU's.
 OPTIONS_NOT_YET: tuple[str, ...] = ()
@@ -391,8 +391,8 @@ class MetalFloatMotionExactContract(unittest.TestCase):
     def test_unprovided_motion3_is_detected(self) -> None:
         src = planted(
             HOST,
-            '"VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL',
-            '"VMAF_feature_motion2_score", NULL',
+            '"VMAF_feature_motion2_score", "VMAF_feature_motion3_score", nullptr',
+            '"VMAF_feature_motion2_score", nullptr',
         )
         self.assert_detected(src, "provides no motion3")
 

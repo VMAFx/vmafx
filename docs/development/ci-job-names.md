@@ -112,6 +112,12 @@ column mirrors that array.
 | `libvmaf-build-matrix.yml` | new in ADR-1260 | `Windows ARM64 MSVC` | 18 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy (Changed C/C++ Files)` | `Tidy Changed` | 12 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy Ratchet (Whole Tree)` | `Tidy Ratchet` | 12 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (cuda)` | 16 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (hip)` | 15 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (sycl)` | 16 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (arm64)` | 17 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (clang)` | 17 | Yes |
+| `tidy-metal.yml` | `Tidy Metal` made a required gate in ADR-2796 | `Tidy Metal` | 10 | Yes |
 | `lint-and-format.yml` | `Cppcheck (Whole Project)` | `Cppcheck` | 8 | Yes |
 | `lint-and-format.yml` | `Python Lint (Ruff + Black + mypy)` | `Python Lint` | 11 | Yes |
 | `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |

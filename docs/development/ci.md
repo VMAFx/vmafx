@@ -85,7 +85,7 @@ required and which ADR owns it, see
 
 | File | Purpose |
 | --- | --- |
-| [`nightly.yml`](../../.github/workflows/nightly.yml) | Nightly jobs, including the whole-tree clang-tidy ratchet of the `cpu` lane. |
+| [`nightly.yml`](../../.github/workflows/nightly.yml) | Nightly jobs, including the whole-tree clang-tidy ratchet of the `cpu` lane and the sweep of every other lane (ADR-2796). |
 | [`nightly-bisect.yml`](../../.github/workflows/nightly-bisect.yml) | Nightly bisect-model-quality smoke against a committed fixture timeline. |
 | [`fuzz.yml`](../../.github/workflows/fuzz.yml) | Nightly libFuzzer smoke over every harness under `core/test/fuzz/`. |
 | [`scorecard.yml`](../../.github/workflows/scorecard.yml) | Weekly OpenSSF Scorecard scan. |
@@ -297,7 +297,7 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 19 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 25 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
@@ -317,6 +317,12 @@ the selectors declared in `.github/ci-impact.json`. There are 19 selectors:
 | `helm` | `deploy/helm/` | Helm chart |
 | `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `tidy_cuda` | `core/src/cuda/`, `core/src/feature/cuda/`, the CUDA and GPU tests, `core/src/dnn/` and the ratchet, lane baseline and lane scripts; own paths only ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)) | `Tidy Lane (cuda)` |
+| `tidy_hip` | `core/src/hip/`, `core/src/feature/hip/`, the HIP and GPU tests, the same lane infrastructure; own paths only | `Tidy Lane (hip)` |
+| `tidy_sycl` | `core/src/sycl/`, `core/src/feature/sycl/`, the SYCL and GPU tests, `core/tools/vmaf_vpl*`, the same lane infrastructure; own paths only | `Tidy Lane (sycl)` |
+| `tidy_arm64` | `core/src/feature/arm64/`, `core/src/arm/`, the NEON and SVE tests, the aarch64 cross files, the same lane infrastructure; own paths only | `Tidy Lane (arm64)` |
+| `tidy_clang` | `core/test/fuzz/`, `core/src/read_json_model.c`, the same lane infrastructure; own paths only | `Tidy Lane (clang)` |
+| `tidy_metal` | `core/src/metal/`, `core/src/feature/metal/`, the Metal tests, `tidy-metal.yml`, the ratchet and the Metal baseline; own paths only | `Tidy Metal` |
 | `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
 | `shell` | `*.sh` | Not required, still path-filtered |
 | `container` | `Dockerfile*`, `dev/`, `docker/`, `deploy/`, `.devcontainer/` | Not required, still path-filtered |
@@ -339,7 +345,8 @@ One declared exception ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.m
 a selector with `"own_paths_only": true` is not set by the fallback itself. When
 the changed paths are known, it is true only if one of them matches its own
 patterns; when they are not (a dispatch, a schedule, a diff that could not be
-read), it stays true. Only `tester_image` and `windows_tester_zip` carry it, it
+read), it stays true. Only the tester selectors and the six `tidy_<lane>`
+selectors carry it ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)), it
 needs patterns and no `inherits`, and `test_ci_impact.py` fails on any other use.
 A change under `scripts/ci/` alone therefore runs every other gate and neither
 tester build.
@@ -553,9 +560,17 @@ pages named here.
 CI bounds clang-tidy findings for every file with a per-lane baseline
 (`scripts/ci/tidy-baseline-<lane>.json`): a file may never exceed its baseline,
 and a cleaner file must tighten it in the same PR. The required context is
-`Tidy Ratchet` (the `cpu` lane); the `cuda`, `sycl`, `hip` and `arm64` lanes are
-measured in the dev container and are not PR-required. Rules, commands and
-exit codes are in [Tidy ratchet](tidy-ratchet.md); measuring is in
+`Tidy Ratchet` (the `cpu` lane). Every other lane is a required, path-routed
+check as well ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
+`Tidy Lane (cuda)`, `Tidy Lane (hip)`, `Tidy Lane (sycl)`,
+`Tidy Lane (arm64)` and `Tidy Lane (clang)` (legs of one job in
+`lint-and-format.yml`, measured in the pinned dev container) and `Tidy Metal`
+(`tidy-metal.yml`, a macOS runner). Each starts on every pull request and
+measures its lane only when the planner selects `tidy_<lane>`; a lane it did
+not measure says so and is checked by the nightly sweep, which runs all lanes
+on master and opens or updates one issue on drift. Rules, commands and
+exit codes are in
+[Tidy ratchet](tidy-ratchet.md#hosted-lanes-adr-2796); measuring is in
 [measuring the lanes](tidy-lanes.md).
 
 ### Carve-outs still open after ADR-1142

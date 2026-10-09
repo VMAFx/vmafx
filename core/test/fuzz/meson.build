@@ -39,7 +39,7 @@ fuzz_vidinput_sources = [
 
 fuzz_y4m_input = executable('fuzz_y4m_input',
     ['fuzz_y4m_input.c'] + fuzz_vidinput_sources,
-    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/', '../../src/')],
     c_args : fuzz_flags + compat_cflags,
     link_args : fuzz_flags,
 )
@@ -49,7 +49,7 @@ fuzz_y4m_input = executable('fuzz_y4m_input',
 # compile time and lets the fuzzer vary only the frame body bytes.
 fuzz_yuv_input = executable('fuzz_yuv_input',
     ['fuzz_yuv_input.c'] + fuzz_vidinput_sources,
-    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/', '../../src/')],
     c_args : fuzz_flags + compat_cflags,
     link_args : fuzz_flags,
 )

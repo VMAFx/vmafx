@@ -87,6 +87,59 @@ jobs:
           name: clang-tidy-full-report
           path: clang-tidy-full.log
 
+  clang-tidy-lanes:
+    name: Tidy lane sweep (${{ matrix.lane }})
+    # Q-315 / ADR-2796: the nightly full sweep of the device and cross lanes on
+    # master, the counterpart of the path-scoped required legs of the Lint
+    # workflow (`Tidy Lane (<lane>)`). Unscoped: every lane, every night, so a
+    # change the per-pull-request routing cannot see (a shared header, a
+    # toolchain bump in the pinned dev container) still shows up. The cpu lane
+    # is `clang-tidy-full` above, the metal lane is tidy-metal.yml.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [cuda, hip, sycl, arm64, clang]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Measure the lane against its baseline
+        uses: ./.github/actions/tidy-lane
+        with:
+          lane: ${{ matrix.lane }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload measurement and log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: tidy-lane-${{ matrix.lane }}
+          path: ${{ runner.temp }}/tidy-lane
+          if-no-files-found: ignore
+
+  tidy-drift:
+    name: Report tidy drift
+    needs: [clang-tidy-full, clang-tidy-lanes]
+    if: always() && (needs.clang-tidy-full.result == 'failure' || needs.clang-tidy-lanes.result == 'failure')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open or update the tidy-drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/tidy-drift-issue.sh "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+
   netflix-benchmark:
     name: Netflix benchmark suite
     runs-on: ubuntu-26.04

@@ -373,7 +373,7 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     /* The geometry stays the one init() sized the buffers for; libvmaf
      * rejects a picture of any other size before it reaches submit(). */
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
-    id<MTLBuffer> slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
+    id<MTLBuffer> const slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];
     if (index >= s->depth) {
         const void *const device_handle = vmaf_metal_context_device_handle(s->ctx);
         const void *const queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
@@ -460,7 +460,7 @@ int advance_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_c
     MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
 
     /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == NULL) { return 0; }
+    if (s->feature_name_dict == nullptr) { return 0; }
 
     const VmafMotionWindow window = mv2_metal_window_of(s);
     return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
@@ -474,7 +474,7 @@ int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_col
     MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
 
     /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == NULL) { return 1; }
+    if (s->feature_name_dict == nullptr) { return 1; }
 
     const VmafMotionWindow window = mv2_metal_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);

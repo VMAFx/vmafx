@@ -48,20 +48,59 @@ Each lane has its own compile database and baseline. The numbers are the
 
 | Lane | Covers | Measured | PR-required | Baseline | Warnings |
 | --- | --- | --- | --- | --- | ---: |
-| `cpu` | The whole CPU tree | CI job `Tidy Ratchet`; dev container for the baseline | Yes (`Tidy Ratchet`) | `tidy-baseline-cpu.json` | 70 |
-| `cuda` | CUDA host and `.cu` kernels | Dev container with `nvcc` | No | `tidy-baseline-cuda.json` | 583 |
-| `sycl` | SYCL host and kernels | Dev container with `icpx` | No (see [carve-outs](#carve-outs-still-open-after-adr-1142)) | `tidy-baseline-sycl.json` | 154 |
-| `hip` | HIP host and `.hip` kernels | Dev container with `hipcc` | No | `tidy-baseline-hip.json` | 503 |
-| `arm64` | NEON and SVE2 tree | Dev container with the aarch64 cross compiler and `qemu-user` | No | `tidy-baseline-arm64.json` | 114 |
+| `cpu` | The whole CPU tree | CI job `Tidy Ratchet`; dev container for the baseline | Yes (`Tidy Ratchet`) | `tidy-baseline-cpu.json` | 13 |
+| `cuda` | CUDA host and `.cu` kernels | Dev container with `nvcc` | Yes (`Tidy Lane (cuda)`, path-routed) | `tidy-baseline-cuda.json` | 0 |
+| `sycl` | SYCL host and kernels | Dev container with `icpx` | Yes (`Tidy Lane (sycl)`, path-routed; see [carve-outs](#carve-outs-still-open-after-adr-1142)) | `tidy-baseline-sycl.json` | 0 |
+| `hip` | HIP host and `.hip` kernels | Dev container with `hipcc` | Yes (`Tidy Lane (hip)`, path-routed) | `tidy-baseline-hip.json` | 0 |
+| `arm64` | NEON and SVE2 tree | Dev container with the aarch64 cross compiler and `qemu-user` | Yes (`Tidy Lane (arm64)`, path-routed) | `tidy-baseline-arm64.json` | 0 |
 
-Metal (`.mm`, `.metal`) has no Linux toolchain and is tracked by structural
-proxy only: its `NOLINT` citations are checked by the tree-wide scan, not by a
-lane measurement.
+The `clang` lane (the fuzz targets and `read_json_model.c` built with clang) is
+required as `Tidy Lane (clang)`, and the macOS `metal` lane (the Objective-C++
+host code and the Metal-only tests, `tidy-baseline-metal.json`) as `Tidy Metal`.
+The `.metal` shader sources have no clang-tidy language mode and are on the
+exception list. Measure a lane with `make tidy-lane LANE=<lane>`; see
+[measuring the lanes](tidy-lanes.md). A lane that did not run is reported as
+*not run*, never as clean.
 
-The GPU and arm64 lanes become PR-required contexts as soon as a hosted
-toolchain exists for the lane. Until then a lane that cannot run is reported as
-*not run*, never as clean. Measure a lane with `make tidy-lane LANE=<lane>`;
-see [measuring the lanes](tidy-lanes.md).
+## Hosted lanes (ADR-2796)
+
+Every lane runs in hosted CI and is a required check, scoped to the files the
+lane reads ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
+
+| Lane | Required context | Where it runs | Selector (`.github/ci-impact.json`) |
+| --- | --- | --- | --- |
+| `cpu` | `Tidy Ratchet` | the runner, `lint-and-format.yml` | `c_core` |
+| `cuda`, `hip`, `sycl`, `arm64`, `clang` | `Tidy Lane (<lane>)` | the digest-pinned dev container, `lint-and-format.yml` | `tidy_<lane>` |
+| `metal` | `Tidy Metal` | a macOS runner, `tidy-metal.yml` | `tidy_metal` |
+
+- **Routing.** Each `tidy_<lane>` selector is `own_paths_only`
+  ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)): it is true when a
+  changed file is one of the lane's own sources or tests, the ratchet
+  (`scripts/ci/tidy-ratchet.py`), the lane's baseline, the lane scripts,
+  `.clang-tidy`, the `Makefile` (which defines the lanes) or the workflow that
+  hosts the lane. A change to a file every lane compiles (`core/src/libvmaf.c`)
+  selects the `cpu` lane only; the nightly sweep finds what it does to the
+  others. A docs-only change selects none. `python3 scripts/ci/plan-ci-impact.py
+  --event pull_request --base "$(git merge-base origin/master HEAD)" --head HEAD
+  --print` shows what a branch selects.
+- **A skipped lane says so.** The leg always starts, so the context always
+  reports. When its selector is false it prints
+  `::notice::tidy_<lane> not impacted (mode=... reason=...) ... NOT measured`
+  and measures nothing; it is never counted as a clean measurement.
+- **The pinned container.** The device and cross lanes need `nvcc`, `hipcc`,
+  `icpx` and the aarch64 cross compiler, which only the dev container has.
+  `.github/actions/tidy-lane/action.yml` names the image by digest and
+  `scripts/dev/tidy-lane.sh` measures the lane in it, as a developer does. After
+  a `dev/Containerfile` change publishes a new image, bump the digest in the same
+  pull request that re-measures the baselines. The package is private; the job
+  reads it with the repository token (`packages: read`).
+- **Nightly sweep.** `nightly.yml` measures the `cpu` lane and every lane above
+  without routing, and `tidy-metal.yml` runs nightly. A failing sweep opens or
+  updates the one issue "Tidy ratchet drift on master"
+  (`scripts/ci/tidy-drift-issue.sh`), with the failed lanes and the run link.
+- **Fixing a red lane.** Fix the code, then tighten the baseline through the
+  write command ([scoped write](#tighten-selected-files-with-a-scoped-write),
+  `make tidy-lane-write`); never edit a baseline by hand.
 
 ### The `cpu` lane
 

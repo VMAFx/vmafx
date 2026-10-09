@@ -102,6 +102,15 @@ DEPFILE_STATEMENT = f"""build src/twin.o: CUSTOM_COMMAND_DEP ../core/src/./featu
  description = Generating$ src/sycl_feature_twin$ with$ a$ custom$ command
 
 """
+# The spill probe (ADR-2170): meson lists the launcher script and python AFTER icpx among the
+# implicit dependencies, and the command runs icpx through the launcher.
+LAUNCHER_STATEMENT = f"""build src/scratch_check.o: CUSTOM_COMMAND_DEP ../core/src/./sycl/scratch_check.cpp | ../core/src/sycl/run_captured.py {ICPX} /usr/bin/python3
+ DEPFILE = src/scratch_check.o.d
+ DEPFILE_UNQUOTED = src/scratch_check.o.d
+ COMMAND = /usr/bin/python3 ../core/src/sycl/run_captured.py -- {ICPX} -pedantic -c -fsycl -MD -MF src/scratch_check.o.d ../core/src/./sycl/scratch_check.cpp -o src/scratch_check.o
+ description = Generating$ src/sycl_common_scratch_check$ with$ a$ custom$ command
+
+"""
 # A device link reads an object, not a source: it is not a translation unit.
 LINK_STATEMENT = f"""build test/probe_link.obj: CUSTOM_COMMAND test/probe.o | {ICPX}
  COMMAND = {ICPX} -fsycl -fsycl-link test/probe.o -o test/probe_link.obj
@@ -129,6 +138,24 @@ class ParseNinjaTests(unittest.TestCase):
         self.assertTrue(twin["command"].startswith("clang++ "))
         self.assertNotIn("-MF", twin["command"])
         self.assertIn("-Isrc", twin["command"])
+
+    def test_the_launched_spill_probe_is_a_translation_unit_of_the_lane(self) -> None:
+        # Failing first: icpx is not the last implicit dependency of this statement and its
+        # command starts with the launcher, so the probe was left out of the database and
+        # the sycl lane reported its baseline entry as "not measured".
+        entries = self._parse(PLAIN_STATEMENT + LAUNCHER_STATEMENT)
+        probe = next(entry for entry in entries if entry["file"].endswith("scratch_check.cpp"))
+        self.assertTrue(probe["command"].startswith("clang++ "), probe["command"])
+        self.assertNotIn("run_captured", probe["command"])
+        self.assertNotIn("python", probe["command"])
+        self.assertNotIn("-MF", probe["command"])
+
+    def test_a_launched_statement_that_cannot_be_parsed_is_an_error(self) -> None:
+        # The statement is counted (icpx among its dependencies) but has no COMMAND line.
+        generator = load_generator()
+        headless = LAUNCHER_STATEMENT.split(" DEPFILE", maxsplit=1)[0] + "\n"
+        with self.assertRaises(generator.UnparsedSyclCommandError):
+            self._parse(PLAIN_STATEMENT + headless, generator)
 
     def test_statement_under_an_unknown_rule_is_an_error(self) -> None:
         # The failure this guards: ninja renamed the rule (CUSTOM_COMMAND_DEP)

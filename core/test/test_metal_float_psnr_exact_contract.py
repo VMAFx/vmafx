@@ -238,8 +238,8 @@ class FloatPsnrMetalExactContract(unittest.TestCase):
     def test_square_threadgroup_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
-            "    MTLSize tg   = MTLSizeMake(16, 16, 1);",
+            "    const MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
+            "    const MTLSize tg   = MTLSizeMake(16, 16, 1);",
         )
         self._assert_detected(failures, "not one 256-pixel segment of one row")
 

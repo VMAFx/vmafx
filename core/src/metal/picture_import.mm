@@ -137,7 +137,7 @@ int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned plane,
 {
     const VmafMetalSurfaceFormat *fmt =
         vmaf_metal_surface_format((uint32_t)IOSurfaceGetPixelFormat(surf));
-    if (fmt == NULL) {
+    if (fmt == nullptr) {
         return -ENOTSUP;
     }
     const size_t src_plane = (size_t)vmaf_metal_surface_src_plane(fmt, plane);

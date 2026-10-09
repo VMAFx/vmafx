@@ -164,6 +164,15 @@ ADR_1687_STRICT_CONTEXTS = {"Tester Image", "Windows Tester Zip", "Release Dry R
 ADR_2440_STRICT_CONTEXTS = {"Go API Compatibility"}
 # ADR-2784: praetor's REUSE workflow (reuse.yml) has the same shape since the pin 3a766f2d56ad.
 ADR_2784_STRICT_CONTEXTS = {"REUSE lint"}
+# ADR-2796: the clang-tidy lanes; every leg always starts and the planner skips only its work.
+ADR_2796_STRICT_CONTEXTS = {
+    "Tidy Lane (cuda)",
+    "Tidy Lane (hip)",
+    "Tidy Lane (sycl)",
+    "Tidy Lane (arm64)",
+    "Tidy Lane (clang)",
+    "Tidy Metal",
+}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -195,8 +204,12 @@ def strict_context_producers(strict: set[str]) -> dict[str, list[str]]:
     for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         for name in strict:
-            # Matrix legs spell `Name (Leg)` as `Name (${{ matrix.name }})`.
-            spellings = {name, re.sub(r"\([^()]*\)$", "(${{ matrix.name }})", name)}
+            # Matrix legs spell `Name (Leg)` as `Name (${{ matrix.name }})`, or with the
+            # `lane` key of the clang-tidy lanes (ADR-2796).
+            spellings = {name} | {
+                re.sub(r"\([^()]*\)$", f"(${{{{ matrix.{key} }}}})", name)
+                for key in ("name", "lane")
+            }
             if any(re.search(rf"(?m)^    name: {re.escape(s)}[ \t]*$", text) for s in spellings):
                 producers[name].append(path.name)
     return producers
@@ -319,7 +332,8 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1528_STRICT_CONTEXTS
             | ADR_1687_STRICT_CONTEXTS
             | ADR_2440_STRICT_CONTEXTS
-            | ADR_2784_STRICT_CONTEXTS,
+            | ADR_2784_STRICT_CONTEXTS
+            | ADR_2796_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

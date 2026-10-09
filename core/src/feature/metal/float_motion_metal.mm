@@ -86,7 +86,7 @@ namespace {
 
 /* One picture plane: its geometry, where its row sums sit in the read-back,
  * and its buffers. */
-typedef struct FmPlaneMetal {
+struct FmPlaneMetal {
     unsigned w;
     unsigned h;
     /* Half-size plane of the scale-1 SAD (motion_add_scale1). */
@@ -105,9 +105,9 @@ typedef struct FmPlaneMetal {
     void *ref_in;
     void *blur[2];
     void *diff[2];
-} FmPlaneMetal;
+};
 
-typedef struct FloatMotionStateMetal {
+struct FloatMotionStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalKernelBuffer rb;        /* float row sums of every plane and scale */
     VmafMetalContext *ctx;
@@ -135,7 +135,7 @@ typedef struct FloatMotionStateMetal {
     bool motion_add_uv;
 
     VmafDictionary *feature_name_dict;
-} FloatMotionStateMetal;
+};
 } // namespace
 
 namespace {
@@ -492,9 +492,9 @@ int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
 {
     fex->extract = extract_force_zero_metal;
-    fex->submit = NULL;
-    fex->collect = NULL;
-    fex->flush = NULL;
+    fex->submit = nullptr;
+    fex->collect = nullptr;
+    fex->flush = nullptr;
     fex->close = close_fex_metal;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
@@ -521,7 +521,7 @@ int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     err = build_pipelines(s, device);
-    for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {
+    for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES && err == 0; c++) {
         err = fm_metal_plane_alloc(s, &s->plane[c], device);
     }
     if (err != 0) { return err; }
@@ -839,7 +839,7 @@ int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_col
 }
 
 static const char *provided_features[] = {
-    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL
+    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", "VMAF_feature_motion3_score", nullptr
 };
 } // namespace
 

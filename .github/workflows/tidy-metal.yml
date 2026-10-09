@@ -5,17 +5,20 @@
 # (22) reads them against the Xcode SDK (docs/development/tidy-lanes.md, "The macOS metal
 # lane"); the measurement is compared with scripts/ci/tidy-baseline-metal.json.
 #
-# A macOS runner bills at ten times a Linux one, so, like the macOS tester bundle
-# (ADR-1595), this is not a per-pull-request gate: it runs weekly, on a pull request that
-# touches the Metal host sources or the lane itself, and on dispatch. It is not in
-# required-aggregator.yml until it has passed on master; a lane that did not run is never
-# reported as clean.
+# A macOS runner bills at ten times a Linux one, so the lane measures only when the planner
+# selects it (selector `tidy_metal` of .github/ci-impact.json, ADR-2796, Q-315): on a pull
+# request or master push that changes a Metal host source, the lane's ratchet or baseline, or
+# this workflow; on the nightly schedule and on dispatch, where there is no diff, always.
+# The required context `Tidy Metal` is the last job below: it reports on every run of the
+# lane tier (not on the release pull request without the cut label, which runs the release
+# contract only), and it says when the lane was not measured instead of reporting it
+# clean. A scheduled run that finds drift opens or updates the one tidy-drift issue.
 
 name: Tidy Metal
 
 on:
   schedule:
-    - cron: "41 4 * * 1"
+    - cron: "41 4 * * *"
   workflow_dispatch:
     inputs:
       fix:
@@ -26,23 +29,15 @@ on:
     branches: [master]
     # ADR-2169: draft pull requests do not run; promoting one to ready does.
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "core/src/metal/**"
-      - "core/src/feature/metal/**"
-      - "core/test/test_metal_install_header.c"
-      - "core/test/test_metal_kernel_coverage_audit.c"
-      - "core/test/test_metal_kernel_registration.c"
-      - "core/test/test_metal_smoke.c"
-      - "scripts/ci/tidy-ratchet.py"
-      - "scripts/ci/tidy-baseline-metal.json"
-      - ".github/workflows/tidy-metal.yml"
+  push:
+    branches: [master]
 
 permissions:
   contents: read
 
 concurrency:
-  group: tidy-metal-${{ github.ref }}
-  cancel-in-progress: true
+  group: tidy-metal-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   tier:
@@ -53,18 +48,43 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/ci-tier.yml
 
-  clang-tidy-metal:
+  plan:
+    name: Plan (Tidy Metal)
     needs: tier
-    if: needs.tier.outputs.full == 'true'
+    if: needs.tier.outputs.light == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      selected: ${{ steps.impact.outputs.tidy_metal }}
+      mode: ${{ steps.impact.outputs.mode }}
+      reason: ${{ steps.impact.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  clang-tidy-metal:
+    needs: [tier, plan]
+    if: needs.tier.outputs.light == 'true' && needs.plan.outputs.selected == 'true'
     # RC3 coverage: the Objective-C++ Metal host code and the Metal-only C tests
     # are in no Linux lane's compile database. Homebrew's clang-tidy of the same
     # major as the Linux lanes reads them against the Xcode SDK. The lane
     # measures only those files (--select) and has its own baseline,
-    # scripts/ci/tidy-baseline-metal.json. Not in required-aggregator.yml until
-    # it has passed on master (the ADR-1297 path the SYCL lane took).
+    # scripts/ci/tidy-baseline-metal.json. Required through the `Tidy Metal`
+    # gate job below (Q-315, ADR-2796).
     # The `.metal` kernels are not read here: clang-tidy has no Metal language
     # mode; they are listed in the lint exception list (follow-up pull request).
-    name: Tidy Metal
+    name: Tidy Metal work
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -174,3 +194,57 @@ jobs:
         with:
           name: tidy-ratchet-metal
           path: tidy-ratchet-metal.json
+
+  gate:
+    needs: [tier, plan, clang-tidy-metal]
+    if: always() && needs.tier.result == 'success' && needs.tier.outputs.light == 'true'
+    # required-aggregator
+    # The required context. It reports on every tier that runs the lanes;
+    # "not selected" is a stated skip, never a clean measurement (HISS-18).
+    # The release pull request without the cut label runs the release
+    # contract only (.github/ci-tier.json), so the gate stays out of it like
+    # every other lane of that tier.
+    name: Tidy Metal
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Report the lane
+        env:
+          PLAN: ${{ needs.plan.result }}
+          WORK: ${{ needs.clang-tidy-metal.result }}
+          SELECTED: ${{ needs.plan.outputs.selected }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          REASON: ${{ needs.plan.outputs.reason }}
+        run: |
+          if [ "$PLAN" != "success" ]; then
+            echo "::error::the impact plan did not complete ($PLAN); the Metal lane is unknown"
+            exit 1
+          fi
+          if [ "$SELECTED" != "true" ]; then
+            echo "::notice::tidy_metal not impacted (mode=$MODE reason=$REASON) - the Metal lane was NOT measured; the nightly run measures it (ADR-2796)"
+            exit 0
+          fi
+          if [ "$WORK" != "success" ]; then
+            echo "::error::the Metal lane was selected and its measurement ended $WORK"
+            exit 1
+          fi
+          echo "Metal lane measured against scripts/ci/tidy-baseline-metal.json"
+
+  drift:
+    needs: [gate]
+    if: always() && github.event_name == 'schedule' && needs.gate.result == 'failure'
+    name: Report Metal drift
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open or update the tidy-drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/tidy-drift-issue.sh "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"

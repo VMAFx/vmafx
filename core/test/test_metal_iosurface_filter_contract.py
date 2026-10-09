@@ -142,7 +142,7 @@ class MetalIOSurfaceFilterContract(unittest.TestCase):
         self.assertIn("IOSurfaceGetPixelFormat(surf)", source)
         self.assertIn("vmaf_metal_plane_read_plan(", source)
         self.assertIn("vmaf_metal_read_plane(", source)
-        self.assertRegex(source, r"if \(fmt == NULL\) \{\s*return -ENOTSUP;")
+        self.assertRegex(source, r"if \(fmt == (?:nullptr|NULL)\) \{\s*return -ENOTSUP;")
         # The plane-by-plane memcpy of the surface's own plane index is gone.
         self.assertNotIn("IOSurfaceGetBaseAddressOfPlane(surf, (size_t)plane)", source)
 
