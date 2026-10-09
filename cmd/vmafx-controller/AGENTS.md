@@ -180,11 +180,13 @@ PostgreSQL store replacing SQLite queue. `store/`: migrations
    binary). Schema change = new migration file + raise `SchemaVersion`.
 4. **Bounded loops** (HISS-02): `MaxHeartbeatJobs` 64, `MaxBackends` 16,
    `MaxListJobs` 10000, `MaxExpiryBatch` 1000; larger input -> `ErrInvalid`.
-5. **Tests need Docker** (golusoris `testutil/pg`; `postgres:18.6-alpine`,
-   migrations also on `postgres:16.15-alpine`). No skip-on-missing-Docker
+5. **Tests need Docker** (golusoris `testutil/pg`; image `storetest.Image`,
+   migrations also on `storetest.OldestImage`). No skip-on-missing-Docker
    added here; `-short` skips (testutil). `storetest.Image` / `OldestImage`
    stay `tag@sha256:<index digest>`: testutil/pg >= golusoris v0.13.0 fails
-   test on undigested image. Tag bump = new digest, same edit.
+   test on undigested image. Tag bump = new digest, same edit. Renovate
+   custom manager (`depNameTemplate: postgres`) owns both constants;
+   `OldestImage` held on 16.x by package rule.
 
 ### backend package (ADR-2350, WP17)
 

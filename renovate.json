@@ -385,6 +385,17 @@
         ".devcontainer/Dockerfile.praetor"
       ],
       "enabled": false
+    },
+    {
+      "description": "OldestImage in the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go) is the oldest PostgreSQL release external servers may run, 16.x: it takes digest, minor and patch updates on that line and never a new major. Image follows the release the chart deploys (ADR-2350 D1), so its major updates stay manual, one pull request each.",
+      "matchFileNames": [
+        "cmd/vmafx-controller/store/storetest/storetest.go"
+      ],
+      "matchDepNames": [
+        "postgres"
+      ],
+      "matchCurrentValue": "/^16\\./",
+      "allowedVersions": "/^16\\./"
     }
   ],
   "customManagers": [
@@ -545,6 +556,18 @@
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "PostgreSQL images of the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go, #2656). golusoris testutil/pg refuses an image without a digest, so Image and OldestImage are Go string constants of the form postgres:<tag>@sha256:<index digest>, which no built-in manager reads. This manager keeps both digests current and proposes newer tags; the package rule for OldestImage holds it on its 16.x line.",
+      "managerFilePatterns": [
+        "/^cmd/vmafx-controller/store/storetest/storetest\\.go$/"
+      ],
+      "matchStrings": [
+        "const (?:Image|OldestImage) = \"postgres:(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "postgres"
     },
     {
       "customType": "regex",

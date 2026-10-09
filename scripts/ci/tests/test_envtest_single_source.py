@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -230,7 +231,7 @@ if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
         manager = managers[0]
         self.assertEqual(manager["datasourceTemplate"], "go")
         self.assertEqual(manager["managerFilePatterns"], ["/^build-config\\.env$/"])
-        pattern = manager["matchStrings"][0].replace("(?<currentValue>", "(?P<currentValue>")
+        pattern = to_python(manager["matchStrings"][0])
         found = re.search(pattern, (ROOT / "build-config.env").read_text())
         self.assertIsNotNone(found)
         assert found is not None

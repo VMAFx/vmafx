@@ -23,6 +23,7 @@ from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +32,12 @@ CONFIG = "build-config.env"
 CONFIG_LINE = re.compile(r'^([A-Z][A-Z0-9_]*)="([^"]*)"', re.MULTILINE)
 DOCKERFILE = re.compile(r"^(?:Dockerfile[^/]*|docker/Dockerfile[^/]*|dev/Containerfile[^/]*)$")
 CUDA_COMPAT = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
+# The controller store tests' PostgreSQL images (#2656): Go string constants
+# of the form postgres:<tag>@sha256:<digest>, read by a custom manager.
+STORETEST = "cmd/vmafx-controller/store/storetest/storetest.go"
+IMAGE_CONSTANT = re.compile(
+    r'^const (\w+) = "postgres:([^"@]+)@(sha256:[a-f0-9]{64})"$', re.MULTILINE
+)
 
 
 def image_keys(config_text: str) -> set[str]:
@@ -176,6 +183,58 @@ class RenovateFilePatterns(unittest.TestCase):
         match = re.search(r"(?ms)^  verify-native-artifacts:\n(.*?)(?=^  [\w-]+:\n|\Z)", workflow)
         self.assertIsNotNone(match, "supply-chain.yml has no verify-native-artifacts job")
         self.assertRegex(match.group(1) if match else "", r"(?m)^    runs-on: ubuntu-24\.04$")
+
+    def storetest_manager(self) -> dict[str, Any]:
+        managers = [
+            manager
+            for manager in self.config["customManagers"]
+            if any(pattern.search(STORETEST) for pattern in self.patterns(manager))
+        ]
+        self.assertEqual(len(managers), 1)
+        manager: dict[str, Any] = managers[0]
+        return manager
+
+    def test_storetest_postgres_images_are_tracked(self) -> None:
+        # No built-in manager reads a Go string constant, so without the custom
+        # manager neither image digest is ever updated. Every image constant of
+        # the file must be a match, with its tag and digest.
+        manager = self.storetest_manager()
+        self.assertEqual(manager["datasourceTemplate"], "docker")
+        self.assertEqual(manager["depNameTemplate"], "postgres")
+        text = (ROOT / STORETEST).read_text(encoding="utf-8")
+        constants = {name: (tag, digest) for name, tag, digest in IMAGE_CONSTANT.findall(text)}
+        self.assertEqual(set(constants), {"Image", "OldestImage"})
+        patterns = [re.compile(to_python(match)) for match in manager["matchStrings"]]
+        found = {
+            (match["currentValue"], match["currentDigest"])
+            for pattern in patterns
+            for match in pattern.finditer(text)
+        }
+        self.assertEqual(found, set(constants.values()))
+        # An image without a digest is not a match (testutil/pg refuses it).
+        undigested = 'const Image = "postgres:18.6-alpine"\n'
+        self.assertFalse(any(pattern.search(undigested) for pattern in patterns))
+
+    def test_oldest_postgres_image_stays_on_its_major(self) -> None:
+        # OldestImage is the oldest release external servers may run: digest,
+        # minor and patch updates only. Image keeps its major updates.
+        rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if rule.get("matchFileNames") == [STORETEST]
+        ]
+        self.assertEqual(len(rules), 1)
+        rule = rules[0]
+        self.assertEqual(rule["matchDepNames"], ["postgres"])
+        text = (ROOT / STORETEST).read_text(encoding="utf-8")
+        tags = {name: tag for name, tag, _ in IMAGE_CONSTANT.findall(text)}
+        current = re.compile(to_python(rule["matchCurrentValue"][1:-1]))
+        allowed = re.compile(to_python(rule["allowedVersions"][1:-1]))
+        self.assertTrue(current.search(tags["OldestImage"]))
+        self.assertFalse(current.search(tags["Image"]))
+        major = int(tags["OldestImage"].split(".", 1)[0])
+        self.assertTrue(allowed.search(f"{major}.99-alpine"))
+        self.assertFalse(allowed.search(f"{major + 1}.0-alpine"))
 
 
 if __name__ == "__main__":

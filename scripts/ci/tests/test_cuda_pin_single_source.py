@@ -34,6 +34,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.renovate_regex import to_python
+
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
@@ -71,14 +75,6 @@ def read_config() -> dict[str, Any]:
     if not isinstance(data, dict):
         raise TypeError("renovate.json must contain a JSON object")
     return data
-
-
-JS_GROUP = re.compile(r"\(\?<([A-Za-z_][A-Za-z0-9_]*)>")
-
-
-def to_python(pattern: str) -> str:
-    """Renovate's regexes use JavaScript named groups; Python spells them (?P<x>)."""
-    return JS_GROUP.sub(r"(?P<\1>", pattern)
 
 
 def compiled(patterns: list[str]) -> list[re.Pattern[str]]:

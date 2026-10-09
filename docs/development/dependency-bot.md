@@ -98,6 +98,25 @@ Renovate run has opened an update PR. The
 [research note](../research/renovate-file-pattern-delimiters.md) records the
 installed Renovate matcher used to reproduce the defect.
 
+### Images pinned in Go source
+
+The controller store tests start PostgreSQL from two Go constants in
+`cmd/vmafx-controller/store/storetest/storetest.go`: `Image`, the release the
+chart deploys, and `OldestImage`, the oldest release external servers may run.
+Each is a `postgres:<tag>@sha256:<digest>` string, because golusoris
+`testutil/pg` refuses a test image without a digest. No built-in Renovate
+manager reads a Go string, so a custom manager (`depNameTemplate: postgres`)
+matches both constants and proposes new digests and tags for them. A package
+rule keeps `OldestImage` on its major line (`allowedVersions` `/^16\./`);
+`Image` receives major updates as ordinary manual pull requests.
+
+`test_storetest_postgres_images_are_tracked` and
+`test_oldest_postgres_image_stays_on_its_major` in
+`scripts/ci/tests/test_renovate_file_patterns.py` evaluate the configured
+patterns against the file. They fail when a constant is added that the
+manager does not match, when the manager loses the digest, or when the rule
+stops matching the oldest image.
+
 ## Migration from self-hosted (2026-05-10)
 
 Removed `.github/workflows/renovate.yml`. The App's webhook-driven model

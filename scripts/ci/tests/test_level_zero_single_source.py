@@ -19,6 +19,7 @@ from typing import Protocol, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -145,7 +146,7 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.assertEqual(manager["managerFilePatterns"], [r"/^build-config\.env$/"])
         matches: list[re.Match[str]] = []
         for pattern in manager["matchStrings"]:
-            python_pattern = pattern.replace("(?<currentValue>", "(?P<currentValue>")
+            python_pattern = to_python(pattern)
             matches.extend(re.finditer(python_pattern, (ROOT / "build-config.env").read_text()))
             self.assertIsNone(re.search(python_pattern, self.text))
         self.assertEqual(len(matches), 1)
@@ -161,8 +162,7 @@ class LevelZeroSingleSource(unittest.TestCase):
             for m in config["customManagers"]
             if m["datasourceTemplate"] == "docker" and "depNameTemplate" not in m
         )
-        pattern = manager["matchStrings"][0]
-        pattern = re.sub(r"\(\?<([A-Za-z]+)>", r"(?P<\1>", pattern)
+        pattern = to_python(manager["matchStrings"][0])
         values = GATE.load_config(ROOT)
         for key in ("ROCM_BUILDER", "ROCM_RUNTIME"):
             with self.subTest(key=key):
