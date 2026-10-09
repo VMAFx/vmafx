@@ -4,6 +4,7 @@ paths:
   - core/src/feature/adm_view_dist.h
   - core/src/feature/integer_adm.c
   - core/src/feature/cuda/integer_adm_cuda.c
+  - core/src/feature/sycl/integer_adm_sycl.cpp
   - core/src/feature/feature_extractor.h
   - core/src/fex_ctx_vector.cpp
   - core/src/rust/shim/rust_twins.cpp
@@ -46,9 +47,10 @@ invariant: Second ADM distance = one context; transform once per scale, weigh pe
 - **Registry (`offer_merge()`).** After dedup only; same extractor name and
   callback; never into initialized context. `adm` and `adm_rust` share
   callback (`add_twin()` copies descriptor); name check keeps both apart.
-- **Twins.** `adm_cuda` evaluates both distances (transform once,
-  per-distance kernels into second result block, host conclusion per
-  distance). SYCL, HIP, Metal twins lack option until own PR (Q-298
-  stack); mirror tests record gap that fails once closed. Remove gap in same
-  PR that adds option; add twin's table to `MERGING_TABLES` of
-  `test_adm_view_dist_contract.py`.
+- **Twins.** `adm_cuda` and `adm_sycl` evaluate both distances (transform
+  once, per-distance kernels into second result block, host conclusion per
+  distance). HIP, Metal twins lack option until own PR (Q-298 stack);
+  mirror tests record gap that fails once closed. Remove gap in same PR that
+  adds option; add twin's table to `MERGING_TABLES` of
+  `test_adm_view_dist_contract.py`; flip twin's row in
+  `test_adm_view_merge.c`.

@@ -57,6 +57,7 @@
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_gain_limit.h"
 #include "feature/adm_score.h"
+#include "feature/adm_view_dist.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
 #include "feature/nonfinite_score.h"
@@ -97,6 +98,9 @@ constexpr int ADM_TERM_AIM = 2; // AIM contrast measure (CPU adm_cm(measure_aim=
 constexpr int ADM_NUM_TERMS = 3;
 constexpr int ADM_TERM_SLOTS = ADM_NUM_SCALES * ADM_NUM_BANDS;
 constexpr int ADM_ACCUM_SLOTS = ADM_NUM_TERMS * ADM_TERM_SLOTS;
+/* Viewing distances one instance evaluates (ADR-2795): each has its own CSF
+ * weights and its own block of ADM_ACCUM_SLOTS accumulators. */
+constexpr unsigned ADM_VIEWS = 2u;
 
 /* Slot of band 0 of `scale` in accumulator term `term`. */
 constexpr size_t adm_accum_slot(int term, int scale)
@@ -135,6 +139,9 @@ struct AdmStateSycl {
     bool debug;
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
+    /* A second viewing distance evaluated on the same DWT (Netflix/vmaf
+     * cffd5b77d, ADR-2795); 0 = none. */
+    double adm_norm_view_dist_extra;
     int adm_ref_display_height;
     int adm_csf_mode;
     double adm_csf_scale;
@@ -148,10 +155,10 @@ struct AdmStateSycl {
 
     VmafDictionary *feature_name_dict;
 
-    // rfactors: 3 bands x 4 scales = 12
-    float rfactor[12];
-    uint32_t i_rfactor[12];
-    uint32_t csf_normalization_shift[4];
+    // rfactors per viewing distance: 3 bands x 4 scales = 12
+    float rfactor[ADM_VIEWS][12];
+    uint32_t i_rfactor[ADM_VIEWS][12];
+    uint32_t csf_normalization_shift[ADM_VIEWS][4];
 
     // DWT intermediate buffers
     int32_t *d_dwt_tmp_ref; // vertical DWT output for ref
@@ -169,9 +176,10 @@ struct AdmStateSycl {
     // Integer division LUT
     int32_t *d_div_lookup; // 65537 entries
 
-    // Accumulators, device + host: [term][scale][band] with the terms
+    // Accumulators, device + host: [view][term][scale][band] with the terms
     // DLM contrast measure, CSF denominator, AIM contrast measure
-    // (ADM_ACCUM_SLOTS int64, one memset and one readback per frame).
+    // (ADM_ACCUM_SLOTS int64 per viewing distance, one memset and one
+    // readback per frame).
     int64_t *d_accum;
     int64_t *h_accum;
 
@@ -242,6 +250,19 @@ const VmafOption options[] = {
         .min = 0.75,
         .max = 24.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        /* Not a feature parameter: the scores of this distance are filed
+         * under the names its own `adm_norm_view_dist` would give them. */
+        .name = "adm_norm_view_dist_extra",
+        .help = "second normalized viewing distance; when > 0, ADM is also evaluated at it "
+                "from the same DWT, and its scores carry that distance's nvd suffix",
+        .alias = "nvde",
+        .offset = offsetof(AdmStateSycl, adm_norm_view_dist_extra),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = 0.0},
+        .min = 0.0,
+        .max = 24.0,
     },
     {
         .name = "adm_ref_display_height",
@@ -372,28 +393,41 @@ AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist, int adm_ref_
     return f;
 }
 
+/* Viewing distances one frame is evaluated at (ADR-2795). */
+unsigned adm_sycl_views(const AdmStateSycl *s)
+{
+    return (s->adm_norm_view_dist_extra > 0.0) ? 2u : 1u;
+}
+
+/* The viewing distance of `view`: 0 = adm_norm_view_dist, 1 = the extra. */
+double adm_sycl_view_dist(const AdmStateSycl *s, unsigned view)
+{
+    return view ? s->adm_norm_view_dist_extra : s->adm_norm_view_dist;
+}
+
 /**
- * Validate a CSF configuration before claiming device resources. Mirrors
- * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
- * this twin reject the same invalid table output. Finite over-range weights
- * are assigned the shared per-scale normalisation exponent later.
+ * Validate a CSF configuration at viewing distance `nvd` before claiming
+ * device resources; init_fex_sycl() checks every distance the instance
+ * evaluates. Mirrors `adm_csf_config_check()` in core/src/feature/integer_adm.c
+ * so the CPU and this twin reject the same invalid table output. Finite
+ * over-range weights are assigned the shared per-scale normalisation exponent
+ * later.
  */
-int adm_csf_config_check(const AdmStateSycl *s)
+int adm_csf_config_check(const AdmStateSycl *s, double nvd)
 {
     assert(s != nullptr);
-    const int geom_err =
-        adm_viewing_geometry_check("adm_sycl", s->adm_norm_view_dist, s->adm_ref_display_height);
+    const int geom_err = adm_viewing_geometry_check("adm_sycl", nvd, s->adm_ref_display_height);
     if (geom_err) {
         return geom_err;
     }
 
     for (int scale = 0; scale < 4; ++scale) {
         const AdmCsfFactors f =
-            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+            adm_csf_factors(scale, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
         const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
-        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
-                                            s->adm_ref_display_height, s->adm_csf_mode);
+        const int err =
+            adm_csf_check_scale(scale, rfactor1, nvd, s->adm_ref_display_height, s->adm_csf_mode);
         if (err) {
             return err;
         }
@@ -1373,31 +1407,43 @@ int close_fex_sycl(VmafFeatureExtractor *fex); /* init error paths own their cle
 constexpr size_t ADM_ACCUM_BYTES = (size_t)ADM_ACCUM_SLOTS * sizeof(int64_t);
 constexpr size_t ADM_DIV_LOOKUP_ENTRIES = 65537;
 
-/* CSF factors and fixed-point weights of every scale (ADR-1325). */
-void adm_init_rfactors(AdmStateSycl *s)
+/* CSF factors and fixed-point weights of every scale at the viewing distance
+ * of `view` (ADR-1325, ADR-2795). */
+void adm_init_view_rfactors(AdmStateSycl *s, unsigned view)
 {
+    double const nvd = adm_sycl_view_dist(s, view);
+    float *const rfactor = s->rfactor[view];
+    uint32_t *const i_rfactor = s->i_rfactor[view];
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
         AdmCsfFactors const f =
-            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+            adm_csf_factors(scale, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
         size_t const band0 = (size_t)scale * ADM_NUM_BANDS;
-        s->rfactor[band0 + 0] = f.factor1;
-        s->rfactor[band0 + 1] = f.factor1;
-        s->rfactor[band0 + 2] = f.factor2;
+        rfactor[band0 + 0] = f.factor1;
+        rfactor[band0 + 1] = f.factor1;
+        rfactor[band0 + 2] = f.factor2;
 
         double fixed[3];
-        s->csf_normalization_shift[scale] = 0u;
-        int const fixed_err = adm_csf_fixed_scale(scale, &s->rfactor[band0], s->adm_norm_view_dist,
-                                                  s->adm_ref_display_height, s->adm_csf_mode, fixed,
-                                                  &s->csf_normalization_shift[scale]);
-        // init_fex_sycl() ran adm_csf_config_check(), which calls the same
-        // conversion through adm_csf_check_scale(), before this point.
+        uint32_t *const shift = &s->csf_normalization_shift[view][scale];
+        *shift = 0u;
+        int const fixed_err = adm_csf_fixed_scale(
+            scale, &rfactor[band0], nvd, s->adm_ref_display_height, s->adm_csf_mode, fixed, shift);
+        // init_fex_sycl() ran adm_csf_config_check() at this distance, which
+        // calls the same conversion through adm_csf_check_scale(), before
+        // this point.
         assert(fixed_err == 0);
         if (fixed_err == 0) {
-            s->i_rfactor[band0] = (uint32_t)fixed[0];
-            s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
-            s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
+            i_rfactor[band0] = (uint32_t)fixed[0];
+            i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            i_rfactor[band0 + 2] = (uint32_t)fixed[2];
         }
+    }
+}
+
+void adm_init_rfactors(AdmStateSycl *s)
+{
+    for (unsigned v = 0; v < adm_sycl_views(s); ++v) {
+        adm_init_view_rfactors(s, v);
     }
 }
 
@@ -1432,8 +1478,10 @@ int adm_alloc_buffers(AdmStateSycl *s, VmafSyclState *state, unsigned w, unsigne
     }
 
     s->d_div_lookup = adm_alloc_band(state, ADM_DIV_LOOKUP_ENTRIES * sizeof(int32_t));
-    s->d_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, ADM_ACCUM_BYTES));
-    s->h_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, ADM_ACCUM_BYTES));
+    // One accumulator block per viewing distance (ADR-2795).
+    s->d_accum =
+        static_cast<int64_t *>(vmaf_sycl_malloc_device(state, ADM_ACCUM_BYTES * ADM_VIEWS));
+    s->h_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, ADM_ACCUM_BYTES * ADM_VIEWS));
     ok = ok && s->d_div_lookup && s->d_accum && s->h_accum;
     if (!ok) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
@@ -1464,6 +1512,18 @@ int adm_upload_div_lookup(AdmStateSycl *s, VmafSyclState *state)
     return err;
 }
 
+/* The feature-name dictionary, with the second viewing distance's names
+ * (ADR-2795). */
+int adm_init_names(VmafFeatureExtractor *fex, AdmStateSycl *s)
+{
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        return -ENOMEM;
+    }
+    return vmaf_adm_extend_name_dict(fex, &s->feature_name_dict);
+}
+
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                   unsigned h)
 {
@@ -1490,9 +1550,11 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     /* Reject invalid CSF table output before any device resource is claimed.
      * Finite over-range weights are normalised with the CPU's shared
      * per-scale exponent in adm_init_rfactors(). */
-    const int csf_err = adm_csf_config_check(s);
-    if (csf_err) {
-        return csf_err;
+    for (unsigned v = 0; v < adm_sycl_views(s); ++v) {
+        const int csf_err = adm_csf_config_check(s, adm_sycl_view_dist(s, v));
+        if (csf_err) {
+            return csf_err;
+        }
     }
 
     VmafSyclState *state = fex->sycl_state;
@@ -1511,9 +1573,7 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
         err = adm_upload_div_lookup(s, state);
     }
     if (!err) {
-        s->feature_name_dict =
-            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        err = s->feature_name_dict ? 0 : -ENOMEM;
+        err = adm_init_names(fex, s);
     }
     if (!err) {
         // Register with combined command graph
@@ -1531,15 +1591,19 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
 /* ------------------------------------------------------------------ */
 
 /* Decouple + CSF, then the three reductions, of one scale whose bands are in
- * d_ref_band / d_dis_band. */
-void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, int scale, int half_w,
-                            int half_h)
+ * d_ref_band / d_dis_band, at the viewing distance of `view`, into that
+ * distance's accumulator block. The DWT bands do not depend on the distance;
+ * the CSF weights do. One distance's kernels write only csf_f, csf_f_aim and
+ * its own accumulators, and the queue is in order, so the next distance reads
+ * the bands the transform left (Netflix/vmaf cffd5b77d, ADR-2795). */
+void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, unsigned view, int scale,
+                            int half_w, int half_h)
 {
     AdmBandInputs in{};
     for (int b = 0; b < ADM_NUM_BANDS; ++b) {
         in.ref[b] = s->d_ref_band[b + 1];
         in.dis[b] = s->d_dis_band[b + 1];
-        in.i_rfactor[b] = s->i_rfactor[(scale * ADM_NUM_BANDS) + b];
+        in.i_rfactor[b] = s->i_rfactor[view][(scale * ADM_NUM_BANDS) + b];
     }
     in.div_lookup = s->d_div_lookup;
     in.gain = adm_gain_limit_split(s->adm_enhn_gain_limit);
@@ -1565,7 +1629,7 @@ void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, int scale, in
     if (r.right <= r.left || r.bottom <= r.top) {
         return;
     }
-    cm.accum = s->d_accum + adm_accum_slot(ADM_TERM_CM, scale);
+    cm.accum = s->d_accum + ((size_t)view * ADM_ACCUM_SLOTS) + adm_accum_slot(ADM_TERM_CM, scale);
     cm.sh = adm_cm_shifts(scale, half_w, half_h, r);
     cm.left = r.left;
     cm.top = r.top;
@@ -1647,7 +1711,9 @@ void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, vo
         const void *dis_src = (scale == 0) ? shared_dis : (const void *)s->d_dis_band[0];
 
         enqueue_adm_dwt(q, s, scale, ref_src, dis_src, cur_w, cur_h);
-        enqueue_adm_reductions(q, s, scale, (int)half_w, (int)half_h);
+        for (unsigned v = 0; v < adm_sycl_views(s); ++v) {
+            enqueue_adm_reductions(q, s, v, scale, (int)half_w, (int)half_h);
+        }
 
         // Next scale dimensions
         cur_w = half_w;
@@ -1664,7 +1730,7 @@ void adm_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    q.memset(s->d_accum, 0, ADM_ACCUM_BYTES);
+    q.memset(s->d_accum, 0, ADM_ACCUM_BYTES * adm_sycl_views(s));
 }
 
 // Graph-recorded: compute kernels only
@@ -1675,12 +1741,13 @@ void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *share
     enqueue_adm_work_impl(q, s, shared_ref, shared_dis);
 }
 
-// Post-graph: the frame's one D2H copy, all three accumulator terms (direct enqueue, outside graph)
+// Post-graph: the frame's one D2H copy, every accumulator term of every viewing
+// distance (direct enqueue, outside graph)
 void adm_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    q.memcpy(s->h_accum, s->d_accum, ADM_ACCUM_BYTES);
+    q.memcpy(s->h_accum, s->d_accum, ADM_ACCUM_BYTES * adm_sycl_views(s));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1717,7 +1784,7 @@ struct AdmScaleCpu {
     float aim_num;
 };
 
-AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, int scale, int w, int h)
+AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, unsigned view, int scale, int w, int h)
 {
     assert(s != nullptr && s->h_accum != nullptr);
     AdmScaleCpu sc{};
@@ -1725,12 +1792,13 @@ AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, int scale, int w, int h)
         sc.den = (float)1e-10; // integer_adm_scale0(): avoid divide by zero
         return sc;
     }
-    const int64_t *acc = s->h_accum;
-    uint32_t const ns = s->csf_normalization_shift[scale];
+    const int64_t *acc = &s->h_accum[(size_t)view * ADM_ACCUM_SLOTS];
+    uint32_t const ns = s->csf_normalization_shift[view][scale];
     sc.num = adm_cm_scale_cpu(&acc[adm_accum_slot(ADM_TERM_CM, scale)], h, w, scale, ns,
                               s->adm_noise_weight, s->adm_p_norm);
-    sc.den = adm_den_scale_cpu(&acc[adm_accum_slot(ADM_TERM_DEN, scale)], h, w, scale,
-                               &s->rfactor[(size_t)scale * ADM_NUM_BANDS], s->adm_noise_weight);
+    sc.den =
+        adm_den_scale_cpu(&acc[adm_accum_slot(ADM_TERM_DEN, scale)], h, w, scale,
+                          &s->rfactor[view][(size_t)scale * ADM_NUM_BANDS], s->adm_noise_weight);
     if (!s->adm_skip_aim) {
         // measure_aim: noise_weight 0.0, as integer_adm_scale0() / _s123() pass it
         sc.aim_num = adm_cm_scale_cpu(&acc[adm_accum_slot(ADM_TERM_AIM, scale)], h, w, scale, ns,
@@ -1747,7 +1815,7 @@ struct AdmTerms {
     double aim_num;
 };
 
-void adm_terms(const AdmStateSycl *s, AdmTerms *t)
+void adm_terms(const AdmStateSycl *s, unsigned view, AdmTerms *t)
 {
     assert(s != nullptr && t != nullptr);
     int w = (int)s->width;
@@ -1758,7 +1826,7 @@ void adm_terms(const AdmStateSycl *s, AdmTerms *t)
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
         w = (w + 1) / 2;
         h = (h + 1) / 2;
-        AdmScaleCpu const sc = adm_scale_cpu(s, scale, w, h);
+        AdmScaleCpu const sc = adm_scale_cpu(s, view, scale, w, h);
         size_t const pair = 2 * (size_t)scale;
         t->scores[pair] = sc.num;
         t->scores[pair + 1] = sc.den;
@@ -1789,20 +1857,32 @@ int adm_finalise(unsigned index, AdmTerms *t, double numden_limit, double ratios
     return err;
 }
 
-int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collector, unsigned index,
-                    const double headline[3], const AdmTerms &t, const double scale_scores[4])
+/* One viewing distance's scores and where they are filed. */
+struct AdmViewScores {
+    unsigned view; /* 0: adm_norm_view_dist, 1: adm_norm_view_dist_extra */
+    unsigned index;
+    double headline[3]; /* adm2, aim, adm3 */
+    double scale_scores[ADM_NUM_SCALES];
+};
+
+int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collector,
+                    const AdmViewScores &v, const AdmTerms &t)
 {
-    VmafNamedScore values[18] = {
-        {.name = "VMAF_integer_feature_adm2_score", .value = headline[0]},
-        {.name = "VMAF_integer_feature_aim_score", .value = headline[1]},
-        {.name = "VMAF_integer_feature_adm3_score", .value = headline[2]},
-        {.name = "integer_adm_scale0", .value = scale_scores[0]},
-        {.name = "integer_adm_scale1", .value = scale_scores[1]},
-        {.name = "integer_adm_scale2", .value = scale_scores[2]},
-        {.name = "integer_adm_scale3", .value = scale_scores[3]},
+    /* View 1 files the second distance's seven scores under the keys the
+     * dictionary maps to that distance's names (ADR-2795); the debug scores
+     * are the first distance's only, as on the CPU. */
+    const char *const *names = v.view ? vmaf_adm_extra_view_keys : vmaf_adm_view_names;
+    double const view_values[VMAF_ADM_VIEW_SCORE_COUNT] = {
+        v.headline[0],     v.headline[1],     v.headline[2],     v.scale_scores[0],
+        v.scale_scores[1], v.scale_scores[2], v.scale_scores[3],
     };
-    size_t value_count = 7u;
-    if (s->debug) {
+    VmafNamedScore values[18] = {};
+    for (size_t i = 0u; i < VMAF_ADM_VIEW_SCORE_COUNT; ++i) {
+        values[i] = VmafNamedScore{.name = names[i], .value = view_values[i]};
+    }
+    size_t value_count = VMAF_ADM_VIEW_SCORE_COUNT;
+    if (s->debug && v.view == 0u) {
+        double const *const headline = v.headline;
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
@@ -1816,21 +1896,15 @@ int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collect
         }
     }
     return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
-                                           "integer_adm_sycl", values, value_count, index);
+                                           "integer_adm_sycl", values, value_count, v.index);
 }
 
-int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
-                     VmafFeatureCollector *feature_collector)
+/* Conclude and file the scores of viewing distance `view`. */
+int collect_view(const AdmStateSycl *s, unsigned view, unsigned index,
+                 VmafFeatureCollector *feature_collector)
 {
-    auto *s = static_cast<AdmStateSycl *>(fex->priv);
-
-    // Combined graph wait (once per frame); a failed wait leaves stale accumulators.
-    s->has_pending = false;
-    if (int const wait_err = vmaf_sycl_graph_wait(fex->sycl_state))
-        return wait_err;
-
     AdmTerms t{};
-    adm_terms(s, &t);
+    adm_terms(s, view, &t);
 
     /* numden_limit — CPU parity (integer_adm.c::integer_compute_adm): the
      * precision floor scales with the FULL-FRAME area, not the scale-3 area. */
@@ -1843,20 +1917,38 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     /* adm2 is emitted unclamped: ADR-0487's adm_min_val clamps adm3 only, as
      * in integer_adm.c::extract(). */
-    double headline[3] = {ratios[0], ratios[1], 0.0}; // adm2, aim, adm3
+    AdmViewScores v{.view = view, .index = index, .headline = {ratios[0], ratios[1], 0.0}};
     err = vmaf_adm3_score_named("integer_adm_sycl", index, ratios[0], ratios[1], 0,
-                                s->adm_dlm_weight, s->adm_min_val, &headline[2]);
+                                s->adm_dlm_weight, s->adm_min_val, &v.headline[2]);
     if (err) {
         return err;
     }
 
-    double scale_scores[ADM_NUM_SCALES];
     err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, t.scores, ADM_NUM_SCALES,
-                                      scale_scores);
+                                      v.scale_scores);
     if (err) {
         return err;
     }
-    return emit_adm_scores(s, feature_collector, index, headline, t, scale_scores);
+    return emit_adm_scores(s, feature_collector, v, t);
+}
+
+int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
+                     VmafFeatureCollector *feature_collector)
+{
+    auto *s = static_cast<AdmStateSycl *>(fex->priv);
+
+    // Combined graph wait (once per frame); a failed wait leaves stale accumulators.
+    s->has_pending = false;
+    if (int const wait_err = vmaf_sycl_graph_wait(fex->sycl_state))
+        return wait_err;
+
+    // Every viewing distance's scores, the first distance's first, as the CPU
+    // files them.
+    int err = 0;
+    for (unsigned v = 0; v < adm_sycl_views(s) && !err; ++v) {
+        err = collect_view(s, v, index, feature_collector);
+    }
+    return err;
 }
 
 int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -1976,4 +2068,6 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_adm_sycl = {
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features,
     .reads_shared_luma_only = reads_shared_luma_only,
+    .merge = vmaf_adm_merge_view_dist,
+    .extend_name_dict = vmaf_adm_extend_name_dict,
 };

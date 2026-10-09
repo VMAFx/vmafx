@@ -50,3 +50,15 @@ invariant: Integer ADM tiny frames and linkage; Scale 0 = CPU int16 semantics; s
   weights leave CPU values by 1..3 ulp, `adm.sycl` exact cell goes red. CPU
   statement changes (`integer_adm_kernels.h`) -> this copy, same PR. Guard:
   `core/test/test_integer_adm_quant_step_contract.py`.
+
+- **Two viewing distances (ADR-2795).** DWT once per scale
+  (`enqueue_adm_dwt()`); `enqueue_adm_reductions()` per distance, with
+  that distance's `i_rfactor[view]` and accumulator block
+  `d_accum + view * ADM_ACCUM_SLOTS`. Queue in order: per-distance kernels
+  write only `csf_f`, `csf_f_aim` and own block, never DWT band. `rfactor`,
+  `i_rfactor`, `csf_normalization_shift` indexed `[view]`; host conclusion
+  (`adm_scale_cpu()`, `adm_terms()`, `collect_view()`) takes distance as
+  argument. Memset + readback size = `ADM_ACCUM_BYTES * adm_sycl_views()`.
+  Debug scores = first distance only. Merge + names = shared
+  `adm_view_dist.c`. `test_adm_two_views_exact` (8 + 10 bit, model
+  options), `test_adm_merged_registrations_exact` (`==`).

@@ -77,7 +77,7 @@ extractor that does not declare an option rejects it as unknown.
 | `debug` | — | bool | `false` | — | all | Emit debug metrics. |
 | `adm_enhn_gain_limit` | `egl` | double | `100.0` | `1.0–100.0` | all | How many times its reference value a restored coefficient may count for. `1.0` (`egl=1.0`) counts no enhancement as restored detail (NEG models and `vmaf_v1.0.16_*`); `100.0` is upstream's default. Note 1. |
 | `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` (integer `adm`: `nvd × rdh ≥ 3240`) | all | Normalised viewing distance (distance ÷ display height). Note 6. |
-| `adm_norm_view_dist_extra` | `nvde` | double | `0.0` (none) | `0–24.0`; must pass the same floor and give names other than `adm_norm_view_dist`'s | `adm` (CPU, `adm_rust`, CUDA) | A second viewing distance evaluated on the same DWT and decouple; its scores carry that distance's `nvd` suffix. Note 7. |
+| `adm_norm_view_dist_extra` | `nvde` | double | `0.0` (none) | `0–24.0`; must pass the same floor and give names other than `adm_norm_view_dist`'s | `adm` (CPU, `adm_rust`, CUDA, SYCL) | A second viewing distance evaluated on the same DWT and decouple; its scores carry that distance's `nvd` suffix. Note 7. |
 | `adm_ref_display_height` | `rdh` (`adm`), `rdf` (`float_adm`) | int | `1080` | `1–4320` | all | Reference display height in pixels, for viewing-distance scaling. |
 | `adm_csf_mode` | `csf` | int | `0` | `0–3` (`adm`), `0–9` (`float_adm`) | all | Contrast-sensitivity-function model. Note 2. |
 | `adm_csf_scale` | `scf` | double | `1.0` | `0–50` | all | H/V-axis CSF sensitivity scale. Read only by `adm_csf_mode=1`. Note 3. |
@@ -210,11 +210,11 @@ vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
   `adm_skip_aim` differs, is not folded in, so its debug scores and its AIM
   stay its own. A model at a distance a context already evaluates second is
   absorbed, not run again.
-- **Which backends.** The CPU extractor, `adm_rust` and `adm_cuda` share;
-  `adm_cuda` runs the wavelet transform once and the other kernels per
-  distance, and returns the CPU's bits for both (`test_cuda_adm_parity`). The
-  SYCL, HIP and Metal `adm` twins still run one instance per distance until
-  each takes the option.
+- **Which backends.** The CPU extractor, `adm_rust`, `adm_cuda` and
+  `adm_sycl` share; the GPU twins run the wavelet transform once and the
+  other kernels per distance, and return the CPU's bits for both
+  (`test_cuda_adm_parity`, `test_sycl_adm_parity`). The HIP and Metal `adm`
+  twins still run one instance per distance until each takes the option.
 
 ### `float_adm` does not depend on the processor
 

@@ -26,6 +26,7 @@ C_SRC = ROOT / "core/src/feature/integer_adm.c"
 MERGING_TABLES = {
     "adm": (C_SRC, "options"),
     "adm_cuda": (ROOT / "core/src/feature/cuda/integer_adm_cuda.c", "options_cuda"),
+    "adm_sycl": (ROOT / "core/src/feature/sycl/integer_adm_sycl.cpp", "options"),
 }
 VIEW_SRC = ROOT / "core/src/feature/adm_view_dist.c"
 VIEW_HDR = ROOT / "core/src/feature/adm_view_dist.h"
@@ -60,8 +61,13 @@ def rust_extra_keys(text: str) -> list[str]:
 
 
 def option_entries(text: str, table_name: str = "options") -> list[str]:
+    # C tables end in {0}, C++ ones (SYCL, in an anonymous namespace) in
+    # {.name = nullptr}.
     table = re.search(
-        rf"static const VmafOption {table_name}\[\] = \{{(.*?)\{{0\}}\}};", text, re.S
+        rf"(?:static )?const VmafOption {table_name}\[\] = \{{(.*?)"
+        rf"\{{(?:0|\.name = nullptr)\}}\}};",
+        text,
+        re.S,
     )
     if not table:
         raise AssertionError("integer_adm.c: option table not found")

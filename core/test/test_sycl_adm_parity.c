@@ -59,37 +59,50 @@
 #endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
+#define MAX_KEYS 32u
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+/* One sample of plane `p` at (col, row), 8-bit or 16-bit storage. */
+static void put_sample(VmafPicture *pic, unsigned p, unsigned col, unsigned row, unsigned v)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    uint8_t *line = (uint8_t *)pic->data[p] + ((size_t)row * pic->stride[p]);
+    if (pic->bpc == 8u) {
+        line[col] = (uint8_t)v;
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)v;
+    }
+}
+
+static int fill_pic(VmafPicture *pic, unsigned salt, unsigned bpc)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
+    const unsigned mask = (1u << bpc) - 1u;
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             /* Diagonal gradient + salt offset — produces non-trivial
              * detail at every ADM scale so DLM/CSF paths are exercised. */
-            y[row * pic->stride[0] + col] = (uint8_t)(((row * 3u + col * 5u + salt * 17u)) & 0xFFu);
+            put_sample(pic, 0u, col, row, (row * 3u + col * 5u + salt * 17u) & mask);
         }
     }
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                put_sample(pic, p, col, row, 1u << (bpc - 1u));
+            }
         }
     }
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
+static int feed_frame(VmafContext *vmaf, unsigned bpc)
 {
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
+    int err = fill_pic(&ref, 0u, bpc);
     if (err)
         return err;
-    err = fill_pic(&dist, 1u);
+    err = fill_pic(&dist, 1u, bpc);
     if (err) {
         vmaf_picture_unref(&ref);
         return err;
@@ -105,7 +118,7 @@ static char *run_cpu_adm(double *adm2)
     mu_assert("CPU: vmaf_init failed", !err);
     err = vmaf_use_feature(vmaf, "adm", NULL);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !err);
-    err = feed_frame(vmaf);
+    err = feed_frame(vmaf, FIXTURE_BPC);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
@@ -134,7 +147,7 @@ static char *run_sycl_adm(double *adm2)
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
     err = vmaf_use_feature(vmaf, "adm_sycl", NULL);
     mu_assert("SYCL: vmaf_use_feature(adm_sycl) failed", !err);
-    err = feed_frame(vmaf);
+    err = feed_frame(vmaf, FIXTURE_BPC);
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
@@ -188,55 +201,110 @@ static const char *const MODEL_KEYS[] = {
 };
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
-{
-    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++)
-        out[k] = NAN;
+/* One adm (CPU) or adm_sycl context. */
+typedef struct AdmRun {
+    bool use_sycl;
+    VmafSyclState *sycl_state;
+    VmafContext *vmaf;
+} AdmRun;
 
-    VmafSyclState *sycl_state = NULL;
-    if (use_sycl) {
+/* Open the run's context; `*skipped` without a SYCL device. */
+static char *adm_run_open(AdmRun *run, int *skipped)
+{
+    *skipped = 0;
+    if (run->use_sycl) {
         VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-        const int sy_err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-        if (sy_err != 0 || sycl_state == NULL) {
+        const int sy_err = vmaf_sycl_state_init(&run->sycl_state, sycl_cfg);
+        if (sy_err != 0 || run->sycl_state == NULL) {
             (void)fprintf(stderr, "[skip: no SYCL device] ");
+            *skipped = 1;
             return NULL;
         }
     }
-
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("model-opts: vmaf_init failed", !err);
-    if (use_sycl) {
-        err = vmaf_sycl_import_state(vmaf, sycl_state);
-        mu_assert("model-opts: vmaf_sycl_import_state failed", !err);
+    mu_assert("vmaf_init failed", !vmaf_init(&run->vmaf, cfg));
+    if (run->use_sycl) {
+        mu_assert("vmaf_sycl_import_state failed",
+                  !vmaf_sycl_import_state(run->vmaf, run->sycl_state));
     }
+    return NULL;
+}
 
+/* Register `opts` (NULL for defaults) and, when set, `opts2` as a second
+ * registration of the same extractor, which the registry folds into the
+ * first (ADR-2795). vmaf_use_feature() takes each dictionary over. */
+static char *adm_run_use(AdmRun *run, VmafFeatureDictionary *opts, VmafFeatureDictionary *opts2)
+{
+    const char *name = run->use_sycl ? "adm_sycl" : "adm";
+    const int err = vmaf_use_feature(run->vmaf, name, opts);
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts2);
+    }
+    mu_assert("vmaf_use_feature failed", !err);
+    if (opts2) {
+        mu_assert("second vmaf_use_feature failed", !vmaf_use_feature(run->vmaf, name, opts2));
+    }
+    return NULL;
+}
+
+/* Score one `bpc`-bit frame and read `keys` into `out`. */
+static char *adm_run_score(AdmRun *run, unsigned bpc, const char *const *keys, size_t count,
+                           double *out)
+{
+    mu_assert("feed_frame failed", !feed_frame(run->vmaf, bpc));
+    mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(run->vmaf, NULL, NULL, 0));
+    for (size_t k = 0; k < count; k++) {
+        const int err = vmaf_feature_score_at_index(run->vmaf, keys[k], &out[k], 0u);
+        if (err) {
+            (void)fprintf(stderr, "\nmissing feature-name key: %s (%s twin)\n", keys[k],
+                          run->use_sycl ? "SYCL" : "CPU");
+        }
+        mu_assert("feature-name key not emitted", !err);
+    }
+    return NULL;
+}
+
+static char *adm_run_close(AdmRun *run)
+{
+    if (run->vmaf) {
+        mu_assert("vmaf_close failed", !vmaf_close(run->vmaf));
+    }
+    if (run->sycl_state) {
+        vmaf_sycl_state_free(&run->sycl_state);
+    }
+    return NULL;
+}
+
+/* One frame of `bpc` bits on the CPU or the SYCL twin with `opts` and, when
+ * set, a second registration with `opts2`; `keys` into `out`. Takes both
+ * dictionaries over. Without a SYCL device the SYCL leg is skipped and `out`
+ * stays NaN. */
+static char *run_adm_keys(bool use_sycl, unsigned bpc, VmafFeatureDictionary *opts,
+                          VmafFeatureDictionary *opts2, const char *const *keys, size_t count,
+                          double *out)
+{
+    for (size_t k = 0; k < count; k++)
+        out[k] = NAN;
+    AdmRun run = {.use_sycl = use_sycl};
+    int skipped = 0;
+    char *msg = adm_run_open(&run, &skipped);
+    if (msg || skipped) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        (void)vmaf_feature_dictionary_free(&opts2);
+        return msg;
+    }
+    msg = adm_run_use(&run, opts, opts2);
+    if (!msg)
+        msg = adm_run_score(&run, bpc, keys, count, out);
+    char *close_msg = adm_run_close(&run);
+    return msg ? msg : close_msg;
+}
+
+static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
+{
     VmafFeatureDictionary *opts = model_opts();
     mu_assert("model-opts: dictionary build failed", opts != NULL);
-    err = vmaf_use_feature(vmaf, use_sycl ? "adm_sycl" : "adm", opts);
-    mu_assert("model-opts: vmaf_use_feature failed", !err);
-
-    err = feed_frame(vmaf);
-    mu_assert("model-opts: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("model-opts: vmaf_read_pictures(EOS) failed", !err);
-
-    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
-        err = vmaf_feature_score_at_index(vmaf, MODEL_KEYS[k], &out[k], 0u);
-        if (err) {
-            (void)fprintf(stderr, "\nmissing feature-name key: %s (%s twin)\n", MODEL_KEYS[k],
-                          use_sycl ? "SYCL" : "CPU");
-        }
-        mu_assert("model-opts: feature-name key not emitted", !err);
-    }
-
-    err = vmaf_close(vmaf);
-    mu_assert("model-opts: vmaf_close failed", !err);
-    if (use_sycl)
-        vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return run_adm_keys(use_sycl, FIXTURE_BPC, opts, NULL, MODEL_KEYS, NUM_MODEL_KEYS, out);
 }
 
 /* Every option the CPU table declares must also exist, with the same alias,
@@ -260,14 +328,6 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
                 b = &gpu->options[j];
                 break;
             }
-        }
-        /* ADR-2795: the second viewing distance reaches adm_sycl in its own
-         * pull request of the stack. Once the twin declares the option this
-         * fails, and that pull request deletes the gap. */
-        if (!strcmp(a->name, "adm_norm_view_dist_extra")) {
-            mu_assert("adm_sycl declares adm_norm_view_dist_extra: delete the recorded gap",
-                      b == NULL);
-            continue;
         }
         if (!b)
             (void)fprintf(stderr, "\nadm_sycl is missing CPU option \"%s\"\n", a->name);
@@ -376,33 +436,137 @@ static bool same_bits(double a, double b)
     return ua == ub;
 }
 
+/* `cpu` and `gpu` equal key by key, bit for bit; a NaN first SYCL value
+ * means the SYCL leg was skipped. */
+static char *compare_exact(const char *what, const char *const *keys, size_t count,
+                           const double *cpu, const double *gpu)
+{
+    if (isnan(gpu[0]))
+        return NULL;
+    unsigned mismatches = 0u;
+    for (size_t k = 0; k < count; k++) {
+        if (!same_bits(cpu[k], gpu[k])) {
+            (void)fprintf(stderr, "\n%s: %s not bit-exact: cpu=%.17g sycl=%.17g\n", what, keys[k],
+                          cpu[k], gpu[k]);
+            mismatches++;
+        }
+    }
+    mu_assert("ADM: SYCL differs from the CPU bits", mismatches == 0u);
+    return NULL;
+}
+
+/* One `bpc`-bit frame with `make_opts()` (NULL: defaults) on the CPU and on
+ * the SYCL twin; every key must carry the CPU's bits. */
+static char *check_exact(const char *what, unsigned bpc, VmafFeatureDictionary *(*make_opts)(void),
+                         const char *const *keys, size_t count)
+{
+    double cpu[MAX_KEYS];
+    double gpu[MAX_KEYS];
+    mu_assert("check_exact: too many keys", count <= MAX_KEYS);
+    char *msg = run_adm_keys(false, bpc, make_opts ? make_opts() : NULL, NULL, keys, count, cpu);
+    if (!msg)
+        msg = run_adm_keys(true, bpc, make_opts ? make_opts() : NULL, NULL, keys, count, gpu);
+    return msg ? msg : compare_exact(what, keys, count, cpu, gpu);
+}
+
 /* ADR-1362 numerical contract: the device accumulators are bit-exact with the
  * CPU's and the host finalises them in the CPU's own float arithmetic, so
  * every emitted ADM score must carry the CPU's bits, not merely agree to
  * places=4. */
 static char *test_adm_cpu_sycl_bit_exact(void)
 {
-    double cpu[NUM_MODEL_KEYS];
-    double gpu[NUM_MODEL_KEYS];
+    return check_exact("model options", FIXTURE_BPC, model_opts, MODEL_KEYS, NUM_MODEL_KEYS);
+}
 
-    char *msg = run_adm_with_model_opts(false, cpu);
-    if (msg)
-        return msg;
-    msg = run_adm_with_model_opts(true, gpu);
-    if (msg)
-        return msg;
-    if (isnan(gpu[0]))
-        return NULL;
+#define ADM_SCORE_KEYS(suffix)                                                                     \
+    "integer_adm2" suffix, "integer_aim" suffix, "integer_adm3" suffix,                            \
+        "integer_adm_scale0" suffix, "integer_adm_scale1" suffix, "integer_adm_scale2" suffix,     \
+        "integer_adm_scale3" suffix
+#define ADM_DEBUG_KEYS                                                                             \
+    "integer_adm", "integer_adm_num", "integer_adm_den", "integer_adm_num_scale0",                 \
+        "integer_adm_den_scale0", "integer_adm_num_scale1", "integer_adm_den_scale1",              \
+        "integer_adm_num_scale2", "integer_adm_den_scale2", "integer_adm_num_scale3",              \
+        "integer_adm_den_scale3"
 
-    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
-        const bool same = same_bits(cpu[k], gpu[k]);
-        if (!same) {
-            (void)fprintf(stderr, "\n%s not bit-exact: cpu=%.17g sycl=%.17g\n", MODEL_KEYS[k],
-                          cpu[k], gpu[k]);
-        }
-        mu_assert("ADM: SYCL differs from the CPU bits", same);
+/* ADR-2795: one context at two viewing distances. The first distance keeps
+ * its names and, with `debug`, the debug scores; the second files its seven
+ * under the names `adm_norm_view_dist=5` gives them. */
+static VmafFeatureDictionary *two_view_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "debug", "true") ||
+        vmaf_feature_dictionary_set(&d, "adm_norm_view_dist_extra", "5")) {
+        (void)vmaf_feature_dictionary_free(&d);
     }
-    return NULL;
+    return d;
+}
+
+static const char *const TWO_VIEW_KEYS[] = {
+    "VMAF_integer_feature_adm2_score",
+    "VMAF_integer_feature_aim_score",
+    "VMAF_integer_feature_adm3_score",
+    "integer_adm_scale0",
+    "integer_adm_scale1",
+    "integer_adm_scale2",
+    "integer_adm_scale3",
+    ADM_DEBUG_KEYS,
+    ADM_SCORE_KEYS("_nvd_5"),
+};
+#define NUM_TWO_VIEW_KEYS (sizeof(TWO_VIEW_KEYS) / sizeof(TWO_VIEW_KEYS[0]))
+
+/* The model options with `nvd_key` = `nvd`. */
+static VmafFeatureDictionary *model_opts_at(const char *nvd_key, const char *nvd)
+{
+    VmafFeatureDictionary *d = model_opts();
+    if (d && vmaf_feature_dictionary_set(&d, nvd_key, nvd)) {
+        (void)vmaf_feature_dictionary_free(&d);
+    }
+    return d;
+}
+
+/* The model options at 3H, then at 5H: the vmaf_v1.0.16_3d0h / _5d0h pair. */
+static VmafFeatureDictionary *two_view_model_opts(void)
+{
+    return model_opts_at("adm_norm_view_dist_extra", "5");
+}
+
+static const char *const TWO_VIEW_MODEL_KEYS[] = {
+    ADM_SCORE_KEYS(MODEL_SUFFIX),
+    ADM_SCORE_KEYS(MODEL_SUFFIX "_nvd_5"),
+};
+#define NUM_TWO_VIEW_MODEL_KEYS (sizeof(TWO_VIEW_MODEL_KEYS) / sizeof(TWO_VIEW_MODEL_KEYS[0]))
+
+/* ADR-2795: a second viewing distance on the SYCL twin returns the CPU's
+ * scores for both distances, at 8 and 10 bits and under the model options. */
+static char *test_adm_two_views_exact(void)
+{
+    char *msg = check_exact("two views", 8u, two_view_opts, TWO_VIEW_KEYS, NUM_TWO_VIEW_KEYS);
+    if (!msg) {
+        msg = check_exact("two views 10-bit", 10u, two_view_opts, TWO_VIEW_KEYS, NUM_TWO_VIEW_KEYS);
+    }
+    if (!msg) {
+        msg = check_exact("two views model options", 8u, two_view_model_opts, TWO_VIEW_MODEL_KEYS,
+                          NUM_TWO_VIEW_MODEL_KEYS);
+    }
+    return msg;
+}
+
+/* ADR-2795: the SYCL twin registered at 3H and at 5H (the registry folds the
+ * second into the first, as two models do) scores as one CPU context with
+ * both distances. */
+static char *test_adm_merged_registrations_exact(void)
+{
+    double cpu[MAX_KEYS];
+    double gpu[MAX_KEYS];
+    char *msg = run_adm_keys(false, 8u, two_view_model_opts(), NULL, TWO_VIEW_MODEL_KEYS,
+                             NUM_TWO_VIEW_MODEL_KEYS, cpu);
+    if (!msg) {
+        msg = run_adm_keys(true, 8u, model_opts(), model_opts_at("adm_norm_view_dist", "5"),
+                           TWO_VIEW_MODEL_KEYS, NUM_TWO_VIEW_MODEL_KEYS, gpu);
+    }
+    return msg ? msg :
+                 compare_exact("merged registrations", TWO_VIEW_MODEL_KEYS, NUM_TWO_VIEW_MODEL_KEYS,
+                               cpu, gpu);
 }
 
 static char *test_adm_sycl_registered(void)
@@ -434,6 +598,15 @@ static char *test_adm_cpu_sycl_parity(void)
     return NULL;
 }
 
+/* The bit-exact cases: the model options and both viewing distances (ADR-2795). */
+static char *run_exact_cases(void)
+{
+    mu_run_test(test_adm_cpu_sycl_bit_exact);
+    mu_run_test(test_adm_two_views_exact);
+    mu_run_test(test_adm_merged_registrations_exact);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_adm_sycl_registered);
@@ -447,7 +620,7 @@ char *run_tests(void)
      * masking a real regression in the new coverage. */
     mu_run_test(test_adm_cpu_sycl_model_option_keys);
     mu_run_test(test_adm_cpu_sycl_model_option_parity);
-    mu_run_test(test_adm_cpu_sycl_bit_exact);
+    mu_assert_msg(run_exact_cases());
     mu_run_test(test_adm_cpu_sycl_parity);
     return NULL;
 }
