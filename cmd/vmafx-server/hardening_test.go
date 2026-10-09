@@ -9,7 +9,10 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -80,5 +83,58 @@ func TestServerDefaultsYieldToOperator(t *testing.T) {
 	}
 	if hopt.Timeouts.Write != 90*time.Second {
 		t.Errorf("http write timeout = %v, want operator value 90s", hopt.Timeouts.Write)
+	}
+}
+
+// bodyStatus serves one POST of n bytes through an http.Server built from opt
+// (golusoris applies its body limit there) to a handler that reads the whole
+// body, and returns the status: 200 when the body was read, 413 when the limit
+// cut it.
+func bodyStatus(t *testing.T, opt httpserver.Options, n int) int {
+	t.Helper()
+	readAll := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httpserver.New(readAll, opt)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", bytes.NewReader(make([]byte, n)))
+	srv.Handler.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// frameworkBodyLimit is golusoris httpx/server's default request-body cap.
+const frameworkBodyLimit = 10 << 20
+
+// TestBodyLimitZeroKeepsTheDefault pins the docs of VMAFX_HTTP_LIMITS_BODY:
+// since golusoris v0.13.0 `0` keeps the 10 MiB cap instead of removing it.
+func TestBodyLimitZeroKeepsTheDefault(t *testing.T) {
+	writeVmafStubForApp(t)
+	t.Setenv("VMAFX_HTTP_LIMITS_BODY", "0")
+	_, hopt, _ := populateLimits(t)
+
+	if got := bodyStatus(t, hopt, frameworkBodyLimit); got != http.StatusOK {
+		t.Errorf("body at the cap: status %d, want 200", got)
+	}
+	if got := bodyStatus(t, hopt, frameworkBodyLimit+1); got != http.StatusRequestEntityTooLarge {
+		t.Errorf("body one byte over the cap: status %d, want 413", got)
+	}
+}
+
+// TestBodyLimitUnlimitedRemovesTheCap pins VMAFX_HTTP_LIMITS_UNLIMITED: the
+// variable reaches golusoris's http.limits.unlimited and no body is cut.
+func TestBodyLimitUnlimitedRemovesTheCap(t *testing.T) {
+	writeVmafStubForApp(t)
+	t.Setenv("VMAFX_HTTP_LIMITS_UNLIMITED", "true")
+	_, hopt, _ := populateLimits(t)
+
+	if !hopt.Limits.AllowUnlimitedBody {
+		t.Fatal("VMAFX_HTTP_LIMITS_UNLIMITED=true did not reach http.limits.unlimited")
+	}
+	if got := bodyStatus(t, hopt, frameworkBodyLimit+1); got != http.StatusOK {
+		t.Errorf("body over the default cap: status %d, want 200", got)
 	}
 }

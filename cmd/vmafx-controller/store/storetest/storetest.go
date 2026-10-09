@@ -25,11 +25,13 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store"
 )
 
-// Image is the PostgreSQL release the chart deploys (ADR-2350 D1).
-const Image = "postgres:18.6-alpine"
+// Image is the PostgreSQL release the chart deploys (ADR-2350 D1). golusoris
+// testutil/pg refuses a test image without a digest (since v0.13.0), so both
+// images are pinned as tag@sha256 of the multi-platform index.
+const Image = "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
 
 // OldestImage is the oldest release external servers may run.
-const OldestImage = "postgres:16.15-alpine"
+const OldestImage = "postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
 
 // setupTimeout bounds every database call of the helpers (HISS-02).
 const setupTimeout = 2 * time.Minute

@@ -74,9 +74,13 @@ func (w *LeaseSweeper) Work(ctx context.Context, _ *river.Job[LeaseSweepArgs]) e
 	return nil
 }
 
-// RegisterLeaseSweep adds the sweep worker to workers.
-func RegisterLeaseSweep(workers *jobs.Workers, w *LeaseSweeper) {
-	jobs.Register(workers, river.Worker[LeaseSweepArgs](w))
+// RegisterLeaseSweep adds the sweep worker to workers. It fails when workers
+// is nil or uninitialised, w is nil, or the sweep kind is already registered.
+func RegisterLeaseSweep(workers *jobs.Workers, w *LeaseSweeper) error {
+	if err := jobs.Register(workers, river.Worker[LeaseSweepArgs](w)); err != nil {
+		return fmt.Errorf("backend: register lease sweep: %w", err)
+	}
+	return nil
 }
 
 // ScheduleLeaseSweep adds the periodic sweep to client, every interval and

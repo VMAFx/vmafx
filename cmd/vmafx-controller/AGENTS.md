@@ -182,7 +182,9 @@ PostgreSQL store replacing SQLite queue. `store/`: migrations
    `MaxListJobs` 10000, `MaxExpiryBatch` 1000; larger input -> `ErrInvalid`.
 5. **Tests need Docker** (golusoris `testutil/pg`; `postgres:18.6-alpine`,
    migrations also on `postgres:16.15-alpine`). No skip-on-missing-Docker
-   added here; `-short` skips (testutil).
+   added here; `-short` skips (testutil). `storetest.Image` / `OldestImage`
+   stay `tag@sha256:<index digest>`: testutil/pg >= golusoris v0.13.0 fails
+   test on undigested image. Tag bump = new digest, same edit.
 
 ### backend package (ADR-2350, WP17)
 

@@ -170,7 +170,9 @@ func (p postgresBackend) Ready(ctx context.Context) error {
 func newSweepClient(pool *pgxpool.Pool, st *store.Postgres, b *backend.Postgres, opts storeOptions, log *slog.Logger) (*jobs.Client, error) {
 	workers := jobs.NewWorkers()
 	backoff := backend.ExponentialBackoff(opts.BackoffBase, opts.BackoffMax)
-	backend.RegisterLeaseSweep(workers, backend.NewLeaseSweeper(st, backoff, b.RecordSweep))
+	if err := backend.RegisterLeaseSweep(workers, backend.NewLeaseSweeper(st, backoff, b.RecordSweep)); err != nil {
+		return nil, fmt.Errorf("start River: %w", err)
+	}
 	client, err := jobs.New(pool, jobs.DefaultOptions(), workers, log)
 	if err != nil {
 		return nil, fmt.Errorf("start River: %w", err)

@@ -160,8 +160,10 @@ func TestLeaseSweepRunsOnRiverAndRequeuesALostJob(t *testing.T) {
 	}
 	reports := make(chan backend.SweepReport, 16)
 	workers := jobs.NewWorkers()
-	backend.RegisterLeaseSweep(workers, backend.NewLeaseSweeper(db.Store, backend.ExponentialBackoff(0, 0),
-		func(r backend.SweepReport) { b.RecordSweep(r); reports <- r }))
+	if err := backend.RegisterLeaseSweep(workers, backend.NewLeaseSweeper(db.Store, backend.ExponentialBackoff(0, 0),
+		func(r backend.SweepReport) { b.RecordSweep(r); reports <- r })); err != nil {
+		t.Fatalf("register lease sweep: %v", err)
+	}
 	client, err := jobs.New(db.Pool, jobs.DefaultOptions(), workers, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("river client: %v", err)

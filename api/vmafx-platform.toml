@@ -4040,7 +4040,15 @@ key = "http.limits.body"
 binaries = ["controller", "server", "node"]
 type = "bytes"
 default = "`10485760`"
-doc = "Largest request body; `0` disables the cap."
+doc = "Largest request body; `0` keeps the default. `VMAFX_HTTP_LIMITS_UNLIMITED` removes the cap."
+
+[[config]]
+env = "VMAFX_HTTP_LIMITS_UNLIMITED"
+key = "http.limits.unlimited"
+binaries = ["controller", "server", "node"]
+type = "bool"
+default = "`false`"
+doc = "Serve request bodies of any size; `VMAFX_HTTP_LIMITS_BODY` is then ignored."
 
 [[config]]
 env = "VMAFX_GRPC_LISTEN"
