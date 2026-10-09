@@ -195,14 +195,14 @@
     "core/src/thread_pool.c",
     "core/src/vmafx/device.c",
     "core/src/vmafx/device_context.c",
+    "core/src/vmafx/egl_export.c",
     "core/src/vmafx/fence.c",
     "core/src/vmafx/frame_import.c",
     "core/src/vmafx/frame_import_admit.c",
     "core/src/vmafx/frame_pool.c",
-    "core/src/vmafx/gl_sync.c",
     "core/src/vmafx/release_events.c",
     "core/src/vmafx/submit.c",
-    "core/src/vmafx/sync_file.c",
+    "core/src/vmafx/sync_object.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
     "core/test/dnn/test_dnn_session_api.c",
@@ -644,6 +644,37 @@
         }
       },
       "previous_baseline_sha256": "850119bbaf9b0edc42951941eff34ff9a56b4b8f571626472f2efe41ea0cde2c"
+    },
+    {
+      "sources": [
+        "core/src/cuda/import_gl.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/egl_export.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/sync_object.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/egl_export.c",
+            "core/src/vmafx/sync_object.c"
+          ]
+        },
+        "dropped_deleted_files": {
+          "paths": [
+            "core/src/vmafx/gl_sync.c",
+            "core/src/vmafx/sync_file.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "cb15d17724c15ce8fbe90257155dd1d72e78085dac2164aa03182fd43fd3cd55"
     }
   ]
 }

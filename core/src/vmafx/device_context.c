@@ -25,6 +25,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #ifdef HAVE_HIP
 #include "hip/vmafx_hip.h"
 #endif
@@ -45,6 +48,11 @@ static VmafxStatus attach_lane(const VmafxReport *report, VmafxContext *context,
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_context_attach(report, context, device);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_context_attach(report, context, device);
     }
 #endif
 #ifdef HAVE_HIP
@@ -91,6 +99,11 @@ void vmafx_context_release_device(VmafxContext *context)
 #ifdef HAVE_CUDA
     if (context->device && context->device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_context_detach(context);
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (context->device && context->device->backend == VMAFX_BACKEND_SYCL) {
+        vmafx_sycl_context_detach(context);
     }
 #endif
 #ifdef HAVE_HIP

@@ -542,21 +542,22 @@ static void *gbm_device_of(const char *node)
 }
 
 /* One plane: the driver's export when linear, else the GPU copy. */
-static int export_one(void *dpy, void *ctx, void *gbm_dev, const VmafxEglTarget *t, bool allow_copy,
-                      VmafxEglPlane *out, bool *copied, const char **why)
+static int export_one(void *dpy, void *ctx, void *gbm_dev, const VmafxEglTarget *t,
+                      VmafxEglTiled tiled, VmafxEglPlane *out, bool *copied, const char **why)
 {
+    const bool allow_copy = tiled == VMAFX_EGL_TILED_COPY;
     uint32_t fourcc = 0;
     int err = t->texture ? export_texture(dpy, ctx, t->texture, out, &fourcc) : -EINVAL;
     *why = "the texture cannot be exported as one dma-buf through EGL";
     if (err) {
         return err;
     }
-    if (fourcc != t->fourcc) {
+    if (t->fourcc != 0u && fourcc != t->fourcc) {
         *why = "the texture's format is not the plane's (R8 / GR88 / R16 / GR1616)";
         (void)close(out->fd);
         return -ENOTSUP;
     }
-    if (out->modifier == DRM_FORMAT_MOD_LINEAR_) {
+    if (out->modifier == DRM_FORMAT_MOD_LINEAR_ || tiled == VMAFX_EGL_TILED_KEEP) {
         return 0;
     }
     (void)close(out->fd);
@@ -582,9 +583,11 @@ static VmafxStatus fail_plane(const VmafxReport *report, const char *backend, ui
                       (unsigned)i, (unsigned long long)texture, why, err);
 }
 
-/* The current EGL context and its GPU: `dpy`, `ctx`, `node`. */
+/* The current EGL context and, when the PCI check or a copy needs it, its
+ * GPU: `dpy`, `ctx`, `node` (empty when not looked up). */
 static VmafxStatus open_display(const VmafxReport *report, const char *backend,
-                                const char *device_pci, void **dpy, void **ctx, char node[64])
+                                const char *device_pci, bool need_node, void **dpy, void **ctx,
+                                char node[64])
 {
     if (!egl_ready()) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
@@ -599,6 +602,10 @@ static VmafxStatus open_display(const VmafxReport *report, const char *backend,
                           "backend %s, memory GL_TEXTURE: no EGL context is current on this "
                           "thread; make the producer's context current to import its textures",
                           backend);
+    }
+    node[0] = '\0';
+    if (!device_pci && !need_node) {
+        return VMAFX_OK;
     }
     char pci[32];
     const char *why = "";
@@ -619,13 +626,15 @@ static VmafxStatus open_display(const VmafxReport *report, const char *backend,
 
 VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
                                     const char *device_pci, const VmafxEglTarget *targets,
-                                    uint32_t n, bool allow_copy, VmafxEglPlane out[3], bool *copied)
+                                    uint32_t n, VmafxEglTiled tiled, VmafxEglPlane out[3],
+                                    bool *copied)
 {
     assert(n >= 1u && n <= 3u);
+    const bool allow_copy = tiled == VMAFX_EGL_TILED_COPY;
     void *dpy = NULL;
     void *ctx = NULL;
     char node[64];
-    VmafxStatus status = open_display(report, backend, device_pci, &dpy, &ctx, node);
+    VmafxStatus status = open_display(report, backend, device_pci, allow_copy, &dpy, &ctx, node);
     if (status != VMAFX_OK) {
         return status;
     }
@@ -642,9 +651,10 @@ VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backe
             gl_save(&saved);
             saved_state = true;
         }
-        const int err =
-            export_one(dpy, ctx, gbm_dev, &targets[i], allow_copy, &out[i], copied, &why);
-        if (err == 0) {
+        const int err = export_one(dpy, ctx, gbm_dev, &targets[i], tiled, &out[i], copied, &why);
+        if (err == 0 && tiled == VMAFX_EGL_TILED_KEEP) {
+            status = VMAFX_OK; /* the importer honours the implicit fences (D8 retry) */
+        } else if (err == 0) {
             const int w = writers_done(out[i].fd);
             status = w == 0 ? VMAFX_OK :
                               fail_plane(report, backend, i, w,
@@ -674,12 +684,13 @@ void vmafx_egl_close_planes(VmafxEglPlane *planes, uint32_t n)
 
 VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
                                     const char *device_pci, const VmafxEglTarget *targets,
-                                    uint32_t n, bool allow_copy, VmafxEglPlane out[3], bool *copied)
+                                    uint32_t n, VmafxEglTiled tiled, VmafxEglPlane out[3],
+                                    bool *copied)
 {
     (void)device_pci;
     (void)targets;
     (void)n;
-    (void)allow_copy;
+    (void)tiled;
     (void)out;
     *copied = false;
     return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",

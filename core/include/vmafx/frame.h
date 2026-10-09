@@ -56,7 +56,8 @@ typedef enum VmafxMemoryKind {
      * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
      * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
      * texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf
-     * export from an EGL context of the device's GPU, ADR-2132). Added in ABI 0.1.7.
+     * export from an EGL context of the device's GPU, ADR-2132; SYCL through an EGL dma-buf export
+     * of each texture, Linux). Added in ABI 0.1.7.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
 } VmafxMemoryKind;
@@ -317,9 +318,9 @@ struct VmafxFrameImport {
     uint32_t flags;
     /**
      * Called once, on the thread that drops the frame's last reference, after its release fences
-     * were signalled or recorded: a CUDA_EVENT or HIP_EVENT release fence can be waited on from
-     * here (a producer makes its stream wait on it before it reuses the planes, with no host wait);
-     * NULL: none. Added in ABI 0.1.7.
+     * were signalled or recorded: a CUDA_EVENT, HIP_EVENT or SYCL_EVENT release fence can be waited
+     * on from here (a producer makes its stream or queue wait on it before it reuses the planes,
+     * with no host wait); NULL: none. Added in ABI 0.1.7.
      */
     VmafxFrameReleaseCallback release;
     /** Passed to `release`. Added in ABI 0.1.7. */

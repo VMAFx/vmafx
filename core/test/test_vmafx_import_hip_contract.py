@@ -246,7 +246,7 @@ class HipImportContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             EGL,
-            "    VmafxStatus status = open_display(report, backend, device_pci, &dpy, &ctx, node);",
+            "    VmafxStatus status = open_display(report, backend, device_pci, allow_copy, &dpy, &ctx, node);",
             "    VmafxStatus status = VMAFX_OK;",
         )
         self.assert_detected(src, "before the context's GPU is checked")

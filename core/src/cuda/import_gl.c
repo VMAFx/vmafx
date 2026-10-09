@@ -19,10 +19,10 @@
  * on the importing thread.
  *
  * A GL sync object is waited on with glClientWaitSync() on the host
- * (vmafx_gl_sync_acquire(), core/src/vmafx/gl_sync.c, shared with the HIP
- * lane): a signalled sync is passed, an unsignalled one makes the import
- * VMAFX_E_BUSY, and vmafx_context_import_frame() waits on it (bounded) and
- * retries once (decision D8).
+ * (vmafx/sync_object.c, shared with the SYCL lane): a signalled sync is
+ * passed, an unsignalled one makes the import VMAFX_E_BUSY, and
+ * vmafx_context_import_frame() waits on it (bounded) and retries once
+ * (decision D8). No GL header or library is a build dependency.
  */
 
 #include <assert.h>
@@ -32,6 +32,7 @@
 #include "cuda_helper.cuh"
 #include "vmafx/error_internal.h"
 #include "vmafx/internal.h"
+#include "vmafx/sync_object.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_cuda.h"
 #include "vmafx_cuda_internal.h"
@@ -41,7 +42,7 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-/* The GL value used here (Khronos registry). */
+/* GL_TEXTURE_2D (Khronos registry). */
 #define VMAFX_GL_TEXTURE_2D 0x0DE1u
 
 /* Register plane `i`'s texture with CUDA, read only. */

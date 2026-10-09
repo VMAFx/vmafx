@@ -86,7 +86,7 @@ void vmafx_cuda_release_early(VmafxFrame *frame);
 VmafxStatus vmafx_cuda_fence_create(const VmafxReport *report, VmafxDevice *device, uint32_t kind,
                                     VmafxFence *out);
 /* Host wait on a CUDA_EVENT fence (VMAFX_PENDING for a poll). GL_SYNC
- * fences are waited on by fence.c (gl_sync.c), without a device. */
+ * fences are waited on by fence.c (sync_object.c), without a device. */
 VmafxStatus vmafx_cuda_fence_wait(const VmafxReport *report, const VmafxFence *fence,
                                   uint64_t timeout_ns);
 /* Destroy a CUDA_EVENT fence the library returned. */

@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 502,
+  "tus": 501,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -200,10 +200,9 @@
     "core/src/vmafx/frame_import.c",
     "core/src/vmafx/frame_import_admit.c",
     "core/src/vmafx/frame_pool.c",
-    "core/src/vmafx/gl_sync.c",
     "core/src/vmafx/release_events.c",
     "core/src/vmafx/submit.c",
-    "core/src/vmafx/sync_file.c",
+    "core/src/vmafx/sync_object.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
     "core/test/dnn/test_dnn_session_api.c",
@@ -635,6 +634,37 @@
         }
       },
       "previous_baseline_sha256": "b5570925624f4a46d3851244ce3d9159b9e3fd94a61ac58a89855a4e50c91c0a"
+    },
+    {
+      "sources": [
+        "core/src/hip/import_frame.c",
+        "core/src/hip/import_gl.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/egl_export.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/sync_object.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/sync_object.c"
+          ]
+        },
+        "dropped_deleted_files": {
+          "paths": [
+            "core/src/vmafx/gl_sync.c",
+            "core/src/vmafx/sync_file.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "2470f552a893d78a9a70a0d55f2a72de9f0c7e1410544ee5b1206b655d2f9476"
     }
   ]
 }

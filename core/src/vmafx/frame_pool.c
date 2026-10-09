@@ -33,6 +33,9 @@
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
 #endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
+#endif
 #include "picture.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
@@ -74,6 +77,11 @@ static void pool_free(VmafxFramePool *pool)
 #ifdef HAVE_CUDA
         if (frame->residency == VMAFX_BACKEND_CUDA) {
             vmafx_cuda_pool_frame_free(frame);
+        }
+#endif
+#ifdef HAVE_SYCL
+        if (frame->residency == VMAFX_BACKEND_SYCL) {
+            vmafx_sycl_pool_frame_free(frame);
         }
 #endif
         free(frame);
@@ -128,10 +136,15 @@ static int device_planes(VmafxFramePool *pool, const VmafxFrameDesc *d, VmafxFra
         frame->device = pool->device;
         return vmafx_cuda_pool_frame_init(pool->device, d, frame);
     }
-#else
+#endif
+#ifdef HAVE_SYCL
+    if (pool->device->backend == VMAFX_BACKEND_SYCL) {
+        frame->device = pool->device;
+        return vmafx_sycl_pool_frame_init(pool->device, d, frame);
+    }
+#endif
     (void)d;
     (void)frame;
-#endif
     assert(pool->device->backend != VMAFX_BACKEND_CPU);
     return -ENOTSUP;
 }
@@ -220,6 +233,12 @@ static VmafxStatus pool_device(const VmafxReport *report, VmafxDevice *device,
         return VMAFX_OK;
     }
 #endif
+#ifdef HAVE_SYCL
+    if (device && device->backend == VMAFX_BACKEND_SYCL) {
+        *resolved = device;
+        return VMAFX_OK;
+    }
+#endif
     if (device && device->backend == VMAFX_BACKEND_HIP) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_DEVICE, "device",
                           "backend hip: a HIP device has no frame pools; import the frames "
@@ -275,6 +294,15 @@ static int arm_frame(VmafxFrame *frame)
 #ifdef HAVE_CUDA
     if (!err && frame->residency == VMAFX_BACKEND_CUDA) {
         err = vmafx_cuda_pool_frame_arm(frame);
+        if (err) {
+            (void)vmaf_ref_close(pic->ref);
+            pic->ref = NULL;
+        }
+    }
+#endif
+#ifdef HAVE_SYCL
+    if (!err && frame->residency == VMAFX_BACKEND_SYCL) {
+        err = vmafx_sycl_pool_frame_arm(frame);
         if (err) {
             (void)vmaf_ref_close(pic->ref);
             pic->ref = NULL;

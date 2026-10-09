@@ -17,7 +17,7 @@
  * (ADR-2092; T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06, closed by ADR-2132).
  *
  * The GL sync object of the import is the acquire fence, checked on the host
- * before any export (vmafx_gl_sync_acquire(), core/src/vmafx/gl_sync.c).
+ * before any export (vmafx_gl_sync_acquire(), core/src/vmafx/sync_object.c).
  */
 
 #include <assert.h>
@@ -28,6 +28,7 @@
 #include "picture.h"
 #include "vmafx/error_internal.h"
 #include "vmafx/internal.h"
+#include "vmafx/sync_object.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_hip.h"
 #include "vmafx_hip_internal.h"
@@ -71,9 +72,10 @@ VmafxStatus vmafx_hip_gl_export(const VmafxReport *report, const VmafxHipDevice 
                                       .h = ph[i]};
     }
     VmafxEglPlane planes[3];
-    const VmafxStatus status =
-        vmafx_egl_export_planes(report, "hip", dev->pci_bus_id, targets, layout->n_planes,
-                                (d->flags & VMAFX_IMPORT_ALLOW_COPY) != 0u, planes, copied);
+    const VmafxStatus status = vmafx_egl_export_planes(
+        report, "hip", dev->pci_bus_id, targets, layout->n_planes,
+        (d->flags & VMAFX_IMPORT_ALLOW_COPY) != 0u ? VMAFX_EGL_TILED_COPY : VMAFX_EGL_TILED_REFUSE,
+        planes, copied);
     if (status != VMAFX_OK) {
         return status;
     }

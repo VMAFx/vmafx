@@ -311,6 +311,36 @@ static sycl::property_list sycl_queue_props(bool profiling)
     return sycl::property_list{sycl::property::queue::in_order{}};
 }
 
+/* The state on `dev`: its primary queue in `ctx` (a VMAFx device's context,
+ * ADR-2091) or, for NULL, in the device's default context, and the copy queue
+ * beside it. Callers invoke it inside their own try block. */
+static VmafSyclState *sycl_state_create(const sycl::context *ctx, const sycl::device &dev,
+                                        bool profiling)
+{
+    sycl::queue q = ctx ? sycl::queue(*ctx, dev, sycl_queue_props(profiling)) :
+                          sycl::queue(dev, sycl_queue_props(profiling));
+
+    /* ADR-1395: warn once per device when kernels that use scratch
+     * memory return wrong values there (the Linux xe driver on DG2).
+     * Warning only: the device is used either way. */
+    vmaf_sycl_scratch_selftest(&q);
+
+    // Create a separate copy queue for DMA transfers.
+    // Uses the same context+device so USM pointers are interoperable.
+    // Copy queue is always in-order (no profiling needed for memcpy).
+    sycl::queue cq(q.get_context(), dev, sycl::property_list{sycl::property::queue::in_order{}});
+
+    auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
+    s->profiling_enabled = profiling;
+    // Per-extractor timing via q.wait() — no enable_profiling needed
+    const char *env_timing = vmaf_gpu_dispatch_env_get("VMAF_SYCL_TIMING");
+    s->extractor_timing = (env_timing && env_timing[0] == '1');
+    const char *env_idbg = vmaf_gpu_dispatch_env_get("VMAF_SYCL_IMPORT_DEBUG");
+    s->import_debug = (env_idbg && env_idbg[0] == '1');
+    s->has_fp64 = dev.has(sycl::aspect::fp64);
+    return s;
+}
+
 extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfiguration cfg)
 {
     if (!sycl_state)
@@ -325,34 +355,30 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         vmaf_log(VMAF_LOG_LEVEL_INFO, "SYCL: using device: %s\n",
                  dev.get_info<sycl::info::device::name>().c_str());
 
-        bool const has_fp64 = dev.has(sycl::aspect::fp64);
-        sycl_log_fp64_note(has_fp64);
-
-        bool const profiling = sycl_profiling_enabled(cfg);
-        sycl::queue q(dev, sycl_queue_props(profiling));
-
-        /* ADR-1395: warn once per device when kernels that use scratch
-         * memory return wrong values there (the Linux xe driver on DG2).
-         * Warning only: the device is used either way. */
-        vmaf_sycl_scratch_selftest(&q);
-
-        // Create a separate copy queue for DMA transfers.
-        // Uses the same context+device so USM pointers are interoperable.
-        // Copy queue is always in-order (no profiling needed for memcpy).
-        sycl::queue cq(q.get_context(), dev,
-                       sycl::property_list{sycl::property::queue::in_order{}});
-
-        auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
-        s->profiling_enabled = profiling;
-        // Per-extractor timing via q.wait() — no enable_profiling needed
-        const char *env_timing = vmaf_gpu_dispatch_env_get("VMAF_SYCL_TIMING");
-        s->extractor_timing = (env_timing && env_timing[0] == '1');
-        const char *env_idbg = vmaf_gpu_dispatch_env_get("VMAF_SYCL_IMPORT_DEBUG");
-        s->import_debug = (env_idbg && env_idbg[0] == '1');
-        s->has_fp64 = has_fp64;
-        *sycl_state = s;
+        sycl_log_fp64_note(dev.has(sycl::aspect::fp64));
+        *sycl_state = sycl_state_create(nullptr, dev, sycl_profiling_enabled(cfg));
         return 0;
 
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL exception: %s\n", e.what());
+        return -ENODEV;
+    } catch (const std::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL init error: %s\n", e.what());
+        return -EINVAL;
+    }
+}
+
+extern "C" int vmaf_sycl_state_init_queue(VmafSyclState **sycl_state, void *queue_ptr)
+{
+    if (!sycl_state || !queue_ptr)
+        return -EINVAL;
+
+    try {
+        const auto *lib = static_cast<const sycl::queue *>(queue_ptr);
+        const sycl::context ctx = lib->get_context();
+        const VmafSyclConfiguration cfg = {.device_index = -1, .enable_profiling = 0};
+        *sycl_state = sycl_state_create(&ctx, lib->get_device(), sycl_profiling_enabled(cfg));
+        return 0;
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL exception: %s\n", e.what());
         return -ENODEV;
@@ -760,6 +786,22 @@ static sycl::event sycl_enqueue_plane_upload(VmafSyclState *state, void *dst_buf
     return last_ev;
 }
 
+/* One luma plane into a shared slot: the host upload above, or, for a VMAFx
+ * device picture (ADR-2091), a copy on the device that waits on the frame's
+ * producer and is recorded as one of its readers. nullopt when the device
+ * copy could not be enqueued. */
+static std::optional<sycl::event> sycl_enqueue_luma(VmafSyclState *state, void *dst_buf,
+                                                    const VmafPicture *pic, size_t row_bytes)
+{
+    if (!vmaf_sycl_picture_on_device(pic))
+        return sycl_enqueue_plane_upload(state, dst_buf, pic->data[0], pic->stride[0], row_bytes);
+    sycl::event ev;
+    if (vmaf_sycl_picture_read_plane(pic, 0, &state->copy_queue, dst_buf, row_bytes, row_bytes,
+                                     state->frame_h, &ev) != 0)
+        return std::nullopt;
+    return ev;
+}
+
 /* Order the upload into slot `ui` after every reader of that slot's previous
  * frame, and mark the readers of the slot compute is leaving (ADR-1369).
  * Upload F retires cur_compute (frame F-1's slot); all work enqueued so far
@@ -835,13 +877,16 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
 
     try {
         sycl_fence_slot_readers(state, ui);
-        (void)sycl_enqueue_plane_upload(state, state->shared_ref_buf[ui], ref->data[0],
-                                        ref->stride[0], row_bytes);
+        if (!sycl_enqueue_luma(state, state->shared_ref_buf[ui], ref, row_bytes))
+            return -EIO;
 
         double const t1 = monotonic_ms();
 
-        sycl::event const last_ev = sycl_enqueue_plane_upload(
-            state, state->shared_dis_buf[ui], dis->data[0], dis->stride[0], row_bytes);
+        const std::optional<sycl::event> dis_ev =
+            sycl_enqueue_luma(state, state->shared_dis_buf[ui], dis, row_bytes);
+        if (!dis_ev)
+            return -EIO;
+        const sycl::event &last_ev = *dis_ev;
 
         double const t2 = monotonic_ms();
 
@@ -1018,6 +1063,27 @@ static sycl::event sycl_enqueue_chroma_plane(VmafSyclState *state, void *dst, vo
     return state->copy_queue.memcpy(dst, staging, state->planes.plane_bytes);
 }
 
+/* Cb or Cr (`plane` 1 or 2) of `pic` into `dst`: packed through the pinned
+ * staging buffer from a host picture, copied on the device from a VMAFx
+ * device picture (ADR-2091; the copy waits on the frame's producer and is
+ * recorded as one of its readers). nullopt when the device copy could not be
+ * enqueued. */
+static std::optional<sycl::event> sycl_enqueue_chroma_from(VmafSyclState *state, void *dst,
+                                                           void *staging, const VmafPicture *pic,
+                                                           unsigned plane, size_t row_bytes)
+{
+    if (!vmaf_sycl_picture_on_device(pic)) {
+        return sycl_enqueue_chroma_plane(state, dst, staging, pic->data[plane], pic->stride[plane],
+                                         row_bytes);
+    }
+    sycl::event ev;
+    if (vmaf_sycl_picture_read_plane(pic, plane, &state->copy_queue, dst, row_bytes, row_bytes,
+                                     state->planes.h, &ev) != 0) {
+        return std::nullopt;
+    }
+    return ev;
+}
+
 extern "C" int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture *ref,
                                               VmafPicture *dis)
 {
@@ -1037,27 +1103,34 @@ extern "C" int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture 
         // before its vmaf_read_pictures() returned; this wait only guards
         // callers that did not go through it.
         chroma.staged.wait();
-        sycl::event last_ev;
-        for (int p = 0; p < 2; p++) {
-            last_ev = sycl_enqueue_chroma_plane(state, chroma.ref[slot][p], chroma.staging[p],
-                                                ref->data[p + 1], ref->stride[p + 1], row_bytes);
-            last_ev = sycl_enqueue_chroma_plane(state, chroma.dis[slot][p], chroma.staging[2 + p],
-                                                dis->data[p + 1], dis->stride[p + 1], row_bytes);
+        std::optional<sycl::event> last_ev;
+        for (unsigned p = 0; p < 2; p++) {
+            const std::optional<sycl::event> ref_ev = sycl_enqueue_chroma_from(
+                state, chroma.ref[slot][p], chroma.staging[p], ref, p + 1, row_bytes);
+            last_ev = ref_ev ?
+                          sycl_enqueue_chroma_from(state, chroma.dis[slot][p],
+                                                   chroma.staging[2 + p], dis, p + 1, row_bytes) :
+                          std::nullopt;
+            if (!last_ev)
+                return -EIO;
         }
+        if (!last_ev)
+            return -EIO;
         // In-order copy queue: the last copy completes after the luma planes.
-        state->last_upload_event = last_ev;
-        chroma.staged = last_ev;
+        const sycl::event last = *last_ev;
+        state->last_upload_event = last;
+        chroma.staged = last;
         chroma.frame = state->frame_counter;
 
         auto *ref_priv = static_cast<VmafPicturePrivate *>(ref->priv);
         auto *dis_priv = static_cast<VmafPicturePrivate *>(dis->priv);
         if (ref_priv && ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
             ref_priv->sycl.ready_event) {
-            *static_cast<sycl::event *>(ref_priv->sycl.ready_event) = last_ev;
+            *static_cast<sycl::event *>(ref_priv->sycl.ready_event) = last;
         }
         if (dis_priv && dis_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
             dis_priv->sycl.ready_event) {
-            *static_cast<sycl::event *>(dis_priv->sycl.ready_event) = last_ev;
+            *static_cast<sycl::event *>(dis_priv->sycl.ready_event) = last;
         }
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL chroma upload: %s\n", e.what());

@@ -12,9 +12,9 @@ This build carries the core of the API: contexts with their own log
 callback, options, models and model sets, devices, host frames, imported
 frames with fences and frame pools, submission, synchronous scores and
 [asynchronous window scores](windows.md). Imports run on the CPU device in
-every build and on CUDA and HIP devices in builds with those backends; the
-SYCL and Metal imports, the full provenance record and reports follow in
-later RC4 work.
+every build and on CUDA, SYCL and HIP devices in builds with those backends;
+the Metal imports, the full provenance record and reports follow in later
+RC4 work.
 
 Every declaration, the Python binding and the
 [reference pages](reference.md) are generated from one definition,
@@ -274,10 +274,12 @@ for example, hands it over with `vmafx_frame_import()` instead of copying it
 into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
 Every build imports host memory on the CPU device; a build with the CUDA
 backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
-devices ([CUDA devices](#cuda-devices) below), and a build with the HIP
-backend imports HIP device memory, dma-bufs, HIP arrays and OpenGL textures
-(through EGL dma-bufs) on HIP devices ([HIP devices](#hip-devices)). The SYCL
-and Metal imports arrive behind the same calls and types.
+devices ([CUDA devices](#cuda-devices) below), a build with the SYCL backend
+imports USM, Linux dma-bufs and OpenGL textures on SYCL devices
+([SYCL devices](#sycl-devices)), and a build with the HIP backend imports HIP
+device memory, dma-bufs, HIP arrays and OpenGL textures (through EGL dma-bufs)
+on HIP devices ([HIP devices](#hip-devices)). The Metal imports arrive behind
+the same calls and types.
 
 ### Devices
 
@@ -397,16 +399,19 @@ yours right after. Fences the library returns are yours to release once with
 
 A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
 `VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)); a
-build with the HIP backend implements `VMAFX_FENCE_HIP_EVENT`,
-`VMAFX_FENCE_GL_SYNC` and, as an acquire fence, `VMAFX_FENCE_SYNC_FILE` for
-HIP devices ([HIP devices](#hip-devices)). In every build
-`vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC` (`glClientWaitSync()`,
-which needs a GL context of the sync's share group current on the calling
-thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE` descriptor (`poll()`);
-both stay the producer's, so `vmafx_fence_destroy()` refuses them with
-`VMAFX_E_NOTSUP`. The SYCL events, Metal shared events and
-Windows shared fences are declared kinds; until their backends land they are
-answered with `VMAFX_E_NOTSUP` naming the kind.
+build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT` for SYCL
+devices ([SYCL devices](#sycl-devices)), and a build with the HIP backend
+`VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire fence,
+`VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)); SYCL
+devices take `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences
+on Linux too. In every build `vmafx_fence_wait()` waits on a
+`VMAFX_FENCE_GL_SYNC` (`glClientWaitSync()`, which needs a GL context of the
+sync's share group current on the calling thread) and, on Linux, on a
+`VMAFX_FENCE_SYNC_FILE` descriptor (`poll()`); `vmafx_fence_destroy()` closes
+a `SYNC_FILE` descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it
+with `glDeleteSync()`). The Metal shared events and Windows shared fences are
+declared kinds; until their backends land they are answered with
+`VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 
@@ -653,6 +658,108 @@ fences are signalled after the last reader of any of them.
 vendor's tools. The runtime's API log (`AMD_LOG_LEVEL=3`) lists every copy
 with its direction: an import makes device-to-device copies on the library
 stream and no host-to-device or device-to-host copy of the frame.
+
+### SYCL devices
+
+In a build with the SYCL backend
+([ADR-2091](../../adr/2091-vmafx-sycl-device-frames.md)). The devices are the
+Level Zero GPUs; the imports go through Level Zero, so an OpenCL view of the
+same GPU is not counted again.
+
+| Descriptor | Device |
+| --- | --- |
+| `desc.backend = VMAFX_BACKEND_SYCL`, `desc.index = n` (or -1 for the first) | Level Zero GPU `n`; the library creates its own in-order queue on it (with immediate command lists) |
+| `desc.external[0] = (uintptr_t)&queue` (a `sycl::queue *`) | A device in your queue's SYCL context and device (the library creates its own queue in them), so your USM and events are valid in it; the queue stays yours and is read only by `vmafx_device_create()`; `external[1]` must be 0 |
+
+`vmafx_context_use_device(context, device, error)` makes the context score on
+the device: each feature registered afterwards runs on its SYCL twin, in the
+device's SYCL context. A feature without a twin, or whose twin cannot honour
+an option you set, runs on the CPU (a warning names it); host frames still
+score, frames in device memory are then refused by admission naming that
+extractor.
+`VMAFX_DEVICE_PROFILING` is refused; set `VMAF_SYCL_PROFILE=1` or use the
+vendor's profiler.
+
+What a SYCL device imports:
+
+| `memory` | Planes | Bound or converted |
+| --- | --- | --- |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; NV12 / P010 / P016 are planarised on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
+| `VMAFX_MEMORY_DMABUF` (Linux) | `fd` + `size` of the dma-buf, `offset`, `pitch` and `modifier` | Linear (modifier 0) planes are bound; Intel Y-tiled and Tile4 planes are de-tiled on the device; another modifier is refused naming the plane. Planes may share one dma-buf |
+| `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | Each texture is exported as a dma-buf (`EGL_MESA_image_dma_buf_export`) and imported as above |
+
+Every reader copies the planes it needs on the device, so no layout needs a
+copy and `VMAFX_IMPORT_ALLOW_COPY` changes nothing. `VMAFX_MEMORY_WIN32_SHARED`
+is refused with `VMAFX_E_NOTSUP` naming `desc.memory` until it can be tested
+on a Windows device. No path copies a frame through the host.
+
+| Acquire fence | The SYCL device |
+| --- | --- |
+| `VMAFX_FENCE_SYCL_EVENT` | `handle = (uintptr_t)&event` (a `sycl::event *` of the device's context, after the work that writes the planes): the device's queue waits on it; nothing waits on the host |
+| `VMAFX_FENCE_HOST` | Takes a signalled fence; an unsignalled one is `VMAFX_E_BUSY` (`vmafx_context_import_frame()` waits and retries once) |
+| `VMAFX_FENCE_SYNC_FILE` (Linux) | `fd`: a `sync_file` descriptor, polled on the host: signalled, or `VMAFX_E_BUSY` as for `HOST`; the descriptor stays yours |
+| `VMAFX_FENCE_GL_SYNC` (Linux) | GL texture imports: as on a CUDA device |
+
+A dma-buf's own implicit write fences are honoured too: a dma-buf whose
+writer has not finished is `VMAFX_E_BUSY` and the import rule waits on it
+(a GL import waits up to 1 s for the fences the EGL export itself leaves).
+
+Release fences of a SYCL frame:
+
+- `VMAFX_FENCE_HOST`: signalled when the device has run the frame's last
+  reader, in every context the frame was submitted to.
+- `VMAFX_FENCE_SYCL_EVENT`: `handle` is a `sycl::event *` the library owns.
+  The event is created when the last reference is dropped, as a barrier over
+  every reader of the frame on any queue, so wait on it from the frame's
+  release callback (`VmafxFrameImport.release`, called after it exists) or
+  after `vmafx_fence_wait()` returned `VMAFX_OK`, for example with
+  `queue.ext_oneapi_submit_barrier({*(sycl::event *)fence.handle})`.
+- `VMAFX_FENCE_SYNC_FILE` release fences are refused: Level Zero gives this
+  build no kernel fence to export.
+
+```c
+/* A producer on its own queue `producer` (C++), writing USM planes. */
+sycl::event written = producer.submit(/* the work that writes the planes */);
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_DEVICE_POINTER;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_P010;
+imp.bpc = 10;
+imp.w = 3840;
+imp.h = 2160;
+imp.n_planes = 2;
+imp.plane[0].handle = (uintptr_t)luma_usm;
+imp.plane[0].pitch = pitch;
+imp.plane[1].handle = (uintptr_t)chroma_usm;
+imp.plane[1].pitch = pitch;
+imp.acquire.kind = VMAFX_FENCE_SYCL_EVENT;
+imp.acquire.handle = (uintptr_t)&written;
+imp.release = surface_released;   /* makes `producer` wait on the release event */
+imp.user = surface;
+
+status = vmafx_context_import_frame(context, sycl_device, &imp, "main", &frame, &error);
+if (status == VMAFX_OK)
+    status = vmafx_frame_release_fence(frame, VMAFX_FENCE_SYCL_EVENT, &surface->free, &error);
+```
+
+Ordering. A frame's conversions run on the device's queue behind its acquire
+fence; every reader, on whatever queue of whichever context, waits on their
+last event, and the release waits on every reader. One import scored by
+several contexts on the device therefore needs nothing more. A SYCL frame
+pool hands out frames of device USM (`vmafx_frame_planes()` gives the
+addresses) only after the readers of their previous use ran; a pool frame
+carries no acquire fence, so finish your writes (for example `queue.wait()`)
+before the submit.
+
+To check that an import makes no host copy, trace the runtime with
+`sycl-trace --ur.call <program>` (shipped with the DPC++ compiler): every
+`urEnqueueUSMMemcpy` names its source, destination and size, and every kernel
+argument its pointer. In an import-only session (48 imported 1080p NV12 pairs
+scored with `vmaf_v1.0.16_3d0h` on an Arc A380, DPC++ 2026.1.1) the host sent
+5 copies of 280100 bytes in all to the device (tables at start-up, the largest
+262148 bytes), the device sent 194 copies of 94920 bytes back (feature
+results, the largest 1584 bytes), and all 793 kernel pointer arguments were
+device memory: no pixel crossed to or from the host.
 
 ## Scores
 

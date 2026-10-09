@@ -425,6 +425,15 @@ test('test_vmafx_import_hip_contract',
     timeout : 30,
 )
 
+# HISS-19: one EGL export (vmafx/egl_export.c) and one sync-object
+# implementation (vmafx/sync_object.c) for every lane, with planted copies.
+test('test_vmafx_one_egl_export_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_one_egl_export_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_hip_shared_frame_contract',
     import('python').find_installation(),
     args : files('test_hip_shared_frame_contract.py'),
@@ -9558,3 +9567,57 @@ if is_rust_enabled
     )
     test('test_rust_cambi_kernels', test_rust_cambi_kernels, suite : ['rust', 'fast'])
 endif
+
+# RC4 WP3 SYCL lane (ADR-2091): the VMAFx device-frame API on a SYCL device,
+# white-box through the static library (the test-only hooks of
+# core/src/vmafx/frame_import_hooks.h). The producer side (USM uploads, held
+# queues, dma-buf export, device load) is vmafx_sycl_producer.cpp, compiled by
+# the SYCL compiler; each test needs a Level Zero GPU (77 without one) and
+# runs alone on it; the bit-exactness run reads the Netflix fixtures and
+# testdata/bbb. Linux: the dma-buf, sync_file and EGL paths are Linux ones.
+if get_option('enable_sycl') and host_machine.system() == 'linux' and not is_sycl_acpp
+    vmafx_sycl_producer = custom_target('vmafx_sycl_producer',
+        output : 'vmafx_sycl_producer.o',
+        input : 'vmafx_sycl_producer.cpp',
+        depend_files : files('vmafx_sycl_producer.h'),
+        command : [icpx] + sycl_common_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    vmafx_sycl_test_args = vmaf_cflags_common + vmafx_test_dirs + [
+        '-DVMAFX_TEST_BBB_DIR="' + (meson.project_source_root() / '..' / 'testdata' / 'bbb') + '"',
+    ]
+    vmafx_sycl_test_deps = [math_lib, pthread_dependency, thread_lib, sycl_dependency]
+    if have_sycl_dmabuf
+        vmafx_sycl_test_args += ['-DVMAFX_TEST_HAVE_VA=1']
+        vmafx_sycl_test_deps += [libva_dep, libva_drm_dep]
+    endif
+    vmafx_sycl_tests = [
+        ['test_vmafx_import_sycl', 300],
+        ['test_vmafx_import_sycl_bitexact', 1800],
+        ['test_vmafx_import_sycl_fence', 300],
+        ['test_vmafx_import_sycl_gl', 120],
+    ]
+    foreach vmafx_sycl_test : vmafx_sycl_tests
+        vmafx_sycl_name = vmafx_sycl_test[0]
+        vmafx_sycl_exe = executable(vmafx_sycl_name,
+            ['test.c', vmafx_sycl_name + '.c', vmafx_sycl_producer],
+            include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+            link_with : vmafx_static_link,
+            c_args : vmafx_sycl_test_args,
+            dependencies : vmafx_sycl_test_deps,
+            link_language : 'cpp',
+        )
+        test(vmafx_sycl_name, vmafx_sycl_exe,
+            suite : ['gpu', 'sycl'],
+            is_parallel : false,
+            timeout : vmafx_sycl_test[1])
+    endforeach
+endif
+
+# Device-free contract of the SYCL import cells (ADR-2091): the table equals
+# scripts/ci/exact_twins.d/*.sycl, on planted defects too.
+test('test_vmafx_import_sycl_cells_contract',
+    import('python').find_installation(),
+    args : files('test_vmafx_import_sycl_cells_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)

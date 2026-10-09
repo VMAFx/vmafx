@@ -212,6 +212,19 @@ backend within it.
   stage on the host. `core/test/test_vmafx_import_hip_contract.py`,
   `test_hip_shared_frame` and `test_vmafx_import_hip*` (on a device) guard
   them together.
+- **VMAFx SYCL frames are copied by their readers on the device ([ADR-2091](../adr/2091-vmafx-sycl-device-frames.md))**:
+  every frame of a SYCL device of the VMAFx API is a SYCL device picture
+  (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`, `VmafPicturePrivate.sycl.frame`).
+  The shared luma / chroma uploads in `core/src/sycl/common.cpp` and every SYCL
+  twin that stages its own planes copy it with
+  `vmaf_sycl_picture_read_plane()`, which records the read for the release;
+  `core/src/libvmaf.c` skips the upload wait for such pictures and refuses a
+  non-SYCL extractor on one. Acquire and release are joins (an empty kernel
+  with `depends_on()`), never `ext_oneapi_submit_barrier()` (Research-2160
+  finding 2), and no reader uses `ext_oneapi_memcpy2d()` (finding 1). The
+  de-tile math of the VA-surface import and the VMAFx dma-buf import is one
+  header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and
+  `core/test/vmafx_sycl_cells.h` together.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

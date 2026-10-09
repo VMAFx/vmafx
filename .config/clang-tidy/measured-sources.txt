@@ -339,8 +339,15 @@ core/src/sycl/common.cpp
 core/src/sycl/d3d11_import.cpp
 core/src/sycl/dispatch_strategy.cpp
 core/src/sycl/dmabuf_import.cpp
+core/src/sycl/import_device.c
+core/src/sycl/import_dmabuf.c
+core/src/sycl/import_fence.c
+core/src/sycl/import_frame.c
+core/src/sycl/import_gl.c
+core/src/sycl/import_pool.c
 core/src/sycl/picture_sycl.cpp
 core/src/sycl/scratch_check.cpp
+core/src/sycl/vmafx_sycl_rt.cpp
 core/src/thread_locale.cpp
 core/src/thread_pool.c
 core/src/vmafx/bridge.c
@@ -359,7 +366,6 @@ core/src/vmafx/frame_import.c
 core/src/vmafx/frame_import_admit.c
 core/src/vmafx/frame_import_hooks.c
 core/src/vmafx/frame_pool.c
-core/src/vmafx/gl_sync.c
 core/src/vmafx/mcp_server.c
 core/src/vmafx/model.c
 core/src/vmafx/options.c
@@ -376,7 +382,7 @@ core/src/vmafx/sha256.c
 core/src/vmafx/sized.c
 core/src/vmafx/status_gen.c
 core/src/vmafx/submit.c
-core/src/vmafx/sync_file.c
+core/src/vmafx/sync_object.c
 core/src/vmafx/tiny_model.c
 core/src/vmafx/window.c
 core/src/vmafx/window_clock.c
@@ -843,6 +849,10 @@ core/test/test_vmafx_import_hip_bitexact.c
 core/test/test_vmafx_import_hip_fence.c
 core/test/test_vmafx_import_hip_formats.c
 core/test/test_vmafx_import_hip_gl.c
+core/test/test_vmafx_import_sycl.c
+core/test/test_vmafx_import_sycl_bitexact.c
+core/test/test_vmafx_import_sycl_fence.c
+core/test/test_vmafx_import_sycl_gl.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_live_pacing.c
 core/test/test_vmafx_log_routing.c
@@ -863,6 +873,7 @@ core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c
 core/test/test_y_funque_plus.c
 core/test/vmafx_score_contract.c
+core/test/vmafx_sycl_producer.cpp
 core/tools/cli_backends.cpp
 core/tools/cli_feature_backend.cpp
 core/tools/cli_parse.cpp
