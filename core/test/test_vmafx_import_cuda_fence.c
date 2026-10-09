@@ -12,13 +12,20 @@
  * cannot see, another stream keeping the device busy):
  *
  * - Acquire: the producer writes every frame on its own stream behind a host
- *   function that holds that stream for a few milliseconds, then records the
- *   acquire event; the import is made at once. With the library's wait on
- *   its stream every frame scores as the host frame (0 bad of N); with the
- *   planted skipped wait (VMAFX_TEST_SKIP_ACQUIRE_WAIT) the kernels read the
- *   planes before the producer wrote them and frames score wrong. The
- *   ADR-1199 barrier is not what saves the fenced frames: it is skipped for
- *   them, which the skipped-wait arm shows.
+ *   function that holds that stream, then records the acquire event; the
+ *   import is made at once. With the library's wait on its stream every frame
+ *   scores as the host frame (0 bad of N; the hold lasts a few
+ *   milliseconds). The planted skipped wait (VMAFX_TEST_SKIP_ACQUIRE_WAIT)
+ *   runs with a late producer: from frame LATE_FIRST on, the hold before each
+ *   distorted frame's write lasts until the library has run the frame's
+ *   readers (its CUDA_EVENT release fence, which the test waits on), so the
+ *   kernels read the zeroed planes and every such frame scores wrong whatever
+ *   the device's timing. (A timed hold left the control to that timing:
+ *   adm's readers sometimes ran after a 6 ms hold and the skipped wait went
+ *   unseen.) The ADR-1199 barrier is not what saves the fenced frames: it is
+ *   skipped for them, which the skipped-wait arm shows; anything that ordered
+ *   the readers after the producer would hold them until the gate gives up,
+ *   which the arm reports.
  * - Release: the library stream is held behind a host function while the
  *   frame's readers queue up; the frame's release callback makes the
  *   producer's stream wait on the CUDA_EVENT release fence and write a canary
@@ -62,6 +69,17 @@
 #define HOLD_MS 6u
 /* Bytes the load stream keeps setting while a test runs. */
 #define LOAD_BYTES (256u << 20)
+/* The late producer: how long its gate holds at most, how many wake-ups its
+ * wait takes before it gives up, and how long the test waits for a frame's
+ * readers (longer than the gate, so a gate that gives up is what shows). */
+#define GATE_TIMEOUT_S 2
+#define GATE_WAKEUPS 1000u
+#define READERS_TIMEOUT_NS 5000000000ull
+/* The late producer holds the distorted frames from this one on. Frame 0 is
+ * read after the extractors' first-frame setup (module loads, allocations),
+ * which waits for the producer's stream (measured: its gate gave up every
+ * time), so it keeps the timed hold and is not counted. */
+#define LATE_FIRST 1u
 
 static VcGpu gpu;
 static bool have_gpu;
@@ -71,6 +89,48 @@ static void CUDAAPI hold_stream(void *arg)
     (void)arg;
     const struct timespec t = {.tv_sec = 0, .tv_nsec = (long)HOLD_MS * 1000000L};
     (void)nanosleep(&t, NULL);
+}
+
+/* The late producer's gate: the test opens it frame by frame. */
+typedef struct Gate {
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    unsigned opened;   /* frames below it may be written */
+    unsigned timeouts; /* holds that gave up before their frame was opened */
+} Gate;
+
+typedef struct GateTicket {
+    Gate *gate;
+    unsigned frame;
+} GateTicket;
+
+/* Host function: hold the producer's stream until the ticket's frame is
+ * opened, GATE_TIMEOUT_S at most. No CUDA call. */
+static void CUDAAPI hold_until_open(void *arg)
+{
+    const GateTicket *const t = arg;
+    Gate *const g = t->gate;
+    struct timespec deadline = {0, 0};
+    int err = clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += GATE_TIMEOUT_S;
+    if (pthread_mutex_lock(&g->lock) != 0) {
+        return;
+    }
+    for (unsigned n = 0; n < GATE_WAKEUPS && g->opened <= t->frame && err == 0; n++) {
+        err = pthread_cond_timedwait(&g->cond, &g->lock, &deadline);
+    }
+    g->timeouts += g->opened <= t->frame;
+    (void)pthread_mutex_unlock(&g->lock);
+}
+
+/* Let the producer write every frame up to `frame`. */
+static void gate_open(Gate *g, unsigned frame)
+{
+    if (pthread_mutex_lock(&g->lock) == 0) {
+        g->opened = frame + 1u > g->opened ? frame + 1u : g->opened;
+        (void)pthread_cond_broadcast(&g->cond);
+        (void)pthread_mutex_unlock(&g->lock);
+    }
 }
 
 /* ---- Device load (the ADR-1199 harness's concurrent CUDA work) ---------------------- */
@@ -159,16 +219,18 @@ static void clip_close(Clip *c)
 }
 
 /* A frame buffer of the producer: zeroed, then written on the producer's
- * stream from `src` behind a host function that holds the stream, then the
- * acquire event recorded. */
-static bool produce(const Clip *c, const VcPlanes *src, VcPlanes *dst, CUevent *acquire)
+ * stream from `src` behind a host function that holds the stream (HOLD_MS, or
+ * until `gate` opens its frame), then the acquire event recorded. */
+static bool produce(const Clip *c, const VcPlanes *src, VcPlanes *dst, CUevent *acquire,
+                    GateTicket *gate)
 {
     *dst = *src;
     const size_t bytes = (size_t)(src->offset[2] + src->pitch[2] * ((c->desc.h + 1u) / 2u));
     bool ok = vc_push(&gpu) && gpu.f->cuMemAlloc(&dst->base, bytes) == CUDA_SUCCESS &&
               gpu.f->cuMemsetD8Async(dst->base, 0, bytes, gpu.producer) == CUDA_SUCCESS &&
               gpu.f->cuStreamSynchronize(gpu.producer) == CUDA_SUCCESS &&
-              gpu.f->cuLaunchHostFunc(gpu.producer, hold_stream, NULL) == CUDA_SUCCESS &&
+              gpu.f->cuLaunchHostFunc(gpu.producer, gate ? hold_until_open : hold_stream, gate) ==
+                  CUDA_SUCCESS &&
               gpu.f->cuMemcpyDtoDAsync(dst->base, src->base, bytes, gpu.producer) == CUDA_SUCCESS &&
               gpu.f->cuEventCreate(acquire, CU_EVENT_DISABLE_TIMING) == CUDA_SUCCESS &&
               gpu.f->cuEventRecord(*acquire, gpu.producer) == CUDA_SUCCESS;
@@ -178,23 +240,70 @@ static bool produce(const Clip *c, const VcPlanes *src, VcPlanes *dst, CUevent *
 
 /* ---- Acquire ordering ---------------------------------------------------------------- */
 
+/* One fenced session's producer. */
+typedef struct FencedRun {
+    VcPlanes bufs[2u * N_FRAMES];
+    CUevent events[2u * N_FRAMES];
+    bool late;                     /* the late producer (the planted skipped wait's arm) */
+    Gate gate;                     /* late: the holds before the distorted frames' writes */
+    GateTicket tickets[N_FRAMES];  /* late: one per distorted frame */
+    VmafxFence released[N_FRAMES]; /* late: the distorted frames' release fences */
+    unsigned unread;               /* late: frames whose readers had not run in time */
+} FencedRun;
+
+static bool fenced_run_init(FencedRun *r, bool late)
+{
+    memset(r, 0, sizeof(*r));
+    r->late = late;
+    for (unsigned i = 0; i < N_FRAMES; i++) {
+        r->released[i] = (VmafxFence)VMAFX_FENCE_INIT;
+        r->tickets[i] = (GateTicket){.gate = &r->gate, .frame = i};
+    }
+    if (pthread_mutex_init(&r->gate.lock, NULL) != 0) {
+        return false;
+    }
+    if (pthread_cond_init(&r->gate.cond, NULL) != 0) {
+        (void)pthread_mutex_destroy(&r->gate.lock);
+        return false;
+    }
+    return true;
+}
+
+/* Frame i produced, imported at once and submitted. The late producer opens
+ * the distorted frame's gate once the library has run the frame's readers,
+ * and on every other path, so its stream never waits on a failed frame. */
+static bool fenced_frame(FencedRun *r, const Clip *c, VmafxContext *context, unsigned i)
+{
+    VmafxFrame *pair[2] = {NULL, NULL};
+    bool ok = true;
+    const bool gated = r->late && i >= LATE_FIRST;
+    for (unsigned s = 0; s < 2u && ok; s++) {
+        const unsigned k = 2u * i + s;
+        GateTicket *const gate = gated && s ? &r->tickets[i] : NULL;
+        ok = produce(c, &c->src[k], &r->bufs[k], &r->events[k], gate);
+        VmafxFrameImport imp =
+            vc_import_desc(&c->desc, VMAFX_PIXEL_FORMAT_YUV420P, 8u, &r->bufs[k]);
+        imp.acquire.kind = VMAFX_FENCE_CUDA_EVENT;
+        imp.acquire.handle = (uintptr_t)r->events[k];
+        ok = ok && vmafx_frame_import(gpu.device, &imp, &pair[s], NULL) == VMAFX_OK;
+    }
+    ok = ok && (!gated || vmafx_frame_release_fence(pair[1], VMAFX_FENCE_CUDA_EVENT,
+                                                    &r->released[i], NULL) == VMAFX_OK);
+    ok = ok && vmafx_submit(context, pair[0], pair[1], i, NULL) == VMAFX_OK;
+    if (gated) {
+        r->unread += ok && vmafx_fence_wait(&r->released[i], READERS_TIMEOUT_NS, NULL) != VMAFX_OK;
+        gate_open(&r->gate, i);
+    }
+    return ok;
+}
+
 /* The fenced session: every frame produced and imported at once. */
-static VmafxContext *run_fenced(const Clip *c, const VcCell *cell, VcPlanes *bufs, CUevent *events)
+static VmafxContext *run_fenced(FencedRun *r, const Clip *c, const VcCell *cell)
 {
     VmafxContext *const context = vc_cell_context(gpu.device, cell);
     bool ok = context != NULL;
     for (unsigned i = 0; i < N_FRAMES && ok; i++) {
-        VmafxFrame *pair[2] = {NULL, NULL};
-        for (unsigned s = 0; s < 2u && ok; s++) {
-            const unsigned k = 2u * i + s;
-            ok = produce(c, &c->src[k], &bufs[k], &events[k]);
-            VmafxFrameImport imp =
-                vc_import_desc(&c->desc, VMAFX_PIXEL_FORMAT_YUV420P, 8u, &bufs[k]);
-            imp.acquire.kind = VMAFX_FENCE_CUDA_EVENT;
-            imp.acquire.handle = (uintptr_t)events[k];
-            ok = ok && vmafx_frame_import(gpu.device, &imp, &pair[s], NULL) == VMAFX_OK;
-        }
-        ok = ok && vmafx_submit(context, pair[0], pair[1], i, NULL) == VMAFX_OK;
+        ok = fenced_frame(r, c, context, i);
     }
     ok = ok && vmafx_flush(context, NULL) == VMAFX_OK;
     return ok ? context : NULL;
@@ -213,11 +322,12 @@ static VmafxContext *run_host(const Clip *c, const VcCell *cell)
     return ok && vmafx_flush(context, NULL) == VMAFX_OK ? context : NULL;
 }
 
-/* Frames of `fenced` whose `feature` differs from `host`'s. */
-static unsigned bad_frames(VmafxContext *host, VmafxContext *fenced, const char *feature)
+/* Frames of `fenced` from `first` on whose `feature` differs from `host`'s. */
+static unsigned bad_frames(VmafxContext *host, VmafxContext *fenced, const char *feature,
+                           unsigned first)
 {
     unsigned bad = 0;
-    for (unsigned i = 0; i < N_FRAMES; i++) {
+    for (unsigned i = first; i < N_FRAMES; i++) {
         VmafxScore a = VMAFX_SCORE_INIT;
         VmafxScore b = VMAFX_SCORE_INIT;
         const bool ok = vmafx_feature_score(host, feature, i, &a, NULL) == VMAFX_OK &&
@@ -227,39 +337,83 @@ static unsigned bad_frames(VmafxContext *host, VmafxContext *fenced, const char 
     return bad;
 }
 
-static void free_run(VcPlanes *bufs, CUevent *events)
+/* Free the run once the producer's stream has drained: no hold reads the
+ * gate any more. */
+static void fenced_run_free(FencedRun *r)
 {
+    gate_open(&r->gate, N_FRAMES);
+    if (vc_push(&gpu)) {
+        (void)gpu.f->cuStreamSynchronize(gpu.producer);
+        vc_pop(&gpu);
+    }
     for (unsigned k = 0; k < 2u * N_FRAMES; k++) {
-        vc_free(&gpu, &bufs[k]);
-        if (events[k]) {
-            (void)gpu.f->cuEventDestroy(events[k]);
+        vc_free(&gpu, &r->bufs[k]);
+        if (r->events[k]) {
+            (void)gpu.f->cuEventDestroy(r->events[k]);
         }
     }
+    for (unsigned i = 0; i < N_FRAMES; i++) {
+        (void)vmafx_fence_destroy(&r->released[i], NULL);
+    }
+    (void)pthread_cond_destroy(&r->gate.cond);
+    (void)pthread_mutex_destroy(&r->gate.lock);
 }
 
-/* One arm: bad frames of `feature` under load, with the planted switches. */
-static int acquire_arm(const Clip *c, const VcCell *cell, const char *feature, uint32_t switches)
+/* What one arm saw: bad frames of the feature (-1: the run failed) and, with
+ * the late producer, frames whose readers had not run in time and holds that
+ * gave up before their frame was opened. */
+typedef struct ArmResult {
+    int bad;
+    unsigned unread;
+    unsigned timeouts;
+} ArmResult;
+
+/* One arm: bad frames of `feature` under load, with the planted switches;
+ * `late` runs the late producer. */
+static ArmResult acquire_arm(const Clip *c, const VcCell *cell, const char *feature,
+                             uint32_t switches, bool late)
 {
-    VcPlanes bufs[2u * N_FRAMES];
-    CUevent events[2u * N_FRAMES];
-    memset(bufs, 0, sizeof(bufs));
-    memset((void *)events, 0, sizeof(events));
+    static FencedRun r;
+    ArmResult res = {.bad = -1, .unread = 0u, .timeouts = 0u};
+    if (!fenced_run_init(&r, late)) {
+        return res;
+    }
     Load load;
     const bool loaded = load_start(&load);
     vmafx_test_set_switches(switches);
-    VmafxContext *const fenced = loaded ? run_fenced(c, cell, bufs, events) : NULL;
+    VmafxContext *const fenced = loaded ? run_fenced(&r, c, cell) : NULL;
     vmafx_test_set_switches(0u);
     load_stop(&load);
     VmafxContext *const host = fenced ? run_host(c, cell) : NULL;
-    const int bad = fenced && host ? (int)bad_frames(host, fenced, feature) : -1;
+    res.bad = fenced && host ? (int)bad_frames(host, fenced, feature, late ? LATE_FIRST : 0u) : -1;
     if (fenced) {
         (void)vmafx_context_destroy(fenced, NULL);
     }
     if (host) {
         (void)vmafx_context_destroy(host, NULL);
     }
-    free_run(bufs, events);
-    return bad;
+    fenced_run_free(&r);
+    res.unread = r.unread;
+    res.timeouts = r.gate.timeouts;
+    return res;
+}
+
+/* The verdict on one cell: every frame right with the wait; without it,
+ * every late frame wrong, each read before the late producer wrote it. */
+static char *acquire_verdict(const ArmResult *waited, const ArmResult *skipped)
+{
+    if (waited->bad != 0) {
+        return "a fenced frame scored wrong";
+    }
+    if (skipped->timeouts != 0u) {
+        return "the readers waited for the late producer: something besides the acquire wait "
+               "orders them";
+    }
+    if (skipped->unread != 0u) {
+        return "a frame's readers had not run when the late producer wrote it";
+    }
+    return skipped->bad != (int)(N_FRAMES - LATE_FIRST) ? "the planted skipped wait went unseen" :
+                                                          NULL;
 }
 
 static char *test_acquire_order_under_load(void)
@@ -273,13 +427,15 @@ static char *test_acquire_order_under_load(void)
     static const char *const features[] = {"psnr_y", "VMAF_integer_feature_adm2_score"};
     char *msg = NULL;
     for (unsigned k = 0; k < 2u && !msg; k++) {
-        const int waited = acquire_arm(&c, cells[k], features[k], 0u);
-        const int skipped = acquire_arm(&c, cells[k], features[k], VMAFX_TEST_SKIP_ACQUIRE_WAIT);
-        (void)fprintf(stderr, "[%s: %d bad of %u with the wait, %d without] ", cells[k]->name,
-                      waited, N_FRAMES, skipped);
-        msg = waited != 0  ? "a fenced frame scored wrong" :
-              skipped <= 0 ? "the planted skipped wait went unseen" :
-                             NULL;
+        const ArmResult waited = acquire_arm(&c, cells[k], features[k], 0u, false);
+        const ArmResult skipped =
+            acquire_arm(&c, cells[k], features[k], VMAFX_TEST_SKIP_ACQUIRE_WAIT, true);
+        (void)fprintf(stderr,
+                      "[%s: %d bad of %u with the wait; without, %d bad of %u late frames, %u "
+                      "unread in time, %u holds gave up] ",
+                      cells[k]->name, waited.bad, N_FRAMES, skipped.bad, N_FRAMES - LATE_FIRST,
+                      skipped.unread, skipped.timeouts);
+        msg = acquire_verdict(&waited, &skipped);
     }
     clip_close(&c);
     return msg;
@@ -424,7 +580,7 @@ static int release_arm(const Clip *c, uint32_t switches, unsigned *early)
     VmafxContext *const imported = r.device ? run_release(&r, c, &vc_cells[17]) : NULL;
     vmafx_test_set_switches(0u);
     VmafxContext *const host = imported ? run_host(c, &vc_cells[17]) : NULL;
-    const int bad = imported && host ? (int)bad_frames(host, imported, "psnr_y") : -1;
+    const int bad = imported && host ? (int)bad_frames(host, imported, "psnr_y", 0u) : -1;
     *early = r.early_canaries;
     if (r.callbacks != N_FRAMES) {
         (void)fprintf(stderr, "[%u release callbacks of %u] ", r.callbacks, N_FRAMES);
@@ -531,7 +687,7 @@ static char *test_pool_frames_ordered_by_barrier(void)
         load_stop(&load);
     }
     VmafxContext *const host = pooled ? run_host(&c, &vc_cells[17]) : NULL;
-    const int bad = pooled && host ? (int)bad_frames(host, pooled, "psnr_y") : -1;
+    const int bad = pooled && host ? (int)bad_frames(host, pooled, "psnr_y", 0u) : -1;
     if (pooled) {
         (void)vmafx_context_destroy(pooled, NULL);
     }

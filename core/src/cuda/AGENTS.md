@@ -446,6 +446,11 @@ chroma isn't flat, or wrong plane reads same sentinel as right one.
 - Guards: `test_vmafx_import_cuda`, `test_vmafx_import_cuda_bitexact`,
   `test_vmafx_import_cuda_fence`, `test_vmafx_import_cuda_gl` (device, suite
   `gpu`/`cuda`), `test_vmafx_import_cuda_cells_contract.py` (fast).
+- `test_vmafx_import_cuda_fence` skipped-wait control: late producer. From
+  frame 1, distorted frame written only after its `CUDA_EVENT` release fence
+  signalled (host-function gate, test opens it). No timed hold for that arm:
+  adm readers outran 6 ms in ~1 run of 10. Frame 0 stays out: extractors'
+  first-frame setup waits for producer stream.
 
 ## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
 
