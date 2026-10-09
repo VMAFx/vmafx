@@ -80,7 +80,10 @@ class ComputedLayoutTest(unittest.TestCase):
 @unittest.skipIf(tool("cc") is None, "no C compiler (cc) on PATH")
 class CompiledLayoutTest(unittest.TestCase):
     def test_fixture_compiles_and_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        # Windows keeps a program it has just run open for a moment (Access is
+        # denied on unlink, Windows ARM64 MSVC leg); the leftover scratch
+        # directory is not the subject of this test.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             render_into(Path(tmp), parse(fixture()))
             status, output = compile_layout("cc", Path(tmp))
         self.assertEqual(status, 0, output)
@@ -91,7 +94,10 @@ class CompiledLayoutTest(unittest.TestCase):
             ("VmafxFramePlane plane[3];", "VmafxFramePlane plane[4];", "holds 3 elements"),
             ("    int32_t fd;\n    /** Plane in", "    int64_t fd;\n    /** Plane in", "offset"),
         ):
-            with self.subTest(defect=new), tempfile.TemporaryDirectory() as tmp:
+            with (
+                self.subTest(defect=new),
+                tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp,
+            ):
                 render_into(Path(tmp), parse(fixture()))
                 header = Path(tmp) / "core/include/vmafx/frame.h"
                 text = header.read_text()

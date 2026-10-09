@@ -28,6 +28,7 @@ cannot be read, --check exits 77 and says why.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -44,8 +45,14 @@ from vmafx_api import crd_compat, gitref
 REPO = Path(__file__).resolve().parents[2]
 SKIP = 77
 TOOL_TIMEOUT_S = 900
-TYPES = "./api/vmafx/v1/..."
-OPERATOR = "./cmd/vmafx-operator/..."
+# Package patterns by import path, never as filesystem roots ("./x/..."):
+# controller-tools (v0.22.0, pkg/loader/loader.go) turns a filesystem root into
+# ".<os.PathSeparator>...", and on Windows `go list` reads ".\..." as the one
+# package in that directory. The operator's role then lost every marker of
+# cmd/vmafx-operator/internal/controller and test_crd_generated_current failed
+# on the Windows ARM64 MSVC leg (T-CRD-GENERATE-WINDOWS-RELATIVE-PATTERN-2026-10-09).
+TYPES_PACKAGES = "api/vmafx/v1/..."
+OPERATOR_PACKAGES = "cmd/vmafx-operator/..."
 DEEPCOPY = Path("api/vmafx/v1")
 CRDS = Path("deploy/helm/vmafx/crds")
 RBAC = Path("config/rbac")
@@ -62,6 +69,18 @@ YAML_HEADER = """# SPDX-License-Identifier: EUPL-1.2
 
 class Unavailable(Exception):
     """Go or controller-gen cannot run here; the check is skipped."""
+
+
+MODULE_LINE = re.compile(r"^module\s+(\S+)\s*$", re.MULTILINE)
+
+
+def package_pattern(root: Path, packages: str) -> str:
+    """`packages` (a path under the module root, ending in /...) as an import
+    path pattern of the module go.mod at root declares."""
+    found = MODULE_LINE.search((root / "go.mod").read_text(encoding="utf-8"))
+    if found is None:
+        raise SystemExit(f"crd_generate: {root / 'go.mod'} declares no module")
+    return f"{found.group(1)}/{packages}"
 
 
 def controller_gen(root: Path, *args: str) -> None:
@@ -90,17 +109,19 @@ def generate(root: Path, scratch: Path) -> dict[str, str]:
     """Run the three generators into scratch; return {repository path: text}."""
     header = scratch / "boilerplate.go.txt"
     header.write_text(GO_HEADER, encoding="utf-8")
+    types = package_pattern(root, TYPES_PACKAGES)
+    operator = package_pattern(root, OPERATOR_PACKAGES)
     controller_gen(
         root,
         f"object:headerFile={header}",
-        f"paths={TYPES}",
+        f"paths={types}",
         f"output:object:dir={scratch / 'object'}",
     )
     controller_gen(
-        root, "crd:allowDangerousTypes=true", f"paths={TYPES}", f"output:crd:dir={scratch / 'crds'}"
+        root, "crd:allowDangerousTypes=true", f"paths={types}", f"output:crd:dir={scratch / 'crds'}"
     )
     controller_gen(
-        root, f"rbac:roleName={ROLE}", f"paths={OPERATOR}", f"output:rbac:dir={scratch / 'rbac'}"
+        root, f"rbac:roleName={ROLE}", f"paths={operator}", f"output:rbac:dir={scratch / 'rbac'}"
     )
     files = {
         (DEEPCOPY / Path(p).name).as_posix(): text

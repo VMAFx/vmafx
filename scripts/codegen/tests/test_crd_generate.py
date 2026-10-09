@@ -267,5 +267,38 @@ class CrdGenerateTest(unittest.TestCase):
                 self.assertEqual((root / path).read_text(encoding="utf-8"), text)
 
 
+class PackagePatternTest(unittest.TestCase):
+    """controller-gen gets import path patterns: controller-tools turns a
+    filesystem root ("./x/...") into ".<separator>...", which `go list` on
+    Windows reads as one package, and the role lost the controllers' markers."""
+
+    def test_generate_passes_import_path_patterns(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(crd_generate, "controller_gen", lambda _root, *a: calls.append(a)),
+        ):
+            crd_generate.generate(ROOT, Path(tmp))
+        patterns = [
+            arg[len("paths=") :] for call in calls for arg in call if arg.startswith("paths=")
+        ]
+        self.assertEqual(len(patterns), 3)
+        for pattern in patterns:
+            self.assertTrue(pattern.startswith("github.com/VMAFx/vmafx/"), pattern)
+            self.assertTrue(pattern.endswith("/..."), pattern)
+        self.assertIn("github.com/VMAFx/vmafx/cmd/vmafx-operator/...", patterns)
+
+    def test_pattern_follows_the_module_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "go.mod").write_text(
+                "// x\nmodule example.org/m\n\ngo 1.27\n", encoding="utf-8"
+            )
+            self.assertEqual(crd_generate.package_pattern(root, "a/..."), "example.org/m/a/...")
+            (root / "go.mod").write_text("go 1.27\n", encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                crd_generate.package_pattern(root, "a/...")
+
+
 if __name__ == "__main__":
     unittest.main()

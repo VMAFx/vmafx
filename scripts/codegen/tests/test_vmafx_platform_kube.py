@@ -248,7 +248,9 @@ class KubeEmitTest(unittest.TestCase):
                 for path, text in emit_kube_types.files(kube).items():
                     out = Path(tmp) / path
                     out.parent.mkdir(parents=True, exist_ok=True)
-                    out.write_text(text, encoding="utf-8")
+                    # LF on every host, as the generator writes them: gofmt
+                    # lists a CRLF file (text mode wrote one on Windows).
+                    out.write_text(text, encoding="utf-8", newline="\n")
             done = run([gofmt, "-l", tmp])
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), "", "gofmt would rewrite these files")

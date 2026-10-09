@@ -275,11 +275,20 @@ static bool text_passes(const char *path, bool (*check)(const char *text))
     return ok;
 }
 
+/* The engine writes the XML, JSON and CSV reports through a text-mode stream
+ * (output_file_open() in libvmaf.c, as upstream's fopen(path, "w")), so a line
+ * ends in CR LF on Windows; read_text() reads the bytes. */
+#ifdef _WIN32
+#define REPORT_EOL "\r\n"
+#else
+#define REPORT_EOL "\n"
+#endif
+
 static bool xml_has_record(const char *xml)
 {
     return strstr(xml, "<provenance abi_major=") != NULL &&
            strstr(xml, "<model name=\"vmaf\"") != NULL &&
-           strstr(xml, "</provenance>\n</VMAF>") != NULL;
+           strstr(xml, "</provenance>" REPORT_EOL "</VMAF>") != NULL;
 }
 
 static bool csv_untouched(const char *csv)
