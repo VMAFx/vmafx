@@ -46,6 +46,7 @@
     "FFmpeg Ubuntu gcc",
     "FFmpeg macOS clang",
     "FFmpeg SYCL",
+    "FFmpeg Windows MSVC",
     "Docker Image Build",
     "Dev Container Build",
     "Tester Image",

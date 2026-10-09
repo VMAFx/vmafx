@@ -133,6 +133,32 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertNotIn("patch -p1", integration)
         self.assertIn("FATAL: ffmpeg-patches/$line did not apply", sycl)
 
+    def test_msvc_leg_builds_the_series_against_the_static_msvc_install(self) -> None:
+        # ADR-2783: the configured release with the whole series, cl.exe through
+        # FFmpeg's configure, linked against vmaf.lib / vmafx.lib (ADR-2752).
+        integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
+        work = _job(integration, "ffmpeg-msvc-work")
+        gate = _job(integration, "ffmpeg-msvc-gate")
+        self.assertIn("    name: FFmpeg Windows MSVC work\n", work)
+        self.assertIn("    # required-aggregator\n    name: FFmpeg Windows MSVC\n", gate)
+        self.assertIn("needs.ffmpeg-msvc-work.result", gate)
+        self.assertLess(work.index("core.autocrlf false"), work.index("uses: actions/checkout@"))
+        self.assertLess(work.index("core.eol lf"), work.index("uses: actions/checkout@"))
+        build = _step(work, "Build libvmaf (static, MSVC)")
+        self.assertIn("--default-library=static", build)
+        self.assertNotIn("b_vscrt", build)
+        self.assertIn(
+            "check_msvc_library_names.py --prefix install",
+            _step(work, "Check installed library names (MSVC)"),
+        )
+        smoke = _step(work, "Build FFmpeg with the patch series against vmaf.lib")
+        self.assertIn("FFMPEG_TOOLCHAIN: msvc", smoke)
+        self.assertIn("VMAF_SCORE_CHECK: '1'", smoke)
+        self.assertIn("bash ffmpeg-patches/test/build-and-run.sh", smoke)
+        self.assertNotIn("SMOKE_FATE", work)
+        self.assertNotIn("continue-on-error", work)
+        self.assertLess(work.index("check_msvc_library_names.py"), work.index("build-and-run.sh"))
+
     def test_all_release_consumers_use_warning_clean_tag_checkout(self) -> None:
         helper = "scripts/ci/checkout-annotated-tag.sh"
         integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")

@@ -224,6 +224,17 @@ uc_check_loaded() {
   [ "$found" -eq 1 ] || uc_die "no libvmaf under $prefix was loaded (see $log)"
 }
 
+# uc_ffmpeg_graph OUT_JSON: the filter graph that scores FRAMES frames with
+# FFmpeg's libvmaf filter, as uc_cli_scores scores them with the CLI. Each input
+# is cut to FRAMES frames BEFORE libvmaf: `-frames:v` on the output stops ffmpeg
+# at a scheduling-dependent point, and the last scored frame's motion value
+# depends on whether a following frame reached the filter. Input 0 is the
+# distorted video, input 1 the reference (libavfilter/vf_libvmaf.c).
+uc_ffmpeg_graph() {
+  local cut="trim=end_frame=$FRAMES,setpts=PTS-STARTPTS"
+  echo "[0:v]${cut}[d];[1:v]${cut}[r];[d][r]libvmaf=log_fmt=json:log_path=$1:n_threads=1"
+}
+
 # uc_compare A B LABEL_A LABEL_B [extra comparator args]: exact-text
 # comparison of every frame metric and pooled metric; returns 0/1/2.
 uc_compare() {

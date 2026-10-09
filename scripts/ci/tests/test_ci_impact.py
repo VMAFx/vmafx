@@ -68,11 +68,12 @@ REQUIRED_CONSUMER_CONTRACTS = {
     ),
     "ffmpeg-integration.yml": (
         "c_core",
-        ("ffmpeg-work", "ffmpeg-sycl-work"),
+        ("ffmpeg-work", "ffmpeg-sycl-work", "ffmpeg-msvc-work"),
         (
             ("ffmpeg-ubuntu-gate", "FFmpeg Ubuntu gcc", "ffmpeg-work"),
             ("ffmpeg-macos-gate", "FFmpeg macOS clang", "ffmpeg-work"),
             ("ffmpeg-sycl-gate", "FFmpeg SYCL", "ffmpeg-sycl-work"),
+            ("ffmpeg-msvc-gate", "FFmpeg Windows MSVC", "ffmpeg-msvc-work"),
         ),
     ),
     "helm-chart.yml": (

@@ -118,7 +118,25 @@ python scripts\ci\run_meson_test.py -- -C build --suite fast
 `/experimental:c11atomics` is required on every MSVC build: libvmaf uses C11
 atomics, and MSVC's `<stdatomic.h>` refuses them without it.
 
-### Threads on MSVC
+To confirm the toolset:
+
+- `cl.exe` prints `for ARM64` in its banner when the ARM64-hosted toolset is
+  active.
+- The x64 cross toolset (`vcvarsall.bat amd64_arm64`) also produces ARM64
+  binaries, but runs the compiler under emulation.
+- `install\bin\vmaf.exe` is an ARM64 image (PE machine `0xAA64`).
+
+How this build differs from the other AArch64 builds:
+
+- **Strict floating point.** GCC and clang get `-ffp-contract=off` for the
+  float NEON carve-outs; MSVC gets `/fp:precise`, which generates no fused
+  multiply-adds by default (`arm64_strict_fp_args` in `core/src/meson.build`).
+- **No SVE2.** MSVC has no `<arm_sve.h>`, and SVE2 is probed at run time on
+  Linux only, so the binary dispatches NEON.
+- **No CUDA.** NVIDIA published no Windows ARM64 packages for CUDA 13.3.1, the
+  release this was checked against.
+
+## Threads on MSVC
 
 MSVC ships no `pthread.h`, so an MSVC, clang-cl or icx-cl build takes its
 threads from a small header in the repository,
@@ -132,7 +150,7 @@ and returns `ETIMEDOUT` once it has passed, and the VMAFx API's host fences
 (`vmafx_fence_wait()`) wait on it rather than polling. Upstream's bundled
 pthread-win32 and its `-Dbundled_winpthreads` option are not used.
 
-### Library files of an MSVC build
+## Library files of an MSVC build
 
 A static MSVC, clang-cl or icx-cl build (`--default-library=static`, as every
 recipe on this page uses) installs its two libraries under the names the MSVC
@@ -151,20 +169,65 @@ renaming. MinGW builds keep GCC's names (`libvmaf.a`, `libvmafx.a`), and so does
 an MSVC build with `--default-library=both`, where `vmaf.lib` is the import
 library of `vmaf.dll`.
 
-To confirm the toolset:
+## FFmpeg with MSVC
 
-- `cl.exe` prints `for ARM64` in its banner when the ARM64-hosted toolset is
-  active.
-- The x64 cross toolset (`vcvarsall.bat amd64_arm64`) also produces ARM64
-  binaries, but runs the compiler under emulation.
-- `install\bin\vmaf.exe` is an ARM64 image (PE machine `0xAA64`).
+FFmpeg builds with `cl.exe` through its own configure script
+(`--toolchain=msvc`), run from an MSYS2 shell that has the MSVC environment.
+The patch series in `ffmpeg-patches/` applies and links on this route; the
+`FFmpeg Windows MSVC` check
+([`ffmpeg-integration.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/ffmpeg-integration.yml))
+builds it whenever a change reaches the C library or the patches
+([ADR-2783](../adr/2783-ffmpeg-msvc-consumer-leg.md)).
 
-How this build differs from the other AArch64 builds:
+1. From an **x64 Native Tools Command Prompt** in the repository root, build
+   and install VMAFx as a static library:
 
-- **Strict floating point.** GCC and clang get `-ffp-contract=off` for the
-  float NEON carve-outs; MSVC gets `/fp:precise`, which generates no fused
-  multiply-adds by default (`arm64_strict_fp_args` in `core/src/meson.build`).
-- **No SVE2.** MSVC has no `<arm_sve.h>`, and SVE2 is probed at run time on
-  Linux only, so the binary dispatches NEON.
-- **No CUDA.** NVIDIA published no Windows ARM64 packages for CUDA 13.3.1, the
-  release this was checked against.
+    ```bat
+    set CFLAGS=/experimental:c11atomics
+    set CXXFLAGS=/experimental:c11atomics
+    meson setup core core\build --buildtype release ^
+      --prefix %CD%\install --default-library=static -Dc_std=none ^
+      -Denable_cuda=false -Denable_sycl=false
+    ninja -C core\build install
+    ```
+
+2. Install [MSYS2](https://www.msys2.org/) and, in a UCRT64 shell, the tools
+   FFmpeg's build needs:
+
+    ```bash
+    pacman -S --noconfirm --needed make diffutils git \
+      mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-pkgconf \
+      mingw-w64-ucrt-x86_64-python
+    ```
+
+3. Open the UCRT64 shell from the same Native Tools Command Prompt with
+   `msys2_shell.cmd -ucrt64 -use-full-path`, so `cl.exe`, `INCLUDE` and `LIB`
+   stay set. MSYS2's `link` command comes first on `PATH`; FFmpeg's
+   `compat/windows/mslink` runs MSVC's `link.exe` from beside `cl.exe`
+   instead, so nothing needs renaming.
+4. From the repository root, build the configured FFmpeg release with the
+   whole series against the install, and compare the filter's scores with the
+   CLI's:
+
+    ```bash
+    FFMPEG_TOOLCHAIN=msvc VMAF_SCORE_CHECK=1 \
+      VMAF_PREFIX="$PWD/install" \
+      bash ffmpeg-patches/test/build-and-run.sh
+    ```
+
+The script configures FFmpeg with `--extra-cflags=-MD`: every object of one
+MSVC link must use the same C runtime, and a release build of VMAFx compiles
+with `/MD` (Meson's `b_vscrt=from_buildtype`). A VMAFx build with another
+runtime (`-Db_vscrt=mt`, a debug build's `/MDd`) needs FFmpeg built with the
+same one; the linker reports a mismatch as warning `LNK4098`, which the
+script's warning check fails on.
+
+With `FFMPEG_TOOLCHAIN=msvc` that check covers the lines the patch series adds
+or changes and every linker warning. `cl.exe` reports some 400 warnings in
+FFmpeg's own sources at the configured release (`C4334`, `C4113`, `C5287` and
+others), some of them in files the series also edits, and `D9024` when FFmpeg
+links its host tools; the series does not write those lines, so they are
+printed but do not fail the run. With the host's compiler
+every warning fails it. The script's other settings (`FFMPEG_JOBS`,
+`SMOKE_FATE`, `KEEP_BUILD`) are listed at the top of
+[`ffmpeg-patches/test/build-and-run.sh`](https://github.com/VMAFx/vmafx/blob/master/ffmpeg-patches/test/build-and-run.sh).

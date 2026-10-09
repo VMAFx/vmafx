@@ -261,6 +261,8 @@ jobs:
               'FFmpeg Ubuntu gcc',
               'FFmpeg macOS clang',
               'FFmpeg SYCL',
+              // ADR-2783 — the MSVC consumer of vmaf.lib (exact-name gate).
+              'FFmpeg Windows MSVC',
               'Docker Image Build',
               'Dev Container Build',
               'vmafx-sys CI',
@@ -379,6 +381,8 @@ jobs:
               'FFmpeg Ubuntu gcc',
               'FFmpeg macOS clang',
               'FFmpeg SYCL',
+              // ADR-2783 — the MSVC consumer of vmaf.lib (exact-name gate).
+              'FFmpeg Windows MSVC',
               'Docker Image Build',
               'Dev Container Build',
               'vmafx-sys CI',
@@ -439,6 +443,7 @@ jobs:
                 "FFmpeg macOS clang work"
               ],
               "FFmpeg SYCL": ["Plan FFmpeg impact", "FFmpeg SYCL work"],
+              "FFmpeg Windows MSVC": ["Plan FFmpeg impact", "FFmpeg Windows MSVC work"],
               "Docker Image Build": ["Plan Docker image impact", "Docker Image Build work"],
               "Dev Container Build": [
                 "Plan dev-container impact",

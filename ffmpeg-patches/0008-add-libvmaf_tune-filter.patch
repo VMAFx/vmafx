@@ -70,7 +70,7 @@ index 102fd55c38821b98c5a760019b6feda0f64fb5b8..9bd3aa0163aa8ef1a95897dfab1b7524
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..37b1e9c83e4e21a2cfeb2eaf04c0fa9a0e4668f5
+index 0000000000000000000000000000000000000000..570eddf2eaf6991e562042a4b20a88929c0cfd95
 --- /dev/null
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -0,0 +1,410 @@
@@ -458,7 +458,7 @@ index 0000000000000000000000000000000000000000..37b1e9c83e4e21a2cfeb2eaf04c0fa9a
 +        AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
 +        AV_PIX_FMT_NONE,
 +    };
-+    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
++    return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
 +}
 +
 +static const AVFilterPad libvmaf_tune_inputs[] = {

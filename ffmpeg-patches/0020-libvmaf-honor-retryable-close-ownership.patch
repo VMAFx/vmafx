@@ -178,7 +178,7 @@ index 1a99ead3d1b89761076c0744d74c0ea6128f64ed..c4351af2199c31e1daa07bed7f39a358
          vmaf_metal_state_free(&s->metal_state);
  }
 diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
-index 37b1e9c83e4e21a2cfeb2eaf04c0fa9a0e4668f5..7a87f0bc6018a8103adb1278eda8051d345b9259 100644
+index 570eddf2eaf6991e562042a4b20a88929c0cfd95..2c42a3fd72978f876da5948cce530ab0e8b8c3b8 100644
 --- a/libavfilter/vf_libvmaf_tune.c
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -94,6 +94,32 @@ static const AVOption libvmaf_tune_options[] = {

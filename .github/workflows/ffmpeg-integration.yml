@@ -1,5 +1,5 @@
 name: FFmpeg
-# FFmpeg — Linux/macOS x gcc/clang + SYCL.
+# FFmpeg — Linux/macOS x gcc/clang + SYCL + Windows MSVC.
 # The display name is deliberately short: GitHub's badge.svg paints it
 # into the README status badge. See ADR-1227.
 on:
@@ -282,6 +282,129 @@ jobs:
           sudo make install
           echo "FFmpeg with SYCL support built successfully"
 
+  # ADR-2783 (upstream 3e1385bed, Q-300): the configured FFmpeg release with
+  # the whole patch series, compiled by cl.exe through FFmpeg's own configure
+  # (--toolchain=msvc) in an MSYS2 shell, linked against vmaf.lib and
+  # vmafx.lib from a static MSVC build of this commit (ADR-2752). Upstream
+  # builds the same consumer through a Meson port of FFmpeg; this leg keeps
+  # FFmpeg's build system, the one the patch series and every distributor use.
+  # ffmpeg-patches/test/build-and-run.sh does the work, as on a developer's
+  # machine, and compares the filter's scores with the CLI's as exact text.
+  ffmpeg-msvc-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    name: FFmpeg Windows MSVC work
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      # bash reads build-config.env, the scripts, series.txt and the patches:
+      # an LF checkout. autocrlf=false alone still writes the native CRLF for
+      # `text=auto` files; core.eol=lf does not.
+      - name: Check out with LF line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.8
+
+      - name: Install meson and ninja
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+
+      - name: Setup MSVC dev environment (x64)
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
+        with:
+          arch: x64
+
+      # As on the MSVC legs of libvmaf-build-matrix.yml: a ccache.exe on PATH
+      # makes meson wrap the compiler at configure time.
+      - name: Disable ccache wrap (windows)
+        shell: pwsh
+        run: |
+          $p = 'C:\Strawberry\c\bin\ccache.exe'
+          if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
+          Write-Host "ccache binary disabled"
+
+      # ADR-2170: the libvmaf build prints no warnings, so they are errors.
+      - name: Warnings-as-errors arguments
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh msvc)"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
+      # Static, so the install holds vmaf.lib and vmafx.lib (ADR-2752); the
+      # release buildtype compiles with /MD, the runtime the smoke script gives
+      # FFmpeg. `/experimental:c11atomics` as on every MSVC leg. No tests: the
+      # MSVC legs of libvmaf-build-matrix.yml build and run them; this leg
+      # needs the library and the vmaf CLI.
+      - name: Build libvmaf (static, MSVC)
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          meson setup core core\build --buildtype release ^
+            --prefix %CD%\install ^
+            --default-library=static ^
+            -Dc_std=none -Denable_tests=false ^
+            -Denable_cuda=false -Denable_sycl=false ^
+            ${{ steps.werror.outputs.args }}
+          ninja -C core\build install
+
+      - name: Check installed library names (MSVC)
+        shell: cmd
+        run: python scripts\ci\check_msvc_library_names.py --prefix install
+
+      # path-type inherit keeps the MSVC environment (cl.exe, INCLUDE, LIB) of
+      # the step above; FFmpeg's compat/windows/mslink finds MSVC's link.exe
+      # beside cl.exe, ahead of the MSYS2 coreutils `link`. MSYS2's own git
+      # takes the POSIX paths and /dev/null the smoke script passes.
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
+        with:
+          msystem: UCRT64
+          install: >-
+            make
+            diffutils
+            git
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+          update: true
+          path-type: inherit
+
+      - name: Build FFmpeg with the patch series against vmaf.lib
+        shell: msys2 {0}
+        env:
+          FFMPEG_TOOLCHAIN: msvc
+          VMAF_SCORE_CHECK: '1'
+        run: |
+          set -euo pipefail
+          workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          export VMAF_PREFIX="$workspace/install"
+          export FFMPEG_SRC="$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
+          export KEEP_BUILD=1
+          bash ffmpeg-patches/test/build-and-run.sh
+
+      - name: Upload FFmpeg logs on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ffmpeg-msvc-logs
+          path: |
+            ${{ runner.temp }}/ffmpeg/ffbuild/config.log
+            ${{ runner.temp }}/ffmpeg/vmafx-build.log
+            ${{ runner.temp }}/ffmpeg/vmafx-score/
+          if-no-files-found: warn
+
   ffmpeg-ubuntu-gate:
     needs: [tier, impact, ffmpeg-work]
     if: always() && needs.tier.outputs.full == 'true'
@@ -352,6 +475,28 @@ jobs:
           case "$SELECTED:$WORK_RESULT" in
             true:success|false:skipped) ;;
             *) echo "::error::invalid FFmpeg SYCL gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
+
+  ffmpeg-msvc-gate:
+    needs: [tier, impact, ffmpeg-msvc-work]
+    if: always() && needs.tier.outputs.full == 'true'
+    # required-aggregator
+    name: FFmpeg Windows MSVC
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected FFmpeg Windows MSVC work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.ffmpeg-msvc-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid FFmpeg Windows MSVC gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
           esac
 
   # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from

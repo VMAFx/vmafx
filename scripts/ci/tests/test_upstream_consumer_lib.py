@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
-"""Tests for the install lookup of scripts/ci/upstream-consumer-lib.sh.
+"""Tests for the install lookup and scoring graph of scripts/ci/upstream-consumer-lib.sh.
 
 The consumer scripts find the library under test through the pkg-config and
 library directories of a prefix. Meson installs into lib, lib64 or, on Debian
@@ -80,6 +80,45 @@ class InstallLookupTests(unittest.TestCase):
             .stdout.strip()
             .endswith(f"{self.prefix}/share/pkgconfig")
         )
+
+
+def _graph(frames: str, out: str) -> subprocess.CompletedProcess[str]:
+    """uc_ffmpeg_graph OUT with FRAMES set as a consumer script sets it."""
+    assert BASH is not None
+    script = f'. "{LIB}" && uc_defaults && FRAMES="$1" && uc_ffmpeg_graph "$2"'
+    # A fixed script over arguments this test chose; no user input.
+    return subprocess.run(  # noqa: S603
+        [BASH, "-c", script, "uc-test", frames, out],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=TIMEOUT,
+    )
+
+
+@unittest.skipIf(BASH is None, "bash not found")
+class FFmpegGraphTests(unittest.TestCase):
+    """The scoring graph shared by upstream-ffmpeg-compat.sh and the patch smoke."""
+
+    def test_graph_cuts_both_inputs_before_libvmaf(self) -> None:
+        graph = _graph("3", "ffmpeg.json").stdout.strip()
+        cut = "trim=end_frame=3,setpts=PTS-STARTPTS"
+        self.assertEqual(
+            graph,
+            f"[0:v]{cut}[d];[1:v]{cut}[r];"
+            "[d][r]libvmaf=log_fmt=json:log_path=ffmpeg.json:n_threads=1",
+        )
+
+    def test_one_frame_boundary(self) -> None:
+        graph = _graph("1", "out.json").stdout
+        self.assertEqual(graph.count("trim=end_frame=1,"), 2)
+        self.assertNotIn("end_frame=3", graph)
+
+    def test_distorted_input_feeds_the_main_pad(self) -> None:
+        graph = _graph("3", "x.json").stdout
+        self.assertLess(graph.index("[0:v]"), graph.index("[1:v]"))
+        self.assertIn("[d][r]libvmaf=", graph)
+        self.assertNotIn("[r][d]libvmaf=", graph)
 
 
 if __name__ == "__main__":

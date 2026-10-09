@@ -115,28 +115,19 @@ ff_compare() {
   esac
 }
 
-# ff_graph OUT_JSON: the filter graph of the CPU leg. Each input is cut to
-# FRAMES frames BEFORE libvmaf: `-frames:v` on the output stops ffmpeg at a
-# scheduling-dependent point, and the last scored frame's motion value depends
-# on whether a following frame reached the filter.
-ff_graph() {
-  local cut="trim=end_frame=$FRAMES,setpts=PTS-STARTPTS"
-  echo "[0:v]${cut}[d];[1:v]${cut}[r];[d][r]libvmaf=log_fmt=json:log_path=$1:n_threads=1"
-}
-
 ff_cpu_leg() {
   local bin="$FF_ROOT/build/ffmpeg" graph out
   out="$WORK/ffmpeg-prefix.json"
   # Upstream input order (libavfilter/vf_libvmaf.c, libvmaf_inputs[]): pad 0
   # "main" is the DISTORTED video, pad 1 "reference" is the reference.
-  graph="$(ff_graph "$out")"
+  graph="$(uc_ffmpeg_graph "$out")"
   echo "== ffmpeg: $(LD_LIBRARY_PATH="$(uc_ldpath "$PREFIX")" "$bin" -version | head -n 1)"
   echo "== scoring with --prefix $PREFIX"
   ff_score "$bin" "$PREFIX" "$out" "$graph"
   if [ -n "$REF_PREFIX" ]; then
     echo "== re-running the same ffmpeg binary against --reference-prefix $REF_PREFIX"
     ff_score "$bin" "$REF_PREFIX" "$WORK/ffmpeg-reference.json" \
-      "$(ff_graph "$WORK/ffmpeg-reference.json")"
+      "$(uc_ffmpeg_graph "$WORK/ffmpeg-reference.json")"
     ff_compare "$out" "$WORK/ffmpeg-reference.json" "ffmpeg+prefix" "ffmpeg+reference-prefix"
   fi
   if [ "$AGAINST_CLI" -eq 1 ]; then
