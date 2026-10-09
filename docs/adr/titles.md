@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1353), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1354), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5419,6 +5419,10 @@ Every ADR, one heading each (1353), so the site search finds an ADR by its title
 ## ADR-2817: Re-pin the Pelorus mirror to v0.3.0, its EUPL-1.2 release, and check the licence on every sync
 
 [2817-pelorus-v030-eupl-repin](2817-pelorus-v030-eupl-repin.md)
+
+## ADR-2828: Every CI build lane spells warnings as errors where praetor's build-warnings gate reads it
+
+[2828-ci-werror-every-lane](2828-ci-werror-every-lane.md)
 
 ## ADR-2949: `vmaf_picture_wrap` ships with upstream's signature, on `vmafx_frame_wrap_host`, with the fork's plane rules
 
