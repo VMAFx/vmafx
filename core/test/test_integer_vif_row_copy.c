@@ -11,7 +11,9 @@
  *  own buffer: it read past the end of such a picture and wrote past the rows
  *  of its buffer. Each case here lays the luma plane out with a wide stride
  *  in memory that ends exactly at the last row's last sample, followed by an
- *  inaccessible page (POSIX and Windows), so an over-read faults; it then
+ *  inaccessible page (anonymous mmap + mprotect, or VirtualAlloc +
+ *  VirtualProtect; the page size is the system's, 16 KiB on Apple silicon),
+ *  so an over-read faults; it then
  *  requires every VIF score to equal, bit for bit, the score of the same
  *  samples at the library's own stride. 8-bit and 10-bit, the wide plane on
  *  the reference, on the distorted picture and on both.
@@ -72,6 +74,29 @@ static size_t page_size(void)
 #endif
 }
 
+#if !defined(_WIN32)
+/* `len` bytes of private anonymous memory. macOS and the BSDs spell the flag
+ * MAP_ANON, glibc and POSIX.1-2024 MAP_ANONYMOUS; a system with neither maps
+ * /dev/zero, which macOS refuses (ENODEV), so that is the last resort only. */
+static void *map_anonymous(size_t len)
+{
+#if defined(MAP_ANONYMOUS)
+    return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#elif defined(MAP_ANON)
+    return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+#else
+    const int fd = open("/dev/zero", O_RDWR);
+    void *const base =
+        fd < 0 ? MAP_FAILED : mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (fd >= 0 && close(fd) != 0 && base != MAP_FAILED) {
+        (void)munmap(base, len);
+        return MAP_FAILED;
+    }
+    return base;
+#endif
+}
+#endif
+
 static int guarded_alloc(GuardedPlane *g, size_t bytes)
 {
     const size_t page = page_size();
@@ -84,12 +109,8 @@ static int guarded_alloc(GuardedPlane *g, size_t bytes)
         return -1;
     }
 #else
-    /* A private map of /dev/zero is anonymous memory in plain POSIX terms
-     * (MAP_ANONYMOUS takes an fd of -1). */
-    const int fd = open("/dev/zero", O_RDWR);
-    g->base = fd < 0 ? MAP_FAILED : mmap(NULL, g->len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-    const int closed = fd < 0 ? 0 : close(fd);
-    if (g->base == MAP_FAILED || g->base == NULL || closed != 0 ||
+    g->base = map_anonymous(g->len);
+    if (g->base == MAP_FAILED || g->base == NULL ||
         mprotect((uint8_t *)g->base + g->len - page, page, PROT_NONE)) {
         return -1;
     }
@@ -224,21 +245,22 @@ static char *check_wide(unsigned bpc, enum WideSide side)
     GuardedPlane g_dist = {0};
     VmafPicture ref_view = ref;
     VmafPicture dist_view = dist;
-    int err = vif_scores(&ref, &dist, tight);
-    if (!err && (side & WIDE_REF)) {
-        err = wide_view(&ref, &g_ref, &ref_view);
+    const int scored = vif_scores(&ref, &dist, tight);
+    int guarded = 0;
+    if (side & WIDE_REF) {
+        guarded |= wide_view(&ref, &g_ref, &ref_view);
     }
-    if (!err && (side & WIDE_DIST)) {
-        err = wide_view(&dist, &g_dist, &dist_view);
+    if (side & WIDE_DIST) {
+        guarded |= wide_view(&dist, &g_dist, &dist_view);
     }
-    if (!err) {
-        err = vif_scores(&ref_view, &dist_view, wide);
-    }
+    const int scored_wide = (scored || guarded) ? -1 : vif_scores(&ref_view, &dist_view, wide);
     guarded_free(&g_ref);
     guarded_free(&g_dist);
     (void)vmaf_picture_unref(&ref);
     (void)vmaf_picture_unref(&dist);
-    mu_assert("scoring failed", !err);
+    mu_assert("scoring at the library's stride failed", !scored);
+    mu_assert("the guarded plane could not be mapped", !guarded);
+    mu_assert("scoring the wide stride failed", !scored_wide);
     for (unsigned k = 0; k < SCORES; k++) {
         mu_assert("vif score is finite", isfinite(tight[k]));
         mu_assert("a wide stride changes no VIF score", same_bits(tight[k], wide[k]));
